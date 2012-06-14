@@ -418,12 +418,12 @@ ESL_PIC_FLAGS
 # If we're using SSE, figure out our @SIMD_CFLAGS@
 if test "$impl_choice" = "sse" && test "x$SIMD_CFLAGS" = x; then
    case $ax_cv_c_compiler_vendor in
-   gnu)   AX_CHECK_COMPILER_FLAGS(-msse2,[SIMD_CFLAGS="-msse2"],[impl_choice=dummy]);;
+   gnu)   AX_CHECK_COMPILER_FLAGS(-msse2,[SIMD_CFLAGS="-msse2"],[AC_MSG_ERROR([Need -msse2 flag (gnu compiler, SSE implementation)])]);;
    intel) ;;
    *)     ;;
    esac
 fi
-if test "$enable_sse" = "yes" && test "$impl_choice" = dummy; then
+if test "$enable_sse" = "yes" && test "$impl_choice" = none; then
    AC_MSG_ERROR([SSE instructions are apparently not available; --enable-sse failed])
 fi
 
@@ -476,7 +476,7 @@ if test "$impl_choice" = "sse"; then
 fi
 
 # Verify that we can actually build the chosen implementation; else
-# default to dummy.
+# fail (there is no dummy implementation in Infernal).
 # (For example, Athlon reports as i686-*, so will get assigned to 
 # sse impl, but does not support SSE2 instructions.)
 # The test here is cribbed from the Apache configure.ac file.
@@ -496,8 +496,8 @@ if test "$impl_choice" = "sse"; then
 				   _mm_free(two);
 				 ]])],
 	[ AC_MSG_RESULT([yes])],
-	[ AC_MSG_RESULT([no; reverting to dummy implementation])
-	  impl_choice=dummy
+	[ AC_MSG_RESULT([no; unable to continue])
+	  AC_MSG_ERROR([Unable to use vector instructions (SSE or VMX).])
 	]
   )
   CFLAGS="$sre_save_cflags"
@@ -515,8 +515,7 @@ if test "$impl_choice" = "vmx"; then
                                    onev = vec_adds(onev, zerov);
 				 ]])],
 	[ AC_MSG_RESULT([yes])],
-	[ AC_MSG_RESULT([no; reverting to dummy implementation])
-	  impl_choice=dummy
+	[ AC_MSG_RESULT([no; unable to continue])
           if test "${ax_cv_c_compiler_vendor}" = "ibm"; then
              echo "******************************************************"
              echo "*  You seem to have the IBM  C compiler.  If your    *"
@@ -530,6 +529,7 @@ if test "$impl_choice" = "vmx"; then
              echo "*  you have.                                         *"
              echo "******************************************************"
           fi
+	  AC_MSG_ERROR([Unable to use vector instructions (SSE or VMX).])
  	]
   )
   CFLAGS="$sre_save_cflags"
@@ -558,6 +558,9 @@ sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
       AC_DEFINE([HAVE_SSE2])
       AC_DEFINE([p7_IMPL_SSE])
       AC_SUBST([HMMERIMPLLIB], ["impl_sse/libhmmerimpl.a"])
+#      AC_SUBST([DO_IMPL_SSE], ["(cd src/impl_sse; make CC=\"\$(CC)\" CFLAGS=\"\$(CFLAGS)\";)"])
+      AC_SUBST([DO_IMPL_SSE], ["\${QUIET_SUBDIR0}src/impl_sse     \${QUIET_SUBDIR1} all"])
+      AC_SUBST([INSTALL_IMPL_SSE], ["for file in \$(SSEPROGS); do cp src/impl_sse/\$\$file \$(BINDIR)/; done"])
       IMPL_CHOICE="sse"
       ;;
 
@@ -568,10 +571,8 @@ vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
       IMPL_CHOICE="vmx"
       ;;
 
-*)    AC_MSG_NOTICE([Activating "dummy" implementation])
-      AC_DEFINE([p7_IMPL_DUMMY])
-      AC_SUBST([HMMERIMPLLIB], ["impl_dummy/libhmmerimpl.a"])
-      IMPL_CHOICE="dummy"
+*)    AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+      AC_MSG_ERROR([Unable to use vector instructions (SSE or VMX).])
       ;;
 esac
 AC_SUBST(IMPL_CHOICE)
@@ -685,7 +686,6 @@ AC_CONFIG_FILES([documentation/Makefile])
 AC_CONFIG_FILES([documentation/manpages/Makefile])
 AC_CONFIG_FILES([documentation/userguide/Makefile])
 
-
 # HMMER files
 if test -d hmmer/release-notes; then
   AC_CONFIG_FILES(hmmer/release-notes/LICENSE.sh)
@@ -736,12 +736,6 @@ INFERNAL configuration:
      libraries:            ${LIBS} ${LIBGSL} ${PTHREAD_LIBS}
      DP implementation:    ${impl_choice}
 "
-
-if test "$impl_choice" = "dummy"; then
-  AC_MSG_WARN([The "dummy" implementation is a portable ANSI C reference implementation.])
-  AC_MSG_WARN([It is slow, and is not intended for production use.])
-fi
-
 
 
 

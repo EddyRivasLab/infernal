@@ -12,7 +12,7 @@
 # i11.1 =  simple example alignment (1 seq)
 # i11.2 =  sequence to align (irrelevant really)
 
-$usage = "i11 <cmbuild> <cmalign>\n";
+$usage = "perl bug-i11.pl <cmbuild> <cmalign>\n";
 if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
 
 $cmbuild  = shift;

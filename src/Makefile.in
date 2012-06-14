@@ -129,7 +129,6 @@ ITESTS =\
 
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 
-#ITESTS = 
 #EXAMPLES =
 
 # beautification magic stolen from git
@@ -199,8 +198,8 @@ ${BENCHMARKS}: libinfernal.a  ${HDRS} config.h
 	@BASENAME=`echo $@ | sed -e 's/_benchmark//' | sed -e 's/^cm_//'` ;\
 	DFLAG=`echo $${BASENAME} | sed -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`;\
 	DFLAG=CM_$${DFLAG}_BENCHMARK ;\
-	if test -e ${srcdir}/CM_$${BASENAME}.c; then \
-           DFILE=${srcdir}/CM_$${BASENAME}.c ;\
+	if test -e ${srcdir}/cm_$${BASENAME}.c; then \
+           DFILE=${srcdir}/cm_$${BASENAME}.c ;\
         else \
            DFILE=${srcdir}/$${BASENAME}.c ;\
 	fi;\

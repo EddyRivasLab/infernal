@@ -54,8 +54,8 @@
 1 exercise  bug/i11-bld-detach       perl !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i12-aln-outside      perl !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i13-aln-sub          perl !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
+1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
 
 ################################################################
 # Option tests
@@ -207,16 +207,16 @@
 1  exercise  fetch/4/f          @src/cmfetch@ -f %4.CM% !testsuite/2.list!
 1  exercise  fetch/4/o          @src/cmfetch@ -o %TMP.CM% %4.CM% Vault
 1  exercise  fetch/4/O          @src/cmfetch@ -O %4.CM% Vault
-1  exercise  emit/4/O           @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/4/1        rm !testsuite/Vault!
+1  exercise  emit/4/O           @src/cmemit@ Vault
+1  prep      cleanup/4/1        rm Vault
 1  prep      cleanup/4/2        rm %4.CM%.ssi
 
 1  exercise  fetch/4C/index     @src/cmfetch@ --index %4.C.CM% 
 1  exercise  fetch/4C/f         @src/cmfetch@ -f %4.C.CM% !testsuite/2.list!
 1  exercise  fetch/4C/o         @src/cmfetch@ -o %TMP.C.CM% %4.C.CM% Vault
 1  exercise  fetch/4C/O         @src/cmfetch@ -O %4.C.CM% Vault
-1  exercise  emit/4C/O          @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/4C/1       rm !testsuite/Vault!
+1  exercise  emit/4C/O          @src/cmemit@ Vault
+1  prep      cleanup/4C/1       rm Vault
 1  prep      cleanup/4C/2       rm %4.C.CM%.ssi
 
 # test program exercises

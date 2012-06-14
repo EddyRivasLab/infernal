@@ -71,10 +71,10 @@ main(int argc, char **argv)
   int             sc2, br2, bsc2;
   char           *cmfile = esl_opt_GetArg(go, 1);
   char           *seqfile= esl_opt_GetArg(go, 2);
-  CMFILE         *cmfp;	/* open input CM file stream */
+  CM_FILE        *cmfp;	/* open input CM file stream */
   ESL_SQFILE     *sqfp;
   ESL_SQ         *seq;
-  char            errbuf[cmERRBUFSIZE];
+  char            errbuf[eslERRBUFSIZE];
   CM_CONSENSUS   *ccm = NULL;
   CM_OPTIMIZED   *ocm = NULL;
   uint8_t         s1_cutoff;
@@ -111,8 +111,8 @@ main(int argc, char **argv)
   /* post-MSCYK bias filter */
   int do_biasfilter  = TRUE;
     
-  search_results_t *results = NULL; /* First stage results from MSCYK */
-  search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
+  CM_TOPHITS *results = NULL; /* First stage results from MSCYK */
+  CM_TOPHITS *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
   ESL_ALLOC(s2_coord, sizeof(HitCoord_epi16));
 
   ESL_STOPWATCH  *w = esl_stopwatch_Create();
@@ -122,9 +122,16 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--toponly")) do_reverse = 0;
   else                                     do_reverse = 1;
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
+  /* Initializations: open the CM file, read one CM, and make sure there's only one. */
+  status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf);
+  if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
+  else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",               status, cmfile, errbuf);  
+  status = cm_file_Read(cmfp, TRUE, &abc, &cm);
+  if(status != eslOK) cm_Fail(cmfp->errbuf);
+  status = cm_file_Read(cmfp, TRUE, &abc, NULL);
+  if(status != eslEOF) cm_Fail("CM file %s does not contain just one CM\n", cmfp->fname);
+  cm_file_Close(cmfp);
 
   if (esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK) cm_Fail("Failed to open sequence database file\n");
   if ((status = GetDBSize(sqfp, errbuf, &dbsize, NULL, NULL)) != eslOK) return status;
@@ -142,10 +149,10 @@ main(int argc, char **argv)
   }
 
   cm->config_opts |= CM_CONFIG_LOCAL;
-  cm->search_opts |= CM_SEARCH_NOQDB;
+  cm->search_opts |= CM_SEARCH_NONBANDED;
   cm->search_opts |= CM_SEARCH_NULL3;
-  ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
-  cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+  if ((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
+  ///cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
   ccm = cm_consensus_Convert(cm);
   ocm = cm_optimized_Convert(cm);
 
@@ -276,14 +283,14 @@ main(int argc, char **argv)
     s2_pcut = esl_opt_GetReal(go,"--s2-P");
     // FIXME FIXME FIXME  1.-p_cutoff rounds to 1 in the range of 1e-18 -> f_cutoff = inf, even though the
     // FIXME FIXME FIXME  effective possible range goes as far as about 1e-24 (for RF00037 at least)
-    f_cutoff = esl_exp_invcdf(1.-s2_pcut,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+    f_cutoff = esl_exp_invcdf(1.-s2_pcut,cm->expA[EXP_CM_LC]->mu_extrap,cm->expA[EXP_CM_LC]->lambda);
     fprintf(stderr,"Stage 2: P-value cutoff %.2e\n",e_cutoff);
     s2_cutoff = wordify(ocm->scale_w, f_cutoff);
     /* fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff); */
     if (s2_cutoff == WORDMAX) {
       s2_cutoff--;
       f_cutoff = s2_cutoff/ocm->scale_w;
-      s2_pcut = esl_exp_surv(f_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+      s2_pcut = esl_exp_surv(f_cutoff,cm->expA[EXP_CM_LC]->mu_extrap,cm->expA[EXP_CM_LC]->lambda);
       /* fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff); */
       fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2e\n",s2_pcut);
     }
@@ -297,8 +304,8 @@ main(int argc, char **argv)
   else {
     e_cutoff = esl_opt_GetReal(go,"--s3-E");
     s3_ecut = e_cutoff;
-    s3_pcut = e_cutoff/cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->cur_eff_dbsize;
-    f_cutoff = esl_exp_invcdf(1.-s3_pcut,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+    s3_pcut = e_cutoff/cm->expA[EXP_CM_LC]->cur_eff_dbsize;
+    f_cutoff = esl_exp_invcdf(1.-s3_pcut,cm->expA[EXP_CM_LC]->mu_extrap,cm->expA[EXP_CM_LC]->lambda);
     fprintf(stderr,"Stage 3: E-value cutoff %.2e\n",e_cutoff);
   }
   s3_cutoff = f_cutoff;
@@ -312,7 +319,7 @@ main(int argc, char **argv)
   
 PIPELINE:
     /* Stage 1: MSCYK */
-    results = CreateResults(INIT_RESULTS);
+    results = cm_tophits_Create();
     esl_stopwatch_Start(w);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
     esl_stopwatch_Stop(w);
@@ -320,109 +327,102 @@ PIPELINE:
     esl_stopwatch_Display(stderr, w, " CPU time: ");
 
     if (o_glbf_all) {
-      for (i = 0; i < results->num_results; i++) {
-        if (!is_reversed) fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, results->data[i].start, results->data[i].stop, 0);
-        else fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, (int) seq->n-results->data[i].stop+1, (int) seq->n-results->data[i].start+1, 1);
+      for (i = 0; i < results->N; i++) {
+	if (!is_reversed) fprintf(S0_OFILE,"%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float) results->unsrt[i].score, results->unsrt[i].start, results->unsrt[i].stop, 0);
+        else fprintf(S0_OFILE,"%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float) results->unsrt[i].score, (int) seq->n-results->unsrt[i].stop+1, (int) seq->n-results->unsrt[i].start+1, 1);
       }
     }
 
     if (do_biasfilter) {
-      for (i = 0; i < results->num_results; i++) {
-        ccm_bg_FilterScore(ccm->bg, seq->dsq+results->data[i].start-1, results->data[i].stop-results->data[i].start+1, &filtersc);
-        results->data[i].score -= filtersc/eslCONST_LOG2;
-        ccm_bg_NullOne(ccm->bg, results->data[i].stop-results->data[i].start+1, &nullsc);
-        results->data[i].score += nullsc/eslCONST_LOG2;
+      for (i = 0; i < results->N; i++) {
+        ccm_bg_FilterScore(ccm->bg, seq->dsq+results->unsrt[i].start-1, results->unsrt[i].stop-results->unsrt[i].start+1, &filtersc);
+        results->unsrt[i].score -= filtersc/eslCONST_LOG2;
+        ccm_bg_NullOne(ccm->bg, results->unsrt[i].stop-results->unsrt[i].start+1, &nullsc);
+        results->unsrt[i].score += nullsc/eslCONST_LOG2;
       }
     }
 
     /* Convert hits to windows for next stage */
     windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W, s1_fcut);
-    FreeResults(results);
+    cm_tophits_Destroy(results);
 
     if (o_glbf == 1) {
-      for (i = 0; i < windows->num_results; i++) {
+      for (i = 0; i < windows->N; i++) {
         if (!is_reversed)
-          printf("%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, windows->data[i].start, windows->data[i].stop, 0);
+          printf("%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float) windows->unsrt[i].score, windows->unsrt[i].start, windows->unsrt[i].stop, 0);
         else
-          printf("%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
+          printf("%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float) windows->unsrt[i].score, (int) seq->n-windows->unsrt[i].stop+1, (int) seq->n-windows->unsrt[i].start+1, 1);
       }
     }
     else if (o_glbf_all) {
-      for (i = 0; i < windows->num_results; i++) {
+      for (i = 0; i < windows->N; i++) {
         if (!is_reversed)
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, windows->data[i].start, windows->data[i].stop, 0);
+          fprintf(S1_OFILE,"%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float) windows->unsrt[i].score, windows->unsrt[i].start, windows->unsrt[i].stop, 0);
         else
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
+          fprintf(S1_OFILE,"%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float) windows->unsrt[i].score, (int) seq->n-windows->unsrt[i].stop+1, (int) seq->n-windows->unsrt[i].start+1, 1);
       }
     }
 
-    for (i = 0; i < windows->num_results; i++) {
-      int gc = get_gc_comp(ccm->abc,seq->dsq,windows->data[i].start,windows->data[i].stop);
-      int start, stop;
+    for (i = 0; i < windows->N; i++) {
+      int64_t start, stop;
       s2_coord->j = -1; s2_coord->d = 0; 
       /* Stage 2: medium-precision CYK */
-      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M-1, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2, s2_coord);
+      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M-1, windows->unsrt[i].start, windows->unsrt[i].stop, TRUE, &br2, &bsc2, s2_coord);
       stop = s2_coord->j;
       start = stop - s2_coord->d + 1;
 
       ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,cm->null3_omega,&null3_correction);
-      p2 = esl_exp_surv((float)sc2/ocm->scale_w-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+      p2 = esl_exp_surv((float)sc2/ocm->scale_w-null3_correction,cm->expA[EXP_CM_LC]->mu_extrap,cm->expA[EXP_CM_LC]->lambda);
       if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (sc2 > WORDMAX-10*ocm->scale_w)) {
         if (o_glbf == 2) {
           if (!is_reversed) 
-            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
+            printf("%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
           else
-            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+            printf("%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
         }
         else if (o_glbf_all) {
           if (!is_reversed) 
-            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
+            fprintf(S2_OFILE,"%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
           else
-            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+            fprintf(S2_OFILE,"%-24s %-6f %" PRId64 " %" PRId64 " %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
         }
 
         /* Stage 3: full-precision CYK */
         //sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
-        results = CreateResults(INIT_RESULTS);
-/*
-        if (cm->si == NULL) { CreateSearchInfo(cm, E_CUTOFF, s3_cutoff, s3_pcut); }
-        else { UpdateSearchInfoCutoff(cm, cm->si->nrounds, E_CUTOFF, s3_cutoff, s3_pcut); }
-        ValidateSearchInfo(cm, cm->si);
-        DispatchSearch(cm, errbuf, cm->si->nrounds, seq->dsq, windows->data[i].start, windows->data[i].stop, &results, 1000, NULL, &sc3);
-*/
-        SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->data[i].start, windows->data[i].stop, s3_cutoff, results, TRUE, NULL, &sc3);
+        results = cm_tophits_Create();
+        SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->unsrt[i].start, windows->unsrt[i].stop, s3_cutoff, results, TRUE, NULL, &sc3);
 
-        for (int hitloop = 0; hitloop < results->num_results; hitloop++) {
-          sc3   = results->data[hitloop].score;
-          start = results->data[hitloop].start;
-          stop  = results->data[hitloop].stop;
+        for (int hitloop = 0; hitloop < results->N; hitloop++) {
+          sc3   = results->unsrt[hitloop].score;
+          start = results->unsrt[hitloop].start;
+          stop  = results->unsrt[hitloop].stop;
           /* ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,cm->null3_omega,&null3_correction); */
           null3_correction = 0.; /* Hit resolution in CYKSCan already applies null3 */
-          p3 = esl_exp_surv((float)sc3-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
-          e3 = p3 * cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->cur_eff_dbsize;
+          p3 = esl_exp_surv((float)sc3-null3_correction,cm->expA[EXP_CM_LC]->mu_extrap,cm->expA[EXP_CM_LC]->lambda);
+          e3 = p3 * cm->expA[EXP_CM_LC]->cur_eff_dbsize;
           if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || (e3 < s3_ecut)) {
             /* Report hit */
             if (o_glbf == 3) {
               if (!is_reversed)
-                //printf("%-24s %-6e %d %d %d\n", seq->name, p3, start, stop, 0);
-                printf("%-24s %-6e %d %d %d\n", seq->name, e3, start, stop, 0);
+                //printf("%-24s %-6e %" PRId64 " %" PRId64 " %d\n", seq->name, p3, start, stop, 0);
+                printf("%-24s %-6e %" PRId64 " %" PRId64 " %d\n", seq->name, e3, start, stop, 0);
               else
-                //printf("%-24s %-6e %d %d %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
-                printf("%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+                //printf("%-24s %-6e %" PRId64 " %" PRId64 " %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+                printf("%-24s %-6e %" PRId64 " %" PRId64 " %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
             }
             else if (o_glbf_all) {
               if (!is_reversed)
-                fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, start, stop, 0);
+                fprintf(S3_OFILE,"%-24s %-6e %" PRId64 " %" PRId64 " %d\n", seq->name, e3, start, stop, 0);
               else
-                fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+                fprintf(S3_OFILE,"%-24s %-6e %" PRId64 " %" PRId64 " %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
             }
           }
         }
-        FreeResults(results);
+        cm_tophits_Destroy(results);
       }
     }
 
-    FreeResults(windows);
+    cm_tophits_Destroy(windows);
 
     if (do_reverse && !is_reversed) {
       revcomp(seq->abc, seq, seq);

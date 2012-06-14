@@ -27,23 +27,25 @@
 # more in ~nawrockie/notebook/9_0612_inf_bug_cmalign_enone.
 #
 # 
-# i14.sto =  Brian's training alignment.
-# i14.fa  =  Brian's 8 sequences to align, crashes on seq 8, only
-#            crashes if all 8 are present.
+# bug-i14.sto =  Brian's training alignment.
+# bug-i14.fa  =  Brian's 8 sequences to align, crashes on seq 8, only
+#                crashes if all 8 are present.
 
-$usage = "i14 <cmbuild> <cmalign>\n";
-if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
+$usage = "perl bug-i14.pl <cmbuild> <cmalign> <path to bug-i14.sto> <path to bug-i14.fa>\n";
+if ($#ARGV != 3) { die "Wrong argument number.\n$usage"; }
 
 $cmbuild  = shift;
 $cmalign  = shift;
+$alifile  = shift;
+$seqfile  = shift;
 $ok       = 1;
 
 if ($ok) { 
-    system("$cmbuild --wnone --enone -F i14.cm bug-i14.sto > /dev/null 2> /dev/null");
+    system("$cmbuild --wnone --enone -F i14.cm $alifile > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign --notrunc i14.cm bug-i14.fa > /dev/null 2> /dev/null");
+    system("$cmalign --notrunc i14.cm $seqfile > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

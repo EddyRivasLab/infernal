@@ -35,8 +35,7 @@ MYINCDIRS      = -I../../${ESLDIR} \
 		 -I${srcdir} \
 		 -I${top_srcdir}/src
 
-PROGS = sse_cmsearch\
-        sse_cmsearch_mod
+PROGS = sse_cmsearch
 
 OBJS  = cm_optimized.o\
         sse_cm_dpsearch.o\
@@ -79,6 +78,9 @@ libinfernal-impl.stamp: ${OBJS}
 .FORCE:
 
 ${OBJS}:   ${HDRS} 
+
+${PROGS}: @EXEC_DEPENDENCY@  ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLDIR}/libeasel.a  
+	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
 .c.o:  
 	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<

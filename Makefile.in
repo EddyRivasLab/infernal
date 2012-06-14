@@ -102,6 +102,7 @@ all:
 	${QUIET_SUBDIR0}${HMMERDIR}      ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}src              ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}rmark            ${QUIET_SUBDIR1} all
+	@DO_IMPL_SSE@
 
 # dev: compile all executables, including drivers.
 #
@@ -179,6 +180,7 @@ install:
 	${INSTALL} -d ${DESTDIR}${pdfdir}
 	${QUIET_SUBDIR0}src           ${QUIET_SUBDIR1} install
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} install
+	@INSTALL_IMPL_SSE@
 
 # uninstall: Reverses the steps of "make install".
 #

@@ -20,7 +20,7 @@
 # 
 # xref STL7 p.12
 
-$usage = "i1 <cmbuild> <cmalign>\n";
+$usage = "perl bug-i1.pl <cmbuild> <cmalign>\n";
 if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
 
 $cmbuild = shift;

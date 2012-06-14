@@ -36,7 +36,7 @@
 # i13.1 =  simple example alignment (1 seq)
 # i13.2 =  sequence to align 
 
-$usage = "i13 <cmbuild> <cmalign>\n";
+$usage = "perl bug-i13.pl <cmbuild> <cmalign>\n";
 if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
 
 $cmbuild  = shift;

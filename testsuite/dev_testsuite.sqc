@@ -70,8 +70,8 @@
 1 exercise  bug/i11-bld-detach       perl !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i12-aln-outside      perl !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i13-aln-sub          perl !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
+1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
 
 ################################################################
 # Option tests
@@ -223,16 +223,16 @@
 1  exercise  fetch/4/f          @src/cmfetch@ -f %4.CM% !testsuite/2.list!
 1  exercise  fetch/4/o          @src/cmfetch@ -o %TMP.CM% %4.CM% Vault
 1  exercise  fetch/4/O          @src/cmfetch@ -O %4.CM% Vault
-1  exercise  emit/4/O           @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/4/1        rm !testsuite/Vault!
+1  exercise  emit/4/O           @src/cmemit@ Vault
+1  prep      cleanup/4/1        rm Vault
 1  prep      cleanup/4/2        rm %4.CM%.ssi
 
 1  exercise  fetch/4C/index     @src/cmfetch@ --index %4.C.CM% 
 1  exercise  fetch/4C/f         @src/cmfetch@ -f %4.C.CM% !testsuite/2.list!
 1  exercise  fetch/4C/o         @src/cmfetch@ -o %TMP.C.CM% %4.C.CM% Vault
 1  exercise  fetch/4C/O         @src/cmfetch@ -O %4.C.CM% Vault
-1  exercise  emit/4C/O          @src/cmemit@ !testsuite/Vault!
-1  prep      cleanup/4C/1       rm !testsuite/Vault!
+1  exercise  emit/4C/O          @src/cmemit@ Vault
+1  prep      cleanup/4C/1       rm Vault
 1  prep      cleanup/4C/2       rm %4.C.CM%.ssi
 
 # test program exercises
@@ -282,7 +282,7 @@
 1  exercise  align:help/1         @src/cmalign@  -h
 
 1  prep      align:build/trna     @src/cmbuild@ -F --wnone %TRNA.CM% !testsuite/tRNA.sto!
-1  exercise  align:t/df           @src/cmalign@  %TRNA.CM% emitted-tRNA.fa
+1  exercise  align:t/df           @src/cmalign@  %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/stdin/cm     cat %TRNA.CM% | @src/cmalign@  - !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/stdin/seq    cat !testsuite/emitted-tRNA.fa! | @src/cmalign@  %TRNA.CM% -
 1  fail      align:t/stdin/both   cat !testsuite/emitted-tRNA.fa! | @src/cmalign@  - -
@@ -320,18 +320,18 @@
 1  exercise  align:t/regress      @src/cmalign@  --ileaved --regress %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --informat and --outformat
-1  exercise  align:t/infmt1       @src/cmalign@  %TRNA.CM% 3trnas.gb
-1  exercise  align:t/infmt2       @src/cmalign@  --informat GENBank %TRNA.CM% 3trnas.gb
-1  exercise  align:t/infmt3       @src/cmalign@  --informat ddbj %TRNA.CM% 3trnas.gb
+1  exercise  align:t/infmt1       @src/cmalign@  %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/infmt2       @src/cmalign@  --informat GENBank %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/infmt3       @src/cmalign@  --informat ddbj %TRNA.CM% !testsuite/3trnas.gb!
 
-1  exercise  align:t/outstk       @src/cmalign@  --outformat stockholm %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outpfm       @src/cmalign@  --outformat pfam %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outa2m       @src/cmalign@  --outformat a2m %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outslx       @src/cmalign@  --outformat selex %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outafa       @src/cmalign@  --outformat afa %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outpsi       @src/cmalign@  --outformat psiblast %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outclu       @src/cmalign@  --outformat clustal %TRNA.CM% 3trnas.gb
-1  exercise  align:t/outphy       @src/cmalign@  --outformat phylip %TRNA.CM% 3trnas.gb
+1  exercise  align:t/outstk       @src/cmalign@  --outformat stockholm %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outpfm       @src/cmalign@  --outformat pfam %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outa2m       @src/cmalign@  --outformat a2m %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outslx       @src/cmalign@  --outformat selex %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outafa       @src/cmalign@  --outformat afa %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outpsi       @src/cmalign@  --outformat psiblast %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outclu       @src/cmalign@  --outformat clustal %TRNA.CM% !testsuite/3trnas.gb!
+1  exercise  align:t/outphy       @src/cmalign@  --outformat phylip %TRNA.CM% !testsuite/3trnas.gb!
 
 # Algorithm options:
 #
@@ -413,9 +413,9 @@
 1  exercise  build:se/sf0        @src/cmbuild@ --symfrac 1.0 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/sf1        @src/cmbuild@ --symfrac 0.0 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/rf         @src/cmbuild@ --hand -F %SE.CM% !testsuite/se.rf.sto! 
-1  exercise  build:se/null       @src/cmbuild@ -F --null at4.null %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/pri        @src/cmbuild@ -F --prior plus1.prior %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch RIBOSUM85-60.mat -F %SE.CM% !testsuite/se.1.sto!
+1  exercise  build:se/null       @src/cmbuild@ -F --null !testsuite/at4.null! %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/pri        @src/cmbuild@ -F --prior !testsuite/plus1.prior! %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! -F %SE.CM% !testsuite/se.1.sto!
 1  exercise  build:se/noss       @src/cmbuild@ --noss -F %SE.CM% !testsuite/se.sto!
 
 1  exercise  build:se/betaW      @src/cmbuild@ --betaW 1E-12 -F %SE.CM% !testsuite/se.sto! 
@@ -986,7 +986,7 @@
 1  exercise  fetch:ni/stdin/cm    cat %4.CM% | @src/cmfetch@ - Vault
 1  exercise  fetch:ni/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %4.CM% -
 1  fail      fetch:ni/stdin/bth   cat %4.CM% | @src/cmfetch@ -f - -
-1  prep      fetch:cleanup/ni1    rm !testsuite/RF00006!
+1  prep      fetch:cleanup/ni1    rm RF00006
 
 # And again, this time after indexing
 1  exercise  fetch:index          @src/cmfetch@ --index %4.CM% 
@@ -1000,7 +1000,7 @@
 1  exercise  fetch:yi/stdin/cm    cat %4.CM% | @src/cmfetch@ - Vault
 1  exercise  fetch:yi/stdin/key   cat !testsuite/2.list! | @src/cmfetch@ -f %4.CM% -
 1  fail      fetch:yi/stdin/bth   cat %4.CM% | @src/cmfetch@ -f - -
-1  prep      fetch:cleanup:yi1    rm !testsuite/RF00006!
+1  prep      fetch:cleanup:yi1    rm RF00006
 1  prep      fetch:cleanup:yi2    rm %4.CM%.ssi 
 
 
