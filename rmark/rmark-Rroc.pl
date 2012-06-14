@@ -17,7 +17,7 @@ use Getopt::Std;
 getopts('R');
 if (defined $opt_R) { $replace_underscores = 1; }
 
-my $usage = "Usage: perl rmark-rocR.pl [OPTIONS] <listfile> <key (e.g. 1E04)> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
+my $usage = "Usage: perl rmark-Rroc.pl [OPTIONS] <listfile> <key (e.g. 1E04)> <pdfname> <1/0 yes/no draw error-bars> <plot title>\n";
 $usage .= "\nFormat of list file:\n\t<series_name> <root> <color>\n\n";
 $usage .= "\nExample:\n\tinf1p02-df r2-i1p02 green\n\n";
 $usage .= "<root>/<root>.em$key.xy, <root>/<root>.em$key.mer and <root>/<root>.time must exist\n\n";

@@ -1,4 +1,4 @@
-$usage = "perl rmark-multiply-evalues.pl <scaling factor for inflating E-values of positives> <output from rmark-idpositives.pl>\n";
+$usage = "perl rmark-multiply-evalues.pl <scaling factor for multiplying E-values of positives> <output from rmark-idpositives.pl>\n";
 if(scalar(@ARGV) < 1) { die "$usage"; }
 $scale = shift;
 
