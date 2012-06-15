@@ -695,11 +695,9 @@ AC_CONFIG_FILES([documentation/userguide/Makefile])
 if test -d hmmer/release-notes; then
   AC_CONFIG_FILES(hmmer/release-notes/LICENSE.sh)
 fi
-if test -d hmmer/documentation; then  
-  AC_CONFIG_FILES([hmmer/documentation/Makefile])
-  AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
-  AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
-fi
+AC_CONFIG_FILES([hmmer/documentation/Makefile])
+AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
+AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
 AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
 AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
 AC_CONFIG_FILES([hmmer/libdivsufsort/Makefile])

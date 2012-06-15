@@ -47,8 +47,15 @@ static unsigned int v01magic = 0xe3edb0b1; /* v0.1 binary: "cm01" + 0x80808080 *
 #endif
 
 static uint32_t  v1a_magic  = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
-static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV file, SSE:     "1afs" = 0x 31 61 66 73  + 0x80808080 */
-/* http://www.ascii-code.com/ and hmmer/src/impl_sse/io.c might be useful to make sense of these codes */
+static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
+/* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
+ * trailing 's' iforSSE binary files, but in Infernal this is used
+ * whether we're building for SSE or VMX (since this code is neither
+ * SSE nor VMX-specific). I suppose we could say it stands for SSV,
+ * with 'f' for filter... Also, http://www.ascii-code.com/ and
+ * hmmer/src/impl_sse/io.c might be useful to determine how each code
+ * derives from its text string.
+ */
 
 static int read_asc_1p1_cm(CM_FILE *hfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 static int read_bin_1p1_cm(CM_FILE *hfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
