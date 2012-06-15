@@ -20,7 +20,8 @@ man1ext     = .1
 
 INSTALL     = @INSTALL@
 
-MANS =  cmalign\
+MANS =  infernal\
+	cmalign\
 	cmbuild\
 	cmcalibrate\
 	cmconvert\
@@ -29,11 +30,10 @@ MANS =  cmalign\
 	cmpress\
 	cmsearch\
 	cmscan\
-	cmstat\
-	sse_cmsearch\
-	cmsearch_dual\
-	cm2hmm\
-	cm2hmmsearch
+	cmstat
+# don't install these, since the programs aren't installed
+#	sse_cmsearch\
+#	cmsearch_dual
 
 .PHONY:  install uninstall clean distclean
 

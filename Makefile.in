@@ -30,6 +30,9 @@ HMMERDIR       = @INFERNAL_HMMERDIR@
 # location of suffix array library
 SADIR          = @INFERNAL_SADIR@
 
+# impl directory (currently only either 'impl_sse' or '')
+IMPLDIR        = @INFERNAL_IMPLDIR@
+
 # Package information
 #
 PACKAGE         = @PACKAGE_NAME@
@@ -102,7 +105,9 @@ all:
 	${QUIET_SUBDIR0}${HMMERDIR}      ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}src              ${QUIET_SUBDIR1} all
 	${QUIET_SUBDIR0}rmark            ${QUIET_SUBDIR1} all
-	@DO_IMPL_SSE@
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}src/impl_sse     ${QUIET_SUBDIR1} all
+endif
 
 # dev: compile all executables, including drivers.
 #
@@ -178,9 +183,9 @@ install:
 	${INSTALL} -d ${DESTDIR}${includedir}
 	${INSTALL} -d ${DESTDIR}${man1dir}
 	${INSTALL} -d ${DESTDIR}${pdfdir}
+# src 'install' moves into impl_sse and does 'install' (if IMPLDIR is defined (system has SSE))
 	${QUIET_SUBDIR0}src           ${QUIET_SUBDIR1} install
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} install
-	@INSTALL_IMPL_SSE@
 
 # uninstall: Reverses the steps of "make install".
 #
@@ -207,7 +212,7 @@ distclean:
 	${QUIET_SUBDIR0}testsuite     ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}${HMMERDIR}   ${QUIET_SUBDIR1} distclean
-	${QUIET_SUBDIR0}${ESLDIR}     ${QUIET_SUBDIR1} distclean
+# no need to distclean in easel/ because distclean in hmmer/ already did that (and easel/Makefile has been deleted)
 	-rm config.log config.status
 	-rm -rf autom4te.cache
 	-rm -f *.o *~ Makefile.bak core TAGS gmon.out

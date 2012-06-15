@@ -558,9 +558,6 @@ sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
       AC_DEFINE([HAVE_SSE2])
       AC_DEFINE([p7_IMPL_SSE])
       AC_SUBST([HMMERIMPLLIB], ["impl_sse/libhmmerimpl.a"])
-#      AC_SUBST([DO_IMPL_SSE], ["(cd src/impl_sse; make CC=\"\$(CC)\" CFLAGS=\"\$(CFLAGS)\";)"])
-      AC_SUBST([DO_IMPL_SSE], ["\${QUIET_SUBDIR0}src/impl_sse     \${QUIET_SUBDIR1} all"])
-      AC_SUBST([INSTALL_IMPL_SSE], ["for file in \$(SSEPROGS); do cp src/impl_sse/\$\$file \$(BINDIR)/; done"])
       IMPL_CHOICE="sse"
       INFERNAL_IMPLDIR="impl_sse"
       ;;
@@ -587,7 +584,7 @@ AS_IF([test "x$impl_choice" != xno],
       [AC_MSG_CHECKING([compiler support --start-group])
        LDFLAGS_save=$LDFLAGS
        LDFLAGS="-Wl,--start-group -Wl,--end-group $LDFLAGS"
-       AC_LINK_IFELSE(AC_LANG_PROGRAM([],[]),
+       AC_LINK_IFELSE([AC_LANG_PROGRAM([],[])],
            [AC_MSG_RESULT([yes])
             AC_SUBST([GROUPHMMERLIBS], ["-Wl,--start-group -lhmmer -lhmmerimpl -Wl,--end-group"])],
            [AC_MSG_RESULT([no])

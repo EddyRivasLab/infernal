@@ -48,7 +48,7 @@ MYINCDIRS = -I../${ESLDIR} \
 	    -I. \
 	    -I${srcdir}
 
-
+# full list of executable programs that get built
 PROGS = cmalign\
 	cmbuild\
 	cmcalibrate\
@@ -66,7 +66,20 @@ PROGS = cmalign\
 	sub_cm-test\
 	truncyk_check
 
-PROGSOBJSS = \
+# list of executable programs that get installed
+IPROGS = \
+	cmalign\
+	cmbuild\
+	cmcalibrate\
+	cmconvert\
+	cmemit\
+	cmfetch\
+	cmpress\
+	cmscan\
+	cmsearch\
+	cmstat
+
+PROGOBJS = \
 	cmalign.o\
 	cmbuild.o\
 	cmemit.o\
@@ -75,7 +88,11 @@ PROGSOBJSS = \
 	cmsearch.o\
 	cmstat.o\
 	trcyk.o\
-	truncyk_check.o\
+	bandcyk-montecarlo-test.o\
+	bandcyk-truncation-test.o\
+	cp9-test.o\
+	sub_cm-test.o\
+	truncyk_check.o
 
 HDRS =  infernal.h\
 
@@ -218,10 +235,7 @@ ${BENCHMARKS}: libinfernal.a  ${HDRS} config.h
 	${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
 
 install:
-ifdef IMPLDIR
-	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} install
-endif
-	for file in ${PROGS}; do \
+	for file in ${IPROGS}; do \
 	   ${INSTALL} -m 0755 $$file ${DESTDIR}${bindir}/ ;\
 	done
 	${INSTALL} -m 0755 libinfernal.a ${DESTDIR}${libdir}/
@@ -229,12 +243,10 @@ endif
 	   ${INSTALL} -m 0644 ${srcdir}/$$file ${DESTDIR}${includedir}/ ;\
 	done
 	${INSTALL} -m 0644 config.h ${DESTDIR}${includedir}/ ;\
+# no programs currently get installed from IMPLDIR
 
 uninstall:
-ifdef IMPLDIR
-	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} uninstall
-endif
-	for file in ${PROGS}; do \
+	for file in ${IPROGS}; do \
 	   rm -f ${DESTDIR}${bindir}/$$file ;\
 	done
 	-rm -f ${DESTDIR}${libdir}/libinfernal.a
@@ -242,6 +254,7 @@ endif
 	   rm -f ${DESTDIR}${includedir}/$$file ;\
 	done
 	-rm -f ${DESTDIR}${includedir}/config.h
+# no programs currently get installed from IMPLDIR
 
 distclean: clean
 ifdef IMPLDIR

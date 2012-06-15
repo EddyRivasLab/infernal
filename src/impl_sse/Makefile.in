@@ -85,16 +85,6 @@ ${PROGS}: @EXEC_DEPENDENCY@  ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a .
 .c.o:  
 	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<
 
-install:
-	for file in ${HDRS}; do \
-	   ${INSTALL} -m 0644 ${srcdir}/$$file ${DESTDIR}${includedir}/ ;\
-	done
-
-uninstall:
-	for file in ${HDRS}; do \
-	   rm -f ${DESTDIR}${includedir}/$$file ;\
-	done
-
 distclean: clean
 	-rm -f Makefile 
 
