@@ -94,7 +94,7 @@ PROGOBJS = \
 	sub_cm-test.o\
 	truncyk_check.o
 
-HDRS =  infernal.h\
+HDRS =  infernal.h
 
 OBJS  = cm.o\
 	cm_alidisplay.o\

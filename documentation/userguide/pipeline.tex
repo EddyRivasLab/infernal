@@ -3,17 +3,18 @@
 \setcounter{footnote}{0}
 
 In this section, we briefly outline the processing pipeline for a
-single profile/sequence comparison.\footnote{Code gurus and
-masochists: you can follow along in \ccode{src/cm\_pipeline.c}.} POINT
-OUT SPECIFIC FUNCTIONS??  This
+single profile/sequence comparison. This
 should help give you a sense of what Infernal is doing under the hood,
 what sort of mistakes it may make, and what the various results in the
-output actually mean. Infernal's pipeline is based closely on the
-profile HMM/sequence comparison pipeline in HMMER3
-(\url{hmmer.org}). In fact, the first several stages of the
-pipeline use code from HMMER's pipeline to score candidate sequences
-with profile HMMs that act as filters for the later, more
-computationally expensive CM stages.
+output actually mean. If you haven't already worked through the
+tutorial section of the guide, you should do that first before reading
+this section as it lays some foundation for this discussion. 
+
+Infernal's pipeline is based closely on the profile HMM/sequence
+comparison pipeline in HMMER3 (\url{hmmer.org}). In fact, the first
+several stages of the pipeline use code from HMMER's pipeline to score
+candidate sequences with profile HMMs that act as filters for the
+later, more computationally expensive CM stages.
 
 In briefest outline, the comparison pipeline takes the following
 steps:
@@ -23,9 +24,15 @@ steps:
   pipeline use only a profile HMM, putting off all calculations with
   the CM until later. Since profile HMM algorithms are less complex
   than CM ones, this saves us time by only using the expensive CM
-  methods for regions the HMM has given high scores. The profile HMM
-  filter stages are very closely based on the similar steps in
-  HMMER3's accelerated comparison pipeline with the important
+  methods for regions the HMM has given high scores. Of course, by
+  relying on sequence-only based filters like HMMs, we are potentially
+  going to miss homologs that are divergent at the sequence level but
+  that the CM would still score highly thanks to conserved secondary
+  structure. Our benchmarks reveal this is rare, but it does happen
+  and is an important failure mode to keep in mind. 
+
+  The profile HMM filter stages are very closely based on the similar
+  steps in HMMER3's accelerated comparison pipeline with the important
   difference that both \emph{local} and \emph{glocal} versions of HMM
   algorithms are used.
 \begin{description}
@@ -34,19 +41,19 @@ steps:
   score correction is used to turn all subsequent profile/sequence bit
   scores into a final log-odds bit score.
   
-\item[\textbf{Local SSV filter.}] The SSV (``Single Segment Viterbi'')
-  algorithm looks for high-scoring \emph{ungapped} alignments. Each
-  sequence segment (referred to as a ``diagonal'') in a SSV alignment
-  is extended slightly to define a window. Overlapping windows are
-  merged together into a single window. Then, long windows greater
-  than a maximum length $2L$ (where $L$ is the maximum of the model's
-  $W$ parameter\footnote{$W$ is the expected maximum hit length for
-  the model calculated by \prog{cmbuild} and stored in the CM file}
-  and $1.25$ times the consensus length of the model) are split into
-  multiple windows of length $2L$ with $L-1$ overlapping nucleotides
-  between adjacent windows. Each window is then passed on to the next
-  next pipeline step. Any nucleotides that are not contained in an SSV
-  window are not evaluated further.
+\item[\textbf{Local scanning SSV filter.}] The SSV (``Single Segment
+  Viterbi'') algorithm looks for high-scoring \emph{ungapped}
+  alignments. Each sequence segment (referred to as a ``diagonal'') in
+  a SSV alignment is extended slightly to define a window. Overlapping
+  windows are merged together into a single window. Then, long windows
+  greater than a maximum length $2L$ (where $L$ is the maximum of the
+  model's $W$ parameter\footnote{$W$ is the expected maximum hit
+  length for the model calculated by \prog{cmbuild} and stored in the
+  CM file} and $1.25$ times the consensus length of the model) are
+  split into multiple windows of length $2L$ with $L-1$ overlapping
+  nucleotides between adjacent windows. Each window is then passed on
+  to the next next pipeline step. Any nucleotides that are not
+  contained in an SSV window are not evaluated further.
 
 \item[\textbf{Local Viterbi filter.}] A more stringent accelerated
   filter. An optimal (maximum likelihood) gapped alignment score is
@@ -1096,4 +1103,40 @@ they are incompatible with the \ccode{--max} options and
 \ccode{--nohmm} options. When either of these options are used,
 truncated hit detection is automatically turned off.
 
+\subsection{HMM-only pipeline variant for models without structure}
+As discussed in the tutorial, Infernal uses profile HMM algorithms for
+models with no secondary structure (zero basepairs). For these models,
+the pipeline that Infernal uses is essentially identical to HMMER3's
+(version 3.0) pipeline, with the lone difference that the scanning
+local SSV filter (described for the standard pipeline above) replaces
+the full-sequence (non-scanning) MSV filter used in HMMER.
 
+We won't go through the HMM-only pipeline in as much detail as the
+standard one (for more, see the HMMER3 user's guide), but briefly
+the HMM-only pipeline consists of the following steps: local scanning
+SSV filter to define windows, a bias filter to correct SSV scores for
+biased composition (identical to the one in the standard pipeline used
+after the local Viterbi stage), local Viterbi filter for each window,
+and finally local Forward filter for each window. Windows that survive
+the local Forward filter are then subject to the 'domain identification'
+stage of the HMMER pipeline, which identifies hits after full
+alignment ensemble calculation using the Forward and Backward
+algorithms. Each hit is then aligned to the HMM using an optimal
+accuracy alignment algorithm that maximizes the summed posterior
+probability of all aligned residues. The null3 biased composition
+model is not used in the HMM-only pipeline, but HMMER's null2 biased
+composition model is used, see the HMMER3 guide for details on null2. 
+
+Unlike in the standard pipeline, the filter thresholds used in the
+HMM-only pipeline are always the same, i.e. they are not dependent on
+the size of the search space. The default thresholds are the same
+values used in the HMMER3 pipeline: the SSV filter threshold is
+$0.02$, the local Viterbi threshold is $0.001$ and the local Forward
+threshold is $1e-5$. These can be changed with the \ccode{--hmmF1}
+(SSV), \ccode{--hmmF2} (Viterbi) and \ccode{--hmmF3} (Forward). The
+\ccode{--hmmmax} option runs the HMM-only pipeline in maximum
+sensitivity mode with the SSV P-value threshold set at 0.3 and the
+Viterbi and Forward filters turned off. The HMM-only pipeline can be
+turned off with the \ccode{--nohmmonly} option. When turned off, all
+models will use the standard CM pipeline, even those with no
+structure.

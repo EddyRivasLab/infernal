@@ -5,7 +5,7 @@
 # Avoid using the below three options at all for script compatibility.
 # -Z is accepted at script command line and passed to both executables,
 # so it should not be set here.
-# --tabfile for cmsearch is used internally to process results list, and
+# --tblout for cmsearch is used internally to process results list, and
 # should not be altered either here or where it is set below.
 # --glbf for sse_cmsearch is used internally to process results list, and
 # should not be altered either here or where it is set below.
@@ -35,23 +35,26 @@ $fafile = $ARGV[1];
 
 # Run scalar cmsearch
 $cmsearch = $opt_P?$opt_P:'cmsearch';
-$tab_out = $cmfile;
-$tab_out =~ s/.*\///;
-$tab_out =~ s/cm$//;
-$tab_out .= $fafile;
-$tab_out =~ s/\..*\//\./;
-$tab_out =~ s/fa//;
-$tab_out .= "1\.tab";
-$logfile = $tab_out;
-$logfile =~ s/tab$/log/;
-@args = ($cmsearch, $opt_Z?"-Z $opt_Z":'', "--noalign", "--tabfile $tab_out", $cmsearch_options, $cmfile, $fafile, "> $logfile");
+$tbl_out = $cmfile;
+$tbl_out =~ s/.*\///;
+$tbl_out =~ s/cm$//;
+$tbl_out .= $fafile;
+$tbl_out =~ s/\..*\//\./;
+$tbl_out =~ s/fa//;
+$tbl_out .= "1\.tbl";
+$logfile = $tbl_out;
+$logfile =~ s/tbl$/log/;
+@args = ($cmsearch, $opt_Z?"-Z $opt_Z":'', "--noali", "--tblout $tbl_out", $cmsearch_options, $cmfile, $fafile, "> $logfile");
 $status = system("@args"); # FIXME check status
 
 # Read cmsearch results
-@cms_hit_lines = `grep -v "^#" $tab_out`;
+@cms_hit_lines = `grep -v "^#" $tbl_out`;
 $num_hits = 0;
 foreach $line (@cms_hit_lines) {
-   (undef,$seq,$start,$stop,undef,undef,undef,$e_val,undef) = split ' ',$line;
+# example:
+# mrum-tRNA.5          -         tRNA                 RF00005    cm        1       71        1       74      +    no    1 0.53   0.1   63.6   1.2e-17 !   -
+# 0                    1         2                    3          4         5       6         7       8       9    10   11 12     13    14     15      16 17
+   ($seq,undef,undef,undef,undef,undef,undef,$start,$stop,undef,undef,undef,undef,undef,undef,$e_val,undef,undef) = split ' ', $line;
    if ($start > $stop ) {
       $orient = 1;
       $tmp = $stop;
@@ -70,6 +73,7 @@ foreach $line (@cms_hit_lines) {
 
 # Clean up cmsearch results
 
+#printf("running sse_cmsearch\n");
 # Run sse_cmsearch
 $sse_cmsearch = $opt_Q?$opt_Q:'sse_cmsearch';
 $logfile =~ s/1\.log/2\.log/;
@@ -99,6 +103,7 @@ foreach $line (@sse_hit_lines) {
    }
 }
 
+#printf("retrieving\n");
 # Retrieve sequences
 $sfetch = $opt_R?$opt_R:'esl-sfetch';
 $fa2 = $logfile;
@@ -113,9 +118,10 @@ for $href (@hit) {
    $status = system("@args"); # FIXME check status
 }
 
-# Re-run cmsearch (no filters) on combined hit list,
+#printf("rerunning\n");
+# Re-run cmsearch (no filters (--max) (could do top strand only but currently don't) on combined hit list,
 # output sent to stdout
-@args = ($cmsearch, $opt_Z?"-Z $opt_Z":'', "--fil-no-hmm --fil-no-qdb", $cmfile, $fa2);
+@args = ($cmsearch, $opt_Z?"-Z $opt_Z":'', "--max", $cmfile, $fa2);
 $status = system("@args"); # FIXME check status
 
 exit;
@@ -125,6 +131,7 @@ exit;
 #################################################################################
 
 # Help/usage message
+
 sub main::HELP_MESSAGE {
    print "cmsearch_dual - a combination of two pipelines to use both sequence and structural filters\n";
    print "Usage: cmsearch [options] cmfile seqfile\n";

@@ -35,14 +35,16 @@ MYINCDIRS      = -I../../${ESLDIR} \
 		 -I${srcdir} \
 		 -I${top_srcdir}/src
 
-PROGS = sse_cmsearch
+PROGS     = sse_cmsearch
 
-OBJS  = cm_optimized.o\
-        sse_cm_dpsearch.o\
-        sse_cm_dpsmall.o\
-        sse_cmcons_hitmx.o\
-        sse_cmcons_mscyk.o\
-        sse_util.o
+PROGOBJS  = sse_cmsearch.o
+
+OBJS      = cm_optimized.o\
+            sse_cm_dpsearch.o\
+            sse_cm_dpsmall.o\
+            sse_cmcons_hitmx.o\
+            sse_cmcons_mscyk.o\
+            sse_util.o
 
 HDRS  = ../infernal.h\
         impl_sse.h
@@ -67,7 +69,7 @@ endif
 .PHONY: all dev check tests install uninstall distclean clean 
 
 
-all:   ${PROGS} libinfernal-impl.stamp
+all:   ${PROGS} .FORCE libinfernal-impl.stamp
 
 libinfernal-impl.stamp: ${OBJS}
 	${QUIET_AR}${AR} -r ../libinfernal.a $? > /dev/null 2>&1
@@ -77,7 +79,8 @@ libinfernal-impl.stamp: ${OBJS}
 
 .FORCE:
 
-${OBJS}:   ${HDRS} 
+${OBJS}:     ${HDRS} 
+${PROGOBJS}: ${HDRS}
 
 ${PROGS}: @EXEC_DEPENDENCY@  ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLDIR}/libeasel.a  
 	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}

@@ -181,6 +181,9 @@ UpdateGammaHitMx_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, i
 	hit->start = ip;
 	hit->stop  = jp;
 	hit->score = fhit_sc;
+	hit->root  = 0;
+	hit->mode  = TRMODE_J;
+	hit->hmmonly = FALSE;
       }
     }
     bestd    = 0;
@@ -202,6 +205,9 @@ UpdateGammaHitMx_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, i
 	    hit->start = ip;
 	    hit->stop  = jp;
 	    hit->score = fhit_sc;
+	    hit->root  = 0;
+	    hit->mode  = TRMODE_J;
+	    hit->hmmonly = FALSE;
 	  }
 	}
 	bestd = d;
@@ -242,6 +248,9 @@ TBackGammaHitMx_epu8(GammaHitMx_epu8 *gamma, CM_TOPHITS *hitlist, int i0, int j0
 	hit->start = gamma->gback[jp_g];
 	hit->stop  = j;
 	hit->score = gamma->savesc[jp_g];
+	hit->root  = 0;
+	hit->mode  = TRMODE_J;
+	hit->hmmonly = FALSE;
       }
       j = gamma->gback[jp_g]-1;
     }

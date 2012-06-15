@@ -708,6 +708,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
    * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
    */
   if(tmp_hitlist != NULL) { 
+    /* first, set srcL for all hits to length of sequence, this is required for overlap removal */
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = L;
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     if((status = cm_tophits_RemoveOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 

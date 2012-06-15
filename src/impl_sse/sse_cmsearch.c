@@ -98,7 +98,8 @@ main(int argc, char **argv)
 
   /* vars for MSCYK score distribution fitting */
   int L = 1000;	/* P-values will be per-kb, so simulate 1 kb at a time */
-  int samples = 10000;
+  ///int samples = 10000;
+  int samples = 1000;
   float *x;
   double *xv;
   int n;
@@ -149,10 +150,10 @@ main(int argc, char **argv)
   }
 
   cm->config_opts |= CM_CONFIG_LOCAL;
+  cm->config_opts |= CM_CONFIG_SCANMX;
   cm->search_opts |= CM_SEARCH_NONBANDED;
   cm->search_opts |= CM_SEARCH_NULL3;
   if ((status = cm_Configure(cm, errbuf, -1)) != eslOK) cm_Fail(errbuf);
-  ///cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
   ccm = cm_consensus_Convert(cm);
   ocm = cm_optimized_Convert(cm);
 
@@ -341,10 +342,12 @@ PIPELINE:
         results->unsrt[i].score += nullsc/eslCONST_LOG2;
       }
     }
+    /*cm_tophits_Dump(stdout, results);*/
 
     /* Convert hits to windows for next stage */
     windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W, s1_fcut);
     cm_tophits_Destroy(results);
+    /*cm_tophits_Dump(stdout, windows);*/
 
     if (o_glbf == 1) {
       for (i = 0; i < windows->N; i++) {
@@ -390,10 +393,11 @@ PIPELINE:
         /* Stage 3: full-precision CYK */
         //sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
         results = cm_tophits_Create();
-        SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->unsrt[i].start, windows->unsrt[i].stop, s3_cutoff, results, TRUE, NULL, &sc3);
+        if((status = SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->unsrt[i].start, windows->unsrt[i].stop, s3_cutoff, results, TRUE, NULL, &sc3)) != eslOK) cm_Fail(errbuf);;
+	/*cm_tophits_Dump(stdout, results);*/
 
         for (int hitloop = 0; hitloop < results->N; hitloop++) {
-          sc3   = results->unsrt[hitloop].score;
+	  sc3   = results->unsrt[hitloop].score;
           start = results->unsrt[hitloop].start;
           stop  = results->unsrt[hitloop].stop;
           /* ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,cm->null3_omega,&null3_correction); */

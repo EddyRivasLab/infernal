@@ -1158,6 +1158,8 @@ ResolveMSCYK(CM_TOPHITS *initial, int i0, int j0, int W, float cutoff) {
       hit->stop  = j;
       hit->root  = 0;
       hit->score = initial->unsrt[x].score;
+      hit->mode  = TRMODE_J;
+      hit->hmmonly = FALSE;
     }
   }
 
