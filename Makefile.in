@@ -179,8 +179,6 @@ pdf:
 #          may be set on a make command line when building contrib RPMs).
 install: 
 	${INSTALL} -d ${DESTDIR}${bindir}
-	${INSTALL} -d ${DESTDIR}${libdir}
-	${INSTALL} -d ${DESTDIR}${includedir}
 	${INSTALL} -d ${DESTDIR}${man1dir}
 	${INSTALL} -d ${DESTDIR}${pdfdir}
 # src 'install' moves into impl_sse and does 'install' (if IMPLDIR is defined (system has SSE))

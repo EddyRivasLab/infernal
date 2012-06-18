@@ -238,22 +238,12 @@ install:
 	for file in ${IPROGS}; do \
 	   ${INSTALL} -m 0755 $$file ${DESTDIR}${bindir}/ ;\
 	done
-	${INSTALL} -m 0755 libinfernal.a ${DESTDIR}${libdir}/
-	for file in ${HDRS}; do \
-	   ${INSTALL} -m 0644 ${srcdir}/$$file ${DESTDIR}${includedir}/ ;\
-	done
-	${INSTALL} -m 0644 config.h ${DESTDIR}${includedir}/ ;\
 # no programs currently get installed from IMPLDIR
 
 uninstall:
 	for file in ${IPROGS}; do \
 	   rm -f ${DESTDIR}${bindir}/$$file ;\
 	done
-	-rm -f ${DESTDIR}${libdir}/libinfernal.a
-	for file in ${HDRS}; do \
-	   rm -f ${DESTDIR}${includedir}/$$file ;\
-	done
-	-rm -f ${DESTDIR}${includedir}/config.h
 # no programs currently get installed from IMPLDIR
 
 distclean: clean
