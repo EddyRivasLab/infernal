@@ -1020,9 +1020,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       seq_idx++;
       esl_stopwatch_Start(w);	                          
 
-      /* seqfile may need to be rewound (multiquery mode) */
-      if (seq_idx > 1) list->current = 0;
-
       fprintf(ofp, "Query:       %s  [L=%ld]\n", qsq->name, (long) qsq->n);
       if (qsq->acc[0]  != 0) fprintf(ofp, "Accession:   %s\n", qsq->acc);
       if (qsq->desc[0] != 0) fprintf(ofp, "Description: %s\n", qsq->desc);
@@ -1035,6 +1032,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Create processing pipeline and hit list */
       th  = cm_tophits_Create(); 
       pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qZ, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+      pli->nseqs++;
 
       /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
       for(in_rc = 0; in_rc <= 1; in_rc++) { 
@@ -1054,6 +1052,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);
+	list->current = 0; /* init nmodels searched for this strand of this seq against any models, impt to reset this for each strand! */
 
 	/* Main loop: */
 	while ((hstatus = mpi_next_block(cmfp, list, &block)) == eslOK)
@@ -1082,8 +1081,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  {
 	  case eslEFORMAT:   mpi_failure("bad file format in CM file %s",           cfg->cmfile); break;
 	  case eslEINCOMPAT: mpi_failure("CM file %s contains different alphabets", cfg->cmfile); break;
-	  case eslEOF: 	   /* do nothing */	                                                break;
-	  default:	   mpi_failure("Unexpected error %d in reading CMs from %s", hstatus, cfg->cmfile); break;
+	  case eslEOF:       /* do nothing */	                                                  break;
+	  default:	     mpi_failure("Unexpected error %d in reading CMs from %s", hstatus, cfg->cmfile); break;
 	  }
 	
 	block.offset = 0;
@@ -1140,6 +1139,17 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  cm_tophits_Destroy(mpi_th);
 	}
       
+      if(pli->do_top && pli->do_bot) { 
+	/* we've searched all models versus each sequence then reverse
+	 * complemented it and search all models versus it again, so
+	 * we've double counted all models.
+	 */
+	pli->nmodels /= 2;
+	pli->nnodes  /= 2;
+	if(pli->nmodels_hmmonly > 0) pli->nmodels_hmmonly /= 2;
+	if(pli->nnodes_hmmonly  > 0) pli->nnodes_hmmonly /= 2;
+      }
+
       if(pli->do_trunc_ends) { 
 	/* We may have overlaps so sort by sequence index/position and remove duplicates */
 	cm_tophits_SortForOverlapRemoval(th);
@@ -1335,6 +1345,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* Create processing pipeline and hit list */
       th  = cm_tophits_Create(); 
       pli = cm_pipeline_Create(go, abc, 100, 100, cfg->Z * qZ, cfg->Z_setby, CM_SCAN_MODELS); /* M_hint = 100, L_hint = 100 are just dummies for now */
+      pli->nseqs++;
 
       /* scan all target CMs twice, once with the top strand of the query and once with the bottom strand */
       for(in_rc = 0; in_rc <= 1; in_rc++) { 
@@ -1958,7 +1969,7 @@ mpi_failure(char *format, ...)
 /* This routine parses the database keeping track of the blocks
  * offset within the file, number of sequences and the length
  * of the block.  These blocks are passed as work units to the
- * MPI workers.  If multiple hmm's are in the query file, the
+ * MPI workers.  If multiple models are in the query file, the
  * blocks are reused without parsing the database a second time.
  */
 int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, MSV_BLOCK *block)
