@@ -50,7 +50,7 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,  NULL,  NULL, NULL, "save each tested CM parameters to file <f>",     0 },
-  { "-s",        eslARG_INT,     "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-s",        eslARG_INT,    "181", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "be verbose",                                     0 },
   { "-N",        eslARG_INT,    "100", NULL, NULL,  NULL,  NULL, NULL, "number of randomly sampled CMs",                 0 },
   { "--nocyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL,"--noinside", "don't test  CYK,   only Inside",          0 },
@@ -198,6 +198,7 @@ main(int argc, char **argv)
     first_j = esl_opt_GetBoolean(go, "--skip") ? 1 : 0;
     for (j = first_j; j <= N; j++)	                /* #0 = fixed params; #1..N = sampled params */
       {
+	printf("\n\nj: %d\n", j);
 	if (esl_opt_GetBoolean(go, "-v")) 
 	  printf("%s\n", do_local ? "Local mode" : "Global mode");
 	  
@@ -513,11 +514,11 @@ sample_brute_matl_params(ESL_RANDOMNESS *r, int do_local, struct cm_brute_matl_p
   prm->t8t8 = 1.0;              /* cm->t[8][0] MATL_IL (8) -> MATL_IL (8) is irrelevant, b/c state 8 is detached */
   prm->t8t9 = 0.0;              /* cm->t[8][1] MATL_IL (8) -> END_E   (9) is irrelevant, b/c state 8 is detached */
 
-  /* sample begin and end transitions */
+  /* sample begin and end transitions*/
   esl_vec_DSet(prm->begin, 10, 0.);
   esl_vec_DSet(prm->end,   10, 0.);
-  if(do_local) { 
-    sample_zeropeppered_probvector(r, tmp, 2);  prm->begin[3] = tmp[0]; prm->begin[6] = tmp[1];
+  if(do_local) { /* sample begin probs, make sure neither prm->begin[6] is not 1.0 (if it is we'll be forced to emit 1 residue only!) */
+    do { sample_zeropeppered_probvector(r, tmp, 2);  prm->begin[3] = tmp[0]; prm->begin[6] = tmp[1]; } while (prm->begin[3] == 0.0);
     prm->end[3] = esl_rnd_UniformPositive(r); /* all other end probabilities remain 0. */
   }
 

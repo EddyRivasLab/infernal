@@ -102,7 +102,7 @@ main(int argc, char **argv)
   int samples = 1000;
   float *x;
   double *xv;
-  int n;
+  int n, k, hitloop;
   double ccm_mu, ccm_lambda;
   double param[2];
   ESL_RANDOMNESS *r;
@@ -114,9 +114,9 @@ main(int argc, char **argv)
     
   CM_TOPHITS *results = NULL; /* First stage results from MSCYK */
   CM_TOPHITS *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
-  ESL_ALLOC(s2_coord, sizeof(HitCoord_epi16));
-
   ESL_STOPWATCH  *w = esl_stopwatch_Create();
+
+  ESL_ALLOC(s2_coord, sizeof(HitCoord_epi16));
 
   o_glbf = esl_opt_GetInteger(go, "--glbf");
   o_glbf_all = esl_opt_GetBoolean(go, "--glbf_all");
@@ -227,7 +227,7 @@ main(int argc, char **argv)
     r = esl_randomness_CreateTimeseeded();
     ESL_ALLOC(x, sizeof(float) * samples);
     ESL_ALLOC(seq->dsq, sizeof(ESL_DSQ) * (L+2));
-    for (int k = 0; k < samples; k++) {
+    for (k = 0; k < samples; k++) {
       esl_rsq_xIID(r, background, 4, L, seq->dsq);
       if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, L, 0x00, NULL, FALSE, NULL, &(x[k]))) != eslOK) cm_Fail(errbuf);
       esl_histogram_Add(hist, x[k]);
@@ -396,7 +396,7 @@ PIPELINE:
         if((status = SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->unsrt[i].start, windows->unsrt[i].stop, s3_cutoff, results, TRUE, NULL, &sc3)) != eslOK) cm_Fail(errbuf);;
 	/*cm_tophits_Dump(stdout, results);*/
 
-        for (int hitloop = 0; hitloop < results->N; hitloop++) {
+        for (hitloop = 0; hitloop < results->N; hitloop++) {
 	  sc3   = results->unsrt[hitloop].score;
           start = results->unsrt[hitloop].start;
           stop  = results->unsrt[hitloop].stop;

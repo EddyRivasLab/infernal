@@ -224,7 +224,7 @@ struct cfg_s {
   int              my_rank;           /* who am I, in 0..nproc-1                         */
 
   int64_t          Z;                /* database size, in number of models * residues    */
-  int              Z_setby;          /* how Z was set: CM_ZSETBY_SSIINFO, CM_ZSETBY_OPTION, CM_ZSETBY_FILEINFO */
+  enum cm_zsetby_e Z_setby;          /* how Z was set: CM_ZSETBY_SSIINFO, CM_ZSETBY_OPTION, CM_ZSETBY_FILEINFO */
 };
 
 static char usage[]  = "[-options] <cmdb> <seqfile>";

@@ -239,7 +239,7 @@ struct cfg_s {
   char            *dbfile;           /* target sequence database file                   */
   char            *cmfile;           /* query HMM file                                  */
   int64_t          Z;                /* database size, in nucleotides                   */
-  int              Z_setby;          /* how Z was set: CM_ZSETBY_SSIINFO, CM_ZSETBY_OPTION, CM_ZSETBY_FILEINFO */
+  enum cm_zsetby_e Z_setby;          /* how Z was set: CM_ZSETBY_SSIINFO, CM_ZSETBY_OPTION, CM_ZSETBY_FILEINFO */
   int              do_mpi;           /* TRUE if we're doing MPI parallelization         */
   int              nproc;            /* how many MPI processes, total                   */
   int              my_rank;          /* who am I, in 0..nproc-1                         */

@@ -964,6 +964,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
+  nworkers  = cfg->nproc - 1;
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
 
   /* initialization */
@@ -1048,7 +1049,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* main send/recv loop: send sequences to workers and receive their results */
     have_work = TRUE;
-    nworkers  = cfg->nproc - 1;
     nworking  = 0;
     si        = 0; /* sequence index */
     while(have_work || nworking > 0) { 
