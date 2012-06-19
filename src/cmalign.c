@@ -546,7 +546,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
     else            status = serial_loop(info, errbuf, sq_block, r);
 #else
-    status = serial_loop(info, errbuf, sq_block);
+    status = serial_loop(info, errbuf, sq_block, r);
 #endif
     if(status != eslOK) cm_Fail(errbuf);
 
