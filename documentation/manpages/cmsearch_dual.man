@@ -1,21 +1,21 @@
-.TH "cmsearch_dual" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+.TH "cmsearch_dual" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 .TP
-cmsearch_dual - search a sequence database for RNAs homologous to a CM using two filtering pipelines
+cmsearch_dual - search covariance model(s) against a sequence database using two filter pipelines
 
 .SH SYNOPSIS
 .B cmsearch_dual
 .I [options]
-.I cmfile
-.I seqfile
+.I <cmfile>
+.I <seqdb>
 
 .SH DESCRIPTION
 .B cmsearch_dual
 uses the covariance model (CM) in
-.I cmfile
+.I <cmfile>
 to search for homologous RNAs in 
-.I seqfile,
+.I <seqdb>,
 and outputs high-scoring alignments.
 .B cmsearch_dual
 runs both the standard filter pipeline of 
@@ -38,17 +38,13 @@ CM files must be calibrated prior to running
 .B cmsearch_dual
 with the 
 .B cmcalibrate 
-program. Searches with calibrated CM files will include
-E-values and will use appropriate filter thresholds for
-acceleration. 
-CM calibration is described in more detail 
-in chapters 5 and 6 of the User's Guide.
+program.
 
 .PP
 .B cmsearch_dual
 output is in the same format used by 
 .B cmsearch;
-consult the User's Guide for more detail.
+consult the user guide for more detail.
 
 .SH OPTIONS
 
@@ -60,7 +56,10 @@ Print brief help, including summary of available options.
 .BI -Z " <x>"
 Calculate E-values as if the target database size was 
 .I <x> 
-megabases (Mb). Ignore the actual size of the sequence file.
+megabases (Mb).  Without the use of this option, the search space size
+is defined as the total number of nucleotides in
+.I <seqdb>
+times 2, because both strands of each target sequence will be searched.
 
 .TP 
 .B -P <n>
@@ -78,9 +77,11 @@ Directly specify the path
 .I <n>
 to 
 .B sse_cmsearch.
-This is unecessary if 
+This is usually necessary because 
 .B sse_cmsearch
-is installed and available in your path.
+is not installed by Infernal, but it is built on systems with SSE
+parallelization capability. It can be found in the src/impl_sse/
+directory.
 
 .TP 
 .B -R <n>
@@ -92,3 +93,37 @@ This is unecessary if
 .B esl-sfetch
 is installed and available in your path.
 
+
+.SH SEE ALSO 
+
+See 
+.B infernal(1)
+for a master man page with a list of all the individual man pages
+for programs in the Infernal package.
+
+.PP
+For complete documentation, see the user guide that came with your
+Infernal distribution (Userguide.pdf); or see the Infernal web page
+(@INFERNAL_URL@).
+
+.SH COPYRIGHT
+
+.nf
+@INFERNAL_COPYRIGHT@
+@INFERNAL_LICENSE@
+.fi
+
+For additional information on copyright and licensing, see the file
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
+web page 
+(@INFERNAL_URL@).
+
+.SH AUTHOR
+
+.nf
+The Eddy/Rivas Laboratory
+Janelia Farm Research Campus
+19700 Helix Drive
+Ashburn VA 20147 USA
+http://eddylab.org
+.fi

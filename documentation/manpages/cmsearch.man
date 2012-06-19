@@ -1,8 +1,7 @@
-.TH "cmsearch" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmsearch" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 cmsearch - search covariance model(s) against a sequence database
-
 
 .SH SYNOPSIS
 .B cmsearch
@@ -61,7 +60,7 @@ in /dev/null.
 reexamines the 5' and 3' terminii of target sequences using 
 specialized algorithms for detection of 
 .I truncated
-hits, in which part of the 5 and/or 3' end of the actual full length
+hits, in which part of the 5' and/or 3' end of the actual full length
 homologous sequence is missing in the target sequence file. These
 types of hits will be most common in sequence files consisting of
 unassembled sequencing reads. By default, any 5' truncated hit is
@@ -93,9 +92,8 @@ Truncated hit detection is automatically turned off when the
 .B --max,
 .B --nohmm, 
 .B --qdb, 
-.B --nonbanded,
 or
-.B --anonbanded 
+.B --nonbanded
 options are used because it relies on the use of an accelerated HMM
 banded alignment strategy that is turned off by any of those options.
 
@@ -127,20 +125,23 @@ all models must be calibrated, even those with zero basepairs.
 
 .TP
 .BI -Z " <x>"
-Calculate E-values as if the target database size was 
+Calculate E-values as if the search space size was 
 .I <x> 
-megabases (Mb). Ignore the actual size of the database. This option
-is only valid if the CM file has been calibrated. 
+megabases (Mb). Without the use of this option, the search space size
+is defined as the total number of nucleotides in 
+.I <seqdb>
+times 2, because both strands of each target sequence will be searched.
 
 .TP
 .B --devhelp
 Print help, as with  
 .B "-h",
 but also include expert options that are not displayed with 
-.B "-h". These expert options are not expected to be relevant for the
-vast majority of users and so are not described in the manual page.
-The only resources for understanding what they actually do are the
-brief one-line descriptions output when
+.B "-h". 
+These expert options are not expected to be relevant for the vast
+majority of users and so are not described in the manual page.  The
+only resources for understanding what they actually do are the brief
+one-line descriptions output when
 .B "--devhelp"
 is enabled, and the source code.
 
@@ -162,8 +163,8 @@ to the file
 .TP 
 .BI --tblout " <f>"
 Save a simple tabular (space-delimited) file summarizing the
-hits found, with one data line per hit.
-
+hits found, with one data line per hit. The format of this file is
+described in the Infernal user guide.
 
 .TP 
 .B --acc
@@ -189,8 +190,8 @@ Set the main output's line length limit to
 characters per line. The default is 120.
 
 .TP 
-.BI --allstats
-Display all search pipeline statistics in the main output, including
+.BI --verbose
+Include extra search pipeline statistics in the main output, including
 filter survival statistics for truncated hit detection and number of
 envelopes discarded due to matrix size overflows. 
 
@@ -259,8 +260,8 @@ score of
 .I <x>
 bits, and acts
 as if
-.BI -T <x>
-.BI --incT <x>
+.BI -T " <x>"
+.BI --incT " <x>"
 has been applied specifically using each model's curated thresholds.
 
 .TP
@@ -287,42 +288,37 @@ that is above all known false positives.
 
 .SH OPTIONS CONTROLLING THE ACCELERATION PIPELINE
 
-INFERNAL @INFERNAL_VERSION@ searches are accelerated in a six-stage
+Infernal @INFERNAL_VERSION@ searches are accelerated in a six-stage
 filter pipeline. The first five stages use a profile HMM to define
 envelopes that are passed to the stage six CM CYK filter. Any
 envelopes that survive all filters are assigned final scores using the 
-the CM Inside algorithm. 
+the CM Inside algorithm. (See the user guide for more information.)
 
 The profile HMM filter is built by the 
 .B cmbuild
 program and is stored in 
 .I <cmfile>.
+
 Each successive filter is slower than the previous one, but better
 than it at disciminating between subsequences that may contain
 high-scoring CM hits and those that do not. The first three HMM filter
-stages are the same as those used in HMMER3.
-", albeit with different thresholds. Because 
-".B cmsearch
-"uses an HMM to filter for a more complicated model (a CM) as opposed
-"to for the same HMM in HMMER3, less strict thresholds must be used in
-"order to maintain an acceptably high level of sensitivity compared to
-"a non-filtered search. 
-Stage 1 (F1) is the local HMM MSV filter. Stage 2 (F2) is the local
-HMM Viterbi filter. Stage 3 (F3) is the local HMM Forward filter. Each
-of the first three stages uses the profile HMM in local mode, which
-allows a target subsequence to align to any region of the HMM. Stage 4
-(F4) is a glocal HMM filter, which requires a target subsequence to
-align to the full-length profile HMM. Stage 5 (F5) is the glocal HMM
-envelope definition filter, which uses HMMER3's domain identification
-heursitics to define envelope boundaries. After each stage from 2 to 5
-a bias filter step (F2b, F3b, F4b, and F5b) is used to remove
-sequences that appear to have passed the filter due to biased
-composition alone. Any envelopes that survive stages F1 through F5b
-are then passed with the local CM CYK filter. The CYK filter uses
+stages are the same as those used in HMMER3.  Stage 1 (F1) is the
+local HMM SSV filter modified for long sequences. Stage 2 (F2) is the
+local HMM Viterbi filter. Stage 3 (F3) is the local HMM Forward
+filter. Each of the first three stages uses the profile HMM in local
+mode, which allows a target subsequence to align to any region of the
+HMM. Stage 4 (F4) is a glocal HMM filter, which requires a target
+subsequence to align to the full-length profile HMM. Stage 5 (F5) is
+the glocal HMM envelope definition filter, which uses HMMER3's domain
+identification heursitics to define envelope boundaries. After each
+stage from 2 to 5 a bias filter step (F2b, F3b, F4b, and F5b) is used
+to remove sequences that appear to have passed the filter due to
+biased composition alone. Any envelopes that survive stages F1 through
+F5b are then passed with the local CM CYK filter. The CYK filter uses
 constraints (bands) derived from an HMM alignment of the envelope to
-reduce the number of required calculations and save time.
-Any envelopes that pass CYK are scored with the local CM Inside
-algorithm, again using HMM bands for acceleration.
+reduce the number of required calculations and save time.  Any
+envelopes that pass CYK are scored with the local CM Inside algorithm,
+again using HMM bands for acceleration.
 
 The default filter thresholds that define the minimum score required
 for a subsequence to survive each stage are defined based on the size of the
@@ -341,34 +337,33 @@ rationale is that for larger databases, hits must have higher scores
 to achieve statistical significance, so stricter filtering that
 removes lower scoring insignificant hits is acceptable.
 
-The P-value thresholds for all possible database sizes and all filter
+The P-value thresholds for all possible search space sizes and all filter
 stages are listed next. (A P-value threshold of 0.01 means that
 roughly 1% of the highest scoring nonhomologous subsequence are
-expected to pass the filter.)
+expected to pass the filter.) Z is defined as the number of
+nucleotides in the complete target sequence file times 2 because both
+strands will be searched with each model.
 
-If the database size is less than 1 Mb: F1 is off; F2 and F2b are
-0.25; F3, F3b, F4, F4b and F5 are 0.02; F6 is 0.0001.
+If Z is less than 2 Mb: F1 is 0.35; F2 and F2b are
+off; F3, F3b, F4, F4b and F5 are 0.02; F6 is 0.0001.
 
-If the database size is between 1 Mb and 10 Mb: F1 is 0.35; F2 and F2b are
-0.20; F3, F3b, F4, F4b and F5 are 0.015; F6 is 0.0001.
+If Z is between 2 Mb and 20 Mb: F1 is 0.35; F2 and F2b are
+off; F3, F3b, F4, F4b and F5 are 0.005; F6 is 0.0001.
 
-If the database size is between 10 Mb and 100 Mb: F1 is 0.35; F2 and F2b are
-0.20; F3, F3b, F4, F4b and F5 are 0.003; F6 is 0.0001.
+If Z is between 20 Mb and 200 Mb: F1 is 0.35; F2 and F2b are
+0.15; F3, F3b, F4, F4b and F5 are 0.003; F6 is 0.0001.
 
-If the database size is between 100 Mb and 1 Gb: F1 is 0.30; F2 and F2b are
-0.15; F3, F3b, F4, F4b, F5, and F5b are 0.002; and F6 is 0.0001.
+If Z is between 200 Mb and 2 Gb: F1 is 0.15; F2 and F2b are
+0.15; F3, F3b, F4, F4b, F5, and F5b are 0.0008; and F6 is 0.0001.
 
-If the database size is between 1 Gb and 10 Gb: F1 is 0.06; F2 and F2b are
-0.15; F3, F3b, F4, F4b, F5, and F5b are 0.0005; and F6 is 0.0001.
+If Z is between 2 Gb and 20 Gb: F1 is 0.15; F2 and F2b are
+0.15; F3, F3b, F4, F4b, F5, and F5b are 0.0002; and F6 is 0.0001.
 
-If the database size is between 10 Gb and 100 Gb: F1 is 0.06; F2 and F2b are
-0.05; F3, F3b, F4, F4b, F5, and F5b are 0.0005; and F6 is 0.0001.
-
-If the database size is more than 100 Gb: F1 is 0.05; F2 and F2b are
-0.04; F3, F3b, F4, F4b, F5, and F5b are 0.0004; and F6 is 0.0001.
+If Z is more than 20 Gb: F1 is 0.06; F2 and F2b are
+0.02; F3, F3b, F4, F4b, F5, and F5b are 0.0002; and F6 is 0.0001.
 
 These thresholds were chosen based on performance on an internal
-benchmark using many different possible settings.
+benchmark testing many different possible settings.
 
 There are five options for controlling the general filtering
 level. These options are, in order from least strict (slowest but most sensitive) to most
@@ -430,7 +425,10 @@ structure (zero basepairs). These profile HMM searches will run
 significantly faster than the CM searches. You can force HMM-only
 searches with the 
 .B --hmmonly 
-option. For more information on HMM-only searches see the user guide. 
+option. For more information on HMM-only searches see the description
+of the 
+.B --hmmonly
+option below, and the user guide. 
 
 .TP
 .B --max
@@ -449,7 +447,7 @@ speed.
 
 .TP
 .B --mid
-Turn off the HMM MSV and Viterbi filter stages (F1 through F2b). 
+Turn off the HMM SSV and Viterbi filter stages (F1 through F2b). 
 Set remaining HMM filter thresholds (F3 through F5b) to 0.02 by
 default, but changeable to 
 .I <x> 
@@ -466,8 +464,8 @@ filter thresholds are determined based on the database size.
 .TP
 .B --rfam
 Use a strict filtering strategy devised for large databases (more than
-100 Gb). This will accelerate the search at a potential cost to
-sensitivity. 
+20 Gb). This will accelerate the search at a potential cost to
+sensitivity. It will have no effect if the database is larger than 20 Gb.
 
 .TP
 .B --hmmonly
@@ -491,16 +489,9 @@ HMM-only mode. This can be turned off, forcing CM searches for these
 models with the 
 .B --nohmmonly 
 option.
-
 These options are only displayed if the 
 .B --devhelp 
-optin is used.
-
-QDBs, will be run on every full-length target sequence and will
-enforce a P-value threshold of 0.0001. Each subsequence that survives
-CYK will be passed to Inside, which will also use QDBs (but a looser
-set). This increases sensitivity somewhat, at a very large cost in
-speed.
+option is used.
 
 .TP
 .BI --FZ " <x>"
@@ -508,7 +499,7 @@ Set filter thresholds as the defaults used if the database were
 .B <x>
 megabases (Mb). If used with 
 .B <x>
-greater than 100000 (100 Gb) this option has the same effect as 
+greater than 20000 (20 Gb) this option has the same effect as 
 .B --rfam.
 
 
@@ -524,17 +515,20 @@ is 0.02.
 
 .SH OTHER OPTIONS
 
+.TP
 .B --notrunc
 Turn off truncated hit detection. 
 
-".B --anytrunc
-"Allow truncated hits to begin and end at any position in a target
-"sequence. By default, 5' truncated hits must include the first residue of
-"their target sequence and 3' truncated hits must include the final
-"residue of their target sequence. With this option you may observe
-"fewer full length hits that extend to the beginning and end of the
-"query CM.
+.TP
+.B --anytrunc
+Allow truncated hits to begin and end at any position in a target
+sequence. By default, 5' truncated hits must include the first residue of
+their target sequence and 3' truncated hits must include the final
+residue of their target sequence. With this option you may observe
+fewer full length hits that extend to the beginning and end of the
+query CM.
 
+.TP 
 .B --nonull3
 Turn off the null3 CM score corrections for biased composition. This
 correction is not used during the HMM filter stages.
@@ -626,13 +620,16 @@ query-dependent bands.
 .B --toponly
 Only search the top (Watson) strand of target sequences in
 .I <seqdb>.
-By default, both strands are searched.
+By default, both strands are searched. This will halve the database
+size (Z).
 
 .TP 
 .B --bottomonly
 Only search the bottom (Crick) strand of target sequences in
 .I <seqdb>.
 By default, both strands are searched.
+This will halve the database
+size (Z).
 
 .TP
 .BI --tformat " <s>"
@@ -656,18 +653,17 @@ The default is to autodetect the format of the file.
 .BI --cpu " <n>"
 Set the number of parallel worker threads to 
 .I <n>.
-By default, INFERNAL sets this to the number of CPU cores it detects in
+By default, Infernal sets this to the number of CPU cores it detects in
 your machine - that is, it tries to maximize the use of your available
 processor cores. Setting 
 .I <n>
 higher than the number of available cores is of little if any value,
 but you may want to set it to something less. You can also control
 this number by setting an environment variable, 
-.I HMMER_NCPU.
-
-This option is only available if INFERNAL was compiled with POSIX threads
-support. This is the default, but it may have been turned off at
-compile-time for your site or machine for some reason.
+.I INFERNAL_NCPU.
+This option is only available if Infernal was compiled with POSIX
+threads support. This is the default, but it may have been turned off
+at compile-time for your site or machine for some reason.
 
 .TP
 .B --stall
@@ -696,11 +692,11 @@ subdirectory.
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 .SH COPYRIGHT
@@ -711,7 +707,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

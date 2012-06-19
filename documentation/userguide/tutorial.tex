@@ -88,7 +88,7 @@ are:
   corresponding to \otext{minifam.cm}, produced by \prog{cmpress}.
 %
 \item[\otext{metag-example.fa}]: A FASTA sequence file containing 3
-  sequences hand-selected from a metagenomics dataset \cite{Tringe05},
+  sequences hand-selected from a metagenomics dataset \citep{Tringe05},
   used for demonstrating \prog{cmscan}. 
 %
 \item[\otext{minifam-metag.out}]: An example \prog{cmscan} output file,
@@ -561,7 +561,7 @@ the GC fraction of the hit. These are redundant with the columns of
 the same name in the hit list, described above.
 
 Next comes the alignment display. This is an ``optimal
-posterior accuracy'' alignment \cite{Holmes98}, which means it is the
+posterior accuracy'' alignment \citep{Holmes98}, which means it is the
 alignment with the maximal summed posterior probability of all
 aligned residues. Take a look at the alignment for hit number 43:
 
@@ -775,17 +775,21 @@ residues from the 81 windows, indicated by the drop of 0.1973\% to
 0.1358\%.
 %%^^^^
 
-After hit envelopes have been defined with the filter HMM, the
+After hit envelopes have been defined with the filter HMM, the two
 remaining stages of the pipeline use the CM to score both the
-conserved sequence and structure of each possible hit. First, the CYK
-algorithm (which is the SCFG analog of the Viterbi HMM algorithm) is
-used to determine the best scoring maximum likelihood alignment of any
-subsequence in each envelope to the CM. If this alignment has a
-P-value of less than $1e-4$ then the envelope survives to the final
-round. The envelopes passed to the final stage may be shorter than
-those examined during the CYK stage. Specifically, envelopes are
-redefined as starting and ending at the first and final residues for
-which at least one alignment exists with a P-value less than $1e-3$.
+conserved sequence and structure of each possible hit. In both of
+these stages, constraints are derived from an HMM alignment of the
+envelope and enforced as \emph{bands} on the CM dynamic programming
+matrices (more on this in section~\ref{section:pipeline}. In the first
+CM stage, the CYK algorithm (which is the SCFG analog of the Viterbi
+HMM algorithm) is used to determine the best scoring maximum
+likelihood alignment of any subsequence in each envelope to the CM. If
+this alignment has a P-value of less than $1e-4$ then the envelope
+survives to the final round. The envelopes passed to the final stage
+may be shorter than those examined during the CYK stage. Specifically,
+envelopes are redefined as starting and ending at the first and final
+residues for which at least one alignment exists with a P-value less
+than $1e-3$.
 
 In the final round, the Inside algorithm (the SCFG analog of the HMM
 Forward algorithm) is used to define final hit boundaries and
@@ -815,7 +819,7 @@ found. However, there is an example of a truncated hit in the
 sequencing survey.
 
 Special dynamic programming algorithms are required for truncated hit
-detection \cite{KolbeEddy09}, so sequences must be re-searched for
+detection \citep{KolbeEddy09}, so sequences must be re-searched for
 truncated hits after they are initially searched for standard
 (non-truncated) hits. However, only the sequence ends must be
 re-searched because Infernal assumes that only hits at sequence
@@ -825,7 +829,7 @@ that only 360 residues were re-searched for truncated hits. For each
 model, an expected maximum length of a hit\footnote{The expected
   maximum hit length is defined as the maximum of 1.25 times the
   consensus length of the model and the $W$ parameter computed with
-  the QDB algorithm \cite{NawrockiEddy07} based on the transition
+  the QDB algorithm \citep{NawrockiEddy07} based on the transition
   probabilities of the model by \prog{cmbuild} and stored in the CM
   file.}  is used to define the window length at the beginning and end
 of each sequence which must be re-searched for truncated hits. For our
@@ -923,7 +927,7 @@ Now we can analyze sequences using our CM database and
 For example, the file \otext{tutorial/metag-example.fa} includes 3
 sequences (whole genome shotgun sequencing reads) derived from samples
 of ``whale fall'' carcasses in a metagenomics study
-\cite{Tringe05}. These three sequences were chosen from the roughly
+\citep{Tringe05}. These three sequences were chosen from the roughly
 200,000 in the complete dataset because they include statistically
 significant hits to the three models in our toy CM database.
 
@@ -978,7 +982,6 @@ Now back to the \prog{cmscan} results. What follows the ranked list of
 three hits are the hit alignments. These are constructed and annotated
 the same as in \prog{cmsearch}. The 5S alignment is:
 
-% tutorial regression: contrived.cmscan
 \begin{sreoutput}
                              v               v       v         v         v             v           vv                NC
                      (((((((((,,,,<<-<<<<<---<<--<<<<<<______.>>-->>>>-->>---->>>>>-->><<<-<<----<-<<-----<<____>>-- CS
@@ -996,7 +999,7 @@ the same as in \prog{cmsearch}. The 5S alignment is:
 \end{sreoutput}
 
 After the three sequences, you'll see a pipeline statistics summary
-report (FIX ME WITH FIXED CMSCAN OUTPUT!):
+report:
 
 \begin{sreoutput}
 Internal CM pipeline statistics summary:
@@ -1027,17 +1030,16 @@ query model. In this case, the sequence was 943 residues long, so a
 total of 1886 residues were searched, since both strands were
 %        ^^^^
 examined. The next line reports that the average number of residues
-re-searched for truncated hits per model was 992.0 (FIX ME, BUG IN
-PIPELINE SUMMARY OUTPUT CODE!). An average is reported here
-because remember the number of residues re-searched per model depends
-on the expected maximum size of a hit, which varies per model, because
-only sequence terminii are examined for truncated hits (see
-``Truncated RNA detection'' above and section~\ref{section:pipeline}).
-The remainder of the output is the same as in \prog{cmsearch} except
-that the fractional values are averages per model. For example, for
-all three models 4 envelopes survived the CYK filter stage, and those
-surviving envelopes contained 5.189\% of the target sequence \emph{on
-  average per model}.
+re-searched for truncated hits per model was 992.0. An average is
+reported here because remember the number of residues re-searched per
+model depends on the expected maximum size of a hit, which varies per
+model, because only sequence terminii are examined for truncated hits
+(see ``Truncated RNA detection'' above and
+section~\ref{section:pipeline}).  The remainder of the output is the
+same as in \prog{cmsearch} except that the fractional values are
+averages per model. For example, for all three models 4 envelopes
+survived the CYK filter stage, and those surviving envelopes contained
+5.189\% of the target sequence \emph{on average per model}.
 
 You may have noticed that the expected survival fractions are
 different than they were in the \prog{cmsearch} example. This is
@@ -1056,24 +1058,25 @@ contains one hit to the Cobalamin riboswitch model, which is truncated
 at the 5' end. Here is the alignment:
 
 \begin{sreoutput}
+Hit alignments:
 >> Cobalamin  Cobalamin riboswitch
  rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
   (1) !   6.1e-09   30.0   0.0  cm       32      191 ~]         934         832 - ~. 0.92    5' 0.48
 
-                                                 ???              v           v      v    v                          NC
-                                     ~~~~~~______>>>,,,,,(((,,,<.<<<<_______>>>>>,,<<<____>>>,<<<---<<<<~~~~~~>>>>-- CS
-                       Cobalamin   1 <[31]*agugaaggguuAAaaGGGAAc.ccGGUGaaAaUCCgggGCuGcCCCCgCaACuGUAAgcGg*[61]*cCgcgA 158
-                                             +G+     + AA: GGAA: : GGUG AAAUCC ::+C:G CCC  C:ACUGUAA:C:        :G:+A
-  gi|60123518|gb|AAFY01022046.1| 934 <[ 0]*GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCACUGUAACCAG*[ 4]*UUGGAA 864
-                                     ......44455566666899******989************************************97...7..79**** PP
+                                 ???              v           v      v    v                                     ???? NC
+                     ~~~~~~______>>>,,,,,(((,,,<.<<<<_______>>>>>,,<<<____>>>,<<<---<<<<~~~~~~>>>>---->>>,,,,)))]]]] CS
+       Cobalamin   1 <[31]*agugaaggguuAAaaGGGAAc.ccGGUGaaAaUCCgggGCuGcCCCCgCaACuGUAAgcGg*[61]*cCgcgAGcCaGGAGACCuGCCa 174
+                             +G+     + AA: GGAA: : GGUG AAAUCC ::+C:G CCC  C:ACUGUAA:C:        :G:+AG+CAG A AC :  C 
+  AAFY01022046.1 934 <[ 0]*GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCACUGUAACCAG*[ 4]*UUGGAAGUCAG-AUACUCUUCU 849
+                     ......44455566666899******989************************************97...7..79*********.9********* PP
 
-                                                 ??????                NC
-                                     -->>>,,,,)))]]]]]]::::::::::::::: CS
-                       Cobalamin 159 GcCaGGAGACCuGCCaucaguuuuugaaucucc 191
-                                     G+CAG A AC :  C   ++++   GAA+CU C
-  gi|60123518|gb|AAFY01022046.1| 863 GUCAG-AUACUCUUCUAUUAAGGCGGAAACUAC 832
-                                     *****.9************************** PP
+                     ??                NC
+                     ]]::::::::::::::: CS
+       Cobalamin 175 ucaguuuuugaaucucc 191
+                       ++++   GAA+CU C
+  AAFY01022046.1 848 AUUAAGGCGGAAACUAC 832
+                     ***************** PP
 \end{sreoutput}
 
 This alignment has some important differences with the ones we've seen
@@ -1118,7 +1121,7 @@ end of the first \otext{CS} line, at the same position as the string
 \otext{*[61]*} in the model line immediately below. This indicates a
 a special type of alignment called a local end. Local ends occur when
 a large insertion or deletion is used in the optimal alignment at
-reduced penalty \cite{KleinEddy03} and allow Infernal to be tolerant
+reduced penalty \citep{KleinEddy03} and allow Infernal to be tolerant
 of the insertion and/or deletion of RNA substructures not modeled by the
 CM. An example of how local ends enable remote homology detection in
 RNase P is included in section XX. In this case, 61 model positions
@@ -1352,8 +1355,8 @@ Likewise, profile HMMs are more appropriate than CMs for modeling RNAs
 of unknown structure. For such RNAs, a profile HMM search may reveal
 additional homologs that can help elucidate the conserved structure
 for the family. Given the multiple homologs, you can use other
-programs like RNAalifold \cite{Bernhart08,Hofacker02} or WAR
-\cite{Torarinsson08} (a webserver that includes implementations of
+programs like RNAalifold \citep{Bernhart08,Hofacker02} or WAR
+\citep{Torarinsson08} (a webserver that includes implementations of
 several programs) to try to predict the conserved secondary structure
 of a collection of homologous RNAs. Currently, Infernal itself does
 not have the capability of predicting structure, but it's predecessor
@@ -1478,7 +1481,7 @@ in their structure than in sequence conservation, but many include
 significance of homologs by about 3 orders or magnitude\footnote{For a
   graph depicting of the relative amount of information in structure
   for sequence for many different types of RNAs see Figure 1.9 of
-  \cite{Nawrocki09}}.
+  \citep{Nawrocki09}}.
 
 HMM hit alignments differ slightly from CM hit alignments. Take a look
 at the first alignment:
@@ -1509,7 +1512,7 @@ model position 1 to 72 for the same region of the genome. The profile
 HMMs used in Infernal allow local alignments that begin and end at any
 position in the model, with an equal score given for all possible
 start and end positions (this is the same local alignment strategy
-used in HMMER 3.0 \cite{Eddy08}). In contrast, the CM local alignment
+used in HMMER 3.0 \citep{Eddy08}). In contrast, the CM local alignment
 strategy used by Infernal encourages global alignments by enforcing a
 score penalty for local ones. Partly because CM and HMM alignments
 differ in this way, ``truncated'' HMM hits can start and end anywhere
@@ -1546,15 +1549,14 @@ insert nonhomologous residues into the alignment (these were the
 \otext{~} annotated residues in the \prog{cmscan} and \prog{cmalign}
 examples above). Local alignments are permitted by default, because
 our internal benchmarks suggest this strategy is more sensitive for
-remote homology detection. An example of a local RNase P alignment is
-demonstrated in Figure X (FIX ME) of this guide. However, some users
-may wish to turn off local alignment. This can be done using the
-\otext{-g} option to \prog{cmsearch}, \prog{cmscan}, and
-\prog{cmalign}. The use of local mode by default in \prog{cmalign} is
-new to version 1.1 - all previous versions used global alignment by
-default. Importantly, using \otext{-g} does not turn off
-truncated hit detection and alignment; to do that use
-\otext{--notrunc}. 
+remote homology detection. (An example of a local RNase P alignment is
+demonstrated in Figure~\ref{fig:bsu-alignment} of this guide.)
+However, some users may wish to turn off local alignment. This can be
+done using the \otext{-g} option to \prog{cmsearch}, \prog{cmscan},
+and \prog{cmalign}. The use of local mode by default in \prog{cmalign}
+is new to version 1.1 - all previous versions used global alignment by
+default. Importantly, using \otext{-g} does not turn off truncated hit
+detection and alignment; to do that use \otext{--notrunc}.
 
 \subsection{Specifying and annotating match positions with cmbuild --hand}
 

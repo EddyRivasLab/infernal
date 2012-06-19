@@ -1,4 +1,4 @@
-.TH "cmalign" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmalign" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 cmalign - align sequences to a covariance model
@@ -70,7 +70,9 @@ length biological sequence are not present in the input sequence
 (see DL Kolbe and SR Eddy, Bioinformatics, 25:1236-1243, 2009). This
 behavior is on by default, but can be turned off with 
 .B --notrunc.
-In previous versions of INFERNAL the 
+In previous versions of 
+.B cmalign 
+the 
 .B --sub
 option was required to appropriately handle truncated sequences. The
 .B --sub 
@@ -91,7 +93,7 @@ within the output alignment of
 It is possible to merge two or more alignments created by the
 same CM using the Easel miniapp 
 .B esl-alimerge
-(included in the easel/miniapp/ subdirectory of INFERNAL). Previous
+(included in the easel/miniapps/ subdirectory of Infernal). Previous
 versions of 
 .B cmalign 
 included options to merge alignments but they were deprecated upon development
@@ -148,7 +150,7 @@ the calculation of the posterior probabilities
 considers all possible alignments of the target sequence to the
 CM. Without 
 .B --nonbanded
-(in HMM banded mode), the calculation considers only possible
+(i.e. in default mode), the calculation considers only possible
 alignments within the HMM bands. Further, the posterior probabilities
 are conditional on the truncation mode of the alignment. For example, if
 the sequence alignment is truncated 5', a PP value of "9" indicates between
@@ -163,7 +165,7 @@ is enabled, posterior annotation must also be turned off using
 
 The tabular output that is printed to stdout if the 
 .B -o 
-option is used includes one line per sequences and twelve fields per
+option is used includes one line per sequence and twelve fields per
 line: "idx": the index of the sequence in the input file, "seq name":
 the sequence name; "length": the length of the sequence; "cm from" and
 "cm to": the model start and end positions of the alignment; "trunc":
@@ -174,9 +176,9 @@ the bit score of the alignment, "avg pp" the average posterior
 probability of all aligned nucleotides in the alignment; "band calc",
 "alignment" and "total": the time in seconds required for calculating
 HMM bands, computing the alignment, and complete processing of the
-sequence; "mem (Mb)": the size in Mb of all dynamic programming
-matrices required for aligning the sequence.  This tabular data can be
-saved to file
+sequence, respectively; "mem (Mb)": the size in Mb of all dynamic
+programming matrices required for aligning the sequence.  This tabular
+data can be saved to file
 .I <f>
 with the 
 .BI --sfile " <f>"
@@ -201,8 +203,7 @@ Configure the model for global alignment of the query model to the
 target sequences. By default, the model is configured for local
 alignment. Local alignments can contain large insertions and deletions
 called "local ends" in the structure to be penalized differently than
-normal indels. These are annotated as
-.I ~
+normal indels. These are annotated as "~"
 columns in the RF line of the output alignment. The
 .B -g 
 option can be used to disallow these local ends.
@@ -267,7 +268,7 @@ All sequences in the input file will be assumed to be full length,
 unless 
 .B --sub
 is also used, in which case the program can still handle truncated
-sequences, but will use an alternative strategy for their alignment.
+sequences but will use an alternative strategy for their alignment.
 
 .TP
 .B --sub
@@ -343,13 +344,11 @@ will attempt to iteratively tighten the HMM bands it uses to constrain the
 alignment by raising the tau parameter and recalculating the bands
 until the total matrix size needed falls below 
 .I <x>
-megabytes or the maximum allowable tau value (0.01 by default, but
+megabytes or the maximum allowable tau value (0.05 by default, but
 changeable with 
 .B --maxtau)
 is reached. At each iteration of band tightening, tau is multiplied by
-a preset factor (2.0 by default but changeable with
-.B --xtau).
-The band tightening strategy can be turned off with the 
+a 2.0. The band tightening strategy can be turned off with the 
 .B --fixedtau
 option.
 If the maximum tau is reached and the required matrix size still exceeds 
@@ -388,22 +387,13 @@ of the
 option above.
 
 .TP
-.BI --xtau " <x>"
-Set the factor by which to mulitply tau at each iteration of band
-tightening, described in the explanation of 
-.B --mxsize 
-above, to 
-.I <x>.
-By default this value is 2.0.
-
-.TP
 .BI --maxtau " <x>"
 Set the maximum allowed value for tau during band
 tightening, described in the explanation of 
 .B --mxsize 
 above, to 
 .I <x>.
-By default this value is 0.01.
+By default this value is 0.05.
 
 .TP
 .B --nonbanded
@@ -436,7 +426,8 @@ allows CM alignment within practical memory limits,
 reducing the memory required for alignment LSU rRNA, the largest known
 RNAs, from 150 Gb to less than 300 Mb.
 This option can only be used in combination with
-.B --nonbanded 
+.B --nonbanded,
+.B --notrunc,
 and
 .B --cyk.
 
@@ -446,6 +437,10 @@ and
 .BI --sfile " <f>"
 Dump per-sequence alignment score and timig information to file
 .I <f>.
+The format of this file is described above (it's the same data in the
+same format as the tabular stdout output when the 
+.B -o 
+option is used).
 
 .TP
 .BI --tfile " <f>"
@@ -494,7 +489,8 @@ from. The program verifies that the checksum of the file matches that
 of the file used to construct the CM. A similar option to this one was
 called
 .B --withali
-in previous versions of INFERNAL.
+in previous versions of
+.B cmalign.
 
 .TP 
 .B --mapstr
@@ -504,7 +500,8 @@ Propogate structural information for any pseudoknots that exist in
 .I <f> 
 to the output alignment. A similar option to this one was called
 .B --withstr 
-in previous versions of INFERNAL.
+in previous versions of 
+.B cmalign.
 
 .TP
 .BI --informat " <s>"
@@ -516,7 +513,7 @@ Do not run Babelfish format autodection. This increases
 the reliability of the program somewhat, because 
 the Babelfish can make mistakes; particularly
 recommended for unattended, high-throughput runs
-of INFERNAL. 
+of Infernal. 
 Acceptable formats are: FASTA, GENBANK, and DDBJ.
 .I <s>
 is case-insensitive.
@@ -532,7 +529,7 @@ annotation of aligned residues.
 
 .TP
 .B --dnaout
-Output the alignments as DNA sequence alignments. 
+Output the alignments as DNA sequence alignments, instead of RNA ones.
 
 .TP
 .BI --noprob
@@ -566,6 +563,17 @@ Save an additional copy of the output alignment with no author
 information to file
 .I <s>.
 
+.TP 
+.B --verbose
+Output additional information in the tabular scores output (output to
+stdout if 
+.B -o 
+is used, or to 
+.I <f>
+if 
+.BI --sfile " <f>" 
+is used). These are mainly useful for testing and debugging. 
+
 .TP
 .BI --cpu " <n>"
 Specify that 
@@ -573,14 +581,18 @@ Specify that
 parallel CPU workers be used. If 
 .I <n> 
 is set as "0", then the program will be run in serial mode, without
-using threads. This option will only be available if the machine on
-which INFERNAL was built is capable of using POSIX threading (see the
+using threads. 
+You can also control
+this number by setting an environment variable, 
+.I INFERNAL_NCPU.
+This option will only be available if the machine on
+which Infernal was built is capable of using POSIX threading (see the
 Installation section of the user guide for more information).
 
 .TP
 .B --mpi
 Run as an MPI parallel program. This option will only be available if
-INFERNAL has been configured and built with the "--enable-mpi" flag
+Infernal has been configured and built with the "--enable-mpi" flag
 (see the Installation section of the user guide for more information).
 
 
@@ -589,11 +601,11 @@ INFERNAL has been configured and built with the "--enable-mpi" flag
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -605,7 +617,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

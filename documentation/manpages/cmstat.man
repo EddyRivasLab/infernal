@@ -1,4 +1,4 @@
-.TH "cmstat" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmstat" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 cmstat - summary statistics for a covariance model file
@@ -53,6 +53,10 @@ such as the default entropy weighting.
 The length of the model in consensus residues (match states).
 
 .TP
+.B W
+The expected maximum length of a hit to the model. 
+
+.TP
 .B bps
 The number of basepairs in the model.
 
@@ -61,29 +65,34 @@ The number of basepairs in the model.
 The number of bifurcations in the model.
 
 .TP
-.B W
-The expected maximum length of a hit to the model. 
+.B model
+What type of model will be used by default in 
+.B cmsearch
+and 
+.B cmscan
+for this profile, either "cm" or "hmm". For profiles with 0 basepairs,
+this will be "hmm" (unless the
+.B --nohmmonly 
+option is used). For all other profiles, this will be "cm".
 
 .TP
-.B M
-The total number of states in the model.
-
-.TP
-.B rel entropy, CM:
+.B rel entropy, cm:
 Mean relative entropy per match state, in bits. This is the expected
 (mean) score per consensus position. This is what the default
 entropy-weighting method for effective sequence number estimation
 focuses on, so for default Infernal, this value will often
-reflect the default target for entropy-weighting.
+reflect the default target for entropy-weighting. If the "model" field
+for this profile is "hmm", this field will be "-".
 
 .TP
-.B rel entropy, HMM:
+.B rel entropy, hmm:
 Mean relative entropy per match state, in bits, if the CM were
 transformed into an HMM (information from structure is ignored). 
 The larger the difference between the CM and HMM relative entropy,
 the more the model will rely on structural conservation relative
 sequence conservation when identifying homologs.
 
+.PP
 If the model(s) in 
 .I <cmfile>
 have been calibrated with 
@@ -108,6 +117,13 @@ score thresholds. Seperate bit scores or E-values will be displayed
 for each of the four possible CM search algorithm and model
 configuration pairs: local Inside, local CYK, glocal Inside and glocal
 CYK.
+
+For profiles with zero basepairs (those with "hmm" in the "model"
+field), any E-value and bit score statistics will pertain to the
+profile HMM filter, instead of to the CM. This is also true for all
+profiles if the 
+.B --hmmonly
+option is used.
 
 .SH OPTIONS
 
@@ -198,16 +214,31 @@ Only print statistics for CM with name or accession
 skip all other models in 
 .I <cmfile>.
 
+.TP
+.B --hmmonly
+Print statistics on the profile HMM filters for all profiles, instead
+of the CMs. This can be useful if you plan to use the 
+.B --hmmonly 
+option to 
+.B cmsearch
+or
+.B cmscan.
+
+.TP
+.B --nohmmonly
+Always print statistics on the CM for each profile, even for those
+with zero basepairs.
+
 .SH SEE ALSO 
 
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -219,7 +250,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

@@ -4,13 +4,21 @@
 
 \subsection{How do I cite Infernal?}
 
-The appropriate citation is to the web site, \url{infernal.janelia.org}. You
-should also cite what version of the software you used. We archive all
-old versions, so anyone should be able to obtain the version you used,
-when exact reproducibility of an analysis is an issue. 
+If you'd like to cite a paper, the closest one that is appropriate is
+the Infernal 1.0 application note in \emph{Bioinformatics}:
+
+Infernal 1.0: inference of RNA alignments. 
+EP Nawrocki, DL Kolbe, and SR Eddy.
+Bioinformatics. 2009 May 15;25(10):1335-7. 
+
+The most appropriate citation is to the web site,
+\url{infernal.janelia.org}. You should also cite what version of the
+software you used. We archive all old versions, so anyone should be
+able to obtain the version you used, when exact reproducibility of an
+analysis is an issue.
 
 The version number is in the header of most output files. To see it
-quickly, do something like \prog{cmscann -h} to get a help page, and
+quickly, do something like \prog{cmscan -h} to get a help page, and
 the header will say:
 
 \begin{sreoutput}
@@ -23,13 +31,8 @@ the header will say:
 
 So (from the second line there) this is from Infernal 1.1.
 
-If you'd like to cite a paper, the closest one that is appropriate is
-the Infernal 1.0 paper: 
-
-
-
-We hope to publish a paper soon that's more relevant to version 1.1,
-at which point we'll update this section.
+We hope to publish a paper soon that's more relevant to version 1.1
+than the 1.0 paper, at which point we'll update this section.
 
 \subsection{How do I report a bug?}
 
@@ -146,7 +149,7 @@ reformat the tabular output to the ``GDF'' format that
 \prog{esl-sfetch} expects: <newname> <from> <to> <source seqname>.
 These lines are then piped into \prog{esl-sfetch} (using the '-'
 argument) to retrieve each hit (only the subsequence that comprises
-each hit - not the full target sequence). \prog{esl-sfetch} will
+each hit -- not the full target sequence). \prog{esl-sfetch} will
 output a FASTA file, which is finally being piped into \prog{cmalign},
 again using the '-' argument. The output that is actually printed to
 the screen will be a multiple alignment of all the included tRNA hits.
@@ -176,14 +179,14 @@ its \prog{<cmfile>} argument to be associated with four auxiliary
 files named \prog{<cmfile>.i1\{mifp\}} that \prog{cmpress} creates,
 so \prog{cmscan} does not permit a '-' for its \prog{<cmfile>}
 argument. Finally, when a command would require multiple passes over
-an input file, the command will generally abort after the first pass
+an input file the command will generally abort after the first pass
 if you are trying to read that file through a standard input pipe
 (pipes are nonrewindable in general; a few Easel programs
 will buffer input streams to make multiple passes possible, but this
 is not usually the case). An important example is trying to search a
-database that is streamed into \prog{cmsearch}, which is not possible
+database that is streamed into \prog{cmsearch}. This is not allowed
 because \prog{cmsearch} first reads the entire sequence file to
-determine it's size (which dictates the filter thresholds that will be
+determine its size (which dictates the filter thresholds that will be
 used for the search), then needs to rewind the file before beginning
 the search.
 

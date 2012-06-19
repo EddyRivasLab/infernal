@@ -1,4 +1,4 @@
-.TH "cmemit" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmemit" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 cmemit - sample sequences from a covariance model
@@ -41,6 +41,22 @@ may be '-' (dash), which
 means reading this input from
 .I stdin
 rather than a file.  
+
+For models with zero basepairs, sequences are sampled from the profile
+HMM filter instead of the CM. However, since these models will be
+nearly identical (unless special options were used in 
+.B cmbuild 
+to prevent this), using the HMM instead of the CM will not change the
+output in a significant way, unless the 
+.B -l 
+option is used. With 
+.B -l,
+the HMM will be configured for equiprobable model begin and end positions,
+while the CM will not. You can force
+.B cmemit 
+to always sample from the CM with the 
+.B --nohmmonly 
+option.
 
 .SH OPTIONS
 
@@ -86,9 +102,15 @@ upper case; others are shown in lower case.
 
 .TP
 .BI -e " <n>"
-Embed the CM emitted sequences in a larger randomly generated (iid 25% A,C,G,U)
+Embed the CM emitted sequences in a larger randomly generated 
 sequence of length
-.I <n>.
+.I <n>
+generated from an HMM that was trained on real genomic sequences with
+various GC contents (the same HMM used by 
+.B cmcalibrate).
+You can use the 
+.B --iid
+option to generate 25% A, C, G, and U sequence instead.
 The CM emitted sequence will begin at a random position within the larger
 sequence and will be included in its entirety unless the 
 .B --u5p
@@ -182,6 +204,12 @@ is 0, the random number generator is seeded arbitrarily, and
 stochastic samplings will vary from run to run of the same command.
 The default seed is 0.
 
+.TP 
+.BI --iid
+With 
+.B -e,
+generate the larger sequences as 25% each A, C, G and U.
+
 .TP
 .BI --rna
 Specify that the emitted sequences be output as RNA sequences. This is true by default.
@@ -201,7 +229,9 @@ is 1.
 
 .TP
 .BI --outformat " <s>"
-Specify the output alignment format as
+With 
+.B -a,
+specify the output alignment format as
 .I <s>.
 Acceptable formats are: Pfam, AFA, A2M, Clustal, and Phylip.
 AFA is aligned fasta. Only Pfam and Stockholm alignment formats will
@@ -237,17 +267,25 @@ more difficult (
 > 1.0) for the CM to
 distinguish as homologous from background, random sequence.
 
+.TP 
+.B --hmmonly
+Emit from the filter profile HMM instead of the CM. 
+
+.TP 
+.B --nohmmonly
+Never emit from the filter profile HMM, always use the CM, even for
+models with zero basepairs.
 
 .SH SEE ALSO 
 
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -259,7 +297,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

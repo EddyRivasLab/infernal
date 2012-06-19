@@ -78,12 +78,12 @@ free text target sequence description, as follows:\footnote{The
   hits are found on successive passes.
 
 \item[\emprog{(13) gc:}] 
-  Fraction of G and C residues in the hit. 
+  Fraction of G and C nucleotides in the hit. 
 
 \item[\emprog{(7) bias:}] The biased-composition correction: the bit
   score difference contributed by the null3 model for CM hits, or the
   null2 model for HMM hits. High bias scores may be a red flag for a
-  false positive.  It is difficult to correct for all possible ways in
+  false positive. It is difficult to correct for all possible ways in
   which a nonrandom but nonhomologous biological sequences can appear
   to be similar, such as short-period tandem repeats, so there are
   cases where the bias correction is not strong enough (creating false
@@ -94,15 +94,19 @@ free text target sequence description, as follows:\footnote{The
   the biased-composition correction (the ``null3'' model for CM hits,
   or the ``null2'' model for HMM hits). 
 
-\item[\emprog{(16) E-value:}] The expectation value
-  (statistical significance) of the target.  This is a \emph{per
-  query} E-value; i.e.\ calculated as the expected number of false
-  positives achieving this comparison's score for a \emph{single}
-  query against the $Z$ nucleotides in the target dataset.  If you
-  search with multiple queries and if you want to control the
-  \emph{overall} false positive rate of that search rather than the
-  false positive rate per query, you will want to multiply this
-  per-query E-value by how many queries you're doing.
+\item[\emprog{(16) E-value:}] The expectation value (statistical
+  significance) of the target.  This is a \emph{per query} E-value;
+  i.e.\ calculated as the expected number of false positives achieving
+  this comparison's score for a \emph{single} query against the search
+  space $Z$. For \prog{cmsearch} $Z$ is defined as the total number of
+  nucleotides in the target dataset (counting each strand
+  separately). For \prog{cmscan} $Z$ is the total number of
+  nucleotides in the query sequence (again, counting each strand
+  separately) multiplied by the number of models in the target
+  database. If you search with multiple queries and if you want to
+  control the \emph{overall} false positive rate of that search rather
+  than the false positive rate per query, you will want to multiply
+  this per-query E-value by how many queries you're doing.
 
 \item[\emprog{(17) inc (included?):}] 
   Indicates whether or not this hit achieves the inclusion threshold:

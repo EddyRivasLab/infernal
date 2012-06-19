@@ -1,26 +1,26 @@
-.TH "cmconvert" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmconvert" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
-cmconvert - convert INFERNAL covariance model files
+cmconvert - convert Infernal covariance model files
 
 .SH SYNOPSIS
 .B cmconvert
 .I [options]
 .I <cmfile>
 
-
 .SH DESCRIPTION
 
 .PP
 The
 .B cmconvert 
-utility
-converts an input covariance model file to different INFERNAL formats.
+utility converts an input covariance model file to different Infernal
+formats.
 
 .PP
 By default, the input CM file can be any CM file created by Infernal
-v1.0 or later; the output CM file is a current Infernal
-format. Files from versions older than v1.0 cannot be converted.
+version 1.0 or later; the output CM file is a current Infernal
+format. Files from versions older than version 1.0 cannot be
+converted.
 
 .PP
 .I <cmfile> 
@@ -28,7 +28,6 @@ may be '-' (dash), which
 means reading this input from
 .I stdin
 rather than a file.  
-
 
 .SH OPTIONS
 
@@ -47,7 +46,7 @@ Output profiles in binary format.
 
 .TP 
 .B -1
-Output in legacy INFERNAL1 (Infernal v1.0 through v1.0.2) ASCII text
+Output in legacy Infernal1 (Infernal v1.0 through v1.0.2) ASCII text
 format. Due to important changes between version v1.0.2 and v1.1, any
 E-value statistic parameters calculated by
 .B cmcalibrate
@@ -78,11 +77,11 @@ in HMMER3 ASCII text format.
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -94,7 +93,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

@@ -1,7 +1,8 @@
 \section{Profile SCFG construction: the \texttt{cmbuild} program}
 \label{section:cmbuild}
+\setcounter{footnote}{0}
 
-\software{infernal} builds a model of consensus RNA secondary
+Infernal builds a model of consensus RNA secondary
 structure using a formalism called a \emph{covariance model} (CM),
 which is a type of \emph{profile stochastic context-free grammar}
 (profile SCFG) \cite{Eddy94,Durbin98,Eddy02b}.
@@ -10,7 +11,7 @@ What follows is a technical description of what a CM is, how it
 corresponds to a known RNA secondary structure, and how it is built
 and parameterized.\footnote{Much of this text is taken from
 \cite{Eddy02b}.}  You certainly don't have to understand the technical
-details of CMs to understand \prog{cmbuild} or \software{infernal},
+details of CMs to understand \prog{cmbuild} or Infernal,
 but it will probably help to at least skim this part. After that is a
 description of what the \prog{cmbuild} program does to build a CM from
 an input RNA multiple alignment, and how to control the behavior of
@@ -437,12 +438,12 @@ mark base pairs and \verb+.+ for single stranded columns.
 If a secondary structure annotation line is in WUSS notation and it
 contains valid pseudoknot annotation (e.g.\ additional non-nested
 stems marked with AAA,aaa or BBB,bbb, etc.), this annotation is
-ignored because \software{infernal} cannot handle
+ignored because Infernal cannot handle
 pseudoknots. Internally, these columns are treated as if they were
 marked with \verb+.+ symbols.
 
 \begin{srefaq}{How should I choose to annotate pseudoknots?} 
-\software{infernal} can only deal with nested base pairs. If there is
+Infernal can only deal with nested base pairs. If there is
 a pseudoknot, you have to make a choice of which stem to annotate as
 normal nested structure (thus including it in the model) and which
 stem to call additional ``pseudoknotted'' structure (thus ignoring it
@@ -451,7 +452,7 @@ you annotate it as \verb+AAAA.<<<<aaaa....>>>>+, or
 \verb+<<<<.AAAA>>>>....aaaa+?  From an RNA structure viewpoint, which
 stem I label as the pseudoknotted one is an arbitrary choice; but
 since one of the stems in the pseudoknot will have to be modeled as a
-single stranded region by \software{infernal}, the choice makes a
+single stranded region by Infernal, the choice makes a
 slight difference in the performance of your model. You want your
 model to capture as much information content as possible.  Thus, since
 the information content of the model is a sum of the sequence

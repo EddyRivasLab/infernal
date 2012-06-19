@@ -1,4 +1,4 @@
-.TH "cmpress" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmpress" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 cmpress - prepare a covariance model database for cmscan
@@ -15,13 +15,22 @@ cmpress - prepare a covariance model database for cmscan
 .PP
 Starting from a CM database
 .I <cmfile>
-in standard INFERNAL-1.1 format,
+in standard Infernal-1.1 format,
 construct binary compressed datafiles for 
 .B cmscan.
 The 
 .I cmpress
 step is required for
 .B cmscan
+to work.
+
+.PP 
+The 
+.I <cmfile>
+must be have already been calibrated with
+.B cmcalibrate
+for 
+.B cmpress
 to work.
 
 .PP
@@ -43,7 +52,7 @@ file.
 The
 .I <cmfile>.i1f
 file contains precomputed data structures
-for the fast heuristic filter (the MSV filter) for the filter p7
+for the fast heuristic filter (the SSV filter) for the filter p7
 profile HMMs in
 .I <cmfile>.
 The
@@ -75,11 +84,11 @@ to bitch about any existing files and ask you to delete them first.
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -91,7 +100,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

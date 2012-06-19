@@ -1,7 +1,7 @@
-.TH "INFERNAL" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "Infernal" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
-INFERANAL - sequence analysis using profiles of RNA sequence and secondary structure consensus
+Infernal - sequence analysis using profiles of RNA sequence and secondary structure consensus
 
 .SH SYNOPSIS
 
@@ -15,7 +15,7 @@ INFERANAL - sequence analysis using profiles of RNA sequence and secondary struc
   Fit exponential tails for covariance model E-value determination
 
 .B cmconvert
-  Convert INFERNAL covariance model files
+  Convert Infernal covariance model files
 
 .B cmemit
   Sample sequences from a covariance model
@@ -37,27 +37,27 @@ INFERANAL - sequence analysis using profiles of RNA sequence and secondary struc
 
 .SH DESCRIPTION
 
-INFERNAL is a suite of several programs for structural RNA sequence
+Infernal is a suite of several programs for structural RNA sequence
 alignment and database homology search. It uses probabilistic models
 called "covariance models" (CMs) to represent the likely evolutionary
 homologs of a multiple alignment (or single sequence) of a structural
 RNA sequence family.  
 
 Along with the Rfam database of RNA families and associated CMs
-(http://rfam.sanger.ac.uk), INFERNAL can be used to annotate homologs
+(http://rfam.sanger.ac.uk), Infernal can be used to annotate homologs
 of known structural RNA families in genomes.
 
-INFERNAL is closely related to the HMMER software suite for sequence
+Infernal is closely related to the HMMER software suite for sequence
 family analysis using profile HMMs (http://hmmer.org), but is designed
 specifically for structural RNA sequence families.  In addition to
 modeling the conserved sequence of a family as profile HMMs do, CMs
 model the family's conserved, well-nested (non-pseudoknotted)
 secondary structure as well. Consequently, CM search and alignment
-methods are relatively computationally expensive.  INFERNAL uses
+methods are relatively computationally expensive.  Infernal uses
 profile HMMs as filters and for deriving constraints to make the CM
 methods more practical.
 
-INFERNAL is used in three main modes: to search a sequence database
+Infernal is used in three main modes: to search a sequence database
 for new homologs of an RNA family (or annotate homologs in a genome);
 to search a CM database (like Rfam) to find what known family a query
 sequence belongs to; and to automatically construct large multiple
@@ -79,11 +79,11 @@ The
 program searches CM(s) against a sequence database.
 
 Suppose you have sequence(s) that you want to analyze using a
-INFERNAL-based CM database like Rfam (http://rfam.sanger.ac.uk).
+Infernal-based CM database like Rfam (http://rfam.sanger.ac.uk).
 The
 .B cmpress
 program formats a covariance model (such as the file you
-would download from Rfam) into a INFERNAL binary database.
+would download from Rfam) into a Infernal binary database.
 The 
 .B cmscan
 program searches sequence(s) against that database.
@@ -96,7 +96,7 @@ and use the
 .B cmalign 
 program to align any number of sequences to that CM.
 
-INFERNAL also includes some auxiliary tools for working with large
+Infernal also includes some auxiliary tools for working with large
 CM databases.
 .B cmfetch 
 fetches one or more CMs from a database.
@@ -104,7 +104,7 @@ fetches one or more CMs from a database.
 prints summary statistics about a CM file.
 
 For compatibility with previous versions of
-INFERNAL, as well as with HMMER, the
+Infernal, as well as with HMMER, the
 .B cmconvert
 program converts CM files to a few other formats.
 
@@ -118,7 +118,7 @@ Each program has its own man page.
 
 .SH SEE ALSO 
 
-This is a summary man page for the entire INFERNAL package.
+This is a summary man page for the entire Infernal package.
 See individual man pages
 .B [cmbuild(1),
 for example]
@@ -126,7 +126,7 @@ for usage, options, and description of each program in the package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -138,7 +138,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 

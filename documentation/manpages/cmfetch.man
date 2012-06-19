@@ -1,4 +1,4 @@
-.TH "cmfetch" 1 "@INFERNAL_DATE@" "INFERNAL @INFERNAL_VERSION@" "INFERNAL Manual"
+.TH "cmfetch" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 cmfetch - retrieve covariance model(s) from a file
@@ -119,7 +119,7 @@ create a list of CM names or accessions, then fetch them all
 to a new file, just with one command.
 
 .PP
-By default, the CM is printed to standard output in INFERNAL-1.1 format.
+By default, the CM is printed to standard output in Infernal-1.1 format.
 
 .SH OPTIONS
 
@@ -174,11 +174,11 @@ binary index file.
 See 
 .B infernal(1)
 for a master man page with a list of all the individual man pages
-for programs in the INFERNAL package.
+for programs in the Infernal package.
 
 .PP
 For complete documentation, see the user guide that came with your
-INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
+Infernal distribution (Userguide.pdf); or see the Infernal web page
 (@INFERNAL_URL@).
 
 
@@ -190,7 +190,7 @@ INFERNAL distribution (Userguide.pdf); or see the INFERNAL web page
 .fi
 
 For additional information on copyright and licensing, see the file
-called COPYRIGHT in your INFERNAL source distribution, or see the INFERNAL
+called COPYRIGHT in your Infernal source distribution, or see the Infernal
 web page 
 (@INFERNAL_URL@).
 
