@@ -1,0 +1,43 @@
+Infernal - inference of RNA secondary structure alignments
+http://infernal.janelia.org/
+Version @INFERNAL_VERSION@; @INFERNAL_DATE@
+@INFERNAL_COPYRIGHT@
+------------------------------------------------------------------
+
+HMMER searches biological sequence databases for homologous sequences,
+using either single sequences or multiple sequence alignments as
+queries. HMMER implements a technology called "profile hidden Markov
+models" (profile HMMs). HMMER is the software engine underlying many
+protein family domain databases and large-scale annotation pipelines,
+including the Pfam and SMART databases.
+
+Infernal is an implementation of covariance models (CMs), which are
+statistical models of RNA secondary structure and sequence consensus.
+You give Infernal a multiple sequence alignment of a conserved
+structural RNA family, annotated with the consensus secondary
+structure. The "cmbuild" program builds a statistical profile of your
+alignment. That CM can be used as a query in a database search to find
+more homologs of your RNAs (the "cmsearch" program). You can also use
+a CM of a representative alignment of your sequence family to create a
+larger consensus alignment of any number of RNAs (the "cmalign"
+program). Infernal is the software engine underlying the Rfam RNA
+database (http://rfam.janelia.org).
+
+Other files to read in the top-level source directory:
+
+    INSTALL          Brief installation instructions.
+    Userguide.pdf    The Infernal User's Guide.
+    COPYRIGHT        Copyright and license information.
+    LICENSE          The GNU General Public License (GPLv3).
+
+To get started after installation, see the Tutorial section in the
+Infernal User's Guide (Userguide.pdf).
+
+
+-------------------------------------------------------------------
+The Infernal development team
+HHMI Janelia Farm Research Campus
+http://infernal.janelia.org/
+
+
+

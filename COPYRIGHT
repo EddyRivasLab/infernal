@@ -1,4 +1,6 @@
 Infernal - inference of RNA secondary structural alignments
+@INFERNAL_COPYRIGHT@
+------------------------------------------------------------------
 
 Copyright (C) 2012 HHMI Janelia Farm Research Campus
 
@@ -36,5 +38,9 @@ GNU General Public License for more details.
 A copy of the GNU General Public License is in the file LICENSE.  You
 may also obtain a copy from <http://www.gnu.org/licenses/>.
 
+------------------------------------------------------------------
+The Infernal development team
+HHMI Janelia Farm Research Campus
+http://infernal.janelia.org/
 
 
