@@ -142,7 +142,7 @@ description, I assume that both the structural annotation and the
 labeling of insert versus consensus columns is given in the input
 file, as shown in the alignment in Figure~\ref{fig:input_alignment},
 where both are are indicated by the WUSS notation in the [structure]
-line (where, e.g., insert columns are marked with \verb+.+). (In
+line (where, e.g., insert columns are marked with \otext{.}). (In
 practice, \prog{cmbuild} does need secondary structure annotation, but
 it doesn't require insert/consensus annotation or full WUSS notation
 in its input alignment files; this would require a lot of manual
@@ -330,7 +330,7 @@ tree, as shown in Figure~\ref{fig:parsetrees}. Weighted counts for
 observed state transitions and singlet/pair emissions are then
 collected from these parse trees. These counts are converted to
 transition and emission probabilities, as maximum \emph{a posteriori}
-estimates using mixture Dirichlet priors.
+estimates using mixture Dirichlet priors\citep{Durbin98,NawrockiEddy07}. 
 
 \begin{figure}[t]
 \begin{center}
@@ -390,7 +390,7 @@ important options that can be chosen to affect its behavior.
 \subsubsection{Alignment input file}
 
 The input alignment file must be in Stockholm format, and it must have
-a consensus secondary structure annotation line (\verb+#=GC SS_cons+).
+a consensus secondary structure annotation line (\otext{\#=GC SS\_cons}).
 
 The program is actually capable of reading many common multiple
 alignment formats (ClustalW, PHYLIP, GCG MSF, and others) but no other
@@ -398,7 +398,7 @@ format currently supports consensus RNA secondary structure
 annotation. This may change in the future, either when other formats
 allow structure annotation, or when \prog{cmbuild} is capable of
 inferring consensus structure from the alignment by automated
-comparative analysis, as the earlier \software{COVE} suite was capable
+comparative analysis, as the earlier COVE suite was capable
 of \cite{Eddy94}. 
 
 If the file does not exist, is not readable, or is not in a recognized
@@ -410,7 +410,6 @@ alignment files.
 
 % EPN, Wed Apr  2 12:47:54 2008, the cat my.sto | cmbuild command
 % in this faq no longer works.
-\begin{comment}
 \begin{srefaq}{Why does \prog{cmbuild} have a \prog{--informat} option, if it only
 accepts Stockholm?} If you don't specify \prog{--informat}, the
 software has to autodetect the file format. Autodetection of file
@@ -421,26 +420,25 @@ autodetection; e.g. \prog{cat my.sto | cmbuild --informat Stockholm
 my.cm -} is an example of reading the alignment from piped standard
 input.
 \end{srefaq}
-\end{comment}
 
 \subsubsection{Parsing secondary structure annotation}
 
 The structure annotation line only needs to indicate which columns are
 base paired to which. It does not have to be in full WUSS notation.
 Even if it is, the details of the notation are largely ignored.
-Nested pairs of \verb+<>+, \verb+()+, \verb+[]+, or \verb+{}+ symbols
+Nested pairs of \otext{<>}, \otext{()}, \otext{[]}, or \otext{{}} symbols
 are interpreted as base paired columns. All other columns marked with
-the symbols \verb+:,_-.~+ are interpreted as single stranded columns.
+the symbols \otext{:,_-.~} are interpreted as single stranded columns.
 
-A simple minimal annotation is therefore to use \verb+<>+ symbols to
-mark base pairs and \verb+.+ for single stranded columns.
+A simple minimal annotation is therefore to use \otext{<>} symbols to
+mark base pairs and \otext{.} for single stranded columns.
 
 If a secondary structure annotation line is in WUSS notation and it
 contains valid pseudoknot annotation (e.g.\ additional non-nested
 stems marked with AAA,aaa or BBB,bbb, etc.), this annotation is
 ignored because Infernal cannot handle
 pseudoknots. Internally, these columns are treated as if they were
-marked with \verb+.+ symbols.
+marked with \otext{.} symbols.
 
 \begin{srefaq}{How should I choose to annotate pseudoknots?} 
 Infernal can only deal with nested base pairs. If there is
@@ -448,8 +446,8 @@ a pseudoknot, you have to make a choice of which stem to annotate as
 normal nested structure (thus including it in the model) and which
 stem to call additional ``pseudoknotted'' structure (thus ignoring it
 in the model). For example, for a simple two-stem pseudoknot, should
-you annotate it as \verb+AAAA.<<<<aaaa....>>>>+, or
-\verb+<<<<.AAAA>>>>....aaaa+?  From an RNA structure viewpoint, which
+you annotate it as \otext{AAAA.<<<<aaaa....>>>>}, or
+\otext{<<<<.AAAA>>>>....aaaa}?  From an RNA structure viewpoint, which
 stem I label as the pseudoknotted one is an arbitrary choice; but
 since one of the stems in the pseudoknot will have to be modeled as a
 single stranded region by Infernal, the choice makes a
@@ -466,13 +464,13 @@ that one as primary sequence consensus only).
 \end{srefaq}
 
 If (aside from any ignored pseudoknot annotation) the structure
-annotation line contains characters other than \verb+<>()[]{}:_-,.~+
-then those characters are ignored (treated as \verb+.+) and a warning
+annotation line contains characters other than \otext{<>()[]{}:_-,.~}
+then those characters are ignored (treated as \otext{.}) and a warning
 is printed.
 
 If, after this ``data cleaning'', the structure annotation is
 inconsistent with a secondary structure (for example, if the number of
-\verb+<+ and \verb+>+ characters isn't the same), then the program
+\otext{<} and \otext{>} characters isn't the same), then the program
 exits with a ``failed to parse consensus structure annotation'' error.
 
 \subsubsection{Sequence weighting}
@@ -486,11 +484,13 @@ off (e.g. set all weights to 1.0), use the \prog{--wnone} option.
 
 Some alignment file formats allow relative sequence weights to be
 given in the file. This includes Stockholm format, which has
-\verb+#=GS WT+ weight annotations. Normally \prog{cmbuild} ignores any
+\otext{\#=GS WT} weight annotations. Normally \prog{cmbuild} ignores any
 such input weights.  The \prog{--wgiven} option tells \prog{cmbuild}
 to use them.  This lets you set the weights with any external
-procedure you like; for example, the \prog{weight} utility program in
-\software{squid} implements some common weighting algorithms,
+procedure you like; for example, the \prog{esl-weight} utility program in
+Easel\footnote{This program will be in
+  \ccode{infernal/easel/miniapps/} after building Infernal.} 
+implements some common weighting algorithms,
 including the fast $O(N)$ Henikoff position-based weights
 \cite{Henikoff94b}.
 
@@ -521,17 +521,17 @@ frequency of gaps in a column. If the frequency of gaps is greater
 than a threshold, the column is considered to be an insertion. 
 
 The threshold defaults to 0.5. It can be changed to another number
-\verb+<x>+ (from 0 to 1.0) by the \prog{--gapthresh <x>} option.  The
+\otext{<x>} (from 0 to 1.0) by the \prog{--gapthresh <x>} option.  The
 higher the number, the more columns are included in the model.  At
 \prog{--gapthresh 1.0}, all the columns are considered to be part of
 the consensus. At \prog{--gapthresh 0.0}, only columns with no gaps are.
 
 You can also manually specify which columns are consensus versus
 insert by including reference coordinate annotation (e.g. a
-\verb+#=GC RF+ line, in Stockholm format) and using the \prog{--rf}
+\otext{\#=GC RF} line, in Stockholm format) and using the \prog{--rf}
 option. Any columns marked by non-gap symbols become consensus
 columns. (The simplest thing to do is mark consensus columns with x's,
-and insert columns with \verb+.+'s. Remember that spaces aren't
+and insert columns with \otext{.}'s. Remember that spaces aren't
 allowed in alignments in Stockholm format.) If you set the \prog{--rf}
 option but your file doesn't have reference coordinate annotation, the
 program exits with an error.
@@ -540,40 +540,36 @@ program exits with an error.
 
 Weighted observed emission and transition counts are then collected
 from the alignment data. These count vectors $c$ are then converted to
-estimated probabilities $p$ using mixture Dirichlet priors. The
-default mixture priors are described in \cite{NawrockiEddy07}. You can
-provide your own prior as a file, using the \prog{--prior <f>}
-option.
+estimated probabilities $p$ using mixture Dirichlet priors
+\citep{Durbin98, NawrockiEddy07}. You can provide your own prior as a
+file, using the \prog{--prior <f>} option.
+
+As an exception, insert state emission probabilities are not learned
+from the counts from implicit parse trees of sequences in the input
+alignment, instead they are all set to 0.25 for each of the four RNA
+nucleotides.  Another exception is made for transition counts in
+ROOT\_IL and ROOT\_IR states from the implicit parsetrees. Any
+transition counts in these states are \emph{ignored} by the
+construction procedure -- they are set to zero before the transition
+probability parameters for these states are determined.
 
 \subsubsection{Naming the model}
 
 Each CM gets a name. Stockholm format allows the alignment to have a
-name, provided in the \verb+#=GF ID+ tag. If this name is provided,
+name, provided in the \otext{\#=GF ID} tag. If this name is provided,
 it is used as the CM name.
 
 Stockholm format allows more than one alignment per file, and
 \prog{cmbuild} supports this: CM files can contain more than one
 model, and if you say e.g.\ \prog{cmbuild Rfam.cm Rfam.sto} where
-\verb+Rfam.sto+ contains a whole database of alignments,
+\otext{Rfam.sto} contains a whole database of alignments,
 \prog{cmbuild} will create a database of CMs in the \prog{Rfam.cm} file,
 one per alignment. 
 
-If a name or names are not provided in the Stockholm \verb+#=GF ID+
-annotation, the name given to each CM is the input filename plus a ``-''
-character and an integer indicating the position of that alignment
-within the alignment file. For example, if you build a model from a
-single alignment in alignment file \prog{RNaseP.sto}, the model will
-be named RNaseP-1. 
-
-If the \prog{--cmaxid, --ctarget} or \prog{--call} options are used to
-split each input alignment into several alignments (see the
-Tutorial for an example), then an additional extension of ``.''
-plus an integer indicating the order in which the model was
-constructed from the alignment is added to the name. For example, if
-you run \prog{cmbuild --ctarget 3} with the alignment file
-\prog{RNaseP.sto}, \prog{cmbuild} will cluster the alignment by
-sequence identity into 3 clusters and build 3 CMs, one from each
-cluster. These CMs will be named: RNaseP-1.1, RNaseP-1.2 and RNaseP-1.3.
+If a name is not provided in the Stockholm \otext{\#=GF ID}
+annotation, the name given to each CM is the input filename. This will
+not work if the alignment file has more than one alignment. In that
+case, you must include names for each alignment.
 
 If the alignment file only has 1 alignment in it, you can override the
 automatic naming conventions and provide your own name with the \prog{-n <s>}
@@ -583,10 +579,10 @@ option, where \prog{<s>} is any string.
 
 The model is now saved to a file, according to the filename specified
 on the command line. By default, a new file is created, and the model
-is saved in a portable ASCII text format.
+is saved in a portable ASCII text format. This format is described in
+section~\ref{section:format} of this guide.
 
 If the cmfile already exists, the program exits with an error. The
 \prog{-F} option causes the new model to overwrite an existing
-cmfile. The \prog{-A} option causes the new model to be appended to
-an existing cmfile (creating a growing CM database, perhaps).
+cmfile. 
 
