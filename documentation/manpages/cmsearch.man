@@ -23,6 +23,7 @@ matches to the CM.
 To build CMs from multiple alignments, see
 .B cmbuild.
 
+.PP
 The query
 .I <cmfile>
 must have been calibrated for E-values with 
@@ -56,8 +57,9 @@ The
 option allows redirecting the main output, including throwing it away
 in /dev/null.
 
+.PP
 .B cmsearch
-reexamines the 5' and 3' terminii of target sequences using 
+reexamines the 5' and 3' termini of target sequences using 
 specialized algorithms for detection of 
 .I truncated
 hits, in which part of the 5' and/or 3' end of the actual full length
@@ -88,6 +90,7 @@ most significantly for target
 .I <seqdb>
 files that include many short sequences.
 
+.PP
 Truncated hit detection is automatically turned off when the 
 .B --max,
 .B --nohmm, 
@@ -247,10 +250,12 @@ By default this option is unset.
 
 .SH OPTIONS FOR MODEL-SPECIFIC SCORE THRESHOLDING
 
+.PP
 Curated CM databases may define specific bit score thresholds for
 each CM, superseding any thresholding based on statistical
 significance alone.
 
+.PP
 To use these options, the profile must contain the appropriate (GA,
 TC, and/or NC) optional score threshold annotation; this is picked up
 by 
@@ -288,17 +293,20 @@ that is above all known false positives.
 
 .SH OPTIONS CONTROLLING THE ACCELERATION PIPELINE
 
-Infernal @INFERNAL_VERSION@ searches are accelerated in a six-stage
+.PP
+Infernal 1.1 searches are accelerated in a six-stage
 filter pipeline. The first five stages use a profile HMM to define
 envelopes that are passed to the stage six CM CYK filter. Any
 envelopes that survive all filters are assigned final scores using the 
 the CM Inside algorithm. (See the user guide for more information.)
 
+.PP
 The profile HMM filter is built by the 
 .B cmbuild
 program and is stored in 
 .I <cmfile>.
 
+.PP
 Each successive filter is slower than the previous one, but better
 than it at disciminating between subsequences that may contain
 high-scoring CM hits and those that do not. The first three HMM filter
@@ -320,6 +328,7 @@ reduce the number of required calculations and save time.  Any
 envelopes that pass CYK are scored with the local CM Inside algorithm,
 again using HMM bands for acceleration.
 
+.PP
 The default filter thresholds that define the minimum score required
 for a subsequence to survive each stage are defined based on the size of the
 database in 
@@ -337,6 +346,7 @@ rationale is that for larger databases, hits must have higher scores
 to achieve statistical significance, so stricter filtering that
 removes lower scoring insignificant hits is acceptable.
 
+.PP
 The P-value thresholds for all possible search space sizes and all filter
 stages are listed next. (A P-value threshold of 0.01 means that
 roughly 1% of the highest scoring nonhomologous subsequence are
@@ -344,27 +354,35 @@ expected to pass the filter.) Z is defined as the number of
 nucleotides in the complete target sequence file times 2 because both
 strands will be searched with each model.
 
+.PP
 If Z is less than 2 Mb: F1 is 0.35; F2 and F2b are
 off; F3, F3b, F4, F4b and F5 are 0.02; F6 is 0.0001.
 
+.PP
 If Z is between 2 Mb and 20 Mb: F1 is 0.35; F2 and F2b are
 off; F3, F3b, F4, F4b and F5 are 0.005; F6 is 0.0001.
 
+.PP
 If Z is between 20 Mb and 200 Mb: F1 is 0.35; F2 and F2b are
 0.15; F3, F3b, F4, F4b and F5 are 0.003; F6 is 0.0001.
 
+.PP
 If Z is between 200 Mb and 2 Gb: F1 is 0.15; F2 and F2b are
 0.15; F3, F3b, F4, F4b, F5, and F5b are 0.0008; and F6 is 0.0001.
 
+.PP
 If Z is between 2 Gb and 20 Gb: F1 is 0.15; F2 and F2b are
 0.15; F3, F3b, F4, F4b, F5, and F5b are 0.0002; and F6 is 0.0001.
 
+.PP
 If Z is more than 20 Gb: F1 is 0.06; F2 and F2b are
 0.02; F3, F3b, F4, F4b, F5, and F5b are 0.0002; and F6 is 0.0001.
 
+.PP
 These thresholds were chosen based on performance on an internal
 benchmark testing many different possible settings.
 
+.PP
 There are five options for controlling the general filtering
 level. These options are, in order from least strict (slowest but most sensitive) to most
 strict (fastest but least sensitive): 
@@ -381,6 +399,7 @@ With
 the filter thresholds will be database-size dependent. See the
 explanation of each of these individual options below for more information.
 
+.PP
 Additionally, an expert user can precisely control each filter stage
 score threshold with the 
 .B --F1,
@@ -416,6 +435,7 @@ to keep the number of displayed options with
 reasonable, and because they are only expected to be useful to a
 small minority of users.
 
+.PP
 As a special case, for any models in 
 .I <cmfile> 
 which have zero basepairs, profile HMM searches are run instead of CM

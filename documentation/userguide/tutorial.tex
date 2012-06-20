@@ -57,64 +57,64 @@ are:
   \prog{cmcalibrate}. Included so you don't need to calibrate your own
   model file, which takes about 20 minutes. 
 %
-\item[\otext{mrum-genome.fa}]: The 3 Mb genome of the methanogenic archeaon 
+\item[\otext{mrum-genome.fa}] The 3 Mb genome of the methanogenic archeaon 
   \emph{Methanobrevibacter ruminantium}, in
   FASTA format, downloaded from the NCBI Nucleotide database
   (accession: NC\_13790.1). 
 %
-\item[\otext{tRNA5-mrum.out}]: An example \prog{cmsearch} output file,
+\item[\otext{tRNA5-mrum.out}] An example \prog{cmsearch} output file,
   obtained by searching \otext{tRNA5.c.cm} against \otext{mrum-genome.fa}.
 %
-\item[\otext{5S\_rRNA.sto}]: The Rfam 10.1 5S ribosomal RNA (RF00001) 
+\item[\otext{5S\_rRNA.sto}] The Rfam 10.1 5S ribosomal RNA (RF00001) 
   ``seed'' alignment. 
 %
-\item[\otext{5S\_rRNA.c.cm}]: A CM file built from
+\item[\otext{5S\_rRNA.c.cm}] A CM file built from
   \otext{5S\_rRNA.sto} using \prog{cmbuild}
   and calibrated using \prog{cmcalibrate}.
 %
-\item[\otext{Cobalamin.sto}]: The Rfam 10.1 Cobalamin riboswitch (RF00174) 
+\item[\otext{Cobalamin.sto}] The Rfam 10.1 Cobalamin riboswitch (RF00174) 
   ``seed'' alignment. 
 %
-\item[\otext{Cobalamin.c.cm}]: A CM file built from
+\item[\otext{Cobalamin.c.cm}] A CM file built from
   \otext{Cobalamin.sto} using \prog{cmbuild}
   and calibrated using \prog{cmcalibrate}.
 %
-\item[\otext{minifam.cm}]: A CM file including three calibrated CMs.
+\item[\otext{minifam.cm}] A CM file including three calibrated CMs.
   This is actually just a concatenation 
   of the files \otext{tRNA5.c.cm}, \otext{5S\_rRNA.c.cm} and
   \otext{Cobalamin.c.cm}.
 %
-\item[\emprog{minifam.i1\{m,i,f,p\}}] Binary compressed files
+\item[\otext{minifam.i1\{m,i,f,p\}}] Binary compressed files
   corresponding to \otext{minifam.cm}, produced by \prog{cmpress}.
 %
-\item[\otext{metag-example.fa}]: A FASTA sequence file containing 3
+\item[\otext{metag-example.fa}] A FASTA sequence file containing 3
   sequences hand-selected from a metagenomics dataset \citep{Tringe05},
   used for demonstrating \prog{cmscan}. 
 %
-\item[\otext{minifam-metag.out}]: An example \prog{cmscan} output file,
+\item[\otext{minifam-metag.out}] An example \prog{cmscan} output file,
   obtained by searching \otext{minifam.cm} against \otext{metag-example.fa}.
 %
-\item[\otext{mrum-tRNAs10.fa}]: A FASTA sequence file containing 10
+\item[\otext{mrum-tRNAs10.fa}] A FASTA sequence file containing 10
   tRNAs predicted using \prog{cmsearch} in the \emph{M. ruminantium} genome.
 %
-\item[\otext{mrum-tRNAs10.out}]: An example \prog{cmalign} output
+\item[\otext{mrum-tRNAs10.out}] An example \prog{cmalign} output
   alignment, obtained by aligning the sequences in
   \otext{mrum-tRNAs10.fa} to the model in \otext{tRNA5.c.cm} with \prog{cmalign}.
 %
-\item[\otext{Cobalamin.fa}]: A FASTA sequence file containing 1
+\item[\otext{Cobalamin.fa}] A FASTA sequence file containing 1
   \prog{cmscan}-predicted Cobalamin riboswitch extracted from \otext{metag-example.fa}.
 %
-\item[\otext{tRNA5-noss.sto}]: A Stockholm alignment file identical
-  to \otext{tRNA.sto} except without secondary structure annotation.
+\item[\otext{tRNA5-noss.sto}] A Stockholm alignment file identical
+  to \otext{tRNA5.sto} except without secondary structure annotation.
   Used to demonstrate HMM searches for models without secondary
   structure.
 %
-\item[\otext{tRNA5-hand.sto}]: A Stockholm alignment file identical
-  to \otext{tRNA.sto} except it includes column reference annotation.
+\item[\otext{tRNA5-hand.sto}] A Stockholm alignment file identical
+  to \otext{tRNA5.sto} except it includes column reference annotation.
   Used to demonstrate expert annotation of model positions with
   \otext{cmbuild --hand}.
 %
-\item[\otext{tRNA5-hand.c.cm}]: A CM file built from
+\item[\otext{tRNA5-hand.c.cm}] A CM file built from
   \otext{tRNA5-hand.sto} with \prog{cmbuild} and calibrated with
   \prog{cmcalibrate}. 
 \end{sreitems}
@@ -131,7 +131,7 @@ secondary structure of the first sequence shown to the right for
 reference (yeast Phe tRNA, labeled as ``tRNA1'' in the file):
 
 \vspace{1em}
-\begin{minipage}{4.7in}
+\begin{minipage}{4.0in}
 \begin{sreoutput}[xleftmargin=0em]
 # STOCKHOLM 1.0
 
@@ -160,7 +160,7 @@ This is a simple example of a multiple RNA sequence alignment with
 secondary structure annotation, in \emph{Stockholm format}.  Stockholm
 format, the native alignment format used by HMMER and Infernal and the
 Pfam and Rfam databases, is documented in detail later in the guide in
-section~\ref{section:stockholm}.
+section~\ref{section:formats}.
 
 For now, what you need to know about the key features of the input file is:
 \begin{itemize}
@@ -171,17 +171,17 @@ long alignments are split into blocks separated by blank lines.
 \item For residues, any one-letter IUPAC nucleotide code is accepted,
       including ambiguous nucleotides. Case is ignored; residues
       may be either upper or lower case.
-\item Gaps are indicated by the characters \otext{.}, \otext{\_}, -, or \otext{~}.
+\item Gaps are indicated by the characters \otext{.}, \otext{\_}, -, or \verb+~+.
       (Blank space is not allowed.)
 \item A special line starting with \otext{\#=GC SS\_cons} indicates
       the secondary structure consensus. Gap characters annotate
       unpaired (single-stranded) columns. Base pairs are indicated
       by any of the following pairs: \otext{<>}, \otext{()}, \otext{[]},
-      or \otext{[]}. No pseudoknots are allowed; the
+      or \otext{\{\}}. No pseudoknots are allowed; the
       open/close-brackets notation is only unambiguous for strictly
       nested base-pairing interactions.
-      For more on secondary structure annotation see
-      section~\ref{section:wuss}.
+      For more on secondary structure annotation see the WUSS format
+      description in section~\ref{section:formats}.
 \item The alignment begins with the special tag line
       \otext{\# STOCKHOLM 1.0}, and ends with \otext{//}.
       Stockholm alignments
@@ -249,7 +249,7 @@ defined in Section~\ref{section:formats}.
 \subsubsection{Step 2: calibrate the model with cmcalibrate}
 
 The next step is to ``calibrate'' the model. This step must be
-performed priot to using your model for database searches with
+performed prior to using your model for database searches with
 \prog{cmsearch} or \prog{cmscan}. In this step, statistical parameters
 necessary for reporting E-values (expectation values) are estimated
 and stored in the CM file. When \prog{cmsearch} or \prog{cmscan} is
@@ -270,8 +270,7 @@ random sequences must be searched to determine the expected
 distribution of hit scores against nonhomologous sequences, and none
 of the search acceleration heuristics described in
 section~\ref{section:pipeline} can be used because they rely on
-detecting primary sequence similarity which is absent in random
-sequence. 
+primary sequence similarity which is absent in random sequence.
 
 The amount of time required for calibration varies widely, but
 depends mainly on the size of the RNA family being modeled.
@@ -284,7 +283,6 @@ estimate of the running time. To get an estimate for the tRNA model, do:
 You should see something like this:
 
 \begin{sreoutput}
-<[src]> ./cmcalibrate --forecast tRNA5.cm
 # cmcalibrate :: fit exponential tails for CM E-values
 # INFERNAL 1.1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
@@ -310,7 +308,7 @@ The header comes first, telling you what program you ran, on what file
 and with what options. This calibration will use 2 CPUs, your output
 may vary depending on how many cores you have available on the machine
 you're using\footnote{All the exercises in this tutorial were
-  performed on a mid 2009 MacBook Pro with 2 cores}. (If you are
+  performed on a mid 2009 MacBook Pro with 2 cores.}. (If you are
 planning to use MPI to parallelize the calibration (see the
 Installation section), you can specify the number of CPUs for the time
 estimate as \otext{<n>} with the \otext{--nforecast <n>} option.) Using
@@ -337,8 +335,7 @@ the search:
 \user{cmsearch tRNA5.cm mrum-genome.fa}\\
 
 As before, the first section is the header, telling you what program
-your ran, on what, and with what options, as well as the name and size
-of:
+your ran, on what, and with what options:
 
 \begin{sreoutput}
 # cmsearch :: search CM(s) against a sequence database
@@ -420,7 +417,7 @@ most significant hit first):
 
 The first number is the rank of each hit\footnote{Ranks of hits are in
   parantheses to make it easy to jump to/from an entry in the hit list
-  and the hit alignment section, described later}. Next comes either a
+  and the hit alignment section, described later.}. Next comes either a
 \otext{!} or \otext{?} symbol and then the \emph{E-value} of the hit.
 The E-value is the statistical significance of the hit: the number of
 hits we'd expect to score this highly in a database of this size
@@ -436,7 +433,7 @@ the noise, so you can see what interesting sequences might be getting
 tickled by your search). By default, inclusion thresholds usually
 require an E-value of 0.01 or less, and reporting E-value thresholds
 are set to 10.0, but these can be changed (see the manual page for
-\prog{cmsearch} in section~\ref{section:manpages}).
+\prog{cmsearch} toward the end of guide).
 
 The E-value is based on the \emph{bit score}, which is in the next
 column. This is the log-odds score for the hit. Some people like to
@@ -447,7 +444,7 @@ model and the target sequence.
 The next number, the \emph{bias}, is a correction term for biased
 sequence composition that has been applied to the sequence bit
 score. Infernal uses an alternative null model we call \emph{null3},
-described more in section~\ref{section:null3}, to determine the bias
+described more in section~\ref{section:pipeline}, to determine the bias
 bit score correction. The bias correction is often very small and is
 only reported to one decimal place, after rounding. For all hits in
 this example search the bias column reads 0.0 bits, indicating that
@@ -463,7 +460,7 @@ sequence\footnote{You can search either only the top strand with the
 \otext{--toponly} or bottom strand with the \otext{--bottomonly} options
 to \prog{cmsearch} and \prog{cmscan}.}, so the start position may be
 less than (if hit is on the top strand) or greater than (if hit is on
-the reverse strand) the end position. After the end position, comes a single
+the bottom strand) the end position. After the end position, comes a single
 \otext{+} or \otext{-} symbol, indicating whether the hit is on the
 top (\otext{+}) or bottom (\otext{-}) strand (solely for convenience -
 so you don't have to look at the start and end positions to determine
@@ -488,18 +485,18 @@ truncated due to missing data at the beginning and/or end of a target
 sequence. Truncated hits are most common in databases that include
 single reads from shotgun sequencing projects. Since our database is a
 complete genome, we don't expect any hits to be truncated due to
-missing data. For all hits the``trunc'' column reads
+missing data. For all hits the ``trunc'' column reads
 ``no'' indicating that, as expected, none of the hits are
 truncated. There are examples of truncated hits in the next exercise
 which uses \prog{cmscan}. Section~\ref{section:pipeline} describes how
 Infernal detects and aligns truncated hits in more detail.
 
 The next column reports the GC fraction of the hit. This is the
-fraction of residues in the target sequence hit that are either
-\otext{G} or \otext{C} residues. The GC fraction is included as an
-additional indication of the level of sequence bias of the hit. Some
-expert users may be aided by this number when deciding if they 
-believe a hit is a real homolog or a false positive.
+fraction of residues in the target sequence hit that are either G or C
+residues. The GC fraction is included as an additional indication of
+the level of sequence bias of the hit. Some expert users may be aided
+by this number when deciding if they believe a hit is a real homolog
+or a false positive.
 
 Finally comes the description of the sequence, if any. This
 description is propogated from the input target sequence file.
@@ -542,10 +539,10 @@ alignment were full-length flush to the ends of the query or target,
 and \otext{[.}  and \otext{.]} mean only the left (5') or right (3') end
 was flush/full length. For truncated hits, the symbols are the same
 except that either the first and/or the second symbol will be a
-\otext{~} for the query and target. If the first symbol is \otext{~}
+\verb+~+ for the query and target. If the first symbol is \verb+~+
 then the left end of the alignment is truncated because the 5' end of
 the hit is predicted to be missing (extend beyond the beginning of the
-target sequence). Similarly, if the second symbol is \otext{~} then the
+target sequence). Similarly, if the second symbol is \verb+~+ then the
 right end of the alignment is truncated because the 3' end of the hit
 is predicted to be missing (extend beyond the end of the target
 sequence). These two symbols occur just after the ``mdl to'' column for
@@ -582,7 +579,7 @@ structure of the target sequence. The format is a little fancier and
 more informative than the simple least-common-denominator format we
 used in the input alignment file. It's designed to make it easier to
 see the secondary structure by eye. The format is described in detail
-later (section~\ref{section:wuss}; for now, here's all you need to
+later (see WUSS format in section~\ref{section:formats}); for now, here's all you need to
 know. Basepairs in simple stem loops are annotated with \otext{<>}
 characters. Basepairs enclosing multifurcations (multiple stem loops)
 are annotated with \otext{()}, such as the tRNA acceptor stem in this
@@ -630,11 +627,11 @@ For a single-stranded consensus residue, if the observed residue is
 the highest scoring possibility, the residue is shown in upper case;
 if the observed residue has a score of $\geq 0$, a \otext{+} character
 is shown; else there is a space, indicating a negative contribution to
-the alignment score. Importantly for HMM hits (``mdl'' column reads
+the alignment score. Importantly, for HMM hits (``mdl'' column reads
 ``hmm''), \emph{all} positions are considered single stranded, since
-an HMM does scores each half of a basepair independently.
+an HMM scores each half of a basepair independently.
 
-The fifth line, beginning with \otext{gi|288559258|ref|NC\_013790.1} is
+The fifth line, beginning with \otext{NC\_013790.1} is
 the target sequence. Dashes (\otext{-}) in this line indicate deletions
 in the target sequence with respect to the model.
 
@@ -704,7 +701,7 @@ scoring algorithms called SSV, Viterbi, Forward\footnote{Actually two
   separate Forward based filters are used, the first with the profile
   HMM in local mode and the next with the profile HMM in global
   mode. There's more detail on this in
-  section~\ref{section:pipeline}}, and CYK in order of increasing
+  section~\ref{section:pipeline}.}, and CYK in order of increasing
 sensitivity and increasing computational requirement. The filter
 pipeline is the topic of section~\ref{section:pipeline} of this guide
 but briefly, SSV, Viterbi and Forward are profile HMM algorithms which
@@ -723,7 +720,8 @@ posterior accuracy algorithm and displayed.
 
 The score thresholds for a subsequence surviving each HMM filter stage
 are dependent on the search space size (sequence database size for
-\prog{cmsearch}), unlike in HMMER3. In general, the larger the search
+\prog{cmsearch}). This differs from HMMER3 which always uses the same
+filter thresholds. In general, the larger the search
 space the more strict the thresholds are, because a hit must have a
 higher bit score to have a significant E-value.  In this case, the
 database is relatively small so the filter thresholds have been set
@@ -740,8 +738,8 @@ residues will pass the filter). Here, about 21\% of the database in
 this size, the local Viterbi filter is turned off.  The local Forward filter
 is set to allow an expected 0.5\% of the database survive. Here about
 %                           ^^^^
-0.03\% survives in 140 windows. Next, each surviving window is checked
-%^^^
+0.3\% survives in 140 windows. Next, each surviving window is checked
+%^^
 to see if the target sequence is ``obviously'' so biased in its
 composition that it's unlikely to be a true homolog. This is called
 the ``bias filter''\footnote{There's also a bias filter step used in
@@ -758,7 +756,7 @@ model\footnote{The use of glocal Forward is another important
 expected 0.5\% of the database is expected to survive. In this case,
 88 of the 139 windows, comprising about 0.2\% of the database,
 survive. The bias filter is run again, this time applying a correction
-to the glocal Forward scores. For this search 0 windows are removed at
+to the glocal Forward scores. For this search, 0 windows are removed at
 this stage. The envelope definition stage is next. This stage is very
 similar to the HMMER3 domain definition stage, with the difference
 that the HMM is configured in glocal rather than local mode. In this
@@ -780,16 +778,16 @@ remaining stages of the pipeline use the CM to score both the
 conserved sequence and structure of each possible hit. In both of
 these stages, constraints are derived from an HMM alignment of the
 envelope and enforced as \emph{bands} on the CM dynamic programming
-matrices (more on this in section~\ref{section:pipeline}. In the first
-CM stage, the CYK algorithm (which is the SCFG analog of the Viterbi
-HMM algorithm) is used to determine the best scoring maximum
+matrices (more on this in section~\ref{section:pipeline}). In the
+first CM stage, the CYK algorithm (which is the SCFG analog of the
+Viterbi HMM algorithm) is used to determine the best scoring maximum
 likelihood alignment of any subsequence in each envelope to the CM. If
-this alignment has a P-value of less than $1e-4$ then the envelope
+this alignment has a P-value of $\leq 0.0001$ then the envelope
 survives to the final round. The envelopes passed to the final stage
 may be shorter than those examined during the CYK stage. Specifically,
 envelopes are redefined as starting and ending at the first and final
-residues for which at least one alignment exists with a P-value less
-than $1e-3$.
+residues for which at least one alignment exists with a P-value $\leq
+0.001$.
 
 In the final round, the Inside algorithm (the SCFG analog of the HMM
 Forward algorithm) is used to define final hit boundaries and
@@ -823,27 +821,28 @@ detection \citep{KolbeEddy09}, so sequences must be re-searched for
 truncated hits after they are initially searched for standard
 (non-truncated) hits. However, only the sequence ends must be
 re-searched because Infernal assumes that only hits at sequence
-terminus might be truncated. This is why our search above reported
+terminii might be truncated. This is why our search above reported
 that only 360 residues were re-searched for truncated hits. For each
 %         ^^^
 model, an expected maximum length of a hit\footnote{The expected
   maximum hit length is defined as the maximum of 1.25 times the
   consensus length of the model and the $W$ parameter computed with
-  the QDB algorithm \citep{NawrockiEddy07} based on the transition
-  probabilities of the model by \prog{cmbuild} and stored in the CM
-  file.}  is used to define the window length at the beginning and end
-of each sequence which must be re-searched for truncated hits. For our
-tRNA model the maximum expected length is 90, so exactly 360 residues
-were re-searched: the first and final 90 residues on the top strand,
-and the first and final 90 residues on the bottom strand.
+  the QDB algorithm \citep{NawrockiEddy07}. $W$ is computed based on
+  the transition probabilities of the model by \prog{cmbuild} and
+  stored in the CM file.} 
+is used to define the window length at the
+beginning and end of each sequence which must be re-searched for
+truncated hits. For our tRNA model the maximum expected length is
+90, so exactly 360 residues were re-searched: the first and final 90
+residues on the top strand, and the first and final 90 residues on
+the bottom strand.
 
 There is one more aspect of truncated hit detection that is important
-to mention here. Because Infernal expects that hit truncation only occurs
-at the ends of target sequences, 5' truncated hits are forced to
-start at the first nucleotide of a target sequence, 3' truncated hits are
-forced to end at the final nucleotide of a target sequence forced to
-include the final residue of a target sequence, and 5' and 3'
-truncated hits are forced to include the full target sequence.
+to mention here. Because Infernal expects that hit truncation only
+occurs at the ends of sequences, 5' truncated hits are forced to start
+at the first nucleotide of a sequence, 3' truncated hits are forced to
+end at the final nucleotide of the sequence, and 5' \emph{and} 3'
+truncated hits are forced to include the full sequence.
 
 The annotation of truncated hits in \prog{cmsearch} output is slightly
 different than for standard (non-truncated) hits. An example is
@@ -878,11 +877,11 @@ directory in the files \otext{5S\_rRNA.c.cm}, and
 and \prog{cmcalibrate} from the Rfam 10.1 seed alignments for 5S\_rRNA
 (RF00001) and Cobalamin (RF00174), provided in
 \otext{tutorial/5S\_rRNA.sto} and \otext{tutorial/Cobalamin.sto}. The
-third model is the tRNA model from earlier in the tutorial
-(\otext{tutorial/tRNA5.c.cm}). Feel free to build and calibrate these
+third model is the tRNA model from earlier in the tutorial 
+(\otext{tRNA5.c.cm}). Feel free to build and calibrate these
 models yourself if you'd like, but if you'd like to keep moving on
-with the tutorial use provided ones. To create the database, simply
-concatenate the three provided files:
+with the tutorial, use the pre-calibrated ones. To create the database,
+simply concatenate the three provided files:
 
 \user{cat tutorial/tRNA5.c.cm tutorial/5S\_rRNA.c.cm tutorial/Cobalamin.c.cm > minifam.cm}
 
@@ -911,8 +910,7 @@ and you'll see these four new binary files in the directory.
 
 The \otext{tutorial} directory includes a copy of the
 \otext{minifam.cm} file, which has already been pressed, so there
-are example binary files\\
-\otext{tutorial/minifam.cm.i1\{m,i,f,p\}}
+are example binary files \otext{tutorial/minifam.cm.i1\{m,i,f,p\}}
 included in the tutorial.
 
 Their format is ``proprietary'', which is an open source term of art
@@ -937,7 +935,8 @@ To scan the sequences with our database:
 
 The header and the first section of the output will look like:
 
-% tutorial regression: contrived.cmscan
+\newpage
+
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
 # INFERNAL 1.1 (June 2012)
@@ -970,19 +969,21 @@ this guide as the $Z$ parameter).  The size of the search space for
 \prog{cmscan} is double the length of the current (single) query
 sequence (doubled because we're searching both strands) multiplied by
 the number of models in the CM database (here, 3; for a Rfam search,
-on the order of 1000). In \prog{cmsearch}, the size of the search
-space is double the summed length of all sequences in the database
-(again, doubled because both strands are searched). This means that
-E-values may differ even for the same individual CM vs. sequence
-comparison, depending on how you do the search. The search space size
-also affects what filter thresholds \prog{cmsearch} or \prog{cmscan}
-will use, which is discussed more in section~\ref{section:pipeline}.
+on the order of 1000). Because each query sequence is probably a
+different size this means $Z$ changes for each query sequence. In
+\prog{cmsearch}, the size of the search space is double the summed
+length of all sequences in the database (again, doubled because both
+strands are searched). This means that E-values may differ even for
+the same individual CM vs. sequence comparison, depending on how you
+do the search. The search space size also affects what filter
+thresholds \prog{cmsearch} or \prog{cmscan} will use, which is
+discussed more in section~\ref{section:pipeline}.
 
 Now back to the \prog{cmscan} results. What follows the ranked list of
 three hits are the hit alignments. These are constructed and annotated
 the same as in \prog{cmsearch}. The 5S alignment is:
 
-\begin{sreoutput}
+\begin{widesreoutput}
                              v               v       v         v         v             v           vv                NC
                      (((((((((,,,,<<-<<<<<---<<--<<<<<<______.>>-->>>>-->>---->>>>>-->><<<-<<----<-<<-----<<____>>-- CS
          5S_rRNA   1 gcuuGcggcCAUAccagcgcgaAagcACcgGauCCCAUCc.GaACuCcgAAguUAAGcgcgcUugggCcagggUAGUAcuagGaUGgGuGAcCuC 94 
@@ -996,12 +997,12 @@ the same as in \prog{cmsearch}. The 5S alignment is:
                       UG  A: A::AGG   C:GC:AG:C
   AAGA01015927.1 150 AUGCGAG-AGUAGGGaACUGCCAGGC 174
                      **99999.****************** PP
-\end{sreoutput}
+\end{widesreoutput}
 
 After the three sequences, you'll see a pipeline statistics summary
 report:
 
-\begin{sreoutput}
+\begin{widesreoutput}
 Internal CM pipeline statistics summary:
 ----------------------------------------
 Query sequence(s):                                               1  (1886 residues searched)
@@ -1020,7 +1021,7 @@ Total CM hits reported:                                          3  (0.03046); i
 
 # CPU time: 0.20u 0.01s 00:00:00.21 Elapsed: 00:00:00.23
 //
-\end{sreoutput}
+\end{widesreoutput}
 
 This report is similar to the one you saw earlier from
 \prog{cmsearch}, but not identical. One big difference is that
@@ -1037,9 +1038,9 @@ model, because only sequence terminii are examined for truncated hits
 (see ``Truncated RNA detection'' above and
 section~\ref{section:pipeline}).  The remainder of the output is the
 same as in \prog{cmsearch} except that the fractional values are
-averages per model. For example, for all three models 4 envelopes
-survived the CYK filter stage, and those surviving envelopes contained
-5.189\% of the target sequence \emph{on average per model}.
+averages per model. For example, for all three models a total of 4
+envelopes survived the CYK filter stage, and those surviving envelopes
+contained 5.189\% of the target sequence \emph{on average per model}.
 
 You may have noticed that the expected survival fractions are
 different than they were in the \prog{cmsearch} example. This is
@@ -1049,15 +1050,15 @@ only 6 Kb (1886 residues in the query sequence multiplied by 3 target
 models), so the thresholds are set differently than for the
 \prog{cmsearch} example which had a search space size of roughly 6
 Mb. The exact thresholds used for various $Z$ values can be found in
-Table~\ref{table:thresholds} in section~\ref{section:pipeline}.
+Table~\ref{tbl:thresholds} in section~\ref{section:pipeline}.
 
 \subsubsection{Truncated hit and local end alignment example}
 Next, take a look at the \prog{cmscan} output for the second query
-sequence \otext{AAFY01022046.1}. The reverse strand of this sequence
+sequence \otext{AAFY01022046.1}. The bottom strand of this sequence
 contains one hit to the Cobalamin riboswitch model, which is truncated
 at the 5' end. Here is the alignment:
 
-\begin{sreoutput}
+\begin{widesreoutput}
 Hit alignments:
 >> Cobalamin  Cobalamin riboswitch
  rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
@@ -1077,16 +1078,16 @@ Hit alignments:
                        ++++   GAA+CU C
   AAFY01022046.1 848 AUUAAGGCGGAAACUAC 832
                      ***************** PP
-\end{sreoutput}
+\end{widesreoutput}
 
 This alignment has some important differences with the ones we've seen
 so far because it is of a truncated hit. First, notice that the
 \otext{trunc} column reads \otext{5'} indicating that Infernal
 predicts the 5' end (beginning) of this Cobalamin riboswitch is
-missing. (Note that this hit is on the reverse strand so the Cobalamin
-hit is actually predicted to extend past the 3' end of the input
-sequence (past residue 934), but on the opposite strand.) The 5' end
-of the alignment indicates this with special annotation: the
+missing. (Note that this hit is on the bottom (reverse) strand so the
+Cobalamin hit is actually predicted to extend past the 3' end of the
+input sequence (past residue 934), but on the opposite strand.) The 5'
+end of the alignment indicates this with special annotation: the
 \otext{<[31]*} in the model line indicates that the missing sequence
 is expected to align to the 31 5'-most positions of the Cobalamin
 model (i.e. about 31 residues are missing) and the first \otext{a}
@@ -1095,19 +1096,22 @@ residue in this line corresponds to model position 32; the
 no observed residues which align to those 31 positions and the first
 \otext{G} residue is at position 934 of the sequence, which is the
 first position (on the opposite strand) of the query sequence. If,
-alternatively, this sequence was 3' truncated, or both 5' and 3'
-truncated, there would be analogous annotation at the 3' end of the
-alignment. Also notice the \otext{~]} and \otext{~.} symbols following
-the model and sequence coordinates, respectively. The \otext{~}
+alternatively, this sequence was 3' truncated, or both 5' \emph{and}
+3' truncated, there would be analogous annotation at the 3' end of the
+alignment. Also notice the \verb+~]+ and \verb+~.+ symbols following
+the model and sequence coordinates, respectively. The \verb+~+
 leftmost symbol in both of these pairs indicate that this hit is
-truncated at the 5' end. 
+truncated at the 5' end. To make sense of this alignment display, it
+may help to look at the \prog{cmalign} alignment of the same sequence
+to the same model on page~\pageref{cmalign-cobalamin}, which shows all
+model and sequence positions.
 
 Truncated hit alignments also contain different annotation in the
 \otext{NC} lines. Instead of only containing blank spaces or \otext{v}
 characters indicating negative scoring noncanonical basepairs,
 \otext{?} characters are used to denote basepairs for which the other
 half is missing due to the truncation. For example, the second
-\otext{g} in the first model line corresponds the right half of a
+\otext{g} in the first model line corresponds to the right half of a
 basepair for which the left half is included in the stretch of 31 5'
 truncated model positions, so it is annotated with a \otext{?}.  A
 \otext{?} is used because it is impossible to tell if such basepairs
@@ -1116,24 +1120,26 @@ identity of the other half.
 
 This hit alignment also demonstrates another type of annotation not
 yet seen in the previous examples, for \emph{local end}
-alignments. Notice the stretch of six \otext{~} characters towards the
+alignments. Notice the stretch of six \verb+~+ characters towards the
 end of the first \otext{CS} line, at the same position as the string
-\otext{*[61]*} in the model line immediately below. This indicates a
-a special type of alignment called a local end. Local ends occur when
-a large insertion or deletion is used in the optimal alignment at
+\otext{*[61]*} in the model line immediately below. This indicates a a
+special type of alignment called a local end. Local ends occur when a
+large insertion or deletion is used in the optimal alignment at
 reduced penalty \citep{KleinEddy03} and allow Infernal to be tolerant
-of the insertion and/or deletion of RNA substructures not modeled by the
-CM. An example of how local ends enable remote homology detection in
-RNase P is included in section XX. In this case, 61 model positions
-are deleted and 4 residues are inserted in the sequence (indicated by 
-\otext{*[ 4]*} at the corresponding positions in the sequence line). 
+of the insertion and/or deletion of RNA substructures not modeled by
+the CM. An example of how local ends enable remote homology detection
+in RNase P can be see in Figure~\ref{fig:bsu-alignment} on
+page~\pageref{fig:bsu-alignment}. In this case, 61 model positions are
+deleted and 4 residues are inserted in the sequence (indicated by
+\otext{*[ 4]*} at the corresponding positions in the sequence line).
 It is possible for zero sequence residues to be inserted by a local
-end, and for the number of residues inserted in a local end to exceed the
-number of model positions. Note that a single \otext{7} annotates the
-posterior probability of the four sequence residues in the \otext{PP}
-line. This means that the average posterior probability for these four
-residues is between 65 and 75\%. If no sequence residues were in this
-EL, the \otext{PP} annotation would be a gap (\otext{.}) character.
+end, and for the number of residues inserted in a local end to exceed
+the number of model positions. Note that a single \otext{7} annotates
+the posterior probability of the four sequence residues in the
+\otext{PP} line. This means that the average posterior probability for
+these four residues is between 65 and 75\%. If no sequence residues
+were in this EL, the \otext{PP} annotation would be a gap (\otext{.})
+character.
 
 \subsection{Creating multiple alignments with cmalign}
 % tutorial regression: 
@@ -1201,28 +1207,28 @@ instead, the sequence(s) with insertions are paying transition
 probabilities into and out of their inserted residue.
 
 Actually, there's two types of insert columns: standard insert columns
-where residues are assigned to insert states and less common local end
+where residues are assigned to insert states and less common ``local end''
 insertion columns where residues are assigned to a special local end
 state called the ``EL'' state. There is one EL state per model and it
 allows a CM to permit large insertions or deletions in the structure
 present in the alignment the model was built from, at a reduced
 cost. This can help Infernal detect remote homologs in some cases. We
 saw an example of this in our Cobalamin \prog{cmscan} hit
-above. Another example is shown in figure~\ref{section:rp-local} in
-section~\ref{section:formats}. Columns containing EL insertions are
+above. Another example is shown in Figure~\ref{fig:bsu-alignment} on
+page~\pageref{fig:bsu-alignment}. Columns containing EL insertions are
 denoted in the \otext{\#=GC RF} annotation, described next.
 
 Take a look at the final two lines of the alignment. The \otext{\#=GC
   RF} line is Stockholm-format \emph{reference coordinate annotation},
 with a residue marking each column that the CM considered to be
-consensus, a '\otext{.}' marking insert columns and a '\otext{~}'
+consensus, a '\otext{.}' marking insert columns and a '\verb+~+'
 marking EL insert columns. For match columns, upper case residues
 denote strongly conserved columns, and lower case denotes weakly
 conserved ones. The \otext{\#=GC SS\_cons} line gives the consensus
 secondary structure of the model. The symbols here have the same
 meaning that they did in a pairwise alignment from \prog{cmsearch},
-for a detailed description see section~\ref{section:wuss}. As in the
-RF annotation, EL columns are indicated by '\otext{~}'. In this
+for a detailed description see section~\ref{section:formats}. As in the
+RF annotation, EL columns are indicated by '\verb+~+'. In this
 alignment, \otext{mrum-tRNA.9} is the only sequence that uses the EL
 state.
 
@@ -1247,9 +1253,9 @@ sure to see cases where lower-case inserted residues are ``obviously
 misaligned''. This is just because Infernal isn't trying to ``align''
 them in the first place: it is assigning them to unaligned
 insertions. For example of an obvious misalignment look at sequences
-\otext{mrum-tRNA.17} and \otext{mrum-tRNA.19} in the above example
+\otext{mrum-tRNA.6} and \otext{mrum-tRNA.8} in the above example
 alignment. The first inserted (lowercase) \otext{c} in
-\otext{mrum-tRNA67} would be better aligned with respect to
+\otext{mrum-tRNA.6} would be better aligned with respect to
 \otext{mrum-tRNA.8} if it were placed one position to the left.
 
 Enough about the sequences in the alignment. Now notice all those
@@ -1271,20 +1277,21 @@ inserted residues, that choice is arbitrary.
 Unlike in all previous versions of Infernal, \prog{cmalign} in version
 1.1 assumes that input sequences may be truncated and uses specialized
 dynamic programming algorithms to align them appropriately based on
-that assumption.\footnote{In versions 1.0 through 1.0.2, the
+that assumption\footnote{In versions 1.0 through 1.0.2, the
   \prog{cmalign} \ccode{--sub} option was recommended when input
   sequences may have been truncated. This option still exists in this
   version but we believe the new default mode should do a better job
-  of correctly aligning truncated sequences.} Importantly, output
+  of correctly aligning truncated sequences.}. Importantly, output
 alignments from \prog{cmalign} do not indicate when sequences have
 been truncated, as those from \prog{cmsearch} and \prog{cmscan} do. As
 an example, use the \ccode{tutorial/Cobalamin.c.cm} model to align the
-truncated Cobalamin hit (in the file \ccode{tutorial/Cobalamin.fa}
+truncated Cobalamin hit (in the file \ccode{tutorial/Cobalamin.fa})
 from the \prog{cmscan} example above (I've split up the alignment
 below so it will fit on the page):
 
 \user{cmalign tutorial/Cobalamin.c.cm tutorial/Cobalamin.fa}
 
+\label{cmalign-cobalamin}
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF AU Infernal 1.1
@@ -1339,7 +1346,7 @@ terminii. The types of truncated alignment allowed modify the
 dynamic programming alignment algorithm, so this difference can also
 result in different alignments. However, most of the time the
 alignments will be identical, and when they are different they will
-often only be slightly different.
+usually only be slightly different.
 
 \subsection{Searching a sequence database for RNAs with unknown or no
  secondary structure}
@@ -1354,13 +1361,13 @@ efficient than CM ones.
 Likewise, profile HMMs are more appropriate than CMs for modeling RNAs
 of unknown structure. For such RNAs, a profile HMM search may reveal
 additional homologs that can help elucidate the conserved structure
-for the family. Given the multiple homologs, you can use other
-programs like RNAalifold \citep{Bernhart08,Hofacker02} or WAR
-\citep{Torarinsson08} (a webserver that includes implementations of
-several programs) to try to predict the conserved secondary structure
-of a collection of homologous RNAs. Currently, Infernal itself does
-not have the capability of predicting structure, but it's predecessor
-COVE did with the \prog{covet} program, still available at
+for the family, if there is one. Given the multiple homologs, you can
+use other programs like RNAalifold \citep{Bernhart08,Hofacker02} or
+WAR \citep{Torarinsson08b} (a webserver that includes implementations
+of several programs) to try to predict the conserved secondary
+structure of a collection of homologous RNAs. Currently, Infernal
+itself does not have the capability of predicting structure, but it's
+predecessor COVE did with the \prog{covet} program, still available at
 \url{ftp://selab.janelia.org/pub/software/cove/cove-2.4.4.tar.Z}.
 
 Infernal automatically detects when a model has zero basepairs and
@@ -1404,24 +1411,28 @@ identical:
 \end{sreoutput}
 
 The output reports that this model has 0 basepairs (``bps'') (the
-earlier example had 21) and that the CM and HMM have identical
-relative entropy. This is because the CM can be mirrored nearly
+earlier example had 21) and that the CM relative entropy is different
+from before because basepairs have been ignored. Now the CM and HMM 
+relative entropy are identical, because the CM can be mirrored nearly
 identically by a profile HMM.
 
 Remember that after we built our tRNA CM with structure above, we
 needed to use \prog{cmcalibrate} to calibrate the model before we
 could perform searches. Importantly, zero basepair models do not need
-to be calibrated prior to running cmsearch, so we can skip that step
-here. 
+to be calibrated prior to running \prog{cmsearch}\footnote{Zero
+  basepair models do need to be calibrated before they can be used
+  with \prog{cmscan} however.}, so we can skip that step here. 
 
 Now, let's repeat the search of the \emph{M. ruminantium} genome but
 using our structureless tRNA model: 
 
 \user{cmsearch tRNA5-noss.cm mrum-genome.fa}\\
 
-This search is faster than the first one, because only
-profile HMM algorithms are used this time around. Take a look at list
-of hits:
+This search is faster than the first one (though you may not be able
+to tell), because only profile HMM algorithms are used this time
+around. Take a look at the list of hits:
+
+\newpage
 
 \begin{sreoutput}
  rank     E-value  score  bias  sequence      start     end   mdl trunc   gc  description
@@ -1475,13 +1486,13 @@ though. In fact, tRNA is an particular strong example of the power of
 CMs versus sequence-only based methods like HMMs because about as much
 statistical signal is present in their structure as in their primary
 sequence. Many structural RNAs contain significantly less information
-in their structure than in sequence conservation, but many include
-10 bits or more of information in their structure. An additional
-10 bits roughly translates into lowering the expected statistical
-significance of homologs by about 3 orders or magnitude\footnote{For a
-  graph depicting of the relative amount of information in structure
-  for sequence for many different types of RNAs see Figure 1.9 of
-  \citep{Nawrocki09}}.
+in their structure than in sequence conservation, but many include 10
+bits or more of information in their structure. An additional 10 bits
+roughly translates into lowering the expected statistical significance
+of homologs detected in database searches by about 3 orders or
+magnitude\footnote{For a graph showing the relative amount of
+information in structure for sequence for many different types of RNAs
+see Figure 1.9 of \citep{Nawrocki09}}.
 
 HMM hit alignments differ slightly from CM hit alignments. Take a look
 at the first alignment:
@@ -1504,7 +1515,7 @@ First, note that the \otext{mdl} field reads \otext{hmm} instead of
 \otext{NC} annotation pointing out negative scoring noncanonical
 basepairs.
 
-Finally, if you look at more hits you may notice that HMM hits are
+If you were to look at more hits you may notice that HMM hits are
 more likely to not be full length than CM hits are. This hit, for
 example, begins at model position 5 and ends at model position 67,
 whereas our earlier CM search included a full length alignment from
@@ -1519,7 +1530,7 @@ differ in this way, ``truncated'' HMM hits can start and end anywhere
 in the target sequence (instead of being identified only with
 specialized algorithms only at sequence ends like a CM), and so the
 \otext{trunc} field is invalid for HMM hits and will always read
-\otext{-}.
+``\otext{-}''.
 
 In \prog{cmscan}, HMM algorithms will be used to compute alignments
 for all models in the CM database that contain zero basepairs, and CM
@@ -1534,7 +1545,7 @@ basepairs, mainly because they are more efficient. If you'd like, you
 can force the use of CM algorithms for such models with the
 \otext{--nohmmonly} option with \prog{cmsearch} or \prog{cmscan}. Using
 \otext{--nohmmonly} will encourage more full length hits, but will
-cause the program to run a few-fold slower and also requires that the
+cause the program to run a few-fold slower, and also requires that the
 CM be calibrated with \prog{cmcalibrate} first.
 
 \subsection{Forcing global CM alignment with the -g option}
@@ -1546,11 +1557,12 @@ and start at any match position in the model and to use what's called
 a ``local end'' to prematurely exit a section of the model to handle
 large insertions or deletions of the model structure and potentially
 insert nonhomologous residues into the alignment (these were the
-\otext{~} annotated residues in the \prog{cmscan} and \prog{cmalign}
+\verb+~+ annotated residues in the \prog{cmscan} and \prog{cmalign}
 examples above). Local alignments are permitted by default, because
 our internal benchmarks suggest this strategy is more sensitive for
 remote homology detection. (An example of a local RNase P alignment is
-demonstrated in Figure~\ref{fig:bsu-alignment} of this guide.)
+demonstrated in Figure~\ref{fig:bsu-alignment} on
+page~\pageref{fig:bsu-alignment} of this guide.)
 However, some users may wish to turn off local alignment. This can be
 done using the \otext{-g} option to \prog{cmsearch}, \prog{cmscan},
 and \prog{cmalign}. The use of local mode by default in \prog{cmalign}
@@ -1563,19 +1575,19 @@ detection and alignment; to do that use \otext{--notrunc}.
 When \prog{cmbuild} constructs a model from an input alignment it must
 decide which columns of the input alignment to define as match (also
 called ``consensus'') and insert columns. To do this, it firsts
-computes weights for each sequences using an ad hoc algorithm to
-downweight closely related sequences and upweight distantly related
-ones. Then, for each position, the sum of the weights of
-the sequences that include a residue at the position is computed. If
-this sum is at least half the total number of sequences then the
-position is defined as a match position, else it is an insert
-position. If you're curious which positions get annotated as match
-versus insert in your alignment, use the \otext{-O <f>} option with
-\prog{cmbuild}, which will save a annotated version of your input
-alignment to file \otext{<f>}, including the weights of each
-sequence. In this output alignment, positions with residues in the
-\otext{\#=GC RF} lines of the alignment are match positions, and
-positions with gap characters are inserts.
+computes weights for each sequences using an \emph{ad hoc} algorithm
+to downweight closely related sequences and upweight distantly related
+ones. Then, for each position, the sum of the weights of the sequences
+that include a residue at the position is computed. If this sum is at
+least half the total number of sequences then the position is defined
+as a match position, else it is an insert position. If you're curious
+which positions get annotated as match versus insert in your
+alignment, use the \otext{-O <f>} option with \prog{cmbuild}, which
+will save a annotated version of your input alignment to file
+\otext{<f>}, including the weights of each sequence. In this output
+alignment, positions with residues in the \otext{\#=GC RF} lines of
+the alignment are match positions, and positions with gap characters
+are inserts.
 
 Sometimes you may want to override this automated behavior by
 specifying which columns be defined as match/insert, especially if
@@ -1590,7 +1602,7 @@ alignment from earlier in the tutorial.
 Take a look at the file \otext{tutorial/tRNA5-hand.sto}:
 
 \vspace{1em}
-\begin{minipage}{4.7in}
+\begin{minipage}{4.0in}
 \begin{sreoutput}[xleftmargin=0em]
 # STOCKHOLM 1.0
 
@@ -1619,34 +1631,27 @@ tRNA5             UCGGUUCGAUUCCGGUUGCGUCCA
 
 This file is the same as \otext{tutorial/tRNA5.sto} except for the two
 additional lines beginning with \otext{\#=GC RF}. This RF (reference)
-annotation is required for using \otext{--hand}. Any non-gap character
-in the reference annotation will be assigned as a match
-position. Importantly, four different characters are considered gaps:
-dashes (\otext{-}), underscores (\otext{\_}), dots (\otext{.}) and
-tildes (\otext{~}). In this alignment, all columns are non-gap
-characters, so all columns will be considered match positions.
+annotation is required for using \otext{--hand}. When \otext{--hand}
+is used, any non-gap character in the reference annotation will be
+assigned as a match (consensus) position. Importantly, four different
+characters are considered gaps: dashes (\otext{-}), underscores
+(\otext{\_}), dots (\otext{.}) and tildes (\verb+~+). In this example
+alignment, all columns are non-gap characters, so all columns will be
+considered match positions.
 
 Different regions of the secondary structure have been marked up using
 abbreviations for the names of the regions in the reference
 annotation. For example, \otext{acd} annotates the three positions of
-the anticodon. I've used \otext{[} and \otext{]} to indicate region
-boundaries in some cases. Crucially, I've avoided the use of any gap
-characters for positions between named regions which I still want to
-be considered match positions, and opted to use \otext{=} (which is
-not considered a gap by \prog{cmbuild}) for these positions.
+the anticodon, and \otext{[vlp]} annotates the so-called variable
+loop. I've used \otext{[} and \otext{]} to indicate region boundaries
+in some cases. Crucially, I've avoided the use of any gap characters
+for positions between named regions which I still want to be
+considered match positions, and opted to use \otext{=} (which is not
+considered a gap by \prog{cmbuild}) for these positions.
 
 To build the hand-specified model from this alignment, do:
 
 \user{cmbuild --hand tRNA5-hand.cm tutorial/tRNA5.hand.sto}
-
-The output reports that the model now has 74 match (consensus)
-positions in the \otext{clen} column. If we had built this model
-without specifying \otext{--hand} (as we did earlier in this tutorial)
-the resulting model would have had only 72 consensus positions.
-(I've annotated the two extra match positions with three gaps in
-\otext{tRNA5.hand.sto} as match solely to demonstrate how
-\otext{--hand} works, not because I think it's better to model these
-positions as matches than inserts.)
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
@@ -1667,6 +1672,15 @@ positions as matches than inserts.)
 # CPU time: 0.36u 0.00s 00:00:00.36 Elapsed: 00:00:00.41
 \end{sreoutput}
 
+The output reports that the model now has 74 match (consensus)
+positions in the \otext{clen} column. If we had built this model
+without specifying \otext{--hand} (as we did earlier in this tutorial)
+the resulting model would have had only 72 consensus positions.
+(I've annotated the two extra match positions with three gaps in
+\otext{tRNA5.hand.sto} as match solely to demonstrate how
+\otext{--hand} works, not because I think it's better to model these
+positions as matches than inserts.)
+
 Now, let's use this model to search the \emph{M. ruminantium} genome
 again. First, the model must be calibrated. To save time, a calibrated
 version of the file is in \otext{tutorial/tRNA5-hand.c.cm}. To do the
@@ -1680,7 +1694,7 @@ identical since the model now has two additional match positions). The
 important difference involves the hit alignments. Take a look at the
 alignment for hit number 46 as an illustrative example:
 
-\begin{sreoutput}
+\begin{widesreoutput}
 >> NC_013790.1  Methanobrevibacter ruminantium M1 chromosome, complete genome
  rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
@@ -1692,12 +1706,13 @@ alignment for hit number 46 as an illustrative example:
   NC_013790.1 995344 AGAGACAUAGCGAAGC-GGUCaAACGCGGCAGACUCAAGAUCUGUUGAuuaguucuUCAGGGGUUCGAAUCCCCUUGUCUCUA 995263
                      ************9***.8886258***********************9444444445************************** PP
                      [accep]======[=Dloop=.]============acd=======[vl........p]=====[Tloop]=====[accep]= RF
-\end{sreoutput}
+\end{widesreoutput}
 
 The reference annotation from the training alignment to \prog{cmbuild}
-has been propagated to the hit. All inserts in the alignment are
-annotated as \otext{.} columns in the RF annotation. Note that the
-variable loop (annotated as \otext{[vlp]} in the training alignment)
-contains 8 inserted residues. The RF annotation will also be
-transferred to multiple alignments created with \prog{cmalign}.
+has been propagated to the hit as an extra \otext{RF} line at the
+bottom of the alignment. All inserts in the alignment are annotated as
+\otext{.} columns in the RF annotation. Note that the variable loop
+(annotated as \otext{[vlp]} in the training alignment) contains 8
+inserted residues. The RF annotation will also be transferred to
+multiple alignments created with \prog{cmalign}.
 

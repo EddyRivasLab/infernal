@@ -128,12 +128,18 @@ or (sub)sequences by names/accessions given in a list, \emph{and} these
 programs can also read these lists from a stdin pipe, you can craft
 incantations that generate subsets of queries or targets on the
 fly. For example, you can extract and align all hits found by
-\prog{cmsearch} with an E-value below the inclusion threshold as
-follows:
+\prog{cmsearch} with an E-value below the inclusion threshold as 
+follows (using the \textbackslash character twice below to split up the final
+command onto three lines):
 
-\user{cmsearch --tblout tRNA5.mrum-genome.tbl tRNA5.cm mrum-genome.fa}
-\user{esl-sfetch --index mrum-genome.fa}
-\user{cat tRNA5.mrum-genome.tbl | grep -v ^\# | grep ! | awk '{ printf("%s/%s-%s %s %s %s\n", $1, $8, $9, $8, $9, $1); }' | esl-sfetch -Cf mrum-genome.fa - | ../src/cmalign tRNA5.cm -}
+%note: can't use \user{} here because too many special characters
+%(believe me I tried). Only difference between \user{} and the way
+%I've done it below ts that we're not bold, oh well. 
+\indent\indent\small\verb+> cmsearch --tblout tRNA5.mrum-genome.tbl tRNA5.cm mrum-genome.fa+ \\
+\indent\indent\small\verb+> esl-sfetch --index mrum-genome.fa+ \\
+\indent\indent\small\verb+> cat tRNA5.mrum-genome.tbl | grep -v ^# | grep ! \ + \\
+\indent\indent\small\verb+> | awk '{ printf(``%s/%s-%s %s %s %s\n'', $1, $8, $9, $8, $9, $1); }' \ + \\
+\indent\indent\small\verb+> | esl-sfetch -Cf mrum-genome.fa - | ../src/cmalign tRNA5.cm - + \\
 
 The first command performed the search using the CM file
 \ccode{tRNA5.c.cm} and sequence file \ccode{mrum-genome.fa} (these
@@ -146,17 +152,18 @@ are comment lines) and also include a \prog{!} (these are hits that
 have E-values below the inclusion threshold) using the first two
 \prog{grep} commands. This output was then sent through \prog{awk} to
 reformat the tabular output to the ``GDF'' format that
-\prog{esl-sfetch} expects: <newname> <from> <to> <source seqname>.
-These lines are then piped into \prog{esl-sfetch} (using the '-'
-argument) to retrieve each hit (only the subsequence that comprises
-each hit -- not the full target sequence). \prog{esl-sfetch} will
-output a FASTA file, which is finally being piped into \prog{cmalign},
-again using the '-' argument. The output that is actually printed to
-the screen will be a multiple alignment of all the included tRNA hits.
+\prog{esl-sfetch} expects: \otext{<newname> <from> <to> <source
+seqname>}.  These lines are then piped into \prog{esl-sfetch} (using
+the '-' argument) to retrieve each hit (only the subsequence that
+comprises each hit -- not the full target sequence). \prog{esl-sfetch}
+will output a FASTA file, which is finally being piped into
+\prog{cmalign}, again using the '-' argument. The output that is
+actually printed to the screen will be a multiple alignment of all the
+included tRNA hits.
 
-Ditto for piping subsets of CMs. Supposing you have a copy of Rfam in Rfam.cm:
+You can do similar commands piping subsets of CMs. Supposing you have a copy of Rfam in Rfam.cm:
 
-\user{cmfetch --index Rfam.cm}
+\user{cmfetch --index Rfam.cm} \\ 
 \user{cat myqueries.list | cmfetch -f Rfam.hmm - | cmsearch - mrum-genome.fa}
 
 This takes a list of query CM names/accessions in

@@ -3,7 +3,6 @@
 \setcounter{footnote}{0}
 
 \subsection{Infernal CM files}
-\label{section:savefiles}
 
 The file \prog{tutorial/Cobalamin.c.cm} gives an example of an Infernal ASCII
 CM save file. An abridged version is shown here, where (\ldots) mark
@@ -54,15 +53,7 @@ CM
     ML     3     2 3     5     3    86   132   461   772  -9.129  -0.009  -7.783                          0.192 -0.324 -0.320  0.331 
      D     4     2 3     5     3    80   128   458   769  -6.226  -1.577  -0.618                         
     IL     5     5 3     5     3    85   132   461   773  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
-                                             [ MATL    2 ]      2      - u - - -
-    ML     6     5 3     8     3    85   131   460   771  -9.131  -0.009  -7.785                          0.129 -0.155 -0.410  0.328 
-     D     7     5 3     8     3    79   127   457   768  -6.174  -1.687  -0.566                         
-    IL     8     8 3     8     3    84   131   460   772  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
 (...)
-                                             [ MATL   97 ]    150      - C - - -
-    ML   585   584 3   587     3     1     1    12    31  -9.131  -0.009  -7.785                         -2.892  1.826 -3.164 -2.259 
-     D   586   584 3   587     3     0     0    13    32  -6.174  -1.687  -0.566                         
-    IL   587   587 3   587     3     1     1    18    36  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
                                              [ MATL   98 ]    151      - C - - -
     ML   588   587 3   590     2     1     1     1     1       *   0.000                                 -3.022  1.825 -3.061 -2.226 
      D   589   587 3   590     2     0     0     0     0       *   0.000                                 
@@ -98,13 +89,7 @@ HMM          A        C        G        U
       1   1.24903  1.60847  1.61442  1.15831      1 u - - :
           1.38629  1.38629  1.38629  1.38629
           0.02747  4.30141  4.30141  1.46634  0.26236  1.09861  0.40547
-      2   1.28810  1.50313  1.67262  1.15831      2 u - - :
-          1.38629  1.38629  1.38629  1.38629
-          0.02743  4.30301  4.30301  1.46634  0.26236  1.09861  0.40547
 (...)
-    190   1.43270  1.22474  1.77469  1.21077    440 u - - :
-          1.38629  1.38629  1.38629  1.38629
-          0.02743  4.30301  4.30301  1.46634  0.26236  1.09861  0.40547
     191   1.51542  1.17791  1.56046  1.33817    441 c - - :
           1.38629  1.38629  1.38629  1.38629
           0.01381  4.28939        *  1.46634  0.26236  0.00000        *
@@ -163,7 +148,7 @@ indicated.
   compatible. The remainder of the line after the \prog{INFERNAL1/a} tag
   is free text that is ignored by the parser. INFERNAL currently writes
   its version number and release date in brackets here,
-  e.g. \prog{[1.1 | April 2012]} in this
+  e.g. \prog{[1.1 | June 2012]} in this
   example. \textbf{Mandatory.}
 
 \item [\emprog{NAME <s>}] Model name; \prog{<s>} is a single word
@@ -198,7 +183,7 @@ hit to this model. This is calculated based on the transition
 probabilities of the model\footnote{Specifically, \prog{W} is set as
 the \emph{dmax} value for the ROOT\_S state (state 0) from the QDB
 algorithm using $\beta$ equal to the \prog{WBETA} value
-\cite{NawrockiEddy07}.}  \textbf{Mandatory.}
+\citep{NawrockiEddy07}.}  \textbf{Mandatory.}
 
 \item [\emprog{ALPH <s>}] Symbol alphabet type. Currently this will
 necessarily be \prog{RNA} for RNA sequence analysis models.
@@ -284,17 +269,17 @@ report appropriate E-values. \textbf{Optional}; assumed to be $0.05$
 if not present.
 
 \item [\emprog{WBETA <f>}] Tail loss probability for calculating
-  window length (W); The QDB algorithm \cite{NawrockiEddy07} was used
+  window length (W); The QDB algorithm \citep{NawrockiEddy07} was used
   to determine the maximum expected length of a hit (W) using a tail
-  loss probability of <f>, W was set as the \emph{dmax} value for the
+  loss probability of \otext{<f>}, W was set as the \emph{dmax} value for the
   ROOT\_S state (state 0). \textbf{Mandatory.}
 
 \item [\emprog{QDBBETA1 <f>}] Tail loss probability for calculating
   the tighter of the two sets of query-dependent bands (QDBs); The QDB
-  algorithm \cite{NawrockiEddy07} was used to determine the minimum
+  algorithm \citep{NawrockiEddy07} was used to determine the minimum
   and maximum subsequence lengths allowed to align to the subtree
   rooted at each state of the model, using a tail loss $\beta$
-  probability of <f>. These minimum and maximum values for each state
+  probability of \otext{<f>}. These minimum and maximum values for each state
   are included in each state line in the main model section, described
   below.  below. The \prog{<f>} value for \prog{QDBBETA2} will be
   less than or equal to the \prog{<f>} value for \prog{QDBBETA1}.
@@ -302,10 +287,10 @@ if not present.
 
 \item [\emprog{QDBBETA2 <f>}] Tail loss probability for calculating
   the looser of the two sets of query-dependent bands (QDBs); The QDB
-  algorithm \cite{NawrockiEddy07} was used to determine the minimum
+  algorithm \citep{NawrockiEddy07} was used to determine the minimum
   and maximum subsequence lengths allowed to align to the subtree
   rooted at each state of the model, using a tail loss $\beta$
-  probability of <f>. These minimum and maximum values for each state
+  probability of \prog{<f>}. These minimum and maximum values for each state
   are included in each state line in the main model section, described
   below. The \prog{<f>} value for \prog{QDBBETA2} will be less than
   or equal to the \prog{<f>} value for \prog{QDBBETA1}.
@@ -520,13 +505,13 @@ state lines, one each for each state within the node.
   \prog{<n4>} are query dependent band values for the current
   state. These are integers. \prog{<n1>} is the minimum expected
   subsequence length to align at the subtree rooted at this state
-  calculated with the QDB algorithm \cite{NawrockiEddy07} using a
+  calculated with the QDB algorithm \citep{NawrockiEddy07} using a
   $\beta$ tail loss probability value given in the header in the
   \prog{QDBBETA2} line. \prog{<n2>} is the same, but calculated with
   $\beta$ equal to the value from the \prog{QDBBETA1} header line. 
   \prog{<n3>} is the maximum expected
   subsequence length to align at the subtree rooted at this state
-  calculated with the QDB algorithm \cite{NawrockiEddy07} using a
+  calculated with the QDB algorithm \citep{NawrockiEddy07} using a
   $\beta$ tail loss probability value given in the header in the
   \prog{QDBBETA1} line. \prog{<n4>} is the same, but calculated with
   $\beta$ equal to the value from the \prog{QDBBETA2} header line. 
@@ -543,7 +528,7 @@ state lines, one each for each state within the node.
   state type and the node type of the \emph{next} node in the model.
   For a list of all possible sets of transitions for each possible
   state type/next node combination see Table 1 of
-  \cite{NawrockiEddy07}. As a special case, ``B'' (bifurcation) states
+  \citep{NawrockiEddy07}. As a special case, ``B'' (bifurcation) states
   have zero transition score fields, they necessarily transition to
   their child ``BEGL\_S'' and ``BEGR\_S'' states with a probability of
   $1.0$ (score of $0$ bits).
@@ -581,7 +566,10 @@ stored as '*'.
 Spacing is arranged for human readability, but the parser only cares
 that fields are separated by at least one space character.
 
-A more detailed description of the format follows.
+A more detailed description of the format follows\footnote{This section is
+  nearly identical to one from the HMMER3 user's guide
+  \cite{hmmer3guide}. It is included here, instead of just providing
+  reference to the HMMER guide, for convenience.}.
 
 \subsubsection{HMM header section}
 
@@ -675,9 +663,7 @@ HMM alignment back to the original multiple alignment, via the model.
 
 \item [\emprog{DATE <s>}] Date the model was constructed; \prog{<s>}
 is a free text date string.  This field is only used for logging
-purposes.\footnote{Infernal does not use dates for any purpose other than
-human-readable annotation, so it is no more prone than you are to Y2K,
-Y2038, or any other date-related eschatology.} \textbf{Optional.}
+purposes. \textbf{Optional.}
 
 \item [\emprog{COM [<n>] <s>}] Command line log; \prog{<n>} counts
 command line numbers, and \prog{<s>} is a one-line command. There may
@@ -808,7 +794,6 @@ $D_k \rightarrow M_{k+1}$ transition is always 0.0 (probability 1.0).
 Finally, the last line of the format is the ``//'' record separator.
 
 \subsection{RNA secondary structures: WUSS notation}
-\label{section:wuss}
 
 Infernal annotates RNA secondary structures using a linear
 string representation called ``WUSS notation'' (Washington University
@@ -929,7 +914,7 @@ Figure~\ref{fig:bsu-alignment}.
 \end{center}
 \caption{\small \textbf{Example of WUSS notation.} Top: Secondary
 structure of \emph{E. coli} RNase P, from Jim Brown's RNase P database
-\cite{Brown99}. Bottom: WUSS notation for the same structure,
+\citep{Brown99}. Bottom: WUSS notation for the same structure,
 annotating the \emph{E. coli} RNase P sequence. The P4 and P6
 pseudoknots are not annotated in this example.}
 \label{fig:RNaseP}
@@ -979,7 +964,7 @@ pseudoknots are not annotated in this example.}
 \end{center}
 \caption{\small \textbf{Local alignment annotation example.} Top:
 Secondary structure of \emph{B. subtilis} RNase P, from Jim Brown's
-RNase P database \cite{Brown99}. Residues in red are those that
+RNase P database \citep{Brown99}. Residues in red are those that
 Infernal aligns to a CM of \emph{E. coli} type RNase P's
 (the RNase P bacterial type A model built from the Rfam 10.1 RF00010
 seed alignment using default Infernal 1.1 \prog{cmbuild} and
@@ -992,7 +977,7 @@ closely to the \emph{E. coli} structure, aligned to the
 \emph{B. subtilis} sequence. The three skipped regions (96, 1, and 32
 nt long) of the \emph{B. subtilis} structure from the top of the
 figure are ``local end'' emissions which skip 15, 43, and 39 consensus
-positions of the type A model, respectively.
+positions of the type A model, respectively.}
 \label{fig:bsu-alignment}
 \end{figure}
 
@@ -1042,7 +1027,6 @@ notation is a matter of a simple Perl or sed script, substituting the
 symbols appropriately.
 
 \subsection{Stockholm, the recommended multiple sequence alignment format}
-\label{section:stockholm}
 
 The Rfam and Pfam Consortiums have developed a multiple sequence
 alignment format called ``Stockholm format'' that allows rich and
@@ -1052,8 +1036,7 @@ Crucially for Infernal, Stockholm alignments support the annotation of
 a consensus secondary structure, which is why \prog{cmbuild} requires
 its input alignment files to be in Stockholm format. Here is a minimal
 Stockholm file with consensus secondary structure annotation in
-shorthand WUSS notation (described above in
-section~\ref{section:wuss}).
+shorthand WUSS notation (described earlier in this section).
 
 \begin{sreoutput}
 # STOCKHOLM 1.0
@@ -1091,8 +1074,8 @@ Other blank lines are ignored. You can add comments anywhere to the
 file (even within a block) on lines starting with a \verb+#+.
 
 The \verb+SS_cons+ line defines the consensus secondary structure in
-shorthand WUSS notation, as described above in
-section~\ref{section:wuss}.
+shorthand WUSS notation, as described earlier in 
+this section.
 
 All other annotation is added using a tag/value comment style. The
 tag/value format is inherently extensible, and readily made
@@ -1258,7 +1241,7 @@ are as follows:
         loosely, in shorthand (input) WUSS notation: pairs of symbols
         \verb+<>+, \verb+()+, \verb+[]+, or \verb+[]+ mark consensus
         base pairs, and symbols \verb+:_-,.~+ mark single stranded
-        columns (see section~\ref{section:wuss} above for details).
+        columns (see the section on WUSS format above for details).
 
 \end{sreitems}
 

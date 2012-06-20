@@ -50,8 +50,8 @@ static ESL_OPTIONS options[] = {
   { "--fast",      eslARG_NONE,"default",   NULL, NULL,      CONOPTS,      NULL,         NULL, "assign cols w/ >= symfrac residues as consensus",                2 },
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
-  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
   { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
+  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
 
   /* Other model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -638,12 +638,12 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
   if (esl_opt_IsUsed(go, "--hand"))        { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
   if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
   if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
+  if (esl_opt_IsUsed(go, "--noss"))        { fprintf(ofp, "# ignore secondary structure, if any:                 yes\n"); }
   if (esl_opt_IsUsed(go, "--rsearch"))     { fprintf(ofp, "# RSEARCH parameterization mode w/RIBOSUM mx file:    %s\n", esl_opt_GetString(go, "--rsearch")); }
   if (esl_opt_IsUsed(go, "--betaW"))       { fprintf(ofp, "# tail loss probability for defining W:               %g\n", esl_opt_GetReal(go, "--betaW")); }
   if (esl_opt_IsUsed(go, "--beta1"))       { fprintf(ofp, "# tail loss probability for defining tight QDBs:      %g\n", esl_opt_GetReal(go, "--beta1")); }
   if (esl_opt_IsUsed(go, "--beta2"))       { fprintf(ofp, "# tail loss probability for defining loose QDBs:      %g\n", esl_opt_GetReal(go, "--beta2")); }
   if (esl_opt_IsUsed(go, "--informat"))    { fprintf(ofp, "# input format specified as:                          %s\n", esl_opt_GetString(go, "--informat")); }
-  if (esl_opt_IsUsed(go, "--noss"))        { fprintf(ofp, "# ignore secondary structure, if any:                 yes\n"); }
   if (esl_opt_IsUsed(go, "--v1p0"))        { fprintf(ofp, "# v1.0 parameterization mode:                         on\n"); }
   if (esl_opt_IsUsed(go, "--p56"))         { fprintf(ofp, "# use default priors from v0.56 through v1.0.2:       yes\n"); }
   if (esl_opt_IsUsed(go, "--iins"))        { fprintf(ofp, "# allowing informative insert emission probabilities: yes\n"); }
@@ -1318,7 +1318,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      fflush(cfg->ofp); 
    }
 
-   if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "--hand used, but alignment #%d has no reference coord annotation", cfg->nali+1);
+   if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "--hand used, but alignment #%d has no reference coord annotation", cfg->nali);
    if (esl_opt_GetBoolean(go, "--noss")) { /* --noss: if SS_cons exists, strip all BPs from it; if it doesn't create it with zero bps */
      if(msa->ss_cons == NULL) { ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1)); msa->ss_cons[msa->alen] = '\0'; }
      memset(msa->ss_cons,  '.', msa->alen);
@@ -2232,7 +2232,7 @@ set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *ms
     {
       if (esl_opt_IsUsed(go, "-n")) ESL_FAIL(eslEINVAL, errbuf, "Oops. Wait. You can't use -n with an alignment database.");
       else if (msa->name != NULL)   cfg->nnamed++;
-      else                          ESL_FAIL(eslEINVAL, errbuf, "Oops. Wait. I need name annotation on each alignment in a multi MSA file; failed on #%d", cfg->nali+1);
+      else                          ESL_FAIL(eslEINVAL, errbuf, "Oops. Wait. I need name annotation on each alignment in a multi MSA file; failed on #%d", cfg->nali);
 
       /* special kind of failure: the *first* alignment didn't have a name, and we used the filename to
        * construct one; now that we see a second alignment, we realize this was a boo-boo*/

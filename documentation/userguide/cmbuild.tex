@@ -5,12 +5,12 @@
 Infernal builds a model of consensus RNA secondary
 structure using a formalism called a \emph{covariance model} (CM),
 which is a type of \emph{profile stochastic context-free grammar}
-(profile SCFG) \cite{Eddy94,Durbin98,Eddy02b}.
+(profile SCFG) \citep{Eddy94,Durbin98,Eddy02b}.
 
 What follows is a technical description of what a CM is, how it
 corresponds to a known RNA secondary structure, and how it is built
 and parameterized.\footnote{Much of this text is taken from
-\cite{Eddy02b}.}  You certainly don't have to understand the technical
+\citep{Eddy02b}.}  You certainly don't have to understand the technical
 details of CMs to understand \prog{cmbuild} or Infernal,
 but it will probably help to at least skim this part. After that is a
 description of what the \prog{cmbuild} program does to build a CM from
@@ -267,7 +267,7 @@ individual structure. This is important. The algorithm will find a
 maximum likelihood parse tree for a given sequence, and we wish to
 interpret this result as a maximum likelihood structure, so there must
 be a one to one relationship between parse trees and secondary
-structures \cite{Giegerich00}.
+structures \citep{Giegerich00}.
 
 The final CM is an array of $M$ states, connected as a directed graph
 by transitions $t_v(y)$ (or probability 1 transitions $v \rightarrow
@@ -330,7 +330,8 @@ tree, as shown in Figure~\ref{fig:parsetrees}. Weighted counts for
 observed state transitions and singlet/pair emissions are then
 collected from these parse trees. These counts are converted to
 transition and emission probabilities, as maximum \emph{a posteriori}
-estimates using mixture Dirichlet priors\citep{Durbin98,NawrockiEddy07}. 
+estimates using mixture Dirichlet priors
+\citep{Sjolander96,Durbin98,NawrockiEddy07}. 
 
 \begin{figure}[t]
 \begin{center}
@@ -357,7 +358,7 @@ consensus use nonconsensus states, shown in gray.}
 The relationship between an SCFG and a covariance model is analogous
 to the relationship of hidden Markov models (HMMs) and profile HMMs
 for modeling multiple sequence alignments
-\cite{Krogh94,Durbin98,Eddy98}. A comparison may be instructive to
+\citep{Krogh94,Durbin98,Eddy98}. A comparison may be instructive to
 readers familiar with profile HMMs.  A profile HMM is a repetitive HMM
 architecture that associates each consensus column of a multiple
 alignment with a single type of model node -- a MATL node, in the
@@ -399,7 +400,7 @@ annotation. This may change in the future, either when other formats
 allow structure annotation, or when \prog{cmbuild} is capable of
 inferring consensus structure from the alignment by automated
 comparative analysis, as the earlier COVE suite was capable
-of \cite{Eddy94}. 
+of \citep{Eddy94}. 
 
 If the file does not exist, is not readable, or is not in a recognized
 format, the program exits with a ``Alignment file doesn't exist or is
@@ -428,7 +429,7 @@ base paired to which. It does not have to be in full WUSS notation.
 Even if it is, the details of the notation are largely ignored.
 Nested pairs of \otext{<>}, \otext{()}, \otext{[]}, or \otext{{}} symbols
 are interpreted as base paired columns. All other columns marked with
-the symbols \otext{:,_-.~} are interpreted as single stranded columns.
+the symbols \otext{:,\_-.~} are interpreted as single stranded columns.
 
 A simple minimal annotation is therefore to use \otext{<>} symbols to
 mark base pairs and \otext{.} for single stranded columns.
@@ -464,7 +465,7 @@ that one as primary sequence consensus only).
 \end{srefaq}
 
 If (aside from any ignored pseudoknot annotation) the structure
-annotation line contains characters other than \otext{<>()[]{}:_-,.~}
+annotation line contains characters other than \otext{<>()[]{}:\_-,.~}
 then those characters are ignored (treated as \otext{.}) and a warning
 is printed.
 
@@ -477,10 +478,11 @@ exits with a ``failed to parse consensus structure annotation'' error.
 
 By default, the input sequences are weighted in two ways to compensate
 for biased sampling (phylogenetic correlations).  Relative sequence
-weights are calculated by the Gerstein/Chothia/Sonnhammer method
-\cite{Gerstein94}.  (The \prog{--wgsc} option forces GSC weights, but
-is redundant since that's the default.)  To turn relative weighting
-off (e.g. set all weights to 1.0), use the \prog{--wnone} option.
+weights are calculated by the Henikoff position-based method.
+\citep{Henikoff94b}.  (The \prog{--wpb} option forces position-based
+weights, but is redundant since that's the default.)  To turn relative
+weighting off (e.g. set all weights to 1.0), use the \prog{--wnone}
+option.
 
 Some alignment file formats allow relative sequence weights to be
 given in the file. This includes Stockholm format, which has
@@ -491,11 +493,11 @@ procedure you like; for example, the \prog{esl-weight} utility program in
 Easel\footnote{This program will be in
   \ccode{infernal/easel/miniapps/} after building Infernal.} 
 implements some common weighting algorithms,
-including the fast $O(N)$ Henikoff position-based weights
-\cite{Henikoff94b}.
+including the Gerstein/Sonnhammer/Chothia weighting scheme
+\citep{Gerstein94}.
 
 Absolute weights (the ``effective sequence number'') is calculate by
-``entropy weighting'' \cite{Karplus98}. This sets the balance between
+``entropy weighting'' \citep{Karplus98}. This sets the balance between
 the prior and the data, and affects the information content of the
 model. Entropy weighting reduces the effective sequence number (the
 total sum of the weights) and increases the entropy (degrading the
@@ -517,32 +519,39 @@ columns, and which are insert columns. (Remember that although WUSS
 notation allows insertions to be annotated in the secondary structure
 line, \prog{cmbuild} is only paying attention to annotated base
 pairs.) By default, it does this by a simple rule based on the
-frequency of gaps in a column. If the frequency of gaps is greater
-than a threshold, the column is considered to be an insertion. 
+frequency of residues (non-gaps) in a column. If the frequency of
+residues is lower than a threshold, the column is considered to be
+an insertion. Importantly though this frequency is determined using
+the relative weights from the sequence weighting step, instead of
+absolute gaps (e.g. a residue in a sequence with weight $0.8$ will count
+as $0.8$ residues)\footnote{This behavior is new in Infernal 1.1, in all
+previous versions of Infernal, absolute weights, not relative weights
+were used at this step.}.
 
 The threshold defaults to 0.5. It can be changed to another number
-\otext{<x>} (from 0 to 1.0) by the \prog{--gapthresh <x>} option.  The
-higher the number, the more columns are included in the model.  At
-\prog{--gapthresh 1.0}, all the columns are considered to be part of
-the consensus. At \prog{--gapthresh 0.0}, only columns with no gaps are.
+\otext{<x>} (from 0 to 1.0) by the \prog{--symfrac <x>} option.  The
+lower the number, the more columns are included in the model.  At
+\prog{--symfrac 0.0}, all the columns are considered to be part of
+the consensus. At \prog{--symfrac 1.0}, only columns with no gaps are.
 
 You can also manually specify which columns are consensus versus
 insert by including reference coordinate annotation (e.g. a
-\otext{\#=GC RF} line, in Stockholm format) and using the \prog{--rf}
-option. Any columns marked by non-gap symbols become consensus
-columns. (The simplest thing to do is mark consensus columns with x's,
-and insert columns with \otext{.}'s. Remember that spaces aren't
-allowed in alignments in Stockholm format.) If you set the \prog{--rf}
-option but your file doesn't have reference coordinate annotation, the
-program exits with an error.
+\otext{\#=GC RF} line, in Stockholm format) and using the
+\prog{--hand} option. There's an example of this in the tutorial. Any
+columns marked by non-gap symbols become consensus columns. (The
+simplest thing to do is mark consensus columns with x's, and insert
+columns with \otext{.}'s. Remember that spaces aren't allowed in
+alignments in Stockholm format.) If you set the \prog{--hand} option but
+your file doesn't have reference coordinate annotation, the program
+exits with an error.
 
 \subsubsection{Parameterization}
 
 Weighted observed emission and transition counts are then collected
 from the alignment data. These count vectors $c$ are then converted to
 estimated probabilities $p$ using mixture Dirichlet priors
-\citep{Durbin98, NawrockiEddy07}. You can provide your own prior as a
-file, using the \prog{--prior <f>} option.
+\citep{Sjolander96, Durbin98, NawrockiEddy07}. You can provide your
+own prior as a file, using the \prog{--prior <f>} option.
 
 As an exception, insert state emission probabilities are not learned
 from the counts from implicit parse trees of sequences in the input
@@ -580,7 +589,7 @@ option, where \prog{<s>} is any string.
 The model is now saved to a file, according to the filename specified
 on the command line. By default, a new file is created, and the model
 is saved in a portable ASCII text format. This format is described in
-section~\ref{section:format} of this guide.
+section~\ref{section:formats} of this guide.
 
 If the cmfile already exists, the program exits with an error. The
 \prog{-F} option causes the new model to overwrite an existing

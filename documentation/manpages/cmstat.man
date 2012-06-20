@@ -10,6 +10,7 @@ cmstat - summary statistics for a covariance model file
 
 .SH DESCRIPTION
 
+.PP
 The
 .B cmstat
 utility prints out a tabular file of summary statistics for each
@@ -21,6 +22,7 @@ covariance model in
 may be '-' (a dash character), in which case CMs
 are read from a <stdin> pipe instead of from a file.
 
+.PP
 By default,
 .B cmstat
 prints general statistics of the model and the alignment it was built
@@ -118,6 +120,7 @@ for each of the four possible CM search algorithm and model
 configuration pairs: local Inside, local CYK, glocal Inside and glocal
 CYK.
 
+.PP
 For profiles with zero basepairs (those with "hmm" in the "model"
 field), any E-value and bit score statistics will pertain to the
 profile HMM filter, instead of to the CM. This is also true for all

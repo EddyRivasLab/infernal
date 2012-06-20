@@ -49,6 +49,7 @@ because sending the CM file to
 would conflict with the other text
 output of the program.
 
+.PP
 In addition to writing CM(s) to 
 .I <cmfile_out>, 
 .B cmbuild

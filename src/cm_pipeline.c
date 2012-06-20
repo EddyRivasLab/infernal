@@ -1188,7 +1188,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 
-  /* Determine if we have the 5' and/or 3' terminii. We can do this
+  /* Determine if we have the 5' and/or 3' termini. We can do this
    * because sq->L should always be valid. (Caller should enforce
    * this, but it takes some effort if caller is potentially reading
    * subsequences of large sequences. For example, cmsearch does an

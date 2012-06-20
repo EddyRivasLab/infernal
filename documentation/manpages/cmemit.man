@@ -42,6 +42,7 @@ means reading this input from
 .I stdin
 rather than a file.  
 
+.PP
 For models with zero basepairs, sequences are sampled from the profile
 HMM filter instead of the CM. However, since these models will be
 nearly identical (unless special options were used in 

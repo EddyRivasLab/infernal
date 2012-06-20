@@ -12,15 +12,17 @@ foundation for this discussion.
 
 We'll first discuss the \emph{standard} pipeline used by Infernal,
 which is excecuted on each comparison between a CM and full length
-sequence, then we'll discuss \emph{truncated variants} of the pipeline
-that are rerun the sequence ends for detection of truncated hits and
-finally the HMM-only pipeline which is run for models with zero
-basepairs.  First, a few notes on terminology. In the discussion,
-below the standard pipeline is often referred to as just the pipeline,
-the term ``profile'' refers to either a profile HMM filter or a CM,
-and nucleotide and residue are used interchangeably for a single
-symbol of an input DNA/RNA sequence (even though ``residue''
-traditionally refers to an amino acid residue of a protein sequence).
+sequence. Then we'll discuss \emph{truncated variants} of the pipeline
+that are \emph{re}run on the sequence ends for detection of truncated
+hits. Finally, we'll cover the HMM-only pipeline which is run for
+models with zero basepairs. Before we begin, a few notes on
+terminology. In this discussion, the term ``profile'' refers to either
+a profile HMM filter or a CM, and nucleotide and residue are used
+interchangeably for a single symbol of an input DNA/RNA sequence (even
+though ``residue'' traditionally refers to an amino acid residue of a
+protein sequence). Also, if I refer to ``the pipeline'' without
+specifying which variant (standard or a truncated one), then I mean
+the standard one.
 
 Infernal's standard pipeline is based closely on the profile
 HMM/sequence comparison pipeline in HMMER3 (\url{hmmer.org}). In fact,
@@ -35,7 +37,7 @@ steps:
 \item[Profile HMM filter stages:] The first several stages of the
   pipeline use only a profile HMM, putting off all calculations with
   the CM until later. Since profile HMM algorithms are less complex
-  than CM ones, this saves us time by only using the expensive CM
+  than CM ones, this saves time by only using the expensive CM
   methods for regions the HMM has identified as having a good chance
   of containing a high-scoring hit. Of course, by relying on
   sequence-only based filters like HMMs, we are potentially going to
@@ -133,6 +135,7 @@ steps:
   CM to evaluate each envelope that survived the profile HMM filter
   stages. 
 
+\begin{description}
 \item[\textbf{HMM banded CYK filter.}] For each envelope, posterior
   probabilities that each sequence residue aligns to each state of a
   profile HMM is computed\footnote{The profile HMM used at this stage
@@ -144,7 +147,7 @@ steps:
   essentially a reimplementation of the maximum likelihood heuristic
   HMM described in \citep{WeinbergRuzzo06}.} and used to derive bands
   (constraints) for the CM CYK algorithm \citep{Brown00,
-  Nawrocki09}. A banded version of the CYK algorithm is used to
+  Nawrocki09b}. A banded version of the CYK algorithm is used to
   determine the bit score of the maximum likelihood alignment of any
   subsequence within the envelope to the CM that is consistent with
   the HMM-derived bands. If this score passes a set threshold, the
@@ -156,13 +159,13 @@ steps:
 \item[\textbf{HMM banded Inside parser.}] The full likelihood of the
   profile/sequence envelope is now evaluated, summed over the entire
   alignment ensemble for every subsequence of the envelope, using the
-  CM Inside algorithm. Again HMM bands are used to constrain the
-  CM dynamic programming calculations. This procedure identifies zero
-  or more non-overlapping \emph{hits}, defined as subsequences in
-  envelope. An \emph{ad hoc} ``null3'' hypothesis is constructed for
-  each hit's composition and used to calculate a biased composition
-  score correction. The null3 score is subtracted from the Inside bit
-  score and an E-value is computed for that score.
+  CM Inside algorithm. Again HMM bands are used to constrain the CM
+  dynamic programming calculations. This procedure identifies zero or
+  more non-overlapping \emph{hits}, each defined as a subsequence in
+  the envelope. An \emph{ad hoc} ``null3'' hypothesis is constructed
+  for each hit's composition and used to calculate a biased
+  composition score correction. The null3 score is subtracted from the
+  Inside bit score and an E-value is computed for that score.
 
 \item[\textbf{CM bias filter: the ``null3'' model.}]  To reduce false
   positive CM hits due to biased composition sequences, the Inside
@@ -183,6 +186,7 @@ steps:
   per-residue posterior probabilities.
 
 \end{description}
+\end{description}
 
 \subsection{Filter thresholds are dependent on database size}
 Before we go into more detail on each stage, we'll briefly discuss the
@@ -194,11 +198,12 @@ filter thresholds are dependent on the size of the search space. We
 use the parameter $Z$ in the code and in this documentation to
 represent the search space.
 
-For \prog{cmsearch}, the search space is the size of the target
-sequence database, in total number of nucleotides. For \prog{cmscan},
-the search space is the defined a bit strangely, it is the length of
-the current query sequence in nucleotides \emph{multiplied by the
-number of models in the target CM database}.
+For \prog{cmsearch}, $Z$ is the size of the target sequence database,
+in total number of nucleotides, multiplied by 2 because both strands
+of each sequence will be searched. For \prog{cmscan}, $Z$ is defined
+differently; it is the length of the current query sequence (again,
+multiplied by 2) in nucleotides \emph{multiplied by the number of
+models in the target CM database}. 
 
 In general, the larger the search space, the stricter the filter
 thresholds become. The specific thresholds used for all stages of the
@@ -209,7 +214,7 @@ The rationale for making filter thresholds more strict as $Z$
 increases is as follows. As $Z$ increases so too does the CM bit score
 necessary for a hit to reach the E-value reporting threshold (by
 default 10.0). If we assume that a hit's filter HMM score increases
-with its CM score (which should be true in most cases), then it
+1qwith its CM score (which should be true for most true homologs), then it
 follows that we should be able to decrease filter P-value thresholds
 as $Z$ increases without sacrificing sensitivity relative to an
 unfiltered search. Of course, it's unclear exactly how much we can
@@ -228,38 +233,56 @@ speed on that benchmark.
 % table in ~nawrockie/notebook/12_0326_talk_xfam/latex/xfam.tex,
 % and rounding.
 %
+\begin{center}
 \begin{table}
-\begin{tabular}{lll||r|r|r|r|r|r|}
-\multicolumn{3}{c}{} & \multicolumn{6}{|c|}search space ($Z$)} \\
-filter &       & model         &         & 2Mb     & 20Mb     & 200Mb  & 2Gb     &          \\
-stage  & model & configuration & $<$ 2Mb & to 20Mb & to 200Mb & to 2Gb & to 20Gb & $>$ 20Gb \\  \hline
-& & & & & & & \\
+\small
+\begin{tabular}{lll|r|r|r|r|r|r|}
+\multicolumn{3}{c}{} & \multicolumn{6}{|c|}{size of search space ($Z$)} \\ \cline{4-9}
+               &      & model         &         & 2Mb     & 20Mb     & 200Mb  & 2Gb     &          \\
+filter stage  & model & configuration & $<$ 2Mb & to 20Mb & to 200Mb & to 2Gb & to 20Gb & $>$ 20Gb \\  \hline
+& & & & & & & & \\
 SSV                 & HMM & local  & 0.35  & 0.35 & 0.35 & 0.15 & 0.15 & 0.06 \\
-& & & & & & & \\
+& & & & & & & & \\
 Viterbi             & HMM & local  & off   & off & 0.15 & 0.15 & 0.15 & 0.02 \\
 & & & & & & & & \\
-Forward             & HMM & local  & 0.02  & 0.005 & 0.003 & 8E-4 & 2E-4 & 2E-4 \\
-& & & & & & & \\
-Forward             & HMM & global & 0.02  & 0.005 & 0.003 & 8E-4 & 2E-4 & 2E-4 \\
-& & & & & & & \\
-envelope definition & HMM & global & 0.02  & 0.005 & 0.003 & 8E-4 & 2E-4 & 2E-4 \\
-& & & & & & & \\
-HMM banded CYK      & CM  & local  & 1E-4  & 1E-4  & 1E-4 & 1E-4 & 1E-4 & 1E-4 \\
-& & & & & & & \\
-HMM banded Inside   & CM  & local  & & & & & \\ \hline
-& & & & & & & \\
-& & & & & & & \\
+Forward             & HMM & local  & 0.02  & 0.005 & 0.003 & 0.0008 & 0.0002 & 0.0002 \\
+& & & & & & & & \\
+Forward             & HMM & global & 0.02  & 0.005 & 0.003 & 0.0008 & 0.0002 & 0.0002 \\
+& & & & & & & & \\
+envelope definition & HMM & global & 0.02  & 0.005 & 0.003 & 0.0008 & 0.0002 & 0.0002 \\
+& & & & & & & & \\
+HMM banded CYK      & CM  & local  & 0.0001  & 0.0001  & 0.0001 & 0.0001 & 0.0001 & 0.0001 \\
+& & & & & & & & \\
+HMM banded Inside   & CM  & local  & E $\leq$ 10 & E $\leq$ 10 & E $\leq$ 10 & E $\leq$ 10 & E $\leq$ 10 & E $\leq$ 10 \\ \hline
+& & & & & & & & \\
 %Avg model per Gb time   & & 3.48h & 1.25h & 0.54h & 0.27h & 0.18h & 0.11h \\
-Avg relative speed &   & & 30.0 & 10.0 & 5.0 & 2.5 & 1.5 & 1.0 \\
+\multicolumn{3}{c|}{Average relative running time per Mb} & 30.0 & 10.0 & 5.0 & 2.5 & 1.5 & 1.0 \\
 \end{tabular}
+\caption{\textbf{Default P-value survival thresholds used for each
+  filter stage for different search space sizes $Z$.} These values can
+  be changed with command-line options as described in the text. The
+  ``HMM banded Inside'' stage is not actually a filter, hits with an
+  E-value $\leq$ 10 after this stage are reported to the search output. 
+  filter stage. The final line ``Average relative running time''
+  provides rough estimates of the relative speed per Mb of the different
+  parameter settings for each range of $Z$ (these are relative units,
+  not an actual unit of time like minutes). Importantly, $Z$ is
+  defined differently in \prog{cmsearch} and \prog{cmscan}. In
+  \prog{cmsearch}, $Z$ is the total number of nucleotides in the
+  target database file multiplied by 2 (because both strands of each
+  sequence is searched). For \prog{cmscan}, $Z$ is the length of the
+  current query sequence multiplied 2 (because both strands of the
+  sequence are searched) and multiplied again by the number of CMs in
+  the target CM database.}
 \label{tbl:thresholds}
 \end{table}
+\end{center}
 
 \subsection{Manually setting filter thresholds}
 
 As described above, by default filter thresholds are automatically set
 based on the search space $Z$, but several options exist for
-overriding these defaults. There are six pre-defined sets of
+overriding these defaults. There are four pre-defined sets of
 thresholds, each available via a single command-line option to
 \prog{cmsearch} or \prog{cmscan}. In order from least strict to most
 strict these are: \ccode{--max}, \ccode{--nohmm}, \ccode{--mid}, and
@@ -277,16 +300,17 @@ option. There's also descriptions of these options in the
 \item[\ccode{--max}:] Turn off all filters, run Inside on full length
   target sequences. This option will result in maximum sensitivity but
   is also the slowest. Using this option will slow down
-  \prog{cmsearch} by about 3 or 4 orders of magnitude.
+  \prog{cmsearch} by about 3 or 4 orders of magnitude for typical
+  searches.
 \item[\ccode{--nohmm}:] Turn off all profile HMM filters, run only the
   CYK filter on full length sequences and Inside on surviving
   envelopes. Searches with this option will often be between 5 and
-  times faster than \ccode{--max} searches.
-\item[\ccode{--mid}:] Set all profile HMM filter thresholds (SSV,
-  local Viterbi, local Forward, glocal Forward and glocal domain
-  definition) to the same, set P-value. By default this P-value is
-  $0.02$, but it is settable to \ccode{<x>} by also using the
-  \ccode{--Fmid <x>} option. These searches will 
+  10 times faster than \ccode{--max} searches.
+\item[\ccode{--mid}:] Turn off the SSV and Viterbi filters, and set
+  all profile HMM filter thresholds (local Forward, glocal Forward and
+  glocal domain definition) to the same, set P-value. By default this
+  P-value is $0.02$, but it is settable to \ccode{<x>} by also using
+  the \ccode{--Fmid <x>} option. 
 \item[\ccode{--rfam}:] Set all filter thresholds as if the search
   space were more than 20 Gb. These are the filter thresholds used by
   a database like Rfam, which annotates RNAs in an EMBL-based sequence
@@ -302,7 +326,7 @@ option. There's also descriptions of these options in the
   search space size the E-values correspond to, use the \ccode{-Z <x2>}
   option\footnote{Note that if you use \ccode{-Z <x2>} without
   \ccode{--FZ <x>}, the filter thresholds will be set as if the
-  search space size was \ccode{<x2>} Mb.}.)
+  search space size is \ccode{<x2>} Mb.}.)
 \end{description}
 
 For expert users, options also exist to precisely set each individual
@@ -342,12 +366,12 @@ or envelope being evaluated\footnote{For the SSV filter, which
 examines full length target sequences instead of windows, $L$ is set
 as the expected maximum length of a hit for the profile, defined as
 the maximum of the $1.25$ times the consensus length of the model and
-the $W$ parameter for the CM we're filtering for calculated by
-\prog{cmbuild}.}, with each residue drawn from a background
-frequency distribution of $0.25$ for all four RNA nucleotides (a
-standard i.i.d. model: residues are treated as independent and
-identically distributed). This null model is used for the profile HMM
-and the CM stages of the pipeline. 
+the $W$ parameter for the CM we're filtering for. The $W$ parameter is
+calculated by \prog{cmbuild}.}, with each residue drawn from a
+background frequency distribution of $0.25$ for all four RNA
+nucleotides (a standard i.i.d. model: residues are treated as
+independent and identically distributed). This null model is used for
+the profile HMM and the CM stages of the pipeline.
 
 For technical reasons, the \emph{residue emission} probabilities of
 the null model are incorporated directly into the profile HMM, by
@@ -365,7 +389,7 @@ allows a single high-scoring local ungapped segment to match.  The
 optimal alignment score (Viterbi score) is calculated under this
 specialized model, hence the term SSV, for ``single-segment
 Viterbi''. SSV is similar, but not identical to, the MSV
-(``multi-segment Viterbi) algorithm used by the programs in HMMER used
+(``multi-segment Viterbi) algorithm used by the programs in HMMER 
 for protein sequence analysis. There are two main differences. First,
 SSV only allows a single ungapped segment match between the sequence
 and specialized model. Second, the variant of SSV used by Infernal is
@@ -376,7 +400,7 @@ developed by Travis Wheeler for a soon-to-be released version of HMMER
 that includes a program for DNA homology search called \prog{nhmmer}.
 
 Vector parallelization methods are used to accelerate optimal ungapped
-alignment in SSV.  he P-value threshold for what subsequences pass
+alignment in SSV. The P-value threshold for what subsequences pass
 this filter range from $0.35$ for small target databases down to
 $0.06$ for large ones (Table~\ref{tbl:thresholds}). Take as an
 example, the \prog{cmsearch} for tRNAs performed in the tutorial. The
@@ -403,10 +427,10 @@ The \ccode{--F1 <x>} expert option sets filter P-value threshold for
 passing the SSV filter to \ccode{<x>}. The \ccode{--doF1b} and
 \ccode{--F1b <x>} options turn on a SSV bias filter (described further
 below) and control its P-value threshold, respectively. SSV is turned
-off if the \ccode{--max}, \ccode{--nohmm}, or \ccode{--noF1} options
-are used.
+off if the \ccode{--max}, \ccode{--nohmm}, \ccode{--mid}, or
+\ccode{--noF1} options are used.
 
-\subsection{Local Viterbi filter.}
+\subsubsection{Local Viterbi filter.}
 Each sequence window that survives the SSV filter is now aligned to
 the profile HMM using a fast Viterbi algorithm for optimal gapped
 alignment. This stage is identical the Viterbi stage of the HMMER3
@@ -433,7 +457,7 @@ included in the output in the pipeline summary output:
 
 \begin{sreoutput}
 Windows   passing  local HMM Viterbi       filter:                  (off)
-\enf{sreoutput}
+\end{sreoutput}
 
 For searches with $Z$ greater than $20$ Mb, this line would be
 formatted similar to the one for the SSV filter. For example,
@@ -465,10 +489,10 @@ the pipeline.
 
 The \ccode{--F2 <x>} option controls the P-value threshold for passing
 the Viterbi filter, and can be turned off with \ccode{--noF2}.  The
-local Viterbi filter is also turned off if the \ccode{--max} or
-\ccode{--nohmm} options are used.
+local Viterbi filter is also turned off if the \ccode{--max},
+\ccode{--nohmm}, or \ccode{--mid} options are used.
 
-\subsection{Biased composition filter.}
+\subsubsection{Biased composition filter.}
 
 It's possible for profile HMMs and/or sequences to have biased nucleotide
 compositions that result in ``significant'' log-odds bit scores not
@@ -547,7 +571,7 @@ but its score is not recomputed using the bias composition model.  The
 local Viterbi bias filter is also turned off if the \ccode{--max} or
 \ccode{--nohmm} options are used.
 
-\subsection{Local Forward filter.}
+\subsubsection{Local Forward filter.}
 
 Each surviving window is now aligned to the profile HMM using the full
 Forward algorithm with the model configured in local mode (allowing
@@ -568,13 +592,13 @@ this score passes the local Forward filter threshold then it passes to
 the Forward bias filter and the score is recomputed using the biased
 composition model. If the P-value of this score passes the Forward
 bias filter threshold, then this window is pass onto the next stage of
-the pipeline.\footnote{You might wonder why the intial score with just
+the pipeline\footnote{You might wonder why the intial score with just
 the null model is even computed if the bias adjusted score must also
 pass the threshold for the window to survive. We do this solely for
 more informative output - so we can report how many windows fail to
 pass at each of these two stages independently, to potentially alert
 users if a large number of windows are being thrown out by the bias
-filter alone.} 
+filter alone.}. 
 
 The local Forward filter threshold used depends on
 the search space $Z$ (Table~\ref{tbl:thresholds}). For the tRNA search
@@ -596,7 +620,7 @@ passing the local Forward and local Forward bias filter stages.  The
 stages. Both filters are also turned off if the \ccode{--max} or
 \ccode{--nohmm} options are used.
 
-\subsection{Glocal Forward filter.}
+\subsubsection{Glocal Forward filter.}
 
 Each surviving window is now aligned to the profile HMM again using the full
 Forward algorithm, but this time with the model configured in global
@@ -604,7 +628,7 @@ mode, only allowing alignments that begin at the first position of the
 model and end at the final position. This stage is referred to as
 \emph{glocal} because it is global with respect to the profile HMM,
 but (potentially) local with respect to the sequence window,
-alignments can begin and end at any position in the sequence:
+alignments can begin and end at any position in the sequence
 window. 
 
 For technical reasons related to the inability to guarantee a lower
@@ -636,7 +660,7 @@ hits that are truncated at one or both ends due to the beginning or
 termination of a sequencing read. However, Infernal uses a special
 pipeline for identifying these hits at the ends of sequences, as
 described in a later section, so if they're missed at this stage, they
-should be detected later in when the truncated variants of the
+should be detected later when the truncated variants of the
 pipeline are run.
 
 The glocal Forward filter bit score is calculated by correcting the
@@ -667,10 +691,10 @@ passing the glocal Forward and glocal Forward bias filter stages.  The
 stages. Both filters are also turned off if the \ccode{--max} or
 \ccode{--nohmm} options are used.
 
-\subsection{Envelope definition.}
+\subsubsection{Envelope definition.}
 
 A target sequence window that reaches this point is likely to be
-larger than the eventual hit or hit(s) contained within it (if any),
+larger than the eventual hit or hit(s) (if any) contained within it,
 including nonhomologous nucleotides at the ends of the target sequence
 window and possibly in between hits (if there are more than one). At
 this stage, each window is transformed into one or more envelopes that
@@ -790,18 +814,18 @@ expensive (more than an order of magnitude more complex than HMM
 algorithms) so we need to constrain these algorithms in order to
 incorporate them into a comparison pipeline that runs at a practical
 speed. The acceleration technique used by Infernal relies on computing
-bands and imposing on the CM dynamic programming matrices derived from
+and imposing bands on the CM dynamic programming matrices derived from
 an HMM Forward/Backward decoding of the sequence, similar to the one
 used in the envelope definition filter stage. This technique is based
-on one pioneered by Michael Brown \citep{Bronw00}. Next, we'll discuss the
+on one pioneered by Michael Brown \citep{Brown00}. Next, we'll discuss the
 calculation of those bands and how they're utilized to accelerate the
-remaining CM stages of the pipeline.see chapter 8 of \citep{Nawrocki09}.
+remaining CM stages of the pipeline.
 
-\subsubsection{HMM band definition for CM stages}
+\subsubsection{HMM band definition for CM stages.}
 
 For each envelope that survives all the filter HMM stages,
 sequence-specific bands are derived for a CYK dynamic programming
-alignment of the envelope. The bands are derived from a HMM
+alignment of the envelope. The bands are derived from a HMM \\
 Forward/Backward/Decoding steps (similar to those used in the envelope
 definition pipeline) are used to determine the posterior probability
 that each HMM position aligns to each sequence position of the
@@ -828,7 +852,7 @@ CP9 HMMs are more similar to CMs than are the plan 7 HMMs of HMMER in
 that they include transitions from delete states to insert states and
 vice versa. These transitions are allowed in CMs, but not in plan 7
 HMMs. Also, CP9 HMMs have special states for mirroring the local end
-(EL) states of CMs, which don't occur in plan 7 HMMs.  Finally, these
+(EL) state of a CM, which don't occur in plan 7 HMMs.  Finally, these
 CP9 HMMs are configured in a local mode with an uneven begin and end
 probability distribution that places the highest probability on
 beginning at model position 1 and ending at the final model position.
@@ -836,16 +860,16 @@ This local configuration more closely matches the CM local
 configuration than both the local and global p7 filter HMM
 configuration\footnote{In the plan 7 HMMER3 HMMs used in the filter
   stages, begin and end probabilities are equal for all positions of
-  the model \ref{Eddy08}.}
+  the model \citep{Eddy08}.}.
 
-\subsubsection{HMM banded CM CYK filter:}
+\subsubsection{HMM banded CM CYK filter.}
 
 Given an envelope and CP9 HMM-derived bands constraining possible
 alignments of a CM to the sequence positions in the envelope, a banded
 version of the CM CYK algorithm is used to determine the
 maximum-likelihood CM alignment\footnote{The CYK algorithm is the CM
 analog of the HMM Viterbi algorithm.} of any subsequence in the
-envelope to the CM that is consistent with the HMM bands \citep{Nawrocki09}.
+envelope to the CM that is consistent with the HMM bands \citep{Nawrocki09b}.
 
 In most cases that occur in Infernal's pipeline, the HMM banded
 version of CYK is significantly faster than non-banded, or even
@@ -876,24 +900,24 @@ computes the maximum likelihood alignment score (consistent with the
 HMM bands) of all possible subsequences in the envelope to the CM, and
 examine each nucleotide to see if it is included in any possible
 alignment to the model above a certain score threshold. By default,
-this threshold is 10-fold lower P-value than the filter survival
-threshold, so it is $1e-3$ ($10*0.0001$). This envelope redefinition
+this threshold is a 10-fold lower P-value than the filter survival
+threshold, so it is $0.001$ ($10*0.0001$). This envelope redefinition
 can be turned off with the \ccode{--nocykenvx} option and it the
 threshold for it can be changed with the \ccode{--cykenvx <x>} option.
 
-\subsubsection{HMM banded CM Inside filter/parser:}
+\subsubsection{HMM banded CM Inside filter/parser.}
 
 Envelopes that survive CYK are evaluated using the CM Inside
 algorithm, which is the CM analog of the HMM Forward algorithm. HMM
 bands are rederived for this step (remember the envelope boundaries
-may now be different), using a smaller $\tau$ value (total probability
-mass excluded per band) of $5e-6$. With Inside, the probability of all
-possible alignments (instead of just the most likely one) of each
-subsequence to the model (consistent with the bands) are summed to
-define a probability for that subsequence. A log-odds score is
-determined by applying two null models: the standard null model used
-in CYK and an alternative null3 model based on the composition of the
-aligned subsequence. The null3 model is explained below. 
+may now be different), using a smaller $\tau$ value of $5e-6$. With
+Inside, the probability of all possible alignments (instead of just
+the most likely one) of each subsequence to the model that is
+consistent with the bands are summed to define a probability for that
+subsequence. A log-odds score is determined by applying two null
+models: the standard null model used in CYK and an alternative null3
+model based on the composition of the aligned subsequence. The null3
+model is explained below.
 
 A non-overlapping set of subsequence/model hits that fall below the
 reporting E-value threshold is then collected using a greedy
@@ -906,7 +930,7 @@ By default, the reporting threshold is an E-value of $10.0$, but this
 is settable to a different E-value with the \ccode{-E <x>} option, or
 to a particular bit score with the \ccode{-T <x>} option.
 
-\subsubsection{Optimal accuracy alignment}
+\subsubsection{Optimal accuracy alignment.}
 
 For each hit reported by Inside, an optimally accurate
 alignment\footnote{This is the same type of alignment referred to as
@@ -919,7 +943,7 @@ probabilities of all aligned nucleotides. The alignment is then stored in
 memory until the end of the search when it is finally output as part
 of a ranked list of hits and their alignments.
 
-\paragraph{Biased composition CM score correction: the null3 model}
+\subsubsection{Biased composition CM score correction: the null3 model.}
 
 CM Inside scores are adjusted using an alternative null hypothesis
 called the null3 model in an effort to counteract the contribution of
@@ -1190,17 +1214,19 @@ because of the position where the sequencing read happened to begin or
 end. While the chromosome the read derives from presumably included a
 full length hit, the read itself does not because the sequencing
 reaction used to determine the sequence began or ended at a position
-internal to the hit. Infernal uses a modified version of its
+internal to the hit. Infernal uses modified versions of its
 profile/sequence comparison pipeline for detection of truncated hits.
+This modified pipeline is executed after the full sequence is examined
+with the standard pipeline.
 
-The modified pipeline is only used near the sequence terminii because
+The modified pipeline is only used near the sequence termini because
 Infernal only expects truncated hits to occur due to the premature
 ending of a sequencing read\footnote{There are cases where truncated
 hits might occur within sequences (``split tRNAs'' in archaea
 \citep{Randau05}, for example), but these are rare and Infernal does
 not explicit look for these types of hits, unless the
 \ccode{--anytrunc} option is used, as discussed at the end of this
-section.} Specifically only the first or final $X$ nucleotides at
+section.}. Specifically only the first or final $X$ nucleotides at
 either sequence end are examined for truncated hits, where $X$ is
 defined as the minimum of the $W$ parameter (maximum expected hit
 length, calculated in \prog{cmbuild}) and $1.25$ times the consensus
@@ -1208,11 +1234,10 @@ length of the model.
 
 There are three variants of the pipeline used for truncated hit
 detection:
-%These are listed below and shown in Figure X. 
 
 \begin{enumerate}
 
-\item  5' truncated hit detection
+\item \textbf{5' truncated hit detection.}
 This pipeline is used only on the $X$ 5'-most nucleotides of each
 sequence. These $X$ nucleotides are also searched along with the rest
 of the complete sequence as part of the standard pipeline. Only 5'
@@ -1220,7 +1245,7 @@ truncated or non-truncated alignments can be found by this pipeline
 variant, but non-truncated alignments will be duplicates of
 those found previously by the standard pipeline. 
 
-\item  3' truncated hit detection
+\item  \textbf{3' truncated hit detection.}
 This pipeline is used only on the $X$ 3'-most nucleotides of each
 sequence. These $X$ nucleotides are also searched along with the rest
 of the complete sequence as part of the standard pipeline. Only 3'
@@ -1228,7 +1253,7 @@ truncated or non-truncated alignments can be found by this pipeline
 variant, but non-truncated alignments will be duplicates of
 those found previously by the standard pipeline. 
 
-\item  5' and 3' truncated hit detection
+\item  \textbf{5' and 3' truncated hit detection.}
 This pipeline is used only on complete sequences that are less than
 $X$ nucleotides long. These sequences are also searched in their
 entirety by the standard pipeline, the 5' truncated variant pipeline,
@@ -1242,24 +1267,24 @@ alignments will not be duplicates of previously found alignments.
 Given a sequence to search, the standard pipeline described in the
 first part of this section is used on the full sequence. Then the
 truncated pipeline variants 1 and 2 are used on the sequence
-terminii. Finally, if the sequence is less than $X$ nucleotides long,
+termini. Finally, if the sequence is less than $X$ nucleotides long,
 variant 3 is used. Before hits are output, overlapping hits
 potentially found in different variants of the pipeline are removed,
-by keeping the higher scoring one. Also, remember that Infernal
-searches both strands of each sequence, so each pipeline is run on
-both strands.
+by keeping the highest scoring one. Also, remember that Infernal
+searches both strands of each sequence, so each pipeline is run
+separately on each strand.
 
 It may seem like Infernal is duplicating effort by searching the first
-and final $X$ nucleotides twice, i.e. once in the standard pipeline and
-once in the 5' truncated variant or the 3' truncated variant. One
-might argue that only searching these $X$ nucleotides with the truncated
-pipeline variant should be sufficient to find truncated and
+and final $X$ nucleotides twice, i.e. once in the standard pipeline
+and once in the 5' truncated variant or the 3' truncated variant. One
+might argue that only searching these $X$ nucleotides with the
+truncated pipeline variant should be sufficient to find truncated and
 non-truncated hits. However, as we'll discuss next, the glocal HMM
-filter stages, HMM band construction and CYK and Inside algorithms are
-different between the standard and truncated variants of the pipeline
-and some non-truncated hits found by the standard variant will be
-missed by the truncated variants, and vice versa. So it is important
-we perform search the $X$ terminal nucleotides on the 5' and 3' end
+filter stages, HMM band construction and the CYK and Inside algorithms
+are different between the standard and truncated variants of the
+pipeline and some non-truncated hits found by the standard variant
+will be missed by the truncated variants, and vice versa. So it is
+important we search the $X$ terminal nucleotides on the 5' and 3' end
 using both standard and truncated variants of the pipeline. The same
 is true of sequences that are less than $X$ nucleotides, which get
 searched four times, once by each of the four pipeline variants (the
@@ -1275,13 +1300,13 @@ described above. However, the glocal HMM Forward, glocal HMM envelope
 definition, CYK and Inside differ to accomodate truncated hits.
 
 Recall that in the standard pipeline in the glocal HMM Forward and
-envelope definition stages the HMM is configured in global mode which
+envelope definition stages, the HMM is configured in global mode which
 forces all alignments to begin in the first model position and end in
 the final one (in the match or delete state in both cases). Also, in
 these stages, the alignment could begin or end in any position of the
 sequence window (i.e. local with respect to the sequence).  These
-aspects of these two pipeline stages in the truncated variants are
-different. For the 5' truncated pipeline variant, alignments can begin
+aspects of these two pipeline stages differ in the truncated variants.
+For the 5' truncated pipeline variant, alignments can begin
 at any model position but must end at the final model position,
 \emph{and} the \emph{first} nucleotide in the window must be aligned to an HMM
 model position. The 3' truncated pipeline variant does the opposite,
@@ -1297,12 +1322,13 @@ the CM pipeline stages. The HMM bands are computed using CP9 HMMs
 configured in modified ways, similar to the modifications for the
 filter HMMs in the glocal filter stages. Specifically, in the 5'
 variant the first nucleotide in the window must be aligned to the
-model and begin probabilities are equal for all model positions. In
-the 3' variant, the final nucleotide in the window must be aligned to
-the model and end probabilities are equal for all model positions. In
-the 5' and 3' variant, the first and final nucleotides (i.e. all
-nucleotides) in the window must be aligned to the model and begin and
-end probabilities are equal for all model positions.
+model and model \emph{begin} probabilities are equal for all model
+positions. In the 3' variant, the final nucleotide in the window must
+be aligned to the model and the model \emph{end} probabilities are
+equal for all model positions. In the 5' and 3' variant, the first and
+final nucleotides (i.e. all nucleotides) in the window must be aligned
+to the model and model begin \emph{and} end probabilities are equal
+for all model positions.
 
 Also, additional score corrections are used in the CM stages to
 compensate for the fact that alignments are now allowed to begin
@@ -1310,7 +1336,7 @@ and/or end at any model position to account for the truncation. The
 correction is roughly the log of $1/M$ bits for the 5'-only and
 3'-only pipeline variants, and roughly the log of $2/(M*(M+1))$ bits
 for the 5' and 3' pipeline variant. For all hits found in a truncated
-pipeline variant, this correction is subtracted from CM bit score. 
+pipeline variant, this correction is subtracted from the CM bit score. 
 
 For the CYK and Inside stages, specialized versions of the CM
 alignment algorithms are necessary to cope with truncated
@@ -1321,8 +1347,8 @@ need to be able to deal with the possibility that the sequence
 aligning to part of a subtree of the model has been truncated
 away. For example, a truncated CM alignment algorithm must be able to
 deal with the case where the left half but not the right half of a
-basepair has been deleted, and vice versa. For details on CM truncated
-alignment, see \citep{KolbeEddy08}. HMM banded, truncated versions of
+stem has been deleted, and vice versa. For details on CM truncated
+alignment, see \citep{KolbeEddy09}. HMM banded, truncated versions of
 CYK and Inside are implemented in Infernal, and are used by the
 truncated pipeline variants (see \ccode{src/cm\_dpsearch\_trunc.c} and
 \ccode{src/cm\_dpalign\_trunc.c}. These implementations allow either 5'
@@ -1368,7 +1394,9 @@ CM ones. So a profile HMM search will be as sensitive but faster than
 a CM one for families with zero basepairs.  When \prog{cmsearch} or
 \prog{cmscan} is being used for a comparison between a sequence and a
 model with zero basepairs, it will automatically use the HMM-only
-filter pipeline. 
+filter pipeline. For these models, the truncated variants of the
+pipeline are not used, because the standard HMM pipeline is capable of
+identifying truncated hits.
 
 The HMM-only pipeline that Infernal uses is essentially identical to
 HMMER3's (version 3.0) pipeline, with the lone
@@ -1393,7 +1421,7 @@ calculation using the Forward and Backward algorithms. Each hit is
 then aligned to the HMM using an optimal accuracy alignment algorithm
 that maximizes the summed posterior probability of all aligned
 residues. The null3 biased composition model is not used in the
-HMM-only pipeline, but HMMER's null2 biased composition model is used,
+HMM-only pipeline, but HMMER's null2 biased composition model is used, 
 see the HMMER3 guide for details on null2.
 
 Unlike in the standard pipeline, the filter thresholds used in the
@@ -1407,5 +1435,5 @@ threshold is $1e-5$. These can be changed with the \ccode{--hmmF1}
 sensitivity mode with the SSV P-value threshold set at 0.3 and the
 Viterbi and Forward filters turned off. The HMM-only pipeline can be
 turned off with the \ccode{--nohmmonly} option. When turned off, all
-models will use the standard CM pipeline, even those with no
-structure.
+models will use the standard and truncated CM pipelines, even those
+with no structure.

@@ -101,6 +101,7 @@ of
 .B esl-alimerge, 
 which is significantly more memory efficient. 
 
+.PP
 By default,
 .B cmalign
 will output the alignment to stdout. 
@@ -113,6 +114,7 @@ option. With
 information on each aligned sequence, including score and model
 alignment boundaries will be printed to stdout (more on this below).
 
+.PP
 The output alignment will be in Stockholm format by default. This can
 be changed to Pfam, aligned FASTA (AFA), A2M, Clustal, or Phylip
 format using the
@@ -131,6 +133,7 @@ that this may require a lot of memory.
 will only work for alignments up to 100,000 sequences or 100,000,000
 total nucleotides.
 
+.PP
 If the output alignment format is Stockholm or Pfam, the output
 alignment will be annotated with posterior probabilities which
 estimate the confidence level of each aligned nucleotide.  This
@@ -163,6 +166,7 @@ option. If
 is enabled, posterior annotation must also be turned off using
 .B --noprob.
 
+.PP
 The tabular output that is printed to stdout if the 
 .B -o 
 option is used includes one line per sequence and twelve fields per

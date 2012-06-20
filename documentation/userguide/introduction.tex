@@ -1,4 +1,5 @@
 \section{Introduction}
+\label{section:introduction}
 \setcounter{footnote}{0}
 
 Infernal is used to search sequence databases for homologs of
@@ -22,7 +23,7 @@ cost, and the slow speed of CM homology searches has been a serious
 limitation of previous versions. With
 version 1.1, typical homology searches are now about 100x faster,
 thanks to the incorporation of accelerated HMM methods from the HMMER3
-software package \url{http://hmmer.org}, making Infernal a much more
+software package (\url{http://hmmer.org}), making Infernal a much more
 practical tool for RNA sequence analysis.
 
 \subsection{How to avoid reading this manual}
@@ -53,8 +54,8 @@ annotated RNA multiple sequence alignments, or even of single
 sequences and structures. CMs are a specific formulation of profile
 stochastic context-free grammars (profile SCFG), which were introduced
 independently by Yasu Sakakibara in David Haussler's
-group\citep{Sakakibar94} and by Sean Eddy and Richard
-Durbin\citep{Eddy94}. CMs are closely related to profile hidden Markov
+group \citep{Sakakibara94c} and by Sean Eddy and Richard
+Durbin \citep{Eddy94}. CMs are closely related to profile hidden Markov
 models (profile HMMs) commonly used for protein sequence analysis, but
 are more complex. CMs and profile HMMs both capture position-specific
 information about how conserved each column of the alignment is, and
@@ -82,8 +83,8 @@ models a single consensus structure for the family it models.
 \subsection{Applications of covariance models}
 
 Infernal can be useful if you're intereseted in a particular RNA
-family. You've carefully collected and aligned a set of homologs and
-have a predicted (or known) secondary structure for the
+family. Imagine that you've carefully collected and aligned a set of
+homologs and have a predicted (or known) secondary structure for the
 family. Homology searches with BLAST using single sequences from your
 set of homologs may not reveal any additional homologs in sequence
 databases. You can build a CM from your alignment and redo your search
@@ -94,8 +95,8 @@ essentially does just this, but on a much larger scale. The Rfam
 curators maintain about 2000 RNA families, each represented by a
 multiple sequence alignment (called a \emph{seed} alignment) and a CM
 built from that alignment. Each Rfam release involves a search through
-a large EMBL-based nucleotide sequence database with each of the
-CMs which identifies putative structural RNAs in the database. The
+a large EMBL-based nucleotide sequence database with each of the CMs
+which identifies putative structural RNAs in the database. The
 annotations of these RNAs, as well as the CMs and seed alignments are
 freely available.
 
@@ -103,21 +104,21 @@ Automated genome annotation of structural RNAs can be performed with
 Infernal and a collection of CMs from Rfam, by searching
 through the genome of interest with each CM and collecting information
 on high-scoring hits. Previous versions of Infernal were too slow to
-be incorporated into many genome annotation pipelines, but the 
-roughly 100-fold acceleration achieved in version 1.1 should change
-this.
+be incorporated into many genome annotation pipelines, but we're
+hoping the improved speed of version 1.1 changes this.
 
 Another application is the automated construction and maintenance of
 large sequence- and structure-based multiple alignment databases.  For
 example, the Ribosomal Database Project uses CMs of 16S small subunit
 ribosomal RNA (16S SSU rRNA) to maintain alignments of millions of 16S
-sequences\citep{Cole09}. The CMs (one archaeal 16S and one bacterial
+sequences \citep{Cole09}. The CMs (one archaeal 16S and one bacterial
 16S model) were built from training alignments of only a few hundred
 representative sequences. The manageable size of the training
 alignments means that they can be manually curated prior to building
-the model. Rfam is doing this too, because it creates multiple
-alignments (called \emph{full} alignments) of all of the hits from the
-database its curators believe to be real RNA homologs.
+the model. Rfam is another example of this application too because
+Rfam creates and makes available multiple alignments (called \emph{full}
+alignments) of all of the hits from the database its curators believe
+to be real RNA homologs.
 
 Infernal can also be used to determine what types of RNAs exist in a
 particular sequence dataset. Suppose you're performing a metagenomics
@@ -184,19 +185,19 @@ what structural RNAs are present in a collection of sequences, such as
 a metagenomics dataset\footnote{\prog{cmscan} is similar to
 \prog{cmsearch} but is more convenient for some applications. One
 difference between the two programs is that results from \prog{cmscan}
-are organized per-sequence instead of per-model.}  Another new feature
+are organized per-sequence instead of per-model.}. Another new feature
 of version 1.1 is better handling of truncated RNAs, for which part of
 one or both ends of the RNA is missing due to a premature end of the
-sequence\citep{KolbeEddy09}. These types of fragmentary sequences are
+sequence \citep{KolbeEddy09}. These types of fragmentary sequences are
 common in whole genome shotgun sequencing datasets. While previous
 versions of Infernal were prone to misalignment of these sequences,
 version 1.1 includes implementations of CM search and alignment
 algorithms specialized for truncated sequences \citep{KolbeEddy09} in
 \prog{cmsearch}, \prog{cmscan} and \prog{cmalign}.
 
-Model parameterization has changed in several ways. Mixture Dirichlet
-priors for emissions and single component Dirichlet priors for
-transitions have been reestimated using larger and more diverse
+Model parameterization has changed in several minor ways. Mixture
+Dirichlet priors for emissions and single component Dirichlet priors
+for transitions have been reestimated using larger and more diverse
 datasets than the ones the previous priors were derived from
 (discussed in \citep{NawrockiEddy07}). Also, the definition of match
 and insert columns, previously determined by a simple majority rule
@@ -206,38 +207,38 @@ counts (and same $>=50\%$ rule) after a sequence weighting algorithm
 is applied. And inserts before the first and after the final match
 position of alignments are now ignored by the CM construction
 procedure and thus no longer contribute to parameterizing the
-transition probabilities of the \ccode{ROOT\_IL} and \ccode{ROOT\_IR}
-states. These changes mean that for a given input alignment a model
-built with version 1.1 may have different numbers of states and nodes,
-and will have (usually) slightly different parameters, than a model
-built from the same alignment with version 1.0.2.  Finally, the
-important \prog{cmbuild} command line options \prog{--rf} and
-\prog{--gapthresh} have been changed to \prog{--hand} and
-\prog{--symfrac}^\footnote{To reproduce the behavior obtained in
-previous versions with \prog{--gapthresh <x>} use \prog{--symfrac
-<1-x>}.}.
+transition probabilities of the model (specifically, the
+\ccode{ROOT\_IL} and \ccode{ROOT\_IR} states). These changes mean
+that for a given input alignment a model built with version 1.1 may
+have different numbers of states and nodes, and will have (usually)
+slightly different parameters, than a model built from the same
+alignment with version 1.0.2.  Finally, the important \prog{cmbuild}
+command line options \prog{--rf} and \prog{--gapthresh} have been
+renamed to \prog{--hand} and \prog{--symfrac}\footnote{To reproduce
+the behavior obtained in previous versions with \prog{--gapthresh <x>}
+use \prog{--symfrac <1-x>}.}.
 
 The formatting of \prog{cmsearch} output has also changed. It mirrors
 the output format of the \prog{hmmsearch} program from HMMER3, for
 examples see the tutorial section of this guide. Another change is
 that the most compute-intensive programs in Infernal 1.1
-(\prog{cmcalibrate}, \prog{cmsearch}, \prog{cmscan} and \prog{cmalign}
-support multicore parallelization using threads.
+(\prog{cmcalibrate}, \prog{cmsearch}, \prog{cmscan} and
+\prog{cmalign}) support multicore parallelization using threads.
 
 \subsection{How to learn more about CMs and profile HMMs}
 
-Section~\ref{section:build} of this guide may be a good place to
+Section~\ref{section:cmbuild} of this guide may be a good place to
 start. That section walks through an example of how a CM is
 constructed from a structurally annotated multiple sequence alignment.
 The tutorial section is also recommended for all users.
 
 As for other available publications: two papers published in 1994
 introduced profile SCFGs in computational biology
-\citep{Sakakibara94,Eddy94}, and our lab has published several papers
+\citep{Sakakibara94c,Eddy94}, and our lab has published several papers
 \citep{Eddy02b,KleinEddy03,NawrockiEddy07,Nawrocki09,KolbeEddy09,KolbeEddy11},
 book chapters \citep{Eddy06b,NawrockiEddy09}, and a few doctoral
-theses \citep{Klein03,Nawrocki09b,Kolbe10} related to CMs\footnote{all
-available from available from
+theses \citep{Klein03,Nawrocki09b,Kolbe10} related to
+CMs\footnote{Eddy lab publications are available from
 \url{http://selab.janelia.org/publications.html}}. The book
 \emph{Biological Sequence Analysis: Probabilistic Models of Proteins
 and Nucleic Acids} \citep{Durbin98} has several chapters deveoted to
