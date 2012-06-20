@@ -16,14 +16,12 @@
  * - negative sequences with >= 0 positives embedded 
  *   within them
  *
- * Seven output files are generated:
+ * Six output files are generated:
  *   <basename>.tbl  - table summarizing the benchmark
  *   <basename>.msa  - MSA queries, stockholm format
  *   <basename>.fa   - benchmark sequences, fasta format
  *   <basename>.pos  - table summarizing positive test set;
  *                     their locations in the benchmark seqs
- *   <basename>.neg  - table summarizing negative test set;                
- *                     where they derived from in <FASTA db>
  *   <basename>.pfa  - positive sequences, fasta format
  *   <basename>.ppos - table summarizing positive test seqs;
  *                     their locations in the .pfa file

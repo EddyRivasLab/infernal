@@ -38,25 +38,10 @@
 #    It must take the following arguments:
 #    <execdir> <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile> <posfile> <fafile> <outfile>
 #
-# Command-line options:
-# -D     : debugging; don't unlink intermediate files, save them all
-# -P     : run a positive-only benchmark, only positive sequences will be searched
-# -W     : run a positive-window-only benchmark
-# -Y     : run a no-positive benchmark; for timings only
-# -B <f> : build models as needed, using options in file <f>
-# -C <f> : fetch models from existing file <f>
-# -N <n> : specify <N> processes be used for all families, default is to do one process per family
-# -M <n> : pass -M <n> onto search module, telling it to run MPI with <n> <= 8 processors.
-#          only valid if --mpi exists in the $optsfile
-# -O <n> : only submit a single job, number <n> (for testing)
-# -X <s> : pass on -X <s> to the benchmark script
-# -Z     : pass on -Z to the benchmark script
-# -H <f> : pass on -H <f> to the benchmark script
-# -I <n> : requires x-cmsearch, do <n> searches, on <bmark_pfx>.1.fa through <bmark_pfx>.<n>.fa
+# See definition of $options_usage string for description of options.
 #
-# Examples of rmark benchmark:
-#   ./rmark-master.pl ../src/ cmsearch-results cmsearch-df.opts rmark3 ./rmark-cmsearch
-#   ./rmark-master.pl -P -N 1 ../src/ cmsearch-po-results cmsearch-df.opts rmark3 ./rmark-cmsearch
+# Example of rmark benchmark:
+#   ./rmark-master.pl -C models/rmark3.cm -F ../src/ rmark models r3-test cmsearch-df.opts rmark3 rmark/x-cmsearch
 
 use Getopt::Std;
 getopts('DPWB:N:T:FAM:O:C:X:ZYH:I:');

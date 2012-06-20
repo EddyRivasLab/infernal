@@ -3165,11 +3165,11 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 
   /* per-mode vectors */
   ESL_ALLOC(JpA,     sizeof(float) * (MAXCONNECT+1));
-  ESL_ALLOC(LpA,     sizeof(float) * MAXCONNECT);
-  ESL_ALLOC(RpA,     sizeof(float) * MAXCONNECT);
+  ESL_ALLOC(LpA,     sizeof(float) * (MAXCONNECT+1));
+  ESL_ALLOC(RpA,     sizeof(float) * (MAXCONNECT+1));
   esl_vec_FSet(JpA,      MAXCONNECT+1, 0.);          
-  esl_vec_FSet(LpA,      MAXCONNECT,   0.);          
-  esl_vec_FSet(RpA,      MAXCONNECT,   0.);          
+  esl_vec_FSet(LpA,      MAXCONNECT+1, 0.);          
+  esl_vec_FSet(RpA,      MAXCONNECT+1, 0.);          
 
   /* Determine which matrices we might use, based on <preset_mode>, if TRMODE_UNKNOWN, filled_L, filled_R, filled_T will all be set as TRUE */
   if((status = cm_TrFillFromMode(preset_mode, &filled_L, &filled_R, &filled_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetree(), bogus mode: %d", preset_mode);
@@ -3448,8 +3448,8 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  }
 	  /* init JpA, LpA, RpA */
 	  esl_vec_FSet(JpA, MAXCONNECT+1, IMPOSSIBLE);
-	  esl_vec_FSet(LpA, MAXCONNECT,   IMPOSSIBLE);
-	  esl_vec_FSet(RpA, MAXCONNECT,   IMPOSSIBLE);
+	  esl_vec_FSet(LpA, MAXCONNECT+1, IMPOSSIBLE);
+	  esl_vec_FSet(RpA, MAXCONNECT+1, IMPOSSIBLE);
 	  /* fill JpA, LpA, RpA separately */
 	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	    y = cm->cfirst[v] + yoffset;
@@ -3545,6 +3545,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if(validA    != NULL) free(validA);
   if(y_modeA   != NULL) free(y_modeA);
   if(z_modeA   != NULL) free(z_modeA);
+  if(kA        != NULL) free(kA);
   if(yoffsetA  != NULL) free(yoffsetA);
   if(JpA       != NULL) free(JpA);
   if(LpA       != NULL) free(LpA);
@@ -3572,6 +3573,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if(validA    != NULL) free(validA);
   if(y_modeA   != NULL) free(y_modeA);
   if(z_modeA   != NULL) free(z_modeA);
+  if(kA        != NULL) free(kA);
   if(yoffsetA  != NULL) free(yoffsetA);
   if(JpA       != NULL) free(JpA);
   if(LpA       != NULL) free(LpA);
@@ -3649,7 +3651,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   float   *RpA = NULL;                /* prob vector for possible transitions to take, R mode */
   int      vms_sd, vms_sdl, vms_sdr;  /* mode-specific state delta, state left delta, state right delta */
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
-  int      filled_L, filled_R, filled_T;       /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
+  int      filled_L, filled_R, filled_T; /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends, even if outside bands */
   int      pty_idx;                   /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;                 /* truncation penalty, differs based on pass_idx and if we're local or global */
@@ -3697,11 +3699,11 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 
   /* per-mode vectors */
   ESL_ALLOC(JpA,     sizeof(float) * (MAXCONNECT+1));
-  ESL_ALLOC(LpA,     sizeof(float) * MAXCONNECT);
-  ESL_ALLOC(RpA,     sizeof(float) * MAXCONNECT);
+  ESL_ALLOC(LpA,     sizeof(float) * (MAXCONNECT+1));
+  ESL_ALLOC(RpA,     sizeof(float) * (MAXCONNECT+1));
   esl_vec_FSet(JpA,      MAXCONNECT+1, 0.);          
-  esl_vec_FSet(LpA,      MAXCONNECT,   0.);          
-  esl_vec_FSet(RpA,      MAXCONNECT,   0.);          
+  esl_vec_FSet(LpA,      MAXCONNECT+1, 0.);          
+  esl_vec_FSet(RpA,      MAXCONNECT+1, 0.);          
 
   /* Determine which matrices we might use, based on <preset_mode>, if TRMODE_UNKNOWN, filled_L, filled_R, filled_T will all be set as TRUE */
   if((status = cm_TrFillFromMode(preset_mode, &filled_L, &filled_R, &filled_T)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetreeHB(), bogus mode: %d", preset_mode);
@@ -3853,6 +3855,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	  jp_y = j-jmin[y];
 	  if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { /* d is valid in j, y */
+	    dp_y = d - hdmin[y][jp_y];
 	    if(cp9b->Jvalid[y]) { 
 	      pA[d+1]      = Jalpha[y][jp_y][dp_y]; /* entire sequence is on left in J mode, k is 0 */
 	      kA[d+1]      = 0;
@@ -3860,7 +3863,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	      z_modeA[d+1] = TRMODE_UNKNOWN;
 	    }
 	    if(filled_L && cp9b->Lvalid[y]) { 
-	      pA[d+2]      = Lalpha[y][jp_y][dp_y]; /* entire sequence is on left in J mode, k is 0 */
+	      pA[d+2]      = Lalpha[y][jp_y][dp_y]; /* entire sequence is on left in L mode, k is 0 */
 	      kA[d+2]      = 0;
 	      y_modeA[d+2] = TRMODE_L;
 	      z_modeA[d+2] = TRMODE_UNKNOWN;
@@ -3921,7 +3924,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       }
 
       /* sample k */
-      if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of transitions (B_st) is 0.");
+      if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_TrStochasticParsetreeHB() number of transitions (B_st) is 0.");
       y_mode = y_modeA[choice];
       z_mode = z_modeA[choice];
       k      = kA[choice];      
@@ -4071,8 +4074,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  }
 	  /* init JpA, LpA, RpA */
 	  esl_vec_FSet(JpA, MAXCONNECT+1, IMPOSSIBLE);
-	  esl_vec_FSet(LpA, MAXCONNECT,   IMPOSSIBLE);
-	  esl_vec_FSet(RpA, MAXCONNECT,   IMPOSSIBLE);
+	  esl_vec_FSet(LpA, MAXCONNECT+1, IMPOSSIBLE);
+	  esl_vec_FSet(RpA, MAXCONNECT+1, IMPOSSIBLE);
 	  /* fill JpA, LpA, RpA separately */
 	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	    y = cm->cfirst[v] + yoffset;
@@ -4174,6 +4177,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(validA    != NULL) free(validA);
   if(y_modeA   != NULL) free(y_modeA);
   if(z_modeA   != NULL) free(z_modeA);
+  if(kA        != NULL) free(kA);
   if(yoffsetA  != NULL) free(yoffsetA);
   if(JpA       != NULL) free(JpA);
   if(LpA       != NULL) free(LpA);
@@ -4201,6 +4205,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(validA    != NULL) free(validA);
   if(y_modeA   != NULL) free(y_modeA);
   if(z_modeA   != NULL) free(z_modeA);
+  if(kA        != NULL) free(kA);
   if(yoffsetA  != NULL) free(yoffsetA);
   if(JpA       != NULL) free(JpA);
   if(LpA       != NULL) free(LpA);

@@ -9,20 +9,9 @@
 # all search programs (BLAST uses it, for example).
 #
 # Usage:      x-cmsearch <execdir>        <scriptdir> <modeldir> <resultdir> <optsfile> <tblfile> <msafile>  <posfile>  <fafile> <outfile>
-# Example:  ./x-cmsearch ../hmmer/src/    ../rmark/   h3-models  testdir     h3-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
+# Example:  ./x-cmsearch ../infernal/src/  ../rmark/   i1-models  testdir     i1-df.opts test.tbl  rmark3.msa rmark3.pos test.fa  test.out
 #
-# Command-line options:
-# -D     : debugging; don't unlink intermediate files, save them all
-# -T     : only search TOP strand of db seqs (--toponly)
-# -B     : only search BOTTOM strand of db seqs (--bottomonly)
-# -P     : run a positive-only benchmark, only each family's positive sequences will be searched
-# -W     : run a positive-window-only benchmark
-# -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the $optsfile
-# -G <f> : build models as needed, instead of reading them from a file
-# -C <f> : fetch models from existing file <f>
-# -Y     : run a no-positive benchmark; for timings only
-# -Z     : run 'dcmsearch', not 'cmsearch'
-# -K <s> : use key <s> when naming files
+# For command-line options, see definition of $options_usage below.
 #
 # SRE, Tue Apr 20 10:32:49 2010 [Janelia]
 # SVN $Id$
@@ -61,14 +50,16 @@ if($do_posonly && $do_nopos)                            { die "ERROR, only one o
 if($do_poswindowonly && $do_nopos)                      { die "ERROR, only one of -Y or -W may be enabled."; }
 $usage = "Usage: x-cmsearch [options]\n\t<execdir>\n\t<scriptdir>\n\t<modeldir>\n\t<resultdir>\n\t<optsfile>\n\t<tblfile>\n\t<msafile>\n\t<posfile>\n\t<fafile>\n\t<outfile>\n";
 $options_usage  = "Options:\n\t";
+$options_usage .= " -D     : debugging; don't unlink intermediate files, save them all\n\t";
+$options_usage .= " -T     : use --toponly in cmsearch\n\t";
+$options_usage .= " -B     : use --bottomonly in cmsearch\n\t";
 $options_usage .= " -P     : run a positive-only benchmark, only each family's positive sequences will be searched\n\t";
 $options_usage .= " -W     : run a positive-window-only benchmark\n\t";
 $options_usage .= " -M <n> : run MPI with <n> <= 8 processors, only valid if --mpi exists in the <optsfile>\n\t";
 $options_usage .= " -G <f> : build models as needed, using options in file <f>\n\t";
 $options_usage .= " -C <f> : fetch models from existing file <f>\n\t";
 $options_usage .= " -Z     : run v1.0 cmsearch\n\t";
-$options_usage .= " -B     : use --toponly in cmsearch\n\t";
-$options_usage .= " -T     : use --bottomonly in cmsearch\n\t";
+$options_usage .= " -Y     : run a no-positive benchmark; for timings only\n\t";
 $options_usage .= " -K <s> : use key <s> when naming output files\n\n";
 if(scalar(@ARGV) != 10) { printf("$usage\n$options_usage"); exit(1); }
 
@@ -245,12 +236,12 @@ while (<TABLE>)
 	    while (<OUTPUT>)
 	    {
 		if (/^\#/) { next; }
-		@fields   = split(' ', $_, 13);
+		@fields   = split(' ', $_, 16);
 		$target      = $fields[0];
-		$target_from = $fields[6];
-		$target_to   = $fields[7];
-		$bitscore    = $fields[12];
-		$evalue      = $fields[11];
+		$target_from = $fields[7];
+		$target_to   = $fields[8];
+		$bitscore    = $fields[14];
+		$evalue      = $fields[15];
 		printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $evalue, $bitscore, $target_from, $target_to, $target, $msaname;
 	    }
 	}
