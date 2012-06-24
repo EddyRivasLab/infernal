@@ -241,7 +241,7 @@
 # xref notebook/1015-infernal-bands; xref STL7 p.130.
 #
 # Build CMs, these are used by all test programs
-1  prep      build/trna          @src/cmbuild@ --hand -F %TRNA.CM% !testsuite/trna.sto!
+1  prep      build/trna          @src/cmbuild@ --hand -F %TRNA.CM% !testsuite/trna-2.sto!
 1  prep      build/rp            @src/cmbuild@ --hand -F %RP.CM%   !testsuite/RNaseP.sto!
 2  prep      build/ssu           @src/cmbuild@ --hand -F %SSU.CM%  !testsuite/ssu.sto!
 
