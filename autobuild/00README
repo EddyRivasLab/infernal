@@ -5,10 +5,6 @@ The automated build system consists of two levels of files.  A build
 can be done at either of the two levels. Each level increases the
 amount of automation of the process. 
 
-HMMER's autobuild system includes a third level - the so-called
-'nightlies' using hmmer_autobuilds.pl; this level has not yet been
-added for Infernal.
-
 1. Command scripts (intel-linux-gcc, for example)
    Minimal script to build one configuration, on current host and in
    current directory.
@@ -81,4 +77,39 @@ added for Infernal.
    Upon failure, it exits with nonzero status and prints "FAIL: " 
    followed by a short reason, to both stdout and the build.status file.
 
+3. infernal_autobuilds.pl
+   Usage:    infernal_autobuilds.pl  <srcdir>
+   Example:  infernal_autobuilds.pl  ~/nightlies/infernal/trunk > /tmp/infernal_autobuilds.log
+
+   This is the top-level automation script. It moves into the <srcdir>
+   (which is expected to be a Subversion working directory).  It svn
+   update's (and reruns autoconf just in case) to get a freshest copy
+   from Subversion. It then runs through a data table that defines a
+   list of build configs, and the compilation host for each config.
+   For example:
+
+   @buildconfigs = (
+    { name => "intel-linux-icc-mpi",      host => "login-eddy"  },
+    { name => "intel-linux-gcc",          host => "login-eddy"  },
+    { name => "intel-macosx-gcc-debug",   host => "."           },
+    { name => "intel-macosx-gcc",         host => "."           },
+    );
+
+   This defines four configs. For each, we ssh into the compile host
+   (if necessary; "." means localhost), then call "autobuild.pl" on
+   the build configuration.
+   
+   The output is a table: <buildconfig> <compile host>  <ok or FAIL>
+
+   intel-linux-icc-mpi            login-eddy           ok
+   intel-linux-gcc                login-eddy           ok
+   intel-macosx-gcc-debug         .                    ok
+   intel-macosx-gcc               .                    ok
+
+   A build directory is created for each config, in
+   <srcdir>/ab-<script>; for example, ab-intel-linux-gcc.  In that
+   directory are three log files from autobuild.pl: build.out (output
+   of the build process), build.env (the environment-setting commands
+   from the buildconfig), and build.status (the "ok" or "FAIL" string,
+   same as column 3 in the table above.)
 
