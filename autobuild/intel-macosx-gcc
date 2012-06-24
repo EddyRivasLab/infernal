@@ -1,8 +1,10 @@
+# SQCLEVEL is 2 instead of 3 to disallow valgrind testing,
+# I'm not sure where it is on mac os machines...
 ../configure 
 make V=1
 make V=1 dev                              
-make V=1 SQCLEVEL=3 check                            
-make V=1 SQCLEVEL=3 devcheck                            
+make V=1 SQCLEVEL=2 check                            
+make V=1 SQCLEVEL=2 devcheck                            
 
 
 
