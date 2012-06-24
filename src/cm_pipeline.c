@@ -2121,7 +2121,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   int               new_nsurv_fwd;    /* used when merging fwd survivors */
   ESL_DSQ          *subdsq;           /* a ptr to the first position of a window */
   int               have_rest;        /* do we have the full <om> read in? */
-  P7_MSV_WINDOWLIST wlist;           /* list of windows, structure taken by p7_MSVFilter_longtarget() */
+  P7_HMM_WINDOWLIST wlist;            /* list of windows, structure taken by p7_MSVFilter_longtarget() */
   int               save_max_length = om->max_length;
 
   /* filter thresholds and on/off parameters, these will normally be set to
@@ -2166,7 +2166,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   /***************************************************/
   /* Filter 1: MSV, long target-variant, with p7 HMM */
   if(cur_do_msv) { 
-    fm_initWindows(&wlist);
+    p7_hmmwindow_init(&wlist);
     status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, cur_F1, &wlist);
 
     if(wlist.count > 0) { 
