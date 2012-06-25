@@ -2768,7 +2768,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       if(! have_el && sd > 0) { /* this is only necessary for emitters (MP, ML, MR in this context) */
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
-	  d = ESL_MIN(sd+1, hdmin[v][jp_v]);
+	  d = ESL_MAX(sd+1, hdmin[v][jp_v]);
 	  dp_v = d - hdmin[v][jp_v];
 	  for (; d <= hdmax[v][jp_v]; d++) { 
 	    if(yshadow[v][jp_v][dp_v] == USED_EL) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
