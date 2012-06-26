@@ -1,4 +1,4 @@
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/a [1.1rc1 | June 2012]
 NAME     5S_rRNA
 ACC      RF00001
 DESC     5S ribosomal RNA
@@ -491,7 +491,7 @@ CM
                                              [ END    90 ]      -      - - - - -
      E   365   364 3    -1     0     0     0     0     0                                                 
 //
-HMMER3/f [i1.1 | June 2012]
+HMMER3/f [i1.1rc1 | June 2012]
 NAME  5S_rRNA
 ACC   RF00001
 DESC  5S ribosomal RNA
