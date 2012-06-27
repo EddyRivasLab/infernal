@@ -4,11 +4,11 @@ EPN, Mon Jun 25 20:35:05 2012
 ________________________________________________________________
 
 Infernal 1.1 is a major new release of Infernal. Most of the programs
-in Infernal have been completely rewritten, and output content and
-formatting for several programs has changed dramatically. Many of
-these changes have been enabled by and modeled after the HMMER3
-package (http://hmmer.org). Here are a list of the most significant
-changes since the last release (1.0.2):
+in Infernal have been completely rewritten since the last release
+(v1.0.2), and output content and formatting for several programs has
+changed dramatically. Many of the changes have been enabled by and
+modeled after the HMMER3 package (http://hmmer.org). Here are a list
+of the most significant changes since the 1.0.2 release:
 
 - Infernal now depends on HMMER (which is included and built with
   Infernal) as a library in addition to the Easel library.

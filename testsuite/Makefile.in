@@ -41,7 +41,7 @@ cmalign:
 	@echo
 	@grep align: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmbuild:
 	@echo 
@@ -49,7 +49,7 @@ cmbuild:
 	@echo
 	@grep build: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmcalibrate:
 	@echo 
@@ -57,7 +57,7 @@ cmcalibrate:
 	@echo
 	@grep calibrate: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmconvert:
 	@echo 
@@ -65,7 +65,7 @@ cmconvert:
 	@echo
 	@grep convert: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmemit:
 	@echo 
@@ -73,7 +73,7 @@ cmemit:
 	@echo
 	@grep emit: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmfetch:
 	@echo 
@@ -81,7 +81,7 @@ cmfetch:
 	@echo
 	@grep fetch: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmpress:
 	@echo 
@@ -89,7 +89,7 @@ cmpress:
 	@echo
 	@grep press: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmscan:
 	@echo 
@@ -97,7 +97,7 @@ cmscan:
 	@echo
 	@grep scan: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmsearch:
 	@echo 
@@ -105,7 +105,7 @@ cmsearch:
 	@echo
 	@grep search: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmstat:
 	@echo 
@@ -113,7 +113,7 @@ cmstat:
 	@echo
 	@grep stat: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 clean:
 	-rm -f *.gcno *.gcda *.gcov
