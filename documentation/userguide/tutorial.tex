@@ -199,12 +199,12 @@ and you'll see some output that looks like:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1 (June 2012)
+# INFERNAL 1.1rc1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5.cm
-# alignment file:                                     ../tutorial/tRNA5.sto
+# alignment file:                                     tutorial/tRNA5.sto
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #                                                                      rel entropy
 #                                                                      -----------
@@ -284,7 +284,7 @@ You should see something like this:
 
 \begin{sreoutput}
 # cmcalibrate :: fit exponential tails for CM E-values
-# INFERNAL 1.1 (June 2012)
+# INFERNAL 1.1rc1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -339,12 +339,12 @@ your ran, on what, and with what options:
 
 \begin{sreoutput}
 # cmsearch :: search CM(s) against a sequence database
-# INFERNAL 1.1 (June 2012)
+# INFERNAL 1.1rc1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query CM file:                         tRNA5.cm
-# target sequence database:              ../tutorial/mrum-genome.fa
+# target sequence database:              tutorial/mrum-genome.fa
 # number of worker threads:              2
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \end{sreoutput}
@@ -352,7 +352,6 @@ your ran, on what, and with what options:
 The second section is a list of ranked top hits (sorted by E-value,
 most significant hit first):
 
-% tutorial regression: tRNA5-search.out
 \begin{sreoutput}
  rank     E-value  score  bias  sequence      start     end   mdl trunc   gc  description
  ----   --------- ------ -----  ----------- ------- -------   --- ----- ----  -----------
@@ -795,7 +794,7 @@ scores. Hits with scores above the reporting threshold were output, as
 described above. In this search there were 56 such hits.
 
 Finally, the running time of the search is reported, in CPU time and
-elapsed time. This search took about 1.4 seconds of elapsed (wall
+elapsed time. This search took about 1.8 seconds of elapsed (wall
 %                                    ^^^
 clock time) (running on two cores). 
 
@@ -939,7 +938,7 @@ The header and the first section of the output will look like:
 
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
-# INFERNAL 1.1 (June 2012)
+# INFERNAL 1.1rc1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1032,6 +1031,7 @@ total of 1886 residues were searched, since both strands were
 %        ^^^^
 examined. The next line reports that the average number of residues
 re-searched for truncated hits per model was 992.0. An average is
+%                                            ^^^^^
 reported here because remember the number of residues re-searched per
 model depends on the expected maximum size of a hit, which varies per
 model, because only sequence terminii are examined for truncated hits
@@ -1165,7 +1165,7 @@ The output of this is a Stockholm format multiple alignment file:
 
 \begin{tinysreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1
+#=GF AU Infernal 1.1rc1
 
 mrum-tRNA.1          GGAGCUAUAGCUCAAU..GGC..AGAGCGUUUGGCUGACAU........................................CCAAAAGGUUAUGGGUUCGAUUCCCUUUAGCCCCA
 #=GR mrum-tRNA.1  PP ****************..***..******************........................................***********************************
@@ -1294,7 +1294,7 @@ below so it will fit on the page):
 \label{cmalign-cobalamin}
 \begin{sreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1
+#=GF AU Infernal 1.1rc1
 
 Cobalamin.1         -------------------------------GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCA
 #=GR Cobalamin.1 PP ...............................44455566666899******989****************************
@@ -1393,7 +1393,7 @@ identical:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1 (June 2012)
+# INFERNAL 1.1rc1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1651,11 +1651,11 @@ considered a gap by \prog{cmbuild}) for these positions.
 
 To build the hand-specified model from this alignment, do:
 
-\user{cmbuild --hand tRNA5-hand.cm tutorial/tRNA5.hand.sto}
+\user{cmbuild --hand tRNA5-hand.cm tutorial/tRNA5-hand.sto}
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1 (June 2012)
+# INFERNAL 1.1rc1 (June 2012)
 # Copyright (C) 2012 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

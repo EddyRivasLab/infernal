@@ -25,8 +25,8 @@ if (! -d $srcdir) { die "FAIL: source working directory $srcdir not found"; }
 # First we update in the source working directory.
 #
 chdir $srcdir ||    die "FAIL: couldn't cd to $srcdir"; 
-system("$svn update > autobuilds.log 2>&1");             if ($?) { die "FAIL: svn update"; }
-system("$autoconf  > autobuilds.log 2>&1 ");            if ($?) { die "FAIL: H3 $autoconf"; }
+system("$svn update > autobuilds.log 2>&1");            if ($?) { die "FAIL: svn update"; }
+system("$autoconf  > autobuilds.log 2>&1 ");            if ($?) { die "FAIL: inf $autoconf"; }
 system("(cd easel; $autoconf) > autobuilds.log 2>&1");  if ($?) { die "FAIL: esl $autoconf"; }
 
 # Then we try to build on everything
