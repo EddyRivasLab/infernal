@@ -209,7 +209,7 @@ main(int argc, char **argv)
   ESL_GETOPTS     *go  = NULL;    /* command line processing                 */
   struct cfg_s     cfg;           /* configuration data                      */
   char             errbuf[eslERRBUFSIZE];
-  int              i;
+  int              i, i2;
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
@@ -247,6 +247,7 @@ main(int argc, char **argv)
 
   ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
   ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
+  for(i = 0; i < cfg.cmalloc; i++) cfg.expAA[i]  = NULL; 
   for(i = 0; i < cfg.cmalloc; i++) cfg.namesA[i] = NULL; 
 
   ESL_DASSERT1((EXP_CM_GC  == 0));
@@ -324,7 +325,6 @@ main(int argc, char **argv)
       if(cm->expA != NULL) { 
 	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
       }
-      ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
 
       cm->expA   = cfg.expAA[cmi];
       cm->flags |= CMH_EXPTAIL_STATS; 
@@ -354,6 +354,7 @@ main(int argc, char **argv)
     if (rename(cfg.tmpfile, cfg.cmfile) != 0)            cm_Fail("system error during rewrite of CM file.");
     if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) cm_Fail("system error during rewrite of CM file.");
     free(cfg.tmpfile);
+    cfg.tmpfile = NULL;
     
     /* master specific cleaning */
     if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp) printf("#\n");
@@ -379,15 +380,23 @@ main(int argc, char **argv)
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
 
-    if (cfg.expAA  != NULL) free(cfg.expAA);
-    if (cfg.namesA != NULL) { for(i = 0; i < cfg.ncm; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+    if (cfg.expAA   != NULL) free(cfg.expAA);
+    if (cfg.namesA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+  } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) */
+  else { /* non-master or --forecast or --memreq-specific cleaning */
+    if (cfg.cmfp   != NULL) cm_file_Close(cfg.cmfp);
+    if (cfg.expAA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]  != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
+    if (cfg.namesA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
   }
 
   /* clean up */
-  if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
-  if (cfg.w     != NULL) esl_stopwatch_Destroy(cfg.w);
-  if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.r_est != NULL) esl_randomness_Destroy(cfg.r_est);
+  if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.w       != NULL) esl_stopwatch_Destroy(cfg.w);
+  if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.r_est   != NULL) esl_randomness_Destroy(cfg.r_est);
+  if (cfg.tmpfile != NULL) free(cfg.tmpfile);
+  if (cfg.dnull   != NULL) free(cfg.dnull);
+
   esl_stopwatch_Stop(w);
   if (cfg.my_rank == 0) { 
     printf("#\n");
@@ -446,10 +455,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
 
   /* variables needed for threaded implementation */
+  ESL_SQ         **init_sqA  = NULL; /* for initializing workers */
   WORKER_INFO     *info      = NULL; /* the worker info */
   int              infocnt   = 0;    /* number of worker infos */
 #ifdef HMMER_THREADS
-  ESL_SQ          *sq        = NULL;
   ESL_THREADS     *threadObj = NULL;
   ESL_WORK_QUEUE  *queue     = NULL;
 #endif
@@ -493,9 +502,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
 #ifdef HMMER_THREADS    
-    for (i = 0; i < ncpus * 2; ++i) {
-      if((sq = esl_sq_Create()) == NULL)                     cm_Fail("Failed to allocate sequence");
-      if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add sequence to work queue");
+    ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * (ncpus * 2));
+    for (i = 0; i < ncpus * 2; i++) {
+      init_sqA[i] = NULL;
+      if((init_sqA[i] = esl_sq_CreateDigital(cfg->abc)) == NULL)      cm_Fail("Failed to allocate a sequence");
+      if((status = esl_workqueue_Init(queue, init_sqA[i]))  != eslOK) cm_Fail("Failed to add sequence to work queue");
     }
 #endif
   }
@@ -526,6 +537,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(! esl_opt_IsUsed(go, "--forecast")) { 
 	esl_stopwatch_Start(cfg->w);
 	for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+
+	  /* clone CM for each worker, do this here so --forecast and --memreq don't do it */
+	  if(exp_mode == 0) { 
+	    for (i = 0; i < infocnt; i++) {
+	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+	    }
+	  }
+
 	  /* do we need to switch from global configuration to local? */
 	  if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
 	    /* switch from global to local by copying the current exptail stats from <cm>
@@ -536,23 +555,29 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    FreeCM(cm);
 	    cm = nc_cm;
 	    if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
+	    for (i = 0; i < infocnt; i++) {
+	      if(info[i].cm  != NULL) { FreeCM(info[i].cm); info[i].cm = NULL; } 
+	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+	    }
 	  }
 	  /* set search_opts and determine how many '=' to print to status bar for this mode, 
 	   * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
 	   */
 	  if(ExpModeIsInside(exp_mode)) { 
 	    cm->search_opts |= CM_SEARCH_INSIDE; 
+	    for (i = 0; i < infocnt; i++) info[i].cm->search_opts |= CM_SEARCH_INSIDE;
 	    nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
 	  }
 	  else { 
 	    cm->search_opts &= ~CM_SEARCH_INSIDE; 
+	    for (i = 0; i < infocnt; i++) info[i].cm->search_opts &= ~CM_SEARCH_INSIDE;
 	    nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
 	  }
 	  fflush(stdout);
 	  
-	  /* clone CM for each thread */
+	  /* initialize worker info */
 	  for (i = 0; i < infocnt; ++i) {
-	    if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+	    if(info[i].scA != NULL) free(info[i].scA);
 	    info[i].scA     = NULL;
 	    info[i].nhits   = 0;
 	    info[i].cutoff  = cfg->sc_cutoff;
@@ -571,7 +596,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(status != eslOK) cm_Fail(errbuf);
 	  
 	  merged_nhits = 0;
-	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
 	  for (i = 0; i < infocnt; ++i) {
 	    if(info[i].nhits > 0) { 
 	      ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
@@ -586,6 +610,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
 	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
+
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
 	
 	esl_stopwatch_Stop(cfg->w);
@@ -596,8 +622,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	total_asec += cfg->w->elapsed;
 	
       } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
+      else { /* --forecast */
+	FreeCM(nc_cm);
+      }
     } /* end of else, entered if (! esl_opt_IsUsed(go, "--memreq")) */
     FreeCM(cm);
+    for(i = 0; i < infocnt; i++) { 
+      if(info[i].cm  != NULL) { FreeCM(info[i].cm); info[i].cm = NULL;  }
+      if(info[i].scA != NULL) { free(info[i].scA);  info[i].scA = NULL; }
+    }
     if(sq_block != NULL) esl_sq_DestroyBlock(sq_block);
 
     fflush(stdout);
@@ -609,6 +642,22 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   
   if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(available_ncpus);
   else if(cfg->ncm > 1)              print_total_time(go, total_asec, total_psec);
+
+#ifdef HMMER_THREADS
+  if (ncpus > 0) {
+    esl_workqueue_Reset(queue); 
+    if(init_sqA != NULL) { 
+      for (i = 0; i < ncpus * 2; i++) { 
+	if(init_sqA[i] != NULL) esl_sq_Destroy(init_sqA[i]);
+      }
+      free(init_sqA);
+      init_sqA = NULL;
+    }
+    esl_workqueue_Destroy(queue);
+    esl_threads_Destroy(threadObj);
+  }
+#endif
+  if(info != NULL) { free(info); info = NULL; }
 
   return;
       
@@ -758,6 +807,10 @@ pipeline_thread(void *arg)
 
   status = esl_workqueue_WorkerUpdate(info->queue, NULL, &new_sq);
   if (status != eslOK) cm_Fail("Work queue worker failed");
+
+  /* reinitialize array of hit scores */
+  info->nhits = 0;
+  if(info->scA != NULL) free(info->scA);
 
   /* loop until all sequences have been processed */
   sq = (ESL_SQ *) new_sq;
@@ -1883,6 +1936,12 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
      * We can't use esl_sq_CreateDigitalFrom() bc sq_block->list already contains a contiguous set of ESL_SQ objects 
      */
     sq = sq_block->list + i;
+    /* esl_sq_CreateDigitalBlock() allocates sq->dsq and sq->name for each sq in the block, we'll refill them, so free them first */
+    free(sq->dsq); 
+    sq->dsq = NULL;
+    free(sq->name); 
+    sq->name = NULL;
+
     if ((status = esl_abc_dsqdup(dsq, cfg->L, &(sq->dsq))) != eslOK) goto ERROR;
     free(dsq); /* we just duplicated it */
     sq->L = cfg->L; 

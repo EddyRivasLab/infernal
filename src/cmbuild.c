@@ -1451,7 +1451,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
     * ever implemented - in that case we will want to handle EL
     * emissions (more) correctly.
     */
-   ESL_ALLOC(used_el, sizeof(int) * msa->alen+1);
+   ESL_ALLOC(used_el, sizeof(int) * (msa->alen+1));
    esl_vec_ISet(used_el, msa->alen+1, FALSE);
    for (idx = 0; idx < msa->nseq; idx++) {
      if((status = Transmogrify(cm, errbuf, mtr, msa->ax[idx], used_el, msa->alen, &(tr[idx]))) != eslOK) return status;

@@ -1,4 +1,4 @@
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/a [1.1rc1 | June 2012]
 NAME     tRNA5
 STATES   230
 NODES    61
@@ -321,7 +321,7 @@ CM
                                              [ END    41 ]      -      - - - - -
      E   229   228 3    -1     0     0     0     0     0                                                 
 //
-HMMER3/f [i1.1 | June 2012]
+HMMER3/f [i1.1rc1 | June 2012]
 NAME  tRNA5
 LENG  72
 MAXL  152
@@ -561,7 +561,7 @@ HMM          A        C        G        U
           1.38629  1.38629  1.38629  1.38629
           0.01418  4.26268        *  1.46634  0.26236  0.00000        *
 //
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/a [1.1rc1 | June 2012]
 NAME     5S_rRNA
 ACC      RF00001
 DESC     5S ribosomal RNA
@@ -1054,7 +1054,7 @@ CM
                                              [ END    90 ]      -      - - - - -
      E   365   364 3    -1     0     0     0     0     0                                                 
 //
-HMMER3/f [i1.1 | June 2012]
+HMMER3/f [i1.1rc1 | June 2012]
 NAME  5S_rRNA
 ACC   RF00001
 DESC  5S ribosomal RNA
@@ -1437,7 +1437,7 @@ HMM          A        C        G        U
           1.38629  1.38629  1.38629  1.38629
           0.00992  4.61824        *  1.46634  0.26236  0.00000        *
 //
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/a [1.1rc1 | June 2012]
 NAME     Cobalamin
 ACC      RF00174
 DESC     Cobalamin riboswitch
@@ -2229,7 +2229,7 @@ CM
                                              [ END    99 ]      -      - - - - -
      E   591   590 3    -1     0     0     0     0     0                                                 
 //
-HMMER3/f [i1.1 | June 2012]
+HMMER3/f [i1.1rc1 | June 2012]
 NAME  Cobalamin
 ACC   RF00174
 DESC  Cobalamin riboswitch

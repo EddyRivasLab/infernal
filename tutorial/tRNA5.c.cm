@@ -1,4 +1,4 @@
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/a [1.1rc1 | June 2012]
 NAME     tRNA5
 STATES   230
 NODES    61
@@ -321,7 +321,7 @@ CM
                                              [ END    41 ]      -      - - - - -
      E   229   228 3    -1     0     0     0     0     0                                                 
 //
-HMMER3/f [i1.1 | June 2012]
+HMMER3/f [i1.1rc1 | June 2012]
 NAME  tRNA5
 LENG  72
 MAXL  152

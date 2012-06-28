@@ -39,81 +39,81 @@ cmalign:
 	@echo 
 	@echo Running Infernal cmalign developer test suite...
 	@echo
-	@grep align: dev_testsuite.sqc > tmp.sqc
+	@grep align: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmbuild:
 	@echo 
 	@echo Running Infernal cmbuild developer test suite...
 	@echo
-	@grep build: dev_testsuite.sqc > tmp.sqc
+	@grep build: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmcalibrate:
 	@echo 
 	@echo Running Infernal cmcalibrate developer test suite...
 	@echo
-	@grep calibrate: dev_testsuite.sqc > tmp.sqc
+	@grep calibrate: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmconvert:
 	@echo 
 	@echo Running Infernal cmconvert developer test suite...
 	@echo
-	@grep convert: dev_testsuite.sqc > tmp.sqc
+	@grep convert: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmemit:
 	@echo 
 	@echo Running Infernal cmemit developer test suite...
 	@echo
-	@grep emit: dev_testsuite.sqc > tmp.sqc
+	@grep emit: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmfetch:
 	@echo 
 	@echo Running Infernal cmfetch developer test suite...
 	@echo
-	@grep fetch: dev_testsuite.sqc > tmp.sqc
+	@grep fetch: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmpress:
 	@echo 
 	@echo Running Infernal cmpress developer test suite...
 	@echo
-	@grep press: dev_testsuite.sqc > tmp.sqc
+	@grep press: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmscan:
 	@echo 
 	@echo Running Infernal cmscan developer test suite...
 	@echo
-	@grep scan: dev_testsuite.sqc > tmp.sqc
+	@grep scan: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmsearch:
 	@echo 
 	@echo Running Infernal cmsearch developer test suite...
 	@echo
-	@grep search: dev_testsuite.sqc > tmp.sqc
+	@grep search: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 cmstat:
 	@echo 
 	@echo Running Infernal cmstat developer test suite...
 	@echo
-	@grep stat: dev_testsuite.sqc > tmp.sqc
+	@grep stat: ${srcdir}/dev_testsuite.sqc > ${srcdir}/tmp.sqc
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${DEVSQCLEVEL} ${srcdir}/tmp.sqc     .. ${srcdir}/..
-	@rm tmp.sqc
+	@rm ${srcdir}/tmp.sqc
 
 clean:
 	-rm -f *.gcno *.gcda *.gcov

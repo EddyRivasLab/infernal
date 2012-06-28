@@ -267,9 +267,6 @@
 2  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
 1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
 
-# trcyk (truncated CYK, D&C version, non D&C version is tested in cmalign) 
-1  exercise  trcyk/trna         @src/trcyk@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
-
 # truncyk_check (truncated CYK check, D&C version, non D&C version is tested in cmalign) 
 1  exercise  trcykcheck/trna    @src/truncyk_check@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
@@ -1304,8 +1301,8 @@
 1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
 
 # cleanup, specific to cmscan.sqc (not in cmsearch.sqc)
-1  prep      scan:cleanup/tC      rm -f %TRNA.CM%.*
-1  prep      scan:cleanup/vC      rm -f %VAULT.CM%.*
+1  prep      scan:cleanup/tC      rm -f %T.CM%.*
+1  prep      scan:cleanup/vC      rm -f %V.CM%.*
 1  prep      scan:cleanup/4C      rm -f %4.CM%.*
 
 ##################################################################

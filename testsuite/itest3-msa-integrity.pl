@@ -47,7 +47,8 @@ foreach $trial (1..5)
 print "ok\n";
 unlink "$tmppfx.sto";
 unlink <$tmppfx.fa*>;
-unlink "$tmppfx.dtbl";
+unlink "$tmppfx.tbl";
+unlink "$tmppfx.gdf";
 exit 0;
 
 
@@ -76,7 +77,7 @@ sub cmsearch_msa_integrity_check
     my ($fafile, $cmfile) = @_;
     my $i;
 
-    # need report = include threshold to have same hits in .sto, .dtbl
+    # need report = include threshold to have same hits in .sto, .tbl
     `$builddir/src/cmsearch -E 1 --incE 1 --tblout $tmppfx.tbl -A $tmppfx.sto $cmfile $fafile > /dev/null 2>&1`;
     if ($? != 0) { die "FAIL: cmsearch failed"; }
 

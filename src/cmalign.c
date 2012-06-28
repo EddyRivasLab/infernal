@@ -383,7 +383,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* variables related to threaded implementation */
   int              ncpus     = 0;    /* number of CPUs working */
-  ESL_SQ          *sq        = NULL; /* for initializing workers */
+  ESL_SQ         **init_sqA  = NULL; /* for initializing workers */
   WORKER_INFO     *info      = NULL; /* the worker info */
   int              infocnt   = 0;    /* number of worker infos */
 #ifdef HMMER_THREADS
@@ -465,9 +465,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   
 #ifdef HMMER_THREADS    
-  for (k = 0; k < ncpus * 2; ++k) {
-    if((sq     = esl_sq_CreateDigital(cfg->abc)) == NULL)  cm_Fail("Failed to allocate a sequence");
-    if((status = esl_workqueue_Init(queue, sq))  != eslOK) cm_Fail("Failed to add sequence to work queue");
+  ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * (ncpus * 2));
+  for (k = 0; k < ncpus * 2; k++) {
+    init_sqA[k] = NULL;
+    if((init_sqA[k] = esl_sq_CreateDigital(cfg->abc)) == NULL)          cm_Fail("Failed to allocate a sequence");
+    if((status      = esl_workqueue_Init(queue, init_sqA[k])) != eslOK) cm_Fail("Failed to add sequence to work queue");
   }
 #endif
 
@@ -627,6 +629,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
     esl_workqueue_Reset(queue); 
+    if(init_sqA != NULL) { 
+      for (k = 0; k < ncpus * 2; k++) { 
+	if(init_sqA[k] != NULL) esl_sq_Destroy(init_sqA[k]);
+      }
+      free(init_sqA);
+      init_sqA = NULL;
+    }
     esl_workqueue_Destroy(queue);
     esl_threads_Destroy(threadObj);
   }
