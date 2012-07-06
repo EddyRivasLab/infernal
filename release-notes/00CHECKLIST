@@ -641,7 +641,7 @@ macosx-intel build (on Sean's desktop):
   variable in the configure.ac files to i1.1rc1).
 
   Go back to working copies of the trunks and merge the release branches into it.
-       cd ~/src/infernal/trunk
+       cd ~/src/infernal
        svn update
 
        svn diff  -r r4120:4130 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1 > tmp
