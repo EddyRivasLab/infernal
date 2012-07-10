@@ -82,9 +82,9 @@ is complete.
     svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1  infernal-release
 
 Don't call this working directory infernal-1.1, nor infernal! Call it
-infernal-release, because later "make dist" is going to try to create
-infernal-xx as its release, and because you want to recognize that it's
-different from src/infernal.
+infernal-release, because later we'll create infernal-xx as its
+release, and because you want to recognize that it's different from
+src/infernal.
 
 If this is the first time (a new release branch), you also need to
 update the "svn:externals" so Easel and HMMER are checked out from 
@@ -346,11 +346,19 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 * clean up files that don't belong in the distro, 
   including hmmer's easel subdir.
   (I chose to remove Manuscripts because it's big (39M))
+
+  Note: after 1.1rc1, we changed this part: documentation/userguide
+  in infernal and hmmer, and documentation/ in easel are no longer
+  removed. Their Makefile.in's have been updated to check for req'd
+  executables before building the guide. They were originally removed
+  b/c Sean didn't want users going in there, running make, failing
+  with many errors due to missing executables, and reporting bugs to
+  us.
+
    make distclean
    cp   release-notes/RELEASE-${INFERNAL_VERSION} RELEASE-NOTES
    rm -rf Bugs
    rm -rf Manuscripts
-   rm -rf documentation/userguide
    rm -rf release-notes
    rm -rf autobuild
 
@@ -358,7 +366,6 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    rm -rf easel
    rm -rf bugs
    rm -rf contrib
-   rm -rf documentation/userguide
    rm -rf release-notes
    rm -rf test-speed
    rm -rf autobuild
@@ -366,7 +373,6 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
    cd ../easel
    rm -f  00CHECKLIST LICENSE.csh.in LICENSE.tag 
-   rm -rf documentation
    cd ..
 
 * record and finish release notes
@@ -440,6 +446,8 @@ Also, do a rmark3 benchmark with default settings and --mid.
 
 Check the userguide (Userguide.pdf).
 
+Ensure 'make clean' and 'make distclean' finish without errors. The
+1.1rc1 distro had a bug that caused errors for both of these.
 
 ================================================================
 = Binary distros
@@ -566,6 +574,9 @@ macosx-intel build (on Sean's desktop):
    (cd /var/ftp/pub/software/infernal; sudo ln -s infernal-${INFERNAL_VERSION}.tar.gz infernal.tar.gz)
    logout
 
+* Install on login-eddy. Currently, I don't have permission to
+  install software on login-eddy, so just email Goran at this point.
+
 * Update the web site and the blog I can't do a 'make', because I
   don't have proper permission. So I have to copy all the files that
   change in ~/web/infernal/ (usually just index.html) to
@@ -609,7 +620,7 @@ macosx-intel build (on Sean's desktop):
   You must do this by diff of specific revisions in the branch.
   Do *not* diff the branch against the trunk; if the trunk has its own
   changes that should be retained, you'll revert them to the branch
-  version!
+o  version!
 
   If you're doing a minor bugfix release on a stable branch, you know the
   revs that introduced the bugfixes; merge them explicitly. For example:
