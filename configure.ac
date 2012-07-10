@@ -677,9 +677,6 @@ AC_CONFIG_HEADERS(src/config.h)
 if test -d release-notes; then
   AC_CONFIG_FILES(release-notes/LICENSE.sh)
 fi
-if test -d documentation/userguide; then
-  AC_CONFIG_FILES([documentation/userguide/Makefile])
-fi
 
 AC_CONFIG_FILES([src/Makefile])
 if test "$impl_choice" = "sse"; then
@@ -689,13 +686,12 @@ AC_CONFIG_FILES([testsuite/Makefile])
 AC_CONFIG_FILES([rmark/Makefile])
 AC_CONFIG_FILES([documentation/Makefile])
 AC_CONFIG_FILES([documentation/manpages/Makefile])
+AC_CONFIG_FILES([documentation/userguide/Makefile])
 
 # HMMER files
 AC_CONFIG_FILES([hmmer/documentation/Makefile])
 AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
-if test -d hmmer/documentation/userguide; then
-  AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
-fi
+AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
 AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
 AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
 AC_CONFIG_FILES([hmmer/libdivsufsort/Makefile])
@@ -715,9 +711,7 @@ AC_CONFIG_HEADERS([easel/esl_config.h])
 AC_CONFIG_FILES([easel/miniapps/Makefile])
 AC_CONFIG_FILES([easel/testsuite/Makefile])
 AC_CONFIG_FILES([easel/Makefile])
-if test -e "easel/documentation/Makefile.in"; then
-  AC_CONFIG_FILES([easel/documentation/Makefile])
-fi
+AC_CONFIG_FILES([easel/documentation/Makefile])
 
 ################################################################
 # 13. AC_OUTPUT
