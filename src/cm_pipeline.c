@@ -24,7 +24,7 @@
 
 #include "infernal.h"
 
-static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
+static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *scoredata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
 				    P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_env_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
@@ -1154,7 +1154,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  * Xref:      J4/25.
  */
 int
-cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
+cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *scoredata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm)
 {
   int             status;
   int             nwin = 0;     /* number of windows surviving MSV & Vit & lFwd, filled by pli_p7_filter() */
@@ -1293,7 +1293,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 3
       printf("\nHMM ONLY PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-      if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+      if((status = pli_p7_filter(pli, om, bg, p7_evparam, scoredata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
       prv_ntophits = hitlist->N;
@@ -1317,7 +1317,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 3
 	printf("\nPIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-	if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+	if((status = pli_p7_filter(pli, om, bg, p7_evparam, scoredata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 #if eslDEBUGLEVEL >= 3
@@ -2095,7 +2095,7 @@ cm_pli_PassAllowsTruncation(int pass_idx)
  * Xref:      J4/25.
  */
 int
-pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
+pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *scoredata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
 {
   int               status;
   float             mfsc, vfsc, fwdsc;/* filter scores          */
@@ -2167,7 +2167,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   /* Filter 1: MSV, long target-variant, with p7 HMM */
   if(cur_do_msv) { 
     p7_hmmwindow_init(&wlist);
-    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, msvdata, bg, cur_F1, &wlist);
+    status = p7_MSVFilter_longtarget(sq->dsq, sq->n, om, pli->oxf, scoredata, bg, cur_F1, &wlist);
 
     if(wlist.count > 0) { 
       /* In scan mode, if at least one window passes the MSV filter, read the rest of the profile */
@@ -2177,13 +2177,13 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	 * does at this point), because we don't yet have the CM */
 	have_rest = TRUE;
       }
-      if(msvdata->prefix_lengths == NULL && msvdata->suffix_lengths == NULL) { 
-	p7_hmm_MSVDataComputeRest(om, msvdata);
+      if(scoredata->prefix_lengths == NULL && scoredata->suffix_lengths == NULL) { 
+	p7_hmm_ScoreDataComputeRest(om, scoredata);
 	/* only call *ComputeRest() if we haven't already (we may have 
 	 * already in a previous pipeline pass).
 	 */
       }
-      p7_pli_ExtendAndMergeWindows(om, msvdata, &wlist, sq->n, 0.0);
+      p7_pli_ExtendAndMergeWindows(om, scoredata, &wlist, sq->n, 0.0);
     }
     ESL_ALLOC(ws, sizeof(int64_t) * wlist.count);
     ESL_ALLOC(we, sizeof(int64_t) * wlist.count);
@@ -2671,7 +2671,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
       p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
       p7_BackwardParser(seq->dsq, wlen, om, pli->oxf, pli->oxb, NULL);
-      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, NULL, bg, FALSE); 
+      status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, bg, NULL, FALSE, NULL, NULL, NULL); 
     }
     else { 
       /* We're defining envelopes in glocal mode, so we need to fill
@@ -3469,7 +3469,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
   }
   cm = *opt_cm;
 
- /* calculate nullsc2, this mimics nhmmer from
+  /* calculate nullsc2, this mimics nhmmer from
    * p7_pipeline:postMSV_LongTarget(), as of r3976.
    */
   loc_window_length = om->max_length;
@@ -3498,7 +3498,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
     p7_ForwardParser(seq->dsq, wlen, om, pli->oxf, NULL);
     p7_omx_GrowTo(pli->oxb, om->M, 0, wlen);
     p7_BackwardParser(seq->dsq, wlen, om, pli->oxf, pli->oxb, NULL);
-    status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, NULL, bg, FALSE); 
+    status = p7_domaindef_ByPosteriorHeuristics (seq, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, bg, NULL, FALSE, NULL, NULL, NULL); 
 
     if (status != eslOK) ESL_FAIL(status, pli->errbuf, "envelope definition workflow failure"); /* eslERANGE can happen */
     if (pli->ddef->nregions   == 0)  continue; /* score passed threshold but there's no discrete domains here       */

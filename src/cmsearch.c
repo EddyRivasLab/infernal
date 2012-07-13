@@ -54,7 +54,7 @@ typedef struct {
   P7_PROFILE       *Rgm;         /* generic   query profile HMM for 5' truncated hits */
   P7_PROFILE       *Lgm;         /* generic   query profile HMM for 3' truncated hits */
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
-  P7_MSVDATA       *msvdata;     /* MSV/SSV specific data structure */
+  P7_SCOREDATA     *scoredata;   /* MSV/SSV specific data structure */
   float            *p7_evparam;  /* [0..CM_p7_NEVPARAM] E-value parameters */
   float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
@@ -778,7 +778,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
 			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -793,7 +793,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
 			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -966,7 +966,7 @@ pipeline_thread(void *arg)
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
 				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -981,7 +981,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
 				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1554,7 +1554,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* search top strand */
 	  if (info->pli->do_top) { 
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
 				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
@@ -1568,7 +1568,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	    esl_sq_ReverseComplement(dbsq);
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
 				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
@@ -2183,16 +2183,16 @@ create_info(const ESL_GETOPTS *go)
   WORKER_INFO *info = NULL;
 
   ESL_ALLOC(info, sizeof(WORKER_INFO));
-  info->pli     = NULL;
-  info->th      = NULL;
-  info->cm      = NULL;
-  info->gm      = NULL;
-  info->Rgm     = NULL;
-  info->Lgm     = NULL;
-  info->Tgm     = NULL;
-  info->om      = NULL;
-  info->bg      = NULL;
-  info->msvdata = NULL;
+  info->pli       = NULL;
+  info->th        = NULL;
+  info->cm        = NULL;
+  info->gm        = NULL;
+  info->Rgm       = NULL;
+  info->Lgm       = NULL;
+  info->Tgm       = NULL;
+  info->om        = NULL;
+  info->bg        = NULL;
+  info->scoredata = NULL;
   ESL_ALLOC(info->p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
   info->smxsize = esl_opt_GetReal(go, "--smxsize");
   return info;
@@ -2229,7 +2229,7 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     if((dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc)) == NULL) goto ERROR;
     if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
-    dest_infoA[i].msvdata = p7_hmm_MSVDataClone(src_info->msvdata, src_info->om->abc->Kp);
+    dest_infoA[i].scoredata = p7_hmm_ScoreDataClone(src_info->scoredata, src_info->om->abc->Kp);
   }
   return eslOK;
   
@@ -2257,7 +2257,7 @@ free_info(WORKER_INFO *info)
   if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL;
   if(info->bg         != NULL) p7_bg_Destroy(info->bg);                  info->bg         = NULL;
   if(info->p7_evparam != NULL) free(info->p7_evparam);                   info->p7_evparam = NULL;
-  if(info->msvdata    != NULL) p7_hmm_MSVDataDestroy(info->msvdata);     info->msvdata    = NULL;
+  if(info->scoredata  != NULL) p7_hmm_ScoreDataDestroy(info->scoredata); info->scoredata  = NULL;
 
   return;
 }
@@ -2366,8 +2366,8 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
   /* copy E-value parameters */
   esl_vec_FCopy(info->cm->fp7_evparam, CM_p7_NEVPARAM, info->p7_evparam); 
 
-  /* compute msvdata */
-  info->msvdata = p7_hmm_MSVDataCreate(info->om, FALSE);
+  /* compute scoredata */
+  info->scoredata = p7_hmm_ScoreDataCreate(info->om, FALSE);
 
   return eslOK;
 }
