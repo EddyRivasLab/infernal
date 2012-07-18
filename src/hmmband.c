@@ -4637,18 +4637,38 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
   esl_vec_ICopy(src_cp9b->isum_pn_i, src_cp9b->hmm_M+1, dest_cp9b->isum_pn_i);
   esl_vec_ICopy(src_cp9b->isum_pn_d, src_cp9b->hmm_M+1, dest_cp9b->isum_pn_d);
 
-  esl_vec_ICopy(src_cp9b->imin,       src_cp9b->cm_M, dest_cp9b->imin);
-  esl_vec_ICopy(src_cp9b->imax,       src_cp9b->cm_M, dest_cp9b->imax);
-  esl_vec_ICopy(src_cp9b->jmin,       src_cp9b->cm_M, dest_cp9b->jmin);
-  esl_vec_ICopy(src_cp9b->jmax,       src_cp9b->cm_M, dest_cp9b->jmax);
-  esl_vec_ICopy(src_cp9b->safe_hdmin, src_cp9b->cm_M, dest_cp9b->safe_hdmin);
-  esl_vec_ICopy(src_cp9b->safe_hdmax, src_cp9b->cm_M, dest_cp9b->safe_hdmax);
+  dest_cp9b->sp1 = src_cp9b->sp1;
+  dest_cp9b->ep1 = src_cp9b->ep1;
+  dest_cp9b->sp2 = src_cp9b->sp2;
+  dest_cp9b->ep2 = src_cp9b->ep2;
+
+  dest_cp9b->thresh1 = src_cp9b->thresh1;
+  dest_cp9b->thresh2 = src_cp9b->thresh2;
+
+  dest_cp9b->Rmarg_imin = src_cp9b->Rmarg_imin;
+  dest_cp9b->Rmarg_imax = src_cp9b->Rmarg_imax;
+  dest_cp9b->Lmarg_jmin = src_cp9b->Lmarg_jmin;
+  dest_cp9b->Lmarg_jmax = src_cp9b->Lmarg_jmax;
+
+  esl_vec_ICopy(src_cp9b->Jvalid, (src_cp9b->cm_M+1), dest_cp9b->Jvalid);
+  esl_vec_ICopy(src_cp9b->Lvalid, (src_cp9b->cm_M+1), dest_cp9b->Lvalid);
+  esl_vec_ICopy(src_cp9b->Rvalid, (src_cp9b->cm_M+1), dest_cp9b->Rvalid);
+  esl_vec_ICopy(src_cp9b->Tvalid, (src_cp9b->cm_M+1), dest_cp9b->Tvalid);
+
+  esl_vec_ICopy(src_cp9b->imin, src_cp9b->cm_M, dest_cp9b->imin);
+  esl_vec_ICopy(src_cp9b->imax, src_cp9b->cm_M, dest_cp9b->imax);
+  esl_vec_ICopy(src_cp9b->jmin, src_cp9b->cm_M, dest_cp9b->jmin);
+  esl_vec_ICopy(src_cp9b->jmax, src_cp9b->cm_M, dest_cp9b->jmax);
 
   if(src_cp9b->hd_alloced > 0) { 
+    /* set hdmin, hdmax ptrs and hd_needed and hd_alloced (all set in cp9GrowHDBands()) */
     if((status = cp9_GrowHDBands(dest_cp9b, errbuf)) != eslOK) goto ERROR;
     esl_vec_ICopy(src_cp9b->hdmin_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmin_mem);
     esl_vec_ICopy(src_cp9b->hdmax_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmax_mem);
   }
+
+  esl_vec_ICopy(src_cp9b->safe_hdmin, src_cp9b->cm_M, dest_cp9b->safe_hdmin);
+  esl_vec_ICopy(src_cp9b->safe_hdmax, src_cp9b->cm_M, dest_cp9b->safe_hdmax);
 
   dest_cp9b->tau = src_cp9b->tau;
 

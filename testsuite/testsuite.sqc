@@ -56,6 +56,7 @@
 1 exercise  bug/i13-aln-sub          perl !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
 1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
+1 exercise  bug/i28-srch-band-clone  perl !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
 
 ################################################################
 # Option tests
