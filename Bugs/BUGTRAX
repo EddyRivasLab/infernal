@@ -824,3 +824,51 @@ This bug was fixed as of revision 3666.
 #### 
 ####  1.1rc1 release: 27 June 2012
 ####
+
+ID              i28
+TITLE		Incomplete cloning of HMM bands (CP9Bands_t)
+STATUS          CLOSED
+XREF            Minimal notes in ~nawrockie/notebook/12_0708_inf_stadler_paper_repro/00LOG
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Jul 18 05:56:22 2012
+DESCRIPTION    
+
+Not all variables in a CP9Bands_t objects were being cloned in the
+hmmband.c:cp9_CloneBands() function. This function is called in
+cm_pipeline.c:pli_final_stage() to clone CP9 bands calculated during
+the final Inside search stage that may be needed to align multiple
+hits in the same envelope. For example, if there is 2 hits in the
+envelope, we clone the bands used in the search step, then shift them
+for the first hit (some cells inside the bands may be outside the
+first hit boundaries) and compute the alignment of the first hit, then
+to align the second hit, we copy the cloned search bands into cm->cp9b
+and shift them for the second hit before aligning the second hit.
+
+The bug was that the cp9_CloneBands() function was not cloning the
+variables related to truncated alignment, most importantly the
+{J,L,R,T}valid arrays. So these were being left as their default
+values from AllocCP9Bands() (TRUE for states 1..M for J,L,R,T). These
+*valid arrays control what types of truncated alignments are possible
+at each state. Then downstream of this we got a failure in rare cases: 
+
+Error: cm_pipeline() failed unexpected with status code 11
+pli_align_hit() alignment HB retry mx too big, this shouldn't happen
+
+This is because the cloned bands were being used with *valid arrays
+set to all TRUE, and the required size of the matrix was much larger
+than it should have been. 
+
+The fix is to copy the truncated-related cp9b variables (most
+importantly the *valid arrays) in cp9_CloneBands().
+
+This bug occured rarely, because it only happens in a truncated pass
+of the pipeline where there's multiple hits in an envelope which is
+rare because truncated passes only occur on the final W residues of
+any sequence. I observed it for a single sequence on a search for SRP
+(using the SRP model from the Menzel, Gorodkin and Stadler 2009 RNA
+paper) on the Macaca mulatta genome - which has in the ballpark of 1
+million SRP hits.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4174.
+//
