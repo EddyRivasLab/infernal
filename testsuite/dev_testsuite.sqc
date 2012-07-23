@@ -268,9 +268,6 @@
 2  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
 1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
 
-# truncyk_check (truncated CYK check, D&C version, non D&C version is tested in cmalign) 
-1  exercise  trcykcheck/trna    @src/truncyk_check@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
-
 ##################################################################
 ##################################################################
 # 2. cmalign option testing, all options tested at least once.
