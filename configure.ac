@@ -315,23 +315,6 @@ AS_IF([test "x$check_threads" != xno],
 #	;;
 #esac])
 
-# --with-gsl        - enable hooks into the GSL (GNU Scientific Library)
-#
-# The (action-if-given) is blank: using --with-gsl sets $with_gsl to 'yes',
-# and --without-gsl sets $with_gsl to 'no'. If neither is given,
-# $with_gsl is set to 'check', and we'll try to use GSL anyway if we
-# can find it.
-# 
-# We interpret the $with_gsl setting later, in the "checks for libraries" section.
-AC_ARG_WITH([gsl],
-            [AS_HELP_STRING([--with-gsl],
-                           [use the GSL, GNU Scientific Library (default is no)])],
-            [if test "x$withval" != xno ; then 
-               AC_MSG_NOTICE([Enabling hooks into the GNU Scientific Library (GSL)])
-             fi
-            ],
-	    [with_gsl=no])
-
 # end of optionally configured features
 ################################################################
 
