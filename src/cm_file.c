@@ -2556,8 +2556,10 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	}
       else if (strncmp(tok, "FT-", 3) == 0) 
 	{				
-	  /* filter thresholds statistics are deprecated, chew up the rest ot this line */
+	  /* filter thresholds statistics are deprecated, chew up the rest ot this line, and following two lines */
 	  if ((status = esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid FT- line");
+	  if (esl_fgets(&buf, &n, cmfp->f) == eslEOF) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Premature end to file, while reading FT- line 2");
+	  if (esl_fgets(&buf, &n, cmfp->f) == eslEOF) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Premature end to file, while reading FT- line 3");
 	}
       else if (strcmp(tok, "MODEL:") == 0)
 	break;

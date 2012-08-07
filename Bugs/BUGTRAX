@@ -872,3 +872,21 @@ million SRP hits.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4174.
 //
+ID              i29
+TITLE		Incorrect parsing of 1.0 CM files w/0 HMM filter threshold pts
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_0725_inf_cmconvert_bug_jen
+REPORTED_BY     Jen Daub
+CLOSED_DATE     EPN, Wed Jul 25 10:26:53 2012
+DESCRIPTION    
+
+The cm_file.c::read_asc_1p0_cm() function, which is only used by
+cmconvert, was incorrectly reading some CM files that were generated
+by Infernal 1.0 which had 0 HMM filter threshold points. Such files
+had 2 blank lines after each 'FT-' prefixed line, which caused the
+parsing function to fail. The fix is to simply read in the two lines
+after each 'FT-' prefixed line and not parse them at all. 
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4181.
+//
