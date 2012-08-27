@@ -586,18 +586,11 @@ fi
 # 5. Checks for libraries
 #
 LIBGSL=
-AS_IF([test "x$with_gsl" != xno],
-      [AC_CHECK_LIB([gsl], [gsl_expm1], 
-           [AC_SUBST([LIBGSL], ["-lgsl -lgslcblas"])
-            AC_DEFINE([HAVE_LIBGSL], [1], [Define if you have libgsl])
-           ],
-           [if test "x$with_gsl" != xcheck; then
-             AC_MSG_FAILURE(
-               [--with-gsl was given, but GSL library was not found])
-            fi
-           ],
-           [-lgslcblas]
-        )])
+AC_SUBST(LIBGSL)
+# We could check for LIBGSL here, but that check caused problems in the Infernal
+# 1.1rc1 release so we took --enable-gsl out. It was really only useful for Easel
+# anyway according to Sean. We still need to define LIBGSL though, because Easel
+# has files with @LIBGSL@ in them.
 
 # Checks for headers
 #

@@ -19,7 +19,7 @@ $cmbuild  = shift;
 $cmalign  = shift;
 $ok       = 1;
 
-# Make our test alignment file, i6.1
+# Make our test alignment file, i11.1
 #
 open (OUT, ">i11.1") || die;
 print OUT <<END;
@@ -32,7 +32,7 @@ human              ACG
 END
 close OUT;
 
-# Make our test sequence file, i6.2
+# Make our test sequence file, i11.2
 #
 open (OUT, ">i11.2") || die;
 print OUT <<END;
