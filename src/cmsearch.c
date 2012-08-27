@@ -768,6 +768,13 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
 
+  while(wstatus == eslEOD) { /* this block is only necessary to chew up zero-length sequences */
+    info->pli->nseqs++;
+    esl_sq_Reuse(dbsq);
+    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+    seq_idx++;
+  }
+
   /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
   while (wstatus == eslOK ) {
     /* if this is the first window for this sequence, set dbsq->L */
@@ -814,7 +821,10 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
 
     wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
     /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
-    if (wstatus == eslEOD) { /* no more left of this sequence ... move along to the next sequence. */
+    while (wstatus == eslEOD) { 
+      /* no more left of this sequence ... move along to the next sequence.
+       * (this is while() instead of if() so that we will skip zero-length sequences)
+       */
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
       wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);

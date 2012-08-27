@@ -890,3 +890,20 @@ after each 'FT-' prefixed line and not parse them at all.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4181.
 //
+ID              i30
+TITLE		cmsearch serial and threaded fails on zero length seqs
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_0820_inf_zasha_bug
+REPORTED_BY     Zasha Weinberg
+CLOSED_DATE     EPN, Mon Aug 27 05:44:33 2012
+DESCRIPTION    
+
+Zero length sequences were not being handled correctly. The fix required
+changes to cmsearch.c:serial_loop() and
+easel/esl_sqio_ascii.c:sqascii_ReadBlock() to catch and properly
+handle eslEOD return status from
+esl_sqio_ascii.c:sqascii_ReadWindow(). 
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4196.
+//

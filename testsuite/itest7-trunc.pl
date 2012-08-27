@@ -195,5 +195,6 @@ unlink <$tmppfx.cm1*>;
 unlink <$tmppfx.cm2*>;
 unlink "$tmppfx.fa1";
 unlink "$tmppfx.fa2";
+unlink "$tmppfx.tbl";
 
 exit 0;
