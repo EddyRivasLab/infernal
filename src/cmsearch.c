@@ -267,7 +267,7 @@ static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *
 
 /* Functions to avoid code duplication for common tasks */
 static int          open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_dbfp);
-static int          dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs);
+static int          dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs);
 static WORKER_INFO *create_info(const ESL_GETOPTS *go);
 static int          clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int dest_infocnt, char *errbuf);
 static void         free_info(WORKER_INFO *info);
@@ -511,8 +511,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * dbsize_and_seq_lengths() and then overwrite it based on <x>
      * from -Z <x>.
      */
-    if (! esl_sqfile_IsRewindable(dbfp)) cm_Fail("Target sequence file %s isn't rewindable; use esl-sfetch to index it (if possible)", cfg->dbfile);
-    if((status = dbsize_and_seq_lengths(go, cfg, dbfp, errbuf, &srcL, &nseqs_expected)) != eslOK) { 
+    if ((! esl_sqfile_IsRewindable(dbfp)) && dbfp->data.ascii.do_gzip == FALSE) { 
+	cm_Fail("Target sequence file %s isn't rewindable, cmsearch needs to be able to rewind it", cfg->dbfile);
+    }
+    if((status = dbsize_and_seq_lengths(go, cfg, &dbfp, errbuf, &srcL, &nseqs_expected)) != eslOK) { 
       cm_Fail("Parse failed (sequence file %s):\n%s\n", dbfp->filename, esl_sqfile_GetErrorBuf(dbfp));
     }
     if(esl_opt_IsUsed(go, "-Z")) { /* -Z enabled, use that size */
@@ -2129,7 +2131,7 @@ open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_d
  *            eslEFORMAT if database file is screwy.
  */
 static int
-dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs)
+dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr, char *errbuf, int64_t **ret_srcL, int64_t *ret_nseqs)
 {
   int       status;
   ESL_SQ   *sq = NULL;
@@ -2140,9 +2142,14 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
   int64_t   nalloc_srcL = 0;       /* current allocation size of srcL */
   int       alloc_srcL  = 10000;   /* chunk size to increase allocation by for srcL */
   int64_t   i;                     /* counter */       
+  char     *tmp_filename = NULL;   /* name of sqfile, used only if gzipped */
+  int       tmp_fmt;               /* fmt of sqfile, used only if gzipped */
+  
+  /* we'll only use this if seqfile is gzipped */
+  ESL_ALLOC(tmp_filename, sizeof(char) * (strlen((*dbfp_ptr)->filename) + 1));
 
   sq = esl_sq_Create();
-  while ((status = esl_sqio_ReadInfo(dbfp, sq)) == eslOK) { 
+  while ((status = esl_sqio_ReadInfo(*dbfp_ptr, sq)) == eslOK) { 
     nres += sq->L;
     if(nseqs == nalloc_srcL) { /* reallocate */
       nalloc_srcL += alloc_srcL;
@@ -2162,8 +2169,28 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
   }
   cfg->Z_setby = CM_ZSETBY_FILEREAD;
 
-  esl_sqfile_Position(dbfp, 0);
-  if(sq != NULL) esl_sq_Destroy(sq);
+  if((*dbfp_ptr)->data.ascii.do_gzip == TRUE) { 
+    /* file is gzipped, close it and reopen it.  
+       we know we successfully opened it the first time, so a
+       failure to reopen is an exception, not a user-reportable
+       normal error. ENOTFOUND is the only normal error;
+       EFORMAT error can't occur because we know the format and
+       don't use autodetection.
+    */
+    strcpy(tmp_filename, (*dbfp_ptr)->filename);
+    tmp_fmt = (*dbfp_ptr)->format;
+    esl_sqfile_Close(*dbfp_ptr);
+    status = esl_sqfile_Open(tmp_filename, tmp_fmt, NULL, dbfp_ptr);
+    if      (status == eslENOTFOUND) ESL_EXCEPTION(eslENOTFOUND, "failed to reopen alignment file");
+    else if (status != eslOK)        ESL_FAIL(status, errbuf, "unexpected error when reopening sequence file");
+  }
+  else { 
+    /* file is not gzipped, easier case */
+    esl_sqfile_Position((*dbfp_ptr), 0);
+  }
+
+  if(tmp_filename != NULL) free(tmp_filename);
+  if(sq           != NULL) esl_sq_Destroy(sq);
 
   *ret_srcL  = srcL;
   *ret_nseqs = nseqs;
@@ -2171,8 +2198,20 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, cha
   return eslOK;
 
  ERROR: 
-  esl_sqfile_Position(dbfp, 0);
-  if(sq != NULL) esl_sq_Destroy(sq);
+  if((*dbfp_ptr)->data.ascii.do_gzip == TRUE) { /* same as above, close and reopen */
+    strcpy(tmp_filename, (*dbfp_ptr)->filename);
+    tmp_fmt = (*dbfp_ptr)->format;
+    esl_sqfile_Close((*dbfp_ptr));
+    status = esl_sqfile_Open(tmp_filename, tmp_fmt, NULL, dbfp_ptr);
+    if      (status == eslENOTFOUND) ESL_EXCEPTION(eslENOTFOUND, "failed to reopen alignment file");
+    else if (status != eslOK)        ESL_XFAIL(status, errbuf, "unexpected error when reopening sequence file");
+  }
+  else { 
+    /* file is not gzipped, easier case */
+    esl_sqfile_Position((*dbfp_ptr), 0);
+  }
+  if(tmp_filename != NULL) free(tmp_filename);
+  if(sq           != NULL) esl_sq_Destroy(sq);
 
   *ret_srcL  = NULL;
   *ret_nseqs = 0;
