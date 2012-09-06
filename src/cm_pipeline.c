@@ -652,7 +652,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->cm_config_opts |= CM_CONFIG_LOCAL;
     if(! esl_opt_GetBoolean(go, "--cp9gloc")) { 
       pli->cm_config_opts |= CM_CONFIG_HMMLOCAL;
-      if(! esl_opt_GetBoolean(go, "--cp9noel")) pli->cm_config_opts |= CM_CONFIG_HMMEL; 
+      if(! esl_opt_GetBoolean(go, "--cp9noel")) { 
+	pli->cm_config_opts |= CM_CONFIG_HMMEL; 
+      }
     }
   }
   /* should we setup for truncated alignments? */
@@ -686,13 +688,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   }
 
   /* Determine statistics modes for CM stages */
-  pli->do_glocal_cm_stages = (esl_opt_GetBoolean(go, "-g")) ? TRUE : FALSE;
-  pli->fcyk_cm_exp_mode    = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
+  pli->do_glocal_cm_always    = (esl_opt_GetBoolean(go, "-g")) ? TRUE : FALSE;
+  pli->do_glocal_cm_cur       = pli->do_glocal_cm_always       ? TRUE : FALSE;
+  pli->do_glocal_cm_sometimes = (esl_opt_IsOn(go, "--glist"))  ? TRUE : FALSE;
+
+  pli->fcyk_cm_exp_mode       = pli->do_glocal_cm_always ? EXP_CM_GC : EXP_CM_LC;
   if(pli->final_cm_search_opts & CM_SEARCH_INSIDE) { 
-    pli->final_cm_exp_mode = pli->do_glocal_cm_stages ? EXP_CM_GI : EXP_CM_LI;
+    pli->final_cm_exp_mode  = pli->do_glocal_cm_always ? EXP_CM_GI : EXP_CM_LI;
   }
   else {
-    pli->final_cm_exp_mode = pli->do_glocal_cm_stages ? EXP_CM_GC : EXP_CM_LC;
+    pli->final_cm_exp_mode = pli->do_glocal_cm_always ? EXP_CM_GC : EXP_CM_LC;
   }
   /* finished setting up parameters for CM stages */
   /********************************************************************************/
@@ -843,6 +848,19 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            be equal to om->max_length, but in SCAN mode om may
  *            be NULL).
  *
+ *            <glocal_kh> is irrelevant (and can be NULL) unless 
+ *            we're in case 2 and pli->do_glocal_cm_sometimes is
+ *            TRUE. If so, we update pli parameters relevant to 
+ *            the CM model configuration (local/global) depending
+ *            on whether om->name is in <glocal_kh> (if it is,
+ *            we set configuration to global, else we set it 
+ *            to local). This allows us to use glocal mode for
+ *            only those models who are keys in glocal_kh (the
+ *            cmscan --glist option) which was implemented between
+ *            v1.1rc1 and v1.1rc2 solely to handle the fact that
+ *            some Rfam bit score thresholds correspond to glocal
+ *            mode and others to local (i.e. it's a brutal hack).
+ *
  * Returns:   <eslOK> on success.
  *
  *            <eslEINCOMPAT> in contract is not met.
@@ -852,7 +870,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, ESL_KEYHASH *glocal_kh)
 {
   int status = eslOK;
   float T;
@@ -893,16 +911,40 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
   if(pli->mode == CM_SEARCH_SEQS || modmode == CM_NEWMODEL_MSV) { 
     /* set A updates: case 1 and 2 do these */
 
+    /* set model configuration local/global if we're in SCAN mode and do_glocal_cm_sometimes is TRUE*/
+    if(modmode == CM_NEWMODEL_MSV && pli->do_glocal_cm_sometimes) { 
+      if(glocal_kh == NULL)        ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, do_glocal_cm_sometimes is TRUE but glocal_kh is NULL");
+      if(pli->do_glocal_cm_always) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, do_glocal_cm_sometimes and do_glocal_cm_always both TRUE");
+      status = esl_keyhash_Lookup(glocal_kh, om->name, -1, NULL);
+      if(status == eslOK) { /* om->name is in glocal_kh, use glocal CM stages for this model */
+	pli->do_glocal_cm_cur  = TRUE;
+	pli->fcyk_cm_exp_mode  = EXP_CM_GC;
+	pli->final_cm_exp_mode = (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? EXP_CM_GI : EXP_CM_GC;
+	pli->cm_config_opts &= ~CM_CONFIG_LOCAL;
+	pli->cm_config_opts &= ~CM_CONFIG_HMMLOCAL;
+	pli->cm_config_opts &= ~CM_CONFIG_HMMEL; 
+      }
+      else if (status == eslENOTFOUND) { /* om->name is not in glocal_kh, use local CM stages for this model */
+	pli->do_glocal_cm_cur  = FALSE;
+	pli->fcyk_cm_exp_mode  = EXP_CM_LC;
+	pli->final_cm_exp_mode = (pli->final_cm_search_opts & CM_SEARCH_INSIDE) ? EXP_CM_LI : EXP_CM_LC;
+	pli->cm_config_opts |= CM_CONFIG_LOCAL;
+	pli->cm_config_opts |= CM_CONFIG_HMMLOCAL;
+	pli->cm_config_opts |= CM_CONFIG_HMMEL; 
+      }
+      else { ESL_FAIL(status, pli->errbuf, "cm_pli_NewModel(), unexpected error looking up model %s\n", om->name); }
+    }
+
     /* determine if we should use the special HMM only pipeline for this model,
      * if pli->do_hmmonly_never    == TRUE: we won't,
-     * if pli->do_glocal_cm_stages == TRUE: we won't,
+     * if pli->do_glocal_cm_cur    == TRUE: we won't,
      * if pli->do_hmmonly_always   == TRUE: we will,
      * else we will only if model has 0 base pairs.
      */
     
-    if     (pli->do_hmmonly_never  || pli->do_glocal_cm_stages) pli->do_hmmonly_cur = FALSE;
-    else if(pli->do_hmmonly_always || cm_nbp == 0)              pli->do_hmmonly_cur = TRUE;
-    else                                                        pli->do_hmmonly_cur = FALSE;
+    if     (pli->do_hmmonly_never  || pli->do_glocal_cm_cur) pli->do_hmmonly_cur = FALSE;
+    else if(pli->do_hmmonly_always || cm_nbp == 0)           pli->do_hmmonly_cur = TRUE;
+    else                                                     pli->do_hmmonly_cur = FALSE;
 
     if(pli->do_hmmonly_cur) { 
       pli->nmodels_hmmonly++;
@@ -1675,7 +1717,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 
   if(pli->do_fcyk) { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
-	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
+	    (pli->do_glocal_cm_always || pli->do_glocal_cm_sometimes) ? ((pli->do_glocal_cm_always) ? "glocal" : "") : "local",
 	    pli_acct->n_past_cyk,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_cyk / nres_searched,
 	    pli->F6);
@@ -1683,7 +1725,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   }
   else { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15s  (off)\n", 
-	    (pli->do_glocal_cm_stages) ? "glocal" : "local",
+	    (pli->do_glocal_cm_always || pli->do_glocal_cm_sometimes) ? ((pli->do_glocal_cm_always) ? "glocal" : "") : "local",
 	    "");
   }
 
@@ -3307,6 +3349,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       hit->pass_idx = pli->cur_pass_idx;
       hit->pvalue   = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
       hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
+      hit->glocal   = (pli->final_cm_exp_mode == EXP_CM_GI || pli->final_cm_exp_mode == EXP_CM_GC) ? TRUE : FALSE;
 
       /* initialize remaining values we don't know yet */
       hit->evalue  = 0.;
@@ -3557,6 +3600,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 	hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
 
 	hit->hmmonly  = TRUE;
+	hit->glocal   = FALSE; /* all HMM hits are local (currently) */
 	hit->bias     = dom_bias;
 	hit->evalue   = 0.; /* we'll redefine this later */
 
@@ -3950,7 +3994,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
   if((status = cm_Configure(cm, pli->errbuf, W_from_cmdline)) != eslOK) goto ERROR;
   /* update the pipeline about the model */
   if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, cm, cm->clen, cm->W, CMCountNodetype(cm, MATP_nd),
-			       NULL, NULL, p7_evparam, p7_max_length, pli->cur_cm_idx)) /* NULL: om, bg */
+			       NULL, NULL, p7_evparam, p7_max_length, pli->cur_cm_idx, NULL)) /* NULL: om, bg, glocal_kh */
      != eslOK) goto ERROR;
   
   *ret_cm = cm;

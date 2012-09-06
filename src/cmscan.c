@@ -15,6 +15,7 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
+#include "esl_keyhash.h"
 #include "esl_sq.h"
 #include "esl_sqio.h"
 #include "esl_stopwatch.h"
@@ -48,6 +49,7 @@ typedef struct {
   CM_TOPHITS       *th;         /* top hit results                     */
   float            *p7_evparam; /* E-value parameters for p7 filter    */
   int               in_rc;      /* TRUE if qsq is currently revcomp'ed */
+  ESL_KEYHASH      *glocal_kh;  /* non-NULL only if --glist, these models will be run in glocal mode */
 } WORKER_INFO;
 
 
@@ -128,6 +130,7 @@ static ESL_OPTIONS options[] = {
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the top strand",                                   7 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "only search the bottom strand",                                7 },
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,            "assert query <seqfile> is in format <s>: no autodetection",    7 },
+  { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  "-g",            "configure CMs listed in file <f> in glocal mode, others in local", 7 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",       7 },
 #endif
@@ -202,8 +205,8 @@ static ESL_OPTIONS options[] = {
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    107 },
-  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               107 },
-  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              107 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist",    "turn off local ends in cp9 HMMs",                               107 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist,--cp9noel", "configure cp9 HMM in glocal mode",                       107 },
   { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       107 },
   { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     107 },
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           107 },
@@ -246,6 +249,7 @@ static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile);
 static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int ncpus);
+static int  read_glocal_list_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_glocal_kh);
 
 #ifdef HAVE_MPI
 /* Define common tags used by the MPI master/slave processes */
@@ -369,6 +373,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
   int              seq_idx  = 0;                 /* index of current seq we're working with         */
+  ESL_KEYHASH     *glocal_kh= NULL;              /* list of models to configure globally, only created if --glist */
   int              textw;
   int              status   = eslOK;
   int              hstatus  = eslOK;
@@ -422,6 +427,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->Z = (int64_t) cmfp->ssi->nprimary;
     cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
+
+  /* Open and read the list of glocal models, while CM file is open */
+  if (esl_opt_IsOn(go, "--glist")) { 
+    if((status = read_glocal_list_file(esl_opt_GetString(go, "--glist"), errbuf, cmfp, &glocal_kh)) != eslOK) cm_Fail(errbuf);
+  }
+
   cm_file_Close(cmfp);
 
   /* Open the query sequence database */
@@ -457,6 +468,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].bg    = p7_bg_Create(abc);
       info[i].in_rc = FALSE;
       ESL_ALLOC(info[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
+      if(glocal_kh != NULL) { 
+	if((info[i].glocal_kh = esl_keyhash_Clone(glocal_kh)) == NULL) esl_fatal("Failed to clone keyhash, out of memory");
+      }
+      else { 
+	info[i].glocal_kh = NULL;
+      }
 #ifdef HMMER_THREADS
       info[i].queue = queue;
 #endif
@@ -628,6 +645,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       free(info[i].p7_evparam);
       p7_bg_Destroy(info[i].bg);
+      if(info[i].glocal_kh != NULL) esl_keyhash_Destroy(info[i].glocal_kh);
     }
 
 #ifdef HMMER_THREADS
@@ -650,6 +668,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_stopwatch_Destroy(mw);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
+  if(glocal_kh != NULL) esl_keyhash_Destroy(glocal_kh);
 
   if (ofp != stdout) fclose(ofp);
   if (tblfp)         fclose(tblfp);
@@ -698,7 +717,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				   cm,                     /* this is NULL b/c we don't have one yet */
 				   cm_clen, cm_W, cm_nbp,  /* we read these in cm_p7_oprofile_ReadMSV() */
-				   om, info->bg, info->p7_evparam, om->max_length, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
+				   om, info->bg, info->p7_evparam, om->max_length, cm_idx-1, info->glocal_kh)) != eslOK) cm_Fail(info->pli->errbuf);
 
       prv_ntophits = info->th->N;
       if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, info->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
@@ -847,7 +866,7 @@ pipeline_thread(void *arg)
 	  if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_MSV, 
 				       cm,                    /* this is NULL b/c we don't have one yet */
 				       cm_clen, cm_W, cm_nbp, /* we read these in cm_p7_oprofile_ReadMSV() */
-				       om, info->bg, info->p7_evparam, om->max_length, cm_idx-1)) != eslOK) cm_Fail(info->pli->errbuf);
+				       om, info->bg, info->p7_evparam, om->max_length, cm_idx-1, info->glocal_kh)) != eslOK) cm_Fail(info->pli->errbuf);
 
 	  prv_ntophits = info->th->N;
 	  if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, info->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
@@ -1277,6 +1296,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   float           *p7_evparam;                   /* E-value parameters for the p7 filter */
   int              prv_ntophits;                 /* number of top hits before cm_Pipeline() call */
   int              in_rc;                        /* in_rc == TRUE; our qsq has been reverse complemented */
+  ESL_KEYHASH     *glocal_kh= NULL;              /* list of models to configure globally, only created if --glist */
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
@@ -1312,6 +1332,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->Z = (int64_t) cmfp->ssi->nprimary;
     cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
+  /* Open and read the list of glocal models, while CM file is open */
+  if (esl_opt_IsOn(go, "--glist")) { 
+    if((status = read_glocal_list_file(esl_opt_GetString(go, "--glist"), errbuf, cmfp, &glocal_kh)) != eslOK) cm_Fail(errbuf);
+  }
+
   cm_file_Close(cmfp);
 
   /* Open the query sequence database */
@@ -1401,7 +1426,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 		if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
 					     cm,                     /* this is NULL b/c we don't have one yet */
 					     cm_clen, cm_W, cm_nbp,  /* we read these in cm_p7_oprofile_ReadMSV() */
-					     om, bg, p7_evparam, om->max_length, cm_idx-1)) != eslOK) mpi_failure(pli->errbuf);
+					     om, bg, p7_evparam, om->max_length, cm_idx-1, glocal_kh)) != eslOK) mpi_failure(pli->errbuf);
 		
 		prv_ntophits = th->N;
 
@@ -1477,7 +1502,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_sq_Destroy(qsq);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
-  if(w  != NULL) esl_stopwatch_Destroy(w);
+  if(w         != NULL) esl_stopwatch_Destroy(w);
+  if(glocal_kh != NULL) esl_keyhash_Destroy(glocal_kh);
 
   return eslOK;
 
@@ -1833,6 +1859,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go, "--qformat"));
+  if (esl_opt_IsUsed(go, "--glist"))      fprintf(ofp, "# models for glocal mode scan read from: %s\n", esl_opt_GetString(go, "--glist"));
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--stall"))      fprintf(ofp, "# MPI stall mode:                        on\n");
 #endif
@@ -1921,6 +1948,68 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (! output_ncpu)                       {  fprintf(ofp, "# number of worker threads:              0 [serial mode; threading unavailable]\n"); }
   fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\n");
   return eslOK;
+}
+
+/* Function: read_glocal_list_file
+ * Date:     EPN, Wed Sep  5 04:57:31 2012
+ * 
+ * Read a file listing models to run in glocal mode.
+ * Store model keys (names or accessions) in 
+ * *ret_glist and return it.
+ * Each white-space delimited token is considered a 
+ * different model key. We use the CM file's SSI
+ * index to verify each one exists in the CM file.
+ * 
+ * Returns eslOK on success.
+ */
+int
+read_glocal_list_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_glocal_kh)
+{
+  int             status;
+  ESL_FILEPARSER *efp = NULL;
+  char           *tok = NULL;
+  int             toklen;
+  ESL_KEYHASH    *glocal_kh;
+  uint16_t        tmp_fh;
+  off_t           tmp_roff;
+  uint64_t        save_nsecondary = 0;
+
+  if(cmfp->ssi == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Failed to open SSI index for CM file: %s (required for --gfile)\n", cmfp->fname);
+  /* store, then overwrite ssi->nsecondary as 0. This will force
+   * esl_ssi_FindName() to only look at primary keys, which is
+   * necessary because when we're reading MSV data for P7 filters,
+   * only om->name is valid (om->accn is not read), so we can't 
+   * allow accessions as keys in filename.
+   */
+  save_nsecondary = cmfp->ssi->nsecondary;
+  cmfp->ssi->nsecondary = 0;
+
+  if (esl_fileparser_Open(filename, NULL,  &efp) != eslOK) ESL_XFAIL(eslEINVAL, errbuf, "failed to open %s for reading glocal CM names\n", filename);
+  if((glocal_kh = esl_keyhash_Create()) == NULL)           ESL_XFAIL(eslEMEM, errbuf, "out of memory");
+
+  while((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslEOF) {
+    /* verify CM <tok> exists in the CM file, via SSI */
+    status = esl_ssi_FindName(cmfp->ssi, tok, &tmp_fh, &tmp_roff, NULL, NULL);
+    if(status == eslENOTFOUND) ESL_XFAIL(status, errbuf, "unable to find model %s listed in %s in SSI index file", tok, filename);
+    if(status == eslEFORMAT)   ESL_XFAIL(status, errbuf, "SSI index for CM file is in incorrect format, try rerunning cmpress");
+    if(status != eslOK)        ESL_XFAIL(status, errbuf, "unexpected error processing --glist file %s", filename);
+
+    /* add to keyhash */
+    status = esl_keyhash_Store(glocal_kh, tok, toklen, NULL);
+    if(status == eslEDUP)     ESL_XFAIL(status, errbuf, "model %s listed twice in %s", tok, filename);
+    else if (status != eslOK) ESL_XFAIL(status, errbuf, "unexpected error processing --glist file %s", filename);
+  }
+  esl_fileparser_Close(efp);
+  *ret_glocal_kh = glocal_kh;
+  cmfp->ssi->nsecondary = save_nsecondary;
+  return eslOK;
+
+ ERROR:
+  if(efp       != NULL) esl_fileparser_Close(efp);
+  if(glocal_kh != NULL) esl_keyhash_Destroy(glocal_kh);
+  *ret_glocal_kh = NULL;
+  if(cmfp->ssi != NULL) cmfp->ssi->nsecondary = save_nsecondary;
+  return status;
 }
 
 #if HAVE_MPI 

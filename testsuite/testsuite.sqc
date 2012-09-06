@@ -42,6 +42,7 @@
 1 exercise  itest/pipeline          perl !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
 1 exercise  itest/sensitivity       perl !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
 1 exercise  itest/trunc             perl !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
+1 exercise  itest/scan-glist        perl !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################

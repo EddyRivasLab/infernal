@@ -651,8 +651,8 @@ By default, both strands are searched. This will halve the search
 space size (Z).
 
 .TP
-.BI --tformat " <s>"
-Assert that the target sequence database file is in format 
+.BI --qformat " <s>"
+Assert that the query sequence database file is in format 
 .I <s>. 
 Accepted formats include 
 .I fasta, 
@@ -667,6 +667,25 @@ Accepted formats include
 and 
 .I phylip
 The default is to autodetect the format of the file.
+
+.TP
+.BI --glist " <f>"
+Configure a subset of models from 
+.I <cmfile> 
+in glocal alignment mode, instead of local mode, namely the models
+listed in file
+.I <f>.
+Configure all other
+models (those not listed in 
+.I <f>)
+in local mode.
+This option is incompatible with 
+.I -g.
+File
+.I <f>
+must list valid names of models from
+.I <cmfile>,
+each separated by any whitespace character (e.g. a newline character).
 
 .TP
 .BI --cpu " <n>"

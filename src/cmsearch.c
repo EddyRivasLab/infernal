@@ -143,6 +143,7 @@ static ESL_OPTIONS options[] = {
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the top strand",                                   7 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the bottom strand",                                7 },
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                 "assert target <seqdb> is in format <s>: no autodetection",     7 },
+  { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                 "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",       7 },
 #endif
@@ -598,7 +599,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].th   = cm_tophits_Create();
       info[i].pli  = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, nbps,
-				   info[i].om, info[i].bg, info[i].p7_evparam, info[i].om->max_length, cm_idx-1)) != eslOK) { 
+				   info[i].om, info[i].bg, info[i].p7_evparam, info[i].om->max_length, cm_idx-1, NULL)) != eslOK) { 
 	cm_Fail(info[i].pli->errbuf);
       }
 
@@ -1181,7 +1182,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
     if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, nbps, 
-				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1)) != eslOK) { 
+				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1, NULL)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
     
@@ -1520,7 +1521,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
     if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), 
-				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1)) != eslOK) { 
+				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1, NULL)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
 
@@ -1725,6 +1726,12 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (strcmp(*ret_seqfile, "-") == 0) { puts("Can't read <seqdb> from stdout: don't use '-'"); goto ERROR; }
 
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+
+  /* --glist never works, it only exists because cmscan has it, and consequently cm_pipeline_Create() expects it to */
+  if (esl_opt_IsOn(go, "--glist")) { 
+    puts("Failed to parse command line: --glist is an invalid cmsearch option (it only works with cmscan)");
+    goto ERROR;
+  }    
 
   /* --beta only makes sense with --qdb, --nohmm or --max */
   if (esl_opt_IsUsed(go, "--beta") && (! esl_opt_GetBoolean(go, "--qdb")) && 
