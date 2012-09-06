@@ -2269,19 +2269,21 @@ typedef struct cm_pipeline_s {
   int    ns;            /* number of traceback samples for domain/envelope def */
 
   /* CM search options for CYK filter and final stage */
-  int     do_fcykenv;	        /* TRUE to redefine envelopes after CYK     */
-  double  F6env;	        /* CYK envelope P-value threshold           */
-  int     do_null2;		/* TRUE to use null2 score corrections      */
-  int     do_null3;		/* TRUE to use null3 score corrections      */
-  int     do_glocal_cm_stages;  /* TRUE to use CM in glocal mode for final stages */
-  int     fcyk_cm_search_opts;  /* CYK filter stage search opts             */
-  int     final_cm_search_opts; /* final stage search opts                  */
-  int     fcyk_cm_exp_mode;     /* CYK filter exp mode                      */
-  int     final_cm_exp_mode;    /* final stage exp mode   e                 */
-  double  fcyk_beta;            /* QDB beta for CYK filter stage            */
-  double  final_beta;           /* QDB beta for final stage                 */
-  double  fcyk_tau;             /* HMM bands tau for CYK filter stage       */
-  double  final_tau;            /* HMM bands tau for final stage            */
+  int     do_fcykenv;	          /* TRUE to redefine envelopes after CYK     */
+  double  F6env;	          /* CYK envelope P-value threshold           */
+  int     do_null2;		  /* TRUE to use null2 score corrections      */
+  int     do_null3;		  /* TRUE to use null3 score corrections      */
+  int     do_glocal_cm_always;    /* TRUE to use glocal mode for CM stages, for all models */
+  int     do_glocal_cm_cur;       /* TRUE to use glocal mode for CM stages, for current model */
+  int     do_glocal_cm_sometimes; /* TRUE to use glocal mode for CM stages, for some models */
+  int     fcyk_cm_search_opts;    /* CYK filter stage search opts             */
+  int     final_cm_search_opts;   /* final stage search opts                  */
+  int     fcyk_cm_exp_mode;       /* CYK filter exp mode                      */
+  int     final_cm_exp_mode;      /* final stage exp mode                     */
+  double  fcyk_beta;              /* QDB beta for CYK filter stage            */
+  double  final_beta;             /* QDB beta for final stage                 */
+  double  fcyk_tau;               /* HMM bands tau for CYK filter stage       */
+  double  final_tau;              /* HMM bands tau for final stage            */
 
   /* Threshold settings for HMM-only pipeline                               */
   int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model */
@@ -2410,6 +2412,7 @@ typedef struct cm_hit_s {
   double         pvalue;	/* P-value of the hit   (with corrections) */
   double         evalue;	/* E-value of the hit   (with corrections) */
   int            hmmonly;       /* TRUE if hit was found during HMM only pipeline run, FALSE if not */
+  int            glocal;        /* TRUE if hit was found by model in global configuration, FALSE if not */
   CM_ALIDISPLAY *ad;            /* alignment display */
   uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE */
 
@@ -2906,7 +2909,7 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx);
+extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, ESL_KEYHASH *glocal_kh);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *scoredata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);

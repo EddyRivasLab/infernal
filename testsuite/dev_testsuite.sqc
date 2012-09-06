@@ -58,6 +58,7 @@
 1 exercise  itest/pipeline          perl !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
 1 exercise  itest/sensitivity       perl !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
 1 exercise  itest/trunc             perl !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
+1 exercise  itest/scan-glist        perl !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
@@ -1060,12 +1061,14 @@
 1  prep      scan:copy/4/faemit    cp !testsuite/emitted-4.fa! %4EMIT%
 1  prep      scan:copy/rand/fa1k   cp !testsuite/1k.fa! %R1K%
 
-1  exercise  scan:t/10k    @src/cmscan@  %T.CM% %T10K%
-1  exercise  scan:v/10k    @src/cmscan@  %V.CM% %V10K%
-1  exercise  scan:4/10k    @src/cmscan@  %4.CM% %410K%
-1  exercise  scan:t/emit   @src/cmscan@  %T.CM% %TEMIT%
-1  exercise  scan:v/emit   @src/cmscan@  %V.CM% %VEMIT%
-1  exercise  scan:4/emit   @src/cmscan@  %4.CM% %4EMIT%
+1  exercise  scan:t/10k         @src/cmscan@  %T.CM% %T10K%
+1  exercise  scan:v/10k         @src/cmscan@  %V.CM% %V10K%
+1  exercise  scan:4/10k         @src/cmscan@  %4.CM% %410K%
+1  exercise  scan:t/emit        @src/cmscan@  %T.CM% %TEMIT%
+1  exercise  scan:v/emit        @src/cmscan@  %V.CM% %VEMIT%
+1  exercise  scan:4/emit        @src/cmscan@  %4.CM% %4EMIT%
+
+1  exercise  scan:4/emit/glist  @src/cmscan@ --glist !testsuite/2name.list! %4.CM% %4EMIT%
 
 1  fail      scan:t/cm/stdin  cat %T.CM%  | @src/cmscan@ - %TEMIT%
 1  fail      scan:4/cm/stdin  cat %4.CM%  | @src/cmscan@ - %4EMIT%
