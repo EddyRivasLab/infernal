@@ -198,7 +198,7 @@ static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
 static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
 static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
 static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk);
-static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header);
+static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded);
 static void print_required_memory_tail(int ncpus);
 
 int
@@ -502,7 +502,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
 #ifdef HMMER_THREADS    
-    ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * (ncpus * 2));
+    if(ncpus > 0) { 
+      ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * (ncpus * 2));
+    }
     for (i = 0; i < ncpus * 2; i++) {
       init_sqA[i] = NULL;
       if((init_sqA[i] = esl_sq_CreateDigital(cfg->abc)) == NULL)      cm_Fail("Failed to allocate a sequence");
@@ -524,7 +526,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
 
     if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
-      print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE);
+      print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE, esl_opt_IsUsed(go, "--nonbanded"));
     }
     else { /* normal case */
       if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -2164,11 +2166,12 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
  * Returns:  void
  *
  */
-void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header)
+void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded)
 {
   float cm_reqmb  = 0.;
   float smx_reqmb = 0.;
   float seq_reqmb = 0.;
+  float hit_reqmb = 0.;
   float ser_reqmb = 0.;
   float thr_reqmb = 0.;
 
@@ -2198,9 +2201,23 @@ void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header)
   seq_reqmb += N * sizeof(char) * strlen("irrelevant");
   seq_reqmb /= 1000000.;
 
+  /* Estimate size of CM_HITLIST tmp_hitlist (based on number of hits)
+   * within FastCYKScan() and FastIInsideScan() *before* overlaps are
+   * removed. It's difficult to predict what this will be, so we use
+   * an empirical estimate based on all Rfam 11 CMs. See 
+   * ~nawrockie/notebook/12_0927_inf_cmcalibrate_mpi_memory/00LOG 
+   * for details.
+   */
+  if(do_nonbanded) { 
+    hit_reqmb = 572.; /* max seen in all Rfam 11 with --nonbanded */
+  }
+  else { 
+    hit_reqmb = 72.; /* max seen in all Rfam 11 with default, note we don't adjust for different beta values */
+  }
+
   /* total up memory requirements */
-  ser_reqmb = cm_reqmb + smx_reqmb + seq_reqmb;
-  thr_reqmb = ((cm_reqmb + smx_reqmb) * ncpus) + seq_reqmb;
+  ser_reqmb = cm_reqmb + smx_reqmb + hit_reqmb + seq_reqmb;
+  thr_reqmb = ((cm_reqmb + smx_reqmb + hit_reqmb) * ncpus) + seq_reqmb;
 
   if(ncpus > 1) { 
     printf("  %-20s  %10.1f  %10.1f\n", cm->name, ser_reqmb, thr_reqmb);
