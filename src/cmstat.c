@@ -353,8 +353,8 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, P7_BG *bg, int output_mode)
 	      ncm,
 	      cm->name,
 	      cm->acc == NULL ? "-" : cm->acc);
-      if(use_cm) fprintf(stdout, "%13g  %13g  %13g  %13g  %5s\n", lins, lcyk, gins, gcyk, "cm");
-      else       fprintf(stdout, "%13g  %13s  %13s  %13s  %5s\n", lfwd, "-", "-", "-", "hmm");
+      if(use_cm) fprintf(stdout, "  %13g  %13g  %13g  %13g  %5s\n", lins, lcyk, gins, gcyk, "cm");
+      else       fprintf(stdout, "  %13g  %13s  %13s  %13s  %5s\n", lfwd, "-", "-", "-", "hmm");
     }
     else { 
       if((output_mode == OUTMODE_GA && (! (cm->flags & CMH_GA))) || 
