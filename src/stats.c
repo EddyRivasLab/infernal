@@ -66,7 +66,7 @@ int debug_print_expinfo_array(CM_t *cm, char *errbuf, ExpInfo_t **expA)
  */
 int debug_print_expinfo(ExpInfo_t *exp)
 {
-  if(exp->is_valid) printf("cur_eff_dbsize: %f lambda: %f mu_extrap: %f mu_orig: %f dbsize: %ld nrandhits: %d tailp: %f (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
+  if(exp->is_valid) printf("cur_eff_dbsize: %f lambda: %f mu_extrap: %f mu_orig: %f dbsize: %.0f nrandhits: %d tailp: %f (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
   else              printf("invalid (not yet set)\n");
   fflush(stdout);
   return eslOK;
@@ -457,7 +457,7 @@ CreateExpInfo()
  * Returns:  void
  */
 void 
-SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, long dbsize, int nrandhits, double tailp)
+SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, double dbsize, int nrandhits, double tailp)
 {
   exp->lambda    = lambda;
   exp->mu_orig   = mu_orig;
@@ -536,15 +536,16 @@ DescribeExpMode(int exp_mode)
  *           violation with informative error message in errbuf.
  */
 int 
-UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize)
+UpdateExpsForDBSize(CM_t *cm, char *errbuf, double dbsize)
 {
   int i;
   /* contract checks */
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats.");
 
   for(i = 0; i < EXP_NMODES; i++) { 
-    cm->expA[i]->cur_eff_dbsize = ((double) dbsize / (double) cm->expA[i]->dbsize) * ((double) cm->expA[i]->nrandhits);
+    cm->expA[i]->cur_eff_dbsize = (dbsize / cm->expA[i]->dbsize) * ((double) cm->expA[i]->nrandhits);
   }
+
   return eslOK;
 }  
 

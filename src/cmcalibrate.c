@@ -611,7 +611,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
 	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
 	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
 
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
@@ -1076,7 +1076,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("about to call fit_histogram, %" PRId64 " hits\n", merged_nhits);
 #endif 
       if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) mpi_failure(errbuf);
-      SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (long) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+      SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
       
       /* clear hits */
       if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }

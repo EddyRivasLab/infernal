@@ -297,7 +297,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       avg_hitlen = (double) (cfg->rL * cfg->rN) / (double) nrandhits;
       printf("Random  seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\n", 
 	     "mu", mu, "lambda", lambda, "nrandhits", nrandhits, "tailp", tailp, "avg_len", avg_hitlen);
-      SetExpInfo(rand_expinfo, lambda, mu, (long) (cfg->rL * cfg->rN), (int) nrandhits, tailp);
+      SetExpInfo(rand_expinfo, lambda, mu, (double) (cfg->rL * cfg->rN), (int) nrandhits, tailp);
       debug_print_expinfo(rand_expinfo);
 
       /* output to --rfile, if nec */
@@ -341,7 +341,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	     "mu", mu, "lambda", lambda, "nsamphits", nsamphits, "tailp", tailp);
       sc_tailp = ((float) nsamphits / (float) nrandhits);
       SetExpInfo(impt_expinfo, lambda, mu, 
-		 (long) (cfg->rL * cfg->rN),
+		 (double) (cfg->rL * cfg->rN),
 		 (int) nrandhits, /* actually this is scaled_nhits */
 		 sc_tailp);
       debug_print_expinfo(impt_expinfo);

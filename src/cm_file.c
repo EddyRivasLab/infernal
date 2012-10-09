@@ -645,16 +645,16 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   }
   if (cm->flags & CMH_EXPTAIL_STATS)
     {
-      fprintf(fp, "ECMLC    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
+      fprintf(fp, "ECMLC    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_LC]->lambda, cm->expA[EXP_CM_LC]->mu_extrap, cm->expA[EXP_CM_LC]->mu_orig, 
 	      cm->expA[EXP_CM_LC]->dbsize, cm->expA[EXP_CM_LC]->nrandhits, cm->expA[EXP_CM_LC]->tailp);
-      fprintf(fp, "ECMGC    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
+      fprintf(fp, "ECMGC    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_GC]->lambda, cm->expA[EXP_CM_GC]->mu_extrap, cm->expA[EXP_CM_GC]->mu_orig, 
 	      cm->expA[EXP_CM_GC]->dbsize, cm->expA[EXP_CM_GC]->nrandhits, cm->expA[EXP_CM_GC]->tailp);
-      fprintf(fp, "ECMLI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
+      fprintf(fp, "ECMLI    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_LI]->lambda, cm->expA[EXP_CM_LI]->mu_extrap, cm->expA[EXP_CM_LI]->mu_orig, 
 	      cm->expA[EXP_CM_LI]->dbsize, cm->expA[EXP_CM_LI]->nrandhits, cm->expA[EXP_CM_LI]->tailp);
-      fprintf(fp, "ECMGI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
+      fprintf(fp, "ECMGI    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_GI]->lambda, cm->expA[EXP_CM_GI]->mu_extrap, cm->expA[EXP_CM_GI]->mu_orig, 
 	      cm->expA[EXP_CM_GI]->dbsize, cm->expA[EXP_CM_GI]->nrandhits, cm->expA[EXP_CM_GI]->tailp);
     }
@@ -2223,7 +2223,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       if (! fread((char *) &(cm->expA[x]->lambda),    sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->mu_extrap), sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->mu_orig),   sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
-      if (! fread((char *) &(cm->expA[x]->dbsize),    sizeof(long),   1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(cm->expA[x]->dbsize),    sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->nrandhits), sizeof(int),    1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->tailp),     sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
     }
@@ -2536,7 +2536,7 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	  
 	  if ((status = esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No dbsize read on E-xx line");
 	  if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "dbsize is not integer on E-xx line");
-	  cm->expA[exp_mode]->dbsize = (long) atoi(tok);
+	  cm->expA[exp_mode]->dbsize = atof(tok);
 	  
 	  if ((status = esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No nrandhits read on E-xx line");
 	  if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "nrandhits is not integer on E-xx line");

@@ -495,7 +495,7 @@ typedef struct expinfo_s {
   double mu_extrap;	/* offset/location param for exponential tail extrapolated to include all <nrandhits> from cmcalibrate, 
 			 * mu_corrected = mu_orig - log(1./tailp) / lambda */
   double mu_orig;	/* offset/location param for exponential tail's original fit to tailp of rand seq score histogram in cmcalibrate */
-  long   dbsize;        /* db size in residues that was used in cmcalibrate */
+  double dbsize;        /* db size in residues that was used in cmcalibrate */
   int    nrandhits;     /* total number of hits in random sequence database in cmcalibrate */ 
   double tailp;         /* fractional tail mass threshold for hit histogram in random sequences in cmcalibrate */
   int    is_valid;      /* TRUE if this expinfo_s object is valid (it's parameters have been set), FALSE if not */
@@ -3243,10 +3243,10 @@ extern float      cm_p7_P2Score(double P, float mu, float lambda);
 extern int        ExpModeIsLocal(int exp_mode);
 extern int        ExpModeIsInside(int exp_mode);
 extern ExpInfo_t *CreateExpInfo();
-extern void       SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, long dbsize, int nrandhits, double tailp);
+extern void       SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, double dbsize, int nrandhits, double tailp);
 extern ExpInfo_t *DuplicateExpInfo(ExpInfo_t *src);
 extern char      *DescribeExpMode(int exp_mode);
-extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
+extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, double dbsize);
 extern int        CreateGenomicHMM(const ESL_ALPHABET *abc, char *errbuf, double **ret_sA, double ***ret_tAA, double ***ret_eAA, int *ret_nstates);
 extern int        SampleGenomicSequenceFromHMM(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, char *errbuf, double *sA, double **tAA, double **eAA, int nstates, int L, ESL_DSQ **ret_dsq);
 extern int        CopyExpInfo(ExpInfo_t *src, ExpInfo_t *dest);
