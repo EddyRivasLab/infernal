@@ -505,6 +505,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 	     cm = new_cm; 
 	     if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
 	       for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
+	       free(tr);
 	       tr = new_tr;
 	       FreeParsetree(mtr);
 	       mtr = new_mtr;
@@ -1024,6 +1025,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    sq_block->first_seqidx = 0;
    for(i = 0; i < nseq; i++) { 
      tmp_sqp = sq_block->list + i;
+     if(input_msa->ss[i]) ESL_ALLOC(tmp_sqp->ss, sizeof(char) * tmp_sqp->salloc); 
      esl_sq_GetFromMSA(input_msa, i, tmp_sqp);
      sq_block->count++;
    }
@@ -1079,7 +1081,11 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
        if(esl_opt_GetBoolean(go, "--indi")) print_refine_column_headings(go, cfg);
        if(iter > 1 || (! do_trunc)) { fprintf(cfg->ofp, "  %5d %13.2f %10.3f\n", iter, totscore, delta); }
        else                         { fprintf(cfg->ofp, "  %5d %13.2f %10s\n",   iter, totscore, "-"); }
-       if(delta <= threshold && delta > (-1. * eslSMALLX1)) break; /* break out of loop before max number of iterations are reached */
+       if(delta <= threshold && delta > (-1. * eslSMALLX1)) { 
+	 for(i = 0; i < nseq; i++) cm_alndata_Destroy(dataA[i], FALSE); /* FALSE: don't free sequences, ESL_SQ_BLOCK still points at them */
+	 free(dataA);
+	 break; /* break out of loop before max number of iterations are reached */
+       }
        oldscore = totscore;
 
        /* 2. parsetrees -> msa */
@@ -1102,12 +1108,12 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 	 FreeCM(cm);
 	 FreeParsetree(mtr);
 	 for(i = 0; i < nseq; i++) FreeParsetree(trA[i]);
-	 for(i = 0; i < nseq; i++) cm_alndata_Destroy(dataA[i], FALSE); /* FALSE: don't free sequences, ESL_SQ_BLOCK still points at them */
-	 free(dataA);
        }
        cm  = NULL; /* even if iter == 1; we set cm to NULL, so we don't klobber init_cm */
        mtr = NULL;
        trA = NULL;
+       for(i = 0; i < nseq; i++) cm_alndata_Destroy(dataA[i], FALSE); /* FALSE: don't free sequences, ESL_SQ_BLOCK still points at them */
+       free(dataA);
        if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &trA))  != eslOK) cm_Fail(errbuf);
      }
 

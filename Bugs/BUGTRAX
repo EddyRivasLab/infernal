@@ -932,3 +932,26 @@ long).
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4226.
 //
+//
+ID              i32
+TITLE		cmbuild --refine fails if MSA has individual SS annotation.
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_1010_inf_bug_cmbuild_refine
+REPORTED_BY     Paul Gardner
+CLOSED_DATE     EPN, Wed Oct 10 16:55:07 2012
+DESCRIPTION    
+
+cmbuild was not allocating sq->ss prior to calling esl_sq_GetFromMSA() 
+when the --refine option was used. esl_sq_GetFromMSA() assumes sq->ss
+is already allocated if the sequence to get has individual SS
+annotation, so this was causing a segmentation fault as strcpy tried
+to copy into memory that didn't exist. The fix is to allocate sq->ss
+if necessary prior to calling esl_sq_GetFromMSA(). Note that we would
+use esl_sq_FetchFromMSA() (which allocates as necessary) except for
+our desire to use an ESL_SQBLOCK object for a block of pre-allocated
+sequences so that we can use the same functions that cmalign uses to
+create alignments (which use ESL_SQBLOCK objects).
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4234.
+//
