@@ -859,7 +859,7 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
       if (fwrite((char *) &(cm->expA[z]->lambda),    sizeof(double), 1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->mu_extrap), sizeof(double), 1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->mu_orig),   sizeof(double), 1, fp) != 1) return eslFAIL;
-      if (fwrite((char *) &(cm->expA[z]->dbsize),    sizeof(long),   1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(cm->expA[z]->dbsize),    sizeof(double), 1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->nrandhits), sizeof(int),    1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->tailp),     sizeof(double), 1, fp) != 1) return eslFAIL;
     }
@@ -1757,7 +1757,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	cm->expA[exp_mode]->lambda    = atof(tok1);
 	cm->expA[exp_mode]->mu_extrap = atof(tok2);
 	cm->expA[exp_mode]->mu_orig   = atof(tok3);
-	cm->expA[exp_mode]->dbsize    = atoll(tok4);
+	cm->expA[exp_mode]->dbsize    = atof(tok4);
 	cm->expA[exp_mode]->nrandhits = atoi(tok5);
 	cm->expA[exp_mode]->tailp     = atof(tok6);
 	cm->expA[exp_mode]->is_valid  = TRUE;
@@ -2112,8 +2112,8 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       }
       if (! fread((char *) &magic, sizeof(uint32_t), 1, cmfp->f))    { status = eslEOF;       goto ERROR; }
 
-      if      (cmfp->format == CM_FILE_1a) { if (magic != v1a_magic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic number at start of CM");  }
-      else                                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no such CM file format code");      
+      if (cmfp->format == CM_FILE_1a) { if (magic != v1a_magic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic number at start of CM");  }
+      else                                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no such CM file format code");      
     }
 
   /* Allocate shell of the new CM. 
