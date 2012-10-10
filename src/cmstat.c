@@ -295,7 +295,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, P7_BG *bg, int output_mode)
   else if(output_mode == OUTMODE_BITSCORES_E) { 
     E = esl_opt_GetReal(go, "-E");
     if(use_cm) { 
-      if((status = UpdateExpsForDBSize(cm, errbuf, (long) Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+      if((status = UpdateExpsForDBSize(cm, errbuf, Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
       if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_LI], errbuf, E, &lins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
       if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_LC], errbuf, E, &lcyk)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
       if((status = E2ScoreGivenExpInfo(cm->expA[EXP_CM_GI], errbuf, E, &gins)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
@@ -333,7 +333,7 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, P7_BG *bg, int output_mode)
 
   }
   else { 
-    if((status = UpdateExpsForDBSize(cm, errbuf, (long) Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
+    if((status = UpdateExpsForDBSize(cm, errbuf, Z)) != eslOK) cm_Fail("model %s: %s\n", cm->name, errbuf);
     if(output_mode == OUTMODE_EVALUES) { T = esl_opt_GetReal(go, "-T"); }
     if(output_mode == OUTMODE_GA)      { T = (cm->flags & CMH_GA) ? cm->ga : 0.; }
     if(output_mode == OUTMODE_NC)      { T = (cm->flags & CMH_GA) ? cm->nc : 0.; }

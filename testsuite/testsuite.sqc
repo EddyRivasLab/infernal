@@ -60,6 +60,7 @@
 1 exercise  bug/i28-srch-bndcln      perl !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
 1 exercise  bug/i29-cnv-1p0-nft      perl !testsuite/bug-i29.pl! @src/cmconvert@ !testsuite/bug-i29.cm!
 1 exercise  bug/i30-srch-zeroln      perl !testsuite/bug-i30.pl! @src/cmbuild@ @src/cmsearch@
+1 exercise  bug/i31-neg-dbsize       perl !testsuite/bug-i31.pl! @src/cmsearch@ !testsuite/bug-i31.cm! !testsuite/bug-i31.fa!
 
 ################################################################
 # Option tests

@@ -907,3 +907,28 @@ esl_sqio_ascii.c:sqascii_ReadWindow().
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4196.
 //
+ID              i31
+TITLE		Negative database sizes on 32-bit systems.
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_1005_inf_bug_neg_dbsize
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     EPN, Tue Oct  9 14:44:51 2012
+DESCRIPTION    
+
+Database size gets defined as a 'long' in some contexts. On (at least
+some) 32-bit systems the max value is 2,147,483,647 so searching
+databases larger than this causes an overflow and (at least sometimes)
+negative values for the database size. This can lead to negative
+E-values, which are, obviously, problematic. 
+
+No similar problem has ever been observed on 64-bit systems, where
+the maximum value for a long is much larger, typically 2^64-1.
+
+The fix is to use doubles for database size in all cases. Previously
+double was used for some database sizes (e.g. CM_PIPELINE had a Z
+value that was a double) but not all (CM_EXP_INFO had dbsize as a
+long). 
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4226.
+//
