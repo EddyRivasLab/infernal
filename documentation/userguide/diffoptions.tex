@@ -14,7 +14,8 @@ cmstat in version 1.1 are significantly simpler than they were in
 version 1.0 and have many fewer options. The motivation for renaming
 options whose behavior did not change was for consistency with
 HMMER3, so that analogous options in Infernal and HMMER have the same
-name.
+name. For more information on the version 1.1 options, see the manual
+pages in this guide.
 
 \subsection{cmalign options from Infernal version 1.0.x that have changed in version 1.1.} 
 
@@ -94,7 +95,7 @@ v1.0 option                  & v1.1 option              & explanation           
 \otext{--exp-cmL-glc <x>}    & \otext{-L <x>}           & renamed \\
 \otext{--exp-cmL-loc <x>}    & \otext{-L <x>}           & renamed \\
 \otext{--exp-ffile <f>}      & \otext{--ffile <f>}      & renamed only; no change in behavior \\
-\otext{--exp-fract}          & none                     & no longer necessary; HMMs are not calibrated \\
+\otext{--exp-fract}          & none                     & no longer relevant; HMMs are not calibrated \\
 \otext{--exp-gc <f>}         & \otext{--gc}             & renamed only; no change in behavior \\
 \otext{--exp-hfile <f>}      & \otext{--hfile <f>}      & renamed only; no change in behavior \\
 \otext{--exp-hmmLn-glc <x>}  & none                     & no longer necessary; HMMs are not calibrated \\
@@ -167,8 +168,8 @@ v1.0 option            & v1.1 option              & explanation                 
                            & corresponding            &                                     \\
 v1.0 option                & v1.1 option              & explanation                         \\ \hline
 \otext{--aln2hbands}       & none                     & no longer supported \\
-\otext{--aln-hbanded}      & \otext{--noali}          & true by default \\
-\otext{--aln-optacc}       & \otext{--noali}          & true by default \\
+\otext{--aln-hbanded}      & none                     & true by default \\
+\otext{--aln-optacc}       & none                     & true by default \\
 \otext{--dna}              & none                     & no longer supported \\
 \otext{--fil-no-hmm}       & \otext{--nohmm}          & renamed \\
 \otext{--fil-no-qdb}       & \otext{--max}            & \otext{--max} turns off all filters \\
