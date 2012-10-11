@@ -50,7 +50,8 @@ TEXFILES =\
 	main.tex\
 	scores.tex\
 	titlepage.tex\
-	tutorial.tex
+	tutorial.tex\
+	diffoptions.tex
 
 .PHONY: pdf install uninstall clean distclean TAGS
 
