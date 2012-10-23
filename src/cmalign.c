@@ -51,7 +51,8 @@
  * exceeds either of these, final output alignment will be in 1
  * line/seq Pfam format.
  */
-#define CMALIGN_MAX_NSEQ              10000  /* 10k sequences,  Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
+//#define CMALIGN_MAX_NSEQ              10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
+#define CMALIGN_MAX_NSEQ              10
 #define CMALIGN_MAX_NRES           10000000  /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 
 /* Max number of sequences, residues allowed if we're going to try and
@@ -2178,7 +2179,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
     /* determine how many all gap columns to insert after each alignment position
      * of the temporary msa when copying it to the merged msa */
     if((status = determine_gap_columns_to_add(msaA[ai], maxins, maxel, cm->clen, &(ngap_insA), &(ngap_elA), &(ngap_eitherA), errbuf)) != eslOK) 
-      cm_Fail("error determining number of all gap columns to add to temp alignment %d", ai);
+      cm_Fail("error determining number of all gap columns to add to temp alignment %d\n%s", ai, errbuf);
     regurg_header = ((! gs_exists) && (ai == 0)) ? TRUE : FALSE;
     regurg_gf     = ((! gs_exists) && (ai == 0)) ? TRUE : FALSE;
 
@@ -2337,11 +2338,9 @@ determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, in
   int *ngap_insA = NULL;
   int *ngap_elA = NULL;
   int *ngap_eitherA = NULL;
-  int insert_before_el_flag = FALSE; /* set to TRUE for a cpos if we observe an insert column 5' of a missing data column between cpos-1 and cpos */
-  int el_before_insert_flag = FALSE; /* set to TRUE for a cpos if we observe a missing data column 5' of an insert column between cpos-1 and cpos */
 
   /* contract check */
-  if(maxel[0] != 0) ESL_FAIL(eslEINVAL, errbuf, "missing characters exist prior to first cpos, this shouldn't happen.\n");
+  if(maxel[0]     != 0)    ESL_FAIL(eslEINVAL, errbuf, "missing characters exist prior to first cpos, this shouldn't happen.\n");
   if(msa->ss_cons == NULL) ESL_FAIL(eslEINVAL, errbuf, "MSA's SS_cons is null in determine_gap_columns_to_add.\n");
 
   ESL_ALLOC(ngap_insA, sizeof(int) * (msa->alen+1));
@@ -2354,17 +2353,15 @@ determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, in
   for(apos = 0; apos < msa->alen; apos++) { 
     if(esl_abc_CIsMissing(msa->abc, msa->rf[apos])) { 
       nel++;
-      if(nins > 0) insert_before_el_flag = TRUE;
+      if(nins > 0) ESL_FAIL(eslEINVAL, errbuf, "after nongap RF pos %d, %d gap columns precede a missing data column (none should)", cpos, nins);
     }
     else if(esl_abc_CIsGap(msa->abc, msa->rf[apos])) { 
       nins++;
-      if(nel > 0) el_before_insert_flag = TRUE;
     }
     else { /* a consensus position */
       /* a few sanity checks */
-      if(nins  > maxins[cpos])  ESL_FAIL(eslEINCONCEIVABLE, errbuf, "%d inserts before cpos %d greater than max expected (%d).\n", nins, cpos, maxins[cpos]); 
-      if(nel > maxel[cpos]) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "%d EL inserts before cpos %d greater than max expected (%d).\n", nel, cpos, maxel[cpos]); 
-      if(insert_before_el_flag && el_before_insert_flag) ESL_XFAIL(eslEINVAL, errbuf, "found inserts then missing chars '~' then inserts in RF before cpos %d.\n", cpos);
+      if(nins > maxins[cpos])  ESL_FAIL(eslEINCONCEIVABLE, errbuf, "%d inserts before cpos %d greater than max expected (%d).\n", nins, cpos, maxins[cpos]); 
+      if(nel  > maxel[cpos]) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "%d EL inserts before cpos %d greater than max expected (%d).\n", nel, cpos, maxel[cpos]); 
 
       if (cpos == 0) { 
 	if(nel != 0) ESL_FAIL(eslEINVAL, errbuf, "found missing chars prior to first cpos, shouldn't happen\n");
@@ -2383,52 +2380,12 @@ determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, in
 	  ngap_elA[prv_cpos + 1 + (nel/2)] = maxel[cpos] - nel; /* internal cpos: split */
 	}
 	else if(maxins[cpos] >  0 && maxel[cpos] > 0) { 
-	  /* We have to determine 5'->3' order: it could be inserts 5'
-	   * (before) missing data or missing data 5' (before)
-	   * inserts.  Rule for this is convoluted but we can
-	   * determine which order based on the consensus structure:
-	   * ff cpos-1 and cpos form a base pair (SS_cons[cpos-1] ==
-	   * '<' && SS_cons[cpos] == '>'), then we do inserts 5' of
-	   * missing data, else we do missing data 5' of inserts.  
-	   * 
-	   * The reason is b/c all ELs (missing data) occur at the end
-	   * of a stem (prior to END_nd's left consensus position).
-	   * Inserts emitted by states immediately prior to an END_nd
-	   * are involved in the lone case of ambiguity in the CM
-	   * grammar because it indicates an insert position to which
-	   * two insert states (one IL and one IR) emit. This
-	   * ambiguity is dealt with by 'detaching' (see
-	   * cm_modelmaker.c:cm_find_and_detach_dual_inserts()) insert
-	   * states with index equal to the state index of an END_E
-	   * state *minus 1*. These detached states are always IL
-	   * states that would emit inserts 5' of any ELs (missing
-	   * data) (e.g. a MATL_IL just before an END_E) *except* when
-	   * a MATP_nd is immediately prior to an END_E node, in which
-	   * case the detached state is an IR state (always MATP_IR
-	   * just before END_E). Because these states are detached we
-	   * know that the *other* state that inserts at that position
-	   * must be used.  Either an IR (ROOT_IR, MATR_IR or MATP_IR)
-	   * in the former case or a MATP_IL in the latter. The IR
-	   * will insert 3' of an EL, and the MATP_IL will insert 5'
-	   * of an EL. We can determine the MATP_IL cases by asking if
-	   * cpos-1 and cpos form a basepair in the SS_cons, b/c
-	   * that's the only case in which a MATP node exists
-	   * immediately before an END_nd. Note that this basepair
-	   * will always be a '<' '>' basepair (as opposed to a '('
-	   * ')' or '{' '}' for example) b/c it is the lowest nesting
-	   * order (enclosing basepair of stem. (Told you it was
-	   * convoluted.)
+	  /* Rule is (as of SVN r4271, and version 1.1rc2) that 
+	   * ELs always come before (5' of) insertions, even for the
+	   * rare case of a MATP node immediately prior to an END node.
 	   */
-	  if((msa->ss_cons[prv_cpos] == '<') && (msa->ss_cons[apos] == '>')) { /* special case */
-	    /* inserts should be 5' of missing data (ELs) */
-	    ngap_insA[prv_cpos + 1        + (nins/2)] = maxins[cpos] - nins; /* internal cpos: split */
-	    ngap_elA[prv_cpos  + 1 + nins + (nel/2)] = maxel[cpos] - nel; /* internal cpos: split */
-	  }
-	  else { 
-	    /* missing data (ELs) should be 5' of inserts */
-	    ngap_elA[prv_cpos + 1 + (nel/2)] = maxel[cpos] - nel; /* internal cpos: split */
-	    ngap_insA[prv_cpos + 1 + nel + (nins/2)] = maxins[cpos] - nins; /* internal cpos: split */
-	  }
+	  ngap_elA[prv_cpos  + 1 +       (nel/2)]  = maxel[cpos]  - nel;  /* internal cpos: split */
+	  ngap_insA[prv_cpos + 1 + nel + (nins/2)] = maxins[cpos] - nins; /* internal cpos: split */
 	}
 	/* final case is if (maxins[cpos] == 0 && maxel[cpos] == 0) 
 	 * in this case we do nothing. 
@@ -2439,40 +2396,31 @@ determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, in
       prv_cpos = apos;
       nins = 0;
       nel = 0;
-      el_before_insert_flag = FALSE;
-      insert_before_el_flag = FALSE;
     }
   }
-  cpos = clen;
-  apos = msa->alen;
-  /* deal with inserts after final consensus position, we could have both inserts and missing data, but only in case where 
-   * CM has 0 bps (model is ROOT, MATL, MATL, ..., MATL, END) so we know that MATL_IL has been detached, ROOT_IR emits inserts
-   * after final cpos, and thus missing data (ELs) should be 5' of inserts 
-   */
-  if(maxins[cpos] > 0 && maxel[cpos] == 0) { /* most common case */
-    ngap_insA[apos] = maxins[cpos] - nins; /* flush left inserts (no ELs) */
-  }
-  else if(maxins[cpos] == 0 && maxel[cpos] > 0) { 
-    ngap_elA[apos] = maxel[cpos] - nel; /* flush left ELs (no inserts) */
-  }
-  else if(maxins[cpos] > 0 && maxel[cpos] > 0) { 
-    if((msa->ss_cons[prv_cpos] == '<') && (msa->ss_cons[apos] == '>')) ESL_FAIL(eslEINVAL, errbuf, "final position needs ELs and inserts after it, and is right half of a base pair, this shouldn't happen");
-    /* missing data (ELs) should be 5' of inserts */
-    ngap_elA[apos]      = maxel[cpos] - nel; /* flush left */
-    ngap_insA[apos+nel] = maxins[cpos] - nins; /* flush left, after ELs */
-  }
-
-  /* determine ngap_eitherA[], the number of gaps due to either inserts or missing data after each apos */
-  for(apos = 0; apos <= msa->alen; apos++) { 
-    ngap_eitherA[apos] = ngap_insA[apos] + ngap_elA[apos];
-  }
-
-  /* validate that clen is what it should be */
+  /* first, validate that clen is what it should be */
   if(cpos != clen) { 
     if(ngap_insA != NULL) free(ngap_insA);
     if(ngap_elA != NULL) free(ngap_elA);
     if(ngap_eitherA != NULL) free(ngap_eitherA);
     ESL_FAIL(eslEINCONCEIVABLE, errbuf, "consensus length (%d) is not the expected length (%d).", cpos, clen);
+  }
+  
+  if(maxins[cpos] > 0 && maxel[cpos] == 0) { /* most common case */
+    ngap_insA[prv_cpos + 1 + nins] = maxins[cpos] - nins; /* flush left inserts (no missing) */
+  }
+  else if(maxins[cpos] == 0 && maxel[cpos] > 0) { 
+    ngap_elA[prv_cpos + 1 + nel] = maxel[cpos] - nel; /* flush left ELs (no gaps) */
+  }
+  else if(maxins[cpos] > 0 && maxel[cpos] > 0) { 
+    /* missing data (ELs) is always 5' of gaps */
+    ngap_elA[prv_cpos + 1 + nel]         = maxel[cpos] - nel; /* flush left */
+    ngap_insA[prv_cpos + 1 + nel + nins] = maxins[cpos] - nins; /* flush left, after ELs */
+  }
+
+  /* determine ngap_eitherA[], the number of gaps due to either inserts or missing data after each apos */
+  for(apos = 0; apos <= msa->alen; apos++) { 
+    ngap_eitherA[apos] = ngap_insA[apos] + ngap_elA[apos];
   }
 
   *ret_ngap_insA  = ngap_insA;
@@ -2508,7 +2456,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   int apos  = 0;
   int apos2print  = 0;
   int i, j;
-  int el_before_ins = FALSE;
   int prv_cpos = -1;
   int alen2print = 0;
   char *rf2print;
@@ -2520,50 +2467,17 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   rf2print[alen2print] = '\0';
   ss_cons2print[alen2print] = '\0';
 
-  if(msa->ss_cons == NULL) cm_Fail("Error trying to add inserts to SS_cons, but unexpectedly it doesn't exist.");
-  if(msa->rf      == NULL) cm_Fail("Error trying to add inserts to SS_cons, but unexpectedly it doesn't exist.");
+  if(msa->ss_cons == NULL) cm_Fail("Error: trying to add inserts to SS_cons, but unexpectedly it doesn't exist.");
+  if(msa->rf      == NULL) cm_Fail("Error: trying to add inserts to SS_cons, but unexpectedly it doesn't exist.");
   for(apos = 0; apos <= msa->alen; apos++) { 
-    el_before_ins = TRUE; /* until proven otherwise */
-    if(ngap_insA[apos] > 0 && ngap_elA[apos] > 0) { 
-      /* Rare case: we need to add at least one '.' and '~'. We need
-       * to determine which to add first. The only possible way we do
-       * '.'s and then '~'s is if we're inserting between the two
-       * match positions of a MATP node and the following node is an
-       * END (search for 'convoluted' in comments in
-       * determine_gap_columns_to_add() for explanation of why).
-       * This will only occur if previously seen consensus SS_cons 
-       * char was a '<' and next consensus SS_cons char is a '>'.
-       * First, check if prev consensus SS_cons char is '<',
-       * if it is check if following one is a '>' by searching for
-       * it. This is inefficient but should be rare so it's okay 
-       * (we'll only do this at most once per END node in model).
-       */
-      if((prv_cpos == -1) || (msa->ss_cons[prv_cpos] != '<')) el_before_ins = TRUE; /* normal case */
-      else { /* prv_cpos is '<', check if next one is a '>' */
-	j = i+1; 
-	while(j < msa->alen && msa->ss_cons[j] == '.') j++;
-	if((j < msa->alen) && (msa->ss_cons[j] == '>')) el_before_ins = FALSE;
-      }
+    /* ELs always come before (5' of) inserts */
+    for(i = 0; i < ngap_elA[apos]; i++) { 
+      rf2print[apos2print] = '~';
+      ss_cons2print[apos2print++] = '~';
     }
-    if(el_before_ins) { 
-      for(i = 0; i < ngap_elA[apos]; i++) { 
-	rf2print[apos2print] = '~';
-	ss_cons2print[apos2print++] = '~';
-      }
-      for(i = 0; i < ngap_insA[apos]; i++) { 
-	rf2print[apos2print] = '.';
-	ss_cons2print[apos2print++] = '.';
-      }
-    } 
-    else { /* insert before els, rare, only occurs if el_before_ins set to FALSE above */
-      for(i = 0; i < ngap_insA[apos]; i++) { 
-	rf2print[apos2print] = '.';
-	ss_cons2print[apos2print++] = '.';
-      }
-      for(i = 0; i < ngap_elA[apos]; i++) { 
-	rf2print[apos2print] = '~';
-	ss_cons2print[apos2print++] = '~';
-      }
+    for(i = 0; i < ngap_insA[apos]; i++) { 
+      rf2print[apos2print] = '.';
+      ss_cons2print[apos2print++] = '.';
     }
     if(apos < msa->alen) { 
       rf2print[apos2print]        = msa->rf[apos];
@@ -2571,12 +2485,12 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
       if(! esl_abc_CIsGap(msa->abc, msa->rf[apos])) prv_cpos = apos;
     }	
   }    
-
+  
   *ret_ss_cons2print = ss_cons2print;
   *ret_rf2print = rf2print;
-
+  
   return;
-
+  
  ERROR:
   cm_Fail("Allocation error when creating final alignment RF and SS_cons.");
   return; /* NEVERREACHED */

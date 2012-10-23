@@ -826,11 +826,27 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       }
   } /* end calculating lengths used by all traces */
   
-  /* Now we can calculate the total length of the multiple alignment, alen;
-   * and the maps ilmap, elmap, and irmap that turn a cpos into an apos
-   * in the multiple alignment: e.g. for an IL that follows consensus position
-   * cpos, put it at or after apos = ilmap[cpos] in aseq[][].
-   * IR's are filled in backwards (3'->5') and rightflushed.
+  /* Now we can calculate the total length of the multiple alignment,
+   * alen; and the maps ilmap, elmap, and irmap that turn a cpos into
+   * an apos in the multiple alignment: e.g. for an IL and EL that
+   * follows consensus position cpos, put it at or after apos =
+   * ilmap[cpos] in aseq[][].  IR's are filled in backwards (3'->5')
+   * and rightflushed.
+   * 
+   * EPN, Mon Oct 22 09:40:15 2012
+   * Post-1.1rc1: always put EL insertions *before* (5') of ILs or
+   * IRs. Previous to this modification ELs were 5' or IRs, but 3' of
+   * ILs. Since ELs only occur at the end of stem loops, IRs nearly
+   * always accounted for inserts at the same position as an EL
+   * (because ILs directly before an END_E state are detached to
+   * resolve an ambiguity in the CM grammar).  This means the
+   * post-1.1rc1 change only affected models with MATP immediately
+   * followed by an END_E, where the MATP_IR is is detached and the
+   * MATP_IL can emit after the same position as an EL. For those
+   * cases, previously ELs were 3' or the ILs, but now ELs are 5' of
+   * the ILs. This makes it possible to merge alignments to the same
+   * model without parsing their secondary structure because we can
+   * assume ELs are always 5' of inserts.
    */
   alen = 0;
   for (cpos = 0; cpos <= emap->clen; cpos++) { 
@@ -840,10 +856,10 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     } 
     else matmap[cpos] = -1;
     
-    ilmap[cpos] = alen; 
-    if(! do_matchonly) alen += maxil[cpos];
     elmap[cpos] = alen; 
     if(! do_matchonly) alen += maxel[cpos];
+    ilmap[cpos] = alen; 
+    if(! do_matchonly) alen += maxil[cpos];
     if(! do_matchonly) alen += maxir[cpos]; 
     irmap[cpos] = alen-1; 
     /* note: if do_matchonly, no inserts are printed, ilmap, elmap, irmap are irrelevant */
