@@ -932,7 +932,6 @@ long).
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4226.
 //
-//
 ID              i32
 TITLE		cmbuild --refine fails if MSA has individual SS annotation.
 STATUS          CLOSED
@@ -954,4 +953,30 @@ create alignments (which use ESL_SQBLOCK objects).
 
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4234.
+//
+ID              i33
+TITLE		cmsearch -A fails on some 'cmconvert'ed models from v1.0x
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_1024_inf_bug_cmsearch_A_glocal/00LOG
+REPORTED_BY     Zasha Weinberg
+CLOSED_DATE     EPN, Tue Oct 30 11:24:19 2012
+DESCRIPTION    
+
+cm_alidisplay.c::cm_alidisplay_BackConvert() was using
+HandModelMaker() to construct a CM guidetree from a msa->ss_cons for
+use in Transmogrify() to convert aligned sequences to parsetrees.
+This failed for some CM files built with version 1.0x and converted to
+1.1 format with cmconvert because the code in HandModelMaker() was
+changed between v1.0 and v1.1 such that the same SS_cons can lead to
+different CM guide trees in v1.0 and v1.1. The changes between 1.0 and
+1.1 to HandModelMaker() were to deal with bugs i19 and i20. 
+
+The HandModelMaker() change affected exactly 150 of the 2208 Rfam 11.0
+CMs (7%) in the 'cmconvert'ed Rfam.cm file, so this bug affects a
+significant number of models. This bug manifests itself with cmsearch
+-A because that is the only way cm_alidisplay_BackConvert() is
+executed. 
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4274.
 //

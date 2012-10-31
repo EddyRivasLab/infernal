@@ -2961,7 +2961,7 @@ CompareCMGuideTrees(CM_t *cm1, CM_t *cm2)
  *           goal is so there's only 1 execution path through
  *           all the configuration functions. If there are many
  *           possible paths, dictated by combinations of options
- *           to an application for example, its very possible that
+ *           to an application for example, it's very possible that
  *           some of those paths screw something up.
  *
  * Args:     cm     - CM to check
@@ -4884,5 +4884,220 @@ InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_i2)
   *ret_i1 = i1;
   *ret_i2 = i2;
   return;
+}
+
+
+/* Function: cm_GuideTree()
+ * Incept:   EPN, Thu Oct 25 06:24:06 2012
+ *
+ * Purpose:  Given a CM and a MSA with aligned sequences to that 
+ *           CM construct a 'guide tree' (a Parsetree_t object) 
+ *           that corresponds to the CM with MSA coordinates.
+ *
+ *           The MSA must have RF annotation indicating which
+ *           positions are consensus (nongap) and which are
+ *           inserts (gap) and which are missing (EL: ~).
+ *
+ *           This guidetree is useful for backconverting the
+ *           aligned residues to parsetrees themselves.
+ *           
+ *           This function is similar to HandModelmaker() 
+ *           in that it generates a guide tree, but is 
+ *           different in that we already have the CM,
+ *           whereas in HandModelmaker() we do not have
+ *           the CM (in fact, in HandModelMaker we use
+ *           the guide tree to construct the CM -- the 
+ *           inverse of what we do here.)
+ * 
+ *           Guide tree for <cm> is returned in <ret_gtr>.
+ *
+ * Returns:  eslOK on success.
+ *           eslEINVAL if msa->rf is NULL or 
+ *           msa->rf nongap length != cm->clen
+ */
+int
+cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **ret_gtr)
+{
+  int status;
+  int  nd, apos, v, cpos;
+  Parsetree_t *gtr = NULL;
+  ESL_STACK   *pda;
+  int         *matassign = NULL; /* 1..alen   array; 0=insert col, 1=match col */
+  int         *elassign  = NULL; /* 1..alen   array; 0=match/ins col, 1=EL col */
+  int         *c2a_map = NULL;  /* [1..cm->clen] map from consensus (match) positions to alignment positions */
+  int i, j, k, el_i, el_j; /* position counters */
+
+  if(msa->rf  == NULL) ESL_FAIL(eslEINVAL, errbuf, "msa->rf is NULL in cm_Guidetree()");
+
+  /* create a map from consensus positions to alignment positions, 
+   * and fill in matassign and elassign, all for convenience later
+   */
+  ESL_ALLOC(c2a_map,   sizeof(int) * (cm->clen+1)); 
+  ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
+  ESL_ALLOC(elassign,  sizeof(int) * (msa->alen+1));
+  c2a_map[0] = 0;  /* invalid */
+  cpos = 0;
+
+  for (apos = 1; apos <= msa->alen; apos++) { 
+    matassign[apos] = ((esl_abc_CIsGap    (msa->abc, msa->rf[apos-1])) || /* CIsGap     returns true for '.', '_' and '-' only (they're equivalent, see create_rna() in esl_alphabet.c()) */
+		       (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
+      ? FALSE : TRUE;
+    elassign[apos] = (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])) ? TRUE : FALSE;
+    if(! (esl_abc_CIsGap(cm->abc, msa->rf[apos-1]) || esl_abc_CIsMissing(cm->abc, msa->rf[apos-1]))) { 
+      cpos++;
+      c2a_map[cpos] = apos;
+    }
+  }
+  if(cpos != cm->clen) ESL_FAIL(eslEINVAL, errbuf, "msa->rf nongap length (%d) != clen (%d)\n", cpos, cm->clen);
+
+  gtr = CreateParsetree(cm->nodes);	/* the guide tree we'll grow */
+
+  /* Now create the guide tree using the same procedure used by
+   * cm_modelmaker.c::HandModelmaker(), except that now it is simpler
+   * because we already know the node architecture of the CM.  We push
+   * and pop node index and i..j alignment coordinates rooted at the
+   * node's subtree to a stack to properly deal with the branching
+   * structure of the tree. It's important we use this specific
+   * strategy (as opposed to the strategy used for constructing an
+   * emitmap in display.c:CreateEmitMap()) because we have to deal
+   * with inserts and ELs in the MSA.
+   */
+  if ((pda  = esl_stack_ICreate()) == NULL) goto ERROR;
+  if((status = esl_stack_IPush(pda, 1))         != eslOK) goto ERROR;	/* emitl */
+  if((status = esl_stack_IPush(pda, msa->alen)) != eslOK) goto ERROR;	/* emitr */
+  if((status = esl_stack_IPush(pda, 0))         != eslOK) goto ERROR;	/* node index */
+  while (esl_stack_IPop(pda, &nd) != eslEOD) /* pop a node to attach */
+    {
+      esl_stack_IPop(pda, &j);
+      esl_stack_IPop(pda, &i); /* i..j == subseq we're responsible for */
+
+      /* We'll skip EL columns but need to remember what i and j would
+       * be if we didn't: <el_i> and <el_j>. Then, we can set emitr
+       * for MATL and emitl for MATR as <el_j> and <el_i> respectively.
+       */       
+      el_i = i; 
+      el_j = j; 
+      while(i <= msa->alen && elassign[i]) i++;
+      while(j >= 1         && elassign[j]) j--;
+      if(i > (msa->alen+1)) ESL_XFAIL(eslEINVAL, errbuf, "cm_GuideTree(): problem with local ends (RF='~') during guide tree construction"); 
+      if(j < 0)             ESL_XFAIL(eslEINVAL, errbuf, "cm_GuideTree(): problem with local ends (RF='~') during guide tree construction");
+
+      /*printf("G nd: %2d (%4s) i: %2d j: %2d el_i: %2d el_j: %2d\n", nd, Nodetype(cm->ndtype[nd]), i, j, el_i, el_j);*/
+
+      v = cm->nodemap[nd];
+      gtr->state[nd] = cm->ndtype[nd];
+      gtr->mode[nd]  = TRMODE_J;
+      gtr->prv[nd] = (cm->ndtype[nd] == ROOT_nd) ? -1 : cm->ndidx[cm->plast[v]];
+      gtr->n++;
+
+      if (cm->ndtype[nd] == END_nd) { 
+	gtr->nxtl[nd]  = -1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = j;
+      }
+
+      else if (cm->ndtype[nd] == ROOT_nd) { /* try to push i,j; but deal with IL and IR */
+	gtr->nxtl[nd]  = nd+1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = j;
+	for (; i <= j; i++) if (matassign[i] || elassign[i]) break;
+	for (; j >= i; j--) if (matassign[j] || elassign[j]) break;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR;
+      }
+
+      else if (cm->ndtype[nd] == BEGL_nd) {    /* no inserts */
+	gtr->nxtl[nd]  = nd+1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = j;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
+      }
+
+      else if (cm->ndtype[nd] == BEGR_nd)  { /* look for INSL */
+	gtr->nxtl[nd]  = nd+1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = j;
+	for (; i <= j; i++) if (matassign[i] || elassign[i]) break; 
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
+      }
+
+      else if (cm->ndtype[nd] == MATL_nd) { 
+	 	/* i unpaired. This is a MATL node; allow INSL */
+	gtr->nxtl[nd]  = nd+1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = el_j;
+	for (i = i+1; i <= j; i++) if (matassign[i] || elassign[i]) break;
+	if((status = esl_stack_IPush(pda, i))    != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, el_j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
+      }
+
+      else if (cm->ndtype[nd] == MATR_nd) { 
+	gtr->nxtl[nd]  = nd+1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = el_i;
+	gtr->emitr[nd] = j;
+	for (j = j-1; j >= i; j--) if (matassign[j] || elassign[j]) break;
+	if((status = esl_stack_IPush(pda, el_i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j))    != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
+      }
+
+      else if (cm->ndtype[nd] == MATP_nd) { 
+	gtr->nxtl[nd]  = nd+1;
+	gtr->nxtr[nd]  = -1;
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = j;
+	for (i = i+1; i <= j; i++) if (matassign[i] || elassign[i]) break;
+	for (j = j-1; j >= i; j--) if (matassign[j] || elassign[j]) break;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
+      }
+
+      else if (cm->ndtype[nd] == BIF_nd) { 
+	gtr->nxtl[nd]  = cm->ndidx[cm->cfirst[v]];
+	gtr->nxtr[nd]  = cm->ndidx[cm->cnum[v]];
+	gtr->emitl[nd] = i;
+	gtr->emitr[nd] = j;
+	
+	k = c2a_map[cm->emap->rpos[nd+1]-1];
+	
+	/* push the right BEGIN node first */
+	if((status = esl_stack_IPush(pda, k+1)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j))   != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]])) != eslOK) goto ERROR;
+	/* then push the left BEGIN node */
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]])) != eslOK) goto ERROR;
+      }
+    }	/* while something's on the stack */
+  esl_stack_Destroy(pda);
+
+  if(c2a_map)   free(c2a_map);
+  if(elassign)  free(elassign);
+  if(matassign) free(matassign);
+  *ret_gtr = gtr;
+
+  return eslOK;
+
+ ERROR: 
+  if(elassign)  free(elassign);
+  if(matassign) free(matassign);
+  if(c2a_map)   free(c2a_map);
+  if(gtr)       FreeParsetree(gtr);
+
+  return status;
 }
 

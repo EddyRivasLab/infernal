@@ -2586,6 +2586,7 @@ extern int     cm_ExpectedPositionOccupancy(CM_t *cm, float **ret_mexpocc, float
 extern char ***cm_CreateTransitionMap();
 extern void    cm_FreeTransitionMap(char ***tmap);
 extern void    InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_2);
+extern int     cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **ret_gtr);
 
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 

@@ -1401,10 +1401,8 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
 
   if((status = esl_msa_Digitize(cm->abc, msa, errbuf)) != eslOK) goto ERROR;
 
-  if((status = HandModelmaker(msa, errbuf, 
-			      TRUE, /* use_rf */ 
-			      TRUE, /* use_el */
-			      FALSE, 1.0, NULL, &mtr)) != eslOK) goto ERROR;
+  /* get a guidetree for the CM */
+  if((status = cm_Guidetree(cm, errbuf, msa, &mtr)) != eslOK) goto ERROR;
 
   ESL_ALLOC(used_el, (msa->alen+1) * sizeof(int));
   /* change any EL emissions in aseq to '~' so Transmogrify deals with them appropriately */
