@@ -16,8 +16,8 @@ $tmppfx    = shift;
 if (! -x "$builddir/src/cmalign")                  { die "FAIL: didn't find cmalign binary in $builddir/src";  }
 if (! -x "$builddir/src/cmemit")                   { die "FAIL: didn't find cmemit binary in $builddir/src";  }
 if (! -x "$builddir/src/cmsearch")                 { die "FAIL: didn't find cmsearch binary in $builddir/src";  }
-if (! -x "$builddir/easel/miniapps/esl-reformat")   { die "FAIL: didn't find esl-reformat binary in $builddir/easel/miniapps";  }
-if (! -x "$builddir/easel/miniapps/esl-shuffle")    { die "FAIL: didn't find esl-reformat binary in $builddir/easel/miniapps";  }
+if (! -x "$builddir/easel/miniapps/esl-reformat")  { die "FAIL: didn't find esl-reformat binary in $builddir/easel/miniapps";  }
+if (! -x "$builddir/easel/miniapps/esl-shuffle")   { die "FAIL: didn't find esl-shuffle binary in $builddir/easel/miniapps";  }
 
 # Verify that we have all the datafiles we need.
 if (! -e "$srcdir/testsuite/tRNA.c.cm")  { die "FAIL: didn't find tRNA.c.cm in $srcdir/testsuite";  }

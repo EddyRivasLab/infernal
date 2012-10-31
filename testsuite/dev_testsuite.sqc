@@ -78,6 +78,7 @@
 1 exercise  bug/i30-srch-zeroln      perl !testsuite/bug-i30.pl! @src/cmbuild@ @src/cmsearch@
 1 exercise  bug/i31-neg-dbsize       perl !testsuite/bug-i31.pl! @src/cmsearch@ !testsuite/bug-i31.cm! !testsuite/bug-i31.fa!
 1 exercise  bug/i32-refine-ss        perl !testsuite/bug-i32.pl! @src/cmbuild@
+1 exercise  bug/i33-cmsearch-A       perl !testsuite/bug-i33.pl! @src/cmsearch@ @src/cmbuild@ !testsuite/bug-i33.cm!
 
 ################################################################
 # Option tests

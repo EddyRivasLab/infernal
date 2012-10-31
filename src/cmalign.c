@@ -2455,7 +2455,7 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   int status;
   int apos  = 0;
   int apos2print  = 0;
-  int i, j;
+  int i;
   int prv_cpos = -1;
   int alen2print = 0;
   char *rf2print;
