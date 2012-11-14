@@ -1025,7 +1025,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    sq_block->first_seqidx = 0;
    for(i = 0; i < nseq; i++) { 
      tmp_sqp = sq_block->list + i;
-     if(input_msa->ss[i]) ESL_ALLOC(tmp_sqp->ss, sizeof(char) * tmp_sqp->salloc); 
+     if(input_msa->ss && input_msa->ss[i]) ESL_ALLOC(tmp_sqp->ss, sizeof(char) * tmp_sqp->salloc); 
      esl_sq_GetFromMSA(input_msa, i, tmp_sqp);
      sq_block->count++;
    }
