@@ -16,6 +16,7 @@ if ($#ARGV != 2) { die "Wrong argument number.\n$usage"; }
 
 $cmsearch = shift;
 $cmbuild  = shift;
+$cmfile   = shift;
 $ok       = 1;
 
 # Make our test sequence file, i33.1
@@ -28,7 +29,7 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmsearch -A i33.2 bug-i33.cm i33.1 > /dev/null 2> /dev/null");
+    system("$cmsearch -A i33.2 $cmfile i33.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 
