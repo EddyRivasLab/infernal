@@ -10,18 +10,16 @@ improvements, listed below:
 
 The following reported bugs have been fixed:
  - #i28: cmsearch: fails in rare cases when the alignment matrix grows
-         too large
-
+         too larg.
  - #i29: cmconvert: v1.0 files with 0 HMM filter threshold points were
          incorrectly parsed
-
  - #i30: cmsearch: failed on zero length sequences
  - #i31: cmsearch: E-values would turn negative for target databases 
          > 2 Gb on 32-bit systems
  - #i32: cmbuild: --refine failed if individual sequences had SS
          annotation
  - #i33: cmsearch: -A failed on some CM files created by cmconvert of 
-         v1.0 CM files.
+         v1.0 CM files
 
 Other improvements:
  - non-MPI cmsearch can now read gzipped target sequence fasta files.
