@@ -51,8 +51,7 @@
  * exceeds either of these, final output alignment will be in 1
  * line/seq Pfam format.
  */
-//#define CMALIGN_MAX_NSEQ              10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
-#define CMALIGN_MAX_NSEQ              10
+#define CMALIGN_MAX_NSEQ              10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 #define CMALIGN_MAX_NRES           10000000  /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 
 /* Max number of sequences, residues allowed if we're going to try and
