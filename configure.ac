@@ -401,7 +401,9 @@ ESL_PIC_FLAGS
 # If we're using SSE, figure out our @SIMD_CFLAGS@
 if test "$impl_choice" = "sse" && test "x$SIMD_CFLAGS" = x; then
    case $ax_cv_c_compiler_vendor in
-   gnu)   AX_CHECK_COMPILER_FLAGS(-msse2,[SIMD_CFLAGS="-msse2"],[AC_MSG_ERROR([Need -msse2 flag (gnu compiler, SSE implementation)])]);;
+   gnu)   AX_CHECK_COMPILER_FLAGS([-msse2],        [ SIMD_CFLAGS="-msse2" ])
+          AX_CHECK_COMPILER_FLAGS([-msse2 -msse3], [ SIMD_CFLAGS="-msse2 -msse3" ])
+	  ;;
    intel) ;;
    *)     ;;
    esac
@@ -593,8 +595,16 @@ AC_SUBST(LIBGSL)
 # has files with @LIBGSL@ in them.
 
 # Checks for headers
-#
-AC_CHECK_HEADERS([sys/types.h sys/sysctl.h unistd.h stdint.h inttypes.h endian.h])
+# Defines HAVE_SYS_TYPES_H, HAVE_STDINT_H, etc.
+AC_CHECK_HEADERS([ \
+  endian.h\
+  inttypes.h\
+  stdint.h\
+  unistd.h\
+  sys/types.h\
+  sys/sysctl.h\
+  netinet/in.h
+])  
 
 # altivec.h requires the simd cflags
 # For reasons I don't understand, this needs to come after any other CHECK_HEADERS().
