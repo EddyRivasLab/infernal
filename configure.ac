@@ -602,9 +602,32 @@ AC_CHECK_HEADERS([ \
   stdint.h\
   unistd.h\
   sys/types.h\
-  sys/sysctl.h\
   netinet/in.h
 ])  
+
+# Check for sysctl.h separately.  On OpenBSD, it requires
+# <sys/param.h> and autoconf needs special logic to deal w. this as
+# follows.
+AC_CHECK_HEADERS([sys/param.h])
+AC_CHECK_HEADERS([sys/sysctl.h], [], [], 
+[[#ifdef HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
+]])
+
+
+# Vector-specific headers. 
+# Separated, because we may want to implement
+# other vector languages besides SSE
+# For SSE:
+#  xmmintrin.h = SSE
+#  emmintrin.h = SSE2
+#  pmmintrin.h = SSE3
+AC_CHECK_HEADERS([\
+  emmintrin.h\
+  pmmintrin.h\
+  xmmintrin.h
+])
 
 # altivec.h requires the simd cflags
 # For reasons I don't understand, this needs to come after any other CHECK_HEADERS().
