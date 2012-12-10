@@ -23,6 +23,8 @@ The following reported bugs have been fixed:
 
 Other improvements:
  - non-MPI cmsearch can now read gzipped target sequence fasta files.
+ - fixed problems with building Infernal on 32-bit Ubuntu, FreeBSD and
+    OpenBSD operating systems.
  - fixed problem with building Infernal on 32-bit Ubuntu machines.
  - cmscan --glist <f> option added to allow specific models (listed in
    <f>) to be run in glocal search mode.
