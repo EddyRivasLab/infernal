@@ -980,6 +980,30 @@ executed.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4274.
 //
+//
+ID              i34
+TITLE		cmalign improperly arranging EL and IL emits for MATP->END adjacent nodes
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_1112_inf_release_1p1rc2/00LOG
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Dec 12 09:49:14 2012
+DESCRIPTION    
+
+cm_parsetree.c::Parsetrees2Alignment() was not enforcing the new rule
+(instituted after the 1.1rc1 release) that EL emissions always come 5'
+of IL emissions, which only very rarely occurs (1 model in all of Rfam
+10.1) when a MATP node is followed by an END node. The bug was in the
+section of Parsetrees2Alignment() that rejustifies the insertions by
+splitting them in half and shoving each half left/right.
+
+This bug was never in a released version of the software, it was
+created (rev 4272) and fixed in between releases 1.1rc1 and
+1.1rc2.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4336.
+//
+
 #### 
-####  1.1rc2 release: 11 December 2012
+####  1.1rc2 release: 13 December 2012
 ####

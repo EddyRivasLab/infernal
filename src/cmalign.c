@@ -47,20 +47,12 @@
 
 #include "infernal.h"
 
-/* Max number of sequences, residues per tmp alignment, if seq file
- * exceeds either of these, final output alignment will be in 1
- * line/seq Pfam format.
+/* Max number of sequences per tmp alignment, if seq file exceeds
+ * either of these, final output alignment will be in 1 line/seq Pfam
+ * format. Max number of residues is MAX_RESIDUE_COUNT from esl_sqio_ncbi.h
+ * where it's currently defined as (1024 * 1024).
  */
-#define CMALIGN_MAX_NSEQ              10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
-#define CMALIGN_MAX_NRES           10000000  /* 10 Mb, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
-
-/* Max number of sequences, residues allowed if we're going to try and
- * output the entire alignment in one block.  If seq file exceeds
- * either of these and --ileaved enabled, we'll output an error and
- * tell user file is to big to use --ileaved.
- */
-#define CMALIGN_MAX_NSEQ_ONEBLOCK     100000  /* 100k sequences, most we allow to be aligned and output in interleaved format */
-#define CMALIGN_MAX_NRES_ONEBLOCK  100000000  /* 100Mb, most we allow to be aligned and output in interleaved format */
+#define CMALIGN_MAX_NSEQ  10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 
 #define DEBUGSERIAL 0
 #define DEBUGMPI    0
@@ -153,7 +145,7 @@ struct cfg_s {
   int              outfmt;      /* output alignment format */
   int              be_verbose;  /* TRUE if --verbose used */
   int              do_oneblock; /* TRUE to force output of full alignment 
-				 * in one block, if input file is really big.
+				 * in one block, if input file is really big,
 				 * we'll fail and tell the user to pick a
 				 * different format.
 				 */
@@ -370,8 +362,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int            sstatus = eslOK;  /* status from esl_sq_ReadBlock() */
   ESL_SQ_BLOCK  *sq_block;         /* a sequence block */
   ESL_SQ_BLOCK  *nxt_sq_block;     /* sequence block for next loop iteration */
-  int            block_max_nres;   /* maximum number of residues  we'll allow in sq_block */
-  int            block_max_nseq;   /* maximum number of sequences we'll allow in sq_block */
   int            reached_eof;      /* TRUE if we've reached EOF in target sequence file */
 
   /* variables related to --mapali */
@@ -488,25 +478,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Our main loop will loop over reading a single large block
-   * (<sq_block>) of sequences, up to <block_max_nres> residues and up
-   * to <block_max_nseq> sequences, but potentially less if we reach
-   * the end of the sequence file first. The <block_max_*> values
-   * depend on whether we're trying to output the alignment in
-   * one block (cfg->do_oneblock) or not. All max values are
-   * #defined at the top of the file.
+   * (<sq_block>) of sequences, up to MAX_RESIDUE_COUNT
+   * (1024*1024=1048576) residues, and up to CMALIGN_MAX_NSEQ
+   * sequences (10,000), but potentially less if we reach the end of
+   * the sequence file first.
    */
-  if(cfg->do_oneblock) { 
-    block_max_nseq = CMALIGN_MAX_NSEQ_ONEBLOCK; /* 100,000 */
-    block_max_nres = CMALIGN_MAX_NRES_ONEBLOCK; /* 100 Mb  */
-  }
-  else { 
-    block_max_nseq = CMALIGN_MAX_NSEQ; /* 10,000 */
-    block_max_nres = CMALIGN_MAX_NRES; /* 10 Mb  */
-  }
 
   /* Read the first block */
-  sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+  sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
@@ -535,13 +515,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * user isn't cross when the job fails after seemingly going along
      * fine for a while.
      */
-    nxt_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+    nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if(! reached_eof && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for -i or output format other than Pfam", CMALIGN_MAX_NSEQ_ONEBLOCK, CMALIGN_MAX_NRES_ONEBLOCK);
+    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use esl-reformat to reformat alignment later.", CMALIGN_MAX_NSEQ, MAX_RESIDUE_COUNT);
 
     /* align the sequences in the block */
 #ifdef HMMER_THREADS
@@ -936,8 +916,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int            sstatus = eslOK;  /* status from esl_sq_ReadBlock() */
   ESL_SQ_BLOCK  *sq_block;         /* a sequence block */
   ESL_SQ_BLOCK  *nxt_sq_block;     /* sequence block for next loop iteration */
-  int            block_max_nres;   /* maximum number of residues  we'll allow in sq_block */
-  int            block_max_nseq;   /* maximum number of sequences we'll allow in sq_block */
   int            reached_eof;      /* TRUE if we've reached EOF in target sequence file */
 
   /* variables related to --mapali */
@@ -988,25 +966,15 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Our main loop will loop over reading a single large block
-   * (<sq_block>) of sequences, up to <block_max_nres> residues and up
-   * to <block_max_nseq> sequences, but potentially less if we reach
-   * the end of the sequence file first. The <block_max_*> values
-   * depend on whether we're trying to output the alignment in
-   * one block (cfg->do_oneblock) or not. All max values are
-   * #defined at the top of the file.
+   * (<sq_block>) of sequences, up to MAX_RESIDUE_COUNT
+   * (1024*1024=1048576) residues, and up to CMALIGN_MAX_NSEQ
+   * sequences (10,000), but potentially less if we reach the end of
+   * the sequence file first.
    */
-  if(cfg->do_oneblock) { 
-    block_max_nseq = CMALIGN_MAX_NSEQ_ONEBLOCK; /* 100,000 */
-    block_max_nres = CMALIGN_MAX_NRES_ONEBLOCK; /* 100 Mb  */
-  }
-  else { 
-    block_max_nseq = CMALIGN_MAX_NSEQ; /* 10,000 */
-    block_max_nres = CMALIGN_MAX_NRES; /* 10 Mb  */
-  }
 
   /* Read the first block */
-  sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+  sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
 #if DEBUGMPI
@@ -1034,13 +1002,13 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * user isn't cross when the job fails after seemingly going along
      * fine for a while.
      */
-    nxt_sq_block = esl_sq_CreateDigitalBlock(block_max_nseq, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, block_max_nres, FALSE); /* FALSE says: read complete sequences */
+    nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if(! reached_eof && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for -i or output format other than Pfam", CMALIGN_MAX_NSEQ_ONEBLOCK, CMALIGN_MAX_NRES_ONEBLOCK);
+    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or\noutput format other than Pfam. Use esl-reformat to reformat alignment later.", CMALIGN_MAX_NSEQ, MAX_RESIDUE_COUNT);
 
     /* allocate an array for all CM_ALNDATA objects we'll receive from workers */
     nmap_cur = (nali == 0) ? nmap_data : 0;
