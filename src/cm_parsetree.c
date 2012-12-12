@@ -834,7 +834,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
    * and rightflushed.
    * 
    * EPN, Mon Oct 22 09:40:15 2012
-   * Post-1.1rc1: always put EL insertions *before* (5') of ILs or
+   * Post-1.1rc1: always put EL insertions *before* (5' of) ILs or
    * IRs. Previous to this modification ELs were 5' or IRs, but 3' of
    * ILs. Since ELs only occur at the end of stem loops, IRs nearly
    * always accounted for inserts at the same position as an EL
@@ -1079,58 +1079,67 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
        *
        * We have to be careful about EL's. We don't want to group IL/IR's and EL's together and then split them
        * because we need to annotate IL/IR's as '.'s in the consensus structure and EL's as '~'. So we split
-       * each group separately. There should only be either IL or IR's at any position (b/c assuming we've
-       * detached the CM grammar ambiguity (which is default in cmbuild)). But we don't count on it here.
+       * each group separately. 
+       * post-1.1rc1 release, we now always but EL insertions *before* (5' of) ILs or IRs. This is a change
+       * relative to 1.0->1.1rc1, in which ILs would come 3' of ELs (although this would only very rarely
+       * occur in the case of a MATP followed by an END (that's the only case where an IL and EL can emit
+       * after the same cpos)).
        */
       if(! (cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, split insert in half */
 	{
-	  /* Deal with inserts before first consensus position, ILs, then ELs, then IRs
-	   * IL's are flush left, we want flush right */
-	  rightjustify(abc, msa->aseq[i], maxil[0]);
-	  if(do_cur_post) rightjustify(abc, msa->pp[i], maxil[0]);
+	  /* Deal with inserts before first consensus position, ELs, then ILs, then IRs 
+	   * (new convention post-1.1rc1 see note above, used to be ILs then ELs then IRs)
+	   */
+
+	  /* EL's are flush left, we want flush right (I think these are impossible, but just in case...) */
+	  rightjustify(abc, msa->aseq[i], maxel[0]);
+	  if(do_cur_post) rightjustify(abc, msa->pp[i], maxel[0]);
+
+	  /* IL's are flush left, we want flush right */
+	  rightjustify(abc, msa->aseq[i]+maxel[0], maxil[0]);
+	  if(do_cur_post) rightjustify(abc, msa->pp[i]+maxel[0], maxil[0]);
 	  
-	  /* EL's are flush left, we want flush right I think these are impossible, but just in case... */
-	  rightjustify(abc, msa->aseq[i]+maxil[0], maxel[0]);
-	  if(do_cur_post) rightjustify(abc, msa->pp[i]+maxil[0], maxel[0]);
 	  /* IR's are flush right, we want flush right, do nothing */
 	    
 	  /* split all internal insertions */
 	  for (cpos = 1; cpos < emap->clen; cpos++) 
 	    {
-	      if(maxil[cpos] > 1) /* we're flush LEFT, want to split */
+	      if(maxel[cpos] > 1) /* we're flush LEFT, want to split */
 		{
 		  apos = matmap[cpos]+1;
 		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
 		    nins++;
 		  nins /= 2;		/* split the insertion in half */
-		  rightjustify(abc, msa->aseq[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
-		  if(do_cur_post) rightjustify(abc, msa->pp[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
+		  rightjustify(abc, msa->aseq[i]+matmap[cpos]+1+nins, maxel[cpos]-nins);
+		  if(do_cur_post) rightjustify(abc, msa->pp[i]+matmap[cpos]+1+nins, maxel[cpos]-nins);
 		}
-	      if(maxel[cpos] > 1) /* we're flush LEFT, want to split */
+
+	      if(maxil[cpos] > 1) /* we're flush LEFT, want to split */
 		{
-		  apos = matmap[cpos]+1 + maxil[cpos];
+		  apos = matmap[cpos]+1 + maxel[cpos];
 		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
 		    nins++;
 		  nins /= 2;		/* split the insertion in half */
-		  rightjustify(abc, msa->aseq[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
-		  if(do_cur_post) rightjustify(abc, msa->pp[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
+		  rightjustify(abc, msa->aseq[i]+matmap[cpos]+1+maxel[cpos]+nins, maxil[cpos]-nins);
+		  if(do_cur_post) rightjustify(abc, msa->pp[i]+matmap[cpos]+1+maxel[cpos]+nins, maxil[cpos]-nins);
 		}
+
 	      if(maxir[cpos] > 1) /* we're flush RIGHT, want to split */
 		{
 		  apos = matmap[cpos+1]-1;
 		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos--)
 		    nins++;
 		  nins ++; nins /= 2;		/* split the insertion in half (++ makes it same behavior as IL/EL */
-		  leftjustify(abc, msa->aseq[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
-		  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
+		  leftjustify(abc, msa->aseq[i]+matmap[cpos]+1 + maxel[cpos] + maxil[cpos], maxir[cpos]-nins);
+		  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[cpos]+1 + maxel[cpos] + maxil[cpos], maxir[cpos]-nins);
 		}
 	    }
 	  /* Deal with inserts after final consensus position, IL's then EL's, then IR's
-	   * IL's are flush left, we want flush left, do nothing 
 	   * EL's are flush left, we want flush left, do nothing 
+	   * IL's are flush left, we want flush left, do nothing 
 	   * IR's are flush right, we want flush left */
-	  leftjustify(abc, msa->aseq[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
-	  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
+	  leftjustify(abc, msa->aseq[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
+	  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	}
     }
     
@@ -1142,7 +1151,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	{
 	  if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 
 	    fprintf(insertfp, "  %d %d %d", cpos, ifirst[cpos], (iluse[cpos] + iruse[cpos])); /* note cpos+1 puts cpos from 1..clen, ifirst[] is already 1..sq->n */
-	    /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 (I think) */
+	    /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 */
 	  }
 	  if((elfp != NULL) && (eluse[cpos] > 0)) { 
 	    fprintf(elfp, "  %d %d %d", cpos, elfirst[cpos], eluse[cpos]); /* note cpos+1 puts cpos from 1..clen, ifirst[] is already 1..sq->n */
