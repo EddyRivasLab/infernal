@@ -936,6 +936,21 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     total_psec += psec;
     print_forecasted_time(go, cfg, errbuf, cm, psec);
 
+    /* Time forecast complete, send ready signal to all workers. 
+     * (This 'fixes' bug i35: in 1.1rc1, calibrations for large models 
+     * on large numbers of processors (W>~1000, nproc>~80) would fail,
+     * seemingly due to too long a wait by mpi_worker()'s first
+     * MPI_Send(), but I never figured out exactly why. Regardless,
+     * sending a specific signal to each worker, who is waiting for
+     * it before it begins working solves the issue.)
+     */
+    for(dest = 1; dest < cfg->nproc; dest++) { 
+      if (MPI_Send(&status, 1, MPI_INT, dest, INFERNAL_READY_TAG, MPI_COMM_WORLD) != 0) mpi_failure("mpi send failed");
+#if DEBUG_MPI
+      printf("master sent ready signal to worker %d\n", dest);
+#endif
+    }
+
     esl_stopwatch_Start(cfg->w);
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
       /* do we need to switch from global configuration to local? */
@@ -1163,6 +1178,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = expand_exp_and_name_arrays(cfg))                    != eslOK) mpi_failure("out of memory");
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) mpi_failure(errbuf);
     if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) mpi_failure(errbuf);
+
+    /* wait for ready signal from master (this addresses bug i35, see comment in mpi_master()) */
+#if DEBUG_MPI
+    printf("worker %d waiting for ready signal from master\n", cfg->my_rank);
+#endif
+    if((status = MPI_Recv(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD, &mpistatus)) != 0) mpi_failure("failed to receive ready signal");
 
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
       /* do we need to switch from global configuration to local? */
