@@ -1002,7 +1002,37 @@ created (rev 4272) and fixed in between releases 1.1rc1 and
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4336.
 //
+ID              i35
+TITLE		cmcalibrate MPI commonly fails for large models (W>1000) with many (>80) processors
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/12_1112_inf_release_1p1rc2/00LOG
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Fri Dec 14 06:09:07 2012
+DESCRIPTION    
 
+Something was going wrong in MPI cmcalibrate, but only when run 
+with many processors (>80) on large models (W>1000). The issue was related
+to the first MPI_Send() call in mpi_worker() and/or the first MPI_Probe()
+call in mpi_master(). I never fully understood the problem, but my
+experiments suggested there was some type of 'time-out' going on by some
+of the worker nodes as they waited for the master to receive the first
+message they sent. This 'time-out' caused the cmcalibrate MPI process
+to fail, and only happened when the initial time forecast, done by the
+master *before* it would call MPI_Probe() to receive any of the worker's
+sent messages, took a long time (as it will for large models). I never
+understood why this only occurred for many processors though (running 
+with 41 or less never exhibited the bug). 
+
+The fix is for mpi_master() to send a 'ready signal' to each specific
+worker via MPI_Send() after it's done the time forecast. During the
+forecast, each worker is waiting to receive it's 'ready signal' from
+the master.  This solves the problem in that I never observe failures
+for large numbers of processors on large models, but, again, I can't
+explain exactly why.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4338.
+//
 #### 
-####  1.1rc2 release: 13 December 2012
+####  1.1rc2 release: 14 December 2012
 ####
