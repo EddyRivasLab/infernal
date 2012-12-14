@@ -9,8 +9,9 @@ trunk, not in a release branch. It isn't included in releases anyway.
 
 Subversion repository:  https://svn.janelia.org/eddylab/eddys/src/infernal
 
-HMMER follows an 'unstable trunk' policy.  Each major release goes
-onto a stable branch.  Every release (even minor ones) is tagged.
+Infernal, like HMMER, follows an 'unstable trunk' policy.  Each major
+release goes onto a stable branch.  Every release (even minor ones) is
+tagged.
 
 Release types: major releases, minor releases, and snapshots. A major
 release gets its own branch. A minor release puts bug fixes into a
@@ -68,9 +69,9 @@ development of the next main release.
             -m "created Infernal 1.1 release branch"          
 
 
-================================================================
-= Work in the current release branch (~/releases/hmmer-release)
-================================================================
+==================================================================
+= Work in the current release branch (~/releases/infernal-release)
+==================================================================
 
 Once a release branch has been taken (either new, or by a merge from
 the trunk destined to become a release), work only in the release
@@ -82,9 +83,9 @@ is complete.
     svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1  infernal-release
 
 Don't call this working directory infernal-1.1, nor infernal! Call it
-infernal-release, because later "make dist" is going to try to create
-infernal-xx as its release, and because you want to recognize that it's
-different from src/infernal.
+infernal-release, because later we'll create infernal-xx as its
+release, and because you want to recognize that it's different from
+src/infernal.
 
 If this is the first time (a new release branch), you also need to
 update the "svn:externals" so Easel and HMMER are checked out from 
@@ -166,18 +167,12 @@ wrong, it's easy enough to come back and make a new tarball.
    . release-notes/LICENSE.sh
 
 
-*********************************************************************
-NOTE: For 1.1rc1, I didn't regress against any old version, so
-INFERNAL_OLDVERSION is undefined. For next release, it will be
-defined, so I left the notes pertaining to it here (these were copied
-from HMMER3's 00CHECKLIST).
-*********************************************************************
-
 * Edit .bashrc
   I use the following environment variables in the scripting below:
-    INFERNAL_VERSION     The current version.  
-    INFERNAL_OLDVERSION  The version we regress against. (found in ~releases/infernal-${INFERNAL_OLDVERSION}
-    INFERNAL_RELEASE_NOTEBOOK  The e-notebook dir        ({HOME}/notebook/xxx)
+    INFERNAL_VERSION              The current version.  
+    INFERNAL_OLDVERSION           The version we regress against. (found in ~releases/infernal-${INFERNAL_OLDVERSION}
+    INFERNAL_RELEASE_NOTEBOOK     The e-notebook dir ({HOME}/notebook/xxx)
+    INFERNAL_OLDRELEASE_NOTEBOOK  The e-notebook dir used for last release ({HOME}/notebook/xxx)
 
   Having these set everywhere, in all the ssh'ing you're about to 
   do, simplifies the scripting below, and reduces the odds of 
@@ -225,9 +220,6 @@ On login-eddy (our compile host):
   make dev        >> build.out  2>&1
   make check      >> build.out  2>&1
 
-***Again, I skipped the OLDVERSION steps for the 1.1rc1 release. Do
-   them for the next release.
-
   ssh login-eddy
   cd ~/releases/infernal-${INFERNAL_OLDVERSION}
   make distclean
@@ -262,15 +254,18 @@ Release candidate:
   builddir (gcc)      ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc
   builddir (icc,MPI)  ~/releases/infernal-${INFERNAL_OLDVERSION}/build-icc-mpi
 
-
 * Update the user guide - including the tutorial section, and
   version numbers in the installation section.
   See last ~/notebook entry for scripts.
   Don't slack off on this step - it's a useful regression test as well.
 
-* Commit
+* Commit (don't forget to commit in hmmer and easel too!)
     svn status
 do any cleanup... 
+    svn commit
+    cd hmmer
+    svn commit
+    cd ../easel
     svn commit
 
 
@@ -282,8 +277,7 @@ ${INFERNAL_VERSION}, ${EASEL_VERSION}, and ${HMMER_VERSION} tags used
 below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 @HMMER_VERSION@ in configure.ac, Makefile.
 
-*
-   cd ~/releases
+* cd ~/releases
 
 * Delete any old releases of the same number
    rm -rf infernal-${INFERNAL_VERSION}
@@ -292,16 +286,17 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
 * Export a snapshot, alpha, beta, or release candidate from the development trunk: 
    svn export https://svn.janelia.org/eddylab/eddys/src/infernal/trunk infernal-${INFERNAL_VERSION}
-   cd infernal-${INFERNAL_VERSION}
 
   or: Export a major or minor release from its branch
    svn export https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1 infernal-${INFERNAL_VERSION}
+
    cd infernal-${INFERNAL_VERSION}
    autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
    ./configure
    . release-notes/LICENSE.sh
 
   1.1rc1: exported 4130/774
+  1.1rc2: exported 4342/834
 
 * Check that svn has file permissions right. 
   Both of these should have no output.
@@ -309,7 +304,19 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    find . -perm o+x ! -perm -u+x -print
 
 * versioning, dating, licensing (these are originally set in
-  configure.ac, and exported as shell variables by LICENSE.sh call above)
+  configure.ac, and exported as shell variables by LICENSE.sh call
+  above, make sure they're correct using echo before proceeding)
+
+   echo ${INFERNAL_VERSION}
+   echo ${EASEL_VERSION}
+   echo ${HMMER_VERSION}
+   echo ${INFERNAL_DATE}
+   echo ${HMMER_DATE}
+   echo ${EASEL_DATE}
+   echo ${INFERNAL_COPYRIGHT}
+   echo ${HMMER_COPYRIGHT}
+   echo ${EASEL_COPYRIGHT}
+
 * must do Easel and HMMER first
 
    easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/00README
@@ -322,7 +329,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/COPYRIGHT
    easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/INSTALL
    easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/release-notes/LICENSE.tag
-   find easel -type f -exec easel/devkit/sedition-pp LICENSE hmmer/release-notes/LICENSE.tag {} \;   
+   find hmmer -type f -exec easel/devkit/sedition-pp LICENSE hmmer/release-notes/LICENSE.tag {} \;   
 
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" README
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" COPYRIGHT
@@ -342,15 +349,22 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    mv Userguide.pdf ../../Userguide.pdf
    cd ../..
 
-
 * clean up files that don't belong in the distro, 
   including hmmer's easel subdir.
   (I chose to remove Manuscripts because it's big (39M))
+
+  Note: after 1.1rc1, we changed this part: documentation/userguide
+  in infernal and hmmer, and documentation/ in easel are no longer
+  removed. Their Makefile.in's have been updated to check for req'd
+  executables before building the guide. They were originally removed
+  b/c Sean didn't want users going in there, running make, failing
+  with many errors due to missing executables, and reporting bugs to
+  us.
+
    make distclean
    cp   release-notes/RELEASE-${INFERNAL_VERSION} RELEASE-NOTES
    rm -rf Bugs
    rm -rf Manuscripts
-   rm -rf documentation/userguide
    rm -rf release-notes
    rm -rf autobuild
 
@@ -358,7 +372,6 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    rm -rf easel
    rm -rf bugs
    rm -rf contrib
-   rm -rf documentation/userguide
    rm -rf release-notes
    rm -rf test-speed
    rm -rf autobuild
@@ -366,14 +379,16 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
    cd ../easel
    rm -f  00CHECKLIST LICENSE.csh.in LICENSE.tag 
-   rm -rf documentation
    cd ..
+
+   rm *~
 
 * record and finish release notes
   (Sean's command in HMMER that I skipped because I'm not sure what it
   does: cat RELEASE-NOTES | dumpnotes )
     
    emacs RELEASE-NOTES
+   rm *~
 Delete TO-DO sections and clean up for public consumption.
 
   (Again, not sure of this command that Sean uses for hmmer: 'texclean')
@@ -384,6 +399,7 @@ Delete TO-DO sections and clean up for public consumption.
    gzip infernal-${INFERNAL_VERSION}.tar
 
    1.1rc1: 11.7 Mb (gzipped)
+   1.1rc2: 19.1 Mb (gzipped, diff b/c of documentation directories)
 
 All subsequent tests are on this source distro.
 
@@ -401,6 +417,7 @@ On login-eddy (our compile host):
   make            >> build.out	 2>&1
   make dev        >> build.out	 2>&1
   make check      >> build.out	 2>&1
+  make devcheck   >> build.out	 2>&1
 
   ssh login-eddy
   cd ~/releases/infernal-${INFERNAL_VERSION}
@@ -410,8 +427,55 @@ On login-eddy (our compile host):
   ../configure CC=icc LDFLAGS=-static-intel --enable-mpi   > build.out  2>&1
   make            >> build.out  2>&1
   make dev        >> build.out  2>&1
-  make check      >> build.out  2>&1
+  make devcheck   >> build.out  2>&1
 
+================================================================
+= Build and check on all compile farm nodes
+================================================================
+
+Look at current list of compile farm nodes on the lab wiki page.
+For each machine, we manually login and build through a 
+'make devcheck' and verify that all tests pass. 
+
+Do this in ~/releases/infernal-${INFERNAL_VERSION}
+(not in ~/releases/infernal-release/)
+
+Example:
+  cd ~/releases/infernal-${INFERNAL_VERSION}
+  mkdir build-cf-xcompile
+  cd build-cf-xcompile/
+
+Create build.sh:
+
+  cat build.sh
+      ../configure       > build.out 2>&1
+      make V=1          >> build.out 2>&1
+      make V=1 dev      >> build.out 2>&1
+      make V=1 check    >> build.out 2>&1
+      make V=1 devcheck >> build.out 2>&1
+
+   ssh xcompile.int.janelia.org
+   cd ~/releases/infernal-${INFERNAL_VERSION}/build-cf-xcompile
+   sh build.sh
+
+Wait for it to finish. Then manually verify that all tests pass.
+
+List of all compile farm nodes that should pass all tests as of
+last release (1.1rc2):
+
+(See http://wiki.int.janelia.org/wiki/display/EddyLab/Compile+Farm)
+ for current list and for machine-specific instructions for building)
+
+ 1) Intel Apple OS/X (xcompile.int.janelia.org)        passed
+ 2) PowerPC IBM AIX  (cf-ppc2.int.janelia.org)         passed
+ 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  passed
+ 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     passed
+ 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     passed
+ 6) Fedora 16 AMD64 (cf-fedora.int.janelia.org)        passed
+ 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     passed
+ 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  passed
+ 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     passed
+10) Ubuntu 12.0.4.1 32-bit (cf-ubuntu32)               passed
 
 ================================================================
 = Testing
@@ -419,11 +483,7 @@ On login-eddy (our compile host):
 
 See latest e-notebook for tests.
 
-As of 1.1rc1, I'm not doing any regressions. At next release, I'll
-regress against 1.1rc1.
-
-Current testing is three sets of jobs, see notebook 00LOG. These
-scripts should be in ${INFERNAL_RELEASE_NOTEBOOK}/tests/ 
+Current testing is three sets of jobs, see old notebook 00LOG. 
 
 tests-fast.sh:          fast enough to run in succession.
 tests-fast-valgrind.sh: same tests as tests-fast.sh but valgrind
@@ -432,14 +492,116 @@ tests-slow.sh:          submit to cluster, includes MPI jobs.
 Output tests-fast.sh and tests-fast-valgrind.sh to a file, and
 manually look at each line for errors. 
 
-Remember to test on both builds (gcc and icc-mpi).
+These instructions should work post-1.1rc2:
+
+Set up tests:
+  cd ${INFERNAL_RELEASE_NOTEBOOK}
+  mkdir tests
+  mkdir tests/out-files/
+  mkdir tests/err-files/
+  mkdir tests/out-oldversion-files/
+  mkdir tests/err-oldversion-files/
+  cd tests
+  cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/cp-required-files.sh ./
+  sh cp-required-files.sh
+
+Run tests:
+tests-fast*.sh          run on current machine, take about 1 minute
+tests-fast-valgrind*.sh submit to cluster,      take about 30 minutes
+tests-slow*.sh          submit to cluster,      take about 2.5 hours
+
+  time sh tests-fast.sh > tests-fast.out
+  time sh tests-fast-oldversion.sh > tests-fast-oldversion.out
+  diff tests-fast.out tests-fast-oldversion.out > tests-fast.diff
+
+  sh submit-valgrind.sh 
+Look at err-files/valg.1.err and make sure there's no memory leaks or errors.
+  diff tests-fast-valgrind.out tests-fast-valgrind-oldversion.out > tests-fast-valgrind.diff
+
+  sh tests-slow.sh
+  sh tests-slow-oldversion.sh 
+Wait for these to finish (about 3 hours)
+  sh regressify-slow.sh 
+  sh regressify-slow-oldversion.sh
+  sh diff-slow.sh > tests-slow.diff
+
+Make sure all diff output includes only expected differences.
+  emacs tests-fast.diff
+  emacs tests-fast-valgrind.diff
+  emacs tests-slow.diff
+
+Remember to test on both builds (gcc and icc-mpi), the scripts above
+already do this.
 
 Then run some anecdotal tests.
+     mkdir anecdotes
+Some examples:
+     cd anecdotes
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmfetch ~/db/rfam_11.0/Rfam.cm.1_1 5S_rRNA > 5S.cm
+     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmfetch ~/db/rfam_11.0/Rfam.cm.1_1 5S_rRNA > 5S.old.cm
+     diff 5S.cm 5S.old.cm
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmstat 5S.cm
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmstat 5S.old.cm
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmsearch 5S.cm ~/genomes/hvol.fa
+     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmsearch 5S.cm ~/genomes/hvol.fa
+     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmpress 5S.cm
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmpress 5S.cm
+     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmpress 5S.old.cm
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmscan 5S.cm ~/genomes/hvol.fa
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmscan 5S.old.cm ~/genomes/hvol.fa
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmsearch -A 5S.sto 5S.cm ~/genomes/hvol.fa
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmalign 5S.cm 5S.fa 
 
-Also, do a rmark3 benchmark with default settings and --mid.
+Also, do a rmark3 benchmark with default settings and --mid.	      
+(These commands should work post-i1.1rc2 if you're doing a small
+update release)
+
+     cd ${INFERNAL_RELEASE_NOTEBOOK}/tests/
+     mkdir rmark3
+     cd rmark3
+     mkdir models
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/rmark3.msa ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/fetch.sh ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/build.sh ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/calibrate.sh ./
+     sh fetch.sh
+     sh build.sh
+Wait for all jobs to finish (about 1 minute)
+     sh calibrate.sh
+Wait for all jobs to finish (about 30 minutes, if cluster is nearly empty)
+     cat models/*.cm > models/rmark3.cm     
+
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/rmark3* ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/df.opts ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/mid.opts ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-symlink.sh ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-all.sh ./
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-pp.sh ./
+Edit version number in do-symlink.sh, do-all.sh, do-pp.sh
+     emacs do-symlink.sh     
+     emacs do-all.sh
+     emacs do-pp.sh
+     sh do-symlink.sh
+     sh do-all.sh 
+Wait for jobs to finish (approximately 20 min)
+     sh do-pp.sh 
+Wait for jobs to finish (approximately 5 min)
+      
+Compare .sum files with .sum files from: 
+${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/	 
 
 Check the userguide (Userguide.pdf).
 
+Ensure 'make clean' and 'make distclean' finish without errors. The
+1.1rc1 distro had a bug that caused errors for both of these. To do
+this:
+     cd ~/releases/infernal-${INFERNAL_VERSION}/
+     sh ./configure;
+     make
+     make dev
+     make clean
+     make distclean
 
 ================================================================
 = Binary distros
@@ -454,6 +616,8 @@ warning:
   icc: warning #10237: -lcilkrts linked in dynamically, static library not available
 If this gets resolved in the future, we may go back to distributing
 binaries built with icc (64 and 32).
+
+The lcilkrts is still a problem as of 1.1rc2 (Dec 13 2012)
 
 Note: the configure call differs from the one Sean uses in hmmer. I
 specify --prefix. If I don't do that I get a 'make install' error
@@ -521,8 +685,19 @@ macosx-intel build (on Sean's desktop):
   tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
--------------------------
+Look at the build output for these two distros and make sure
+everything looks normal and all tests pass:
+  emacs ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-linux-intel-gcc.out
+  emacs ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-macosx-intel.out
 
+Test these Distro tarballs:
+
+linux-intel-gcc: ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz
+macosx-intel:    ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz
+
+Copy linux-intel-gcc to a new directory on your home dir on login-eddy
+and test it with some anecdotal tets.
+Copy macosx-intel tar ball to your laptop and test it.
 
 ================================================================
 = Distribution
@@ -543,7 +718,7 @@ macosx-intel build (on Sean's desktop):
   it would require changing the website significantly.
 
    ssh selab
-   export INFERNAL_VERSION=1.1rc1
+   export INFERNAL_VERSION=1.1rc2
    mkdir ~/to-be-infernal-${INFERNAL_VERSION}
    logout
 
@@ -559,12 +734,15 @@ macosx-intel build (on Sean's desktop):
    scp infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz      selab:~/to-be-infernal-${INFERNAL_VERSION}
 
    ssh selab
-   export INFERNAL_VERSION=1.1rc1
+   export INFERNAL_VERSION=1.1rc2
    sudo mv ~/to-be-infernal-${INFERNAL_VERSION}/* /var/ftp/pub/software/infernal/
    echo ftp://selab.janelia.org/pub/software/infernal/infernal-${INFERNAL_VERSION}.tar.gz
    sudo rm -f /var/ftp/pub/software/infernal/infernal.tar.gz
    (cd /var/ftp/pub/software/infernal; sudo ln -s infernal-${INFERNAL_VERSION}.tar.gz infernal.tar.gz)
    logout
+
+* Install on login-eddy. Currently, I don't have permission to
+  install software on login-eddy, so just email Goran at this point.
 
 * Update the web site and the blog I can't do a 'make', because I
   don't have proper permission. So I have to copy all the files that
@@ -586,21 +764,42 @@ macosx-intel build (on Sean's desktop):
 
 	 cd ~/web/infernal/
          svn commit
-   
+
+Update website with Rfam files (if current version of Rfam is not 
+compatible with new version of Infernal, which was true for 1.1rc1
+and 1.1rc2).
+
+What I did for 1.1rc2:
+
+	 ssh selab
+	 rm -rf ~/to-be-rfam/
+	 mkdir ~/to-be-rfam/
+	 sudo mkdir /var/ftp/pub/rfam/rfam-11.0   
+	 logout
+
+	 cd ${INFERNAL_RELEASE_NOTEBOOK}
+	 cd rfam-files-for-infernal-website/for-website
+	 scp * nawrockie@selab:~/to-be-rfam/
+
+	 ssh selab
+	 sudo mv ~/to-be-rfam/* /var/ftp/pub/rfam/rfam-11.0/
+	 logout
+
 * tag the release. Replace version # below!
    cd ~/releases/infernal-release
 
    svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1\
             https://svn.janelia.org/eddylab/eddys/src/infernal/tags/${INFERNAL_VERSION}\
-            -m "tagged 1.1 release, from 1.1 branch"          
+            -m "tagged 1.1rc2 release, from 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/src/hmmer/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/src/hmmer/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged HMMER for Infernal 1.1 release, from Infernal 1.1 branch"          
+            -m "tagged HMMER for Infernal 1.1rc2 release, from Infernal 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged Easel for Infernal 1.1 release, from Infernal 1.1 branch"          
+            -m "tagged Easel for Infernal 1.1rc2 release, from Infernal 1.1 branch"          
 
    1.1rc1: svn 4131 hmmer:4132 easel:775
+   1.1rc2: svn 4343 hmmer:4344 easel:835
 
 * Merge the branch's changes back to the trunk
   (This section is more verbose here than in the hmmer 00CHECKLIST. I
@@ -641,7 +840,7 @@ macosx-intel build (on Sean's desktop):
   variable in the configure.ac files to i1.1rc1).
 
   Go back to working copies of the trunks and merge the release branches into it.
-       cd ~/src/infernal/trunk
+       cd ~/src/infernal
        svn update
 
        svn diff  -r r4120:4130 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1 > tmp
@@ -700,3 +899,4 @@ Release history
 1.0.1  - SRE, Sat Oct 24 10:12:50 2009   r2997  Easel:r422
 1.0.2  - SRE, Fri Oct 30 13:57:33 2009   r3022  Easel:r428
 1.1rc1 - EPN, Wed Jun 27 22:02:39 2012   r4131  Easel:r775
+1.1rc2 - EPN, Fri Dec 14 15:04:24 2012   r4343  Easel:r835
