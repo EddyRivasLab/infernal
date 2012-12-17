@@ -765,6 +765,9 @@ Copy macosx-intel tar ball to your laptop and test it.
 	 cd ~/web/infernal/
          svn commit
 
+Don't forget to update the 'Last modified' bit at the bottom
+of index.html.
+
 Update website with Rfam files (if current version of Rfam is not 
 compatible with new version of Infernal, which was true for 1.1rc1
 and 1.1rc2).
