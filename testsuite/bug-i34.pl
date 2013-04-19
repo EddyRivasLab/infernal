@@ -54,7 +54,7 @@ if ($ok) {
 
 }
 
-foreach $tmpfile ("i33.1") { 
+foreach $tmpfile ("i34.1") { 
     unlink $tmpfile if -e $tmpfile;
 }
 if ($ok) { print "ok\n";     exit 0; }

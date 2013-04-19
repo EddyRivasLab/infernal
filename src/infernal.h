@@ -3173,7 +3173,7 @@ extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, i
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
-extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0);
+extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int do_trunc);
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);

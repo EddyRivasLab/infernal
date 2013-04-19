@@ -3567,6 +3567,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+        kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
 	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
@@ -4080,6 +4081,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+        kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
 	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	

@@ -276,11 +276,6 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
   int       b;                  /* local begin state */
   int       jp_v;               /* j-jmin[v] for current j, and current v */
   int       dp_v;               /* d-hdmin[v][jp_v] for current j, current v, current d*/
-  int       jp_z;               /* j-jmin[z] for current j, and current z */
-  int       kp_z;               /* the k value (d dim) from the shadow matrix
-				 * giving the len of right fragment offset in deck z,
-				 * k = kp_z + hdmin[z][jp_z]
-				 */
   int       allow_S_local_end;  /* set to true to allow d==0 BEGL_S and BEGR_S local ends if(do_optacc) */
 
   /* pointers to cp9b data for convenience */
@@ -344,10 +339,8 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
     }
 
     if (cm->sttype[v] == B_st) {
-      kp_z = shmx->kshadow[v][jp_v][dp_v];   /* kp_z = offset len of right fragment */
-      z    = cm->cnum[v];
-      jp_z = j-jmin[z];
-      k    = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+      k = shmx->kshadow[v][jp_v][dp_v];   /* k = offset len of right fragment */
+      z = cm->cnum[v];
       
       /* Store info about the right fragment that we'll retrieve later:
        */
@@ -1402,7 +1395,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-	/* kn satisfies inequalities (1) and (3) (listed below)*/	
+        kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
+        /* kn satisfies inequalities (1) and (3) (listed below)*/	
 	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
 	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
@@ -1443,7 +1437,7 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	      if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) 
 		  > alpha[v][jp_v][dp_v]) { 
 		alpha[v][jp_v][dp_v] = sc;
-		kshadow[v][jp_v][dp_v] = kp_z;
+		kshadow[v][jp_v][dp_v] = k;
 	      }
 	    }
 	  }
@@ -2030,6 +2024,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+        kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
 	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
@@ -2793,6 +2788,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+        kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
 	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
@@ -2839,7 +2835,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 		     ((k == 0) || (NOT_IMPOSSIBLE(alpha[z][jp_z][kp_z]))))                   /* right subtree can only be IMPOSSIBLE if it has length 0 (in which case k==0) */
 		    { 
 		      alpha[v][jp_v][dp_v] = sc;
-		      kshadow[v][jp_v][dp_v] = kp_z;
+		      kshadow[v][jp_v][dp_v] = k;
 		      /* Note: we take the logsum here, because we're
 		       * keeping track of the log of the summed probability
 		       * of emitting all residues up to this point, (from

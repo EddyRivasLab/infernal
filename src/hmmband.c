@@ -358,7 +358,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
-  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0)) != eslOK) return status;
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
   ESL_DPRINTF1(("bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm); 
@@ -1234,11 +1234,13 @@ cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9b, int i0, int j0)
  * Returns: eslOK, or, if error, other status code and filled errbuf
  */
 int
-cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
+cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int do_trunc)
 {
   int v;            /* counter over states of the CM */
   int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
+  int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
+  int dn;           /* max_sdl_sdr if do_trunc, else sd */
   int hd_needed;
   int j;
 
@@ -1253,14 +1255,27 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
   if(hd_needed != cp9b->hd_needed) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hd_needed inconsistent.");
 
   for(v = 0; v < cm->M; v++) {
-    sd = StateDelta(cm->sttype[v]);
+    sd          = StateDelta(cm->sttype[v]);
+    max_sdl_sdr = ESL_MAX(StateLeftDelta(cm->sttype[v]), StateRightDelta(cm->sttype[v]));
+    dn          = do_trunc ? max_sdl_sdr : sd;
+    /* if (do_trunc) d can be 1 for MP states, this is why we use dn
+     * here.  Note: d can't be 0 for ML/IL in R mode, MR/IR in L
+     * mode even though you might think it could be. We'll always do
+     * a truncated begin with d=1 for L,R marginal alignments. */
     if(cp9b->jmin[v] != -1) { 
-      if(cp9b->jmin[v] < sd) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmin[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmin[v], sd);
-      if(cp9b->jmax[v] < sd) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmax[v], sd);
+      if(cp9b->jmin[v] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmin[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmin[v], dn);
+      if(cp9b->jmax[v] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmax[v], dn);
     }
   }
 
   for(v = 0; v < cm->M; v++) {
+    sd          = StateDelta(cm->sttype[v]);
+    max_sdl_sdr = ESL_MAX(StateLeftDelta(cm->sttype[v]), StateRightDelta(cm->sttype[v]));
+    dn          = do_trunc ? max_sdl_sdr : sd;
+    /* if (do_trunc) d can be 1 for MP states, this is why we use dn
+     * here.  Note: d can't be 0 for ML/IL in R mode, MR/IR in L
+     * mode even though you might think it could be. We'll always do
+     * a truncated begin with d=1 for L,R marginal alignments. */
     if(cm->sttype[v] == E_st) {
       for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
 	if(cp9b->hdmin[v][jp] != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
@@ -1268,13 +1283,17 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
       }
     }
     else {
-      sd = StateDelta(cm->sttype[v]);
       if(cp9b->jmin[v] != -1) { 
 	for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
 	  j = jp+cp9b->jmin[v];
-	  if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin %d (sd: %d) for state %d, j: %d imax[v]: %d is inconsistent.", cp9b->hdmin[v][jp], sd, v, j, cp9b->imax[v]);
-	  if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax %d (sd: %d) for state %d, j: %d imin[v]: %d is inconsistent.", cp9b->hdmax[v][jp], sd, v, j, cp9b->imin[v]);
-	}
+          if(cp9b->hdmin[v][jp] == -1) { 
+            if(cp9b->hdmax[v][jp] != -2) { ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin is -1 for state %d, j: %d, but hdmax is not -2 (it's %d).",  v, j, cp9b->hdmax[v][jp]); }
+          }
+          else { 
+            if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), dn)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin %d (dn: %d) for state %d, j: %d imax[v]: %d is inconsistent.", cp9b->hdmin[v][jp], dn, v, j, cp9b->imax[v]);
+            if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), dn)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax %d (dn: %d) for state %d, j: %d imin[v]: %d is inconsistent.", cp9b->hdmax[v][jp], dn, v, j, cp9b->imin[v]);
+          }
+        }
       }
     }
     /* get rid of StateIsDetached once old band construction method is deprecated */
@@ -1300,9 +1319,14 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
 	for(j = cp9b->jmin[v]; j <= cp9b->jmax[v]; j++) {
 	  if(j < (i0-1)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0-1:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0-1, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
 	  if(j > j0)     ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0-1:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0-1, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
-	  if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
-	  if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
-	}
+          if(cp9b->hdmin[v][(j-cp9b->jmin[v])] == -1) { 
+            if(cp9b->hdmax[v][(j-cp9b->jmin[v])] != -2) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] == -1, but hdmax[v][jp_v:%d] != -2 (it's %d)\n", v, j, (j-cp9b->jmin[v]), (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])]);
+          }
+          else { 
+            if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], dn);
+            if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], dn);
+          }
+        }
 	if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), jmax[v:%d]:%d > jmax[0]:%d.", v, cp9b->jmax[v], cp9b->jmax[0]);
 	if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), imin[v:%d]:%d < imin[0]:%d, i0:%d j0:%d jmin[v]:%d jmax[v]:%d jmin[0]:%d jmax[0]:%d imax[v]:%d", v, cp9b->imin[v], cp9b->imin[0], i0, j0, cp9b->jmin[v], cp9b->jmax[v], cp9b->jmin[0], cp9b->jmax[0], cp9b->imax[v]);
       }
