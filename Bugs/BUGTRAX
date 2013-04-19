@@ -1033,6 +1033,48 @@ explain exactly why.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4338.
 //
+
 #### 
 ####  1.1rc2 release: 14 December 2012
 ####
+
+ID              i36
+TITLE		Rare banded alignment traceback bifurcation offset bug
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/13_0418_inf_zasha_banded_bug/00LOG
+REPORTED_BY     Zasha Weinberg
+CLOSED_DATE     EPN, Fri Apr 19 10:43:56 2013
+DESCRIPTION    
+
+In very rare cases, cmsearch was failing during a non-truncated HMM
+banded optimal accuracy alignment traceback. There is a single model
+for which this bug was observed, and it was reported by Zasha
+Weinberg. The problem occurs when tracing back at a BIF_B state where
+the z (BEGR_S child) state is either unreachable for any j, or
+unreachable for the current j due to hdmin/hdmax band being set as
+-1/-2. I thought at first the solution was to check for and catch this
+rare case during the traceback, but a cleaner solution (the one
+actually implemented) is to change the DP functions
+(cm_CYKInsideAlignHB() and cm_OptAccAlignHB()) so they put 'k' instead
+of 'kp_z' (for which kp_z = k - hdmin[z][jp_z]) into the kshadow DP
+matrix. This prevents the need of reconverting kp_z to k during the
+traceback. Since the bug occured at this reconversion step (b/c either
+jp_z or hdmin[z][jp_z] was invalid in the rare cases) this solved the
+problem and fixed the bug. (Storing k and not kp_z is the way the
+truncated versions of these functions were already implemented in
+cm_TrCYKInsideAlignHB() and cm_TrOptAccAlignHB()). 
+
+This bug only occured when a B state had a parse subtree of length 0
+underneath it and only for optimal accuracy (OA) parsetrees because OA
+parsetrees have the odd property that only emissions contribute to the
+score. This has the effect that what should be 'impossible' parsetrees
+due to the HMM bands become possible (and are sometimes optimal)
+because a subtree of length 0 does not contribute to the score, so
+effectively any subtree of length 0 is 'possible'. This is not
+problematic as long as it doesn't cause a failure downstream in the
+code because later code has assumed it won't happen (which is what
+happened in the case of this bug).
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4427.
+//
