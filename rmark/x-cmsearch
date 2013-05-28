@@ -79,9 +79,11 @@ if(! -e $afetch) {
     $afetch     = "$execdir/../easel/miniapps/esl-afetch";
     if(! -e $afetch) { die "$afetch does not exist, nor $execdir/$afetch"; }
 }
-if(! -e $sfetch) { 
+if($do_posonly || $do_poswindowonly) { 
+  if(! -e $sfetch) { 
     $sfetch     = "$execdir/../easel/miniapps/esl-sfetch";
     if(! -e $sfetch) { die "$sfetch does not exist, nor $execdir/$sfetch"; }
+  }
 }
 if($do_fetch_models) { 
     if(! -e $cmfetch) { die "$cmfetch does not exist"; }

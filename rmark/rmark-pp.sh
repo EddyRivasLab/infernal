@@ -1,16 +1,17 @@
 #/bin/bash
+
 # get running time
-ls $2/*.time   | perl rmark-time.pl > $2/$2.time
+ls $2/*.time | perl $4/rmark-time.pl > $2/$2.time
 # get MER
-cat $2/*out | perl rmark-multiply-evalues.pl $3 | sort -g | perl rmark-mer.pl $1.pos $2/$2.time > $2/$2.em$3.mer
+cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | perl $4/rmark-mer.pl $1.pos $2/$2.time > $2/$2.em$3.mer
 # get ROC
-cat $2/*out | perl rmark-multiply-evalues.pl $3 | sort -g | rmark-rocplot -N 100000 --seed 181 $1 - > $2/$2.em$3.xy
+cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | $4/rmark-rocplot -N 100000 --seed 181 $1 - > $2/$2.em$3.xy
 # get mer from rmark-rocplot
-cat $2/*out | perl rmark-multiply-evalues.pl $3 | sort -g | rmark-rocplot -N 100000 --mer --seed 181 $1 - > $2/$2.em$3.bmer
+cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | $4/rmark-rocplot -N 100000 --mer --seed 181 $1 - > $2/$2.em$3.bmer
 # get numbers of false negatives and false positives at E-threshold of 0.1 from rmark-rocplot (after E-value inflation)
 #ARG=`echo 0.1/$3|bc -l`
 #echo 0.1/$3|bc -l
-cat $2/*out | perl rmark-multiply-evalues.pl $3 | sort -g | rmark-rocplot -N 100000 --Ethresh 0.1 --seed 181 $1 - > $2/$2.em$3.bEthresh
+cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | $4/rmark-rocplot -N 100000 --Ethresh 0.1 --seed 181 $1 - > $2/$2.em$3.bEthresh
 
 # copy files to cwd
 #cp $2/$2.em$3.mer ./
