@@ -264,12 +264,12 @@ if(! $do_indi) {
     {
 	if((!$do_onejob_only) || ($onejob == $i)) { 
 	    if($do_mpi) { # turn exclusivity on, so we get all processors on our node, to run MPI with
-		#printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-		system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+		#printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
+		system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	    }
 	    else { 
-		#printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-		system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -l short=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+              #print("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+              system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	    }
 	}
     }
@@ -290,8 +290,8 @@ else { # $do_indi
 		# 2 qsubs, one with -T (--toponly) and one with -B (--bottomonly)
 		#printf("qsub -V -cwd -b y -N $resultdir.$i.$j.T -j y -o $resultdir/tbl$i.$j.T.sge '$rmark_script -K $j.T -T $posonly_opt $debug_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.$j.T.out'\n");
 		#printf("qsub -V -cwd -b y -N $resultdir.$i.$j.B -j y -o $resultdir/tbl$i.$j.B.sge '$rmark_script -K $j.B -B $posonly_opt $debug_opt $build_opt $c_opt $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.$j.B.out'\n");
-		system("qsub -V -cwd -b y -N $resultdir.$i.$j.T -j y -o $resultdir/tbl$i.$j.T.sge '$rmark_script -K $j.T -T $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.$j.T.out'");
-		system("qsub -V -cwd -b y -N $resultdir.$i.$j.B -j y -o $resultdir/tbl$i.$j.B.sge '$rmark_script -K $j.B -B $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.$j.B.out'");
+		system("qsub -V -cwd -b y -N $resultdir.$i.$j.T -j y -o $resultdir/tbl$i.$j.T.sge -R y -l excl=true '$rmark_script -K $j.T -T $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.$j.T.out'");
+		system("qsub -V -cwd -b y -N $resultdir.$i.$j.B -j y -o $resultdir/tbl$i.$j.B.sge -R y -l excl=true '$rmark_script -K $j.B -B $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.$j.B.out'");
 	    }
 	}
     }

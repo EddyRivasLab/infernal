@@ -39,9 +39,11 @@ $idscript   = "$scriptdir/rmark-idpositives.pl";
 $nhmmer     = "$execdir/nhmmer";
 $hmmfetch   = "$execdir/hmmfetch";
 $sfetch     = "$execdir/esl-sfetch";
-if(! -e $sfetch) { 
+if($do_posonly) { 
+  if(! -e $sfetch) { 
     $sfetch     = "$execdir/../easel/miniapps/esl-sfetch";
     if(! -e $sfetch) { die "$sfetch does not exist, nor $execdir/$sfetch"; }
+  }
 }
 
 if($do_fetch_models) { 
@@ -111,14 +113,14 @@ while (<TABLE>)
     while (<OUTPUT>)
     {
 	if (/^\#/) { next; }
-# example: rmark4               -          Lysine               RF00168          5     158  255326  255495  255322  255516  255329  255489    +     1.8e-11   46.5   0.4  -
+# example: rmark5               -          tRNA                 RF00005         24      70  911231  911278  911214  911279  911237  911273 1017549    +      0.0029   20.6   0.0  -
 
-	@fields   = split(' ', $_, 15);
+	@fields   = split(' ', $_, 16);
 	$target      = $fields[0];
 	$target_from = $fields[6];
 	$target_to   = $fields[7];
-	$pval        = $fields[13];
-	$bitscore    = $fields[14];
+	$pval        = $fields[14];
+	$bitscore    = $fields[15];
 	printf TMPOUTFILE "%10g %10.1f %10d %10d %20s %35s\n", $pval, $bitscore, $target_from, $target_to, $target, $msaname;
     }
 
