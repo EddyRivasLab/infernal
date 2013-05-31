@@ -1078,3 +1078,35 @@ happened in the case of this bug).
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4427.
 //
+
+ID              i37
+TITLE		Off-by-one error when shifting HMM bands
+STATUS          CLOSED
+XREF            Notes in ~nawrockie/notebook/13_0531_inf_1p1rc2_bug_zasha_bandshift
+REPORTED_BY     Zasha Weinberg
+CLOSED_DATE     EPN, Fri May 31 13:25:01 2013
+DESCRIPTION    
+
+As the last stage in the search/scan pipeline, a hit, the start/stop
+of which have been defined by HMM banded inside, is excised and sent
+to pli_align_hit() to be aligned from 1..L using the full DP matrices so
+a traceback can be performed. The first step of pli_align_hit() is to 
+shift the CM bands that were calc'ed in the final search stage. They
+may shift because we now know the exact start/stop of the hit, and
+we're aligning from 1..L instead of i..j (where i may not equal
+1). When this shift occurs in cp9_ShiftCMBands() the maximum allowed
+'i' value for any imin..imax band was being set as L. In fact, i
+should be able to be L+1, so a d=0 length subsequence (d=j-i+1) is
+possible for delete states. So the bug fix is to simply change the
+maximum allowed value for i from L to L+1.
+
+This bug existed in 1.1rc1 and 1.1rc2, and it's surprising it didn't
+expose itself before now. The failure case is apparently a rare one,
+when an all delete path is used by a subtree of the model 'after' the
+full hit has been emitted. This will likely only happen in global
+mode, which is how it was found and which is not default, and which
+at least partially explains why it was not discovered earlier.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4467.
+//
