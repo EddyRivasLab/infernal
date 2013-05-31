@@ -4607,7 +4607,10 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
     sdr = StateRightDelta(cm->sttype[v]);
     if(cm->cp9b->imin[v] > 0) { /* state is currently possible to reach */
       min_i = 1;
-      max_i = Lp;
+      max_i = Lp+1; /* careful! need Lp+1 so d can be 0 (i==j+1) when j is Lp 
+                     * (at the end of the sequence), previously in 1.1rc1, 1.1rc2, 
+                     * this was 'max_i = Lp', which was bug i37.
+                     */
       min_j = do_trunc ? ESL_MAX(sdl, sdr) : sd; 
       max_j = ESL_MAX(Lp, min_j);
       /* if (do_trunc) d can be 1 for MP states, this is why we use

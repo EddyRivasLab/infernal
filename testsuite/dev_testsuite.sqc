@@ -81,6 +81,7 @@
 1 exercise  bug/i33-cmsearch-A       perl !testsuite/bug-i33.pl! @src/cmsearch@ @src/cmbuild@ !testsuite/bug-i33.cm!
 1 exercise  bug/i34-cmalign-EL       perl !testsuite/bug-i34.pl! @src/cmalign@ !testsuite/bug-i34.cm!
 1 exercise  bug/i36-hbanded-tb       perl !testsuite/bug-i36.pl! @src/cmsearch@ !testsuite/bug-i36.cm!
+1 exercise  bug/i37-bandshift        perl !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
 
 ################################################################
 # Option tests
