@@ -729,7 +729,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   fprintf(ofp, "[ok]\n");
 
   esl_stopwatch_Stop(mw);
-  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "Total runtime:");
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "# Total CPU time:");
 
   free(info);
   if(srcL != NULL) free(srcL);
@@ -1415,7 +1415,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   fprintf(ofp, "[ok]\n");
 
   esl_stopwatch_Stop(mw);
-  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "Total runtime:");
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "# Total CPU time:");
 
   /* Cleanup - prepare for exit
    */
