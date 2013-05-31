@@ -632,7 +632,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 					    sstatus, sqfp->filename);
 
   esl_stopwatch_Stop(mw);
-  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(ofp, mw, "# Total runtime:");
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(ofp, mw, "# Total CPU time:");
 
   /* Terminate outputs - any last words?
    */
@@ -1243,7 +1243,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if (ofp)      fprintf(ofp, "[ok]\n");
 
   esl_stopwatch_Stop(mw);
-  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "Total runtime:");
+  if(esl_opt_GetBoolean(go, "--verbose")) esl_stopwatch_Display(stdout, mw, "# Total CPU time:");
   
   /* Cleanup - prepare for successful exit
    */
