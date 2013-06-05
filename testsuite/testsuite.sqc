@@ -35,37 +35,37 @@
 # Integration tests
 ################################################################
 
-1 exercise  itest/mapali            perl !testsuite/itest1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
-1 exercise  itest/dup-names         perl !testsuite/itest2-duplicate-names.pl!    @@ !! %OUTFILES%
-1 exercise  itest/msa-integrity     perl !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
-1 exercise  itest/stdin-pipes       perl !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
-1 exercise  itest/pipeline          perl !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
-1 exercise  itest/sensitivity       perl !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
-1 exercise  itest/trunc             perl !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
-1 exercise  itest/scan-glist        perl !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
+1 exercise  itest/mapali            !testsuite/itest1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
+1 exercise  itest/dup-names         !testsuite/itest2-duplicate-names.pl!    @@ !! %OUTFILES%
+1 exercise  itest/msa-integrity     !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
+1 exercise  itest/stdin-pipes       !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
+1 exercise  itest/pipeline          !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
+1 exercise  itest/sensitivity       !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
+1 exercise  itest/trunc             !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
+1 exercise  itest/scan-glist        !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
 # Fixed bug tests
 ################################################################
 
-1 exercise  bug/i1-vault-sscons      perl !testsuite/bug-i1.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i1-vault-sscons      !testsuite/bug-i1.pl! @src/cmbuild@ @src/cmalign@
 1 prep      bug/i2-cmalign-leak      @src/cmbuild@ -F %CM% !testsuite/bug-i2.sto!
 1 exercise  bug/i2-cmalign-leak      @src/cmalign@ --notrunc %CM% !testsuite/bug-i2.fa!
-1 exercise  bug/i11-bld-detach       perl !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i12-aln-outside      perl !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i13-aln-sub          perl !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i14-aln-oa-zero      perl !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
-1 exercise  bug/i15-aln-bif-imp      perl !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
-1 exercise  bug/i28-srch-bndcln      perl !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
-1 exercise  bug/i29-cnv-1p0-nft      perl !testsuite/bug-i29.pl! @src/cmconvert@ !testsuite/bug-i29.cm!
-1 exercise  bug/i30-srch-zeroln      perl !testsuite/bug-i30.pl! @src/cmbuild@ @src/cmsearch@
-1 exercise  bug/i31-neg-dbsize       perl !testsuite/bug-i31.pl! @src/cmsearch@ !testsuite/bug-i31.cm! !testsuite/bug-i31.fa!
-1 exercise  bug/i32-refine-ss        perl !testsuite/bug-i32.pl! @src/cmbuild@
-1 exercise  bug/i33-cmsearch-A       perl !testsuite/bug-i33.pl! @src/cmsearch@ @src/cmbuild@ !testsuite/bug-i33.cm!
-1 exercise  bug/i34-cmalign-EL       perl !testsuite/bug-i34.pl! @src/cmalign@ !testsuite/bug-i34.cm!
-1 exercise  bug/i36-hbanded-tb       perl !testsuite/bug-i36.pl! @src/cmsearch@ !testsuite/bug-i36.cm!
-1 exercise  bug/i37-bandshift        perl !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
+1 exercise  bug/i11-bld-detach       !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i12-aln-outside      !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i13-aln-sub          !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i14-aln-oa-zero      !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
+1 exercise  bug/i15-aln-bif-imp      !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
+1 exercise  bug/i28-srch-bndcln      !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
+1 exercise  bug/i29-cnv-1p0-nft      !testsuite/bug-i29.pl! @src/cmconvert@ !testsuite/bug-i29.cm!
+1 exercise  bug/i30-srch-zeroln      !testsuite/bug-i30.pl! @src/cmbuild@ @src/cmsearch@
+1 exercise  bug/i31-neg-dbsize       !testsuite/bug-i31.pl! @src/cmsearch@ !testsuite/bug-i31.cm! !testsuite/bug-i31.fa!
+1 exercise  bug/i32-refine-ss        !testsuite/bug-i32.pl! @src/cmbuild@
+1 exercise  bug/i33-cmsearch-A       !testsuite/bug-i33.pl! @src/cmsearch@ @src/cmbuild@ !testsuite/bug-i33.cm!
+1 exercise  bug/i34-cmalign-EL       !testsuite/bug-i34.pl! @src/cmalign@ !testsuite/bug-i34.cm!
+1 exercise  bug/i36-hbanded-tb       !testsuite/bug-i36.pl! @src/cmsearch@ !testsuite/bug-i36.cm!
+1 exercise  bug/i37-bandshift        !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
 
 ################################################################
 # Option tests
