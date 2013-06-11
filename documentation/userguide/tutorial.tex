@@ -1,8 +1,6 @@
-% EPN, Tue Jun 12 16:53:45 2012
+% EPN, Tue Jun  4 14:33:54 2013
 % Actual commands run on: 
-% MacBook Pro, mid 2009
-% 2.53 GHz Intel Core 2 Duo
-% 4 Gb 1067 MHz DDR3 (RAM)
+% login-eddy
 
 \section{Tutorial}
 \label{section:tutorial}
@@ -199,8 +197,8 @@ and you'll see some output that looks like:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1rc1 (June 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
+# INFERNAL 1.1rc3 (June 2013)
+# Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5.cm
@@ -212,13 +210,13 @@ and you'll see some output that looks like:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5                       5     3.73     74    72   21    2 0.783 0.489 
 #
-# CPU time: 0.34u 0.00s 00:00:00.34 Elapsed: 00:00:00.71
+# CPU time: 0.57u 0.00s 00:00:00.56 Elapsed: 00:00:00.57
 \end{sreoutput}
 
 If your input file had contained more than one alignment, you'd get
 one line of output for each model. The information on these lines is
 almost self-explanatory. The \otext{tRNA5} alignment consisted of 5
-%  VERIFY WHEN UPDATING                                          ^
+%  VERIFY WHEN UPDATING                                           ^
 sequences with 74 aligned columns. Infernal turned it into a model of
 %              ^^
 72 consensus positions, which means it defined 2 gap-containing
@@ -284,8 +282,8 @@ You should see something like this:
 
 \begin{sreoutput}
 # cmcalibrate :: fit exponential tails for CM E-values
-# INFERNAL 1.1rc1 (June 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
+# INFERNAL 1.1rc3 (June 2013)
+# Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                     tRNA5.cm
@@ -307,13 +305,12 @@ You should see something like this:
 The header comes first, telling you what program you ran, on what file
 and with what options. This calibration will use 2 CPUs, your output
 may vary depending on how many cores you have available on the machine
-you're using\footnote{All the exercises in this tutorial were
-  performed on a mid 2009 MacBook Pro with 2 cores.}. (If you are
-planning to use MPI to parallelize the calibration (see the
-Installation section), you can specify the number of CPUs for the time
-estimate as \otext{<n>} with the \otext{--nforecast <n>} option.) Using
-2 CPUs, \prog{cmcalibrate} estimates the time required for calibration
-on the machine I'm using at about twenty minutes.
+you're using. (If you are planning to use MPI to parallelize the
+calibration (see the Installation section), you can specify the number
+of CPUs for the time estimate as \otext{<n>} with the
+\otext{--nforecast <n>} option.) Using 2 CPUs, \prog{cmcalibrate}
+estimates the time required for calibration on the machine I'm using
+at about twenty minutes.
 
 Feel free to perform the calibration yourself if you'd like (with the
 command \otext{cmcalibrate tRNA5.cm}). However, we've included the file
@@ -339,13 +336,13 @@ your ran, on what, and with what options:
 
 \begin{sreoutput}
 # cmsearch :: search CM(s) against a sequence database
-# INFERNAL 1.1rc1 (June 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
+# INFERNAL 1.1rc3 (June 2013)
+# Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query CM file:                         tRNA5.cm
 # target sequence database:              tutorial/mrum-genome.fa
-# number of worker threads:              2
+# number of worker threads:              8
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \end{sreoutput}
 
@@ -678,7 +675,7 @@ Envelopes passing glocal HMM envelope defn filter:             101  (0.001358); 
 Envelopes passing  local CM  CYK           filter:              60  (0.0007629); expected (0.0001)
 Total CM hits reported:                                         56  (0.0007205); includes 0 truncated hit(s)
 
-# CPU time: 2.66u 0.04s 00:00:02.70 Elapsed: 00:00:01.77
+# CPU time: 2.19u 0.03s 00:00:02.21 Elapsed: 00:00:00.98
 //
 \end{sreoutput}
 
@@ -794,9 +791,9 @@ scores. Hits with scores above the reporting threshold were output, as
 described above. In this search there were 56 such hits.
 
 Finally, the running time of the search is reported, in CPU time and
-elapsed time. This search took about 1.8 seconds of elapsed (wall
-%                                    ^^^
-clock time) (running on two cores). 
+elapsed time. This search took about 1 second (wall
+%                                    ^
+clock time) (running on eight cores). 
 
 \subsubsection{Truncated RNA detection}
 
@@ -938,8 +935,8 @@ The header and the first section of the output will look like:
 
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
-# INFERNAL 1.1rc1 (June 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
+# INFERNAL 1.1rc3 (June 2013)
+# Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query sequence file:                   ../tutorial/metag-example.fa
@@ -1018,7 +1015,7 @@ Envelopes passing glocal HMM envelope defn filter:               4  (0.05189); e
 Envelopes passing  local CM  CYK           filter:               4  (0.05189); expected (0.0001)
 Total CM hits reported:                                          3  (0.03046); includes 0 truncated hit(s)
 
-# CPU time: 0.20u 0.01s 00:00:00.21 Elapsed: 00:00:00.23
+# CPU time: 0.23u 0.00s 00:00:00.23 Elapsed: 00:00:00.25
 //
 \end{widesreoutput}
 
@@ -1165,7 +1162,7 @@ The output of this is a Stockholm format multiple alignment file:
 
 \begin{tinysreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1rc1
+#=GF AU Infernal 1.1rc3
 
 mrum-tRNA.1          GGAGCUAUAGCUCAAU..GGC..AGAGCGUUUGGCUGACAU........................................CCAAAAGGUUAUGGGUUCGAUUCCCUUUAGCCCCA
 #=GR mrum-tRNA.1  PP ****************..***..******************........................................***********************************
@@ -1294,7 +1291,7 @@ below so it will fit on the page):
 \label{cmalign-cobalamin}
 \begin{sreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1rc1
+#=GF AU Infernal 1.1rc3
 
 Cobalamin.1         -------------------------------GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCA
 #=GR Cobalamin.1 PP ...............................44455566666899******989****************************
@@ -1393,8 +1390,8 @@ identical:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1rc1 (June 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
+# INFERNAL 1.1rc3 (June 2013)
+# Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5-noss.cm
@@ -1407,7 +1404,7 @@ identical:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5-noss                  5     5.00     74    72    0    0 0.552 0.552 
 #
-# CPU time: 0.18u 0.00s 00:00:00.18 Elapsed: 00:00:00.27
+# CPU time: 0.18u 0.00s 00:00:00.18 Elapsed: 00:00:00.19
 \end{sreoutput}
 
 The output reports that this model has 0 basepairs (``bps'') (the
@@ -1610,7 +1607,7 @@ tRNA1             GCGGAUUUAGCUCAGUUGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCC
 tRNA2             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CC
 tRNA3             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UC
 tRNA4             GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
-tRNA5             GGGCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
+otRNA5             GGGCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
 #=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
 #=GC RF           [accep]======[=Dloop=]============acd=======[vlp]=
 
@@ -1655,8 +1652,8 @@ To build the hand-specified model from this alignment, do:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1rc1 (June 2012)
-# Copyright (C) 2012 Howard Hughes Medical Institute.
+# INFERNAL 1.1rc3 (June 2013)
+# Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5-hand.cm
@@ -1669,7 +1666,7 @@ To build the hand-specified model from this alignment, do:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5-hand                  5     3.59     74    74   21    2 0.763 0.476 
 #
-# CPU time: 0.36u 0.00s 00:00:00.36 Elapsed: 00:00:00.41
+# CPU time: 0.58u 0.00s 00:00:00.57 Elapsed: 00:00:00.59
 \end{sreoutput}
 
 The output reports that the model now has 74 match (consensus)

@@ -2,10 +2,10 @@ Infernal - inference of RNA secondary structural alignments
 @INFERNAL_COPYRIGHT@
 ------------------------------------------------------------------
 
-Copyright (C) 2012 HHMI Janelia Farm Research Campus
+Copyright (C) 2013 HHMI Janelia Farm Research Campus
 
-   Portions Copyright (C) 1991-2012      Sean R. Eddy
-   Portions Copyright (C) 2005-2012      Eric P. Nawrocki
+   Portions Copyright (C) 1991-2013      Sean R. Eddy
+   Portions Copyright (C) 2005-2013      Eric P. Nawrocki
    Portions Copyright (C) 2005-2011      Diana L. Kolbe
    Portions Copyright (C) 2004           Zasha Weinberg
    Portions Copyright (C) 1990           Don G. Gilbert
