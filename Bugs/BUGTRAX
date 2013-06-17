@@ -1115,3 +1115,27 @@ This bug was fixed in the Infernal 1.1 release branch as of revision
 #### 
 ####  1.1rc3 release: 5 June 2013
 ####
+
+ID              i38
+TITLE		cmalign --mapali doesn't work if aln has no SS_cons
+STATUS          CLOSED
+XREF            /groups/eddy/home/nawrockie/notebook/13_0616_inf_bug_cmbuild_noss_O/
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     EPN, Mon Jun 17 13:15:23 2013
+DESCRIPTION    
+
+cmalign --mapali <f> fails with error message if alignment in <f> has
+no SS_cons annotation, even if <f> was used to build a zero-basepair
+model with the cmbuild --noss option. 
+
+Solution was to add a --noss option to cmalign that needs to be used
+in this special case. cmalign then creates a zero-basepair SS_cons
+temporarily for the msa (which mirrors how cmbuild handles the --noss
+option) so that the necessary internal functions that require a
+SS_cons can proceed without error.
+
+This bug is explicitly checked for in the testsuite.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4485.
+//
