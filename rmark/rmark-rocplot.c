@@ -540,7 +540,7 @@ make_plot(struct result_s *rp, int nresults, int **pni, double *queryp, int nq, 
     plot->totalpos = npos;
 
   curr_xi  = 0;
-  true_pos = false_pos = 0.0;
+  true_pos = false_pos = false_pos_per_q = 0.0;
   false_neg = plot->totalpos;
 
   for (j = 0; j < nresults; j++)

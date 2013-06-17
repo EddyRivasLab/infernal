@@ -1,10 +1,10 @@
 #/bin/bash
 # get running time
-ls $2/*.time   | perl rmark-time.pl > $2/$2.time
+ls $2/*.time   | perl $4/rmark-time.pl > $2/$2.time
 # get MER
-cat $2/*out | sort -g | perl rmark-mer.pl $1.ppos $2/$2.time > $2/$2.mer
+cat $2/*out | sort -g | perl $4/rmark-mer.pl $1.ppos $2/$2.time > $2/$2.mer
 # get hitlist
-cat $2/*out | sort -g | perl rmark-hitlist.pl $1.ppos > $2/$2.hitlist
+cat $2/*out | sort -g | perl $4/rmark-hitlist.pl $1.ppos > $2/$2.hitlist
 
 # copy files to cwd
 cp $2/$2.mer ./
