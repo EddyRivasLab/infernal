@@ -302,6 +302,9 @@
 1  exercise  align:pkhav/l/map    @src/cmalign@  -g --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 1  exercise  align:pkhav/l/mapstr @src/cmalign@  -g --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 
+1  exercise  align:build/se       @src/cmbuild@ -F --noss %SE.CM% !testsuite/se.noss.sto!
+1  exercise  align:se/map/noss    @src/cmalign@  --mapali !testsuite/se.noss.sto! --noss %SE.CM% !testsuite/se.fa!
+
 1  exercise  align:t/cpu0         @src/cmalign@  --cpu 0 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:t/tau          @src/cmalign@  --tau 1E-4  %TRNA.CM% !testsuite/emitted-tRNA.fa!
