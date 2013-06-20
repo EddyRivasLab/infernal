@@ -1139,3 +1139,32 @@ This bug is explicitly checked for in the testsuite.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4485.
 //
+
+ID              i39
+TITLE		cmbuild -O can give corrupt alignment for zero bp models
+STATUS          CLOSED
+XREF            /groups/eddy/home/nawrockie/notebook/13_0616_inf_bug_cmbuild_noss_O/
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     EPN, Thu Jun 20 15:03:25 2013
+DESCRIPTION    
+
+When cmbuild -O <f> is used to output the processed and annotated
+input alignment to file <f>, sometimes that alignment can be corrupt
+if the alignment has zero basepairs. This is because the
+cm_parsetree_Doctor() function did not properly handle ROOT_IR
+emissions when doctoring parsetrees and sometimes wrote corrupt
+'emitr' values. This corrupt 'emitr' values were seemingly innocuous
+unless an output alignment was requested with -O, in which case they
+could yield corrupt output alignments. Note that cm_parsetree_Doctor()
+is only used if the model has zero basepairs, and this bug has
+therefore only been observed for zero basepair models when the -O
+option was also used and when there are ROOT_IR emissions in the input
+alignment (inserts after the final match column).
+
+The fix is to properly handle ROOT_IR emissions in
+cm_parsetree_Doctor() see code and svn diff output for more details.
+
+This bug is explicitly checked for in the testsuite.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4493.

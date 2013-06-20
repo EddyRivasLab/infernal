@@ -4335,14 +4335,14 @@ cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *
      * nxtl:  always points to next position (unless END_E, which we'll fix at end)
      * nxtr:  always -1 
      * prv:   always npos-1
-     * emitr: always == tr->emitr[0] (unless END_E, which we'll fix at end)
-     * at next parsetree node.)
+     * emitr: always == tr->emitr[opos] (only right emitters we'll have are ROOT_IRs)
+     * at next parsetree node.
      */ 
     tr->mode[npos]  = TRMODE_J;
     tr->nxtl[npos]  = npos+1;
     tr->nxtr[npos]  = -1;
     tr->prv[npos]   = npos-1;  /* even correct for npos == 0 */
-    tr->emitr[npos] = tr->emitr[0];
+    tr->emitr[npos] = tr->emitr[opos]; /* this never changes */
 
     /* fix implied D->I transitions; D transforms to M, I pulled in */
     if (cm->stid[tr->state[opos]] == MATL_D && cm->stid[tr->state[opos+1]] == MATL_IL) {
