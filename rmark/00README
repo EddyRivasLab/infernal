@@ -487,11 +487,11 @@ rmark-multiply-evalues.pl and rmark-roc programs, so you may not need
 to worry about how to use those scripts if you learn how to use
 rmark-pp.sh and rmark-po-pp.sh. 
 
-Usage:   rmark-pp.sh <benchmark_prefix> <resultdir> <positive E-value multiplier>
-Example: rmark-pp.sh rmark3 i1p1-df 1 
+Usage:   rmark-pp.sh <benchmark_prefix> <resultdir> <positive E-value multiplier> <path to "rmark" dir with scripts like rmark-mer.pl (e.g. "infernal-1.1rc3/rmark")>
+Example: rmark-pp.sh rmark3 i1p1-df 1 ~/src/infernal-1.1rc3/rmark
 
-Usage:   rmark-po-pp.sh <benchmark_prefix> <resultdir>
-Example: rmark-po-pp.sh rmark3 i1p1
+Usage:   rmark-po-pp.sh <benchmark_prefix> <resultdir> <path to "rmark" dir with scripts like rmark-mer.pl (e.g. "infernal-1.1rc3/rmark")>
+Example: rmark-po-pp.sh rmark3 i1p1 ~/src/infernal-1.1rc3/rmark
 
 Note regarding E-value multiplication:
 The <positive E-value multiplier> is used with the

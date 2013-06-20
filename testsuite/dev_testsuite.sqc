@@ -82,6 +82,7 @@
 1 exercise  bug/i34-cmalign-EL       !testsuite/bug-i34.pl! @src/cmalign@ !testsuite/bug-i34.cm!
 1 exercise  bug/i36-hbanded-tb       !testsuite/bug-i36.pl! @src/cmsearch@ !testsuite/bug-i36.cm!
 1 exercise  bug/i37-bandshift        !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
+1 exercise  bug/i38-mapali-noss      !testsuite/bug-i38.pl! @src/cmbuild@ @src/cmalign@
 
 ################################################################
 # Option tests
@@ -300,6 +301,9 @@
 1  exercise  align:pkhav/l        @src/cmalign@  -g %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 1  exercise  align:pkhav/l/map    @src/cmalign@  -g --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
 1  exercise  align:pkhav/l/mapstr @src/cmalign@  -g --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+
+1  exercise  align:build/se       @src/cmbuild@ -F --noss %SE.CM% !testsuite/se.noss.sto!
+1  exercise  align:se/map/noss    @src/cmalign@  --mapali !testsuite/se.noss.sto! --noss %SE.CM% !testsuite/se.fa!
 
 1  exercise  align:t/cpu0         @src/cmalign@  --cpu 0 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 

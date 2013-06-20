@@ -115,6 +115,7 @@ static ESL_OPTIONS options[] = {
   /* other expert options */
   { "--mapali",    eslARG_INFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "include alignment in file <f> (same ali that CM came from)", 5 },
   { "--mapstr",      eslARG_NONE,        NULL, NULL,        NULL,       NULL,  "--mapali",          NULL, "include structure (w/pknots) from <f> from --mapali <f>",    5 },
+  { "--noss",        eslARG_NONE,        NULL, NULL,        NULL,       NULL,  "--mapali",    "--mapstr", "cmbuild --noss option was used w/aln from --mapali <f>",     5 },
   { "--informat",  eslARG_STRING,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "assert <seqfile> is in format <s>: no autodetection",        5 },
   { "--outformat", eslARG_STRING, "Stockholm", NULL,        NULL,       NULL,        NULL,          NULL, "output alignment in format <s>",                             5 },
   { "--dnaout",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "output alignment as DNA (not RNA) sequence data",            5 },
@@ -192,7 +193,7 @@ static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int  map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss);
+static int  map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss);
 static int  output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FILE *ofp, CM_ALNDATA **dataA, int ndata, char *map_sscons);
 static void output_info_file_header(FILE *fp, char *firstline, char *elstring);
 static int  output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, int first_idx, int be_verbose);
@@ -473,7 +474,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* include the mapali, if nec */
   if((map_file = esl_opt_GetString(go, "--mapali")) != NULL) { 
-    if((status = map_alignment(map_file, cm, errbuf, &map_dataA, &nmap_data, &map_sscons)) != eslOK) cm_Fail(errbuf);
+    if((status = map_alignment(map_file, cm, esl_opt_GetBoolean(go, "--noss"), errbuf, &map_dataA, &nmap_data, &map_sscons)) != eslOK) cm_Fail(errbuf);
     if(esl_opt_GetBoolean(go, "--mapstr") && map_sscons == NULL) cm_Fail("Failed to read SS_cons for --mapstr from %s", map_file);
   }
 
@@ -583,6 +584,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* free block and worker data */
     esl_sq_DestroyBlock(sq_block);
     sq_block = NULL;
+    for(i = 0; i < nmap_cur; i++) { /* free the mapali seqs if nec */
+      if(merged_dataA[i]->sq != NULL) esl_sq_Destroy(merged_dataA[i]->sq); 
+    }
     for(i = 0; i < nmerged; i++) { 
       cm_alndata_Destroy(merged_dataA[i], FALSE); /* FALSE: don't free sq's, we just free'd them by destroying the block */
     }
@@ -628,6 +632,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(info[k].w_tot != NULL) esl_stopwatch_Destroy(info[k].w_tot);
   }
   free(info);
+
+  if(map_sscons != NULL) free(map_sscons);
   FreeCM(cm);
 
   return;
@@ -961,7 +967,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* include the mapali, if nec */
   if((map_file = esl_opt_GetString(go, "--mapali")) != NULL) { 
-    if((status = map_alignment(map_file, cm, errbuf, &map_dataA, &nmap_data, &map_sscons)) != eslOK) mpi_failure(errbuf);
+    if((status = map_alignment(map_file, cm, esl_opt_GetBoolean(go, "--noss"), errbuf, &map_dataA, &nmap_data, &map_sscons)) != eslOK) mpi_failure(errbuf);
     if(esl_opt_GetBoolean(go, "--mapstr") && map_sscons == NULL) mpi_failure("Failed to read SS_cons for --mapstr from %s", map_file);
   }
 
@@ -1158,6 +1164,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(cfg->efp != NULL) { fprintf(cfg->efp, "//\n"); }
 
   /* clean up */
+  if(map_sscons != NULL) free(map_sscons);
   FreeCM(cm);
   if(mpibuf != NULL) free(mpibuf);
 
@@ -1642,7 +1649,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * was used. 
  */
 static int
-map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss)
+map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss)
 {
   int            status;
   ESLX_MSAFILE  *afp       = NULL;
@@ -1673,11 +1680,21 @@ map_alignment(const char *msafile, CM_t *cm, char *errbuf, CM_ALNDATA ***ret_dat
   ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * msa->nseq);
   for(i = 0; i < msa->nseq; i++) dataA[i] = cm_alndata_Create();
 
+  /* if --noss used, potentially remove ss_cons and replace with no basepairs */
+  if(noss_used) { 
+    if(msa->ss_cons != NULL) { free(msa->ss_cons); msa->ss_cons = NULL; }
+    ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1)); msa->ss_cons[msa->alen] = '\0'; 
+    memset(msa->ss_cons,  '.', msa->alen);
+  }  
+
   /* get SS_cons from the msa possibly for --mapstr, important to do it here, before it is potentially deknotted in HandModelmaker() */
   if(msa->ss_cons != NULL) { 
     ESL_ALLOC(ss, sizeof(char) * (cm->clen+1));
     ss[cm->clen] = '\0';
     for(cpos = 1; cpos <= cm->clen; cpos++) ss[cpos-1] = msa->ss_cons[cm->map[cpos]-1];
+  }
+  else { 
+    cm_Fail("--mapali MSA in %s does not have any SS_cons annotation, use --noss if you used --noss with cmbuild", msafile);
   }
 
   /* add RF annotation to the msa, so we can use it in HandModelMaker() */
