@@ -154,7 +154,6 @@ wrong, it's easy enough to come back and make a new tarball.
 
    When done, svn add the new RELEASE-xxx file.
 
-
 * Edit configure.ac: make sure version, date, copyright info is set correctly.
   Do this in easel and hmmer too, they won't use their configure's
   unless someone goes in there and manually does it, but they should
@@ -165,7 +164,6 @@ wrong, it's easy enough to come back and make a new tarball.
    autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
    ./configure
    . release-notes/LICENSE.sh
-
 
 * Edit .bashrc
   I use the following environment variables in the scripting below:
@@ -297,6 +295,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
   1.1rc1: exported 4130/774
   1.1rc2: exported 4342/834
+  1.1rc3: exported 4478/871
 
 * Check that svn has file permissions right. 
   Both of these should have no output.
@@ -400,6 +399,7 @@ Delete TO-DO sections and clean up for public consumption.
 
    1.1rc1: 11.7 Mb (gzipped)
    1.1rc2: 19.1 Mb (gzipped, diff b/c of documentation directories)
+   1.1rc3: 19.2 Mb (gzipped)
 
 All subsequent tests are on this source distro.
 
@@ -407,6 +407,17 @@ All subsequent tests are on this source distro.
 ================================================================
 = Build for testing
 ================================================================
+
+It's important to build four sets of the executables for testing. Two
+on login-eddy (build-gcc and build-icc-mpi) and two on the cluster
+(build-cluster-gcc and build-cluster-icc-mpi). The cluster versions 
+are now necessary (as of 1.1rc3) b/c those machines have recently
+changed and it's recommended to compile code on the cluster that you
+run on the cluster.
+
+We'll use the login-eddy-built executables for any tests we run
+locally (e.g. tests-fast.sh) and the cluster-built executables for any
+tests we submit to the cluster (e.g. tests-slow.sh).
 
 On login-eddy (our compile host):
   ssh login-eddy
@@ -423,6 +434,32 @@ On login-eddy (our compile host):
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-icc-mpi
   cd build-icc-mpi
+  setup_icc_intel64
+  ../configure CC=icc LDFLAGS=-static-intel --enable-mpi   > build.out  2>&1
+  make            >> build.out  2>&1
+  make dev        >> build.out  2>&1
+  make devcheck   >> build.out  2>&1
+
+  ssh login-eddy
+  qlogin -l excl=true
+      NOTE: this will likely become 'qlogin -pe batch 16' with new
+            cluster on 06.17.13
+  cd ~/releases/infernal-${INFERNAL_VERSION}
+  mkdir build-cluster-gcc
+  cd build-cluster-gcc
+  ../configure     > build.out   2>&1
+  make            >> build.out	 2>&1
+  make dev        >> build.out	 2>&1
+  make check      >> build.out	 2>&1
+  make devcheck   >> build.out	 2>&1
+
+  ssh login-eddy
+  qlogin -l excl=true
+     NOTE: this will likely become 'qlogin -pe batch 16' with new
+           cluster on 06.17.13
+  cd ~/releases/infernal-${INFERNAL_VERSION}
+  mkdir build-cluster-icc-mpi
+  cd build-cluster-icc-mpi
   setup_icc_intel64
   ../configure CC=icc LDFLAGS=-static-intel --enable-mpi   > build.out  2>&1
   make            >> build.out  2>&1
@@ -466,16 +503,16 @@ last release (1.1rc2):
 (See http://wiki.int.janelia.org/wiki/display/EddyLab/Compile+Farm)
  for current list and for machine-specific instructions for building)
 
- 1) Intel Apple OS/X (xcompile.int.janelia.org)        passed
- 2) PowerPC IBM AIX  (cf-ppc2.int.janelia.org)         passed
- 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  passed
- 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     passed
- 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     passed
- 6) Fedora 16 AMD64 (cf-fedora.int.janelia.org)        passed
- 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     passed
- 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  passed
- 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     passed
-10) Ubuntu 12.0.4.1 32-bit (cf-ubuntu32)               passed
+ 1) Intel Apple OS/X (xcompile.int.janelia.org)        
+ 2) PowerPC IBM AIX  (cf-ppc2.int.janelia.org)         
+ 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  
+ 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     
+ 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     
+ 6) Fedora 16 AMD64 (cf-fedora.int.janelia.org)        doesn't mount  home dir
+ 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     
+ 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  
+ 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     
+10) Ubuntu 12.0.4.1 32-bit (cf-ubuntu32)               
 
 ================================================================
 = Testing
@@ -495,6 +532,7 @@ manually look at each line for errors.
 These instructions should work post-1.1rc2:
 
 Set up tests:
+  ssh login-eddy
   cd ${INFERNAL_RELEASE_NOTEBOOK}
   mkdir tests
   mkdir tests/out-files/
@@ -506,19 +544,44 @@ Set up tests:
   sh cp-required-files.sh
 
 Run tests:
-tests-fast*.sh          run on current machine, take about 1 minute
-tests-fast-valgrind*.sh submit to cluster,      take about 30 minutes
-tests-slow*.sh          submit to cluster,      take about 2.5 hours
+tests-fast*.sh          run on login-eddy,                takes about 1 minute
+tests-fast-valgrind*.sh run valgrind tests on login-eddy, takes about 30 minutes
+tests-slow*.sh          submit to cluster,                takes about 2.5 hours
 
   time sh tests-fast.sh > tests-fast.out
   time sh tests-fast-oldversion.sh > tests-fast-oldversion.out
   diff tests-fast.out tests-fast-oldversion.out > tests-fast.diff
 
-  sh submit-valgrind.sh 
-Look at err-files/valg.1.err and make sure there's no memory leaks or errors.
-  diff tests-fast-valgrind.out tests-fast-valgrind-oldversion.out > tests-fast-valgrind.diff
+NOTE: With 1.1rc1 and 1.1rc2, I executed 'tests-fast-valgrind.sh' and
+'tests-fast-valgrind-oldversion.sh' via 'submit-valgrind.sh', but
+starting with 1.1rc3 I run them on login-eddy. The reason is that the
+cluster nodes were showing weird valgrind errors that I could never
+account for. This happened on both the current and 'new' cluster
+nodes. The current nodes had changed since the 1.1rc2 release in that
+a new OS had been installed on them (see Feb 26 2013 email from Rob
+Lines). I never figured out the root of the problem, but decided to
+not pursue it because it could only lead to more changes in the 1.1rc3
+code, which were more likely to break something than fix anything
+broken (if anything was in fact broken!) given the stability of hmmer3
+and infernal 1.1rc1 and 1.1rc2 all of which valgrind was reporting
+problems in on the cluster nodes.
 
+  sh run-valgrind.sh  
+
+Takes about 1 hour. Note run-valgrind does not run jobs in parallel
+because current and old version tests create and use files of the same
+name.  
+
+Look at err-files/valg.1.err and make sure there's no memory
+leaks or errors.
+
+  diff tests-fast-valgrind.out tests-fast-valgrind-oldversion.out > tests-fast-valgrind.diff
   sh tests-slow.sh
+
+  *** NOTE: post-1.1rc3: before running tests-slow-oldversion.sh, change
+      tests-slow-oldversion.sh directories from build-gcc to
+      build-cluster-gcc and build-icc-mpi to build-cluster-icc-mpi
+
   sh tests-slow-oldversion.sh 
 Wait for these to finish (about 3 hours)
   sh regressify-slow.sh 
@@ -530,8 +593,10 @@ Make sure all diff output includes only expected differences.
   emacs tests-fast-valgrind.diff
   emacs tests-slow.diff
 
+Make sure all err-files/* and err-oldversion-files/* are empty.
+
 Remember to test on both builds (gcc and icc-mpi), the scripts above
-already do this.
+already do this, except for the valgrind ones.
 
 Then run some anecdotal tests.
      mkdir anecdotes
@@ -544,13 +609,12 @@ Some examples:
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmstat 5S.old.cm
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmsearch 5S.cm ~/genomes/hvol.fa
      ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmsearch 5S.cm ~/genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmpress 5S.cm
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmpress 5S.cm
      ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc/src/cmpress 5S.old.cm
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmscan 5S.cm ~/genomes/hvol.fa
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmscan 5S.old.cm ~/genomes/hvol.fa
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmsearch -A 5S.sto 5S.cm ~/genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/easel/miniapps/esl-reformat fasta 5S.sto > 5S.faa
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmalign 5S.cm 5S.fa 
 
 Also, do a rmark3 benchmark with default settings and --mid.	      
@@ -561,6 +625,7 @@ update release)
      mkdir rmark3
      cd rmark3
      mkdir models
+
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/rmark3.msa ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/fetch.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/build.sh ./
@@ -617,7 +682,7 @@ warning:
 If this gets resolved in the future, we may go back to distributing
 binaries built with icc (64 and 32).
 
-The lcilkrts is still a problem as of 1.1rc2 (Dec 13 2012)
+The lcilkrts is still a problem as of 1.1rc3 (June 7 2013)
 
 Note: the configure call differs from the one Sean uses in hmmer. I
 specify --prefix. If I don't do that I get a 'make install' error
@@ -718,7 +783,7 @@ Copy macosx-intel tar ball to your laptop and test it.
   it would require changing the website significantly.
 
    ssh selab
-   export INFERNAL_VERSION=1.1rc2
+   export INFERNAL_VERSION=1.1rc3
    mkdir ~/to-be-infernal-${INFERNAL_VERSION}
    logout
 
@@ -734,7 +799,7 @@ Copy macosx-intel tar ball to your laptop and test it.
    scp infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz      selab:~/to-be-infernal-${INFERNAL_VERSION}
 
    ssh selab
-   export INFERNAL_VERSION=1.1rc2
+   export INFERNAL_VERSION=1.1rc3
    sudo mv ~/to-be-infernal-${INFERNAL_VERSION}/* /var/ftp/pub/software/infernal/
    echo ftp://selab.janelia.org/pub/software/infernal/infernal-${INFERNAL_VERSION}.tar.gz
    sudo rm -f /var/ftp/pub/software/infernal/infernal.tar.gz
@@ -743,6 +808,7 @@ Copy macosx-intel tar ball to your laptop and test it.
 
 * Install on login-eddy. Currently, I don't have permission to
   install software on login-eddy, so just email Goran at this point.
+  (For 1.1rc3, asked him to install on both old and new cluster).
 
 * Update the web site and the blog I can't do a 'make', because I
   don't have proper permission. So I have to copy all the files that
@@ -755,6 +821,7 @@ Copy macosx-intel tar ball to your laptop and test it.
 	 logout
 
 	 cd ~/web/infernal/
+         svn update
          emacs index.html 
 	 scp index.html nawrockie@selab:~/to-be-web/
 	 
@@ -793,20 +860,31 @@ What I did for 1.1rc2:
 
    svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1\
             https://svn.janelia.org/eddylab/eddys/src/infernal/tags/${INFERNAL_VERSION}\
-            -m "tagged 1.1rc2 release, from 1.1 branch"          
+            -m "tagged 1.1rc3 release, from 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/src/hmmer/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/src/hmmer/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged HMMER for Infernal 1.1rc2 release, from Infernal 1.1 branch"          
+            -m "tagged HMMER for Infernal 1.1rc3 release, from Infernal 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged Easel for Infernal 1.1rc2 release, from Infernal 1.1 branch"          
+            -m "tagged Easel for Infernal 1.1rc3 release, from Infernal 1.1 branch"          
 
    1.1rc1: svn 4131 hmmer:4132 easel:775
    1.1rc2: svn 4343 hmmer:4344 easel:835
+   1.1rc2: svn 4479 hmmer:4480 easel:872
 
 * Merge the branch's changes back to the trunk
   (This section is more verbose here than in the hmmer 00CHECKLIST. I
   added some notes from the old 1.0.2 Infernal 00CHECKLIST)
+
+  ***You may have already done this for MOST changes in the branch if
+     you've been rigorous about updating trunk when changes to branch
+     are made. I had been with 1.1rc3. To manually check, do a search
+     for "SVN Infernal" in gmail, and for all commits since previous
+     release in the branch, manually check there's a corresponding
+     update in the trunk. However, even if you've been rigorous,
+     changes you've made just prior to a release (date updates in
+     configure.ac's for example) will probably still need to be merged
+     to the trunk.
 
   You must do this by diff of specific revisions in the branch.
   Do *not* diff the branch against the trunk; if the trunk has its own
@@ -816,9 +894,10 @@ What I did for 1.1rc2:
   If you're doing a minor bugfix release on a stable branch, you know the
   revs that introduced the bugfixes; merge them explicitly. For example:
 
-   cd ~/src/infernal
+   cd ~/src/wd-infernal
    svn update
-   svn merge -r 3019:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
+   svn merge -r 4471:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
+   svn commit
     
   If you're doing a major release on a new stable branch:
   First identify the rev #'s for when we made the release branch.
@@ -903,3 +982,4 @@ Release history
 1.0.2  - SRE, Fri Oct 30 13:57:33 2009   r3022  Easel:r428
 1.1rc1 - EPN, Wed Jun 27 22:02:39 2012   r4131  Easel:r775
 1.1rc2 - EPN, Fri Dec 14 15:04:24 2012   r4343  Easel:r835
+1.1rc3 - EPN, Tue Jun 11 05:55:39 2013   r4479  Easel:r872
