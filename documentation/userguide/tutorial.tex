@@ -197,7 +197,7 @@ and you'll see some output that looks like:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1rc3 (June 2013)
+# INFERNAL 1.1rc4 (June 2013)
 # Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -282,35 +282,35 @@ You should see something like this:
 
 \begin{sreoutput}
 # cmcalibrate :: fit exponential tails for CM E-values
-# INFERNAL 1.1rc3 (June 2013)
+# INFERNAL 1.1rc4 (June 2013)
 # Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                     tRNA5.cm
-# forecast mode (no calibration):              on (2 CPUs)
+# forecast mode (no calibration):              on
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #
-# Forecasting running time for CM calibration(s) on 2 cpus:
+# Forecasting running time for CM calibration(s) on 8 cpus:
 #
 #                          predicted
 #                       running time
 # model name            (hr:min:sec)
 # --------------------  ------------
-  tRNA5                     00:20:37
+  tRNA5                     00:06:52
 #
-# CPU time: 0.22u 0.01s 00:00:00.23 Elapsed: 00:00:00.30
+# CPU time: 0.27u 0.00s 00:00:00.27 Elapsed: 00:00:00.28
 [ok]
 \end{sreoutput}
 
 The header comes first, telling you what program you ran, on what file
-and with what options. This calibration will use 2 CPUs, your output
+and with what options. This calibration will use 8 CPUs, your output
 may vary depending on how many cores you have available on the machine
 you're using. (If you are planning to use MPI to parallelize the
 calibration (see the Installation section), you can specify the number
 of CPUs for the time estimate as \otext{<n>} with the
-\otext{--nforecast <n>} option.) Using 2 CPUs, \prog{cmcalibrate}
+\otext{--nforecast <n>} option.) Using 8 CPUs, \prog{cmcalibrate}
 estimates the time required for calibration on the machine I'm using
-at about twenty minutes.
+at about seven minutes.
 
 Feel free to perform the calibration yourself if you'd like (with the
 command \otext{cmcalibrate tRNA5.cm}). However, we've included the file
@@ -337,7 +337,7 @@ your ran, on what, and with what options:
 
 \begin{sreoutput}
 # cmsearch :: search CM(s) against a sequence database
-# INFERNAL 1.1rc3 (June 2013)
+# INFERNAL 1.1rc4 (June 2013)
 # Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -942,7 +942,7 @@ The header and the first section of the output will look like:
 
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
-# INFERNAL 1.1rc3 (June 2013)
+# INFERNAL 1.1rc4 (June 2013)
 # Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1163,7 +1163,7 @@ The output of this is a Stockholm format multiple alignment file:
 
 \begin{tinysreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1rc3
+#=GF AU Infernal 1.1rc4
 
 mrum-tRNA.1          GGAGCUAUAGCUCAAU..GGC..AGAGCGUUUGGCUGACAU........................................CCAAAAGGUUAUGGGUUCGAUUCCCUUUAGCCCCA
 #=GR mrum-tRNA.1  PP ****************..***..******************........................................***********************************
@@ -1293,7 +1293,7 @@ below so it will fit on the page):
 \label{cmalign-cobalamin}
 \begin{sreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1rc3
+#=GF AU Infernal 1.1rc4
 
 Cobalamin.1         -------------------------------GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCA
 #=GR Cobalamin.1 PP ...............................44455566666899******989****************************
@@ -1393,7 +1393,7 @@ identical:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1rc3 (June 2013)
+# INFERNAL 1.1rc4 (June 2013)
 # Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1655,7 +1655,7 @@ To build the hand-specified model from this alignment, do:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1rc3 (June 2013)
+# INFERNAL 1.1rc4 (June 2013)
 # Copyright (C) 2013 Howard Hughes Medical Institute.
 # Freely distributed under the GNU General Public License (GPLv3).
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
