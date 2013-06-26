@@ -266,7 +266,6 @@ do any cleanup...
     cd ../easel
     svn commit
 
-
 ================================================================
 = Creating a source distribution
 ================================================================
@@ -296,6 +295,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   1.1rc1: exported 4130/774
   1.1rc2: exported 4342/834
   1.1rc3: exported 4478/871
+  1.1rc4: exported 4498/874
 
 * Check that svn has file permissions right. 
   Both of these should have no output.
@@ -400,6 +400,7 @@ Delete TO-DO sections and clean up for public consumption.
    1.1rc1: 11.7 Mb (gzipped)
    1.1rc2: 19.1 Mb (gzipped, diff b/c of documentation directories)
    1.1rc3: 19.2 Mb (gzipped)
+   1.1rc4: 19.2 Mb (gzipped)
 
 All subsequent tests are on this source distro.
 
@@ -454,7 +455,7 @@ On login-eddy (our compile host):
   make devcheck   >> build.out	 2>&1
 
   ssh login-eddy
-  qlogin -l excl=true
+  qlogin -l excl=true -l old=true
      NOTE: this will likely become 'qlogin -pe batch 16' with new
            cluster on 06.17.13
   cd ~/releases/infernal-${INFERNAL_VERSION}
@@ -503,15 +504,15 @@ last release (1.1rc2):
 (See http://wiki.int.janelia.org/wiki/display/EddyLab/Compile+Farm)
  for current list and for machine-specific instructions for building)
 
- 1) Intel Apple OS/X (xcompile.int.janelia.org)        
+ 1) Intel Apple OS/X (xcompile.int.janelia.org)        pass
  2) PowerPC IBM AIX  (cf-ppc2.int.janelia.org)         
- 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  
- 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     
- 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     
+ 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  pass
+ 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     pass
+ 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     pass
  6) Fedora 16 AMD64 (cf-fedora.int.janelia.org)        doesn't mount  home dir
- 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     
- 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  
- 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     
+ 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     pass
+ 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  pass
+ 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     pass
 10) Ubuntu 12.0.4.1 32-bit (cf-ubuntu32)               
 
 ================================================================
@@ -614,7 +615,7 @@ Some examples:
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmscan 5S.cm ~/genomes/hvol.fa
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmscan 5S.old.cm ~/genomes/hvol.fa
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmsearch -A 5S.sto 5S.cm ~/genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/easel/miniapps/esl-reformat fasta 5S.sto > 5S.faa
+     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
      ~/releases/infernal-${INFERNAL_VERSION}/build-gcc/src/cmalign 5S.cm 5S.fa 
 
 Also, do a rmark3 benchmark with default settings and --mid.	      
@@ -650,8 +651,16 @@ Edit version number in do-symlink.sh, do-all.sh, do-pp.sh
      sh do-symlink.sh
      sh do-all.sh 
 Wait for jobs to finish (approximately 20 min)
+
+NOTE: as of 1.1rc3, the do-pp.sh won't work out of the box. You'll
+need to copy the 'rmark-rocplot' executable from a build dir into the
+rmark directory, because rmark-pp.sh expects all the rmark scripts to
+be in the same dir, then delete it when we're done with it:
+  
+     cp ~/releases/infernal-${INFERNAL_VERSION}/rmark/build-cluster-gcc/rmark-rocplot ~/releases/infernal-${INFERNAL_VERSION}/rmark/
      sh do-pp.sh 
 Wait for jobs to finish (approximately 5 min)
+     rm ~/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-rocplot
       
 Compare .sum files with .sum files from: 
 ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/	 
@@ -682,7 +691,7 @@ warning:
 If this gets resolved in the future, we may go back to distributing
 binaries built with icc (64 and 32).
 
-The lcilkrts is still a problem as of 1.1rc3 (June 7 2013)
+The lcilkrts is still a problem as of 1.1rc4 (June 26 2013)
 
 Note: the configure call differs from the one Sean uses in hmmer. I
 specify --prefix. If I don't do that I get a 'make install' error
@@ -783,7 +792,7 @@ Copy macosx-intel tar ball to your laptop and test it.
   it would require changing the website significantly.
 
    ssh selab
-   export INFERNAL_VERSION=1.1rc3
+   export INFERNAL_VERSION=1.1rc4
    mkdir ~/to-be-infernal-${INFERNAL_VERSION}
    logout
 
@@ -799,16 +808,16 @@ Copy macosx-intel tar ball to your laptop and test it.
    scp infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz      selab:~/to-be-infernal-${INFERNAL_VERSION}
 
    ssh selab
-   export INFERNAL_VERSION=1.1rc3
+   export INFERNAL_VERSION=1.1rc4
    sudo mv ~/to-be-infernal-${INFERNAL_VERSION}/* /var/ftp/pub/software/infernal/
    echo ftp://selab.janelia.org/pub/software/infernal/infernal-${INFERNAL_VERSION}.tar.gz
    sudo rm -f /var/ftp/pub/software/infernal/infernal.tar.gz
    (cd /var/ftp/pub/software/infernal; sudo ln -s infernal-${INFERNAL_VERSION}.tar.gz infernal.tar.gz)
-   logout
+   y
 
 * Install on login-eddy. Currently, I don't have permission to
   install software on login-eddy, so just email Goran at this point.
-  (For 1.1rc3, asked him to install on both old and new cluster).
+  (For 1.1rc3 and 1.1rc4 I asked him to install on both old and new cluster).
 
 * Update the web site and the blog I can't do a 'make', because I
   don't have proper permission. So I have to copy all the files that
@@ -860,17 +869,18 @@ What I did for 1.1rc2:
 
    svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1\
             https://svn.janelia.org/eddylab/eddys/src/infernal/tags/${INFERNAL_VERSION}\
-            -m "tagged 1.1rc3 release, from 1.1 branch"          
+            -m "tagged 1.1rc4 release, from 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/src/hmmer/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/src/hmmer/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged HMMER for Infernal 1.1rc3 release, from Infernal 1.1 branch"          
+            -m "tagged HMMER for Infernal 1.1rc4 release, from Infernal 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged Easel for Infernal 1.1rc3 release, from Infernal 1.1 branch"          
+            -m "tagged Easel for Infernal 1.1rc4 release, from Infernal 1.1 branch"          
 
    1.1rc1: svn 4131 hmmer:4132 easel:775
    1.1rc2: svn 4343 hmmer:4344 easel:835
-   1.1rc2: svn 4479 hmmer:4480 easel:872
+   1.1rc3: svn 4479 hmmer:4480 easel:872
+   1.1rc4: svn 4499 hmmer:4500 easel:875
 
 * Merge the branch's changes back to the trunk
   (This section is more verbose here than in the hmmer 00CHECKLIST. I
@@ -896,7 +906,7 @@ What I did for 1.1rc2:
 
    cd ~/src/wd-infernal
    svn update
-   svn merge -r 4471:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
+   svn merge -r 4495:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
    svn commit
     
   If you're doing a major release on a new stable branch:
@@ -983,3 +993,4 @@ Release history
 1.1rc1 - EPN, Wed Jun 27 22:02:39 2012   r4131  Easel:r775
 1.1rc2 - EPN, Fri Dec 14 15:04:24 2012   r4343  Easel:r835
 1.1rc3 - EPN, Tue Jun 11 05:55:39 2013   r4479  Easel:r872
+1.1rc4 - EPN, Wed Jun 26 14:17:19 2013   r4499  Easel:r875
