@@ -44,7 +44,7 @@
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it.
 AC_PREREQ(2.63)
-AC_INIT(Infernal, 1.1rc3, nawrockie@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 1.1rc4, nawrockie@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 # remember if the user is overriding CFLAGS
