@@ -164,7 +164,7 @@ included tRNA hits.
 You can do similar commands piping subsets of CMs. Supposing you have a copy of Rfam in Rfam.cm:
 
 \user{cmfetch --index Rfam.cm} \\ 
-\user{cat myqueries.list | cmfetch -f Rfam.hmm - | cmsearch - mrum-genome.fa}
+\user{cat myqueries.list | cmfetch -f Rfam.cm - | cmsearch - mrum-genome.fa}
 
 This takes a list of query CM names/accessions in
 \prog{myqueries.list}, fetches them one by one from Rfam, and does an
