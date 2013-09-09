@@ -9,7 +9,6 @@ $usage = "perl bug-i39.pl <cmbuild>\n";
 if ($#ARGV != 0) { die "Wrong argument number.\n$usage"; }
 
 $cmbuild = shift;
-$alistat = shift;
 $ok      = 1;
 
 # Make our test alignment, i39.1
@@ -46,7 +45,7 @@ if ($ok) {
 }
 
 foreach $tmpfile ("i39.1", "i39.2", "i39.cm", "i39.2.cm") { 
-#    unlink $tmpfile if -e $tmpfile;
+    unlink $tmpfile if -e $tmpfile;
 }
 if ($ok) { print "ok\n";     exit 0; }
 else     { print "FAILED\n"; exit 1; }
