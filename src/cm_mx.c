@@ -5858,7 +5858,7 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   int j, v;
   int n_begl;
   int n_non_begl;
-  int cur_cell;
+  int64_t cur_cell;
 
   /* allocate alpha 
    * we allocate only as many cells as necessary,
@@ -5876,8 +5876,12 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   ESL_ALLOC(smx->falpha,        sizeof(float **) * 2);
   ESL_ALLOC(smx->falpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
   ESL_ALLOC(smx->falpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
-  ESL_ALLOC(smx->falpha_mem,    sizeof(float) * 2 * n_non_begl * (smx->W+1));
-  smx->ncells_alpha = 2 * n_non_begl * (smx->W+1);
+  /* define ncells_alpha in two statements to avoid potential overflow
+   * (this is probably unnec, but is nec for ncells_alpha_begl so stay consistent)
+   */
+  smx->ncells_alpha  = 2 * n_non_begl;
+  smx->ncells_alpha *= (smx->W+1);
+  ESL_ALLOC(smx->falpha_mem,    sizeof(float) * smx->ncells_alpha);
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
@@ -5899,8 +5903,16 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   ESL_ALLOC(smx->falpha_begl, sizeof(float **) * (smx->W+1));
   for (j = 0; j <= smx->W; j++) 
     ESL_ALLOC(smx->falpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, falpha_begl[0][v] will be NULL */
-  ESL_ALLOC(smx->falpha_begl_mem,   sizeof(float) * (smx->W+1) * n_begl * (smx->W+1));
-  smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
+  /* define ncells_alpha_begl with three separate statements: */
+  smx->ncells_alpha_begl = (smx->W+1);
+  smx->ncells_alpha_begl *= n_begl;
+  smx->ncells_alpha_begl *= (smx->W+1);
+  ESL_ALLOC(smx->falpha_begl_mem,   sizeof(float) * (smx->ncells_alpha_begl));
+  /* we used to define ncells_alpha_begl this way: 
+   *   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
+   * but that overflows for large models (even though ncells_alpha_begl is an int64_t, I guess
+   * the temporary value stored on the RHS overflows?). This was bug i40.
+   */
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
@@ -5941,7 +5953,7 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   int status;
   int n_begl;
   int n_non_begl;
-  int cur_cell;
+  int64_t cur_cell;
   int v, j;
 
   /* allocate alpha 
@@ -5960,9 +5972,12 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   ESL_ALLOC(smx->ialpha,        sizeof(int **) * 2);
   ESL_ALLOC(smx->ialpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, ialpha[0][v] will be NULL */
   ESL_ALLOC(smx->ialpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, ialpha[0][v] will be NULL */
-  ESL_ALLOC(smx->ialpha_mem,    sizeof(int) * 2 * n_non_begl * (smx->W+1));
-
-  smx->ncells_alpha = 2 * n_non_begl * (smx->W+1);
+  /* define ncells_alpha in two statements to avoid potential overflow
+   * (this is probably unnec, but is nec for ncells_alpha_begl so stay consistent)
+   */
+  smx->ncells_alpha  = 2 * n_non_begl;
+  smx->ncells_alpha *= (smx->W+1);
+  ESL_ALLOC(smx->ialpha_mem,    sizeof(float) * smx->ncells_alpha);
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
@@ -5984,9 +5999,16 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   ESL_ALLOC(smx->ialpha_begl, sizeof(int **) * (smx->W+1));
   for (j = 0; j <= smx->W; j++) 
     ESL_ALLOC(smx->ialpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, ialpha_begl[0][v] will be NULL */
-  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * (smx->W+1) * n_begl * (smx->W+1));
-  smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
-
+  /* define ncells_alpha_begl with three separate statements: */
+  smx->ncells_alpha_begl = (smx->W+1);
+  smx->ncells_alpha_begl *= n_begl;
+  smx->ncells_alpha_begl *= (smx->W+1);
+  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * (smx->ncells_alpha_begl));
+  /* we used to define ncells_alpha_begl this way: 
+   *   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
+   * but that overflows for large models (even though ncells_alpha_begl is an int64_t, I guess
+   * the temporary value stored on the RHS overflows?). This was bug i40.
+   */
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     for (j = 0; j <= smx->W; j++) { 
@@ -6010,7 +6032,7 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
  ERROR: 
   ESL_FAIL(eslEMEM, errbuf, "out of memory (creating int scan matrix)");
   return status; /* NOT REACHED */
-}  
+}
 
 /* Function: cm_scan_mx_InitializeFloats()
  * Date:     EPN, Tue Dec 27 10:41:53 2011
@@ -6032,6 +6054,7 @@ cm_scan_mx_InitializeFloats(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   /* First, init entire matrix to IMPOSSIBLE */
   esl_vec_FSet(smx->falpha_mem,      smx->ncells_alpha,      IMPOSSIBLE);
   esl_vec_FSet(smx->falpha_begl_mem, smx->ncells_alpha_begl, IMPOSSIBLE);
+
   /* Now, initialize cells that should not be IMPOSSIBLE in falpha and falpha_begl */
   for(v = cm->M-1; v >= 0; v--) {
     if(cm->stid[v] != BEGL_S) {
@@ -6087,6 +6110,7 @@ cm_scan_mx_InitializeIntegers(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   /* First, init entire matrix to -INFTY */
   esl_vec_ISet(smx->ialpha_mem,      smx->ncells_alpha,      -INFTY);
   esl_vec_ISet(smx->ialpha_begl_mem, smx->ncells_alpha_begl, -INFTY);
+
   /* Now, initialize cells that should not be -INFTY in ialpha and ialpha_begl */
   for(v = cm->M-1; v >= 0; v--) {
     if(cm->stid[v] != BEGL_S) {
@@ -6144,8 +6168,15 @@ cm_scan_mx_SizeNeeded(CM_t *cm, int do_float, int do_int)
   n_begl = 0;
   for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
   n_non_begl = cm->M - n_begl;
-  ncells_alpha      = 2         * n_non_begl * (cm->W+1);
-  ncells_alpha_begl = (cm->W+1) * n_begl     * (cm->W+1);
+  /* use several statements to calculate ncells_alpha_*, otherwise we could overflow,
+   * (the overflow was part of bug i40).
+   */
+  ncells_alpha       = 2;
+  ncells_alpha      *= n_non_begl;
+  ncells_alpha      *= (cm->W+1);
+  ncells_alpha_begl  = (cm->W+1);
+  ncells_alpha_begl *= n_begl;
+  ncells_alpha_begl *= (cm->W+1);
 
   /* tally up size */
   Mb_needed  = (float) sizeof(CM_SCAN_MX);
@@ -6540,7 +6571,7 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   int j, v;
   int n_begl, n_bif;
   int n_non_begl;
-  int cur_cell;
+  int64_t cur_cell;
 
   /* allocate alpha 
    * we allocate only as many cells as necessary,
@@ -6578,7 +6609,11 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   ESL_ALLOC(trsmx->fTalpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->fTalpha_mem,    sizeof(float) * 2 * n_non_begl * (trsmx->W+1));
 
-  trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
+  /* define ncells_alpha in two statements to avoid potential overflow
+   * (this is probably unnec, but is nec for ncells_alpha_begl so stay consistent)
+   */
+  trsmx->ncells_alpha  = 2 * n_non_begl;
+  trsmx->ncells_alpha *= (trsmx->W+1);
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] != BEGL_S) {
@@ -6628,11 +6663,14 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
     ESL_ALLOC(trsmx->fLalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fLalpha_begl[0][v] will be NULL */
     ESL_ALLOC(trsmx->fRalpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fRalpha_begl[0][v] will be NULL */
   }
-  ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->W+1) * n_begl * (trsmx->W+1));
+  /* define ncells_alpha_begl with three separate statements (so we don't overflow, that was bug i40): */
+  trsmx->ncells_alpha_begl  = (trsmx->W+1);
+  trsmx->ncells_alpha_begl *= n_begl;
+  trsmx->ncells_alpha_begl *= (trsmx->W+1);
+  ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->ncells_alpha_begl));
 
-  trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     for (j = 0; j <= trsmx->W; j++) { 
@@ -6679,7 +6717,7 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   int j, v;
   int n_begl, n_bif;
   int n_non_begl;
-  int cur_cell;
+  int64_t cur_cell;
 
   /* allocate alpha 
    * we allocate only as many cells as necessary,
@@ -6717,7 +6755,11 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   ESL_ALLOC(trsmx->iTalpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BIF_B and v != ROOT_S, fTalpha[1][v] will be NULL */
   ESL_ALLOC(trsmx->iTalpha_mem,    sizeof(int) * 2 * n_non_begl * (trsmx->W+1));
 
-  trsmx->ncells_alpha = 2 * n_non_begl * (trsmx->W+1);
+  /* define ncells_alpha in two statements to avoid potential overflow
+   * (this is probably unnec, but is nec for ncells_alpha_begl so stay consistent)
+   */
+  trsmx->ncells_alpha  = 2 * n_non_begl;
+  trsmx->ncells_alpha *= (trsmx->W+1);
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] != BEGL_S) {
@@ -6767,11 +6809,14 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
     ESL_ALLOC(trsmx->iLalpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fLalpha_begl[0][v] will be NULL */
     ESL_ALLOC(trsmx->iRalpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, fRalpha_begl[0][v] will be NULL */
   }
-  ESL_ALLOC(trsmx->iJalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->iLalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
-  ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * (trsmx->W+1) * n_begl * (trsmx->W+1));
+  /* define ncells_alpha_begl with three separate statements (so we don't overflow, that was bug i40): */
+  trsmx->ncells_alpha_begl  = (trsmx->W+1);
+  trsmx->ncells_alpha_begl *= n_begl;
+  trsmx->ncells_alpha_begl *= (trsmx->W+1);
+  ESL_ALLOC(trsmx->iJalpha_begl_mem,   sizeof(int) * (trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->iLalpha_begl_mem,   sizeof(int) * (trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * (trsmx->ncells_alpha_begl));
 
-  trsmx->ncells_alpha_begl = (trsmx->W+1) * n_begl * (trsmx->W+1);
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
     for (j = 0; j <= trsmx->W; j++) { 
@@ -6955,8 +7000,15 @@ cm_tr_scan_mx_SizeNeeded(CM_t *cm, int do_float, int do_int)
   n_begl = 0;
   for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
   n_non_begl = cm->M - n_begl;
-  ncells_alpha      = 2         * n_non_begl * (cm->W+1);
-  ncells_alpha_begl = (cm->W+1) * n_begl     * (cm->W+1);
+  /* use several statements to calculate ncells_alpha_*, otherwise we could overflow,
+   * (the overflow was part of bug i40).
+   */
+  ncells_alpha       = 2;
+  ncells_alpha      *= n_non_begl;
+  ncells_alpha      *= (cm->W+1);
+  ncells_alpha_begl  = (cm->W+1);
+  ncells_alpha_begl *= n_begl;
+  ncells_alpha_begl *= (cm->W+1);
 
   /* tally up size */
   Mb_needed  = (float) sizeof(CM_SCAN_MX);

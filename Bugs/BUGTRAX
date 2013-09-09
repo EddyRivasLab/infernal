@@ -1172,3 +1172,42 @@ This bug was fixed in the Infernal 1.1 release branch as of revision
 #### 
 ####  1.1rc4 release: 25 June 2013
 ####
+
+ID              i40
+TITLE		cmcalibrate segfaults on big (LSU) models
+STATUS          CLOSED
+XREF            /groups/eddy/home/nawrockie/notebook/13_0904_inf_cmcalibrate_lsu_bug/
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Sep  4 11:55:49 2013
+DESCRIPTION    
+
+When defining the number of cells in the alpha_begl section of
+CM_SCAN_MX, there was an overflow for very large models. The 
+overflow never occurred for any Rfam 11.0 models, but did for 
+at least some eukaryotic LSU rRNA models. The fix is to change 
+how the number of cells in the 'begl' section of the scan matrix are
+defined. From cm_mx.c:cm_scan_mx_floatize(), one example of the 
+old way that did overflow: 
+
+   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
+         
+new way that does not:
+ 
+  smx->ncells_alpha_begl = (smx->W+1);
+  smx->ncells_alpha_begl *= n_begl;
+  smx->ncells_alpha_begl *= (smx->W+1);
+
+Note that ncells_alpha_begl is an int64_t.
+
+There were several other places I made similar changes to hopefully
+prevent similar overflows, although I limited the changes to those
+involving ncells_alpha or ncells_alpha_begl in CM_SCAN_MX or 
+CM_TR_SCAN_MX data structures. Use 'svn diff' for specifics.
+
+I decided not to add a test for this bug in the testsuite, mainly 
+because it only occurs for such large models that running the test
+would take several minutes (at least, even with --forecast).
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4527.
+//
