@@ -861,11 +861,9 @@ Copy macosx-intel tar ball to your laptop and test it.
    1.1rc2: svn 4343 hmmer:4344 easel:835
    1.1rc3: svn 4479 hmmer:4480 easel:872
    1.1rc4: svn 4499 hmmer:4500 easel:875
-   1.1:    svn 4551 hmmer:4550 easel:890 
-   (made mistake and didn't replace version # for 1.1, so r4549 says
-   'tagged 1.1rc4 release, from 1.1 branch', then I did same command
-   with proper version (1.1), so r4551 says 'tagged 1.1 release, from
-   1.1 branch')
+   1.1:    svn 4549 hmmer:4550 easel:890 
+   (made mistake and didn't replace version # for 1.1, so r4549
+   erroneously says 'tagged 1.1rc4 release, from 1.1 branch')
 
 * Merge the branch's changes back to the trunk
   (This section is more verbose here than in the hmmer 00CHECKLIST. I
@@ -979,4 +977,4 @@ Release history
 1.1rc2 - EPN, Fri Dec 14 15:04:24 2012   r4343  Easel:r835
 1.1rc3 - EPN, Tue Jun 11 05:55:39 2013   r4479  Easel:r872
 1.1rc4 - EPN, Wed Jun 26 14:17:19 2013   r4499  Easel:r875
-1.1    - EPN, Thu Oct 31 13:42:20 2013   r4551  Easel:r890
+1.1    - EPN, Thu Oct 31 13:42:20 2013   r4549  Easel:r890
