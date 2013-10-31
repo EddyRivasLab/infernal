@@ -1,0 +1,16 @@
+# STOCKHOLM 1.0
+#=GF ID se1
+
+human              .AAGACUUCGGAUCUGGCG.ACA.CCC.
+mouse              aUACACUUCGGAUG-CACC.AAA.GUGa
+orc                .AGGUCUUC-GCACGGGCAgCCAcUUC.
+#=GC SS_cons       .::<<<____>->>:<<-<.___.>>>.
+//
+# STOCKHOLM 1.0
+#=GF ID se2
+
+human              .AAGACUUCGGAUCUGGCG.ACA.CCC.
+mouse              aUACACUUCGGAUG-CACC.AAA.GUGa
+orc                .AGGUCUUC-GCACGGGCAgCCAcUUC.
+#=GC SS_cons       .::<<<____>->>:<<-<.___.>>>.
+//

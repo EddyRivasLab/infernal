@@ -1,0 +1,46 @@
+Infernal - inference of RNA secondary structural alignments
+@INFERNAL_COPYRIGHT@
+------------------------------------------------------------------
+
+Copyright (C) 2013 HHMI Janelia Farm Research Campus
+
+   Portions Copyright (C) 1991-2013      Sean R. Eddy
+   Portions Copyright (C) 2005-2013      Eric P. Nawrocki
+   Portions Copyright (C) 2005-2011      Diana L. Kolbe
+   Portions Copyright (C) 2004           Zasha Weinberg
+   Portions Copyright (C) 1990           Don G. Gilbert
+   Portions Copyright (C) 1995-2006      Washington University in St. Louis
+   Portions Copyright (C) 1992-1995      Medical Research Council, UK
+   Portions Copyright (C) 2004           University of Washington, Seattle
+   Portions Copyright (C) 1986,1993,1995 University of Toronto
+   Portions Copyright (C) 1989-2001      Free Software Foundation
+   Portions Copyright (C) 1991           Massachusetts Institute of Technology
+
+Infernal includes the HMMER software package, which has its own license and
+copyright information. See hmmer/COPYRIGHT and hmmer/LICENSE.
+
+Infernal uses the Easel software library, which has its own license and
+copyright information. See easel/COPYRIGHT and easel/LICENSE.
+
+Infernal is distributed under the terms of the GNU General Public
+License version 3 (GPLv3). See the file LICENSE for details.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+A copy of the GNU General Public License is in the file LICENSE.  You
+may also obtain a copy from <http://www.gnu.org/licenses/>.
+
+------------------------------------------------------------------
+The Infernal development team
+HHMI Janelia Farm Research Campus
+http://infernal.janelia.org/
+
+

@@ -1,0 +1,70 @@
+# STOCKHOLM 1.0
+#  structure and alignment from [Brown99]
+#  reference line imposes the E. coli RNase P RNA coordinate system
+
+
+E.coli                    GAAGCUGACCAGACAGUCGCCGCUUCGUCGUCGUCCUC-------UUCG-
+S.typhimurium             GAAGCUGACCAGACAGUCGCCGCUUCGUCGUCGUCCU--------UUCG-
+Y.pestis                  GGAGUUGACUAGACAGUCGCCGCUUCACUGCCGUCCCU-------UUCG-
+P.aeruginosa              AGAGUCGAUUGGACAGUCGCUGUCGCGC-----------------AAUA-
+H.influenza               CGAGUUGGUUAGACAAUCGCUGGUUUAUUGAAGCCCUUAACCGUAUUUAU
+#=GC SS_cons              <<<<<<<<<<<<<<<<<<-<<<<<<<<<<<<<-<<<<<<-<<<<------
+#=GC RF                   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-------xxxx-
+
+E.coli                    -----GGGG-AGAC-GGGCGGAGGGGAGGAAAGUCCGGGCUCCAUAGGGC
+S.typhimurium             ------GGG-AGAC-GGGCGGAGGGGAGGAAAGUCCGGGCUCCAUAGGGC
+Y.pestis                  -----GGGG-AGAC-AGGUGGAGGGGAGGAAAGUCCGGGCUCCAUAGGGC
+P.aeruginosa              -----------------GCGCGGUGGAGGAAAGUCCGGGCUCCAUAGGGC
+H.influenza               ACGACCUAGUGGGACAAGUAAACGAGAGGAAAGUCCGAGCUACACAGGGC
+#=GC SS_cons              >>>>>>>>>->>>>->->>>>>>>>>----AAA-AAAAA<<<<---BBBB
+#=GC RF                   -----xxxx-xxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+E.coli                    AGGGUGCCAGGUAACGCCUGGGGGG-GAAA-CCCACGACCAGUGCAACAG
+S.typhimurium             AGGGUGCCAGGUAACGCCUGGGGGG-GAAA-CCCACGACCAGUGCAACAG
+Y.pestis                  AGGGUGCCAGGUAACGCCUGGGAGGCGCAAGCCUACGACAAGUGCAACAG
+P.aeruginosa              AGAGUGCCAGGUAACGCCUGGGAGGCGCGAGCCUACGGAAAGUGCCACAG
+H.influenza               AGAGUGCCGGAUAACGUCCGGGCGGCGUGAGCCGACGACCAGUGCAACAG
+#=GC SS_cons              -<<<<<<<<<<----->>>>><<<<<---->>>>-><<---<<<<<----
+#=GC RF                   xxxxxxxxxxxxxxxxxxxxxxxxx-xxxx-xxxxxxxxxxxxxxxxxxx
+
+E.coli                    AGAGCAAACCGCC-GAUGGCCCGCGCAAGCGGGAUCA-GGUAAGGGUGAA
+S.typhimurium             AGAGCAAACCGCC-GAUGGCCCACGUAAGUGGGAUCA-GGUAAGGGUGAA
+Y.pestis                  AGAGCAAACCGCC-GAUGGCCCACGCAAGUGGGAUCA-GGUAAGGGUGAA
+P.aeruginosa              AAAAUA-ACCGCCUAAGCGC----AACA----G-CGCCGGUAAGGGUGAA
+H.influenza               AGAGCAGACCGCC---GU------GUAA-------AC-GGUAAGGGUGAA
+#=GC SS_cons              --------<<<<<---<<<<<<<<---->>>>>->>>->>>-->>-----
+#=GC RF                   xxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxx
+
+E.coli                    AGGGUGCGGUAAGAGCGCACCGCGCGGCUGGUAACAGUCCGUGGCACGGU
+S.typhimurium             AGGGUGCGGUAAGAGCGCACCGCGCGGCUGGUAACAGUCCGUGGCACGGU
+Y.pestis                  AGGGUGCGGUAAGAGCGCACCGCGCGGCUGGCAACAGUUCGUGGCAUGGU
+P.aeruginosa              AAGGUGCGGUAAGAGCGCACCGCACGGCUGGCAACAGUGCGUGGCUAGGU
+H.influenza               AGGGUGCGGUAAGAGCGCACCGUGCCGUUGGUAACAACGUGCAGCAGGGU
+#=GC SS_cons              --<<<<<<------->>>>>><<<<<<<<<---->>>->>>>>->-->>>
+#=GC RF                   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+E.coli                    AAACUCCACCCGGAGCAAGGCCAAAUAGGGGUUCAUAAGGUACGGCCCGU
+S.typhimurium             AAACUCCACCCGGAGCAAGGCCAAAUAGGGGUUCAUAAGGUACGGCCCGU
+Y.pestis                  AAACUCCACCCGGAGCAAGGCCAAAUAGGGGUUCGCAUGGUACGGCCCGU
+P.aeruginosa              AAACCCCACUCGGAGCAAGACCAAAUAGGAAUCCAU-UGGCGCGGCCCGC
+H.influenza               AAACUCCACUCGUAGCAAGACCAAAUAGGAACUCA--AUGGGUGGCCCGU
+#=GC SS_cons              -->>>>>>>>>>>>>---<<<<------<<<<<<----<<<<<-bbbb>>
+#=GC RF                   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+E.coli                    ACUGAACCCGGGUAGGCUGCUUGAGCCAGUGAGCGAUUGCUGGCCUAGAU
+S.typhimurium             ACUGAACCCGGGUAGGCUGCUUGAGCCAGUGAGCGAUUGCUGGCCUAGAU
+Y.pestis                  ACUGAACCCGGGUAGGCUGCUUGAGCCAGUGAGCGAUUGCUGGCCUAGAG
+P.aeruginosa              GUUGGAUUCGGGUAGGUCGCUUGAGGCGUACAGUGAUGUGCGUCCCAGAG
+H.influenza               CCAGAGUUCGGGUAGGUUGCUUGAGCGGCAGAGUAAUUUGUCGCCUAGAG
+#=GC SS_cons              >>>>>>>>>----->>>>------<<<<<<<<---->>>>>>>>------
+#=GC RF                   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+E.coli                    GAAUGACUGUCCACGACAGAACCCGGCUUAUCGGUCAGUUUCACCU
+S.typhimurium             GAAUGACUGUCCACGACAGAACCCGGCUUAUCGGUCAGUUUCACCU
+Y.pestis                  GAAUGACUGUCCACGACAGAACCCGGCUUACCGGUCAACUCCAC..
+P.aeruginosa              GAAUGGCUGUCCUCGACAGAACCCGGCUUAUAGAUCGACUCUCCCA
+H.influenza               GAAUGAUUGUCCACGACAGAACUCGGCUUAUCGACCAACUCAAAAC
+#=GC SS_cons              ---->>>>>>>----------aaaaaaaa->->>>>>>>>>>----
+#=GC RF                   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+//
