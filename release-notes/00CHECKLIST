@@ -266,6 +266,7 @@ do any cleanup...
     cd ../easel
     svn commit
 
+
 ================================================================
 = Creating a source distribution
 ================================================================
@@ -296,6 +297,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   1.1rc2: exported 4342/834
   1.1rc3: exported 4478/871
   1.1rc4: exported 4498/874
+  1.1:    exported 4547/889
 
 * Check that svn has file permissions right. 
   Both of these should have no output.
@@ -401,6 +403,7 @@ Delete TO-DO sections and clean up for public consumption.
    1.1rc2: 19.1 Mb (gzipped, diff b/c of documentation directories)
    1.1rc3: 19.2 Mb (gzipped)
    1.1rc4: 19.2 Mb (gzipped)
+   1.1:    19.2 Mb (gzipped)
 
 All subsequent tests are on this source distro.
 
@@ -442,9 +445,7 @@ On login-eddy (our compile host):
   make devcheck   >> build.out  2>&1
 
   ssh login-eddy
-  qlogin -l excl=true
-      NOTE: this will likely become 'qlogin -pe batch 16' with new
-            cluster on 06.17.13
+  qlogin -pe batch=16
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-cluster-gcc
   cd build-cluster-gcc
@@ -478,6 +479,11 @@ For each machine, we manually login and build through a
 Do this in ~/releases/infernal-${INFERNAL_VERSION}
 (not in ~/releases/infernal-release/)
 
+(NOTE: to save time at this step in 1.1rc2 --> 1.1, I 
+created a mkdir.sh file that creates all the compile farm
+build dirs and copies the build.sh files, see 
+~/releases/infernal-${INFERNAL_OLDVERSION}/mkdir.sh)
+
 Example:
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-cf-xcompile
@@ -504,15 +510,15 @@ last release (1.1rc2):
 (See http://wiki.int.janelia.org/wiki/display/EddyLab/Compile+Farm)
  for current list and for machine-specific instructions for building)
 
- 1) Intel Apple OS/X (xcompile.int.janelia.org)        pass
+ 1) Intel Apple OS/X (xcompile.int.janelia.org)        
  2) PowerPC IBM AIX  (cf-ppc2.int.janelia.org)         
- 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  pass
- 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     pass
- 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     pass
- 6) Fedora 16 AMD64 (cf-fedora.int.janelia.org)        doesn't mount  home dir
- 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     pass
- 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  pass
- 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     pass
+ 3) Linux on an AMD Opteron (cf-suse.int.janelia.org)  
+ 4) Debian 6.0.3 AMD64 (cf-debian.int.janelia.org)     
+ 5) Ubuntu 12.04 AMD64 (cf-ubuntu.int.janelia.org)     
+ 6) Fedora 16 AMD64 (cf-fedora.int.janelia.org)        
+ 7) OpenBSD 5.0 AMD64 (cf-openbsd.int.janelia.org)     
+ 8) OpenSuse 12.1 AMD64 (cf-opensuse.int.janelia.org)  
+ 9) FreeBSD 8.2 AMD64 (cf-freebsd.int.janelia.org)     
 10) Ubuntu 12.0.4.1 32-bit (cf-ubuntu32)               
 
 ================================================================
@@ -649,6 +655,11 @@ Edit version number in do-symlink.sh, do-all.sh, do-pp.sh
      emacs do-all.sh
      emacs do-pp.sh
      sh do-symlink.sh
+
+NOTE: as of 1.1, do-all.sh won't work as written b/c new cluster
+doesn't accept "-l excl=true" flag. For 1.1 release Rob Lines
+qalter'd the jobs so they went through after about 12h of waiting.        
+
      sh do-all.sh 
 Wait for jobs to finish (approximately 20 min)
 
@@ -656,8 +667,8 @@ NOTE: as of 1.1rc3, the do-pp.sh won't work out of the box. You'll
 need to copy the 'rmark-rocplot' executable from a build dir into the
 rmark directory, because rmark-pp.sh expects all the rmark scripts to
 be in the same dir, then delete it when we're done with it:
-  
-     cp ~/releases/infernal-${INFERNAL_VERSION}/rmark/build-cluster-gcc/rmark-rocplot ~/releases/infernal-${INFERNAL_VERSION}/rmark/
+
+     cp ~/releases/infernal-${INFERNAL_VERSION}/build-cluster-gcc/rmark/rmark-rocplot ~/releases/infernal-${INFERNAL_VERSION}/rmark/
      sh do-pp.sh 
 Wait for jobs to finish (approximately 5 min)
      rm ~/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-rocplot
@@ -680,7 +691,7 @@ this:
 ================================================================
 = Binary distros
 ================================================================
-  
+
   cd ${INFERNAL_RELEASE_NOTEBOOK}
   mkdir Distros; cd Distros
 
@@ -732,7 +743,7 @@ linux-intel-gcc:
 
 
 macosx-intel build (on Sean's desktop):
-  ssh 10.102.30.160
+  ssh 10.123.13.171 
   export INFERNAL_DISTRO=macosx-intel
 
   cd ${INFERNAL_RELEASE_NOTEBOOK}/Distros
@@ -777,78 +788,42 @@ Copy macosx-intel tar ball to your laptop and test it.
 = Distribution
 ================================================================
 
-* copy to ftp site
+* copy to ftp site 
 
-  I don't currently have permission to do the scp calls Sean does
-  directly into var/ftp/pub/software/infernal/, but I can scp to my
-  home directory and then 'sudo mv' it to
-  /var/ftp/pub/software/infernal/, which is what I do below.
+ Big change as of 1.1, after receiving email from Sean explaining how
+ manual copying of files to selab server was Bad. 
 
-  Also, the /var/ftp/pub/software/infernal/ directory is organized a
-  bit differently than the /var/ftp/pub/software/hmmer/ one. hmmer has
-  a directory for each release, infernal only has a tarball. The
-  README, RELEASE-NOTES, etc. files only exist at the top level, for
-  the current release. I chose not to mimic hmmer with 1.1rc1, because
-  it would require changing the website significantly.
+ All we need to do is update the web svn repository, and then one
+ 'make' will populate selab. See Sean's email to me Subj: 'Infernal
+ and lab web site' on July 19, 2013.
+  
+  cd ~/web/
+  svn update
 
-   ssh selab
-   export INFERNAL_VERSION=1.1rc4
-   mkdir ~/to-be-infernal-${INFERNAL_VERSION}
-   logout
+  cp ~/releases/infernal-${INFERNAL_VERSION}/README ./selab/software/infernal/
+  cp ~/releases/infernal-${INFERNAL_VERSION}/RELEASE-NOTES ./selab/software/infernal/
+  cp ~/releases/infernal-${INFERNAL_VERSION}/COPYRIGHT ./selab/software/infernal/
+  cp ~/releases/infernal-${INFERNAL_VERSION}/LICENSE ./selab/software/infernal/
+  cp ~/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ./selab/software/infernal/
+  cp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz ./selab/software/infernal/
+  cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz ./selab/software/infernal/
+  cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz ./selab/software/infernal/
+  
+ update symlink:
+  cd ./selab/software/infernal
+  rm infernal.tar.gz
+  ln -s infernal-${INFERNAL_VERSION}.tar.gz infernal.tar.gz
+  cd ../../../
+   
+ update 'index.html'; change versions and dates at least.
+  emacs infernal/index.html
 
-   cd ~/releases
-   scp infernal-${INFERNAL_VERSION}/README        selab:~/to-be-infernal-${INFERNAL_VERSION}
-   scp infernal-${INFERNAL_VERSION}/RELEASE-NOTES selab:~/to-be-infernal-${INFERNAL_VERSION}
-   scp infernal-${INFERNAL_VERSION}/COPYRIGHT     selab:~/to-be-infernal-${INFERNAL_VERSION}
-   scp infernal-${INFERNAL_VERSION}/LICENSE       selab:~/to-be-infernal-${INFERNAL_VERSION}
-   scp infernal-${INFERNAL_VERSION}/Userguide.pdf selab:~/to-be-infernal-${INFERNAL_VERSION}
-   scp infernal-${INFERNAL_VERSION}.tar.gz        selab:~/to-be-infernal-${INFERNAL_VERSION}
-   cd ${INFERNAL_RELEASE_NOTEBOOK}/Distros
-   scp infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz   selab:~/to-be-infernal-${INFERNAL_VERSION}
-   scp infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz      selab:~/to-be-infernal-${INFERNAL_VERSION}
+ Update website with Rfam files (if current version of Rfam is not 
+ compatible with new version of Infernal, which was true for 1.1rc1
+ and 1.1rc2).
 
-   ssh selab
-   export INFERNAL_VERSION=1.1rc4
-   sudo mv ~/to-be-infernal-${INFERNAL_VERSION}/* /var/ftp/pub/software/infernal/
-   echo ftp://selab.janelia.org/pub/software/infernal/infernal-${INFERNAL_VERSION}.tar.gz
-   sudo rm -f /var/ftp/pub/software/infernal/infernal.tar.gz
-   (cd /var/ftp/pub/software/infernal; sudo ln -s infernal-${INFERNAL_VERSION}.tar.gz infernal.tar.gz)
-   y
-
-* Install on login-eddy. Currently, I don't have permission to
-  install software on login-eddy, so just email Goran at this point.
-  (For 1.1rc3 and 1.1rc4 I asked him to install on both old and new cluster).
-
-* Update the web site and the blog I can't do a 'make', because I
-  don't have proper permission. So I have to copy all the files that
-  change in ~/web/infernal/ (usually just index.html) to
-  selab:~/to-be-web/, then sudo mv them to /opt/www/infernal/docs/
-
-	 ssh selab
-	 rm -rf ~/to-be-web/
-	 mkdir ~/to-be-web/
-	 logout
-
-	 cd ~/web/infernal/
-         svn update
-         emacs index.html 
-	 scp index.html nawrockie@selab:~/to-be-web/
-	 
-	 ssh selab
-	 sudo mv ~/to-be-web/index.html /opt/www/infernal/docs/
-	 logout
-
-	 cd ~/web/infernal/
-         svn commit
-
-Don't forget to update the 'Last modified' bit at the bottom
-of index.html.
-
-Update website with Rfam files (if current version of Rfam is not 
-compatible with new version of Infernal, which was true for 1.1rc1
-and 1.1rc2).
-
-What I did for 1.1rc2:
+ What I did for 1.1rc2 (THIS IS PROBABLY NOT THE CORRECT WAY TO DO
+ THIS, EMAIL SEAN BEFORE DOING SOMETHING SIMILAR):
 
 	 ssh selab
 	 rm -rf ~/to-be-rfam/
@@ -864,23 +839,33 @@ What I did for 1.1rc2:
 	 sudo mv ~/to-be-rfam/* /var/ftp/pub/rfam/rfam-11.0/
 	 logout
 
+ Commit changes.
+  svn commit
+
+ Email Sean and ask him to do a 'make'.
+
 * tag the release. Replace version # below!
    cd ~/releases/infernal-release
 
    svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1\
             https://svn.janelia.org/eddylab/eddys/src/infernal/tags/${INFERNAL_VERSION}\
-            -m "tagged 1.1rc4 release, from 1.1 branch"          
+            -m "tagged 1.1 release, from 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/src/hmmer/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/src/hmmer/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged HMMER for Infernal 1.1rc4 release, from Infernal 1.1 branch"          
+            -m "tagged HMMER for Infernal 1.1 release, from Infernal 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged Easel for Infernal 1.1rc4 release, from Infernal 1.1 branch"          
+            -m "tagged Easel for Infernal 1.1 release, from Infernal 1.1 branch"          
 
    1.1rc1: svn 4131 hmmer:4132 easel:775
    1.1rc2: svn 4343 hmmer:4344 easel:835
    1.1rc3: svn 4479 hmmer:4480 easel:872
    1.1rc4: svn 4499 hmmer:4500 easel:875
+   1.1:    svn 4551 hmmer:4550 easel:890 
+   (made mistake and didn't replace version # for 1.1, so r4549 says
+   'tagged 1.1rc4 release, from 1.1 branch', then I did same command
+   with proper version (1.1), so r4551 says 'tagged 1.1 release, from
+   1.1 branch')
 
 * Merge the branch's changes back to the trunk
   (This section is more verbose here than in the hmmer 00CHECKLIST. I
@@ -906,7 +891,7 @@ What I did for 1.1rc2:
 
    cd ~/src/wd-infernal
    svn update
-   svn merge -r 4495:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
+   svn merge -r 4523:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
    svn commit
     
   If you're doing a major release on a new stable branch:
@@ -994,3 +979,4 @@ Release history
 1.1rc2 - EPN, Fri Dec 14 15:04:24 2012   r4343  Easel:r835
 1.1rc3 - EPN, Tue Jun 11 05:55:39 2013   r4479  Easel:r872
 1.1rc4 - EPN, Wed Jun 26 14:17:19 2013   r4499  Easel:r875
+1.1    - EPN, Thu Oct 31 13:42:20 2013   r4551  Easel:r890
