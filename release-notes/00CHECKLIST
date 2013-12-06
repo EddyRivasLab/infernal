@@ -711,9 +711,10 @@ directory. Also, as a result I have to delete the share/ directory
 after I install. (Sean doesn't have to do that b/c his build won't
 create it).
 
-Two builds:
+Three builds:
   linux-intel-gcc
   macosx-intel
+  cygwin
 
 linux-intel-gcc:
   ssh login-eddy
@@ -770,19 +771,71 @@ macosx-intel build (on Sean's desktop):
   tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
-Look at the build output for these two distros and make sure
+
+cygwin (on a Windows VM):
+  Open up VM on MacBook pro via VirtualBox, see Nov 12 email from
+    Travis Wheeler to my gmail address, or notes in
+    13_1205_inf_1p1_windows_cygwin/00LOG'
+  
+  (NOTE: this was done post-1.1 release on Dec 5, 2013, I didn't use
+  variables and did this on my MacBook pro in a windows VM)
+  
+  from cygwin home:
+  cd ~/notebook/13_1205_inf_1p1_windows_cygwin
+  pwd
+    /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin
+  mkdir Distros
+  cd Distros
+  cp /cygdrive/c/Users/IEUser/Downloads/infernal-1.1.tar.gz .
+
+  gunzip infernal-1.1.tar.gz
+  tar xf infernal-1.1.tar
+  mv infernal-1.1 infernal-1.1-cygwin
+  cd infernal-1.1-cygwin
+  mkdir build-cygwin
+  cd build-cygwin
+  ../configure \
+   --bindir=/home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin/binaries \
+   --prefix=/home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin \
+   > /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out
+
+  make           > /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
+  make dev      >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
+  make check    >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
+  make install  >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
+  (cd easel/miniapps; make install >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1)
+  rm -rf /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin/share
+
+ Look at build-infernal-1.1-cygwin.out.
+
+  cd ..
+  rm -rf build-cygwin
+  cd .. 
+
+ Add a 00README-cygin-binaries.txt file to the binaries/ dir. See the
+ one I made in Dec 2013 for v1.1 as an example.   
+
+  emacs binaries/00README-cygwin-binaries.txt
+  tar cf infernal-1.1-cygwin.tar  infernal-1.1-cygwin
+  gzip infernal-1.1-cygwin.tar
+  
+Look at the build output for these three distros and make sure
 everything looks normal and all tests pass:
   emacs ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-linux-intel-gcc.out
   emacs ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-macosx-intel.out
+  ON MACBOOK PRO:
+    emacs notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out
 
 Test these Distro tarballs:
 
 linux-intel-gcc: ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz
 macosx-intel:    ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz
+cygwin:          notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin.tar.gz
 
 Copy linux-intel-gcc to a new directory on your home dir on login-eddy
 and test it with some anecdotal tets.
 Copy macosx-intel tar ball to your laptop and test it.
+Copy cygwin to another virtual machine or windows machine and test it.
 
 ================================================================
 = Distribution
@@ -822,22 +875,7 @@ Copy macosx-intel tar ball to your laptop and test it.
  compatible with new version of Infernal, which was true for 1.1rc1
  and 1.1rc2).
 
- What I did for 1.1rc2 (THIS IS PROBABLY NOT THE CORRECT WAY TO DO
- THIS, EMAIL SEAN BEFORE DOING SOMETHING SIMILAR):
-
-	 ssh selab
-	 rm -rf ~/to-be-rfam/
-	 mkdir ~/to-be-rfam/
-	 sudo mkdir /var/ftp/pub/rfam/rfam-11.0   
-	 logout
-
-	 cd ${INFERNAL_RELEASE_NOTEBOOK}
-	 cd rfam-files-for-infernal-website/for-website
-	 scp * nawrockie@selab:~/to-be-rfam/
-
-	 ssh selab
-	 sudo mv ~/to-be-rfam/* /var/ftp/pub/rfam/rfam-11.0/
-	 logout
+ svn add all new files (see list of files you cp'ed above)
 
  Commit changes.
   svn commit
