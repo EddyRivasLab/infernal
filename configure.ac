@@ -80,7 +80,7 @@ INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://infernal.janelia.org/"
 INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
-INFERNAL_SADIR="hmmer/libdivsufsort"
+INFERNAL_SADIR="hmmer/lib/libdivsufsort"
 
 HMMER_DATE="October 2013"
 HMMER_COPYRIGHT="Copyright (C) 2013 Howard Hughes Medical Institute."
@@ -88,7 +88,7 @@ HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 HMMER_VERSION=i$PACKAGE_VERSION
 HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
-HMMER_SADIR="libdivsufsort"
+HMMER_SADIR="lib/libdivsufsort"
 
 EASEL_DATE="October 2013"
 EASEL_COPYRIGHT="Copyright (C) 2013 HHMI Janelia Farm Research Campus"
@@ -697,20 +697,37 @@ AC_CONFIG_FILES([documentation/Makefile])
 AC_CONFIG_FILES([documentation/manpages/Makefile])
 AC_CONFIG_FILES([documentation/userguide/Makefile])
 
-# HMMER files
-AC_CONFIG_FILES([hmmer/documentation/Makefile])
-AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
-AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
-AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
-AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
-AC_CONFIG_FILES([hmmer/libdivsufsort/Makefile])
-AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
-AC_CONFIG_HEADERS(hmmer/libdivsufsort/divsufsort.h)
+# following from HMMER's configure.ac
+#################################################################
+AC_CONFIG_FILES([
+  hmmer/documentation/Makefile 
+  hmmer/documentation/man/Makefile
+  hmmer/documentation/userguide/Makefile
+  hmmer/src/Makefile
+  hmmer/src/Makefile-subdirs.mk
+  hmmer/src/base/Makefile
+  hmmer/src/build/Makefile
+  hmmer/src/daemon/Makefile
+  hmmer/src/dp_reference/Makefile
+  hmmer/src/dp_sparse/Makefile
+  hmmer/src/dp_vector/Makefile
+  hmmer/src/experiments/Makefile
+  hmmer/src/misc/Makefile
+  hmmer/src/programs/Makefile
+  hmmer/src/sandbox/Makefile
+  hmmer/src/search/Makefile
+  hmmer/src/utilities/Makefile
+  hmmer/testsuite/Makefile
+  hmmer/benchmarks/Makefile
+  hmmer/benchmarks/profmark/Makefile
+  hmmer/benchmarks/speed/Makefile
+  hmmer/lib/libdivsufsort/Makefile
+])
 
-# the following incantation establishes a symlink of
-# src/impl_{whatever} to src/impl in the *build* directory.
-# Testsuite sqc tests rely on it.
-AC_CONFIG_LINKS([hmmer/src/impl:${ac_top_build_prefix}hmmer/src/impl_${impl_choice}])
+AC_CONFIG_HEADERS([
+  hmmer/src/p7_config.h
+  hmmer/lib/libdivsufsort/divsufsort.h
+])
 
 # Finally, build the top-level HMMER makefile (note: this is *not* built by HMMER's configure)
 AC_CONFIG_FILES([hmmer/Makefile])

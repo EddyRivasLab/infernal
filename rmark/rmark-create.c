@@ -41,6 +41,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_composition.h"
 #include "esl_distance.h"
 #include "esl_fileparser.h"
 #include "esl_getopts.h"
