@@ -1215,3 +1215,36 @@ This bug was fixed in the Infernal 1.1 release branch as of revision
 #### 
 ####  1.1 release: 22 October 2013
 ####
+
+ID              i41
+TITLE		cmconvert binary output failure on a network or piped
+STATUS          CLOSED
+XREF            /groups/eddy/home/nawrockie/notebook/14_0509_inf_cmconvert_bug
+REPORTED_BY     Eric Deveaud [Institut Pasteur]
+CLOSED_DATE     EPN, Fri May  9 08:39:29 2014
+DESCRIPTION    
+
+In certain situations binary output of a CM from cmconvert fails. Eric
+Deveaud gave two examples when he reported this (to
+infernal@janelia.hhmi.org):
+
+Case 1: 
+  ssh bic.pasteur.fr "cmconvert -b /test-suite/infernal/1.1/Vault.1p0.cm"  > /tmp/xxx.out
+  Fatal exception (source file cm_file.c, line 892):
+  failed to determine file position for p7 filter
+
+Case 2:
+  cmconvert -b ../../datas/infernal/Vault.1p0.cm | cat > /dev/null
+  Fatal exception (source file cm_file.c, line 892):
+  failed to determine file position for p7 filter
+
+The fix is to add an '-o' option to cmconvert and require it when the
+'-b' option is used, which was suggested by Eric when he reported it
+and is what I ended up doing to fix it.
+
+I did not add a script to the testsuite to test this bug because once
+the '-o' option was required with '-b' it became impossible to reproduce.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4664.
+//

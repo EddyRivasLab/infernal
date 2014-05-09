@@ -25,8 +25,9 @@ static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help on version and usage",                             0 },
   { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
+  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       "-o",       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
+  { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             0 },
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        0 },
   /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },*/
@@ -45,7 +46,7 @@ main(int argc, char **argv)
   char          *cmfile  = esl_opt_GetArg(go, 1);
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
-  FILE          *ofp     = stdout;
+  FILE          *ofp     = NULL;
   /*char          *outfmt  = esl_opt_GetString(go, "--outfmt");*/
   int            fmtcode = -1;	/* -1 = write the current default format */
   int            status;
@@ -62,6 +63,12 @@ main(int argc, char **argv)
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",                       status, cmfile, errbuf);  
+
+  /* open output file for writing, if nec */
+  if ( esl_opt_IsOn(go, "-o") ) {
+    if ((ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) ESL_FAIL(eslFAIL, errbuf, "Failed to open output file %s", esl_opt_GetString(go, "-o"));
+  } 
+  else ofp = stdout;
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
@@ -98,6 +105,8 @@ main(int argc, char **argv)
   else if (status != eslEOF)       cm_Fail("Unexpected error in reading CMs from %s\n%s",   cmfile, cmfp->errbuf);
 
   cm_file_Close(cmfp);
+
+  if(esl_opt_IsOn(go, "-o")) fclose(ofp); 
   esl_alphabet_Destroy(abc);
   esl_getopts_Destroy(go);
   return 0;
