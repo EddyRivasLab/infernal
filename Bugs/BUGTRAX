@@ -1221,7 +1221,7 @@ TITLE		cmconvert binary output failure on a network or piped
 STATUS          CLOSED
 XREF            /groups/eddy/home/nawrockie/notebook/14_0509_inf_cmconvert_bug
 REPORTED_BY     Eric Deveaud [Institut Pasteur]
-CLOSED_DATE     EPN, Fri May  9 08:39:29 2014
+CLOSED_DATE     EPN, Fri May  9 09:35:07 2014
 DESCRIPTION    
 
 In certain situations binary output of a CM from cmconvert fails. Eric
@@ -1238,13 +1238,19 @@ Case 2:
   Fatal exception (source file cm_file.c, line 892):
   failed to determine file position for p7 filter
 
-The fix is to add an '-o' option to cmconvert and require it when the
-'-b' option is used, which was suggested by Eric when he reported it
-and is what I ended up doing to fix it.
+The fix was in cm_file.c::cm_file_WriteBinary() which tries to save
+the file offset at which the p7 filter stored because this can be
+returned optionally to the caller. When the binary output is piped to
+cat or used in combination with an 'ssh' command this offset cannot be
+determined (for reasons I don't pretend to understand). 
+However, cmconvert's cm_file_WriteBinary() does not request this
+offset be returned so the code doesn't need to try to determine it. 
 
-I did not add a script to the testsuite to test this bug because once
-the '-o' option was required with '-b' it became impossible to reproduce.
+So, the fix is to check if the file offset for the fp7 is going to be
+returned before trying to determine it. Since it's not in cmconvert,
+we avoid trying to determine it and avoid the "Fatal exception"
+in the above examples.
 
 This bug was fixed in the Infernal 1.1 release branch as of revision
-4664.
+4666, and 4667 in the trunk.
 //

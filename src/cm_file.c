@@ -889,7 +889,12 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
    * fp7 was written if (! (cm->flags & CMH_FP7)) || cm->fp7 == NULL 
    */
   if(cm->flags & CMH_FP7 && cm->fp7 != NULL) { 
-    if((fp7_offset = ftello(fp)) == -1) ESL_EXCEPTION(eslEINVAL, "failed to determine file position for p7 filter");
+    if(opt_fp7_offset != NULL) { 
+      /* figure out offset only if we are returning it, otherwise it's irrelevant and can cause a failure
+       * in some cases (e.g. cmconvert -b test.cm | cat > /dev/null), this was bug i41
+       */
+      if((fp7_offset = ftello(fp)) == -1) ESL_EXCEPTION(eslEINVAL, "failed to determine file position for p7 filter");
+    }
     p7_hmmfile_WriteBinary(fp, -1, cm->fp7);
   }
   
