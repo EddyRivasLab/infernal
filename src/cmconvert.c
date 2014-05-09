@@ -25,7 +25,7 @@ static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help on version and usage",                             0 },
   { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       "-o",       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
+  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
   { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             0 },
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
