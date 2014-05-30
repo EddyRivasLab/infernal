@@ -3793,6 +3793,11 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   
  ERROR: 
   cm->tau = save_tau;
+  /* don't forget to thresh1 and thresh2 revert to their original values (not doing this was bug i42) */
+  if(cm->cp9b != NULL) { 
+    cm->cp9b->thresh1 = save_thresh1;
+    cm->cp9b->thresh2 = save_thresh2;
+  }
   *ret_sc      = IMPOSSIBLE;
   if(opt_envi    != NULL) *opt_envi = start;
   if(opt_envj    != NULL) *opt_envi = stop;

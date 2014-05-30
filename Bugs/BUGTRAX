@@ -1254,3 +1254,58 @@ in the above examples.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4666, and 4667 in the trunk.
 //
+
+ID              i42
+TITLE		HMM band values were not reset upon HMM banded matrix overflow
+STATUS          CLOSED
+XREF            /groups/eddy/home/nawrockie/notebook/14_0415_inf_cmsearch_hbmx_overflow_lsu_ssu_examples/00LOG
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Fri May 30 14:08:06 2014
+DESCRIPTION    
+
+In the integral cm_pipeline.c::pli_dispatch_cm_search() function, the
+HMM bands are calculated and tightened if necessary until the
+resulting matrix is below our maximum allowed size (typically 128 Mb).
+For the non-truncated case, the cp9bands_t 'tau' value is the only
+value that is changed during band tightening (tau is the amount of
+probability mass outside each band). However, in the truncated case 
+two additional parameters, generically called 'thresh1' and 'thresh2'
+are used to limit what types of marginal alignments (J, L, R, T) are
+allowed at each state. 'thresh1' is the probability threshold for
+calling a position 'maybe used', and 'thresh2' is the threshold for
+calling a position 'likely used'. (See
+hmmband.c::cp9_PredictStartAndEndPositions() for details on how these
+thresholds are used.) When bands are
+tightened for a truncated alignment, 'thresh1' and 'thresh2' can be
+modified in addition to 'tau' with the effect of shrinking the size of
+the required matrix in an attempt to get it under the maximum allowed
+size. 
+
+If, during this tightening of bands, a matrix is eventually determined
+that is below our maximum, we continue with that matrix and then
+(correctly) reset the tau, thresh1, and thresh2 values in the cm and
+cp9bands_t objects back to their original values before leaving
+pli_dispatch_cm_search().
+
+However (and this is the bug), if 'tau', 'thresh1' and 'thresh2' are
+all raised/lowered to their maxima/minima allowed and the matrix is
+still above our max allowed size, then we have what we call a 'matrix
+overflow', and the subsequence being evaluated is abandoned. A matrix
+overflow acts as an independent filtering stage, removing any hits for
+which we can't define a matrix within our allowed parameters for
+'tau', 'thresh1', 'thresh2' and our maximum allowed matrix size. In
+the case of an 'overflow' the 'tau' value of the cm is properly reset
+to its original value, but the 'thresh1' and 'thresh2' values of the
+cp9bands_t object were not being reset. Thus if a subsequent call to
+pli_dispatch_cm_search() was made, they would begin at their near
+maxima/minima values leftover from the previous call.
+
+The fix is simple: reset them to their original values in the event of
+a mx overflow.
+
+I did not add a test for this in the testsuite because a simple
+example of it would be very difficult to construct.
+
+This bug was fixed in the Infernal 1.1 release branch as of revision
+4676, and 4678 in the trunk.
+//
