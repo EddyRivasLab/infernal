@@ -131,25 +131,25 @@ static ESL_OPTIONS options[] = {
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set filters to defaults used for a search space of size <x> Mb", 6 },
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
-  /* name           type         default   env  range toggles   reqs   incomp                help                                                            docgroup*/
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "do not allow truncated hits at sequence termini",              7 },
-  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",         "allow truncated hits anywhere within sequences",               7 },
-  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn off the NULL3 post hoc additional null model",            7 },
-  { "--mxsize",     eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of alignment DP matrices to <x> Mb",      7 },
-  { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of search DP matrices to <x> Mb",         7 },
-  { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "use scanning CM CYK algorithm, not Inside in final stage",     7 },
-  { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "align hits with CYK, not optimal accuracy",                    7 },
-  { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb", "set W (expected max hit len) as <x> * cm->clen (model len)",   7 },
-  { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the top strand",                                   7 },
-  { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the bottom strand",                                7 },
-  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                 "assert target <seqdb> is in format <s>: no autodetection",     7 },
+  /* name           type         default   env  range toggles   reqs   incomp                help                                                              docgroup*/
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "do not allow truncated hits at sequence termini",                7 },
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"-g,--notrunc",         "allow truncated hits anywhere within sequences",                 7 },
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn off the NULL3 post hoc additional null model",              7 },
+  { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed alnment mx size to <x> Mb [df: autodetermined]", 7 },
+  { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                 "set max allowed size of search DP matrices to <x> Mb",           7 },
+  { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "use scanning CM CYK algorithm, not Inside in final stage",       7 },
+  { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "align hits with CYK, not optimal accuracy",                      7 },
+  { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb", "set W (expected max hit len) as <x> * cm->clen (model len)",     7 },
+  { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the top strand",                                     7 },
+  { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "only search the bottom strand",                                  7 },
+  { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                 "assert target <seqdb> is in format <s>: no autodetection",       7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                 "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",       7 },
+  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",              7 },
 #endif
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",              7 },  
-  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                               7 },
+  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",                     7 },  
+  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                                      7 },
 #endif
 
   /* All options below are developer options, only shown if --devhelp invoked */

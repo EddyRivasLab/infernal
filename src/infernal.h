@@ -92,6 +92,10 @@
 #define DEFAULT_MAXTAU              0.1            /* default cm->maxtau, max allowed tau value during HMM band tightening */
 #define DEFAULT_CP9BANDS_THRESH1    0.01           /* default for CP9Bands_t thresh1, if occ[k] > thresh1 HMM posn k 'maybe used'  */
 #define DEFAULT_CP9BANDS_THRESH2    0.98           /* default for CP9Bands_t thresh2, if occ[k] > thresh2 HMM posn k 'likely used' */
+#define DEFAULT_HB_MXSIZE_MAX_MB    512.           /* maximum for auto-determined maximum HMM banded matrix size */
+#define DEFAULT_HB_MXSIZE_MAX_W     3000.          /* a CM window size (cm->W) of this or higher results in max matrix size (DEFAULT_HB_MXSIZE_MAX_MB) */
+#define DEFAULT_HB_MXSIZE_MIN_MB    128.           /* minimum for auto-determined maximum HMM banded matrix size */
+#define DEFAULT_HB_MXSIZE_MIN_W     1000.          /* a CM window size (cm->W) of this or lower results in min matrix size (DEFAULT_HB_MXSIZE_MIN_MB) */
 
 /* Hard-coded values (not changeable by command-line options). 
  * All of these are related to HMM band tightening to reduce
@@ -2185,7 +2189,8 @@ typedef struct cm_pipeline_s {
   P7_DOMAINDEF   *ddef;		/* domain definition workflow               */
 
   /* miscellaneous parameters */
-  float         hb_size_limit;  /* maximum size in Mb allowed for HB alignment    */
+  float         mxsize_limit;   /* maximum size in Mb allowed for HB alignment           */
+  int           mxsize_set;     /* TRUE if mxsize_limit was set by user (default: FALSE) */
   int           be_verbose;     /* TRUE for verbose reporting mode          */
   int           do_top;         /* TRUE to do top    strand (usually TRUE)  */
   int           do_bot;         /* TRUE to do bottom strand (usually TRUE)  */

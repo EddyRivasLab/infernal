@@ -41,6 +41,7 @@ static int   pli_sum_statistics         (CM_PIPELINE *pli);
 static void  pli_copy_subseq            (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
 static char *pli_describe_pass          (int pass_idx); 
 static char *pli_describe_hits_for_pass (int pass_idx); 
+static float pli_mxsize_limit_from_W    (int W);
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -216,7 +217,14 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->ddef->do_reseeding = pli->do_reseeding;
 
   /* Miscellaneous parameters */
-  pli->hb_size_limit   = esl_opt_GetReal   (go, "--mxsize");
+  if(esl_opt_IsOn(go, "--mxsize")) { 
+    pli->mxsize_limit = esl_opt_GetReal(go, "--mxsize");
+    pli->mxsize_set   = TRUE;
+  }
+  else { 
+    pli->mxsize_limit = 0.;
+    pli->mxsize_set   = FALSE;
+  }  
   pli->do_top          = esl_opt_GetBoolean(go, "--bottomonly") ? FALSE : TRUE;
   pli->do_bot          = esl_opt_GetBoolean(go, "--toponly")    ? FALSE : TRUE;
   pli->be_verbose      = esl_opt_GetBoolean(go, "--verbose")    ? TRUE  : FALSE;
@@ -3710,16 +3718,17 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   float  save_thresh2     = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh2;
   float  hbmx_Mb = 0.;     /* approximate size in Mb for HMM banded matrix for this sequence */
   float  sc;               /* score returned from DP scanner */
+  float  mxsize_limit     = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
   
   /* printf("in pli_dispatch_cm_search(): do_trunc: %d do_inside: %d cutoff: %.1f env_cutoff: %.1f do_hbanded: %d hitlist?: %d opt_envi/j?: %d start: %" PRId64 " stop: %" PRId64 "\n", 
      do_trunc, do_inside, cutoff, env_cutoff, do_hbanded, (hitlist == NULL) ? 0 : 1, (opt_envi == NULL && opt_envj == NULL) ? 0 : 1, start, stop); */
 
   if(do_hbanded) { 
-    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, pli->hb_size_limit, 
+    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit, 
 				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
 				  pli->maxtau, &hbmx_Mb);
     if(status == eslERANGE) { 
-      /* HMM banded matrix exceeded pli->hb_size_limit with tau of
+      /* HMM banded matrix exceeded mxsize_limit with tau of
        * pli->maxtau. We kill this potential hit. The memory limit
        * is acting as a filter. This is the only filter that is 
        * used differently for different sized models. The bigger
@@ -3731,24 +3740,24 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       printf("pli_dispatch_cm_search(), error: %s\n", pli->errbuf); goto ERROR; 
     }
     else if(status == eslOK) { 
-      /* bands imply a matrix or size pli->hb_size_limit or smaller with tau == cm->tau <= pli->maxtau */
+      /* bands imply a matrix or size mxsize_limit or smaller with tau == cm->tau <= pli->maxtau */
       if(do_trunc) { /* HMM banded, truncated */
 	if(do_inside) { 
-	  status = FTrInsideScanHB(cm, pli->errbuf, cm->trhb_mx, pli->hb_size_limit, pli->cur_pass_idx, dsq, start, stop,
+	  status = FTrInsideScanHB(cm, pli->errbuf, cm->trhb_mx, mxsize_limit, pli->cur_pass_idx, dsq, start, stop,
 				   cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
 	}
 	else { 
-	  status = TrCYKScanHB(cm, pli->errbuf, cm->trhb_mx, pli->hb_size_limit, pli->cur_pass_idx, dsq, start, stop,
+	  status = TrCYKScanHB(cm, pli->errbuf, cm->trhb_mx, mxsize_limit, pli->cur_pass_idx, dsq, start, stop,
 			       cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
 	}
       }
       else { /* HMM banded, not truncated */
 	if(do_inside) { 
-	  status = FastFInsideScanHB(cm, pli->errbuf, cm->hb_mx, pli->hb_size_limit, dsq, start, stop,
+	  status = FastFInsideScanHB(cm, pli->errbuf, cm->hb_mx, mxsize_limit, dsq, start, stop,
 				     cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
 	else { 
-	  status = FastCYKScanHB(cm, pli->errbuf, cm->hb_mx, pli->hb_size_limit, dsq, start, stop,
+	  status = FastCYKScanHB(cm, pli->errbuf, cm->hb_mx, mxsize_limit, dsq, start, stop,
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
       }
@@ -3835,6 +3844,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
   ESL_SQ        *sq2aln = NULL;    /* copy of the hit, req'd by DispatchSqAlignment() */
   ESL_STOPWATCH *watch  = NULL;    /* stopwatch for timing alignment step */
   float          null3_correction; /* null 3 bit score penalty, for CYK score */
+  float          mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
 
   if(cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, pli->errbuf, "pli_align_hit() cm->cmcons is NULL");
 
@@ -3862,7 +3872,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
     if(! (cm->align_opts & CM_ALIGN_POST)) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() using HMM bands but CM_ALIGN_POST is down"); 
 
     /* compute the HMM banded alignment */
-    status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
+    status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,
 				 TRUE, /* TRUE: cp9b bands are valid, don't recalc them */
 				 NULL, NULL, NULL, &adata);
     if(status != eslOK && status != eslERANGE) { 
@@ -3876,7 +3886,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
       /* Note that we double max matrix size in next call to be safe,
        * this should be overkill because we know that our Inside
        * search stage using the same bands was able to use a matrix
-       * less than pli->hb_size_limit. If we can't do it now in twice
+       * less than mxsize_limit. If we can't do it now in twice
        * that, something has gone horribly wrong. (Note that the
        * required matrix size will be bigger than for an Inside scan,
        * because of the required shadow matrix, but that's roughly 25%
@@ -3884,7 +3894,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
        * alignment should never exceed twice what the Inside scan
        * required.)
        */
-      status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, 2*pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
+      status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, 2*mxsize_limit, hit->mode, pli->cur_pass_idx,
 				   TRUE, /* TRUE: cp9b bands are valid, don't recalc them */
 				   NULL, NULL, NULL, &adata);
       if (status == eslERANGE) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() alignment HB retry mx too big, this shouldn't happen");
@@ -3895,7 +3905,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
   }
   else { /* do non-HMM-banded alignment (! (cm->align_opts & CM_ALIGN_HBANDED)) */
     esl_stopwatch_Start(watch);
-    if((status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, pli->hb_size_limit, hit->mode, pli->cur_pass_idx,
+    if((status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,
 				     FALSE, NULL, NULL, NULL, &adata)) != eslOK) goto ERROR;
     pli->acct[pli->cur_pass_idx].n_aln_dccyk++;
     esl_stopwatch_Stop(watch);
@@ -4112,6 +4122,38 @@ pli_describe_hits_for_pass(int pass_idx)
   default: cm_Fail("bogus pipeline pass index %d\n", pass_idx); break;
   }
   return "";
+}
+
+/* Function:  pli_mxsize_limit_from_W()
+ * Date:      EPN, Fri May 30 15:28:04 2014
+ *
+ * Purpose:   Determine the HMM banded matrix size limit dependent on
+ *            W. This is used separately for each model in the pipeline
+ *            unless the user set --mxsize in 'cmsearch' or 'cmscan'.
+ * 
+ * Args:      W: cm->W, the window length for the current CM
+ *
+ * Returns:   the maximum matrix size for the given W.
+ */
+float 
+pli_mxsize_limit_from_W(int W)
+{
+  float mxsize;
+
+  mxsize  = (float) W - (float) DEFAULT_HB_MXSIZE_MIN_W;
+  mxsize /= (float) DEFAULT_HB_MXSIZE_MAX_W  - (float) DEFAULT_HB_MXSIZE_MIN_W;
+  mxsize *= (float) DEFAULT_HB_MXSIZE_MAX_MB - (float) DEFAULT_HB_MXSIZE_MIN_MB;
+  mxsize += (float) DEFAULT_HB_MXSIZE_MIN_MB;
+
+  /* at this point, mxsize is probably less than the minimum allowed (DEFAULT_HB_MXSIZE_MIN_MB)
+   * (depending on what that's set to). It may even be a negative number! So it's important
+   * to enforce the minimum and maximum here.
+   */
+  mxsize = ESL_MIN(mxsize, DEFAULT_HB_MXSIZE_MAX_MB);
+  mxsize = ESL_MAX(mxsize, DEFAULT_HB_MXSIZE_MIN_MB);
+
+  /*printf("in mxsize_limit_from_W(): W: %d returning %.3f\n", W, mxsize);*/
+  return mxsize;
 }
 
 #if 0
