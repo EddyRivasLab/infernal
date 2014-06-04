@@ -55,6 +55,7 @@
 #include "esl_sqio.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
+#include "esl_msaweight.h"
 
 static char banner[] = "construct a rmark benchmark profile training/test set";
 static char usage1[]  = "[options] <basename> <msafile> <hmmfile>";
@@ -208,7 +209,10 @@ main(int argc, char **argv)
   double        avgid;
   void         *ptr;
   int           i, traini, testi;
-  
+  double        pctid;
+  ESL_SQ       *train_consensus;
+  char         *tmpstr;
+
   /* Parse command line */
   go = esl_getopts_Create(options);
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK) cmdline_failure(argv[0], "Failed to parse command line: %s\n", go->errbuf);
@@ -252,9 +256,6 @@ main(int argc, char **argv)
 
   if (cfg.max_ntest>0  && cfg.max_ntest  < cfg.min_ntest)   esl_fatal("Conflict between -E and --maxtest");
   if (cfg.max_ntrain>0 && cfg.max_ntrain < cfg.min_ntrain)  esl_fatal("Conflict between -R and --maxtrain");
-
-
-
   /* Open the output files */ 
   if (snprintf(outfile, 256, "%s.msa", basename) >= 256)   esl_fatal("Failed to construct output MSA file name");
   if ((cfg.out_msafp = fopen(outfile, "w"))      == NULL)  esl_fatal("Failed to open MSA output file %s\n", outfile);
@@ -374,7 +375,7 @@ main(int argc, char **argv)
 
 
 
-      if ((ntestseq >= cfg.min_ntest) && (ntrainseq >= cfg.min_ntrain)) { 
+      if ((ntestseq >= cfg.min_ntest) && (ntrainseq >= cfg.min_ntrain)) {
         /* We have a valid train/test set, that either satisfied
          * test 1 in separate_sets() or satisfied test 2 from
          * find_sets().  Extract and write out the training alignment. */
@@ -386,31 +387,6 @@ main(int argc, char **argv)
         fprintf(cfg.tblfp, "%-20s  %3.0f%% %6d %6d %6d %6d %6d\n", msa->name, 100.*avgid, (int) trainmsa->alen, msa->nseq, nfrags, trainmsa->nseq, ntestseq);
         nali++;
 
-        /* Save the positive test sequences, we'll embed these
-         * in the long test sequences later */
-        if(npos > 0) { ESL_RALLOC(posseqs, ptr, sizeof(ESL_SQ *) * (npos + ntestseq)); }
-        else         { ESL_ALLOC (posseqs,      sizeof(ESL_SQ *) * ntestseq); }
-        for(i = 0; i < msa->nseq; i++) {
-          if(i_am_test[i]) {
-            esl_sq_FetchFromMSA(msa, i, &(posseqs[npos]));
-            poslen_total += posseqs[npos]->n;
-            /* Sequence description is set as a concatenation of the
-             * family name and the sequence index in this family,
-             * separated by a '/', which never appears in an Rfam
-             * name. For example: "tRNA/3" for the third tRNA.
-             */
-            esl_sq_FormatDesc(posseqs[npos], "%s/%d", msa->name, npos_this_msa+1);
-            /* Write the sequence to the positives-only output file, and its info the positives-only table */
-            esl_sqio_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
-            fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8d %8" PRId64 "\n",
-              posseqs[npos]->desc,  /* description, this has been set earlier as the msa name plus seq idx (e.g. "tRNA/3" for 3rd tRNA in the set)   */
-              posseqs[npos]->name,  /* positive sequence name (from input MSA) */
-              posseqs[npos]->name,  /* again, positive sequence name (from input MSA) */
-              1, posseqs[npos]->n); /* start, stop */
-            npos++;
-            npos_this_msa++;
-          }
-        }
         if(cfg.tfp != NULL) {
           /* output 2 more alignments per family:
            * 1. training alignment with seqs renamed as "TRAIN.<fam>.<i>"
@@ -434,11 +410,59 @@ main(int argc, char **argv)
           esl_msa_FormatName(tmpmsa, "TRAIN.%s", msa->name);
           eslx_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
 
+
+          /* capture the consensus of the msa into train_consensus, for use in calculating pct_id later */
+          status = esl_msaweight_PB(tmpmsa);
+          ESL_REALLOC(tmpstr, msa->alen + 1 );
+          esl_msa_ReasonableRF(tmpmsa, 0.5, TRUE, tmpstr);
+          train_consensus = esl_sq_CreateFrom(msa->name, tmpstr, msa->name, msa->name, NULL);
+          esl_sq_Digitize(msa->abc, train_consensus);
+
           /* Output test subset */
           if ((status = esl_msa_SequenceSubset(msa, i_am_test, &tmpmsa)) != eslOK) goto ERROR;
           esl_msa_FormatName(tmpmsa, "TEST.%s", msa->name);
           eslx_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
           esl_msa_Destroy(tmpmsa);
+        }
+
+
+        /* Save the positive test sequences, we'll embed these
+         * in the long test sequences later */
+        if(npos > 0) { ESL_RALLOC(posseqs, ptr, sizeof(ESL_SQ *) * (npos + ntestseq)); }
+        else         { ESL_ALLOC (posseqs,      sizeof(ESL_SQ *) * ntestseq); }
+        for(i = 0; i < msa->nseq; i++) {
+          if(i_am_test[i]) {
+            esl_sq_FetchFromMSA(msa, i, &(posseqs[npos]));
+            poslen_total += posseqs[npos]->n;
+            /* Sequence description is set as a concatenation of the
+             * family name and the sequence index in this family,
+             * separated by a '/', which never appears in an Rfam
+             * name. For example: "tRNA/3" for the third tRNA.
+             */
+            esl_sq_FormatDesc(posseqs[npos], "%s/%d", msa->name, npos_this_msa+1);
+            /* Write the sequence to the positives-only output file, and its info the positives-only table */
+            esl_sqio_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
+
+            if(cfg.tfp != NULL) {
+
+              esl_dst_XPairId(msa->abc, train_consensus->dsq, msa->ax[i], &pctid, NULL, NULL);
+
+              fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8d %8" PRId64 " %.0f\n",
+              posseqs[npos]->desc,  /* description, this has been set earlier as the msa name plus seq idx (e.g. "tRNA/3" for 3rd tRNA in the set)   */
+              posseqs[npos]->name,  /* positive sequence name (from input MSA) */
+              posseqs[npos]->name,  /* again, positive sequence name (from input MSA) */
+              1, posseqs[npos]->n,  /* start, stop */
+              100*pctid);
+            } else {
+              fprintf(cfg.ppossummfp, "%-35s %-35s %-35s %8d %8" PRId64 "\n",
+              posseqs[npos]->desc,  /* description, this has been set earlier as the msa name plus seq idx (e.g. "tRNA/3" for 3rd tRNA in the set)   */
+              posseqs[npos]->name,  /* positive sequence name (from input MSA) */
+              posseqs[npos]->name,  /* again, positive sequence name (from input MSA) */
+              1, posseqs[npos]->n); /* start, stop */
+            }
+            npos++;
+            npos_this_msa++;
+          }
         }
       }
       if(i_am_train != NULL) free(i_am_train);
@@ -448,6 +472,7 @@ main(int argc, char **argv)
       esl_msa_Destroy(origmsa);
       esl_msa_Destroy(msa);
   }
+
   if (status != eslEOF)           eslx_msafile_ReadFailure(afp, status);
   else if (nali   == 0)           esl_fatal("No alignments found in file %s\n", alifile);
 
@@ -474,6 +499,10 @@ main(int argc, char **argv)
   esl_alphabet_Destroy(cfg.abc);
   eslx_msafile_Close(afp);
   esl_getopts_Destroy(go);
+
+  if (train_consensus != NULL) esl_sq_Destroy(train_consensus);
+  if (tmpstr          != NULL) free(tmpstr);
+
   return 0;
 
  ERROR:
