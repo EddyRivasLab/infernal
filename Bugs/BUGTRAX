@@ -1309,3 +1309,51 @@ example of it would be very difficult to construct.
 This bug was fixed in the Infernal 1.1 release branch as of revision
 4676, and 4678 in the trunk.
 //
+
+ID              i43
+TITLE		Rare large optimally accurate parsetrees used illegal local begins
+STATUS          CLOSED
+XREF            /groups/eddy/home/nawrockie/notebook/14_0624_inf_parsetree_bug/00LOG
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Fri Jul 18 13:04:48 2014
+DESCRIPTION    
+
+
+The cm_dpalign.c:cm_OptAccAlign() and cm_OptAccAlignHB() functions
+were not first checking if a local begin out of state v was impossible
+before considering it. Thus, it was posssible for a optimally accurate
+parsetree to have a local begin that was supposed to be
+impossible. This had downstream implications, because it violated an
+assumption made by cm_parsetree.c:ParsetreeToCMBounds() that the first
+and final consensus positions that are 'spanned' and that emit
+residues are identical (see the function for more details, this
+assumption holds if only legal local begins exist in a parsetree).
+The code in ParsetreeToCMBounds() actually checks that this assumption
+holds, and if not the program exits with an error message.
+
+I only have witnessed this bug with a Eukaryotic LSU model, which is
+the largest model thus far tested (about 3400 consensus positions),
+and even with Euk LSU it only happens very rarely (3 times in about 1
+million hits in RFAMSEQ12).
+
+The fix is simple, add a manual check to make sure state 'v' is a
+legal local begin state before allowing it to become a local begin in
+an optimally accurate parsetree, if it's not a legal local begin
+state, then don't allow a local begin.
+
+In the notebook dir where I investigated this bug:
+/groups/eddy/home/nawrockie/notebook/14_0624_inf_parsetree_bug/, I
+also went through some trouble to convince myself the cm_OptAccAlign*
+functions are working as I thought they were and doing what they
+should be (they are and they do). Also I did some investigations into
+how often the round-off errors caused by using a lookup-table for
+dealing with summing log probabilities in log space fast causes a
+change in the alignment versus a slower, more robust solution that
+does not use a look-up table, but rather uses expensive log() and
+exp() calls. The answer is that it does affect alignments,
+unavoidably, but that the frequency/severity with which OptAccAlign
+alignments are affected by the logsum lookup table is comparable to
+the frequency/severity with which CYK alignments are affected -- so
+there's not something about OptAcc alignments that makes more prone to
+errors due to the lookup - which I was concerned about.
+//

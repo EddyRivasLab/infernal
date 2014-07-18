@@ -3341,7 +3341,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 #if eslDEBUGLEVEL >= 1
       if((status = cp9_ValidateBands(cm, pli->errbuf, cm->cp9b, es[i], ee[i], cm_pli_PassAllowsTruncation(pli->cur_pass_idx))) != eslOK) return status;
       ESL_DPRINTF1(("original bands validated.\n"));
-      if((status = cp9_ValidateBands(cm, pli->errbuf, scan_cp9b, es[i], ee[i], cm_pli_PassAllowsTrunction(pli->cur_pass_idx)) != eslOK) return status;
+      if((status = cp9_ValidateBands(cm, pli->errbuf, scan_cp9b, es[i], ee[i], cm_pli_PassAllowsTruncation(pli->cur_pass_idx))) != eslOK) return status;
       ESL_DPRINTF1(("cloned bands validated.\n"));
 #endif
     }

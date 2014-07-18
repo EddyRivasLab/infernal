@@ -2105,7 +2105,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
   if(ret_sc != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_InsideAlignHB() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("cm_InsideAlignHB() return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -2443,7 +2443,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
       }
     }
     /* allow local begins, if nec */
-    if(cm->flags & CMH_LOCAL_BEGIN) {
+    if((cm->flags & CMH_LOCAL_BEGIN) && (NOT_IMPOSSIBLE(cm->beginsc[v]))) {
       if (alpha[v][L][L] > bsc) {
 	b   = v;
 	bsc = alpha[v][L][L];
@@ -2881,7 +2881,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       }
     }
     /* allow local begins, if nec */
-    if(cm->flags & CMH_LOCAL_BEGIN) {
+    if((cm->flags & CMH_LOCAL_BEGIN) && (NOT_IMPOSSIBLE(cm->beginsc[v]))) {
       if(L >= jmin[v] && L <= jmax[v]) { 
 	jp_v = L - jmin[v];
 	Lp   = L - hdmin[v][jp_v];

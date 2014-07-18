@@ -68,6 +68,7 @@
 1 exercise  bug/i37-bandshift        !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
 1 exercise  bug/i38-mapali-noss      !testsuite/bug-i38.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i39-build-O-0bp      !testsuite/bug-i39.pl! @src/cmbuild@
+1 exercise  bug/i43-oa-loc-beg       !testsuite/bug-i43.pl! @src/cmsearch@ !testsuite/bug-i43.cm! !testsuite/bug-i43.fa!
 
 ################################################################
 # Option tests
