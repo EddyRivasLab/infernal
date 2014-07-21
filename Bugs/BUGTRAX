@@ -1341,19 +1341,4 @@ legal local begin state before allowing it to become a local begin in
 an optimally accurate parsetree, if it's not a legal local begin
 state, then don't allow a local begin.
 
-In the notebook dir where I investigated this bug:
-/groups/eddy/home/nawrockie/notebook/14_0624_inf_parsetree_bug/, I
-also went through some trouble to convince myself the cm_OptAccAlign*
-functions are working as I thought they were and doing what they
-should be (they are and they do). Also I did some investigations into
-how often the round-off errors caused by using a lookup-table for
-dealing with summing log probabilities in log space fast causes a
-change in the alignment versus a slower, more robust solution that
-does not use a look-up table, but rather uses expensive log() and
-exp() calls. The answer is that it does affect alignments,
-unavoidably, but that the frequency/severity with which OptAccAlign
-alignments are affected by the logsum lookup table is comparable to
-the frequency/severity with which CYK alignments are affected -- so
-there's not something about OptAcc alignments that makes more prone to
-errors due to the lookup - which I was concerned about.
 //
