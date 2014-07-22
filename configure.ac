@@ -44,7 +44,7 @@
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it.
 AC_PREREQ(2.63)
-AC_INIT(Infernal, 1.1, nawrockie@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 1.1.1, nawrockie@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 # remember if the user is overriding CFLAGS
@@ -73,8 +73,8 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="October 2013"
-INFERNAL_COPYRIGHT="Copyright (C) 2013 Howard Hughes Medical Institute."
+INFERNAL_DATE="July 2014"
+INFERNAL_COPYRIGHT="Copyright (C) 2014 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://infernal.janelia.org/"
@@ -82,16 +82,16 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="October 2013"
-HMMER_COPYRIGHT="Copyright (C) 2013 Howard Hughes Medical Institute."
+HMMER_DATE="July 2014"
+HMMER_COPYRIGHT="Copyright (C) 2014 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 HMMER_VERSION=i$PACKAGE_VERSION
 HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="October 2013"
-EASEL_COPYRIGHT="Copyright (C) 2013 HHMI Janelia Farm Research Campus"
+EASEL_DATE="July 2014"
+EASEL_COPYRIGHT="Copyright (C) 2014 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_VERSION="i$PACKAGE_VERSION"
 EASEL_URL="http://bioeasel.org/"
@@ -333,17 +333,17 @@ if test "$impl_choice" = "none"; then
 fi
 
 if test "$impl_choice" = "none"; then
-  AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
   AC_MSG_ERROR([It appears your platform has neither and will not support Infernal.])
 fi
 
 if test "$impl_choice" = "sse" && test "$enable_sse" = "no"; then
-  AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
   AC_MSG_WARN([Your platform supports only SSE, but you have disabled it.])
   AC_MSG_ERROR([You must reconfigure without disabling SSE for Infernal to build.])
 fi
 if test "$impl_choice" = "vmx" && test "$enable_vmx" = "no"; then
-  AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
   AC_MSG_WARN([Your platform supports only VMX, but you have disabled it.])
   AC_MSG_ERROR([You must reconfigure without disabling VMX for Infernal to build.])
 fi
@@ -555,7 +555,7 @@ vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
       INFERNAL_IMPLDIR=""
       ;;
 
-*)    AC_MSG_WARN([Infernal 1.1 requires VMX or SSE capability for parallel instructions.])
+*)    AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
       AC_MSG_ERROR([Unable to use vector instructions (SSE or VMX).])
       ;;
 esac
