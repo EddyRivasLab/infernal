@@ -286,7 +286,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    svn export https://svn.janelia.org/eddylab/eddys/src/infernal/trunk infernal-${INFERNAL_VERSION}
 
   or: Export a major or minor release from its branch
-   svn export https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1 infernal-${INFERNAL_VERSION}
+   svn export https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1 infernal-${INFERNAL_VERSION}   
 
    cd infernal-${INFERNAL_VERSION}
    autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
@@ -298,6 +298,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   1.1rc3: exported 4478/871
   1.1rc4: exported 4498/874
   1.1:    exported 4547/889
+  1.1.1:  exported 4710/917
 
 * Check that svn has file permissions right. 
   Both of these should have no output.
@@ -346,6 +347,11 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
 * compile documentation
    cd documentation/userguide
+
+   *** NOTE: for 1.1.1 release I had to modify the documentation/userguide/Makefile here to point to Sean's 'rman':
+       'RMAN          = /groups/eddy/home/eddys/sw/Linux/bin/rman'. I'm not sure why I had to do this for 1.1.1
+       but not for 1.1?
+
    make
    mv Userguide.pdf ../../Userguide.pdf
    cd ../..
@@ -404,9 +410,9 @@ Delete TO-DO sections and clean up for public consumption.
    1.1rc3: 19.2 Mb (gzipped)
    1.1rc4: 19.2 Mb (gzipped)
    1.1:    19.2 Mb (gzipped)
+   1.1.1:  19.5 Mb (gzipped) added large testsuite/bug-i43.cm file
 
 All subsequent tests are on this source distro.
-
 
 ================================================================
 = Build for testing
@@ -434,6 +440,8 @@ On login-eddy (our compile host):
   make check      >> build.out	 2>&1
   make devcheck   >> build.out	 2>&1
 
+1 line: ../configure > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
+
   ssh login-eddy
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-icc-mpi
@@ -442,10 +450,13 @@ On login-eddy (our compile host):
   ../configure CC=icc LDFLAGS=-static-intel --enable-mpi   > build.out  2>&1
   make            >> build.out  2>&1
   make dev        >> build.out  2>&1
+  make check      >> build.out  2>&1
   make devcheck   >> build.out  2>&1
 
+1 line: setup_icc_intel64; ../configure CC=icc LDFLAGS=-static-intel --enable-mpi > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
+
   ssh login-eddy
-  qlogin -pe batch=16
+  qlogin -pe batch 16
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-cluster-gcc
   cd build-cluster-gcc
@@ -455,10 +466,10 @@ On login-eddy (our compile host):
   make check      >> build.out	 2>&1
   make devcheck   >> build.out	 2>&1
 
+1 line: ../configure > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
+
   ssh login-eddy
-  qlogin -l excl=true -l old=true
-     NOTE: this will likely become 'qlogin -pe batch 16' with new
-           cluster on 06.17.13
+  qlogin -pe batch 16
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-cluster-icc-mpi
   cd build-cluster-icc-mpi
@@ -466,7 +477,10 @@ On login-eddy (our compile host):
   ../configure CC=icc LDFLAGS=-static-intel --enable-mpi   > build.out  2>&1
   make            >> build.out  2>&1
   make dev        >> build.out  2>&1
+  make check      >> build.out  2>&1
   make devcheck   >> build.out  2>&1
+
+1 line: setup_icc_intel64; ../configure CC=icc LDFLAGS=-static-intel --enable-mpi > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
 
 ================================================================
 = Build and check on all compile farm nodes
@@ -590,6 +604,7 @@ leaks or errors.
       build-cluster-gcc and build-icc-mpi to build-cluster-icc-mpi
 
   sh tests-slow-oldversion.sh 
+
 Wait for these to finish (about 3 hours)
   sh regressify-slow.sh 
   sh regressify-slow-oldversion.sh
@@ -600,7 +615,7 @@ Make sure all diff output includes only expected differences.
   emacs tests-fast-valgrind.diff
   emacs tests-slow.diff
 
-Make sure all err-files/* and err-oldversion-files/* are empty.
+Make sure all err-files/* and err-oldversion-files/* (besides valg.*err) are empty.
 
 Remember to test on both builds (gcc and icc-mpi), the scripts above
 already do this, except for the valgrind ones.
@@ -650,15 +665,19 @@ Wait for all jobs to finish (about 30 minutes, if cluster is nearly empty)
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-symlink.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-all.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-pp.sh ./
-Edit version number in do-symlink.sh, do-all.sh, do-pp.sh
+Edit version number (may not be necessary) in do-symlink.sh, do-all.sh, do-pp.sh
      emacs do-symlink.sh     
      emacs do-all.sh
      emacs do-pp.sh
      sh do-symlink.sh
 
 NOTE: as of 1.1, do-all.sh won't work as written b/c new cluster
-doesn't accept "-l excl=true" flag. For 1.1 release Rob Lines
-qalter'd the jobs so they went through after about 12h of waiting.        
+doesn't accept "-l excl=true" flag. To fix it, copy the old
+~/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-master.pl
+to the current dir to ./tmp-rmark-master.pl, then replace
+'-l excl=true' to '-pe batch 16' (if the cluster still has 16
+CPUs per node), then modify do-all.sh so it calls tmp-rmark-master.pl
+instead of ~/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-master.pl.
 
      sh do-all.sh 
 Wait for jobs to finish (approximately 20 min)
@@ -702,7 +721,7 @@ warning:
 If this gets resolved in the future, we may go back to distributing
 binaries built with icc (64 and 32).
 
-The lcilkrts is still a problem as of 1.1rc4 (June 26 2013)
+The lcilkrts is still a problem as of 1.1.1 (July 23 2014)
 
 Note: the configure call differs from the one Sean uses in hmmer. I
 specify --prefix. If I don't do that I get a 'make install' error
@@ -751,13 +770,11 @@ macosx-intel build (on Sean's desktop):
   tar zxf ~/releases/infernal-${INFERNAL_VERSION}.tar.gz
   mv infernal-${INFERNAL_VERSION} infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   cd infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+  mkdir binaries
 
   mkdir build-${INFERNAL_DISTRO}
   cd build-${INFERNAL_DISTRO}
-  ../configure \
-   --bindir=${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}/binaries \
-   --prefix=${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO} \
-   > ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-${INFERNAL_DISTRO}.out  2>&1
+  ../configure --bindir=${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}/binaries --prefix=${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO} > ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-${INFERNAL_DISTRO}.out  2>&1
   make                             >> ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-${INFERNAL_DISTRO}.out   2>&1
   make dev                         >> ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-${INFERNAL_DISTRO}.out   2>&1
   make check                       >> ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-${INFERNAL_DISTRO}.out   2>&1
@@ -773,40 +790,42 @@ macosx-intel build (on Sean's desktop):
 
 
 cygwin (on a Windows VM):
-  Open up VM on MacBook pro via VirtualBox, see Nov 12 email from
-    Travis Wheeler to my gmail address, or notes in
-    13_1205_inf_1p1_windows_cygwin/00LOG'
+  Copy tarball of src release to ssh.janelia.org so I can get it onto my cygwin virtual machine
+    scp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz nawrockie@ssh.janelia.org:~/
+
+  Open up VM entitled 'IE11 - Win7' on MacBook pro via VirtualBox, see Nov 12 email from
+    Travis Wheeler to my gmail address, or notes in 13_1205_inf_1p1_windows_cygwin/00LOG'
   
-  (NOTE: this was done post-1.1 release on Dec 5, 2013, I didn't use
-  variables and did this on my MacBook pro in a windows VM)
+  (NOTE: this was done without variables, and was
+   done on my MacBook pro in a windows VM)
   
   from cygwin home:
   cd ~/notebook/13_1205_inf_1p1_windows_cygwin
   pwd
-    /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin
+    /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin
   mkdir Distros
   cd Distros
-  cp /cygdrive/c/Users/IEUser/Downloads/infernal-1.1.tar.gz .
+  scp nawrockie@ssh.janelia.org:~/infernal-1.1.1.tar.gz .
 
-  gunzip infernal-1.1.tar.gz
-  tar xf infernal-1.1.tar
-  mv infernal-1.1 infernal-1.1-cygwin
-  cd infernal-1.1-cygwin
+  gunzip infernal-1.1.1.tar.gz
+  tar xf infernal-1.1.1.tar
+  mv infernal-1.1.1 infernal-1.1.1-cygwin
+  cd infernal-1.1.1-cygwin
   mkdir build-cygwin
   cd build-cygwin
   ../configure \
-   --bindir=/home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin/binaries \
-   --prefix=/home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin \
-   > /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out
+   --bindir=/home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/infernal-1.1.1-cygwin/binaries \
+   --prefix=/home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/infernal-1.1.1-cygwin \
+   > /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out
 
-  make           > /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
-  make dev      >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
-  make check    >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
-  make install  >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1
-  (cd easel/miniapps; make install >> /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out 2>&1)
-  rm -rf /home/IEUser/notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin/share
+  make          >> /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out 2>&1
+  make dev      >> /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out 2>&1
+  make check    >> /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out 2>&1
+  make install  >> /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out 2>&1
+  (cd easel/miniapps; make install >> /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out 2>&1)
+  rm -rf /home/IEUser/notebook/14_0723_inf_1p1p1_cygwin/Distros/infernal-1.1.1-cygwin/share
 
- Look at build-infernal-1.1-cygwin.out.
+ Look at build-infernal-1.1.1-cygwin.out.
 
   cd ..
   rm -rf build-cygwin
@@ -816,21 +835,21 @@ cygwin (on a Windows VM):
  one I made in Dec 2013 for v1.1 as an example.   
 
   emacs binaries/00README-cygwin-binaries.txt
-  tar cf infernal-1.1-cygwin.tar  infernal-1.1-cygwin
-  gzip infernal-1.1-cygwin.tar
+  tar cf infernal-1.1.1-cygwin.tar  infernal-1.1.1-cygwin
+  gzip infernal-1.1.1-cygwin.tar
   
 Look at the build output for these three distros and make sure
 everything looks normal and all tests pass:
   emacs ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-linux-intel-gcc.out
   emacs ${INFERNAL_RELEASE_NOTEBOOK}/Distros/build-macosx-intel.out
   ON MACBOOK PRO:
-    emacs notebook/13_1205_inf_1p1_windows_cygwin/Distros/build-infernal-1.1-cygwin.out
+    emacs notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out
 
 Test these Distro tarballs:
 
 linux-intel-gcc: ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz
 macosx-intel:    ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz
-cygwin:          notebook/13_1205_inf_1p1_windows_cygwin/Distros/infernal-1.1-cygwin.tar.gz
+cygwin:          notebook/14_0723_inf_1p1p1_cygwin/Distros/infernal-1.1.1-cygwin.tar.gz
 
 Copy linux-intel-gcc to a new directory on your home dir on login-eddy
 and test it with some anecdotal tets.
@@ -861,7 +880,9 @@ Copy cygwin to another virtual machine or windows machine and test it.
   cp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz ./selab/software/infernal/
   cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz ./selab/software/infernal/
   cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz ./selab/software/infernal/
-  
+  cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-cygwin.tar.gz ./selab/software/infernal/
+  cp ${INFERNAL_RELEASE_NOTEBOOK}/00README-cygwin-binaries.txt ./selab/software/infernal/
+
  update symlink:
   cd ./selab/software/infernal
   rm infernal.tar.gz
@@ -887,13 +908,13 @@ Copy cygwin to another virtual machine or windows machine and test it.
 
    svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1\
             https://svn.janelia.org/eddylab/eddys/src/infernal/tags/${INFERNAL_VERSION}\
-            -m "tagged 1.1 release, from 1.1 branch"          
+            -m "tagged 1.1.1 release, from 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/src/hmmer/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/src/hmmer/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged HMMER for Infernal 1.1 release, from Infernal 1.1 branch"          
+            -m "tagged HMMER for Infernal 1.1.1 release, from Infernal 1.1 branch"          
    svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.1\
             https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/${INFERNAL_VERSION}\
-            -m "tagged Easel for Infernal 1.1 release, from Infernal 1.1 branch"          
+            -m "tagged Easel for Infernal 1.1.1 release, from Infernal 1.1 branch"          
 
    1.1rc1: svn 4131 hmmer:4132 easel:775
    1.1rc2: svn 4343 hmmer:4344 easel:835
@@ -902,6 +923,7 @@ Copy cygwin to another virtual machine or windows machine and test it.
    1.1:    svn 4549 hmmer:4550 easel:890 
    (made mistake and didn't replace version # for 1.1, so r4549
    erroneously says 'tagged 1.1rc4 release, from 1.1 branch')
+   1.1.1:  svn 4711 hmmer:4712 easel:918
 
 * Merge the branch's changes back to the trunk
   (This section is more verbose here than in the hmmer 00CHECKLIST. I
@@ -927,7 +949,7 @@ Copy cygwin to another virtual machine or windows machine and test it.
 
    cd ~/src/wd-infernal
    svn update
-   svn merge -r 4523:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
+   svn merge -r 4707:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.1
    svn commit
     
   If you're doing a major release on a new stable branch:
@@ -1016,3 +1038,4 @@ Release history
 1.1rc3 - EPN, Tue Jun 11 05:55:39 2013   r4479  Easel:r872
 1.1rc4 - EPN, Wed Jun 26 14:17:19 2013   r4499  Easel:r875
 1.1    - EPN, Thu Oct 31 13:42:20 2013   r4549  Easel:r890
+1.1.1  - EPN, Wed Jul 23 11:11:49 2014   r4711  Easel:r918
