@@ -401,8 +401,12 @@ Delete TO-DO sections and clean up for public consumption.
   (Again, not sure of this command that Sean uses for hmmer: 'texclean')
 
 * package
+* The 'h' option on tar is --dereference: it may only be 
+* available in gnu tar. It dereferences symlinks and makes
+* them copies instead. Windows systems can't deal w/ symlinks,
+* we're told.
    cd ..
-   tar cvf infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
+   tar cvfh infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
    gzip infernal-${INFERNAL_VERSION}.tar
 
    1.1rc1: 11.7 Mb (gzipped)
@@ -758,7 +762,7 @@ linux-intel-gcc:
   cd ..
   rm -rf build-${INFERNAL_DISTRO}
   cd .. 
-  tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+  tar cfh infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
 
@@ -785,7 +789,7 @@ macosx-intel build (on Sean's desktop):
   cd ..
   rm -rf build-${INFERNAL_DISTRO}
   cd .. 
-  tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+  tar cfh infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
 
@@ -835,7 +839,7 @@ cygwin (on a Windows VM):
  one I made in Dec 2013 for v1.1 as an example.   
 
   emacs binaries/00README-cygwin-binaries.txt
-  tar cf infernal-1.1.1-cygwin.tar  infernal-1.1.1-cygwin
+  tar cfh infernal-1.1.1-cygwin.tar  infernal-1.1.1-cygwin
   gzip infernal-1.1.1-cygwin.tar
   
 Look at the build output for these three distros and make sure
