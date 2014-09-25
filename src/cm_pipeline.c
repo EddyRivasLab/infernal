@@ -24,7 +24,7 @@
 
 #include "infernal.h"
 
-static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
+static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
 				    P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_env_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
@@ -151,6 +151,7 @@ static float pli_mxsize_limit_from_W    (int W);
  *            | --timeF4     |  abort after F4b stage, for timing expts     |   FALSE   | 
  *            | --timeF5     |  abort after F5b stage, for timing expts     |   FALSE   | 
  *            | --timeF6     |  abort after F6  stage, for timing expts     |   FALSE   | 
+ *            | --trmF3      |  terminate after F3 stage, output windows    |   FALSE   | 
  *            | --nogreedy   |  use optimal CM hit resolution, not greedy   |   FALSE   |
  *            | --cp9noel    |  turn off EL state in CP9 HMM                |   FALSE   |
  *            | --cp9gloc    |  configure CP9 HMM in glocal mode            |   FALSE   |
@@ -239,6 +240,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_time_F4      = esl_opt_GetBoolean(go, "--timeF4")     ? TRUE  : FALSE;
   pli->do_time_F5      = esl_opt_GetBoolean(go, "--timeF5")     ? TRUE  : FALSE;
   pli->do_time_F6      = esl_opt_GetBoolean(go, "--timeF6")     ? TRUE  : FALSE;
+  pli->do_trm_F3       = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -1210,6 +1212,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int             nwin = 0;     /* number of windows surviving MSV & Vit & lFwd, filled by pli_p7_filter() */
   int64_t        *ws = NULL;    /* [0..i..nwin-1] window start positions, filled by pli_p7_filter() */
   int64_t        *we = NULL;    /* [0..i..nwin-1] window end   positions, filled by pli_p7_filter() */
+  float          *wb = NULL;    /* [0..i..nwin-1] window bit scores, filled by pli_p7_filter, relevant only if pli->do_trm_F3 is TRUE */
   int             np7env = 0;   /* number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by pli_p7_env_def() */
   int64_t        *p7es  = NULL; /* [0..i..np7env-1] window start positions, filled by pli_p7_env_def() */
   int64_t        *p7ee  = NULL; /* [0..i..np7env-1] window end   positions, filled by pli_p7_env_def() */
@@ -1343,11 +1346,19 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 3
       printf("\nHMM ONLY PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-      if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+      if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
-
-      prv_ntophits = hitlist->N;
-      if((status = pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq2search, ws, we, nwin, hitlist, opt_cm)) != eslOK) return status;
+      if(pli->do_trm_F3) { /* terminate after F3, and output surviving windows */
+        for(h = 0; h < nwin; h++) { 
+          ws[h] = (in_rc) ? (sq->start - ws[h] + 1) : (ws[h] + sq->start - 1);
+          we[h] = (in_rc) ? (sq->start - we[h] + 1) : (we[h] + sq->start - 1);
+          printf("* %s  %s  %" PRId64 "  %" PRId64 "  %" PRId64 "  %c  %8.2f\n", om->name, sq->name, sq->L, ws[h], we[h], (in_rc ? '-' : '+'), wb[h]);
+        }
+      }
+      else { 
+        prv_ntophits = hitlist->N;
+        if((status = pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq2search, ws, we, nwin, hitlist, opt_cm)) != eslOK) return status;
+      }
     }
     else { /* normal case, p != PLI_PASS_HMM_ONLY_ANY */
       /********************************************************************************************************/
@@ -1367,28 +1378,37 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 3
 	printf("\nPIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-	if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &nwin)) != eslOK) return status;
+	if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
-#if eslDEBUGLEVEL >= 3
-	printf("\nPIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
-#endif
-	if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &p7es, &p7ee, &np7env)) != eslOK) return status;
-	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
 
-	if(pli->do_fcyk) { 
+        if(pli->do_trm_F3) { /* terminate after F3, and output surviving windows */
+          for(h = 0; h < nwin; h++) { 
+            ws[h] = (in_rc) ? (sq->start - ws[h] + 1) : (ws[h] + sq->start - 1);
+            we[h] = (in_rc) ? (sq->start - we[h] + 1) : (we[h] + sq->start - 1);
+            printf("* %s  %s  %" PRId64 "  %" PRId64 "  %" PRId64 "  %c  %8.2f\n", om->name, sq->name, sq->L, ws[h], we[h], (in_rc ? '-' : '+'), wb[h]);
+          }
+        }
+        else { 
 #if eslDEBUGLEVEL >= 3
-	  printf("\nPIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+          printf("\nPIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-	  if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7es, p7ee, np7env, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
-	  if(pli->do_time_F4 || pli->do_time_F5) return status;
-	}
-	else { /* defined envelopes with HMM, but CYK filter is off: act as if p7-defined envelopes survived CYK */
-	  ESL_ALLOC(es, sizeof(int64_t) * np7env);
-	  ESL_ALLOC(ee, sizeof(int64_t) * np7env);
-	  for(i = 0; i < np7env; i++) { es[i] = p7es[i]; ee[i] = p7ee[i]; } 
-	  nenv = np7env;
-	}
+          if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &p7es, &p7ee, &np7env)) != eslOK) return status;
+          
+          if(pli->do_fcyk) { 
+#if eslDEBUGLEVEL >= 3
+            printf("\nPIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+#endif
+            if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7es, p7ee, np7env, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
+            if(pli->do_time_F4 || pli->do_time_F5) return status;
+          }
+          else { /* defined envelopes with HMM, but CYK filter is off: act as if p7-defined envelopes survived CYK */
+            ESL_ALLOC(es, sizeof(int64_t) * np7env);
+            ESL_ALLOC(ee, sizeof(int64_t) * np7env);
+            for(i = 0; i < np7env; i++) { es[i] = p7es[i]; ee[i] = p7ee[i]; } 
+            nenv = np7env;
+          }
+        } /* end of 'else' entered if pli->do_trm_F3 is FALSE */
       }
       /* end of '1. using a p7 hmm (if pli->do_edef == TRUE)' */
       /********************************************************************************************************/
@@ -1443,6 +1463,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 
     if(ws    != NULL) { free(ws);    ws   = NULL; }
     if(we    != NULL) { free(we);    we   = NULL; }
+    if(wb    != NULL) { free(wb);    wb   = NULL; }
     if(p7es  != NULL) { free(p7es);  p7es = NULL; }
     if(p7ee  != NULL) { free(p7ee);  p7ee = NULL; }
     if(es    != NULL) { free(es);    es   = NULL; }
@@ -2145,33 +2166,35 @@ cm_pli_PassAllowsTruncation(int pass_idx)
  * Xref:      J4/25.
  */
 int
-pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin)
+pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_MSVDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin)
 {
   int               status;
-  float             mfsc, vfsc, fwdsc;/* filter scores          */
-  float             filtersc;         /* HMM null filter score  */
-  int               have_filtersc;    /* TRUE if filtersc has been calc'ed for current window */
-  float             nullsc;           /* null model score */
-  float             wsc;              /* the corrected bit score for a window */
-  double            P;                /* P-value of a hit */
-  int               i, i2;            /* counters */
-  int               wlen;             /* length of current window */
-  void             *p;                /* for ESL_RALLOC */
-  int              *useme = NULL;     /* used when merging overlapping windows */
-  int               overlap;          /* number of overlapping positions b/t 2 adjacent windows */
-  int             **survAA = NULL;    /* [0..s..Np7_SURV-1][0..i..nwin-1] TRUE if window i survived stage s */
-  int               nalloc;           /* currently allocated size for ws, we */
-  int64_t          *ws = NULL;        /* [0..nwin-1] window start positions */
-  int64_t          *we = NULL;        /* [0..nwin-1] window end   positions */
-  double           *wp = NULL;        /* [0..nwin-1] window P-values, P-value of furthest-reached filter algorithm */
-  int               nwin;             /* number of windows */
-  int64_t          *new_ws = NULL;    /* used when copying/modifying ws */
-  int64_t           *new_we = NULL;    /* used when copying/modifying we */
-  int               nsurv_fwd;        /* number of windows that survive fwd filter */
-  int               new_nsurv_fwd;    /* used when merging fwd survivors */
-  ESL_DSQ          *subdsq;           /* a ptr to the first position of a window */
-  int               have_rest;        /* do we have the full <om> read in? */
-  P7_HMM_WINDOWLIST wlist;            /* list of windows, structure taken by p7_MSVFilter_longtarget() */
+  float             mfsc, vfsc, fwdsc; /* filter scores          */
+  float             filtersc;          /* HMM null filter score  */
+  int               have_filtersc;     /* TRUE if filtersc has been calc'ed for current window */
+  float             nullsc;            /* null model score */
+  float             wsc;               /* the corrected bit score for a window */
+  double            P;                 /* P-value of a hit */
+  int               i, i2;             /* counters */
+  int               wlen;              /* length of current window */
+  void             *p;                 /* for ESL_RALLOC */
+  int              *useme = NULL;      /* used when merging overlapping windows */
+  int               overlap;           /* number of overlapping positions b/t 2 adjacent windows */
+  int             **survAA = NULL;     /* [0..s..Np7_SURV-1][0..i..nwin-1] TRUE if window i survived stage s */
+  int               nalloc;            /* currently allocated size for ws, we */
+  int64_t          *ws = NULL;         /* [0..nwin-1] window start positions */
+  int64_t          *we = NULL;         /* [0..nwin-1] window end   positions */
+  double           *wp = NULL;         /* [0..nwin-1] window P-value   of furthest-reached filter alg, not valid until Vit (invalid for F1, F1b) */
+  float            *wb = NULL;         /* [0..nwin-1] window bit score of furthest-reached filter alg, not valid until Vit (invalid for F1, F1b) */
+  int               nwin;              /* number of windows */
+  int64_t          *new_ws = NULL;     /* used when copying/modifying ws */
+  int64_t          *new_we = NULL;     /* used when copying/modifying we */
+  float            *new_wb = NULL;     /* used when copying/modifying wb */
+  int               nsurv_fwd;         /* number of windows that survive fwd filter */
+  int               new_nsurv_fwd;     /* used when merging fwd survivors */
+  ESL_DSQ          *subdsq;            /* a ptr to the first position of a window */
+  int               have_rest;         /* do we have the full <om> read in? */
+  P7_HMM_WINDOWLIST wlist;             /* list of windows, structure taken by p7_MSVFilter_longtarget() */
   int               save_max_length = om->max_length;
 
   /* filter thresholds and on/off parameters, these will normally be set to
@@ -2301,9 +2324,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   }     
   pli->acct[pli->cur_pass_idx].n_past_msv += nwin;
   
-  ESL_ALLOC(wp, sizeof(double) * nwin);
-  for(i = 0; i < nwin; i++) { wp[i] = cur_F1; } /* TEMP (?) p7_MSVFilter_longtarget() does not return P-values */
-
   /*********************************************/
   /* allocate and initialize survAA, which will keep track of number of windows surviving each stage */
   ESL_ALLOC(survAA, sizeof(int *) * Np7_SURV);
@@ -2312,6 +2332,11 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     esl_vec_ISet(survAA[i], nwin, FALSE);
   }
     
+  ESL_ALLOC(wp, sizeof(double) * nwin);
+  ESL_ALLOC(wb, sizeof(float)  * nwin);
+  for (i = 0; i < nwin; i++) { wp[i] = 1.0;    }
+  for (i = 0; i < nwin; i++) { wb[i] = -999.0; }
+
   for (i = 0; i < nwin; i++) {
     subdsq = sq->dsq + ws[i] - 1;
     have_filtersc = FALSE;
@@ -2321,7 +2346,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     p7_bg_NullOne  (bg, subdsq, wlen, &nullsc);
 
 #if eslDEBUGLEVEL >= 3
-    if(cur_do_msv) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived SSV       %6.2f bits  P %g\n", i, ws[i], we[i], 0., wp[i]);
+    if(cur_do_msv) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived SSV       ? bits ? P\n", i, ws[i], we[i]);
 #endif
     survAA[p7_SURV_F1][i] = TRUE;
     
@@ -2344,11 +2369,12 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 
       /******************************************************************************/
     }
+
     pli->acct[pli->cur_pass_idx].n_past_msvbias++;
     survAA[p7_SURV_F1b][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3
-    if(cur_do_msv && cur_do_msvbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], 0., wp[i]);
+    if(cur_do_msv && cur_do_msvbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  ? bits  P ?\n", i, ws[i], we[i]);
 #endif      
     if(pli->do_time_F1) return eslOK;
     
@@ -2373,16 +2399,17 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       /* Filter 2: Viterbi with p7 HMM */
       /* Second level filter: ViterbiFilter(), multihit with <om> */
       p7_ViterbiFilter(subdsq, wlen, om, pli->oxf, &vfsc);
-      wsc = (vfsc - nullsc) / eslCONST_LOG2; 
-      P   = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
+      wsc   = (vfsc - nullsc) / eslCONST_LOG2; 
+      P     = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
       wp[i] = P;
+      wb[i] = wsc;
       if (P > cur_F2) continue;
     }
     pli->acct[pli->cur_pass_idx].n_past_vit++;
     survAA[p7_SURV_F2][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3
-    if (cur_do_vit) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit       %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+    if (cur_do_vit) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit       %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
 
     /********************************************/
@@ -2392,8 +2419,9 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       }
       have_filtersc = TRUE;
       wsc = (vfsc - filtersc) / eslCONST_LOG2;
-      P = esl_gumbel_surv(wsc,  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
+      P = esl_gumbel_surv(wb[i],  p7_evparam[CM_p7_LVMU],  p7_evparam[CM_p7_LVLAMBDA]);
       wp[i] = P;
+      wb[i] = wsc;
       if (P > cur_F2b) continue;
       /******************************************************************************/
     }
@@ -2401,7 +2429,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     survAA[p7_SURV_F2b][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3
-    if (cur_do_vit && cur_do_vitbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+    if (cur_do_vit && cur_do_vitbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
     if(pli->do_time_F2) continue; 
     /********************************************/
@@ -2414,14 +2442,15 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       wsc = (fwdsc - nullsc) / eslCONST_LOG2; 
       P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       wp[i] = P;
+      wb[i] = wsc;
       if (P > cur_F3) continue;
     }
     /******************************************************************************/
     pli->acct[pli->cur_pass_idx].n_past_fwd++;
     survAA[p7_SURV_F3][i] = TRUE;
 
-#if eslDEBUGLEVEL >= 3
-    if(cur_do_fwd) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd       %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+#if eslDEBUGLEVEL >= 3 
+    if(cur_do_fwd) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd       %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
 
     if (cur_do_fwd && cur_do_fwdbias) { 
@@ -2432,6 +2461,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       wsc = (fwdsc - filtersc) / eslCONST_LOG2;
       P = esl_exp_surv(wsc,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       wp[i] = P;
+      wb[i] = wsc;
       if (P > cur_F3b) continue;
       /******************************************************************************/
     }
@@ -2439,10 +2469,9 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     nsurv_fwd++;
     survAA[p7_SURV_F3b][i] = TRUE;
 
-#if eslDEBUGLEVEL >= 3
-    if(cur_do_fwd && cur_do_fwdbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wsc, wp[i]);
+#if eslDEBUGLEVEL >= 3 
+    if(cur_do_fwd && cur_do_fwdbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
-    if(pli->do_time_F3) continue;
   }
 
   /* Go back through all windows, and tally up total number of
@@ -2479,10 +2508,12 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   if(nsurv_fwd > 0) { 
     ESL_ALLOC(new_ws, sizeof(int64_t) * nsurv_fwd);
     ESL_ALLOC(new_we, sizeof(int64_t) * nsurv_fwd);
+    ESL_ALLOC(new_wb, sizeof(float) * nsurv_fwd);
     for (i = 0, i2 = 0; i < nwin; i++) { 
       if(survAA[p7_SURV_F3b][i]) { 
 	new_ws[i2] = ws[i];
 	new_we[i2] = we[i];
+        new_wb[i2] = wb[i];
 	i2++;
       }
     }
@@ -2497,6 +2528,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) { 
 	useme[i2] = FALSE;
 	new_we[i] = new_we[i2]; /* merged i with i2, rewrite end for i */
+        new_wb[i] = ESL_MAX(new_wb[i], new_wb[i2]); /* keep higher score */
 	i2++;
       }
       i = i2-1;
@@ -2506,6 +2538,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       if(useme[i]) { 
 	new_ws[i2] = new_ws[i];
 	new_we[i2] = new_we[i];
+        new_wb[i2] = new_wb[i];
 	i2++;
       }
     }
@@ -2514,13 +2547,16 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     free(ws); ws = NULL;
     free(we); we = NULL;
     free(wp); wp = NULL;
+    free(wb); wb = NULL;
     ws = new_ws;
     we = new_we;
-  }    
+    wb = new_wb;
+  } /* end of 'if(nsurv_fwd > 0)' */
   else { 
     if(ws != NULL) free(ws); ws = NULL;
     if(we != NULL) free(we); we = NULL;
     if(wp != NULL) free(wp); wp = NULL;
+    if(wb != NULL) free(wb); wb = NULL;
   }
 
   if(survAA != NULL) { 
@@ -2532,6 +2568,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 
   *ret_ws   = ws;
   *ret_we   = we;
+  *ret_wb   = wb;
   *ret_nwin = nsurv_fwd;
 
   return eslOK;
@@ -3619,7 +3656,8 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 	p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
 	pli->ddef->dcl[d].ad = NULL;
 
-#if eslDEBUGLEVEL >= 3
+        /*#if eslDEBUGLEVEL >= 3*/
+#if 1
 	printf("SURVIVOR envelope     [%10ld..%10ld] survived Final HMM ONLY stage    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
       

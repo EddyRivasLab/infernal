@@ -2205,12 +2205,14 @@ typedef struct cm_pipeline_s {
   float         cmult;          /* 1.25; maxW will be max of wmult * cm->W and cmult * cm->clen */
   float         mlmult;         /* 0.10; om->max_length multiplier for MSV window defn */
   /* flags for timing experiments */
-  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
-  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
-  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
-  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd */
-  int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
-  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
+  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV, for timing expts */
+  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit, for timing expts */
+  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd, for timing expts */
+  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd, for timing expts */
+  int           do_time_F5;      /* TRUE to abort after Stage 5 env def, for timing expts */
+  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
+  /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
+  int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
