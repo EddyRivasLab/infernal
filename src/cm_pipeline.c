@@ -308,34 +308,46 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
 
   /* configure truncation hit allowance parameters */
   if(esl_opt_GetBoolean(go, "--anytrunc")) { 
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = TRUE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = TRUE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--notrunc")) { 
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--5trunc")) { 
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = TRUE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = TRUE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--3trunc")) { 
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = TRUE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = TRUE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
+  }
+  else if(esl_opt_GetBoolean(go, "--only53trunc")) { 
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = TRUE;
   }
   else { /* default */
-    pli->do_trunc_ends         = TRUE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = TRUE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
 
   /* Set Z, the search space size. This is used for E-value
@@ -410,10 +422,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->F1  = pli->F2  = pli->F3  = pli->F4  = pli->F5  = pli->F6 = 1.0;
     pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = pli->F6 = 1.0;
     /* D&C truncated alignment is not robust, so we don't allow it */
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--nohmm")) { 
     pli->do_nohmm  = TRUE;
@@ -423,10 +436,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->F1b = pli->F2b = pli->F3b = pli->F4b = pli->F5b = 1.0;
     pli->F6  = 0.0001; /* default F6, we'll change this below if --F6 was used */
     /* D&C truncated alignment is not robust, so we don't allow it */
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--mid")) { 
     pli->do_mid  = TRUE;
@@ -690,7 +704,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     }
   }
   /* should we setup for truncated alignments? */
-  if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends_only || pli->do_trunc_3p_ends_only) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
+  if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends || pli->do_trunc_only_5p_and_3p_ends) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
 
   /* will we be requiring a CM_SCAN_MX? a CM_TR_SCAN_MX? */
   if(pli->do_max   ||                    /* max mode, no filters */
@@ -698,7 +712,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      esl_opt_GetBoolean(go, "--fqdb") || /* user specified to use --fqdb, do it */
      esl_opt_GetBoolean(go, "--qdb")) {  /* user specified to use --qdb,  do it */
     pli->cm_config_opts |= CM_CONFIG_SCANMX;
-    if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends_only || pli->do_trunc_3p_ends_only) pli->cm_config_opts |= CM_CONFIG_TRSCANMX;
+    if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends || pli->do_trunc_only_5p_and_3p_ends) pli->cm_config_opts |= CM_CONFIG_TRSCANMX;
   }
   /* will we be requiring non-banded alignment matrices? */
   if(pli->do_max ||                     /* max mode, no filters, hit alignment will be nonbanded */
@@ -709,10 +723,11 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     if(pli->do_max) pli->cm_align_opts |= CM_ALIGN_NONBANDED;
     else            pli->cm_align_opts |= CM_ALIGN_QDB;       /* --nohmm, --qdb */
     /* D&C truncated alignment is not robust, so we don't allow it */
-    pli->do_trunc_ends         = FALSE;
-    pli->do_trunc_any          = FALSE;
-    pli->do_trunc_5p_ends_only = FALSE;
-    pli->do_trunc_3p_ends_only = FALSE;
+    pli->do_trunc_ends                = FALSE;
+    pli->do_trunc_any                 = FALSE;
+    pli->do_trunc_5p_ends             = FALSE;
+    pli->do_trunc_3p_ends             = FALSE;
+    pli->do_trunc_only_5p_and_3p_ends = FALSE;
   }
   else { 
     pli->cm_align_opts |= CM_ALIGN_HBANDED;
@@ -1250,7 +1265,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   ESL_SQ   *term5sq   = NULL;  /* a copy of the 5'-most pli->maxW residues from sq */
   ESL_SQ   *term3sq   = NULL;  /* a copy of the 3'-most pli->maxW residues from sq */
   int       p;                 /* counter over passes */
-  int       nwin_pass_std_any = 0; /* number of windows that survived pass 1 (PLI_PASS_STD_ANY) */
+  int       nwin_pass_std_any = -1;  /* number of windows that survived pass 1 (PLI_PASS_STD_ANY), -1 indicates we didn't run PLI_PASS_STD_ANY */
   int       do_pass_std_any;         /* should we do pass 2 (PLI_PASS_STD_ANY)          search the full sequence with CM pipeline? */
   int       do_pass_5p_only_force;   /* should we do pass 2 (PLI_PASS_5P_ONLY_FORCE)?   re-search the 5'-most pli->maxW residues */
   int       do_pass_3p_only_force;   /* should we do pass 3 (PLI_PASS_3P_ONLY_FORCE)?   re-search the 3'-most pli->maxW residues */
@@ -1305,12 +1320,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     do_pass_5p_and_3p_force = (have5term && have3term && sq->n <= pli->maxW) ? TRUE : FALSE;
     do_pass_5p_and_3p_any   = do_pass_hmm_only_any = FALSE;
   }
-  else if(pli->do_trunc_5p_ends_only) { /* we allow truncated hits only at 5' end */
+  else if(pli->do_trunc_5p_ends) { /* we allow truncated hits only at 5' end */
     do_pass_std_any        = TRUE;
     do_pass_5p_only_force  = have5term ? TRUE : FALSE;
     do_pass_3p_only_force  = do_pass_5p_and_3p_force = do_pass_5p_and_3p_any = do_pass_hmm_only_any = FALSE;
   }
-  else if(pli->do_trunc_3p_ends_only) { /* we allow truncated hits only at 3' end */
+  else if(pli->do_trunc_3p_ends) { /* we allow truncated hits only at 3' end */
     do_pass_std_any        = TRUE;
     do_pass_3p_only_force  = have3term ? TRUE : FALSE;
     do_pass_5p_only_force  = do_pass_5p_and_3p_force = do_pass_5p_and_3p_any = do_pass_hmm_only_any = FALSE;
@@ -1320,10 +1335,21 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     do_pass_5p_and_3p_any = TRUE;
     do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_hmm_only_any = FALSE;
   }
+  else if(pli->do_trunc_only_5p_and_3p_ends) { /* we only allow 5' and 3' truncated hits */
+    do_pass_5p_and_3p_force = TRUE;
+    do_pass_std_any = do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_any = do_pass_hmm_only_any = FALSE;
+  }
   else { /* we're not allowing any truncated hits */
     do_pass_std_any       = TRUE;
     do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_5p_and_3p_any = do_pass_hmm_only_any = FALSE;
   }
+
+  printf("do_pass_std_any:         %d\n", do_pass_std_any);
+  printf("do_pass_5p_only_force:   %d\n", do_pass_5p_only_force);
+  printf("do_pass_3p_only_force:   %d\n", do_pass_3p_only_force);
+  printf("do_pass_5p_and_3p_force: %d\n", do_pass_5p_and_3p_force);
+  printf("do_pass_5p_and_3p_any:   %d\n", do_pass_5p_and_3p_any);
+  printf("do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 
   for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { /* p will go from 1..6 */
     if(p == PLI_PASS_STD_ANY         && (! do_pass_std_any))         continue;
@@ -1348,7 +1374,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
       if(in_rc) pli->acct[p].nres_bot += ESL_MIN(pli->maxW, sq->n);
       else      pli->acct[p].nres_top += ESL_MIN(pli->maxW, sq->n);
     }
-
+    
     /* if we know there's no windows that pass local Fwd (F3), our terminal (or full) seqs won't have any either, continue */
     if(p != PLI_PASS_STD_ANY && p != PLI_PASS_HMM_ONLY_ANY && nwin_pass_std_any == 0 && (! pli->do_max)) continue; 
     
@@ -1538,14 +1564,17 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
       pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE);   fprintf(ofp, "\n");
       pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE); fprintf(ofp, "\n");
     }
-    else if(pli->do_trunc_5p_ends_only) { 
+    else if(pli->do_trunc_5p_ends) { 
       pli_pass_statistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
     }
-    else if(pli->do_trunc_3p_ends_only) { 
+    else if(pli->do_trunc_3p_ends) { 
       pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE); fprintf(ofp, "\n");
     }
     else if(pli->do_trunc_any) { 
       pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY); fprintf(ofp, "\n");
+    }
+    else if(pli->do_trunc_only_5p_and_3p_ends) { 
+      pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE); fprintf(ofp, "\n");
     }
   }
   if(pli->nmodels_hmmonly > 0) { /* HMM only pipeline used for at least one model */
@@ -1635,7 +1664,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       }
       else { 
 	fprintf(ofp,   "Target sequences re-searched for truncated hits:   %15" PRId64 "  (%" PRId64 " residues re-searched)\n",  
-		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends_only || pli->do_trunc_3p_ends_only) ? pli->nseqs : 0, 
+		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends || pli->do_trunc_only_5p_and_3p_ends) ? pli->nseqs : 0, 
 		nres_researched);
       }
     }
@@ -1659,7 +1688,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       }
       else { 
 	fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n", 
-		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends_only || pli->do_trunc_3p_ends_only) ? pli->nseqs : 0, 
+		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends || pli->do_trunc_only_5p_and_3p_ends) ? pli->nseqs : 0, 
 		(float) nres_researched / (float) pli->nmodels);
       }
     }
@@ -1803,17 +1832,21 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_5P_AND_3P_FORCE].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_5P_AND_3P_FORCE].pos_output;
     }
-    else if(pli->do_trunc_5p_ends_only) { 
+    else if(pli->do_trunc_5p_ends) { 
       n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output;
     }
-    else if(pli->do_trunc_3p_ends_only) { 
+    else if(pli->do_trunc_3p_ends) { 
       n_output_trunc   = pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output;
     }
     else if(pli->do_trunc_any) { 
       n_output_trunc   = pli->acct[PLI_PASS_5P_AND_3P_ANY].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_5P_AND_3P_ANY].pos_output;
+    }
+    else if(pli->do_trunc_only_5p_and_3p_ends) { 
+      n_output_trunc   = pli->acct[PLI_PASS_5P_AND_3P_FORCE].n_output;
+      pos_output_trunc = pli->acct[PLI_PASS_5P_AND_3P_FORCE].pos_output;
     }
     else { /* no truncated hits were allowed */
       n_output_trunc   = 0;
@@ -2878,7 +2911,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       pli->acct[pli->cur_pass_idx].n_past_gfwd++;
       pli->acct[pli->cur_pass_idx].pos_past_gfwd += wlen;
 
-#if eslDEBUGLEVEL >= 3	
+      /* TEMP #if eslDEBUGLEVEL >= 3 */
+#if 1
       printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif      
 
@@ -2901,13 +2935,19 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
 	}
 	if(P > pli->F4b) continue;
-#if eslDEBUGLEVEL >= 3	
+        /* TEMP #if eslDEBUGLEVEL >= 3 */
+#if 1 
 	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
 	pli->acct[pli->cur_pass_idx].n_past_gfwdbias++;
 	pli->acct[pli->cur_pass_idx].pos_past_gfwdbias += wlen;
       }
       if(pli->do_time_F4) continue; 
+      //if(pli->cur_pass_idx != PLI_PASS_STD_ANY) continue;
+      //if(pli->cur_pass_idx != PLI_PASS_5P_ONLY_FORCE) continue;
+      //if(pli->cur_pass_idx != PLI_PASS_3P_ONLY_FORCE) continue;
+      //if(pli->cur_pass_idx != PLI_PASS_5P_AND_3P_FORCE) continue;
+      //if(1) continue;
 
       /* this block needs to match up with if..else if...else if...else block calling p7_GForward above */
       if(use_Tgm) { 
@@ -3005,6 +3045,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
       }
 #if eslDEBUGLEVEL >= 3
+      /* HERE HERE HERE, this is where --trmF5 would output */
       printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
       pli->acct[pli->cur_pass_idx].n_past_edefbias++;

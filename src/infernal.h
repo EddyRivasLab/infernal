@@ -2059,9 +2059,10 @@ typedef struct cm_file_s {
  * on it.
  * 
  * Not all passes are performed in a pipeline. If pli->do_trunc_ends,
- * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends_only, passes
- * 1 and 2 are performed. If pli->do_trunc_3p_ends_only, passes 1
+ * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends, passes
+ * 1 and 2 are performed. If pli->do_trunc_3p_ends, passes 1
  * and 3 are performed. If pli->do_trunc_any, passes 1 and 5 are
+ * performed. If pli->do_only_trunc_5p_and_3p_ends, only pass 4 is
  * performed. If pli->do_hmmonly_cur, only pass 6 is performed. If
  * none of these flags is TRUE only pass 1 is performed.
  *
@@ -2268,10 +2269,12 @@ typedef struct cm_pipeline_s {
   int     do_edefbias;     	/* TRUE to use biased comp HMM filter w/edef*/
 
   /* truncated sequence detection parameters */
-  int     do_trunc_ends;         /* TRUE to use truncated CM algs at sequence ends */
-  int     do_trunc_any;          /* TRUE to use truncated CM algs for entire sequences */
-  int     do_trunc_5p_ends_only; /* TRUE to use truncated CM algs only at 5' ends (added for RNAVORE, post 1.1.1) */
-  int     do_trunc_3p_ends_only; /* TRUE to use truncated CM algs only at 3' ends (added for RNAVORE, post 1.1.1) */
+  int     do_trunc_ends;                /* TRUE to use truncated CM algs at sequence ends */
+  int     do_trunc_any;                 /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_5p_ends;             /* TRUE to use truncated CM algs only at 5' ends (added for RNAVORE, post 1.1.1) */
+  int     do_trunc_3p_ends;             /* TRUE to use truncated CM algs only at 3' ends (added for RNAVORE, post 1.1.1) */
+  /* and for enforcing exactly one truncation mode */
+  int     do_trunc_only_5p_and_3p_ends; /* TRUE to only use truncated CM algs to enforce 5' and 3' end truncation (added for RNAVORE, post 1.1.1) */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
