@@ -2202,6 +2202,7 @@ typedef struct cm_pipeline_s {
   double        maxtau;         /* max tau when tightening bands            */
   int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
   float         wcx;            /* set W as cm->clen * wcx, ignoring W from CM file */
+  int           do_one_cmpass;  /* TRUE to only use CM for best scoring HMM pass if envelope encompasses full sequence */
   /* these are all currently hard-coded, in cm_pipeline_Create() */
   float         smult;          /* 2.0;  W multiplier for window splitting */
   float         wmult;          /* 1.0;  maxW will be max of wmult * cm->W and cmult * cm->clen */
@@ -2273,8 +2274,6 @@ typedef struct cm_pipeline_s {
   int     do_trunc_any;                 /* TRUE to use truncated CM algs for entire sequences */
   int     do_trunc_5p_ends;             /* TRUE to use truncated CM algs only at 5' ends (added for RNAVORE, post 1.1.1) */
   int     do_trunc_3p_ends;             /* TRUE to use truncated CM algs only at 3' ends (added for RNAVORE, post 1.1.1) */
-  /* and for enforcing exactly one truncation mode */
-  int     do_trunc_only_5p_and_3p_ends; /* TRUE to only use truncated CM algs to enforce 5' and 3' end truncation (added for RNAVORE, post 1.1.1) */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
