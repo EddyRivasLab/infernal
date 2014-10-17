@@ -50,7 +50,8 @@
 
 #define REALLYSMALLX        1e-20
 #define EXPTAIL_CHUNKLEN    10000 /* sequence chunk length for random sequence searches */
-#define DEBUGMPI 0
+#define DEBUGMPI            0
+#define INS_V_CYK_GUESS     3.0   /* ratio of time required for inside versus CYK used if --noforecast enabled */
 
 typedef struct {
 #ifdef HMMER_THREADS
@@ -79,6 +80,7 @@ static ESL_OPTIONS options[] = {
   { "--forecast",   eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, predict running time and exit",             2 },
   { "--nforecast",  eslARG_INT,       NULL,  NULL,           "n>0",      NULL, "--forecast",      NULL, "w/--forecast, predict time with <n> processors (maybe for MPI)",  2 },
   { "--memreq",     eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, print required memory and exit",            2 },
+  { "--noforecast", eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,"--forecast", "do calibration, but skip running time prediction",              2 },
   /* Options controlling exponential tail fits */
   { "--gtailn",     eslARG_INT,       "250", NULL,        "n>=100",      NULL,         NULL, "--tailp", "fit the top <n> hits/Mb in histogram for glocal modes [df: 250]", 3 },
   { "--ltailn",     eslARG_INT,       "750", NULL,        "n>=100",      NULL,         NULL, "--tailp", "fit the top <n> hits/Mb in histogram for  local modes [df: 750]", 3 },
@@ -530,7 +532,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     else { /* normal case */
       if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-      if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
+      if(! esl_opt_GetBoolean(go, "--noforecast")) { 
+        if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
+      }
+      else { 
+        psec = 0.;
+        ins_v_cyk = INS_V_CYK_GUESS;
+      }
       total_psec += psec;
       print_forecasted_time(go, cfg, errbuf, cm, psec);
       
@@ -932,7 +940,13 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
     if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
-    if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
+    if(! esl_opt_GetBoolean(go, "--noforecast")) { 
+      if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
+    }
+    else { 
+      psec = 0.;
+      ins_v_cyk = INS_V_CYK_GUESS;
+    }
     total_psec += psec;
     print_forecasted_time(go, cfg, errbuf, cm, psec);
 
@@ -1824,9 +1838,14 @@ static void
 print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec)
 {
   char  time_buf[128];	      /* for printing run time */
-  FormatTimeString(time_buf, psec, FALSE);
 
-  printf("  %-20s  %12s", cm->name, time_buf);
+  if(esl_opt_GetBoolean(go, "--noforecast")) { /* no forecast performed, print '?' */
+    printf("  %-20s  %12s", cm->name, "?");
+  }
+  else { 
+    FormatTimeString(time_buf, psec, FALSE);
+    printf("  %-20s  %12s", cm->name, time_buf);
+  }
   if(! esl_opt_IsUsed(go, "--forecast")) fputs("  [", stdout);
   else                                   fputs("\n",  stdout);
   fflush(stdout);
