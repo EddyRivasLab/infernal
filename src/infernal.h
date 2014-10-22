@@ -2974,7 +2974,9 @@ extern int         cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h);
 extern int         cm_tophits_SortByPosition(CM_TOPHITS *h);
 extern int         cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2);
 extern int         cm_tophits_GetMaxPositionLength(CM_TOPHITS *h);
+extern int         cm_tophits_GetMaxTargetLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxNameLength(CM_TOPHITS *h);
+extern int         cm_tophits_GetMaxDescLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxAccessionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxShownLength(CM_TOPHITS *h);
 extern int         cm_tophits_Reuse(CM_TOPHITS *h);
@@ -2988,10 +2990,12 @@ extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, ui
 
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
+extern int cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk, int used_hb, double default_tau);
 extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
 extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
+extern int cm_tophits_F3TabularTargets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
 

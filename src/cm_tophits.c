@@ -460,6 +460,26 @@ cm_tophits_GetMaxPositionLength(CM_TOPHITS *h)
   return max;
 }
 
+/* Function:  cm_tophits_GetMaxTargetLength()
+ * Synopsis:  Returns maximum target length in hit list.
+ * Incept:    EPN, Wed Oct 22 10:36:11 2014
+ *
+ * Purpose:   Returns the length of the longest target length (srcL)
+ *            of all the registered hits, in chars. This is useful when
+ *            deciding how to format output.
+ */
+int
+cm_tophits_GetMaxTargetLength(CM_TOPHITS *h)
+{
+  int i, max;
+
+  max = 0;
+  for (i = 0; i < h->N; i++) {
+    max = ESL_MAX(max, integer_textwidth(h->unsrt[i].srcL));
+  }
+  return max;
+}
+
 /* Function:  cm_tophits_GetMaxNameLength()
  * Synopsis:  Returns maximum name length in hit list (targets).
  * Incept:    EPN, Tue May 24 13:34:12 2011
@@ -485,6 +505,28 @@ cm_tophits_GetMaxNameLength(CM_TOPHITS *h)
     if (h->unsrt[i].name != NULL) {
       max = ESL_MAX(max, strlen(h->unsrt[i].name));
     }
+  return max;
+}
+
+/* Function:  cm_tophits_GetMaxDescLength()
+ * Synopsis:  Returns maximum length of the desc field in hit list.
+ * Incept:    EPN, Wed Oct 22 10:36:11 2014
+ *
+ * Purpose:   Returns the length of the longest description (desc)
+ *            of all the registered hits, in chars. This is useful when
+ *            deciding how to format output.
+ */
+int
+cm_tophits_GetMaxDescLength(CM_TOPHITS *h)
+{
+  int i, max;
+
+  max = 0;
+  for (i = 0; i < h->N; i++) {
+    if(h->unsrt[i].desc != NULL) { 
+      max = ESL_MAX(max, strlen(h->unsrt[i].desc));
+    }
+  }
   return max;
 }
 
@@ -1089,7 +1131,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      namew, showname,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
-	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'), 
+	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      th->hit[h]->hmmonly ? "hmm" : "cm",
 	      cm_alidisplay_TruncString(th->hit[h]->ad),
 	      th->hit[h]->ad->gc);
@@ -1114,6 +1156,108 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 
  ERROR:
   if(namestr != NULL) free(namestr);
+  if(posstr  != NULL) free(posstr);
+
+  return status;
+}
+
+/* Function:  cm_tophits_F3Targets()
+ * Synopsis:  Standard output format for a top target hits list
+ *            in special terminate after filter stage F3 mode.
+ *            
+ * Incept:    EPN, Wed Oct 22 13:29:23 2014
+ *            SRE, Tue Dec  9 09:10:43 2008 [Janelia] (p7_tophits.c)
+ *
+ * Purpose:   Output a list of the reportable top target hits in <th> 
+ *            in human-readable ASCII text format to stream <ofp>, using
+ *            final pipeline accounting stored in <pli>. This version
+ *            is similar to cm_tophits_Targets() but reports a different
+ *            set of fields.
+ * 
+ *            The tophits list <th> should already be sorted (see
+ *            <cm_tophits_Sort()> and thresholded (see
+ *            <cm_tophits_Threshold>).
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
+{
+  int    status;
+  int    h,i;
+  int    namew;
+  int    posw;
+  int    descw;
+  char  *showname;
+  int    nprinted = 0;
+  char   lseq, rseq;
+
+  char *namestr     = NULL;
+  char *descstr     = NULL;
+  char *posstr      = NULL;
+
+  /* when --acc is on, we'll show accession if available, and fall back to name */
+  if (pli->show_accessions) namew = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 8 : 9), cm_tophits_GetMaxShownLength(th));
+  else                      namew = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 8 : 9), cm_tophits_GetMaxNameLength(th));
+  descw = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 9 : 8), cm_tophits_GetMaxDescLength(th));
+  posw  = ESL_MAX(6, cm_tophits_GetMaxPositionLength(th));
+
+  ESL_ALLOC(namestr, sizeof(char) * (namew+1));
+  ESL_ALLOC(descstr, sizeof(char) * (descw+1));
+  ESL_ALLOC(posstr,  sizeof(char) * (posw+1));
+
+  for(i = 0; i < namew; i++) { namestr[i] = '-'; } namestr[namew] = '\0';
+  for(i = 0; i < descw; i++) { descstr[i] = '-'; } descstr[descw] = '\0';
+  for(i = 0; i < posw;  i++) { posstr[i]  = '-'; } posstr[posw]   = '\0';
+
+  fprintf(ofp, "Windows that survived F3 filter stage:\n");
+  fprintf(ofp, " %1s %-*s %-*s %6s %*s %*s\n", "", namew, (pli->mode == CM_SEARCH_SEQS) ? "sequence" : "modelname", descw, (pli->mode == CM_SEARCH_SEQS) ? "modelname" : "sequence", " score", posw, "start", posw, "end");
+  fprintf(ofp, " %1s %*s %*s %6s %*s %*s\n", "", namew, namestr, descw, descstr, "------", posw, posstr, posw, posstr);
+  
+  nprinted = 0;
+  for (h = 0; h < th->N; h++) { 
+    if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
+
+      if (pli->show_accessions) { 
+	/* the --acc option: report accessions rather than names if possible */
+	if (th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') showname = th->hit[h]->acc;
+	else                                                       showname = th->hit[h]->name;
+      }
+      else {
+	showname = th->hit[h]->name;
+      }
+      if(th->hit[h]->in_rc) { 
+        lseq = th->hit[h]->start == th->hit[h]->srcL ? '[' : '.'; 
+        rseq = th->hit[h]->stop  == 1                ? ']' : '.'; 
+      }
+      else { 
+        lseq = th->hit[h]->start == 1                ? '[' : '.'; 
+        rseq = th->hit[h]->stop  == th->hit[h]->srcL ? ']' : '.'; 
+      }
+  
+      fprintf(ofp, " %c %-*s %-*s %6.1f %*" PRId64 " %*" PRId64 " %c %c%c\n", 
+	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? '!' : '?'),
+	      namew, showname,
+	      descw, th->hit[h]->desc,
+	      th->hit[h]->score,
+	      posw, th->hit[h]->start,
+	      posw, th->hit[h]->stop,
+	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
+	      lseq, rseq);
+      nprinted++;
+    }
+  }
+  if (th->nreported == 0) fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
+
+  if(namestr != NULL) free(namestr);
+  if(descstr != NULL) free(descstr);
+  if(posstr  != NULL) free(posstr);
+
+  return eslOK;
+
+ ERROR:
+  if(namestr != NULL) free(namestr);
+  if(descstr != NULL) free(descstr);
   if(posstr  != NULL) free(posstr);
 
   return status;
@@ -1236,7 +1380,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      lmod, rmod, 
 	      th->hit[h]->start,
 	      th->hit[h]->stop,
-	      (th->hit[h]->start < th->hit[h]->stop ? '+' : '-'),
+	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      lseq, rseq);
       if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s %4.2f", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
       else                       { fprintf(ofp, " %6.1f %5s %4.2f", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
@@ -1768,6 +1912,112 @@ cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM
   if(qaccstr  != NULL) free(qaccstr);
   if(qaccstr  != NULL) free(taccstr);
   if(posstr   != NULL) free(posstr);
+
+  return status;
+}
+
+/* Function:  cm_tophits_F3TabularTargets()
+ * Synopsis:  Standard output format for a top target hits list
+ *            in special 'terminate after filter stage F3' mode.
+ *            
+ * Incept:    EPN, Wed Oct 22 14:42:48 2014
+ *            SRE, Tue Dec  9 09:10:43 2008 [Janelia] (p7_tophits.c)
+ *
+ * Purpose:   Output a parseable table of reportable per-sequence hits
+ *            in sorted tophits list <th> in an easily parsed ASCII
+ *            tabular form to stream <ofp>, using final pipeline
+ *            accounting stored in <pli>. This version is similar
+ *            to cm_tophits_TabularTargets() but reports a 
+ *            different set of fields. The same fields that are
+ *            printed in cm_tophits_F3Targets() are printed here.
+ *
+ * Purpose:   Output a list of the reportable top target hits in <th> 
+ *            in human-readable ASCII text format to stream <ofp>, using
+ *            final pipeline accounting stored in <pli>. This version
+ *            is similar to cm_tophits_TabularTargets() but reports a different
+ *            set of fields.
+ * 
+ *            The tophits list <th> should already be sorted (see
+ *            <cm_tophits_Sort()> and thresholded (see
+ *            <cm_tophits_Threshold>).
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_tophits_F3TabularTargets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header)
+{
+  int    status;
+  int    h,i;
+  int    namew;
+  int    posw;
+  int    descw;
+  char  *showname;
+  char   lseq, rseq;
+
+  char *namestr     = NULL;
+  char *descstr     = NULL;
+  char *posstr      = NULL;
+
+  /* when --acc is on, we'll show accession if available, and fall back to name */
+  if (pli->show_accessions) namew = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 9 : 10), cm_tophits_GetMaxShownLength(th));
+  else                      namew = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 9 : 10), cm_tophits_GetMaxNameLength(th));
+  descw = ESL_MAX((pli->mode == CM_SEARCH_SEQS ? 9 : 8), cm_tophits_GetMaxDescLength(th));
+  posw  = ESL_MAX(6, cm_tophits_GetMaxPositionLength(th));
+
+  ESL_ALLOC(namestr, sizeof(char) * (namew+1));
+  ESL_ALLOC(descstr, sizeof(char) * (descw+1));
+  ESL_ALLOC(posstr,  sizeof(char) * (posw+1));
+
+  namestr[0] = '#';
+  for(i = 1; i < namew; i++) { namestr[i] = '-'; } namestr[namew] = '\0';
+  for(i = 0; i < descw; i++) { descstr[i] = '-'; } descstr[descw] = '\0';
+  for(i = 0; i < posw;  i++) { posstr[i]  = '-'; } posstr[posw]   = '\0';
+
+  if(show_header) { 
+    fprintf(ofp, "%-*s %-*s %6s %*s %*s %6s %6s\n", namew, (pli->mode == CM_SEARCH_SEQS) ? "#sequence" : "#modelname", descw, (pli->mode == CM_SEARCH_SEQS) ? "modelname" : "sequence", " score", posw, "start", posw, "end", "strand", "bounds");
+    fprintf(ofp, "%*s %*s %6s %*s %*s %6s %6s\n", namew, namestr, descw, descstr, "------", posw, posstr, posw, posstr, "------", "------");
+  }
+  
+  for (h = 0; h < th->N; h++) { 
+    if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
+
+      if (pli->show_accessions) { 
+	/* the --acc option: report accessions rather than names if possible */
+	if (th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') showname = th->hit[h]->acc;
+	else                                                       showname = th->hit[h]->name;
+      }
+      else {
+	showname = th->hit[h]->name;
+      }
+      if(th->hit[h]->in_rc) { 
+        lseq = th->hit[h]->start == th->hit[h]->srcL ? '[' : '.'; 
+        rseq = th->hit[h]->stop  == 1                ? ']' : '.'; 
+      }
+      else { 
+        lseq = th->hit[h]->start == 1                ? '[' : '.'; 
+        rseq = th->hit[h]->stop  == th->hit[h]->srcL ? ']' : '.'; 
+      }
+  
+      fprintf(ofp, "%-*s %-*s %6.1f %*" PRId64 " %*" PRId64 " %6s %4s%c%c\n", 
+	      namew, showname,
+	      descw, th->hit[h]->desc,
+	      th->hit[h]->score,
+	      posw, th->hit[h]->start,
+	      posw, th->hit[h]->stop,
+	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
+	      "", lseq, rseq);
+    }
+  }
+  if(namestr != NULL) free(namestr);
+  if(descstr != NULL) free(descstr);
+  if(posstr  != NULL) free(posstr);
+
+  return eslOK;
+
+ ERROR:
+  if(namestr != NULL) free(namestr);
+  if(descstr != NULL) free(descstr);
+  if(posstr  != NULL) free(posstr);
 
   return status;
 }
