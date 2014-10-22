@@ -133,7 +133,7 @@ static ESL_OPTIONS options[] = {
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--5trunc,--3trunc"  "do not allow truncated hits at sequence termini",                7 },
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                7 },
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits anywhere within sequences",                 7 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",              7 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",              7 },
@@ -220,7 +220,7 @@ static ESL_OPTIONS options[] = {
   { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 106 },
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
-  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc",TIMINGOPTS,   "terminate after Stage 3 Fwd and output surviving windows",       107 },
+  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       107 },
   
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
@@ -651,8 +651,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cm_tophits_SortForOverlapRemoval(info[0].th);
     if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
 
-    /* Resort by score and enforce threshold */
-    cm_tophits_SortByEvalue(info[0].th);
+    /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
+    if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
+    else                       cm_tophits_SortByEvalue(info[0].th);
+
+    /* Enforce threshold */
     cm_tophits_Threshold(info[0].th, info[0].pli);
 
     /* tally up total number of hits and target coverage */
@@ -664,7 +667,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
       
     /* Output */
-    cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
+    if(info[0].pli->do_trm_F3) { 
+      cm_tophits_F3Targets(ofp, info[0].th, info[0].pli);
+    }
+    else { 
+      cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
+    }
     fprintf(ofp, "\n\n");
 
     if(info[0].pli->show_alignments) {
@@ -680,7 +688,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
     if (tblfp != NULL) { 
-      cm_tophits_TabularTargets(tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+      if(info[0].pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
+      else                       cm_tophits_TabularTargets  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -1324,10 +1333,14 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info->th);
     if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
-    /* Resort by score and enforce threshold */
-    cm_tophits_SortByEvalue(info->th);
-    cm_tophits_Threshold(info->th, info->pli);
-    
+
+    /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
+    if(info->pli->do_trm_F3) cm_tophits_SortByPosition(info->th);
+    else                     cm_tophits_SortByEvalue(info[0].th);
+
+    /* Enforce threshold */
+    cm_tophits_Threshold(info[0].th, info[0].pli);
+
     /* tally up total number of hits and target coverage */
     for (i = 0; i < info->th->N; i++) {
       if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
@@ -1336,7 +1349,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     
-    cm_tophits_Targets(ofp, info->th, info->pli, textw); 
+    if(info->pli->do_trm_F3) { 
+      cm_tophits_F3Targets(ofp, info->th, info->pli);
+    }
+    else { 
+      cm_tophits_Targets(ofp, info->th, info->pli, textw);
+    }
     fprintf(ofp, "\n\n");
     if(info->pli->show_alignments) {
       if((status = cm_tophits_HitAlignments(ofp, info->th, info->pli, textw)) != eslOK) mpi_failure("Out of memory");
@@ -1350,7 +1368,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     if (tblfp != NULL) { 
-      cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, info->th, info->pli, (cm_idx == 1)); 
+      else                     cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -2074,6 +2093,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--timeF4"))     fprintf(ofp, "# abort after Stage 4 gFwd (for timing)  on\n");
   if (esl_opt_IsUsed(go, "--timeF5"))     fprintf(ofp, "# abort after Stage 5 env defn (for timing) on\n");
   if (esl_opt_IsUsed(go, "--timeF6"))     fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
+
+  if (esl_opt_IsUsed(go, "--trmF3"))      fprintf(ofp, "# terminate after Stage 3 Fwd:           on\n");
 
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");

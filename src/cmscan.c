@@ -124,6 +124,7 @@ static ESL_OPTIONS options[] = {
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits anywhere within sequences",                   7 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",                7 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",                7 },
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",              7 },
   { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed alnment mx size to <x> Mb [df: autodetermined]",   7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed size of search DP matrices to <x> Mb",             7 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "use scanning CM CYK algorithm, not Inside in final stage",         7 },
@@ -206,7 +207,7 @@ static ESL_OPTIONS options[] = {
   { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 106 },
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
   /* Other expert options */
-  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--notrunc",TIMINGOPTS,   "terminate after Stage 3 Fwd and output surviving windows",       107 },
+  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc", NULL,   "terminate after Stage 3 Fwd and output surviving windows",       107 },
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    108 },
   { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist",    "turn off local ends in cp9 HMMs",                               108 },
@@ -592,9 +593,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
       }
 
-      /* Sort by score and enforce threshold. */
-      cm_tophits_SortByEvalue(info[0].th);
+      /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
+      if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
+      else                       cm_tophits_SortByEvalue(info[0].th);
+
+      /* Enforce threshold */
       cm_tophits_Threshold(info[0].th, info[0].pli);
+
 
       /* tally up total number of hits and target coverage */
       for (i = 0; i < info[0].th->N; i++) {
@@ -603,7 +608,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
 	}
       }
-      cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw); fprintf(ofp, "\n\n");
+      if(info[0].pli->do_trm_F3) { 
+        cm_tophits_F3Targets(ofp, info[0].th, info[0].pli);
+      }
+      else { 
+        cm_tophits_Targets(ofp, info[0].th, info[0].pli, textw);
+      }
+      fprintf(ofp, "\n\n");
 
       if(info[0].pli->show_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, info[0].th, info[0].pli, textw)) != eslOK) esl_fatal("Out of memory");
@@ -618,7 +629,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       if (tblfp != NULL) { 
-	cm_tophits_TabularTargets(tblfp, qsq->name, qsq->acc, info[0].th, info[0].pli, (seq_idx == 1));
+        if(info[0].pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, info[0].th, info[0].pli, (seq_idx == 1));
+        else               	   cm_tophits_TabularTargets  (tblfp, qsq->name, qsq->acc, info[0].th, info[0].pli, (seq_idx == 1));
       }
       esl_stopwatch_Stop(w);
 
@@ -729,7 +741,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       cm_pipeline_Reuse(info->pli); 
       if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
 
-      if(info->th->N != prv_ntophits) { 
+      if(info->th->N != prv_ntophits && (! info->pli->do_trm_F3)) { 
 	if(info->pli->do_hmmonly_cur) eZ = info->pli->Z / (float) om->max_length;
 	else                 	      eZ = cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
 	cm_tophits_ComputeEvalues(info->th, eZ, prv_ntophits);
@@ -878,7 +890,7 @@ pipeline_thread(void *arg)
 	  cm_pipeline_Reuse(info->pli);
 	  if(info->in_rc && info->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(info->th, prv_ntophits, info->qsq->start, info->in_rc);
 
-	  if(info->th->N != prv_ntophits) { 
+	  if(info->th->N != prv_ntophits && (! info->pli->do_trm_F3)) { 
 	    if(info->pli->do_hmmonly_cur) eZ = info->pli->Z / (float) om->max_length;
 	    else                	  eZ = cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
 	    cm_tophits_ComputeEvalues(info->th, eZ, prv_ntophits);
@@ -1179,8 +1191,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = cm_tophits_RemoveOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
       }
       
-      /* Print the results.  */
-      cm_tophits_SortByEvalue(th);
+
+      /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
+      if(pli->do_trm_F3) cm_tophits_SortByPosition(th);
+      else               cm_tophits_SortByEvalue(th);
+
+      /* Enforce threshold */
       cm_tophits_Threshold(th, pli);
 
       /* tally up total number of hits and target coverage */
@@ -1190,7 +1206,15 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  pli->acct[th->hit[i]->pass_idx].pos_output += abs(th->hit[i]->stop - th->hit[i]->start) + 1;
 	}
       }
-      cm_tophits_Targets(ofp, th, pli, textw); fprintf(ofp, "\n\n");
+
+      /* Print the results.  */
+      if(info->pli->do_trm_F3) { 
+        cm_tophits_F3Targets(ofp, th, pli); 
+      }
+      else { 
+        cm_tophits_Targets(ofp, th, pli, textw);
+      }
+      fprintf(ofp, "\n\n");
 
       if(pli->show_alignments) {
 	if((status = cm_tophits_HitAlignments(ofp, th, pli, textw)) != eslOK) mpi_failure("Out of memory");
@@ -1204,7 +1228,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       }
       
-      if (tblfp)    cm_tophits_TabularTargets(tblfp,    qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+      if (tblfp) { 
+        if(pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, th, pli, (seq_idx == 1));
+        else               cm_tophits_TabularTargets  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+      }
       
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, pli, w);
@@ -1869,7 +1896,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
   if (esl_opt_IsUsed(go, "--wcx"))        fprintf(ofp, "# W set as <x> * cm->clen:               <x>=%g\n", esl_opt_GetReal(go, "--wcx"));
-  if (esl_opt_IsUsed(go, "--onepass"))    fprintf(ofp, "# using CM for best HMM pass only        on\n");
+  if (esl_opt_IsUsed(go, "--onepass"))    fprintf(ofp, "# using CM for best HMM pass only:       on\n");
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go, "--qformat"));
@@ -1933,6 +1960,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--timeF4"))     fprintf(ofp, "# abort after Stage 4 gFwd (for timing)  on\n");
   if (esl_opt_IsUsed(go, "--timeF5"))     fprintf(ofp, "# abort after Stage 5 env defn (for timing) on\n");
   if (esl_opt_IsUsed(go, "--timeF6"))     fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
+
+  if (esl_opt_IsUsed(go, "--trmF3"))      fprintf(ofp, "# terminate after Stage 3 Fwd:           on\n");
 
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");

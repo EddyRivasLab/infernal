@@ -332,12 +332,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = TRUE;
   }
-  else if(esl_opt_GetBoolean(go, "--only53trunc")) { 
-    pli->do_trunc_ends    = FALSE;
-    pli->do_trunc_any     = FALSE;
-    pli->do_trunc_5p_ends = FALSE;
-    pli->do_trunc_3p_ends = FALSE;
-  }
   else { /* default */
     pli->do_trunc_ends    = TRUE;
     pli->do_trunc_any     = FALSE;
@@ -1252,6 +1246,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int64_t        *es  = NULL;     /* [0..i..nenv-1] envelope start positions, filled by pli_cyk_env_filter() or pli_cyk_seq_filter() */
   int64_t        *ee  = NULL;     /* [0..i..nenv-1] envelope end   positions, filled by pli_cyk_env_filter() or pli_cyk_seq_filter() */
   int             i;              /* counter over envelopes */
+  CM_HIT         *hit = NULL;     /* ptr to the current hit output data, only used if pli->do_trmF3 */
 
   /* variables necessary for re-searching sequence ends */
   ESL_SQ   *sq2search = NULL;  /* a pointer to the sequence to search on current pass */
@@ -1274,6 +1269,10 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   float     winning_sc   = 0.; /* score of best scoring pass in HMM stage, only used if pli->do_one_cmpass */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
+
+  if ((! pli->do_edef) && pli->do_one_cmpass) { 
+    ESL_FAIL(eslEINVAL, pli->errbuf, "cm_Pipeline() entered with do_edef as FALSE but do_onepass as TRUE, coding bug.");
+  }
 
   /* Determine if we have the 5' and/or 3' termini. We can do this
    * because sq->L should always be valid. (Caller should enforce
@@ -1422,17 +1421,8 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #endif
       if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
-      if(pli->do_trm_F3) { /* terminate after F3, and output surviving windows */
-        for(h = 0; h < nwin; h++) { 
-          ws[h] = (in_rc) ? (sq->start - ws[h] + 1) : (ws[h] + sq->start - 1);
-          we[h] = (in_rc) ? (sq->start - we[h] + 1) : (we[h] + sq->start - 1);
-          printf("* %s  %s  %" PRId64 "  %" PRId64 "  %" PRId64 "  %c  %8.2f\n", om->name, sq->name, sq->L, ws[h], we[h], (in_rc ? '-' : '+'), wb[h]);
-        }
-      }
-      else { 
-        prv_ntophits = hitlist->N;
-        if((status = pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq2search, ws, we, nwin, hitlist, opt_cm)) != eslOK) return status;
-      }
+      prv_ntophits = hitlist->N;
+      if((status = pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq2search, ws, we, nwin, hitlist, opt_cm)) != eslOK) return status;
     }
     else { /* normal case, p != PLI_PASS_HMM_ONLY_ANY */
       /* Use HMM to define envelopes, if nec.
@@ -1451,11 +1441,43 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
         
-        if(pli->do_trm_F3) { /* terminate after F3, and output surviving windows */
+        if(pli->do_trm_F3) { /* terminate after F3, and convert surviving windows to hits */
           for(h = 0; h < nwin; h++) { 
-            ws[h] = (in_rc) ? (sq->start - ws[h] + 1) : (ws[h] + sq->start - 1);
-            we[h] = (in_rc) ? (sq->start - we[h] + 1) : (we[h] + sq->start - 1);
-            printf("* %s  %s  %" PRId64 "  %" PRId64 "  %" PRId64 "  %c  %8.2f\n", om->name, sq->name, sq->L, ws[h], we[h], (in_rc ? '-' : '+'), wb[h]);
+            /* create a hit from each window to be output at end of run, we do this (as opposed to 
+             * just outputting info on windows *here*) so that we can use our machinery for removing
+             * overlaps later before we output.
+             */
+            cm_tophits_CreateNextHit(hitlist, &hit);
+            hit->start    = ws[h];
+            hit->stop     = we[h];
+            hit->root     = -1; /* irrelevant in HMM only hit */
+            hit->mode     = TRMODE_J; /* irrelevant */
+            hit->score    = wb[h];
+            
+            hit->cm_idx   = pli->cur_cm_idx;
+            hit->seq_idx  = pli->cur_seq_idx;
+            hit->pass_idx = pli->cur_pass_idx;
+            hit->pvalue   = 0.; /* irrelevant */
+            hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
+            
+            hit->hmmonly  = TRUE;
+            hit->glocal   = FALSE; /* all HMM hits are local */
+            hit->bias     = 0.; /* irrelevant */
+            hit->evalue   = 0.; /* irrelevant */
+            hit->ad       = NULL;
+            
+            if (pli->mode == CM_SEARCH_SEQS) { 
+              if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+              if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+              /* special for do_trm_F3: description gets overwritten as query name */
+              if ((status  = esl_strdup(om->name, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            }
+            else { /* SCAN mode */
+              if ((status  = esl_strdup(om->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+              if ((status  = esl_strdup(om->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+              /* special for do_trm_F3: description gets overwritten as query name */
+              if ((status  = esl_strdup(sq->name, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            }
           }
         }
         else { 
