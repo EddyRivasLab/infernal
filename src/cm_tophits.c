@@ -1974,8 +1974,8 @@ cm_tophits_F3TabularTargets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int sho
   for(i = 0; i < posw;  i++) { posstr[i]  = '-'; } posstr[posw]   = '\0';
 
   if(show_header) { 
-    fprintf(ofp, "%-*s %-*s %6s %*s %*s %6s %6s\n", namew, (pli->mode == CM_SEARCH_SEQS) ? "#sequence" : "#modelname", descw, (pli->mode == CM_SEARCH_SEQS) ? "modelname" : "sequence", " score", posw, "start", posw, "end", "strand", "bounds");
-    fprintf(ofp, "%*s %*s %6s %*s %*s %6s %6s\n", namew, namestr, descw, descstr, "------", posw, posstr, posw, posstr, "------", "------");
+    fprintf(ofp, "%-*s %-*s %6s %*s %*s %6s %6s %11s\n", namew, (pli->mode == CM_SEARCH_SEQS) ? "#sequence" : "#modelname", descw, (pli->mode == CM_SEARCH_SEQS) ? "modelname" : "sequence", " score", posw, "start", posw, "end", "strand", "bounds", "seqlen");
+    fprintf(ofp, "%*s %*s %6s %*s %*s %6s %6s %11s\n", namew, namestr, descw, descstr, "------", posw, posstr, posw, posstr, "------", "------", "-----------");
   }
   
   for (h = 0; h < th->N; h++) { 
@@ -1998,14 +1998,14 @@ cm_tophits_F3TabularTargets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int sho
         rseq = th->hit[h]->stop  == th->hit[h]->srcL ? ']' : '.'; 
       }
   
-      fprintf(ofp, "%-*s %-*s %6.1f %*" PRId64 " %*" PRId64 " %6s %4s%c%c\n", 
+      fprintf(ofp, "%-*s %-*s %6.1f %*" PRId64 " %*" PRId64 " %6s %4s%c%c %11" PRId64 "\n", 
 	      namew, showname,
 	      descw, th->hit[h]->desc,
 	      th->hit[h]->score,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-	      "", lseq, rseq);
+	      "", lseq, rseq, th->hit[h]->srcL);
     }
   }
   if(namestr != NULL) free(namestr);
