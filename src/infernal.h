@@ -111,6 +111,11 @@
 /* number of possible integer GC contents, example 40 = 0.40 GC */
 #define GC_SEGMENTS 101
 
+/* length of a sequence 'chunk' that gets processed in cmsearch/cmscan
+ * sequences larger than this get broken up into overlapping chunks of this size.
+ */
+#define CM_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
+
 /* P7 HMM E-value parameters, borrowed from HMMER, but with 2 new additions: CM_p7_GMU and CM_p7_GLAMBDA */
 #define CM_p7_NEVPARAM 8  /* number of statistical parameters stored in cm->p7_evparam */
 enum cm_p7_evparams_e {CM_p7_LMMU  = 0, CM_p7_LMLAMBDA = 1, CM_p7_LVMU = 2,  CM_p7_LVLAMBDA = 3, CM_p7_LFTAU = 4, CM_p7_LFLAMBDA = 5, CM_p7_GFMU = 6, CM_p7_GFLAMBDA = 7 };
@@ -2924,6 +2929,7 @@ extern int   cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern int   cm_pli_PassEnforcesFirstRes(int pass_idx);
 extern int   cm_pli_PassEnforcesFinalRes(int pass_idx);
 extern int   cm_pli_PassAllowsTruncation(int pass_idx);
+extern void  cm_pli_AdjustNresForOverlaps(CM_PIPELINE *pli, int64_t noverlap, int in_rc);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
