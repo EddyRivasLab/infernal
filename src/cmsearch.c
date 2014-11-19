@@ -38,9 +38,6 @@
 
 #include "infernal.h"
 
-/* set the max residue count to 100Kb when reading a block */
-#define CMSEARCH_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
-
 typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
@@ -281,8 +278,6 @@ static int          clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_IN
 static void         free_info(WORKER_INFO *info);
 static int          configure_cm(WORKER_INFO *info);
 static int          setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info);
-static void         adjust_nres_top_for_overlaps(CM_PIPELINE *pli, int64_t noverlap);
-static void         adjust_nres_bot_for_overlaps(CM_PIPELINE *pli, int64_t noverlap);
 
 #ifdef HAVE_MPI
 
@@ -769,8 +764,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 /* serial_loop(): 
  * 
- * Read the sequence file one window of CMSEARCH_MAX_RESIDUE_COUNT
- * residues (or one sequence, if seqlen < CMSEARCH_MAX_RESIDUE_COUNT)
+ * Read the sequence file one window of CM_MAX_RESIDUE_COUNT
+ * residues (or one sequence, if seqlen < CM_MAX_RESIDUE_COUNT)
  * at a time. Search the top strand of the window, then revcomp it and
  * search the bottom strand.
  */
@@ -784,13 +779,13 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq    = esl_sq_CreateDigital(info->cm->abc);
 
-  wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+  wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
 
   while(wstatus == eslEOD) { /* this block is only necessary to chew up zero-length sequences */
     info->pli->nseqs++;
     esl_sq_Reuse(dbsq);
-    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
     seq_idx++;
   }
 
@@ -809,7 +804,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* subtract overlapping residues from previous window */
-      if(dbsq->C > 0) adjust_nres_top_for_overlaps(info->pli, dbsq->C);
+      if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, FALSE); /* 'FALSE': we're not on bottom strand */
 
       /* modify hit positions to account for the position of the window in the full sequence */
       cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, FALSE);
@@ -824,7 +819,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* subtract overlapping residues from previous window */
-      if(dbsq->C > 0) adjust_nres_bot_for_overlaps(info->pli, dbsq->C);
+      if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, TRUE); /* 'TRUEE': we are on bottom strand */ 
 
       /* modify hit positions to account for the position of the window in the full sequence */
       cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
@@ -838,7 +833,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
       esl_sq_ReverseComplement(dbsq);
     }
 
-    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
     /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
     while (wstatus == eslEOD) { 
       /* no more left of this sequence ... move along to the next sequence.
@@ -846,7 +841,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
        */
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
-      wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CMSEARCH_MAX_RESIDUE_COUNT, dbsq);
+      wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
       seq_idx++; /* because we started reading a new sequence, or reached EOF */
     }
   }
@@ -891,7 +886,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
        * overlap should be retained in the ReadWindow step. */
     }
 
-    sstatus = esl_sqio_ReadBlock(dbfp, block, CMSEARCH_MAX_RESIDUE_COUNT, TRUE);
+    sstatus = esl_sqio_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, TRUE);
 
     if (sstatus == eslOK) { /* we read a block */
       if(! block->complete) { 
@@ -1000,7 +995,7 @@ pipeline_thread(void *arg)
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* subtract overlapping residues from previous window */
-	if(dbsq->C > 0) adjust_nres_top_for_overlaps(info->pli, dbsq->C);
+	if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, FALSE); /* 'FALSE': we're not on bottom strand */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, FALSE);
@@ -1015,7 +1010,7 @@ pipeline_thread(void *arg)
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* subtract overlapping residues from previous window */
-	if(dbsq->C > 0) adjust_nres_bot_for_overlaps(info->pli, dbsq->C);
+	if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, TRUE); /* 'TRUE': we're not on bottom strand */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
@@ -1327,8 +1322,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* Set number of seqs, and subtract number of overlapping residues searched from total */
     info->pli->nseqs = tot_nseq;
-    if(info->pli->do_top && tot_noverlap > 0) adjust_nres_top_for_overlaps(info->pli, tot_noverlap);
-    if(info->pli->do_bot && tot_noverlap > 0) adjust_nres_bot_for_overlaps(info->pli, tot_noverlap);
+    if(info->pli->do_top && tot_noverlap > 0) cm_pli_AdjustNresForOverlaps(info->pli, tot_noverlap, FALSE); /* 'FALSE': we're not on bottom strand */
+    if(info->pli->do_bot && tot_noverlap > 0) cm_pli_AdjustNresForOverlaps(info->pli, tot_noverlap, TRUE);  /* 'TRUE':  we are on bottom strand */
     
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info->th);
@@ -2468,42 +2463,6 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
   return eslOK;
 }
 
-/* Function:  adjust_nres_top_for_overlap()
- * Incept:    EPN, Thu Apr 12 05:44:09 2012
- *
- * Purpose:  Update <nres_top> values in a CM_PIPELINE <pli> to account
- *           for overlapping windows from previous pipeline
- *           passes. Only certain passes are affected, all others can
- *           never search overlaps.
- *
- * Returns: void.
- */
-void
-adjust_nres_top_for_overlaps(CM_PIPELINE *pli, int64_t noverlap)
-{ 
-  if(! pli->do_hmmonly_cur) pli->acct[PLI_PASS_STD_ANY].nres_top       -= noverlap;
-  else                      pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_top  -= noverlap;
-  if(pli->do_trunc_any)     pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_top -= noverlap;
-}
-
-/* Function:  adjust_nres_bot_for_overlap()
- * Incept:    EPN, Thu Apr 12 05:44:09 2012
- *
- * Purpose:  Update <nres_top> values in a CM_PIPELINE <pli> to account
- *           for overlapping windows from previous pipeline
- *           passes. Only certain passes are affected, all others can
- *           never search overlaps.
- *
- * Returns: void.
- */
-void
-adjust_nres_bot_for_overlaps(CM_PIPELINE *pli, int64_t noverlap)
-{ 
-  if(! pli->do_hmmonly_cur) pli->acct[PLI_PASS_STD_ANY].nres_bot       -= noverlap;
-  else                      pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_bot  -= noverlap;
-  if(pli->do_trunc_any)     pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_bot -= noverlap;
-}
-
 #ifdef HAVE_MPI
 /* mpi_failure()
  * Generate an error message.  If the clients rank is not 0, a
@@ -2753,9 +2712,9 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
     
   /* Now fill in >= 1 blocks with this sequence. 
    * Chop the sequence up into overlapping chunks of max size
-   * CMSEARCH_MAX_RESIDUE_COUNT (not including any overlap). The final
+   * CM_MAX_RESIDUE_COUNT (not including any overlap). The final
    * chunk (which may be the only chunk) will probably be less than
-   * CMSEARCH_MAX_RESIDUE_COUNT residues. Add the chunk(s) to as many
+   * CM_MAX_RESIDUE_COUNT residues. Add the chunk(s) to as many
    * blocks as necessary, creating all blocks except the first one as
    * we go, to get rid of all the chunks.  Each block will get exactly
    * 1 chunk.
@@ -2764,7 +2723,7 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
   nremaining   = L;
   cur_noverlap = 0; /* first chunk of this sequence, we haven't required any overlapping residues yet */
   while(nremaining > 0) { 
-    ntoadd   = CMSEARCH_MAX_RESIDUE_COUNT + cur_noverlap; /* max number residues we can add to cur_block */
+    ntoadd   = CM_MAX_RESIDUE_COUNT + cur_noverlap; /* max number residues we can add to cur_block */
     ntoadd   = ESL_MIN(ntoadd, nremaining);
     if(cur_block->blockL == 0) { /* this block was just created */
       cur_block->first_idx = pkey_idx; 
@@ -2777,7 +2736,7 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
       }
       cur_block->final_to  = L;
       cur_block->blockL   += nremaining;
-      if(cur_block->blockL >= CMSEARCH_MAX_RESIDUE_COUNT) { 
+      if(cur_block->blockL >= CM_MAX_RESIDUE_COUNT) { 
 	cur_block->complete = TRUE;
       }
       /* update nremaining, this will break us out of the while()  */
