@@ -2320,7 +2320,6 @@ cm_pli_AdjustNresForOverlaps(CM_PIPELINE *pli, int64_t noverlap, int in_rc)
   return;
 }
 
-
 /*------------------- end, pipeline API -------------------------*/
  
 
