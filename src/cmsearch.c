@@ -145,6 +145,7 @@ static ESL_OPTIONS options[] = {
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the bottom strand",                                  7 },
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "assert target <seqdb> is in format <s>: no autodetection",       7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
+  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",         7 },
 #endif

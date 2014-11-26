@@ -3494,6 +3494,7 @@ cm_p7_oprofile_CreateBlock(int count)
   ESL_ALLOC(block, sizeof(*block));
 
   block->count = 0;
+  block->idx0  = 0;
   block->listSize = 0;
   block->list         = NULL;
   block->cm_offsetA   = NULL;

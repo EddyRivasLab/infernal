@@ -2467,6 +2467,7 @@ typedef struct cm_tophits_s {
 
 typedef struct {
   int            count;       /* number of <P7_OPROFILE> objects in the block (and cm_offsetA, cm_clenA, cm_WA, gfmuA, gflambdaA) */
+  int64_t        idx0;        /* index of first profile in file >= 0          */
   int            listSize;    /* maximum number elements in the list          */
   P7_OPROFILE  **list;        /* array of <P7_OPROFILE> objects               */
   off_t         *cm_offsetA;  /* file offsets for CMs */
@@ -2767,7 +2768,7 @@ extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
 extern int     cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm);
 extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, int cm_nbp, float gfmu, float gflambda, P7_OPROFILE *om);
 extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
-extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
+extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, int64_t cm_idx, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
 extern int     cm_file_Write1p0ASCII(FILE *fp, CM_t *cm);
 

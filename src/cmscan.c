@@ -50,6 +50,8 @@ typedef struct {
   float            *p7_evparam; /* E-value parameters for p7 filter    */
   int               in_rc;      /* TRUE if qsq is currently revcomp'ed */
   ESL_KEYHASH      *glocal_kh;  /* non-NULL only if --glist, these models will be run in glocal mode */
+
+  /* the arrays of models and matrices */
 } WORKER_INFO;
 
 
@@ -514,7 +516,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
     {
-      if(qsq->n > CMSCAN_MAX_SEQ_LEN) cm_Fail("sequence #%d (L=%d) exceeds max length of %d\n", seq_idx+1, qsq->n, CMSCAN_MAX_SEQ_LEN);
       seq_idx++;
       esl_stopwatch_Start(w);	                          
 
@@ -545,6 +546,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if(! info->pli->do_top) cm_Fail("Trying to only search bottom strand but sequence cannot be complemented"); 
 	    else continue; /* skip bottom strand b/c we can't complement the sequence */
 	  }
+          printf("calling revcomp()\n");
 	  esl_sq_ReverseComplement(qsq);
 	}
 
@@ -733,6 +735,23 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
   int64_t           prv_posn = 0;              /* position of previous chunk for cur seq, 0 if first chunk */
   ESL_DSQ          *save_dsq = info->qsq->dsq; /* pointer to original qsq->dsq data */
 
+  /* temp */
+  int ncm_read  = 0;
+  int nom_read  = 0;
+  int nhmm_read = 0;
+  int ngm_config = 0;
+  int nRgm_config = 0;
+  int nLgm_config = 0;
+  int nTgm_config = 0;
+
+  int om_was_null = TRUE;
+  int hmm_was_null = TRUE;
+  int cm_was_null = TRUE;
+  int gm_was_null = TRUE;
+  int Rgm_was_null = TRUE;
+  int Lgm_was_null = TRUE;
+  int Tgm_was_null = TRUE;
+
   /* Main loop: */
   while ((status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &abc, &cm_offset, &cm_clen, &cm_W, &cm_nbp, &gfmu, &gflambda, &om)) == eslOK)
     {
@@ -785,14 +804,38 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
         info->qsq->n     = info->qsq->end - info->qsq->start + 1; 
         info->qsq->W     = info->qsq->n - info->qsq->C; 
         prv_posn         = info->qsq->end;
-        info->qsq->dsq   = save_dsq + info->qsq->start - 1;
-        if(info->in_rc) ESL_SWAP(info->qsq->start, info->qsq->end, int64_t); 
+        if(info->in_rc) { 
+          ESL_SWAP(info->qsq->start, info->qsq->end, int64_t); 
+          info->qsq->dsq = save_dsq + (info->qsq->L - info->qsq->start);
+        }
+        else { 
+          info->qsq->dsq = save_dsq + info->qsq->start - 1;
+        }
+        /*printf("serial_loop() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n",
+          om->name, info->qsq->name, info->qsq->start, info->qsq->end, info->qsq->n, info->qsq->C, info->qsq->W, info->qsq->L, info->in_rc); */
+        
+        /* temp */
+        om_was_null  = (om   == NULL) ? TRUE : FALSE;
+        hmm_was_null = (hmm  == NULL) ? TRUE : FALSE;
+        cm_was_null  = (cm   == NULL) ? TRUE : FALSE;
+        gm_was_null  = (gm   == NULL) ? TRUE : FALSE;
+        Rgm_was_null = (Rgm  == NULL) ? TRUE : FALSE;
+        Lgm_was_null = (Lgm  == NULL) ? TRUE : FALSE;
+        Tgm_was_null = (Tgm  == NULL) ? TRUE : FALSE;
 
-        printf("serial_loop() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n", 
-               om->name, info->qsq->name, info->qsq->start, info->qsq->end, info->qsq->n, info->qsq->C, info->qsq->W, info->qsq->L, info->in_rc); 
         prv_ntophits = info->th->N;
         if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, info->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
           cm_Fail("cm_Pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
+
+        /* temp */
+        if(om_was_null  && om  != NULL)  { nom_read++;  }
+        if(hmm_was_null && hmm != NULL)  { nhmm_read++; }
+        if(cm_was_null  && cm  != NULL)  { ncm_read++;  }
+        if(gm_was_null  && gm  != NULL)  { ngm_config++; }
+        if(Rgm_was_null && Rgm  != NULL) { nRgm_config++; }
+        if(Lgm_was_null && Lgm  != NULL) { nLgm_config++; }
+        if(Tgm_was_null && Tgm  != NULL) { nTgm_config++; }
+
         cm_pipeline_Reuse(info->pli); 
         /* subtract overlapping residues from previous chunk */
         if(info->qsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, info->qsq->C, info->in_rc); 
@@ -801,7 +844,7 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
         
         if(info->th->N != prv_ntophits && (! info->pli->do_trm_F3)) { 
           if(info->pli->do_hmmonly_cur) eZ = info->pli->Z / (float) om->max_length;
-          else                 	      eZ = cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
+          else                 	        eZ = cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
           cm_tophits_ComputeEvalues(info->th, eZ, prv_ntophits);
         }
       } /* end of 'while(prv_posn != info->qsq->L)' */
@@ -823,6 +866,14 @@ serial_loop(WORKER_INFO *info, CM_FILE *cmfp)
       if(msvdata != NULL) { p7_hmm_MSVDataDestroy(msvdata); msvdata = NULL; }
     } /* end of while(cm_p7_oprofile_ReadMSV() == eslOK) */
 
+  printf("SERIAL nom_read    %10d\n", nom_read);
+  printf("SERIAL nhmm_read   %10d\n", nhmm_read);
+  printf("SERIAL ncm_read    %10d\n", ncm_read);
+  printf("SERIAL ngm_config  %10d\n", ngm_config);
+  printf("SERIAL nRgm_config %10d\n", nRgm_config);
+  printf("SERIAL nLgm_config %10d\n", nLgm_config);
+  printf("SERIAL nTgm_config %10d\n", nTgm_config);
+
   esl_alphabet_Destroy(abc);
   
   return status;
@@ -838,6 +889,7 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp)
   CM_P7_OM_BLOCK  *block;
   ESL_ALPHABET    *abc = NULL;
   void            *newBlock;
+  int64_t          idx0 = 0;   /* index of next profile in CM file, 0 == first profile */
 
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
@@ -846,10 +898,11 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp)
   if (status != eslOK) esl_fatal("Work queue reader failed");
       
   /* Main loop: */
+
   while (sstatus == eslOK)
     {
       block = (CM_P7_OM_BLOCK *) newBlock;
-      sstatus = cm_p7_oprofile_ReadBlockMSV(cmfp, &abc, block);
+      sstatus = cm_p7_oprofile_ReadBlockMSV(cmfp, idx0, &abc, block);
       if (sstatus == eslEOF) { 
 	if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
 	++eofCount;
@@ -857,6 +910,7 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, CM_FILE *cmfp)
       if (sstatus == eslOK) { 
 	status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
 	if (status != eslOK) esl_fatal("Work queue reader failed");
+        idx0 += block->count;
       }
     }
 
@@ -905,6 +959,22 @@ pipeline_thread(void *arg)
                                                 * we can manipulate without interfering with other
                                                 * threads who's info->qsq points at the same sequence.
                                                 */
+  /* temp */
+  int ncm_read  = 0;
+  int nom_read  = 0;
+  int nhmm_read = 0;
+  int ngm_config = 0;
+  int nRgm_config = 0;
+  int nLgm_config = 0;
+  int nTgm_config = 0;
+
+  int om_was_null = TRUE;
+  int hmm_was_null = TRUE;
+  int cm_was_null = TRUE;
+  int gm_was_null = TRUE;
+  int Rgm_was_null = TRUE;
+  int Lgm_was_null = TRUE;
+  int Tgm_was_null = TRUE;
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -941,6 +1011,7 @@ pipeline_thread(void *arg)
   while (block->count > 0)
     {
       /* Main loop: */
+      cm_idx = block->idx0;
       for (i = 0; i < block->count; ++i)
 	{
 	  P7_OPROFILE *om = block->list[i];
@@ -1000,14 +1071,39 @@ pipeline_thread(void *arg)
             info->qsq->W     = info->qsq->n - info->qsq->C; 
             prv_posn         = info->qsq->end;
             info->qsq->dsq   = save_dsq + info->qsq->start - 1;
-            if(info->in_rc) ESL_SWAP(info->qsq->start, info->qsq->end, int64_t); 
-            
-            printf("pipeline_thread() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n", 
+            if(info->in_rc) { 
+              ESL_SWAP(info->qsq->start, info->qsq->end, int64_t); 
+              info->qsq->dsq = save_dsq + (info->qsq->L - info->qsq->start);
+            }
+            else { 
+              info->qsq->dsq = save_dsq + info->qsq->start - 1;
+            }
+            /*printf("pipeline_thread() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n", 
                    om->name, info->qsq->name, info->qsq->start, info->qsq->end, info->qsq->n, info->qsq->C, info->qsq->W, info->qsq->L, info->in_rc); 
+            */
+
+            /* temp */
+            om_was_null  = (om   == NULL) ? TRUE : FALSE;
+            hmm_was_null = (hmm  == NULL) ? TRUE : FALSE;
+            cm_was_null  = (cm   == NULL) ? TRUE : FALSE;
+            gm_was_null  = (gm   == NULL) ? TRUE : FALSE;
+            Rgm_was_null = (Rgm  == NULL) ? TRUE : FALSE;
+            Lgm_was_null = (Lgm  == NULL) ? TRUE : FALSE;
+            Tgm_was_null = (Tgm  == NULL) ? TRUE : FALSE;
             
             prv_ntophits = info->th->N;
             if((status = cm_Pipeline(info->pli, cm_offset, om, info->bg, info->p7_evparam, msvdata, info->qsq, info->th, info->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
               cm_Fail("cm_Pipeline() failed unexpected with status code %d\n%s", status, info->pli->errbuf);
+
+            /* temp */
+            if(om_was_null  && om  != NULL)  { nom_read++;  }
+            if(hmm_was_null && hmm != NULL)  { nhmm_read++; }
+            if(cm_was_null  && cm  != NULL)  { ncm_read++;  }
+            if(gm_was_null  && gm  != NULL)  { ngm_config++; }
+            if(Rgm_was_null && Rgm  != NULL) { nRgm_config++; }
+            if(Lgm_was_null && Lgm  != NULL) { nLgm_config++; }
+            if(Tgm_was_null && Tgm  != NULL) { nTgm_config++; }
+
             cm_pipeline_Reuse(info->pli);
             /* subtract overlapping residues from previous chunk */
             if(info->qsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, info->qsq->C, info->in_rc); 
@@ -1045,6 +1141,14 @@ pipeline_thread(void *arg)
       
       block = (CM_P7_OM_BLOCK *) newBlock;
     }
+
+  printf("THREAD nom_read    %10d\n", nom_read);
+  printf("THREAD nhmm_read   %10d\n", nhmm_read);
+  printf("THREAD ncm_read    %10d\n", ncm_read);
+  printf("THREAD ngm_config  %10d\n", ngm_config);
+  printf("THREAD nRgm_config %10d\n", nRgm_config);
+  printf("THREAD nLgm_config %10d\n", nLgm_config);
+  printf("THREAD nTgm_config %10d\n", nTgm_config);
   
   status = esl_workqueue_WorkerUpdate(info->queue, block, NULL);
   if (status != eslOK) esl_fatal("Work queue worker failed");
@@ -1191,8 +1295,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       CM_PIPELINE     *pli     = NULL;		/* processing pipeline                      */
       CM_TOPHITS      *th      = NULL;        	/* top-scoring sequence hits                */
-
-      if(qsq->n > CMSCAN_MAX_SEQ_LEN) mpi_failure("sequence #%d (L=%d) exceeds max length of %d\n", seq_idx+1, qsq->n, CMSCAN_MAX_SEQ_LEN);
 
       seq_idx++;
       esl_stopwatch_Start(w);	                          
@@ -1637,10 +1739,15 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                   qsq->W     = qsq->n - qsq->C; 
                   prv_posn         = qsq->end;
                   qsq->dsq   = save_dsq + qsq->start - 1;
-                  if(in_rc) ESL_SWAP(qsq->start, qsq->end, int64_t); 
-
-                  printf("mpi_worker() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n", 
-                         om->name, qsq->name, qsq->start, qsq->end, qsq->n, qsq->C, qsq->W, qsq->L, in_rc); 
+                  if(in_rc) { 
+                    ESL_SWAP(qsq->start, qsq->end, int64_t); 
+                    qsq->dsq = save_dsq + (qsq->L - qsq->start);
+                  }
+                  else { 
+                    qsq->dsq = save_dsq + qsq->start - 1;
+                  }
+                  /*printf("mpi_worker() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n", 
+                    om->name, qsq->name, qsq->start, qsq->end, qsq->n, qsq->C, qsq->W, qsq->L, in_rc); */
 
                   prv_ntophits = th->N;
                   
@@ -2093,8 +2200,9 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--onepass"))    fprintf(ofp, "# using CM for best HMM pass only:       on\n");
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
-  if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go, "--qformat"));
-  if (esl_opt_IsUsed(go, "--glist"))      fprintf(ofp, "# models for glocal mode scan read from: %s\n", esl_opt_GetString(go, "--glist"));
+  if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go,  "--qformat"));
+  if (esl_opt_IsUsed(go, "--glist"))      fprintf(ofp, "# models for glocal mode scan read from: %s\n", esl_opt_GetString(go,  "--glist"));
+  if (esl_opt_IsUsed(go, "--block"))      fprintf(ofp, "# block size (# models) set to:          %d\n", esl_opt_GetInteger(go, "--block"));
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--stall"))      fprintf(ofp, "# MPI stall mode:                        on\n");
 #endif
