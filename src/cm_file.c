@@ -1414,6 +1414,7 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
  *            for more explanation. 
  *
  * Args:      cmfp    - open CM file, with associated .i1f file
+ *            idx0    - the index of the next profile in the file (0 if first profile)
  *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
  *                              <*byp_abc == NULL> if desired; 
  *                              <NULL> if unwanted.
@@ -1431,12 +1432,13 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
  *            file (including first attempt to read an empty file).
  */
 int
-cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock)
+cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, int64_t idx0, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock)
 {
   int status         = eslOK;      /* return status */
   int i;
 
   hmmBlock->count = 0;
+  hmmBlock->idx0  = idx0;
   for (i = 0; i < hmmBlock->listSize; ++i)
     {
       status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, byp_abc, 
