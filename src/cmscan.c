@@ -275,9 +275,10 @@ static void copy_sq_for_thread(ESL_SQ *src_sq, ESL_SQ *dest_sq);
 #define MAX_BLOCK_SIZE (512*1024)
 
 typedef struct {
-  uint64_t  offset;
-  uint64_t  length;
-  uint64_t  count;
+  uint64_t  offset; /* offset in file for first profile in block */
+  uint64_t  length; /* size of block */
+  uint64_t  count;  /* number of profiles in block */
+  uint64_t  idx0;   /* index of first profile in block (0 == first) */
 } MSV_BLOCK;
 
 typedef struct {
@@ -289,7 +290,7 @@ typedef struct {
 } BLOCK_LIST;
 
 static void mpi_failure(char *format, ...);
-static int  mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, MSV_BLOCK *block);
+static int  mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0, MSV_BLOCK *block);
 #endif /* HAVE_MPI */
 
 int
@@ -381,7 +382,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *mw       = NULL;              /* timing all query sequences                      */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
-  int              seq_idx  = 0;                 /* index of current seq we're working with         */
+  int64_t          seq_idx  = 0;                 /* index of current seq we're working with         */
   ESL_KEYHASH     *glocal_kh= NULL;              /* list of models to configure globally, only created if --glist */
   int              textw;
   int              status   = eslOK;
@@ -605,11 +606,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(info[0].pli->nnodes_hmmonly  > 0) info[0].pli->nnodes_hmmonly /= 2;
       }
 
-      if(info[0].pli->do_trunc_ends || info[0].pli->do_trunc_5p_ends || info[0].pli->do_trunc_3p_ends) {
-	/* We may have overlaps so sort by sequence index/position and remove duplicates */
-	cm_tophits_SortForOverlapRemoval(info[0].th);
-	if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
-      }
+      /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
+      cm_tophits_SortForOverlapRemoval(info[0].th);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
+
+      /* Resort in order to markup overlapping hits from different models */
+      cm_tophits_SortForOverlapMarkup(info[0].th);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
       if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
@@ -617,7 +620,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Enforce threshold */
       cm_tophits_Threshold(info[0].th, info[0].pli);
-
 
       /* tally up total number of hits and target coverage */
       for (i = 0; i < info[0].th->N; i++) {
@@ -1196,7 +1198,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH   *mw       = NULL;              /* timing all query sequences                      */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
   int              qZ = 0;                       /* # residues to search in query seq (both strands)*/
-  int              seq_idx   = 0;
+  int64_t          seq_idx   = 0;
   int              textw;
   int              status   = eslOK;
   int              hstatus  = eslOK;
@@ -1209,6 +1211,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   MSV_BLOCK        block;
   int64_t          nmodels;                      /* number of models in CM file       */
   int64_t          bsize = 0;                    /* number of models per worker block */
+  uint64_t         cm_idx = 0;                   /* index of profile we're currently working on */
 
   int              i;
   int              size;
@@ -1334,7 +1337,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	list->current = 0; /* init nmodels searched for this strand of this seq against any models, impt to reset this for each strand! */
 
 	/* Main loop: */
-	while ((hstatus = mpi_next_block(cmfp, list, bsize, &block)) == eslOK)
+	while ((hstatus = mpi_next_block(cmfp, list, bsize, cm_idx, &block)) == eslOK)
 	{
 	  if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) 
 	    mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
@@ -1354,7 +1357,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
 	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
 	  
-	  MPI_Send(&block, 3, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
+	  MPI_Send(&block, 4, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
+          cm_idx += block.count;
 	}
 	switch(hstatus)
 	  {
@@ -1429,12 +1433,13 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(pli->nnodes_hmmonly  > 0) pli->nnodes_hmmonly /= 2;
       }
 
-      if(pli->do_trunc_ends || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) {
-	/* We may have overlaps so sort by sequence index/position and remove duplicates */
-	cm_tophits_SortForOverlapRemoval(th);
-	if((status = cm_tophits_RemoveOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
-      }
-      
+      /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
+      cm_tophits_SortForOverlapRemoval(th);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
+
+      /* Resort in order to markup overlapping hits from different models */
+      cm_tophits_SortForOverlapMarkup(th);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
       if(pli->do_trm_F3) cm_tophits_SortByPosition(th);
@@ -1575,8 +1580,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
-  int              seq_idx  = 0;                 /* index of sequence we're currently working on */
-  int              cm_idx   = 0;                 /* index of model    we're currently working on */
+  int64_t          seq_idx  = 0;                 /* index of sequence we're currently working on */
+  int64_t          cm_idx   = 0;                 /* index of model    we're currently working on */
   double           eZ;                           /* effective database size                      */
   int64_t          prv_posn = 0;                 /* position of previous chunk for cur seq, 0 if first chunk */
   ESL_DSQ         *save_dsq = NULL;              /* pointer to original qsq->dsq data */
@@ -1673,11 +1678,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm_pli_NewSeq(pli, qsq, seq_idx);
 
 	/* receive a block of models from the master */
-	MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	MPI_Recv(&block, 4, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
 	while (block.count > 0)
 	  {
 	    uint64_t length = 0;
 	    uint64_t count  = block.count;
+            int64_t cm_idx = (int64_t) block.idx0;
 	    
 	    hstatus = cm_p7_oprofile_Position(cmfp, block.offset);
 	    if (hstatus != eslOK) mpi_failure("Cannot position optimized model to %ld\n", block.offset);
@@ -1805,7 +1811,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 	    
 	    /* wait for the next block of sequences */
-	    MPI_Recv(&block, 3, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	    MPI_Recv(&block, 4, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
 	  }
 	cm_file_Close(cmfp);
       } /* end loop over in_rc (reverse complement) */
@@ -2493,7 +2499,7 @@ mpi_failure(char *format, ...)
  * MPI workers.  If multiple models are in the query file, the
  * blocks are reused without parsing the database a second time.
  */
-int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, MSV_BLOCK *block)
+int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0, MSV_BLOCK *block)
 {
   P7_OPROFILE   *om       = NULL;
   ESL_ALPHABET  *abc      = NULL;
@@ -2508,6 +2514,7 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, MSV_BLOCK *bl
 	  block->offset = 0;
 	  block->length = 0;
 	  block->count  = 0;
+          block->idx0   = 0;
 
 	  status = eslEOF;
 	}
@@ -2518,6 +2525,7 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, MSV_BLOCK *bl
 	  block->offset = list->blocks[inx].offset;
 	  block->length = list->blocks[inx].length;
 	  block->count  = list->blocks[inx].count;
+          block->idx0   = list->blocks[inx].idx0;
 
 	  status = eslOK;
 	}
@@ -2527,7 +2535,8 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, MSV_BLOCK *bl
 
   block->offset = 0;
   block->length = 0;
-  block->count = 0;
+  block->count  = 0;
+  block->idx0   = idx0;
   if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
 
   while (block->count  < bsize          &&
@@ -2560,6 +2569,7 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, MSV_BLOCK *bl
       list->blocks[inx].offset = block->offset;
       list->blocks[inx].length = block->length;
       list->blocks[inx].count  = block->count;
+      list->blocks[inx].idx0   = block->idx0;
     }
 
   return status;

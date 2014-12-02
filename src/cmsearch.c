@@ -645,7 +645,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info[0].th);
-    if((status = cm_tophits_RemoveOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
 
     /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
     if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
@@ -1328,7 +1328,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info->th);
-    if((status = cm_tophits_RemoveOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
 
     /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
     if(info->pli->do_trm_F3) cm_tophits_SortByPosition(info->th);
