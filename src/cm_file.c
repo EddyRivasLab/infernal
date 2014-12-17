@@ -1470,6 +1470,10 @@ cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, int64_t idx0, ESL_ALPHABET **byp_abc,
       if (status != eslOK) break;
       ++hmmBlock->count;
     }
+  /* create the MSV data */
+  for (i = 0; i < hmmBlock->count; ++i) { 
+    hmmBlock->msvdataA[i] = p7_hmm_MSVDataCreate(hmmBlock->list[i], FALSE);
+  }
 
   /* EOF will be returned only in the case were no profiles were read */
   if (status == eslEOF && i > 0) status = eslOK;

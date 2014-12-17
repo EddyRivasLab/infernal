@@ -2472,6 +2472,7 @@ typedef struct {
   int64_t        idx0;        /* index of first profile in file >= 0          */
   int            listSize;    /* maximum number elements in the list          */
   P7_OPROFILE  **list;        /* array of <P7_OPROFILE> objects               */
+  P7_MSVDATA   **msvdataA;    /* array of <P7_MSVDATA> objects                */
   off_t         *cm_offsetA;  /* file offsets for CMs */
   int           *cm_clenA;    /* consensus length of CMs */
   int           *cm_WA;       /* window length of CMs */
