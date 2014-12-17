@@ -3497,6 +3497,7 @@ cm_p7_oprofile_CreateBlock(int count)
   block->idx0  = 0;
   block->listSize = 0;
   block->list         = NULL;
+  block->msvdataA     = NULL;
   block->cm_offsetA   = NULL;
   block->cm_clenA     = NULL;
   block->cm_WA        = NULL;
@@ -3505,6 +3506,7 @@ cm_p7_oprofile_CreateBlock(int count)
   block->gflambdaA    = NULL;
 
   ESL_ALLOC(block->list,       sizeof(P7_OPROFILE *) * count);
+  ESL_ALLOC(block->msvdataA,   sizeof(P7_MSVDATA *)  * count);
   ESL_ALLOC(block->cm_offsetA, sizeof(off_t)         * count);
   ESL_ALLOC(block->cm_clenA,   sizeof(int)           * count);
   ESL_ALLOC(block->cm_WA,      sizeof(int)           * count);
@@ -3515,7 +3517,8 @@ cm_p7_oprofile_CreateBlock(int count)
 
   for (i = 0; i < count; ++i)
     {
-      block->list[i]      = NULL;
+      block->list[i]       = NULL;
+      block->msvdataA[i]   = NULL;
       block->cm_offsetA[i] = 0;
       block->cm_clenA[i]   = 0;
       block->cm_WA[i]      = 0;
@@ -3530,6 +3533,7 @@ cm_p7_oprofile_CreateBlock(int count)
   if (block != NULL)
     {
       if (block->list       != NULL)  free(block->list);
+      if (block->msvdataA   != NULL)  free(block->msvdataA);
       if (block->cm_offsetA != NULL)  free(block->cm_offsetA);
       if (block->cm_clenA   != NULL)  free(block->cm_clenA);
       if (block->cm_WA      != NULL)  free(block->cm_WA);
@@ -3555,14 +3559,18 @@ cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block)
 
   if (block == NULL) return;
 
-  if (block->list != NULL)
-    {
-      for (i = 0; i < block->listSize; ++i)
-	{
-	  if (block->list[i]    != NULL)  p7_oprofile_Destroy(block->list[i]);
-	}
-      free(block->list);
+  if (block->list != NULL) { 
+    for (i = 0; i < block->listSize; ++i) { 
+      if (block->list[i] != NULL) p7_oprofile_Destroy(block->list[i]);
     }
+    free(block->list);
+  }
+  if (block->msvdataA != NULL) { 
+    for (i = 0; i < block->listSize; ++i) { 
+      if (block->msvdataA[i] != NULL) p7_hmm_MSVDataDestroy(block->msvdataA[i]);
+    }
+    free(block->msvdataA);
+  }
   if (block->cm_offsetA != NULL)  free(block->cm_offsetA);
   if (block->cm_clenA   != NULL)  free(block->cm_clenA);
   if (block->cm_WA      != NULL)  free(block->cm_WA);
