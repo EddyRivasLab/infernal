@@ -2413,6 +2413,7 @@ typedef struct cm_hit_s {
   int64_t        cm_idx;        /* model    index in the cmfile,  unique id for the model    */
   int64_t        seq_idx;       /* sequence index in the seqfile, unique id for the sequence */
   int            pass_idx;      /* index of pipeline pass hit was found on */
+  int64_t        hit_idx;       /* index of this hit in the hit list */
   int64_t        srcL;          /* full length of source sequence the hit is from */
   int64_t        start, stop;   /* start/end points of hit */
   int            in_rc;         /* TRUE if hit is in reverse complement of a target, FALSE if not */
@@ -2420,12 +2421,20 @@ typedef struct cm_hit_s {
   int            mode;          /* joint or marginal hit mode: CM_MODE_J | CM_MODE_R | CM_MODE_L | CM_MODE_T */
   float          score;		/* bit score of the hit (with corrections) */
   float          bias;          /* null{2,3} (2 if hmmonly, 3 if not) correction, in bits (already subtracted from score) */
-  double         pvalue;	/* P-value of the hit   (with corrections) */
-  double         evalue;	/* E-value of the hit   (with corrections) */
+  double         pvalue;	/* P-value of the hit (with corrections) */
+  double         evalue;	/* E-value of the hit (with corrections) */
+  int            has_evalue;	/* TRUE if E-value has been set for this hit */
   int            hmmonly;       /* TRUE if hit was found during HMM only pipeline run, FALSE if not */
   int            glocal;        /* TRUE if hit was found by model in global configuration, FALSE if not */
   CM_ALIDISPLAY *ad;            /* alignment display */
-  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE */
+  uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE | CM_HIT_IS_MARKED_OVERLAP */
+  /* overlap information */
+  int64_t        any_oidx;      /* hit index of best scoring (E-value, then bit score) hit that has 
+                                 * better score than this hit and overlaps with it */
+  int64_t        win_oidx;      /* hit index of best scoring (E-value, then bit score) hit that has
+                                 * better score than this AND has no CM_HIT_IS_MARKED_OVERLAP flag raised */
+  double         any_bitE;      /* score of hit <any_oidx>, E-value if 'has_evalue' is TRUE, else bit score */
+  double         win_bitE;      /* score of hit <win_oidx>, E-value if 'has_evalue' is TRUE, else bit score */
 
 } CM_HIT;
 
@@ -2448,7 +2457,7 @@ typedef struct cm_tophits_s {
   uint64_t nincluded;	                  /* number of hits that are includable       */
   int      is_sorted_by_evalue;           /* TRUE when hits are sorted by E-value, score, length, th->hit valid for all N hits */
   int      is_sorted_for_overlap_removal; /* TRUE when hits are sorted by cm_idx, seq_idx, strand, score, th->hit valid for all N hits */
-  int      is_sorted_for_overlap_markup;  /* TRUE when hits are sorted by cm_idx, seq_idx, strand, score, th->hit valid for all N hits */
+  int      is_sorted_for_overlap_markup;  /* TRUE when hits are sorted by seq_idx, strand, score, th->hit valid for all N hits */
   int      is_sorted_by_position;         /* TRUE when hits are sorted by cm_idx, seq_idx, strand, first residue 
 					   * (start if ! in_rc, stop if in_rc), th->hit valid for all N hits 
 					   */
@@ -3004,8 +3013,9 @@ extern int cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk, int used_hb, double default_tau);
 extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
-extern int cm_tophits_TabularTargets(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
-extern int cm_tophits_F3TabularTargets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
+extern int cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
+extern int cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, int skip_overlaps, char *errbuf);
+extern int cm_tophits_F3TabularTargets1(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
 

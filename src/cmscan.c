@@ -119,6 +119,7 @@ static ESL_OPTIONS options[] = {
   /* Control of output */
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
+  { "--fmt",        eslARG_INT,      "1", NULL, "1<=n<=2",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
@@ -148,18 +149,19 @@ static ESL_OPTIONS options[] = {
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits anywhere within sequences",                   7 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",                7 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",                7 },
-  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",              7 },
+  { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",                7 },
   { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed alnment mx size to <x> Mb [df: autodetermined]",   7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed size of search DP matrices to <x> Mb",             7 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "use scanning CM CYK algorithm, not Inside in final stage",         7 },
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "align hits with CYK, not optimal accuracy",                        7 },
   { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb",           "set W (expected max hit len) as <x> * cm->clen (model len)",       7 },
-  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",           "use CM only for best scoring HMM pass for full seq envelopes",   7 },
+  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",           "use CM only for best scoring HMM pass for full seq envelopes",     7 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the top strand",                                       7 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the bottom strand",                                    7 },
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "assert query <seqfile> is in format <s>: no autodetection",        7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  "-g",                           "configure CMs listed in file <f> in glocal mode, others in local", 7 },
-  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "set block size (number of modelss per worker/thread) to <n>",      7 },
+  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "set block size (number of models per worker/thread) to <n>",       7 },
+  { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, "--fmt",NULL,                           "w/'--fmt 2' and '--tblout', do not overlap lower scoring overlaps",7 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",           7 },
 #endif
@@ -645,6 +647,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(tinfo[0].pli->do_trm_F3) cm_tophits_SortByPosition(tinfo[0].th);
       else                        cm_tophits_SortByEvalue(tinfo[0].th);
 
+      /* TEMP cm_tophits_Dump(stdout, tinfo[0].th); */
+
       /* Enforce threshold */
       cm_tophits_Threshold(tinfo[0].th, tinfo[0].pli);
 
@@ -676,8 +680,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       if (tblfp != NULL) { 
-        if(tinfo[0].pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, tinfo[0].th, tinfo[0].pli, (seq_idx == 1));
-        else               	    cm_tophits_TabularTargets  (tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1));
+        if(esl_opt_GetInteger(go, "--fmt") == 1) { 
+          if(tinfo[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, tinfo[0].th, tinfo[0].pli, (seq_idx == 1)); 
+          else                        cm_tophits_TabularTargets1  (tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1));
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 2) { 
+          if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1), esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
+            esl_fatal(errbuf);
+          }
+        }
       }
       esl_stopwatch_Stop(w);
 
@@ -915,14 +926,6 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
       } /* end of 'if(status == eslOK)' signaling a successful MSV read or point of ptr */
     } /* end of 'while (cm_idx < tinfo->nmodels && status == eslOK)' */
   
-  //printf("SERIAL nom_read    %10d\n", nom_read);
-  //printf("SERIAL nhmm_read   %10d\n", nhmm_read);
-  //printf("SERIAL ncm_read    %10d\n", ncm_read);
-  //printf("SERIAL ngm_config  %10d\n", ngm_config);
-  //printf("SERIAL nRgm_config %10d\n", nRgm_config);
-  //printf("SERIAL nLgm_config %10d\n", nLgm_config);
-  //printf("SERIAL nTgm_config %10d\n", nTgm_config);
-
   /* don't destroy the alphabet, oms in omA point to it */
   return status;
 }
@@ -1234,14 +1237,6 @@ pipeline_thread(void *arg)
       block = (CM_P7_OM_BLOCK *) newBlock;
     }
 
-  //printf("THREAD nom_read    %10d\n", nom_read);
-  //printf("THREAD nhmm_read   %10d\n", nhmm_read);
-  //printf("THREAD ncm_read    %10d\n", ncm_read);
-  //printf("THREAD ngm_config  %10d\n", ngm_config);
-  //printf("THREAD nRgm_config %10d\n", nRgm_config);
-  //printf("THREAD nLgm_config %10d\n", nLgm_config);
-  //printf("THREAD nTgm_config %10d\n", nTgm_config);
-
   status = esl_workqueue_WorkerUpdate(tinfo->queue, block, NULL);
   if (status != eslOK) esl_fatal("Work queue worker failed");
   
@@ -1530,9 +1525,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_tophits_SortForOverlapMarkup(th);
       if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
 
-o      /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
+      /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
       if(pli->do_trm_F3) cm_tophits_SortByPosition(th);
       else               cm_tophits_SortByEvalue(th);
+
+      /* TEMP cm_tophits_Dump(stdout, tinfo[0].th); */
 
       /* Enforce threshold */
       cm_tophits_Threshold(th, pli);
@@ -2297,6 +2294,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",    esl_opt_GetReal(go, "-Z"));
   if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",      esl_opt_GetString(go, "-o"));
   if (esl_opt_IsUsed(go, "--tblout"))     fprintf(ofp, "# tabular output of hits:                %s\n",      esl_opt_GetString(go, "--tblout"));
+  if (esl_opt_IsUsed(go, "--fmt"))        fprintf(ofp, "# tabular output format:                 %d\n",      esl_opt_GetInteger(go, "--fmt"));
   if (esl_opt_IsUsed(go, "--acc"))        fprintf(ofp, "# prefer accessions over names:          yes\n");
   if (esl_opt_IsUsed(go, "--noali"))      fprintf(ofp, "# show alignments in output:             no\n");
   if (esl_opt_IsUsed(go, "--notextw"))    fprintf(ofp, "# max ASCII text line length:            unlimited\n");
@@ -2330,6 +2328,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go,  "--qformat"));
   if (esl_opt_IsUsed(go, "--glist"))      fprintf(ofp, "# models for glocal mode scan read from: %s\n", esl_opt_GetString(go,  "--glist"));
   if (esl_opt_IsUsed(go, "--block"))      fprintf(ofp, "# block size (# models) set to:          %d\n", esl_opt_GetInteger(go, "--block"));
+  if (esl_opt_IsUsed(go, "--oskip"))      fprintf(ofp, "# skipping overlaps in tbl output:       yes\n");
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--stall"))      fprintf(ofp, "# MPI stall mode:                        on\n");
 #endif

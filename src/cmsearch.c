@@ -684,8 +684,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
     if (tblfp != NULL) { 
-      if(info[0].pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
-      else                       cm_tophits_TabularTargets  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+      if(info[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
+      else                       cm_tophits_TabularTargets1  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);

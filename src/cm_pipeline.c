@@ -1462,11 +1462,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
             hit->pvalue   = 0.; /* irrelevant */
             hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
             
-            hit->hmmonly  = TRUE;
-            hit->glocal   = FALSE; /* all HMM hits are local */
-            hit->bias     = 0.; /* irrelevant */
-            hit->evalue   = 0.; /* irrelevant */
-            hit->ad       = NULL;
+            hit->hmmonly    = TRUE;
+            hit->glocal     = FALSE; /* all HMM hits are local */
+            hit->bias       = 0.; /* irrelevant */
+            hit->evalue     = 0.; /* irrelevant */
+            hit->has_evalue = FALSE;
+            hit->ad         = NULL;
             
             if (pli->mode == CM_SEARCH_SEQS) { 
               if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
@@ -3598,8 +3599,9 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       hit->glocal   = (pli->final_cm_exp_mode == EXP_CM_GI || pli->final_cm_exp_mode == EXP_CM_GC) ? TRUE : FALSE;
 
       /* initialize remaining values we don't know yet */
-      hit->evalue  = 0.;
-      hit->ad      = NULL;
+      hit->evalue     = 0.;
+      hit->has_evalue = FALSE;
+      hit->ad         = NULL;
 	  
       if (pli->mode == CM_SEARCH_SEQS) { 
 	if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
