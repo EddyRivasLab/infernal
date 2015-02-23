@@ -93,7 +93,8 @@ static float pli_mxsize_limit_from_W    (int W);
  *            | --cut_nc     |  model-specific thresholding using NC        |   FALSE   |
  *            | --cut_tc     |  model-specific thresholding using TC        |   FALSE   |
  *            | --notrunc    |  turn off truncated hit detection            |   FALSE   |
- *            | --anytrunc   |  allow truncated hits anywhere in the seq    |   FALSE   |
+ *            | --anytrunc   |  allow full + trunc hits anywhere in the seq |   FALSE   |
+ *            | --onlytrunc  |  allow only trunc hits anywhere in the seq   |   FALSE   |
  *            | --max        |  turn all heuristic filters off              |   FALSE   |
  *            | --nohmm      |  turn all HMM filters off                    |   FALSE   |
  *            | --mid        |  turn off MSV and Viterbi filters            |   FALSE   |
@@ -195,6 +196,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->cmW          = 0;    /* model-dependent, invalid until cm_pli_NewModel() is called */
   pli->clen         = 0;    /* model-dependent, invalid until cm_pli_NewModel() is called */
   pli->cur_cm_idx   = -1;   /* model-dependent, invalid until cm_pli_NewModel() is called */
+  pli->cur_clan_idx = -1;   /* model-dependent, invalid until cm_pli_NewModel() is called */
   pli->cur_seq_idx  = -1;   /* sequence-dependent, invalid until cm_pli_NewSeq() is called */
   pli->cur_pass_idx = -1;   /* pipeline-pass-dependent, updated in cm_Pipeline() */
   pli->cmfp         = NULL; /* set by caller only if we're a scan pipeline (i.e. set in cmscan) */
@@ -313,30 +315,49 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if(esl_opt_GetBoolean(go, "--anytrunc")) { 
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = TRUE;
+    pli->do_trunc_only    = FALSE;
+    pli->do_trunc_5p_ends = FALSE;
+    pli->do_trunc_3p_ends = FALSE;
+  }
+  else if(esl_opt_GetBoolean(go, "--onlytrunc")) {
+    pli->do_trunc_ends    = FALSE;
+    pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = TRUE;
+    pli->do_trunc_5p_ends = FALSE;
+    pli->do_trunc_3p_ends = FALSE;
+  }
+  else if(esl_opt_GetBoolean(go, "--onlytrunc")) { 
+    pli->do_trunc_ends    = FALSE;
+    pli->do_trunc_any     = TRUE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--notrunc")) { 
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--5trunc")) { 
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = TRUE;
     pli->do_trunc_3p_ends = FALSE;
   }
   else if(esl_opt_GetBoolean(go, "--3trunc")) { 
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = TRUE;
   }
   else { /* default */
     pli->do_trunc_ends    = TRUE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
@@ -415,6 +436,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     /* D&C truncated alignment is not robust, so we don't allow it */
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
@@ -428,6 +450,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     /* D&C truncated alignment is not robust, so we don't allow it */
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
@@ -693,7 +716,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     }
   }
   /* should we setup for truncated alignments? */
-  if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
+  if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_only || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) pli->cm_config_opts |= CM_CONFIG_TRUNC; 
 
   /* will we be requiring a CM_SCAN_MX? a CM_TR_SCAN_MX? */
   if(pli->do_max   ||                    /* max mode, no filters */
@@ -701,7 +724,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      esl_opt_GetBoolean(go, "--fqdb") || /* user specified to use --fqdb, do it */
      esl_opt_GetBoolean(go, "--qdb")) {  /* user specified to use --qdb,  do it */
     pli->cm_config_opts |= CM_CONFIG_SCANMX;
-    if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) pli->cm_config_opts |= CM_CONFIG_TRSCANMX;
+    if(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_only || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) pli->cm_config_opts |= CM_CONFIG_TRSCANMX;
   }
   /* will we be requiring non-banded alignment matrices? */
   if(pli->do_max ||                     /* max mode, no filters, hit alignment will be nonbanded */
@@ -714,6 +737,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     /* D&C truncated alignment is not robust, so we don't allow it */
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
+    pli->do_trunc_only    = FALSE;
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
@@ -884,6 +908,13 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            (If we're in SEARCH mode, <p7_max_length> will likely
  *            be equal to om->max_length, but in SCAN mode om may
  *            be NULL).
+ * 
+ *            <cur_clan_idx> indicates the index of the clan for the
+ *            model and will be transferred to any hits (CM_HIT) found
+ *            with this model. It can be -1 if the model either does
+ *            not belong to a clan or if we are not keeping track of
+ *            clans (which is the usual case: clans are only used for
+ *            certain options in cmscan).
  *
  *            <glocal_kh> is irrelevant (and can be NULL) unless 
  *            we're in case 2 and pli->do_glocal_cm_sometimes is
@@ -907,7 +938,7 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
  *            have the appropriate ones set.
  */
 int
-cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, ESL_KEYHASH *glocal_kh)
+cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, int cur_clan_idx, ESL_KEYHASH *glocal_kh)
 {
   int status = eslOK;
   float T;
@@ -938,7 +969,8 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     }
   }
 
-  pli->cur_cm_idx = cur_cm_idx;
+  pli->cur_cm_idx   = cur_cm_idx;
+  pli->cur_clan_idx = cur_clan_idx;
 
   /* Two sets (A and B) of value updates: 
    * case 1: we do both sets 
@@ -1345,6 +1377,10 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     do_pass_5p_and_3p_any = TRUE;
     do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_hmm_only_any = FALSE;
   }
+  else if(pli->do_trunc_only) { /* we allow any truncated hit, in a special pass PLI_PASS_5P_AND_3P_ANY */
+    do_pass_5p_and_3p_any = TRUE;
+    do_pass_std_any = do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_hmm_only_any = FALSE;
+  }
   else { /* we're not allowing any truncated hits */
     do_pass_std_any       = TRUE;
     do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_5p_and_3p_any = do_pass_hmm_only_any = FALSE;
@@ -1457,6 +1493,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
             hit->score    = wb[h];
             
             hit->cm_idx   = pli->cur_cm_idx;
+            hit->clan_idx = pli->cur_clan_idx;
             hit->seq_idx  = pli->cur_seq_idx;
             hit->pass_idx = pli->cur_pass_idx;
             hit->pvalue   = 0.; /* irrelevant */
@@ -1657,7 +1694,9 @@ int
 cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 {
   if(pli->nmodels > 0 && pli->be_verbose) { /* print stats out for each stage */
-    pli_pass_statistics(ofp, pli, PLI_PASS_STD_ANY); fprintf(ofp, "\n");
+    if(! pli->do_trunc_only) { 
+      pli_pass_statistics(ofp, pli, PLI_PASS_STD_ANY); fprintf(ofp, "\n");
+    }
     if(pli->do_trunc_ends) { 
       pli_pass_statistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
       pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE);   fprintf(ofp, "\n");
@@ -1669,7 +1708,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
     else if(pli->do_trunc_3p_ends) { 
       pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE); fprintf(ofp, "\n");
     }
-    else if(pli->do_trunc_any) { 
+    else if(pli->do_trunc_any || pli->do_trunc_only) { 
       pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY); fprintf(ofp, "\n");
     }
   }
@@ -1759,9 +1798,15 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 		nres_researched);
       }
       else { 
-	fprintf(ofp,   "Target sequences re-searched for truncated hits:   %15" PRId64 "  (%" PRId64 " residues re-searched)\n",  
-		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) ? pli->nseqs : 0, 
-		nres_researched);
+        if(pli->do_trunc_only) { 
+          fprintf(ofp,   "Target sequences searched for truncated hits:      %15" PRId64 "  (%" PRId64 " residues searched)\n",  
+                  pli->nseqs, nres_researched);
+        }
+        else { 
+          fprintf(ofp,   "Target sequences re-searched for truncated hits:   %15" PRId64 "  (%" PRId64 " residues re-searched)\n",  
+                  (pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) ? pli->nseqs : 0, 
+                  nres_researched);
+        }
       }
     }
   } else { /* SCAN mode */
@@ -1784,7 +1829,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       }
       else { 
 	fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n", 
-		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) ? pli->nseqs : 0, 
+		(pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_only || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) ? pli->nseqs : 0, 
 		(float) nres_researched / (float) pli->nmodels);
       }
     }
@@ -1936,7 +1981,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       n_output_trunc   = pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output;
     }
-    else if(pli->do_trunc_any) { 
+    else if(pli->do_trunc_any || pli->do_trunc_only) { 
       n_output_trunc   = pli->acct[PLI_PASS_5P_AND_3P_ANY].n_output;
       pos_output_trunc = pli->acct[PLI_PASS_5P_AND_3P_ANY].pos_output;
     }
@@ -2311,14 +2356,14 @@ void
 cm_pli_AdjustNresForOverlaps(CM_PIPELINE *pli, int64_t noverlap, int in_rc)
 { 
   if(in_rc) { 
-    if(! pli->do_hmmonly_cur) pli->acct[PLI_PASS_STD_ANY].nres_bot       -= noverlap;
-    else                      pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_bot  -= noverlap;
-    if(pli->do_trunc_any)     pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_bot -= noverlap;
+    if(! pli->do_hmmonly_cur)                   pli->acct[PLI_PASS_STD_ANY].nres_bot       -= noverlap;
+    else                                        pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_bot  -= noverlap;
+    if(pli->do_trunc_any || pli->do_trunc_only) pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_bot -= noverlap;
   }
   else { 
-    if(! pli->do_hmmonly_cur) pli->acct[PLI_PASS_STD_ANY].nres_top       -= noverlap;
-    else                      pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_top  -= noverlap;
-    if(pli->do_trunc_any)     pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_top -= noverlap;
+    if(! pli->do_hmmonly_cur)                   pli->acct[PLI_PASS_STD_ANY].nres_top       -= noverlap;
+    else                                        pli->acct[PLI_PASS_HMM_ONLY_ANY].nres_top  -= noverlap;
+    if(pli->do_trunc_any || pli->do_trunc_only) pli->acct[PLI_PASS_5P_AND_3P_ANY].nres_top -= noverlap;
   }
   return;
 }
@@ -2862,7 +2907,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
   /* Will we use local envelope definition? Only if we're in the
    * special pipeline pass where we allow any truncated hits (only
-   * possibly true if pli->do_trunc_any is TRUE).
+   * possibly true if pli->do_trunc_any or pli->do_trunc_only is TRUE).
    */
   do_local_envdef = (pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
 
@@ -3592,6 +3637,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     for (h = nhit; h < hitlist->N; h++) { 
       hit = &(hitlist->unsrt[h]);
       hit->cm_idx   = pli->cur_cm_idx;
+      hit->clan_idx = pli->cur_clan_idx;
       hit->seq_idx  = pli->cur_seq_idx;
       hit->pass_idx = pli->cur_pass_idx;
       hit->pvalue   = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
@@ -3842,6 +3888,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 	hit->score    = dom_score;
 
 	hit->cm_idx   = pli->cur_cm_idx;
+	hit->clan_idx = pli->cur_clan_idx;
 	hit->seq_idx  = pli->cur_seq_idx;
 	hit->pass_idx = pli->cur_pass_idx;
 	hit->pvalue   = esl_exp_surv (hit->score,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
@@ -4249,7 +4296,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
   if((status = cm_Configure(cm, pli->errbuf, W_from_cmdline)) != eslOK) goto ERROR;
   /* update the pipeline about the model */
   if((status = cm_pli_NewModel(pli, CM_NEWMODEL_CM, cm, cm->clen, cm->W, CMCountNodetype(cm, MATP_nd),
-			       NULL, NULL, p7_evparam, p7_max_length, pli->cur_cm_idx, NULL)) /* NULL: om, bg, glocal_kh */
+			       NULL, NULL, p7_evparam, p7_max_length, pli->cur_cm_idx, pli->cur_clan_idx, NULL)) /* NULL: om, bg, glocal_kh */
      != eslOK) goto ERROR;
   
   *ret_cm = cm;

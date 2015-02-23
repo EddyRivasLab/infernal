@@ -2064,8 +2064,12 @@ typedef struct cm_file_s {
  * on it.
  * 
  * Not all passes are performed in a pipeline. If pli->do_trunc_ends,
- * passes 1,2,3,4 are performed. If pli->do_trunc_any, passes 1 and 5
- * are performed. If pli->do_hmmonly_cur, only pass 6 is performed. If
+ * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends, passes
+ * 1 and 2 are performed. If pli->do_trunc_3p_ends, passes 1
+ * and 3 are performed. If pli->do_trunc_any, passes 1 and 5 are
+ * performed. If pli->do_trunc_only, only pass 5 is performed.
+ * If pli->do_only_trunc_5p_and_3p_ends, only pass 4 is
+ * performed. If pli->do_hmmonly_cur, only pass 6 is performed. If
  * none of these flags is TRUE only pass 1 is performed.
  *
  * These values have two interrelated but different roles:
@@ -2175,7 +2179,8 @@ typedef struct cm_pipeline_s {
   int 		maxW;           /* # residues to overlap in adjacent windows*/
   int 		cmW;            /* CM's window length                       */
   int 		clen;           /* CM's consensus length of model           */
-  int64_t       cur_cm_idx;     /* model    index currently being used      */
+  int64_t       cur_cm_idx;     /* model index currently being used         */
+  int           cur_clan_idx;   /* clan index currently being used, -1 if none */
 
   int64_t       cur_seq_idx;    /* sequence index currently being searched */
   int64_t       cur_pass_idx;   /* pipeline pass index currently underway */
@@ -2269,8 +2274,11 @@ typedef struct cm_pipeline_s {
   int     do_edefbias;     	/* TRUE to use biased comp HMM filter w/edef*/
 
   /* truncated sequence detection parameters */
-  int     do_trunc_ends;        /* TRUE to use truncated CM algs at sequence ends */
-  int     do_trunc_any;         /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_ends;                /* TRUE to use truncated CM algs at sequence ends */
+  int     do_trunc_any;                 /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_only;                /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_5p_ends;             /* TRUE to use truncated CM algs only at 5' ends (added for RNAVORE, post 1.1.1) */
+  int     do_trunc_3p_ends;             /* TRUE to use truncated CM algs only at 3' ends (added for RNAVORE, post 1.1.1) */
 
   /* Parameters controlling p7 domain/envelope defintion */
   float  rt1;   	/* controls when regions are called. mocc[i] post prob >= dt1 : triggers a region around i */
@@ -2410,7 +2418,8 @@ typedef struct cm_hit_s {
   char          *name;		/* name of the target               (mandatory)           */
   char          *acc;		/* accession of the target          (optional; else NULL) */
   char          *desc;		/* description of the target        (optional; else NULL) */
-  int64_t        cm_idx;        /* model    index in the cmfile,  unique id for the model    */
+  int64_t        cm_idx;        /* model    index in the cmfile,  unique id for the model */
+  int            clan_idx;      /* clan     index in the cmfile,  -1 if none (usually -1) */
   int64_t        seq_idx;       /* sequence index in the seqfile, unique id for the sequence */
   int            pass_idx;      /* index of pipeline pass hit was found on */
   int64_t        hit_idx;       /* index of this hit in the hit list */
@@ -2480,6 +2489,7 @@ typedef struct {
   int           *cm_nbpA;     /* number of basepairs in CMs */
   float         *gfmuA;       /* glocal forward mu parameter for HMM */
   float         *gflambdaA;   /* glocal forward lambda parameter for HMM */
+  int           *clan_idxA;   /* clan index for profile, or -1 for none */
 } CM_P7_OM_BLOCK;
 
 
@@ -2933,7 +2943,7 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
-extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, ESL_KEYHASH *glocal_kh);
+extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, int cur_clan_idx, ESL_KEYHASH *glocal_kh);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *scoredata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
@@ -2999,11 +3009,12 @@ extern int         cm_tophits_GetMaxNameLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxDescLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxAccessionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxShownLength(CM_TOPHITS *h);
+extern int         cm_tophits_GetMaxClanLength(CM_TOPHITS *h, ESL_KEYHASH *clan_name_kh);
 extern int         cm_tophits_Reuse(CM_TOPHITS *h);
 extern void        cm_tophits_Destroy(CM_TOPHITS *h);
 extern int         cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th);
 extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart);
-extern int         cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, char *errbuf);
+extern int         cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans, char *errbuf);
 extern int         cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, uint64_t nseqs);
 
@@ -3014,7 +3025,7 @@ extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli,
 extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk, int used_hb, double default_tau);
 extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
 extern int cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
-extern int cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, int skip_overlaps, char *errbuf);
+extern int cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, ESL_KEYHASH *clan_name_kh, int skip_overlaps, char *errbuf);
 extern int cm_tophits_F3TabularTargets1(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);

@@ -661,7 +661,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
-    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
+    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, FALSE, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -1305,7 +1305,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
   if(tmp_hitlist != NULL) { 
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
+    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, FALSE, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -2431,7 +2431,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     /*cm_tophits_Dump(stdout, tmp_hitlist);*/
-    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
+    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, FALSE, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
@@ -3546,7 +3546,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
     cm_tophits_SortForOverlapRemoval(tmp_hitlist);
     /* cm_tophits_Dump(stdout, tmp_hitlist); */
-    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, errbuf)) != eslOK) return status;
+    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, FALSE, errbuf)) != eslOK) return status;
     for(h = 0; h < tmp_hitlist->N; h++) { 
       if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");

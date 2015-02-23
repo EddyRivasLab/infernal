@@ -75,6 +75,11 @@ typedef struct {
   float            *gflambdaA;  /* [0..cm_idx..nmodels-1] HMM glocal lambda for CM <cm_idx> */
   P7_OPROFILE     **omA;        /* [0..cm_idx..nmodels-1] optimized query profile HMM for CM <cm_idx> */
   P7_MSVDATA      **msvdataA;   /* [0..cm_idx..nmodels-1] P7_MSVDATA for CM <cm_idx> */
+  /* variables related to --clanin */
+  ESL_KEYHASH      *clan_fam_kh;  /* these are family names in a clan, members of same clan are contiguous */
+  int              *clan_mapA;    /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                   * index c in <clan_name_kh> */
+  int              *clan_idxA;    /* [0..cm_idx..nmodels-1] idx of clan this model belongs to, or -1 if none */
 } READER_INFO;
 
 #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
@@ -82,7 +87,7 @@ typedef struct {
 #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define FMODEOPTS   "--FZ,--hmmonly,--rfam,--mid,--nohmm,--max"
 #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
-#define TRUNCOPTS   "-g,--notrunc,--anytrunc,--5trunc,--3trunc"
+#define TRUNCOPTS   "-g,--notrunc,--anytrunc,--onlytrunc,--5trunc,--3trunc"
 
 /* ** Large sets of options are InCompatible With (ICW) --max, --nohmm,
  * --mid, --rfam, --FZ, Previously (before these were commented out) I
@@ -119,7 +124,7 @@ static ESL_OPTIONS options[] = {
   /* Control of output */
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
-  { "--fmt",        eslARG_INT,      "1", NULL, "1<=n<=2",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
+  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=2",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
@@ -145,8 +150,9 @@ static ESL_OPTIONS options[] = {
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set filters to defaults used for a search space of size <x> Mb", 6 },
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                  7 },
-  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits anywhere within sequences",                   7 },
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                  7 },
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow full and truncated hits anywhere within sequences",          7 },
+  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow only truncated hits, anywhere within sequences",             7 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",                7 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",                7 },
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",                7 },
@@ -161,7 +167,9 @@ static ESL_OPTIONS options[] = {
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "assert query <seqfile> is in format <s>: no autodetection",        7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  "-g",                           "configure CMs listed in file <f> in glocal mode, others in local", 7 },
   { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "set block size (number of models per worker/thread) to <n>",       7 },
-  { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, "--fmt",NULL,                           "w/'--fmt 2' and '--tblout', do not overlap lower scoring overlaps",7 },
+  { "--clanin",     eslARG_INFILE,  NULL, NULL, NULL,    NULL, "--fmt",NULL,                           "read clan information from file <f>",                              7 },
+  { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, "--fmt,--clanin",NULL,                  "w/'--fmt 2' and '--tblout', only mark overlaps within clans",      7 },
+  { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, "--fmt",NULL,                           "w/'--fmt 2' and '--tblout', do not output lower scoring overlaps", 7 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",           7 },
 #endif
@@ -281,9 +289,11 @@ static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static void         process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile);
 static int          output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int ncpus);
 static int          read_glocal_list_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_glocal_kh);
+static int          read_clan_info_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_clan_name_kh, ESL_KEYHASH **ret_clan_fam_kh, int **ret_clan_mapA);
+static int          determine_clan_index(char *modelname, ESL_KEYHASH *clan_fam_kh, int *clan_mapA);
 static void         duplicate_sq_for_thread(ESL_SQ *src_sq, ESL_SQ **ret_sq);
 static void         copy_sq_for_thread(ESL_SQ *src_sq, ESL_SQ *dest_sq);
-static READER_INFO *create_reader_info(int64_t nmodels);
+static READER_INFO *create_reader_info(int64_t nmodels, ESL_KEYHASH *clan_fam_kh, int *clan_mapA);
 static void         free_reader_info(READER_INFO *rinfo);
 
 #ifdef HAVE_MPI
@@ -410,6 +420,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              qZ = 0;                        /* # residues to search in query seq (both strands)*/
   int64_t          seq_idx   = 0;                 /* index of current seq we're working with         */
   ESL_KEYHASH     *glocal_kh = NULL;              /* list of models to configure globally, only created if --glist */
+
+  /* variables only used if --clanin is used */
+  ESL_KEYHASH      *clan_name_kh = NULL;          /* these are clan names */
+  ESL_KEYHASH      *clan_fam_kh  = NULL;          /* these are family names in a clan, members of same clan are contiguous */
+  int              *clan_mapA    = NULL;          /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                                   * index c in <clan_name_kh>. */
   int              textw;       
   int              status   = eslOK;
   int              hstatus  = eslOK;
@@ -469,9 +485,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
 
-  /* Open and read the list of glocal models, while CM file is open */
+  /* If nec, open and read the list of glocal models, while CM file is open */
   if (esl_opt_IsOn(go, "--glist")) { 
     if((status = read_glocal_list_file(esl_opt_GetString(go, "--glist"), errbuf, cmfp, &glocal_kh)) != eslOK) cm_Fail(errbuf);
+  }
+  /* If nec, open and read the clan info file, while CM file is open */
+  if (esl_opt_IsOn(go, "--clanin")) { 
+    if((status = read_clan_info_file(esl_opt_GetString(go, "--clanin"), errbuf, cmfp, &clan_name_kh, &clan_fam_kh, &clan_mapA)) != eslOK) cm_Fail(errbuf);
   }
 
   cm_file_Close(cmfp);
@@ -519,11 +539,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       tinfo[i].in_rc = FALSE;
       ESL_ALLOC(tinfo[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
       if(glocal_kh != NULL) { 
-	if((tinfo[i].glocal_kh = esl_keyhash_Clone(glocal_kh)) == NULL) esl_fatal("Failed to clone keyhash, out of memory");
+        if((tinfo[i].glocal_kh = esl_keyhash_Clone(glocal_kh)) == NULL) esl_fatal("Failed to clone keyhash, out of memory"); 
       }
-      else { 
-	tinfo[i].glocal_kh = NULL;
+      else {
+        tinfo[i].glocal_kh = NULL; 
       }
+
 #ifdef HMMER_THREADS
       tinfo[i].queue = queue;
 #endif
@@ -541,7 +562,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 
   /* initialize rinfo */
-  rinfo = create_reader_info(nmodels);
+  rinfo = create_reader_info(nmodels, clan_fam_kh, clan_mapA);
 
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
@@ -637,11 +658,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
       cm_tophits_SortForOverlapRemoval(tinfo[0].th);
-      if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
-      /* Resort in order to markup overlapping hits from different models */
+      /* Resort in order to markup overlapping hits from different models (only within clans if --oclan) */
       cm_tophits_SortForOverlapMarkup(tinfo[0].th);
-      if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, esl_opt_GetBoolean(go, "--oclan"), errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
       if(tinfo[0].pli->do_trm_F3) cm_tophits_SortByPosition(tinfo[0].th);
@@ -680,12 +701,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       if (tblfp != NULL) { 
-        if(esl_opt_GetInteger(go, "--fmt") == 1) { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
           if(tinfo[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, tinfo[0].th, tinfo[0].pli, (seq_idx == 1)); 
           else                        cm_tophits_TabularTargets1  (tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1));
         }
         else if(esl_opt_GetInteger(go, "--fmt") == 2) { 
-          if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1), esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
+          if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
             esl_fatal(errbuf);
           }
         }
@@ -719,7 +740,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       free(tinfo[i].p7_evparam);
       p7_bg_Destroy(tinfo[i].bg);
-      if(tinfo[i].glocal_kh != NULL) esl_keyhash_Destroy(tinfo[i].glocal_kh);
+      if(tinfo[i].glocal_kh    != NULL) esl_keyhash_Destroy(tinfo[i].glocal_kh);
     }
 
   free_reader_info(rinfo);
@@ -744,7 +765,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_stopwatch_Destroy(mw);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
-  if(glocal_kh != NULL) esl_keyhash_Destroy(glocal_kh);
+  if(glocal_kh    != NULL) esl_keyhash_Destroy(glocal_kh);
+  if(clan_name_kh != NULL) esl_keyhash_Destroy(clan_name_kh);
+  if(clan_fam_kh  != NULL) esl_keyhash_Destroy(clan_fam_kh);
+  if(clan_mapA    != NULL) free(clan_mapA);
 
   if (ofp != stdout) fclose(ofp);
   if (tblfp)         fclose(tblfp);
@@ -775,23 +799,11 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
   double            eZ;                         /* effective database size                      */
   int64_t           prv_posn = 0;               /* position of previous chunk for cur seq, 0 if first chunk */
   ESL_DSQ          *save_dsq = tinfo->qsq->dsq; /* pointer to original qsq->dsq data */
+  int               have_clans;                 /* set to TRUE if we have information on clans, else FALSE */
+  int               clan_idx = -1;              /* clan index, -1 if current family is not part of a clan */
 
-  /* temp */
-  int ncm_read  = 0;
-  int nom_read  = 0;
-  int nhmm_read = 0;
-  int ngm_config = 0;
-  int nRgm_config = 0;
-  int nLgm_config = 0;
-  int nTgm_config = 0;
-
-  int om_was_null = TRUE;
-  int hmm_was_null = TRUE;
-  int cm_was_null = TRUE;
-  int gm_was_null = TRUE;
-  int Rgm_was_null = TRUE;
-  int Lgm_was_null = TRUE;
-  int Tgm_was_null = TRUE;
+  /* do we have clan info? */
+  have_clans = (rinfo->clan_fam_kh != NULL && rinfo->clan_mapA != NULL) ? TRUE : FALSE;
 
   /* Main loop: */
   status = eslOK;
@@ -800,6 +812,9 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
       if(rinfo->omA[cm_idx] == NULL) { 
         status = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &(rinfo->abc), &(rinfo->cm_offsetA[cm_idx]), &(rinfo->cm_clenA[cm_idx]), &(rinfo->cm_WA[cm_idx]), 
                                         &(rinfo->cm_nbpA[cm_idx]), &(rinfo->gfmuA[cm_idx]), &(rinfo->gflambdaA[cm_idx]), &(rinfo->omA[cm_idx]));
+        /* determine clan idx if nec */
+        if(have_clans) { rinfo->clan_idxA[cm_idx] = determine_clan_index(rinfo->omA[cm_idx]->name, rinfo->clan_fam_kh, rinfo->clan_mapA); }
+        else           { rinfo->clan_idxA[cm_idx] = -1; }
       }
       if(status == eslOK) { 
         if(rinfo->msvdataA[cm_idx] == NULL) { 
@@ -814,6 +829,7 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
         gfmu      = rinfo->gfmuA[cm_idx];
         gflambda  = rinfo->gflambdaA[cm_idx];
         msvdata   = rinfo->msvdataA[cm_idx];
+        clan_idx  = rinfo->clan_idxA[cm_idx];
 
         esl_vec_FCopy(om->evparam, p7_NEVPARAM, tinfo->p7_evparam);
         tinfo->p7_evparam[CM_p7_GFMU]     = gfmu;
@@ -826,9 +842,9 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
         cm     = NULL; /* ditto */
         if(tinfo->pli->do_wcx) cm_W = (int) cm_clen * tinfo->pli->wcx; /* do_wcx == TRUE means --wcx was used */
         if((status = cm_pli_NewModel(tinfo->pli, CM_NEWMODEL_MSV, 
-                                     cm,                     /* this is NULL b/c we don't have one yet */
-                                     cm_clen, cm_W, cm_nbp,  /* we read these in cm_p7_oprofile_ReadMSV() */
-                                     om, tinfo->bg, tinfo->p7_evparam, om->max_length, cm_idx, tinfo->glocal_kh)) != eslOK) cm_Fail(tinfo->pli->errbuf);
+                                     cm,                        /* this is NULL b/c we don't have one yet */
+                                     cm_clen, cm_W, cm_nbp, om, /* we read these in cm_p7_oprofile_ReadMSV() */
+                                     tinfo->bg, tinfo->p7_evparam, om->max_length, cm_idx, clan_idx, tinfo->glocal_kh)) != eslOK) cm_Fail(tinfo->pli->errbuf);
       
         /* Split the sequence (tinfo->qsq) into chunks and run the
          * pipeline on each.  If we're in rev comp (tinfo->in_rc == 1)
@@ -872,28 +888,10 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
           /*printf("serial_loop() calling cm_Pipeline %s vs %s start: %" PRId64 " end: %" PRId64 " n: %" PRId64 " C: %" PRId64 " W: %" PRId64 " L: %" PRId64 " in_rc: %d\n",
             om->name, tinfo->qsq->name, tinfo->qsq->start, tinfo->qsq->end, tinfo->qsq->n, tinfo->qsq->C, tinfo->qsq->W, tinfo->qsq->L, tinfo->in_rc); */
 
-          /* temp */
-          om_was_null  = (om   == NULL) ? TRUE : FALSE;
-          hmm_was_null = (hmm  == NULL) ? TRUE : FALSE;
-          cm_was_null  = (cm   == NULL) ? TRUE : FALSE;
-          gm_was_null  = (gm   == NULL) ? TRUE : FALSE;
-          Rgm_was_null = (Rgm  == NULL) ? TRUE : FALSE;
-          Lgm_was_null = (Lgm  == NULL) ? TRUE : FALSE;
-          Tgm_was_null = (Tgm  == NULL) ? TRUE : FALSE;
-          
           prv_ntophits = tinfo->th->N;
           if((status = cm_Pipeline(tinfo->pli, cm_offset, om, tinfo->bg, tinfo->p7_evparam, msvdata, tinfo->qsq, tinfo->th, tinfo->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
             cm_Fail("cm_Pipeline() failed unexpected with status code %d\n%s", status, tinfo->pli->errbuf);
           
-          /* temp */
-          if(om_was_null  && om  != NULL)  { nom_read++;  }
-          if(hmm_was_null && hmm != NULL)  { nhmm_read++; }
-          if(cm_was_null  && cm  != NULL)  { ncm_read++;  }
-          if(gm_was_null  && gm  != NULL)  { ngm_config++; }
-          if(Rgm_was_null && Rgm  != NULL) { nRgm_config++; }
-          if(Lgm_was_null && Lgm  != NULL) { nLgm_config++; }
-          if(Tgm_was_null && Tgm  != NULL) { nTgm_config++; }
-
           cm_pipeline_Reuse(tinfo->pli); 
           /* subtract overlapping residues from previous chunk */
           if(tinfo->qsq->C > 0) cm_pli_AdjustNresForOverlaps(tinfo->pli, tinfo->qsq->C, tinfo->in_rc); 
@@ -943,7 +941,13 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
   int64_t          cm_idx = 0; /* index of current profile we're working on */
   int64_t          i;          /* counter over elements of a block */
               
-  printf("in thread_loop\n");
+  /* variables related to --clanin */
+  int              have_clans;         /* set to TRUE if we have information on clans, else FALSE */
+  int              clan_idx = -1;      /* clan index, -1 if current family is not part of a clan */
+  int              clan_fam_idx = -1;  /* index of current family in clan_fam_kh, if it exists, else -1 */
+
+  /* do we have clan info? */
+  have_clans = (rinfo->clan_fam_kh != NULL && rinfo->clan_mapA != NULL) ? TRUE : FALSE;
 
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
@@ -952,7 +956,6 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
   if (status != eslOK) esl_fatal("Work queue reader failed");
       
   /* Main loop: */
-
   while (sstatus == eslOK)
     {
       block = (CM_P7_OM_BLOCK *) newBlock;
@@ -972,6 +975,15 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
           rinfo->gflambdaA[cm_idx]  = block->gflambdaA[i];
           rinfo->omA[cm_idx]        = block->list[i];
           rinfo->msvdataA[cm_idx]   = block->msvdataA[i];
+
+          /* figure out clan_idx and set it in the block and rinfo */
+          clan_idx     = -1; 
+          clan_fam_idx = -1;
+          if(have_clans) { block->clan_idxA[i] = determine_clan_index(rinfo->omA[cm_idx]->name, rinfo->clan_fam_kh, rinfo->clan_mapA); }
+          else           { block->clan_idxA[i] = -1; }
+          rinfo->clan_idxA[cm_idx] = block->clan_idxA[i];
+
+          /* increment counters */
           i++;
           cm_idx++;
         }        
@@ -992,6 +1004,7 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
           block->gflambdaA[i]  = rinfo->gflambdaA[cm_idx];
           block->list[i]       = rinfo->omA[cm_idx];
           block->msvdataA[i]   = rinfo->msvdataA[cm_idx];
+          block->clan_idxA[i]  = rinfo->clan_idxA[cm_idx];
           block->count++;
           i++;
           cm_idx++;
@@ -1053,22 +1066,7 @@ pipeline_thread(void *arg)
                                                 * we can manipulate without interfering with other
                                                 * threads who's tinfo->qsq points at the same sequence.
                                                 */
-  /* temp */
-  int ncm_read  = 0;
-  int nom_read  = 0;
-  int nhmm_read = 0;
-  int ngm_config = 0;
-  int nRgm_config = 0;
-  int nLgm_config = 0;
-  int nTgm_config = 0;
-
-  int om_was_null = TRUE;
-  int hmm_was_null = TRUE;
-  int cm_was_null = TRUE;
-  int gm_was_null = TRUE;
-  int Rgm_was_null = TRUE;
-  int Lgm_was_null = TRUE;
-  int Tgm_was_null = TRUE;
+  int               clan_idx = -1;             /* clan index, -1 if current family is not part of a clan */
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -1116,6 +1114,7 @@ pipeline_thread(void *arg)
 	  cm_nbp              = block->cm_nbpA[i];
 	  gfmu                = block->gfmuA[i];
 	  gflambda            = block->gflambdaA[i];
+          clan_idx            = block->clan_idxA[i];
 
 	  esl_vec_FCopy(om->evparam, p7_NEVPARAM, tinfo->p7_evparam);
 	  tinfo->p7_evparam[CM_p7_GFMU]     = gfmu;
@@ -1128,9 +1127,9 @@ pipeline_thread(void *arg)
 	  cm     = NULL; /* ditto */
 	  if(tinfo->pli->do_wcx) cm_W = (int) cm_clen * tinfo->pli->wcx; /* do_wcx == TRUE means --wcx was used */
 	  if((status = cm_pli_NewModel(tinfo->pli, CM_NEWMODEL_MSV, 
-				       cm,                    /* this is NULL b/c we don't have one yet */
-				       cm_clen, cm_W, cm_nbp, /* we read these in cm_p7_oprofile_ReadMSV() */
-				       om, tinfo->bg, tinfo->p7_evparam, om->max_length, cm_idx, tinfo->glocal_kh)) != eslOK) cm_Fail(tinfo->pli->errbuf);
+				       cm,                        /* this is NULL b/c we don't have one yet */
+				       cm_clen, cm_W, cm_nbp, om, /* we read these in cm_p7_oprofile_ReadMSV() */
+				       tinfo->bg, tinfo->p7_evparam, om->max_length, cm_idx, clan_idx, tinfo->glocal_kh)) != eslOK) cm_Fail(tinfo->pli->errbuf);
 
 
           /* Split the sequence (tinfo->qsq) into chunks and run the
@@ -1175,27 +1174,9 @@ pipeline_thread(void *arg)
                    om->name, tinfo->qsq->name, tinfo->qsq->start, tinfo->qsq->end, tinfo->qsq->n, tinfo->qsq->C, tinfo->qsq->W, tinfo->qsq->L, tinfo->in_rc); 
             */
 
-            /* temp */
-            om_was_null  = (om   == NULL) ? TRUE : FALSE;
-            hmm_was_null = (hmm  == NULL) ? TRUE : FALSE;
-            cm_was_null  = (cm   == NULL) ? TRUE : FALSE;
-            gm_was_null  = (gm   == NULL) ? TRUE : FALSE;
-            Rgm_was_null = (Rgm  == NULL) ? TRUE : FALSE;
-            Lgm_was_null = (Lgm  == NULL) ? TRUE : FALSE;
-            Tgm_was_null = (Tgm  == NULL) ? TRUE : FALSE;
-            
             prv_ntophits = tinfo->th->N;
             if((status = cm_Pipeline(tinfo->pli, cm_offset, om, tinfo->bg, tinfo->p7_evparam, msvdata, tinfo->qsq, tinfo->th, tinfo->in_rc, &hmm, &gm, &Rgm, &Lgm, &Tgm, &cm)) != eslOK)
               cm_Fail("cm_Pipeline() failed unexpected with status code %d\n%s", status, tinfo->pli->errbuf);
-
-            /* temp */
-            if(om_was_null  && om  != NULL)  { nom_read++;  }
-            if(hmm_was_null && hmm != NULL)  { nhmm_read++; }
-            if(cm_was_null  && cm  != NULL)  { ncm_read++;  }
-            if(gm_was_null  && gm  != NULL)  { ngm_config++; }
-            if(Rgm_was_null && Rgm  != NULL) { nRgm_config++; }
-            if(Lgm_was_null && Lgm  != NULL) { nLgm_config++; }
-            if(Tgm_was_null && Tgm  != NULL) { nTgm_config++; }
 
             cm_pipeline_Reuse(tinfo->pli);
             /* subtract overlapping residues from previous chunk */
@@ -1662,7 +1643,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   float           *p7_evparam;                   /* E-value parameters for the p7 filter */
   int              prv_ntophits;                 /* number of top hits before cm_Pipeline() call */
   int              in_rc;                        /* in_rc == TRUE; our qsq has been reverse complemented */
-  ESL_KEYHASH     *glocal_kh= NULL;              /* list of models to configure globally, only created if --glist */
+  ESL_KEYHASH     *glocal_kh = NULL;             /* list of models to configure globally, only created if --glist */
+
+  /* variables only used if --clanin is used */
+  FIX ME
+  ESL_KEYHASH     *clan_kh     = NULL;    /* list of models in clans */
+  char           **clan_namesA = NULL;    /* [0..c..nclan-1] name of clan <c>*/
+  int64_t         *clan_sidxA  = NULL;    /* [0..c..nclan-1] starting index in clan_kh for clan <c> */
+  int              nclan       = 0;       /* number of clans, size of clan_namesA and clan_sidxA */
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
@@ -1703,10 +1691,15 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->Z = (int64_t) cmfp->ssi->nprimary;
     cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
-  /* Open and read the list of glocal models, while CM file is open */
+  /* If nec, open and read the list of glocal models, while CM file is open */
   if (esl_opt_IsOn(go, "--glist")) { 
     if((status = read_glocal_list_file(esl_opt_GetString(go, "--glist"), errbuf, cmfp, &glocal_kh)) != eslOK) cm_Fail(errbuf);
   }
+  /* If nec, open and read the clan info file, while CM file is open */
+  if (esl_opt_IsOn(go, "--clanin")) { 
+    if((status = read_clan_info_file(esl_opt_GetString(go, "--clanin"), errbuf, cmfp, &clan_name_kh, &clan_fam_kh, &clan_mapA)) != eslOK) cm_Fail(errbuf);
+  }
+
   nmodels = (int64_t) cmfp->ssi->nprimary;
 
   cm_file_Close(cmfp);
@@ -1724,7 +1717,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_ALLOC(p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
 
   /* initialize rinfo */
-  rinfo = create_reader_info(nmodels);
+  rinfo = create_reader_info(nmodels, clan_fam_kh, clan_mapA);
 
   /* Outside loop: over each query sequence in <seqfile>. */
   while ((sstatus = esl_sqio_Read(sqfp, qsq)) == eslOK)
@@ -1824,9 +1817,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                   cm     = NULL; /* ditto */
                   if(pli->do_wcx) cm_W = (int) cm_clen * pli->wcx; /* do_wcx == TRUE means --wcx was used */
                   if((status = cm_pli_NewModel(pli, CM_NEWMODEL_MSV, 
-                                               cm,                     /* this is NULL b/c we don't have one yet */
-                                               cm_clen, cm_W, cm_nbp,  /* we read these in cm_p7_oprofile_ReadMSV() */
-                                               om, bg, p7_evparam, om->max_length, cm_idx, glocal_kh)) != eslOK) mpi_failure(pli->errbuf);
+                                               cm,                        /* this is NULL b/c we don't have one yet */
+                                               cm_clen, cm_W, cm_nbp, om, /* we read these in cm_p7_oprofile_ReadMSV() */
+                                               bg, p7_evparam, om->max_length, cm_idx, clan_idx, glocal_kh)) != eslOK) mpi_failure(pli->errbuf);
                   
                   /* Split the sequence (qsq) into chunks and run the
                    * pipeline on each.  If we're in rev comp (in_rc == 1)
@@ -2142,6 +2135,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --max is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --max is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --max is incompatible with option --onepass");    goto ERROR; }
@@ -2179,6 +2173,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --nohmm is incompatible with option --onepass");    goto ERROR; }
@@ -2256,6 +2251,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onepass");    goto ERROR; }
@@ -2316,6 +2312,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--hmmonly"))    fprintf(ofp, "# HMM-only mode (for all models):        on [CM will not be used]\n");
   if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
   if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
+  if (esl_opt_IsUsed(go, "--onlytrunc"))  fprintf(ofp, "# only allowing truncated seqs anywhere: on\n");
   if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
   if (esl_opt_IsUsed(go, "--mxsize"))     fprintf(ofp, "# maximum DP alignment matrix size:      %.1f Mb\n", esl_opt_GetReal(go, "--mxsize"));
   if (esl_opt_IsUsed(go, "--smxsize"))    fprintf(ofp, "# maximum DP search matrix size:         %.1f Mb\n", esl_opt_GetReal(go, "--smxsize"));
@@ -2328,6 +2325,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go,  "--qformat"));
   if (esl_opt_IsUsed(go, "--glist"))      fprintf(ofp, "# models for glocal mode scan read from: %s\n", esl_opt_GetString(go,  "--glist"));
   if (esl_opt_IsUsed(go, "--block"))      fprintf(ofp, "# block size (# models) set to:          %d\n", esl_opt_GetInteger(go, "--block"));
+  if (esl_opt_IsUsed(go, "--clanin"))     fprintf(ofp, "# clan information read from file:       %s\n", esl_opt_GetString(go,  "--clanin"));
+  if (esl_opt_IsUsed(go, "--oclan"))      fprintf(ofp, "# only mark overlaps within clans:       yes\n");
   if (esl_opt_IsUsed(go, "--oskip"))      fprintf(ofp, "# skipping overlaps in tbl output:       yes\n");
 #ifdef HAVE_MPI
   if (esl_opt_IsUsed(go, "--stall"))      fprintf(ofp, "# MPI stall mode:                        on\n");
@@ -2482,6 +2481,158 @@ read_glocal_list_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH *
   if(cmfp->ssi != NULL) cmfp->ssi->nsecondary = save_nsecondary;
   return status;
 }
+
+
+/* Function: read_clan_info_file
+ * Date:     EPN, Mon Jan 26 10:03:39 2015
+ * 
+ * Read a 'clan info' file in the following format:
+ * <clan-name-1> <model-name-or-accn-1> <model-name-or-accn-2> ... <model-name-or-accn-N>
+ * <clan-name-2> <model-name-or-accn-1> <model-name-or-accn-2> ... <model-name-or-accn-N>
+ *    ....
+ * <clan-name-N> <model-name-or-accn-1> <model-name-or-accn-2> ... <model-name-or-accn-N>
+ *
+ * And allocate and fill return variables <ret_clan_name_kh>,
+ * <ret_clan_fam_kh, and <ret_clan_mapA>.
+ * 
+ * Example:
+ * Clan info file:
+ *  CL00001 tRNA tRNA-Sec
+ *  SSU SSU_rRNA_archaea SSU_rRNA_bacteria SSU_rRNA_eukarya SSU_rRNA_microsporidia
+ *  LSU LSU_rRNA_archaea LSU_rRNA_bacteria LSU_rRNA_eukarya 
+ * 
+ * Return values:
+ * ret_clan_name_kh = keyhash with "CL00001", "SSU", "LSU"
+ * ret_clan_fam_kh  = keyhash with "tRNA", "tRNA-Sec"...."LSU_rRNA_eukarya"
+ * ret_clan_mapA    = (0, 0, 1, 1, 1, 1, 2, 2) indicating
+ *                    index 0 and 1    in ret_clan_fam_kh belongs to index 0 in ret_clan_name_kh and
+ *                    index 2, 3, 4, 5 in ret_clan_fam_kh belongs to index 1 in ret_clan_name_kh and
+ *                    index 6 and 7    in ret_clan_fam_kh belongs to index 2 in ret_clan_name_kh and
+ * Returns eslOK on success.
+ */
+int
+read_clan_info_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_clan_name_kh, ESL_KEYHASH **ret_clan_fam_kh, int **ret_clan_mapA)
+{
+  int             status;
+  ESL_FILEPARSER *efp = NULL;
+  char           *tok = NULL;
+  int             toklen;
+  ESL_KEYHASH    *clan_name_kh = NULL; /* these are clan names */
+  ESL_KEYHASH    *clan_fam_kh  = NULL; /* these are family names in a clan, members of same clan are contiguous */
+  int            *clan_mapA    = NULL; /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                        * index c in <clan_name_kh>.
+                                        */
+  uint16_t        tmp_fh;
+  off_t           tmp_roff;
+  uint64_t        save_nsecondary = 0;
+  int             i = 0; /* counter */
+
+  int tot_nalloc = 0; /* total current size of first dim of clannamesA */
+  int nalloc     = 1; /* reallocation size for first dim of clannamesA */
+  int nclan      = 0; /* number of clans read from the file */
+  int nfam       = 0; /* number of families in the current clan */
+
+  if(cmfp->ssi == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Failed to open SSI index for CM file: %s (required for --gfile)\n", cmfp->fname);
+  /* store, then overwrite ssi->nsecondary as 0. This will force
+   * esl_ssi_FindName() to only look at primary keys, which is
+   * necessary because when we're reading MSV data for P7 filters,
+   * only om->name is valid (om->accn is not read), so we can't 
+   * allow accessions as keys in filename.
+   */
+  save_nsecondary = cmfp->ssi->nsecondary;
+  cmfp->ssi->nsecondary = 0;
+
+  if (esl_fileparser_Open(filename, NULL,  &efp) != eslOK) ESL_XFAIL(eslEINVAL, errbuf, "failed to open %s for reading clan information\n", filename);
+
+  if((clan_name_kh = esl_keyhash_Create()) == NULL) ESL_XFAIL(eslEMEM, errbuf, "out of memory");
+  if((clan_fam_kh  = esl_keyhash_Create()) == NULL) ESL_XFAIL(eslEMEM, errbuf, "out of memory");
+
+  /* example line:
+   * CL00001 tRNA tRNA-Sec
+   * SSU SSU_rRNA_archaea SSU_rRNA_bacteria SSU_rRNA_eukarya SSU_rRNA_microsporidia
+   */
+  while((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslEOF) {
+    /* add <tok> to clan name keyhash */
+    status = esl_keyhash_Store(clan_name_kh, tok, toklen, NULL);
+
+    /* now read the rest of the line, each token is the name or accession of a model in current clan */
+    while((status = esl_fileparser_GetTokenOnLine(efp, &tok, &toklen)) == eslOK) {
+      /* verify CM <tok> exists in the CM file, via SSI */
+      status = esl_ssi_FindName(cmfp->ssi, tok, &tmp_fh, &tmp_roff, NULL, NULL);
+      if(status == eslENOTFOUND) ESL_XFAIL(status, errbuf, "unable to find model %s listed in %s in SSI index file", tok, filename);
+      if(status == eslEFORMAT)   ESL_XFAIL(status, errbuf, "SSI index for CM file is in incorrect format, try rerunning cmpress");
+      if(status != eslOK)        ESL_XFAIL(status, errbuf, "unexpected error processing --clanin file %s", filename);
+
+      /* add to family keyhash */
+      status = esl_keyhash_Store(clan_fam_kh, tok, toklen, NULL);
+      if(status == eslEDUP)     ESL_XFAIL(status, errbuf, "model %s listed twice in %s", tok, filename);
+      else if (status != eslOK) ESL_XFAIL(status, errbuf, "unexpected error processing --clanin file %s", filename);
+
+      /* add to clan_mapA, after reallocating if nec */
+      if(nfam == tot_nalloc) { 
+        ESL_REALLOC(clan_mapA, sizeof(int) * (tot_nalloc + nalloc));
+        for(i = tot_nalloc; i < tot_nalloc + nalloc; i++) clan_mapA[i] = -1;
+        tot_nalloc += nalloc;
+      }
+      clan_mapA[nfam] = nclan;
+      nfam++;
+    }
+    nclan++;
+  }
+  esl_fileparser_Close(efp);
+
+  if(nclan == 0) ESL_FAIL(status, errbuf, "Error reading %s, no clans present in file\n", filename);
+
+  /* debug print */
+  for(i = 0; i < nclan; i++) { 
+    printf("clan %d %s\n", i, esl_keyhash_Get(clan_name_kh, i));
+  }
+  printf("\n\n");
+  for(i = 0; i < nfam; i++) { 
+    printf("fam %d %s clan: %d\n", i, esl_keyhash_Get(clan_fam_kh, i), clan_mapA[i]);
+  }
+  printf("\n\n");
+
+  *ret_clan_name_kh = clan_name_kh;
+  *ret_clan_fam_kh  = clan_fam_kh;
+  *ret_clan_mapA    = clan_mapA;
+
+  cmfp->ssi->nsecondary = save_nsecondary;
+  return eslOK;
+
+ ERROR:
+  if(efp          != NULL) esl_fileparser_Close(efp);
+  if(clan_name_kh != NULL) esl_keyhash_Destroy(clan_name_kh);
+  if(clan_fam_kh  != NULL) esl_keyhash_Destroy(clan_fam_kh);
+  if(clan_mapA    != NULL) free(clan_mapA);
+  *ret_clan_name_kh = NULL;
+  *ret_clan_fam_kh  = NULL;
+  *ret_clan_mapA    = NULL;
+
+  if(cmfp->ssi != NULL) cmfp->ssi->nsecondary = save_nsecondary;
+  return status;
+}
+
+
+/* Function: determine_clan_index
+ * Date:     EPN, Tue Jan 27 20:17:02 2015
+ * 
+ * Given the clan_fam_kh ESL_KEYHASH and the clan_mapA integer
+ * array mapping clan_fam_kh indices to clan indices, determine
+ * the clan index for the model named <modelname> and return it.
+ * If none exists, return -1.
+ */
+int
+determine_clan_index(char *modelname, ESL_KEYHASH *clan_fam_kh, int *clan_mapA)
+{
+  int clan_fam_idx;
+
+  /* get the index of <modelname> in the hash, <clan_fam_idx> will
+   * be set to -1 if <modelname> is not in the hash 
+   */
+  esl_keyhash_Lookup(clan_fam_kh, modelname, -1, &clan_fam_idx); /* clan_fam_idx will be set to -1 if modelname not found */
+  return (clan_fam_idx == -1) ? -1 : clan_mapA[clan_fam_idx]; 
+}
  
 /* Function: duplicate_sq_for_thread
  * Date:     EPN, Thu Nov 20 09:40:32 2014
@@ -2580,11 +2731,16 @@ copy_sq_for_thread(ESL_SQ *src_sq, ESL_SQ *dest_sq)
  *          READER_INFO object.
  */
 READER_INFO *
-create_reader_info(int64_t nmodels) 
+create_reader_info(int64_t nmodels, ESL_KEYHASH *clan_fam_kh, int *clan_mapA) 
 {
   int status;
   int64_t cm_idx;
   READER_INFO *rinfo = NULL;
+  int f, nfam;
+  int have_clans = (clan_fam_kh != NULL && clan_mapA != NULL) ? TRUE : FALSE;
+
+  if(clan_fam_kh != NULL && clan_mapA == NULL) esl_fatal("internal error, creating reader info but some but not all clan info present");
+  if(clan_fam_kh == NULL && clan_mapA != NULL) esl_fatal("internal error, creating reader info but some but not all clan info present");
 
   ESL_ALLOC(rinfo, sizeof(READER_INFO));
   rinfo->nmodels = nmodels;
@@ -2606,6 +2762,24 @@ create_reader_info(int64_t nmodels)
     rinfo->gflambdaA[cm_idx]  = 0.;
     rinfo->omA[cm_idx]        = NULL; 
     rinfo->msvdataA[cm_idx]   = NULL; 
+  }
+  /* and the clan info (--clanin) variables, if nec */
+  if(have_clans) { 
+    if((rinfo->clan_fam_kh = esl_keyhash_Clone(clan_fam_kh)) == NULL) esl_fatal("Failed to clone keyhash, out of memory"); 
+    nfam = esl_keyhash_GetNumber(clan_fam_kh);
+    ESL_ALLOC(rinfo->clan_mapA, sizeof(int) * nfam);
+    for(f = 0; f < nfam; f++) { 
+      rinfo->clan_mapA[f] = clan_mapA[f];
+    }
+  }
+  else { 
+    rinfo->clan_fam_kh = NULL;
+    rinfo->clan_mapA   = NULL;
+  }
+  /* always make clan_idxA, it will be set to -1 if we don't do clans */
+  ESL_ALLOC(rinfo->clan_idxA, sizeof(int) * nmodels);
+  for(cm_idx = 0; cm_idx < nmodels; cm_idx++) { 
+    rinfo->clan_idxA[cm_idx] = -1; 
   }
 
   return rinfo;
@@ -2652,6 +2826,12 @@ free_reader_info(READER_INFO *rinfo)
     if(rinfo->gfmuA      != NULL) { free(rinfo->gfmuA);      rinfo->gfmuA      = NULL; }
     if(rinfo->gflambdaA  != NULL) { free(rinfo->gflambdaA);  rinfo->gflambdaA  = NULL; }
     if(rinfo->abc        != NULL) { esl_alphabet_Destroy(rinfo->abc); rinfo->abc = NULL; }
+
+    /* clan info variables */
+    if(rinfo->clan_fam_kh  != NULL) { esl_keyhash_Destroy(rinfo->clan_fam_kh);  rinfo->clan_fam_kh  = NULL; }
+    if(rinfo->clan_mapA    != NULL) { free(rinfo->clan_mapA);                   rinfo->clan_mapA    = NULL; }
+    if(rinfo->clan_idxA    != NULL) { free(rinfo->clan_idxA);                   rinfo->clan_idxA    = NULL; }
+
     free(rinfo);
     rinfo = NULL;
   }
