@@ -164,6 +164,7 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->has_evalue       = FALSE;
 
   hit->cm_idx           = -1;
+  hit->clan_idx         = -1;
   hit->seq_idx          = -1;
   hit->pass_idx         = -1;
   hit->hit_idx          = h->N-1; 
@@ -249,22 +250,26 @@ hit_sorter_for_overlap_markup(const void *vh1, const void *vh2)
   if      (h1->seq_idx > h2->seq_idx)   return  1; /* first key, seq_idx (unique id for sequences), low to high */
   else if (h1->seq_idx < h2->seq_idx)   return -1;
   else { 
-    /* same sequence; sort by strand, then E-value, then score, then start position, then CM index */
+    /* same sequence; sort by strand, then clan_idx, then E-value, then score, then start position, then CM index */
     if     (h1->in_rc > h2->in_rc)      return  1; /* second key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
     else if(h1->in_rc < h2->in_rc)      return -1; /*                    (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
     else {
-      if     (h1->evalue > h2->evalue)    return  1; /* third key is E-value, low to high */
-      else if(h1->evalue < h2->evalue)    return -1; 
+      if     (h1->clan_idx > h2->clan_idx) return  1; /* third key is clan_idx, low to high (often these will all be -1) */
+      else if(h1->clan_idx < h2->clan_idx) return -1; 
       else { 
-        if     (h1->score < h2->score)    return  1; /* fourth key is bit score, high to low */
-        else if(h1->score > h2->score)    return -1; 
+        if     (h1->evalue > h2->evalue)    return  1; /* fourth key is E-value, low to high */
+        else if(h1->evalue < h2->evalue)    return -1; 
         else { 
-          if     (h1->start > h2->start)  return  1; /* fifth key is start position, low to high (irregardless of in_rc value) */
-          else if(h1->start < h2->start)  return -1; 
+          if     (h1->score < h2->score)    return  1; /* fifth key is bit score, high to low */
+          else if(h1->score > h2->score)    return -1; 
           else { 
-            if     (h1->cm_idx > h2->cm_idx) return  1; /* sixth key is cm_idx (unique id for models), low to high */
-            else if(h1->cm_idx < h2->cm_idx) return -1; 
-            else                             return  0;
+            if     (h1->start > h2->start)  return  1; /* sixth key is start position, low to high (irregardless of in_rc value) */
+            else if(h1->start < h2->start)  return -1; 
+            else { 
+              if     (h1->cm_idx > h2->cm_idx) return  1; /* seventh key is cm_idx (unique id for models), low to high */
+              else if(h1->cm_idx < h2->cm_idx) return -1; 
+              else                             return  0;
+            }
           }
         }
       }
@@ -539,9 +544,6 @@ integer_textwidth(long n)
  *            the top hits, and the max name length in these top hits
  *            may be different than the max length over all the hits.
  *
- *            Used specifically for nhmmer output, so expects only one
- *            domain per hit
- *
  *            If there are no hits in <h>, or none of the
  *            hits have names, returns 0.
  */
@@ -681,6 +683,39 @@ cm_tophits_GetMaxShownLength(CM_TOPHITS *h)
   return max;
 }
 
+/* Function:  cm_tophits_GetMaxClanLength()
+ * Synopsis:  Returns maximum length of a clan name in hit list (targets).
+ * Incept:    EPN, Wed Jan 28 09:11:43 2015
+ *
+ * Purpose:   Returns the length of the longest clan name of all of the 
+ *            registered hits, in chars. This is useful when deciding
+ *            how to format output.
+ *
+ *            The maximum is taken over all registered hits. This
+ *            opens a possible side effect: caller might print only
+ *            the top hits, and the max name length in these top hits
+ *            may be different than the max length over all the hits.
+ *
+ *            If there are no hits in <h>, <clan_name_kh> is NULL, or
+ *            none of the hits have clans, returns 0.
+ */
+int
+cm_tophits_GetMaxClanLength(CM_TOPHITS *h, ESL_KEYHASH *clan_name_kh)
+{
+  int i, max;
+
+  if(clan_name_kh == NULL) return 0;
+
+  max = 0;
+  for (i = 0; i < h->N; i++) {
+    if(h->unsrt[i].clan_idx != -1) { 
+      max = ESL_MAX(max, 
+                    strlen(esl_keyhash_Get(clan_name_kh, h->unsrt[i].clan_idx)));
+    }
+  }
+  return max;
+}
+
 /* Function:  cm_tophits_Reuse()
  * Synopsis:  Reuse a hit list, freeing internals.
  * Incept:    EPN, Tue May 24 13:36:15 2011
@@ -770,6 +805,7 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
 
   if ((status = cm_tophits_CreateNextHit(dest_th, &hit)) != eslOK) goto ERROR;
   hit->cm_idx     = src_th->hit[h]->cm_idx;
+  hit->clan_idx   = src_th->hit[h]->clan_idx;
   hit->seq_idx    = src_th->hit[h]->seq_idx;
   hit->pass_idx   = src_th->hit[h]->pass_idx;
   /* don't update hit->hit_idx, it will stay as set by CreateNextHit (dest_th->N-1) */
@@ -900,13 +936,14 @@ int remove_or_mark_overlaps_one_seq_fast(CM_TOPHITS *th, int64_t idx1, int64_t i
 
     if(! (th->hit[i]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) { 
       /* i is not a duplicate that's already been removed */
+      
       min = ESL_MIN(th->hit[i]->start, th->hit[i]->stop); 
       max = ESL_MAX(th->hit[i]->start, th->hit[i]->stop); 
       overlap_flag = FALSE;
       for(pos = min; pos <= max; pos++) { 
         if(covered[pos] == TRUE) { overlap_flag = TRUE; break; }
       }
-
+    
       /* how we process the hit differs significantly between
        * whether we're in remove mode (do_remove is TRUE) or
        * mark mode (do_remove is FALSE)
@@ -1077,13 +1114,17 @@ int remove_or_mark_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t
  *            th->is_sorted_for_overlap_markup flags, exactly one
  *            of which must be true, otherwise we'll die.
  *
+ *            <do_clans>: TRUE to only markup overlaps for hits in
+ *            the same clan, FALSE to markup overlaps between all
+ *            hits. IRRELEVANT if th->is_sorted_for_overlap_removal.
+ *
  * Returns:   eslOK on success. 
  *            eslEINVAL if th is not sorted appropriately, errbuf filled
  *            eslERANGE if a hit includes positions outside of 1..srcL, errbuf filled
  *            eslEMEM if we run out of memory, errbuf filled
  */
 int
-cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, char *errbuf)
+cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans, char *errbuf)
 {
   int status;
   int64_t i, j;            
@@ -1110,7 +1151,9 @@ cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, char *errbuf)
   else { 
     ESL_FAIL(eslEINVAL, errbuf, "cm_tophits_RemoveOrMarkOverlaps() list is not sorted appropriately");
   }
-
+  if(do_remove && do_clans) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_tophits_RemoveOrMarkOverlaps() list is sorted for overlap removal and we're trying to respect clan membership...shouldn't happen");
+  }
 
   if (th->N<2) return eslOK;
 
@@ -1120,18 +1163,24 @@ cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, char *errbuf)
     while(j < th->N && 
 	  ((! do_remove) || (th->hit[j]->cm_idx  == th->hit[i]->cm_idx))  &&
 	  th->hit[j]->seq_idx == th->hit[i]->seq_idx &&
-	  th->hit[j]->in_rc   == th->hit[i]->in_rc) { 
+	  th->hit[j]->in_rc   == th->hit[i]->in_rc   && 
+	  ((! do_clans) || (th->hit[j]->clan_idx == th->hit[i]->clan_idx))) { 
       j++;
     }
-    if(j != (i+1)) { 
+    if(j != (i+1) &&                                    /* more than one hit in set i..j-1 */
+       ((! do_clans) || th->hit[i]->clan_idx != -1)) {  /* we're not only marking overlaps within same clan OR 
+                                                         * we are and all hits are in same clan, this way if 
+                                                         * do_clans is TRUE we won't remove overlaps between
+                                                         * hits in families that are not members of any clan */
       /* Hits i to j-1 form a set of hits that all share cm_idx (if
-       * 'do_remove == TRUE'), seq_idx and in_rc. Remove overlaps from
-       * this set in 1 of 2 ways, depending on length of source
-       * sequence and number of hits.  remove_overlaps_one_seq_fast()
-       * will need to allocate a char array of size srcL, but it is
-       * significantly faster when nhits is big. If (do_remove) is
-       * FALSE then we need about 16X more memory in 'one_seq_fast()' 
-       * method so our srcL_limit is 16-fold lower (calc'ed above).
+       * 'do_remove == TRUE'), seq_idx, in_rc and clan_idx (if
+       * 'do_clans == TRUE'). Remove overlaps from this set in 1 of 2
+       * ways, depending on length of source sequence and number of
+       * hits.  remove_overlaps_one_seq_fast() will need to allocate a
+       * char array of size srcL, but it is significantly faster when
+       * nhits is big. If (do_remove) is FALSE then we need about 16X
+       * more memory in 'one_seq_fast()' method so our srcL_limit is
+       * 16-fold lower (calc'ed above).
        */ 
       nhits = (j-1)-i+1;
       if(nhits < 5000 || th->hit[i]->srcL > srcL_limit) { 
@@ -2142,7 +2191,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(qnamestr != NULL) free(qnamestr);
   if(tnamestr != NULL) free(tnamestr);
   if(qaccstr  != NULL) free(qaccstr);
-  if(qaccstr  != NULL) free(taccstr);
+  if(taccstr  != NULL) free(taccstr);
   if(posstr   != NULL) free(posstr);
 
   return eslOK;
@@ -2151,7 +2200,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(qnamestr != NULL) free(qnamestr);
   if(tnamestr != NULL) free(tnamestr);
   if(qaccstr  != NULL) free(qaccstr);
-  if(qaccstr  != NULL) free(taccstr);
+  if(taccstr  != NULL) free(taccstr);
   if(posstr   != NULL) free(posstr);
 
   return status;
@@ -2168,13 +2217,20 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
  *            tabular form to stream <ofp>, using final pipeline
  *            accounting stored in <pli>. Format #2. 
  *            
+ *            Format #2 differs from format 1 (cm_tophits_TabularTargets1(),
+ *            the only tabular format available in Infernal 1.1rc1-->1.1.1)
+ *            in that overlap information is output here (whether each hit
+ *            has a higher scoring overlap and the index of the overlap
+ *            as well as fractional overlap), as well as clan information
+ *            if it's available.
+ *            
  *            Designed to be concatenated for multiple queries and
  *            multiple top hits list.
  *
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, int skip_overlaps, char *errbuf)
+cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, ESL_KEYHASH *clan_name_kh, int skip_overlaps, char *errbuf)
 {
   int status;
   int i;
@@ -2185,6 +2241,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   int posw   = ESL_MAX(8, cm_tophits_GetMaxPositionLength(th));
   int idxw1  = ESL_MAX(4, integer_textwidth(th->N));
   int idxw2  = ESL_MAX(6, integer_textwidth(th->N));
+  int clanw  = ESL_MAX(9, cm_tophits_GetMaxClanLength(th, clan_name_kh));
+
   /* variables used only if pli->do_trm_F3 */
   char   lseq, rseq;
   /* variables used for dealing with overlap annotation */
@@ -2204,6 +2262,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   char *tnamestr     = NULL;
   char *qaccstr      = NULL;
   char *taccstr      = NULL;
+  char *clanstr      = NULL;
   char *posstr       = NULL;
   char *idxstr1      = NULL;
   char *idxstr2      = NULL;
@@ -2214,6 +2273,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   char *any_ofctstr2 = NULL;
   char *win_ofctstr1 = NULL;
   char *win_ofctstr2 = NULL;
+  char *clannamestr  = NULL;
 
   if(pli->mode != CM_SCAN_MODELS) { /* we'll only possibly have overlaps if in scan mode */
     ESL_XFAIL(eslEINVAL, errbuf, "Trying to output in format 2, but not in SCAN mode");
@@ -2225,6 +2285,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   ESL_ALLOC(taccstr,      sizeof(char) * (taccw+1));
   ESL_ALLOC(qnamestr,     sizeof(char) * (qnamew+1));
   ESL_ALLOC(qaccstr,      sizeof(char) * (qaccw+1));
+  ESL_ALLOC(clanstr,      sizeof(char) * (clanw+1));
   ESL_ALLOC(posstr,       sizeof(char) * (posw+1));
   ESL_ALLOC(olp_str,      sizeof(char) * 4);
   ESL_ALLOC(any_oidxstr,  sizeof(char) * (idxw2+1)); /* string for hit index of best scoring overlap */
@@ -2233,6 +2294,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   ESL_ALLOC(any_ofctstr2, sizeof(char) * 7);         /* string for fractional overlap b/t current hit and hit any_oidx wrt hit any_oidx */
   ESL_ALLOC(win_ofctstr1, sizeof(char) * 7);         /* string for fractional overlap b/t current hit and hit win_oidx wrt current hit */
   ESL_ALLOC(win_ofctstr2, sizeof(char) * 7);         /* string for fractional overlap b/t current hit and hit win_oidx wrt hit win_oidx */
+  ESL_ALLOC(clannamestr,  sizeof(char) * clanw);     /* string for output of clan name */
 
   for(i = 0; i < idxw1-1;  i++) { idxstr1[i]  = '-'; } idxstr1[idxw1-1]   = '\0'; /* need to account for single '#' */
   for(i = 0; i < idxw2;    i++) { idxstr2[i]  = '-'; } idxstr2[idxw2]     = '\0';
@@ -2240,6 +2302,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   for(i = 0; i < taccw;    i++) { taccstr[i]  = '-'; } taccstr[taccw]     = '\0';
   for(i = 0; i < qnamew;   i++) { qnamestr[i] = '-'; } qnamestr[qnamew]   = '\0';
   for(i = 0; i < qaccw;    i++) { qaccstr[i]  = '-'; } qaccstr[qaccw]     = '\0';
+  for(i = 0; i < clanw;    i++) { clanstr[i]  = '-'; } clanstr[clanw]     = '\0';
   for(i = 0; i < posw;     i++) { posstr[i]   = '-'; } posstr[posw]       = '\0';
 
   ESL_ALLOC(sorted_idxA, sizeof(int64_t) * th->N);
@@ -2264,26 +2327,26 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 
   if (show_header) { 
     if(pli->do_trm_F3) { /* terminated after F3, more compact output (we don't have all the info for the default output mode) */
-      fprintf(ofp, "#%-*s %-*s %-*s %6s %*s %*s %6s %6s %11s %3s %*s %6s %6s %*s %6s %6s\n",
-              idxw1-1, "idx", tnamew, "target name", qnamew, "query name", 
+      fprintf(ofp, "#%-*s %-*s %-*s %-*s %6s %*s %*s %6s %6s %11s %3s %*s %6s %6s %*s %6s %6s\n",
+              idxw1-1, "idx", tnamew, "target name", qnamew, "query name", clanw, "clan name", 
               "score", 
               posw, "seq from", posw, "seq to", 
               "strand", "bounds", "seqlen",
               "olp", idxw2, "anyidx", "afrct1", "afrct2", idxw2, "winidx", "wfrct1", "wfrct2");
-      fprintf(ofp, "#%-*s %-*s %-*s %6s %*s %*s %6s %6s %11s %3s %s %s %s %s %s %s\n",
-              idxw1-1, idxstr1, tnamew, tnamestr, qnamew, qnamestr, 
+      fprintf(ofp, "#%-*s %-*s %-*s %-*s %6s %*s %*s %6s %6s %11s %3s %s %s %s %s %s %s\n",
+              idxw1-1, idxstr1, tnamew, tnamestr, qnamew, qnamestr, clanw, clanstr, 
               "------",
               posw, posstr, posw, posstr, "------", "------", "-----------", "---", idxstr2, "------", "------", idxstr2, "------", "------");
     }
     else { /* pli->do_trm_F3 is FALSE, default output mode */
-      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %*s %6s %6s %*s %6s %6s %-s\n",
-              idxw1-1, "idx", tnamew, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
+      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %*s %6s %6s %*s %6s %6s %-s\n",
+              idxw1-1, "idx", tnamew, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", clanw, "clan name",
               "mdl", "mdl from", "mdl to", 
               posw, "seq from", posw, "seq to", 
               "strand", "trunc", "pass", "gc", "bias", "score", "E-value", "inc", 
               "olp", idxw2, "anyidx", "afrct1", "afrct2", idxw2, "winidx", "wfrct1", "wfrct2", "description of target");
-      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %s %s %s %s %s %s %s\n",
-              idxw1-1, idxstr1, tnamew, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
+      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %s %s %s %s %s %s %s\n",
+              idxw1-1, idxstr1, tnamew, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, clanw, clanstr,
               "---", "--------", "--------", 
               posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", "---", idxstr2, "------", "------", idxstr2, "------", "------", "---------------------");
     }
@@ -2340,6 +2403,12 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
       else if(has_overlapA[th->hit[h]->hit_idx] == TRUE)    { sprintf(olp_str, " ^ "); maybe_skip = FALSE; }
       else                                                  { sprintf(olp_str, " * "); maybe_skip = FALSE; }
 
+      /* make sure the clan name string makes sense */
+      if(th->hit[h]->clan_idx != -1) { 
+        if(clan_name_kh == NULL)                                        ESL_XFAIL(eslEINVAL, errbuf, "trying to output tabular output of clans, but clan data structure is missing...");
+        if(th->hit[h]->clan_idx >= esl_keyhash_GetNumber(clan_name_kh)) ESL_XFAIL(eslEINVAL, errbuf, "trying to output tabular output of clans, but clan index is invalid...");
+      }
+
       if((skip_overlaps == FALSE) || (maybe_skip == FALSE)) { /* if skip_overlaps is TRUE, potentially skip this hit in the tabular output */
         noutput++;
         if(pli->do_trm_F3) { /* special 'terminate after F3 mode', different output */
@@ -2351,10 +2420,11 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
             lseq = th->hit[h]->start == 1                ? '[' : '.'; 
             rseq = th->hit[h]->stop  == th->hit[h]->srcL ? ']' : '.'; 
           }
-          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %6.1f %*" PRId64 " %*" PRId64 " %6s %4s%c%c %11" PRId64 " %3s %*s %6s %6s %*s %6s %6s\n",
+          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %6.1f %*" PRId64 " %*" PRId64 " %6s %4s%c%c %11" PRId64 " %3s %*s %6s %6s %*s %6s %6s\n",
                   idxw1, noutput,
                   tnamew, th->hit[h]->name,
                   qnamew, qname,
+                  clanw, (th->hit[h]->clan_idx == -1) ? "-" : esl_keyhash_Get(clan_name_kh, th->hit[h]->clan_idx),
                   th->hit[h]->score,
                   posw, th->hit[h]->start,
                   posw, th->hit[h]->stop,
@@ -2369,12 +2439,13 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr2);
         }
         else { /* pli->do_trm_F3 is FALSE, default output mode */
-          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %s\n",
+          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %s\n",
                   idxw1, noutput,
                   tnamew, th->hit[h]->name,
                   taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
                   qnamew, qname,
                   qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
+                  clanw, (th->hit[h]->clan_idx == -1) ? "-" : esl_keyhash_Get(clan_name_kh, th->hit[h]->clan_idx),
                   th->hit[h]->hmmonly ? "hmm" : "cm",
                   th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit,
                   posw, th->hit[h]->start,
@@ -2402,7 +2473,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(qnamestr     != NULL) free(qnamestr);
   if(tnamestr     != NULL) free(tnamestr);
   if(qaccstr      != NULL) free(qaccstr);
-  if(qaccstr      != NULL) free(taccstr);
+  if(taccstr      != NULL) free(taccstr);
+  if(clanstr      != NULL) free(clanstr);
   if(posstr       != NULL) free(posstr);
   if(idxstr1      != NULL) free(idxstr1);
   if(idxstr2      != NULL) free(idxstr2);
@@ -2423,7 +2495,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(qnamestr     != NULL) free(qnamestr);
   if(tnamestr     != NULL) free(tnamestr);
   if(qaccstr      != NULL) free(qaccstr);
-  if(qaccstr      != NULL) free(taccstr);
+  if(taccstr      != NULL) free(taccstr);
+  if(clanstr      != NULL) free(clanstr);
   if(posstr       != NULL) free(posstr);
   if(idxstr1      != NULL) free(idxstr1);
   if(idxstr2      != NULL) free(idxstr2);
@@ -2681,6 +2754,7 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   fprintf(fp, "nincluded                     = %" PRId64 "\n", th->nincluded);
   fprintf(fp, "is_sorted_by_evalue           = %s\n",  th->is_sorted_by_evalue           ? "TRUE" : "FALSE");
   fprintf(fp, "is_sorted_for_overlap_removal = %s\n",  th->is_sorted_for_overlap_removal ? "TRUE" : "FALSE");
+  fprintf(fp, "is_sorted_by_overlap_markup   = %s\n",  th->is_sorted_for_overlap_markup  ? "TRUE" : "FALSE");
   fprintf(fp, "is_sorted_by_position         = %s\n",  th->is_sorted_by_position         ? "TRUE" : "FALSE");
   if(th->is_sorted_by_evalue) { 
     for (i = 0; i < th->N; i++) {
@@ -2697,6 +2771,12 @@ cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th)
   else if(th->is_sorted_by_position) { 
     for (i = 0; i < th->N; i++) {
       fprintf(fp, "POSITION SORTED HIT %" PRId64 ":\n", i);
+      cm_hit_Dump(fp, th->hit[i]);
+    }
+  }
+  else if(th->is_sorted_for_overlap_markup) { 
+    for (i = 0; i < th->N; i++) {
+      fprintf(fp, "OVERLAP MARKUP SORTED HIT %" PRId64 ":\n", i);
       cm_hit_Dump(fp, th->hit[i]);
     }
   }
@@ -2796,6 +2876,7 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   fprintf(fp, "acc        = %s\n",  (h->acc  != NULL) ? h->acc  : "NULL");
   fprintf(fp, "desc       = %s\n",  (h->desc != NULL) ? h->desc : "NULL");
   fprintf(fp, "cm_idx     = %" PRId64 "\n", h->cm_idx);
+  fprintf(fp, "clan_idx   = %d\n",          h->clan_idx);
   fprintf(fp, "seq_idx    = %" PRId64 "\n", h->seq_idx);
   fprintf(fp, "pass_idx   = %d\n",          h->pass_idx);
   fprintf(fp, "start      = %" PRId64 "\n", h->start);

@@ -61,7 +61,7 @@ typedef struct {
 #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
 #define FMODEOPTS   "--FZ,--hmmonly,--rfam,--mid,--nohmm,--max"
 #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
-#define TRUNCOPTS   "-g,--notrunc,--anytrunc,--5trunc,--3trunc"
+#define TRUNCOPTS   "-g,--notrunc,--anytrunc,--onlytrunc,--5trunc,--3trunc"
 
 /* ** Large sets of options are InCompatible With (ICW) --max, --nohmm,
  * --mid, --rfam, --FZ, Previously (before these were commented out) I
@@ -73,8 +73,8 @@ typedef struct {
  * options which are actually incompatible with a lot of other
  * options. 
  *
- * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--5trunc,--3trunc,--onepass"
- * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--5trunc,--3trunc,--onepass"
+ * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--onlytrunc,--5trunc,--3trunc,--onepass"
+ * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--onlytrunc,--5trunc,--3trunc,--onepass"
  * #define ICWMID   "--max,--nohmm,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
  * #define ICWDF    "--max,--nohmm,--mid,--rfam,--FZ"
  * #define ICWRFAM  "--max,--nohmm,--mid,--default,--FZ"
@@ -130,8 +130,9 @@ static ESL_OPTIONS options[] = {
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                7 },
-  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits anywhere within sequences",                 7 },
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                7 },
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow full and truncated hits anywhere within sequences",          7 },
+  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow only truncated hits, anywhere within sequences",             7 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",              7 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",              7 },
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",              7 },
@@ -146,6 +147,9 @@ static ESL_OPTIONS options[] = {
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "assert target <seqdb> is in format <s>: no autodetection",       7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
+  { "--clanin",     eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
+  { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
+  { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
   { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",         7 },
 #endif
@@ -604,7 +608,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       info[i].th   = cm_tophits_Create();
       info[i].pli  = cm_pipeline_Create(go, abc, tinfo->cm->clen, 100, cfg->Z, cfg->Z_setby, CM_SEARCH_SEQS); /* L_hint = 100 is just a dummy for now */
       if((status = cm_pli_NewModel(info[i].pli, CM_NEWMODEL_CM, info[i].cm, info[i].cm->clen, info[i].cm->W, nbps,
-				   info[i].om, info[i].bg, info[i].p7_evparam, info[i].om->max_length, cm_idx-1, NULL)) != eslOK) { 
+				   info[i].om, info[i].bg, info[i].p7_evparam, info[i].om->max_length, cm_idx-1, 
+                                   -1, NULL)) != eslOK) { /* -1 is for clan_idx, irrelevant in this context */
 	cm_Fail(info[i].pli->errbuf);
       }
 
@@ -647,7 +652,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info[0].th);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(info[0].th, errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(info[0].th, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
     /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
     if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
@@ -1196,7 +1201,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
     if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, nbps, 
-				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1, NULL)) != eslOK) { 
+				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1, 
+                                 -1, NULL)) != eslOK) { /* -1 is for clan_idx, irrelevant in this context */
       mpi_failure(info->pli->errbuf);
     }
     
@@ -1330,7 +1336,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info->th);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(info->th, errbuf)) != eslOK) mpi_failure(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(info->th, FALSE, errbuf)) != eslOK) mpi_failure(errbuf);
 
     /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
     if(info->pli->do_trm_F3) cm_tophits_SortByPosition(info->th);
@@ -1545,7 +1551,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = configure_cm(info))         != eslOK) mpi_failure(info->pli->errbuf);
     if((status = setup_hmm_filter(go, info)) != eslOK) mpi_failure(info->pli->errbuf);
     if((status = cm_pli_NewModel(info->pli, CM_NEWMODEL_CM, info->cm, info->cm->clen, info->cm->W, CMCountNodetype(info->cm, MATP_nd), 
-				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1, NULL)) != eslOK) { 
+				 info->om, info->bg, info->p7_evparam, info->om->max_length, cm_idx-1, 
+                                 -1, NULL)) != eslOK) { 
       mpi_failure(info->pli->errbuf);
     }
 
@@ -1846,6 +1853,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --max is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --max is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --max is incompatible with option --onepass");    goto ERROR; }
@@ -1883,6 +1891,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --nohmm is incompatible with option --onepass");    goto ERROR; }
@@ -1960,6 +1969,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onepass");    goto ERROR; }
@@ -2020,6 +2030,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--hmmonly"))    fprintf(ofp, "# HMM-only mode (for all models):        on [CM will not be used]\n");
   if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
   if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
+  if (esl_opt_IsUsed(go, "--onlytrunc"))  fprintf(ofp, "# only allowing truncated seqs anywhere: on\n");
   if (esl_opt_IsUsed(go, "--5trunc"))     fprintf(ofp, "# allowing 5' truncated seqs only:       on\n");
   if (esl_opt_IsUsed(go, "--3trunc"))     fprintf(ofp, "# allowing 3' truncated seqs only:       on\n");
   if (esl_opt_IsUsed(go, "--nonull3"))    fprintf(ofp, "# null3 bias corrections:                off\n");
