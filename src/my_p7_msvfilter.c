@@ -17,15 +17,14 @@
  * SRE, Sun Nov 25 11:26:48 2007 [Casa de Gatos]
  * SVN $Id: impl_sse.c 2509 2008-07-30 14:45:52Z eddys $
  */
-#include "config.h"
+
+#include "esl_config.h"
 #include "p7_config.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <math.h>
 #include <assert.h>
-
-#include <xmmintrin.h>		/* SSE  */
-#include <emmintrin.h>		/* SSE2 */
 
 #include "easel.h"
 #include "esl_sse.h"
