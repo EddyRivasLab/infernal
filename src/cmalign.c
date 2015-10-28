@@ -1664,6 +1664,9 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   char          *aseq      = NULL;  /* aligned sequence, req'd by Transmogrify() */
   char          *ss        = NULL;  /* msa's SS_cons, if there is one, dealigned to length cm->clen */
   int           *used_el   = NULL;  /* [1..msa->alen] used_el[apos] = TRUE if apos is modeled by EL state, else FALSE */
+  /* variables used for copying the structure */
+  int           *useme     = NULL;  /* [0..msa->alen-1] useme[apos] = 1 if alignment position apos is a consensus position, else 0 */
+  char          *msa_ss_cons_copy = NULL; /* copy of the msa's SS_cons we remove broken basepair halves from */
   
   status = eslx_msafile_Open(&abc, msafile, NULL, eslMSAFILE_UNKNOWN, NULL, &afp);
   if (status != eslOK) eslx_msafile_OpenFailure(afp, status);
@@ -1689,9 +1692,22 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
 
   /* get SS_cons from the msa possibly for --mapstr, important to do it here, before it is potentially deknotted in HandModelmaker() */
   if(msa->ss_cons != NULL) { 
+    /* post 1.1.1 release modification [EPN, Tue Jul 28 15:34:45 2015] 
+     * Be careful to deal with basepairs where exactly one of the two paired positions is a consensus 
+     * position (other is an insert). The way we deal is to remove the structure annotation for the 
+     * one that is a consensus position. Replace it with a '.'.
+     */
+    /* set useme array, useme[apos] = 1 if apos is a consensus position, else it's 0 */
+    ESL_ALLOC(useme, sizeof(int) * msa->alen);
+    esl_vec_ISet(useme, msa->alen, 0);
+    for(cpos = 1; cpos <= cm->clen; cpos++) useme[cm->map[cpos]-1] = 1;
+
+    if((status = esl_strdup(msa->ss_cons, msa->alen, &msa_ss_cons_copy)) != eslOK) cm_Fail("Out of memory");
+    if((status = esl_msa_RemoveBrokenBasepairsFromSS(msa_ss_cons_copy, errbuf, msa->alen, useme)) != eslOK) cm_Fail("Problem including structure from --mapali, maybe out of memory");
+
     ESL_ALLOC(ss, sizeof(char) * (cm->clen+1));
     ss[cm->clen] = '\0';
-    for(cpos = 1; cpos <= cm->clen; cpos++) ss[cpos-1] = msa->ss_cons[cm->map[cpos]-1];
+    for(cpos = 1; cpos <= cm->clen; cpos++) ss[cpos-1] = msa_ss_cons_copy[cm->map[cpos]-1];
   }
   else { 
     cm_Fail("--mapali MSA in %s does not have any SS_cons annotation, use --noss if you used --noss with cmbuild", msafile);
@@ -1750,6 +1766,8 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   FreeParsetree(mtr);
   free(a2u_map);
   free(used_el);
+  if(useme            != NULL) free(useme);
+  if(msa_ss_cons_copy != NULL) free(msa_ss_cons_copy);
 
   return eslOK;
 
@@ -1760,10 +1778,12 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
     for(i = 0; i < msa->nseq; i++) cm_alndata_Destroy(dataA[i], TRUE); 
     dataA = NULL;
   }
-  if (afp       != NULL) eslx_msafile_Close(afp);
-  if (msa       != NULL) esl_msa_Destroy(msa);
-  if (a2u_map   != NULL) free(a2u_map);
-  if (aseq      != NULL) free(aseq);  
+  if (afp             != NULL) eslx_msafile_Close(afp);
+  if (msa             != NULL) esl_msa_Destroy(msa);
+  if (a2u_map         != NULL) free(a2u_map);
+  if (aseq            != NULL) free(aseq);  
+  if(useme            != NULL) free(useme);
+  if(msa_ss_cons_copy != NULL) free(msa_ss_cons_copy);
   ESL_FAIL(status, errbuf, "out of memory");
 }
 
