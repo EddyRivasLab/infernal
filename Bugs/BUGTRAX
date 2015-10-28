@@ -1342,3 +1342,35 @@ an optimally accurate parsetree, if it's not a legal local begin
 state, then don't allow a local begin.
 
 //
+
+ID              i44
+TITLE		cmalign --mapstr allows broken basepairs
+STATUS          CLOSED
+XREF            /home/nawrocke/notebook/15_1027_inf_rfam_pknots_in_seeds/00LOG.txt
+                (first bug fix while working at NCBI)
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Oct 28 12:29:05 2015
+DESCRIPTION    
+
+The --mapstr option in cmalign results in the output alignment
+including the SS_cons annotation from alignment <f> where <f> is the
+alignment used to build the CM being used provided with --mapali
+<f>. For example: 'cmalign --mapali my.stk --mapstr my.cm new.stk'.
+(--mapstr must be used in combination with --mapali). The bug is that
+if any of the annotated basepairs in 'my.stk' were actually broken by
+the consensus/insert column definition in cmbuild when the model was
+built, then the output alignment 'new.stk' would have broken basepairs
+annotated. For example if columns i and j (with i < j) are paired in
+my.stk and column i is a consensus column in the model my.cm but j is
+*not* a consensus column, then in new.stk column 'i' would be annotated
+as a left half of a basepair but column 'j' would be annotated as a
+'.' (if at all, since it's an insert column it may not appear in
+'new.stk'). So the output structure would likely not be a legal
+secondary structure. 
+
+Fix is to check for this case in cmalign.c:map_alignment() and remove
+the broken basepair halves by changing them to '.'. The test script
+checks that both a broken non-pseudoknotted basepair and a
+pseudoknotted broken basepair are both correctly removed.
+
+//
