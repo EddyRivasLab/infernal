@@ -1641,7 +1641,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * Called if the --mapali <f> option is used. Open and read a 
  * MSA from <f>, confirm it was the same alignment used to 
  * build the CM, and convert its aligned sequences to 
- * parsetrees. Return data (sequences and parsetrees) gets populated into <ret_dataA>.
+ * parsetrees. Return data (sequences and parsetrees) gets 
+ * populated into <ret_dataA>.
  * 
  * Also, return the dealigned (cm-> clen length) SS_cons
  * from the alignment in <ret_ss>. This will be used to 
@@ -1664,8 +1665,10 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   char          *aseq      = NULL;  /* aligned sequence, req'd by Transmogrify() */
   char          *ss        = NULL;  /* msa's SS_cons, if there is one, dealigned to length cm->clen */
   int           *used_el   = NULL;  /* [1..msa->alen] used_el[apos] = TRUE if apos is modeled by EL state, else FALSE */
-  /* variables used for copying the structure */
-  int           *useme     = NULL;  /* [0..msa->alen-1] useme[apos] = 1 if alignment position apos is a consensus position, else 0 */
+  /* variables used for copying the structure and possibly removing broken basepairs (for which exactly 1 of the 2 paired positions is a consensus column */
+  int            opos;              /* position that apos pairs with */
+  int           *i_am_rf   = NULL;  /* [1..msa->alen] i_am_rf[apos] = 1 if alignment position apos is a consensus (RF) position, else 0 */
+  int           *msa_ct    = NULL;  /* [1..msa->alen] msa_ct[apos] = x; x==0 if apos is unpaired, x==opos if apos is paired to opos in msa->ss_cons */
   char          *msa_ss_cons_copy = NULL; /* copy of the msa's SS_cons we remove broken basepair halves from */
   
   status = eslx_msafile_Open(&abc, msafile, NULL, eslMSAFILE_UNKNOWN, NULL, &afp);
@@ -1683,6 +1686,9 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * msa->nseq);
   for(i = 0; i < msa->nseq; i++) dataA[i] = cm_alndata_Create();
 
+  /* allocated msa_ct */
+  ESL_ALLOC(msa_ct, sizeof(int) * (msa->alen+1));
+
   /* if --noss used, potentially remove ss_cons and replace with no basepairs */
   if(noss_used) { 
     if(msa->ss_cons != NULL) { free(msa->ss_cons); msa->ss_cons = NULL; }
@@ -1697,13 +1703,27 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
      * position (other is an insert). The way we deal is to remove the structure annotation for the 
      * one that is a consensus position. Replace it with a '.'.
      */
-    /* set useme array, useme[apos] = 1 if apos is a consensus position, else it's 0 */
-    ESL_ALLOC(useme, sizeof(int) * msa->alen);
-    esl_vec_ISet(useme, msa->alen, 0);
-    for(cpos = 1; cpos <= cm->clen; cpos++) useme[cm->map[cpos]-1] = 1;
+    /* set i_am_rf array, i_am_rf[apos] = 1 if apos is a consensus position, else it's 0 */
+    ESL_ALLOC(i_am_rf, sizeof(int) * msa->alen);
+    esl_vec_ISet(i_am_rf, msa->alen, 0);
+    for(cpos = 1; cpos <= cm->clen; cpos++) i_am_rf[cm->map[cpos]] = 1;
 
+    /* get CT array that describes all basepairs in the ss_cons (ct array is 1..alen, not 0..alen-1 */
     if((status = esl_strdup(msa->ss_cons, msa->alen, &msa_ss_cons_copy)) != eslOK) cm_Fail("Out of memory");
-    if((status = esl_msa_RemoveBrokenBasepairsFromSS(msa_ss_cons_copy, errbuf, msa->alen, useme)) != eslOK) cm_Fail("Problem including structure from --mapali, maybe out of memory");
+    if((status = esl_wuss2ct(msa_ss_cons_copy, msa->alen, msa_ct)) != eslOK) cm_Fail("Problem including structure from --mapali, maybe out of memory");
+    for(apos = 1; apos <= msa->alen; apos++) { 
+      if(i_am_rf[apos] && msa_ct[apos] != 0) { 
+        /* apos is a consensus position that is part of a pair, make
+         * sure it's mate is also consensus, if not, remove the
+         * annotation of both of them from the consensus structure
+         */
+        opos = msa_ct[apos];
+        if(! i_am_rf[opos]) { 
+          msa_ss_cons_copy[apos-1] = '.';
+          msa_ss_cons_copy[opos-1] = '.';
+        }
+      }
+    }
 
     ESL_ALLOC(ss, sizeof(char) * (cm->clen+1));
     ss[cm->clen] = '\0';
@@ -1766,7 +1786,8 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   FreeParsetree(mtr);
   free(a2u_map);
   free(used_el);
-  if(useme            != NULL) free(useme);
+  if(i_am_rf          != NULL) free(i_am_rf);
+  if(msa_ct           != NULL) free(msa_ct);
   if(msa_ss_cons_copy != NULL) free(msa_ss_cons_copy);
 
   return eslOK;
@@ -1782,8 +1803,10 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   if (msa             != NULL) esl_msa_Destroy(msa);
   if (a2u_map         != NULL) free(a2u_map);
   if (aseq            != NULL) free(aseq);  
-  if(useme            != NULL) free(useme);
+  if(i_am_rf          != NULL) free(i_am_rf);
+  if(msa_ct           != NULL) free(msa_ct);
   if(msa_ss_cons_copy != NULL) free(msa_ss_cons_copy);
+
   ESL_FAIL(status, errbuf, "out of memory");
 }
 
