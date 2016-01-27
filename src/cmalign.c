@@ -1704,8 +1704,8 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
      * one that is a consensus position. Replace it with a '.'.
      */
     /* set i_am_rf array, i_am_rf[apos] = 1 if apos is a consensus position, else it's 0 */
-    ESL_ALLOC(i_am_rf, sizeof(int) * msa->alen);
-    esl_vec_ISet(i_am_rf, msa->alen, 0);
+    ESL_ALLOC(i_am_rf, sizeof(int) * (msa->alen+1));
+    esl_vec_ISet(i_am_rf, (msa->alen+1), 0);
     for(cpos = 1; cpos <= cm->clen; cpos++) i_am_rf[cm->map[cpos]] = 1;
 
     /* get CT array that describes all basepairs in the ss_cons (ct array is 1..alen, not 0..alen-1 */
