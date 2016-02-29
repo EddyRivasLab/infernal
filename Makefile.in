@@ -227,10 +227,7 @@ distclean:
 
 # "make TAGS": emacs etags database, for searching the whole source tree.
 TAGS:
-	etags    src/*.[ch]        src/*.in
-	etags -a testsuite/*.[ch]  testsuite/*.in
-	etags -a easel/*.[ch]      easel/*.in
+	./makeTAGS.sh
 
-################################################################
-# @LICENSE@
-################################################################
+
+
