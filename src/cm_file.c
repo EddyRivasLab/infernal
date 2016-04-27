@@ -606,7 +606,7 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
 
   if (format == -1) format = CM_FILE_1a;
 
-  if      (format == CM_FILE_1a) fprintf(fp, "INFERNAL1/a [%s | %s]\n",                             INFERNAL_VERSION, INFERNAL_DATE);
+  if   (format == CM_FILE_1a) fprintf(fp, "INFERNAL1/a [%s | %s]\n", INFERNAL_VERSION, INFERNAL_DATE);
   else ESL_EXCEPTION(eslEINVAL, "invalid CM file format code");
   
   fprintf(fp, "NAME     %s\n", cm->name);
@@ -645,18 +645,28 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   }
   if (cm->flags & CMH_EXPTAIL_STATS)
     {
-      fprintf(fp, "ECMLC    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
+      /* make sure our dbsize values can be cast to a long reliably,
+       * even on 32 bit systems (<= 2 Gb), they certainly should be,
+       * max value in cmcalibrate is 160Mb. (This is related to bug
+       * i31.)
+       */
+      if(cm->expA[EXP_CM_LC]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid dbsize (too big) EXP_CM_LC");
+      if(cm->expA[EXP_CM_GC]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid dbsize (too big) EXP_CM_GC");
+      if(cm->expA[EXP_CM_LI]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid dbsize (too big) EXP_CM_LI");
+      if(cm->expA[EXP_CM_GI]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid dbsize (too big) EXP_CM_GI");
+
+      fprintf(fp, "ECMLC    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_LC]->lambda, cm->expA[EXP_CM_LC]->mu_extrap, cm->expA[EXP_CM_LC]->mu_orig, 
-	      cm->expA[EXP_CM_LC]->dbsize, cm->expA[EXP_CM_LC]->nrandhits, cm->expA[EXP_CM_LC]->tailp);
-      fprintf(fp, "ECMGC    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
+	      (long) (cm->expA[EXP_CM_LC]->dbsize + 0.5), cm->expA[EXP_CM_LC]->nrandhits, cm->expA[EXP_CM_LC]->tailp);
+      fprintf(fp, "ECMGC    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_GC]->lambda, cm->expA[EXP_CM_GC]->mu_extrap, cm->expA[EXP_CM_GC]->mu_orig, 
-	      cm->expA[EXP_CM_GC]->dbsize, cm->expA[EXP_CM_GC]->nrandhits, cm->expA[EXP_CM_GC]->tailp);
-      fprintf(fp, "ECMLI    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
+	      (long) (cm->expA[EXP_CM_GC]->dbsize + 0.5), cm->expA[EXP_CM_GC]->nrandhits, cm->expA[EXP_CM_GC]->tailp);
+      fprintf(fp, "ECMLI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_LI]->lambda, cm->expA[EXP_CM_LI]->mu_extrap, cm->expA[EXP_CM_LI]->mu_orig, 
-	      cm->expA[EXP_CM_LI]->dbsize, cm->expA[EXP_CM_LI]->nrandhits, cm->expA[EXP_CM_LI]->tailp);
-      fprintf(fp, "ECMGI    %.5f  %10.5f  %10.5f  %10.0f  %10d  %.6f\n", 
+	      (long) (cm->expA[EXP_CM_LI]->dbsize + 0.5), cm->expA[EXP_CM_LI]->nrandhits, cm->expA[EXP_CM_LI]->tailp);
+      fprintf(fp, "ECMGI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_GI]->lambda, cm->expA[EXP_CM_GI]->mu_extrap, cm->expA[EXP_CM_GI]->mu_orig, 
-	      cm->expA[EXP_CM_GI]->dbsize, cm->expA[EXP_CM_GI]->nrandhits, cm->expA[EXP_CM_GI]->tailp);
+	      (long) (cm->expA[EXP_CM_GI]->dbsize + 0.5), cm->expA[EXP_CM_GI]->nrandhits, cm->expA[EXP_CM_GI]->tailp);
     }
 
   /* main model section */
@@ -855,11 +865,19 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
     if (fwrite((char *) &(cm->fp7_evparam[CM_p7_GFLAMBDA]), sizeof(float), 1, fp) != 1) return eslFAIL;
   }
   if (cm->flags & CMH_EXPTAIL_STATS) { 
+    long dbsize_long;
     for(z = 0; z < EXP_NMODES; z++) {
+      /* make sure our dbsize values can be cast to a long reliably,
+       * even on 32 bit systems (<= 2 Gb), they certainly should be,
+       * max value in cmcalibrate is 160Mb. (This is related to bug
+       * i31.)
+       */
+      if(cm->expA[z]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid dbsize (too big)");
+      dbsize_long = (long) cm->expA[z]->dbsize + 0.5;
       if (fwrite((char *) &(cm->expA[z]->lambda),    sizeof(double), 1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->mu_extrap), sizeof(double), 1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->mu_orig),   sizeof(double), 1, fp) != 1) return eslFAIL;
-      if (fwrite((char *) &(cm->expA[z]->dbsize),    sizeof(double), 1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(dbsize_long),            sizeof(long),   1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->nrandhits), sizeof(int),    1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->tailp),     sizeof(double), 1, fp) != 1) return eslFAIL;
     }
@@ -1772,7 +1790,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	cm->expA[exp_mode]->lambda    = atof(tok1);
 	cm->expA[exp_mode]->mu_extrap = atof(tok2);
 	cm->expA[exp_mode]->mu_orig   = atof(tok3);
-	cm->expA[exp_mode]->dbsize    = atof(tok4);
+	cm->expA[exp_mode]->dbsize    = atof(tok4); /* store as double, even though it was written as a long */
 	cm->expA[exp_mode]->nrandhits = atoi(tok5);
 	cm->expA[exp_mode]->tailp     = atof(tok6);
 	cm->expA[exp_mode]->is_valid  = TRUE;
@@ -2232,13 +2250,15 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     if (! fread((char *) &tmp_fp7_gflambda, sizeof(float), 1, cmfp->f))         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read additional P7 E-value stats");
   }
   if (cm->flags & CMH_EXPTAIL_STATS) { 
+    long dbsize_long;
     ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
     for(x = 0; x < EXP_NMODES; x++) {
       cm->expA[x] = CreateExpInfo();
       if (! fread((char *) &(cm->expA[x]->lambda),    sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->mu_extrap), sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->mu_orig),   sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
-      if (! fread((char *) &(cm->expA[x]->dbsize),    sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      if (! fread((char *) &(dbsize_long),            sizeof(long),   1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+      cm->expA[x]->dbsize = (double) dbsize_long;
       if (! fread((char *) &(cm->expA[x]->nrandhits), sizeof(int),    1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->tailp),     sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
     }
@@ -2551,7 +2571,7 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	  
 	  if ((status = esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No dbsize read on E-xx line");
 	  if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "dbsize is not integer on E-xx line");
-	  cm->expA[exp_mode]->dbsize = atof(tok);
+	  cm->expA[exp_mode]->dbsize = atof(tok); /* read it as a double, even though it's written as a long */
 	  
 	  if ((status = esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No nrandhits read on E-xx line");
 	  if (! is_integer(tok))                                 ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "nrandhits is not integer on E-xx line");

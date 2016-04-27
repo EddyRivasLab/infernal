@@ -151,11 +151,11 @@ static ESL_OPTIONS options[] = {
   { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",              7 },
+  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",         7 },
 #endif
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",                     7 },  
-  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                                      7 },
+  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,                           "arrest after start: for debugging MPI under gdb",                7 },  
+  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,                        "run as an MPI parallel program",                                 7 },
 #endif
 
   /* All options below are developer options, only shown if --devhelp invoked */
@@ -223,18 +223,22 @@ static ESL_OPTIONS options[] = {
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
   { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       107 },
+<<<<<<< HEAD
+=======
+  
+>>>>>>> 47e02776cc90bb656e18bd9de857a638aa97547d
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
-  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    107 },
-  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               107 },
-  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              107 },
-  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       107 },
-  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     107 },
-  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           107 },
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    108 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               108 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              108 },
+  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       108 },
+  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     108 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
-  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 107 },
-  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index",  107 },
+  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 108 },
+  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index",  108 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -652,11 +656,19 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Sort by sequence index/position and remove duplicates */
     cm_tophits_SortForOverlapRemoval(info[0].th);
     if((status = cm_tophits_RemoveOrMarkOverlaps(info[0].th, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+<<<<<<< HEAD
 
     /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
     if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
     else                       cm_tophits_SortByEvalue(info[0].th);
 
+=======
+
+    /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
+    if(info[0].pli->do_trm_F3) cm_tophits_SortByPosition(info[0].th);
+    else                       cm_tophits_SortByEvalue(info[0].th);
+
+>>>>>>> 47e02776cc90bb656e18bd9de857a638aa97547d
     /* Enforce threshold */
     cm_tophits_Threshold(info[0].th, info[0].pli);
 
@@ -2038,6 +2050,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
   if (esl_opt_IsUsed(go, "--wcx"))        fprintf(ofp, "# W set as <x> * cm->clen:               <x>=%g\n", esl_opt_GetReal(go, "--wcx"));
+  if (esl_opt_IsUsed(go, "--onepass"))    fprintf(ofp, "# using CM for best HMM pass only:       on\n");
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--tformat"))    fprintf(ofp, "# targ <seqdb> format asserted:          %s\n", esl_opt_GetString(go, "--tformat"));

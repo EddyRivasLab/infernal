@@ -225,13 +225,13 @@ alignment columns to be insertions relative to consensus. The 5
 %                                                             ^
 sequences were only counted as an ``effective'' total sequence number
 (\otext{eff\_nseq}) of 3.73. The model includes 21 basepairs and 2
-%                     ^^^^                     ^^               ^
+%                      ^^^^                     ^^               ^
 bifurcations. The model ended up with a relative entropy per position
 (\otext{rel entropy, CM}; information content) of 0.783 bits. If the
-%                                                ^^^^^
+%                                                 ^^^^^
 secondary structure information of the model were ignored the relative
 entropy per position (\otext{rel entropy, HMM}) would be 0.489 bits.
-%                                                       ^^^^^         
+%                                                        ^^^^^         
 This output format is rudimentary. Infernal knows quite a bit more
 information about what it's done to build this CM, but it's not
 displaying it. You don't need to know more to be able to use the
@@ -319,7 +319,7 @@ for you to use if you don't want to wait. To use this calibrated
 model, copy over the \otext{tRNA5.cm} file you just made with the
 calibrated version:
  
-\user{cp tRNA5.c.cm tRNA5.cm}\\
+\user{cp tutorial/tRNA5.c.cm tRNA5.cm}\\
  
 \subsubsection{Step 3: search a sequence database with cmsearch}
 
@@ -329,7 +329,8 @@ archaeon \emph{Methanobrevibacter rumanitium} (accession:
 \otext{NC\_13790.1}). We'll use this file as our database. To perform
 the search:
 
-\user{cmsearch tRNA5.cm mrum-genome.fa}\\
+\user{cmsearch tRNA5.cm tutorial/mrum-genome.fa}\\
+% tutorial regression: tRNA5-search.out
 
 As before, the first section is the header, telling you what program
 your ran, on what, and with what options:
@@ -503,7 +504,6 @@ same order. As an illustrative example, let's take a look at
 hit number 43. First, take a look at the first four lines for this
 hit: 
 
-% tutorial regression: tRNA5-search.out
 \begin{sreoutput}
 >> NC_013790.1  Methanobrevibacter ruminantium M1 chromosome, complete genome
  rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
@@ -574,18 +574,19 @@ structure of the target sequence. The format is a little fancier and
 more informative than the simple least-common-denominator format we
 used in the input alignment file. It's designed to make it easier to
 see the secondary structure by eye. The format is described in detail
-later (see WUSS format in section~\ref{section:formats}); for now, here's all you need to
-know. Basepairs in simple stem loops are annotated with \otext{<>}
-characters. Basepairs enclosing multifurcations (multiple stem loops)
-are annotated with \otext{()}, such as the tRNA acceptor stem in this
-example. In more complicated structures, \otext{[]} and \otext{\{\}}
-annotations also show up, to reflect deeper nestings of
-multifurcations. For single stranded residues, \otext{\_} characters
-mark hairpin loops; \otext{-} characters mark interior loops and
-bulges; \otext{,} characters mark single-stranded residues in
-multifurcation loops; and \otext{:} characters mark single stranded
-residues external to any secondary structure. Insertions relative to
-this consensus are annotated by a \otext{.} character.
+later (see WUSS format in section~\ref{section:formats}); for now,
+here's all you need to know. Basepairs in simple stem loops are
+annotated with \otext{<>} characters. Basepairs enclosing
+multifurcations (multiple stem loops) are annotated with \otext{()},
+such as the tRNA acceptor stem in this example. In more complicated
+structures, \otext{[]} and \otext{\{\}} annotations also show up, to
+reflect deeper nestings of multifurcations. For single stranded
+residues, \otext{\_} characters mark hairpin loops; \otext{-}
+characters mark interior loops and bulges; \otext{,} characters mark
+single-stranded residues in multifurcation loops; and \otext{:}
+characters mark single stranded residues external to any secondary
+structure. Insertions relative to this consensus are annotated by a
+\otext{.} character.
 
 The line above the \otext{CS} line ends with \otext{NC} and marks
 negative scoring non-canonical basepairs in the alignment with a
@@ -663,15 +664,15 @@ Internal CM pipeline statistics summary:
 Query model(s):                                                  1  (72 consensus positions)
 Target sequences:                                                1  (5874406 residues searched)
 Target sequences re-searched for truncated hits:                 1  (360 residues re-searched)
-Windows   passing  local HMM SSV           filter:           11197  (0.2108); expected (0.35)
+Windows   passing  local HMM SSV           filter:           11200  (0.2111); expected (0.35)
 Windows   passing  local HMM Viterbi       filter:                  (off)
 Windows   passing  local HMM Viterbi  bias filter:                  (off)
-Windows   passing  local HMM Forward       filter:             140  (0.002747); expected (0.005)
-Windows   passing  local HMM Forward  bias filter:             139  (0.002728); expected (0.005)
-Windows   passing glocal HMM Forward       filter:              88  (0.001973); expected (0.005)
-Windows   passing glocal HMM Forward  bias filter:              88  (0.001973); expected (0.005)
-Envelopes passing glocal HMM envelope defn filter:             101  (0.001358); expected (0.005)
-Envelopes passing  local CM  CYK           filter:              60  (0.0007629); expected (0.0001)
+Windows   passing  local HMM Forward       filter:             137  (0.002691); expected (0.005)
+Windows   passing  local HMM Forward  bias filter:             134  (0.002621); expected (0.005)
+Windows   passing glocal HMM Forward       filter:              87  (0.001923); expected (0.005)
+Windows   passing glocal HMM Forward  bias filter:              87  (0.001923); expected (0.005)
+Envelopes passing glocal HMM envelope defn filter:             100  (0.001342); expected (0.005)
+Envelopes passing  local CM  CYK           filter:              60  (0.0007631); expected (0.0001)
 Total CM hits reported:                                         56  (0.0007205); includes 0 truncated hit(s)
 
 # CPU time: 2.15u 0.03s 00:00:02.17 Elapsed: 00:00:00.89
@@ -729,28 +730,29 @@ P-values were accurately calculated, the highest scoring 35\% of the
 %                                           ^^^^
 residues will pass the filter). Here, about 21\% of the database in
 %                                           ^^^^
-11,197 separate windows got through the SSV filter. For a database of
+11,200 separate windows got through the SSV filter. For a database of
 %^^^^^
 this size, the local Viterbi filter is turned off.  The local Forward filter
 is set to allow an expected 0.5\% of the database survive. Here about
 %                           ^^^^
-0.3\% survives in 140 windows. Next, each surviving window is checked
+0.3\% survives in 137 windows. Next, each surviving window is checked
 %^^
 to see if the target sequence is ``obviously'' so biased in its
 composition that it's unlikely to be a true homolog. This is called
 the ``bias filter''\footnote{There's also a bias filter step used in
   the local Viterbi filter stage, when it is used.} and applying a bit
 score correction to previous filter's score for each window and
-recomputing the P-value. Exactly 1 of the 140 windows fails to pass
-%                                ^        ^^^
-the local Forward bias filter stage Next, the Forward algorithm is
+recomputing the P-value. Three of the 137 windows fail to pass
+%                        ^^^^^        ^^^
+the local Forward bias filter stage. Next, the Forward algorithm is
 used to score each window again, but this time with the HMM configured
 in glocal mode requiring a full length alignment to the
 model\footnote{The use of glocal Forward is another important
   difference between Infernal and HMMER3's (v3.0) pipeline. HMMER v3.0
   only uses local HMM algorithms.}  As with the local stage, an
 expected 0.5\% of the database is expected to survive. In this case,
-88 of the 139 windows, comprising about 0.2\% of the database,
+87 of the 134 windows, comprising about 0.2\% of the database,
+%^        ^^^
 survive. The bias filter is run again, this time applying a correction
 to the glocal Forward scores. For this search, 0 windows are removed at
 this stage. The envelope definition stage is next. This stage is very
@@ -760,13 +762,13 @@ stage, the Forward and Backward algorithms are used to identify zero
 or more hit envelopes in each window, where each envelope contains one
 putative hit.  Often residues at the beginning and ends of windows are
 determined to be nonhomologous and are not included in the
-envelope. In this search, 101 envelopes are defined within the 81
+envelope. In this search, 100 envelopes are defined within the 87
 %                         ^^^                                  ^^
 windows. Note that the envelopes comprise only about 70\% of the
 %                                                    ^^^
-residues from the 81 windows, indicated by the drop of 0.1973\% to
+residues from the 87 windows, indicated by the drop of 0.1923\% to
 %                                                      ^^^^^^^^
-0.1358\%.
+0.1342\%.
 %%^^^^
 
 After hit envelopes have been defined with the filter HMM, the two
@@ -789,6 +791,7 @@ In the final round, the Inside algorithm (the SCFG analog of the HMM
 Forward algorithm) is used to define final hit boundaries and
 scores. Hits with scores above the reporting threshold were output, as
 described above. In this search there were 56 such hits.
+%                                          ^^
 
 Finally, the running time of the search is reported, in CPU time and
 elapsed time. This search took about 1 second (wall
@@ -830,7 +833,9 @@ is used to define the window length at the
 beginning and end of each sequence which must be re-searched for
 truncated hits. For our tRNA model the maximum expected length is
 90, so exactly 360 residues were re-searched: the first and final 90
+%^             ^^^                                                ^^
 residues on the top strand, and the first and final 90 residues on
+%                                                   ^^
 the bottom strand.
 
 There is one more aspect of truncated hit detection that is important
@@ -850,9 +855,10 @@ The \prog{cmscan} program is for annotating all the different
 known/detectable RNAs in a given sequence. It takes a single query
 sequence and a CM database as input. The CM database might be Rfam,
 for example, or another collection of your choice. \prog{cmscan} is
-new to version 1.1 of Infernal. It is designed to be useful primarily
-for the analysis metagenomic datasets, in which one wants to know what
-families of RNAs are represented in the sequence dataset.
+new to version 1.1 of Infernal. It is designed to be useful for
+sequence datasets from RNA-Seq experiments or metagenomics surveys,
+for which one wants to know what families of RNAs are represented in
+the sequence dataset.
 
 \subsubsection{Step 1: create an CM database flatfile}
 
@@ -928,6 +934,7 @@ significant hits to the three models in our toy CM database.
 To scan the sequences with our database: 
 
 \user{cmscan minifam.cm tutorial/metag-example.fa}
+%tutorial regression: metag-scan.out
 
 The header and the first section of the output will look like:
 
@@ -941,7 +948,7 @@ The header and the first section of the output will look like:
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query sequence file:                   ../../tutorial/metag-example.fa
 # target CM database:                    minifam.cm
-# number of worker threads:              2
+# number of worker threads:              8
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Query:       AAGA01015927.1  [L=943]
@@ -950,8 +957,8 @@ Hit scores:
  rank     E-value  score  bias  modelname  start    end   mdl trunc   gc  description
  ----   --------- ------ -----  --------- ------ ------   --- ----- ----  -----------
   (1) !   3.3e-19   77.3   0.0  5S_rRNA       59    174 +  cm    no 0.66  5S ribosomal RNA
-  (2) !   9.3e-19   62.4   0.0  tRNA5        229    302 +  cm    no 0.62  
-  (3) !     6e-16   53.5   0.0  tRNA5        314    386 +  cm    no 0.59  
+  (2) !   9.3e-19   62.4   0.0  tRNA5        229    302 +  cm    no 0.62  -
+  (3) !     6e-16   53.5   0.0  tRNA5        314    386 +  cm    no 0.59  -
 \end{sreoutput}
 
 \prog{cmscan} has identified three putative RNAs in the first query
@@ -1004,13 +1011,13 @@ Internal CM pipeline statistics summary:
 Query sequence(s):                                               1  (1886 residues searched)
 Query sequences re-searched for truncated hits:                  1  (992.0 residues re-searched, avg per model)
 Target model(s):                                                 3  (382 consensus positions)
-Windows   passing  local HMM SSV           filter:              16  (0.331); expected (0.35)
+Windows   passing  local HMM SSV           filter:              16  (0.3323); expected (0.35)
 Windows   passing  local HMM Viterbi       filter:                  (off)
 Windows   passing  local HMM Viterbi  bias filter:                  (off)
-Windows   passing  local HMM Forward       filter:               4  (0.09138); expected (0.02)
-Windows   passing  local HMM Forward  bias filter:               4  (0.09138); expected (0.02)
-Windows   passing glocal HMM Forward       filter:               3  (0.09138); expected (0.02)
-Windows   passing glocal HMM Forward  bias filter:               3  (0.09138); expected (0.02)
+Windows   passing  local HMM Forward       filter:               4  (0.09822); expected (0.02)
+Windows   passing  local HMM Forward  bias filter:               4  (0.09822); expected (0.02)
+Windows   passing glocal HMM Forward       filter:               3  (0.09822); expected (0.02)
+Windows   passing glocal HMM Forward  bias filter:               3  (0.09822); expected (0.02)
 Envelopes passing glocal HMM envelope defn filter:               4  (0.05189); expected (0.02)
 Envelopes passing  local CM  CYK           filter:               4  (0.05189); expected (0.0001)
 Total CM hits reported:                                          3  (0.03046); includes 0 truncated hit(s)
@@ -1082,7 +1089,7 @@ so far because it is of a truncated hit. First, notice that the
 \otext{trunc} column reads \otext{5'} indicating that Infernal
 predicts the 5' end (beginning) of this Cobalamin riboswitch is
 missing. (Note that this hit is on the bottom (reverse) strand so the
-Cobalamin hit is actually predicted to extend past the 3' end of the
+Cobalamin hit is actually predicted to extend past the end of the
 input sequence (past residue 934), but on the opposite strand.) The 5'
 end of the alignment indicates this with special annotation: the
 \otext{<[31]*} in the model line indicates that the missing sequence
@@ -1139,13 +1146,6 @@ were in this EL, the \otext{PP} annotation would be a gap (\otext{.})
 character.
 
 \subsection{Creating multiple alignments with cmalign}
-% tutorial regression: 
-% cmsearch -A mrum-tRNAs.stk tRNA5.cm mrum-genome.fa 
-% esl-reformat --rename mrum-tRNA fasta mrum-tRNAs.stk > mrum-tRNAs.fa
-% then manually removed all but first 20 sequences, 
-% and sequence descriptions, and converted lowercase to uppercase.
-% Saved a version of this file with mrum-tRNA.20 for an example of 
-% local alignment.
 The file \otext{tutorial/mrum-tRNAs10.fa} is a FASTA file containing
 the 10 of the tRNA hits above the inclusion threshold (with an E-value
 less than $0.01$) found by \prog{cmsearch} in our 
@@ -1157,6 +1157,7 @@ To align these 10 sequences to our example tRNA model and make a multiple sequen
 alignment:
 
 \user{cmalign tRNA5.cm tutorial/mrum-tRNAs10.fa}
+% tutorial regression: mrum-tRNAs10.sto
 
 The output of this is a Stockholm format multiple alignment file:
 
@@ -1287,6 +1288,7 @@ from the \prog{cmscan} example above (I've split up the alignment
 below so it will fit on the page):
 
 \user{cmalign tutorial/Cobalamin.c.cm tutorial/Cobalamin.fa}
+% tutorial regression: cobalamin-align.sto
 
 \label{cmalign-cobalamin}
 \begin{sreoutput}
@@ -1379,6 +1381,7 @@ secondary structure annotation.
 To build a structureless tRNA model from this alignment, execute:
 
 \user{cmbuild --noss tRNA5-noss.cm tutorial/tRNA5.sto}
+%tutorial regression: trna-noss-build.out
 
 The \otext{--noss} option is required when the alignment file lacks
 structure annotation. By forcing the use of \otext{--noss} we're
@@ -1423,11 +1426,11 @@ to be calibrated prior to running \prog{cmsearch}\footnote{Zero
 Now, let's repeat the search of the \emph{M. ruminantium} genome but
 using our structureless tRNA model: 
 
-\user{cmsearch tRNA5-noss.cm mrum-genome.fa}\\
+\user{cmsearch tRNA5-noss.cm tutorial/mrum-genome.fa}\\
+%tutorial regression: trna-noss-search.out
 
-This search is faster than the first one (though you may not be able
-to tell), because only profile HMM algorithms are used this time
-around. Take a look at the list of hits:
+This search is faster than the first one because only profile HMM
+algorithms are used this time around. Take a look at the list of hits:
 
 \newpage
 
@@ -1438,8 +1441,8 @@ around. Take a look at the list of hits:
   (2) !     3e-07   32.2   0.0  NC_013790.1  762496  762559 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, complete genome
   (3) !     3e-07   32.2   0.0  NC_013790.1 2041698 2041635 - hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, complete genome
   (4) !     5e-06   28.3   0.0  NC_013790.1 2585264 2585203 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, complete genome
-  (5) !   6.4e-06   28.0   0.0  NC_013790.1  735143  735198 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, complete genome
-  (6) !   7.1e-06   27.9   0.0  NC_013790.1 2351247 2351188 - hmm     - 0.57  Methanobrevibacter ruminantium M1 chromosome, complete genome
+  (5) !   6.1e-06   28.1   0.0  NC_013790.1  735143  735198 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, complete genome
+  (6) !     7e-06   27.9   0.0  NC_013790.1 2351247 2351188 - hmm     - 0.57  Methanobrevibacter ruminantium M1 chromosome, complete genome
   (7) !   1.2e-05   27.2   0.0  NC_013790.1  662193  662251 + hmm     - 0.64  Methanobrevibacter ruminantium M1 chromosome, complete genome
   (8) !   1.2e-05   27.1   0.0  NC_013790.1 2186009 2185951 - hmm     - 0.51  Methanobrevibacter ruminantium M1 chromosome, complete genome
   (9) !   4.2e-05   25.4   0.0  NC_013790.1 2585183 2585118 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, complete genome
@@ -1455,25 +1458,24 @@ around. Take a look at the list of hits:
  (19) !    0.0057   18.7   0.0  NC_013790.1 1160527 1160608 + hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, complete genome
  (20) !    0.0074   18.3   0.0  NC_013790.1  361056  360994 - hmm     - 0.40  Methanobrevibacter ruminantium M1 chromosome, complete genome
  ------ inclusion threshold ------
- (21) ?     0.012   17.7   0.0  NC_013790.1 2151679 2151737 + hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (22) ?     0.012   17.7   0.0  NC_013790.1  917729  917784 + hmm     - 0.61  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (23) ?     0.019   17.1   0.0  NC_013790.1 2327123 2327043 - hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (24) ?     0.023   16.7   0.0  NC_013790.1  360973  360920 - hmm     - 0.54  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (25) ?     0.037   16.1   0.0  NC_013790.1 2350982 2350919 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (26) ?     0.039   16.1   0.0  NC_013790.1  361671  361606 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (27) ?     0.039   16.0   0.0  NC_013790.1 2680176 2680227 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (28) ?     0.062   15.4   0.0  NC_013790.1 2585067 2585000 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (29) ?     0.063   15.4   0.0  NC_013790.1  362793  362738 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (30) ?     0.063   15.4   0.0  NC_013790.1 1064778 1064857 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (31) ?     0.072   15.2   0.0  NC_013790.1 2749938 2749884 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (32) ?     0.073   15.2   0.0  NC_013790.1 2749832 2749778 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (33) ?      0.12   14.5   0.0  NC_013790.1  361729  361689 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (34) ?       1.3   11.2   0.0  NC_013790.1  361439  361393 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (35) ?       4.4    9.6   0.0  NC_013790.1 2583867 2583803 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, complete genome
- (36) ?         6    9.1   0.0  NC_013790.1  546054  546021 - hmm     - 0.68  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (21) ?     0.011   17.7   0.0  NC_013790.1 2151679 2151737 + hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (22) ?     0.019   17.1   0.0  NC_013790.1 2327123 2327043 - hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (23) ?     0.023   16.7   0.0  NC_013790.1  360973  360920 - hmm     - 0.54  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (24) ?     0.037   16.1   0.0  NC_013790.1 2350982 2350919 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (25) ?     0.039   16.1   0.0  NC_013790.1  361671  361606 - hmm     - 0.50  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (26) ?     0.039   16.0   0.0  NC_013790.1 2680176 2680227 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (27) ?     0.062   15.4   0.0  NC_013790.1 2585067 2585000 - hmm     - 0.59  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (28) ?     0.063   15.4   0.0  NC_013790.1  362793  362738 - hmm     - 0.46  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (29) ?     0.063   15.4   0.0  NC_013790.1 1064778 1064857 + hmm     - 0.62  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (30) ?     0.072   15.2   0.0  NC_013790.1 2749938 2749884 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (31) ?     0.073   15.2   0.0  NC_013790.1 2749832 2749778 - hmm     - 0.47  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (32) ?      0.12   14.5   0.0  NC_013790.1  361729  361689 - hmm     - 0.56  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (33) ?       1.3   11.2   0.0  NC_013790.1  361439  361393 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (34) ?       4.4    9.6   0.0  NC_013790.1 2583867 2583803 - hmm     - 0.49  Methanobrevibacter ruminantium M1 chromosome, complete genome
+ (35) ?       5.9    9.2   0.0  NC_013790.1  546054  546021 - hmm     - 0.68  Methanobrevibacter ruminantium M1 chromosome, complete genome
 \end{sreoutput}
 
-Note that this time we only find 36 hits (20 with E-values less than
+Note that this time we only find 35 hits (20 with E-values less than
 the inclusion threshold of 0.01) compared to 56 (with 54 less than
 0.01) in the original search with the structure-based CM. The
 increased sensitivity in the initial CM search exemplifies the
@@ -1495,16 +1497,16 @@ HMM hit alignments differ slightly from CM hit alignments. Take a look
 at the first alignment:
 
 \begin{sreoutput}
->> gi|288559258|ref|NC_013790.1|  Methanobrevibacter ruminantium M1 chromosome, complete genome
+>> NC_013790.1  Methanobrevibacter ruminantium M1 chromosome, complete genome
  rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
   (1) !   3.6e-09   38.2   0.0 hmm        5       67 ..      362022      361960 - .. 0.93     - 0.46
 
-                                       ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: CS
-                     tRNA5.noss      5 auAUaGcgcAGUGGuAGcGCGgcagcCUgucaagguggAGGUCCuggGUUCGAUUCccaGUgu 67    
-                                        uAUaGc+cA+UGG AG+GCG  +g CUg ca  +   AGGU  uggGUUCGAUUCcc  U+ 
-  gi|288559258|ref|NC_013790.1| 362022 CUAUAGCUCAAUGGCAGAGCGUUUGGCUGACAUCCAAAAGGUUAUGGGUUCGAUUCCCUUUAG 361960
-                                       689******************************************************988876 PP
+                     ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: CS
+        tRNA5      5 auAUaGcgcAGUGGuAGcGCGgcagcCUgucaagguggAGGUCCuggGUUCGAUUCccaGUgu 67    
+                      uAUaGc+cA+UGG AG+GCG  +g CUg ca  +   AGGU  uggGUUCGAUUCcc  U+ 
+  NC_013790.1 362022 CUAUAGCUCAAUGGCAGAGCGUUUGGCUGACAUCCAAAAGGUUAUGGGUUCGAUUCCCUUUAG 361960
+                     689******************************************************988876 PP
 \end{sreoutput}
 
 First, note that the \otext{mdl} field reads \otext{hmm} instead of
@@ -1649,6 +1651,7 @@ considered a gap by \prog{cmbuild}) for these positions.
 To build the hand-specified model from this alignment, do:
 
 \user{cmbuild --hand tRNA5-hand.cm tutorial/tRNA5-hand.sto}
+%tutorial regression: trna-hand-build.out
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
