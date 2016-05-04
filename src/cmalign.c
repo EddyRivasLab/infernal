@@ -1403,7 +1403,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   }
 
   /* Determine output alignment file format */
-  outfmt = eslx_msafile_EncodeFormat(esl_opt_GetString(go, "--outformat"));
+  outfmt = esl_msafile_EncodeFormat(esl_opt_GetString(go, "--outformat"));
   if (outfmt == eslMSAFILE_UNKNOWN) {
     printf("\nERROR: %s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
     goto ERROR;
@@ -1653,7 +1653,7 @@ static int
 map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALNDATA ***ret_dataA, int *ret_ndata, char **ret_ss)
 {
   int            status;
-  ESLX_MSAFILE  *afp       = NULL;
+  ESL_MSAFILE   *afp       = NULL;
   ESL_MSA       *msa       = NULL;
   ESL_ALPHABET  *abc       = (ESL_ALPHABET *) cm->abc; /* removing const'ness to make compiler happy. Safe. */
   uint32_t       chksum    = 0;
@@ -1671,11 +1671,11 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   int           *msa_ct    = NULL;  /* [1..msa->alen] msa_ct[apos] = x; x==0 if apos is unpaired, x==opos if apos is paired to opos in msa->ss_cons */
   char          *msa_ss_cons_copy = NULL; /* copy of the msa's SS_cons we remove broken basepair halves from */
   
-  status = eslx_msafile_Open(&abc, msafile, NULL, eslMSAFILE_UNKNOWN, NULL, &afp);
-  if (status != eslOK) eslx_msafile_OpenFailure(afp, status);
+  status = esl_msafile_Open(&abc, msafile, NULL, eslMSAFILE_UNKNOWN, NULL, &afp);
+  if (status != eslOK) esl_msafile_OpenFailure(afp, status);
 
-  status = eslx_msafile_Read(afp, &msa);
-  if (status != eslOK) eslx_msafile_ReadFailure(afp, status);
+  status = esl_msafile_Read(afp, &msa);
+  if (status != eslOK) esl_msafile_ReadFailure(afp, status);
 
   if (! (cm->flags & CMH_CHKSUM))  cm_Fail("CM has no checksum. --mapali unreliable without it.");
   if (! (cm->flags & CMH_MAP))     cm_Fail("CM has no map. --mapali can't work without it.");
@@ -1781,7 +1781,7 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
   *ret_ndata = msa->nseq;
   *ret_ss    = ss;
 
-  eslx_msafile_Close(afp);
+  esl_msafile_Close(afp);
   esl_msa_Destroy(msa);
   FreeParsetree(mtr);
   free(a2u_map);
@@ -1799,7 +1799,7 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
     for(i = 0; i < msa->nseq; i++) cm_alndata_Destroy(dataA[i], TRUE); 
     dataA = NULL;
   }
-  if (afp             != NULL) eslx_msafile_Close(afp);
+  if (afp             != NULL) esl_msafile_Close(afp);
   if (msa             != NULL) esl_msa_Destroy(msa);
   if (a2u_map         != NULL) free(a2u_map);
   if (aseq            != NULL) free(aseq);  
@@ -1876,7 +1876,7 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
    * that this all makes sense earlier in the program, and the
    * contract of this function asserted so (see above).
    */
-  status = eslx_msafile_Write(ofp, msa, (ofp == cfg->tmpfp ? eslMSAFILE_PFAM : cfg->outfmt));
+  status = esl_msafile_Write(ofp, msa, (ofp == cfg->tmpfp ? eslMSAFILE_PFAM : cfg->outfmt));
   if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 

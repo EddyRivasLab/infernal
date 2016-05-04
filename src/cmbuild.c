@@ -178,7 +178,7 @@ struct cfg_s {
 
   char         *alifile;	/* name of the alignment file we're building CMs from  */
   int           fmt;		/* format code for alifile */
-  ESLX_MSAFILE *afp;            /* open alifile  */
+  ESL_MSAFILE  *afp;            /* open alifile  */
   ESL_ALPHABET *abc;		/* digital alphabet */
 
   char         *cmfile;         /* file to write CM to                    */
@@ -296,7 +296,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    cfg.rdfp       = NULL;
 
    if (esl_opt_IsOn(go, "--informat")) {
-     cfg.fmt = eslx_msafile_EncodeFormat(esl_opt_GetString(go, "--informat"));
+     cfg.fmt = esl_msafile_EncodeFormat(esl_opt_GetString(go, "--informat"));
      if (cfg.fmt == eslMSAFILE_UNKNOWN)   cm_Fail("%s is not a recognized input sequence file format\n", esl_opt_GetString(go, "--informat"));
      if (cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM && cfg.fmt != eslMSAFILE_SELEX) { 
        cm_Fail("%s is an invalid format for cmbuild, must be Stockholm, Pfam, or Selex\n", esl_opt_GetString(go, "--informat"));
@@ -394,7 +394,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      fclose(cfg.rdfp); 
    }
 
-   if (cfg.afp        != NULL) eslx_msafile_Close(cfg.afp);
+   if (cfg.afp        != NULL) esl_msafile_Close(cfg.afp);
    if (cfg.abc        != NULL) esl_alphabet_Destroy(cfg.abc);
    if (cfg.cmoutfp    != NULL) fclose(cfg.cmoutfp);
    if (cfg.pri        != NULL) Prior_Destroy(cfg.pri);
@@ -456,9 +456,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
    mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
 
-   while ((status = eslx_msafile_Read(cfg->afp, &msa)) != eslEOF)
+   while ((status = esl_msafile_Read(cfg->afp, &msa)) != eslEOF)
      {
-       if (status != eslOK) eslx_msafile_ReadFailure(cfg->afp, status);
+       if (status != eslOK) esl_msafile_ReadFailure(cfg->afp, status);
        cfg->nali++;  
 
        if(set_msa_name(go, cfg, errbuf, msa) != eslOK) cm_Fail(errbuf);
@@ -477,8 +477,8 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 	   if(do_cluster) {
 	       msa = cmsa[c];
 	       if(esl_opt_GetString(go, "--cdump") != NULL) { 
-		 if((status = eslx_msafile_Write(cfg->cdfp, msa, eslMSAFILE_STOCKHOLM)) != eslOK)
-		   cm_Fail("--cdump related eslx_msafile_Write() call failed.");
+		 if((status = esl_msafile_Write(cfg->cdfp, msa, eslMSAFILE_STOCKHOLM)) != eslOK)
+		   cm_Fail("--cdump related esl_msafile_Write() call failed.");
 	       }
 	   }
 
@@ -758,8 +758,8 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if((cfg->abc = esl_alphabet_Create(eslRNA)) == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create alphabet for sequence file");
 
    /* open input alignment file */
-   if((status = eslx_msafile_Open(&(cfg->abc), cfg->alifile, NULL, cfg->fmt, NULL, &(cfg->afp))) != eslOK) { 
-     eslx_msafile_OpenFailure(cfg->afp, status);
+   if((status = esl_msafile_Open(&(cfg->abc), cfg->alifile, NULL, cfg->fmt, NULL, &(cfg->afp))) != eslOK) { 
+     esl_msafile_OpenFailure(cfg->afp, status);
    }
 
    /* open CM file for writing */
@@ -1058,7 +1058,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    }
    /* print initial alignment to --rdump file, if --rdump was enabled */
    if(cfg->rdfp != NULL) { 
-     if((status = eslx_msafile_Write(cfg->rdfp, input_msa, eslMSAFILE_STOCKHOLM)) != eslOK) {
+     if((status = esl_msafile_Write(cfg->rdfp, input_msa, eslMSAFILE_STOCKHOLM)) != eslOK) {
        ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
      }
    }
@@ -1100,7 +1100,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 
        /* print intermediate alignment to --rdump file, if --rdump was enabled */
        if(cfg->rdfp != NULL) {
-	 if((status = eslx_msafile_Write(cfg->rdfp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
+	 if((status = esl_msafile_Write(cfg->rdfp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
 	   ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
        }
        /* 3. msa -> cm */
@@ -1118,7 +1118,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      }
 
    /* write out final alignment to --refine output file */
-   if((status = eslx_msafile_Write(cfg->refinefp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
+   if((status = esl_msafile_Write(cfg->refinefp, msa, eslMSAFILE_STOCKHOLM)) != eslOK) 
      ESL_FAIL(status, errbuf, "refine_msa(), esl_msafile_Write() call failed.");
 
    /* If the model is local (-l was used), then we need to convert it
@@ -1292,7 +1292,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
      esl_msa_SetName     (omsa, msa->name, -1);
      esl_msa_SetDesc     (omsa, msa->desc, -1);
      esl_msa_SetAccession(omsa, msa->acc,  -1);
-     eslx_msafile_Write(cfg->postmsafp, omsa, eslMSAFILE_STOCKHOLM);
+     esl_msafile_Write(cfg->postmsafp, omsa, eslMSAFILE_STOCKHOLM);
 
      esl_msa_Destroy(omsa);
      for(i = 0; i < msa->nseq; i++) esl_sq_Destroy(sq[i]);

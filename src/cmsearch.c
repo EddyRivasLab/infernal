@@ -702,8 +702,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_MSA *msa = NULL;
       if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, &msa)) == eslOK) { 
 	if(msa != NULL) { 
-	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
-	  else           eslx_msafile_Write(afp, msa, eslMSAFILE_PFAM);
+	  if (textw > 0) esl_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
+	  else           esl_msafile_Write(afp, msa, eslMSAFILE_PFAM);
 	  fprintf(ofp, "# Alignment of %d hits satisfying inclusion thresholds saved to: %s\n", msa->nseq, esl_opt_GetString(go, "-A"));
 	}
 	else { 
@@ -1384,8 +1384,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_MSA *msa = NULL;
       if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, &msa)) == eslOK) { 
 	if(msa != NULL) { 
-	  if (textw > 0) eslx_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
-	  else           eslx_msafile_Write(afp, msa, eslMSAFILE_PFAM);
+	  if (textw > 0) esl_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
+	  else           esl_msafile_Write(afp, msa, eslMSAFILE_PFAM);
 	  fprintf(ofp, "# Alignment of %d hits satisfying inclusion thresholds saved to: %s\n", msa->nseq, esl_opt_GetString(go, "-A"));
 	}
 	else { 

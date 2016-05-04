@@ -32,7 +32,6 @@
  * pass a filter strategy, for example.
  * 
  * EPN, Tue Jul  6 09:48:24 2010
- * SVN $Id: create-profmark.c 3267 2010-05-14 17:27:36Z eddys $
  */
 
 #include <stdlib.h>
@@ -190,7 +189,7 @@ main(int argc, char **argv)
   char          outfile[256];	/* name of an output file          */
   int           alifmt;		/* format code for alifile         */
   int           dbfmt;		/* format code for dbfile          */
-  ESLX_MSAFILE *afp     = NULL;	/* open alignment file             */
+  ESL_MSAFILE  *afp     = NULL;	/* open alignment file             */
   ESL_MSA      *origmsa = NULL;	/* one multiple sequence alignment */
   ESL_MSA      *msa     = NULL;	/* MSA after frags are removed     */
   ESL_MSA      *trainmsa= NULL;	/* training set, aligned           */
@@ -287,8 +286,8 @@ main(int argc, char **argv)
   if      (esl_opt_GetBoolean(go, "--amino"))   cfg.abc = esl_alphabet_Create(eslAMINO);
   else if (esl_opt_GetBoolean(go, "--dna"))     cfg.abc = esl_alphabet_Create(eslDNA);
   else if (esl_opt_GetBoolean(go, "--rna"))     cfg.abc = esl_alphabet_Create(eslRNA);
-  if((status = eslx_msafile_Open(&(cfg.abc), alifile, NULL, alifmt, NULL, &afp)) != eslOK) { 
-    eslx_msafile_OpenFailure(afp, status);
+  if((status = esl_msafile_Open(&(cfg.abc), alifile, NULL, alifmt, NULL, &afp)) != eslOK) { 
+    esl_msafile_OpenFailure(afp, status);
   }
 
   if (cfg.abc->type == eslAMINO) esl_composition_SW34(cfg.fq);
@@ -302,7 +301,7 @@ main(int argc, char **argv)
   nali = 0; 
   npos = 0;
   poslen_total = 0;
-  while ((status = eslx_msafile_Read(afp, &origmsa)) == eslOK)
+  while ((status = esl_msafile_Read(afp, &origmsa)) == eslOK)
   {
       npos_this_msa = 0;
       if(origmsa->name == NULL) esl_fatal("All msa's must have a valid name (#=GC ID), alignment %d does not.", nali);
@@ -381,7 +380,7 @@ main(int argc, char **argv)
          * find_sets().  Extract and write out the training alignment. */
         if ((status = esl_msa_SequenceSubset(msa, i_am_train, &trainmsa)) != eslOK) goto ERROR;
         esl_msa_MinimGaps(trainmsa, NULL, NULL, FALSE);
-        eslx_msafile_Write(cfg.out_msafp, trainmsa, eslMSAFILE_STOCKHOLM);
+        esl_msafile_Write(cfg.out_msafp, trainmsa, eslMSAFILE_STOCKHOLM);
 
         esl_dst_XAverageId(cfg.abc, trainmsa->ax, trainmsa->nseq, 10000, &avgid); /* 10000 is max_comparisons, before sampling kicks in */
         fprintf(cfg.tblfp, "%-20s  %3.0f%% %6d %6d %6d %6d %6d\n", msa->name, 100.*avgid, (int) trainmsa->alen, msa->nseq, nfrags, trainmsa->nseq, ntestseq);
@@ -408,7 +407,7 @@ main(int argc, char **argv)
           /* Output train subset, note we don't use trainmsa, b/c it's has all gap columns removed */
           if ((status = esl_msa_SequenceSubset(msa, i_am_train, &tmpmsa)) != eslOK) goto ERROR;
           esl_msa_FormatName(tmpmsa, "TRAIN.%s", msa->name);
-          eslx_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
+          esl_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
 
 
           /* capture the consensus of the msa into train_consensus, for use in calculating pct_id later */
@@ -421,7 +420,7 @@ main(int argc, char **argv)
           /* Output test subset */
           if ((status = esl_msa_SequenceSubset(msa, i_am_test, &tmpmsa)) != eslOK) goto ERROR;
           esl_msa_FormatName(tmpmsa, "TEST.%s", msa->name);
-          eslx_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
+          esl_msafile_Write(cfg.tfp, tmpmsa, eslMSAFILE_PFAM);
           esl_msa_Destroy(tmpmsa);
         }
 
@@ -473,7 +472,7 @@ main(int argc, char **argv)
       esl_msa_Destroy(msa);
   }
 
-  if (status != eslEOF)           eslx_msafile_ReadFailure(afp, status);
+  if (status != eslEOF)           esl_msafile_ReadFailure(afp, status);
   else if (nali   == 0)           esl_fatal("No alignments found in file %s\n", alifile);
 
   /* Make sure we summed length of the positives isn't above the max allowed */
@@ -497,7 +496,7 @@ main(int argc, char **argv)
   fclose(cfg.tblfp);
   esl_randomness_Destroy(cfg.r);
   esl_alphabet_Destroy(cfg.abc);
-  eslx_msafile_Close(afp);
+  esl_msafile_Close(afp);
   esl_getopts_Destroy(go);
 
   if (train_consensus != NULL) esl_sq_Destroy(train_consensus);
@@ -1465,3 +1464,4 @@ read_hmmfile(char *filename, ESL_HMM **ret_hmm)
   esl_fileparser_Destroy(efp);
   return;
 }
+

@@ -495,7 +495,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   }
 
   /* Determine output alignment file format */
-  outfmt = eslx_msafile_EncodeFormat(esl_opt_GetString(go, "--outformat"));
+  outfmt = esl_msafile_EncodeFormat(esl_opt_GetString(go, "--outformat"));
   if (outfmt == eslMSAFILE_UNKNOWN) { 
     ESL_FAIL(eslEINCOMPAT, errbuf, "%s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
   }
@@ -560,7 +560,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   }
 
   /* Output the alignment */
-  status = eslx_msafile_Write(cfg->ofp, msa, outfmt);
+  status = esl_msafile_Write(cfg->ofp, msa, outfmt);
   if      (status == eslEMEM) ESL_XFAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_XFAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 
