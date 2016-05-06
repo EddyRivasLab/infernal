@@ -23,7 +23,7 @@
 #         w/ AC_CONFIG_HEADERS -- which means, easel.h.in
 #
 # SRE, Mon Oct  5 14:55:45 1998
-# SVN $Id$
+# SVN $Id: configure.ac 4708 2014-07-22 13:11:50Z nawrockie $
 # xref autoconf macro archive: //www.gnu.org/software/ac-archive/
 #
 # GNU recommends the following order:
@@ -44,7 +44,7 @@
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it.
 AC_PREREQ(2.63)
-AC_INIT(Infernal, 1.1.1, nawrockie@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 1.1.1x, eric.nawrocki@nih.gov, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 # remember if the user is overriding CFLAGS
@@ -73,26 +73,26 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="July 2014"
-INFERNAL_COPYRIGHT="Copyright (C) 2014 Howard Hughes Medical Institute."
-INFERNAL_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
+INFERNAL_DATE="May 2016"
+INFERNAL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
+INFERNAL_LICENSE="Freely distributed under a BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://infernal.janelia.org/"
 INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
-INFERNAL_SADIR="hmmer/lib/libdivsufsort"
+INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="July 2014"
-HMMER_COPYRIGHT="Copyright (C) 2014 Howard Hughes Medical Institute."
-HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
+HMMER_DATE="May 2016"
+HMMER_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
+HMMER_LICENSE="Freely distributed under a BSD open source licence."
 HMMER_VERSION=i$PACKAGE_VERSION
 HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
-HMMER_SADIR="lib/libdivsufsort"
+HMMER_SADIR="libdivsufsort"
 
 EASEL_DATE="July 2014"
-EASEL_COPYRIGHT="Copyright (C) 2014 HHMI Janelia Farm Research Campus"
-EASEL_LICENSE="Freely distributed under the Janelia Software License."
+EASEL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute"
+EASEL_LICENSE="Freely distributed under a BSD open source license."
 EASEL_VERSION="i$PACKAGE_VERSION"
 EASEL_URL="http://bioeasel.org/"
 
@@ -697,37 +697,25 @@ AC_CONFIG_FILES([documentation/Makefile])
 AC_CONFIG_FILES([documentation/manpages/Makefile])
 AC_CONFIG_FILES([documentation/userguide/Makefile])
 
-# following from HMMER's configure.ac
-#################################################################
-AC_CONFIG_FILES([
-  hmmer/documentation/Makefile 
-  hmmer/documentation/man/Makefile
-  hmmer/documentation/userguide/Makefile
-  hmmer/src/Makefile
-  hmmer/src/Makefile-subdirs.mk
-  hmmer/src/base/Makefile
-  hmmer/src/build/Makefile
-  hmmer/src/daemon/Makefile
-  hmmer/src/dp_reference/Makefile
-  hmmer/src/dp_sparse/Makefile
-  hmmer/src/dp_vector/Makefile
-  hmmer/src/experiments/Makefile
-  hmmer/src/misc/Makefile
-  hmmer/src/programs/Makefile
-  hmmer/src/sandbox/Makefile
-  hmmer/src/search/Makefile
-  hmmer/src/utilities/Makefile
-  hmmer/testsuite/Makefile
-  hmmer/benchmarks/Makefile
-  hmmer/benchmarks/profmark/Makefile
-  hmmer/benchmarks/speed/Makefile
-  hmmer/lib/libdivsufsort/Makefile
-])
+# HMMER files
+AC_CONFIG_FILES([hmmer/documentation/Makefile])
+AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
+AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
+AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
+AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
+AC_CONFIG_FILES([hmmer/libdivsufsort/Makefile])
+AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
+AC_CONFIG_HEADERS(hmmer/libdivsufsort/divsufsort.h)
 
-AC_CONFIG_HEADERS([
-  hmmer/src/p7_config.h
-  hmmer/lib/libdivsufsort/divsufsort.h
-])
+# the following incantation establishes a symlink of
+# src/impl_{whatever} to src/impl in the *build* directory.
+# Testsuite sqc tests rely on it.
+# You can't use AC_CONFIG_LINKS, apparently, because it is only
+# designed to link files, not directories.
+# PORTABILITY: Beware: we're using a naked ln -sf here, which some systems may not support!
+AC_CONFIG_COMMANDS([hmmer/src/impl],
+	           [cd hmmer/src; ln -sf impl_${impl_choice} impl],
+		   [ac_top_build_prefix=${ac_top_build_prefix}; impl_choice=${impl_choice}])
 
 # Finally, build the top-level HMMER makefile (note: this is *not* built by HMMER's configure)
 AC_CONFIG_FILES([hmmer/Makefile])

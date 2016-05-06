@@ -3357,14 +3357,14 @@ main(int argc, char **argv)
   hit->srcL    = L+1;
   
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
   if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
 
   cm_tophits_Merge(h1, h2);
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "second")        != 0)   esl_fatal("sort 2 failed (top is %s = %f)",            h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "third")         != 0)   esl_fatal("sort 2 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
@@ -3377,7 +3377,7 @@ main(int argc, char **argv)
 
   cm_tophits_Merge(h1, h3);
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "first")         != 0)   esl_fatal("sort 3 failed (top    is %s = %f)",         h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "second")        != 0)   esl_fatal("sort 3 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
@@ -3395,7 +3395,7 @@ main(int argc, char **argv)
   /* test markup, first sort for removal and make sure we don't mark up any overlaps of different models */
   cm_tophits_Merge(h1, h4);
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "Bfirst")        != 0)   esl_fatal("sort 4 failed (first  is %s = %f)",         h1->hit[0]->name,      h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "first")         != 0)   esl_fatal("sort 4 failed (second is %s = %f)",         h1->hit[1]->name,      h1->hit[1]->score);
@@ -3416,7 +3416,7 @@ main(int argc, char **argv)
 
   /* second sort for markup and make sure we DO mark up overlaps of different models */
   cm_tophits_SortForOverlapMarkup(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,      "Bfirst")        != 0)     esl_fatal("sort 5 failed (first  is %s = %f)",         h1->hit[0]->name,      h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,      "first")         != 0)     esl_fatal("sort 5 failed (second is %s = %f)",         h1->hit[1]->name,      h1->hit[1]->score);
@@ -3521,9 +3521,9 @@ main(int argc, char **argv)
     }
 
     cm_tophits_SortForOverlapRemoval(h5);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
     cm_tophits_SortForOverlapMarkup(h5);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
     
     cm_tophits_SortByEvalue(h5);
     if (strcmp(h5->hit[0]->name,  "hit1")  != 0)     esl_fatal("sort 6 failed pass %d (first  is %s = %f)", p+1,    h5->hit[0]->name,      h5->hit[0]->score);

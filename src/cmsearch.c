@@ -51,7 +51,7 @@ typedef struct {
   P7_PROFILE       *Rgm;         /* generic   query profile HMM for 5' truncated hits */
   P7_PROFILE       *Lgm;         /* generic   query profile HMM for 3' truncated hits */
   P7_PROFILE       *Tgm;         /* generic   query profile HMM for 5' and 3' truncated hits */
-  P7_SCOREDATA     *scoredata;   /* MSV/SSV specific data structure */
+  P7_SCOREDATA     *msvdata;     /* MSV/SSV specific data structure */
   float            *p7_evparam;  /* [0..CM_p7_NEVPARAM] E-value parameters */
   float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
@@ -130,7 +130,7 @@ static ESL_OPTIONS options[] = {
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                7 },
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",      7 },
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow full and truncated hits anywhere within sequences",          7 },
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow only truncated hits, anywhere within sequences",             7 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",              7 },
@@ -151,11 +151,11 @@ static ESL_OPTIONS options[] = {
   { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,      "number of parallel CPU workers to use for multithreads",              7 },
+  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",         7 },
 #endif
 #ifdef HAVE_MPI
-  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,            "arrest after start: for debugging MPI under gdb",                     7 },  
-  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,         "run as an MPI parallel program",                                      7 },
+  { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,                           "arrest after start: for debugging MPI under gdb",                7 },  
+  { "--mpi",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  MPIOPTS,                        "run as an MPI parallel program",                                 7 },
 #endif
 
   /* All options below are developer options, only shown if --devhelp invoked */
@@ -223,18 +223,19 @@ static ESL_OPTIONS options[] = {
   { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
   { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       107 },
+
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
-  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    107 },
-  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               107 },
-  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              107 },
-  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       107 },
-  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     107 },
-  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           107 },
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    108 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               108 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              108 },
+  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       108 },
+  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     108 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
-  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 107 },
-  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index",  107 },
+  { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 108 },
+  { "--eidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "stop  searching at sequence index <n> in target db SSI index",  108 },
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -806,7 +807,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
 			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -821,7 +822,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if (info->pli->do_bot && dbsq->abc->complement != NULL) { 
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
-      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+      if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
 			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -893,7 +894,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
        * overlap should be retained in the ReadWindow step. */
     }
 
-    sstatus = esl_sqio_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, TRUE);
+    sstatus = esl_sqio_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, /*max_sequences=*/-1, TRUE);  // SRE: is it ok to pass -1 for max_seqs? That's a new arg to ReadBlock().
 
     if (sstatus == eslOK) { /* we read a block */
       if(! block->complete) { 
@@ -997,7 +998,7 @@ pipeline_thread(void *arg)
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
 				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1012,7 +1013,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_bot && dbsq->abc->complement != NULL) {
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
-	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
 				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1597,7 +1598,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* search top strand */
 	  if (info->pli->do_top) { 
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
 				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
@@ -1611,7 +1612,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(info->pli->do_bot && dbsq->abc->complement != NULL) { 
 	    esl_sq_ReverseComplement(dbsq);
 	    prv_pli_ntophits = info->th->N;
-	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->scoredata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
+	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
 				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
@@ -2038,6 +2039,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--cyk"))        fprintf(ofp, "# use CYK for final search stage         on\n");
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
   if (esl_opt_IsUsed(go, "--wcx"))        fprintf(ofp, "# W set as <x> * cm->clen:               <x>=%g\n", esl_opt_GetReal(go, "--wcx"));
+  if (esl_opt_IsUsed(go, "--onepass"))    fprintf(ofp, "# using CM for best HMM pass only:       on\n");
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--tformat"))    fprintf(ofp, "# targ <seqdb> format asserted:          %s\n", esl_opt_GetString(go, "--tformat"));
@@ -2286,16 +2288,16 @@ create_info(const ESL_GETOPTS *go)
   WORKER_INFO *info = NULL;
 
   ESL_ALLOC(info, sizeof(WORKER_INFO));
-  info->pli       = NULL;
-  info->th        = NULL;
-  info->cm        = NULL;
-  info->gm        = NULL;
-  info->Rgm       = NULL;
-  info->Lgm       = NULL;
-  info->Tgm       = NULL;
-  info->om        = NULL;
-  info->bg        = NULL;
-  info->scoredata = NULL;
+  info->pli     = NULL;
+  info->th      = NULL;
+  info->cm      = NULL;
+  info->gm      = NULL;
+  info->Rgm     = NULL;
+  info->Lgm     = NULL;
+  info->Tgm     = NULL;
+  info->om      = NULL;
+  info->bg      = NULL;
+  info->msvdata = NULL;
   ESL_ALLOC(info->p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
   info->smxsize = esl_opt_GetReal(go, "--smxsize");
   return info;
@@ -2328,11 +2330,11 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
     if(src_info->Rgm != NULL) { if((dest_infoA[i].Rgm = p7_profile_Clone(src_info->Rgm)) == NULL) goto ERROR; }
     if(src_info->Lgm != NULL) { if((dest_infoA[i].Lgm = p7_profile_Clone(src_info->Lgm)) == NULL) goto ERROR; }
     if(src_info->Tgm != NULL) { if((dest_infoA[i].Tgm = p7_profile_Clone(src_info->Tgm)) == NULL) goto ERROR; }
-    if((dest_infoA[i].om  = p7_oprofile_Shadow(src_info->om)) == NULL) goto ERROR;
+    if((dest_infoA[i].om  = p7_oprofile_Clone(src_info->om)) == NULL) goto ERROR;
     if((dest_infoA[i].bg  = p7_bg_Create(src_info->bg->abc)) == NULL) goto ERROR;
     if(dest_infoA[i].p7_evparam == NULL) ESL_ALLOC(dest_infoA[i].p7_evparam, sizeof(float) * CM_p7_NEVPARAM);
     esl_vec_FCopy(src_info->cm->fp7_evparam, CM_p7_NEVPARAM, dest_infoA[i].p7_evparam);
-    dest_infoA[i].scoredata = p7_hmm_ScoreDataClone(src_info->scoredata, src_info->om->abc->Kp);
+    dest_infoA[i].msvdata = p7_hmm_ScoreDataClone(src_info->msvdata, src_info->om->abc->Kp);
   }
   return eslOK;
   
@@ -2360,7 +2362,7 @@ free_info(WORKER_INFO *info)
   if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL;
   if(info->bg         != NULL) p7_bg_Destroy(info->bg);                  info->bg         = NULL;
   if(info->p7_evparam != NULL) free(info->p7_evparam);                   info->p7_evparam = NULL;
-  if(info->scoredata  != NULL) p7_hmm_ScoreDataDestroy(info->scoredata); info->scoredata  = NULL;
+  if(info->msvdata    != NULL) p7_hmm_ScoreDataDestroy(info->msvdata);   info->msvdata    = NULL;
 
   return;
 }
@@ -2469,8 +2471,8 @@ setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
   /* copy E-value parameters */
   esl_vec_FCopy(info->cm->fp7_evparam, CM_p7_NEVPARAM, info->p7_evparam); 
 
-  /* compute scoredata */
-  info->scoredata = p7_hmm_ScoreDataCreate(info->om, FALSE);
+  /* compute msvdata */
+  info->msvdata = p7_hmm_ScoreDataCreate(info->om, FALSE);
 
   return eslOK;
 }

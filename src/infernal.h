@@ -2083,7 +2083,7 @@ typedef struct cm_file_s {
  * algorithms will be called but _ANY is used as a suffix because
  * HMM local alignment algorithms allow 5' and 3' truncation.
  *
- * A wrinkle is that these indices used for DP truncated alignment
+ * A wrinkle is that these indices are used for DP truncated alignment
  * functions called for 'cmalign' (either PLI_PASS_5P_AND_3P_FORCE or
  * PLI_PASS_STD_ANY) even though those functions are not called as
  * part of a search/scan pipeline. In this case, the pass index is
@@ -2209,18 +2209,21 @@ typedef struct cm_pipeline_s {
   double        maxtau;         /* max tau when tightening bands            */
   int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
   float         wcx;            /* set W as cm->clen * wcx, ignoring W from CM file */
+  int           do_one_cmpass;  /* TRUE to only use CM for best scoring HMM pass if envelope encompasses full sequence */
   /* these are all currently hard-coded, in cm_pipeline_Create() */
   float         smult;          /* 2.0;  W multiplier for window splitting */
   float         wmult;          /* 1.0;  maxW will be max of wmult * cm->W and cmult * cm->clen */
   float         cmult;          /* 1.25; maxW will be max of wmult * cm->W and cmult * cm->clen */
   float         mlmult;         /* 0.10; om->max_length multiplier for MSV window defn */
   /* flags for timing experiments */
-  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV */
-  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit */
-  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd */
-  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd */
-  int           do_time_F5;      /* TRUE to abort after Stage 5 env def */
-  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK */
+  int           do_time_F1;      /* TRUE to abort after Stage 1 MSV, for timing expts */
+  int           do_time_F2;      /* TRUE to abort after Stage 2 Vit, for timing expts */
+  int           do_time_F3;      /* TRUE to abort after Stage 3 Fwd, for timing expts */
+  int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd, for timing expts */
+  int           do_time_F5;      /* TRUE to abort after Stage 5 env def, for timing expts */
+  int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
+  /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
+  int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
@@ -2482,7 +2485,7 @@ typedef struct {
   int64_t        idx0;        /* index of first profile in file >= 0          */
   int            listSize;    /* maximum number elements in the list          */
   P7_OPROFILE  **list;        /* array of <P7_OPROFILE> objects               */
-  P7_MSVDATA   **msvdataA;    /* array of <P7_MSVDATA> objects                */
+  P7_SCOREDATA **msvdataA;    /* array of <P7_SCOREDATA> objects              */
   off_t         *cm_offsetA;  /* file offsets for CMs */
   int           *cm_clenA;    /* consensus length of CMs */
   int           *cm_WA;       /* window length of CMs */
@@ -2946,7 +2949,7 @@ extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double
 extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, int cur_clan_idx, ESL_KEYHASH *glocal_kh);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
-extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *scoredata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
+extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
 extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
 extern int   cm_pli_ZeroAccounting(CM_PLI_ACCT *pli_acct);
 extern int   cm_pli_PassEnforcesFirstRes(int pass_idx);

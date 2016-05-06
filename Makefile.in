@@ -153,10 +153,10 @@ check:
 	${QUIET_SUBDIR0}${HMMERDIR}            ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}src                    ${QUIET_SUBDIR1} tests
 	${QUIET_SUBDIR0}${ESLDIR}              ${QUIET_SUBDIR1} check
-	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-afetch   ${HMMERDIR}/easel/miniapps; fi
-	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-reformat ${HMMERDIR}/easel/miniapps; fi
-	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-sfetch   ${HMMERDIR}/easel/miniapps; fi
-	if   test -d ${HMMERDIR}/easel; then cp ${ESLDIR}/miniapps/esl-shuffle  ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel && ! test -e  ${HMMERDIR}/easel/miniapps/esl-afetch;   then cp ${ESLDIR}/miniapps/esl-afetch   ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel && ! test -e  ${HMMERDIR}/easel/miniapps/esl-reformat; then cp ${ESLDIR}/miniapps/esl-reformat ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel && ! test -e  ${HMMERDIR}/easel/miniapps/esl-sfetch;   then cp ${ESLDIR}/miniapps/esl-sfetch   ${HMMERDIR}/easel/miniapps; fi
+	if   test -d ${HMMERDIR}/easel && ! test -e  ${HMMERDIR}/easel/miniapps/esl-sfetch;   then cp ${ESLDIR}/miniapps/esl-shuffle  ${HMMERDIR}/easel/miniapps; fi
 	if ! test -d ${HMMERDIR}/easel; then cd ${HMMERDIR}; @LN_S@ ../${ESLDIR} .; cd ..; fi
 	if ! test -d ${srcdir}/${HMMERDIR}/easel; then @LN_S@ ${srcdir}/${ESLDIR} ${srcdir}/${HMMERDIR}/easel; fi
 	${QUIET_SUBDIR0}${HMMERDIR}/testsuite  ${QUIET_SUBDIR1} check

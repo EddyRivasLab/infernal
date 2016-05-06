@@ -49,7 +49,7 @@
 
 /* Max number of sequences per tmp alignment, if seq file exceeds
  * either of these, final output alignment will be in 1 line/seq Pfam
- * format. Max number of residues is MAX_RESIDUE_COUNT from esl_sqio_ncbi.h
+ * format. Max number of residues is CM_MAX_RESIDUE_COUNT from infernal.h
  * where it's currently defined as (1024 * 1024).
  */
 #define CMALIGN_MAX_NSEQ  10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
@@ -479,15 +479,15 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Our main loop will loop over reading a single large block
-   * (<sq_block>) of sequences, up to MAX_RESIDUE_COUNT
-   * (1024*1024=1048576) residues, and up to CMALIGN_MAX_NSEQ
+   * (<sq_block>) of sequences, up to CM_MAX_RESIDUE_COUNT
+   * (100000) residues, and up to CMALIGN_MAX_NSEQ
    * sequences (10,000), but potentially less if we reach the end of
    * the sequence file first.
    */
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, CM_MAX_RESIDUE_COUNT, CMALIGN_MAX_NSEQ, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
@@ -517,12 +517,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, CM_MAX_RESIDUE_COUNT, CMALIGN_MAX_NSEQ, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use esl-reformat to reformat alignment later.", CMALIGN_MAX_NSEQ, MAX_RESIDUE_COUNT);
+    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use esl-reformat to reformat alignment later.", CMALIGN_MAX_NSEQ, CM_MAX_RESIDUE_COUNT);
 
     /* align the sequences in the block */
 #ifdef HMMER_THREADS

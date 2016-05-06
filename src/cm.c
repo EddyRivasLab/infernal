@@ -3507,7 +3507,7 @@ cm_p7_oprofile_CreateBlock(int count)
   block->clan_idxA    = NULL;
 
   ESL_ALLOC(block->list,       sizeof(P7_OPROFILE *) * count);
-  ESL_ALLOC(block->msvdataA,   sizeof(P7_MSVDATA *)  * count);
+  ESL_ALLOC(block->msvdataA,   sizeof(P7_SCOREDATA *)* count);
   ESL_ALLOC(block->cm_offsetA, sizeof(off_t)         * count);
   ESL_ALLOC(block->cm_clenA,   sizeof(int)           * count);
   ESL_ALLOC(block->cm_WA,      sizeof(int)           * count);
@@ -3571,7 +3571,7 @@ cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block)
   }
   if (block->msvdataA != NULL) { 
     for (i = 0; i < block->listSize; ++i) { 
-      if (block->msvdataA[i] != NULL) p7_hmm_MSVDataDestroy(block->msvdataA[i]);
+      if (block->msvdataA[i] != NULL) p7_hmm_ScoreDataDestroy(block->msvdataA[i]);
     }
     free(block->msvdataA);
   }

@@ -74,7 +74,7 @@ typedef struct {
   float            *gfmuA;      /* [0..cm_idx..nmodels-1] HMM glocal mu for CM <cm_idx> */
   float            *gflambdaA;  /* [0..cm_idx..nmodels-1] HMM glocal lambda for CM <cm_idx> */
   P7_OPROFILE     **omA;        /* [0..cm_idx..nmodels-1] optimized query profile HMM for CM <cm_idx> */
-  P7_MSVDATA      **msvdataA;   /* [0..cm_idx..nmodels-1] P7_MSVDATA for CM <cm_idx> */
+  P7_SCOREDATA    **msvdataA;   /* [0..cm_idx..nmodels-1] P7_SCOREDATA for CM <cm_idx> */
   /* variables related to --clanin */
   ESL_KEYHASH      *clan_fam_kh;  /* these are family names in a clan, members of same clan are contiguous */
   int              *clan_mapA;    /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
@@ -790,7 +790,7 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
   P7_PROFILE       *Rgm        = NULL;          /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE       *Lgm        = NULL;          /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE       *Tgm        = NULL;          /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  P7_MSVDATA       *msvdata    = NULL;          /* MSV/SSV specific data structure              */
+  P7_SCOREDATA     *msvdata    = NULL;          /* MSV/SSV specific data structure              */
   int               prv_ntophits;               /* number of top hits before cm_Pipeline() call */
   int               cm_clen, cm_W, cm_nbp;      /* consensus, window length and # bps for CM    */ 
   float             gfmu, gflambda;             /* glocal fwd mu, lambda for current hmm filter */
@@ -818,7 +818,7 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
       }
       if(status == eslOK) { 
         if(rinfo->msvdataA[cm_idx] == NULL) { 
-          rinfo->msvdataA[cm_idx] = p7_hmm_MSVDataCreate(rinfo->omA[cm_idx], FALSE);
+          rinfo->msvdataA[cm_idx] = p7_hmm_ScoreDataCreate(rinfo->omA[cm_idx], FALSE);
         }
         /* set pointers for convenience */
         om        = rinfo->omA[cm_idx];
@@ -1106,8 +1106,8 @@ pipeline_thread(void *arg)
       cm_idx = block->idx0;
       for (i = 0; i < block->count; ++i)
 	{
-	  P7_OPROFILE *om     = block->list[i];
-	  P7_MSVDATA *msvdata = block->msvdataA[i];
+	  P7_OPROFILE *om       = block->list[i];
+	  P7_SCOREDATA *msvdata = block->msvdataA[i];
 	  cm_offset           = block->cm_offsetA[i];
 	  cm_clen             = block->cm_clenA[i];
 	  cm_W                = block->cm_WA[i];
@@ -2752,7 +2752,7 @@ create_reader_info(int64_t nmodels, ESL_KEYHASH *clan_fam_kh, int *clan_mapA)
   ESL_ALLOC(rinfo->gfmuA,      sizeof(float)         * nmodels);
   ESL_ALLOC(rinfo->gflambdaA,  sizeof(float)         * nmodels);
   ESL_ALLOC(rinfo->omA,        sizeof(P7_OPROFILE *) * nmodels);
-  ESL_ALLOC(rinfo->msvdataA,   sizeof(P7_MSVDATA *)  * nmodels);
+  ESL_ALLOC(rinfo->msvdataA,   sizeof(P7_SCOREDATA *)* nmodels);
   for(cm_idx = 0; cm_idx < nmodels; cm_idx++) { 
     rinfo->cm_offsetA[cm_idx] = 0;
     rinfo->cm_clenA[cm_idx]   = -1;
@@ -2813,7 +2813,7 @@ free_reader_info(READER_INFO *rinfo)
 
     if(rinfo->msvdataA != NULL) { 
       for(cm_idx = 0; cm_idx < rinfo->nmodels; cm_idx++) { 
-        if(rinfo->msvdataA[cm_idx] != NULL) { p7_hmm_MSVDataDestroy(rinfo->msvdataA[cm_idx]); rinfo->msvdataA[cm_idx] = NULL; }
+        if(rinfo->msvdataA[cm_idx] != NULL) { p7_hmm_ScoreDataDestroy(rinfo->msvdataA[cm_idx]); rinfo->msvdataA[cm_idx] = NULL; }
       }
       free(rinfo->msvdataA);
       rinfo->msvdataA = NULL;

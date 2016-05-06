@@ -75,7 +75,7 @@ typedef struct {
 static ESL_OPTIONS options[] = {
   /* name                  type    default   env             range    toggles         reqs      incomp  help  docgroup*/
   { "-h",           eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show brief help on version and usage",         1 },
-  { "-L",           eslARG_REAL,     "1.6",  NULL, "0.01<=x<=100.",      NULL,         NULL,      NULL, "set random seq length to search in Mb to <x>", 1 },
+  { "-L",           eslARG_REAL,     "1.6",  NULL, "0.01<=x<=160.",      NULL,         NULL,      NULL, "set random seq length to search in Mb to <x>", 1 },
   /* Options for predicting running time and memory requirements */
   { "--forecast",   eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, predict running time and exit",             2 },
   { "--nforecast",  eslARG_INT,       NULL,  NULL,           "n>0",      NULL, "--forecast",      NULL, "w/--forecast, predict time with <n> processors (maybe for MPI)",  2 },

@@ -48,13 +48,13 @@
 #include "esl_msa.h"
 #include "esl_msafile.h"
 #include "esl_msacluster.h"
+#include "esl_msaweight.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
 #include "esl_sq.h"
 #include "esl_sqio.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
-#include "esl_msaweight.h"
 
 static char banner[] = "construct a rmark benchmark profile training/test set";
 static char usage1[]  = "[options] <basename> <msafile> <hmmfile>";
@@ -72,12 +72,10 @@ static ESL_OPTIONS options[] = {
   { "-F",       eslARG_REAL, "0.70", NULL,"0<x<=1.0",NULL,NULL,NULL,         "filter out seqs <x*average length",                       1 },
   { "-N",       eslARG_INT,    "10", NULL, NULL,     NULL,NULL,NULL,         "number of benchmark seqs",                            1 },
   { "-L",       eslARG_INT,"1000000",NULL,"n>0",     NULL,NULL,NULL,         "full length of benchmark seqs prior to test seq embedding",               1 },
-  { "-C",       eslARG_INT,   "1000",NULL,"n>0",     NULL,NULL,"--iid",      "length of <seqdb> seqs to extract/shuffle when making test seqs",  1 },
+  { "-C",       eslARG_INT,   "1000",NULL,"n>0",     NULL,NULL,"--iid",      "length of of <seqdb> seqs to extract and shuffle when making test seqs",  1 },
   { "-X",       eslARG_REAL, "0.05", NULL,"0<x<=1.0",NULL,NULL,NULL,         "maximum fraction of total test seq covered by positives", 1 },
   { "-R",       eslARG_INT,     "5", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of training seqs per family",              1 },
   { "-E",       eslARG_INT,     "1", NULL,"n>0",     NULL,NULL,NULL,         "minimum number of test     seqs per family",              1 },
-  { "--maxtrain", eslARG_INT,   FALSE, NULL, NULL, NULL, NULL, NULL,         "maximum # of test domains taken per input MSA",      1 },
-  { "--maxtest",  eslARG_INT,   FALSE, NULL, NULL, NULL, NULL, NULL,         "maximum # of training domains taken per input MSA",  1 },
 
   /* Options controlling negative segment randomization method  */
   { "--iid",     eslARG_NONE,    FALSE, NULL, NULL, NULL, NULL, "-S",      "generate random iid sequence for negatives",                2 },
@@ -113,9 +111,6 @@ struct cfg_s {
   double          idthresh2;	/* fractional identity threshold for selecting test seqs   */
   int             min_ntrain;	/* minimum number of sequences in the training set */
   int             min_ntest;	/* minimum number of sequences in the test set */
-  int             max_ntrain; /* maximum number of test domains per input alignment; 0=unlimited */
-  int             max_ntest;  /* maximum number of test domains per input alignment; 0=unlimited */
-
 
   FILE           *out_msafp;	/* output: training MSAs  */
   FILE           *out_bmkfp;	/* output: benchmark sequences */
@@ -139,8 +134,8 @@ struct cfg_s {
 static int process_dbfile       (struct cfg_s *cfg, char *dbfile, int dbfmt);
 static int remove_fragments     (struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int *ret_nfrags);
 static int separate_sets        (struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i_am_test);
-static int find_sets_greedily   (struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, int **ret_i_am_train, int **ret_i_am_test);
-static int find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_xtest, int **ret_i_am_train, int **ret_i_am_test);
+static int find_sets_greedily   (struct cfg_s *cfg, ESL_MSA *msa, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test);
+static int find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test);
 static int synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ **posseqs, int npos);
 static int set_random_segment  (ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq, int L);
 static void read_hmmfile(char *filename, ESL_HMM **ret_hmm);
@@ -193,10 +188,11 @@ main(int argc, char **argv)
   ESL_MSA      *origmsa = NULL;	/* one multiple sequence alignment */
   ESL_MSA      *msa     = NULL;	/* MSA after frags are removed     */
   ESL_MSA      *trainmsa= NULL;	/* training set, aligned           */
+  char         *tmpstr  = NULL; /* #=RF annotation line            */
+  ESL_SQ       *train_consensus = NULL;
   ESL_MSA      *tmpmsa= NULL;	/* tmp aligned training/testing set, used if --tfile */
   int          *i_am_train = NULL; /* [0..msa->nseq-1]: 1 if train seq, 0 if not */
   int          *i_am_test  = NULL; /* [0..msa->nseq-1]: 1 if test  seq, 0 if not */
-  int           status;		/* easel return code               */
   int           nfrags;		/* # of fragments removed          */
   int           ntestseq;       /* # of test  sequences for cur fam */
   int           ntrainseq;      /* # of train sequences for cur fam */
@@ -206,12 +202,11 @@ main(int argc, char **argv)
   ESL_SQ      **posseqs=NULL;   /* all the test seqs, to be embedded */
   int64_t       poslen_total;   /* total length of all positive seqs */
   double        avgid;
+  double        pctid;
   void         *ptr;
   int           i, traini, testi;
-  double        pctid;
-  ESL_SQ       *train_consensus;
-  char         *tmpstr;
-
+  int           status;		/* easel return code               */
+  
   /* Parse command line */
   go = esl_getopts_Create(options);
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK) cmdline_failure(argv[0], "Failed to parse command line: %s\n", go->errbuf);
@@ -250,11 +245,7 @@ main(int argc, char **argv)
   cfg.nneg       = esl_opt_GetInteger(go, "-N");
   cfg.negL       = esl_opt_GetInteger(go, "-L");
   cfg.negchunkL  = esl_opt_GetInteger(go, "-C");
-  cfg.max_ntest  = (esl_opt_IsOn(go, "--maxtest")  ? esl_opt_GetInteger(go, "--maxtest")  : 0);
-  cfg.max_ntrain = (esl_opt_IsOn(go, "--maxtrain") ? esl_opt_GetInteger(go, "--maxtrain") : 0);
 
-  if (cfg.max_ntest>0  && cfg.max_ntest  < cfg.min_ntest)   esl_fatal("Conflict between -E and --maxtest");
-  if (cfg.max_ntrain>0 && cfg.max_ntrain < cfg.min_ntrain)  esl_fatal("Conflict between -R and --maxtrain");
   /* Open the output files */ 
   if (snprintf(outfile, 256, "%s.msa", basename) >= 256)   esl_fatal("Failed to construct output MSA file name");
   if ((cfg.out_msafp = fopen(outfile, "w"))      == NULL)  esl_fatal("Failed to open MSA output file %s\n", outfile);
@@ -318,61 +309,38 @@ main(int argc, char **argv)
        *  - more than cfg->idthresh2 similar to >=1 sequences in the test set
       */
       if(! esl_opt_GetBoolean(go, "--skip")) { 
-        separate_sets (&cfg, msa, &i_am_train, &i_am_test);
-        ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
-        ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
+	separate_sets (&cfg, msa, &i_am_train, &i_am_test);
+	ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
+	ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
       }
       else { /* --skip enabled, we skipped test 1 */
-        ntestseq = ntrainseq = 0;
+	ntestseq = ntrainseq = 0;
       }
 
       /* if --sub or --sample, check if we should look for subsets of 
        * the seqs in the msa that satisfy our thresholds */
       if((esl_opt_IsOn(go, "--sub") || esl_opt_IsOn(go, "--sample")) &&
-          ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)))
-      { /* Test 2: Is there a subset of the sequences in the msa
-         *         that would satisfy our thresholds (most similar
-         *         train/test pair < cfg->idthresh1, and most
-         *         similar test/test pair < cfg->idthresh2) and that
-         *         include a sufficient number of train/test seqs.
-         *
-         * We either use a greedy deterministic algorithm (by
-         * default) to look for these subsets, or we use a sampling
-         * algorithm (non-deterministic, enabled with --sample).
-         */
-        if(esl_opt_IsOn(go, "--sub")) find_sets_greedily   (&cfg, msa, esl_opt_GetBoolean(go, "--xtest"), &i_am_train, &i_am_test);
-        else                          find_sets_by_sampling(&cfg, msa, esl_opt_GetInteger(go, "--sample"), esl_opt_GetBoolean(go, "--xtest"), &i_am_train, &i_am_test);
-        ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
-        ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
-        /* we did find a satisfactory set (find_sets() checks that
-         * we have a sufficient number of test/train seqs, but
-         * check, to be sure */
-        if ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain))
-          esl_fatal("find_sets() returned insufficient train/test sets!");
-      }
-
-
-
-      //Filter both lists down as necessary.
-      //Until reaching the right #, randomly find a TRUE entry in i_am_test, and set it to FALSE.
-      while (cfg.max_ntest > 0 && ntestseq > cfg.max_ntest) {
-        i = esl_rnd_Roll(cfg.r, msa->nseq);
-        if (i_am_test[i] == TRUE) {
-          i_am_test[i] = FALSE;
-          ntestseq--;
-        }
-      }
-
-      //Until reaching the right #, randomly find a TRUE entry in i_am_train, and set it to FALSE.
-      while (cfg.max_ntrain > 0 && ntrainseq > cfg.max_ntrain) {
-        i = esl_rnd_Roll(cfg.r, msa->nseq);
-        if (i_am_train[i] == TRUE) {
-          i_am_train[i] = FALSE;
-          ntrainseq--;
-        }
-      }
-
-
+	 ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)))
+	{ /* Test 2: Is there a subset of the sequences in the msa
+	   *         that would satisfy our thresholds (most similar
+	   *         train/test pair < cfg->idthresh1, and most
+	   *         similar test/test pair < cfg->idthresh2) and that
+	   *         include a sufficient number of train/test seqs.
+	   * 
+	   * We either use a greedy deterministic algorithm (by
+	   * default) to look for these subsets, or we use a sampling
+	   * algorithm (non-deterministic, enabled with --sample). 
+	   */
+	  if(esl_opt_IsOn(go, "--sub")) find_sets_greedily   (&cfg, msa, esl_opt_GetBoolean(go, "--xtest"), &i_am_train, &i_am_test);
+	  else                          find_sets_by_sampling(&cfg, msa, esl_opt_GetInteger(go, "--sample"), esl_opt_GetBoolean(go, "--xtest"), &i_am_train, &i_am_test);
+	  ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
+	  ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
+	  /* we did find a satisfactory set (find_sets() checks that
+	   * we have a sufficient number of test/train seqs, but
+	   * check, to be sure */
+	  if ((ntestseq  < cfg.min_ntest) || (ntrainseq < cfg.min_ntrain)) 
+	    esl_fatal("find_sets() returned insufficient train/test sets!"); 
+	}
 
       if ((ntestseq >= cfg.min_ntest) && (ntrainseq >= cfg.min_ntrain)) {
         /* We have a valid train/test set, that either satisfied
@@ -498,10 +466,6 @@ main(int argc, char **argv)
   esl_alphabet_Destroy(cfg.abc);
   esl_msafile_Close(afp);
   esl_getopts_Destroy(go);
-
-  if (train_consensus != NULL) esl_sq_Destroy(train_consensus);
-  if (tmpstr          != NULL) free(tmpstr);
-
   return 0;
 
  ERROR:
@@ -875,7 +839,7 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, int **ret_i_am
  * instead.
  */
 static int
-find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_xtest, int **ret_i_am_train, int **ret_i_am_test)
+find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test)
 {      
   ESL_MSA   *test_msa  = NULL;
   int *i_am_test       = NULL;
@@ -1007,8 +971,8 @@ find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_xtes
 	 * OR maximum of |test|           (enabled with --maxtest)
 	 */
 
-	if((  do_xtest && (ntest   > nbest_test)) ||
-	   (! do_xtest && ((ntrain+ntest) > (nbest_train+nbest_test)))) {
+	if((  do_maxtest && (ntest   > nbest_test)) || 
+	   (! do_maxtest && ((ntrain+ntest) > (nbest_train+nbest_test)))) { 
 	  esl_vec_ICopy(i_am_train, msa->nseq, i_am_best_train);
 	  esl_vec_ICopy(i_am_test,  msa->nseq, i_am_best_test);
 	  nbest_train = ntrain;

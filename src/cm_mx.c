@@ -1884,7 +1884,7 @@ cm_shadow_mx_Create(CM_t *cm)
  
   /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
   ESL_ALLOC(mx->yshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->kshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->kshadow_mem,  sizeof(int)  * ESL_MAX(1, B * allocL * allocW)); // avoid 0 malloc
 
   b = 0;
   for (v = 0; v < M; v++) {
@@ -2266,13 +2266,13 @@ cm_tr_shadow_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   
-  ESL_ALLOC(mx->Jkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Lkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Rkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Tkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));  // avoid 0 malloc
+  ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
 
-  ESL_ALLOC(mx->Lkmode_mem,   (sizeof(char) * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Rkmode_mem,   (sizeof(char) * (B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->Lkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Rkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
 
   b = 0;
   for (v = 0; v < M; v++) {
@@ -2886,7 +2886,7 @@ cm_hb_shadow_mx_Create(CM_t *cm)
 
   ESL_ALLOC(mx->nrowsA, sizeof(int)      * M);
   ESL_ALLOC(mx->yshadow_mem, (sizeof(char) * (M-nbifs)));
-  ESL_ALLOC(mx->kshadow_mem, (sizeof(int)  * (nbifs)));
+  ESL_ALLOC(mx->kshadow_mem, (sizeof(int)  * ESL_MAX(1,nbifs)));  // avoid 0 malloc
 
   nb = 0;
   for (v = 0; v < M; v++) {
@@ -3310,13 +3310,13 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   
-  ESL_ALLOC(mx->Jkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Lkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Rkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Tkshadow_mem, (sizeof(int)  * (B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
 
-  ESL_ALLOC(mx->Lkmode_mem,   (sizeof(char) * (B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Rkmode_mem,   (sizeof(char) * (B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->Lkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Rkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
 
   ESL_ALLOC(mx->JnrowsA, sizeof(int)      * M);
   ESL_ALLOC(mx->LnrowsA, sizeof(int)      * M);
@@ -5907,7 +5907,7 @@ cm_scan_mx_floatize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   smx->ncells_alpha_begl = (smx->W+1);
   smx->ncells_alpha_begl *= n_begl;
   smx->ncells_alpha_begl *= (smx->W+1);
-  ESL_ALLOC(smx->falpha_begl_mem,   sizeof(float) * (smx->ncells_alpha_begl));
+  ESL_ALLOC(smx->falpha_begl_mem,   sizeof(float) * ESL_MAX(1, smx->ncells_alpha_begl));
   /* we used to define ncells_alpha_begl this way: 
    *   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
    * but that overflows for large models (even though ncells_alpha_begl is an int64_t, I guess
@@ -6003,7 +6003,7 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   smx->ncells_alpha_begl = (smx->W+1);
   smx->ncells_alpha_begl *= n_begl;
   smx->ncells_alpha_begl *= (smx->W+1);
-  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * (smx->ncells_alpha_begl));
+  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * ESL_MAX(1, smx->ncells_alpha_begl));
   /* we used to define ncells_alpha_begl this way: 
    *   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
    * but that overflows for large models (even though ncells_alpha_begl is an int64_t, I guess
