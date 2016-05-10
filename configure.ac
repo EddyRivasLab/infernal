@@ -594,6 +594,10 @@ AC_SUBST(LIBGSL)
 # anyway according to Sean. We still need to define LIBGSL though, because Easel
 # has files with @LIBGSL@ in them.
 
+# Easel stopwatch high-res timer may try to use clock_gettime,
+# which may be in librt
+AC_SEARCH_LIBS(clock_gettime, [rt posix4])
+
 # Checks for headers
 # Defines HAVE_SYS_TYPES_H, HAVE_STDINT_H, etc.
 AC_CHECK_HEADERS([ \
