@@ -558,8 +558,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cm_idx++;
     esl_stopwatch_Start(w);
     
-    printf("CM size: %.2f Mb\n", cm_Sizeof(cm));
-
     /* create a new template info, and point it to the cm we just read */
     tinfo = create_info(go);
     tinfo->cm = cm;
