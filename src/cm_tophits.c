@@ -189,7 +189,8 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   return status;
 }
 
-/* hit_sorter_by_evalue(), hit_sorter_for_overlap_removal and hit_sorter_by_position: qsort's pawns, below */
+/* hit_sorter_by_evalue(), hit_sorter_for_overlap_removal, hit_sorter_for_overlap_markup_clans_only, 
+ * hit_sorter_for_overlap_markup_clans_agnostic and hit_sorter_by_position: qsort's pawns, below */
 static int
   hit_sorter_by_evalue(const void *vh1, const void *vh2) 
   {
@@ -242,7 +243,7 @@ hit_sorter_for_overlap_removal(const void *vh1, const void *vh2)
 }
 
 static int
-hit_sorter_for_overlap_markup(const void *vh1, const void *vh2)
+hit_sorter_for_overlap_markup_clans_only(const void *vh1, const void *vh2)
 {
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
@@ -254,7 +255,7 @@ hit_sorter_for_overlap_markup(const void *vh1, const void *vh2)
     if     (h1->in_rc > h2->in_rc)      return  1; /* second key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
     else if(h1->in_rc < h2->in_rc)      return -1; /*                    (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
     else {
-      if     (h1->clan_idx > h2->clan_idx) return  1; /* third key is clan_idx, low to high (often these will all be -1) */
+      if     (h1->clan_idx > h2->clan_idx) return  1; /* third key is clan_idx, low to high */
       else if(h1->clan_idx < h2->clan_idx) return -1; 
       else { 
         if     (h1->evalue > h2->evalue)    return  1; /* fourth key is E-value, low to high */
@@ -270,6 +271,38 @@ hit_sorter_for_overlap_markup(const void *vh1, const void *vh2)
               else if(h1->cm_idx < h2->cm_idx) return -1; 
               else                             return  0;
             }
+          }
+        }
+      }
+    }
+  }
+}
+
+static int
+hit_sorter_for_overlap_markup_clans_agnostic(const void *vh1, const void *vh2)
+{
+  CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
+  CM_HIT *h2 = *((CM_HIT **) vh2);
+
+  if      (h1->seq_idx > h2->seq_idx)   return  1; /* first key, seq_idx (unique id for sequences), low to high */
+  else if (h1->seq_idx < h2->seq_idx)   return -1;
+  else { 
+    /* same sequence; sort by strand, then E-value, then score, then start position, then CM index */
+    if     (h1->in_rc > h2->in_rc)      return  1; /* second key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+    else if(h1->in_rc < h2->in_rc)      return -1; /*                    (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+    else {
+      if     (h1->evalue > h2->evalue)    return  1; /* fourth key is E-value, low to high */
+      else if(h1->evalue < h2->evalue)    return -1; 
+      else { 
+        if     (h1->score < h2->score)    return  1; /* fifth key is bit score, high to low */
+        else if(h1->score > h2->score)    return -1; 
+        else { 
+          if     (h1->start > h2->start)  return  1; /* sixth key is start position, low to high (irregardless of in_rc value) */
+          else if(h1->start < h2->start)  return -1; 
+          else { 
+            if     (h1->cm_idx > h2->cm_idx) return  1; /* seventh key is cm_idx (unique id for models), low to high */
+            else if(h1->cm_idx < h2->cm_idx) return -1; 
+            else                             return  0;
           }
         }
       }
@@ -390,10 +423,14 @@ cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h)
  *            to low), fifth is start position (low to high) and 
  *            sixth key is CM idx (unique id for models, low to high).
  *
+ * Args:      do_clans_only - TRUE: we are only marking overlaps within clans
+ *                            FALSE: we are marking all overlaps
+ *                            This has implications on how we sort.
+ * 
  * Returns:   <eslOK> on success.
  */
 int
-cm_tophits_SortForOverlapMarkup(CM_TOPHITS *h)
+cm_tophits_SortForOverlapMarkup(CM_TOPHITS *h, int do_clans_only)
 {
   int i;
 
@@ -405,7 +442,14 @@ cm_tophits_SortForOverlapMarkup(CM_TOPHITS *h)
   }
   /* initialize hit ptrs, this also unsorts if already sorted by score */
   for (i = 0; i < h->N; i++) h->hit[i] = h->unsrt + i;
-  if (h->N > 1)  qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_for_overlap_markup);
+  if (h->N > 1) {
+    if(do_clans_only) { 
+      qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_for_overlap_markup_clans_only);
+    }
+    else { 
+      qsort(h->hit, h->N, sizeof(CM_HIT *), hit_sorter_for_overlap_markup_clans_agnostic);
+    }
+  }
   h->is_sorted_by_evalue           = FALSE;
   h->is_sorted_by_position         = FALSE;
   h->is_sorted_for_overlap_removal = FALSE;
@@ -1114,7 +1158,7 @@ int remove_or_mark_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t
  *            th->is_sorted_for_overlap_markup flags, exactly one
  *            of which must be true, otherwise we'll die.
  *
- *            <do_clans>: TRUE to only markup overlaps for hits in
+ *            <do_clans_only>: TRUE to only markup overlaps for hits in
  *            the same clan, FALSE to markup overlaps between all
  *            hits. IRRELEVANT if th->is_sorted_for_overlap_removal.
  *
@@ -1124,7 +1168,7 @@ int remove_or_mark_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t
  *            eslEMEM if we run out of memory, errbuf filled
  */
 int
-cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans, char *errbuf)
+cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans_only, char *errbuf)
 {
   int status;
   int64_t i, j;            
@@ -1151,7 +1195,7 @@ cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans, char *errbuf)
   else { 
     ESL_FAIL(eslEINVAL, errbuf, "cm_tophits_RemoveOrMarkOverlaps() list is not sorted appropriately");
   }
-  if(do_remove && do_clans) { 
+  if(do_remove && do_clans_only) { 
     ESL_FAIL(eslEINVAL, errbuf, "cm_tophits_RemoveOrMarkOverlaps() list is sorted for overlap removal and we're trying to respect clan membership...shouldn't happen");
   }
 
@@ -1164,17 +1208,17 @@ cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans, char *errbuf)
 	  ((! do_remove) || (th->hit[j]->cm_idx  == th->hit[i]->cm_idx))  &&
 	  th->hit[j]->seq_idx == th->hit[i]->seq_idx &&
 	  th->hit[j]->in_rc   == th->hit[i]->in_rc   && 
-	  ((! do_clans) || (th->hit[j]->clan_idx == th->hit[i]->clan_idx))) { 
+	  ((! do_clans_only) || (th->hit[j]->clan_idx == th->hit[i]->clan_idx))) { 
       j++;
     }
-    if(j != (i+1) &&                                    /* more than one hit in set i..j-1 */
-       ((! do_clans) || th->hit[i]->clan_idx != -1)) {  /* we're not only marking overlaps within same clan OR 
-                                                         * we are and all hits are in same clan, this way if 
-                                                         * do_clans is TRUE we won't remove overlaps between
-                                                         * hits in families that are not members of any clan */
+    if(j != (i+1) &&                                         /* more than one hit in set i..j-1 */
+       ((! do_clans_only) || th->hit[i]->clan_idx != -1)) {  /* we're not only marking overlaps within same clan OR 
+                                                              * we are and all hits are in same clan, this way if 
+                                                              * do_clans_only is TRUE we won't remove overlaps between
+                                                              * hits in families that are not members of any clan */
       /* Hits i to j-1 form a set of hits that all share cm_idx (if
        * 'do_remove == TRUE'), seq_idx, in_rc and clan_idx (if
-       * 'do_clans == TRUE'). Remove overlaps from this set in 1 of 2
+       * 'do_clans_only == TRUE'). Remove overlaps from this set in 1 of 2
        * ways, depending on length of source sequence and number of
        * hits.  remove_overlaps_one_seq_fast() will need to allocate a
        * char array of size srcL, but it is significantly faster when
@@ -3052,7 +3096,7 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveOrMarkOverlaps() (removing):  ");
   esl_stopwatch_Start(w);
 
-  cm_tophits_SortForOverlapMarkup(h[0]);
+  cm_tophits_SortForOverlapMarkup(h[0], FALSE);
 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortForOverlapMarkup():             ");
@@ -3357,14 +3401,14 @@ main(int argc, char **argv)
   hit->srcL    = L+1;
   
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,   "third")        != 0)   esl_fatal("sort 1 failed (top is %s = %f)",  h1->hit[0]->name,   h1->hit[0]->score);
   if (strcmp(h1->hit[N+1]->name, "thirdtolast")  != 0)   esl_fatal("sort 1 failed (last is %s = %f)", h1->hit[N+1]->name, h1->hit[N+1]->score);
 
   cm_tophits_Merge(h1, h2);
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "second")        != 0)   esl_fatal("sort 2 failed (top is %s = %f)",            h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "third")         != 0)   esl_fatal("sort 2 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
@@ -3377,7 +3421,7 @@ main(int argc, char **argv)
 
   cm_tophits_Merge(h1, h3);
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "first")         != 0)   esl_fatal("sort 3 failed (top    is %s = %f)",         h1->hit[0]->name,     h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "second")        != 0)   esl_fatal("sort 3 failed (second is %s = %f)",         h1->hit[1]->name,     h1->hit[1]->score);
@@ -3395,7 +3439,7 @@ main(int argc, char **argv)
   /* test markup, first sort for removal and make sure we don't mark up any overlaps of different models */
   cm_tophits_Merge(h1, h4);
   cm_tophits_SortForOverlapRemoval(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,     "Bfirst")        != 0)   esl_fatal("sort 4 failed (first  is %s = %f)",         h1->hit[0]->name,      h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,     "first")         != 0)   esl_fatal("sort 4 failed (second is %s = %f)",         h1->hit[1]->name,      h1->hit[1]->score);
@@ -3415,8 +3459,8 @@ main(int argc, char **argv)
   if (h1->hit[4*N+7]->flags  & CM_HIT_IS_REMOVED_DUPLICATE) esl_fatal("RemoveOrMarkOverlaps failed 14");
 
   /* second sort for markup and make sure we DO mark up overlaps of different models */
-  cm_tophits_SortForOverlapMarkup(h1);
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+  cm_tophits_SortForOverlapMarkup(h1, /*do_clans_only=*/FALSE);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h1, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
   cm_tophits_SortByEvalue(h1);
   if (strcmp(h1->hit[0]->name,      "Bfirst")        != 0)     esl_fatal("sort 5 failed (first  is %s = %f)",         h1->hit[0]->name,      h1->hit[0]->score);
   if (strcmp(h1->hit[1]->name,      "first")         != 0)     esl_fatal("sort 5 failed (second is %s = %f)",         h1->hit[1]->name,      h1->hit[1]->score);
@@ -3521,9 +3565,9 @@ main(int argc, char **argv)
     }
 
     cm_tophits_SortForOverlapRemoval(h5);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
-    cm_tophits_SortForOverlapMarkup(h5);
-    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+    cm_tophits_SortForOverlapMarkup(h5, /*do_clans_only=*/FALSE);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(h5, /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
     
     cm_tophits_SortByEvalue(h5);
     if (strcmp(h5->hit[0]->name,  "hit1")  != 0)     esl_fatal("sort 6 failed pass %d (first  is %s = %f)", p+1,    h5->hit[0]->name,      h5->hit[0]->score);

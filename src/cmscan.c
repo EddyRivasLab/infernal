@@ -661,7 +661,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort in order to markup overlapping hits from different models (only within clans if --oclan) */
-      cm_tophits_SortForOverlapMarkup(tinfo[0].th);
+      cm_tophits_SortForOverlapMarkup(tinfo[0].th, esl_opt_GetBoolean(go, "--oclan"));
       if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, esl_opt_GetBoolean(go, "--oclan"), errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
