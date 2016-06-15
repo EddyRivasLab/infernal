@@ -2087,6 +2087,23 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
+  /* '--clanin' and '--oclan' only make sense with '--fmt 2',
+   * esl_getopts enforces --fmt is used, but not necessarily
+   * with '2' as the argument. 
+   */
+  if(esl_opt_IsUsed(go, "--clanin")) { 
+    if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
+      printf("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
+      goto ERROR;  
+    }
+  }
+  if(esl_opt_IsUsed(go, "--oclan")) { 
+    if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
+      printf("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
+      goto ERROR;  
+    }
+  }
+
   /* Finally, check for incompatible option combinations I *do* know
    * how to disallow with esl_getopts, but that would require an error
    * message like: "Option 'x' is incompatible with options
