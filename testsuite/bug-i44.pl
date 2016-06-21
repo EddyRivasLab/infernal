@@ -74,7 +74,7 @@ if ($ok) {
 }
 
 foreach $tmpfile ("i44.1", "i44.2", "i44.3", "i44.cm") { 
-#    unlink $tmpfile if -e $tmpfile;
+  unlink $tmpfile if -e $tmpfile;
 }
 if ($ok) { print "ok\n";     exit 0; }
 else     { print "FAILED\n"; exit 1; }

@@ -63,7 +63,7 @@ do_cmd ( "$builddir/easel/miniapps/esl-shuffle --seed 5 --rna -G -N 1 -L 99900 |
 $output = `$builddir/src/cmsearch -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     != 2)        { die "FAIL: on expected number of hits, cmsearch (single model)\n"; } 
 if ($i1::sfrom[0] ne "199872") { die "FAIL: on seq from, hit 1, cmsearch (single model)\n"; } 
 if ($i1::sto[0]   ne "199963") { die "FAIL: on seq to, hit 1, cmsearch (single model)\n"; } 
@@ -76,7 +76,7 @@ if ($i1::hitsc[1] ne "39.4")   { die "FAIL: on hit score, hit 1, cmsearch (singl
 $output = `$builddir/src/cmsearch -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm2 $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     != 2)        { die "FAIL: on expected number of hits, cmsearch (multi model)\n"; } 
 if ($i1::sfrom[0] ne "199872") { die "FAIL: on seq from, hit 1, cmsearch (multi model)\n"; } 
 if ($i1::sto[0]   ne "199963") { die "FAIL: on seq to, hit 1, cmsearch (multi model)\n"; } 
@@ -103,7 +103,7 @@ if(-e "$tmppfx.cm2.ssi") { unlink "$tmppfx.cm2.ssi"; }
 $output = `$builddir/src/cmscan -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     != 2)        { die "FAIL: on expected number of hits, cmscan (single model)\n"; } 
 if ($i1::sfrom[0] ne "199872") { die "FAIL: on seq from, hit 1, cmscan (single model)\n"; } 
 if ($i1::sto[0]   ne "199963") { die "FAIL: on seq to, hit 1, cmscan (single model)\n"; } 
@@ -116,7 +116,7 @@ if ($i1::hitsc[1] ne "39.4")   { die "FAIL: on hit score, hit 1, cmscan (single 
 $output = `$builddir/src/cmscan -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm2 $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     != 2)        { die "FAIL: on expected number of hits, cmscan (multi model)\n"; } 
 if ($i1::sfrom[0] ne "199872") { die "FAIL: on seq from, hit 1, cmscan (multi model)\n"; } 
 if ($i1::sto[0]   ne "199963") { die "FAIL: on seq to, hit 1, cmscan (multi model)\n"; } 
