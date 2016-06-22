@@ -35,16 +35,15 @@
 # Integration tests
 ################################################################
 
-#1 exercise  itest/mapali            !testsuite/itest1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
-#1 exercise  itest/dup-names         !testsuite/itest2-duplicate-names.pl!    @@ !! %OUTFILES%
-#1 exercise  itest/msa-integrity     !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
-#1 exercise  itest/stdin-pipes       !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
-#1 exercise  itest/pipeline          !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
-#1 exercise  itest/sensitivity       !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
-#1 exercise  itest/trunc             !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
-#1 exercise  itest/scan-glist        !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
-1 exercise  itest/scan-overlaps      !testsuite/itest9-overlaps.pl!            @@ !! %OUTFILES%
-
+1 exercise  itest/mapali            !testsuite/itest1-cmalign-mapali.pl!     @src/cmalign@   @easel/miniapps/esl-reformat@  !testsuite!  %OUTFILES%
+1 exercise  itest/dup-names         !testsuite/itest2-duplicate-names.pl!    @@ !! %OUTFILES%
+1 exercise  itest/msa-integrity     !testsuite/itest3-msa-integrity.pl!      @@ !! %OUTFILES%
+1 exercise  itest/stdin-pipes       !testsuite/itest4-stdin.pl!              @@ !! %OUTFILES%
+1 exercise  itest/pipeline          !testsuite/itest5-pipeline.pl!           @@ !! %OUTFILES%
+1 exercise  itest/sensitivity       !testsuite/itest6-sensitivity.pl!        @@ !! %OUTFILES%
+1 exercise  itest/trunc             !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
+1 exercise  itest/scan-glist        !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
+1 exercise  itest/scan-overlaps     !testsuite/itest9-overlaps.pl!           @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
@@ -138,7 +137,7 @@
 1  prep        cleanup/zC     rm -f %ZBP.C.CM%.*
 1  exercise    scan/4C        @src/cmscan@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/4C     rm -f %4.C.CM%.*
-1  exercise    scan/5C        @src/cmscan@ --fmt 2 --oskip --oclan --clanin !testsuite/5.claninfo! -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    scan/5C        @src/cmscan@ --fmt 2 --tblout %5.C.TBLOUT% --oskip --oclan --clanin !testsuite/5.claninfo! -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/5C     rm -f %5.C.CM%.*
 
 # cmemit exercises
