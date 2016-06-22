@@ -208,7 +208,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   char          mode;            /* mode passed to DispatchSqAlignment() */
   int           cp9b_valid;      /* passed to DispatchSqAlignment() */
 
-  ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * sq_block->count);
+  ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, sq_block->count)); // avoid 0 malloc
   for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
 
   /* DispatchSqAligment() needs a mode, pipeline pass index, and

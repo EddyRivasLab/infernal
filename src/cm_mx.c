@@ -894,7 +894,7 @@ cm_hb_mx_Create(int M)
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
   ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
+  ESL_ALLOC(mx->nrowsA, sizeof(int)    * (M+1));
   for (v = 0; v <= M; v++) {
     ESL_ALLOC(mx->dp[v], sizeof(float *) * (allocL));
     mx->nrowsA[v] = allocL;
@@ -3302,15 +3302,15 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Rkshadow,  sizeof(int **)  * M);
   ESL_ALLOC(mx->Tkshadow,  sizeof(int **)  * M);
 
-  ESL_ALLOC(mx->Lkmode,    sizeof(char **)  * M);
-  ESL_ALLOC(mx->Rkmode,    sizeof(char **)  * M);
+  ESL_ALLOC(mx->Lkmode,    sizeof(char **) * M);
+  ESL_ALLOC(mx->Rkmode,    sizeof(char **) * M);
  
   /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
   ESL_ALLOC(mx->Jyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
   
-  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW)); // avoid 0 malloc
   ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
   ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
   ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
@@ -3662,7 +3662,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	if(jbw > mx->LnrowsA[v]) { 
 	  if(mx->Lkshadow[v] != NULL) ESL_RALLOC(mx->Lkshadow[v], p, sizeof(int *)  * jbw);
 	  else                        ESL_ALLOC (mx->Lkshadow[v],    sizeof(int *)  * jbw);
-	  if(mx->Lkmode[v] != NULL)   ESL_RALLOC(mx->Lkmode[v], p,   sizeof(char *)  * jbw);
+	  if(mx->Lkmode[v] != NULL)   ESL_RALLOC(mx->Lkmode[v],   p, sizeof(char *)  * jbw);
 	  else                        ESL_ALLOC (mx->Lkmode[v],      sizeof(char *)  * jbw);
 	  mx->LnrowsA[v] = jbw;
 	}
@@ -6003,7 +6003,7 @@ cm_scan_mx_integerize(CM_t *cm, CM_SCAN_MX *smx, char *errbuf)
   smx->ncells_alpha_begl = (smx->W+1);
   smx->ncells_alpha_begl *= n_begl;
   smx->ncells_alpha_begl *= (smx->W+1);
-  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * ESL_MAX(1, smx->ncells_alpha_begl));
+  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * ESL_MAX(1, smx->ncells_alpha_begl)); // avoid 0 malloc
   /* we used to define ncells_alpha_begl this way: 
    *   smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
    * but that overflows for large models (even though ncells_alpha_begl is an int64_t, I guess
@@ -6667,9 +6667,9 @@ cm_tr_scan_mx_floatize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   trsmx->ncells_alpha_begl  = (trsmx->W+1);
   trsmx->ncells_alpha_begl *= n_begl;
   trsmx->ncells_alpha_begl *= (trsmx->W+1);
-  ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * (trsmx->ncells_alpha_begl));
-  ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * (trsmx->ncells_alpha_begl));
-  ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * (trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->fJalpha_begl_mem,   sizeof(float) * ESL_MAX(1, trsmx->ncells_alpha_begl)); // avoid 0 malloc
+  ESL_ALLOC(trsmx->fLalpha_begl_mem,   sizeof(float) * ESL_MAX(1, trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->fRalpha_begl_mem,   sizeof(float) * ESL_MAX(1, trsmx->ncells_alpha_begl));
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	
@@ -6813,9 +6813,9 @@ cm_tr_scan_mx_integerize(CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf)
   trsmx->ncells_alpha_begl  = (trsmx->W+1);
   trsmx->ncells_alpha_begl *= n_begl;
   trsmx->ncells_alpha_begl *= (trsmx->W+1);
-  ESL_ALLOC(trsmx->iJalpha_begl_mem,   sizeof(int) * (trsmx->ncells_alpha_begl));
-  ESL_ALLOC(trsmx->iLalpha_begl_mem,   sizeof(int) * (trsmx->ncells_alpha_begl));
-  ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * (trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->iJalpha_begl_mem,   sizeof(int) * ESL_MAX(1, trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->iLalpha_begl_mem,   sizeof(int) * ESL_MAX(1, trsmx->ncells_alpha_begl));
+  ESL_ALLOC(trsmx->iRalpha_begl_mem,   sizeof(int) * ESL_MAX(1, trsmx->ncells_alpha_begl));
 
   cur_cell = 0;
   for (v = 0; v < cm->M; v++) {	

@@ -1604,8 +1604,8 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
         if(pli->do_time_F4 || pli->do_time_F5) return status;
       }
       else { /* defined envelopes with HMM, but CYK filter is off: act as if all p7-defined envelopes survived CYK */
-        ESL_ALLOC(es, sizeof(int64_t) * np7envA[p]);
-        ESL_ALLOC(ee, sizeof(int64_t) * np7envA[p]);
+        ESL_ALLOC(es, sizeof(int64_t) * ESL_MAX(1, np7envA[p])); // avoid 0 malloc
+        ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, np7envA[p]));
         for(i = 0; i < np7envA[p]; i++) { es[i] = p7esAA[p][i]; ee[i] = p7eeAA[p][i]; } 
         nenv = np7envA[p];
       }
@@ -2912,9 +2912,9 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   do_local_envdef = (pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
 
   nenv_alloc = nwin;
-  ESL_ALLOC(es, sizeof(int64_t) * nenv_alloc);
-  ESL_ALLOC(ee, sizeof(int64_t) * nenv_alloc);
-  ESL_ALLOC(eb, sizeof(float)   * nenv_alloc);
+  ESL_ALLOC(es, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); // avoid 0 malloc
+  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); 
+  ESL_ALLOC(eb, sizeof(float)   * ESL_MAX(1, nenv_alloc));
   nenv = 0;
   seq = esl_sq_CreateDigital(sq->abc);
 
@@ -4514,10 +4514,10 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
   for(i2 = 0; i2 < nwin2; i2++) if(ws2[i2] > we2[i2]) return eslEINVAL;
 
   nalloc = nwin1 + nwin2; /* we'll never exceed this */
-  ESL_ALLOC(mws, sizeof(int64_t) * nalloc);
-  ESL_ALLOC(mwe, sizeof(int64_t) * nalloc);
-  ESL_ALLOC(mwp, sizeof(double)  * nalloc);
-  ESL_ALLOC(mwl, sizeof(int)     * nalloc);
+  ESL_ALLOC(mws, sizeof(int64_t) * ESL_MAX(1, nalloc)); // avoid 0 malloc 
+  ESL_ALLOC(mwe, sizeof(int64_t) * ESL_MAX(1, nalloc));
+  ESL_ALLOC(mwp, sizeof(double)  * ESL_MAX(1, nalloc));
+  ESL_ALLOC(mwl, sizeof(int)     * ESL_MAX(1, nalloc));
 
   i1 = 0;
   i2 = 0;

@@ -456,7 +456,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   
 #ifdef HMMER_THREADS    
-  ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * (ncpus * 2));
+  ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * ESL_MAX(1, ncpus * 2)); // avoid malloc of 0
   for (k = 0; k < ncpus * 2; k++) {
     init_sqA[k] = NULL;
     if((init_sqA[k] = esl_sq_CreateDigital(cfg->abc)) == NULL)          cm_Fail("Failed to allocate a sequence");
@@ -487,7 +487,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, CM_MAX_RESIDUE_COUNT, CMALIGN_MAX_NSEQ, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
@@ -517,7 +517,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, CM_MAX_RESIDUE_COUNT, CMALIGN_MAX_NSEQ, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
@@ -536,7 +536,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* create a single array of all CM_ALNDATA objects, in original (input) order */
     nmap_cur = (nali == 0) ? nmap_data : 0;
     nmerged  = nseq_cur + nmap_cur;
-    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * nmerged);
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, nmerged)); // avoid malloc of 0
     /* prepend mapali data if nec */
     if(nmap_cur > 0) {
       for(i = 0; i < nmap_cur; i++) merged_dataA[i] = map_dataA[i];
@@ -980,7 +980,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
 #if DEBUGMPI
@@ -1009,7 +1009,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
@@ -1019,7 +1019,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* allocate an array for all CM_ALNDATA objects we'll receive from workers */
     nmap_cur = (nali == 0) ? nmap_data : 0;
     nmerged = nseq_cur + nmap_cur;
-    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * (nseq_cur + nmap_cur));
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, nseq_cur + nmap_cur)); // avoid malloc of 0
     /* prepend mapali data if nec */
     if(nmap_cur > 0) {
       for(i = 0; i < nmap_cur; i++) merged_dataA[i] = map_dataA[i];

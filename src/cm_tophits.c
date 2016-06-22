@@ -2529,9 +2529,10 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(any_ofctstr2 != NULL) free(any_ofctstr2);
   if(win_ofctstr1 != NULL) free(win_ofctstr1);
   if(win_ofctstr2 != NULL) free(win_ofctstr2);
-  if(has_overlapA != NULL) free(has_overlapA);
+  if(clannamestr  != NULL) free(clannamestr);
   if(sorted_idxA  != NULL) free(sorted_idxA);
   if(output_idxA  != NULL) free(output_idxA);
+  if(has_overlapA != NULL) free(has_overlapA);
 
   return eslOK;
 
@@ -2551,9 +2552,10 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(any_ofctstr2 != NULL) free(any_ofctstr2);
   if(win_ofctstr1 != NULL) free(win_ofctstr1);
   if(win_ofctstr2 != NULL) free(win_ofctstr2);
-  if(has_overlapA != NULL) free(has_overlapA);
+  if(clannamestr  != NULL) free(clannamestr);
   if(sorted_idxA  != NULL) free(sorted_idxA);
   if(output_idxA  != NULL) free(output_idxA);
+  if(has_overlapA != NULL) free(has_overlapA);
 
   return status;
 }

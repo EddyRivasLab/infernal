@@ -1274,6 +1274,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              sstatus  = eslOK;
   int              dest;
 
+  /* variables only used if --clanin is used */
+  ESL_KEYHASH      *clan_name_kh = NULL;          /* these are clan names */
+  ESL_KEYHASH      *clan_fam_kh  = NULL;          /* these are family names in a clan, members of same clan are contiguous */
+  int              *clan_mapA    = NULL;          /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                                   * index c in <clan_name_kh>. */
+
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
   BLOCK_LIST      *list     = NULL;
@@ -1326,7 +1332,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->Z = (int64_t) cmfp->ssi->nprimary;
     cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
-  cm_file_Close(cmfp);
+  /* If nec, open and read the clan info file, while CM file is open */
+  if (esl_opt_IsOn(go, "--clanin")) { 
+    if((status = read_clan_info_file(esl_opt_GetString(go, "--clanin"), errbuf, cmfp, &clan_name_kh, &clan_fam_kh, &clan_mapA)) != eslOK) cm_Fail(errbuf);
+  }
+
+  cm_file_Close(cmfp); /* important to do this after the read_clan_info_file() call above, which uses cmfp */
 
   /* Open the query sequence database */
   status = esl_sqfile_OpenDigital(abc, cfg->seqfile, seqfmt, NULL, &sqfp);
@@ -1503,11 +1514,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
       cm_tophits_SortForOverlapRemoval(th);
-      if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(th, FALSE, errbuf)) != eslOK) mpi_failure(errbuf);
 
-      /* Resort in order to markup overlapping hits from different models */
-      cm_tophits_SortForOverlapMarkup(th);
-      if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
+      /* Resort in order to markup overlapping hits from different models (only within clans if --oclan) */
+      cm_tophits_SortForOverlapMarkup(th, esl_opt_GetBoolean(go, "--oclan"));
+      if((status = cm_tophits_RemoveOrMarkOverlaps(th, esl_opt_GetBoolean(go, "--oclan"), errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
       if(pli->do_trm_F3) cm_tophits_SortByPosition(th);
@@ -1547,11 +1558,18 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       }
       
-      if (tblfp) { 
-        if(pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, th, pli, (seq_idx == 1));
-        else               cm_tophits_TabularTargets  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+      if (tblfp != NULL) { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
+          if(pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, th, pli, (seq_idx == 1)); 
+          else               cm_tophits_TabularTargets1  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 2) { 
+          if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
+            mpi_failure(errbuf);
+          }
+        }
       }
-      
+
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, pli, w);
       fprintf(ofp, "//\n");
@@ -1605,8 +1623,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_sq_Destroy(qsq);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
-  if(w  != NULL) esl_stopwatch_Destroy(w);
-  if(mw != NULL) esl_stopwatch_Destroy(mw);
+  if(w            != NULL) esl_stopwatch_Destroy(w);
+  if(mw           != NULL) esl_stopwatch_Destroy(mw);
+  if(clan_name_kh != NULL) esl_keyhash_Destroy(clan_name_kh);
+  if(clan_fam_kh  != NULL) esl_keyhash_Destroy(clan_fam_kh);
+  if(clan_mapA    != NULL) free(clan_mapA);
 
   if (ofp != stdout) fclose(ofp);
   if (tblfp)         fclose(tblfp);
@@ -1632,7 +1653,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   P7_PROFILE      *Rgm      = NULL;              /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE      *Lgm      = NULL;              /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE      *Tgm      = NULL;              /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  P7_MSVDATA      *msvdata  = NULL;              /* MSV/SSV specific data structure                 */
+  P7_SCOREDATA    *msvdata  = NULL;              /* MSV/SSV specific data structure                 */
 
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
@@ -1649,11 +1670,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_KEYHASH     *glocal_kh = NULL;             /* list of models to configure globally, only created if --glist */
 
   /* variables only used if --clanin is used */
-  FIX ME
-  ESL_KEYHASH     *clan_kh     = NULL;    /* list of models in clans */
-  char           **clan_namesA = NULL;    /* [0..c..nclan-1] name of clan <c>*/
-  int64_t         *clan_sidxA  = NULL;    /* [0..c..nclan-1] starting index in clan_kh for clan <c> */
-  int              nclan       = 0;       /* number of clans, size of clan_namesA and clan_sidxA */
+  ESL_KEYHASH      *clan_name_kh = NULL;          /* these are clan names */
+  ESL_KEYHASH      *clan_fam_kh  = NULL;          /* these are family names in a clan, members of same clan are contiguous */
+  int              *clan_mapA    = NULL;          /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                                   * index c in <clan_name_kh>. */
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
@@ -1662,6 +1682,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   double           eZ;                           /* effective database size                      */
   int64_t          prv_posn = 0;                 /* position of previous chunk for cur seq, 0 if first chunk */
   ESL_DSQ         *save_dsq = NULL;              /* pointer to original qsq->dsq data */
+  int              have_clans;                   /* set to TRUE if we have information on clans, else FALSE */
+  int              clan_idx = -1;                /* clan index, -1 if current family is not part of a clan */
 
   MPI_Status       mpistatus;
   char             errbuf[eslERRBUFSIZE];
@@ -1684,7 +1706,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
   else if (hstatus != eslOK) mpi_failure("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
 
-  /* Determine database size: default is to updated as we read target CMs */
+  /* Determine database size: default is to update as we read target CMs */
   if(esl_opt_IsUsed(go, "-Z")) { 
     cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
     cfg->Z_setby = CM_ZSETBY_OPTION; 
@@ -1701,6 +1723,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* If nec, open and read the clan info file, while CM file is open */
   if (esl_opt_IsOn(go, "--clanin")) { 
     if((status = read_clan_info_file(esl_opt_GetString(go, "--clanin"), errbuf, cmfp, &clan_name_kh, &clan_fam_kh, &clan_mapA)) != eslOK) cm_Fail(errbuf);
+    have_clans = TRUE;
+  }
+  else { 
+    have_clans = FALSE;
   }
 
   nmodels = (int64_t) cmfp->ssi->nprimary;
@@ -1788,11 +1814,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                   if(rinfo->omA[cm_idx] != NULL) mpi_failure("Worker was supposed to read MSVs but already had one...\n");
                   hstatus = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &(rinfo->abc), &(rinfo->cm_offsetA[cm_idx]), &(rinfo->cm_clenA[cm_idx]), &(rinfo->cm_WA[cm_idx]), 
                                                    &(rinfo->cm_nbpA[cm_idx]), &(rinfo->gfmuA[cm_idx]), &(rinfo->gflambdaA[cm_idx]), &(rinfo->omA[cm_idx]));
+                  /* determine clan idx if nec */
+                  if(have_clans) { rinfo->clan_idxA[cm_idx] = determine_clan_index(rinfo->omA[cm_idx]->name, rinfo->clan_fam_kh, rinfo->clan_mapA); }
+                  else           { rinfo->clan_idxA[cm_idx] = -1; }
                   
                 }
                 if(hstatus == eslOK) { 
                   if(rinfo->msvdataA[cm_idx] == NULL) { 
-                    rinfo->msvdataA[cm_idx] = p7_hmm_MSVDataCreate(rinfo->omA[cm_idx], FALSE);
+                    rinfo->msvdataA[cm_idx] = p7_hmm_ScoreDataCreate(rinfo->omA[cm_idx], FALSE);
                   }
 
                   /* set pointers for convenience */
@@ -1804,9 +1833,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                   gflambda  = rinfo->gflambdaA[cm_idx];
                   om        = rinfo->omA[cm_idx];
                   msvdata   = rinfo->msvdataA[cm_idx];
+                  clan_idx  = rinfo->clan_idxA[cm_idx];
 
                   length = om->eoff - block.offset + 1;
-                  
                   
                   esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
                   p7_evparam[CM_p7_GFMU]     = gfmu;

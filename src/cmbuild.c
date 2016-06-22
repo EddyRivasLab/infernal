@@ -2521,7 +2521,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
      * I'm leaving it in the code because later code relies on it
      * (see note on rounding of diff values in "Mode 3" comment block below) 
      */
-    ESL_ALLOC(diff,  (sizeof(double) * (T->N - 1)));  /* one for each node */
+    ESL_ALLOC(diff,  (sizeof(double) * ESL_MAX(1, T->N - 1)));  /* one for each node, avoid 0 malloc */
     for (n = (T->N-2); n >= 0; n--) {
       diff[n]  = T->ld[n]; /* or we could set it to T->rd[n], they're identical */
       diff[n] *= 1000.; 

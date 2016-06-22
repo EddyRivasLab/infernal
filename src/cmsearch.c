@@ -1369,8 +1369,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     if (tblfp != NULL) { 
-      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, info->th, info->pli, (cm_idx == 1)); 
-      else                     cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info->th, info->pli, (cm_idx == 1)); 
+      else                     cm_tophits_TabularTargets1(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
