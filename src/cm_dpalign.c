@@ -270,7 +270,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
   ESL_STACK *pda;               /* stack that tracks bifurc parent of a right start */
   int       v,j,d,i;		/* indices for state, j, subseq len */
   int       k;			/* subseq len for bifurcs */
-  int       z;			/* state index */
+  /*int       z;*/              /* state index */
   int       y, yoffset;         /* child state y, it's offset */
   int       bifparent;          /* B_st parent */
   int       b;                  /* local begin state */
@@ -340,7 +340,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
 
     if (cm->sttype[v] == B_st) {
       k = shmx->kshadow[v][jp_v][dp_v];   /* k = offset len of right fragment */
-      z = cm->cnum[v];
+      /*z = cm->cnum[v];*/
       
       /* Store info about the right fragment that we'll retrieve later:
        */
@@ -2201,7 +2201,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;       /* j - sdr */
   int      d_sd;        /* d - sd */
-  float    tsc;         /* a transition score */
   int      have_el;     /* TRUE if CM has local ends on, otherwise FALSE */
 
   /* the DP matrices */
@@ -2244,7 +2243,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) {
-    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
 
@@ -2321,7 +2319,6 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
        */
       for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
 	yoffset = y - cm->cfirst[v];
-	tsc = tsc_v[yoffset];
 	j_sdr = 0;
 	for (j = sdr; j <= L; j++, j_sdr++) {
 	  d_sd = 0;
@@ -3001,7 +2998,6 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   float  **esc_vAA;            /* ptr to cm->oesc, optimized emission scores */
   float    escore;	       /* an emission score, tmp variable */
   int      voffset;	       /* index of v in t_v(y) transition scores */
-  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
   int      sd;                 /* StateDelta(cm->sttype[y]) */
   int      sdr;                /* StateRightDelta(cm->sttype[y] */
 
@@ -3111,7 +3107,6 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
       sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
-      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
       
       for (j = 0; j <= L; j++) { 
 	for (d = 0; d <= j; d++) {
@@ -4023,7 +4018,6 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
   float  **esc_vAA;            /* ptr to cm->oesc, optimized emission scores */
   float    escore;	       /* an emission score, tmp variable */
   int      voffset;	       /* index of v in t_v(y) transition scores */
-  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
   int      sd;                 /* StateDelta(cm->sttype[y]) */
   int      sdr;                /* StateRightDelta(cm->sttype[y] */
 
@@ -4128,7 +4122,6 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
     if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
       sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
-      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
       
       for (j = 0; j <= L; j++) { 
 	for (d = 0; d <= j; d++) {
@@ -5196,7 +5189,6 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
   int    status;
   int    v, j, d; /* state, position, subseq length */
   int    i;       /* sequence position */
-  int    sd;      /* StateDelta(v) */
   int    ip_v;    /* offset i in banded matrix */
   int    ip_v2;   /* another offset i in banded matrix */
   int    jp_v;    /* offset j in banded matrix */
@@ -5225,7 +5217,6 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
    *         leftwise (l_pp) or rightwise (r_pp).
    */
   for(v = 0; v < cm->M; v++) { 
-    sd = StateDelta(cm->sttype[v]);
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
       for(j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j - jmin[v];
@@ -5450,7 +5441,7 @@ int
 cm_PostCode(CM_t *cm, char *errbuf, int L, CM_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp)
 {
   int   status;
-  int   x, v, i, j, d, r; /* counters */
+  int   x, v, i, j, r; /* counters */
   char *ppstr;       /* the PP string, created here */
   float p;           /* a probability */
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
@@ -5464,7 +5455,6 @@ cm_PostCode(CM_t *cm, char *errbuf, int L, CM_EMIT_MX *emit_mx, Parsetree_t *tr,
       v = tr->state[x];
       i = tr->emitl[x];
       j = tr->emitr[x];
-      d = j-i+1;
 
       /* Only P, L, R, and EL states have emissions. */
       if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
@@ -5510,7 +5500,7 @@ int
 cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp)
 {
   int   status;
-  int   x, v, i, j, d, r; /* counters */
+  int   x, v, i, j, r; /* counters */
   char *ppstr;       /* the PP string, created here */
   float p;           /* a probability */
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
@@ -5533,7 +5523,6 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t
       v = tr->state[x];
       i = tr->emitl[x];
       j = tr->emitr[x];
-      d = j-i+1;
 
       /* Only P, L, R, and EL states have emissions. */
       if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */

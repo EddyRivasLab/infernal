@@ -780,7 +780,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   int       status;
   int       wstatus;
   int       prv_pli_ntophits;    /* number of top hits before each cm_Pipeline() */
-  int       prv_seq_ntophits;    /* number of top hits before each target sequence */
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq    = esl_sq_CreateDigital(info->cm->abc);
 
@@ -800,7 +799,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if(dbsq->start == 1) dbsq->L = srcL[seq_idx-1];
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
-    prv_seq_ntophits = info->th->N; 
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
@@ -962,8 +960,6 @@ pipeline_thread(void *arg)
   ESL_SQ_BLOCK  *block = NULL;
   void          *newBlock;
   int            prv_pli_ntophits;    /* number of top hits before each cm_Pipeline() */
-  int            prv_seq_ntophits;    /* number of top hits before each target sequence */
-
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -991,7 +987,6 @@ pipeline_thread(void *arg)
       ESL_SQ *dbsq = block->list + i;
 
       cm_pli_NewSeq(info->pli, dbsq, block->first_seqidx + i);
-      prv_seq_ntophits = info->th->N; 
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;

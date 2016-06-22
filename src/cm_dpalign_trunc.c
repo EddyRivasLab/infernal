@@ -9217,7 +9217,6 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
   int    status;
   int    v, j, d; /* state, position, subseq length */
   int    i;       /* sequence position */
-  int    sd;      /* StateDelta(v) */
   int    fill_L, fill_R; /* do we need to fill Ll_pp/Rr_pp matrices? */
   int    jp_v;    /* j-jmin[v] for current j, and current v */
   int    jp_v2;   /* another offset j in banded matrix */
@@ -9253,7 +9252,6 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
    *         leftwise (*l_pp) or rightwise (*r_pp).
    */
   for(v = 0; v < cm->M; v++) { 
-    sd = StateDelta(cm->sttype[v]);
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
       if(cm->cp9b->Jvalid[v]) { 
 	for(j = jmin[v]; j <= jmax[v]; j++) { 
@@ -9588,7 +9586,7 @@ int
 cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_TR_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp)
 {
   int   status;
-  int   x, v, i, j, d, r; /* counters */
+  int   x, v, i, j, r; /* counters */
   char *ppstr;       /* the PP string, created here */
   float p;           /* a probability */
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
@@ -9606,7 +9604,6 @@ cm_TrPostCode(CM_t *cm, char *errbuf, int L, CM_TR_EMIT_MX *emit_mx, Parsetree_t
     v    = tr->state[x];
     i    = tr->emitl[x];
     j    = tr->emitr[x];
-    d    = j-i+1;
     mode = tr->mode[x];
 
     /* Only P, L, R, and EL states have emissions. */
@@ -9694,7 +9691,7 @@ int
 cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parsetree_t *tr, char **ret_ppstr, float *ret_avgp)
 {
   int   status;
-  int   x, v, i, j, d, r; /* counters */
+  int   x, v, i, j, r; /* counters */
   char *ppstr;       /* the PP string, created here */
   float p;           /* a probability */
   float sum_logp;    /* log of summed probability of all residues emitted thus far */
@@ -9721,7 +9718,6 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
     v    = tr->state[x];
     i    = tr->emitl[x];
     j    = tr->emitr[x];
-    d    = j-i+1;
     mode = tr->mode[x];
 
     /* Only P, L, R, and EL states have emissions. */

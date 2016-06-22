@@ -127,7 +127,7 @@ UpdateGammaHitMx_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, i
 		      CM_TOPHITS *hitlist, int W, int sW)
 {
   int i, d;
-  int bestd;
+  /*int bestd;*/
   int ip, jp;
   int do_report_hit;
   uint8_t hit_sc, bestd_sc;
@@ -186,7 +186,7 @@ UpdateGammaHitMx_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, i
 	hit->hmmonly = FALSE;
       }
     }
-    bestd    = 0;
+    /*bestd    = 0;*/
     bestd_sc = hit_sc;
     /* Now, if current score is greater than maximum seen previous, report
      * it if >= cutoff and set new max */
@@ -210,7 +210,7 @@ UpdateGammaHitMx_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, i
 	    hit->hmmonly = FALSE;
 	  }
 	}
-	bestd = d;
+	/*bestd = d;*/
         bestd_sc = hit_sc; 
       }
     }

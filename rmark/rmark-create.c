@@ -530,7 +530,6 @@ remove_fragments(struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int
   int     *useme    = NULL;
   double   len      = 0.0;
   int      i;
-  int      nfrags;
   int      status;
 
   /* min length is cfg->fragfrac * average length */
@@ -539,7 +538,7 @@ remove_fragments(struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int
   len *= cfg->fragfrac / (double) msa->nseq;
 
   ESL_ALLOC(useme, sizeof(int) * msa->nseq);
-  for (nfrags = 0, i = 0; i < msa->nseq; i++) 
+  for (i = 0; i < msa->nseq; i++) 
     useme[i] = (esl_abc_dsqrlen(msa->abc, msa->ax[i]) < len) ? 0 : 1;
 
   if ((status = esl_msa_SequenceSubset(msa, useme, ret_filteredmsa)) != eslOK) goto ERROR;
@@ -580,7 +579,6 @@ separate_sets(struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i
   int  nc         = 0;
   int  c;
   int  ctrain;			/* index of the cluster that becomes the training alignment */
-  int  ntrain;			/* number of seqs in the training alignment */
   int  nskip;
   int  i, i2;
   int  status;
@@ -591,7 +589,6 @@ separate_sets(struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i
 
   if ((status = esl_msacluster_SingleLinkage(msa, cfg->idthresh1, &assignment, &nin, &nc)) != eslOK) goto ERROR;
   ctrain = esl_vec_IArgMax(nin, nc);
-  ntrain = esl_vec_IMax(nin, nc);
 
   for (i = 0; i < msa->nseq; i++) i_am_train[i] = (assignment[i] == ctrain) ? 1 : 0;
   if ((status = esl_msa_SequenceSubset(msa, i_am_train, &trainmsa)) != eslOK) goto ERROR;

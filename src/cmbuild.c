@@ -1611,21 +1611,17 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
  static int
  set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
  {
-   int cutoff_was_set = FALSE;
    if(msa->cutset[eslMSA_TC1]) { 
      cm->tc = msa->cutoff[eslMSA_TC1];
      cm->flags |= CMH_TC;
-     cutoff_was_set = TRUE;
    }
    if(msa->cutset[eslMSA_GA1]) { 
      cm->ga = msa->cutoff[eslMSA_GA1];
      cm->flags |= CMH_GA;
-     cutoff_was_set = TRUE;
    }
    if(msa->cutset[eslMSA_NC1]) { 
      cm->nc = msa->cutoff[eslMSA_NC1];
      cm->flags |= CMH_NC;
-     cutoff_was_set = TRUE;
    }
    return eslOK;
  }
@@ -2761,7 +2757,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
   float high       = 1.0;
   float low        = 0.0;
   int   high_nc    = 0;
-  int   low_nc     = 0;
+  /*int   low_nc     = 0;*/
   float mindiff    = 0.5;
   int   curr_nc    = -1;
   int   curr_best  = -1;
@@ -2785,7 +2781,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
     }
     else {/* curr_nc >= target_nc */
       low        = mindiff;
-      low_nc     = curr_nc;
+      /*low_nc     = curr_nc;*/
       mindiff   += (high - mindiff) / 2.;
       if(fabs(high-low) < thresh)  keep_going = FALSE; /* stop, high and low have converged */
       /*printf("GREATER nc: %d mindiff: %f low: %f high: %f\n", curr_nc, mindiff, low, high);*/

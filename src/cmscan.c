@@ -946,8 +946,6 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
               
   /* variables related to --clanin */
   int              have_clans;         /* set to TRUE if we have information on clans, else FALSE */
-  int              clan_idx = -1;      /* clan index, -1 if current family is not part of a clan */
-  int              clan_fam_idx = -1;  /* index of current family in clan_fam_kh, if it exists, else -1 */
 
   /* do we have clan info? */
   have_clans = (rinfo->clan_fam_kh != NULL && rinfo->clan_mapA != NULL) ? TRUE : FALSE;
@@ -980,8 +978,6 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
           rinfo->msvdataA[cm_idx]   = block->msvdataA[i];
 
           /* figure out clan_idx and set it in the block and rinfo */
-          clan_idx     = -1; 
-          clan_fam_idx = -1;
           if(have_clans) { block->clan_idxA[i] = determine_clan_index(rinfo->omA[cm_idx]->name, rinfo->clan_fam_kh, rinfo->clan_mapA); }
           else           { block->clan_idxA[i] = -1; }
           rinfo->clan_idxA[cm_idx] = block->clan_idxA[i];

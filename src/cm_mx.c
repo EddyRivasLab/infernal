@@ -2162,11 +2162,9 @@ cm_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_ny_cells, in
   int64_t y_ncells;
   int64_t k_ncells;
   float   Mb_needed;
-  int     nbifs;
 
   y_ncells = 0;
   k_ncells = 0;
-  nbifs = CMCountStatetype(cm, B_st);
   Mb_needed = (float) 
     (sizeof(CM_SHADOW_MX) + 
      ((cm->M) * sizeof(char **)) + /* mx->yshadow[] ptrs */
@@ -2776,7 +2774,6 @@ cm_tr_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_Jny_cells
   int64_t Rk_ncells;
   int64_t Tk_ncells;
   float   Mb_needed;
-  int     nbifs;
 
   Jy_ncells = 0;
   Ly_ncells = 0;
@@ -2785,7 +2782,6 @@ cm_tr_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_Jny_cells
   Lk_ncells = 0;
   Rk_ncells = 0;
   Tk_ncells = 0;
-  nbifs = CMCountStatetype(cm, B_st);
   Mb_needed = (float) 
     (sizeof(CM_TR_SHADOW_MX) + 
      (3 * (cm->M) * sizeof(char **)) + /* mx->{J,L,R}yshadow[] ptrs */
@@ -3195,13 +3191,11 @@ cm_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *re
   int64_t y_ncells, k_ncells;
   int     jbw;
   float   Mb_needed;
-  int     nbifs;
 
   /* contract check */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   y_ncells = k_ncells = 0;
-  nbifs = CMCountStatetype(cm, B_st);
 
   Mb_needed = (float) 
     (sizeof(CM_HB_SHADOW_MX) + 
@@ -3992,7 +3986,6 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
   int64_t Tk_ncells;
   int     jbw;
   float   Mb_needed;
-  int     nbifs;
 
   /* contract check */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_tr_hb_shadow_mx_SizeNeeded() entered with cp9b == NULL.\n");
@@ -4004,7 +3997,6 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
   Lk_ncells = 0;
   Rk_ncells = 0;
   Tk_ncells = 0;
-  nbifs = CMCountStatetype(cm, B_st);
   Mb_needed = (float) 
     (sizeof(CM_TR_HB_SHADOW_MX) + 
      (3 * (cp9b->cm_M) * sizeof(char **)) + /* mx->{J,L,R}yshadow[] ptrs */

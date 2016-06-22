@@ -2081,7 +2081,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
   int           cur_clen;                      /* consensus length (non-gap #=GC RF length) of current alignment */
   int           apos;                          /* alignment position */
   ESL_MSA      *fmsa = NULL;                   /* the merged alignment created by merging all alignments in msaA */
-  int           alen_fmsa;                     /* number of columns in merged MSA */
+  /*int           alen_fmsa;*/                  /* number of columns in merged MSA */
   int          *ngap_insA = NULL;               /* [0..alen] number of insert gap columns to add after each alignment column when merging */
   int          *ngap_elA = NULL;                /* [0..alen] number of missing data ('~') gap columns to add after each alignment column when merging */
   int          *ngap_eitherA = NULL;            /* [0..apos..alen] = ngap_insA[apos] + ngap_elA[apos] */
@@ -2165,7 +2165,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
    * final (3rd) pass we'll output aligned data.
    */     
   fmsa = esl_msa_Create(nseq_tot, -1); 
-  alen_fmsa = cm->clen + esl_vec_ISum(maxins, (cm->clen+1)); 
+  /*alen_fmsa = cm->clen + esl_vec_ISum(maxins, (cm->clen+1));*/
 
   /* if there was any GS annotation in any of the individual alignments,
    * do second pass through alignment files, outputting GS annotation as we go. */
@@ -2483,7 +2483,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   int apos  = 0;
   int apos2print  = 0;
   int i;
-  int prv_cpos = -1;
   int alen2print = 0;
   char *rf2print;
   char *ss_cons2print;
@@ -2509,7 +2508,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
     if(apos < msa->alen) { 
       rf2print[apos2print]        = msa->rf[apos];
       ss_cons2print[apos2print++] = msa->ss_cons[apos];
-      if(! esl_abc_CIsGap(msa->abc, msa->rf[apos])) prv_cpos = apos;
     }	
   }    
   

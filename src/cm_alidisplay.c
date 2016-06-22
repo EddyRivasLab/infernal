@@ -76,7 +76,6 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   int         pos;		 /* position in growing ali */
   int         lc, rc;		 /* indices for left, right pos in consensus */
   int         symi, symj;
-  int         d;
   char        mode;
   int         lrf, rrf;  /* chars in annotation line; left, right     */
   int         lstr, rstr;	 /* chars in structure line; left, right      */
@@ -416,7 +415,6 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	lpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
 	rpost = '.'; /* init to gap, if it corresponds to a residue, we'll reset it below */
       }
-      d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
     
       /* Calculate four of the six lines: rfline, csline, model, and aseq.

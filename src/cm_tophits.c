@@ -1770,7 +1770,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
   int is_reported;
   int is_included;
   int is_removed_duplicate;
-  int is_marked_duplicate;
+  /*int is_marked_duplicate;*/ /* not used, currently */
 
   /* variables for alignments for all hits */
   int64_t all_naln = 0;                        /* total number alignments */
@@ -1836,7 +1836,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
       is_reported          = (th->unsrt[h].flags & CM_HIT_IS_REPORTED) ?          TRUE : FALSE;
       is_included          = (th->unsrt[h].flags & CM_HIT_IS_INCLUDED) ?          TRUE : FALSE;
       is_removed_duplicate = (th->unsrt[h].flags & CM_HIT_IS_REMOVED_DUPLICATE) ? TRUE : FALSE;
-      is_marked_duplicate  = (th->unsrt[h].flags & CM_HIT_IS_MARKED_OVERLAP)  ? TRUE : FALSE;
+      /*is_marked_duplicate  = (th->unsrt[h].flags & CM_HIT_IS_MARKED_OVERLAP)  ? TRUE : FALSE;*/
       if(th->unsrt[h].ad != NULL) { 
 	all_naln++;
 	all_tot_matrix_Mb    += th->unsrt[h].ad->matrix_Mb;

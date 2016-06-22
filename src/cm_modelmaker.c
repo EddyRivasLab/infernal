@@ -1831,7 +1831,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   int ret_val;
   int i, yoffset;
   int to_detach;
-  int to_keep;
+  /*int to_keep;*/
   float diff;
   
   ret_val = FALSE;
@@ -1843,7 +1843,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
     {
       ret_val = TRUE;
       to_detach = insert1;
-      to_keep   = insert2;
+      /*to_keep   = insert2;*/
     }
   if(cm->sttype[insert2+1] == E_st)
     {
@@ -1851,7 +1851,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	cm_Fail("ERROR: in cm_check_before_detaching() insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
       ret_val = TRUE;
       to_detach = insert2;
-      to_keep   = insert1;
+      /*to_keep   = insert1;*/
     }
 
   /* check to make sure we have 0.0 counts in to_detach */

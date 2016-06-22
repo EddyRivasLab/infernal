@@ -100,16 +100,16 @@ CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr)
   int  apos;                    /* position in alignment columns   */
   int  tpos;			/* position in traceback           */
   int  first_match;             /* first match column */
-  int  last_match;              /* last match column */
+  /*int  last_match;*/              /* last match column, not used */
 
   ESL_ALLOC(tr, sizeof(CP9trace_t *) * msa->nseq);
   
   first_match = -1;
-  last_match  = -1;
+  /*last_match  = -1;*/
   for (apos = 0; apos < msa->alen; apos++)
     {
       if(matassign[apos+1] && first_match == -1) first_match = apos;
-      if(matassign[apos+1]) last_match = apos;
+      /*if(matassign[apos+1]) last_match = apos;*/
     }
 
   for (idx = 0; idx < msa->nseq; idx++)

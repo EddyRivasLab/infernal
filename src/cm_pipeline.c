@@ -2436,7 +2436,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   int64_t          *new_we = NULL;     /* used when copying/modifying we */
   float            *new_wb = NULL;     /* used when copying/modifying wb */
   int               nsurv_fwd;         /* number of windows that survive fwd filter */
-  int               new_nsurv_fwd;     /* used when merging fwd survivors */
   ESL_DSQ          *subdsq;            /* a ptr to the first position of a window */
   int               have_rest;         /* do we have the full <om> read in? */
   P7_HMM_WINDOWLIST wlist;             /* list of windows, structure taken by p7_MSVFilter_longtarget() */
@@ -2763,7 +2762,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       }
     }
     /* we could have overlapping windows, merge those that do overlap */
-    new_nsurv_fwd = 0;
     ESL_ALLOC(useme, sizeof(int) * nsurv_fwd);
     esl_vec_ISet(useme, nsurv_fwd, FALSE);
     i2 = 0;

@@ -441,7 +441,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      cmi;                   /* CM index, which model we're working on */
   char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
   int      exp_mode;              /* ctr over exp tail modes */
-  double   asec;                  /* actual    number of seconds for calibrating current CM */
   double   psec;                  /* predicted number of seconds for calibrating current CM */
   double   total_psec   = 0.;     /* predicted number of seconds for calibrating all CMs */
   double   total_asec   = 0.;     /* actual    number of seconds for calibrating all CMs */
@@ -628,7 +627,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
 	printf("]  %12s\n", time_buf);
 	fflush(stdout);
-	asec        = cfg->w->elapsed;
 	total_asec += cfg->w->elapsed;
 	
       } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
