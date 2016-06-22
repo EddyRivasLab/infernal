@@ -1056,165 +1056,6 @@ models), so the thresholds are set differently than for the
 Mb. The exact thresholds used for various $Z$ values can be found in
 Table~\ref{tbl:thresholds} in section~\ref{section:pipeline}.
 
-\subsection{Searching the Rfam CM database with a query sequence}
-
-The \prog{Rfam} database \url{http://rfam.xfam.org/} is a collection
-of RNA families, each represented by a CM and multiple sequence
-alignment used to build that CM. As of June 2016, the current release
-is 12.1, which includes 2474 families. The Rfam website allows
-web-based searches using \prog{cmscan} of the Rfam CM database against
-query sequences the user can upload. Alternatively, you can perform
-the same searches by running \prog{cmscan} locally, as shown in this
-example. By searching all of Rfam with your sequence dataset, you will
-be annotating your dataset for most known types of structural RNAs
-with a single command.
-
-To complete this step of the tutorial you'll need to download the Rfam
-12.1 CM file from here:
-\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/12.1/Rfam.cm.gz} 
-and gunzipping it, like this: 
-
-\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/12.1/Rfam.cm.gz} 
-\user{gunzip Rfam.cm.gz}
-
-Then, as in the previous example, you'll need to run \prog{cmpress} on
-this CM database:
-\user{cmpress Rfam.cm}
-
-The next step is to run \prog{cmscan}. In order to reproduce how Rfam
-searches are performed \citep{Nawrocki15} several command line
-options are required. Each of these options is explained below. The
-full command is: 
-
-\user{cmscan --rfam --cut_ga --nohmmonly --fmt 2 --tblout \
-  mrum-genome.tblout --clanin tutorial/Rfam.12.1.claninfo \
-  Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan}
-
-This command will take at least several minutes and possibly up to
-about 30 minutes depending on the number of cores and speed of your
-computer. 
-
-The command line options used in the above command are as follows:
-
-\begin{sreitems}{\emprog{--nohmmonly}
-\item[\otext{--rfam}] Specify that the filter pipeline run in fast
-  mode, with the same strict filters that are used for Rfam searches
-  and for other sequence databases larger than 20 Gb (see
-  section~\ref{section:pipeline}). 
-
-\item[\otext{--cut\_ga}] Specifies that the special Rfam \emph{GA}
-  (gathering) thresholds that are stored in the \prog{Rfam.cm} file to determine
-  which hits are reported. Each model has its own GA bit score
-  threshold, which were determined by Rfam curators as the bit score
-  at and above which all hits are believed to be homologous. These
-  determinations were made based on observed hit results against a
-  the large Rfamseq database used by Rfam \citep{Nawrocki15}.
-
-\item[\otext{--nohmmonly}] All models, even those with zero basepairs,
-  are run in CM mode. This ensures all GA cutoffs, which were
-  determined in CM mode for each model, are valid.
-
-\item[\otext{--fmt 2}] The tabular output file will be in format 2,
-  which includes annotation of overlapping hits. See
-  page~\pageref{tabular-format2} for a complete description of this
-  format. 
-
-\item[\otext{--tblout}] Specifies that a tabular output
-  file should be created, see section~\ref{section:tabular}.
-
-\item[\otext{--clanin}] Clan information should be read
-  from the file \prog{tutorial/Rfam.12.1.claninfo}. This file lists
-  which models belong to the same clan. Clans are groups of models
-  that are homologous and therefore it is expected that some hits to
-  these models will overlap. For example, the LSU\_rRNA\_archaea and
-  LSU\_rRNA\_bacteria models are both in the same clan.
-
-When the \prog{cmscan} command finishes running, the file
-\prog{mrum-genome.cmscan} will contain the standard output of the
-program which will be similar to what we saw in the earlier example of
-\prog{cmscan}. The file \prog{mrum-genome.tblout} has also been
-created, which is a tabular representation of all hits, one line per
-hit.  Take a look at this file. The first two lines are comment lines
-(prefixed with \prog{#} characters) with the labels of each of the 27
-columns of data in the file. Each subsequent line has 27 space
-delimited tokens. The specific meaning of these tokens is described in
-detail in section~\ref{section:tabular}.  Below I'm including the
-first 24 lines of the file, with columns 3-5, 7-9 and 13-16 removed
-(replaced with \prog{...}) so that the text will fit on this page:
-
-\begin{tinysreoutput}
-#idx target name            ... clan name ... seq from   seq to strand ... score   E-value inc olp anyidx afrct1 afrct2 winidx wfrct1 wfrct2 description of target
-#--- ---------------------- ... --------- ... -------- -------- ------ ... ----- --------- --- --- ------ ------ ------ ------ ------ ------ ---------------------
-1    LSU_rRNA_archaea       ... CL00112   ...  762872   765862      +  ... 2763.5         0  !   ^       -      -      -      -      -      - -
-2    LSU_rRNA_archaea       ... CL00112   ... 2041329  2038338      -  ... 2755.0         0  !   ^       -      -      -      -      -      - -
-3    LSU_rRNA_bacteria      ... CL00112   ...  762874   765862      +  ... 1872.9         0  !   =       1  1.000  0.999      "      "      " -
-4    LSU_rRNA_bacteria      ... CL00112   ... 2041327  2038338      -  ... 1865.5         0  !   =       2  1.000  0.999      "      "      " -
-5    LSU_rRNA_eukarya       ... CL00112   ...  763018   765851      +  ... 1581.3         0  !   =       1  1.000  0.948      "      "      " -
-6    LSU_rRNA_eukarya       ... CL00112   ... 2041183  2038349      -  ... 1572.1         0  !   =       2  1.000  0.948      "      "      " -
-7    SSU_rRNA_archaea       ... CL00111   ... 2043361  2041888      -  ... 1552.0         0  !   ^       -      -      -      -      -      - -
-8    SSU_rRNA_archaea       ... CL00111   ...  760878   762351      +  ... 1546.5         0  !   ^       -      -      -      -      -      - -
-9    SSU_rRNA_bacteria      ... CL00111   ... 2043366  2041886      -  ... 1161.9         0  !   =       7  0.995  1.000      "      "      " -
-10   SSU_rRNA_bacteria      ... CL00111   ...  760873   762353      +  ... 1156.4         0  !   =       8  0.995  1.000      "      "      " -
-11   SSU_rRNA_eukarya       ... CL00111   ... 2043361  2041891      -  ...  970.4  2.5e-289  !   =       7  1.000  0.998      "      "      " -
-12   SSU_rRNA_eukarya       ... CL00111   ...  760878   762348      +  ...  963.8  2.4e-287  !   =       8  1.000  0.998      "      "      " -
-13   SSU_rRNA_microsporidia ... CL00111   ... 2043361  2041891      -  ...  919.9  1.9e-277  !   =       7  1.000  0.998      "      "      " -
-14   SSU_rRNA_microsporidia ... CL00111   ...  760878   762348      +  ...  917.2  1.3e-276  !   =       8  1.000  0.998      "      "      " -
-15   RNaseP_arch            ... -         ... 2614544  2614262      -  ...  184.9   2.8e-50  !   *       -      -      -      -      -      - -
-16   Archaea_SRP            ... CL00003   ... 1064321  1064634      +  ...  197.6   1.7e-45  !   *       -      -      -      -      -      - -
-17   FMN                    ... -         ...  193975   193837      -  ...  115.2   1.7e-24  !   *       -      -      -      -      -      - -
-18   tRNA                   ... CL00001   ...  735136   735208      +  ...   72.1   1.2e-12  !   *       -      -      -      -      -      - -
-19   tRNA                   ... CL00001   ... 2350593  2350520      -  ...   71.0   2.5e-12  !   *       -      -      -      -      -      - -
-20   tRNA                   ... CL00001   ... 2680310  2680384      +  ...   70.9   2.6e-12  !   *       -      -      -      -      -      - -
-21   tRNA                   ... CL00001   ... 2351254  2351181      -  ...   69.7   5.5e-12  !   *       -      -      -      -      -      - -
-22   tRNA                   ... CL00001   ...  361676   361604      -  ...   69.5   6.2e-12  !   *       -      -      -      -      -      - -
-\end{tinysreoutput}
-
-This tabular format includes the target model name, sequence name (in
-column 3, which is omitted above to save space), clan name, sequence
-coordinates, bit score, E-value and more. Because the \prog{--fmt 2}
-option was used, this file includes information on which hit overlap
-with other hits, starting at the column labelled ``olp'' and ending
-with ``wfrct2''. Hits with the ``*'' character in the ``olp'' column
-do not overlap with any other hits. Those with ``^'' do overlap with
-at least one other hit, but none of those overlapping hits have a
-better score (that occurs higher in the list). Those with ``='' also
-overlap with at least one other hit that does have a better score, the
-index of which is given in the ``anyidx'' column. For more detailed
-explanation of these columns, see page~\pageref{tabular-format2}.
-
-The top two hits are both to the \prog{LSU\_rRNA\_archaea}
-model. These are the two copies of LSU rRNA in the
-\emph{Methanobrevibacter ruminantium} genome. Hits number 3 and 4
-are to the \prog{LSU\_rRNA\_bacteria} model and overlap with hits 1
-and 2 nearly completely (hit 1 is from sequence positions 76282 to 765862 and
-hit 3 is from sequence positions 76284 to 765862). This overlap is not
-surprising because the bacterial and archaeal LSU rRNA models are very
-similar, and so are assigning high scores to the same
-subsequences. Further, hit 5 is to \prog{LSU\_rRNA\_eukarya} and also
-overlaps hits 1 and 3. Because these three LSU models are all expected
-to produce overlapping hits due to their homology, Rfam has grouped
-them into the same \emph{clan}, note the ``CL00112'' value in the ``clan
-name'' column for all three hits. This clan information was provided
-in the \prog{rfam.12.1claninfo} input file we provided \prog{cmscan}
-with the \prog{--clanin} option. 
-
-The ``olp'' column indicates that hit 1 is the highest scoring of the
-three because it contains the ``^'' character. Hits 3 and 5 both have
-``='' in the ``olp'' column indicating that there is another hit to
-another model that overlaps these hits that has a better score.
-
-If you were using these results to produce annotations for the 
-\emph{Methanobrevibacter ruminantium} genome, you may want to ignore 
-any hits that have higher scoring overlaps. To do this you can just
-remove any hits with ``='' in the ``olp'' column. Alternatively, you
-can have these hits not printed to the tabular output file by
-additionally providing the \prog{--oskip} option to \prog{cmscan}.
-You can also modify the overlap annotation behavior with
-\prog{--oclan} option which restricts the annotation of overlaps to
-hits for models within the same clan. Hits that overlap but are to
-different models that are not in the same clan will not be marked as
-overlaps, they will marked as ``*'' in the ``olp'' field.
-
 \subsubsection{Truncated hit and local end alignment example}
 Next, take a look at the \prog{cmscan} output for the second query
 sequence \otext{AAFY01022046.1}. The bottom strand of this sequence
@@ -1303,6 +1144,169 @@ the posterior probability of the four sequence residues in the
 these four residues is between 65 and 75\%. If no sequence residues
 were in this EL, the \otext{PP} annotation would be a gap (\otext{.})
 character.
+
+\subsection{Searching the Rfam CM database with a query sequence}
+
+The Rfam database \url{http://rfam.xfam.org/} is a collection
+of RNA families, each represented by a CM and multiple sequence
+alignment used to build that CM. As of June 2016, the current release
+is 12.1, which includes 2474 families. The Rfam website allows
+web-based searches using \prog{cmscan} of the Rfam CM database against
+query sequences that the user can upload. Alternatively, you can perform
+the same searches by running \prog{cmscan} locally, as shown in this
+example. By searching all of Rfam with your sequence dataset, you will
+be annotating your dataset for most known types of structural RNAs
+with a single command.
+
+To complete this step of the tutorial you'll need to download the Rfam
+12.1 CM file from here:
+\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/12.1/Rfam.cm.gz} 
+and gunzipping it, like this: 
+
+\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/12.1/Rfam.cm.gz} 
+
+\user{gunzip Rfam.cm.gz}
+
+Then, as in the previous example, you'll need to run \prog{cmpress} on
+this CM database:
+
+\user{cmpress Rfam.cm}
+
+The next step is to run \prog{cmscan}. In order to reproduce how Rfam
+searches are performed \citep{Nawrocki15} several command line
+options are required. Each of these options is explained below. The
+full command is (split up into three lines so it fits on the page): 
+
+\user{cmscan --rfam --cut\_ga --nohmmonly --fmt 2 --tblout \ }
+\user{mrum-genome.tblout --clanin tutorial/Rfam.12.1.claninfo \ }
+\user{Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan}
+
+This command will take at least several minutes and possibly up to
+about 30 minutes depending on the number of cores and speed of your
+computer. 
+
+The command line options used in the above command are as follows:
+
+\begin{sreitems}{\emprog{--nohmmonly}}
+\item[\otext{--rfam}] Specify that the filter pipeline run in fast
+  mode, with the same strict filters that are used for Rfam searches
+  and for other sequence databases larger than 20 Gb (see
+  section~\ref{section:pipeline}). 
+%
+\item[\otext{--cut\_ga}] Specifies that the special Rfam \emph{GA}
+  (gathering) thresholds that are stored in the \prog{Rfam.cm} file to determine
+  which hits are reported. Each model has its own GA bit score
+  threshold, which were determined by Rfam curators as the bit score
+  at and above which all hits are believed to be homologous. These
+  determinations were made based on observed hit results against a
+  the large Rfamseq database used by Rfam \citep{Nawrocki15}.
+%
+\item[\otext{--nohmmonly}] All models, even those with zero basepairs,
+  are run in CM mode. This ensures all GA cutoffs, which were
+  determined in CM mode for each model, are valid.
+%
+\item[\otext{--fmt 2}] The tabular output file will be in format 2,
+  which includes annotation of overlapping hits. See
+  page~\pageref{tabular-format2} for a complete description of this
+  format. 
+%
+\item[\otext{--tblout}] Specifies that a tabular output
+  file should be created, see section~\ref{section:tabular}.
+%
+\item[\otext{--clanin}] Clan information should be read
+  from the file \prog{tutorial/Rfam.12.1.claninfo}. This file lists
+  which models belong to the same clan. Clans are groups of models
+  that are homologous and therefore it is expected that some hits to
+  these models will overlap. For example, the LSU\_rRNA\_archaea and
+  LSU\_rRNA\_bacteria models are both in the same clan.
+%
+\end{sreitems}
+
+When the \prog{cmscan} command finishes running, the file
+\prog{mrum-genome.cmscan} will contain the standard output of the
+program which will be similar to what we saw in the earlier example of
+\prog{cmscan}. The file \prog{mrum-genome.tblout} has also been
+created, which is a tabular representation of all hits, one line per
+hit.  Take a look at this file. The first two lines are comment lines
+(prefixed with \prog{\#} characters) with the labels of each of the 27
+columns of data in the file. Each subsequent line has 27 space
+delimited tokens. The specific meaning of these tokens is described in
+detail in section~\ref{section:tabular}.  Below I'm including the
+first 24 lines of the file, with columns 3-5, 7-9 and 13-16 removed
+(replaced with \prog{...}) so that the text will fit on this page:
+
+\begin{tinysreoutput}
+#idx target name            ... clan name ... seq from   seq to strand ... score   E-value inc olp anyidx afrct1 afrct2 winidx wfrct1 wfrct2 description of target
+#--- ---------------------- ... --------- ... -------- -------- ------ ... ----- --------- --- --- ------ ------ ------ ------ ------ ------ ---------------------
+1    LSU_rRNA_archaea       ... CL00112   ...  762872   765862      +  ... 2763.5         0  !   ^       -      -      -      -      -      - -
+2    LSU_rRNA_archaea       ... CL00112   ... 2041329  2038338      -  ... 2755.0         0  !   ^       -      -      -      -      -      - -
+3    LSU_rRNA_bacteria      ... CL00112   ...  762874   765862      +  ... 1872.9         0  !   =       1  1.000  0.999      "      "      " -
+4    LSU_rRNA_bacteria      ... CL00112   ... 2041327  2038338      -  ... 1865.5         0  !   =       2  1.000  0.999      "      "      " -
+5    LSU_rRNA_eukarya       ... CL00112   ...  763018   765851      +  ... 1581.3         0  !   =       1  1.000  0.948      "      "      " -
+6    LSU_rRNA_eukarya       ... CL00112   ... 2041183  2038349      -  ... 1572.1         0  !   =       2  1.000  0.948      "      "      " -
+7    SSU_rRNA_archaea       ... CL00111   ... 2043361  2041888      -  ... 1552.0         0  !   ^       -      -      -      -      -      - -
+8    SSU_rRNA_archaea       ... CL00111   ...  760878   762351      +  ... 1546.5         0  !   ^       -      -      -      -      -      - -
+9    SSU_rRNA_bacteria      ... CL00111   ... 2043366  2041886      -  ... 1161.9         0  !   =       7  0.995  1.000      "      "      " -
+10   SSU_rRNA_bacteria      ... CL00111   ...  760873   762353      +  ... 1156.4         0  !   =       8  0.995  1.000      "      "      " -
+11   SSU_rRNA_eukarya       ... CL00111   ... 2043361  2041891      -  ...  970.4  2.5e-289  !   =       7  1.000  0.998      "      "      " -
+12   SSU_rRNA_eukarya       ... CL00111   ...  760878   762348      +  ...  963.8  2.4e-287  !   =       8  1.000  0.998      "      "      " -
+13   SSU_rRNA_microsporidia ... CL00111   ... 2043361  2041891      -  ...  919.9  1.9e-277  !   =       7  1.000  0.998      "      "      " -
+14   SSU_rRNA_microsporidia ... CL00111   ...  760878   762348      +  ...  917.2  1.3e-276  !   =       8  1.000  0.998      "      "      " -
+15   RNaseP_arch            ... -         ... 2614544  2614262      -  ...  184.9   2.8e-50  !   *       -      -      -      -      -      - -
+16   Archaea_SRP            ... CL00003   ... 1064321  1064634      +  ...  197.6   1.7e-45  !   *       -      -      -      -      -      - -
+17   FMN                    ... -         ...  193975   193837      -  ...  115.2   1.7e-24  !   *       -      -      -      -      -      - -
+18   tRNA                   ... CL00001   ...  735136   735208      +  ...   72.1   1.2e-12  !   *       -      -      -      -      -      - -
+19   tRNA                   ... CL00001   ... 2350593  2350520      -  ...   71.0   2.5e-12  !   *       -      -      -      -      -      - -
+20   tRNA                   ... CL00001   ... 2680310  2680384      +  ...   70.9   2.6e-12  !   *       -      -      -      -      -      - -
+21   tRNA                   ... CL00001   ... 2351254  2351181      -  ...   69.7   5.5e-12  !   *       -      -      -      -      -      - -
+22   tRNA                   ... CL00001   ...  361676   361604      -  ...   69.5   6.2e-12  !   *       -      -      -      -      -      - -
+\end{tinysreoutput}
+
+This tabular format includes the target model name, sequence name (in
+column 3, which is omitted above to save space), clan name, sequence
+coordinates, bit score, E-value and more. Because the \prog{--fmt 2}
+option was used, this file includes information on which hit overlap
+with other hits, starting at the column labelled ``olp'' and ending
+with ``wfrct2''. Hits with the ``*'' character in the ``olp'' column
+do not overlap with any other hits. Those with ``\^'' do overlap with
+at least one other hit, but none of those overlapping hits have a
+better score (that occurs higher in the list). Those with ``='' also
+overlap with at least one other hit that does have a better score, the
+index of which is given in the ``anyidx'' column. For more detailed
+explanation of these columns, see page~\pageref{tabular-format2}.
+
+The top two hits are both to the \prog{LSU\_rRNA\_archaea}
+model. These are the two copies of LSU rRNA in the
+\emph{Methanobrevibacter ruminantium} genome. Hits number 3 and 4
+are to the \prog{LSU\_rRNA\_bacteria} model and overlap with hits 1
+and 2 nearly completely (hit 1 is from sequence positions 76282 to 765862 and
+hit 3 is from sequence positions 76284 to 765862). This overlap is not
+surprising because the bacterial and archaeal LSU rRNA models are very
+similar, and so are assigning high scores to the same
+subsequences. Further, hit 5 is to \prog{LSU\_rRNA\_eukarya} and also
+overlaps hits 1 and 3. Because these three LSU models are all expected
+to produce overlapping hits due to their homology, Rfam has grouped
+them into the same \emph{clan}, note the ``CL00112'' value in the ``clan
+name'' column for all three hits. This clan information was provided
+in the \prog{rfam.12.1claninfo} input file we provided \prog{cmscan}
+with the \prog{--clanin} option. 
+
+The ``olp'' column indicates that hit 1 is the highest scoring of the
+three because it contains the ``\^'' character. Hits 3 and 5 both have
+``='' in the ``olp'' column indicating that there is another hit to
+another model that overlaps these hits that has a better score.
+
+If you were using these results to produce annotations for the 
+\emph{Methanobrevibacter ruminantium} genome, you may want to ignore 
+any hits that have higher scoring overlaps. To do this you can just
+remove any hits with ``='' in the ``olp'' column. Alternatively, you
+can have these hits not printed to the tabular output file by
+additionally providing the \prog{--oskip} option to \prog{cmscan}.
+You can also modify the overlap annotation behavior with
+\prog{--oclan} option which restricts the annotation of overlaps to
+hits for models within the same clan. Hits that overlap but are to
+different models that are not in the same clan will not be marked as
+overlaps, they will marked as ``*'' in the ``olp'' field.
 
 \subsection{Creating multiple alignments with cmalign}
 The file \otext{tutorial/mrum-tRNAs10.fa} is a FASTA file containing

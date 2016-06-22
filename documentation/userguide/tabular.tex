@@ -2,20 +2,20 @@
 \label{section:tabular}
 \setcounter{footnote}{0}
 
-\subsection{Target hits tables (two formats)}
+\subsection{Target hits tables}
 
 The \ccode{--tblout} output option in \prog{cmsearch} and
 \prog{cmscan} produces \emph{target hits tables}. There are two
 different formats of target hits table, which are both described
 below. By default, both \prog{cmsearch} and \prog{cmscan} produce the
-\emph{format 1} target hits table. Format 1 is the format that was
-used by Infernal versions 1.1rc1 through 1.1.1. As of version 1.2, with
-\prog{cmscan}, the \ccode{--fmt 2} can additionally be used with
-\ccode{--tblout} to produce the alternative \emph{format 2} target hits
-table. Both formats 1 and 2 target hits table consist of one
-line for each different query/target comparison that met the reporting
-thresholds, ranked by decreasing statistical significance (increasing
-E-value).
+target hits table in \emph{format 1}. Format 1 is the only format that
+was used by Infernal versions 1.1rc1 through 1.1.1. As of version 1.2,
+with \prog{cmscan}, the \ccode{--fmt 2} option can be used in
+combination with \ccode{--tblout} to produce a target hits table in
+the alternative \emph{format 2}.  Both formats 1 and 2 target hits
+table consist of one line for each different query/target comparison
+that met the reporting thresholds, ranked by decreasing statistical
+significance (increasing E-value).
 
 \subsubsection{Target hits table format 1}
 
@@ -145,11 +145,11 @@ format 1, as follows:
   second has index '2', the Nth hit has index 'N'.
 
 \item[\emprog{(Before field 5 of format 1) clan name:}] 
-  The name of the clan the model for this hit belongs to, or '-' if
+  The name of the clan the model for this hit belongs to, or \ccode{-} if
   the model does not belong to a clan. A clan is a group of related
   models. For example, Rfam groups three LSU rRNA models
   (LSU\_rRNA\_archaea, LSU\_rRNA\_bacteria, and LSU\_rRNA\_eukarya)
-  into the same clan. The value in this field will always be '-'
+  into the same clan. The value in this field will always be \ccode{-}
   unless the \ccode{--clanin <f>} option was used with
   \ccode{cmscan} to specify clan/model relationships in the input file
   \ccode{<f>}. See section~\ref{section:formats} for a description of
@@ -162,88 +162,85 @@ The following seven fields all occur in format 2 between fields 17
 
 \begin{description}
 
-\item[\emprog{olp:}]
-
-A single character indicating the overlap status of this hit. Here,
-two hits are deemed to \emph{overlap} if they share at least one
-nucleotide on the same strand of the same sequence. There are 
-three possible values in this field: \ccode{*}, \ccode{^} and \ccode{=}. 
-\ccode{*} indicates this hit does not
-overlap with any other reported hits. \ccode{^} indicates that this
-hit does overlap with at least one other hit, but none of the
-hits that overlap with it have a higher score (occur above it in the
-hit list). \ccode{=} indicates that this hit does overlap with at
-least one other hit that has a higher score (occurs above it in the
-hit list). If the \ccode{--oclan} option was enabled, the definition
-of \emph{overlap} for the designations of the three characters
-\ccode{*}, \ccode{^} and \ccode{=} described above changes to: two
-hits are deemed to \emph{overlap} if they share at least one
-nucleotide on the same strand of the same sequence and they are to
-models that are in the same clan. Infernal will never report two
-overlapping hits to the same model.
-
-\item[\emprog{anyidx:}]
-For hits that have \ccode{=} in the \ccode{olp} field, this is the
-index of the best scoring hit that overlaps with this hit.
-For hits with either \ccode{*} or \ccode{^} in the \ccode{olp} field,
-this field will always be \ccode{-}.
+\item[\emprog{olp:}] A single character indicating the overlap status
+  of this hit. Here, two hits are deemed to \emph{overlap} if they
+  share at least one nucleotide on the same strand of the same
+  sequence. There are three possible values in this field: \ccode{*},
+  \ccode{\^} and \ccode{=}.  \ccode{*} indicates this hit does not
+  overlap with any other reported hits. \ccode{\^} indicates that this
+  hit does overlap with at least one other hit, but none of the hits
+  that overlap with it have a higher score (occur above it in the hit
+  list). \ccode{=} indicates that this hit does overlap with at least
+  one other hit that has a higher score (occurs above it in the hit
+  list). If the \ccode{--oclan} option was enabled, the definition of
+  \emph{overlap} for the designations of the three characters
+  \ccode{*}, \ccode{\^} and \ccode{=} described above changes to: two
+  hits are deemed to \emph{overlap} if they share at least one
+  nucleotide on the same strand of the same sequence and they are to
+  models that are in the same clan. That is, only overlaps between
+  hits to models that are in the same clan are counted, all other
+  overlaps are ignored and not annotated.  Infernal will never report
+  two overlapping hits to the same model.
 
 \item[\emprog{anyidx:}]
-For hits that have \ccode{=} in the \ccode{olp} field, this is the
+For hits that have \ccode{=} in the ``olp'' field, this is the
 index of the best scoring hit that overlaps with this hit.
-For hits with either \ccode{*} or \ccode{^} in the \ccode{olp} field,
+For hits with either \ccode{*} or \ccode{\^} in the "olp" field,
 this field will always be \ccode{-}.
 
 \item[\emprog{anyfrct1:}]
-For hits that have \ccode{=} in the \ccode{olp} field, this is the
+For hits that have \ccode{=} in the "olp" field, this is the
 fraction of the length of this hit that overlaps with the best scoring
-overlapping hit (the hit index given in the \ccode{anyidx} field), to
+overlapping hit (the hit index given in the "anyidx" field), to
 4 significant digits. 
-For hits with either \ccode{*} or \ccode{^} in the \ccode{olp} field,
-this field will always be \ccode{-}.
+For hits with \ccode{-} in the "anyidx"
+field, this field will always be \ccode{-}.  
 
 \item[\emprog{anyfrct2:}]
-For hits that have \ccode{=} in the \ccode{olp} field, this is the
+For hits that have \ccode{=} in the "olp" field, this is the
 fraction of the length of the best scoring overlapping hit (the hit
-index given in the \ccode{anyidx} field) that overlaps with this hit,
+index given in the "anyidx" field) that overlaps with this hit,
 to 4 significant digits. 
-For hits with either \ccode{*} or \ccode{^} in the \ccode{olp} field,
-this field will always be \ccode{-}.
+For hits with \ccode{-} in the "anyidx"
+field, this field will always be \ccode{-}.  
 
 \item[\emprog{winidx:}] 
-For hits that have \ccode{=} in the \ccode{olp} field, this is either
-\ccode{``} or the index of the best scoring hit that overlaps with this
-hit that is marked as \ccode{^} in the \ccode{olp} field. If the value
-is \ccode{``} it means that the best scoring hit that overlaps with
-this hit that is marked as \ccode{^} in the \ccode{olp} field is
-already listed in the \ccode{anyidx} field, which is usually the case.
-For hits with either \ccode{*} or \ccode{^} in the \ccode{olp} field,
+For hits that have \ccode{=} in the "olp" field, this is either
+\ccode{"} or the index of the best scoring hit that overlaps with this
+hit that is marked as \ccode{\^} in the "olp" field. If the value
+is \ccode{"} it means that the best scoring hit that overlaps with
+this hit that is marked as \ccode{\^} in the "olp" field is
+already listed in the "anyidx" field, which is usually the case.
+For hits with either \ccode{*} or \ccode{\^} in the "olp" field,
 this field will always be \ccode{-}.
 
 \item[\emprog{winfrct1:}]
-For hits that have neither \ccode{-} nor \ccode{``} in the
-\ccode{winidx} field, this is the fraction of the length of this hit
+For hits that have neither \ccode{-} nor \ccode{"} in the
+"winidx" field, this is the fraction of the length of this hit
 that overlaps with the best scoring overlapping hit marked with
-\ccode{^} in the \ccode{olp} field (the hit index given in the
-\ccode{winidx} field), to 4 significant digits.  For hits with either
-\ccode{*} or \ccode{^} in the \ccode{olp} field, this field will
-always be \ccode{-}.  For hits with \ccode{-} in the \ccode{winidx}
-field, this field will always be \ccode{-}.  For hits with \ccode{``}
-in the \ccode{winidx} field, this field will always be \ccode{``}.
+\ccode{\^} in the "olp" field (the hit index given in the
+"winidx" field), to 4 significant digits.  For hits with either
+\ccode{*} or \ccode{\^} in the "olp" field, this field will
+always be \ccode{-}.  For hits with \ccode{-} in the "winidx"
+field, this field will always be \ccode{-}.  
+For hits with \ccode{"} in the "winidx"
+field, this field will always be \ccode{"}.  
 
 \item[\emprog{winfrct2:}]
-For hits that have neither \ccode{-} nor \ccode{``} in the
-\ccode{winidx} field, this is the
+For hits that have neither \ccode{-} nor \ccode{"} in the
+"winidx" field, this is the
 fraction of the length of the best scoring overlapping hit marked with
-\ccode{^} in the \ccode{olp} field (the hit
-index given in the \ccode{anyidx} field) that overlaps with this hit,
+\ccode{\^} in the "olp" field (the hit
+index given in the "winidx" field) that overlaps with this hit,
 to 4 significant digits. 
   For hits with either
-\ccode{*} or \ccode{^} in the \ccode{olp} field, this field will
-always be \ccode{-}.  For hits with \ccode{-} in the \ccode{winidx}
-field, this field will always be \ccode{-}.  For hits with \ccode{``}
-in the \ccode{winidx} field, this field will always be \ccode{``}.
-\end{descriptions}
+\ccode{*} or \ccode{\^} in the "olp" field, this field will
+always be \ccode{-}.  For hits with \ccode{-} in the "winidx"
+field, this field will always be \ccode{-}.  
+For hits with \ccode{"} in the "winidx"
+field, this field will always be \ccode{"}.  
+
+\end{description}
 
 The tables are columnated neatly for human readability, but do not
 write parsers that rely on this columnation; rely on space-delimited
