@@ -1527,11 +1527,11 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
           if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(np7envA[p]))) != eslOK) return status;
         } 
       } /* end of if(pli->do_edef) */         
-      if(ws    != NULL) { free(ws);    ws   = NULL; }
-      if(we    != NULL) { free(we);    we   = NULL; }
-      if(wb    != NULL) { free(wb);    wb   = NULL; }
-      nwin = 0;
-    }
+    } /* end of 'else' entered if p != PLI_PASS_HMM_ONLY_ANY */
+    if(ws    != NULL) { free(ws);    ws   = NULL; }
+    if(we    != NULL) { free(we);    we   = NULL; }
+    if(wb    != NULL) { free(wb);    wb   = NULL; }
+    nwin = 0;
   } /* end of 'for(p = PLI_PASS_STD_ANY; p <= PLI_NPASSES; p++)', first loop over pipeline passes */
   
   if(pli->do_one_cmpass) { 

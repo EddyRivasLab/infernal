@@ -2630,16 +2630,6 @@ read_clan_info_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **r
 
   if(nclan == 0) ESL_FAIL(status, errbuf, "Error reading %s, no clans present in file\n", filename);
 
-  /* debug print */
-  for(i = 0; i < nclan; i++) { 
-    printf("clan %d %s\n", i, esl_keyhash_Get(clan_name_kh, i));
-  }
-  printf("\n\n");
-  for(i = 0; i < nfam; i++) { 
-    printf("fam %d %s clan: %d\n", i, esl_keyhash_Get(clan_fam_kh, i), clan_mapA[i]);
-  }
-  printf("\n\n");
-
   *ret_clan_name_kh = clan_name_kh;
   *ret_clan_fam_kh  = clan_fam_kh;
   *ret_clan_mapA    = clan_mapA;
