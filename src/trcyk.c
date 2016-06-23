@@ -27,7 +27,6 @@ main(int argc, char **argv)
    Parsetree_t   *tr;
    Fancyali_t    *fali;
    Fancyali_t    *rev_fali;
-   CMConsensus_t *cons;
 
    int do_local;
 
@@ -48,7 +47,6 @@ main(int argc, char **argv)
    tr = NULL;
    fali = NULL;
    rev_fali = NULL;
-   cons = NULL;
    format = eslSQFILE_UNKNOWN;
    do_local = TRUE;
 

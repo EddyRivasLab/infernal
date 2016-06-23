@@ -388,7 +388,7 @@ SSE_CYKDemands(CM_t *cm, int L, int be_quiet)
   float bifcalcs;	/* # of inner loops executed for bifurcation calculations */
   float dpcalcs;	/* # of inner loops executed for non-bif calculations */
   int   j;
-  float avg_Mb_per_banded_deck;    /* average megabytes per deck in mem efficient big mode */
+  /*float avg_Mb_per_banded_deck;*/    /* average megabytes per deck in mem efficient big mode */
   const int vecwidth = 4;
 
   Mb_per_deck = sse_size_vjd_deck(L, 1, L, vecwidth);
@@ -404,7 +404,7 @@ SSE_CYKDemands(CM_t *cm, int L, int be_quiet)
   dpcalcs = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - bif_decks - nends +1);
   bigmemory   = (float) (cm->M - nends +1) * Mb_per_deck;
   dpcells     = (float) (L+2)*(float)(L+1)*0.5*(float) (cm->M - nends +1);
-  avg_Mb_per_banded_deck = 0.; /* irrelevant */
+  /*avg_Mb_per_banded_deck = 0.; */ /* irrelevant */
 
   if(!be_quiet)
     {
@@ -3915,7 +3915,7 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
   int       nends;       /* counter that tracks when we can release end deck to the pool */
   int      *touch;       /* keeps track of how many higher decks still need this deck */
   int       v,y,z;	/* indices for states  */
-  int       j,d,i,k;	/* indices in sequence dimensions */
+  int       j,d,i,k;    /* indices in sequence dimensions */
   int16_t   sc;		/* a temporary variable holding a score */
   int       yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int       W;		/* subsequence length */
@@ -4950,11 +4950,11 @@ sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0, int x)
 {
   float Mb;
   int   maxdecks;
-  int   nends;
-  int   nbif;
+  /*int   nends;*/
+  /*int   nbif;*/
 
-  nends = CMSegmentCountStatetype(cm, r, z, E_st);
-  nbif  = CMSegmentCountStatetype(cm, r, z, B_st);
+  /*nends = CMSegmentCountStatetype(cm, r, z, E_st);*/
+  /*nbif  = CMSegmentCountStatetype(cm, r, z, B_st);*/
   maxdecks = cyk_deck_count(cm, r, z);
 
   Mb  = (float) (sizeof(sse_deck_t *) * cm->M) / 1000000.;  /* the score matrix */

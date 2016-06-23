@@ -2,18 +2,29 @@
 \label{section:tabular}
 \setcounter{footnote}{0}
 
-\subsection{The target hits table}
+\subsection{Target hits tables}
 
-The \ccode{--tblout} output option in \prog{cmscan} and
-  \prog{cmsearch} produces the \emph{target hits table}.  The target
-  hits table consists of one line for each different query/target
-  comparison that met the reporting thresholds, ranked by decreasing
-  statistical significance (increasing E-value).  Each line consists
-  of \textbf{18 space-delimited fields} followed by a free text target
-  sequence description, as follows:\footnote{The \ccode{tblout} format
-  is deliberately space-delimited (rather than tab-delimited) and
-  justified into aligned columns, so these files are suitable both for
-  automated parsing and for human examination. Tab-delimited data
+The \ccode{--tblout} output option in \prog{cmsearch} and
+\prog{cmscan} produces \emph{target hits tables}. There are two
+different formats of target hits table, which are both described
+below. By default, both \prog{cmsearch} and \prog{cmscan} produce the
+target hits table in \emph{format 1}. Format 1 is the only format that
+was used by Infernal versions 1.1rc1 through 1.1.1. As of version 1.2,
+with \prog{cmscan}, the \ccode{--fmt 2} option can be used in
+combination with \ccode{--tblout} to produce a target hits table in
+the alternative \emph{format 2}.  Both formats 1 and 2 target hits
+table consist of one line for each different query/target comparison
+that met the reporting thresholds, ranked by decreasing statistical
+significance (increasing E-value).
+
+\subsubsection{Target hits table format 1}
+
+In the format 1 table, each line
+consists of \textbf{18 space-delimited fields} followed by a free text
+target sequence description, as follows:\footnote{The \ccode{tblout}
+  format is deliberately space-delimited (rather than tab-delimited)
+  and justified into aligned columns, so these files are suitable both
+  for automated parsing and for human examination. Tab-delimited data
   files are difficult for humans to examine and spot check. For this
   reason, we think tab-delimited files are a minor evil in the
   world. Although we occasionally receive shrieks of outrage about
@@ -120,7 +131,118 @@ The \ccode{--tblout} output option in \prog{cmscan} and
   The remainder of the line is the target's description line, as free text.
 \end{description}
 
-This table is columnated neatly for human readability, but do not
+\subsubsection{Target hits table format 2}
+\label{tabular-format2}
+
+Format 2 includes all 18 of the fields from format 1 in the same order, plus 9
+additional fields that are interspersed between some of the 18 from
+format 1, as follows:
+
+\begin{description}
+
+\item[\emprog{(Before field 1 of format 1) idx:}] 
+  The index of the hit in the list. The first hit has index '1', the
+  second has index '2', the Nth hit has index 'N'.
+
+\item[\emprog{(Before field 5 of format 1) clan name:}] 
+  The name of the clan the model for this hit belongs to, or \ccode{-} if
+  the model does not belong to a clan. A clan is a group of related
+  models. For example, Rfam groups three LSU rRNA models
+  (LSU\_rRNA\_archaea, LSU\_rRNA\_bacteria, and LSU\_rRNA\_eukarya)
+  into the same clan. The value in this field will always be \ccode{-}
+  unless the \ccode{--clanin <f>} option was used with
+  \ccode{cmscan} to specify clan/model relationships in the input file
+  \ccode{<f>}. See section~\ref{section:formats} for a description of
+  the format of the input file used with \ccode{--clanin}.
+
+\end{description}
+
+The following seven fields all occur in format 2 between fields 17
+('inc:') and 18 ('description of target') from format 1. 
+
+\begin{description}
+
+\item[\emprog{olp:}] A single character indicating the overlap status
+  of this hit. Here, two hits are deemed to \emph{overlap} if they
+  share at least one nucleotide on the same strand of the same
+  sequence. There are three possible values in this field: \ccode{*},
+  \ccode{\^} and \ccode{=}.  \ccode{*} indicates this hit does not
+  overlap with any other reported hits. \ccode{\^} indicates that this
+  hit does overlap with at least one other hit, but none of the hits
+  that overlap with it have a higher score (occur above it in the hit
+  list). \ccode{=} indicates that this hit does overlap with at least
+  one other hit that has a higher score (occurs above it in the hit
+  list). If the \ccode{--oclan} option was enabled, the definition of
+  \emph{overlap} for the designations of the three characters
+  \ccode{*}, \ccode{\^} and \ccode{=} described above changes to: two
+  hits are deemed to \emph{overlap} if they share at least one
+  nucleotide on the same strand of the same sequence and they are to
+  models that are in the same clan. That is, only overlaps between
+  hits to models that are in the same clan are counted, all other
+  overlaps are ignored and not annotated.  Infernal will never report
+  two overlapping hits to the same model.
+
+\item[\emprog{anyidx:}]
+For hits that have \ccode{=} in the ``olp'' field, this is the
+index of the best scoring hit that overlaps with this hit.
+For hits with either \ccode{*} or \ccode{\^} in the "olp" field,
+this field will always be \ccode{-}.
+
+\item[\emprog{anyfrct1:}]
+For hits that have \ccode{=} in the "olp" field, this is the
+fraction of the length of this hit that overlaps with the best scoring
+overlapping hit (the hit index given in the "anyidx" field), to
+4 significant digits. 
+For hits with \ccode{-} in the "anyidx"
+field, this field will always be \ccode{-}.  
+
+\item[\emprog{anyfrct2:}]
+For hits that have \ccode{=} in the "olp" field, this is the
+fraction of the length of the best scoring overlapping hit (the hit
+index given in the "anyidx" field) that overlaps with this hit,
+to 4 significant digits. 
+For hits with \ccode{-} in the "anyidx"
+field, this field will always be \ccode{-}.  
+
+\item[\emprog{winidx:}] 
+For hits that have \ccode{=} in the "olp" field, this is either
+\ccode{"} or the index of the best scoring hit that overlaps with this
+hit that is marked as \ccode{\^} in the "olp" field. If the value
+is \ccode{"} it means that the best scoring hit that overlaps with
+this hit that is marked as \ccode{\^} in the "olp" field is
+already listed in the "anyidx" field, which is usually the case.
+For hits with either \ccode{*} or \ccode{\^} in the "olp" field,
+this field will always be \ccode{-}.
+
+\item[\emprog{winfrct1:}]
+For hits that have neither \ccode{-} nor \ccode{"} in the
+"winidx" field, this is the fraction of the length of this hit
+that overlaps with the best scoring overlapping hit marked with
+\ccode{\^} in the "olp" field (the hit index given in the
+"winidx" field), to 4 significant digits.  For hits with either
+\ccode{*} or \ccode{\^} in the "olp" field, this field will
+always be \ccode{-}.  For hits with \ccode{-} in the "winidx"
+field, this field will always be \ccode{-}.  
+For hits with \ccode{"} in the "winidx"
+field, this field will always be \ccode{"}.  
+
+\item[\emprog{winfrct2:}]
+For hits that have neither \ccode{-} nor \ccode{"} in the
+"winidx" field, this is the
+fraction of the length of the best scoring overlapping hit marked with
+\ccode{\^} in the "olp" field (the hit
+index given in the "winidx" field) that overlaps with this hit,
+to 4 significant digits. 
+  For hits with either
+\ccode{*} or \ccode{\^} in the "olp" field, this field will
+always be \ccode{-}.  For hits with \ccode{-} in the "winidx"
+field, this field will always be \ccode{-}.  
+For hits with \ccode{"} in the "winidx"
+field, this field will always be \ccode{"}.  
+
+\end{description}
+
+The tables are columnated neatly for human readability, but do not
 write parsers that rely on this columnation; rely on space-delimited
 fields. The pretty columnation assumes fixed maximum widths for each
 field. If a field exceeds its allotted width, it will still be fully
@@ -140,9 +262,10 @@ sequence name second (or vice versa), so \prog{cmsearch} and
 still wouldn't be identical, because the target database size used for
 E-value calculations is different (total number of target nucleotides
 for \prog{cmsearch}, number of target profiles times target sequence
-length for \prog{cmscan}, and it's good not to forget this.
+length for \prog{cmscan}), and it's good not to forget this.
 
 If some of the descriptions of these fields don't make sense to you,
 it may help to go through the tutorial in
 section~\ref{section:tutorial} and read section~\ref{section:pipeline}
 of the manual. 
+

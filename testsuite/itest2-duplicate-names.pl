@@ -77,14 +77,14 @@ if ($? != 0) { die "FAIL: cmpress failed\n"; }
 $output = `$builddir/src/cmsearch --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl != 4) { die "FAIL: on expected number of hits, cmsearch\n"; } 
 
 # cmscan should show four results
 $output = `$builddir/src/cmscan --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl != 4) { die "FAIL: on expected number of hits, cmscan\n"; } 
 
 print "ok\n";

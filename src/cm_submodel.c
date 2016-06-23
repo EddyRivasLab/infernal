@@ -423,7 +423,6 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
 {
   int sub_nd;
   int orig_nd;
-  int is_insert;
   
   /*printf("\nin helper: orig_v: %d sub_v: %d\n", orig_v, sub_v);*/
   
@@ -437,10 +436,8 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
   orig_nd = orig_cm->ndidx[orig_v];
   sub_nd  =  sub_cm->ndidx[sub_v];
   
-  is_insert = FALSE;
   if(sub_cm->sttype[sub_v] == IL_st || sub_cm->sttype[sub_v] == IR_st)
     {
-      is_insert = TRUE;
       /* Make sure that neither orig_v nor sub_v is a detached insert state,
        * if either is, we return b/c it's irrelevant, and we don't store that info in the maps */
       if(orig_cm->sttype[(orig_v+1)] == E_st || sub_cm->sttype[(sub_v+1)] == E_st)
@@ -861,9 +858,7 @@ CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post,
 		    '1' for insert */
   int  max_sc;   /* score (log probability) from post matrix for max_k node max_type state type */
   int  k;        /* counter over nodes */
-  int reached_mass; /* TRUE if we've reached our pmass */
   
-  reached_mass = FALSE;
   if(!is_start) pmass = 1. - pmass; /* we move left to right */
   
   /*printf("in CP9NodeForPosn is_start: %d pmass: %f\n", is_start, pmass);*/
@@ -2046,9 +2041,6 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, ESL_RANDOMNE
   CP9_t    *sub_hmm;     /* constructed CP9 HMM from the sub_cm */
   CP9Map_t *orig_cp9map; /* maps the orig_cm to the orig_hmm and vice versa */
   CP9Map_t *sub_cp9map;  /* maps the sub_cm to the sub_hmm and vice versa */
-  int debug_level;
-  
-  debug_level = 0;
   
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
   if((status = build_cp9_hmm(orig_cm, errbuf, FALSE, 0.0001, print_flag, &orig_hmm, &orig_cp9map)) != eslOK) return status;
@@ -3329,7 +3321,6 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   int orig_v2;
   int orig_nd1;
   int orig_nd2;
-  int nodes_used;
   int cm_nd;
   int i;
   int parent_tr_nd;
@@ -3594,7 +3585,6 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
     }
 
   orig_tr = CreateParsetree(100);
-  nodes_used = 0;
   for(cm_nd = 0; cm_nd < orig_cm->nodes; cm_nd++)
     {
       emitl_flag = 0;

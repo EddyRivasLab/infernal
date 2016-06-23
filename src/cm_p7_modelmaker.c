@@ -351,7 +351,6 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   double   gmu, glam;
   int      status;
   int      i;
-  int      M;
   int do_generic;
 
   if(om == NULL && gm == NULL) { status = eslEINVAL; goto ERROR; }
@@ -361,12 +360,10 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   if(do_generic) { 
     gx = p7_gmx_Create(gm->M, L); /* DP matrix: for ForwardParser,  L rows */
     if (gx == NULL) { status = eslEMEM; goto ERROR; }
-    M  = gm->M;
   }
   else { 
     ox = p7_omx_Create(om->M, 0, L);     /* DP matrix: for ForwardParser,  L rows */
     if (ox == NULL) { status = eslEMEM; goto ERROR; }
-    M  = om->M;
   }
 
   ESL_ALLOC(xv,  sizeof(double)  * N);

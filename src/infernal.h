@@ -3003,7 +3003,7 @@ extern int         cm_tophits_Grow(CM_TOPHITS *h);
 extern int         cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit);
 extern int         cm_tophits_SortByEvalue(CM_TOPHITS *h);
 extern int         cm_tophits_SortForOverlapRemoval(CM_TOPHITS *h);
-extern int         cm_tophits_SortForOverlapMarkup(CM_TOPHITS *h);
+extern int         cm_tophits_SortForOverlapMarkup(CM_TOPHITS *h, int do_clans_only);
 extern int         cm_tophits_SortByPosition(CM_TOPHITS *h);
 extern int         cm_tophits_Merge(CM_TOPHITS *h1, CM_TOPHITS *h2);
 extern int         cm_tophits_GetMaxPositionLength(CM_TOPHITS *h);
@@ -3017,7 +3017,7 @@ extern int         cm_tophits_Reuse(CM_TOPHITS *h);
 extern void        cm_tophits_Destroy(CM_TOPHITS *h);
 extern int         cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th);
 extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int istart);
-extern int         cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans, char *errbuf);
+extern int         cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans_only, char *errbuf);
 extern int         cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, uint64_t nseqs);
 
