@@ -44,7 +44,7 @@
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it.
 AC_PREREQ(2.63)
-AC_INIT(Infernal, 1.1.1x, eric.nawrocki@nih.gov, infernal)
+AC_INIT(Infernal, 1.1.2, eric.nawrocki@nih.gov, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 # remember if the user is overriding CFLAGS
@@ -58,7 +58,7 @@ fi
 # The four AC_INIT args set these output variables and preprocessor symbols:
 #     PACKAGE_NAME      <package>     e.g. "Infernal"
 #     PACKAGE_VERSION   <version>     e.g. "1.0"
-#     PACKAGE_BUGREPORT <bug-report>  e.g. "eddys@janelia.hhmi.org"
+#     PACKAGE_BUGREPORT <bug-report>  e.g. "eric.nawrocki@nih.gov"
 #     PACKAGE_TARNAME   <tarname>     e.g. "infernal"
 # From them, it derives one more:
 #     PACKAGE_STRING    <package> <version>, e.g. "Infernal 1.0"
@@ -73,7 +73,7 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="May 2016"
+INFERNAL_DATE="June 2016"
 INFERNAL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under a BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
@@ -82,18 +82,18 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="May 2016"
+HMMER_DATE="June 2016"
 HMMER_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under a BSD open source licence."
-HMMER_VERSION=i$PACKAGE_VERSION
+HMMER_VERSION="3.1b3"
 HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="July 2014"
+EASEL_DATE="June 2016"
 EASEL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute"
 EASEL_LICENSE="Freely distributed under a BSD open source license."
-EASEL_VERSION="i$PACKAGE_VERSION"
+EASEL_VERSION="0.43"
 EASEL_URL="http://bioeasel.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)
@@ -333,17 +333,17 @@ if test "$impl_choice" = "none"; then
 fi
 
 if test "$impl_choice" = "none"; then
-  AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Infernal 1.1.2 requires VMX or SSE capability for parallel instructions.])
   AC_MSG_ERROR([It appears your platform has neither and will not support Infernal.])
 fi
 
 if test "$impl_choice" = "sse" && test "$enable_sse" = "no"; then
-  AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Infernal 1.1.2 requires VMX or SSE capability for parallel instructions.])
   AC_MSG_WARN([Your platform supports only SSE, but you have disabled it.])
   AC_MSG_ERROR([You must reconfigure without disabling SSE for Infernal to build.])
 fi
 if test "$impl_choice" = "vmx" && test "$enable_vmx" = "no"; then
-  AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
+  AC_MSG_WARN([Infernal 1.1.2 requires VMX or SSE capability for parallel instructions.])
   AC_MSG_WARN([Your platform supports only VMX, but you have disabled it.])
   AC_MSG_ERROR([You must reconfigure without disabling VMX for Infernal to build.])
 fi
@@ -555,7 +555,7 @@ vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
       INFERNAL_IMPLDIR=""
       ;;
 
-*)    AC_MSG_WARN([Infernal 1.1.1 requires VMX or SSE capability for parallel instructions.])
+*)    AC_MSG_WARN([Infernal 1.1.2 requires VMX or SSE capability for parallel instructions.])
       AC_MSG_ERROR([Unable to use vector instructions (SSE or VMX).])
       ;;
 esac
