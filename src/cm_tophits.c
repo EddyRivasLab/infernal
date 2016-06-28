@@ -3094,7 +3094,7 @@ main(int argc, char **argv)
 
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveOrMarkOverlaps() (removing):  ");
@@ -3106,7 +3106,7 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortForOverlapMarkup():             ");
   esl_stopwatch_Start(w);
 
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 
