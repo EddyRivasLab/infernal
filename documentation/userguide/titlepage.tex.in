@@ -18,11 +18,9 @@ Version @INFERNAL_VERSION@; @INFERNAL_DATE@ \\
 \vspace*{\fill}
 
 Eric Nawrocki and Sean Eddy\\
-for the INFERNAL Development Team\\
-Janelia Farm Research Campus\\
-19700 Helix Drive\\
-Ashburn VA 20147 USA\\
-\url{http://eddylab.org/} \\
+for the INFERNAL development team\\
+\url{github.com/EddyRivasLab/infernal/}
+\url{http://eddylab.org/infernal}
 \end{center}
 
 \vspace*{\fill}

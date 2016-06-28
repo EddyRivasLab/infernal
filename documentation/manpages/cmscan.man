@@ -68,8 +68,8 @@ option saves output in a simple tabular format that is concise and
 easier to parse. The
 .BI --fmt " 2"
 option modifies the format of the tabular output by adding several
-fields, including markup of overlapping hits, as described in the
-Infernal user guide. 
+fields, including markup of overlapping hits, as described in section
+6 of the Infernal user guide. 
 The 
 .B -o
 option allows redirecting the main output, including throwing it away
@@ -176,7 +176,7 @@ instead of the default stdout.
 .BI --tblout " <f>"
 Save a simple tabular (space-delimited) file summarizing the
 hits found, with one data line per hit. 
-The format of this file is described in the Infernal user guide.
+The format of this file is described in section 6 of the Infernal user guide.
 
 .TP 
 .BI --fmt " <n>"
@@ -196,7 +196,7 @@ With
 .BI --fmt " 2"
 nine additional fields are added to the tabular output file, most of
 which pertain to the annotation of overlapping hits. 
-See the Infernal user guide for a description of both formats.
+See section 6 the Infernal user guide for a description of both formats.
 
 .TP 
 .B --acc
@@ -726,7 +726,7 @@ and
 .B --tblout
 because clan annotation is only output in format 2 of the tabular
 output file. 
-See the Infernal user guide for specifications on the format of the 
+See section 9 of the Infernal user guide for specifications on the format of the 
 clan input file
 .I <f>.
 
