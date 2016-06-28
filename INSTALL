@@ -30,12 +30,26 @@ instruction sets, you won’t be able to install and run Infernal 1.1 on
 it.
 
 -------------------------------------------------------------
-Starting from a Subversion (SVN) working copy:
+Starting from a Git Repo: 
 
-If you have checked Infernal out from its Subversion repository, there's
+If you have cloned the Infernal Git repository, there's
 some additional stuff you need to do one-time-only in your new working
-directory:
+directory.
 
+First you need to clone easel and hmmer too:
+  cd infernal
+  git clone https://github.com/EddyRivasLab/easel.git
+  git clone https://github.com/EddyRivasLab/hmmer.git
+
+And switch to the h3-master branch:
+  cd hmmer
+  git checkout h3-master
+
+You may want to switch to the 'develop' branch of infernal, the
+'h3-develop' branch of hmmer and the 'develop' branch of easel if you
+want the in-development code.
+
+And finally:
    ln -s easel/aclocal.m4 aclocal.m4
    ln -s easel/aclocal.m4 hmmer/aclocal.m4
    autoconf
@@ -43,7 +57,6 @@ directory:
 
 -------------------------------------------------------------
 The Infernal development team
-HHMI Janelia Farm Research Campus
-http://infernal.janelia.org/
-
+github.com/EddyRivasLab/infernal/
+http://eddylab.org/infernal
 
