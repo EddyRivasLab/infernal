@@ -51,7 +51,7 @@ want the in-development code.
 
 And finally:
    ln -s easel/aclocal.m4 aclocal.m4
-   ln -s easel/aclocal.m4 hmmer/aclocal.m4
+   (cd hmmer; ln -s ../easel/aclocal.m4 aclocal.m4;)
    autoconf
    (cd easel; autoconf; cd ../hmmer; autoconf;)
 
