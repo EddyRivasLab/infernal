@@ -21,7 +21,7 @@ Other files to read in the top-level source directory:
 
     INSTALL          Brief installation instructions.
     Userguide.pdf    The Infernal User's Guide.
-    LICENSE          The GNU General Public License (GPLv3).
+    LICENSE          copyright and license information
 
 To get started after installation, see the Tutorial section in the
 Infernal User's Guide (Userguide.pdf).
