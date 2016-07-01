@@ -12,7 +12,7 @@ sequence and secondary structure consensus} \\ }
 \vspace*{\fill}
 
 \begin{center}
-\url{http://infernal.janelia.org/}\\
+\url{http://eddylab.org/infernal}\\
 Version @INFERNAL_VERSION@; @INFERNAL_DATE@ \\ 
 
 \vspace*{\fill}
@@ -20,7 +20,6 @@ Version @INFERNAL_VERSION@; @INFERNAL_DATE@ \\
 Eric Nawrocki and Sean Eddy\\
 for the INFERNAL development team\\
 \url{github.com/EddyRivasLab/infernal/}
-\url{http://eddylab.org/infernal}
 \end{center}
 
 \vspace*{\fill}
