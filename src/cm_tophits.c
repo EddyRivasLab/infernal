@@ -2211,7 +2211,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
       //      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %c%c  %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
@@ -2227,8 +2227,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	      th->hit[h]->bias,
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
-	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED         ? '!' : '?'),
-	      ((pli->mode == CM_SCAN_MODELS) ? (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP ? '=' : '*') : ' '),
+	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? "!" : "?"),
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
     }
   }
