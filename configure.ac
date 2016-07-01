@@ -73,7 +73,7 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="June 2016"
+INFERNAL_DATE="July 2016"
 INFERNAL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under a BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
@@ -82,7 +82,7 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="June 2016"
+HMMER_DATE="July 2016"
 HMMER_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under a BSD open source licence."
 HMMER_VERSION="3.1b3"
@@ -90,7 +90,7 @@ HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="June 2016"
+EASEL_DATE="July 2016"
 EASEL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute"
 EASEL_LICENSE="Freely distributed under a BSD open source license."
 EASEL_VERSION="0.43"
