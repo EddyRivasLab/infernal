@@ -111,7 +111,6 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
   int       dx_w;               /* maximum valid d for state w */
   int       kn, kx;             /* minimum/maximum valid k for current d in B_st recursion */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
-  int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -260,7 +259,6 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	  jp_y  = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  jq_y = (StateRightDelta(cm->sttype[v]) > 0) ? cur : prv;
 	  sd    = StateDelta(cm->sttype[v]);
-	  cnum  = cm->cnum[v];
 	  /* if we emit right, precalc score of emitting res j from state v */
 	  float   esc_j = IMPOSSIBLE;
 	  float rmesc_j = IMPOSSIBLE;
@@ -768,7 +766,6 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
   int       dx_y;               /* maximum valid d for state y */
   int       dx_w;               /* maximum valid d for state w */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
-  int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -917,7 +914,6 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	  jp_y  = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  jq_y = (StateRightDelta(cm->sttype[v]) > 0) ? cur : prv;
 	  sd    = StateDelta(cm->sttype[v]);
-	  cnum  = cm->cnum[v];
 	  /* if we emit right, precalc score of emitting res j from state v */
 	  int   esc_j = -INFTY;
 	  int rmesc_j = -INFTY;

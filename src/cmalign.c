@@ -456,7 +456,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   
 #ifdef HMMER_THREADS    
-  ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * (ncpus * 2));
+  ESL_ALLOC(init_sqA, sizeof(ESL_SQ *) * ESL_MAX(1, ncpus * 2)); // avoid malloc of 0
   for (k = 0; k < ncpus * 2; k++) {
     init_sqA[k] = NULL;
     if((init_sqA[k] = esl_sq_CreateDigital(cfg->abc)) == NULL)          cm_Fail("Failed to allocate a sequence");
@@ -487,7 +487,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, CM_MAX_RESIDUE_COUNT, CMALIGN_MAX_NSEQ, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
@@ -517,7 +517,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, CM_MAX_RESIDUE_COUNT, CMALIGN_MAX_NSEQ, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
@@ -536,7 +536,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* create a single array of all CM_ALNDATA objects, in original (input) order */
     nmap_cur = (nali == 0) ? nmap_data : 0;
     nmerged  = nseq_cur + nmap_cur;
-    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * nmerged);
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, nmerged)); // avoid malloc of 0
     /* prepend mapali data if nec */
     if(nmap_cur > 0) {
       for(i = 0; i < nmap_cur; i++) merged_dataA[i] = map_dataA[i];
@@ -980,7 +980,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
 #if DEBUGMPI
@@ -1009,7 +1009,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
@@ -1019,7 +1019,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* allocate an array for all CM_ALNDATA objects we'll receive from workers */
     nmap_cur = (nali == 0) ? nmap_data : 0;
     nmerged = nseq_cur + nmap_cur;
-    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * (nseq_cur + nmap_cur));
+    ESL_ALLOC(merged_dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, nseq_cur + nmap_cur)); // avoid malloc of 0
     /* prepend mapali data if nec */
     if(nmap_cur > 0) {
       for(i = 0; i < nmap_cur; i++) merged_dataA[i] = map_dataA[i];
@@ -2081,7 +2081,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
   int           cur_clen;                      /* consensus length (non-gap #=GC RF length) of current alignment */
   int           apos;                          /* alignment position */
   ESL_MSA      *fmsa = NULL;                   /* the merged alignment created by merging all alignments in msaA */
-  int           alen_fmsa;                     /* number of columns in merged MSA */
+  /*int           alen_fmsa;*/                  /* number of columns in merged MSA */
   int          *ngap_insA = NULL;               /* [0..alen] number of insert gap columns to add after each alignment column when merging */
   int          *ngap_elA = NULL;                /* [0..alen] number of missing data ('~') gap columns to add after each alignment column when merging */
   int          *ngap_eitherA = NULL;            /* [0..apos..alen] = ngap_insA[apos] + ngap_elA[apos] */
@@ -2165,7 +2165,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
    * final (3rd) pass we'll output aligned data.
    */     
   fmsa = esl_msa_Create(nseq_tot, -1); 
-  alen_fmsa = cm->clen + esl_vec_ISum(maxins, (cm->clen+1)); 
+  /*alen_fmsa = cm->clen + esl_vec_ISum(maxins, (cm->clen+1));*/
 
   /* if there was any GS annotation in any of the individual alignments,
    * do second pass through alignment files, outputting GS annotation as we go. */
@@ -2483,7 +2483,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   int apos  = 0;
   int apos2print  = 0;
   int i;
-  int prv_cpos = -1;
   int alen2print = 0;
   char *rf2print;
   char *ss_cons2print;
@@ -2509,7 +2508,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
     if(apos < msa->alen) { 
       rf2print[apos2print]        = msa->rf[apos];
       ss_cons2print[apos2print++] = msa->ss_cons[apos];
-      if(! esl_abc_CIsGap(msa->abc, msa->rf[apos])) prv_cpos = apos;
     }	
   }    
   

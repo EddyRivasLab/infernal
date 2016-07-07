@@ -80,8 +80,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
   int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
-  int       dn,   dx;           /* minimum/maximum valid d for current state */
-  int       cnum;               /* number of children for current state */
+  /*int       dn,   dx; */      /* minimum/maximum valid d for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -387,9 +386,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
-	  dn   = dnA[v];
-	  dx   = dxA[v];
+	  /*dn   = dnA[v];*/
+	  /*dx   = dxA[v];*/
 
 	  if(cm->sttype[v] == B_st) {
 	    float *vec_access;

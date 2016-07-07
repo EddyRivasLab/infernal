@@ -1342,6 +1342,9 @@ an optimally accurate parsetree, if it's not a legal local begin
 state, then don't allow a local begin.
 
 //
+#### 
+####  1.1.1 release: 23 July 2014
+####
 
 ID              i44
 TITLE		cmalign --mapstr allows broken basepairs
@@ -1374,3 +1377,6 @@ checks that both a broken non-pseudoknotted basepair and a
 pseudoknotted broken basepair are both correctly removed.
 
 //
+#### 
+####  1.1.2 release: June 2014
+####

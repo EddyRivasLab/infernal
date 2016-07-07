@@ -167,7 +167,7 @@ to the file
 .BI --tblout " <f>"
 Save a simple tabular (space-delimited) file summarizing the
 hits found, with one data line per hit. The format of this file is
-described in the Infernal user guide.
+described in section 6 of the Infernal user guide.
 
 .TP 
 .B --acc

@@ -2621,7 +2621,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
   int          choice;             /* index represeting sampled choice */
-  int          sd, sdl, sdr;       /* state delta, state left delta, state right delta */
+  int          sd, sdr;            /* state delta, state right delta */
 
   /* the DP matrix, filled by prior call to cm_InsideAlign() */
   float ***alpha  = mx->dp; /* pointer to the alpha DP matrix */
@@ -2703,7 +2703,6 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
 	/* add in emission score (or 0.0 if we're a non-emitter) */
 	fsc += get_femission_score(cm, dsq, v, i, j); 
 	sd  = StateDelta(cm->sttype[v]);
-	sdl = StateLeftDelta(cm->sttype[v]);
 	sdr = StateRightDelta(cm->sttype[v]);
 
 	/* set pA[] as (float-ized) log odds scores for each child we can transit to, 
@@ -2860,7 +2859,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   int      jp_z, kp_z;    /* j - jmin[z], d - hdmin[z][jp_z] */
   int      jp_y_sdr;      /* j - jmin[y] - vms_sdr */
   int      dp_y_sd;       /* hdmin[y][jp_y_vms_sdr] - vms_sd */
-  int      jp_0;          /* L offset in ROOT_S's (v==0) j band */
+  int      jp_0;          /* j offset in ROOT_S's (v==0) j band */
   int      Lp_0;          /* L offset in ROOT_S's (v==0) d band */
   int      kmin, kmax;    /* min/max k */
 

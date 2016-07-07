@@ -1533,12 +1533,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   int v;
 
   /* ptrs to cp9b data, for convenience */
-  int *pn_min_m;      /* pn_min_m[k] = first position in HMM band for match state of HMM node k */
-  int *pn_max_m;      /* pn_max_m[k] = last position in HMM band for match state of HMM node k */
-  int *pn_min_i;      /* pn_min_i[k] = first position in HMM band for insert state of HMM node k */
-  int *pn_max_i;      /* pn_max_i[k] = last position in HMM band for insert state of HMM node k */
-  int *pn_min_d;      /* pn_min_d[k] = first position in HMM band for delete state of HMM node k */
-  int *pn_max_d;      /* pn_max_d[k] = last position in HMM band for delete state of HMM node k */
   int *imin;          /* imin[v] = first position in band on i for state v to be filled in this function. [1..M] */
   int *imax;          /* imax[v] = last position in band on i for state v to be filled in this function. [1..M] */
   int *jmin;          /* jmin[v] = first position in band on j for state v to be filled in this function. [1..M] */
@@ -1552,7 +1546,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   int          on_right;   /* TRUE if we're on the right for current node during our CM traversal */
   int          w;          /* a state index */
   int          lpos, rpos; /* left/right border of subtree for current node */
-  int          k;          /* counter of HMM nodes */
+  /*int          k;*/          /* counter of HMM nodes, for debugging print statements, currently not used */
   int hmm_is_localized;      /* TRUE if HMM has local begins, ends or ELs on */
   int cm_is_fully_localized; /* TRUE if CM has local begins and ends on */
 
@@ -1590,12 +1584,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   cm_is_fully_localized = ((cm->flags & CMH_LOCAL_BEGIN) && (cm->flags & CMH_LOCAL_END)) ? TRUE : FALSE;
 
   /* ptrs to cp9b arrays, for convenience */
-  pn_min_m = cp9b->pn_min_m;
-  pn_max_m = cp9b->pn_max_m;
-  pn_min_i = cp9b->pn_min_i;
-  pn_max_i = cp9b->pn_max_i;
-  pn_min_d = cp9b->pn_min_d;
-  pn_max_d = cp9b->pn_max_d;
   imin     = cp9b->imin;
   imax     = cp9b->imax;
   jmin     = cp9b->jmin;
@@ -1642,7 +1630,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     if(!hmm_is_localized) assert(r_mx[hmm_M] == j0 || r_ix[hmm_M] == j0 || r_dx[hmm_M] == j0);
   }
   nd   = 0;
-  k    = 0;
   lpos = 0;
   rpos = 0;
 
@@ -2287,7 +2274,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
   int  c;          /* counter */
   int sd;          /* state delta, number of emissions for each state */
   int local_begins_ends_on; /* TRUE if HMM has local begins (M_0(B) -> M_k for k = 1..M and local ends (M_k -> E) for k = 1..M-1 */
-  int j0_is_reachable = FALSE; /* TRUE if we can reach j0 for some node */
+  /*int j0_is_reachable = FALSE; */ /* TRUE if we can reach j0 for some node */
   /* ptrs to cp9b data, for convenience */
   int *pn_min_m;      /* pn_min_m[k] = first position in HMM band for match state of HMM node k */
   int *pn_max_m;      /* pn_max_m[k] = final position in HMM band for match state of HMM node k */
@@ -2758,7 +2745,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
        */
       k -= 1;
     }
-    else if(r_nx_hmm[k] == j0) j0_is_reachable = TRUE;
+    /*else if(r_nx_hmm[k] == j0) j0_is_reachable = TRUE;*/
   }
   /* final check, if we're doing alignment, the first residue i0, must be first emitted
    * residue, and the final residue, j0 must be final emittable residue. Enforce it.

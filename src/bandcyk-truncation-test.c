@@ -53,7 +53,6 @@ static ESL_OPTIONS options[] = {
   { "--betaW",   eslARG_REAL,  "1E-5", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for W calculation to <x>", 0 },
   { "--beta1",   eslARG_REAL,  "1E-5", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin1/dmax1 to <x>",   0 },
   { "--beta2",   eslARG_REAL,  "1E-6", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin2/dmax2 to <x>",  0 },
-  { "--verbose", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show output (default: silently return 0 on success)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <Z1> <Z2> where width Z1 < Z2.";
@@ -80,7 +79,6 @@ main(int argc, char **argv)
   double   gbeta1;		/* geometric decay constant, truncation error calc */
   double   gbeta2;		/* geometric decay constant, truncation error calc */
   double   g;			/* log of an estimated gamma[n] */
-  int      be_verbose;
   ESL_ALPHABET   *abc     = NULL;
   char            errbuf[eslERRBUFSIZE]; /* for error messages */
   CM_QDBINFO     *qdbinfo1 = NULL; /* holds dmin1/dmax1 and dmin2/dmax2 for first  choice of Z */
@@ -95,7 +93,6 @@ main(int argc, char **argv)
   betaW      = esl_opt_GetReal   (go, "--betaW");
   beta1      = esl_opt_GetReal   (go, "--beta1");
   beta2      = esl_opt_GetReal   (go, "--beta2");
-  be_verbose = esl_opt_GetBoolean(go, "--verbose");
 
   if (Z1 >= Z2) cm_Fail("Please set a width Z1 < width Z2, else the check won't work right.");
 

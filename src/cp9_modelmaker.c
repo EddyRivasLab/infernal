@@ -1199,7 +1199,6 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   int *bp; /* CM states b' that map to HMM state b, 
 	      * bp[1] is -1 if only 1 CM state maps to b*/
   
-  int n;   /* CM node that maps to HMM node k */
   int k_state; /*either HMMMATCH, HMMINSERT, or HMMDELETE*/
 
   int hmm_trans_idx; /*0-8;  CTMM, CTMI, CTMD, CTIM, CTII, CTID, CTDM, CTDI, or CTDD*/
@@ -1209,7 +1208,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
 
   ESL_ALLOC(ap, sizeof (int) * 2);
   ESL_ALLOC(bp, sizeof (int) * 2);
-  n = cp9map->pos2nd[k];
+
   /* Fill all 9 transitions with virtual counts, later normalize these into 
    * probabilities.
    *
@@ -1599,8 +1598,6 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
 		    int k, double *psi)
 {
   int status;
-  int s_n; /* CM node that maps to HMM node with start state */
-  int e_n; /* CM node that maps to HMM node with end state */
   int v; /* state index in CM */
   
   double *sub_psi; /*sub_psi[v] is the expected number of times state v is
@@ -1612,7 +1609,6 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
   int y;
   int x;
   char tmap_val;
-  int n_v; /* CM node containing state v*/
   int is_insert; /* 1 if v is insert, 0 if not */
   float insert_to_start; /* is start is not an insert and the insert state of 
 			  * HMM node k < start, this is the
@@ -1654,8 +1650,6 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
       return cm->t[start][0];
     }
   to_return = 0.;
-  s_n = cm->ndidx[start];
-  e_n = cm->ndidx[end];
   
   ESL_ALLOC(sub_psi, sizeof(double) * (end - start + 1));
   /* Initialize sub_psi[0]. Need to check if we need to ignore the probability
@@ -1686,7 +1680,6 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
     {
       /*printf("\t\t\tv: %d\n", v);*/
       sub_psi[v-start] = 0.;
-      n_v = cm->ndidx[v];
       if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
 	is_insert = 1;
       else

@@ -76,7 +76,7 @@ if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
 # trial one, no --glist, all hits should be local
 $output = `$builddir/src/cmscan -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl   != 2)          { die "FAIL: on expected number of hits, trial 1\n"; }
 if ($i1::hitE[0] !~ m/1.\de-38/) { die "FAIL: on cfg, hit 1, trial 1\n"; }
 if ($i1::hitE[1] !~ m/3.\de-08/) { die "FAIL: on cfg, hit 2, trial 1\n"; }
@@ -84,7 +84,7 @@ if ($i1::hitE[1] !~ m/3.\de-08/) { die "FAIL: on cfg, hit 2, trial 1\n"; }
 # trial two, tRNA in --glist, tRNA hit should be glocal, Plant_SRP hit should be local
 $output = `$builddir/src/cmscan --glist $tmppfx.list1 -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl   != 2)      { die "FAIL: on expected number of hits, trial 2\n"; }
 if ($i1::hitE[0] !~ m/1.\de-38/) { die "FAIL: on cfg, hit 1, trial 2\n"; }
 if ($i1::hitE[1] !~ m/2.\de-06/) { die "FAIL: on cfg, hit 2, trail 2\n"; }
@@ -92,7 +92,7 @@ if ($i1::hitE[1] !~ m/2.\de-06/) { die "FAIL: on cfg, hit 2, trail 2\n"; }
 # trial three, tRNA and Plant_SRP in --glist, both hits should be glocal
 $output = `$builddir/src/cmscan --glist $tmppfx.list2 -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl   != 2)     { die "FAIL: on expected number of hits, tRNA and Plant_SRP in glist\n"; }
 if ($i1::hitE[0] !~ m/1.\de-20/) { die "FAIL: on cfg, hit 1, trial 3\n"; }
 if ($i1::hitE[1] !~ m/2.\de-06/) { die "FAIL: on cfg, hit 2, trail 3\n"; }

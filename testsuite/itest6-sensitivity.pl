@@ -108,7 +108,7 @@ if (! -r "$srcdir/testsuite/$model3.c.cm")  { die "FAIL: can't read profile $mod
 $output = `$builddir/src/cmsearch -E 1E-3 --tblout $tmppfx.tbl $tmppfx.cm1 $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 # first hit should be the best (and only real) tRNAscan-SE hit, 4169..4230
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     < 1)       { die "FAIL: cmsearch tRNA, no hits found\n"; } 
 if ($i1::sfrom[0] ne "4169") { die "FAIL: cmsearch tRNA hit 1, start position\n"; } 
 if ($i1::sto[0]   ne "4230") { die "FAIL: cmsearch tRNA hit 1, stop  position\n"; }
@@ -124,7 +124,7 @@ if(-e "$tmppfx.cm1.ssi") { unlink "$tmppfx.cm1.ssi"; }
 $output = `$builddir/src/cmscan -E 1E-3 --tblout $tmppfx.tbl $tmppfx.cm1 $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 # first hit should be the best (and only real) tRNAscan-SE hit, 4169..4230
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     < 1)       { die "FAIL: cmscan tRNA, no hits found\n"; } 
 if ($i1::sfrom[0] ne "4169") { die "FAIL: cmscan tRNA hit 1, start position\n"; } 
 if ($i1::sto[0]   ne "4230") { die "FAIL: cmscan tRNA hit 1, stop  position\n"; }
@@ -146,7 +146,7 @@ if ($i1::sto[0]   ne "4230") { die "FAIL: cmscan tRNA hit 1, stop  position\n"; 
 # larger subseq
 $output = `$builddir/src/cmsearch -E 0.01 --nohmm --fbeta 1E-2 --beta 1E-4 --tblout $tmppfx.tbl $tmppfx.cm2 $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     < 1)        { die "FAIL: cmsearch long SRP, no hits found\n"; } 
 if ($i1::sfrom[0] ne "15714") { die "FAIL: cmsearch long SRP hit 1, start position\n"; } 
 if ($i1::sto[0]   ne "15739") { die "FAIL: cmsearch long SRP hit 1, stop  position\n"; }
@@ -154,7 +154,7 @@ if ($i1::sto[0]   ne "15739") { die "FAIL: cmsearch long SRP hit 1, stop  positi
 # shorter subseq
 $output = `$builddir/src/cmsearch -E 0.01 --nohmm --fbeta 1E-2 --beta 1E-4 --tblout $tmppfx.tbl $tmppfx.cm2 $tmppfx.fa2 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     < 1)     { die "FAIL: cmsearch short SRP, no hits found\n"; } 
 if ($i1::sfrom[0] ne "43") { die "FAIL: cmsearch short SRP hit 1, start position\n"; } 
 if ($i1::sto[0]   ne "68") { die "FAIL: cmsearch short SRP hit 1, stop  position\n"; }
@@ -172,7 +172,7 @@ if(-e "$tmppfx.cm2.ssi") { unlink "$tmppfx.cm2.ssi"; }
 $output = `$builddir/src/cmscan -E 0.01 --nohmm --fbeta 1E-2 --beta 1E-4 --tblout $tmppfx.tbl $tmppfx.cm2 $tmppfx.fa2 2>&1`;
 
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     < 1)     { die "FAIL: cmscan short SRP, no hits found\n"; } 
 if ($i1::sfrom[0] ne "43") { die "FAIL: cmscan short SRP hit 1, start position\n"; } 
 if ($i1::sto[0]   ne "68") { die "FAIL: cmscan short SRP hit 1, stop  position\n"; }
@@ -192,7 +192,7 @@ if ($i1::sto[0]   ne "68") { die "FAIL: cmscan short SRP hit 1, stop  position\n
 $output = `$builddir/src/cmsearch -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm3 $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     <  1)        { die "FAIL: cmsearch long Rnase P, no hits found\n"; }
 if ($i1::sfrom[0] ne "10920")  { die "FAIL: cmsearch long Rnase P hit 1, start position\n"; }
 if ($i1::sto[0]   ne "10580")  { die "FAIL: cmsearch long Rnase P hit 1, stop  position\n"; }
@@ -201,7 +201,7 @@ if ($i1::sto[0]   ne "10580")  { die "FAIL: cmsearch long Rnase P hit 1, stop  p
 $output = `$builddir/src/cmsearch -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm3 $tmppfx.fa2 2>&1`;
 if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     <  1)      { die "FAIL: cmsearch short Rnase P, no hits found\n"; }
 if ($i1::sfrom[0] ne "43")   { die "FAIL: cmsearch short Rnase P hit 1, start position\n"; }
 if ($i1::sto[0]   ne "383")  { die "FAIL: cmsearch short Rnase P hit 1, stop  position\n"; }
@@ -219,7 +219,7 @@ if(-e "$tmppfx.cm3.ssi") { unlink "$tmppfx.cm3.ssi"; }
 $output = `$builddir/src/cmscan -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm3 $tmppfx.fa2 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 
-&i1::ParseTbl("$tmppfx.tbl");
+&i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl     < 1)      { die "FAIL: cmscan short Rnase P, no hits found\n"; } 
 if ($i1::sfrom[0] ne "43")  { die "FAIL: cmscan short Rnase P hit 1, start position\n"; } 
 if ($i1::sto[0]   ne "383") { die "FAIL: cmscan short Rnase P hit 1, stop  position\n"; }

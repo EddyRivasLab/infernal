@@ -86,7 +86,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
    * 
    * Important note: For this discussion we assume that sequences can
    * only be truncated at consensus positions, which means we don't
-   * have to worry about truncated begins into this is an
+   * have to worry about truncated begins into inserts. This is an
    * approximation (also made by Diana and Sean in the 2009 trCYK
    * paper) that greatly simplifies the explanation of the calculation
    * of the truncation penalties.  The examples in my ELN3 notebook

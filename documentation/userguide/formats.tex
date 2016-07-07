@@ -129,9 +129,6 @@ that fields are separated by at least one space character.
 The CM format is described in more detail below, followed by a
 description of the HMMER3 HMM format for the CM's mandatory filter HMM
 filter.
-%The HMM format is similar but is not described in detail here. See the
-%HMMER user guide for more information
-%(\url{http://hmmer.janelia.org}{http://hmmer.janelia.org}).
 
 \subsubsection{CM header section}
 
@@ -1328,6 +1325,45 @@ the background probability of an ``A'' residue, the second, third, and
 fourth non-comment lines are interpreted as the background
 probabilities of a ``C'', ``G'' and ``U'' respectively. 
 
+\subsection{Clan input file format for cmscan}
+
+The \ccode{cmscan} program has a \ccode{--clanin <f>} option that
+allows the user to supply an input file \ccode{<f>} with information
+on clan membership for models in the CM file. This option must be used
+in combination with the \ccode{--tblout} and \ccode{--fmt 2}
+options. An example clan input file is included with the Infernal
+source distribution, \ccode{tutorial/Rfam.12.1.clanin}. This file
+specifies the clan membership for the 2474 models in the Rfam 12.1
+release, of which 311 models belong to 104 clans. This file should be
+used in combination with the Rfam.cm file for Rfam 12.1, available for
+download as a gzipped file here:
+\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/12.1/Rfam.cm.gz}. Note that
+many of the Rfam models are not members of a clan; the clan input file does
+not need to specify clan membership for all models in the CM file.
+
+A clan input file contains one line per clan. Each line must contain
+at least two space-delimited tokens. The first token is the name of
+the clan (this name cannot contain spaces). Each token after the first
+is the name of a model that is a member of the clan named in the first
+token. These tokens must be valid names of models in the file CM file
+you are using with \ccode{cmscan}. These tokens cannot be the
+accessions of models. Valid model names cannot contain spaces
+(enforced by \prog{cmbuild} during model construction). To determine
+the names of models in a CM file, use \ccode{cmstat}. 
+
+For example, in the file \ccode{tutorial/Rfam.12.1.clanin} the first token
+of the first line is ``CL00001'' and tokens two through five are
+``tRNA'', ``cyano\_tmRNA'', ``tRNA-Sec'', ``mt-tmRNA'', indicating
+that these four models are members of the CL00001 clan. \ccode{cmscan}
+will output the clan name of models in clans in its tabular output
+file specified with \ccode{--tblout} when the \ccode{--fmt 2} option
+is also used. Furthermore, you can specify
+that only overlapping hits between models of the same clan are
+annotated (as opposed to all overlapping hits) in the tabular output
+file by additionally using the \ccode{--oclan} option. Finally, you
+can specify that lower scoring overlaps within clans are not output by
+additionally using the \ccode{--oskip} and the \ccode{--oclan}
+options.
 
 
 

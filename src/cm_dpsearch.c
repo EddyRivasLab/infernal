@@ -745,7 +745,6 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
-  int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -869,7 +868,6 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
 	  dn   = dnA[v];
 	  dx   = dxA[v];
 	  /* if we emit right, precalc score of emitting res j from state v */
@@ -2388,7 +2386,6 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
-  int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -2512,7 +2509,6 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
 	  dn   = dnA[v];
 	  dx   = dxA[v];
 	  /* if we emit right, precalc score of emitting res j from state v */
@@ -2768,7 +2764,6 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   int       dn_w, dx_w;         /* minimum/maximum valid d for state w */
   int      *dmin;               /* [0..v..cm->M-1] minimum d allowed for this state */
   int      *dmax;               /* [0..v..cm->M-1] maximum d allowed for this state */
-  int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
@@ -2891,7 +2886,6 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
 	  dn   = dnA[v];
 	  dx   = dxA[v];
 	  /* if we emit right, precalc score of emitting res j from state v */

@@ -65,7 +65,11 @@ The output format is designed to be human-readable, but is often so
 voluminous that reading it is impractical, and parsing it is a pain. The
 .B --tblout 
 option saves output in a simple tabular format that is concise and
-easier to parse. 
+easier to parse. The
+.BI --fmt " 2"
+option modifies the format of the tabular output by adding several
+fields, including markup of overlapping hits, as described in section
+6 of the Infernal user guide. 
 The 
 .B -o
 option allows redirecting the main output, including throwing it away
@@ -172,7 +176,27 @@ instead of the default stdout.
 .BI --tblout " <f>"
 Save a simple tabular (space-delimited) file summarizing the
 hits found, with one data line per hit. 
-The format of this file is described in the Infernal user guide.
+The format of this file is described in section 6 of the Infernal user guide.
+
+.TP 
+.BI --fmt " <n>"
+specify the format of the tabular output file specified with
+.BI --tblout " <f>" 
+be in format 
+.I <n>.
+Possible values for 
+.I <n>
+are 1 or 2. By default
+.I <n>
+is 1 when 
+.B --tblout
+is used without 
+.B --fmt.
+With 
+.BI --fmt " 2"
+nine additional fields are added to the tabular output file, most of
+which pertain to the annotation of overlapping hits. 
+See section 6 the Infernal user guide for a description of both formats.
 
 .TP 
 .B --acc
@@ -297,7 +321,7 @@ that is above all known false positives.
 .SH OPTIONS CONTROLLING THE ACCELERATION PIPELINE
 
 .PP
-Infernal 1.1 searches are accelerated in a six-stage
+Infernal searches are accelerated in a six-stage
 filter pipeline. The first five stages use a profile HMM to define
 envelopes that are passed to the stage six CM CYK filter. Any
 envelopes that survive all filters are assigned final scores using the 
@@ -561,14 +585,14 @@ megabytes. By default this size is 128 Mb.
 This should be large enough for the vast majority of searches,
 especially with smaller models. 
 If 
-.B cmsearch
+.B cmscan
 encounters an envelope in the CYK or Inside stage that requires a
 larger matrix, the envelope will be discounted from
 consideration. This behavior is like an additional filter that
 prevents expensive (slow) CM DP calculations, but at a potential cost
 to sensitivity. 
 Note that if 
-.B cmsearch
+.B cmscan
 is being run in 
 .I <n>
 multiple threads on a multicore machine then each thread may
@@ -686,6 +710,56 @@ File
 must list valid names of models from
 .I <cmfile>,
 each separated by any whitespace character (e.g. a newline character).
+
+.TP
+.BI --clanin " <f>"
+Read clan information on the models in 
+.I <cmfile> 
+from file
+.I <f>.
+Not all models in 
+.I <cmfile>
+need to be a member of a clan.
+This option must be used in combination with
+.BI --fmt " 2"
+and 
+.B --tblout
+because clan annotation is only output in format 2 of the tabular
+output file. 
+See section 9 of the Infernal user guide for specifications on the format of the 
+clan input file
+.I <f>.
+
+.TP
+.B --oclan
+Only mark overlaps between models in the same clan. 
+This option must be used in combination with
+.BI --fmt " 2"
+, 
+.B --tblout
+and
+.B --clanin
+because clan annotation is only output in format 2 of the tabular
+output file, and clan information can only be input using the 
+.B --clanin
+option.
+
+.TP
+.BI --oskip " <f>"
+Omit any hit h from the tabular output file that satisifies the
+following: another hit h2 overlaps with h and the E-value of h2 is
+lower than that of h. Hit h will not appear in the tabular output
+file, although it will still exist in the standard output. 
+This option must be used in combination with
+.BI --fmt " 2"
+.B --tblout
+because overlap annotation is only output in format 2 of the tabular
+output file. 
+When used in combination with 
+.B "--oclan"
+only hits h that satisfy the following are omitted:
+another hit h2 overlaps with h, the E-value of h2 is lower than that
+of h, and both h and h2 are hits to models that are in the same clan.
 
 .TP
 .BI --cpu " <n>"

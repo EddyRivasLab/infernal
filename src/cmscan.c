@@ -152,21 +152,17 @@ static ESL_OPTIONS options[] = {
   /* Other options */
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",                  7 },
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow full and truncated hits anywhere within sequences",          7 },
-  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow only truncated hits, anywhere within sequences",             7 },
-  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",                7 },
-  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",                7 },
+  { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",                      "never run HMM-only mode, not even for models with 0 basepairs", 7 },
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",                7 },
   { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed alnment mx size to <x> Mb [df: autodetermined]",   7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed size of search DP matrices to <x> Mb",             7 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "use scanning CM CYK algorithm, not Inside in final stage",         7 },
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "align hits with CYK, not optimal accuracy",                        7 },
   { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb",           "set W (expected max hit len) as <x> * cm->clen (model len)",       7 },
-  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",           "use CM only for best scoring HMM pass for full seq envelopes",     7 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the top strand",                                       7 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the bottom strand",                                    7 },
   { "--qformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "assert query <seqfile> is in format <s>: no autodetection",        7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  "-g",                           "configure CMs listed in file <f> in glocal mode, others in local", 7 },
-  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "set block size (number of models per worker/thread) to <n>",       7 },
   { "--clanin",     eslARG_INFILE,  NULL, NULL, NULL,    NULL, "--fmt",NULL,                           "read clan information from file <f>",                              7 },
   { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, "--fmt,--clanin",NULL,                  "w/'--fmt 2' and '--tblout', only mark overlaps within clans",      7 },
   { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL, "--fmt",NULL,                           "w/'--fmt 2' and '--tblout', do not output lower scoring overlaps", 7 },
@@ -210,7 +206,6 @@ static ESL_OPTIONS options[] = {
   { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 3 (Fwd) P value threshold to <x>", 102 },
   { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the bias composition filter",       102 },
   { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the null2 score correction",        102 },
-  { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",       "never run HMM-only mode, not even for models with 0 basepairs",102 },
   /* Options for precise control of HMM envelope definition */
   /* name           type          default  env range toggles    reqs  incomp            help                                                      docgroup*/
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        103 },
@@ -233,23 +228,31 @@ static ESL_OPTIONS options[] = {
   { "--qdb",        eslARG_NONE, FALSE,   NULL, NULL,        NULL,    NULL,   NULL,  "use QDBs (instead of HMM bands) in final Inside round",            105 },
   { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,  "set tail loss prob for final Inside QDB calculation to <x>",       105 },
   { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
+  /* Options for terminating after individual pipeline stages, currently only works for F3 */
+  /* name           type          default env   range toggles reqs                             incomp  help                                                         docgroup*/
+  { "--trmF3",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc", NULL,   "terminate after Stage 3 Fwd and output surviving windows",       106 },
+  /* Options for control of what types of truncated hits are allowed */
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
-  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 SSV; for timing expts",          106 },
-  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          106 },
-  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          106 },
-  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   106 },
-  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 106 },
-  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
+  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 SSV; for timing expts",          107 },
+  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          107 },
+  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          107 },
+  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   107 },
+  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 107 },
+  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          107 },
   /* Other expert options */
-  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc", NULL,   "terminate after Stage 3 Fwd and output surviving windows",       107 },
-  /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
-  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    108 },
-  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist",    "turn off local ends in cp9 HMMs",                               108 },
-  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist,--cp9noel", "configure cp9 HMM in glocal mode",                       108 },
-  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       108 },
-  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     108 },
-  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
+  /* name           type          default   env range toggles   reqs  incomp                   help                                                             docgroup*/
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                   "do not resolve hits with greedy algorithm, use optimal one",    108 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist",           "turn off local ends in cp9 HMMs",                               108 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--glist,--cp9noel", "configure cp9 HMM in glocal mode",                              108 },
+  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                   "turn on null 2 biased composition HMM score corrections",       108 },
+  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,                   "set max tau <x> when tightening HMM bands",                     108 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,                   "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
+  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                   "set block size (number of models per worker/thread) to <n>",    108 },
+  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",   "use CM only for best scoring HMM pass for full seq envelopes",  108 },
+  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow only truncated hits, anywhere within sequences",          108 },
+  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow truncated hits only at 5' ends of sequences",             108 },
+  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow truncated hits only at 3' ends of sequences",             108 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -661,7 +664,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort in order to markup overlapping hits from different models (only within clans if --oclan) */
-      cm_tophits_SortForOverlapMarkup(tinfo[0].th);
+      cm_tophits_SortForOverlapMarkup(tinfo[0].th, esl_opt_GetBoolean(go, "--oclan"));
       if((status = cm_tophits_RemoveOrMarkOverlaps(tinfo[0].th, esl_opt_GetBoolean(go, "--oclan"), errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
@@ -677,7 +680,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       for (i = 0; i < tinfo[0].th->N; i++) {
 	if ((tinfo[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (tinfo[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
 	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].n_output++;
-	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].pos_output += abs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
+	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].pos_output += llabs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
 	}
       }
       if(tinfo[0].pli->do_trm_F3) { 
@@ -943,8 +946,6 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
               
   /* variables related to --clanin */
   int              have_clans;         /* set to TRUE if we have information on clans, else FALSE */
-  int              clan_idx = -1;      /* clan index, -1 if current family is not part of a clan */
-  int              clan_fam_idx = -1;  /* index of current family in clan_fam_kh, if it exists, else -1 */
 
   /* do we have clan info? */
   have_clans = (rinfo->clan_fam_kh != NULL && rinfo->clan_mapA != NULL) ? TRUE : FALSE;
@@ -977,8 +978,6 @@ thread_loop(ESL_THREADS *obj, ESL_WORK_QUEUE *queue, READER_INFO *rinfo, CM_FILE
           rinfo->msvdataA[cm_idx]   = block->msvdataA[i];
 
           /* figure out clan_idx and set it in the block and rinfo */
-          clan_idx     = -1; 
-          clan_fam_idx = -1;
           if(have_clans) { block->clan_idxA[i] = determine_clan_index(rinfo->omA[cm_idx]->name, rinfo->clan_fam_kh, rinfo->clan_mapA); }
           else           { block->clan_idxA[i] = -1; }
           rinfo->clan_idxA[cm_idx] = block->clan_idxA[i];
@@ -1271,6 +1270,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int              sstatus  = eslOK;
   int              dest;
 
+  /* variables only used if --clanin is used */
+  ESL_KEYHASH      *clan_name_kh = NULL;          /* these are clan names */
+  ESL_KEYHASH      *clan_fam_kh  = NULL;          /* these are family names in a clan, members of same clan are contiguous */
+  int              *clan_mapA    = NULL;          /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                                   * index c in <clan_name_kh>. */
+
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
   BLOCK_LIST      *list     = NULL;
@@ -1323,7 +1328,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->Z = (int64_t) cmfp->ssi->nprimary;
     cfg->Z_setby = CM_ZSETBY_SSI_AND_QLENGTH; /* we will multiply Z by each query sequence length */
   }
-  cm_file_Close(cmfp);
+  /* If nec, open and read the clan info file, while CM file is open */
+  if (esl_opt_IsOn(go, "--clanin")) { 
+    if((status = read_clan_info_file(esl_opt_GetString(go, "--clanin"), errbuf, cmfp, &clan_name_kh, &clan_fam_kh, &clan_mapA)) != eslOK) cm_Fail(errbuf);
+  }
+
+  cm_file_Close(cmfp); /* important to do this after the read_clan_info_file() call above, which uses cmfp */
 
   /* Open the query sequence database */
   status = esl_sqfile_OpenDigital(abc, cfg->seqfile, seqfmt, NULL, &sqfp);
@@ -1351,7 +1361,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   else { 
     bsize = nmodels / (cfg->nproc - 1);
-    if(nmodels % (cfg->nproc - 1) != 0) bsize++;;
+    if(nmodels % (cfg->nproc - 1) != 0) bsize++;
   }  
 
   output_header(ofp, go, cfg->cmfile, cfg->seqfile, cfg->nproc);
@@ -1500,11 +1510,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
       cm_tophits_SortForOverlapRemoval(th);
-      if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
+      if((status = cm_tophits_RemoveOrMarkOverlaps(th, FALSE, errbuf)) != eslOK) mpi_failure(errbuf);
 
-      /* Resort in order to markup overlapping hits from different models */
-      cm_tophits_SortForOverlapMarkup(th);
-      if((status = cm_tophits_RemoveOrMarkOverlaps(th, errbuf)) != eslOK) mpi_failure(errbuf);
+      /* Resort in order to markup overlapping hits from different models (only within clans if --oclan) */
+      cm_tophits_SortForOverlapMarkup(th, esl_opt_GetBoolean(go, "--oclan"));
+      if((status = cm_tophits_RemoveOrMarkOverlaps(th, esl_opt_GetBoolean(go, "--oclan"), errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Resort: by score (usually) or by position (if in special 'terminate after F3' mode) */
       if(pli->do_trm_F3) cm_tophits_SortByPosition(th);
@@ -1519,7 +1529,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       for (i = 0; i < th->N; i++) {
 	if ((th->hit[i]->flags & CM_HIT_IS_REPORTED) || (th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
 	  pli->acct[th->hit[i]->pass_idx].n_output++;
-	  pli->acct[th->hit[i]->pass_idx].pos_output += abs(th->hit[i]->stop - th->hit[i]->start) + 1;
+	  pli->acct[th->hit[i]->pass_idx].pos_output += llabs(th->hit[i]->stop - th->hit[i]->start) + 1;
 	}
       }
 
@@ -1544,11 +1554,18 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       }
       
-      if (tblfp) { 
-        if(pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, th, pli, (seq_idx == 1));
-        else               cm_tophits_TabularTargets  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+      if (tblfp != NULL) { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
+          if(pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, th, pli, (seq_idx == 1)); 
+          else               cm_tophits_TabularTargets1  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 2) { 
+          if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
+            mpi_failure(errbuf);
+          }
+        }
       }
-      
+
       esl_stopwatch_Stop(w);
       cm_pli_Statistics(ofp, pli, w);
       fprintf(ofp, "//\n");
@@ -1602,8 +1619,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_sq_Destroy(qsq);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
-  if(w  != NULL) esl_stopwatch_Destroy(w);
-  if(mw != NULL) esl_stopwatch_Destroy(mw);
+  if(w            != NULL) esl_stopwatch_Destroy(w);
+  if(mw           != NULL) esl_stopwatch_Destroy(mw);
+  if(clan_name_kh != NULL) esl_keyhash_Destroy(clan_name_kh);
+  if(clan_fam_kh  != NULL) esl_keyhash_Destroy(clan_fam_kh);
+  if(clan_mapA    != NULL) free(clan_mapA);
 
   if (ofp != stdout) fclose(ofp);
   if (tblfp)         fclose(tblfp);
@@ -1629,7 +1649,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   P7_PROFILE      *Rgm      = NULL;              /* generic query profile HMM for env defn for 5' truncated hits */
   P7_PROFILE      *Lgm      = NULL;              /* generic query profile HMM for env defn for 3' truncated hits */
   P7_PROFILE      *Tgm      = NULL;              /* generic query profile HMM for env defn for 5' and 3'truncated hits */
-  P7_MSVDATA      *msvdata  = NULL;              /* MSV/SSV specific data structure                 */
+  P7_SCOREDATA    *msvdata  = NULL;              /* MSV/SSV specific data structure                 */
 
   ESL_STOPWATCH   *w        = NULL;              /* timing                                          */
   ESL_SQ          *qsq      = NULL;		 /* query sequence                                  */
@@ -1646,11 +1666,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_KEYHASH     *glocal_kh = NULL;             /* list of models to configure globally, only created if --glist */
 
   /* variables only used if --clanin is used */
-  FIX ME
-  ESL_KEYHASH     *clan_kh     = NULL;    /* list of models in clans */
-  char           **clan_namesA = NULL;    /* [0..c..nclan-1] name of clan <c>*/
-  int64_t         *clan_sidxA  = NULL;    /* [0..c..nclan-1] starting index in clan_kh for clan <c> */
-  int              nclan       = 0;       /* number of clans, size of clan_namesA and clan_sidxA */
+  ESL_KEYHASH      *clan_name_kh = NULL;          /* these are clan names */
+  ESL_KEYHASH      *clan_fam_kh  = NULL;          /* these are family names in a clan, members of same clan are contiguous */
+  int              *clan_mapA    = NULL;          /* [0..i..nfam-1] = c; family index i in <clan_fam_kh> belongs to clan
+                                                   * index c in <clan_name_kh>. */
 
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
@@ -1659,6 +1678,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   double           eZ;                           /* effective database size                      */
   int64_t          prv_posn = 0;                 /* position of previous chunk for cur seq, 0 if first chunk */
   ESL_DSQ         *save_dsq = NULL;              /* pointer to original qsq->dsq data */
+  int              have_clans;                   /* set to TRUE if we have information on clans, else FALSE */
+  int              clan_idx = -1;                /* clan index, -1 if current family is not part of a clan */
 
   MPI_Status       mpistatus;
   char             errbuf[eslERRBUFSIZE];
@@ -1681,7 +1702,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
   else if (hstatus != eslOK) mpi_failure("Unexpected error in reading CMs from %s\n%s", cfg->cmfile, cmfp->errbuf); 
 
-  /* Determine database size: default is to updated as we read target CMs */
+  /* Determine database size: default is to update as we read target CMs */
   if(esl_opt_IsUsed(go, "-Z")) { 
     cfg->Z       = (int64_t) esl_opt_GetReal(go, "-Z");
     cfg->Z_setby = CM_ZSETBY_OPTION; 
@@ -1698,6 +1719,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* If nec, open and read the clan info file, while CM file is open */
   if (esl_opt_IsOn(go, "--clanin")) { 
     if((status = read_clan_info_file(esl_opt_GetString(go, "--clanin"), errbuf, cmfp, &clan_name_kh, &clan_fam_kh, &clan_mapA)) != eslOK) cm_Fail(errbuf);
+    have_clans = TRUE;
+  }
+  else { 
+    have_clans = FALSE;
   }
 
   nmodels = (int64_t) cmfp->ssi->nprimary;
@@ -1785,11 +1810,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                   if(rinfo->omA[cm_idx] != NULL) mpi_failure("Worker was supposed to read MSVs but already had one...\n");
                   hstatus = cm_p7_oprofile_ReadMSV(cmfp, TRUE, &(rinfo->abc), &(rinfo->cm_offsetA[cm_idx]), &(rinfo->cm_clenA[cm_idx]), &(rinfo->cm_WA[cm_idx]), 
                                                    &(rinfo->cm_nbpA[cm_idx]), &(rinfo->gfmuA[cm_idx]), &(rinfo->gflambdaA[cm_idx]), &(rinfo->omA[cm_idx]));
+                  /* determine clan idx if nec */
+                  if(have_clans) { rinfo->clan_idxA[cm_idx] = determine_clan_index(rinfo->omA[cm_idx]->name, rinfo->clan_fam_kh, rinfo->clan_mapA); }
+                  else           { rinfo->clan_idxA[cm_idx] = -1; }
                   
                 }
                 if(hstatus == eslOK) { 
                   if(rinfo->msvdataA[cm_idx] == NULL) { 
-                    rinfo->msvdataA[cm_idx] = p7_hmm_MSVDataCreate(rinfo->omA[cm_idx], FALSE);
+                    rinfo->msvdataA[cm_idx] = p7_hmm_ScoreDataCreate(rinfo->omA[cm_idx], FALSE);
                   }
 
                   /* set pointers for convenience */
@@ -1801,9 +1829,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                   gflambda  = rinfo->gflambdaA[cm_idx];
                   om        = rinfo->omA[cm_idx];
                   msvdata   = rinfo->msvdataA[cm_idx];
+                  clan_idx  = rinfo->clan_idxA[cm_idx];
 
                   length = om->eoff - block.offset + 1;
-                  
                   
                   esl_vec_FCopy(om->evparam, p7_NEVPARAM, p7_evparam);
                   p7_evparam[CM_p7_GFMU]     = gfmu;
@@ -2021,15 +2049,17 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
       puts("\nOptions for precise control of the final stage:");
       esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
-      puts("\nOptions for timing pipeline stages:");
+      puts("\nOptions for terminating after individual pipeline stages:");
       esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
+      puts("\nOptions for timing pipeline stages:");
+      esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
     }
 
     printf("\nOther options%s:\n", do_dev ? "" : devmsg);
     esl_opt_DisplayHelp(stdout, go, 7, 2, 80); 
     if(do_dev) { 
       printf("\nOther expert options%s:\n", do_dev ? "" : devmsg);
-      esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 108, 2, 80);
     }
     else { 
       puts("\n*Use --devhelp to show additional expert options.");
@@ -2084,6 +2114,23 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 	printf("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
 	goto ERROR;
       }
+    }
+  }
+
+  /* '--clanin' and '--oclan' only make sense with '--fmt 2',
+   * esl_getopts enforces --fmt is used, but not necessarily
+   * with '2' as the argument. 
+   */
+  if(esl_opt_IsUsed(go, "--clanin")) { 
+    if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
+      printf("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
+      goto ERROR;  
+    }
+  }
+  if(esl_opt_IsUsed(go, "--oclan")) { 
+    if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
+      printf("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
+      goto ERROR;  
     }
   }
 
@@ -2582,16 +2629,6 @@ read_clan_info_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **r
   esl_fileparser_Close(efp);
 
   if(nclan == 0) ESL_FAIL(status, errbuf, "Error reading %s, no clans present in file\n", filename);
-
-  /* debug print */
-  for(i = 0; i < nclan; i++) { 
-    printf("clan %d %s\n", i, esl_keyhash_Get(clan_name_kh, i));
-  }
-  printf("\n\n");
-  for(i = 0; i < nfam; i++) { 
-    printf("fam %d %s clan: %d\n", i, esl_keyhash_Get(clan_fam_kh, i), clan_mapA[i]);
-  }
-  printf("\n\n");
 
   *ret_clan_name_kh = clan_name_kh;
   *ret_clan_fam_kh  = clan_fam_kh;

@@ -132,21 +132,16 @@ static ESL_OPTIONS options[] = {
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",      7 },
   { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow full and truncated hits anywhere within sequences",          7 },
-  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow only truncated hits, anywhere within sequences",             7 },
-  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 5' ends of sequences",              7 },
-  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow truncated hits only at 3' ends of sequences",              7 },
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",              7 },
   { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed alnment mx size to <x> Mb [df: autodetermined]", 7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed size of search DP matrices to <x> Mb",           7 },
   { "--cyk",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "use scanning CM CYK algorithm, not Inside in final stage",       7 },
   { "--acyk",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "align hits with CYK, not optimal accuracy",                      7 },
   { "--wcx",        eslARG_REAL,   FALSE, NULL, "x>=1.25",NULL, NULL,"--nohmm,--qdb,--fqdb",           "set W (expected max hit len) as <x> * cm->clen (model len)",     7 },
-  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",           "use CM only for best scoring HMM pass for full seq envelopes",   7 },
   { "--toponly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the top strand",                                     7 },
   { "--bottomonly", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "only search the bottom strand",                                  7 },
   { "--tformat",    eslARG_STRING,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "assert target <seqdb> is in format <s>: no autodetection",       7 },
   { "--glist",      eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
-  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--clanin",     eslARG_INFILE,  NULL, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
@@ -213,25 +208,29 @@ static ESL_OPTIONS options[] = {
   { "--qdb",        eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL,  "use QDBs (instead of HMM bands) in final Inside round",            105 },
   { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,  "set tail loss prob for final Inside QDB calculation to <x>",       105 },
   { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
+  /* Options for terminating after individual pipeline stages, currently only works for F3 */
+  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
-  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 SSV; for timing expts",          106 },
-  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          106 },
-  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          106 },
-  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   106 },
-  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 106 },
-  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          106 },
-  /* Options for terminating after individual pipeline stages, currently only works for F3 */
-  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       107 },
-
+  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 SSV; for timing expts",          107 },
+  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          107 },
+  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          107 },
+  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   107 },
+  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 107 },
+  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          107 },
   /* Other expert options */
-  /* name          type          default   env  range toggles   reqs  incomp            help                                                             docgroup*/
-  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "do not resolve hits with greedy algorithm, use optimal one",    108 },
-  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",            "turn off local ends in cp9 HMMs",                               108 },
-  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",  "configure cp9 HMM in glocal mode",                              108 },
-  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "turn on null 2 biased composition HMM score corrections",       108 },
-  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,            "set max tau <x> when tightening HMM bands",                     108 },
-  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,            "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
+  /* name          type          default   env  range toggles   reqs  incomp                 help                                                             docgroup*/
+  { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "do not resolve hits with greedy algorithm, use optimal one",    108 },
+  { "--cp9noel",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g",                 "turn off local ends in cp9 HMMs",                               108 },
+  { "--cp9gloc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "-g,--cp9noel",       "configure cp9 HMM in glocal mode",                              108 },
+  { "--null2",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "turn on null 2 biased composition HMM score corrections",       108 },
+  { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,                 "set max tau <x> when tightening HMM bands",                     108 },
+  { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,                 "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
+  { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                 "BOGUS OPTION, NEVER ALLOWED",                                   999 },
+  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb", "use CM only for best scoring HMM pass for full seq envelopes",  108 },
+  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,    "allow only truncated hits, anywhere within sequences",                  108 },
+  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,    "allow truncated hits only at 5' ends of sequences",                     108 },
+  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,    "allow truncated hits only at 3' ends of sequences",                     108 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
   { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 108 },
@@ -558,8 +557,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cm_idx++;
     esl_stopwatch_Start(w);
     
-    printf("CM size: %.2f Mb\n", cm_Sizeof(cm));
-
     /* create a new template info, and point it to the cm we just read */
     tinfo = create_info(go);
     tinfo->cm = cm;
@@ -665,7 +662,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     for (i = 0; i < info->th->N; i++) {
       if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
 	info[0].pli->acct[info[0].th->hit[i]->pass_idx].n_output++;
-	info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += abs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
+	info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += llabs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
       }
     }
       
@@ -783,7 +780,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   int       status;
   int       wstatus;
   int       prv_pli_ntophits;    /* number of top hits before each cm_Pipeline() */
-  int       prv_seq_ntophits;    /* number of top hits before each target sequence */
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq    = esl_sq_CreateDigital(info->cm->abc);
 
@@ -803,7 +799,6 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if(dbsq->start == 1) dbsq->L = srcL[seq_idx-1];
     
     cm_pli_NewSeq(info->pli, dbsq, seq_idx-1);
-    prv_seq_ntophits = info->th->N; 
 
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
@@ -965,8 +960,6 @@ pipeline_thread(void *arg)
   ESL_SQ_BLOCK  *block = NULL;
   void          *newBlock;
   int            prv_pli_ntophits;    /* number of top hits before each cm_Pipeline() */
-  int            prv_seq_ntophits;    /* number of top hits before each target sequence */
-
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
@@ -994,7 +987,6 @@ pipeline_thread(void *arg)
       ESL_SQ *dbsq = block->list + i;
 
       cm_pli_NewSeq(info->pli, dbsq, block->first_seqidx + i);
-      prv_seq_ntophits = info->th->N; 
 
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
@@ -1349,7 +1341,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     for (i = 0; i < info->th->N; i++) {
       if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
 	info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
-	info->pli->acct[info->th->hit[i]->pass_idx].pos_output += abs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	info->pli->acct[info->th->hit[i]->pass_idx].pos_output += llabs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
       }
     }
     
@@ -1372,8 +1364,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     if (tblfp != NULL) { 
-      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets(tblfp, info->th, info->pli, (cm_idx == 1)); 
-      else                     cm_tophits_TabularTargets(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info->th, info->pli, (cm_idx == 1)); 
+      else                     cm_tophits_TabularTargets1(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -1734,15 +1726,17 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
       puts("\nOptions for precise control of the final stage:");
       esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
-      puts("\nOptions for timing pipeline stages:");
+      puts("\nOptions for terminating after individual pipeline stages:");
       esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
+      puts("\nOptions for timing pipeline stages:");
+      esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
     }
 
     printf("\nOther options%s:\n", do_dev ? "" : devmsg);
     esl_opt_DisplayHelp(stdout, go, 7, 2, 80); 
     if(do_dev) { 
       printf("\nOther expert options%s:\n", do_dev ? "" : devmsg);
-      esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 108, 2, 80);
     }
     else { 
       puts("\n*Use --devhelp to show additional expert options.");
