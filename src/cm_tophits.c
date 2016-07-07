@@ -2211,7 +2211,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
       //      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
-      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %c%c  %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
 	      tnamew, th->hit[h]->name,
 	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
 	      qnamew, qname,
@@ -2227,8 +2227,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	      th->hit[h]->bias,
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
-	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED         ? '!' : '?'),
-	      ((pli->mode == CM_SCAN_MODELS) ? (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP ? '=' : '*') : ' '),
+	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? "!" : "?"),
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
     }
   }
@@ -2349,25 +2348,27 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   for(i = 0; i < clanw;    i++) { clanstr[i]  = '-'; } clanstr[clanw]     = '\0';
   for(i = 0; i < posw;     i++) { posstr[i]   = '-'; } posstr[posw]       = '\0';
 
-  ESL_ALLOC(sorted_idxA, sizeof(int64_t) * th->N);
-  for(h = 0; h < th->N; h++) sorted_idxA[h] = -1;
-  ESL_ALLOC(output_idxA, sizeof(int64_t) * th->N);
-  for(h = 0; h < th->N; h++) output_idxA[h] = -1;
-  ESL_ALLOC(has_overlapA, sizeof(int) * th->N);
-  /* determine which hits are listed as any_oidx or win_oidx for any other hits */
-  for(h = 0; h < th->N; h++) has_overlapA[h] = FALSE;
-  for(h = 0; h < th->N; h++) { 
-    if(th->hit[h]->any_oidx != -1) has_overlapA[th->hit[h]->any_oidx] = TRUE; 
-    if(th->hit[h]->win_oidx != -1) has_overlapA[th->hit[h]->win_oidx] = TRUE; 
-    sorted_idxA[th->hit[h]->hit_idx] = h; /* save sorted idx */
-    /* and save the output index we'll use for this hit */
-    if ((th->hit[h]->flags & CM_HIT_IS_REPORTED) &&  /* hit is REPORTED */
-        (skip_overlaps == FALSE || (! (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP)))) { /* hit won't be skipped b/c it's an overlap */
-      noutput++;
-      output_idxA[h] = noutput; /* save output idx */
+  if(th->N > 0) { 
+    ESL_ALLOC(sorted_idxA, sizeof(int64_t) * th->N);
+    ESL_ALLOC(output_idxA, sizeof(int64_t) * th->N);
+    ESL_ALLOC(has_overlapA, sizeof(int) * th->N);
+    for(h = 0; h < th->N; h++) sorted_idxA[h] = -1;
+    for(h = 0; h < th->N; h++) output_idxA[h] = -1;
+    for(h = 0; h < th->N; h++) has_overlapA[h] = FALSE;
+    /* determine which hits are listed as any_oidx or win_oidx for any other hits */
+    for(h = 0; h < th->N; h++) { 
+      if(th->hit[h]->any_oidx != -1) has_overlapA[th->hit[h]->any_oidx] = TRUE; 
+      if(th->hit[h]->win_oidx != -1) has_overlapA[th->hit[h]->win_oidx] = TRUE; 
+      sorted_idxA[th->hit[h]->hit_idx] = h; /* save sorted idx */
+      /* and save the output index we'll use for this hit */
+      if ((th->hit[h]->flags & CM_HIT_IS_REPORTED) &&  /* hit is REPORTED */
+          (skip_overlaps == FALSE || (! (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP)))) { /* hit won't be skipped b/c it's an overlap */
+        noutput++;
+        output_idxA[h] = noutput; /* save output idx */
+      }
     }
+    noutput = 0; /* very impt to reset this, so we list first hit as index 1, and not th->N+1 */
   }
-  noutput = 0; /* very impt to reset this, so we list first hit as index 1, and not th->N+1 */
 
   if (show_header) { 
     if(pli->do_trm_F3) { /* terminated after F3, more compact output (we don't have all the info for the default output mode) */
@@ -3092,7 +3093,7 @@ main(int argc, char **argv)
 
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], /*do_clans_only=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
   esl_stopwatch_Stop(w);
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_RemoveOrMarkOverlaps() (removing):  ");
@@ -3104,7 +3105,7 @@ main(int argc, char **argv)
   esl_stopwatch_Display(stdout, w, "# CPU time cm_tophits_SortForOverlapMarkup():             ");
   esl_stopwatch_Start(w);
 
-  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status = cm_tophits_RemoveOrMarkOverlaps(h[0], /*do_clans=*/FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
   if(esl_opt_GetBoolean(go, "-v")) cm_tophits_Dump(stdout, h[0]);
 

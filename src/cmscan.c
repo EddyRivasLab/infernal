@@ -680,7 +680,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       for (i = 0; i < tinfo[0].th->N; i++) {
 	if ((tinfo[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (tinfo[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
 	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].n_output++;
-	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].pos_output += abs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
+	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].pos_output += llabs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
 	}
       }
       if(tinfo[0].pli->do_trm_F3) { 
@@ -1529,7 +1529,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       for (i = 0; i < th->N; i++) {
 	if ((th->hit[i]->flags & CM_HIT_IS_REPORTED) || (th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
 	  pli->acct[th->hit[i]->pass_idx].n_output++;
-	  pli->acct[th->hit[i]->pass_idx].pos_output += abs(th->hit[i]->stop - th->hit[i]->start) + 1;
+	  pli->acct[th->hit[i]->pass_idx].pos_output += llabs(th->hit[i]->stop - th->hit[i]->start) + 1;
 	}
       }
 

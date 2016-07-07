@@ -1,5 +1,6 @@
 Infernal - inference of RNA secondary structure alignments
-http://infernal.janelia.org/
+http://eddylab.org/infernal/
+
 Version @INFERNAL_VERSION@; @INFERNAL_DATE@
 @INFERNAL_COPYRIGHT@
 ------------------------------------------------------------------
@@ -14,14 +15,13 @@ more homologs of your RNAs (the "cmsearch" program). You can also use
 a CM of a representative alignment of your sequence family to create a
 larger consensus alignment of any number of RNAs (the "cmalign"
 program). Infernal is the software engine underlying the Rfam RNA
-database (http://rfam.janelia.org).
+database (http://rfam.xfam.org/).
 
 Other files to read in the top-level source directory:
 
     INSTALL          Brief installation instructions.
     Userguide.pdf    The Infernal User's Guide.
-    COPYRIGHT        Copyright and license information.
-    LICENSE          The GNU General Public License (GPLv3).
+    LICENSE          copyright and license information
 
 To get started after installation, see the Tutorial section in the
 Infernal User's Guide (Userguide.pdf).
@@ -29,8 +29,5 @@ Infernal User's Guide (Userguide.pdf).
 
 -------------------------------------------------------------------
 The Infernal development team
-HHMI Janelia Farm Research Campus
-http://infernal.janelia.org/
-
-
-
+github.com/EddyRivasLab/infernal/
+http://eddylab.org/infernal

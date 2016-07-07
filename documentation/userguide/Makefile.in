@@ -41,6 +41,7 @@ MANPAGES = \
 
 TEXFILES =\
 	cmbuild.tex\
+	copyright.tex\
 	filter.tex\
 	format_prior.tex\
 	formats.tex\
@@ -57,7 +58,7 @@ TEXFILES =\
 
 pdf:    Userguide.pdf
 
-Userguide.pdf: symlinks.stamp titlepage.tex copyright.tex manpages.tex
+Userguide.pdf: symlinks.stamp titlepage.tex manpages.tex
 	@for prog in pdflatex bibtex; do \
 	  command -v $$prog >/dev/null 2>&1 || { echo >&2 "The $$prog program is required to build the Userguide, but it's not installed. Aborting."; exit 1; } \
 	done
@@ -82,10 +83,6 @@ symlinks.stamp:
 titlepage.tex: ${srcdir}/titlepage.tex.in
 	@cp -f ${srcdir}/titlepage.tex.in titlepage.tex
 	@${SEDITION} INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE ${INFERNAL_DATE} titlepage.tex
-
-copyright.tex: ${srcdir}/copyright.tex.in
-	@cp -f ${srcdir}/copyright.tex.in copyright.tex
-	@${SEDITION} INFERNAL_COPYRIGHT ${INFERNAL_COPYRIGHT} copyright.tex
 
 # manpages: convert man pages to LaTeX chapter in User Guide.
 #    uses PolyglotMan 3.2 "rman", and rmanprocess.pl script in easel's devkit
@@ -114,7 +111,7 @@ distclean: clean
 	   done ;\
 	fi
 	-rm -f symlinks.stamp
-	-rm -f titlepage.tex copyright.tex manpages.tex
+	-rm -f titlepage.tex manpages.tex
 	-rm -f Userguide.pdf
 	-rm -f Makefile
 
