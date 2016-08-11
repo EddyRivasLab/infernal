@@ -2848,12 +2848,17 @@ cm_AppendComlog(CM_t *cm, int argc, char **argv, int add_seed, uint32_t seed)
 int
 cm_SetCtime(CM_t *cm)
 {
-  char    *s = NULL;
-  time_t   date;
-  int      status;
+  char       *s = NULL;
+  time_t      date;
+  int         status;
+  const char *sde = getenv("SOURCE_DATE_EPOCH");
 
   ESL_ALLOC(s, 32);
-  if ((date = time(NULL)) == -1)               { status = eslESYS; goto ERROR; }
+  if (sde) {
+    date = strtoul(sde, NULL, 0);
+  } else {
+    if ((date = time(NULL)) == -1)             { status = eslESYS; goto ERROR; }
+  }
   if (ctime_r(&date, s) == NULL)               { status = eslESYS; goto ERROR; }
   if ((status = esl_strchop(s, -1)) != eslOK)  {                   goto ERROR; }
   
