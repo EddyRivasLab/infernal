@@ -478,7 +478,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
 	  /* print alpha matrices - caution: these will be big! */
 	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
-	      printf("R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
+	      printf("#DEBUG: R j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		     j, v, d, 
 		     NOT_IMPOSSIBLE(Jalpha[jp_v][v][d]) ? Jalpha[jp_v][v][d] : -9999.9,
 		     fill_L && NOT_IMPOSSIBLE(Lalpha[jp_v][v][d]) ? Lalpha[jp_v][v][d] : -9999.9,
@@ -636,12 +636,12 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
-#if eslDEBUGLEVEL >= 2
-  printf("Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
+#if eslDEBUGLEVEL >= 3
+  printf("#DEBUG: Best truncated score: %.4f (%.4f) (ANY LENGTH CYK mode: %s)\n",
 	 vsc_root,
 	 vsc_root + sreLOG2(2./(cm->clen * (cm->clen+1))),
 	 MarginalMode(vmode_root));
-  printf("Best truncated score: %.4f (%.4f) (FULL LENGTH CYK mode: %s)\n",
+  printf("#DEBUG: Best truncated score: %.4f (%.4f) (FULL LENGTH CYK mode: %s)\n",
 	 bsc_full, 
 	 bsc_full + sreLOG2(2./(cm->clen * (cm->clen+1))),
 	 MarginalMode(bmode_full));
@@ -686,7 +686,7 @@ RefTrCYKScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int pass_
   if (ret_sc   != NULL) *ret_sc   = vsc_root;
   if (ret_mode != NULL) *ret_mode = vmode_root;
 
-  ESL_DPRINTF1(("RefTrCYKScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: RefTrCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -1136,7 +1136,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
 	  /* print alpha matrices - caution: these will be big! */
 	  if(cm->stid[v] == BIF_B) { 
 	    for(d = dnA[v]; d <= dxA[v]; d++) { 
-	      printf("R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
+	      printf("#DEBUG: R j: %3d  v: %3d  d: %3d   J: %10d  L: %10d  R: %10d  T: %10d\n", 
 		     j, v, d, 
 		     Jalpha[jp_v][v][d], 
 		     fill_L ? Lalpha[jp_v][v][d] : -INFTY, 
@@ -1327,7 +1327,7 @@ RefITrInsideScan(CM_t *cm, char *errbuf, CM_TR_SCAN_MX *trsmx, int qdbidx, int p
   if (ret_sc   != NULL) *ret_sc   = vsc_root;
   if (ret_mode != NULL) *ret_mode = vmode_root;
 
-  ESL_DPRINTF1(("RefITrInsideScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: RefITrInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -1442,7 +1442,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), mx is NULL.\n");
   if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), cm->cp9 is NULL.\n");
 
-  ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
+  ESL_DPRINTF1(("#DEBUG: cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -2163,7 +2163,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
 	      jp_v = j - jmin[v];
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
+		printf("#DEBUG: H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
 		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
 		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
@@ -2443,7 +2443,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
   if(ret_sc   != NULL) { *ret_sc   = vsc_root;   }
   if(ret_mode != NULL) { *ret_mode = vmode_root; }
 
-  ESL_DPRINTF1(("TrCYKScanHB() return sc: %f\n", vsc_root));
+  ESL_DPRINTF1(("#DEBUG: TrCYKScanHB() return sc: %f\n", vsc_root));
   return eslOK;
 
  ERROR: 
@@ -2558,7 +2558,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), mx is NULL.\n");
   if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FTrInsideScanHB(), cm->cp9b is NULL.\n");
 
-  ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
+  ESL_DPRINTF1(("#DEBUG: cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -3279,7 +3279,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
 	      jp_v = j - jmin[v];
 	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-		printf("H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
+		printf("#DEBUG: H j: %3d  v: %3d  d: %3d   J: %10.4f  L: %10.4f  R: %10.4f  T: %10.4f\n", 
 		       j, v, d, 
 		       (cp9b->Jvalid[v] && NOT_IMPOSSIBLE(Jalpha[v][jp_v][dp_v])) ? Jalpha[v][jp_v][dp_v] : -9999.9,
 		       (cp9b->Lvalid[v] && NOT_IMPOSSIBLE(Lalpha[v][jp_v][dp_v])) ? Lalpha[v][jp_v][dp_v] : -9999.9,
@@ -3559,7 +3559,7 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
   if (ret_sc   != NULL) *ret_sc   = vsc_root;
   if (ret_mode != NULL) *ret_mode = vmode_root;
 
-  ESL_DPRINTF1(("FTrInsideScanHB() return sc: %f\n", vsc_root));
+  ESL_DPRINTF1(("#DEBUG: FTrInsideScanHB() return sc: %f\n", vsc_root));
   return eslOK;
 
  ERROR: 

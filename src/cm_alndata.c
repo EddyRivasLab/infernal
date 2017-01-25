@@ -317,16 +317,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int doing_search = FALSE;
 
 #if eslDEBUGLEVEL >= 1
-  printf("in DispatchSqAlignment() %s\n", sq->name);
-  printf("\tdo_nonbanded: %d\n", do_nonbanded);
-  printf("\tdo_optacc:    %d\n", do_optacc);
-  printf("\tdo_sample:    %d\n", do_sample);
-  printf("\tdo_post:      %d\n", do_post);
-  printf("\tdo_sub:       %d\n", do_sub);
-  printf("\tdo_small:     %d\n", do_small);
-  printf("\tdo_trunc:     %d\n", do_trunc);
-  printf("\tdo_qdb:       %d\n", do_qdb);
-  printf("\tdoing_search: %d\n", doing_search);
+  printf("#DEBUG: in DispatchSqAlignment() %s\n", sq->name);
+  printf("#DEBUG: \tdo_nonbanded: %d\n", do_nonbanded);
+  printf("#DEBUG: \tdo_optacc:    %d\n", do_optacc);
+  printf("#DEBUG: \tdo_sample:    %d\n", do_sample);
+  printf("#DEBUG: \tdo_post:      %d\n", do_post);
+  printf("#DEBUG: \tdo_sub:       %d\n", do_sub);
+  printf("#DEBUG: \tdo_small:     %d\n", do_small);
+  printf("#DEBUG: \tdo_trunc:     %d\n", do_trunc);
+  printf("#DEBUG: \tdo_qdb:       %d\n", do_qdb);
+  printf("#DEBUG: \tdoing_search: %d\n", doing_search);
 #endif
   
   /* sub-mode specific variables (wouldn't be needed if sub mode were not supported) */

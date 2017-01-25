@@ -367,7 +367,7 @@ main(int argc, char **argv)
   pid_t pid;
   /* get the process id */
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 

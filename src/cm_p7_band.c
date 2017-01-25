@@ -770,7 +770,7 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
 
   /* Rearrange DP matrix for this seq */
   if((status = GrowCP9Matrix(mx, errbuf, L, M, kmin, kmax, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_ForwardP7B(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF2(("#DEBUG: cp9_ForwardP7B(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
   
   /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
@@ -917,7 +917,7 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
     } /* end loop over end positions i */
   
   *ret_sc = Scorify(erow[L]);
-  ESL_DPRINTF1(("cp9_ForwardP7B() return score: %10.4f\n", Scorify(erow[L])));
+  ESL_DPRINTF1(("#DEBUG: cp9_ForwardP7B() return score: %10.4f\n", Scorify(erow[L])));
 
   return eslOK;
 }
@@ -1003,7 +1003,7 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
   if((status = GrowCP9Matrix(mx, errbuf, L, M, kmin, kmax, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_ForwardP7B_OLD_WITH_EL(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF2(("#DEBUG: cp9_ForwardP7B_OLD_WITH_EL(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
   
   /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
@@ -1177,7 +1177,7 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
     } /* end loop over end positions i */
   
   *ret_sc = Scorify(erow[L]);
-  ESL_DPRINTF1(("cp9_ForwardP7B_OLD_WITH_EL() return score: %10.4f\n", Scorify(erow[L])));
+  ESL_DPRINTF1(("#DEBUG: cp9_ForwardP7B_OLD_WITH_EL() return score: %10.4f\n", Scorify(erow[L])));
 
   return eslOK;
 }
@@ -1253,7 +1253,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 
   /* Rearrange DP matrix for this seq */
   if((status = GrowCP9Matrix(mx, errbuf, L, M, kmin, kmax, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_BackwardP7B(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF2(("#DEBUG: cp9_BackwardP7B(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* Initialization of the L row. */
   i = L;
@@ -1625,7 +1625,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   /**********************************************************************************/
   /* End of Backward recursion */
   
-  ESL_DPRINTF1(("cp9_BackwardP7B() return score: %10.4f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cp9_BackwardP7B() return score: %10.4f\n", fsc));
   return eslOK;
 }
 
@@ -1722,7 +1722,7 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
     if((fabs(diff) > max_diff)) 
       ESL_FAIL(eslFAIL, errbuf, "cp9_CheckFB(), residue at posn i:%d violates sum_k f[i][k]*b[i][k]=P(x|hmm), sum_k = %.4f bits (should be %.4f)\n", i, fb_sc, sc);
   }
-  ESL_DPRINTF1(("cp9_CheckFB() passed, Forward/Backward matrices pass check.\n"));
+  ESL_DPRINTF1(("#DEBUG: cp9_CheckFB() passed, Forward/Backward matrices pass check.\n"));
   /*printf("cp9_CheckFB() passed, Forward/Backward matrices pass check.\n");*/
   return eslOK;
 }
@@ -1829,7 +1829,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, 1, L, FALSE)) != eslOK) return status;
-  ESL_DPRINTF1(("bands validated.\n"));
+  ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm); 
 

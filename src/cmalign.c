@@ -280,7 +280,7 @@ main(int argc, char **argv)
   pid_t pid;
   /* get the process id */
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 
@@ -1087,7 +1087,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 	if(si == sq_block->count) { 
 	  have_work = FALSE;
-	  ESL_DPRINTF1(("MPI master has sent all %d of its sequences\n", sq_block->count));
+	  ESL_DPRINTF1(("#DEBUG: MPI master has sent all %d of its sequences\n", sq_block->count));
 #if DEBUGMPI
 	  printf("master is out of work\n");
 #endif 

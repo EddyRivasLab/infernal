@@ -561,12 +561,12 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
 #if eslDEBUGLEVEL >= 1  
-  printf("cm_AlignSizeNeededHB()\n");
-  printf("\t mxmb:  %.2f\n", mxmb);
-  printf("\t emxmb: %.2f\n", emxmb);
-  printf("\t shmxmb:%.2f\n", shmxmb);
-  printf("\t totmb: %.2f\n", totmb);
-  printf("\t limit: %.2f\n", size_limit);
+  printf("#DEBUG: cm_AlignSizeNeededHB()\n");
+  printf("#DEBUG: \t mxmb:  %.2f\n", mxmb);
+  printf("#DEBUG: \t emxmb: %.2f\n", emxmb);
+  printf("#DEBUG: \t shmxmb:%.2f\n", shmxmb);
+  printf("#DEBUG: \t totmb: %.2f\n", totmb);
+  printf("#DEBUG: \t limit: %.2f\n", size_limit);
 #endif
 
   if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
@@ -681,7 +681,7 @@ cm_Align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_o
   if (ret_avgpp  != NULL) *ret_avgpp  = avgpp;
   if (ret_sc     != NULL) *ret_sc     = (do_optacc) ? ins_sc : sc;
 
-  ESL_DPRINTF1(("returning from cm_Align() sc : %f\n", sc)); 
+  ESL_DPRINTF1(("#DEBUG: returning from cm_Align() sc : %f\n", sc)); 
   return eslOK;
 }
 
@@ -774,20 +774,20 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
     if((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
   }
 
-#if eslDEBUGLEVEL >= 2
-    CMEmitMap_t *emap;
-    emap = CreateEmitMap(cm);
-    DumpEmitMap(stdout, emap, cm);
-    FreeEmitMap(emap);
-    ParsetreeDump(stdout, tr, cm, dsq);
-#endif
+  /* Uncomment to dump emit map and parse tree */
+  /* CMEmitMap_t *emap;
+     emap = CreateEmitMap(cm);
+     DumpEmitMap(stdout, emap, cm);
+     FreeEmitMap(emap);
+     ParsetreeDump(stdout, tr, cm, dsq);
+  */
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else free(ppstr);
   if (ret_tr     != NULL) *ret_tr     = tr;    else FreeParsetree(tr);
   if (ret_avgpp  != NULL) *ret_avgpp  = avgpp;
   if (ret_sc     != NULL) *ret_sc     = (do_optacc) ? ins_sc : sc;
 
-  ESL_DPRINTF1(("returning from cm_AlignHB() sc : %f\n", sc)); 
+  ESL_DPRINTF1(("#DEBUG: returning from cm_AlignHB() sc : %f\n", sc)); 
   return eslOK;
 }
 
@@ -1031,9 +1031,10 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     yshadow[0][L][L] = USED_LOCAL_BEGIN;
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_cykmx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.std_cykshmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_cykmx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1); */ 
+  /* FILE *fp2; fp2 = fopen("tmp.std_cykshmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2); */
 #endif
   
   sc = alpha[0][L][L];
@@ -1043,7 +1044,7 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   if (ret_b   != NULL) *ret_b  = b;    /* b is -1 if local begins are off */
   if (ret_sc  != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_CYKInsideAlign return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_CYKInsideAlign return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -1479,9 +1480,10 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
     yshadow[0][jp_0][Lp_0] = USED_LOCAL_BEGIN;
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_cykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.std_cykhbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_cykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1); */
+  /* FILE *fp2; fp2 = fopen("tmp.std_cykhbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2); */
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
@@ -1492,7 +1494,7 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   if (ret_b != NULL)  *ret_b   = b;    /* b is -1 if local begins are off */
   if (ret_sc != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_CYKInsideAlignHB return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_CYKInsideAlignHB return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -1706,8 +1708,9 @@ cm_InsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   /* include the bsc as part of alpha[0][L][L] */
   alpha[0][L][L] = FLogsum(alpha[0][L][L], bsc);
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_imx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_imx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1); */
 #endif
 
   sc =  alpha[0][L][L];
@@ -1716,7 +1719,7 @@ cm_InsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 
   if(ret_sc != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_InsideAlign() return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_InsideAlign() return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -2094,8 +2097,9 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     alpha[0][jp_0][Lp_0] = FLogsum(alpha[0][jp_0][Lp_0], bsc);
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp; fp = fopen("tmp.std_ihbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp; fp = fopen("tmp.std_ihbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp); */
 #endif
 
   sc = alpha[0][jp_0][Lp_0];
@@ -2105,7 +2109,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
   if(ret_sc != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_InsideAlignHB() return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_InsideAlignHB() return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -2464,9 +2468,10 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
     yshadow[0][L][L] = USED_LOCAL_BEGIN;
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_oamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.std_oashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_oamx",   "w"); cm_mx_Dump(fp1, mx); fclose(fp1); */
+  /* FILE *fp2; fp2 = fopen("tmp.std_oashmx", "w"); cm_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2); */ 
 #endif
   
   sc = alpha[0][L][L];
@@ -2477,7 +2482,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   if(ret_b != NULL)  *ret_b  = b;    /* b is -1 if local ends are off */
   if(ret_pp != NULL) *ret_pp = pp;
 
-  ESL_DPRINTF1(("cm_OptAccAlign return pp: %f\n", pp));
+  ESL_DPRINTF1(("#DEBUG: cm_OptAccAlign return pp: %f\n", pp));
   return eslOK;
 }
 
@@ -2918,9 +2923,10 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     yshadow[0][jp_0][Lp_0] = USED_LOCAL_BEGIN;
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_oahbmx",   "w"); cm_hb_mx_Dump(fp1, mx); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.std_oahbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_oahbmx",   "w"); cm_hb_mx_Dump(fp1, mx); fclose(fp1); */
+  /* FILE *fp2; fp2 = fopen("tmp.std_oahbshmx", "w"); cm_hb_shadow_mx_Dump(fp2, cm, shmx); fclose(fp2); */
 #endif
   
   sc = alpha[0][jp_0][Lp_0];
@@ -2933,7 +2939,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if (ret_b  != NULL)   *ret_b  = b;   /* b is -1 if local begins are off */
   if (ret_pp != NULL)   *ret_pp = pp;  
 
-  ESL_DPRINTF1(("cm_OptAccAlignHB return pp: %f\n", pp));
+  ESL_DPRINTF1(("#DEBUG: cm_OptAccAlignHB return pp: %f\n", pp));
   return eslOK;
 
  ERROR: 
@@ -3153,8 +3159,9 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_ocykmx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_ocykmx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1); */
 #endif
 
   fail1_flag = FALSE;
@@ -3310,11 +3317,11 @@ cm_CYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check2 FAILED.");
     else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside check3 FAILED.");
-    ESL_DPRINTF1(("SUCCESS! CYK Inside/Outside checks PASSED.\n"));
+    ESL_DPRINTF1(("#DEBUG: SUCCESS! CYK Inside/Outside checks PASSED.\n"));
   }
 
-  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_CYKOutsideAlign() sc : %f\n", sc));
-  else                             ESL_DPRINTF1(("\tcm_CYKOutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
+  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("#DEBUG: \tcm_CYKOutsideAlign() sc : %f\n", sc));
+  else                             ESL_DPRINTF1(("#DEBUG: \tcm_CYKOutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
 
   if(ret_sc != NULL) *ret_sc = sc;
 
@@ -3772,8 +3779,9 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.stdocykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.stdocykhbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1); */
 #endif
 
   fail1_flag = FALSE;
@@ -3937,19 +3945,20 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
     sc = alpha[0][jp_0][Lp_0];
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp; fp = fopen("tmp.std_ocykhbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp; fp = fopen("tmp.std_ocykhbmx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp); */
 #endif
 
   if(do_check) {
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check2 FAILED.");
     else if(fail3_flag) ESL_FAIL(eslFAIL, errbuf, "CYK Inside/Outside HB check3 FAILED.");
-    ESL_DPRINTF1(("SUCCESS! CYK Inside/Outside HB checks PASSED.\n"));
+    ESL_DPRINTF1(("#DEBUG: SUCCESS! CYK Inside/Outside HB checks PASSED.\n"));
   }
 
-  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_CYKOutsideAlignHB() sc : %f\n", sc));
-  else                             ESL_DPRINTF1(("\tcm_CYKOutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
+  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("#DEBUG: \tcm_CYKOutsideAlignHB() sc : %f\n", sc));
+  else                             ESL_DPRINTF1(("#DEBUG: \tcm_CYKOutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
 
   if(ret_sc != NULL) *ret_sc = sc;
 
@@ -4197,7 +4206,7 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
       }
     }
     if(! fail_flag) { 
-      ESL_DPRINTF1(("SUCCESS! all nodes passed error check (cm_OutsideAlign())\n"));
+      ESL_DPRINTF1(("#DEBUG: SUCCESS! all nodes passed error check (cm_OutsideAlign())\n"));
     }
   }
 
@@ -4233,12 +4242,13 @@ cm_OutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, i
 
   if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Not all nodes passed posterior check.");
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_omx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_omx", "w");   cm_mx_Dump(fp1, mx); fclose(fp1); */
 #endif
 
-  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_OutsideAlign() sc : %f\n", sc));
-  else                             ESL_DPRINTF1(("\tcm_OutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
+  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("#DEBUG: \tcm_OutsideAlign() sc : %f\n", sc));
+  else                             ESL_DPRINTF1(("#DEBUG: \tcm_OutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
 
   if(ret_sc != NULL) *ret_sc = sc;
 
@@ -4771,13 +4781,14 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Not all nodes passed posterior check.");
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_ohbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_ohbmx", "w");   cm_hb_mx_Dump(fp1, mx); fclose(fp1); */
 #endif
 
 
-  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("\tcm_OutsideAlignHB() sc : %f\n", sc));
-  else                             ESL_DPRINTF1(("\tcm_OutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
+  if(!(cm->flags & CMH_LOCAL_END)) ESL_DPRINTF1(("#DEBUG: \tcm_OutsideAlignHB() sc : %f\n", sc));
+  else                             ESL_DPRINTF1(("#DEBUG: \tcm_OutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", sc));
 
   if (ret_sc != NULL) *ret_sc = sc;
   return eslOK;
@@ -4848,8 +4859,9 @@ cm_Posterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *ins_mx, CM_
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_pmx", "w");   cm_mx_Dump(fp1, post_mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_pmx", "w");   cm_mx_Dump(fp1, post_mx); fclose(fp1); */
 #endif
 
   return eslOK;
@@ -5083,8 +5095,9 @@ cm_EmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *post
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_unnorm_emitmx",  "w"); cm_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_unnorm_emitmx",  "w"); cm_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1); */
 #endif
 
   /* Step 2. Normalize l_pp and r_pp so that probability that
@@ -5112,7 +5125,7 @@ cm_EmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *post
       }
       printf("i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));
     }
-    ESL_DPRINTF1(("cm_EmitterPosterior() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
+    ESL_DPRINTF1(("#DEBUG: cm_EmitterPosterior() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
   }  
 
   /* normalize, using the sum vector */
@@ -5150,8 +5163,9 @@ cm_EmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, CM_MX *post
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp2; fp2 = fopen("tmp.std_emitmx",  "w"); cm_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp2; fp2 = fopen("tmp.std_emitmx",  "w"); cm_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2); */
 #endif
 
   return eslOK;
@@ -5251,8 +5265,9 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.std_unnorm_hbemitmx",  "w"); cm_hb_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp1; fp1 = fopen("tmp.std_unnorm_hbemitmx",  "w"); cm_hb_emit_mx_Dump(fp1, cm, emit_mx); fclose(fp1); */
 #endif
 
   /* Step 2. Normalize l_pp and r_pp so that probability that
@@ -5289,7 +5304,7 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
       }
       printf("HB i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));
     }
-    ESL_DPRINTF1(("cm_EmitterPosteriorHB() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
+    ESL_DPRINTF1(("#DEBUG: cm_EmitterPosteriorHB() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
   }  
 
   /* normalize, using the sum vector */
@@ -5353,8 +5368,9 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
     }
   }
 
-#if eslDEBUGLEVEL >= 2
-  FILE *fp2; fp2 = fopen("tmp.std_hbemitmx",  "w"); cm_hb_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2);
+#if eslDEBUGLEVEL >= 3
+  /* Uncomment to dump matrix to file. This could be very large, so be careful. */
+  /* FILE *fp2; fp2 = fopen("tmp.std_hbemitmx",  "w"); cm_hb_emit_mx_Dump(fp2, cm, emit_mx); fclose(fp2); */
 #endif
 
   return eslOK;
@@ -5563,7 +5579,7 @@ cm_PostCodeHB(CM_t *cm, char *errbuf, int L, CM_HB_EMIT_MX *emit_mx, Parsetree_t
 
   if(ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if(ret_avgp  != NULL) *ret_avgp  = sreEXP2(sum_logp) / (float) L;
-  ESL_DPRINTF1(("cm_PostcodeHB(): average pp %.4f\n", sreEXP2(sum_logp) / (float) L));
+  ESL_DPRINTF1(("#DEBUG: cm_PostcodeHB(): average pp %.4f\n", sreEXP2(sum_logp) / (float) L));
   /*printf("cm_PostcodeHB(): average pp %.4f\n", sreEXP2(sum_logp) / (float) L);*/
 
   return eslOK;

@@ -247,8 +247,8 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 
   while (1) {
 #if eslDEBUGLEVEL >= 1
-    if(cm->sttype[v] != EL_st) printf("v: %4d  mode: %4d  j: %4d d: %4d\n", v, mode, j, d);
-    else                       printf("v: %4d  mode: %4d  j: %4d d: %4d EL\n", v, mode, j, d);
+    if(cm->sttype[v] != EL_st) printf("#DEBUG: v: %4d  mode: %4d  j: %4d d: %4d\n", v, mode, j, d);
+    else                       printf("#DEBUG: v: %4d  mode: %4d  j: %4d d: %4d EL\n", v, mode, j, d);
 #endif
 
     if (cm->sttype[v] == B_st) {
@@ -290,9 +290,10 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
       v = y;
 
 #if eslDEBUGLEVEL >= 2
-      printf("added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
-      ParsetreeDump(stdout, tr, cm, dsq);
-#endif
+      /* Uncomment to dump parsetree */
+      /* printf("added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
+#endif 
     } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
       /* We don't trace back from an E or EL. Instead, we're done with the
        * left branch of the tree, and we try to swing over to the right
@@ -310,9 +311,11 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
       i = j-d+1;
 				/* attach the S to the right */
       InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, mode);
+
 #if eslDEBUGLEVEL >= 2
-      printf("added E or EL, dumping parsetree:\n");
-      ParsetreeDump(stdout, tr, cm, dsq);
+      /* Uncomment to dump parsetree */
+      /* printf("added E or EL, dumping parsetree:\n"); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 
       v = y;
@@ -331,7 +334,7 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
         ESL_FAIL(eslEINVAL, errbuf, "bogus truncation mode %d\n", mode);
       }
 #if eslDEBUGLEVEL >= 2
-      printf("v: %d std mode: %d yoffset: %d ", v, mode, yoffset);
+      printf("#DEBUG: v: %d std mode: %d yoffset: %d ", v, mode, yoffset);
 #endif
       /* determine nxtmode, and correct yoffset */
       if     (yoffset == USED_TRUNC_BEGIN) { yoffset = USED_TRUNC_BEGIN; nxtmode = mode; } /* yoffset, mode don't change */
@@ -383,8 +386,9 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 	  if(yoffset == USED_EL) { 
 	    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
 #if eslDEBUGLEVEL >= 2
-	    printf("added USED_EL or USED_TRUNC_END, dumping parsetree:\n");
-	    ParsetreeDump(stdout, tr, cm, dsq);
+            /* Uncomment to dump parsetree */
+	    /* printf("added USED_EL or USED_TRUNC_END, dumping parsetree:\n"); */
+	    /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 	  }
 	  v = cm->M;		/* now we're in EL (if USED_TRUNC_END, we act like we are) */
@@ -400,9 +404,10 @@ cm_tr_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 	  y = cm->cfirst[v] + yoffset;
 	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
 #if eslDEBUGLEVEL >= 2
-	  printf("STD yoffset: %d\n", yoffset);
-	  printf("added standard, dumping parsetree:\n");
-	  ParsetreeDump(stdout, tr, cm, dsq);
+          /* Uncomment to dump parsetree */
+	  /* printf("STD yoffset: %d\n", yoffset); */
+	  /* printf("added standard, dumping parsetree:\n"); */
+	  /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 	  v = y;
 	}
@@ -549,8 +554,8 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 
   while (1) {
 #if eslDEBUGLEVEL >= 1
-    if(cm->sttype[v] != EL_st) printf("v: %4d  mode: %4d  j: %4d (%4d..%4d)  d: %4d\n", v, mode, j, jmin[v], jmax[v], d);
-    else                       printf("v: %4d  mode: %4d  j: %4d             d: %4d EL\n", v, mode, j, d);
+    if(cm->sttype[v] != EL_st) printf("#DEBUG: v: %4d  mode: %4d  j: %4d (%4d..%4d)  d: %4d\n", v, mode, j, jmin[v], jmax[v], d);
+    else                       printf("#DEBUG: v: %4d  mode: %4d  j: %4d             d: %4d EL\n", v, mode, j, d);
 #endif
     /* super special case for HMM banded truncated mode, explained below, after the crazy if */
     if((cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) && d == 0 && 
@@ -637,8 +642,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
       v = y;
 
 #if eslDEBUGLEVEL >= 2
-      printf("added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode);
-      ParsetreeDump(stdout, tr, cm, dsq);
+      /* Uncomment to dump parsetree */
+      /* printf("added BEGL_S, dumping parsetree (prvmode: %d mode: %d:\n", prvmode, mode); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
     } 
     else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
@@ -659,8 +665,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 				/* attach the S to the right */
       InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, mode);
 #if eslDEBUGLEVEL >= 2
-      printf("added E or EL, dumping parsetree:\n");
-      ParsetreeDump(stdout, tr, cm, dsq);
+      /* Uncomment to dump parsetree */
+      /* printf("added E or EL, dumping parsetree:\n"); */
+      /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 
       v = y;
@@ -687,7 +694,7 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	}
       }
 #if eslDEBUGLEVEL >= 2
-      printf("v: %d std mode: %d yoffset: %d ", v, mode, yoffset);
+      printf("#DEBUG: v: %d std mode: %d yoffset: %d ", v, mode, yoffset);
 #endif
       /* determine nxtmode, and correct yoffset */
       if     (yoffset == USED_TRUNC_BEGIN) { yoffset = USED_TRUNC_BEGIN; nxtmode = mode; } /* yoffset, mode don't change */
@@ -739,8 +746,9 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	  if(yoffset == USED_EL) { 
 	    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
 #if eslDEBUGLEVEL >= 2
-	    printf("added USED_EL or USED_TRUNC_END, dumping parsetree:\n");
-	    ParsetreeDump(stdout, tr, cm, dsq);
+            /* Uncomment to dump parsetree */
+	    /* printf("added USED_EL or USED_TRUNC_END, dumping parsetree:\n"); */
+	    /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 	  }
 	  v = cm->M; /* now we're in EL (if USED_TRUNC_END, we act like we are) */
@@ -756,9 +764,10 @@ cm_tr_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, c
 	  y = cm->cfirst[v] + yoffset;
 	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
 #if eslDEBUGLEVEL >= 2
-	  printf("STD yoffset: %d\n", yoffset);
-	  printf("added standard, dumping parsetree:\n");
-	  ParsetreeDump(stdout, tr, cm, dsq);
+          /* Uncomment to dump parsetree */
+	  /* printf("STD yoffset: %d\n", yoffset); */
+	  /* printf("added standard, dumping parsetree:\n"); */
+	  /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 	  v    = y;
 	}
@@ -850,12 +859,12 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
 #if eslDEBUGLEVEL >= 1  
-  printf("cm_TrAlignSizeNeeded()\n");
-  printf("\t mxmb:  %.2f\n", mxmb);
-  printf("\t emxmb: %.2f\n", emxmb);
-  printf("\t shmxmb:%.2f\n", shmxmb);
-  printf("\t totmb: %.2f\n", totmb);
-  printf("\t limit: %.2f\n", size_limit);
+  printf("#DEBUG: cm_TrAlignSizeNeeded()\n"); 
+  printf("#DEBUG: \t mxmb:  %.2f\n", mxmb);
+  printf("#DEBUG: \t emxmb: %.2f\n", emxmb);
+  printf("#DEBUG: \t shmxmb:%.2f\n", shmxmb);
+  printf("#DEBUG: \t totmb: %.2f\n", totmb);
+  printf("#DEBUG: \t limit: %.2f\n", size_limit);
 #endif
 
   if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
@@ -934,12 +943,12 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
 #if eslDEBUGLEVEL >= 1  
-  printf("cm_TrAlignSizeNeededHB()\n");
-  printf("\t mxmb:  %.2f\n", mxmb);
-  printf("\t emxmb: %.2f\n", emxmb);
-  printf("\t shmxmb:%.2f\n", shmxmb);
-  printf("\t totmb: %.2f\n", totmb);
-  printf("\t limit: %.2f\n", size_limit);
+  printf("#DEBUG: cm_TrAlignSizeNeededHB()\n");
+  printf("#DEBUG: \t mxmb:  %.2f\n", mxmb);
+  printf("#DEBUG: \t emxmb: %.2f\n", emxmb);
+  printf("#DEBUG: \t shmxmb:%.2f\n", shmxmb);
+  printf("#DEBUG: \t totmb: %.2f\n", totmb);
+  printf("#DEBUG: \t limit: %.2f\n", size_limit);
 #endif
 
   /*printf("cm_TrAlignSizeNeededHB() returning %.2f\n", mxmb);*/
@@ -1075,7 +1084,7 @@ cm_TrAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char p
   if (ret_avgpp  != NULL) *ret_avgpp  = avgpp;
   if (ret_sc     != NULL) *ret_sc     = (do_optacc) ? ins_sc : sc;
 
-  ESL_DPRINTF1(("returning from cm_TrAlign() sc : %f\n", sc)); 
+  ESL_DPRINTF1(("#DEBUG: returning from cm_TrAlign() sc : %f\n", sc)); 
   return eslOK;
 }
 
@@ -1175,11 +1184,12 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   }
 
 #if eslDEBUGLEVEL >= 2
-  CMEmitMap_t *emap;
-  emap = CreateEmitMap(cm);
-  DumpEmitMap(stdout, emap, cm);
-  FreeEmitMap(emap);
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* Uncomment to dump emitmap and parsetree */
+  /* CMEmitMap_t *emap; */
+  /* emap = CreateEmitMap(cm); */
+  /* DumpEmitMap(stdout, emap, cm); */
+  /* FreeEmitMap(emap); */
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
 #endif
 
   if (ret_ppstr  != NULL) *ret_ppstr  = ppstr; else if(ppstr != NULL) free(ppstr);
@@ -1188,7 +1198,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   if (ret_avgpp  != NULL) *ret_avgpp  = avgpp;
   if (ret_sc     != NULL) *ret_sc     = (do_optacc) ? ins_sc : sc;
 
-  ESL_DPRINTF1(("returning from cm_TrAlignHB() sc : %f\n", sc)); 
+  ESL_DPRINTF1(("#DEBUG: returning from cm_TrAlignHB() sc : %f\n", sc)); 
   return eslOK;
 }
 
@@ -1809,8 +1819,9 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   }
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_cykmx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.tru_cykshmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_cykmx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
+  /* FILE *fp2; fp2 = fopen("tmp.tru_cykshmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2); */
 #endif 
 
   if(ret_b    != NULL) *ret_b    = b;    
@@ -1819,7 +1830,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   free(el_scA);
 
-  ESL_DPRINTF1(("cm_TrCYKInsideAlign return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrCYKInsideAlign return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -2878,8 +2889,9 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   }
 
 #if eslDEBUGLEVEL >= 2
-    FILE *fp1; fp1 = fopen("tmp.tru_cykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
-    FILE *fp2; fp2 = fopen("tmp.tru_cykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /*FILE *fp1; fp1 = fopen("tmp.tru_cykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);*/
+  /*FILE *fp2; fp2 = fopen("tmp.tru_cykhbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2);*/
 #endif
 
   if(ret_b    != NULL) *ret_b    = b;    
@@ -2889,7 +2901,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   free(el_scA);
   free(yvalidA);
 
-  ESL_DPRINTF1(("cm_TrCYKInsideAlignHB return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrCYKInsideAlignHB return sc: %f\n", sc));
 
   if(*ret_mode == TRMODE_UNKNOWN) ESL_FAIL(eslEAMBIGUOUS, errbuf, "cm_TrCYKInsideAlignHB() no valid parsetree found");
 
@@ -3341,7 +3353,8 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   }
 
 #if eslDEBUGLEVEL >= 2
-    FILE *fp1; fp1 = fopen("tmp.tru_imx", "w");   cm_tr_mx_Dump(fp1, mx, mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_imx", "w");   cm_tr_mx_Dump(fp1, mx, mode, TRUE); fclose(fp1); */
 #endif
 
   if(ret_mode != NULL) *ret_mode = mode;    
@@ -3349,7 +3362,7 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   
   free(el_scA);
 
-  ESL_DPRINTF1(("cm_TrInsideAlign() return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrInsideAlign() return sc: %f\n", sc));
   return eslOK;
 
  ERROR: 
@@ -4217,7 +4230,8 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 
 
 #if eslDEBUGLEVEL >= 2
-    FILE *fp1; fp1 = fopen("tmp.tru_ihbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_ihbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, mode, TRUE); fclose(fp1); */
 #endif
 
   if(ret_mode != NULL) *ret_mode = mode;    
@@ -4228,7 +4242,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 
   if(ret_sc != NULL) *ret_sc = sc;
 
-  ESL_DPRINTF1(("cm_TrInsideAlignHB() return sc: %f\n", sc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrInsideAlignHB() return sc: %f\n", sc));
 
   if(*ret_mode == TRMODE_UNKNOWN) ESL_FAIL(eslEAMBIGUOUS, errbuf, "cm_TrInsideAlignHB() no valid parsetree found");
   
@@ -4897,14 +4911,15 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   pp = sreEXP2(sc) / (float) L;
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_oamx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.tru_oashmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_oamx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
+  /* FILE *fp2; fp2 = fopen("tmp.tru_oashmx", "w"); cm_tr_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2); */
 #endif
 
   if(ret_b  != NULL) *ret_b  = b;    
   if(ret_pp != NULL) *ret_pp = pp;
 
-  ESL_DPRINTF1(("cm_TrOptAccAlign() return pp: %f\n", pp));
+  ESL_DPRINTF1(("#DEBUG: cm_TrOptAccAlign() return pp: %f\n", pp));
   return eslOK;
 }
 
@@ -5252,7 +5267,6 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { /* make sure d is valid for this v, j and y */
 		      dp_y = d - hdmin[y][jp_y];
 		      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
-		      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
 		      if(do_J_y) { 
 			if ((sc = Jalpha[y][jp_y][dp_y]) > Ralpha[v][jp_v][dp_v]) { 
 			  Ralpha[v][jp_v][dp_v]   = sc; 
@@ -5517,8 +5531,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      if (do_J_y) { 
 		dp_y_sdr = dn - hdmin[y][jp_y_sdr] - sdr;
 		for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  ESL_DASSERT1((dp_v     >= 0 && dp_v      <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y_sdr >= 0 && dp_y_sdr  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 		  if((sc = Jalpha[y][jp_y_sdr][dp_y_sdr]) > Ralpha[v][jp_v][dp_v]) {
 		    Ralpha[v][jp_v][dp_v]   = sc;
 		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_J_OFFSET;
@@ -5528,8 +5542,8 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      if (do_R_y) { 
 		dp_y_sdr = dn - hdmin[y][jp_y_sdr] - sdr;
 		for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) { 
-		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  ESL_DASSERT1((dp_v     >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y_sdr >= 0 && dp_y_sdr <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 		  if((sc = Ralpha[y][jp_y_sdr][dp_y_sdr]) > Ralpha[v][jp_v][dp_v]) {
 		    Ralpha[v][jp_v][dp_v]   = sc;
 		    Ryshadow[v][jp_v][dp_v] = yoffset + TRMODE_R_OFFSET;
@@ -6025,8 +6039,9 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   pp = sreEXP2(sc) / (float) L;
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_oahbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
-  FILE *fp2; fp2 = fopen("tmp.tru_oahbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_oahbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
+  /* FILE *fp2; fp2 = fopen("tmp.tru_oahbshmx", "w"); cm_tr_hb_shadow_mx_Dump(fp2, cm, shmx, preset_mode, TRUE); fclose(fp2); */
 #endif
 
   if(ret_b  != NULL) *ret_b  = b;    
@@ -6034,7 +6049,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 
   free(yvalidA);
 
-  ESL_DPRINTF1(("cm_TrOptAccAlignHB() return pp: %f\n", pp));
+  ESL_DPRINTF1(("#DEBUG: cm_TrOptAccAlignHB() return pp: %f\n", pp));
   return eslOK;
 
  ERROR:
@@ -6524,7 +6539,8 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   if(fail1_flag || fail2_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_ocykmx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_ocykmx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   if(do_check) { 
@@ -6537,7 +6553,7 @@ cm_TrCYKOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   else if(preset_mode == TRMODE_L) optsc = Lalpha[0][L][L];
   else if(preset_mode == TRMODE_R) optsc = Ralpha[0][L][L];
   else if(preset_mode == TRMODE_T) optsc = Talpha[0][L][L];
-  ESL_DPRINTF1(("\tcm_TrCYKOutsideAlign() sc : %f (sc is from Inside!)\n", optsc));
+  ESL_DPRINTF1(("#DEBUG: \tcm_TrCYKOutsideAlign() sc : %f (sc is from Inside!)\n", optsc));
   
   return eslOK;
 
@@ -7376,20 +7392,21 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if(fail1_flag || fail2_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_ocykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_ocykhbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   if(do_check) {
     if     (fail1_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check1 FAILED.");
     else if(fail2_flag) ESL_FAIL(eslFAIL, errbuf, "TrCYKHB Inside/Outside check2 FAILED.");
-    ESL_DPRINTF1(("SUCCESS! TrCYKHB Inside/Outside checks PASSED.\n"));
+    ESL_DPRINTF1(("#DEBUG: SUCCESS! TrCYKHB Inside/Outside checks PASSED.\n"));
   }
 
   if     (preset_mode == TRMODE_J) optsc = Jalpha[0][jp_0][Lp_0];
   else if(preset_mode == TRMODE_L) optsc = Lalpha[0][jp_0][Lp_0];
   else if(preset_mode == TRMODE_R) optsc = Ralpha[0][jp_0][Lp_0];
   else if(preset_mode == TRMODE_T) optsc = Talpha[0][jp_0][Lp_0];
-  ESL_DPRINTF1(("\tcm_TrCYKOutsideAlignHB() sc : %f (sc is from Inside!)\n", optsc));
+  ESL_DPRINTF1(("#DEBUG: \tcm_TrCYKOutsideAlignHB() sc : %f (sc is from Inside!)\n", optsc));
 
   return eslOK;
 
@@ -7815,12 +7832,13 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   }
 
 #if eslDEBUGLEVEL >= 2
-    FILE *fp1; fp1 = fopen("tmp.tru_omx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_omx", "w");   cm_tr_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   if(do_check) { 
     if  (fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside check FAILED.");
-    ESL_DPRINTF1(("SUCCESS! Tr Inside/Outside check PASSED.\n"));
+    ESL_DPRINTF1(("#DEBUG: SUCCESS! Tr Inside/Outside check PASSED.\n"));
     /*printf("SUCCESS! Tr Inside/Outside check PASSED.\n");*/
   }
 
@@ -7828,7 +7846,7 @@ cm_TrOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   else if(preset_mode == TRMODE_L) optsc = Lalpha[0][L][L];
   else if(preset_mode == TRMODE_R) optsc = Ralpha[0][L][L];
   else if(preset_mode == TRMODE_T) optsc = Talpha[0][L][L];
-  ESL_DPRINTF1(("\tcm_TrOutsideAlign() sc : %f (sc is from Inside!)\n", optsc));
+  ESL_DPRINTF1(("#DEBUG: \tcm_TrOutsideAlign() sc : %f (sc is from Inside!)\n", optsc));
 
   return eslOK;
 }
@@ -8608,12 +8626,13 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if(fail_flag) for(j = 1; j <= L; j++) printf("dsq[%4d]: %4d\n", j, dsq[j]);
 
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_ohbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_ohbmx", "w");   cm_tr_hb_mx_Dump(fp1, mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   if(do_check) { 
     if(fail_flag) ESL_FAIL(eslFAIL, errbuf, "Tr Inside/Outside HB check FAILED.");
-    ESL_DPRINTF1(("SUCCESS! Tr Inside/Outside HB check PASSED.\n"));
+    ESL_DPRINTF1(("#DEBUG: SUCCESS! Tr Inside/Outside HB check PASSED.\n"));
     printf("SUCCESS! Tr Inside/Outside HB check PASSED.\n");
   }
 
@@ -8621,7 +8640,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   else if(preset_mode == TRMODE_L) optsc = Lalpha[0][jp_0][Lp_0];
   else if(preset_mode == TRMODE_R) optsc = Ralpha[0][jp_0][Lp_0];
   else if(preset_mode == TRMODE_T) optsc = Talpha[0][jp_0][Lp_0];
-  ESL_DPRINTF1(("\tcm_TrOutsideAlignHB() sc : %f (sc is from Inside!)\n", optsc));
+  ESL_DPRINTF1(("#DEBUG: \tcm_TrOutsideAlignHB() sc : %f (sc is from Inside!)\n", optsc));
 
   return eslOK;
 }
@@ -8742,7 +8761,8 @@ cm_TrPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mode
     }
   }
 #if eslDEBUGLEVEL >= 2
-    FILE *fp1; fp1 = fopen("tmp.tru_pmx", "w");   cm_tr_mx_Dump(fp1, post_mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_pmx", "w");   cm_tr_mx_Dump(fp1, post_mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   return eslOK;
@@ -8905,7 +8925,8 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
     }
   }
 #if eslDEBUGLEVEL >= 2
-    FILE *fp1; fp1 = fopen("tmp.tru_phbmx", "w");   cm_tr_hb_mx_Dump(fp1, post_mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_phbmx", "w");   cm_tr_hb_mx_Dump(fp1, post_mx, preset_mode, TRUE); fclose(fp1); */
 #endif
   return eslOK;
 }
@@ -9088,7 +9109,8 @@ cm_TrEmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char pres
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_unnorm_emitmx",  "w"); cm_tr_emit_mx_Dump(fp1, cm, emit_mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_unnorm_emitmx",  "w"); cm_tr_emit_mx_Dump(fp1, cm, emit_mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   /* Step 2. Normalize *l_pp and *r_pp so that probability that
@@ -9126,7 +9148,7 @@ cm_TrEmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char pres
       }
       /*printf("i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));*/
     }
-    ESL_DPRINTF1(("cm_TrEmitterPosterior() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
+    ESL_DPRINTF1(("#DEBUG: cm_TrEmitterPosterior() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
   }  
 
   /* normalize, using the sum vector */
@@ -9178,7 +9200,8 @@ cm_TrEmitterPosterior(CM_t *cm, char *errbuf, int L, float size_limit, char pres
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp2; fp2 = fopen("tmp.tru_emitmx",  "w"); cm_tr_emit_mx_Dump(fp2, cm, emit_mx, preset_mode, TRUE); fclose(fp2);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp2; fp2 = fopen("tmp.tru_emitmx",  "w"); cm_tr_emit_mx_Dump(fp2, cm, emit_mx, preset_mode, TRUE); fclose(fp2); */
 #endif
 
   return eslOK;
@@ -9328,7 +9351,8 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp1; fp1 = fopen("tmp.tru_unnorm_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp1, cm, emit_mx, preset_mode, TRUE); fclose(fp1);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp1; fp1 = fopen("tmp.tru_unnorm_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp1, cm, emit_mx, preset_mode, TRUE); fclose(fp1); */
 #endif
 
   /* Step 2. Normalize *l_pp and *r_pp so that probability that
@@ -9395,7 +9419,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
       }
       /*printf("i: %d | total: %10.4f\n", i, (sreEXP2(emit_mx->sum[i])));*/
     }
-    ESL_DPRINTF1(("cm_TrEmitterPosteriorHB() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
+    ESL_DPRINTF1(("#DEBUG: cm_TrEmitterPosteriorHB() check passed, all residues have summed probability of emission of between 0.98 and 1.02.\n"));
   }  
 
   /* normalize, using the sum vector */
@@ -9516,7 +9540,8 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
     }
   }
 #if eslDEBUGLEVEL >= 2
-  FILE *fp2; fp2 = fopen("tmp.tru_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp2, cm, emit_mx, preset_mode, TRUE); fclose(fp2);
+  /* Uncomment to dump matrix to file. Careful...this could be very large. */
+  /* FILE *fp2; fp2 = fopen("tmp.tru_hbemitmx",  "w"); cm_tr_hb_emit_mx_Dump(fp2, cm, emit_mx, preset_mode, TRUE); fclose(fp2); */
 #endif
 
   return eslOK;
@@ -9784,7 +9809,7 @@ cm_TrPostCodeHB(CM_t *cm, char *errbuf, int L, CM_TR_HB_EMIT_MX *emit_mx, Parset
   ppstr[L] = '\0';
 
   /*printf("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L);*/
-  ESL_DPRINTF1(("cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L));
+  ESL_DPRINTF1(("#DEBUG: cm_TrPostCodeHB() return avgpp: %f\n", sreEXP2(sum_logp) / (float) L));
 
   if(ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if(ret_avgp  != NULL) *ret_avgp  = sreEXP2(sum_logp) / (float) L;
