@@ -2,7 +2,6 @@
  * 
  * EPN, Tue Jun 28 04:33:27 2011
  * SRE, Mon Oct 20 08:28:05 2008 [Janelia] (hmmscan.c)
- * SVN $Id$
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -3005,8 +3004,5 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0
 }
 #endif /* HAVE_MPI */
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
 
 

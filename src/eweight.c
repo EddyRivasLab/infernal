@@ -1,7 +1,3 @@
-/************************************************************
- * @LICENSE@
- ************************************************************/
-
 /* eweight.c [EPN 11.07.05]
  * based on: HMMER 2.4devl's lsj_eweight.c
  * Most original comments from lsj_eweight.c untouched.
@@ -12,8 +8,6 @@
  * Code for setting effective sequence number (in cmbuild) by
  * achieving a certain target entropy loss, relative to background
  * null distribution.
- *
- * SVN $Id$
  */
 
 #include "esl_config.h"

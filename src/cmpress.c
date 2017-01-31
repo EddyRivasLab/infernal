@@ -2,7 +2,6 @@
  * 
  * EPN, Thu Jul  7 13:08:55 2011
  * SRE, Fri Oct 17 11:24:26 2008 [Janelia] (hmmpress.c)
- * SVN $Id$
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -183,6 +182,3 @@ open_db_files(ESL_GETOPTS *go, char *basename, FILE **ret_mfp, FILE **ret_ffp,  
   return;
 }
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

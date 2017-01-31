@@ -2,7 +2,6 @@
 
 /* cm_dpsmall.c  (formerly smallcyk.c)
  * SRE, Wed Aug  2 08:42:49 2000 [St. Louis]
- * SVN $Id: cm_dpsmall.c 2479 2008-06-20 13:54:48Z nawrockie $
  * 
  * Alignment of a CM to a target (sub)sequence.
  *
@@ -14,9 +13,6 @@
  * (e.g. global alignment). For sequence-local alignment, see
  * scancyk.c.
  * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 /*################################################################
@@ -1518,10 +1514,10 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
        int allow_begin, int *ret_b, float *ret_bsc)
 {
   int       status;
-  int       nends;       /* counter that tracks when we can release end deck to the pool */
-  int      *touch;       /* keeps track of how many higher decks still need this deck */
+  int       nends;      /* counter that tracks when we can release end deck to the pool */
+  int      *touch;      /* keeps track of how many higher decks still need this deck */
   int       v,y,z;	/* indices for states  */
-  int       j,d,i,k;	/* indices in sequence dimensions */
+  int       j,d,k; 	/* indices in sequence dimensions */
   float     sc;		/* a temporary variable holding a score */
   int       yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int       W;		/* subsequence length */
@@ -1883,12 +1879,12 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                     shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(yoffset), mask);
                   }
                 }
-		
-		i = j-dp*vecwidth+1;
-                /*escv = _mm_setr_ps(i>0?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                   i>1?cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                   i>2?cm->oesc[v][dsq[i-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                   i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);  */
+
+                /* i = j-dp*vecwidth+1;
+		   escv = _mm_setr_ps(i>0?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                                      i>1?cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                                      i>2?cm->oesc[v][dsq[i-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                                      i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);  */
                 escv = vec_Pesc[dsq[j]][dp];
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
@@ -1952,7 +1948,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                   }
                 }
 		
-		i = j-dp*vecwidth+1;
                 escv = vec_Lesc[dp];
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
@@ -2023,11 +2018,10 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                   }
                 }
 		
-		i = j-dp*vecwidth+1;
                 escv = vec_Lesc[dp];
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 
-                /* handle yoffset = 0, the self-transition case, seaparately */
+                /* handle yoffset = 0, the self-transition case, separately */
                 tscv = _mm_set1_ps(cm->tsc[v][0]);
                 for (k = 0; k < vecwidth; k++) {
                   tmpv = alt_rightshift_ps(alpha[y]->vec[j][dp], alpha[y]->vec[j][dp-1]);
@@ -3912,10 +3906,10 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
        int allow_begin, int *ret_b, int *ret_bsc, HitCoord_epi16 *ret_coord)
 {
   int       status;
-  int       nends;       /* counter that tracks when we can release end deck to the pool */
-  int      *touch;       /* keeps track of how many higher decks still need this deck */
+  int       nends;      /* counter that tracks when we can release end deck to the pool */
+  int      *touch;      /* keeps track of how many higher decks still need this deck */
   int       v,y,z;	/* indices for states  */
-  int       j,d,i,k;    /* indices in sequence dimensions */
+  int       j,d,k;      /* indices in sequence dimensions */
   int16_t   sc;		/* a temporary variable holding a score */
   int       yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int       W;		/* subsequence length */
@@ -4328,7 +4322,6 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 		
 	    for (dp = 1; dp <= sW; dp++) 
               {
-		i = j-dp*vecwidth+1;
                 escv = vec_Pesc[dsq[j]][dp];
                 alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
 	      }
@@ -4396,7 +4389,6 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 
 	    for (dp = 1; dp <= sW; dp++)
 	      {
-		i = j-dp*vecwidth+1;
                 escv = vec_Lesc[dp];
                 alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
 	      }

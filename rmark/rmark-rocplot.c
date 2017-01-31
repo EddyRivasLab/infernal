@@ -58,7 +58,6 @@
  *    xmgrace -settype xydydy results.xy
  *   
  * SRE, Wed Jun 18 13:37:31 2008 [Janelia]
- * SVN $Id: rocplot.c 3151 2010-02-07 20:43:49Z eddys $  
  */
 #include "esl_config.h"
 

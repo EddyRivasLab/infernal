@@ -9,7 +9,6 @@
  * header file.
  * 
  * SRE, Sun Jun  3 20:22:38 2001 [St. Louis]
- * SVN $Id$
  */
 #ifndef CONFIGH_INCLUDED
 #define CONFIGH_INCLUDED
@@ -60,29 +59,23 @@
  */
 #undef HAVE_ALLOCA_H
 
-/* --enable-debugging=x  debugging diagnostics (development versions only)
- */
-#ifndef DEBUGLEVEL
-#undef DEBUGLEVEL
-#endif
-
-/* --enable-lfs          Large File Summit (LFS) support for >2Gb files
+/* Large file support (must precede any header file inclusion.)
  */
 #undef _LARGEFILE_SOURCE
 #undef _LARGEFILE64_SOURCE
 #undef _FILE_OFFSET_BITS
 
-/* --enable-mpi            MPI parallelization
+
+/* Choice of optimized implementation (one and only one must be set)
+ * These are identically defined in HMMER p7_config.h.in, Easel esl_config.h.in
  */
+#undef eslENABLE_SSE
+#undef eslENABLE_VMX
+
+
+/* Optional parallel implementations */
 #undef HAVE_MPI
 
-/* --enable-sse            SSE parallel implementation 
- */
-#undef HAVE_SSE2
-
-/* Debugging hooks
- */
-#undef cm_DEBUGLEVEL
 
 #endif /* CONFIGH_INCLUDED */
 

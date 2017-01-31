@@ -4,7 +4,6 @@
  *   1. CM_PIPELINE: allocation, initialization, destruction
  *   2. Pipeline API
  *   3. Non-API filter stage search functions.
- *   4. Copyright and license information
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -1595,9 +1594,9 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     /* 1. Banded CYK on the envelopes defined by the p7 HMM in the pipeline pass above (if pli->do_edef == TRUE) */
     if(pli->do_edef) { 
       if(pli->do_fcyk) { 
-      #if eslDEBUGLEVEL >= 3
+#if eslDEBUGLEVEL >= 3
         printf("\nPIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
-      #endif
+#endif
         if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], np7envA[p], opt_cm, &es, &ee, &nenv)) != eslOK) return status;
         if(pli->do_time_F4 || pli->do_time_F5) return status;
       }
@@ -2470,9 +2469,9 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   p7_oprofile_ReconfigMSVLength(om, pli->maxW);
   om->max_length = pli->maxW;
 
-  #if eslDEBUGLEVEL >= 3
+#if eslDEBUGLEVEL >= 3
   printf("\nPIPELINE pli_p7_filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
-  #endif
+#endif
 
   /* initializations */
   nsurv_fwd = 0;
@@ -4606,12 +4605,3 @@ merge_windows_from_two_lists(int64_t *ws1, int64_t *we1, double *wp1, int *wl1, 
 }
 #endif
 
-/*****************************************************************
- * 3. Example 1: "search mode" in a sequence db
- *****************************************************************/
-/*****************************************************************
- * 4. Example 2: "scan mode" in an HMM db
- *****************************************************************/
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

@@ -25,7 +25,6 @@ man1ext     = .1
 
 CC        = @CC@
 CFLAGS    = @CFLAGS@ @PTHREAD_CFLAGS@
-SIMDFLAGS = @SIMD_CFLAGS@
 CPPFLAGS  = @CPPFLAGS@
 LDFLAGS   = @LDFLAGS@
 DEFS      = @DEFS@
@@ -195,14 +194,14 @@ libinfernal-src.stamp: ${OBJS}
 ${OBJS}:     ${HDRS} config.h
 ${PROGOBJS}: ${HDRS} config.h
 
-${PROGS}: @EXEC_DEPENDENCY@  libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a  
-	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
+${PROGS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a  
+	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
 .c.o:
-	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${CPPFLAGS} ${MYINCDIRS} -o $@ -c $<
+	${QUIET_CC}${CC} ${CFLAGS} ${DEFS} ${CPPFLAGS} ${MYINCDIRS} -o $@ -c $<
 
-${ITESTS}: @EXEC_DEPENDENCY@ libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a ${HDRS} config.h
-	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
+${ITESTS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a ${HDRS} config.h
+	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
 ${UTESTS}: libinfernal.a  ${HDRS} config.h
 	@BASENAME=`echo $@ | sed -e 's/_utest//' | sed -e 's/^cm_//'` ;\
@@ -214,10 +213,10 @@ ${UTESTS}: libinfernal.a  ${HDRS} config.h
            DFILE=${srcdir}/$${BASENAME}.c ;\
 	fi;\
 	if test ${V} ;\
-	   then echo "{CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}" ;\
+	   then echo "{CC} ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}" ;\
 	   else echo '    ' GEN $@ ;\
         fi ;\
-	${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
+	${CC} ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
 
 ${BENCHMARKS}: libinfernal.a  ${HDRS} config.h
 	@BASENAME=`echo $@ | sed -e 's/_benchmark//' | sed -e 's/^cm_//'` ;\
@@ -229,10 +228,10 @@ ${BENCHMARKS}: libinfernal.a  ${HDRS} config.h
            DFILE=${srcdir}/$${BASENAME}.c ;\
 	fi;\
 	if test ${V} ;\
-	   then echo "{CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}" ;\
+	   then echo "{CC} ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}" ;\
 	   else echo '    ' GEN $@ ;\
         fi ;\
-	${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
+	${CC} ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -D$${DFLAG} -o $@ $${DFILE} ${LIBS}
 
 install:
 	for file in ${IPROGS}; do \
@@ -256,14 +255,12 @@ clean:
 ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
 endif
-	-rm -f *.o *~ Makefile.bak core ${PROGS} TAGS gmon.out
+	-rm -f *.o *~ Makefile.bak core ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS} TAGS gmon.out
 	-rm -f libinfernal.a libinfernal-src.stamp
 	-rm -f *.gcno
 	-rm -f cscope.out
-	for prog in ${PROGS}; do \
+	for prog in ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS}; do \
 	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
 	done
 
-################################################################
-# @LICENSE@
-################################################################
+

@@ -1,10 +1,6 @@
 #################################################################
 # Infernal
 # src Makefile
-# SVN $Id: Makefile.in 2603 2008-10-05 19:21:32Z kolbed $
-#################################################################
-# @LICENSE@
-#################################################################
 
 SHELL  = /bin/sh
 
@@ -83,7 +79,7 @@ HDRS  = funcs.h\
 ##
 all: 	$(PROGS) 
 
-$(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
+$(PROGS): % : %.o $(OBJS) ${HDRS}
 	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
 
 

@@ -47,8 +47,7 @@
 # Example: ./itest6-sensitivity.pl ..         ..       tmpfoo
 #
 # EPN, Tue May  1 08:15:38 2012
-# SVN $URL$
-# SVN $Id$
+
 
 BEGIN {
     $builddir  = shift;

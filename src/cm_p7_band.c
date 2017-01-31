@@ -741,7 +741,6 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
 {
   int          status;
   int          i;           /* j-W: position in the subsequence                             */
-  int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]          */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]          */
@@ -749,7 +748,6 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
   int        **elmx;        /* DP matrix for EL state scores [0..1][0..cp9->M]              */
   int         *erow;        /* end score for each position [0..1]                           */
   int          M;           /* cp9->M, query length, number of consensus nodes of model */
-
   int          kp, kn, kx, kpcur, kpprv;
 
   /* Contract checks */
@@ -807,8 +805,6 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
   
   for (i = 1; i <= L; i++) 
     { 
-      prv = i-1;
-      cur = i;
       int const *isc = cp9->isc[dsq[i]];
       int const *msc = cp9->msc[dsq[i]];
       int endsc     = -INFTY;
@@ -973,7 +969,6 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
 {
   int          status;
   int          i;           /* j-W: position in the subsequence                             */
-  int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cp9->M]      */
@@ -982,7 +977,6 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
   int         *erow;        /* end score for each position [0..1]                           */
   int          c;           /* counter for EL states                                        */
   int          M;           /* cp9->M, query length, number of consensus nodes of model */
-
   int          kn, kx, kpcur, kpprv, kpprv_el;
 
   /* Contract checks */
@@ -1037,8 +1031,6 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
   
   for (i = 1; i <= L; i++) 
     { 
-      prv = i-1;
-      cur = i;
       int const *isc = cp9->isc[dsq[i]];
       int const *msc = cp9->msc[dsq[i]];
       int endsc     = -INFTY;

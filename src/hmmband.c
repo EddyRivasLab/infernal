@@ -5,11 +5,6 @@
  * parse of a target sequence using CM. Bands are derived
  * from CM plan 9 HMM (CP9 HMM) Forward/Backward parses of
  * the target.
- * 
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************
  */
 
 #include "esl_config.h"
@@ -1971,7 +1966,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
 
-  #if 0
+#if 0
   if(do_trunc) { 
     for(v = 0; v < cm->M; v++) { 
       printf("dotrunc: %d ijband v: %4d nd: %4d  %4s  %2s  i: %5d - %5d  j: %5d - %5d\n", do_trunc, v, cm->ndidx[v], 
@@ -1980,7 +1975,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 	     imin[v], imax[v], jmin[v], jmax[v]);
     }
   }
-  #endif
+#endif
 
   /* A final, brutal hack. If the hmm used to derive bands has local
    * begins, ends and ELs on, it's possible (but extremely rare
@@ -2958,26 +2953,16 @@ HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int
 int
 HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn)
 {
-  int left_min, left_max;    /* min1/max1 if min1 <= min2, else min2/max2 */
-  int right_min, right_max;  /* min2/max2 if min1 <= min2, else min1/max1 */
+  int left_max;              /* min1/max1 if min1 <= min2, else min2/max2 */
+  int right_min;             /* min2/max2 if min1 <= min2, else min1/max1 */
   int in, ix;                /* min/max residue for I_k, calc'ed here */
 
   ESL_DASSERT1((k != 0));
   ESL_DASSERT1((max1 >= min1));
   ESL_DASSERT1((max2 >= min2));
 	       
-  if(min1 <= min2) { 
-    left_min = min1; 
-    left_max = max1;
-    right_min = min2;
-    right_max = max2;
-  }
-  else { 
-    left_min = min2; 
-    left_max = max2;
-    right_min = min1;
-    right_max = max1;
-  }
+  if (min1 <= min2) { left_max = max1;  right_min = min2; }
+  else              { left_max = max2;  right_min = min1; }
   ESL_DASSERT1((right_min - left_max > 1)); 
 
   /* determine in and ix */

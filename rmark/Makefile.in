@@ -4,11 +4,10 @@ VPATH      = @srcdir@
 
 CC       = @CC@
 CFLAGS   = @CFLAGS@ @PTHREAD_CFLAGS@
-SIMDFLAGS= @SIMD_CFLAGS@
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS  = @LDFLAGS@
 DEFS     = @DEFS@
-LIBS     = -lhmmer -leasel @LIBS@ @LIBGSL@ @PTHREAD_LIBS@ -lm
+LIBS     = -lhmmer -leasel @LIBS@ @PTHREAD_LIBS@ -lm
 MPILIBS  = @MPILIBS@
 IMPLDIR  = impl_@IMPL_CHOICE@
 
@@ -43,13 +42,13 @@ endif
 all:    ${PROGS}
 dev:    ${PROGS}
 
-${PROGS}: @EXEC_DEPENDENCY@  ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a 
+${PROGS}: % : %.o ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a 
 	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} -L../${HMMERDIR}/src -L../${ESLDIR} -L${SRCDIR} -o $@ $@.o ${LIBS}
 
 ${PROGOBJS}: ../${HMMERDIR}/src/hmmer.h ../${HMMERDIR}/src/p7_config.h ../src/infernal.h ../src/config.h
 
 .c.o: 
-	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} -o $@ -c $<		
+	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${DEFS} -o $@ -c $<		
 
 distclean: clean
 	-rm -f Makefile
@@ -57,8 +56,9 @@ distclean: clean
 clean:
 	-rm -f *.o *~  ${PROGS} TAGS
 	-rm -f *.gcno
+	for prog in ${PROGS}; do \
+	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
+	done
 
-################################################################
-# @LICENSE@
-################################################################
+
 

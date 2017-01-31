@@ -12,7 +12,6 @@
  * 
  * Based on HMMER3's errors.c:
  * SRE, Fri Jan 12 08:46:02 2007
- * SVN $Id$
  */
 
 #include "esl_config.h"

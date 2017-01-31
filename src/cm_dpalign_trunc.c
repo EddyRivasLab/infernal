@@ -104,10 +104,6 @@
  * is TRUE.
  * 
  * EPN, Wed Sep  7 12:13:00 2011
- *
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -1906,7 +1902,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* must we fill T matrix deck for state v, y, z? */
+  int      do_T_v;                 /* must we fill T matrix deck for state v? */
   int      pty_idx;                /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
@@ -2587,13 +2583,11 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
       do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
       do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
       do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
       do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
       do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
       do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
-      do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
-      
+
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
        * constructed, but we'll check anyway. 
@@ -3446,7 +3440,7 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* must we fill T matrix deck for state v, y, z? */
+  int      do_T_v;                 /* must we fill T matrix deck for state v?       */
   int      pty_idx;                /* index for truncation penalty, determined by pass_idx */
   float    trpenalty;              /* truncation penalty, differs based on pty_idx and if we're local or global */
 
@@ -4009,12 +4003,10 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
       do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
       do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
       do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-      do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 
       do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
       do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
       do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
-      do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
       
       /* Any valid j must be within both state v and state z's j band 
        * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
@@ -4989,7 +4981,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      do_J_v, do_J_y, do_J_z; /* must we fill J matrix deck for state v, y, z? */
   int      do_L_v, do_L_y, do_L_z; /* must we fill L matrix deck for state v, y, z? */
   int      do_R_v, do_R_y, do_R_z; /* must we fill R matrix deck for state v, y, z? */
-  int      do_T_v, do_T_y, do_T_z; /* must we fill T matrix deck for state v, y, z? */
+  int      do_T_v;                 /* must we fill T matrix deck for state v?       */
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -5790,12 +5782,10 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	do_J_y = cp9b->Jvalid[y]           ? TRUE : FALSE;
 	do_L_y = cp9b->Lvalid[y] && fill_L ? TRUE : FALSE;
 	do_R_y = cp9b->Rvalid[y] && fill_R ? TRUE : FALSE;
-	do_T_y = cp9b->Tvalid[y] && fill_T ? TRUE : FALSE; /* will be FALSE, y is not a B_st */
 	
 	do_J_z = cp9b->Jvalid[z]           ? TRUE : FALSE;
 	do_L_z = cp9b->Lvalid[z] && fill_L ? TRUE : FALSE;
 	do_R_z = cp9b->Rvalid[z] && fill_R ? TRUE : FALSE;
-	do_T_z = cp9b->Tvalid[z] && fill_T ? TRUE : FALSE; /* will be FALSE, z is not a B_st */
 	
 	/* Any valid j must be within both state v and state z's j band 
 	 * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 

@@ -1,13 +1,8 @@
 /* display.c
  * SRE, Thu May 23 08:18:05 2002 [St. Louis]
- * SVN $Id$
  * 
  * Routines for formatting and displaying parse trees
  * for output.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -960,7 +955,7 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   int *inface;
   int *outface;
   int  nd, left, right, parent;
-  int  v,w,y;
+  int  v,y;
 
   ESL_ALLOC(inface,  sizeof(int) * cm->nodes);
   ESL_ALLOC(outface, sizeof(int) * cm->nodes);
@@ -1004,7 +999,6 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
       else if (cm->ndtype[nd] == BEGR_nd)
 	{
 	  parent = cm->ndidx[cm->plast[v]];
-	  w      = cm->nodemap[parent];
 	  left   = cm->ndidx[cm->cfirst[y]];
 	  outface[nd] = outface[parent] + inface[left];
 	}

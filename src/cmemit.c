@@ -413,7 +413,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 	else                               { start = esl_rnd_Roll(cfg->r, embedL - sq2print->n + 1) + 1; }
 	for(x = start; x < start + sq2print->n; x++) gsq->dsq[x] = sq2print->dsq[x - start + 1];
 	/* set name */
-	esl_sq_FormatName(gsq, "%s/%d-%d", sq2print->name, start, start + sq2print->n - 1);
+	esl_sq_FormatName(gsq, "%s/%" PRId64 "-%" PRId64, sq2print->name, (int64_t) start, (int64_t) (start + sq2print->n - 1));
 	/* destroy sq2print (which points at esq or tsq), and point it at gsq */
 	esl_sq_Destroy(sq2print);
 	sq2print = gsq;
@@ -754,6 +754,3 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, const
 }
 
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

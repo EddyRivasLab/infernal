@@ -5,9 +5,6 @@
  * DP functions for CYK CM similarity search,
  * 4x single-precision float SSE implementation
  * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
