@@ -649,7 +649,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma)
    */
   *ret_gamma = gamma;
   esl_randomness_Destroy(r);
-  ESL_DPRINTF1(("Returning %d from BandMonteCarlo() (1 is passed, 0 failed)\n", status));
+  ESL_DPRINTF1(("#DEBUG: Returning %d from BandMonteCarlo() (1 is passed, 0 failed)\n", status));
   return status;
 
  ERROR:

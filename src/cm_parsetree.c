@@ -2030,7 +2030,7 @@ ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
   score += sreLOG2(omega);
   
   /* Return the correction to the bit score. */
-  ESL_DPRINTF1(("ParsetreeScoreCorrectionNull2 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF1(("#DEBUG: ParsetreeScoreCorrectionNull2 return sc: %f\n", LogSum2(0., score)));
   free(sc);
   free(p);
   score = LogSum2(0., score);
@@ -2122,7 +2122,7 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
 
   /* Return the correction to the bit score. */
   /*printf("ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score));*/
-  ESL_DPRINTF1(("ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF1(("#DEBUG: ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
   free(sc);
   free(p);
   score = LogSum2(0., score);
@@ -2190,7 +2190,7 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
-  ESL_DPRINTF3(("ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF3(("#DEBUG: ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
   score = LogSum2(0., score);
   *ret_sc = score;
   return;
@@ -2783,17 +2783,17 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   if(validA    != NULL) free(validA);
 
 #if eslDEBUGLEVEL >= 2 
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %.4f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %.4f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_sc   != NULL) *ret_sc   = fsc;
 
-  ESL_DPRINTF1(("cm_StochasticParsetree() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_StochasticParsetree() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
@@ -3067,17 +3067,17 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   if(validA    != NULL) free(validA);
 
 #if eslDEBUGLEVEL >= 2 
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_sc   != NULL) *ret_sc   = fsc;
 
-  ESL_DPRINTF1(("cm_StochasticParsetreeHB() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_StochasticParsetreeHB() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
@@ -3568,18 +3568,18 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if(RpA       != NULL) free(RpA);
 
 #if eslDEBUGLEVEL >= 2 
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %.4f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %.4f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 
   if(ret_sc   != NULL) *ret_sc   = fsc;
 
-  ESL_DPRINTF1(("cm_TrStochasticParsetree() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrStochasticParsetree() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
@@ -4195,18 +4195,18 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(RpA       != NULL) free(RpA);
 
 #if eslDEBUGLEVEL >= 2
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 
   if(ret_sc   != NULL) *ret_sc   = fsc;
     
-  ESL_DPRINTF1(("cm_TrStochasticParsetreeHB() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrStochasticParsetreeHB() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:

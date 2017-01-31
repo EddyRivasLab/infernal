@@ -92,9 +92,9 @@ $tag1 = "<cmfile>";   $arg1 = "$srcdir/testsuite/$model1.c.cm";
 $tag2 = "<seqfile>";  $arg2 = "$tmppfx.fa10"; 
 if ($verbose) { print "$tag...\n"; }
 
-`$prog $arg1 $arg2         > $tmppfx.out1`;   if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
-`cat $arg1 | $prog - $arg2 > $tmppfx.out2`;   if ($?) { die "FAIL: $tag - $tag2\n"; }
-`cat $arg2 | $prog $arg1 - > $tmppfx.out3`;   if ($?) { die "FAIL: $tag $tag1 -\n"; }
+`$prog $arg1 $arg2         | grep -v "^#DEBUG" > $tmppfx.out1`;   if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
+`cat $arg1 | $prog - $arg2 | grep -v "^#DEBUG" > $tmppfx.out2`;   if ($?) { die "FAIL: $tag - $tag2\n"; }
+`cat $arg2 | $prog $arg1 - | grep -v "^#DEBUG" > $tmppfx.out3`;   if ($?) { die "FAIL: $tag $tag1 -\n"; }
 
 `diff -b $tmppfx.out1 $tmppfx.out2 2>&1 > /dev/null`; if ($?) { die "FAIL: $tag results differ if $tag1 comes through stdin\n"; }
 `diff -b $tmppfx.out1 $tmppfx.out3 2>&1 > /dev/null`; if ($?) { die "FAIL: $tag results differ if $tag2 comes through stdin\n"; }

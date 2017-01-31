@@ -535,7 +535,7 @@ expinfo_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm)
 {
   int status;
 
-  ESL_DPRINTF2(("expinfo_MPIPack(): ready.\n"));
+  ESL_DPRINTF2(("#DEBUG: expinfo_MPIPack(): ready.\n"));
   
   status = MPI_Pack((double *) &(exp->cur_eff_dbsize), 1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((double *) &(exp->lambda),         1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
@@ -545,7 +545,7 @@ expinfo_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm)
   status = MPI_Pack((int *)    &(exp->nrandhits),      1, MPI_INT,    buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((double *) &(exp->tailp),          1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *)    &(exp->is_valid),       1, MPI_INT,    buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  ESL_DPRINTF2(("expinfo_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+  ESL_DPRINTF2(("#DEBUG: expinfo_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
   return eslOK;
@@ -642,14 +642,14 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
     if (MPI_Pack_size(L+2, MPI_BYTE,          comm, &sz) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); /* dsq */
     n += sz;
   }
-  ESL_DPRINTF2(("cm_dsq_MPISend(): dsq has size %d\n", n));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPISend(): dsq has size %d\n", n));
 
   /* Make sure the buffer is allocated appropriately */
   if (*buf == NULL || n > *nalloc) {
     ESL_REALLOC(*buf, sizeof(char) * n);
     *nalloc = n; 
   }
-  ESL_DPRINTF2(("cm_dsq_MPISend(): buffer is ready\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPISend(): buffer is ready\n"));
 
   /* Pack the status code, L, idx, and dsq into the buffer */
   pos  = 0;
@@ -660,11 +660,11 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
     if (MPI_Pack(&idx, 1,   MPI_LONG_LONG_INT,  *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
     if (MPI_Pack(dsq,  L+2, MPI_BYTE,           *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
   }
-  ESL_DPRINTF2(("cm_dsq_MPISend(): dsq is packed into %d bytes\n", pos));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPISend(): dsq is packed into %d bytes\n", pos));
 
   /* Send the packed profile to destination  */
   if (MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed");
-  ESL_DPRINTF2(("cm_dsq_MPISend(): dsq is sent.\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPISend(): dsq is sent.\n"));
   return eslOK;
 
  ERROR:
@@ -733,12 +733,12 @@ cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_
   }
 
   /* Receive the packed work unit */
-  ESL_DPRINTF2(("cm_dsq_MPIRecv(): about to receive dsq.\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPIRecv(): about to receive dsq.\n"));
   if (MPI_Recv(*buf, n, MPI_PACKED, source, tag, comm, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
-  ESL_DPRINTF2(("cm_dsq_MPIRecv(): dsq has been received.\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPIRecv(): dsq has been received.\n"));
 
   /* Unpack it - where the first integer is a status code, OK or EOD */
-  ESL_DPRINTF2(("cm_dsq_MPIRecv(): about to unpack dsq.\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPIRecv(): about to unpack dsq.\n"));
   pos = 0;
   if (MPI_Unpack       (*buf, n, &pos, &code, 1,   MPI_INT,           comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (code == eslEOD) { status = eslEOD; goto ERROR; }
@@ -747,7 +747,7 @@ cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
   if (MPI_Unpack       (*buf, n, &pos, dsq,   L+2, MPI_BYTE,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   dsq[0] = dsq[(L+1)] = eslDSQ_SENTINEL; /* overwrite */
-  ESL_DPRINTF2(("cm_dsq_MPIRecv(): dsq has been unpacked.\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_dsq_MPIRecv(): dsq has been unpacked.\n"));
 
   *ret_L   = L;
   *ret_idx = idx;
@@ -840,7 +840,7 @@ cm_parsetree_MPIPack(Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm 
 {
   int status;
 
-  ESL_DPRINTF2(("cm_parsetree_MPIPack(): ready.\n"));
+  ESL_DPRINTF2(("#DEBUG: cm_parsetree_MPIPack(): ready.\n"));
   
   status = MPI_Pack(&tr->n,                  1, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(&tr->memblock,           1, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
@@ -855,7 +855,7 @@ cm_parsetree_MPIPack(Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm 
   status = MPI_Pack(tr->nxtr,            tr->n, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(tr->prv,             tr->n, MPI_INT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
-  ESL_DPRINTF2(("cm_parsetree_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+  ESL_DPRINTF2(("#DEBUG: cm_parsetree_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
   return eslOK;

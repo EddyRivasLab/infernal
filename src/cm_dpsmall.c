@@ -348,7 +348,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  ESL_DPRINTF1(("returning from CYKDivideAndConquer() sc : %f\n", sc)); 
+  ESL_DPRINTF1(("#DEBUG: returning from CYKDivideAndConquer() sc : %f\n", sc)); 
   return sc;
 }
 
@@ -708,7 +708,7 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    and append the trace to tr.
    */
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
-    ESL_DPRINTF2(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
+    ESL_DPRINTF2(("#DEBUG: Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
@@ -848,16 +848,16 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * The problems must be solved in a particular order, since we're
    * constructing the trace in a postorder traversal.
    */
-  ESL_DPRINTF2(("Generic splitter:\n"));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG: Generic splitter:\n"));
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		v, UniqueStatetype(cm->stid[v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    generic: G%d[%s]..%d[%s], %d..%d\n", 
 		w,    UniqueStatetype(cm->stid[w]),
 		wend, UniqueStatetype(cm->stid[wend]),
 		best_j-best_d+1, best_j-best_k));
-  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    generic: G%d[%s]..%d[%s], %d..%d\n", 
 		y,    UniqueStatetype(cm->stid[y]),
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
@@ -931,7 +931,7 @@ wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
-      ESL_DPRINTF2(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+      ESL_DPRINTF2(("#DEBUG: Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
@@ -1045,12 +1045,12 @@ wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int
    *    These have to solved in the order given because we're
    *    constructing the trace in postorder traversal.
    */
-  ESL_DPRINTF2(("Wedge splitter:\n"));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG: Wedge splitter:\n"));
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF2(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
@@ -1108,7 +1108,7 @@ v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z || 
       vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
     {
-      ESL_DPRINTF2(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+      ESL_DPRINTF2(("#DEBUG: Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
@@ -1209,12 +1209,12 @@ v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * Solve in this order, because we're constructing the
    * trace in postorder traversal.
    */
-  ESL_DPRINTF2(("V splitter:\n"));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG: V splitter:\n"));
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_i, best_j, j0));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
@@ -3248,7 +3248,7 @@ deckpool_push(struct deckpool_s *dpool, float **deck)
   }
   dpool->pool[dpool->n] = deck;
   dpool->n++;
-  ESL_DPRINTF3(("deckpool_push\n"));
+  ESL_DPRINTF3(("#DEBUG: deckpool_push\n"));
   return;
  ERROR:
   cm_Fail("Memory reallocation error.\n");
@@ -3259,7 +3259,7 @@ deckpool_pop(struct deckpool_s *d, float ***ret_deck)
   if (d->n == 0) { *ret_deck = NULL; return 0;}
   d->n--;
   *ret_deck = d->pool[d->n];
-  ESL_DPRINTF3(("deckpool_pop\n"));
+  ESL_DPRINTF3(("#DEBUG: deckpool_pop\n"));
   return 1;
 }
 void
@@ -3304,7 +3304,7 @@ alloc_vjd_deck(int L, int i, int j)
   int status;
   float **a;
   int     jp;
-  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
+  ESL_DPRINTF3(("#DEBUG: alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   ESL_ALLOC(a, sizeof(float *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0;   jp < i-1;    jp++) a[jp]     = NULL;
   for (jp = j+1; jp <= L;     jp++) a[jp]     = NULL;
@@ -3444,7 +3444,7 @@ alloc_vji_deck(int i0, int i1, int j1, int j0)
   int status; 
   float **a;
   int     jp;
-  ESL_DPRINTF3(("alloc_vji_deck : %.4f\n", size_vji_deck(i0,i1,j1,j0)));
+  ESL_DPRINTF3(("#DEBUG: alloc_vji_deck : %.4f\n", size_vji_deck(i0,i1,j1,j0)));
   ESL_ALLOC(a, sizeof(float *) * (j0-j1+1)); 
   for (jp = 0; jp <= j0-j1; jp++)
     ESL_ALLOC(a[jp], sizeof(float)*(i1-i0+1));
@@ -3467,7 +3467,7 @@ void			/* free'ing a score deck */
 free_vji_deck(float **a, int j1, int j0)
 {
   int jp;
-  ESL_DPRINTF3(("free_vji_deck called\n"));
+  ESL_DPRINTF3(("#DEBUG: free_vji_deck called\n"));
   for (jp = 0; jp <= j0-j1; jp++) 
     if (a[jp] != NULL) free(a[jp]);
   free(a);
@@ -3749,7 +3749,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    and append the trace to tr.
    */
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
-    ESL_DPRINTF2(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
+    ESL_DPRINTF2(("#DEBUG: Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
 		  i0, j0));
@@ -3890,16 +3890,16 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * The problems must be solved in a particular order, since we're
    * constructing the trace in a postorder traversal.
    */
-  ESL_DPRINTF2(("Generic splitter:\n"));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG: Generic splitter:\n"));
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		v, UniqueStatetype(cm->stid[v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    generic: G%d[%s]..%d[%s], %d..%d\n", 
 		w,    UniqueStatetype(cm->stid[w]),
 		wend, UniqueStatetype(cm->stid[wend]),
 		best_j-best_d+1, best_j-best_k));
-  ESL_DPRINTF2(("   generic: G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    generic: G%d[%s]..%d[%s], %d..%d\n", 
 		y,    UniqueStatetype(cm->stid[y]),
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
@@ -3979,7 +3979,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
     {
-      ESL_DPRINTF2(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+      ESL_DPRINTF2(("#DEBUG: Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j0));
@@ -4093,12 +4093,12 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
    *    These have to solved in the order given because we're
    *    constructing the trace in postorder traversal.
    */
-  ESL_DPRINTF2(("Wedge splitter:\n"));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG: Wedge splitter:\n"));
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_j-best_d+1, best_j, j0));
-  ESL_DPRINTF2(("   wedge:   G%d[%s]..%d[%s], %d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
@@ -4172,7 +4172,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z || 
       vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT)
     {
-      ESL_DPRINTF2(("Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+      ESL_DPRINTF2(("#DEBUG: Solving a V:   G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		z, UniqueStatetype(cm->stid[z]),
 		i0,j1,j1,j0));
@@ -4296,12 +4296,12 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * Solve in this order, because we're constructing the
    * trace in postorder traversal.
    */
-  ESL_DPRINTF2(("V splitter:\n"));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG: V splitter:\n"));
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		i0, best_i, best_j, j0));
-  ESL_DPRINTF2(("   V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
+  ESL_DPRINTF2(("#DEBUG:    V:       G%d[%s]..%d[%s], %d..%d//%d..%d\n", 
 		best_v, UniqueStatetype(cm->stid[best_v]),
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
@@ -6098,7 +6098,7 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
 
   /*printf("in alloc banded vjd deck, L : %d, i : %d, j : %d, min : %d, max : %d\n", L, i, j, min, max);*/
 
-  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
+  ESL_DPRINTF3(("#DEBUG: alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   ESL_ALLOC(a, sizeof(float *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0;   jp < i-1;    jp++) a[jp]     = NULL;
   for (jp = j+1; jp <= L;     jp++) a[jp]     = NULL;

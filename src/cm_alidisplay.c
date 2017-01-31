@@ -208,10 +208,10 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     len += wtrunc_L;
   }
 #if eslDEBUGLEVEL >= 1
-  printf("cfrom_span: %4d\n", cfrom_span);
-  printf("cfrom_emit: %4d\n", cfrom_emit);
-  printf("cto_emit:   %4d\n", cto_emit);
-  printf("cto_span:   %4d\n", cto_span);
+  printf("#DEBUG: cfrom_span: %4d\n", cfrom_span);
+  printf("#DEBUG: cfrom_emit: %4d\n", cfrom_emit);
+  printf("#DEBUG: cto_emit:   %4d\n", cto_emit);
+  printf("#DEBUG: cto_span:   %4d\n", cto_span);
 #endif
   
   /* Create strings of the full model and sequence used in an output

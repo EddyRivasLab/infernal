@@ -110,7 +110,7 @@ cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, 
   if(be_efficient) nrows = 1; /* mx will be 2 rows */
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_Viterbi(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF1(("#DEBUG: cp9_Viterbi(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -242,7 +242,7 @@ cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, 
   if(ret_maxres != NULL) *ret_maxres = best_pos;
   if(ret_psc != NULL)    *ret_psc    = scA;
   else                    free(scA);
-  ESL_DPRINTF1(("cp9_Viterbi() return score: %10.4f\n", best_sc));
+  ESL_DPRINTF1(("#DEBUG: cp9_Viterbi() return score: %10.4f\n", best_sc));
 
   return eslOK;
 
@@ -307,7 +307,7 @@ cp9_ViterbiBackward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, 
   if(be_efficient) nrows = 1; /* mx will be 2 rows */
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_ViterbiBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF1(("#DEBUG: cp9_ViterbiBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -581,7 +581,7 @@ cp9_ViterbiBackward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, 
   if(ret_maxres != NULL) *ret_maxres = best_pos;
   if(ret_psc != NULL)    *ret_psc    = scA;
   else                    free(scA);
-  ESL_DPRINTF1(("cp9_ViterbiBackward() return score: %10.4f\n", best_sc));
+  ESL_DPRINTF1(("#DEBUG: cp9_ViterbiBackward() return score: %10.4f\n", best_sc));
 
   return eslOK;
 
@@ -702,8 +702,8 @@ cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, 
   if(be_efficient) nrows = 1; /* mx will be 2 rows */
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_Forward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
-  ESL_DPRINTF1(("cp9_Forward do_scan: %d\n", do_scan));
+  ESL_DPRINTF1(("#DEBUG: cp9_Forward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF1(("#DEBUG: cp9_Forward do_scan: %d\n", do_scan));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -839,7 +839,7 @@ cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, 
   if(ret_maxres != NULL) *ret_maxres = best_pos;
   if(ret_psc != NULL)    *ret_psc    = scA;
   else                    free(scA);
-  ESL_DPRINTF1(("cp9_Forward() return score: %10.4f\n", best_sc));
+  ESL_DPRINTF1(("#DEBUG: cp9_Forward() return score: %10.4f\n", best_sc));
 
   return eslOK;
 
@@ -1009,8 +1009,8 @@ cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0,
   if(be_efficient) nrows = 1; /* mx will be 2 rows */
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
-  ESL_DPRINTF2(("cp9_Backward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
-  ESL_DPRINTF1(("cp9_Backward do_scan: %d\n", do_scan));
+  ESL_DPRINTF1(("#DEBUG: cp9_Backward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF1(("#DEBUG: cp9_Backward do_scan: %d\n", do_scan));
 
   /* scA will hold P(seq from i..j0 | Model) for each i in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+3));
@@ -1319,7 +1319,7 @@ cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0,
   if(ret_maxres != NULL) *ret_maxres = best_pos;
   if(ret_psc != NULL)    *ret_psc    = scA;
   else                    free(scA);
-  ESL_DPRINTF1(("cp9_Backward() return score: %10.4f\n", best_sc));
+  ESL_DPRINTF1(("#DEBUG: cp9_Backward() return score: %10.4f\n", best_sc));
 
   return eslOK;
 
@@ -1418,7 +1418,7 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
     if((fabs(diff) > max_diff)) 
       ESL_FAIL(eslFAIL, errbuf, "cp9_CheckFB(), residue at posn i:%d violates sum_k f[i][k]*b[i][k]=P(x|hmm), sum_k = %.4f bits (should be %.4f)\n", i, fb_sc, sc);
   }
-  ESL_DPRINTF1(("cp9_CheckFB() passed, Forward/Backward matrices pass check.\n"));
+  ESL_DPRINTF1(("#DEBUG: cp9_CheckFB() passed, Forward/Backward matrices pass check.\n"));
   return eslOK;
 }
 

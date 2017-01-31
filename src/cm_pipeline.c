@@ -1323,8 +1323,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   }
 
 #if eslDEBUGLEVEL >= 3
-  /*printf("\nPIPELINE ENTRANCE %s  %s  %" PRId64 " residues (pli->maxW: %d om->max_length: %d cm->W: %d)\n", sq->name, sq->desc, sq->n, pli->maxW, om->max_length, (*opt_cm)->W);*/
-  printf("\nPIPELINE ENTRANCE %-15s %15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " have5term: %d have3term: %d)\n",
+  printf("#DEBUG: \n#DEBUG: PIPELINE ENTRANCE %-15s %15s  (n: %6" PRId64 " start: %6" PRId64 " end: %6" PRId64 " C: %6" PRId64 " W: %6" PRId64 " L: %6" PRId64 " have5term: %d have3term: %d)\n",
 	 sq->name, om->name, sq->n, sq->start, sq->end, sq->C, sq->W, sq->L, have5term, have3term);
 #endif
 
@@ -1384,13 +1383,13 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   }
 
 #if eslDEBUGLEVEL >= 1
-  printf("in cm_Pipeline() %s\n", sq->name);
-  printf("do_pass_std_any:         %d\n", do_pass_std_any);
-  printf("do_pass_5p_only_force:   %d\n", do_pass_5p_only_force);
-  printf("do_pass_3p_only_force:   %d\n", do_pass_3p_only_force);
-  printf("do_pass_5p_and_3p_force: %d\n", do_pass_5p_and_3p_force);
-  printf("do_pass_5p_and_3p_any:   %d\n", do_pass_5p_and_3p_any);
-  printf("do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
+  printf("#DEBUG: in cm_Pipeline() %s\n", sq->name);
+  printf("#DEBUG: do_pass_std_any:         %d\n", do_pass_std_any);
+  printf("#DEBUG: do_pass_5p_only_force:   %d\n", do_pass_5p_only_force);
+  printf("#DEBUG: do_pass_3p_only_force:   %d\n", do_pass_3p_only_force);
+  printf("#DEBUG: do_pass_5p_and_3p_force: %d\n", do_pass_5p_and_3p_force);
+  printf("#DEBUG: do_pass_5p_and_3p_any:   %d\n", do_pass_5p_and_3p_any);
+  printf("#DEBUG: do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 #endif
 
   /* First loop over each pipeline pass:
@@ -1452,7 +1451,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
        * B. pli_final_stage_hmmonly(): use H3 local domain definition to define HMM hits
        ********************************************************************************************************/
 #if eslDEBUGLEVEL >= 3
-      printf("\nHMM ONLY PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+      printf("#DEBUG:\n#DEBUG: HMM ONLY PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
       if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
@@ -1470,7 +1469,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	 * B. pli_p7_env_def():  glocal Forward, and glocal (usually) HMM envelope definition, then
 	 */
 #if eslDEBUGLEVEL >= 3
-	printf("\nPIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+	printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
 	if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
@@ -1519,7 +1518,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
         }
         else { 
 #if eslDEBUGLEVEL >= 3
-          printf("\nPIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+          printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
           if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(np7envA[p]))) != eslOK) return status;
         } 
@@ -1595,7 +1594,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(pli->do_edef) { 
       if(pli->do_fcyk) { 
 #if eslDEBUGLEVEL >= 3
-        printf("\nPIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+        printf("#DEBUG:\n#DEBUG: PIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
         if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], np7envA[p], opt_cm, &es, &ee, &nenv)) != eslOK) return status;
         if(pli->do_time_F4 || pli->do_time_F5) return status;
@@ -1611,7 +1610,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     else if((! pli->do_edef) && pli->do_fcyk) { 
       /* Defining envelopes with CYK */
 #if eslDEBUGLEVEL >= 3
-      printf("\nPIPELINE calling pli_cyk_seq_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+      printf("#DEBUG:\n#DEBUG: PIPELINE calling pli_cyk_seq_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
       if((status = pli_cyk_seq_filter(pli, cm_offset, sq2search, opt_cm, &es, &ee, &nenv)) != eslOK) return status;
     }
@@ -1626,12 +1625,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     /* Filters are finished. Final stage of pipeline (always run).
      */
 #if eslDEBUGLEVEL >= 3
-    printf("\nPIPELINE calling FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
+    printf("#DEBUG:\n#DEBUG: PIPELINE calling FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
 #endif
     prv_ntophits = hitlist->N;
     if((status = pli_final_stage(pli, cm_offset, sq2search, es, ee, nenv, hitlist, opt_cm)) != eslOK) return status;
 #if eslDEBUGLEVEL >= 3
-    printf("\nPIPELINE back from FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
+    printf("#DEBUG\n#DEBUG: PIPELINE back from FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
 #endif
     
     /* if we're researching a 3' terminus, adjust the start/stop
@@ -2470,7 +2469,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   om->max_length = pli->maxW;
 
 #if eslDEBUGLEVEL >= 3
-  printf("\nPIPELINE pli_p7_filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
+  printf("#DEBUG\n#DEBUG: PIPELINE pli_p7_filter() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
 
   /* initializations */
@@ -2587,7 +2586,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     p7_bg_NullOne  (bg, subdsq, wlen, &nullsc);
 
 #if eslDEBUGLEVEL >= 3
-    if(cur_do_msv) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived SSV       ? bits ? P\n", i, ws[i], we[i]);
+    if(cur_do_msv) printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived SSV       ? bits ? P\n", i, ws[i], we[i]);
 #endif
     survAA[p7_SURV_F1][i] = TRUE;
     
@@ -2615,7 +2614,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     survAA[p7_SURV_F1b][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3
-    if(cur_do_msv && cur_do_msvbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  ? bits  P ?\n", i, ws[i], we[i]);
+    if(cur_do_msv && cur_do_msvbias) printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived MSV-Bias  ? bits  P ?\n", i, ws[i], we[i]);
 #endif      
     if(pli->do_time_F1) return eslOK;
     
@@ -2650,7 +2649,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     survAA[p7_SURV_F2][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3
-    if (cur_do_vit) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit       %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
+    if (cur_do_vit) printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit       %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
 
     /********************************************/
@@ -2670,7 +2669,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     survAA[p7_SURV_F2b][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3
-    if (cur_do_vit && cur_do_vitbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
+    if (cur_do_vit && cur_do_vitbias) printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Vit-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
     if(pli->do_time_F2) continue; 
     /********************************************/
@@ -2691,7 +2690,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     survAA[p7_SURV_F3][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3 
-    if(cur_do_fwd) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd       %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
+    if(cur_do_fwd) printf("#DEBUG SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd       %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
 
     if (cur_do_fwd && cur_do_fwdbias) { 
@@ -2711,7 +2710,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     survAA[p7_SURV_F3b][i] = TRUE;
 
 #if eslDEBUGLEVEL >= 3 
-    if(cur_do_fwd && cur_do_fwdbias) printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
+    if(cur_do_fwd && cur_do_fwdbias) printf("#DEBUG SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived Fwd-Bias  %6.2f bits  P %g\n", i, ws[i], we[i], wb[i], wp[i]);
 #endif
   }
 
@@ -2914,7 +2913,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   seq = esl_sq_CreateDigital(sq->abc);
 
 #if eslDEBUGLEVEL >= 3
-  printf("\nPIPELINE p7EnvelopeDef() %s  %" PRId64 " residues\n", sq->name, sq->n);
+  printf("#DEBUG:\n#DEBUG: PIPELINE p7EnvelopeDef() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
 
   /* determine which generic model we'll need to use based on which pass we're in */
@@ -2969,7 +2968,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   
   for (i = 0; i < nwin; i++) {
 #if eslDEBUGLEVEL >= 3    
-    printf("p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
+    printf("#DEBUG: p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
     /* if we require first or final residue, and don't have it, then
      * this window doesn't survive.
@@ -3061,7 +3060,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
 #if eslDEBUGLEVEL >= 3	
       if(P > pli->F4) { 
-	printf("KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
+	printf("#DEBUG: KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
       }
 #endif      
       /* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
@@ -3071,7 +3070,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       pli->acct[pli->cur_pass_idx].pos_past_gfwd += wlen;
 
 #if eslDEBUGLEVEL >= 3 
-      printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
+      printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif      
 
       if(pli->do_gfwdbias) {
@@ -3094,7 +3093,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
 	if(P > pli->F4b) continue;
 #if eslDEBUGLEVEL >= 3 
-	printf("SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
+	printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
 	pli->acct[pli->cur_pass_idx].n_past_gfwdbias++;
 	pli->acct[pli->cur_pass_idx].pos_past_gfwdbias += wlen;
@@ -3178,7 +3177,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       }
     
 #if eslDEBUGLEVEL >= 3
-      printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
+      printf("#DEBUG: SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
       pli->acct[pli->cur_pass_idx].n_past_edef++;
       pli->acct[pli->cur_pass_idx].pos_past_edef += env_len;
@@ -3202,7 +3201,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
       }
 #if eslDEBUGLEVEL >= 3
-      printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
+      printf("#DEBUG: SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5-bias  %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
       pli->acct[pli->cur_pass_idx].n_past_edefbias++;
       pli->acct[pli->cur_pass_idx].pos_past_edefbias += env_len;
@@ -3318,12 +3317,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   cyk_env_cutoff = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
 
 #if eslDEBUGLEVEL >= 3
-  printf("\nPIPELINE EnvCYKFilter() %s  %" PRId64 " residues\n", sq->name, sq->n);
+  printf("#DEBUG:\n#DEBUG: PIPELINE EnvCYKFilter() %s  %" PRId64 " residues\n", sq->name, sq->n);
 #endif
 
   for (i = 0; i < np7env; i++) {
 #if eslDEBUGLEVEL >= 3
-    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to EnvCYKFilter   pass: %" PRId64 "\n", i, p7es[i], p7ee[i], pli->cur_pass_idx);
+    printf("#DEBUG:\n#DEBUG: SURVIVOR Envelope %5d [%10ld..%10ld] being passed to EnvCYKFilter   pass: %" PRId64 "\n", i, p7es[i], p7ee[i], pli->cur_pass_idx);
 #endif
     cm->search_opts  = pli->fcyk_cm_search_opts;
     cm->tau          = pli->fcyk_tau;
@@ -3351,7 +3350,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     }
 
 #if eslDEBUGLEVEL >= 3
-    printf("SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived EnvCYKFilter       %6.2f bits  P %g\n", p7es[i], p7ee[i], sc, P);
+    printf("#DEBUG: SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived EnvCYKFilter       %6.2f bits  P %g\n", p7es[i], p7ee[i], sc, P);
 #endif
   }
   /* create list of surviving envelopes */
@@ -3497,7 +3496,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
 
 #if eslDEBUGLEVEL >= 3
     double P = esl_exp_surv(sq_hitlist->hit[h]->score, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
-    printf("SURVIVOR window       [%10" PRId64 "..%10" PRId64 "] survived SeqCYKFilter   %6.2f bits  P %g\n", iwin, jwin, sq_hitlist->hit[h]->score, P);
+    printf("#DEBUG: SURVIVOR window       [%10" PRId64 "..%10" PRId64 "] survived SeqCYKFilter   %6.2f bits  P %g\n", iwin, jwin, sq_hitlist->hit[h]->score, P);
 #endif
 
     if(do_merge) { 
@@ -3599,7 +3598,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 
   for (i = 0; i < nenv; i++) {
 #if eslDEBUGLEVEL >= 3
-    printf("\nSURVIVOR Envelope %5d [%10ld..%10ld] being passed to Final stage   pass: %" PRId64 "\n", i, es[i], ee[i], pli->cur_pass_idx);
+    printf("#DEBUG:\n#DEBUG: SURVIVOR Envelope %5d [%10ld..%10ld] being passed to Final stage   pass: %" PRId64 "\n", i, es[i], ee[i], pli->cur_pass_idx);
 #endif
     nhit             = hitlist->N;
     cm->search_opts  = pli->final_cm_search_opts;
@@ -3620,9 +3619,9 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       if(scan_cp9b == NULL) return eslEMEM;
 #if eslDEBUGLEVEL >= 1
       if((status = cp9_ValidateBands(cm, pli->errbuf, cm->cp9b, es[i], ee[i], cm_pli_PassAllowsTruncation(pli->cur_pass_idx))) != eslOK) return status;
-      ESL_DPRINTF1(("original bands validated.\n"));
+      ESL_DPRINTF1(("#DEBUG: original bands validated.\n"));
       if((status = cp9_ValidateBands(cm, pli->errbuf, scan_cp9b, es[i], ee[i], cm_pli_PassAllowsTruncation(pli->cur_pass_idx))) != eslOK) return status;
-      ESL_DPRINTF1(("cloned bands validated.\n"));
+      ESL_DPRINTF1(("#DEBUG: cloned bands validated.\n"));
 #endif
     }
     else { 
@@ -3656,7 +3655,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
         if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
       }
 #if eslDEBUGLEVEL >= 3
-      printf("SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
+      printf("#DEBUG: SURVIVOR envelope     [%10ld..%10ld] survived Inside    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
       /* Get an alignment of the hit. 
        */
@@ -3810,7 +3809,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 
   for (i = 0; i < nwin; i++) {
 #if eslDEBUGLEVEL >= 3    
-    printf("p7 final stage win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
+    printf("#DEBUG: p7 final stage win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
 
     wlen   = we[i]   - ws[i] + 1;
@@ -3904,7 +3903,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 	pli->ddef->dcl[d].ad = NULL;
 
 #if eslDEBUGLEVEL >= 3
-	printf("SURVIVOR envelope     [%10ld..%10ld] survived Final HMM ONLY stage    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
+	printf("#DEBUG: SURVIVOR envelope     [%10ld..%10ld] survived Final HMM ONLY stage    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
       
 	if (pli->mode == CM_SEARCH_SEQS) { 
