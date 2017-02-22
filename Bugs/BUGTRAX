@@ -1380,3 +1380,37 @@ pseudoknotted broken basepair are both correctly removed.
 #### 
 ####  1.1.2 release: June 2014
 ####
+
+ID              i45
+TITLE		cmsearch incorrect model boundaries in alidisplay with local ends at terminii
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/17_0207_inf_cmsearch_alidisplay_bug/00LOG.txt
+                (NCBI)
+REPORTED_BY     Azat Badretdin
+CLOSED_DATE     EPN, Tue Feb 21 10:10:22 2017
+DESCRIPTION    
+
+Model boundaries are not correctly calculated when local ends are used
+in R mode as the first (5'-most) model position, in L mode as the
+final (3'-most) model position, or in T mode as either the first
+(5'-most) or final (3'-most) position(s).
+
+The reason is that I decided to allow L and R (and T) model EL
+emissions relatively late in the development of the 1.1 code, and did
+not 'fully' implement it. Specifically I forgot to modify the code in
+cm_parsetree.c::ParsetreeToCMBounds() that determines the 'cfrom_emit'
+and 'cto_emit' values. 
+
+Azat found this bug because he wrote a parser for cmsearch standard
+output, including CM_ALIDISPLAY alignments, and when this bug occurs
+it results in model boundaries which exceed cm->clen (in the case of
+the 5' bug, which is the only real world example yet found).
+
+The fix is to modify a block of code in
+cm_parsetree.c::ParsetreeToCMBounds() to properly account for local
+end emissions in L and R (and T) modes, and to modify the 
+boundaries of those EL sub-parsetrees. Previously we were using the
+node that transitioned into the EL to calculate those boundaries, 
+when it should be the node that the EL replaces.
+//
+

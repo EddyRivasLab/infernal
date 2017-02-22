@@ -2477,19 +2477,14 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       sdr       = 0; /* this prevents EL from affecting first/final_emit */
       is_left   = TRUE; 
       is_right  = TRUE;
-      nd        = cm->ndidx[prv_v];
-      /* tricky case: if previous node was not a LEFT emitter, the EL will emit at lpos, not after it */
-      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) { 
-	insert_sd = 1;
-      }
-      else { 
-	insert_sd = 0;
-      }
-      /* importantly, lpos and rpos remain as they were for the previous state/nd */
+      nd        = 1 + cm->ndidx[prv_v]; /* calculate node that EL replaced */
+      lpos      = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
+      rpos      = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
     }
 
+
     if(is_left) { 
-      if(ModeEmitsLeft(mode)) { 
+      if(ModeEmitsLeft(mode) || v == cm->M) { 
 	cfrom_emit = ESL_MIN(cfrom_emit, lpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
 	cto_emit   = ESL_MAX(cto_emit,   lpos);
 	if(sdl > 0 && cm->sttype[v] != IL_st) { /* inserts don't impact first_emit/final_emit */
@@ -2499,8 +2494,8 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       }
     }
     if(is_right) { 
-      if(ModeEmitsRight(mode)) { 
-	cfrom_emit = ESL_MIN(cfrom_emit, rpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
+      if(ModeEmitsRight(mode) || v == cm->M) { 
+        cfrom_emit = ESL_MIN(cfrom_emit, rpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
 	cto_emit   = ESL_MAX(cto_emit,   rpos);
 	if(sdr > 0 && cm->sttype[v] != IR_st) { /* inserts don't impact first_emit/final_emit */
 	  first_emit = ESL_MIN(first_emit, rpos);

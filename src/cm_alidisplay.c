@@ -154,7 +154,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     v    = tr->state[ti];
     mode = tr->mode[ti];
     if (v == cm->M) {  /* special case: local exit into EL */
-      nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
+      nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
       qinset = cm->cmcons->rpos[nd] - cm->cmcons->lpos[nd] + 1;
       tinset = tr->emitr[ti]  - tr->emitl[ti]  + 1;
       ninset = ESL_MAX(qinset,tinset);
