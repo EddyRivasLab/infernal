@@ -1174,8 +1174,8 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       
   /* dynamically size the output lines */
   namewidth  = ESL_MAX(strlen(show_cmname), strlen(show_seqname));
-  coordwidth = ESL_MAX(ESL_MAX(integer_textwidth(ad->cfrom_emit),
-			       integer_textwidth(ad->cto_emit)),
+  coordwidth = ESL_MAX(ESL_MAX(integer_textwidth(ad->cfrom_span),
+			       integer_textwidth(ad->cto_span)),
 		       ESL_MAX(integer_textwidth(ad->sqfrom),
 			       integer_textwidth(ad->sqto)));
   aliwidth   = (linewidth > 0) ? linewidth - namewidth - 2*coordwidth - 5 : ad->N;

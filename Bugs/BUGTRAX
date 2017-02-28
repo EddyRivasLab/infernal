@@ -1414,3 +1414,35 @@ node that transitioned into the EL to calculate those boundaries,
 when it should be the node that the EL replaces.
 //
 
+ID              i46
+TITLE		cmsearch alidisplay model coordinate formatting error
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/17_0207_inf_cmsearch_alidisplay_bug/00LOG.txt
+                (NCBI)
+REPORTED_BY     Azat Badretdin
+CLOSED_DATE     EPN, Tue Feb 28 08:23:40 2017
+DESCRIPTION    
+
+The width of the coordinate field in cm_alidisplay_Print() was being
+calculated as the maximum of sqfrom, sqto (sequence boundaries) and
+ad->cfrom_emit, ad->cto_emit (model boundaries). The coordinate width
+should have been (and now is) calculated as the maximum of sqfrom,
+sqto, ad->cfrom_span and ad->cto_span, because it is the cfrom_span
+and cto_span values that are actually printed in the alidisplay. 
+
+cfrom_span and cto_span only differ from cfrom_emit and cto_emit in
+the case of truncated alignment. This bug caused a formatting error in
+rare cases on the 3' end of alignments when the model boundary for a
+block of an alidisplay exceeded cto_emit. Because we are taking a max,
+this bug never affected the 5' end where cfrom_span will always be 1
+if it is different from cfrom_emit.
+
+Azat found this bug because he wrote a parser for cmsearch standard
+output, including CM_ALIDISPLAY alignments, which must have been
+converting lines of alidisplay output into arrays and checking that
+they all made sense at the same indices.
+
+This bug is sufficiently simple that I didn't feel the need to create
+a test script for it in the testsuite.
+//
+
