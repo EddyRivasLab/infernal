@@ -149,7 +149,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     v    = tr->state[ti];
     mode = tr->mode[ti];
     if (v == cm->M) {  /* special case: local exit into EL */
-      nd = cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
+      nd = 1 + cm->ndidx[tr->state[ti-1]]; /* calculate node that EL replaced */
       qinset = cm->cmcons->rpos[nd] - cm->cmcons->lpos[nd] + 1;
       tinset = tr->emitr[ti]  - tr->emitl[ti]  + 1;
       ninset = ESL_MAX(qinset,tinset);
@@ -1169,8 +1169,8 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       
   /* dynamically size the output lines */
   namewidth  = ESL_MAX(strlen(show_cmname), strlen(show_seqname));
-  coordwidth = ESL_MAX(ESL_MAX(integer_textwidth(ad->cfrom_emit),
-			       integer_textwidth(ad->cto_emit)),
+  coordwidth = ESL_MAX(ESL_MAX(integer_textwidth(ad->cfrom_span),
+			       integer_textwidth(ad->cto_span)),
 		       ESL_MAX(integer_textwidth(ad->sqfrom),
 			       integer_textwidth(ad->sqto)));
   aliwidth   = (linewidth > 0) ? linewidth - namewidth - 2*coordwidth - 5 : ad->N;
