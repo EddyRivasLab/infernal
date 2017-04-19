@@ -2024,8 +2024,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     cfg->fp7_bld->arch_strategy = p7_ARCH_HAND;
     
     if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, 
-			     /*opt_trarr=*/NULL, /*opt_gm=*/NULL, /*opt_om=*/NULL, /*opt_postmsa=*/NULL,
-			     /*seqweights_w_fp=*/NULL, /*seqweights_e_fp=*/NULL)) != eslOK)
+			     /*opt_trarr=*/NULL, /*opt_gm=*/NULL, /*opt_om=*/NULL, /*opt_postmsa=*/NULL)) != eslOK)
       { strcpy(errbuf, cfg->fp7_bld->errbuf); return status; }
 
     /* remove the RF annotation, it only exists because we created amsa->rf above */

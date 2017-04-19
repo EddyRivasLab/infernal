@@ -60,18 +60,18 @@ EOF
 close ALI1;
 close SEQ1;
 
-# Build, calibrate and press models from the test alignments,
 if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
 if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
 if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
 if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
 if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
-@output = `$builddir/src/cmbuild -F $tmppfx.cm $tmppfx.sto 2>&1`;
-if ($? != 0) { die "FAIL: cmbuild failed\n"; }
-@output = `$builddir/src/cmcalibrate -L 0.05 $tmppfx.cm    2>&1`;
-if ($? != 0) { die "FAIL: cmcalibrate failed\n"; }
-@output = `$builddir/src/cmpress -F $tmppfx.cm             2>&1`;
-if ($? != 0) { die "FAIL: cmpress failed\n"; }
+
+
+# cmbuild and cmcalibrate will succeed; they don't care about dup names.
+# cmpress will fail; it uses an SSI index, which does care about dup names.
+@output = `$builddir/src/cmbuild -F $tmppfx.cm $tmppfx.sto 2>&1`;   if ($? != 0) { die "FAIL: cmbuild failed\n"; }
+@output = `$builddir/src/cmcalibrate -L 0.05 $tmppfx.cm    2>&1`;   if ($? != 0) { die "FAIL: cmcalibrate failed\n"; }
+@output = `$builddir/src/cmpress -F $tmppfx.cm             2>&1`;   if ($? == 0) { die "FAIL: cmpress should have detected dup names and failed, but it didn't\n"; }
 
 # cmsearch should show four results
 $output = `$builddir/src/cmsearch --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
@@ -80,12 +80,8 @@ if ($? != 0) { die "FAIL: cmsearch failed\n"; }
 &i1::ParseTblFormat1("$tmppfx.tbl");
 if ($i1::ntbl != 4) { die "FAIL: on expected number of hits, cmsearch\n"; } 
 
-# cmscan should show four results
-$output = `$builddir/src/cmscan --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
-if ($? != 0) { die "FAIL: cmscan failed\n"; }
+# you can't run cmscan, because it depends on cmpress success
 
-&i1::ParseTblFormat1("$tmppfx.tbl");
-if ($i1::ntbl != 4) { die "FAIL: on expected number of hits, cmscan\n"; } 
 
 print "ok\n";
 unlink "$tmppfx.sto";
