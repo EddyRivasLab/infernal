@@ -209,7 +209,13 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
 
   cm->mlp7->eff_nseq = cm->eff_nseq;
   cm->mlp7->nseq     = cm->nseq;
-  cm->mlp7->checksum = 0;
+  if(cm->flags & CMH_CHKSUM) { 
+    cm->mlp7->checksum = cm->checksum;
+    cm->mlp7->flags |= p7H_CHKSUM;
+  }    
+  else { 
+    cm->mlp7->checksum = 0;
+  }
 
   /* set the model composition */
   if ((status = p7_hmm_SetComposition(cm->mlp7)) != eslOK) ESL_XFAIL(status, errbuf, "out of memory");

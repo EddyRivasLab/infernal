@@ -936,6 +936,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
+   cm->checksum = checksum;
+   cm->flags   |= CMH_CHKSUM;
+
    if((CMCountNodetype(cm, MATP_nd) == 0)     && 
       (! esl_opt_GetBoolean(go, "--v1p0"))    && 
       (! esl_opt_GetBoolean(go, "--p56"))     && 
@@ -956,9 +959,6 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
    /* if <pretend_cm_is_hmm> we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
    if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm, pretend_cm_is_hmm))          != eslOK) goto ERROR;
-
-   cm->checksum = checksum;
-   cm->flags   |= CMH_CHKSUM;
 
    *ret_cm = cm;
    return eslOK;
