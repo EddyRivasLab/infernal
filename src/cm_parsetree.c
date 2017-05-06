@@ -3,7 +3,6 @@
  * moved to cove 2.0, Mon Sep  6 13:34:55 1993
  * cove4: SRE 29 Feb 2000 [Seattle]
  * infernal: SRE, Fri Jul 28 08:55:47 2000 [StL]
- * SVN $Id$
  * 
  * Unlike a traceback of a normal HMM alignment, which is linear,
  * the traceback of a CM is a tree structure. Here
@@ -2846,16 +2845,15 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
   int          choice;             /* index represeting sampled choice */
-  int          sd, sdl, sdr;       /* state delta, state left delta, state right delta */
+  int          sd, sdr;            /* state delta, state right delta */
 
   /* variables used in HMM banded version but no nonbanded version */
-  int      jp_v, dp_v;    /* j - jmin[v], d - hdmin[v][jp_v] */
+  int      jp_v;          /* j - jmin[v] */
   int      jp_y, dp_y ;   /* j - jmin[y], d - hdmin[y][jp_y] */
   int      jp_z, kp_z;    /* j - jmin[z], d - hdmin[z][jp_z] */
   int      jp_y_sdr;      /* j - jmin[y] - vms_sdr */
   int      dp_y_sd;       /* hdmin[y][jp_y_vms_sdr] - vms_sd */
   int      jp_0;          /* j offset in ROOT_S's (v==0) j band */
-  int      Lp_0;          /* L offset in ROOT_S's (v==0) d band */
   int      kmin, kmax;    /* min/max k */
 
   /* the DP matrix */
@@ -2880,7 +2878,6 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
   if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
@@ -2896,7 +2893,6 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   j = d = L;
   i = 1;
   jp_v = j - jmin[v];
-  dp_v = d - hdmin[v][jp_v];
   fsc = 0.;
   while (1) {
     if (cm->sttype[v] == B_st) {
@@ -2974,7 +2970,6 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	/* add in emission score (or 0.0 if we're a non-emitter) */
 	fsc += get_femission_score(cm, dsq, v, i, j); 
 	sd  = StateDelta(cm->sttype[v]);
-	sdl = StateLeftDelta(cm->sttype[v]);
 	sdr = StateRightDelta(cm->sttype[v]);
 
 	/* set pA[] as (float-ized) log odds scores for each child we can transit to, 
@@ -3153,7 +3148,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   float   *JpA = NULL;                /* prob vector for possible transitions to take, J mode */
   float   *LpA = NULL;                /* prob vector for possible transitions to take, L mode */
   float   *RpA = NULL;                /* prob vector for possible transitions to take, R mode */
-  int      vms_sd, vms_sdl, vms_sdr;  /* mode-specific state delta, state left delta, state right delta */
+  int      vms_sd, vms_sdr;           /* mode-specific state delta, state right delta */
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T;       /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends */
@@ -3429,7 +3424,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  /* determine mode-specific state delta values, and which modes we can transition to */
 	  if(v_mode == TRMODE_J) { 
 	    vms_sd  = StateDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = TRUE;
 	    do_L    = FALSE;
@@ -3437,7 +3431,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  }
 	  else if(v_mode == TRMODE_L) { 
 	    vms_sd  = StateLeftDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = 0;
 	    do_J    = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from L to J mode only if a right emitter */
 	    do_L    = TRUE;
@@ -3445,7 +3438,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  }
 	  else if(v_mode == TRMODE_R) { 
 	    vms_sd  = StateRightDelta(cm->sttype[v]);
-	    vms_sdl = 0;
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = (StateLeftDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from R to J mode only if a left emitter */
 	    do_L    = FALSE;
@@ -3668,7 +3660,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   float   *JpA = NULL;                /* prob vector for possible transitions to take, J mode */
   float   *LpA = NULL;                /* prob vector for possible transitions to take, L mode */
   float   *RpA = NULL;                /* prob vector for possible transitions to take, R mode */
-  int      vms_sd, vms_sdl, vms_sdr;  /* mode-specific state delta, state left delta, state right delta */
+  int      vms_sd, vms_sdr;           /* mode-specific state delta, state right delta */
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T; /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends, even if outside bands */
@@ -3676,7 +3668,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   float    trpenalty;                 /* truncation penalty, differs based on pass_idx and if we're local or global */
 
   /* variables used in HMM banded version but no nonbanded version */
-  int      jp_v, dp_v;    /* j - jmin[v], d - hdmin[v][jp_v] */
+  int      jp_v;          /* j - jmin[v] */
   int      jp_y, dp_y ;   /* j - jmin[y], d - hdmin[y][jp_y] */
   int      jp_z, kp_z;    /* j - jmin[z], d - hdmin[z][jp_z] */
   int      dp_z;          /* d - hdmin[z][jp_z] */
@@ -3780,7 +3772,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   i = 1;
   v_mode = parsetree_mode;
   jp_v = j - jmin[v];
-  dp_v = d - hdmin[v][jp_v];
   fsc = 0.;
   while (1) {
     /* check for super special case in truncated alignment sampling: */
@@ -3796,9 +3787,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       allow_S_trunc_end = TRUE; /* this sets yoffset to USED_TRUNC_END in the final 'else' of the code block below */
     }
     else if(cm->sttype[v] != EL_st) { 
-      /* update all-important jp_v and dp_v (j and d band-offset indices) */
+      /* update all-important jp_v (j band-offset index) */
       jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
       allow_S_trunc_end = FALSE;
       /* check for errors */
       if(j > jmax[v])        ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), j: %d > jmax[%d] (%d)\n", j, v, jmax[v]);
@@ -4055,7 +4045,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  /* determine mode-specific state delta values, and which modes we can transition to */
 	  if(v_mode == TRMODE_J) { 
 	    vms_sd  = StateDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = TRUE;
 	    do_L    = FALSE;
@@ -4063,7 +4052,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  }
 	  else if(v_mode == TRMODE_L) { 
 	    vms_sd  = StateLeftDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = 0;
 	    do_J    = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from L to J mode only a right emitter */
 	    do_L    = TRUE;
@@ -4071,7 +4059,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  }
 	  else if(v_mode == TRMODE_R) { 
 	    vms_sd  = StateRightDelta(cm->sttype[v]);
-	    vms_sdl = 0;
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = (StateLeftDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from R to J mode only a leftt emitter */
 	    do_L    = FALSE;

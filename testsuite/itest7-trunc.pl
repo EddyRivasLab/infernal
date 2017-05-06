@@ -6,8 +6,7 @@
 # Example: ./itest7-trunc.pl ..         ..       tmpfoo
 #
 # EPN, Tue May  1 09:44:54 2012
-# SVN $URL$
-# SVN $Id$
+
 
 BEGIN {
     $builddir  = shift;

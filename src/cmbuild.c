@@ -1,7 +1,6 @@
 /* cmbuild: covariance model construction from a multiple sequence alignment.
  *
  * SRE, Thu Jul 27 13:19:43 2000 [StL]
- * SVN $Id: cmbuild.c 3399 2010-11-05 19:27:46Z nawrockie $
  */
 
 #include "esl_config.h"
@@ -3100,7 +3099,4 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   return NULL;
 }
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
 

@@ -36,7 +36,6 @@
  * all the necessary working memory and heuristic thresholds.
  *   
  * SRE, Thu Jan 24 09:28:01 2008 [Janelia]
- * SVN $Id: p7_domaindef.c 3276 2010-05-24 20:39:03Z eddys $
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 #include "esl_config.h"

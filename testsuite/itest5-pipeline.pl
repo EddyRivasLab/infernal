@@ -8,8 +8,6 @@
 #
 # EPN, Mon Apr 30 13:00:38 2012
 # Based on H3's i18-nhmmer-generic.pl [TJW, Fri Nov 12 11:07:31 EST 2010]
-# SVN $URL$
-# SVN $Id$
 
 BEGIN {
     $builddir  = shift;

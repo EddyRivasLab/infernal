@@ -14,9 +14,6 @@
  *       form on my part. However 'sub CM' is so engrained in the 
  *       codebase at this point, I'm wary to change it, so it stays.
  *
- ***************************************************************** 
- * @LICENSE@
- ***************************************************************** 
  */
 
 #include "esl_config.h"

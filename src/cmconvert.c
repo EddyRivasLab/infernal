@@ -2,7 +2,6 @@
  * 
  * EPN, Fri Jul  1 05:11:15 2011
  * SRE, Thu Oct 16 08:57:43 2008 [janelia] (hmmconvert.c)
- * SVN $Id$
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -159,6 +158,4 @@ configure_model(CM_t *cm, char *errbuf)
 
   return eslOK;
 }
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
+

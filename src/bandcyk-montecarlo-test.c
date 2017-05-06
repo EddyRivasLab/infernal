@@ -10,10 +10,6 @@
  * are significantly different.
  * 
  * If any chi-square is less than a threshold (0.01), fail.
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
- * SVN $Id$
  */
 
 #include "esl_config.h"

@@ -52,10 +52,6 @@
  * were based.
  * 
  * EPN, Thu Sep 29 10:44:19 2011
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -2391,52 +2387,31 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 		  {
 		    alpha[v][j][d]   = sc;
 		    kshadow[v][j][d] = k;
+
 		    /* Note: we take the logsum here, because we're keeping track of the
 		     * log of the summed probability of emitting all residues up to this
 		     * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
 		     * right subtree. (j-k+1..j)
 		     * 
-		     * EPN, Tue Nov 17 10:53:13 2009 
-		     * Bug fix post infernal-1.0.2 release in
-		     * "if(((sc = FLogsum..."  statement above. 
-		     * This is i15 in BUGTRAX, fixed as of svn revision
-		     * 3056 in infernal 1.0 release branch, and revision
-		     * 3057 in infernal trunk. 
-		     * Bug description:
-		     * See analogous section and comment in
-		     * cm_OptAccAlignHB() above. In that
-		     * function, in very rare cases (1 case in the 1.1
-		     * million SSU sequences in release 10_15 of RDP),
-		     * this step will add two alpha values
-		     * (alpha[y][j-k][d-k] for left subtree, and
-		     * alpha[z][j][k] for right subtree) where one of
-		     * them is IMPOSSIBLE and the corresponding
-		     * subtree length ('d-k' in left subtree, or 'k'
-		     * if right subtree) is non-zero, yet their
-		     * FLogsum (which equals the value of the
-		     * non-IMPOSSIBLE cell) is sufficiently high to be
-		     * part of the optimally accurate traceback. This
-		     * will probably cause a seg fault later b/c it
-		     * implies a left or right subtree that is
-		     * IMPOSSIBLE. It is okay if an IMPOSSIBLE scoring
-		     * subtree has length 0 b/c 0 residues will
-		     * contribute nothing to the summed log
-		     * probability (nothing corresponds to a score of
-		     * IMPOSSIBLE). We handle this case here by
-		     * explicitly checking if either left or right
-		     * subtree cell is IMPOSSIBLE with non-zero length
-		     * before reassigning alpha[v][j][d].  I'm not
-		     * sure if this is even possible in the non-banded
-		     * function (this function), but I included the
-		     * analogous fix here (the NOT_IMPOSSIBLE() calls)
-		     * in case it was ever possible. This will slow
-		     * down the implementation, but I'd rather err on
-		     * the side of caution here, since we don't care
-		     * so much about speed in the non-banded function,
-		     * and b/c finding this bug again if the
-		     * non-banded function can have the bug would be a
-		     * pain in the ass.
-		     */		 
+		     * EPN, Tue Nov 17 10:53:13 2009 Bug fix post infernal-1.0.2 release in "if(((sc = FLogsum..."
+		     * statement above.  This is i15 in BUGTRAX, fixed as of svn revision 3056 in infernal 1.0 release
+		     * branch, and revision 3057 in infernal trunk.  Bug description: See analogous section and comment
+		     * in cm_OptAccAlignHB() above. In that function, in very rare cases (1 case in the 1.1 million SSU
+		     * sequences in release 10_15 of RDP), this step will add two alpha values (alpha[y][j-k][d-k] for
+		     * left subtree, and alpha[z][j][k] for right subtree) where one of them is IMPOSSIBLE and the
+		     * corresponding subtree length ('d-k' in left subtree, or 'k' if right subtree) is non-zero, yet
+		     * their FLogsum (which equals the value of the non-IMPOSSIBLE cell) is sufficiently high to be part
+		     * of the optimally accurate traceback. This will probably cause a seg fault later b/c it implies a
+		     * left or right subtree that is IMPOSSIBLE. It is okay if an IMPOSSIBLE scoring subtree has length
+		     * 0 b/c 0 residues will contribute nothing to the summed log probability (nothing corresponds to a
+		     * score of IMPOSSIBLE). We handle this case here by explicitly checking if either left or right
+		     * subtree cell is IMPOSSIBLE with non-zero length before reassigning alpha[v][j][d].  I'm not sure
+		     * if this is even possible in the non-banded function (this function), but I included the analogous
+		     * fix here (the NOT_IMPOSSIBLE() calls) in case it was ever possible. This will slow down the
+		     * implementation, but I'd rather err on the side of caution here, since we don't care so much about
+		     * speed in the non-banded function, and b/c finding this bug again if the non-banded function can
+		     * have the bug would be a pain in the ass.  
+		     */
 		  }
 	      }
 	  }

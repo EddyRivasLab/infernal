@@ -1,7 +1,3 @@
-/************************************************************
- * @LICENSE@
- ************************************************************/
-
 /* cm_dispatch.h
  * 
  * Functions that actually do the work for cmalign and cmsearch,

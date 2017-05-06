@@ -5,9 +5,6 @@
  * DP functions for consensus-only CYK CM similarity search,
  * 16x unsigned int SSE implementation
  * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"

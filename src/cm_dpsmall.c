@@ -1,6 +1,5 @@
 /* cm_dpsmall.c  (formerly smallcyk.c)
  * SRE, Wed Aug  2 08:42:49 2000 [St. Louis]
- * SVN $Id$
  * 
  * Alignment of a CM to a target (sub)sequence.
  *
@@ -11,10 +10,6 @@
  * These algorithms align to the entire target (sub)sequence
  * (e.g. global alignment). For sequence-local alignment, see
  * scancyk.c.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 /*################################################################
@@ -6524,9 +6519,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
   /* variables used for memory efficient bands */
   int      dp_v;           /* d index for state v in alpha w/mem eff bands */
   int      dp_y;           /* d index for state y in alpha w/mem eff bands */
-  int      dp_z;           /* d index for state z in alpha w/mem eff bands */
-  int      kp;             /* k prime - keeps track of what k should be now
-			     that we're using memory efficient bands */
+  int      kp;             /* k' - what k should be, now that we're banded */
   int      Wp;             /* W also changes depending on state */
 
   /* Allocations and initializations
@@ -6725,7 +6718,6 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
 		 */
 		dp_v = d - dmin[v];  /* d index for state v in alpha w/mem eff bands */
 		dp_y = d - dmin[y];  /* d index for state y in alpha w/mem eff bands */
-		dp_z = d - dmin[z];  /* d index for state z in alpha w/mem eff bands */
 
 		/* First make sure we have any valid kp, we know from inequality (2)
 		   that kp <= d-dmin[y]-dmin[z] so if this is < 0 then no kp

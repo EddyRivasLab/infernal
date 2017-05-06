@@ -1,14 +1,7 @@
 /* alphabet.c
  * SRE, Tue Aug  1 10:31:11 2000 [St. Louis]
- * SVN $Id$
  * 
  * Stuff having to do with manipulating symbols in the (RNA) alphabet.
- * 
- *****************************************************************
- *    This copyrighted source code is freely distributed 
- *    under the terms of the GNU General Public License. See
- *    the files COPYRIGHT and LICENSE for details.
- *****************************************************************  
  */
 
 #include "esl_config.h"

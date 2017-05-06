@@ -3,10 +3,6 @@
  * Easelification: EPN, Fri Nov 30 10:14:17 2007
  * 
  * Test the CM -> CP9 HMM construction procedure.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"

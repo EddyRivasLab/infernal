@@ -2521,6 +2521,3 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   return; /* NEVERREACHED */
 }
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

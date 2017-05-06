@@ -7,7 +7,6 @@
 # Example:  ./itest2-duplicate-names.pl ..         ..       tmpfoo
 #
 # SRE, Sun Dec 13 14:41:31 2009 [Yokohama, Japan]
-# SVN $Id: i10-duplicate-names.pl 3462 2011-01-11 13:52:50Z eddys $
 
 BEGIN {
     $builddir = shift;

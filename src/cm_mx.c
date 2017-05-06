@@ -46,7 +46,6 @@
  *      hits for CM DP search functions
  *
  * EPN, Fri Oct 26 05:04:34 2007
- * SVN $Id$
  */
 
 #include "esl_config.h"

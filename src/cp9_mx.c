@@ -1,7 +1,6 @@
 /* CP9_MX functions: dynamic programming matrix for CP9 HMMs
  * 
  * EPN, Wed Nov 28 05:11:51 2007
- * SVN $Id$
  */
 
 #include "esl_config.h"

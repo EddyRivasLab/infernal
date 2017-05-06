@@ -12,7 +12,7 @@ includedir  = @includedir@
 
 CC          = @CC@
 CFLAGS      = @CFLAGS@ @PTHREAD_CFLAGS@
-SIMDFLAGS   = @SIMD_CFLAGS@
+SSE_CFLAGS  = @SSE_CFLAGS@
 CPPFLAGS    = @CPPFLAGS@
 LDFLAGS     = @LDFLAGS@
 DEFS        = @DEFS@
@@ -82,21 +82,22 @@ libinfernal-impl.stamp: ${OBJS}
 ${OBJS}:     ${HDRS} 
 ${PROGOBJS}: ${HDRS}
 
-${PROGS}: @EXEC_DEPENDENCY@  ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLDIR}/libeasel.a  
-	${QUIET_GEN}${CC} ${CFLAGS} ${SIMDFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
+${PROGS}: % : %.o ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLDIR}/libeasel.a  
+	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
 
 .c.o:  
-	${QUIET_CC}${CC} ${CFLAGS} ${SIMDFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<
+	${QUIET_CC}${CC} ${CFLAGS} ${SSE_CFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<
 
 distclean: clean
 	-rm -f Makefile 
 
 clean:
 	-rm -f libinfernal-impl.stamp
-	-rm -f *.o *~ Makefile.bak core TAGS gmon.out cscope.out
+	-rm -f *.o *~ Makefile.bak core ${PROGS} TAGS gmon.out cscope.out
 	-rm -f *.gcno
+	for prog in ${PROGS}; do \
+	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
+	done
 
-################################################################
-# @LICENSE@
-################################################################
+
 

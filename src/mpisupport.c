@@ -2,7 +2,6 @@
  * Optional support for MPI parallelization in Infernal.
  * 
  * EPN, Mon Aug 27 12:38:13 2007
- * SVN $Id$
  */
 
 #include "esl_config.h"
@@ -1929,4 +1928,12 @@ cm_alndata_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ESL_ALPHABET *ab
   return status;
 }
 
+#else // ! HAVE_MPI
+
+/* If we don't have MPI compiled in, provide some nothingness to:
+ *   a. prevent Mac OS/X ranlib from bitching about .o file that "has no symbols" 
+ *   b. prevent compiler from bitching about "empty compilation unit"
+ *   c. compile blank drivers and automatically pass the automated tests (when we add any)
+ */
+void cm_mpisupport_silence_hack(void) { return; }
 #endif

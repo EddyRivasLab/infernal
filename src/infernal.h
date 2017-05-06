@@ -46,7 +46,6 @@
  *   41. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
  *   42. CM_ALNDATA:         information for alignment of a sequence to a CM
  *   43. Routines in Infernal's exposed API
- *   44. Copyright and license information
  *   
  * Also, see impl_{sse,vmx}/impl_{sse,vmx}.h for additional API
  * specific to the acceleration layer.
@@ -3311,7 +3310,4 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
 
 #endif /*INFERNALH_INCLUDED*/
 
-/************************************************************
- * @LICENSE@
- ************************************************************/
 

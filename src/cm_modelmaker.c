@@ -1,6 +1,5 @@
 /* cm_modelmaker.c
  * SRE, 28 Feb 2000 
- * SVN $Id$
  *
  * Construct a model from an alignment. 
  *
@@ -24,10 +23,6 @@
  *   the numbering in the final CM.
  * - emitl and emitr are relative to the alignment columns, not individual
  *   sequence positions.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************
  */
 
 #include "esl_config.h"

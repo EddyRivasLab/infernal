@@ -1,12 +1,7 @@
 /* cm.c
  * SRE, Sat Jul 29 09:01:20 2000 [St. Louis]
- * SVN $Id$
  * 
  * Routines for dealing with the CM data structure.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"

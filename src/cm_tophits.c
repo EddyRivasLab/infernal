@@ -11,7 +11,6 @@
  *    4. Debugging/dev code.
  *    5. Benchmark driver.
  *    6. Test driver.
- *    7. Copyright and license information.
  * 
  * EPN, Tue May 24 13:03:31 2011
  */
@@ -3608,7 +3607,5 @@ main(int argc, char **argv)
   return eslOK;
 }
 #endif /*CM_TOPHITS_TESTDRIVE*/
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
+
 

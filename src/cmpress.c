@@ -2,7 +2,6 @@
  * 
  * EPN, Thu Jul  7 13:08:55 2011
  * SRE, Fri Oct 17 11:24:26 2008 [Janelia] (hmmpress.c)
- * SVN $Id$
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -245,9 +244,3 @@ close_dbfiles(struct dbfiles *dbf, int status)
     }
 }
 
-
-
-
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

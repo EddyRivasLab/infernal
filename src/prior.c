@@ -3,7 +3,6 @@
  *
  * Original code from Eric Nawrocki. Adapted by SRE.
  * SRE, Thu Apr  7 10:44:13 2005
- * SVN $Id$
  */
 
 #include "esl_config.h"
