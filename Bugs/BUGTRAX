@@ -1446,3 +1446,25 @@ This bug is sufficiently simple that I didn't feel the need to create
 a test script for it in the testsuite.
 //
 
+ID              i47
+TITLE		cmbuild --p7ml option does nothing
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/17_0304_inf_cmbuild_p7ml
+                (NCBI)
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Mon Mar 19 16:02:06 2018
+DESCRIPTION    
+
+The --p7ml option to cmbuild did nothing in version 1.1.2. The fix was
+simple enough, to modify the call to build_and_calibrate_p7_filter()
+to include a check for whether the --p7ml option was used. Previously,
+it was passing in a boolean value for whether the ML P7 HMM should be
+used as the filter, but it just wasn't related to the --p7ml option
+being used or not. What that boolean was related to was whether the CM
+had 0 basepairs or not. If a CM had 0 basepairs we were using the ML
+P7 HMM of that CM as its filter, because intuitively that makes sense:
+the CM is itself basically like an HMM and the ML P7 HMM is going to
+be as similar as a P7 HMM can possibly be to that HMM, so we should
+use it to filter.
+//
+

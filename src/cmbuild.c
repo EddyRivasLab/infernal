@@ -956,8 +956,10 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
    if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
    if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
-   /* if <pretend_cm_is_hmm> we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
-   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm, pretend_cm_is_hmm))          != eslOK) goto ERROR;
+   /* if <pretend_cm_is_hmm> OR --p7ml used, then we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
+   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm,
+                                                (pretend_cm_is_hmm || esl_opt_GetBoolean(go, "--p7ml"))))
+        != eslOK) goto ERROR;
 
    *ret_cm = cm;
    return eslOK;

@@ -88,6 +88,7 @@
 1 exercise  bug/i43-oa-loc-beg       !testsuite/bug-i43.pl! @src/cmsearch@ !testsuite/bug-i43.cm! !testsuite/bug-i43.fa!
 1 exercise  bug/i44-mapstr           !testsuite/bug-i44.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i45-alidisplay-EL    !testsuite/bug-i45.pl! @src/cmsearch@ !testsuite/bug-i45.cm! !testsuite/bug-i45a.fa! !testsuite/bug-i45b.fa!
+1 exercise  bug/i47-cmbuild-p7ml     !testsuite/bug-i47.pl! @src/cmbuild@
 
 ################################################################
 # Option tests
