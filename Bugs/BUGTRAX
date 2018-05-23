@@ -1468,3 +1468,27 @@ be as similar as a P7 HMM can possibly be to that HMM, so we should
 use it to filter.
 //
 
+ID              i48
+TITLE		qsort callback random return value
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/18_0521_inf_qsort_helpers_bug/infernal
+                (NCBI)
+REPORTED_BY     Yuri Gribov (github username: yugr)
+                https://github.com/EddyRivasLab/infernal/issues/11
+CLOSED_DATE     EPN, Wed May 23 05:40:21 2018
+DESCRIPTION    
+
+Some of the functions used by qsort() to sort hits in cm_tophits,
+namely hit_sorter_by_evalue() and hit_sorter_by_position(), were not
+returning value '0' for input in which all compared fields for the two
+hits being compared were equal. Instead, 1 or -1 was being returned,
+in ways that Yuri explained 'may return random result when input
+structs have all compared fields equal. This in turn may causes
+inconsistent order or even crashes in some qsort implementations.' The
+fix, as Yuri suggested was simply to update the final comparison so
+that '0' is returned if all fields are equal, that is if both '<' and
+'>' comparisons of final field checked (and all other fields checked)
+returns false.
+
+//
+
