@@ -191,8 +191,8 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
 /* hit_sorter_by_evalue(), hit_sorter_for_overlap_removal, hit_sorter_for_overlap_markup_clans_only, 
  * hit_sorter_for_overlap_markup_clans_agnostic and hit_sorter_by_position: qsort's pawns, below */
 static int
-  hit_sorter_by_evalue(const void *vh1, const void *vh2) 
-  {
+hit_sorter_by_evalue(const void *vh1, const void *vh2) 
+{
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
@@ -207,7 +207,11 @@ static int
       else {
 	if      (h1->start > h2->start) return  1; /* third key, start position, low to high */
 	else if (h1->start < h2->start) return -1;
-	else                            return  (h1->pass_idx < h2->pass_idx ? 1 : -1 ); /* fourth key, pass_idx, high to low */
+	else { 
+	  if     (h1->pass_idx < h2->pass_idx)  return  1; /* fourth key, pass_idx, high to low */
+	  else if(h1->pass_idx > h2->pass_idx)  return -1; 
+	  else                                  return  0;
+        }
       }
     }
   }
@@ -315,24 +319,32 @@ hit_sorter_by_position(const void *vh1, const void *vh2)
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
-  if      (h1->cm_idx > h2->cm_idx)     return  1; /* first key, cm_idx (unique id for models), low to high */
-  else if (h1->cm_idx < h2->cm_idx)     return -1; /* first key, cm_idx (unique id for models), low to high */
+  if      (h1->cm_idx > h2->cm_idx)       return  1; /* first key, cm_idx (unique id for models), low to high */
+  else if (h1->cm_idx < h2->cm_idx)       return -1; /* first key, cm_idx (unique id for models), low to high */
   else { 
-    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
-    else if (h1->seq_idx < h2->seq_idx) return -1;
+    if      (h1->seq_idx > h2->seq_idx)   return  1; /* second key, seq_idx (unique id for sequences), low to high */
+    else if (h1->seq_idx < h2->seq_idx)   return -1;
     else { 
       /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
-      if     (h1->in_rc > h2->in_rc)    return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
-      else if(h1->in_rc < h2->in_rc)    return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+      if     (h1->in_rc > h2->in_rc)      return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+      else if(h1->in_rc < h2->in_rc)      return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
       else if(h1->in_rc) { 
-	if     (h1->stop > h2->stop)    return  1; /* both revcomp:     fourth key is stop  position, low to high */
-	else if(h1->stop < h2->stop)    return -1; 
-	else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
+	if     (h1->stop > h2->stop)      return  1; /* both revcomp:     fourth key is stop  position, low to high */
+	else if(h1->stop < h2->stop)      return -1; 
+	else  { 
+          if     (h1->start > h2->start)  return  1; /* both revcomp, same stop position, fifth key is start position, low to high */
+          else if(h1->start < h2->start)  return -1; 
+          else                            return  0;
+        }
       }
-      else               {
-	if     (h1->start > h2->start)  return  1; /* both !revcomp:    fourth key is start position, low to high */
-	else if(h1->start < h2->start)  return -1; 
-	else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+      else {
+	if     (h1->start > h2->start)    return  1; /* both !revcomp:    fourth key is start position, low to high */
+	else if(h1->start < h2->start)    return -1; 
+	else  { 
+          if     (h1->stop > h2->stop)    return  1; /* both !revcomp, same start position, fifth key is stop position, low to high */
+          else if(h1->stop < h2->stop)    return -1; 
+          else                            return  0;
+        }
       }
     }
   }
