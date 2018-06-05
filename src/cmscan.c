@@ -249,7 +249,7 @@ static ESL_OPTIONS options[] = {
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,                   "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
   { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                   "set block size (number of models per worker/thread) to <n>",    108 },
   { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",   "use CM only for best scoring HMM pass for full seq envelopes",  108 },
-  { "--olonepass",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb,--onepass", "use CM only for best scoring HMM pass for single, overlapping envelopes",  108 },
+  { "--olonepass",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb,--onepass", "use CM only f. best sc'ing HMM pass f. overlapping envelopes",  108 },
   { "--noiter",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",   "do not iteratively tighten bands when necessary",               108 },
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow only truncated hits, anywhere within sequences",          108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow truncated hits only at 5' ends of sequences",             108 },
