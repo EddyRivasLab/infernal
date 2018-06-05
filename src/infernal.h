@@ -2198,18 +2198,19 @@ typedef struct cm_pipeline_s {
   P7_DOMAINDEF   *ddef;		/* domain definition workflow               */
 
   /* miscellaneous parameters */
-  float         mxsize_limit;   /* maximum size in Mb allowed for HB alignment           */
-  int           mxsize_set;     /* TRUE if mxsize_limit was set by user (default: FALSE) */
-  int           be_verbose;     /* TRUE for verbose reporting mode          */
-  int           do_top;         /* TRUE to do top    strand (usually TRUE)  */
-  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)  */
-  int           show_accessions;/* TRUE to output accessions not names      */
-  int           show_alignments;/* TRUE to compute and output alignments (default)*/
-  double        maxtau;         /* max tau when tightening bands            */
-  int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
-  float         wcx;            /* set W as cm->clen * wcx, ignoring W from CM file */
-  int           do_one_cmpass;  /* TRUE to only use CM for best scoring HMM pass if envelope encompasses full sequence */
-  int           do_not_iterate; /* TRUE to *not* iteratively tighten bands to get alignment that will fit in the matrix */
+  float         mxsize_limit;       /* maximum size in Mb allowed for HB alignment           */
+  int           mxsize_set;         /* TRUE if mxsize_limit was set by user (default: FALSE) */
+  int           be_verbose;         /* TRUE for verbose reporting mode          */
+  int           do_top;             /* TRUE to do top    strand (usually TRUE)  */
+  int           do_bot;             /* TRUE to do bottom strand (usually TRUE)  */
+  int           show_accessions;    /* TRUE to output accessions not names      */
+  int           show_alignments;    /* TRUE to compute and output alignments (default)*/
+  double        maxtau;             /* max tau when tightening bands            */
+  int           do_wcx;             /* TRUE to set cm->W as cm->clen * wcx      */
+  float         wcx;                /* set W as cm->clen * wcx, ignoring W from CM file */
+  int           do_one_cmpass;      /* TRUE to only use CM for best scoring HMM pass if envelope encompasses full sequence */
+  int           do_one_cmpass_olap; /* TRUE to only use CM for best scoring HMM pass if all envelopes overlap > 50% */
+  int           do_not_iterate;     /* TRUE to *not* iteratively tighten bands to get alignment that will fit in the matrix */
   /* these are all currently hard-coded, in cm_pipeline_Create() */
   float         smult;          /* 2.0;  W multiplier for window splitting */
   float         wmult;          /* 1.0;  maxW will be max of wmult * cm->W and cmult * cm->clen */
@@ -3020,6 +3021,7 @@ extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int ista
 extern int         cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans_only, char *errbuf);
 extern int         cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, uint64_t nseqs);
+extern int64_t     cm_tophits_OverlapNres(int64_t from1, int64_t to1, int64_t from2, int64_t to2, int64_t *ret_nes, char *errbuf);
 
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);

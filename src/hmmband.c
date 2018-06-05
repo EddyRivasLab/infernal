@@ -426,7 +426,7 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
       if(status != eslOK && status != eslERANGE) return status;
     }      
-    /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
+    printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);
     /* check if we can stop iterating, three ways we can
      * case 1: matrix is now smaller than our limit.
      * case 2: do_iterate == FALSE
