@@ -395,6 +395,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            doing_search - TRUE if we're going to use these HMM bands for search, not alignment
  *            do_sample    - TRUE if bands will eventually be used for sampling a parsetree
  *            do_post      - TRUE if bands will eventually be used for posterior alignment
+ *            do_iterate   - TRUE to attempt to iteratively tighten bands until matrix is small enough
  *            maxtau       - max value allowed for cm->tau
  *            xtau         - we multiply tau by this at each iteration (must be > 1.1)
  *            ret_Mb       - RETURN: required Mb for HB mx for cm->tau upon exit.
@@ -405,7 +406,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            A different error code upon an error, errbuf is filled.
  */
 int
-cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, float *ret_Mb)
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb)
 {
   int   status;
   int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
@@ -428,11 +429,15 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
     /* check if we can stop iterating, three ways we can
      * case 1: matrix is now smaller than our limit.
-     * case 2: do_trunc == FALSE && tau has reached its limit
-     * case 3: do_trunc == TRUE  && tau, thresh1 and thresh have all reached their limits
+     * case 2: do_iterate == FALSE
+     * case 3: do_trunc == FALSE && tau has reached its limit
+     * case 4: do_trunc == TRUE  && tau, thresh1 and thresh have all reached their limits
      */
     if(hbmx_Mb <  size_limit) { 
       break; /* our matrix will be small enough, break out of while(1) */
+    }
+    if(! do_iterate) { 
+      break; /* do_iterate is FALSE */
     }
     if(tau_at_limit && thresh1_at_limit && thresh2_at_limit) { /* if do_trunc is FALSE, thresh{1,2}_at_limit were init'ed as TRUE */
       break; /* tau, thresh1 and thresh2 have all reached their limits, break out of while (1) */

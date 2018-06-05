@@ -236,6 +236,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_wcx          = esl_opt_IsUsed    (go, "--wcx")        ? TRUE  : FALSE;
   pli->wcx             = esl_opt_IsUsed    (go, "--wcx")        ? esl_opt_GetReal(go, "--wcx") : 0.;
   pli->do_one_cmpass   = esl_opt_GetBoolean(go, "--onepass")    ? TRUE  : FALSE;
+  pli->do_not_iterate  = esl_opt_GetBoolean(go, "--noiter")     ? TRUE  : FALSE;
   pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
   pli->do_time_F2      = esl_opt_GetBoolean(go, "--timeF2")     ? TRUE  : FALSE;
   pli->do_time_F3      = esl_opt_GetBoolean(go, "--timeF3")     ? TRUE  : FALSE;
@@ -1302,7 +1303,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 
   if ((! pli->do_edef) && pli->do_one_cmpass) { 
-    ESL_FAIL(eslEINVAL, pli->errbuf, "cm_Pipeline() entered with do_edef as FALSE but do_onepass as TRUE, coding bug.");
+    ESL_FAIL(eslEINVAL, pli->errbuf, "cm_Pipeline() entered with do_edef as FALSE but do_onepass is TRUE, coding bug.");
   }
 
   /* Determine if we have the 5' and/or 3' termini. We can do this
@@ -4009,7 +4010,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   if(do_hbanded) { 
     status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit, 
 				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
-				  pli->maxtau, &hbmx_Mb);
+				  (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
     if(status == eslERANGE) { 
       /* HMM banded matrix exceeded mxsize_limit with tau of
        * pli->maxtau. We kill this potential hit. The memory limit
