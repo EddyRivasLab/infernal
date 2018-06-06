@@ -1415,7 +1415,6 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(p == PLI_PASS_5P_AND_3P_ANY   && (! do_pass_5p_and_3p_any))   continue;
     if(p == PLI_PASS_HMM_ONLY_ANY    && (! do_pass_hmm_only_any))    continue;
 
-
     /* A. Update pipeline accounting numbers 
      * Update npli_{top,bot} run and nres_{top,bot} searched for this
      * pass. It's important to do this precisely here, in between the
@@ -1574,7 +1573,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
          *     envelope from the pass that has the highest score
          */
         if((status = pli_check_overlap_envelopes(p7esAA, p7eeAA, np7envA, best_pass, 0, /*best_env_idx, we know it's 0 b/c only 1 hit)*/
-                                                 sq->n - pli->maxW, /* start_offset to subtract if p == PLI_PASS_3P_ONLY_FORCE*/
+                                                 ESL_MAX(0, sq->n - pli->maxW), /* start_offset to subtract if p == PLI_PASS_3P_ONLY_FORCE*/
                                                  0.5, /*min_fract for overlap*/
                                                  &pass_olap, pli->errbuf)) != eslOK) return status;
         if(! pass_olap) { 
@@ -1612,7 +1611,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     else if(p == PLI_PASS_5P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
       sq2search = term5sq;
     }
-    else if(p == PLI_PASS_3P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
+    else if(p == PLI_PASS_3P_ONLY_FORCE) { /* research final (3') pli->maxW residues */
       sq2search = term3sq;
       start_offset = sq->n - pli->maxW;
     }
@@ -4351,7 +4350,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
 void
 pli_copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
 { 
-  /*Printf("entering pli_copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
+  /*printf("entering pli_copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
     i, i+L-1, L, src_sq->start, src_sq->end);
     fflush(stdout);*/
 
