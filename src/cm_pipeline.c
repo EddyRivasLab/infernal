@@ -1544,7 +1544,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   /* Two special cases: pli->do_one_cmpass and pli->do_one_cmpass_olap */
   if(pli->do_one_cmpass || pli->do_one_cmpass_olap) { 
     /* pli->do_one_cmpass: 
-    /* if following criteria are met, only perform CM stages below with best scoring pass: 
+     * if following criteria are met, only perform CM stages below with best scoring pass: 
      * C1. all passes have 0 or 1 envelopes
      * C2. all envelopes encompass the full sequence
      * 
@@ -4476,12 +4476,6 @@ pli_mxsize_limit_from_W(int W)
 /* Function:  pli_check_one_or_zero_envelopes()
  * Date:      EPN, Tue Jun  5 11:06:15 2018
  *
- * 
- * Args:      sAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope start positions 
- *            eAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope end positions 
- *            bAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope bit scores
- * pli_check_one_or_zero_envelopes(int64_t **sAA, int64_t **eAA, float **bAA, int *nA)
- *
  * Purpose:   Given a set of envelopes for all passes, check 
  *            if all passes have 0 or 1 envelopes. Return '1'
  *            if all passes have 0 or 1 envelopes, or 0 if 
@@ -4504,12 +4498,6 @@ pli_check_one_or_zero_envelopes(int *nA)
 
 /* Function:  pli_get_pass_of_best_envelope()
  * Date:      EPN, Tue Jun  5 11:13:17 2018
- *
- * 
- * Args:      sAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope start positions 
- *            eAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope end positions 
- *            bAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope bit scores
- * pli_check_one_or_zero_envelopes(int64_t **sAA, int64_t **eAA, float **bAA, int *nA)
  *
  * Purpose:   Given a set of envelopes for all passes, return 
  *            pass index that has envelope with the highest score.
@@ -4600,6 +4588,7 @@ pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass
   int status;
   int p;
   int i;
+  int imax;
   int64_t best_start;
   int64_t best_end;
   int64_t best_len;
@@ -4618,7 +4607,8 @@ pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass
   best_len = best_end - best_start + 1;
 
   for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { 
-    for(i = 0; i < nA[p]; i++) { 
+    imax = nA[p]; /* need to set this before loop because our break loop convention sets p to NPLI_PASSES+1 so check of nA[p] would be out of bounds after that */
+    for(i = 0; i < imax; i++) { 
       if(p != best_pass_idx || i != best_env_idx) { 
         cur_start = sAA[p][i];
         cur_end   = eAA[p][i];
@@ -4632,7 +4622,7 @@ pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass
         if(cur_olap < (ESL_MIN(best_len, cur_len) * min_fract)) { 
           /* break loop */
           violation = 1; 
-          i = nA[p]+1;
+          i = imax+1;
           p = NPLI_PASSES+1;
         }
       }
