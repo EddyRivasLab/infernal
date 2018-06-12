@@ -1337,6 +1337,12 @@
 1  exercise  scan:4/100k/maxtau   @src/cmscan@  --maxtau 0.3 %4.CM% %4100K%
 1  exercise  scan:v/1k/seed0      @src/cmscan@  --seed 0 %V.CM% %V1K%
 1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
+1  exercise  scan:4/100k/onepas   @src/cmscan@  --onepass %4.CM% %4100K%
+1  exercise  scan:4/100k/lnepas   @src/cmscan@  --olonepass %4.CM% %4100K%
+1  exercise  scan:4/100k/noiter   @src/cmscan@  --noiter %4.CM% %410K%
+1  exercise  scan:4/100k/onlytr   @src/cmscan@  --onlytrunc %4.CM% %4100K%
+1  exercise  scan:4/100k/5tr      @src/cmscan@  --5trunc %4.CM% %4100K%
+1  exercise  scan:4/100k/3tr      @src/cmscan@  --3trunc %4.CM% %4100K%
 
 # cleanup, specific to cmscan.sqc (not in cmsearch.sqc)
 1  prep      scan:cleanup/tC      rm -f %T.CM%.*
@@ -1617,6 +1623,12 @@
 1  exercise  search:4/100k/maxtau   @src/cmsearch@  --maxtau 0.4 %4.CM% %4100K%
 1  exercise  search:v/1k/seed0      @src/cmsearch@  --seed 0 %V.CM% %V1K%
 1  exercise  search:v/1k/seed1      @src/cmsearch@  --seed 1 %V.CM% %V1K%
+1  exercise  search:4/100k/onepas   @src/cmsearch@  --onepass %4.CM% %4100K%
+1  exercise  search:4/100k/lnepas   @src/cmsearch@  --olonepass %4.CM% %4100K%
+1  exercise  search:4/100k/noiter   @src/cmsearch@  --noiter %4.CM% %410K%
+1  exercise  search:4/100k/onlytr   @src/cmsearch@  --onlytrunc %4.CM% %4100K%
+1  exercise  search:4/100k/5tr      @src/cmsearch@  --5trunc %4.CM% %4100K%
+1  exercise  search:4/100k/3tr      @src/cmsearch@  --3trunc %4.CM% %4100K%
 
 ##################################################################
 ##################################################################
