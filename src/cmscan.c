@@ -98,8 +98,8 @@ typedef struct {
  * options which are actually incompatible with a lot of other
  * options. 
  *
- * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--onepass"
- * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--onepass"
+ * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--onepass,--olonepass,--noiter"
+ * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--onepass,--olonepass,--noiter"
  * #define ICWMID   "--max,--nohmm,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
  * #define ICWDF    "--max,--nohmm,--mid,--rfam,--FZ"
  * #define ICWRFAM  "--max,--nohmm,--mid,--default,--FZ"
@@ -249,6 +249,8 @@ static ESL_OPTIONS options[] = {
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,                   "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
   { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                   "set block size (number of models per worker/thread) to <n>",    108 },
   { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",   "use CM only for best scoring HMM pass for full seq envelopes",  108 },
+  { "--olonepass",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb,--onepass", "use CM only f. best sc'ing HMM pass f. overlapping envelopes",  108 },
+  { "--noiter",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",   "do not iteratively tighten bands when necessary",               108 },
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow only truncated hits, anywhere within sequences",          108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow truncated hits only at 5' ends of sequences",             108 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,              "allow truncated hits only at 3' ends of sequences",             108 },
@@ -2185,6 +2187,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --max is incompatible with option --onepass");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--olonepass"))  { puts("Failed to parse command line: Option --max is incompatible with option --olonepass");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noiter"))     { puts("Failed to parse command line: Option --max is incompatible with option --noiter");     goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--nohmm")) { 
     if(esl_opt_IsUsed(go, "--max"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --max");        goto ERROR; }
@@ -2223,6 +2227,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --nohmm is incompatible with option --onepass");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--olonepass"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --olonepass");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noiter"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --noiter");     goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--mid")) { 
     if(esl_opt_IsUsed(go, "--max"))      { puts("Failed to parse command line: Option --mid is incompatible with option --max");   goto ERROR; }
@@ -2301,6 +2307,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --3trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onepass");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--olonepass"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --olonepass");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noiter"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noiter");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--mxsize"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --mxsize");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--smxsize"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --smxsize");    goto ERROR; }
     if(esl_opt_IsUsed(go, "--nonull3"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonull3");    goto ERROR; }
@@ -2366,6 +2374,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--acyk"))       fprintf(ofp, "# use CYK to align hits:                 on\n");
   if (esl_opt_IsUsed(go, "--wcx"))        fprintf(ofp, "# W set as <x> * cm->clen:               <x>=%g\n", esl_opt_GetReal(go, "--wcx"));
   if (esl_opt_IsUsed(go, "--onepass"))    fprintf(ofp, "# using CM for best HMM pass only:       on\n");
+  if (esl_opt_IsUsed(go, "--olonepass"))  fprintf(ofp, "# using CM for best HMM pass only (ol):  on\n");
+  if (esl_opt_IsUsed(go, "--noiter"))     fprintf(ofp, "# iterative HMM band tightening:         off\n");
   if (esl_opt_IsUsed(go, "--toponly"))    fprintf(ofp, "# search top-strand only:                on\n");
   if (esl_opt_IsUsed(go, "--bottomonly")) fprintf(ofp, "# search bottom-strand only:             on\n");
   if (esl_opt_IsUsed(go, "--qformat"))    fprintf(ofp, "# query <seqfile> format asserted:       %s\n", esl_opt_GetString(go,  "--qformat"));

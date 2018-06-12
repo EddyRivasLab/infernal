@@ -405,7 +405,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     else { /* use HMM bands */
       if(! cp9b_valid) { 
 	if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
-	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 
+	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
 					    cm->maxtau, NULL)) != eslOK) goto ERROR;
 	}
 	else {

@@ -42,6 +42,11 @@ static char *pli_describe_pass          (int pass_idx);
 static char *pli_describe_hits_for_pass (int pass_idx); 
 static float pli_mxsize_limit_from_W    (int W);
 
+static int   pli_check_one_or_zero_envelopes(int *nA);
+static int   pli_get_pass_of_best_envelope(float **bAA, int *nA);
+static int   pli_check_full_length_envelopes(int64_t **esAA, int64_t **eeAA, int *nA, int64_t L);
+static int   pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass_idx, int best_env_idx, int64_t start_offset, float min_fract, int *ret_val, char *errbuf);
+
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
  *****************************************************************/
@@ -227,22 +232,24 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->mxsize_limit = 0.;
     pli->mxsize_set   = FALSE;
   }  
-  pli->do_top          = esl_opt_GetBoolean(go, "--bottomonly") ? FALSE : TRUE;
-  pli->do_bot          = esl_opt_GetBoolean(go, "--toponly")    ? FALSE : TRUE;
-  pli->be_verbose      = esl_opt_GetBoolean(go, "--verbose")    ? TRUE  : FALSE;
-  pli->show_accessions = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
-  pli->show_alignments = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
-  pli->maxtau          = esl_opt_GetReal   (go, "--maxtau");
-  pli->do_wcx          = esl_opt_IsUsed    (go, "--wcx")        ? TRUE  : FALSE;
-  pli->wcx             = esl_opt_IsUsed    (go, "--wcx")        ? esl_opt_GetReal(go, "--wcx") : 0.;
-  pli->do_one_cmpass   = esl_opt_GetBoolean(go, "--onepass")    ? TRUE  : FALSE;
-  pli->do_time_F1      = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
-  pli->do_time_F2      = esl_opt_GetBoolean(go, "--timeF2")     ? TRUE  : FALSE;
-  pli->do_time_F3      = esl_opt_GetBoolean(go, "--timeF3")     ? TRUE  : FALSE;
-  pli->do_time_F4      = esl_opt_GetBoolean(go, "--timeF4")     ? TRUE  : FALSE;
-  pli->do_time_F5      = esl_opt_GetBoolean(go, "--timeF5")     ? TRUE  : FALSE;
-  pli->do_time_F6      = esl_opt_GetBoolean(go, "--timeF6")     ? TRUE  : FALSE;
-  pli->do_trm_F3       = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
+  pli->do_top             = esl_opt_GetBoolean(go, "--bottomonly") ? FALSE : TRUE;
+  pli->do_bot             = esl_opt_GetBoolean(go, "--toponly")    ? FALSE : TRUE;
+  pli->be_verbose         = esl_opt_GetBoolean(go, "--verbose")    ? TRUE  : FALSE;
+  pli->show_accessions    = esl_opt_GetBoolean(go, "--acc")        ? TRUE  : FALSE;
+  pli->show_alignments    = esl_opt_GetBoolean(go, "--noali")      ? FALSE : TRUE;
+  pli->maxtau             = esl_opt_GetReal   (go, "--maxtau");
+  pli->do_wcx             = esl_opt_IsUsed    (go, "--wcx")        ? TRUE  : FALSE;
+  pli->wcx                = esl_opt_IsUsed    (go, "--wcx")        ? esl_opt_GetReal(go, "--wcx") : 0.;
+  pli->do_one_cmpass      = esl_opt_GetBoolean(go, "--onepass")    ? TRUE  : FALSE;
+  pli->do_one_cmpass_olap = esl_opt_GetBoolean(go, "--olonepass")  ? TRUE  : FALSE;
+  pli->do_not_iterate     = esl_opt_GetBoolean(go, "--noiter")     ? TRUE  : FALSE;
+  pli->do_time_F1         = esl_opt_GetBoolean(go, "--timeF1")     ? TRUE  : FALSE;
+  pli->do_time_F2         = esl_opt_GetBoolean(go, "--timeF2")     ? TRUE  : FALSE;
+  pli->do_time_F3         = esl_opt_GetBoolean(go, "--timeF3")     ? TRUE  : FALSE;
+  pli->do_time_F4         = esl_opt_GetBoolean(go, "--timeF4")     ? TRUE  : FALSE;
+  pli->do_time_F5         = esl_opt_GetBoolean(go, "--timeF5")     ? TRUE  : FALSE;
+  pli->do_time_F6         = esl_opt_GetBoolean(go, "--timeF6")     ? TRUE  : FALSE;
+  pli->do_trm_F3          = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -1248,7 +1255,8 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  *
  *            <eslEINVAL> if (in a scan pipeline) we're supposed to
  *            set GA/TC/NC bit score thresholds but the model doesn't
- *            have any.
+ *            have any OR if problem with start..stop order (stop > start)
+ *            when comparing overlaps if pli->do_onepass_olap.
  *
  *            <eslERANGE> on numerical overflow errors in the
  *            optimized vector implementations; particularly in
@@ -1257,6 +1265,7 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
  *            anyway. We may emit a warning to the user, but cleanly
  *            skip the problematic sequence and continue.
  *
+ *  
  * Throws:    <eslEMEM> on allocation failure.
  *
  * Xref:      J4/25.
@@ -1296,13 +1305,15 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int       h;                 /* counter over hits */
   int       prv_ntophits;      /* number of hits */
   int64_t   start_offset;      /* offset to add to start/stop coordinates of hits found in pass 3, in which we re-search the 3' terminus */
-  int       winning_pass = -1; /* best scoring pass in HMM stage, only used if pli->do_one_cmpass */
-  float     winning_sc   = 0.; /* score of best scoring pass in HMM stage, only used if pli->do_one_cmpass */
+
+  /* variables necessary only if --onepass (pli->do_one_cmpass) or --olonepass (pli->do_one_cmpass_olap) */
+  int       best_pass  = -1; /* best scoring pass in HMM stage, only used if pli->do_one_cmpass */
+  int       pass_olap  = -1; /* set to '1' if pli->do_one_cmpass_olap and all envelopes pass the overlap test */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
 
-  if ((! pli->do_edef) && pli->do_one_cmpass) { 
-    ESL_FAIL(eslEINVAL, pli->errbuf, "cm_Pipeline() entered with do_edef as FALSE but do_onepass as TRUE, coding bug.");
+  if ((! pli->do_edef) && (pli->do_one_cmpass || pli->do_one_cmpass_olap)) { 
+    ESL_FAIL(eslEINVAL, pli->errbuf, "cm_Pipeline() entered with do_edef as FALSE but do_one_cmpass or do_one_cmpass_olap is TRUE, coding bug.");
   }
 
   /* Determine if we have the 5' and/or 3' termini. We can do this
@@ -1403,7 +1414,6 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(p == PLI_PASS_5P_AND_3P_FORCE && (! do_pass_5p_and_3p_force)) continue;
     if(p == PLI_PASS_5P_AND_3P_ANY   && (! do_pass_5p_and_3p_any))   continue;
     if(p == PLI_PASS_HMM_ONLY_ANY    && (! do_pass_hmm_only_any))    continue;
-
 
     /* A. Update pipeline accounting numbers 
      * Update npli_{top,bot} run and nres_{top,bot} searched for this
@@ -1529,29 +1539,52 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(wb    != NULL) { free(wb);    wb   = NULL; }
     nwin = 0;
   } /* end of 'for(p = PLI_PASS_STD_ANY; p <= PLI_NPASSES; p++)', first loop over pipeline passes */
-  
-  if(pli->do_one_cmpass) { 
-    winning_pass = -1;
-    /* if following criteria are met, only perform CM stages below with best scoring pass: 
+
+  /* Two special cases: pli->do_one_cmpass and pli->do_one_cmpass_olap */
+  if(pli->do_one_cmpass || pli->do_one_cmpass_olap) { 
+    /* pli->do_one_cmpass: 
+     * if following criteria are met, only perform CM stages below with best scoring pass: 
      * C1. all passes have 0 or 1 envelopes
      * C2. all envelopes encompass the full sequence
+     * 
+     * pli->do_one_cmpass_olap: 
+     * if following criteria are met, only perform CM stages below with best scoring pass: 
+     * C1. all passes have 0 or 1 envelopes
+     * C3. all passes overlap by 50% or more with the 
+     *     envelope from the pass that has the highest score
      */
-    for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { 
-      if(np7envA[p] == 1) { 
-        if(p7esAA[p][0] == 1 && p7eeAA[p][0] == sq->L) { 
-          if(winning_pass == -1 || p7ebAA[p][0] > winning_sc) { 
-            winning_pass = p; 
-            winning_sc   = p7ebAA[p][0];
-          }
-        }
-        else { 
-          p = NPLI_PASSES + 1; /* serves as a flag that we violated our criteria (C2 in this case) */
+    /* check for C1 first and find the best scoring envelope, 
+     * we need to do this for either do_one_cmpass || do_one_cmpass_olap */
+    best_pass = -1;
+    if(pli_check_one_or_zero_envelopes(np7envA)) { 
+      best_pass = pli_get_pass_of_best_envelope(p7ebAA, np7envA);
+    }       
+    if(best_pass != -1) { 
+      /* C1 criteria met, go on */
+      if(pli->do_one_cmpass) { 
+        /* check for C2. all envelopes encompass the full sequence */
+        if(! pli_check_full_length_envelopes(p7esAA, p7eeAA, np7envA, sq->L)) { 
+          /* C2 violated, break; */
+          best_pass  = -1;
         }
       }
-      else if(np7envA[p] > 1) { 
-        p = NPLI_PASSES + 1; /* serves as a flag that we violated our criteria (C1 in this case) */
+      else if(pli->do_one_cmpass_olap) { 
+        /* C3. all passes overlap by 50% or more with the 
+         *     envelope from the pass that has the highest score
+         */
+        if((status = pli_check_overlap_envelopes(p7esAA, p7eeAA, np7envA, best_pass, 0, /*best_env_idx, we know it's 0 b/c only 1 hit)*/
+                                                 ESL_MAX(0, sq->n - pli->maxW), /* start_offset to subtract if p == PLI_PASS_3P_ONLY_FORCE*/
+                                                 0.5, /*min_fract for overlap*/
+                                                 &pass_olap, pli->errbuf)) != eslOK) return status;
+        if(! pass_olap) { 
+          /* C3 violated, break; */
+          best_pass  = -1;
+        }
       }
     }
+    /* when we get here, best_pass will be -1 if all criteria for 
+     * pli->do_one_cmpass or pli->do_one_cmpass_olap were not met
+     */
   }
 
   /* Second loop over each pipeline pass:
@@ -1559,7 +1592,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
    */
   for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { /* p will go from 1..6 */
     if(pli->do_trm_F3)                                               continue; 
-    if(winning_pass != -1            && p != winning_pass)           continue; 
+    if(best_pass != -1               && p != best_pass)              continue; 
     if(p == PLI_PASS_STD_ANY         && (! do_pass_std_any))         continue;
     if(p == PLI_PASS_5P_ONLY_FORCE   && (! do_pass_5p_only_force))   continue;
     if(p == PLI_PASS_3P_ONLY_FORCE   && (! do_pass_3p_only_force))   continue;
@@ -1578,7 +1611,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     else if(p == PLI_PASS_5P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
       sq2search = term5sq;
     }
-    else if(p == PLI_PASS_3P_ONLY_FORCE) { /* research first (5') pli->maxW residues */
+    else if(p == PLI_PASS_3P_ONLY_FORCE) { /* research final (3') pli->maxW residues */
       sq2search = term3sq;
       start_offset = sq->n - pli->maxW;
     }
@@ -4009,7 +4042,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   if(do_hbanded) { 
     status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit, 
 				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
-				  pli->maxtau, &hbmx_Mb);
+				  (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
     if(status == eslERANGE) { 
       /* HMM banded matrix exceeded mxsize_limit with tau of
        * pli->maxtau. We kill this potential hit. The memory limit
@@ -4317,7 +4350,7 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
 void
 pli_copy_subseq(const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L)
 { 
-  /*Printf("entering pli_copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
+  /*printf("entering pli_copy_subseq i: %" PRId64 " j: %" PRId64 " L: %" PRId64 " start-end: %" PRId64 "... %" PRId64 "\n",
     i, i+L-1, L, src_sq->start, src_sq->end);
     fflush(stdout);*/
 
@@ -4437,6 +4470,172 @@ pli_mxsize_limit_from_W(int W)
 
   /*printf("in mxsize_limit_from_W(): W: %d returning %.3f\n", W, mxsize);*/
   return mxsize;
+}
+
+/* Function:  pli_check_one_or_zero_envelopes()
+ * Date:      EPN, Tue Jun  5 11:06:15 2018
+ *
+ * Purpose:   Given a set of envelopes for all passes, check 
+ *            if all passes have 0 or 1 envelopes. Return '1'
+ *            if all passes have 0 or 1 envelopes, or 0 if 
+ *            not.
+ * 
+ * Args:      nA:  [0..p..NPLI_PASSES] number of envelopes 
+ *
+ * Returns:   '1' if all values in nA are 0 or 1
+ */
+int
+pli_check_one_or_zero_envelopes(int *nA)
+{
+  int p;
+
+  for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { 
+    if(nA[p] != 0 && nA[p] != 1) return 0;
+  }
+  return 1;
+}
+
+/* Function:  pli_get_pass_of_best_envelope()
+ * Date:      EPN, Tue Jun  5 11:13:17 2018
+ *
+ * Purpose:   Given a set of envelopes for all passes, return 
+ *            pass index that has envelope with the highest score.
+ * 
+ * Args:      bAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope bit scores
+ *            nA:  [0..p..NPLI_PASSES] number of envelopes 
+ *
+ * Returns:   <best_idx> index of pass with highest scoring envelope
+ *            -1 if all passes have zero envelopes
+ */
+int
+pli_get_pass_of_best_envelope(float **bAA, int *nA)
+{
+  int p;
+  int i;
+  int best_idx = -1;
+  float best_sc = 0.;
+
+  for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { 
+    for(i = 0; i < nA[p]; i++) { 
+      if(best_idx == -1 || bAA[p][i] > best_sc) { 
+        best_idx = p; 
+        best_sc  = bAA[p][i];
+      }
+    }
+  }
+
+  return best_idx;
+}
+
+/* Function:  pli_check_full_length_envelopes()
+ * Date:      EPN, Tue Jun  5 11:23:07 2018
+ * 
+ * Purpose:   Given a set of envelopes for all passes, 
+ *            check if all envelopes include the full sequence.
+ *
+ * Args:      sAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope start positions 
+ *            eAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope end positions 
+ *            nA:  [0..p..NPLI_PASSES] number of envelopes 
+ *            L:   length of sequence
+ *
+ * Returns:   '1' if all envelopes include the full sequence
+ *            '0' if not, or if there are zero envelopes
+ */
+int
+pli_check_full_length_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int64_t L)
+{
+  int p;
+  int i;
+  int at_least_one = 0;
+
+  for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { 
+    for(i = 0; i < nA[p]; i++) { 
+      at_least_one = 1;
+      if(sAA[p][i] != 1 || eAA[p][i] != L) { 
+        return 0;
+      }
+    }
+  }
+
+  return at_least_one;
+}
+
+/* Function:  pli_check_overlap_envelopes()
+ * Date:      EPN, Tue Jun  5 11:32:39 2018
+ * 
+ * Purpose:   Given a set of envelopes for all passes, 
+ *            check if all envelopes overlap by at least <min_fract>
+ *            with best envelope, which is specified by <best_pass_idx>
+ *            and <best_env_idx>.
+ *
+ * Args:      sAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope start positions 
+ *            eAA: [0..p..NPLI_PASSES][0..i..nA[p]-1] envelope end positions 
+ *            nA:  [0..p..NPLI_PASSES] number of envelopes 
+ *            best_pass_idx: pass idx of best envelope
+ *            best_env_idx:  envelope idx of best envelope
+ *            start_offset:  offset to add to start and end of envelopes in PLI_PASS_3P_ONLY_FORCE pass
+ *            min_fract:     minimum fraction of overlap
+ *            ret_val:       RETURN: filled with '1' if all envelopes overlap sufficiently
+ *            errbuf:        error message buffer
+ *
+ * Returns:   eslOK on success, *ret_pass filled
+ *            ! eslOK on an error, errbuf filled
+ */
+int
+pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass_idx, int best_env_idx, int64_t start_offset, float min_fract, int *ret_val, char *errbuf)
+{
+  int status;
+  int p;
+  int i;
+  int imax;
+  int64_t best_start;
+  int64_t best_end;
+  int64_t best_len;
+  int64_t cur_start;
+  int64_t cur_end;
+  int64_t cur_len;
+  int64_t cur_olap = -1;
+  int violation = 0; 
+
+  best_start = sAA[best_pass_idx][best_env_idx];
+  best_end   = eAA[best_pass_idx][best_env_idx];
+  if(best_pass_idx == PLI_PASS_3P_ONLY_FORCE) { 
+    best_start += start_offset; 
+    best_end   += start_offset; 
+  }
+  best_len = best_end - best_start + 1;
+
+  for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { 
+    imax = nA[p]; /* need to set this before loop because our break loop convention sets p to NPLI_PASSES+1 so check of nA[p] would be out of bounds after that */
+    for(i = 0; i < imax; i++) { 
+      if(p != best_pass_idx || i != best_env_idx) { 
+        cur_start = sAA[p][i];
+        cur_end   = eAA[p][i];
+        if(p == PLI_PASS_3P_ONLY_FORCE) { 
+          cur_start += start_offset; 
+          cur_end   += start_offset; 
+        }
+        cur_len = cur_end - cur_start + 1;
+        if((status = cm_tophits_OverlapNres(cur_start, cur_end, best_start, best_end, &cur_olap, errbuf)) != eslOK) return status;
+        /*printf("returned from cm_tophits_OverlapNres, cur_start: %" PRId64 " cur_end: %" PRId64 "best_start: %" PRId64 " best_end: %" PRId64 " cur_olap: %" PRId64 "\n", cur_start, cur_end, best_start, best_end, cur_olap);*/
+        if(cur_olap < (ESL_MIN(best_len, cur_len) * min_fract)) { 
+          /* break loop */
+          violation = 1; 
+          i = imax+1;
+          p = NPLI_PASSES+1;
+        }
+      }
+    }
+  }
+
+  if(violation) { /* at least one hit does not overlap sufficiently */
+    *ret_val = 0;
+  }
+  else { /* all hits overlap sufficiently */
+    *ret_val = 1;
+  }
+
+  return eslOK;
 }
 
 #if 0
