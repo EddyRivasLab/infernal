@@ -211,8 +211,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
    */
   esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
-  if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) == eslESYNTAX) ESL_XFAIL(eslEINVAL, errbuf, "HandModelMaker(): consensus structure string is inconsistent");
-  else if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) != eslOK)  goto ERROR;
+  if      (esl_wuss2ct(msa->ss_cons, msa->alen, ct) == eslESYNTAX) ESL_XFAIL(eslEINVAL, errbuf, "HandModelMaker(): consensus structure string is inconsistent");
+  else if ((status = esl_wuss2ct(msa->ss_cons, msa->alen, ct)) != eslOK)  goto ERROR;
 
   /* 4. Make sure the consensus structure "ct" is consistent with the match assignments.
    *    Wipe out all structure in insert columns; including the base-paired 
@@ -251,9 +251,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
    *    for informational purposes.
    */
   nstates = nnodes = 0;
-  gtr = CreateParsetree(25);	/* the parse tree we'll grow        */
-  pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
-  if(pda == NULL) goto ERROR;
+  if ((gtr = CreateParsetree(25)) == NULL) { status = eslEMEM; goto ERROR; } /* the parse tree we'll grow        */
+  if ((pda = esl_stack_ICreate()) == NULL) { status = eslEMEM; goto ERROR; } /* a pushdown stack for our indices */
   clen = 0;
 
   /* Construction strategy has to make sure we number the nodes in
@@ -266,10 +265,10 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
    * subseq it's responsible for (emitl...emitr), and what node
    * index it attaches to.
    */
-  if((status = esl_stack_IPush(pda, -1))        != eslOK) goto ERROR;	/* what node it's attached to */
-  if((status = esl_stack_IPush(pda, 1))         != eslOK) goto ERROR;	/* emitl */
-  if((status = esl_stack_IPush(pda, msa->alen)) != eslOK) goto ERROR;	/* emitr */
-  if((status = esl_stack_IPush(pda, ROOT_nd))   != eslOK) goto ERROR;	/* "state" (e.g. node type) */
+  if ((status = esl_stack_IPush(pda, -1))        != eslOK) goto ERROR;	/* what node it's attached to */
+  if ((status = esl_stack_IPush(pda, 1))         != eslOK) goto ERROR;	/* emitl */
+  if ((status = esl_stack_IPush(pda, msa->alen)) != eslOK) goto ERROR;	/* emitr */
+  if ((status = esl_stack_IPush(pda, ROOT_nd))   != eslOK) goto ERROR;	/* "state" (e.g. node type) */
 
   while (esl_stack_IPop(pda, &type) != eslEOD) /* pop a node type to attach */
     {
@@ -509,24 +508,24 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
     }
   }
 
-  if(matassign != NULL) free(matassign);
-  if(elassign  != NULL) free(elassign);
-  if(c2a_map   != NULL) free(c2a_map);
-  if(a2c_map   != NULL) free(a2c_map);
-  if (ret_cm  != NULL) *ret_cm  = cm;  else if(cm  != NULL) FreeCM(cm);
-  if (ret_gtr != NULL) *ret_gtr = gtr; else if(gtr != NULL) FreeParsetree(gtr);
+  free(matassign);
+  free(elassign);
+  free(c2a_map);
+  free(a2c_map);
+  if (ret_cm)  *ret_cm  = cm;  else FreeCM(cm);
+  if (ret_gtr) *ret_gtr = gtr; else FreeParsetree(gtr);
   return eslOK;
 
  ERROR:
-  if(matassign != NULL) free(matassign);
-  if(elassign  != NULL) free(elassign);
-  if(c2a_map   != NULL) free(c2a_map);
-  if(a2c_map   != NULL) free(a2c_map);
-  if(cm        != NULL) FreeCM(cm);
-  if(gtr       != NULL) FreeParsetree(gtr);
-  if(ret_cm    != NULL) *ret_cm  = NULL;
-  if(ret_gtr   != NULL) *ret_gtr = NULL;
-  if(status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "HandModelmaker(): memory allocation error.");
+  free(matassign);
+  free(elassign);
+  free(c2a_map);
+  free(a2c_map);
+  FreeCM(cm);
+  FreeParsetree(gtr);
+  if (ret_cm)  *ret_cm  = NULL;
+  if (ret_gtr) *ret_gtr = NULL;
+  if (status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "HandModelmaker(): memory allocation error.");
   return status; /* never reached */
 }
 

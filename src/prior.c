@@ -16,7 +16,7 @@
 #include <assert.h>
 
 #include "easel.h"
-#include "esl_dirichlet.h"
+#include "esl_mixdchlet.h"
 #include "esl_vectorops.h"
 #include "esl_fileparser.h"
 
@@ -133,7 +133,7 @@ Prior_Read(FILE *fp)
       if (esl_mixdchlet_Read(efp, &(pri->t[i])) != eslOK)
 	cm_Fail("%s\nPrior file parse failed, reading transition prior %d at line %d.",
 	    efp->errbuf, i, efp->linenumber);
-      if (pri->t[i]->N > pri->maxnq)     pri->maxnq     = pri->t[i]->N;
+      if (pri->t[i]->Q > pri->maxnq)     pri->maxnq     = pri->t[i]->Q;
       if (pri->t[i]->K > pri->maxnalpha) pri->maxnalpha = pri->t[i]->K;
     }
   
@@ -142,7 +142,7 @@ Prior_Read(FILE *fp)
   if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) 
     cm_Fail("%s\nPrior file parse failed in base pair priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
-  if (pri->mbp->N > pri->maxnq)     pri->maxnq     = pri->mbp->N;
+  if (pri->mbp->Q > pri->maxnq)     pri->maxnq     = pri->mbp->Q;
   if (pri->mbp->K > pri->maxnalpha) pri->maxnalpha = pri->mbp->K;
 
   /* Consensus singlet emission prior section.
@@ -150,7 +150,7 @@ Prior_Read(FILE *fp)
   if (esl_mixdchlet_Read(efp, &(pri->mnt)) != eslOK) 
     cm_Fail("%s\nPrior file parse failed in consensus singlet priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
-  if (pri->mnt->N > pri->maxnq)     pri->maxnq     = pri->mnt->N;
+  if (pri->mnt->Q > pri->maxnq)     pri->maxnq     = pri->mnt->Q;
   if (pri->mnt->K > pri->maxnalpha) pri->maxnalpha = pri->mnt->K;
 
   /* Nonconsensus singlet emission prior section.
@@ -158,7 +158,7 @@ Prior_Read(FILE *fp)
   if (esl_mixdchlet_Read(efp, &(pri->i)) != eslOK)  
     cm_Fail("%s\nPrior file parse failed in nonconsensus singlet priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
-  if (pri->i->N > pri->maxnq)     pri->maxnq     = pri->i->N;
+  if (pri->i->Q > pri->maxnq)     pri->maxnq     = pri->i->Q;
   if (pri->i->K > pri->maxnalpha) pri->maxnalpha = pri->i->K;
 
   esl_fileparser_Destroy(efp);
@@ -221,9 +221,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 	  for (i = 0; i < cm->cnum[v]; i++)
 	    counts[i] = (double) cm->t[v][i];
 
-	  esl_mixdchlet_MPParameters(counts, cm->cnum[v], 
-				     pri->t[setnum],
-				     mixq, probs);
+	  esl_mixdchlet_MPParameters(pri->t[setnum], counts, probs);
 
 	  for (i = 0; i < cm->cnum[v]; i++)
 	    cm->t[v][i] = (float) probs[i];
@@ -238,9 +236,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 	      for (i = 0; i < cm->abc->K*cm->abc->K; i++)
 		counts[i] = (double) cm->e[v][i];
 	      
-	      esl_mixdchlet_MPParameters(counts, cm->abc->K*cm->abc->K,
-					 pri->mbp,
-					 mixq, probs);
+	      esl_mixdchlet_MPParameters(pri->mbp, counts, probs);
 	      
 	      for (i = 0; i < cm->abc->K*cm->abc->K; i++)
 		cm->e[v][i] = (float) probs[i];
@@ -250,9 +246,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 	      for (i = 0; i < cm->abc->K; i++)
 		counts[i] = (double) cm->e[v][i];
 	      
-	      esl_mixdchlet_MPParameters(counts, cm->abc->K,
-					 pri->mnt,
-					 mixq, probs);
+	      esl_mixdchlet_MPParameters(pri->mnt, counts, probs);
 	      
 	      for (i = 0; i < cm->abc->K; i++)
 		cm->e[v][i] = (float) probs[i];
@@ -263,9 +257,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 	      for (i = 0; i < cm->abc->K; i++)
 		counts[i] = (double) cm->e[v][i];
 	      
-	      esl_mixdchlet_MPParameters(counts, cm->abc->K,
-					 pri->i,
-					 mixq, probs);
+	      esl_mixdchlet_MPParameters(pri->i, counts, probs);
 	      
 	      for (i = 0; i < cm->abc->K; i++)
 		cm->e[v][i] = (float) probs[i];
@@ -323,6 +315,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
  *            However, the code within the if(mimic_h3) block
  *            was not created by that script, it was manually added
  *            to the script's output.
+ *            
  *
  * Returns:   ptr to the new prior structure.
  *
@@ -330,6 +323,9 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
  *            ~nawrockie/notebook/10_0830_inf_rmark3_again/
  *            ~nawrockie/notebook/10_0913_lm/
  *            ~nawrockie/notebook/12_0403_inf_hmmonly/ [mimic_h3]
+ *            
+ * Note:      (SRE to EPN, 7/9/18: in your script, change ->pq[ to ->q[, to
+ *            upgrade to new esl_mixchlet)
  */
 Prior_t *
 Prior_Default(int mimic_h3)
@@ -349,21 +345,21 @@ Prior_Default(int mimic_h3)
    */
    pri->tsetmap[MATP_MP][BIF_nd] = 0;
    pri->t[0] = esl_mixdchlet_Create(1, 3);
-   pri->t[0]->pq[0] = 1.0;
+   pri->t[0]->q[0] = 1.0;
    pri->t[0]->alpha[0][0] = 0.067710091654;
    pri->t[0]->alpha[0][1] = 0.000047753225;
    pri->t[0]->alpha[0][2] = 0.483183211040;
 
    pri->tsetmap[MATP_MP][END_nd] = 1;
    pri->t[1] = esl_mixdchlet_Create(1, 3);
-   pri->t[1]->pq[0] = 1.0;
+   pri->t[1]->q[0] = 1.0;
    pri->t[1]->alpha[0][0] = 0.067710091654;
    pri->t[1]->alpha[0][1] = 0.000047753225;
    pri->t[1]->alpha[0][2] = 0.483183211040;
 
    pri->tsetmap[MATP_MP][MATL_nd] = 2;
    pri->t[2] = esl_mixdchlet_Create(1, 4);
-   pri->t[2]->pq[0] = 1.0;
+   pri->t[2]->q[0] = 1.0;
    pri->t[2]->alpha[0][0] = 0.028518011579;
    pri->t[2]->alpha[0][1] = 0.024705844026;
    pri->t[2]->alpha[0][2] = 1.464047470747;
@@ -371,7 +367,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_MP][MATP_nd] = 3;
    pri->t[3] = esl_mixdchlet_Create(1, 6);
-   pri->t[3]->pq[0] = 1.0;
+   pri->t[3]->q[0] = 1.0;
    pri->t[3]->alpha[0][0] = 0.016729608598;
    pri->t[3]->alpha[0][1] = 0.017449035307;
    pri->t[3]->alpha[0][2] = 7.164604225972;
@@ -381,7 +377,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_MP][MATR_nd] = 4;
    pri->t[4] = esl_mixdchlet_Create(1, 4);
-   pri->t[4]->pq[0] = 1.0;
+   pri->t[4]->q[0] = 1.0;
    pri->t[4]->alpha[0][0] = 0.032901537296;
    pri->t[4]->alpha[0][1] = 0.013876834787;
    pri->t[4]->alpha[0][2] = 1.694917068307;
@@ -389,21 +385,21 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_ML][BIF_nd] = 5;
    pri->t[5] = esl_mixdchlet_Create(1, 3);
-   pri->t[5]->pq[0] = 1.0;
+   pri->t[5]->q[0] = 1.0;
    pri->t[5]->alpha[0][0] = 1.0;
    pri->t[5]->alpha[0][1] = 1.0;
    pri->t[5]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_ML][END_nd] = 6;
    pri->t[6] = esl_mixdchlet_Create(1, 3);
-   pri->t[6]->pq[0] = 1.0;
+   pri->t[6]->q[0] = 1.0;
    pri->t[6]->alpha[0][0] = 1.0;
    pri->t[6]->alpha[0][1] = 1.0;
    pri->t[6]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_ML][MATL_nd] = 7;
    pri->t[7] = esl_mixdchlet_Create(1, 4);
-   pri->t[7]->pq[0] = 1.0;
+   pri->t[7]->q[0] = 1.0;
    pri->t[7]->alpha[0][0] = 0.068859974656;
    pri->t[7]->alpha[0][1] = 0.060683472648;
    pri->t[7]->alpha[0][2] = 0.655691547663;
@@ -411,7 +407,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_ML][MATP_nd] = 8;
    pri->t[8] = esl_mixdchlet_Create(1, 6);
-   pri->t[8]->pq[0] = 1.0;
+   pri->t[8]->q[0] = 1.0;
    pri->t[8]->alpha[0][0] = 0.009119452604;
    pri->t[8]->alpha[0][1] = 0.007174198989;
    pri->t[8]->alpha[0][2] = 0.279841652851;
@@ -421,7 +417,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_ML][MATR_nd] = 9;
    pri->t[9] = esl_mixdchlet_Create(1, 4);
-   pri->t[9]->pq[0] = 1.0;
+   pri->t[9]->q[0] = 1.0;
    pri->t[9]->alpha[0][0] = 0.061640259819;
    pri->t[9]->alpha[0][1] = 0.014142411829;
    pri->t[9]->alpha[0][2] = 0.133564345209;
@@ -429,21 +425,21 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_MR][BIF_nd] = 10;
    pri->t[10] = esl_mixdchlet_Create(1, 3);
-   pri->t[10]->pq[0] = 1.0;
+   pri->t[10]->q[0] = 1.0;
    pri->t[10]->alpha[0][0] = 1.0;
    pri->t[10]->alpha[0][1] = 1.0;
    pri->t[10]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_MR][END_nd] = 11;
    pri->t[11] = esl_mixdchlet_Create(1, 3);
-   pri->t[11]->pq[0] = 1.0;
+   pri->t[11]->q[0] = 1.0;
    pri->t[11]->alpha[0][0] = 1.0;
    pri->t[11]->alpha[0][1] = 1.0;
    pri->t[11]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_MR][MATL_nd] = 12;
    pri->t[12] = esl_mixdchlet_Create(1, 4);
-   pri->t[12]->pq[0] = 1.0;
+   pri->t[12]->q[0] = 1.0;
    pri->t[12]->alpha[0][0] = 0.024723293475;
    pri->t[12]->alpha[0][1] = 0.048463880304;
    pri->t[12]->alpha[0][2] = 0.212532685951;
@@ -451,7 +447,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_MR][MATP_nd] = 13;
    pri->t[13] = esl_mixdchlet_Create(1, 6);
-   pri->t[13]->pq[0] = 1.0;
+   pri->t[13]->q[0] = 1.0;
    pri->t[13]->alpha[0][0] = 0.006294030132;
    pri->t[13]->alpha[0][1] = 0.015189408169;
    pri->t[13]->alpha[0][2] = 0.258896467198;
@@ -461,7 +457,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_MR][MATR_nd] = 14;
    pri->t[14] = esl_mixdchlet_Create(1, 4);
-   pri->t[14]->pq[0] = 1.0;
+   pri->t[14]->q[0] = 1.0;
    pri->t[14]->alpha[0][0] = 0.020819322736;
    pri->t[14]->alpha[0][1] = 0.000060497356;
    pri->t[14]->alpha[0][2] = 0.272689176849;
@@ -469,21 +465,21 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_D][BIF_nd] = 15;
    pri->t[15] = esl_mixdchlet_Create(1, 3);
-   pri->t[15]->pq[0] = 1.0;
+   pri->t[15]->q[0] = 1.0;
    pri->t[15]->alpha[0][0] = 1.0;
    pri->t[15]->alpha[0][1] = 1.0;
    pri->t[15]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_D][END_nd] = 16;
    pri->t[16] = esl_mixdchlet_Create(1, 3);
-   pri->t[16]->pq[0] = 1.0;
+   pri->t[16]->q[0] = 1.0;
    pri->t[16]->alpha[0][0] = 1.0;
    pri->t[16]->alpha[0][1] = 1.0;
    pri->t[16]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_D][MATL_nd] = 17;
    pri->t[17] = esl_mixdchlet_Create(1, 4);
-   pri->t[17]->pq[0] = 1.0;
+   pri->t[17]->q[0] = 1.0;
    pri->t[17]->alpha[0][0] = 0.024577940691;
    pri->t[17]->alpha[0][1] = 0.030655567559;
    pri->t[17]->alpha[0][2] = 0.121290355765;
@@ -491,7 +487,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_D][MATP_nd] = 18;
    pri->t[18] = esl_mixdchlet_Create(1, 6);
-   pri->t[18]->pq[0] = 1.0;
+   pri->t[18]->q[0] = 1.0;
    pri->t[18]->alpha[0][0] = 0.001029025955;
    pri->t[18]->alpha[0][1] = 0.002536729756;
    pri->t[18]->alpha[0][2] = 0.046719556839;
@@ -501,7 +497,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_D][MATR_nd] = 19;
    pri->t[19] = esl_mixdchlet_Create(1, 4);
-   pri->t[19]->pq[0] = 1.0;
+   pri->t[19]->q[0] = 1.0;
    pri->t[19]->alpha[0][0] = 0.000017041108;
    pri->t[19]->alpha[0][1] = 0.000007069171;
    pri->t[19]->alpha[0][2] = 0.028384306256;
@@ -509,21 +505,21 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_IL][BIF_nd] = 20;
    pri->t[20] = esl_mixdchlet_Create(1, 3);
-   pri->t[20]->pq[0] = 1.0;
+   pri->t[20]->q[0] = 1.0;
    pri->t[20]->alpha[0][0] = 0.943443048986;
    pri->t[20]->alpha[0][1] = 0.064001237265;
    pri->t[20]->alpha[0][2] = 0.432230812455;
 
    pri->tsetmap[MATP_IL][END_nd] = 21;
    pri->t[21] = esl_mixdchlet_Create(1, 3);
-   pri->t[21]->pq[0] = 1.0;
+   pri->t[21]->q[0] = 1.0;
    pri->t[21]->alpha[0][0] = 0.943443048986;
    pri->t[21]->alpha[0][1] = 0.064001237265;
    pri->t[21]->alpha[0][2] = 0.432230812455;
 
    pri->tsetmap[MATP_IL][MATL_nd] = 22;
    pri->t[22] = esl_mixdchlet_Create(1, 4);
-   pri->t[22]->pq[0] = 1.0;
+   pri->t[22]->q[0] = 1.0;
    pri->t[22]->alpha[0][0] = 0.250101882938;
    pri->t[22]->alpha[0][1] = 0.155728904821;
    pri->t[22]->alpha[0][2] = 0.370945030932;
@@ -531,7 +527,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_IL][MATP_nd] = 23;
    pri->t[23] = esl_mixdchlet_Create(1, 6);
-   pri->t[23]->pq[0] = 1.0;
+   pri->t[23]->q[0] = 1.0;
    pri->t[23]->alpha[0][0] = 0.157307265492;
    pri->t[23]->alpha[0][1] = 0.131105492208;
    pri->t[23]->alpha[0][2] = 0.555106727689;
@@ -541,7 +537,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_IL][MATR_nd] = 24;
    pri->t[24] = esl_mixdchlet_Create(1, 4);
-   pri->t[24]->pq[0] = 1.0;
+   pri->t[24]->q[0] = 1.0;
    pri->t[24]->alpha[0][0] = 0.155093374292;
    pri->t[24]->alpha[0][1] = 0.054734614999;
    pri->t[24]->alpha[0][2] = 0.714409186001;
@@ -549,26 +545,26 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_IR][BIF_nd] = 25;
    pri->t[25] = esl_mixdchlet_Create(1, 2);
-   pri->t[25]->pq[0] = 1.0;
+   pri->t[25]->q[0] = 1.0;
    pri->t[25]->alpha[0][0] = 0.264643213319;
    pri->t[25]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATP_IR][END_nd] = 26;
    pri->t[26] = esl_mixdchlet_Create(1, 2);
-   pri->t[26]->pq[0] = 1.0;
+   pri->t[26]->q[0] = 1.0;
    pri->t[26]->alpha[0][0] = 0.264643213319;
    pri->t[26]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATP_IR][MATL_nd] = 27;
    pri->t[27] = esl_mixdchlet_Create(1, 3);
-   pri->t[27]->pq[0] = 1.0;
+   pri->t[27]->q[0] = 1.0;
    pri->t[27]->alpha[0][0] = 0.601223387577;
    pri->t[27]->alpha[0][1] = 0.939499051719;
    pri->t[27]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[MATP_IR][MATP_nd] = 28;
    pri->t[28] = esl_mixdchlet_Create(1, 5);
-   pri->t[28]->pq[0] = 1.0;
+   pri->t[28]->q[0] = 1.0;
    pri->t[28]->alpha[0][0] = 0.291829430523;
    pri->t[28]->alpha[0][1] = 1.098441427679;
    pri->t[28]->alpha[0][2] = 0.025595408318;
@@ -577,33 +573,33 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATP_IR][MATR_nd] = 29;
    pri->t[29] = esl_mixdchlet_Create(1, 3);
-   pri->t[29]->pq[0] = 1.0;
+   pri->t[29]->q[0] = 1.0;
    pri->t[29]->alpha[0][0] = 0.327208719748;
    pri->t[29]->alpha[0][1] = 0.846283302435;
    pri->t[29]->alpha[0][2] = 0.069337439204;
 
    pri->tsetmap[MATL_ML][BIF_nd] = 30;
    pri->t[30] = esl_mixdchlet_Create(1, 2);
-   pri->t[30]->pq[0] = 1.0;
+   pri->t[30]->q[0] = 1.0;
    pri->t[30]->alpha[0][0] = 0.009635966745;
    pri->t[30]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[MATL_ML][END_nd] = 31;
    pri->t[31] = esl_mixdchlet_Create(1, 2);
-   pri->t[31]->pq[0] = 1.0;
+   pri->t[31]->q[0] = 1.0;
    pri->t[31]->alpha[0][0] = 0.009635966745;
    pri->t[31]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[MATL_ML][MATL_nd] = 32;
    pri->t[32] = esl_mixdchlet_Create(1, 3);
-   pri->t[32]->pq[0] = 1.0;
+   pri->t[32]->q[0] = 1.0;
    pri->t[32]->alpha[0][0] = 0.015185708311;
    pri->t[32]->alpha[0][1] = 1.809432933023;
    pri->t[32]->alpha[0][2] = 0.038601480352;
 
    pri->tsetmap[MATL_ML][MATP_nd] = 33;
    pri->t[33] = esl_mixdchlet_Create(1, 5);
-   pri->t[33]->pq[0] = 1.0;
+   pri->t[33]->q[0] = 1.0;
    pri->t[33]->alpha[0][0] = 0.031820644019;
    pri->t[33]->alpha[0][1] = 2.300193431878;
    pri->t[33]->alpha[0][2] = 0.036163737927;
@@ -612,33 +608,33 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATL_ML][MATR_nd] = 34;
    pri->t[34] = esl_mixdchlet_Create(1, 3);
-   pri->t[34]->pq[0] = 1.0;
+   pri->t[34]->q[0] = 1.0;
    pri->t[34]->alpha[0][0] = 0.012395245929;
    pri->t[34]->alpha[0][1] = 2.076134487839;
    pri->t[34]->alpha[0][2] = 0.039781067793;
 
    pri->tsetmap[MATL_D][BIF_nd] = 35;
    pri->t[35] = esl_mixdchlet_Create(1, 2);
-   pri->t[35]->pq[0] = 1.0;
+   pri->t[35]->q[0] = 1.0;
    pri->t[35]->alpha[0][0] = 0.019509171372;
    pri->t[35]->alpha[0][1] = 6.781321301695;
 
    pri->tsetmap[MATL_D][END_nd] = 36;
    pri->t[36] = esl_mixdchlet_Create(1, 2);
-   pri->t[36]->pq[0] = 1.0;
+   pri->t[36]->q[0] = 1.0;
    pri->t[36]->alpha[0][0] = 0.019509171372;
    pri->t[36]->alpha[0][1] = 6.781321301695;
 
    pri->tsetmap[MATL_D][MATL_nd] = 37;
    pri->t[37] = esl_mixdchlet_Create(1, 3);
-   pri->t[37]->pq[0] = 1.0;
+   pri->t[37]->q[0] = 1.0;
    pri->t[37]->alpha[0][0] = 0.005679808868;
    pri->t[37]->alpha[0][1] = 0.127365862719;
    pri->t[37]->alpha[0][2] = 0.277086556814;
 
    pri->tsetmap[MATL_D][MATP_nd] = 38;
    pri->t[38] = esl_mixdchlet_Create(1, 5);
-   pri->t[38]->pq[0] = 1.0;
+   pri->t[38]->q[0] = 1.0;
    pri->t[38]->alpha[0][0] = 0.023424968753;
    pri->t[38]->alpha[0][1] = 0.417640407951;
    pri->t[38]->alpha[0][2] = 0.039088991906;
@@ -647,33 +643,33 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATL_D][MATR_nd] = 39;
    pri->t[39] = esl_mixdchlet_Create(1, 3);
-   pri->t[39]->pq[0] = 1.0;
+   pri->t[39]->q[0] = 1.0;
    pri->t[39]->alpha[0][0] = 0.013699691994;
    pri->t[39]->alpha[0][1] = 0.405128575339;
    pri->t[39]->alpha[0][2] = 0.254775565405;
 
    pri->tsetmap[MATL_IL][BIF_nd] = 40;
    pri->t[40] = esl_mixdchlet_Create(1, 2);
-   pri->t[40]->pq[0] = 1.0;
+   pri->t[40]->q[0] = 1.0;
    pri->t[40]->alpha[0][0] = 0.264643213319;
    pri->t[40]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATL_IL][END_nd] = 41;
    pri->t[41] = esl_mixdchlet_Create(1, 2);
-   pri->t[41]->pq[0] = 1.0;
+   pri->t[41]->q[0] = 1.0;
    pri->t[41]->alpha[0][0] = 0.264643213319;
    pri->t[41]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATL_IL][MATL_nd] = 42;
    pri->t[42] = esl_mixdchlet_Create(1, 3);
-   pri->t[42]->pq[0] = 1.0;
+   pri->t[42]->q[0] = 1.0;
    pri->t[42]->alpha[0][0] = 0.601223387577;
    pri->t[42]->alpha[0][1] = 0.939499051719;
    pri->t[42]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[MATL_IL][MATP_nd] = 43;
    pri->t[43] = esl_mixdchlet_Create(1, 5);
-   pri->t[43]->pq[0] = 1.0;
+   pri->t[43]->q[0] = 1.0;
    pri->t[43]->alpha[0][0] = 0.291829430523;
    pri->t[43]->alpha[0][1] = 1.098441427679;
    pri->t[43]->alpha[0][2] = 0.091146313822;
@@ -682,20 +678,20 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATL_IL][MATR_nd] = 44;
    pri->t[44] = esl_mixdchlet_Create(1, 3);
-   pri->t[44]->pq[0] = 1.0;
+   pri->t[44]->q[0] = 1.0;
    pri->t[44]->alpha[0][0] = 0.327208719748;
    pri->t[44]->alpha[0][1] = 0.846283302435;
    pri->t[44]->alpha[0][2] = 0.069337439204;
 
    pri->tsetmap[MATR_MR][BIF_nd] = 45;
    pri->t[45] = esl_mixdchlet_Create(1, 2);
-   pri->t[45]->pq[0] = 1.0;
+   pri->t[45]->q[0] = 1.0;
    pri->t[45]->alpha[0][0] = 0.009635966745;
    pri->t[45]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[MATR_MR][MATP_nd] = 46;
    pri->t[46] = esl_mixdchlet_Create(1, 5);
-   pri->t[46]->pq[0] = 1.0;
+   pri->t[46]->q[0] = 1.0;
    pri->t[46]->alpha[0][0] = 0.031820644019;
    pri->t[46]->alpha[0][1] = 2.300193431878;
    pri->t[46]->alpha[0][2] = 0.036163737927;
@@ -704,20 +700,20 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATR_MR][MATR_nd] = 47;
    pri->t[47] = esl_mixdchlet_Create(1, 3);
-   pri->t[47]->pq[0] = 1.0;
+   pri->t[47]->q[0] = 1.0;
    pri->t[47]->alpha[0][0] = 0.012395245929;
    pri->t[47]->alpha[0][1] = 2.076134487839;
    pri->t[47]->alpha[0][2] = 0.039781067793;
 
    pri->tsetmap[MATR_D][BIF_nd] = 48;
    pri->t[48] = esl_mixdchlet_Create(1, 2);
-   pri->t[48]->pq[0] = 1.0;
+   pri->t[48]->q[0] = 1.0;
    pri->t[48]->alpha[0][0] = 0.021604946951;
    pri->t[48]->alpha[0][1] = 0.444765555211;
 
    pri->tsetmap[MATR_D][MATP_nd] = 49;
    pri->t[49] = esl_mixdchlet_Create(1, 5);
-   pri->t[49]->pq[0] = 1.0;
+   pri->t[49]->q[0] = 1.0;
    pri->t[49]->alpha[0][0] = 0.021273745319;
    pri->t[49]->alpha[0][1] = 0.532292228853;
    pri->t[49]->alpha[0][2] = 0.110249350652;
@@ -726,20 +722,20 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATR_D][MATR_nd] = 50;
    pri->t[50] = esl_mixdchlet_Create(1, 3);
-   pri->t[50]->pq[0] = 1.0;
+   pri->t[50]->q[0] = 1.0;
    pri->t[50]->alpha[0][0] = 0.005806440507;
    pri->t[50]->alpha[0][1] = 0.164264844267;
    pri->t[50]->alpha[0][2] = 0.316876127883;
 
    pri->tsetmap[MATR_IR][BIF_nd] = 51;
    pri->t[51] = esl_mixdchlet_Create(1, 2);
-   pri->t[51]->pq[0] = 1.0;
+   pri->t[51]->q[0] = 1.0;
    pri->t[51]->alpha[0][0] = 0.264643213319;
    pri->t[51]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATR_IR][MATP_nd] = 52;
    pri->t[52] = esl_mixdchlet_Create(1, 5);
-   pri->t[52]->pq[0] = 1.0;
+   pri->t[52]->q[0] = 1.0;
    pri->t[52]->alpha[0][0] = 0.291829430523;
    pri->t[52]->alpha[0][1] = 1.098441427679;
    pri->t[52]->alpha[0][2] = 0.025595408318;
@@ -748,19 +744,19 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[MATR_IR][MATR_nd] = 53;
    pri->t[53] = esl_mixdchlet_Create(1, 3);
-   pri->t[53]->pq[0] = 1.0;
+   pri->t[53]->q[0] = 1.0;
    pri->t[53]->alpha[0][0] = 0.327208719748;
    pri->t[53]->alpha[0][1] = 0.846283302435;
    pri->t[53]->alpha[0][2] = 0.069337439204;
 
    pri->tsetmap[BEGL_S][BIF_nd] = 54;
    pri->t[54] = esl_mixdchlet_Create(1, 1);
-   pri->t[54]->pq[0] = 1.0;
+   pri->t[54]->q[0] = 1.0;
    pri->t[54]->alpha[0][0] = 1.0;
 
    pri->tsetmap[BEGL_S][MATP_nd] = 55;
    pri->t[55] = esl_mixdchlet_Create(1, 4);
-   pri->t[55]->pq[0] = 1.0;
+   pri->t[55]->q[0] = 1.0;
    pri->t[55]->alpha[0][0] = 4.829712747509;
    pri->t[55]->alpha[0][1] = 0.061131109227;
    pri->t[55]->alpha[0][2] = 0.092185242101;
@@ -768,20 +764,20 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[BEGR_S][BIF_nd] = 56;
    pri->t[56] = esl_mixdchlet_Create(1, 2);
-   pri->t[56]->pq[0] = 1.0;
+   pri->t[56]->q[0] = 1.0;
    pri->t[56]->alpha[0][0] = 0.009635966745;
    pri->t[56]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[BEGR_S][MATL_nd] = 57;
    pri->t[57] = esl_mixdchlet_Create(1, 3);
-   pri->t[57]->pq[0] = 1.0;
+   pri->t[57]->q[0] = 1.0;
    pri->t[57]->alpha[0][0] = 0.015185708311;
    pri->t[57]->alpha[0][1] = 1.809432933023;
    pri->t[57]->alpha[0][2] = 0.038601480352;
 
    pri->tsetmap[BEGR_S][MATP_nd] = 58;
    pri->t[58] = esl_mixdchlet_Create(1, 5);
-   pri->t[58]->pq[0] = 1.0;
+   pri->t[58]->q[0] = 1.0;
    pri->t[58]->alpha[0][0] = 0.031820644019;
    pri->t[58]->alpha[0][1] = 2.300193431878;
    pri->t[58]->alpha[0][2] = 0.036163737927;
@@ -790,20 +786,20 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[BEGR_IL][BIF_nd] = 59;
    pri->t[59] = esl_mixdchlet_Create(1, 2);
-   pri->t[59]->pq[0] = 1.0;
+   pri->t[59]->q[0] = 1.0;
    pri->t[59]->alpha[0][0] = 0.264643213319;
    pri->t[59]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[BEGR_IL][MATL_nd] = 60;
    pri->t[60] = esl_mixdchlet_Create(1, 3);
-   pri->t[60]->pq[0] = 1.0;
+   pri->t[60]->q[0] = 1.0;
    pri->t[60]->alpha[0][0] = 0.601223387577;
    pri->t[60]->alpha[0][1] = 0.939499051719;
    pri->t[60]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[BEGR_IL][MATP_nd] = 61;
    pri->t[61] = esl_mixdchlet_Create(1, 5);
-   pri->t[61]->pq[0] = 1.0;
+   pri->t[61]->q[0] = 1.0;
    pri->t[61]->alpha[0][0] = 0.291829430523;
    pri->t[61]->alpha[0][1] = 1.098441427679;
    pri->t[61]->alpha[0][2] = 0.091146313822;
@@ -812,14 +808,14 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_S][BIF_nd] = 62;
    pri->t[62] = esl_mixdchlet_Create(1, 3);
-   pri->t[62]->pq[0] = 1.0;
+   pri->t[62]->q[0] = 1.0;
    pri->t[62]->alpha[0][0] = 0.067710091654;
    pri->t[62]->alpha[0][1] = 0.000047753225;
    pri->t[62]->alpha[0][2] = 0.483183211040;
 
    pri->tsetmap[ROOT_S][MATL_nd] = 63;
    pri->t[63] = esl_mixdchlet_Create(1, 4);
-   pri->t[63]->pq[0] = 1.0;
+   pri->t[63]->q[0] = 1.0;
    pri->t[63]->alpha[0][0] = 0.028518011579;
    pri->t[63]->alpha[0][1] = 0.024705844026;
    pri->t[63]->alpha[0][2] = 1.464047470747;
@@ -827,7 +823,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_S][MATP_nd] = 64;
    pri->t[64] = esl_mixdchlet_Create(1, 6);
-   pri->t[64]->pq[0] = 1.0;
+   pri->t[64]->q[0] = 1.0;
    pri->t[64]->alpha[0][0] = 0.016729608598;
    pri->t[64]->alpha[0][1] = 0.017449035307;
    pri->t[64]->alpha[0][2] = 7.164604225972;
@@ -837,7 +833,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_S][MATR_nd] = 65;
    pri->t[65] = esl_mixdchlet_Create(1, 4);
-   pri->t[65]->pq[0] = 1.0;
+   pri->t[65]->q[0] = 1.0;
    pri->t[65]->alpha[0][0] = 0.032901537296;
    pri->t[65]->alpha[0][1] = 0.013876834787;
    pri->t[65]->alpha[0][2] = 1.694917068307;
@@ -845,14 +841,14 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_IL][BIF_nd] = 66;
    pri->t[66] = esl_mixdchlet_Create(1, 3);
-   pri->t[66]->pq[0] = 1.0;
+   pri->t[66]->q[0] = 1.0;
    pri->t[66]->alpha[0][0] = 0.943443048986;
    pri->t[66]->alpha[0][1] = 0.064001237265;
    pri->t[66]->alpha[0][2] = 0.432230812455;
 
    pri->tsetmap[ROOT_IL][MATL_nd] = 67;
    pri->t[67] = esl_mixdchlet_Create(1, 4);
-   pri->t[67]->pq[0] = 1.0;
+   pri->t[67]->q[0] = 1.0;
    pri->t[67]->alpha[0][0] = 0.250101882938;
    pri->t[67]->alpha[0][1] = 0.155728904821;
    pri->t[67]->alpha[0][2] = 0.370945030932;
@@ -860,7 +856,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_IL][MATP_nd] = 68;
    pri->t[68] = esl_mixdchlet_Create(1, 6);
-   pri->t[68]->pq[0] = 1.0;
+   pri->t[68]->q[0] = 1.0;
    pri->t[68]->alpha[0][0] = 0.157307265492;
    pri->t[68]->alpha[0][1] = 0.131105492208;
    pri->t[68]->alpha[0][2] = 0.555106727689;
@@ -870,7 +866,7 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_IL][MATR_nd] = 69;
    pri->t[69] = esl_mixdchlet_Create(1, 4);
-   pri->t[69]->pq[0] = 1.0;
+   pri->t[69]->q[0] = 1.0;
    pri->t[69]->alpha[0][0] = 0.155093374292;
    pri->t[69]->alpha[0][1] = 0.054734614999;
    pri->t[69]->alpha[0][2] = 0.714409186001;
@@ -878,20 +874,20 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_IR][BIF_nd] = 70;
    pri->t[70] = esl_mixdchlet_Create(1, 2);
-   pri->t[70]->pq[0] = 1.0;
+   pri->t[70]->q[0] = 1.0;
    pri->t[70]->alpha[0][0] = 0.264643213319;
    pri->t[70]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[ROOT_IR][MATL_nd] = 71;
    pri->t[71] = esl_mixdchlet_Create(1, 3);
-   pri->t[71]->pq[0] = 1.0;
+   pri->t[71]->q[0] = 1.0;
    pri->t[71]->alpha[0][0] = 0.601223387577;
    pri->t[71]->alpha[0][1] = 0.939499051719;
    pri->t[71]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[ROOT_IR][MATP_nd] = 72;
    pri->t[72] = esl_mixdchlet_Create(1, 5);
-   pri->t[72]->pq[0] = 1.0;
+   pri->t[72]->q[0] = 1.0;
    pri->t[72]->alpha[0][0] = 0.291829430523;
    pri->t[72]->alpha[0][1] = 1.098441427679;
    pri->t[72]->alpha[0][2] = 0.025595408318;
@@ -900,13 +896,13 @@ Prior_Default(int mimic_h3)
 
    pri->tsetmap[ROOT_IR][MATR_nd] = 73;
    pri->t[73] = esl_mixdchlet_Create(1, 3);
-   pri->t[73]->pq[0] = 1.0;
+   pri->t[73]->q[0] = 1.0;
    pri->t[73]->alpha[0][0] = 0.327208719748;
    pri->t[73]->alpha[0][1] = 0.846283302435;
    pri->t[73]->alpha[0][2] = 0.069337439204;
 
    pri->mbp = esl_mixdchlet_Create(10, 16);
-   pri->mbp->pq[0] = 0.016584;
+   pri->mbp->q[0] = 0.016584;
    pri->mbp->alpha[0][0] = 0.142252;
    pri->mbp->alpha[0][1] = 0.180113;
    pri->mbp->alpha[0][2] = 0.153776;
@@ -924,7 +920,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[0][14] = 14.841962;
    pri->mbp->alpha[0][15] = 17.271555;
 
-   pri->mbp->pq[1] = 0.000948;
+   pri->mbp->q[1] = 0.000948;
    pri->mbp->alpha[1][0] = 2.547410;
    pri->mbp->alpha[1][1] = 14.293143;
    pri->mbp->alpha[1][2] = 0.015263;
@@ -942,7 +938,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[1][14] = 2.421882;
    pri->mbp->alpha[1][15] = 2.724272;
 
-   pri->mbp->pq[2] = 0.185395;
+   pri->mbp->q[2] = 0.185395;
    pri->mbp->alpha[2][0] = 0.054512;
    pri->mbp->alpha[2][1] = 0.067070;
    pri->mbp->alpha[2][2] = 0.054506;
@@ -960,7 +956,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[2][14] = 0.695604;
    pri->mbp->alpha[2][15] = 0.146166;
 
-   pri->mbp->pq[3] = 0.082929;
+   pri->mbp->q[3] = 0.082929;
    pri->mbp->alpha[3][0] = 0.481661;
    pri->mbp->alpha[3][1] = 0.414811;
    pri->mbp->alpha[3][2] = 0.419836;
@@ -978,7 +974,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[3][14] = 1.397263;
    pri->mbp->alpha[3][15] = 0.695235;
 
-   pri->mbp->pq[4] = 0.039651;
+   pri->mbp->q[4] = 0.039651;
    pri->mbp->alpha[4][0] = 0.145102;
    pri->mbp->alpha[4][1] = 0.122876;
    pri->mbp->alpha[4][2] = 3.107999;
@@ -996,7 +992,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[4][14] = 0.376995;
    pri->mbp->alpha[4][15] = 0.093335;
 
-   pri->mbp->pq[5] = 0.141227;
+   pri->mbp->q[5] = 0.141227;
    pri->mbp->alpha[5][0] = 0.016163;
    pri->mbp->alpha[5][1] = 0.040913;
    pri->mbp->alpha[5][2] = 0.014116;
@@ -1014,7 +1010,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[5][14] = 0.020960;
    pri->mbp->alpha[5][15] = 0.037299;
 
-   pri->mbp->pq[6] = 0.132571;
+   pri->mbp->q[6] = 0.132571;
    pri->mbp->alpha[6][0] = 0.004230;
    pri->mbp->alpha[6][1] = 0.045568;
    pri->mbp->alpha[6][2] = 0.000699;
@@ -1032,7 +1028,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[6][14] = 0.013400;
    pri->mbp->alpha[6][15] = 0.001169;
 
-   pri->mbp->pq[7] = 0.249417;
+   pri->mbp->q[7] = 0.249417;
    pri->mbp->alpha[7][0] = 0.008027;
    pri->mbp->alpha[7][1] = 0.006602;
    pri->mbp->alpha[7][2] = 0.012884;
@@ -1050,7 +1046,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[7][14] = 0.198688;
    pri->mbp->alpha[7][15] = 0.027512;
 
-   pri->mbp->pq[8] = 0.140727;
+   pri->mbp->q[8] = 0.140727;
    pri->mbp->alpha[8][0] = 0.068663;
    pri->mbp->alpha[8][1] = 0.176455;
    pri->mbp->alpha[8][2] = 0.077881;
@@ -1068,7 +1064,7 @@ Prior_Default(int mimic_h3)
    pri->mbp->alpha[8][14] = 0.270333;
    pri->mbp->alpha[8][15] = 0.159528;
 
-   pri->mbp->pq[9] = 0.010551;
+   pri->mbp->q[9] = 0.010551;
    pri->mbp->alpha[9][0] = 0.478576;
    pri->mbp->alpha[9][1] = 0.402540;
    pri->mbp->alpha[9][2] = 18.466281;
@@ -1088,122 +1084,122 @@ Prior_Default(int mimic_h3)
 
    if(! mimic_h3) { /* normal case (this line not autogenerated) */
      pri->mnt = esl_mixdchlet_Create(10, 4);
-     pri->mnt->pq[0] = 0.081706;
+     pri->mnt->q[0] = 0.081706;
      pri->mnt->alpha[0][0] = 0.963855;
      pri->mnt->alpha[0][1] = 3.273863;
      pri->mnt->alpha[0][2] = 0.444739;
      pri->mnt->alpha[0][3] = 1.958731;
 
-     pri->mnt->pq[1] = 0.104534;
+     pri->mnt->q[1] = 0.104534;
      pri->mnt->alpha[1][0] = 0.589011;
      pri->mnt->alpha[1][1] = 0.648423;
      pri->mnt->alpha[1][2] = 0.360672;
      pri->mnt->alpha[1][3] = 5.771004;
 
-     pri->mnt->pq[2] = 0.048944;
+     pri->mnt->q[2] = 0.048944;
      pri->mnt->alpha[2][0] = 2.609834;
      pri->mnt->alpha[2][1] = 0.127100;
      pri->mnt->alpha[2][2] = 1.180559;
      pri->mnt->alpha[2][3] = 0.134264;
 
-     pri->mnt->pq[3] = 0.064111;
+     pri->mnt->q[3] = 0.064111;
      pri->mnt->alpha[3][0] = 1.259286;
      pri->mnt->alpha[3][1] = 0.659029;
      pri->mnt->alpha[3][2] = 4.874613;
      pri->mnt->alpha[3][3] = 0.882126;
 
-     pri->mnt->pq[4] = 0.085266;
+     pri->mnt->q[4] = 0.085266;
      pri->mnt->alpha[4][0] = 4.664219;
      pri->mnt->alpha[4][1] = 0.628128;
      pri->mnt->alpha[4][2] = 0.448894;
      pri->mnt->alpha[4][3] = 0.661556;
 
-     pri->mnt->pq[5] = 0.045348;
+     pri->mnt->q[5] = 0.045348;
      pri->mnt->alpha[5][0] = 0.250974;
      pri->mnt->alpha[5][1] = 9.700414;
      pri->mnt->alpha[5][2] = 0.206184;
      pri->mnt->alpha[5][3] = 0.338607;
 
-     pri->mnt->pq[6] = 0.100949;
+     pri->mnt->q[6] = 0.100949;
      pri->mnt->alpha[6][0] = 0.178455;
      pri->mnt->alpha[6][1] = 0.049385;
      pri->mnt->alpha[6][2] = 7.914643;
      pri->mnt->alpha[6][3] = 0.100802;
 
-     pri->mnt->pq[7] = 0.108835;
+     pri->mnt->q[7] = 0.108835;
      pri->mnt->alpha[7][0] = 23.818220;
      pri->mnt->alpha[7][1] = 0.064454;
      pri->mnt->alpha[7][2] = 0.119891;
      pri->mnt->alpha[7][3] = 0.101866;
 
-     pri->mnt->pq[8] = 0.234814;
+     pri->mnt->q[8] = 0.234814;
      pri->mnt->alpha[8][0] = 2.980233;
      pri->mnt->alpha[8][1] = 1.817786;
      pri->mnt->alpha[8][2] = 1.818483;
      pri->mnt->alpha[8][3] = 3.042635;
 
-     pri->mnt->pq[9] = 0.125493;
+     pri->mnt->q[9] = 0.125493;
      pri->mnt->alpha[9][0] = 0.024428;
      pri->mnt->alpha[9][1] = 0.064315;
      pri->mnt->alpha[9][2] = 0.008054;
      pri->mnt->alpha[9][3] = 0.107062;
 
      pri->i = esl_mixdchlet_Create(10, 4);
-     pri->i->pq[0] = 0.081706;
+     pri->i->q[0] = 0.081706;
      pri->i->alpha[0][0] = 0.963855;
      pri->i->alpha[0][1] = 3.273863;
      pri->i->alpha[0][2] = 0.444739;
      pri->i->alpha[0][3] = 1.958731;
 
-     pri->i->pq[1] = 0.104534;
+     pri->i->q[1] = 0.104534;
      pri->i->alpha[1][0] = 0.589011;
      pri->i->alpha[1][1] = 0.648423;
      pri->i->alpha[1][2] = 0.360672;
      pri->i->alpha[1][3] = 5.771004;
 
-     pri->i->pq[2] = 0.048944;
+     pri->i->q[2] = 0.048944;
      pri->i->alpha[2][0] = 2.609834;
      pri->i->alpha[2][1] = 0.127100;
      pri->i->alpha[2][2] = 1.180559;
      pri->i->alpha[2][3] = 0.134264;
 
-     pri->i->pq[3] = 0.064111;
+     pri->i->q[3] = 0.064111;
      pri->i->alpha[3][0] = 1.259286;
      pri->i->alpha[3][1] = 0.659029;
      pri->i->alpha[3][2] = 4.874613;
      pri->i->alpha[3][3] = 0.882126;
 
-     pri->i->pq[4] = 0.085266;
+     pri->i->q[4] = 0.085266;
      pri->i->alpha[4][0] = 4.664219;
      pri->i->alpha[4][1] = 0.628128;
      pri->i->alpha[4][2] = 0.448894;
      pri->i->alpha[4][3] = 0.661556;
 
-     pri->i->pq[5] = 0.045348;
+     pri->i->q[5] = 0.045348;
      pri->i->alpha[5][0] = 0.250974;
      pri->i->alpha[5][1] = 9.700414;
      pri->i->alpha[5][2] = 0.206184;
      pri->i->alpha[5][3] = 0.338607;
 
-     pri->i->pq[6] = 0.100949;
+     pri->i->q[6] = 0.100949;
      pri->i->alpha[6][0] = 0.178455;
      pri->i->alpha[6][1] = 0.049385;
      pri->i->alpha[6][2] = 7.914643;
      pri->i->alpha[6][3] = 0.100802;
 
-     pri->i->pq[7] = 0.108835;
+     pri->i->q[7] = 0.108835;
      pri->i->alpha[7][0] = 23.818220;
      pri->i->alpha[7][1] = 0.064454;
      pri->i->alpha[7][2] = 0.119891;
      pri->i->alpha[7][3] = 0.101866;
 
-     pri->i->pq[8] = 0.234814;
+     pri->i->q[8] = 0.234814;
      pri->i->alpha[8][0] = 2.980233;
      pri->i->alpha[8][1] = 1.817786;
      pri->i->alpha[8][2] = 1.818483;
      pri->i->alpha[8][3] = 3.042635;
 
-     pri->i->pq[9] = 0.125493;
+     pri->i->q[9] = 0.125493;
      pri->i->alpha[9][0] = 0.024428;
      pri->i->alpha[9][1] = 0.064315;
      pri->i->alpha[9][2] = 0.008054;
@@ -1222,44 +1218,44 @@ Prior_Default(int mimic_h3)
 
      /* MATL->MATL transitions, overwrite previously set values for relevant transitions */
      pri->tsetmap[MATL_ML][MATL_nd] = 32;
-     pri->t[32]->pq[0] = 1.0;
+     pri->t[32]->q[0] = 1.0;
      pri->t[32]->alpha[0][0] = 0.1; /* ML->IL */
      pri->t[32]->alpha[0][1] = 2.0; /* ML->ML */
      pri->t[32]->alpha[0][2] = 0.1; /* ML->D  */
 
      pri->tsetmap[MATL_D][MATL_nd] = 37;
-     pri->t[37]->pq[0] = 1.0;
+     pri->t[37]->q[0] = 1.0;
      pri->t[37]->alpha[0][0] = 0.0001; /* D->IL (this is irrelevant, D->I transitions are set to IMPOSSIBLE later) */
      pri->t[37]->alpha[0][1] = 0.1;    /* D->ML */
      pri->t[37]->alpha[0][2] = 0.2;    /* D->D  */
 
      pri->tsetmap[MATL_IL][MATL_nd] = 42;
-     pri->t[42]->pq[0] = 1.0;
+     pri->t[42]->q[0] = 1.0;
      pri->t[42]->alpha[0][0] = 0.02;   /* IL->IL */
      pri->t[42]->alpha[0][1] = 0.006;  /* IL->ML */
      pri->t[42]->alpha[0][2] = 0.0001; /* IL->D  (this is irrelevant, D->I transitions are set to IMPOSSIBLE later) */
 
      /* singlet emissions */
      pri->mnt = esl_mixdchlet_Create(4, 4);
-     pri->mnt->pq[0] = 0.24;
+     pri->mnt->q[0] = 0.24;
      pri->mnt->alpha[0][0] = 0.16;
      pri->mnt->alpha[0][1] = 0.45;
      pri->mnt->alpha[0][2] = 0.12;
      pri->mnt->alpha[0][3] = 0.39;
 
-     pri->mnt->pq[1] = 0.26;
+     pri->mnt->q[1] = 0.26;
      pri->mnt->alpha[1][0] = 0.09;
      pri->mnt->alpha[1][1] = 0.03;
      pri->mnt->alpha[1][2] = 0.09;
      pri->mnt->alpha[1][3] = 0.04;
 
-     pri->mnt->pq[2] = 0.08;
+     pri->mnt->q[2] = 0.08;
      pri->mnt->alpha[2][0] = 1.29;
      pri->mnt->alpha[2][1] = 0.40;
      pri->mnt->alpha[2][2] = 6.58;
      pri->mnt->alpha[2][3] = 0.51;
 
-     pri->mnt->pq[3] = 0.42;
+     pri->mnt->q[3] = 0.42;
      pri->mnt->alpha[3][0] = 1.74;
      pri->mnt->alpha[3][1] = 1.49;
      pri->mnt->alpha[3][2] = 1.57;
@@ -1267,7 +1263,7 @@ Prior_Default(int mimic_h3)
 
      /* insert, uninformative (the emission scores get flattened to 0.0 anyway) */
      pri->i = esl_mixdchlet_Create(1, 4);
-     pri->i->pq[0] = 1.0;
+     pri->i->q[0] = 1.0;
      pri->i->alpha[0][0] = 1.0;
      pri->i->alpha[0][1] = 1.0;
      pri->i->alpha[0][2] = 1.0;
@@ -1316,21 +1312,21 @@ Prior_Default_v0p56_through_v1p02(void)
    */
    pri->tsetmap[MATP_MP][BIF_nd] = 0;
    pri->t[0] = esl_mixdchlet_Create(1, 3);
-   pri->t[0]->pq[0] = 1.0;
+   pri->t[0]->q[0] = 1.0;
    pri->t[0]->alpha[0][0] = 0.067710091654;
    pri->t[0]->alpha[0][1] = 0.000047753225;
    pri->t[0]->alpha[0][2] = 0.483183211040;
 
    pri->tsetmap[MATP_MP][END_nd] = 1;
    pri->t[1] = esl_mixdchlet_Create(1, 3);
-   pri->t[1]->pq[0] = 1.0;
+   pri->t[1]->q[0] = 1.0;
    pri->t[1]->alpha[0][0] = 0.067710091654;
    pri->t[1]->alpha[0][1] = 0.000047753225;
    pri->t[1]->alpha[0][2] = 0.483183211040;
 
    pri->tsetmap[MATP_MP][MATL_nd] = 2;
    pri->t[2] = esl_mixdchlet_Create(1, 4);
-   pri->t[2]->pq[0] = 1.0;
+   pri->t[2]->q[0] = 1.0;
    pri->t[2]->alpha[0][0] = 0.028518011579;
    pri->t[2]->alpha[0][1] = 0.024705844026;
    pri->t[2]->alpha[0][2] = 1.464047470747;
@@ -1338,7 +1334,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_MP][MATP_nd] = 3;
    pri->t[3] = esl_mixdchlet_Create(1, 6);
-   pri->t[3]->pq[0] = 1.0;
+   pri->t[3]->q[0] = 1.0;
    pri->t[3]->alpha[0][0] = 0.016729608598;
    pri->t[3]->alpha[0][1] = 0.017449035307;
    pri->t[3]->alpha[0][2] = 7.164604225972;
@@ -1348,7 +1344,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_MP][MATR_nd] = 4;
    pri->t[4] = esl_mixdchlet_Create(1, 4);
-   pri->t[4]->pq[0] = 1.0;
+   pri->t[4]->q[0] = 1.0;
    pri->t[4]->alpha[0][0] = 0.032901537296;
    pri->t[4]->alpha[0][1] = 0.013876834787;
    pri->t[4]->alpha[0][2] = 1.694917068307;
@@ -1356,21 +1352,21 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_ML][BIF_nd] = 5;
    pri->t[5] = esl_mixdchlet_Create(1, 3);
-   pri->t[5]->pq[0] = 1.0;
+   pri->t[5]->q[0] = 1.0;
    pri->t[5]->alpha[0][0] = 1.0;
    pri->t[5]->alpha[0][1] = 1.0;
    pri->t[5]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_ML][END_nd] = 6;
    pri->t[6] = esl_mixdchlet_Create(1, 3);
-   pri->t[6]->pq[0] = 1.0;
+   pri->t[6]->q[0] = 1.0;
    pri->t[6]->alpha[0][0] = 1.0;
    pri->t[6]->alpha[0][1] = 1.0;
    pri->t[6]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_ML][MATL_nd] = 7;
    pri->t[7] = esl_mixdchlet_Create(1, 4);
-   pri->t[7]->pq[0] = 1.0;
+   pri->t[7]->q[0] = 1.0;
    pri->t[7]->alpha[0][0] = 0.068859974656;
    pri->t[7]->alpha[0][1] = 0.060683472648;
    pri->t[7]->alpha[0][2] = 0.655691547663;
@@ -1378,7 +1374,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_ML][MATP_nd] = 8;
    pri->t[8] = esl_mixdchlet_Create(1, 6);
-   pri->t[8]->pq[0] = 1.0;
+   pri->t[8]->q[0] = 1.0;
    pri->t[8]->alpha[0][0] = 0.009119452604;
    pri->t[8]->alpha[0][1] = 0.007174198989;
    pri->t[8]->alpha[0][2] = 0.279841652851;
@@ -1388,7 +1384,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_ML][MATR_nd] = 9;
    pri->t[9] = esl_mixdchlet_Create(1, 4);
-   pri->t[9]->pq[0] = 1.0;
+   pri->t[9]->q[0] = 1.0;
    pri->t[9]->alpha[0][0] = 0.061640259819;
    pri->t[9]->alpha[0][1] = 0.014142411829;
    pri->t[9]->alpha[0][2] = 0.133564345209;
@@ -1396,21 +1392,21 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_MR][BIF_nd] = 10;
    pri->t[10] = esl_mixdchlet_Create(1, 3);
-   pri->t[10]->pq[0] = 1.0;
+   pri->t[10]->q[0] = 1.0;
    pri->t[10]->alpha[0][0] = 1.0;
    pri->t[10]->alpha[0][1] = 1.0;
    pri->t[10]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_MR][END_nd] = 11;
    pri->t[11] = esl_mixdchlet_Create(1, 3);
-   pri->t[11]->pq[0] = 1.0;
+   pri->t[11]->q[0] = 1.0;
    pri->t[11]->alpha[0][0] = 1.0;
    pri->t[11]->alpha[0][1] = 1.0;
    pri->t[11]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_MR][MATL_nd] = 12;
    pri->t[12] = esl_mixdchlet_Create(1, 4);
-   pri->t[12]->pq[0] = 1.0;
+   pri->t[12]->q[0] = 1.0;
    pri->t[12]->alpha[0][0] = 0.024723293475;
    pri->t[12]->alpha[0][1] = 0.048463880304;
    pri->t[12]->alpha[0][2] = 0.212532685951;
@@ -1418,7 +1414,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_MR][MATP_nd] = 13;
    pri->t[13] = esl_mixdchlet_Create(1, 6);
-   pri->t[13]->pq[0] = 1.0;
+   pri->t[13]->q[0] = 1.0;
    pri->t[13]->alpha[0][0] = 0.006294030132;
    pri->t[13]->alpha[0][1] = 0.015189408169;
    pri->t[13]->alpha[0][2] = 0.258896467198;
@@ -1428,7 +1424,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_MR][MATR_nd] = 14;
    pri->t[14] = esl_mixdchlet_Create(1, 4);
-   pri->t[14]->pq[0] = 1.0;
+   pri->t[14]->q[0] = 1.0;
    pri->t[14]->alpha[0][0] = 0.020819322736;
    pri->t[14]->alpha[0][1] = 0.000060497356;
    pri->t[14]->alpha[0][2] = 0.272689176849;
@@ -1436,21 +1432,21 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_D][BIF_nd] = 15;
    pri->t[15] = esl_mixdchlet_Create(1, 3);
-   pri->t[15]->pq[0] = 1.0;
+   pri->t[15]->q[0] = 1.0;
    pri->t[15]->alpha[0][0] = 1.0;
    pri->t[15]->alpha[0][1] = 1.0;
    pri->t[15]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_D][END_nd] = 16;
    pri->t[16] = esl_mixdchlet_Create(1, 3);
-   pri->t[16]->pq[0] = 1.0;
+   pri->t[16]->q[0] = 1.0;
    pri->t[16]->alpha[0][0] = 1.0;
    pri->t[16]->alpha[0][1] = 1.0;
    pri->t[16]->alpha[0][2] = 1.0;
 
    pri->tsetmap[MATP_D][MATL_nd] = 17;
    pri->t[17] = esl_mixdchlet_Create(1, 4);
-   pri->t[17]->pq[0] = 1.0;
+   pri->t[17]->q[0] = 1.0;
    pri->t[17]->alpha[0][0] = 0.024577940691;
    pri->t[17]->alpha[0][1] = 0.030655567559;
    pri->t[17]->alpha[0][2] = 0.121290355765;
@@ -1458,7 +1454,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_D][MATP_nd] = 18;
    pri->t[18] = esl_mixdchlet_Create(1, 6);
-   pri->t[18]->pq[0] = 1.0;
+   pri->t[18]->q[0] = 1.0;
    pri->t[18]->alpha[0][0] = 0.001029025955;
    pri->t[18]->alpha[0][1] = 0.002536729756;
    pri->t[18]->alpha[0][2] = 0.046719556839;
@@ -1468,7 +1464,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_D][MATR_nd] = 19;
    pri->t[19] = esl_mixdchlet_Create(1, 4);
-   pri->t[19]->pq[0] = 1.0;
+   pri->t[19]->q[0] = 1.0;
    pri->t[19]->alpha[0][0] = 0.000017041108;
    pri->t[19]->alpha[0][1] = 0.000007069171;
    pri->t[19]->alpha[0][2] = 0.028384306256;
@@ -1476,21 +1472,21 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_IL][BIF_nd] = 20;
    pri->t[20] = esl_mixdchlet_Create(1, 3);
-   pri->t[20]->pq[0] = 1.0;
+   pri->t[20]->q[0] = 1.0;
    pri->t[20]->alpha[0][0] = 0.943443048986;
    pri->t[20]->alpha[0][1] = 0.064001237265;
    pri->t[20]->alpha[0][2] = 0.432230812455;
 
    pri->tsetmap[MATP_IL][END_nd] = 21;
    pri->t[21] = esl_mixdchlet_Create(1, 3);
-   pri->t[21]->pq[0] = 1.0;
+   pri->t[21]->q[0] = 1.0;
    pri->t[21]->alpha[0][0] = 0.943443048986;
    pri->t[21]->alpha[0][1] = 0.064001237265;
    pri->t[21]->alpha[0][2] = 0.432230812455;
 
    pri->tsetmap[MATP_IL][MATL_nd] = 22;
    pri->t[22] = esl_mixdchlet_Create(1, 4);
-   pri->t[22]->pq[0] = 1.0;
+   pri->t[22]->q[0] = 1.0;
    pri->t[22]->alpha[0][0] = 0.250101882938;
    pri->t[22]->alpha[0][1] = 0.155728904821;
    pri->t[22]->alpha[0][2] = 0.370945030932;
@@ -1498,7 +1494,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_IL][MATP_nd] = 23;
    pri->t[23] = esl_mixdchlet_Create(1, 6);
-   pri->t[23]->pq[0] = 1.0;
+   pri->t[23]->q[0] = 1.0;
    pri->t[23]->alpha[0][0] = 0.157307265492;
    pri->t[23]->alpha[0][1] = 0.131105492208;
    pri->t[23]->alpha[0][2] = 0.555106727689;
@@ -1508,7 +1504,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_IL][MATR_nd] = 24;
    pri->t[24] = esl_mixdchlet_Create(1, 4);
-   pri->t[24]->pq[0] = 1.0;
+   pri->t[24]->q[0] = 1.0;
    pri->t[24]->alpha[0][0] = 0.155093374292;
    pri->t[24]->alpha[0][1] = 0.054734614999;
    pri->t[24]->alpha[0][2] = 0.714409186001;
@@ -1516,26 +1512,26 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_IR][BIF_nd] = 25;
    pri->t[25] = esl_mixdchlet_Create(1, 2);
-   pri->t[25]->pq[0] = 1.0;
+   pri->t[25]->q[0] = 1.0;
    pri->t[25]->alpha[0][0] = 0.264643213319;
    pri->t[25]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATP_IR][END_nd] = 26;
    pri->t[26] = esl_mixdchlet_Create(1, 2);
-   pri->t[26]->pq[0] = 1.0;
+   pri->t[26]->q[0] = 1.0;
    pri->t[26]->alpha[0][0] = 0.264643213319;
    pri->t[26]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATP_IR][MATL_nd] = 27;
    pri->t[27] = esl_mixdchlet_Create(1, 3);
-   pri->t[27]->pq[0] = 1.0;
+   pri->t[27]->q[0] = 1.0;
    pri->t[27]->alpha[0][0] = 0.601223387577;
    pri->t[27]->alpha[0][1] = 0.939499051719;
    pri->t[27]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[MATP_IR][MATP_nd] = 28;
    pri->t[28] = esl_mixdchlet_Create(1, 5);
-   pri->t[28]->pq[0] = 1.0;
+   pri->t[28]->q[0] = 1.0;
    pri->t[28]->alpha[0][0] = 0.291829430523;
    pri->t[28]->alpha[0][1] = 1.098441427679;
    pri->t[28]->alpha[0][2] = 0.025595408318;
@@ -1544,33 +1540,33 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATP_IR][MATR_nd] = 29;
    pri->t[29] = esl_mixdchlet_Create(1, 3);
-   pri->t[29]->pq[0] = 1.0;
+   pri->t[29]->q[0] = 1.0;
    pri->t[29]->alpha[0][0] = 0.327208719748;
    pri->t[29]->alpha[0][1] = 0.846283302435;
    pri->t[29]->alpha[0][2] = 0.069337439204;
 
    pri->tsetmap[MATL_ML][BIF_nd] = 30;
    pri->t[30] = esl_mixdchlet_Create(1, 2);
-   pri->t[30]->pq[0] = 1.0;
+   pri->t[30]->q[0] = 1.0;
    pri->t[30]->alpha[0][0] = 0.009635966745;
    pri->t[30]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[MATL_ML][END_nd] = 31;
    pri->t[31] = esl_mixdchlet_Create(1, 2);
-   pri->t[31]->pq[0] = 1.0;
+   pri->t[31]->q[0] = 1.0;
    pri->t[31]->alpha[0][0] = 0.009635966745;
    pri->t[31]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[MATL_ML][MATL_nd] = 32;
    pri->t[32] = esl_mixdchlet_Create(1, 3);
-   pri->t[32]->pq[0] = 1.0;
+   pri->t[32]->q[0] = 1.0;
    pri->t[32]->alpha[0][0] = 0.015185708311;
    pri->t[32]->alpha[0][1] = 1.809432933023;
    pri->t[32]->alpha[0][2] = 0.038601480352;
 
    pri->tsetmap[MATL_ML][MATP_nd] = 33;
    pri->t[33] = esl_mixdchlet_Create(1, 5);
-   pri->t[33]->pq[0] = 1.0;
+   pri->t[33]->q[0] = 1.0;
    pri->t[33]->alpha[0][0] = 0.031820644019;
    pri->t[33]->alpha[0][1] = 2.300193431878;
    pri->t[33]->alpha[0][2] = 0.036163737927;
@@ -1579,33 +1575,33 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATL_ML][MATR_nd] = 34;
    pri->t[34] = esl_mixdchlet_Create(1, 3);
-   pri->t[34]->pq[0] = 1.0;
+   pri->t[34]->q[0] = 1.0;
    pri->t[34]->alpha[0][0] = 0.012395245929;
    pri->t[34]->alpha[0][1] = 2.076134487839;
    pri->t[34]->alpha[0][2] = 0.039781067793;
 
    pri->tsetmap[MATL_D][BIF_nd] = 35;
    pri->t[35] = esl_mixdchlet_Create(1, 2);
-   pri->t[35]->pq[0] = 1.0;
+   pri->t[35]->q[0] = 1.0;
    pri->t[35]->alpha[0][0] = 0.019509171372;
    pri->t[35]->alpha[0][1] = 6.781321301695;
 
    pri->tsetmap[MATL_D][END_nd] = 36;
    pri->t[36] = esl_mixdchlet_Create(1, 2);
-   pri->t[36]->pq[0] = 1.0;
+   pri->t[36]->q[0] = 1.0;
    pri->t[36]->alpha[0][0] = 0.019509171372;
    pri->t[36]->alpha[0][1] = 6.781321301695;
 
    pri->tsetmap[MATL_D][MATL_nd] = 37;
    pri->t[37] = esl_mixdchlet_Create(1, 3);
-   pri->t[37]->pq[0] = 1.0;
+   pri->t[37]->q[0] = 1.0;
    pri->t[37]->alpha[0][0] = 0.005679808868;
    pri->t[37]->alpha[0][1] = 0.127365862719;
    pri->t[37]->alpha[0][2] = 0.277086556814;
 
    pri->tsetmap[MATL_D][MATP_nd] = 38;
    pri->t[38] = esl_mixdchlet_Create(1, 5);
-   pri->t[38]->pq[0] = 1.0;
+   pri->t[38]->q[0] = 1.0;
    pri->t[38]->alpha[0][0] = 0.023424968753;
    pri->t[38]->alpha[0][1] = 0.417640407951;
    pri->t[38]->alpha[0][2] = 0.039088991906;
@@ -1614,33 +1610,33 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATL_D][MATR_nd] = 39;
    pri->t[39] = esl_mixdchlet_Create(1, 3);
-   pri->t[39]->pq[0] = 1.0;
+   pri->t[39]->q[0] = 1.0;
    pri->t[39]->alpha[0][0] = 0.013699691994;
    pri->t[39]->alpha[0][1] = 0.405128575339;
    pri->t[39]->alpha[0][2] = 0.254775565405;
 
    pri->tsetmap[MATL_IL][BIF_nd] = 40;
    pri->t[40] = esl_mixdchlet_Create(1, 2);
-   pri->t[40]->pq[0] = 1.0;
+   pri->t[40]->q[0] = 1.0;
    pri->t[40]->alpha[0][0] = 0.264643213319;
    pri->t[40]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATL_IL][END_nd] = 41;
    pri->t[41] = esl_mixdchlet_Create(1, 2);
-   pri->t[41]->pq[0] = 1.0;
+   pri->t[41]->q[0] = 1.0;
    pri->t[41]->alpha[0][0] = 0.264643213319;
    pri->t[41]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATL_IL][MATL_nd] = 42;
    pri->t[42] = esl_mixdchlet_Create(1, 3);
-   pri->t[42]->pq[0] = 1.0;
+   pri->t[42]->q[0] = 1.0;
    pri->t[42]->alpha[0][0] = 0.601223387577;
    pri->t[42]->alpha[0][1] = 0.939499051719;
    pri->t[42]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[MATL_IL][MATP_nd] = 43;
    pri->t[43] = esl_mixdchlet_Create(1, 5);
-   pri->t[43]->pq[0] = 1.0;
+   pri->t[43]->q[0] = 1.0;
    pri->t[43]->alpha[0][0] = 0.291829430523;
    pri->t[43]->alpha[0][1] = 1.098441427679;
    pri->t[43]->alpha[0][2] = 0.091146313822;
@@ -1649,20 +1645,20 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATL_IL][MATR_nd] = 44;
    pri->t[44] = esl_mixdchlet_Create(1, 3);
-   pri->t[44]->pq[0] = 1.0;
+   pri->t[44]->q[0] = 1.0;
    pri->t[44]->alpha[0][0] = 0.327208719748;
    pri->t[44]->alpha[0][1] = 0.846283302435;
    pri->t[44]->alpha[0][2] = 0.069337439204;
 
    pri->tsetmap[MATR_MR][BIF_nd] = 45;
    pri->t[45] = esl_mixdchlet_Create(1, 2);
-   pri->t[45]->pq[0] = 1.0;
+   pri->t[45]->q[0] = 1.0;
    pri->t[45]->alpha[0][0] = 0.009635966745;
    pri->t[45]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[MATR_MR][MATP_nd] = 46;
    pri->t[46] = esl_mixdchlet_Create(1, 5);
-   pri->t[46]->pq[0] = 1.0;
+   pri->t[46]->q[0] = 1.0;
    pri->t[46]->alpha[0][0] = 0.031820644019;
    pri->t[46]->alpha[0][1] = 2.300193431878;
    pri->t[46]->alpha[0][2] = 0.036163737927;
@@ -1671,20 +1667,20 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATR_MR][MATR_nd] = 47;
    pri->t[47] = esl_mixdchlet_Create(1, 3);
-   pri->t[47]->pq[0] = 1.0;
+   pri->t[47]->q[0] = 1.0;
    pri->t[47]->alpha[0][0] = 0.012395245929;
    pri->t[47]->alpha[0][1] = 2.076134487839;
    pri->t[47]->alpha[0][2] = 0.039781067793;
 
    pri->tsetmap[MATR_D][BIF_nd] = 48;
    pri->t[48] = esl_mixdchlet_Create(1, 2);
-   pri->t[48]->pq[0] = 1.0;
+   pri->t[48]->q[0] = 1.0;
    pri->t[48]->alpha[0][0] = 0.021604946951;
    pri->t[48]->alpha[0][1] = 0.444765555211;
 
    pri->tsetmap[MATR_D][MATP_nd] = 49;
    pri->t[49] = esl_mixdchlet_Create(1, 5);
-   pri->t[49]->pq[0] = 1.0;
+   pri->t[49]->q[0] = 1.0;
    pri->t[49]->alpha[0][0] = 0.021273745319;
    pri->t[49]->alpha[0][1] = 0.532292228853;
    pri->t[49]->alpha[0][2] = 0.110249350652;
@@ -1693,20 +1689,20 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATR_D][MATR_nd] = 50;
    pri->t[50] = esl_mixdchlet_Create(1, 3);
-   pri->t[50]->pq[0] = 1.0;
+   pri->t[50]->q[0] = 1.0;
    pri->t[50]->alpha[0][0] = 0.005806440507;
    pri->t[50]->alpha[0][1] = 0.164264844267;
    pri->t[50]->alpha[0][2] = 0.316876127883;
 
    pri->tsetmap[MATR_IR][BIF_nd] = 51;
    pri->t[51] = esl_mixdchlet_Create(1, 2);
-   pri->t[51]->pq[0] = 1.0;
+   pri->t[51]->q[0] = 1.0;
    pri->t[51]->alpha[0][0] = 0.264643213319;
    pri->t[51]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[MATR_IR][MATP_nd] = 52;
    pri->t[52] = esl_mixdchlet_Create(1, 5);
-   pri->t[52]->pq[0] = 1.0;
+   pri->t[52]->q[0] = 1.0;
    pri->t[52]->alpha[0][0] = 0.291829430523;
    pri->t[52]->alpha[0][1] = 1.098441427679;
    pri->t[52]->alpha[0][2] = 0.025595408318;
@@ -1715,19 +1711,19 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[MATR_IR][MATR_nd] = 53;
    pri->t[53] = esl_mixdchlet_Create(1, 3);
-   pri->t[53]->pq[0] = 1.0;
+   pri->t[53]->q[0] = 1.0;
    pri->t[53]->alpha[0][0] = 0.327208719748;
    pri->t[53]->alpha[0][1] = 0.846283302435;
    pri->t[53]->alpha[0][2] = 0.069337439204;
 
    pri->tsetmap[BEGL_S][BIF_nd] = 54;
    pri->t[54] = esl_mixdchlet_Create(1, 1);
-   pri->t[54]->pq[0] = 1.0;
+   pri->t[54]->q[0] = 1.0;
    pri->t[54]->alpha[0][0] = 1.0;
 
    pri->tsetmap[BEGL_S][MATP_nd] = 55;
    pri->t[55] = esl_mixdchlet_Create(1, 4);
-   pri->t[55]->pq[0] = 1.0;
+   pri->t[55]->q[0] = 1.0;
    pri->t[55]->alpha[0][0] = 4.829712747509;
    pri->t[55]->alpha[0][1] = 0.061131109227;
    pri->t[55]->alpha[0][2] = 0.092185242101;
@@ -1735,20 +1731,20 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[BEGR_S][BIF_nd] = 56;
    pri->t[56] = esl_mixdchlet_Create(1, 2);
-   pri->t[56]->pq[0] = 1.0;
+   pri->t[56]->q[0] = 1.0;
    pri->t[56]->alpha[0][0] = 0.009635966745;
    pri->t[56]->alpha[0][1] = 1.220143960207;
 
    pri->tsetmap[BEGR_S][MATL_nd] = 57;
    pri->t[57] = esl_mixdchlet_Create(1, 3);
-   pri->t[57]->pq[0] = 1.0;
+   pri->t[57]->q[0] = 1.0;
    pri->t[57]->alpha[0][0] = 0.015185708311;
    pri->t[57]->alpha[0][1] = 1.809432933023;
    pri->t[57]->alpha[0][2] = 0.038601480352;
 
    pri->tsetmap[BEGR_S][MATP_nd] = 58;
    pri->t[58] = esl_mixdchlet_Create(1, 5);
-   pri->t[58]->pq[0] = 1.0;
+   pri->t[58]->q[0] = 1.0;
    pri->t[58]->alpha[0][0] = 0.031820644019;
    pri->t[58]->alpha[0][1] = 2.300193431878;
    pri->t[58]->alpha[0][2] = 0.036163737927;
@@ -1757,20 +1753,20 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[BEGR_IL][BIF_nd] = 59;
    pri->t[59] = esl_mixdchlet_Create(1, 2);
-   pri->t[59]->pq[0] = 1.0;
+   pri->t[59]->q[0] = 1.0;
    pri->t[59]->alpha[0][0] = 0.264643213319;
    pri->t[59]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[BEGR_IL][MATL_nd] = 60;
    pri->t[60] = esl_mixdchlet_Create(1, 3);
-   pri->t[60]->pq[0] = 1.0;
+   pri->t[60]->q[0] = 1.0;
    pri->t[60]->alpha[0][0] = 0.601223387577;
    pri->t[60]->alpha[0][1] = 0.939499051719;
    pri->t[60]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[BEGR_IL][MATP_nd] = 61;
    pri->t[61] = esl_mixdchlet_Create(1, 5);
-   pri->t[61]->pq[0] = 1.0;
+   pri->t[61]->q[0] = 1.0;
    pri->t[61]->alpha[0][0] = 0.291829430523;
    pri->t[61]->alpha[0][1] = 1.098441427679;
    pri->t[61]->alpha[0][2] = 0.091146313822;
@@ -1779,14 +1775,14 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_S][BIF_nd] = 62;
    pri->t[62] = esl_mixdchlet_Create(1, 3);
-   pri->t[62]->pq[0] = 1.0;
+   pri->t[62]->q[0] = 1.0;
    pri->t[62]->alpha[0][0] = 0.067710091654;
    pri->t[62]->alpha[0][1] = 0.000047753225;
    pri->t[62]->alpha[0][2] = 0.483183211040;
 
    pri->tsetmap[ROOT_S][MATL_nd] = 63;
    pri->t[63] = esl_mixdchlet_Create(1, 4);
-   pri->t[63]->pq[0] = 1.0;
+   pri->t[63]->q[0] = 1.0;
    pri->t[63]->alpha[0][0] = 0.028518011579;
    pri->t[63]->alpha[0][1] = 0.024705844026;
    pri->t[63]->alpha[0][2] = 1.464047470747;
@@ -1794,7 +1790,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_S][MATP_nd] = 64;
    pri->t[64] = esl_mixdchlet_Create(1, 6);
-   pri->t[64]->pq[0] = 1.0;
+   pri->t[64]->q[0] = 1.0;
    pri->t[64]->alpha[0][0] = 0.016729608598;
    pri->t[64]->alpha[0][1] = 0.017449035307;
    pri->t[64]->alpha[0][2] = 7.164604225972;
@@ -1804,7 +1800,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_S][MATR_nd] = 65;
    pri->t[65] = esl_mixdchlet_Create(1, 4);
-   pri->t[65]->pq[0] = 1.0;
+   pri->t[65]->q[0] = 1.0;
    pri->t[65]->alpha[0][0] = 0.032901537296;
    pri->t[65]->alpha[0][1] = 0.013876834787;
    pri->t[65]->alpha[0][2] = 1.694917068307;
@@ -1812,14 +1808,14 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_IL][BIF_nd] = 66;
    pri->t[66] = esl_mixdchlet_Create(1, 3);
-   pri->t[66]->pq[0] = 1.0;
+   pri->t[66]->q[0] = 1.0;
    pri->t[66]->alpha[0][0] = 0.943443048986;
    pri->t[66]->alpha[0][1] = 0.064001237265;
    pri->t[66]->alpha[0][2] = 0.432230812455;
 
    pri->tsetmap[ROOT_IL][MATL_nd] = 67;
    pri->t[67] = esl_mixdchlet_Create(1, 4);
-   pri->t[67]->pq[0] = 1.0;
+   pri->t[67]->q[0] = 1.0;
    pri->t[67]->alpha[0][0] = 0.250101882938;
    pri->t[67]->alpha[0][1] = 0.155728904821;
    pri->t[67]->alpha[0][2] = 0.370945030932;
@@ -1827,7 +1823,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_IL][MATP_nd] = 68;
    pri->t[68] = esl_mixdchlet_Create(1, 6);
-   pri->t[68]->pq[0] = 1.0;
+   pri->t[68]->q[0] = 1.0;
    pri->t[68]->alpha[0][0] = 0.157307265492;
    pri->t[68]->alpha[0][1] = 0.131105492208;
    pri->t[68]->alpha[0][2] = 0.555106727689;
@@ -1837,7 +1833,7 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_IL][MATR_nd] = 69;
    pri->t[69] = esl_mixdchlet_Create(1, 4);
-   pri->t[69]->pq[0] = 1.0;
+   pri->t[69]->q[0] = 1.0;
    pri->t[69]->alpha[0][0] = 0.155093374292;
    pri->t[69]->alpha[0][1] = 0.054734614999;
    pri->t[69]->alpha[0][2] = 0.714409186001;
@@ -1845,20 +1841,20 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_IR][BIF_nd] = 70;
    pri->t[70] = esl_mixdchlet_Create(1, 2);
-   pri->t[70]->pq[0] = 1.0;
+   pri->t[70]->q[0] = 1.0;
    pri->t[70]->alpha[0][0] = 0.264643213319;
    pri->t[70]->alpha[0][1] = 0.671462565227;
 
    pri->tsetmap[ROOT_IR][MATL_nd] = 71;
    pri->t[71] = esl_mixdchlet_Create(1, 3);
-   pri->t[71]->pq[0] = 1.0;
+   pri->t[71]->q[0] = 1.0;
    pri->t[71]->alpha[0][0] = 0.601223387577;
    pri->t[71]->alpha[0][1] = 0.939499051719;
    pri->t[71]->alpha[0][2] = 0.092516097691;
 
    pri->tsetmap[ROOT_IR][MATP_nd] = 72;
    pri->t[72] = esl_mixdchlet_Create(1, 5);
-   pri->t[72]->pq[0] = 1.0;
+   pri->t[72]->q[0] = 1.0;
    pri->t[72]->alpha[0][0] = 0.291829430523;
    pri->t[72]->alpha[0][1] = 1.098441427679;
    pri->t[72]->alpha[0][2] = 0.025595408318;
@@ -1867,13 +1863,13 @@ Prior_Default_v0p56_through_v1p02(void)
 
    pri->tsetmap[ROOT_IR][MATR_nd] = 73;
    pri->t[73] = esl_mixdchlet_Create(1, 3);
-   pri->t[73]->pq[0] = 1.0;
+   pri->t[73]->q[0] = 1.0;
    pri->t[73]->alpha[0][0] = 0.327208719748;
    pri->t[73]->alpha[0][1] = 0.846283302435;
    pri->t[73]->alpha[0][2] = 0.069337439204;
 
    pri->mbp = esl_mixdchlet_Create(9, 16);
-   pri->mbp->pq[0] = 0.030512242264;
+   pri->mbp->q[0] = 0.030512242264;
    pri->mbp->alpha[0][0] = 0.571860339721;
    pri->mbp->alpha[0][1] = 0.605642194896;
    pri->mbp->alpha[0][2] = 0.548004739487;
@@ -1891,7 +1887,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[0][14] = 1.072148274499;
    pri->mbp->alpha[0][15] = 0.659833749087;
 
-   pri->mbp->pq[1] = 0.070312169889;
+   pri->mbp->q[1] = 0.070312169889;
    pri->mbp->alpha[1][0] = 0.116757286812;
    pri->mbp->alpha[1][1] = 0.052661180881;
    pri->mbp->alpha[1][2] = 0.067541712113;
@@ -1909,7 +1905,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[1][14] = 0.315242459757;
    pri->mbp->alpha[1][15] = 0.116457644231;
 
-   pri->mbp->pq[2] = 0.118499696300;
+   pri->mbp->q[2] = 0.118499696300;
    pri->mbp->alpha[2][0] = 0.028961414077;
    pri->mbp->alpha[2][1] = 0.022849036260;
    pri->mbp->alpha[2][2] = 0.120089637379;
@@ -1927,7 +1923,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[2][14] = 0.832665494899;
    pri->mbp->alpha[2][15] = 0.058379188171;
 
-   pri->mbp->pq[3] = 0.181025557995;
+   pri->mbp->q[3] = 0.181025557995;
    pri->mbp->alpha[3][0] = 0.000926960236;
    pri->mbp->alpha[3][1] = 0.008100076237;
    pri->mbp->alpha[3][2] = 0.001794303710;
@@ -1945,7 +1941,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[3][14] = 0.043103588084;
    pri->mbp->alpha[3][15] = 0.008080970629;
 
-   pri->mbp->pq[4] = 0.188791659665;
+   pri->mbp->q[4] = 0.188791659665;
    pri->mbp->alpha[4][0] = 0.002163861165;
    pri->mbp->alpha[4][1] = 0.007785521817;
    pri->mbp->alpha[4][2] = 0.003483930554;
@@ -1963,7 +1959,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[4][14] = 0.347662973488;
    pri->mbp->alpha[4][15] = 0.020677924150;
 
-   pri->mbp->pq[5] = 0.157630937531;
+   pri->mbp->q[5] = 0.157630937531;
    pri->mbp->alpha[5][0] = 0.083035113547;
    pri->mbp->alpha[5][1] = 0.166815168558;
    pri->mbp->alpha[5][2] = 0.042669979127;
@@ -1981,7 +1977,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[5][14] = 0.397879304331;
    pri->mbp->alpha[5][15] = 0.130525904952;
 
-   pri->mbp->pq[6] = 0.041708924031;
+   pri->mbp->q[6] = 0.041708924031;
    pri->mbp->alpha[6][0] = 0.217001113139;
    pri->mbp->alpha[6][1] = 0.388746098242;
    pri->mbp->alpha[6][2] = 0.134680826556;
@@ -1999,7 +1995,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[6][14] = 0.406308970402;
    pri->mbp->alpha[6][15] = 0.322809888354;
 
-   pri->mbp->pq[7] = 0.095930656547;
+   pri->mbp->q[7] = 0.095930656547;
    pri->mbp->alpha[7][0] = 0.129043208355;
    pri->mbp->alpha[7][1] = 0.112308496092;
    pri->mbp->alpha[7][2] = 0.116841517642;
@@ -2017,7 +2013,7 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[7][14] = 1.225349985791;
    pri->mbp->alpha[7][15] = 0.296596767798;
 
-   pri->mbp->pq[8] = 0.115588155778;
+   pri->mbp->q[8] = 0.115588155778;
    pri->mbp->alpha[8][0] = 0.005830777296;
    pri->mbp->alpha[8][1] = 0.153807106950;
    pri->mbp->alpha[8][2] = 0.003131256711;
@@ -2036,98 +2032,98 @@ Prior_Default_v0p56_through_v1p02(void)
    pri->mbp->alpha[8][15] = 0.025741311658;
 
    pri->mnt = esl_mixdchlet_Create(8, 4);
-   pri->mnt->pq[0] = 0.085091850427;
+   pri->mnt->q[0] = 0.085091850427;
    pri->mnt->alpha[0][0] = 0.575686380127;
    pri->mnt->alpha[0][1] = 0.756214632926;
    pri->mnt->alpha[0][2] = 0.340269621276;
    pri->mnt->alpha[0][3] = 13.774558068728;
 
-   pri->mnt->pq[1] = 0.015935406086;
+   pri->mnt->q[1] = 0.015935406086;
    pri->mnt->alpha[1][0] = 153.865583955384;
    pri->mnt->alpha[1][1] = 0.235000107300;
    pri->mnt->alpha[1][2] = 0.356622653787;
    pri->mnt->alpha[1][3] = 0.006812718667;
 
-   pri->mnt->pq[2] = 0.102013232739;
+   pri->mnt->q[2] = 0.102013232739;
    pri->mnt->alpha[2][0] = 176.440373997567;
    pri->mnt->alpha[2][1] = 0.935905951648;
    pri->mnt->alpha[2][2] = 1.292808081312;
    pri->mnt->alpha[2][3] = 1.617069444109;
 
-   pri->mnt->pq[3] = 0.415954530541;
+   pri->mnt->q[3] = 0.415954530541;
    pri->mnt->alpha[3][0] = 1.696250324914;
    pri->mnt->alpha[3][1] = 1.128033754503;
    pri->mnt->alpha[3][2] = 0.955462899400;
    pri->mnt->alpha[3][3] = 1.676465850057;
 
-   pri->mnt->pq[4] = 0.074470557341;
+   pri->mnt->q[4] = 0.074470557341;
    pri->mnt->alpha[4][0] = 0.074365531036;
    pri->mnt->alpha[4][1] = 0.039185613484;
    pri->mnt->alpha[4][2] = 0.063868972113;
    pri->mnt->alpha[4][3] = 0.042432587902;
 
-   pri->mnt->pq[5] = 0.055442639402;
+   pri->mnt->q[5] = 0.055442639402;
    pri->mnt->alpha[5][0] = 0.615068901818;
    pri->mnt->alpha[5][1] = 14.630712353118;
    pri->mnt->alpha[5][2] = 0.298404817403;
    pri->mnt->alpha[5][3] = 0.864718655041;
 
-   pri->mnt->pq[6] = 0.118379098369;
+   pri->mnt->q[6] = 0.118379098369;
    pri->mnt->alpha[6][0] = 1.163176461349;
    pri->mnt->alpha[6][1] = 0.408090165233;
    pri->mnt->alpha[6][2] = 11.188793743319;
    pri->mnt->alpha[6][3] = 0.699118301558;
 
-   pri->mnt->pq[7] = 0.132712685095;
+   pri->mnt->q[7] = 0.132712685095;
    pri->mnt->alpha[7][0] = 16.417200192194;
    pri->mnt->alpha[7][1] = 0.980503286582;
    pri->mnt->alpha[7][2] = 1.132071515554;
    pri->mnt->alpha[7][3] = 1.376129445524;
 
    pri->i = esl_mixdchlet_Create(8, 4);
-   pri->i->pq[0] = 0.085091850427;
+   pri->i->q[0] = 0.085091850427;
    pri->i->alpha[0][0] = 0.575686380127;
    pri->i->alpha[0][1] = 0.756214632926;
    pri->i->alpha[0][2] = 0.340269621276;
    pri->i->alpha[0][3] = 13.774558068728;
 
-   pri->i->pq[1] = 0.015935406086;
+   pri->i->q[1] = 0.015935406086;
    pri->i->alpha[1][0] = 153.865583955384;
    pri->i->alpha[1][1] = 0.235000107300;
    pri->i->alpha[1][2] = 0.356622653787;
    pri->i->alpha[1][3] = 0.006812718667;
 
-   pri->i->pq[2] = 0.102013232739;
+   pri->i->q[2] = 0.102013232739;
    pri->i->alpha[2][0] = 176.440373997567;
    pri->i->alpha[2][1] = 0.935905951648;
    pri->i->alpha[2][2] = 1.292808081312;
    pri->i->alpha[2][3] = 1.617069444109;
 
-   pri->i->pq[3] = 0.415954530541;
+   pri->i->q[3] = 0.415954530541;
    pri->i->alpha[3][0] = 1.696250324914;
    pri->i->alpha[3][1] = 1.128033754503;
    pri->i->alpha[3][2] = 0.955462899400;
    pri->i->alpha[3][3] = 1.676465850057;
 
-   pri->i->pq[4] = 0.074470557341;
+   pri->i->q[4] = 0.074470557341;
    pri->i->alpha[4][0] = 0.074365531036;
    pri->i->alpha[4][1] = 0.039185613484;
    pri->i->alpha[4][2] = 0.063868972113;
    pri->i->alpha[4][3] = 0.042432587902;
 
-   pri->i->pq[5] = 0.055442639402;
+   pri->i->q[5] = 0.055442639402;
    pri->i->alpha[5][0] = 0.615068901818;
    pri->i->alpha[5][1] = 14.630712353118;
    pri->i->alpha[5][2] = 0.298404817403;
    pri->i->alpha[5][3] = 0.864718655041;
 
-   pri->i->pq[6] = 0.118379098369;
+   pri->i->q[6] = 0.118379098369;
    pri->i->alpha[6][0] = 1.163176461349;
    pri->i->alpha[6][1] = 0.408090165233;
    pri->i->alpha[6][2] = 11.188793743319;
    pri->i->alpha[6][3] = 0.699118301558;
 
-   pri->i->pq[7] = 0.132712685095;
+   pri->i->q[7] = 0.132712685095;
    pri->i->alpha[7][0] = 16.417200192194;
    pri->i->alpha[7][1] = 0.980503286582;
    pri->i->alpha[7][2] = 1.132071515554;

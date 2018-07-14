@@ -926,7 +926,7 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
 		    ESL_MSA **ret_msa)
 {
   int status;                   /* easel status flag */
-  ESL_MSA   *msa;               /* RETURN: new alignment */
+  ESL_MSA   *msa = NULL;        /* RETURN: new alignment */
   int    idx;                   /* counter for sequences */
   int    alen;                  /* width of alignment */
   int   *maxins = NULL;         /* array of max inserts between aligned columns */
@@ -1141,7 +1141,7 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
       }
     }
                                 /* allocation for new alignment */
-  if((msa = esl_msa_Create(nseq, alen)) == NULL) goto ERROR;
+  if ((msa = esl_msa_Create(nseq, alen)) == NULL) { status = eslEMEM; goto ERROR; }
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = (ESL_ALPHABET *) abc;

@@ -2495,7 +2495,7 @@ read_glocal_list_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH *
   ESL_FILEPARSER *efp = NULL;
   char           *tok = NULL;
   int             toklen;
-  ESL_KEYHASH    *glocal_kh;
+  ESL_KEYHASH    *glocal_kh = NULL;
   uint16_t        tmp_fh;
   off_t           tmp_roff;
   uint64_t        save_nsecondary = 0;

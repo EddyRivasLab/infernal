@@ -171,8 +171,8 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
   int      dv;			/* Delta for state v */
   int      leftn;		/* length of left subsequence under a bifurc */
   double   pdf; 		/* P(<=n) or P(>=n) for this state v         */
-  int     *touch;               /* touch[y] = # higher states depending on y */
-  ESL_STACK *beamstack;         /* pool of beams we can reuse  */
+  int     *touch       = NULL;  /* touch[y] = # higher states depending on y */
+  ESL_STACK *beamstack = NULL;  /* pool of beams we can reuse  */
   double  *tmp;                 /* for freeing beamstack only */
   int      yoffset;             /* counter over children */
   double  *gamma0_loc = NULL;   /* length distribution of  local hits (gamma[0]) */

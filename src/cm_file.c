@@ -1376,7 +1376,7 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
   float gflambda;                  /* glocal fwd lambda parameter for current hmm */
   P7_OPROFILE *om = NULL;          /* the om we've read */
 
-  if (cmfp->errbuf != NULL) cmfp->errbuf[0] = '\0';
+  cmfp->errbuf[0] = '\0';
   if (cmfp->ffp == NULL)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
 
   if (feof(cmfp->ffp))                                           { status = eslEOF; goto ERROR; } /* normal EOF: no more profiles */

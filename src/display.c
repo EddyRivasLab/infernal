@@ -655,7 +655,7 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc)
   CMConsensus_t *con = NULL;    /* growing consensus info */
   char     *cseq = NULL;        /* growing consensus sequence display string   */
   char     *cstr = NULL;        /* growing consensus structure display string  */
-  int      *ct;			/* growing ct Zuker pairing partnet string     */
+  int      *ct = NULL;	        /* growing ct Zuker pairing partnet string     */
   int      *lpos = NULL;        /* maps node->left consensus position, [0..nodes-1] */
   int      *rpos = NULL;        /* maps node->right consensus position, [0..nodes-1] */
   int       cpos;		/* current position in cseq, cstr              */

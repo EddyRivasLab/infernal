@@ -3327,9 +3327,6 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   if (sq->n == 0)  return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (np7env == 0) return eslOK;    /* if there's no envelopes to search in, return */
 
-  ESL_ALLOC(i_surv, sizeof(int) * np7env); 
-  esl_vec_ISet(i_surv, np7env, FALSE);
-
   /* if we're in SCAN mode, and we don't yet have a CM, read it and configure it */
   if (pli->mode == CM_SCAN_MODELS && (*opt_cm == NULL)) { 
     if((status = pli_scan_mode_read_cm(pli, cm_offset, 
@@ -3341,6 +3338,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   }
   cm = *opt_cm;
   save_tau = cm->tau;
+
+  ESL_ALLOC(i_surv, sizeof(int) * np7env); 
+  esl_vec_ISet(i_surv, np7env, FALSE);
 
   /* Determine bit score cutoff for CYK envelope redefinition, any
    * residue that exists in a CYK hit that reaches this threshold will
@@ -4033,7 +4033,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
   float  save_thresh1     = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh1;
   float  save_thresh2     = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh2;
   float  hbmx_Mb = 0.;     /* approximate size in Mb for HMM banded matrix for this sequence */
-  float  sc;               /* score returned from DP scanner */
+  float  sc = 0.;          /* score returned from DP scanner */
   float  mxsize_limit     = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
   
   /* printf("in pli_dispatch_cm_search(): do_trunc: %d do_inside: %d cutoff: %.1f env_cutoff: %.1f do_hbanded: %d hitlist?: %d opt_envi/j?: %d start: %" PRId64 " stop: %" PRId64 "\n", 
@@ -4079,7 +4079,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
     }
   }
-  else if(do_qdb_or_nonbanded) { 
+  else if (do_qdb_or_nonbanded) { 
     if(do_trunc) { 
       if(cm->trsmx == NULL) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_dispatch_cm_search(), need truncated scan mx but don't have one");
       if(do_inside) { /* not HMM banded, truncated */
@@ -4168,7 +4168,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
   esl_stopwatch_Start(watch);  
 
   /* make new sq object, b/c DispatchSqAlignment() requires one */
-  if((sq2aln = esl_sq_CreateDigitalFrom(cm->abc, "seq", sq->dsq + hit->start - 1, hit->stop - hit->start + 1, NULL, NULL, NULL)) == NULL) goto ERROR;
+  if((sq2aln = esl_sq_CreateDigitalFrom(cm->abc, "seq", sq->dsq + hit->start - 1, hit->stop - hit->start + 1, NULL, NULL, NULL)) == NULL) {status = eslEMEM; goto ERROR; }
 
   cm->align_opts = pli->cm_align_opts;
   if(pli->cur_pass_idx != PLI_PASS_STD_ANY) cm->align_opts |= CM_ALIGN_TRUNC;

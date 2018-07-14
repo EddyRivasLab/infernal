@@ -106,14 +106,17 @@ GrowParsetree(Parsetree_t *tr)
 void
 FreeParsetree(Parsetree_t *tr)
 {
-  free(tr->emitl);
-  free(tr->emitr);
-  free(tr->state);
-  free(tr->mode);
-  free(tr->nxtl);
-  free(tr->nxtr);
-  free(tr->prv);
-  free(tr);
+  if (tr)
+    {
+      free(tr->emitl);
+      free(tr->emitr);
+      free(tr->state);
+      free(tr->mode);
+      free(tr->nxtl);
+      free(tr->nxtr);
+      free(tr->prv);
+      free(tr);
+    }
 }
 
 /* Function: SizeofParsetree()
@@ -867,8 +870,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   /* We're getting closer.
    * Now we know the size of the MSA, allocate it. 
    */
-  msa = esl_msa_Create(nseq, -1);
-  if(msa == NULL) goto ERROR;
+  if ((msa = esl_msa_Create(nseq, -1)) == NULL) { status = eslEMEM; goto ERROR; }
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = NULL;
@@ -1709,7 +1711,6 @@ leftjustify(const ESL_ALPHABET *abc, char *s, int n)
 int
 EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N)
 {
-  int status;
   Parsetree_t *tr = NULL;       /* parse tree under construction */
   ESL_STACK *pda = NULL;        /* pushdown automaton for traversing parse tree */              
   ESL_STACK *gsq = NULL;        /* growing sequence under construction */
@@ -1727,6 +1728,8 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
   int lpos;                     /* tmp variable for inserting EL trace node */
   float *tmp_tvec = NULL;       /* tmp transition vector to choose from, 
 				 * for dealing with local end transitions */
+  int status;
+
   /* Contract check */
   if(cm->flags & CMH_LOCAL_END && (fabs(sreEXP2(cm->el_selfsc) - 1.0) < 0.01))
     ESL_FAIL(eslEINVAL, errbuf, "EL self transition probability %f is too high, would emit long (too long) EL insertions.", sreEXP2(cm->el_selfsc));
@@ -1736,8 +1739,8 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
     ESL_FAIL(eslEINVAL, errbuf, "EmitParsetree requires a sequence name for the sequence it's creating.");
 
   tr  = CreateParsetree(100);
-  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
-  if((gsq = esl_stack_CCreate()) == NULL) goto ERROR;
+  if ((pda = esl_stack_ICreate()) == NULL) {status = eslEMEM; goto ERROR; }
+  if ((gsq = esl_stack_CCreate()) == NULL) {status = eslEMEM; goto ERROR; }
   N   = 0;			
   ESL_ALLOC(tmp_tvec, sizeof(float) * (MAXCONNECT+1)); /* enough room for max possible transitions, plus
 							* a local end transition */
@@ -2606,7 +2609,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *pda       = NULL;   /* the stack */
   int          vec_size;           /* size of pA, validA */
   int          cur_vec_size;       /* number of elements we're currently using in pA, validA */ 
@@ -2635,8 +2638,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   /* Stochastically traceback through the TrInside matrix 
    * this section of code is adapted from cm_dpsmall.c:insideT(). 
    */
-  pda = esl_stack_ICreate();
-  if(pda == NULL) goto ERROR;
+  if ((pda = esl_stack_ICreate()) == NULL) { status = eslEMEM; goto ERROR; }
 
   v = 0;
   j = d = L;
@@ -2836,7 +2838,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *pda       = NULL;   /* the stack */
   int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
   int          cur_vec_size;       /* number of elements we're currently using in pA, validA, y_modeA, z_modeA, kA, yoffsetA */
@@ -2886,8 +2888,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   /* Stochastically traceback through the TrInside matrix 
    * this section of code is adapted from cm_dpsmall.c:insideT(). 
    */
-  pda = esl_stack_ICreate();
-  if(pda == NULL) goto ERROR;
+  if ((pda = esl_stack_ICreate()) == NULL) { status = eslEMEM; goto ERROR; }
 
   v = 0;
   j = d = L;
@@ -3124,7 +3125,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *i_pda     = NULL;   /* the stack, integers */
   ESL_STACK   *c_pda     = NULL;   /* the stack, characters */
   int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
@@ -3191,7 +3192,8 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrStochasticParsetree(), unexpected pass idx: %d", pass_idx);
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
-  if(preset_mode == TRMODE_UNKNOWN) { 
+  parsetree_mode = preset_mode;
+  if (preset_mode == TRMODE_UNKNOWN) { 
     cur_vec_size = 4;
     pA[0] = Jalpha[0][L][L]; validA[0] = TRUE; 
     pA[1] = Lalpha[0][L][L]; validA[1] = TRUE; 
@@ -3204,9 +3206,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
     else if(choice == 2) parsetree_mode = TRMODE_R;
     else if(choice == 3) parsetree_mode = TRMODE_T;
     /*printf("cm_TrStochasticParsetree() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);*/
-  }
-  else { /* preset_mode != TRMODE_UNKNOWN, enforce sampled parsetree mode is preset_mode */
-    parsetree_mode = preset_mode;
   }
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
@@ -3636,7 +3635,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *i_pda     = NULL;   /* the stack, integers */
   ESL_STACK   *c_pda     = NULL;   /* the stack, characters */
   int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
@@ -3735,7 +3734,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   Lp_0 = L - hdmin[0][jp_0];
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
-  if(preset_mode == TRMODE_UNKNOWN) { 
+  parsetree_mode = preset_mode;
+  if (preset_mode == TRMODE_UNKNOWN) { 
     cur_vec_size = 4;
     if(cp9b->Jvalid[0]) pA[0] = Jalpha[0][jp_0][Lp_0];
     if(cp9b->Lvalid[0]) pA[1] = Lalpha[0][jp_0][Lp_0];
@@ -3748,9 +3748,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
     else if(choice == 2) parsetree_mode = TRMODE_R;
     else if(choice == 3) parsetree_mode = TRMODE_T;
     /*printf("cm_TrStochasticParsetreeHB() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);*/
-  }
-  else { /* preset_mode != TRMODE_UNKNOWN, enforce sampled parsetree mode is preset_mode */
-    parsetree_mode = preset_mode;
   }
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */

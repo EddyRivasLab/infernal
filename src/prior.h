@@ -7,7 +7,9 @@
 #ifndef PRIOR_INCLUDED
 #define PRIOR_INCLUDED
 
-#include "esl_dirichlet.h"
+#include <stdio.h>
+
+#include "esl_mixchlet.h"
 #include "structs.h"
 
 /* Structure: Prior_t

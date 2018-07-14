@@ -64,9 +64,6 @@ m4_include([easel/m4/ax_check_compile_flag.m4])
 m4_include([easel/m4/ax_gcc_func_attribute.m4])
 
 m4_include([easel/m4/esl_sse.m4])
-m4_include([easel/m4/esl_avx.m4])
-m4_include([easel/m4/esl_avx512.m4])
-m4_include([easel/m4/esl_neon.m4])
 m4_include([easel/m4/esl_vmx.m4])
 
 m4_include([easel/m4/ax_mpi.m4])
@@ -225,9 +222,18 @@ AC_ARG_ENABLE(vmx,     [AS_HELP_STRING([--enable-vmx],     [enable our Altivec/V
 AC_ARG_ENABLE(threads, [AS_HELP_STRING([--enable-threads], [enable POSIX threads parallelization])],     enable_threads=$enableval, enable_threads=check)
 AC_ARG_ENABLE(mpi,     [AS_HELP_STRING([--enable-mpi],     [enable MPI parallelization])],               enable_mpi=$enableval,     enable_mpi=no)
 
-if test "$enable_sse" = "yes" && test "$enable_vmx" = "yes"; then
+# If a vector implementation is force-selected, make sure only one is,
+# and turn off checking for the others.
+vecsel=0
+if test "$enable_sse"     = "yes"; then vecsel=$((vecsel+1)); fi
+if test "$enable_vmx"     = "yes"; then vecsel=$((vecsel+1)); fi
+if   [[ $vecsel -gt 1 ]]; then
   AC_MSG_ERROR([Select only one implementation: sse or vmx])
+elif [[ $vecsel -eq 1 ]]; then
+  if test "$enable_sse"   = "check"; then enable_sse="no";   fi
+  if test "$enable_vmx"   = "check"; then enable_vmx="no";   fi
 fi
+
 
 
 ################################################################
@@ -263,7 +269,7 @@ elif test "$enable_debugging" != "no"; then
    if test "$GCC" = "yes"; then
       CFLAGS="-g -Wall"
    fi
-else
+elif test "$esl_cflags_env_set" != "yes"; then
    CFLAGS="-O3"
 fi
 
@@ -359,7 +365,10 @@ sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE vector DP implementation])
       ;;
 vmx)  AC_MSG_NOTICE([Activating Altivec/VMX vector DP implementation])   
       ;;
-*)    AC_MSG_ERROR([Infernal requires either SSE or VMX/Altivec vector support.])
+*)    AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
+      AC_MSG_NOTICE([Infernal requires SSE or VMX vector instructions.])
+      AC_MSG_NOTICE([Supported platforms are x86 (Intel/AMD) and PowerPC.])
+      AC_MSG_ERROR([No supported vectorization found for your machine.])
       ;;
 esac
 IMPL_CHOICE=$impl_choice
@@ -369,6 +378,7 @@ AC_SUBST(INFERNAL_IMPLDIR)
 # Easel has additional vector implementations that Infernal and HMMER3 do not
 # support. Provide blank config for those CFLAGS.
 AC_SUBST(SSE_CFLAGS)
+AC_SUBST(SSE4_CFLAGS)
 AC_SUBST(AVX_CFLAGS)
 AC_SUBST(AVX512_CFLAGS)
 AC_SUBST(VMX_CFLAGS)
@@ -477,7 +487,6 @@ fi
 ################################################################
 # 8. Checks for types
 ################################################################
-AC_C_BIGENDIAN
 AC_TYPE_UINT8_T
 AC_TYPE_UINT16_T
 AC_TYPE_UINT32_T
@@ -496,6 +505,22 @@ AC_TYPE_OFF_T
 ################################################################
 # 10. Checks for compiler characteristics
 ################################################################
+
+AC_C_BIGENDIAN([
+  AC_DEFINE(WORDS_BIGENDIAN, 1, [Set autoconf's default WORDS_BIGENDIAN flag])
+  ],[
+  if test "$enable_vmx" = "yes"; then
+    AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
+    AC_MSG_NOTICE([Infernal Altivec/VMX only supports bigendian platforms: e.g. ppc64 not ppc64le])
+    AC_MSG_ERROR([No supported vectorization found for your machine.])
+  fi
+  ],[
+    AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
+    AC_MSG_NOTICE([Couldn't determine byte order for your platform.])
+    AC_MSG_NOTICE([Infernal's vector code is sensitive to byte order.])
+    AC_MSG_ERROR([No supported vectorization found for your machine.])
+  ])
+
 
 # __attribute__() tags on function declarations
 # HAVE_FUNC_ATTRIBUTE_NORETURN 

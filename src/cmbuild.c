@@ -3070,28 +3070,28 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   /* Transition priors: taken from hmmer's p7_prior.c::p7_prior_CreateNucleic() */
   /* Roughly, learned from rmark benchmark - hand-beautified (trimming overspecified significant digits)
    */
-  pri->tm->pq[0]       = 1.0;
+  pri->tm->q[0]       = 1.0;
   pri->tm->alpha[0][0] = 2.0; // TMM
   pri->tm->alpha[0][1] = 0.1; // TMI
   pri->tm->alpha[0][2] = 0.1; // TMD
 
-  pri->ti->pq[0]       = 1.0;
+  pri->ti->q[0]       = 1.0;
   pri->ti->alpha[0][0] = 0.06; // TIM
   pri->ti->alpha[0][1] = 0.2; // TII
 
-  pri->td->pq[0]       = 1.0;
+  pri->td->q[0]       = 1.0;
   pri->td->alpha[0][0] = 0.1; // TDM
   pri->td->alpha[0][1] = 0.2; // TDD
 
   /* Match emission priors  */
   for (q = 0; q < num_comp; q++)
     {
-      pri->em->pq[q] = defmq[q];
+      pri->em->q[q] = defmq[q];
       esl_vec_DCopy(defm[q], 4, pri->em->alpha[q]);
     }
 
   /* Insert emission priors. */
-  pri->ei->pq[0] = 1.0;
+  pri->ei->q[0] = 1.0;
   esl_vec_DSet(pri->ei->alpha[0], 4, 1.0);
 
   return pri;

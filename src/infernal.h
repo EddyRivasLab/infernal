@@ -59,7 +59,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
-#include "esl_dirichlet.h"
+#include "esl_mixdchlet.h"
 #include "esl_random.h"
 #include "esl_msa.h"
 #include "esl_sq.h"
