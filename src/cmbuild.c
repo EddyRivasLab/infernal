@@ -137,15 +137,18 @@ static ESL_OPTIONS options[] = {
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer verbose output options */
-  /* name        type          default  env   range toggles reqs  incomp help  docgroup*/
-  { "--verbose", eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                              109 },
-  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                      109 },
-  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",         109 },
-  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",     109 },
-  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>", 109 },
-  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                 109 },
-  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",    109 },
-  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>", 109 },
+  /* name           type          default  env   range toggles reqs  incomp help  docgroup*/
+  { "--verbose",    eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                                      109 },
+  { "--cfile",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                              109 },
+  { "--efile",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",                 109 },
+  { "--tfile",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",             109 },
+  { "--cmtbl",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>",         109 },
+  { "--emap",       eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                         109 },
+  { "--gtree",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",            109 },
+  { "--gtbl",       eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>",         109 },
+  { "--occfile",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CM state to <f>",             109 },
+  { "--cp9occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CP9 ML HMM state) to <f>",    109 },
+  { "--fp7occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each filter P7 HMM state) to <f>", 109 },
 
   /* Building multiple CMs after clustering input MSA */
   /* name        type            default env   range      toggles reqs  incomp    help  docgroup*/
@@ -210,6 +213,9 @@ struct cfg_s {
   FILE         *gfp;            /* for --gtree */
   FILE         *gtblfp;         /* for --gtbl */
   FILE         *tfp;            /* for --tfile */
+  FILE         *occfp;          /* for --occfile */
+  FILE         *cp9occfp;       /* for --cp9occfile */
+  FILE         *fp7occfp;       /* for --fp7occfile */
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
   FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
@@ -251,6 +257,9 @@ static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm
 static int    dump_emission_info(FILE *fp, CM_t *cm, char *errbuf);
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
+static void  dump_cm_occupancy_values(FILE *fp, CM_t *cm);
+static void  dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9);
+static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
 
  int
  main(int argc, char **argv)
@@ -293,6 +302,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    cfg.cdfp       = NULL;
    cfg.refinefp   = NULL;
    cfg.rdfp       = NULL;
+   cfg.occfp      = NULL;
+   cfg.cp9occfp   = NULL;
+   cfg.fp7occfp   = NULL;
 
    if (esl_opt_IsOn(go, "--informat")) {
      cfg.fmt = esl_msafile_EncodeFormat(esl_opt_GetString(go, "--informat"));
@@ -345,7 +357,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 
    /* Clean up the cfg. */
    /* close all output files */
-   if (cfg.postmsafp || cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp) { 
+   if (cfg.postmsafp || cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp || cfg.occfp || cfg.cp9occfp || cfg.fp7occfp) { 
      fprintf(cfg.ofp, "#\n");
    }
    if (cfg.postmsafp != NULL) {
@@ -391,6 +403,18 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if (cfg.rdfp != NULL) {
      fprintf(cfg.ofp, "# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
      fclose(cfg.rdfp); 
+   }
+   if (cfg.occfp != NULL) {
+     fprintf(cfg.ofp, "# Expected occupancy values for each CM state saved in file %s.\n", esl_opt_GetString(go, "--occfile"));
+     fclose(cfg.occfp); 
+   }
+   if (cfg.cp9occfp != NULL) {
+     fprintf(cfg.ofp, "# Expected occupancy values for each CM CP9 HMM state saved in file %s.\n", esl_opt_GetString(go, "--cp9occfile"));
+     fclose(cfg.cp9occfp); 
+   }
+   if (cfg.fp7occfp != NULL) {
+     fprintf(cfg.ofp, "# Expected occupancy values for each filter P7 HMM state saved in file %s.\n", esl_opt_GetString(go, "--fp7occfile"));
+     fclose(cfg.fp7occfp); 
    }
 
    if (cfg.afp        != NULL) esl_msafile_Close(cfg.afp);
@@ -714,6 +738,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
   if (esl_opt_IsUsed(go, "--emap"))        { fprintf(ofp, "# saving consensus emit map to file:                  %s\n", esl_opt_GetString(go, "--emap")); }
   if (esl_opt_IsUsed(go, "--gtree"))       { fprintf(ofp, "# saving tree description of master tree to file:     %s\n", esl_opt_GetString(go, "--gtree")); }
   if (esl_opt_IsUsed(go, "--gtbl"))        { fprintf(ofp, "# saving tabular description of master tree to file:  %s\n", esl_opt_GetString(go, "--gtbl")); }
+  if (esl_opt_IsUsed(go, "--occfile"))     { fprintf(ofp, "# saving CM expected occupancy values to file:        %s\n", esl_opt_GetString(go, "--occfile")); }
+  if (esl_opt_IsUsed(go, "--cp9occfile"))  { fprintf(ofp, "# saving ML CP9 expected occupancy values to file:    %s\n", esl_opt_GetString(go, "--cp9occfile")); }
+  if (esl_opt_IsUsed(go, "--fp7occfile"))  { fprintf(ofp, "# saving filter P7 expected occupancy values to file: %s\n", esl_opt_GetString(go, "--fp7occfile")); }
 
   if (esl_opt_IsUsed(go, "--ctarget"))     { fprintf(ofp, "# building >1 CMs from each MSA; target num CMs:      %d\n", esl_opt_GetInteger(go, "--ctarget")); }
   if (esl_opt_IsUsed(go, "--cmaxid"))      { fprintf(ofp, "# building >1 CMs from each MSA; max id b/t clusters: %g\n", esl_opt_GetReal(go, "--cmaxid")); }
@@ -908,6 +935,21 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
        if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	 cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
      }
+   /* optionally, open occ file */
+   if (esl_opt_GetString(go, "--occfile") != NULL) {
+     if ((cfg->occfp = fopen(esl_opt_GetString(go, "--occfile"), "w")) == NULL) 
+       ESL_FAIL(eslFAIL, errbuf, "Failed to open --occfile output file %s\n", esl_opt_GetString(go, "--occfile"));
+   }
+   /* optionally, open cp9occ file */
+   if (esl_opt_GetString(go, "--cp9occfile") != NULL) {
+     if ((cfg->cp9occfp = fopen(esl_opt_GetString(go, "--cp9occfile"), "w")) == NULL) 
+       ESL_FAIL(eslFAIL, errbuf, "Failed to open --cp9occfile output file %s\n", esl_opt_GetString(go, "--cp9occfile"));
+   }
+   /* optionally, open fp7occ file */
+   if (esl_opt_GetString(go, "--fp7occfile") != NULL) {
+     if ((cfg->fp7occfp = fopen(esl_opt_GetString(go, "--fp7occfile"), "w")) == NULL) 
+       ESL_FAIL(eslFAIL, errbuf, "Failed to open --fp7occfile output file %s\n", esl_opt_GetString(go, "--fp7occfile"));
+   }
 
    if (cfg->pri     == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
    if (cfg->null    == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
@@ -1243,6 +1285,12 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if(cfg->gfp    != NULL) MasterTraceDisplay(cfg->gfp, mtr, cm);
    /* save base pair info, if nec */
    if(cfg->escfp   != NULL) if((status = dump_emission_info(cfg->escfp, cm, errbuf)) != eslOK) return status;
+   /* save CM occ values, if nec */
+   if(cfg->occfp != NULL) dump_cm_occupancy_values(cfg->occfp, cm);  
+   /* save cp9 occ values, if nec */
+   if(cfg->cp9occfp != NULL) dump_cp9_occupancy_values(cfg->cp9occfp, cm->name, cm->cp9);
+   /* save fp7 occ values, if nec */
+   if(cfg->fp7occfp != NULL) dump_fp7_occupancy_values(cfg->fp7occfp, cm->name, cm->fp7);
 
    /* save parsetrees if nec */
    if(cfg->tfp != NULL) { 
@@ -3101,4 +3149,101 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   return NULL;
 }
 
+/* Function: dump_cm_occupancy_values()
+ * Date:     EPN, Tue Jul 17 19:53:06 2018 [Benasque]
+ *
+ * Purpose: Calculate and dump CM occupancy values, the expected
+ *          number of times each CM state is entered.
+ *
+ * Returns: void
+ */
+static void
+dump_cm_occupancy_values(FILE *fp, CM_t *cm)
+{
+  double *psi; /* expected num times each state visited in HMM*/
+  int     v;
 
+  psi = cm_ExpectedStateOccupancy(cm);
+
+  fprintf(fp, "# model_name: %s\n", cm->name);
+  fprintf(fp, "# number_of_states: %d\n", cm->M);
+  fprintf(fp, "# columns: <state_idx> <state_expected_occupancy>\n");
+  for(v = 0; v < cm->M; v++) { 
+    fprintf(fp, "%d %.5f\n", v, psi[v]);
+  }
+  fprintf(fp, "//\n");
+
+  free(psi);
+
+  return;
+}
+
+/* Function: dump_cp9_occupancy_values()
+ * Date:     EPN, Tue Jul 17 19:22:57 2018 [Benasque]
+ *
+ * Purpose: Calculate and dump ML CP9 HMM occupancy values, the
+ *          expected number of times each state is entered.
+ *
+ * Returns: void
+ */
+static void
+dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9)
+{
+  int       status;
+  int        k;
+  double   **phi;     /* expected num times each state visited in HMM*/
+
+  fill_phi_cp9(cp9, &phi, 1, FALSE);
+
+  fprintf(fp, "# model_name: %s\n", name);
+  fprintf(fp, "# number_of_nodes: %d\n", cp9->M);
+  fprintf(fp, "# columns: <node_idx> <expected_occupancy_match> <expected_occupancy_insert> <expected_occupancy_delete>\n");
+  for(k = 0; k <= cp9->M; k++) { 
+    fprintf(fp, "%d %.5f %.5f %.5f\n", k, phi[k][HMMMATCH], phi[k][HMMINSERT], phi[k][HMMDELETE]);
+  }
+  fprintf(fp, "//\n");
+
+  for(k = 0; k <= cp9->M; k++) free(phi[k]);
+  free(phi);
+
+  return;
+}
+
+/* Function: dump_fp7_occupancy_values()
+ * Date:     EPN, Tue Jul 17 19:22:57 2018 [Benasque]
+ *
+ * Purpose: Calculate and dump filter P7 HMM occupancy values, the
+ *          expected number of times each CM state is entered.
+ *
+ * Returns: void
+ */
+static void
+dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7)
+{
+  int       status;
+  int        k;
+  float     *mocc = NULL;
+  float     *iocc = NULL;
+
+  ESL_ALLOC(mocc, sizeof(float) * (p7->M+1));
+  ESL_ALLOC(iocc, sizeof(float) * (p7->M+1));
+
+  if (p7_hmm_CalculateOccupancy(p7, mocc, iocc) != eslOK) cm_Fail("Error in p7_hmm_CalculateOccupancy()");
+
+  fprintf(fp, "# model_name: %s\n", name);
+  fprintf(fp, "# number_of_nodes: %d\n", p7->M);
+  fprintf(fp, "# columns: <node_idx> <expected_occupancy_match> <expected_occupancy_insert> <expected_occupancy_delete>\n");
+  for(k = 0; k <= p7->M; k++) { 
+    fprintf(fp, "%d %.5f %.5f %.5f\n", k, mocc[k], iocc[k], 1. - mocc[k]);
+  }
+  fprintf(fp, "//\n");
+
+  free(mocc);
+  free(iocc);
+
+  return;
+  
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return; /* NEVERREACHED */
+}
