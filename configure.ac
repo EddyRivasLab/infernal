@@ -154,22 +154,24 @@ AC_SUBST(EASEL_LICENSE)
 AC_SUBST(EASEL_VERSION)
 AC_SUBST(EASEL_URL)
 
-AC_DEFINE_UNQUOTED(INFERNAL_DATE,      "$INFERNAL_DATE",      [Release date])
-AC_DEFINE_UNQUOTED(INFERNAL_COPYRIGHT, "$INFERNAL_COPYRIGHT", [Brief copyright statement])
-AC_DEFINE_UNQUOTED(INFERNAL_LICENSE,   "$INFERNAL_LICENSE",   [Brief license statement])
-AC_DEFINE_UNQUOTED(INFERNAL_VERSION,   "$INFERNAL_VERSION",   [Version number])
-AC_DEFINE_UNQUOTED(INFERNAL_URL,       "$INFERNAL_URL",       [Infernal web site])
+AC_DEFINE_UNQUOTED([INFERNAL_DATE],      ["$INFERNAL_DATE"],      [Release date])
+AC_DEFINE_UNQUOTED([INFERNAL_COPYRIGHT], ["$INFERNAL_COPYRIGHT"], [Brief copyright statement])
+AC_DEFINE_UNQUOTED([INFERNAL_LICENSE],   ["$INFERNAL_LICENSE"],   [Brief license statement])
+AC_DEFINE_UNQUOTED([INFERNAL_VERSION],   ["$INFERNAL_VERSION"],   [Version number])
+AC_DEFINE_UNQUOTED([INFERNAL_URL],       ["$INFERNAL_URL"],       [Infernal web site])
 
-AC_DEFINE_UNQUOTED(HMMER_DATE,      "$HMMER_DATE",      [HMMER release date])
-AC_DEFINE_UNQUOTED(HMMER_COPYRIGHT, "$HMMER_COPYRIGHT", [HMMER copyright])
-AC_DEFINE_UNQUOTED(HMMER_LICENSE,   "$HMMER_LICENSE",   [HMMER license])
-AC_DEFINE_UNQUOTED(HMMER_VERSION,   "$HMMER_VERSION",   [HMMER version])
-AC_DEFINE_UNQUOTED(HMMER_URL,       "$HMMER_URL",       [HMMER web site])
+AC_DEFINE_UNQUOTED([HMMER_DATE],         ["$HMMER_DATE"],         [Release date])
+AC_DEFINE_UNQUOTED([HMMER_COPYRIGHT],    ["$HMMER_COPYRIGHT"],    [Brief copyright statement])
+AC_DEFINE_UNQUOTED([HMMER_LICENSE],      ["$HMMER_LICENSE"],      [Brief license statement])
+AC_DEFINE_UNQUOTED([HMMER_VERSION],      ["$HMMER_VERSION"],      [Version number])
+AC_DEFINE_UNQUOTED([HMMER_URL],          ["$HMMER_URL"],          [HMMER web site])
 
-AC_DEFINE_UNQUOTED(EASEL_DATE,      "$EASEL_DATE",      [Easel release date])
-AC_DEFINE_UNQUOTED(EASEL_COPYRIGHT, "$EASEL_COPYRIGHT", [Easel copyright])
-AC_DEFINE_UNQUOTED(EASEL_LICENSE,   "$EASEL_LICENSE",   [Easel license])
-AC_DEFINE_UNQUOTED(EASEL_VERSION,   "$EASEL_VERSION",   [Easel version])
+AC_DEFINE_UNQUOTED([EASEL_DATE],         ["$EASEL_DATE"],         [Easel release date])
+AC_DEFINE_UNQUOTED([EASEL_COPYRIGHT],    ["$EASEL_COPYRIGHT"],    [Easel copyright])
+AC_DEFINE_UNQUOTED([EASEL_LICENSE],      ["$EASEL_LICENSE"],      [Easel license])
+AC_DEFINE_UNQUOTED([EASEL_VERSION],      ["$EASEL_VERSION"],      [Easel version])
+AC_DEFINE_UNQUOTED([EASEL_URL],          ["$EASEL_URL"],          [Easel web URL])
+
 
 # Figure out what host we're compiling on.
 # Three GNU scripts must be included in the distro: 

@@ -3189,7 +3189,6 @@ dump_cm_occupancy_values(FILE *fp, CM_t *cm)
 static void
 dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9)
 {
-  int       status;
   int        k;
   double   **phi;     /* expected num times each state visited in HMM*/
 
