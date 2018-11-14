@@ -430,6 +430,12 @@ else
 fi
 
 
+# We need python, specifically python3, for 'make check' and
+# some dev tools. Define @PYTHON3@ output variable to be the
+# path to python3, or the empty string.
+# 
+AC_PATH_PROG([PYTHON3], [python3])
+
 
 
 ################################################################
@@ -648,12 +654,24 @@ AC_OUTPUT
 echo "
 
 INFERNAL configuration:
-     compiler:             ${CC} ${CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${PTHREAD_CFLAGS} 
-     linker:               ${LDFLAGS}
-     libraries:            ${LIBS} ${PTHREAD_LIBS}
-     DP implementation:    ${impl_choice}
+    compiler:             ${CC} ${CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${PTHREAD_CFLAGS} 
+    linker:               ${LDFLAGS}
+    libraries:            ${LIBS} ${PTHREAD_LIBS}
+    DP implementation:    ${impl_choice}
+    python3:              ${ac_cv_path_PYTHON3}"
 
-"
+
+if test ${PYTHON3}; then echo "
+Now do 'make'  to build INFERNAL, and optionally:
+       'make check'  to run self tests,
+       'make install'  to install programs and man pages.";
+else echo "
+    (No python3 found, so 'make check' self tests are disabled.)
+
+Now do 'make'  to build INFERNAL, and optionally:
+       'make install'  to install programs and man pages.";
+fi
+
 
 
 

@@ -5,7 +5,8 @@ VPATH          = @srcdir@
 SQCLEVEL    = 1
 DEVSQCLEVEL = 2
 
-ESLDIR = @INFERNAL_ESLDIR@
+ESLDIR  = @INFERNAL_ESLDIR@
+PYTHON3 = @PYTHON3@
 
 # beautification magic stolen from git 
 #
@@ -24,12 +25,20 @@ endif
 
 
 check: 
+	@if ! test ${PYTHON3}; then\
+	    echo "No python3 found. 'make check' self tests are disabled.";\
+	    exit 1;\
+	fi
 	@echo 
 	@echo Running Infernal test suite...
 	@echo
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${SQCLEVEL} ${srcdir}/testsuite.sqc .. ${srcdir}/..
 
 devcheck: 
+	@if ! test ${PYTHON3}; then\
+	    echo "No python3 found. 'make devcheck' self tests are disabled.";\
+	    exit 1;\
+	fi
 	@echo 
 	@echo Running Infernal developer test suite...
 	@echo
