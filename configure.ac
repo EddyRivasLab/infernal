@@ -431,8 +431,9 @@ fi
 
 
 # We need python, specifically python3, for 'make check' and
-# some dev tools. Define @PYTHON3@ output variable to be the
-# path to python3, or the empty string.
+# some dev tools. Makefiles check for themselves, but we 
+# also check in ./configure, so we don't recommend
+# 'make check' to the user if they can't use it.
 # 
 AC_PATH_PROG([PYTHON3], [python3])
 
@@ -602,13 +603,16 @@ AC_SYS_LARGEFILE
 AC_CONFIG_HEADERS([easel/decoy_config.h])   # Put this first to keep gnu 'autoheader' from overwriting a real config file.
 AC_CONFIG_HEADERS(src/config.h)
 
-AC_CONFIG_FILES([Makefile])
-AC_CONFIG_FILES([src/Makefile])
-AC_CONFIG_FILES([testsuite/Makefile])
-AC_CONFIG_FILES([rmark/Makefile])
-AC_CONFIG_FILES([documentation/Makefile])
-AC_CONFIG_FILES([documentation/manpages/Makefile])
-AC_CONFIG_FILES([documentation/userguide/Makefile])
+# Infernal Makefiles.
+AC_CONFIG_FILES([ \
+  Makefile                         \
+  src/Makefile                     \
+  testsuite/Makefile               \
+  rmark/Makefile                   \
+  documentation/Makefile           \
+  documentation/manpages/Makefile  \
+  documentation/userguide/Makefile \
+  ])
 if test "$impl_choice" = "sse"; then
   AC_CONFIG_FILES([src/impl_sse/Makefile])
 fi
@@ -616,24 +620,34 @@ if test -d release-notes; then
   AC_CONFIG_FILES(release-notes/LICENSE.sh)
 fi
 
+
+# HMMER3 Makefiles.
+AC_CONFIG_FILES([ \
+  hmmer/Makefile                                    \
+  hmmer/src/Makefile                                \
+  hmmer/testsuite/Makefile                          \
+  hmmer/profmark/Makefile                           \
+  hmmer/src/impl_${impl_choice}/Makefile            \
+  hmmer/documentation/Makefile                      \
+  hmmer/documentation/man/Makefile                  \
+  hmmer/documentation/userguide/Makefile            \
+  hmmer/documentation/userguide/inclusions/Makefile \
+  hmmer/libdivsufsort/Makefile                      \
+  ])
+
 AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
-
-AC_CONFIG_FILES([hmmer/Makefile])
-AC_CONFIG_FILES([hmmer/documentation/Makefile])
-AC_CONFIG_FILES([hmmer/documentation/man/Makefile])
-AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
-AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
-AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
-
-AC_CONFIG_FILES([hmmer/libdivsufsort/Makefile])
 AC_CONFIG_HEADERS(hmmer/libdivsufsort/divsufsort.h)
 
+# Easel Makefiles.
+AC_CONFIG_FILES([ \
+  easel/Makefile               \
+  easel/miniapps/Makefile      \
+  easel/testsuite/Makefile     \
+  easel/documentation/Makefile \
+  ])
 AC_CONFIG_HEADERS([easel/esl_config.h])
 
-AC_CONFIG_FILES([easel/Makefile])
-AC_CONFIG_FILES([easel/miniapps/Makefile])
-AC_CONFIG_FILES([easel/testsuite/Makefile])
-AC_CONFIG_FILES([easel/documentation/Makefile])
+
 
 ################################################################
 # 14. AC_OUTPUT
@@ -664,12 +678,14 @@ INFERNAL configuration:
 if test ${PYTHON3}; then echo "
 Now do 'make'  to build INFERNAL, and optionally:
        'make check'  to run self tests,
-       'make install'  to install programs and man pages.";
+       'make install'  to install programs and man pages.
+";
 else echo "
     (No python3 found, so 'make check' self tests are disabled.)
 
 Now do 'make'  to build INFERNAL, and optionally:
-       'make install'  to install programs and man pages.";
+       'make install'  to install programs and man pages.
+";
 fi
 
 
