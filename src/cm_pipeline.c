@@ -1466,7 +1466,51 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
       if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
       prv_ntophits = hitlist->N;
-      if((status = pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq2search, ws, we, nwin, hitlist, opt_cm)) != eslOK) return status;
+
+      if(pli->do_trm_F3) { /* terminate after F3, and convert surviving windows to hits */
+        for(h = 0; h < nwin; h++) { 
+          /* create a hit from each window to be output at end of run, we do this (as opposed to 
+           * just outputting info on windows *here*) so that we can use our machinery for removing
+           * overlaps later before we output.
+           */
+          cm_tophits_CreateNextHit(hitlist, &hit);
+          hit->start    = ws[h];
+          hit->stop     = we[h];
+          hit->root     = -1; /* irrelevant in HMM only hit */
+          hit->mode     = TRMODE_J; /* irrelevant */
+          hit->score    = wb[h];
+          
+          hit->cm_idx   = pli->cur_cm_idx;
+          hit->clan_idx = pli->cur_clan_idx;
+          hit->seq_idx  = pli->cur_seq_idx;
+          hit->pass_idx = pli->cur_pass_idx;
+          hit->pvalue   = 0.; /* irrelevant */
+          hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
+          
+          hit->hmmonly    = TRUE;
+          hit->glocal     = FALSE; /* all HMM hits are local */
+          hit->bias       = 0.; /* irrelevant */
+          hit->evalue     = 0.; /* irrelevant */
+          hit->has_evalue = FALSE;
+          hit->ad         = NULL;
+          
+          if (pli->mode == CM_SEARCH_SEQS) { 
+            if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            /* special for do_trm_F3: description gets overwritten as query name */
+            if ((status  = esl_strdup(om->name, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+          }
+          else { /* SCAN mode */
+            if ((status  = esl_strdup(om->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            if ((status  = esl_strdup(om->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            /* special for do_trm_F3: description gets overwritten as query name */
+            if ((status  = esl_strdup(sq->name, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+          }
+        }
+      } /* end of 'if(pli->do_trm_F3)' */
+      else { 
+        if((status = pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq2search, ws, we, nwin, hitlist, opt_cm)) != eslOK) return status;
+      }
     }
     else { /* normal case, p != PLI_PASS_HMM_ONLY_ANY */
       /* Use HMM to define envelopes, if nec.
@@ -1485,53 +1529,10 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
         
-        if(pli->do_trm_F3) { /* terminate after F3, and convert surviving windows to hits */
-          for(h = 0; h < nwin; h++) { 
-            /* create a hit from each window to be output at end of run, we do this (as opposed to 
-             * just outputting info on windows *here*) so that we can use our machinery for removing
-             * overlaps later before we output.
-             */
-            cm_tophits_CreateNextHit(hitlist, &hit);
-            hit->start    = ws[h];
-            hit->stop     = we[h];
-            hit->root     = -1; /* irrelevant in HMM only hit */
-            hit->mode     = TRMODE_J; /* irrelevant */
-            hit->score    = wb[h];
-            
-            hit->cm_idx   = pli->cur_cm_idx;
-            hit->clan_idx = pli->cur_clan_idx;
-            hit->seq_idx  = pli->cur_seq_idx;
-            hit->pass_idx = pli->cur_pass_idx;
-            hit->pvalue   = 0.; /* irrelevant */
-            hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
-            
-            hit->hmmonly    = TRUE;
-            hit->glocal     = FALSE; /* all HMM hits are local */
-            hit->bias       = 0.; /* irrelevant */
-            hit->evalue     = 0.; /* irrelevant */
-            hit->has_evalue = FALSE;
-            hit->ad         = NULL;
-            
-            if (pli->mode == CM_SEARCH_SEQS) { 
-              if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-              if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-              /* special for do_trm_F3: description gets overwritten as query name */
-              if ((status  = esl_strdup(om->name, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-            }
-            else { /* SCAN mode */
-              if ((status  = esl_strdup(om->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-              if ((status  = esl_strdup(om->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-              /* special for do_trm_F3: description gets overwritten as query name */
-              if ((status  = esl_strdup(sq->name, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-            }
-          }
-        }
-        else { 
 #if eslDEBUGLEVEL >= 3
-          printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
+        printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-          if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(np7envA[p]))) != eslOK) return status;
-        } 
+        if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(np7envA[p]))) != eslOK) return status;
       } /* end of if(pli->do_edef) */         
     } /* end of 'else' entered if p != PLI_PASS_HMM_ONLY_ANY */
     if(ws    != NULL) { free(ws);    ws   = NULL; }
