@@ -229,8 +229,7 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
   /* name           type          default env   range toggles reqs                             incomp  help                                                         docgroup*/
-  { "--trmF3",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--nohmmonly,--notrunc", NULL,   "terminate after Stage 3 Fwd and output surviving windows",       106 },
-  /* Options for control of what types of truncated hits are allowed */
+  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 SSV; for timing expts",          107 },

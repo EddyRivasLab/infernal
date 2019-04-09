@@ -43,7 +43,6 @@ struct dbfiles {
   ESL_NEWSSI *nssi;
 };
   
-
 static struct dbfiles *open_dbfiles(ESL_GETOPTS *go, char *basename);
 static void            close_dbfiles(struct dbfiles *dbf, int status);
 
@@ -88,16 +87,6 @@ main(int argc, char **argv)
     {
       if (cm->name == NULL)                              ESL_XFAIL(eslEINVAL, errbuf, "Every CM must have a name to be indexed. Failed to find name of CM #%d\n", ncm+1);
       if (cm->fp7  == NULL || (! (cm->flags & CMH_FP7))) ESL_XFAIL(eslEINVAL, errbuf, "CM %s (#%d) does not have a filter HMM", cm->name, ncm+1); 
-
-      /* Check if we have E-value stats, we need them. We could allow
-       * models with 0 basepairs to be pressed without E-value stats,
-       * (e.g. cmsearch can be run on a 0 basepair noncalibrated
-       * model) but then using -g or --nohmmonly with cmscan would
-       * cause a failure. Also, cmpress is meant to be used with a
-       * stable library of CMs and I think requiring a calibration for
-       * all models in the library is reasonable.
-       */ 
-      if (! (cm->flags & CMH_EXPTAIL_STATS)) ESL_XFAIL(eslEINVAL, errbuf, "CMs must have E-value statistics to be press'd. Failed to find stats for CM #%d\n", ncm+1);
 
       if (ncm == 0) { /* first time initialization, now that alphabet is known */
 	bg = p7_bg_Create(abc);
