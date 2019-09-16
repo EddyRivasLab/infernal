@@ -69,8 +69,7 @@ m4_include([easel/m4/esl_vmx.m4])
 m4_include([easel/m4/ax_mpi.m4])
 m4_include([easel/m4/ax_pthread.m4])
 
-
-
+m4_include([easel/m4/esl_pic_flags.m4])
 
 ################################################################
 # 2. AC_INIT
@@ -224,6 +223,8 @@ AC_ARG_ENABLE(vmx,     [AS_HELP_STRING([--enable-vmx],     [enable our Altivec/V
 AC_ARG_ENABLE(threads, [AS_HELP_STRING([--enable-threads], [enable POSIX threads parallelization])],     enable_threads=$enableval, enable_threads=check)
 AC_ARG_ENABLE(mpi,     [AS_HELP_STRING([--enable-mpi],     [enable MPI parallelization])],               enable_mpi=$enableval,     enable_mpi=no)
 
+AC_ARG_ENABLE(pic,     [AS_HELP_STRING([--enable-pic],     [enable position-independent code])],        enable_pic=$enableval,     enable_pic=no)
+
 # If a vector implementation is force-selected, make sure only one is,
 # and turn off checking for the others.
 vecsel=0
@@ -293,6 +294,10 @@ if test "$enable_mpi" = "yes"; then
     AC_MSG_ERROR([MPI library not found for --enable-mpi]))
 fi
 
+# PIC :
+if test "$enable_pic" = "yes"; then
+   ESL_PIC_FLAGS
+fi
 
 # Support for POSIX multithreading (we should generally have this)
 #
