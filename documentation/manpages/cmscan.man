@@ -745,7 +745,7 @@ output file, and clan information can only be input using the
 option.
 
 .TP
-.BI --oskip " <f>"
+.B --oskip
 Omit any hit h from the tabular output file that satisifies the
 following: another hit h2 overlaps with h and the E-value of h2 is
 lower than that of h. Hit h will not appear in the tabular output
