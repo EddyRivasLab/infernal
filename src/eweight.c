@@ -45,7 +45,6 @@ cm_eweight_target_f(double Neff, void *params, double *ret_fx)
 {
   struct ew_param_s *p = (struct ew_param_s *) params;
   int v, i;
-  /*printf("cm_eweight_target_f() Neff:  %f\n", Neff); */
 
   /* copy parameters from to p->*_orig to CM arrays */
   for (v = 0; v < p->cm->M; v++) {
@@ -109,13 +108,16 @@ hmm_eweight_target_f(double Neff, void *params, double *ret_fx)
  *            emissions are marginalized, treating pair emitting states
  *            effectively as a pair of singlet emitting states. 
  *            
+ *            Minimum allowed Neff is <min_Neff>. Maximum allowed Neff
+ *            is <max_Neff> (new as of v1.1.3, controllable via
+ *            cmbuild cmdline option --emaxseq).)
  *
  * Returns:   <eslOK> on success. 
  *
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff)
+cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, double max_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff)
 {
   int status;
   ESL_ROOTFINDER *R = NULL;
@@ -153,13 +155,23 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
 
   /* First, check if min_Neff gives a rel entropy >= e.target, if so
    * set Neff to min_Neff.  In this case its impossible to get a Neff
-   * < min_Neff that a relent == etarget, so we use min_Neff;
+   * < min_Neff such that a relent == etarget, so we use min_Neff;
    */
   Neff = min_Neff;
   if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(Neff, &p, &fx)) != eslOK)    goto ERROR; } 
   else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK)     goto ERROR; } 
+
   if(fx < 0.) { /* an Neff > min_Neff that gives a rel entropy of p.etarget is achievable, find it */
-    Neff = (double) cm->nseq;
+
+    /* check if max_Neff gives a rel_entropy < e.target, if so set
+     * Neff to max_Neff.  In this case its impossible to get a Neff >
+     * max_Neff such that relent == etarget, so we use max_Neff;
+     * (max_Neff is typically cm->nseq (for cmbuild, this it's 
+     * cm->nseq unless --emaxseq is used on cmdline). Using
+     * max_Neff in this way is new in v1.1.3, in versions 1.1.2
+     * and earlier max_Neff was fixed at cm->nseq.
+     */
+    Neff = max_Neff;
     if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(Neff, &p, &fx)) != eslOK)    goto ERROR; } 
     else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK)     goto ERROR; } 
     
@@ -167,7 +179,7 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
       if(pretend_cm_is_hmm) { if ((R = esl_rootfinder_Create(hmm_eweight_target_f, &p))    == NULL) {status = eslEMEM; goto ERROR;} }
       else                  { if ((R = esl_rootfinder_Create(cm_eweight_target_f, &p))     == NULL) {status = eslEMEM; goto ERROR;} }
       esl_rootfinder_SetAbsoluteTolerance(R, 0.01); /* getting Neff to ~2 sig digits is fine */
-      if ((status = esl_root_Bisection(R, 0., (double) cm->nseq, &Neff)) != eslOK) goto ERROR;
+      if ((status = esl_root_Bisection(R, 0., max_Neff, &Neff)) != eslOK) goto ERROR;
       
       esl_rootfinder_Destroy(R);
     }

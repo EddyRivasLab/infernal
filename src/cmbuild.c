@@ -88,6 +88,7 @@ static ESL_OPTIONS options[] = {
   { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set CM target relative entropy to <x>",             5 },
   { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "set eff seq # for all models to <x>",                           5 },
   { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",      5 },
+  { "--emaxseq", eslARG_REAL,      NULL,    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set maximum effective sequence number to <x>",      5 },
   { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",           5 }, 
   { "--esigma",  eslARG_REAL,    "45.0",    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set sigma param to <x>",                            5 },
 
@@ -689,6 +690,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
   if (esl_opt_IsUsed(go, "--ere"))         { fprintf(ofp, "# minimum rel entropy target:                         %f bits\n",   esl_opt_GetReal(go, "--ere")); }
   if (esl_opt_IsUsed(go, "--eset"))        { fprintf(ofp, "# effective seq number:                               set to %f\n", esl_opt_GetReal(go, "--eset")); }
   if (esl_opt_IsUsed(go, "--eminseq"))     { fprintf(ofp, "# minimum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--eminseq")); }
+  if (esl_opt_IsUsed(go, "--emaxseq"))     { fprintf(ofp, "# maximum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--emaxseq")); }
   if (esl_opt_IsUsed(go, "--ehmmre"))      { fprintf(ofp, "# minimum ML CP9 HMM rel entropy target:              %f bits\n",   esl_opt_GetReal(go, "--ehmmre")); }
   if (esl_opt_IsUsed(go, "--esigma"))      { fprintf(ofp, "# entropy target sigma parameter:                     %f bits\n",   esl_opt_GetReal(go, "--esigma")); }
 
@@ -1735,14 +1737,21 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
 	 etarget = set_target_relent(go, cm->abc, clen, CMCountNodetype(cm, MATP_nd));
        }
 
-       status = cm_EntropyWeight(cm, pri, etarget, esl_opt_GetReal(go, "--eminseq"), FALSE, &hmm_re, &neff);
+       status = cm_EntropyWeight(cm, pri, etarget, 
+                                 esl_opt_GetReal(go, "--eminseq"), 
+                                 (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                 FALSE, &hmm_re, &neff);
        /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
 	* recalculate neff so HMM relative entropy of <x> is achieved.
 	*/
        if( esl_opt_IsOn(go, "--ehmmre")) { 
 	 hmm_etarget = esl_opt_GetReal(go, "--ehmmre"); 
+         printf("hmm_etarget: %f\n", hmm_etarget);
 	 if(hmm_re < hmm_etarget) { 
-	   status = cm_EntropyWeight(cm, pri, hmm_etarget, esl_opt_GetReal(go, "--eminseq"), TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+	   status = cm_EntropyWeight(cm, pri, hmm_etarget, 
+                                     esl_opt_GetReal(go, "--eminseq"), 
+                                     (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                     TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
 	   if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
 	   else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
 	   used_hmm_etarget = TRUE;
@@ -2103,7 +2112,10 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
        */
       if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) return status;
       fhmm_re = p7_MeanMatchRelativeEntropy(fhmm, cfg->fp7_bg);
-      status = cm_EntropyWeight(acm, cfg->pri, fhmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+      
+      status = cm_EntropyWeight(acm, cfg->pri, fhmm_re, esl_opt_GetReal(go, "--eminseq"), 
+                                (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
       acm->eff_nseq = neff;
