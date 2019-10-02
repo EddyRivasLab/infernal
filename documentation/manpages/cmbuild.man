@@ -323,16 +323,20 @@ is the default, and can be turned off with
 .B --enone.
 The default target mean match state relative entropy is 0.59 bits for
 models with at least 1 basepair and 0.38 bits for models with zero
-basepairs, but 
+basepairs, but can be
 changed with
 .B --ere.
 The default of 0.59 or 0.38 bits is automatically changed if the total
 relative entropy of the model (summed match state relative entropy)
-is less than a cutoff, which is
-is 6.0 bits by default, but can be changed with the expert, undocumented
-.B --eX 
+is less than a cutoff, which is controlled by the 
+.B --esigma
 option. If you really want to play with that option, consult the
 source code.
+Additionally, the effective sequence number cannot be larger than the
+number of sequences in the alignment, although this can be overridden
+to set the maximum possible effective sequence number with the 
+.B --emaxseq
+option.
 
 .TP 
 .B --enone
@@ -351,6 +355,14 @@ basepairs.
 .BI --eminseq " <x>"
 Define the minimum allowed effective sequence number as
 .I <x>.
+
+.TP 
+.BI --emaxseq " <x>"
+Define the maximum allowed effective sequence number as
+.I <x>.
+This number can be larger than the number of sequences in the
+alignment. Note that 
+
 
 .TP 
 .BI --ehmmre " <x>"

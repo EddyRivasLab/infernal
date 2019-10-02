@@ -474,7 +474,10 @@
 1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0  -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:trna/esig     @src/cmbuild@ --esig 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
+1  exercise  build:trna/esig     @src/cmbuild@ --esigma 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
+1  exercise  build:pkhav/emx1    @src/cmbuild@ --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  exercise  build:pkhav/emx2    @src/cmbuild@ --emaxseq 5.0 --esigma 60. -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  exercise  build:pkhav/emx2    @src/cmbuild@ --emaxseq 5.0 --esigma 80. -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 
 # --refine
 1  exercise  build:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
