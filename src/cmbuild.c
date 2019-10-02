@@ -2073,6 +2073,10 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
      * also set cfg->fp7_bld->arch_strategy as p7_ARCH_HAND.
      */
     amsa = esl_msa_Clone(msa);
+    /* if msa had bit score cutoffs, get rid of those, they pertain to the CM, not to the HMM */
+    amsa->cutset[eslMSA_GA1] = amsa->cutset[eslMSA_GA2] = FALSE;
+    amsa->cutset[eslMSA_TC1] = amsa->cutset[eslMSA_TC2] = FALSE;
+    amsa->cutset[eslMSA_NC1] = amsa->cutset[eslMSA_NC2] = FALSE;
     if(amsa->rf != NULL) free(amsa->rf);
     ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
     if(! (cm->flags & CMH_MAP)) { cm_Fail("Unable to create additional p7 HMM, CM has no map, this shouldn't happen"); }
