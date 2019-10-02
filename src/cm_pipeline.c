@@ -3803,6 +3803,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
   ESL_DSQ         *subdsq;            /* a ptr to the first position of a window */
   ESL_SQ          *seq = NULL;        /* a copy of a window */
   int64_t          wlen;              /* window length of current window */
+  int64_t          prv_sqto;          /* stop position of previous hit, within window, for checking for overlaps */
   int              env_len;           /* envelope length */
   float            nullsc;            /* null model score */
   float            avgpp;             /* average PP of emitted residues in a P7_ALIDISPLAY */
@@ -3821,6 +3822,17 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
   float nullsc2;
   float dom_bias;
   float dom_score;
+
+  /* variables necessary for researching one of two overlapping windows
+   * in case that p7_domaindef_ByPosteriorHeuristics() returns overlapping
+   * domains
+   */
+  int64_t *rerun_ws = NULL;  /* [0..i..rerun_nwin-1], start positions in sq for window i to rerun */
+  int64_t *rerun_we = NULL;  /* [0..i..rerun_nwin-1], end positions in sq for window i to rerun */
+  int64_t  cur_rerun_ws;     /* current start position for a window to rerun */
+  int64_t  cur_rerun_we;     /* current end position for a window to rerun */
+  int      rerun_nwin   = 0; /* number of windows to rerun */
+  int      rerun_nalloc = 0; /* current allocated size for rerun_ws and rerun_we */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0)  return eslOK;    /* if there's no windows, return */
@@ -3873,127 +3885,172 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 
     /* For each domain found in the p7_domaindef_*() function, determine if it passes our criteria */
     for(d = 0; d < pli->ddef->ndom; d++) { 
-      /* make nhmmer score adjustment from p7_pipeline.c::postMSV_LongTarget() as of SVN r3976
-       * comments from relevant part of that function are below:  
-       * 
-       * note: the initial bitscore of a hit depends on the window_len of the
-       * current window. Here, the score is modified (reduced) by treating
-       * all passing windows as though they came from windows of length
-       * om->max_length. For details, see
-       * ~wheelert/notebook/2012/0130_bits_v_evalues/00NOTES (Feb 1)
-       *
-       * adjust the score of a hit to account for the full length model - the characters outside the envelope but in the window 
-       * end of p7_pipeline.c comments
-       * 
-       * I define variables with identical names to
-       * p7_pipeline.c::postMSV_LongTarget() to make it obvious that
-       * I'm doing exactly the same thing.
+      /* check if this domain overlaps with the previous one, if so
+       * recursively call pli_final_stage_hmmonly with the
+       * next window only, this prevents any overlapping
+       * residues between HMM hits, which is important because overlap
+       * removal code doesn't tolerate any overlapping nucleotides
+       * (because CM pipeline implementations do not allow them)
        */
-      env_len = pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv + 1;
-      ali_len = pli->ddef->dcl[d].jali - pli->ddef->dcl[d].iali + 1;
-      bitscore = pli->ddef->dcl[d].envsc;
-      window_len = wlen;
-      /* For these modifications, see notes, ~/notebook/2010/0716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010 */
-      bitscore -= 2 * log(2. / (window_len+2))          +   (env_len-ali_len)            * log((float)window_len / (window_len+2));
-      bitscore += 2 * log(2. / (loc_window_length+2));
-      /* the ESL_MAX test handles the extremely rare case that the env_len is actually larger than om->max_length */
-      bitscore +=  (ESL_MAX(loc_window_length, env_len) - ali_len) * log((float)loc_window_length / (float) (loc_window_length+2));
+      if((d > 0) && (pli->ddef->dcl[d].ad->sqfrom <= prv_sqto)) { 
+        /* overlap of >= 1 positions */
+        cur_rerun_ws = prv_sqto + ws[i] - 1 + 1;
+        cur_rerun_we = pli->ddef->dcl[d].ad->sqto + ws[i] - 1; 
+        if(cur_rerun_ws <= cur_rerun_we) { 
+          /* window length to research is >= 1 */
+          if(rerun_nwin == rerun_nalloc) { 
+            rerun_nalloc += 10;
+            ESL_REALLOC(rerun_ws, sizeof(int64_t) * rerun_nalloc); /* yes this works on initial allocation (if rerun_ws == NULL) */
+            ESL_REALLOC(rerun_we, sizeof(int64_t) * rerun_nalloc);
+          }
+          rerun_ws[rerun_nwin] = cur_rerun_ws;
+          rerun_we[rerun_nwin] = cur_rerun_we;
+          rerun_nwin++;
+        }
+        /* Free the P7_ALIDISPLAY */
+        prv_sqto = pli->ddef->dcl[d].ad->sqto;
+        p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
+        pli->ddef->dcl[d].ad = NULL;
+      }
+      else { 
+        /* only store the hit if it didn't overlap with the previous one */
+
+        /* make nhmmer score adjustment from p7_pipeline.c::postMSV_LongTarget() as of SVN r3976
+         * comments from relevant part of that function are below:  
+         * 
+         * note: the initial bitscore of a hit depends on the window_len of the
+         * current window. Here, the score is modified (reduced) by treating
+         * all passing windows as though they came from windows of length
+         * om->max_length. For details, see
+         * ~wheelert/notebook/2012/0130_bits_v_evalues/00NOTES (Feb 1)
+         *
+         * adjust the score of a hit to account for the full length model - the characters outside the envelope but in the window 
+         * end of p7_pipeline.c comments
+         * 
+         * I define variables with identical names to
+         * p7_pipeline.c::postMSV_LongTarget() to make it obvious that
+         * I'm doing exactly the same thing.
+         */
+        env_len = pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv + 1;
+        ali_len = pli->ddef->dcl[d].jali - pli->ddef->dcl[d].iali + 1;
+        bitscore = pli->ddef->dcl[d].envsc;
+        window_len = wlen;
+        /* For these modifications, see notes, ~/notebook/2010/0716_hmmer_score_v_eval_bug/, end of Thu Jul 22 13:36:49 EDT 2010 */
+        bitscore -= 2 * log(2. / (window_len+2))          +   (env_len-ali_len)            * log((float)window_len / (window_len+2));
+        bitscore += 2 * log(2. / (loc_window_length+2));
+        /* the ESL_MAX test handles the extremely rare case that the env_len is actually larger than om->max_length */
+        bitscore +=  (ESL_MAX(loc_window_length, env_len) - ali_len) * log((float)loc_window_length / (float) (loc_window_length+2));
       
-      dom_bias   = pli->do_null2_hmmonly ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0;
-      dom_score  = (bitscore - (nullsc2 + dom_bias))  / eslCONST_LOG2;
+        dom_bias   = pli->do_null2_hmmonly ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0;
+        dom_score  = (bitscore - (nullsc2 + dom_bias))  / eslCONST_LOG2;
+        prv_sqto   = pli->ddef->dcl[d].ad->sqto;
       
-      if(dom_score >= pli->T) { 
-	cm_tophits_CreateNextHit(hitlist, &hit);
-	/* We define hit start/stop based on P7_ALIDISPLAY
-	 * sqfrom/sqto instead of envelope boundaries, to be consistent
-	 * with non-hmmonly pipeline runs, CM hit start/stop always
-	 * matches CM_ALIDISPLAY sqfrom/sqto.
-	 */
-	pli->ddef->dcl[d].ad->sqfrom += ws[i] - 1;
-	pli->ddef->dcl[d].ad->sqto   += ws[i] - 1;
-	hit->start    = pli->ddef->dcl[d].ad->sqfrom;
-	hit->stop     = pli->ddef->dcl[d].ad->sqto;
-	hit->root     = -1; /* irrelevant in HMM only hit */
-	hit->mode     = TRMODE_J;
-	hit->score    = dom_score;
+        if(dom_score >= pli->T) { 
+          cm_tophits_CreateNextHit(hitlist, &hit);
+          /* We define hit start/stop based on P7_ALIDISPLAY
+           * sqfrom/sqto instead of envelope boundaries, to be consistent
+           * with non-hmmonly pipeline runs, CM hit start/stop always
+           * matches CM_ALIDISPLAY sqfrom/sqto.
+           */
+          pli->ddef->dcl[d].ad->sqfrom += ws[i] - 1;
+          pli->ddef->dcl[d].ad->sqto   += ws[i] - 1;
+          hit->start    = pli->ddef->dcl[d].ad->sqfrom;
+          hit->stop     = pli->ddef->dcl[d].ad->sqto;
+          hit->root     = -1; /* irrelevant in HMM only hit */
+          hit->mode     = TRMODE_J;
+          hit->score    = dom_score;
 
-	hit->cm_idx   = pli->cur_cm_idx;
-	hit->clan_idx = pli->cur_clan_idx;
-	hit->seq_idx  = pli->cur_seq_idx;
-	hit->pass_idx = pli->cur_pass_idx;
-	hit->pvalue   = esl_exp_surv (hit->score,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-	hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
+          hit->cm_idx   = pli->cur_cm_idx;
+          hit->clan_idx = pli->cur_clan_idx;
+          hit->seq_idx  = pli->cur_seq_idx;
+          hit->pass_idx = pli->cur_pass_idx;
+          hit->pvalue   = esl_exp_surv (hit->score,  p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+          hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
 
-	hit->hmmonly  = TRUE;
-	hit->glocal   = FALSE; /* all HMM hits are local (currently) */
-	hit->bias     = dom_bias;
-	hit->evalue   = 0.; /* we'll redefine this later */
+          hit->hmmonly  = TRUE;
+          hit->glocal   = FALSE; /* all HMM hits are local (currently) */
+          hit->bias     = dom_bias;
+          hit->evalue   = 0.; /* we'll redefine this later */
 
-	/* create a CM_ALIDISPLAY from the P7_ALIDISPLAY */
-	avgpp = pli->ddef->dcl[d].oasc / (1.0 + fabs((float) (pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv)));
-	if((status = cm_alidisplay_CreateFromP7(cm, pli->errbuf, sq, hit->start, hit->score, avgpp, pli->ddef->dcl[d].ad, &(hit->ad))) != eslOK) return status;
-	/* Free the P7_ALIDISPLAY */
-	p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
-	pli->ddef->dcl[d].ad = NULL;
+          /* create a CM_ALIDISPLAY from the P7_ALIDISPLAY */
+          avgpp = pli->ddef->dcl[d].oasc / (1.0 + fabs((float) (pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv)));
+          if((status = cm_alidisplay_CreateFromP7(cm, pli->errbuf, sq, hit->start, hit->score, avgpp, pli->ddef->dcl[d].ad, &(hit->ad))) != eslOK) return status;
+          /* Free the P7_ALIDISPLAY */
+          p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
+          pli->ddef->dcl[d].ad = NULL;
 
 #if eslDEBUGLEVEL >= 3
-	printf("#DEBUG: SURVIVOR envelope     [%10ld..%10ld] survived Final HMM ONLY stage    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
+          printf("#DEBUG: SURVIVOR envelope     [%10ld..%10ld] survived Final HMM ONLY stage    %6.2f bits  P %g\n", hit->start, hit->stop, hit->score, hit->pvalue);
 #endif
       
-	if (pli->mode == CM_SEARCH_SEQS) { 
-	  if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-	  if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-	  if (sq->desc[0] != '\0' && (status  = esl_strdup(sq->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-	} 
-	else {
-	  if ((status  = esl_strdup(cm->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-	  if ((status  = esl_strdup(cm->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-	  if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-	}
-	/* Finally, if we're using model-specific bit score thresholds,
-	 * determine if the significance of the hit (is it reported
-	 * and/or included?)  Adapted from Sean's comments at an
-	 * analogous point in p7_pipeline():
-	 *
-	 * If we're using model-specific bit score thresholds (GA | TC | NC)
-	 * and we're in a cmscan pipeline (mode = CM_SCAN_MODELS), then we
-	 * *must* apply those reporting or inclusion thresholds now, because
-	 * this model is about to go away; we won't have its thresholds
-	 * after all targets have been processed.
-	 * 
-	 * If we're using E-value thresholds and we don't know the
-	 * search space size (Z_setby == CM_ZSETBY_NTARGETS), we 
-	 * *cannot* apply those thresholds now, and we *must* wait 
-	 * until all targets have been processed (see cm_tophits_Threshold()).
-	 * 
-	 * For any other thresholding, it doesn't matter whether we do
-	 * it here (model-specifically) or at the end (in
-	 * cm_tophits_Threshold()). 
-	 * 
-	 * What we actually do, then, is to set the flags if we're using
-	 * model-specific score thresholds (regardless of whether we're
-	 * in a scan or a search pipeline); otherwise we leave it to 
-	 * cm_tophits_Threshold(). cm_tophits_Threshold() is always
-	 * responsible for *counting* the reported, included sequences.
-	 * 
-	 * [xref J5/92]
-	 */
-	if (pli->use_bit_cutoffs) { 
-	  if (cm_pli_TargetReportable(pli, hit->score, hit->evalue)) { /* evalue is invalid, but irrelevant if pli->use_bit_cutoffs */
-	    hit->flags |= CM_HIT_IS_REPORTED;
-	    if (cm_pli_TargetIncludable(pli, hit->score, hit->evalue)) /* ditto */
-	      hit->flags |= CM_HIT_IS_INCLUDED;
-	  }
-	}
-      }
-    } /* end of for(d = 0; d < pli->ddef->ndom; d++) */
+          if (pli->mode == CM_SEARCH_SEQS) { 
+            if (                       (status  = esl_strdup(sq->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            if (sq->acc[0]  != '\0' && (status  = esl_strdup(sq->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            if (sq->desc[0] != '\0' && (status  = esl_strdup(sq->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+          } 
+          else {
+            if ((status  = esl_strdup(cm->name, -1, &(hit->name)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            if ((status  = esl_strdup(cm->acc,  -1, &(hit->acc)))   != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+            if ((status  = esl_strdup(cm->desc, -1, &(hit->desc)))  != eslOK) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
+          }
+          /* Finally, if we're using model-specific bit score thresholds,
+           * determine if the significance of the hit (is it reported
+           * and/or included?)  Adapted from Sean's comments at an
+           * analogous point in p7_pipeline():
+           *
+           * If we're using model-specific bit score thresholds (GA | TC | NC)
+           * and we're in a cmscan pipeline (mode = CM_SCAN_MODELS), then we
+           * *must* apply those reporting or inclusion thresholds now, because
+           * this model is about to go away; we won't have its thresholds
+           * after all targets have been processed.
+           * 
+           * If we're using E-value thresholds and we don't know the
+           * search space size (Z_setby == CM_ZSETBY_NTARGETS), we 
+           * *cannot* apply those thresholds now, and we *must* wait 
+           * until all targets have been processed (see cm_tophits_Threshold()).
+           * 
+           * For any other thresholding, it doesn't matter whether we do
+           * it here (model-specifically) or at the end (in
+           * cm_tophits_Threshold()). 
+           * 
+           * What we actually do, then, is to set the flags if we're using
+           * model-specific score thresholds (regardless of whether we're
+           * in a scan or a search pipeline); otherwise we leave it to 
+           * cm_tophits_Threshold(). cm_tophits_Threshold() is always
+           * responsible for *counting* the reported, included sequences.
+           * 
+           * [xref J5/92]
+           */
+          if (pli->use_bit_cutoffs) { 
+            if (cm_pli_TargetReportable(pli, hit->score, hit->evalue)) { /* evalue is invalid, but irrelevant if pli->use_bit_cutoffs */
+              hit->flags |= CM_HIT_IS_REPORTED;
+              if (cm_pli_TargetIncludable(pli, hit->score, hit->evalue)) /* ditto */
+                hit->flags |= CM_HIT_IS_INCLUDED;
+            }
+          }
+        }
+      } /* end of 'else' entered if this domain didn't overlap with previous one */
+    } /* end of for(d = 0; d < pli->ddef->ndom; d++) */ 
     pli->ddef->ndom = 0; /* reset for next use */
   } /* end of 'for(i = 0; i < win'... */
 
+  /* if we stored any windows to rerun due to overlaps, 
+   * rerun them now, with a recursive call to this function */
+  if(rerun_nwin > 0) { 
+    pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq, rerun_ws, rerun_we, rerun_nwin, hitlist, opt_cm);
+  }
+
   /* clean up, set return variables, and return */
   if(seq != NULL) esl_sq_Destroy(seq);
+  if(rerun_ws != NULL) free(rerun_ws);
+  if(rerun_we != NULL) free(rerun_we);
 
   return eslOK;
+
+ ERROR: 
+  if(rerun_ws != NULL) free(rerun_ws);
+  if(rerun_we != NULL) free(rerun_we);
+  ESL_FAIL(status, pli->errbuf, "out of memory");
 }
 
 /* Function:  pli_dispatch_cm_search()
