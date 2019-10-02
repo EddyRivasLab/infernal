@@ -671,7 +671,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(tinfo[0].pli->do_trm_F3) cm_tophits_SortByPosition(tinfo[0].th);
       else                        cm_tophits_SortByEvalue(tinfo[0].th);
 
-      /* TEMP cm_tophits_Dump(stdout, tinfo[0].th); */
+      /* cm_tophits_Dump(stdout, tinfo[0].th); */
 
       /* Enforce threshold */
       cm_tophits_Threshold(tinfo[0].th, tinfo[0].pli);
