@@ -3828,11 +3828,12 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
    * in case that p7_domaindef_ByPosteriorHeuristics() returns overlapping
    * domains
    */
-  int64_t *recursive_ws = NULL;
-  int64_t *recursive_we = NULL;
-  int      recursive_nwin = 0;
-  int      recursive_nalloc = 0;
-  void    *p;                 /* for ESL_RALLOC */
+  int64_t *rerun_ws = NULL;  /* [0..i..rerun_nwin-1], start positions in sq for window i to rerun */
+  int64_t *rerun_we = NULL;  /* [0..i..rerun_nwin-1], end positions in sq for window i to rerun */
+  int64_t  cur_rerun_ws;     /* current start position for a window to rerun */
+  int64_t  cur_rerun_we;     /* current end position for a window to rerun */
+  int      rerun_nwin   = 0; /* number of windows to rerun */
+  int      rerun_nalloc = 0; /* current allocated size for rerun_ws and rerun_we */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0)  return eslOK;    /* if there's no windows, return */
@@ -3893,21 +3894,26 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
        * (because CM pipeline implementations do not allow them)
        */
       if((d > 0) && (pli->ddef->dcl[d].ad->sqfrom <= prv_sqto)) { 
-        printf("HEYA OVERLAP, recursive call for window %ld .. %ld\n", prv_sqto + ws[i] - 1 + 1, pli->ddef->dcl[d].ad->sqto + ws[i] - 1); 
-
-        if(recursive_nwin == 0) { 
-          recursive_nalloc = 10;
-          ESL_ALLOC(recursive_ws, sizeof(int64_t) * recursive_nalloc);
-          ESL_ALLOC(recursive_we, sizeof(int64_t) * recursive_nalloc);
+        /* overlap of >= 1 positions */
+        cur_rerun_ws = prv_sqto + ws[i] - 1 + 1;
+        cur_rerun_we = pli->ddef->dcl[d].ad->sqto + ws[i] - 1; 
+        printf("HEYA overlap, candidate rerun region %ld to %ld\n", cur_rerun_ws, cur_rerun_we);
+        if(cur_rerun_ws <= cur_rerun_we) { 
+          /* window length to research is >= 1 */
+          if(rerun_nwin == rerun_nalloc) { 
+            rerun_nalloc += 10;
+            ESL_REALLOC(rerun_ws, sizeof(int64_t) * rerun_nalloc); /* yes this works on initial allocation (if rerun_ws == NULL) */
+            ESL_REALLOC(rerun_we, sizeof(int64_t) * rerun_nalloc);
+          }
+          rerun_ws[rerun_nwin] = cur_rerun_ws;
+          rerun_we[rerun_nwin] = cur_rerun_we;
+          rerun_nwin++;
+          printf("HEYA overlap, rerun region %ld to %ld\n", cur_rerun_ws, cur_rerun_we);
         }
-        else if(recursive_nwin == recursive_nalloc) { 
-          recursive_nalloc += 10;
-          ESL_RALLOC(recursive_ws, p, sizeof(int64_t) * recursive_nalloc);
-          ESL_RALLOC(recursive_we, p, sizeof(int64_t) * recursive_nalloc);
-        }
-        recursive_ws[recursive_nwin] = prv_sqto + ws[i] - 1 + 1;
-        recursive_we[recursive_nwin] = pli->ddef->dcl[d].ad->sqto + ws[i] - 1; 
-        recursive_nwin++;
+        /* Free the P7_ALIDISPLAY */
+        prv_sqto = pli->ddef->dcl[d].ad->sqto;
+        p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
+        pli->ddef->dcl[d].ad = NULL;
       }
       else { 
         /* only store the hit if it didn't overlap with the previous one */
@@ -3940,6 +3946,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
       
         dom_bias   = pli->do_null2_hmmonly ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0;
         dom_score  = (bitscore - (nullsc2 + dom_bias))  / eslCONST_LOG2;
+        prv_sqto   = pli->ddef->dcl[d].ad->sqto;
       
         if(dom_score >= pli->T) { 
           cm_tophits_CreateNextHit(hitlist, &hit);
@@ -3948,7 +3955,6 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
            * with non-hmmonly pipeline runs, CM hit start/stop always
            * matches CM_ALIDISPLAY sqfrom/sqto.
            */
-          prv_sqto   = pli->ddef->dcl[d].ad->sqto;
           pli->ddef->dcl[d].ad->sqfrom += ws[i] - 1;
           pli->ddef->dcl[d].ad->sqto   += ws[i] - 1;
           hit->start    = pli->ddef->dcl[d].ad->sqfrom;
@@ -4031,21 +4037,22 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
     pli->ddef->ndom = 0; /* reset for next use */
   } /* end of 'for(i = 0; i < win'... */
 
-  if(recursive_nwin > 0) { 
-    pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq, recursive_ws, recursive_we, recursive_nwin, hitlist, opt_cm);
-    printf("HEYA BACK!\n");
+  /* if we stored any windows to rerun due to overlaps, 
+   * rerun them now, with a recursive call to this function */
+  if(rerun_nwin > 0) { 
+    pli_final_stage_hmmonly(pli, cm_offset, om, bg, p7_evparam, sq, rerun_ws, rerun_we, rerun_nwin, hitlist, opt_cm);
   }
 
   /* clean up, set return variables, and return */
   if(seq != NULL) esl_sq_Destroy(seq);
-  if(recursive_ws != NULL) free(recursive_ws);
-  if(recursive_we != NULL) free(recursive_we);
+  if(rerun_ws != NULL) free(rerun_ws);
+  if(rerun_we != NULL) free(rerun_we);
 
   return eslOK;
 
  ERROR: 
-  if(recursive_ws != NULL) free(recursive_ws);
-  if(recursive_we != NULL) free(recursive_we);
+  if(rerun_ws != NULL) free(rerun_ws);
+  if(rerun_we != NULL) free(rerun_we);
   ESL_FAIL(status, pli->errbuf, "out of memory");
 }
 
