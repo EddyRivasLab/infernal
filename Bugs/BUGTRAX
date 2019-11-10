@@ -1378,7 +1378,7 @@ pseudoknotted broken basepair are both correctly removed.
 
 //
 #### 
-####  1.1.2 release: June 2014
+####  1.1.2 release: 7 July 2016
 ####
 
 ID              i45
@@ -1466,6 +1466,7 @@ P7 HMM of that CM as its filter, because intuitively that makes sense:
 the CM is itself basically like an HMM and the ML P7 HMM is going to
 be as similar as a P7 HMM can possibly be to that HMM, so we should
 use it to filter.
+
 //
 
 ID              i48
@@ -1489,6 +1490,48 @@ fix, as Yuri suggested was simply to update the final comparison so
 that '0' is returned if all fields are equal, that is if both '<' and
 '>' comparisons of final field checked (and all other fields checked)
 returns false.
+
+//
+
+ID              i49
+TITLE		cmsearch/cmscan hmmonly missing overlapping hits
+STATUS          CLOSED
+XREF            NCBI: notebook/19_0923_vadr_jira_fp50_discont
+REPORTED_BY     Linda Yankie
+                JIRA:FP-50
+CLOSED_DATE     EPN, Sat Nov  9 16:25:25 2019
+DESCRIPTION    
+
+The hmmonly search/scan pipeline as implemented before the bug fix
+could return overlapping hits in the sequence, specifically by the
+p7_domaindef_ByPosteriorHeuristics() function. nhmmer will report both
+overlapping hits, but infernal assumes overlapping hits are redundant
+(identical hits that exist due to overlapping windows in the sequence
+that get analyzed independently by the search/scan pipeline as it
+splits up large sequences into overlapping chunks) and removes
+them. This is because all functions that return CM hits (as opposed to
+HMM hits) guarantee no overlaps. Also, post-processing tools that I've
+written assume no infernal output hits to the same model will
+overlap. I may have stated this in publications and documentation as
+well.
+
+We could either (A) allow overlaps in this hmmonly search case (like
+nhmmer) or (B) remove the overlaps (which 1.1.2 did before the bug
+fix), or (C) trim hits to remove overlaps. I implemented (C). (A) was
+undesirable because it would require too many changes to too many
+functions (assumption that no non-redundant hits overlap affects
+multiple functions). (B) was undesirable because sometimes the
+overlapping hits are significant (high bit scores) and only overlap by
+a few nucleotides out of many (e.g. 3 nt overlap between two 1000 nt
+long hits). The bug fix implemented (C) identifies when two hits
+returned by p7_domaindef_ByPosteriorHeuristics() overlap in
+cm_pipeline.c:pli_final_stage_hmmonly(), and calls
+p7_domaindef_ByPosteriorHeuristics() on a trimmed version of one of
+the two hits that overlap. This hit is trimmed such that it no longer
+overlaps with the other hit. So any hit returned by the secondary call
+to p7_domaindef_ByPosteriorHeuristics() is guaranteed to not overlap
+with any other hit, thus guaranteeing no non-redundant overlapping
+hits are returned from pli_final_stage_hmmonly().
 
 //
 
