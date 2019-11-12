@@ -27,96 +27,43 @@ https://github.com/EddyRivasLab/easel/wiki
 
 2. Create release branches of easel, hmmer and infernal.
 
-   (from https://github.com/EddyRivasLab/infernal/wiki)
+   See https://github.com/EddyRivasLab/infernal/wiki
+   ## **Making a release**
 
-   NOTE FOR THE 1.1.2 RELEASE I DID NOT FOLLOW THIS EXACTLY:
+   NOTE FOR THE 1.1.2 and 1.1.3 RELEASES I DID NOT FOLLOW THIS
+   EXACTLY:
    instead of finalizing the hmmer and easel releases completely
    before the 1.1.2 release, I waited until I was sure that 
    Infernal 1.1.2 was good to go, then I finalized those releases
    (merged to master and develop). 
-   See the notes underneath this block enclosed by ~~~~~~~~~~~~~
-   for details.
-
-   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   To make a release, you're going to make a release branch of the code,
-   and of any other repos it depends on. For example, for an Infernal
-   release, you're going to make release branches in HMMER and Easel
-   too. You assign appropriate version numbers to each, test and
-   stabilize. When everything is ready, you merge to master and tag that
-   commit with the version number; then you also merge back to develop,
-   and delete the release branch.
-
-   For example, here's the git flow for an Infernal release, depending on
-   HMMER and Easel. Suppose Infernal is currently at 1.1.2, HMMER is
-   currently at 3.2.1, and Easel is currently at 0.2.3. Suppose we decide
-   this release will be Infernal 1.2, and it depends on some new features
-   in HMMER so we need to make a new HMMER 3.2.2 release, but we can use
-   the last stable Easel release as it is. Then first we go over to Easel
-   and just make a tag:
-
-     $ cd easel
-     $ git checkout master
-     $ git tag -a infernal-1.2
-     $ git push origin infernal-1.2
-
-   then we go over to make a new release from HMMER3's h3-develop branch:
-
-     $ cd hmmer3
-     $ git checkout -b release-3.2.2 h3-develop
-       # change version numbers to 3.2.2; also dates, copyrights
-     $ git commit -a -m "Version number bumped to 3.2.2"
-       # do and commit any other work needed to test/stabilize H3 release
-     $ git checkout h3-master
-     $ git merge --no-ff release-3.2.2
-     $ git tag -a 3.2.2
-     $ git tag -a infernal-1.2    # This records that Infernal 1.2 release depends on HMMER 3.2.2
-       # Now merge release branch back to develop...
-     $ git checkout h3-develop
-     $ git merge --no-ff release-3.2.2
-     $ git branch -d release-3.2.2
-    
-   and finally, we do the same pattern on Infernal itself:
-
-     $ cd infernal
-     $ git checkout -b release-1.2 develop 
-       # change version numbers to 1.2; also dates, copyrights  
-     $ git commit -a -m "Version number bumped to 1.2"
-       # do and commit any other work needed to test/stabilize Infernal release
-     $ git checkout master
-     $ git merge --no-ff release-1.2
-     $ git tag -a 1.2
-       # Now merge release branch back to develop...
-     $ git checkout develop
-     $ git merge --no-ff release-1.2  
-     Dependencies always have a tag for their own release (Easel 0.2.4),
-     and may have additional tags for packages that depend on them
-     (HMMER 3.2.2 bundles Easel 0.2.4? Then there's a hmmer-3.2.2 tag
-     pointing to that Easel commit object).
-     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   See the notes below for details.
 
    - create easel release branch
 
      $ cd easel
      $ git checkout develop
 
-     # make sure develop is up to date with master (should be 0
-     # commits behind master) via github
+     # make sure develop is up to date with master (should be 0 or 1
+     # commit behind master (I think it's impossible to have them
+     # exactly even...)) via github
 
      $ git checkout -b release-0.43 develop
 
      # bump version and release date in configure.ac
+     # bump date in LICENSE
+
      # make sure it builds cleanly 
      # do the following on as many systems as are available
      # I did NCBI, my mac, EBI and Odyssey
-     # make check; make dev; testsuite/valgrind_report.pl . .
-     # (FOR 1.1.2, valgrind_report.pl didn't work at
-     # NCBI due to format of valgrind output and NCBI's
-     # version requires the --orig option for some reason.)
+     # In infernal: 'autoconf; sh ./configure', then 
+     # in easel: 'make; make check; make dev; testsuite/valgrind_report.pl'
+     # (1.1.3: add '--orig' option to 'valgrind' call in 
+     #  valgrind_report.pl to get it to work at NCBI.)
      #
      # do some anecdotal testing of miniapps, make sure
      # version, date are correct.
 
-     # push release branch to master
+     # push release branch to origin
      $ git push origin release-0.43
 
      # don't merge to master/develop or tag yet, wait
@@ -126,16 +73,17 @@ https://github.com/EddyRivasLab/easel/wiki
    - create hmmer release branch
 
      $ cd hmmer
-     $ git checkout h3-develop
+     $ git checkout develop
 
-     # make sure h3-develop is up to date with h3-master
-     # (I actually don't know how to do this because github only
-     # lists how many commits behind 'master' you are)
+     # make sure develop is up to date with master (should be 0 or 1
+     # commit behind master (I think it's impossible to have them
+     # exactly even...)) via github
 
      $ git checkout -b release-3.1b3 h3-develop
 
-     # bump version and release date of hmmer and easel
-     # in configure.ac
+     # bump version and release date in configure.ac
+     # bump date in LICENSE 
+
      # make sure it builds cleanly 
      # do the following on as many systems as are available
      # I did NCBI, my mac, EBI and Odyssey
@@ -184,10 +132,9 @@ https://github.com/EddyRivasLab/easel/wiki
 
 * Write the release notes in releases/.
   To gather information, check:
+   feature branches and commit messages on github
    Infernal Bugs/BUGTRAX - update this file to mark release that fixed
                            bugs, and divider indicating release.
-
-   feature branches and commit messages on github
 
    When done, git add the new RELEASE-xxx file.
 
