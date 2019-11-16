@@ -12,6 +12,16 @@ Infernal 1.1.3 is the third update release for Infernal 1.1.
    profile HMMs built with version 1.1.3 give slightly different
    scores compared to previous Infernal versions.
 
+ * cmpress and cmscan now work for non-calibrated models with zero
+   basepairs. Previously, to use cmpress and cmscan with a CM
+   database, all CMs in that database had to have been calibrated with
+   cmcalibrate, even those with zero basepairs. cmcalibrate determines
+   parameters for E-value statistics of CM hit results in cmsearch and
+   cmscan. Since HMM algorithms and not CM algorithms are used by
+   default in cmscan for models with zero basepairs, calibration is
+   not necessary. Calibration is still required prior to running
+   cmpress and cmscan with models with 1 or more basepairs. 
+
  * New cmbuild option --emaxseq for allowing effective number of
    sequences to exceed number of sequences in the alignment.
 

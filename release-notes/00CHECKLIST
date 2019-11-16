@@ -136,7 +136,7 @@ https://github.com/EddyRivasLab/easel/wiki
    Infernal Bugs/BUGTRAX - update this file to mark release that fixed
                            bugs, and divider indicating release.
 
-   When done, git add the new RELEASE-xxx file.
+   When done, git add the new RELEASE-xxx.md file.
 
 * Edit .bashrc
   I use the following environment variables in the scripting below:
