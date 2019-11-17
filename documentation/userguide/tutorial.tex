@@ -1166,8 +1166,8 @@ character.
 The Rfam database \url{http://rfam.xfam.org/} is a collection
 of RNA families, each represented by a CM and multiple sequence
 alignment used to build that CM. As of November 2019, the current release
-%                                      ^^^^^^^^^
-is 14.0, which includes 3016 families. The Rfam website allows
+%                                      ^^^^^^^^^^^^^
+is 14.1, which includes 3016 families. The Rfam website allows
 web-based searches using \prog{cmscan} of the Rfam CM database against
 query sequences that the user can upload. Alternatively, you can perform
 the same searches by running \prog{cmscan} locally, as shown in this
@@ -1176,11 +1176,11 @@ be annotating your dataset for most known types of structural RNAs
 with a single command.
 
 To complete this step of the tutorial you'll need to download the Rfam
-14.0 CM file from here: \\
-\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.0/Rfam.cm.gz} 
+14.1 CM file from here: \\
+\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.1/Rfam.cm.gz} 
 and gunzipping it, like this: 
 
-\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.0/Rfam.cm.gz} 
+\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.1/Rfam.cm.gz} 
 
 \user{gunzip Rfam.cm.gz}
 
@@ -1195,12 +1195,13 @@ options are required. Each of these options is explained below. The
 full command is (split up into two lines so it fits on the page): 
 
 \indent\indent\small\verb+> cmscan --rfam --cut_ga --nohmmonly --tblout mrum-genome.tblout --fmt 2 \+\\
-\indent\indent\small\verb+> --clanin testsuite/Rfam.14.0.clanin Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan+\\
+\indent\indent\small\verb+> --clanin testsuite/Rfam.14.1.clanin Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan+\\
 
 This command will take at least several minutes and possibly up to
 about 30 minutes depending on the number of cores and speed of your
 computer. 
 
+HERE HERE 
 The command line options used in the above command are as follows:
 
 \begin{sreitems}{\emprog{--nohmmonly}}
@@ -1252,32 +1253,31 @@ detail in section~\ref{section:tabular}.  Below I'm including the
 first 24 lines of the file, with columns 3-5, 7-9 and 13-16 removed
 (replaced with \prog{...}) so that the text will fit on this page:
 
-% TODO: replace this with 14.0 results
 \begin{tinysreoutput}
-#idx target name            ... clan name ... seq from   seq to strand ... score   E-value inc olp anyidx afrct1 afrct2 winidx wfrct1 wfrct2 description of target
-#--- ---------------------- ... --------- ... -------- -------- ------ ... ----- --------- --- --- ------ ------ ------ ------ ------ ------ ---------------------
-1    LSU_rRNA_archaea       ... CL00112   ...  762872   765862      +  ... 2763.5         0  !   ^       -      -      -      -      -      - -
-2    LSU_rRNA_archaea       ... CL00112   ... 2041329  2038338      -  ... 2755.0         0  !   ^       -      -      -      -      -      - -
-3    LSU_rRNA_bacteria      ... CL00112   ...  762874   765862      +  ... 1872.9         0  !   =       1  1.000  0.999      "      "      " -
-4    LSU_rRNA_bacteria      ... CL00112   ... 2041327  2038338      -  ... 1865.5         0  !   =       2  1.000  0.999      "      "      " -
-5    LSU_rRNA_eukarya       ... CL00112   ...  763018   765851      +  ... 1581.3         0  !   =       1  1.000  0.948      "      "      " -
-6    LSU_rRNA_eukarya       ... CL00112   ... 2041183  2038349      -  ... 1572.1         0  !   =       2  1.000  0.948      "      "      " -
-7    SSU_rRNA_archaea       ... CL00111   ... 2043361  2041888      -  ... 1552.0         0  !   ^       -      -      -      -      -      - -
-8    SSU_rRNA_archaea       ... CL00111   ...  760878   762351      +  ... 1546.5         0  !   ^       -      -      -      -      -      - -
-9    SSU_rRNA_bacteria      ... CL00111   ... 2043366  2041886      -  ... 1161.9         0  !   =       7  0.995  1.000      "      "      " -
-10   SSU_rRNA_bacteria      ... CL00111   ...  760873   762353      +  ... 1156.4         0  !   =       8  0.995  1.000      "      "      " -
-11   SSU_rRNA_eukarya       ... CL00111   ... 2043361  2041891      -  ...  970.4  2.5e-289  !   =       7  1.000  0.998      "      "      " -
-12   SSU_rRNA_eukarya       ... CL00111   ...  760878   762348      +  ...  963.8  2.4e-287  !   =       8  1.000  0.998      "      "      " -
-13   SSU_rRNA_microsporidia ... CL00111   ... 2043361  2041891      -  ...  919.9  1.9e-277  !   =       7  1.000  0.998      "      "      " -
-14   SSU_rRNA_microsporidia ... CL00111   ...  760878   762348      +  ...  917.2  1.3e-276  !   =       8  1.000  0.998      "      "      " -
-15   RNaseP_arch            ... -         ... 2614544  2614262      -  ...  184.9   2.8e-50  !   *       -      -      -      -      -      - -
-16   Archaea_SRP            ... CL00003   ... 1064321  1064634      +  ...  197.6   1.7e-45  !   *       -      -      -      -      -      - -
-17   FMN                    ... -         ...  193975   193837      -  ...  115.2   1.7e-24  !   *       -      -      -      -      -      - -
-18   tRNA                   ... CL00001   ...  735136   735208      +  ...   72.1   1.2e-12  !   *       -      -      -      -      -      - -
-19   tRNA                   ... CL00001   ... 2350593  2350520      -  ...   71.0   2.5e-12  !   *       -      -      -      -      -      - -
-20   tRNA                   ... CL00001   ... 2680310  2680384      +  ...   70.9   2.6e-12  !   *       -      -      -      -      -      - -
-21   tRNA                   ... CL00001   ... 2351254  2351181      -  ...   69.7   5.5e-12  !   *       -      -      -      -      -      - -
-22   tRNA                   ... CL00001   ...  361676   361604      -  ...   69.5   6.2e-12  !   *       -      -      -      -      -      - -
+#idx target name            ... clan name ... seq from   seq to strand ...  score   E-value inc olp anyidx afrct1 afrct2 winidx wfrct1 wfrct2 description of target
+#--- ---------------------- ... --------- ... -------- -------- ------ ... ------ --------- --- --- ------ ------ ------ ------ ------ ------ ---------------------
+1    LSU_rRNA_archaea       ... CL00112   ...   762872   765862      + ... 2763.5         0  !   ^       -      -      -      -      -      - Archaeal large sub...
+2    LSU_rRNA_archaea       ... CL00112   ...  2041329  2038338      - ... 2755.0         0  !   ^       -      -      -      -      -      - Archaeal large sub...
+3    LSU_rRNA_bacteria      ... CL00112   ...   762874   765862      + ... 1872.9         0  !   =       1  1.000  0.999      "      "      " Bacterial large su...
+4    LSU_rRNA_bacteria      ... CL00112   ...  2041327  2038338      - ... 1865.5         0  !   =       2  1.000  0.999      "      "      " Bacterial large su...
+5    LSU_rRNA_eukarya       ... CL00112   ...   763018   765851      + ... 1581.3         0  !   =       1  1.000  0.948      "      "      " Eukaryotic large s...
+6    LSU_rRNA_eukarya       ... CL00112   ...  2041183  2038349      - ... 1572.1         0  !   =       2  1.000  0.948      "      "      " Eukaryotic large s...
+7    SSU_rRNA_archaea       ... CL00111   ...  2043361  2041888      - ... 1552.0         0  !   ^       -      -      -      -      -      - Archaeal small sub...
+8    SSU_rRNA_archaea       ... CL00111   ...   760878   762351      + ... 1546.5         0  !   ^       -      -      -      -      -      - Archaeal small sub...
+9    SSU_rRNA_bacteria      ... CL00111   ...  2043366  2041886      - ... 1161.9         0  !   =       7  0.995  1.000      "      "      " Bacterial small su...
+10   SSU_rRNA_bacteria      ... CL00111   ...   760873   762353      + ... 1156.4         0  !   =       8  0.995  1.000      "      "      " Bacterial small su...
+11   SSU_rRNA_eukarya       ... CL00111   ...  2043361  2041891      - ...  970.4    3e-289  !   =       7  1.000  0.998      "      "      " Eukaryotic small s...
+12   SSU_rRNA_eukarya       ... CL00111   ...   760878   762348      + ...  963.8    3e-287  !   =       8  1.000  0.998      "      "      " Eukaryotic small s...
+13   SSU_rRNA_microsporidia ... CL00111   ...  2043361  2041891      - ...  919.9  2.3e-277  !   =       7  1.000  0.998      "      "      " Microsporidia small..
+14   SSU_rRNA_microsporidia ... CL00111   ...   760878   762348      + ...  917.2  1.6e-276  !   =       8  1.000  0.998      "      "      " Microsporidia small..
+15   RNaseP_arch            ... CL00002   ...  2614544  2614262      - ...  184.9   3.4e-50  !   *       -      -      -      -      -      - Archaeal RNase P
+16   Archaea_SRP            ... CL00003   ...  1064321  1064634      + ...  197.6   2.1e-45  !   *       -      -      -      -      -      - Archaeal signal re...
+17   FMN                    ... -         ...   193975   193837      - ...  115.2   2.1e-24  !   *       -      -      -      -      -      - FMN riboswitch (RF...
+18   tRNA                   ... CL00001   ...   735136   735208      + ...   72.1   1.5e-12  !   *       -      -      -      -      -      - tRNA
+19   tRNA                   ... CL00001   ...  2350593  2350520      - ...   71.0     3e-12  !   *       -      -      -      -      -      - tRNA
+20   tRNA                   ... CL00001   ...  2680310  2680384      + ...   70.9   3.2e-12  !   *       -      -      -      -      -      - tRNA
+21   tRNA                   ... CL00001   ...  2351254  2351181      - ...   69.7   6.7e-12  !   *       -      -      -      -      -      - tRNA
+22   tRNA                   ... CL00001   ...   361676   361604      - ...   69.5   7.6e-12  !   *       -      -      -     
 \end{tinysreoutput}
 
 This tabular format includes the target model name, sequence name (in
@@ -1313,7 +1313,7 @@ to produce overlapping hits due to their homology, Rfam has grouped
 them into the same \emph{clan}, note the ``CL00112'' value in the ``clan
 %                                          ^^^^^^^
 name'' column for all three hits. This clan information was provided
-in the \prog{rfam.14.0.claninfo} input file we provided to \prog{cmscan}
+in the \prog{rfam.14.1.claninfo} input file we provided to \prog{cmscan}
 by using the \prog{--clanin} option. 
 
 The ``olp'' column indicates that hit 1 is the highest scoring of the
@@ -1334,6 +1334,10 @@ You can also modify the overlap annotation behavior with
 hits for models within the same clan. Overlapping hits from models
 that are not in the same clan will not be marked as
 overlaps, instead they will marked as ``*'' in the ``olp'' field.
+
+For more information on using Infernal for genome annotation see a
+similar example in the Rfam documentation
+(https://rfam.readthedocs.io/en/latest/genome-annotation.html)
 
 \subsection{Creating multiple alignments with cmalign}
 The file \otext{tutorial/mrum-tRNAs10.fa} is a FASTA file containing
