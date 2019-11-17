@@ -177,6 +177,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 @HMMER_VERSION@ in configure.ac, Makefile.
 
 * cd ~/releases
+# this may be $INF/releases at NCBI
 
 * Delete any old releases of the same number
    rm -rf infernal-${INFERNAL_VERSION}
