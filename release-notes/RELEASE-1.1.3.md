@@ -1,6 +1,6 @@
-Infernal 1.1.3 release notes (Nov 2019)
+# Infernal 1.1.3 release notes (Nov 2019)
 
-Infernal 1.1.3 is the third update release for Infernal 1.1.
+### Infernal 1.1.3 is the third update release for Infernal 1.1.
 
 ## Notable changes from 1.1.2:
 

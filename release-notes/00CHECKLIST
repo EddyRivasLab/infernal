@@ -176,8 +176,9 @@ ${INFERNAL_VERSION}, ${EASEL_VERSION}, and ${HMMER_VERSION} tags used
 below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 @HMMER_VERSION@ in configure.ac, Makefile.
 
-* cd ~/releases
-# this may be $INF/releases at NCBI
+* cd $INF/releases
+# this used to be ~/releases, but my home dir is so small at NCBI, I
+# use a different dir
 
 * Delete any old releases of the same number
    rm -rf infernal-${INFERNAL_VERSION}
@@ -422,14 +423,12 @@ because current and old version tests create and use files of the same
 name.  
 
 Look at err-files/valg.1.err and make sure there's no memory
-leaks or errors.
+leaks or errors. Ensure line count from the greps are all the same.
+
   grep "ERROR SUMMARY" err-files/valg.1.err
   grep "in use at exit" err-files/valg.1.err | nl
   grep "total heap usage" err-files/valg.1.err | nl
   grep "All heap blocks were freed -- no leaks are possible" err-files/valg.1.err | nl
-
-# as of 1.1.3, single cmalign call (cmalign --cpu 0 5S.cm 5S.5.fa) has
-# 8 bytes leaked, but I couldn't find the source, also existed in 1.1.2
 
   diff tests-fast-valgrind.out tests-fast-valgrind-oldversion.out > tests-fast-valgrind.diff
   sh tests-slow.sh
@@ -454,20 +453,20 @@ Then run some anecdotal tests.
      mkdir anecdotes
 Some examples:
      cd anecdotes
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.cm
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.old.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.cm
+     $INF/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.old.cm
      diff 5S.cm 5S.old.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.old.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmsearch 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmpress 5S.cm
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmpress 5S.old.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.old.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch -A 5S.sto 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmalign 5S.cm 5S.fa 
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.old.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmsearch 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmpress 5S.cm
+     $INF/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmpress 5S.old.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.old.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch -A 5S.sto 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmalign 5S.cm 5S.fa 
 
 Also, do a rmark3 benchmark with default settings and --mid for
 both new and old versions.	      
@@ -487,7 +486,6 @@ update release)
      sh build.sh
 Wait for all jobs to finish (about 1 minute)
      sh calibrate.sh
-STILL TODO
 Wait for all jobs to finish (about 30 minutes, if cluster is nearly empty)
      cat models/*.cm > models/rmark3.cm     
 
@@ -497,17 +495,14 @@ Wait for all jobs to finish (about 30 minutes, if cluster is nearly empty)
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-symlink.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-all.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-pp.sh ./
-Edit version number (may not be necessary) in do-symlink.sh, do-all.sh, do-pp.sh
-     emacs do-symlink.sh     
-     emacs do-all.sh
-     emacs do-pp.sh
-     sh do-symlink.sh
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/tmp-rmark-master.pl ./
 
 NOTE: as of 1.1, do-all.sh won't work as written b/c it's set-up 
-for Janelia's cluster. As of 1.1.3 and beyond, you should be able
-to look at/copy
+for Janelia's cluster. That's why we copy 
 ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/tmp-rmark-master.pl 
+and use that
 
+     sh do-symlink.sh
      sh do-all.sh 
 Wait for jobs to finish (approximately 20 min)
 
@@ -516,15 +511,16 @@ need to copy the 'rmark-rocplot' executable from a build dir into the
 rmark directory, because rmark-pp.sh expects all the rmark scripts to
 be in the same dir, then delete it when we're done with it:
 
-     cp ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/rmark/rmark-rocplot ~/releases/infernal-${INFERNAL_VERSION}/rmark/
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/rmark/rmark-rocplot $INF/releases/infernal-${INFERNAL_VERSION}/rmark/
      sh do-pp.sh 
 Wait for jobs to finish (approximately 5 min)
-     rm ~/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-rocplot
+     rm $INF/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-rocplot
       
 Compare the old and current .sum files.
 and with the .sum files in ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/	 
 
 Check the userguide (Userguide.pdf).
+    cp $INF/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ${INFERNAL_RELEASE_NOTEBOOK}/tests/
 
 ================================================================
 = Build and check on all compile farm nodes
@@ -773,7 +769,7 @@ Copy cygwin to another virtual machine or windows machine and test it.
 
     We can do this by copying it to our local copy of Sean's web git repo:
 
-    cd /panfs/pan1/infernal/web/eddylab.org/site/software/infernal/
+    cd $INF/web/eddylab.org/site/software/infernal/
 
     (Or checkout new working copy of Sean's website with:
      'git clone nawrocke@ody:/n/eddyfs01/gitrepo/web.git'
@@ -792,7 +788,7 @@ Copy cygwin to another virtual machine or windows machine and test it.
      ln -s infernal-1.1.2.tar.gz infernal.tar.gz
 
    Update index.html, which is in a different directory:
-     cd /panfs/pan1/infernal/web/infernal/  
+     cd $INF/web/infernal/  
    update index.html    
 
      - search for all instances of the version (e.g. 1.1.2)
