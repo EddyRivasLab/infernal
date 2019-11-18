@@ -192,21 +192,27 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
 # note we don't use EASEL_VERSION and HMMER_VERSION here by setting it
 # in our .bashrc, because we want to make sure
-# the release_notes/LICENSE call below does that correctly
+# the release_notes/LICENSE.sh call below does that correctly
 
   git clone https://github.com/EddyRivasLab/easel.git
   cd easel
-  git checkout release-0.43
+  git checkout release-0.46
   cd ..
 
   git clone https://github.com/EddyRivasLab/hmmer.git
   cd hmmer
-  git checkout release-3.1b3
-# the crucial aclocal.m4 symlink UP one dir   
-  ln -s ../easel/aclocal.m4 aclocal.m4
+  git checkout release-3.3
+# the crucial symlink so hmmer's autoconf will work, we remove it shortly
+  ln -s ../easel easel
   cd ..
 
   autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
+# IMPORTANT: remove the symlink we just made above in hmmer
+# otherwise it will mess up configure when it tries to 
+# make the same symlink, we need to do it above to get autoconf
+# to work in hmmer, then we remove it, and then configure makes
+# it again
+  (cd hmmer; rm easel)
   ./configure; 
   . release-notes/LICENSE.sh
 
@@ -229,21 +235,16 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    echo ${HMMER_COPYRIGHT}
    echo ${EASEL_COPYRIGHT}
 
-* must do Easel and HMMER first
-
-   easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/00README
-   easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/INSTALL
-   easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/LICENSE.tag
-   find easel -type f -exec easel/devkit/sedition-pp LICENSE easel/LICENSE.tag {} \;   
-
-   easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/INSTALL
-   easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/release-notes/LICENSE.tag
-   find hmmer -type f -exec easel/devkit/sedition-pp LICENSE hmmer/release-notes/LICENSE.tag {} \;   
+* As of 1.1.3, no longer necessary to do analogous commands for hmmer
+  and easel
+   # potentially update this after Sean makes easel 0.46/hmmer 3.3 releases based on
+   # his new easel 00CHECKLIST or equivalent
 
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" README
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" INSTALL
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" release-notes/LICENSE.tag
    find .     -type f -exec easel/devkit/sedition-pp LICENSE release-notes/LICENSE.tag {} \;
+   # above find commands takes a minute or so
 
    cd documentation/manpages/
    for manpage in *.man; do \
@@ -270,7 +271,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   us.
 
    make distclean
-   cp   release-notes/RELEASE-${INFERNAL_VERSION} RELEASE-NOTES
+   cp   release-notes/RELEASE-${INFERNAL_VERSION}.md RELEASE-NOTES.md
    rm -rf .git
    rm -rf Bugs
    rm -rf Manuscripts
@@ -281,6 +282,8 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 CHECK FOR ANY WEIRD conf*** (e.g. confQy52wQ) directories, and delete if you find them
 this burned me in 1.1.2 release.
 
+   # potentially update this after Sean makes easel 0.46/hmmer 3.3 releases based on
+   # his new easel 00CHECKLIST or equivalent
    cd hmmer
    rm -rf .git
    rm -rf bugs
@@ -290,11 +293,11 @@ this burned me in 1.1.2 release.
    rm -rf autobuild
    rm -rf autom4te.cache 
 
+   # potentially update this after Sean makes easel 0.46/hmmer 3.3 releases based on
+   # his new easel 00CHECKLIST or equivalent
    cd ../easel
    rm -rf .git
-   rm -f  00CHECKLIST LICENSE.csh.in LICENSE.tag 
    cd ..
-
 
    rm *~
 
@@ -313,6 +316,7 @@ Delete TO-DO sections and clean up for public consumption.
 * available in gnu tar. It dereferences symlinks and makes
 * them copies instead. Windows systems can't deal w/ symlinks,
 * we're told.
+
    cd ..
    tar cvfh infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
    gzip infernal-${INFERNAL_VERSION}.tar
@@ -325,6 +329,7 @@ Delete TO-DO sections and clean up for public consumption.
    1.1.1:  19.5 Mb (gzipped) added large testsuite/bug-i43.cm file
    --- git flow ---
    1.1.2:  19.4 Mb (gzipped)
+   1.1.3:  30.0 Mb (gzipped)
 
 All subsequent tests are on this source distro.
 
@@ -336,7 +341,7 @@ We'll build two sets of the executables on cbbdev** for testing
 (build-gcc-mpi and build-icc), for which we'll run tests locally
 (tests-fast.sh) and on the compute farm (tests-slow.sh).
 
-On cbbdev13 (our compile host):
+On cbbdev21 (our compile host):
   ssh cbbdev13
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-gcc-mpi
@@ -349,7 +354,7 @@ On cbbdev13 (our compile host):
 
 1 line: ../configure --enable-mpi > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
 
-  ssh cbbdev13
+  ssh cbbdev21
   cd ~/releases/infernal-${INFERNAL_VERSION}
   mkdir build-icc
   cd build-icc
@@ -400,6 +405,12 @@ tests-fast*.sh          run on cbbdev13,                 takes about 1 minute
 tests-fast-valgrind*.sh run valgrind tests on cbbdev13y, takes about 30 minutes
 tests-slow*.sh          submit to compute farm,          takes about 2.5 hours
 
+***FOR FIRST RELEASE POST 1.1.3, ADD NEW TESTS ADDED IN 1.1.3 
+***(diff between tests-fast.sh and tests-fast-oldversion.sh
+*** and tests-fast-valgrind.sh and tests-fast-valgrind-oldversion.sh)
+***TO *oldversion* versions prior to running oldversion tests so that
+***they are executed for the old version (which will be 1.1.3)
+
   time sh tests-fast.sh > tests-fast.out
   time sh tests-fast-oldversion.sh > tests-fast-oldversion.out
   diff tests-fast.out tests-fast-oldversion.out > tests-fast.diff
@@ -412,14 +423,19 @@ name.
 
 Look at err-files/valg.1.err and make sure there's no memory
 leaks or errors.
+  grep "ERROR SUMMARY" err-files/valg.1.err
+  grep "in use at exit" err-files/valg.1.err | nl
+  grep "total heap usage" err-files/valg.1.err | nl
+  grep "All heap blocks were freed -- no leaks are possible" err-files/valg.1.err | nl
+
+# as of 1.1.3, single cmalign call (cmalign --cpu 0 5S.cm 5S.5.fa) has
+# 8 bytes leaked, but I couldn't find the source, also existed in 1.1.2
 
   diff tests-fast-valgrind.out tests-fast-valgrind-oldversion.out > tests-fast-valgrind.diff
   sh tests-slow.sh
   sh tests-slow-oldversion.sh 
 
 Wait for these to finish (about 3 hours)
-***FOR FIRST RELEASE POST 1.1.2, ADD TO DIFF-SLOW SO NEW 1.1.2 TESTS
-***ARE DIFFED (e.g. cmscan --fmt 2)
   sh regressify-slow.sh 
   sh regressify-slow-oldversion.sh
   sh diff-slow.sh > tests-slow.diff

@@ -623,6 +623,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_workqueue_Destroy(queue);
     esl_threads_Destroy(threadObj);
   }
+  if(init_sqA != NULL) free(init_sqA); /* init_sqA will be NULL if and only if ncpus == 0 */
 #endif
   if(r != NULL) esl_randomness_Destroy(r);
   for(k = 0; k < infocnt; ++k) { 
