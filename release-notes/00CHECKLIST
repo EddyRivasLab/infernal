@@ -1,7 +1,7 @@
 Checklist for an Infernal release.
-EPN, Fri Jun 24 10:17:16 2016
+EPN, Mon Nov 18 13:09:06 2019
 
-Updated for 1.1.2 release, based partly on SSU-ALIGN 0.1.1's 00CHECKLIST
+Updated for 1.1.3 release.
 -------------------------------------
 
 Git repositories:       https://github.com/EddyRivasLab/infernal.git
@@ -186,7 +186,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    rm -f  infernal-${INFERNAL_VERSION}.tar.gz
 
 * Clone from git and checkout release branches
-  ssh cbbdev13
+  ssh cbbdev21
   git clone https://github.com/EddyRivasLab/infernal.git infernal-${INFERNAL_VERSION}
   cd infernal-${INFERNAL_VERSION}
   git checkout release-${INFERNAL_VERSION}
@@ -197,27 +197,36 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
   git clone https://github.com/EddyRivasLab/easel.git
   cd easel
-  git checkout release-0.46
+# checkout a release branch if nec, otherwise just master
+  git checkout master
   cd ..
+# checkout a release branch above if nec
 
   git clone https://github.com/EddyRivasLab/hmmer.git
   cd hmmer
-  git checkout release-3.3
+# checkout a release branch if nec, otherwise just master
+  git checkout master
 # the crucial symlink so hmmer's autoconf will work, we remove it shortly
   ln -s ../easel easel
   cd ..
 
   autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
+
 # IMPORTANT: remove the symlink we just made above in hmmer
 # otherwise it will mess up configure when it tries to 
 # make the same symlink, we need to do it above to get autoconf
 # to work in hmmer, then we remove it, and then configure makes
 # it again
+
   (cd hmmer; rm easel)
   ./configure; 
   . release-notes/LICENSE.sh
+# Note that we *leave* the easel symlink in hmmer that 'configure' just
+# created again, we would *not* want to do this if we were using the
+# 'h' tar flag below to make a tarball without symlinks for windows
+# compatability but we abandoned that in 1.1.3.
 
-* Check that svn has file permissions right. 
+* Check that git has file permissions right. 
   Both of these should have no output.
    find . ! -perm -u+r -print
    find . -perm o+x ! -perm -u+x -print
@@ -238,14 +247,17 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 
 * As of 1.1.3, no longer necessary to do analogous commands for hmmer
   and easel
-   # potentially update this after Sean makes easel 0.46/hmmer 3.3 releases based on
-   # his new easel 00CHECKLIST or equivalent
+   # Note: I don't do anything for HMMER or Easel here, but up until 
+   # 1.1.2 I did. Sean changed how he does this in HMMER and Easel
+   # (this = deal with fact that version, date, copyright need to be
+   # updated in some files each release). I should find out how he 
+   # does it now and make infernal consitent with that before 1.1.4.
 
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" README
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" INSTALL
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" release-notes/LICENSE.tag
    find .     -type f -exec easel/devkit/sedition-pp LICENSE release-notes/LICENSE.tag {} \;
-   # above find commands takes a minute or so
+   # final command above takes a minute or so
 
    cd documentation/manpages/
    for manpage in *.man; do \
@@ -259,6 +271,9 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    make
    mv Userguide.pdf ../../Userguide.pdf
    cd ../..
+   cp Userguide.pdf $FTPDIR/test.pdf
+
+Download test.pdf and look at it.   
 
 * clean up files that don't belong in the distro, 
   IMPORTANTLY INCLUDING THE .git SUBDIRS IN INFERNAL, HMMER AND EASEL
@@ -272,7 +287,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   us.
 
    make distclean
-   cp   release-notes/RELEASE-${INFERNAL_VERSION}.md RELEASE-NOTES.md
+   cp   release-notes/RELEASE-${INFERNAL_VERSION}.md .
    rm -rf .git
    rm -rf Bugs
    rm -rf Manuscripts
@@ -283,19 +298,16 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 CHECK FOR ANY WEIRD conf*** (e.g. confQy52wQ) directories, and delete if you find them
 this burned me in 1.1.2 release.
 
-   # potentially update this after Sean makes easel 0.46/hmmer 3.3 releases based on
-   # his new easel 00CHECKLIST or equivalent
+   # Check latest hmmer release and see what directories are saved in
+   # that release and mirror that her
    cd hmmer
    rm -rf .git
-   rm -rf bugs
    rm -rf contrib
    rm -rf release-notes
-   rm -rf test-speed
    rm -rf autobuild
-   rm -rf autom4te.cache 
 
-   # potentially update this after Sean makes easel 0.46/hmmer 3.3 releases based on
-   # his new easel 00CHECKLIST or equivalent
+   # Check latest hmmer release's easel subdir and see what
+   # directories are saved in that release and mirror that her
    cd ../easel
    rm -rf .git
    cd ..
@@ -306,20 +318,21 @@ this burned me in 1.1.2 release.
   (Sean's command in HMMER that I skipped because I'm not sure what it
   does: cat RELEASE-NOTES | dumpnotes )
     
-   emacs RELEASE-NOTES
+   emacs RELEASE-{$INFERNAL_VERSION}.md
    rm *~
 Delete TO-DO sections and clean up for public consumption.
 
   (Again, not sure of this command that Sean uses for hmmer: 'texclean')
 
 * package
-* The 'h' option on tar is --dereference: it may only be 
-* available in gnu tar. It dereferences symlinks and makes
-* them copies instead. Windows systems can't deal w/ symlinks,
-* we're told.
+* For 1.1.2 we used the 'h' option with the 'tar' command below
+* to dereference the symlinks, but in 1.1.3 we left them in because
+* two hmmer testsuite exercises required them. 
+* Windows systems can't deal w/ symlinks, we're told.
+* I plan to work around this if/when I make a cygwin binary distro.
 
    cd ..
-   tar cvfh infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
+   tar cvf infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
    gzip infernal-${INFERNAL_VERSION}.tar
 
    1.1rc1: 11.7 Mb (gzipped)
@@ -343,8 +356,8 @@ We'll build two sets of the executables on cbbdev** for testing
 (tests-fast.sh) and on the compute farm (tests-slow.sh).
 
 On cbbdev21 (our compile host):
-  ssh cbbdev13
-  cd ~/releases/infernal-${INFERNAL_VERSION}
+  ssh cbbdev21
+  cd $INF/releases/infernal-${INFERNAL_VERSION}
   mkdir build-gcc-mpi
   cd build-gcc-mpi
   ../configure --enable-mpi > build.out   2>&1
@@ -356,7 +369,7 @@ On cbbdev21 (our compile host):
 1 line: ../configure --enable-mpi > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
 
   ssh cbbdev21
-  cd ~/releases/infernal-${INFERNAL_VERSION}
+  cd $INF/releases/infernal-${INFERNAL_VERSION}
   mkdir build-icc
   cd build-icc
   ../configure CC=icc > build.out  2>&1
@@ -390,7 +403,7 @@ manually look at each line for errors.
 These instructions should work post-1.1rc2:
 
 Set up tests:
-  ssh cbbdev13
+  ssh cbbdev21
   cd ${INFERNAL_RELEASE_NOTEBOOK}
   mkdir tests
   mkdir tests/out-files/
@@ -402,14 +415,14 @@ Set up tests:
   sh cp-required-files.sh
 
 Run tests:
-tests-fast*.sh          run on cbbdev13,                 takes about 1 minute
-tests-fast-valgrind*.sh run valgrind tests on cbbdev13y, takes about 30 minutes
+tests-fast*.sh          run on cbbdev21,                 takes about 1 minute
+tests-fast-valgrind*.sh run valgrind tests on cbbdev21,  takes about 30 minutes
 tests-slow*.sh          submit to compute farm,          takes about 2.5 hours
 
 ***FOR FIRST RELEASE POST 1.1.3, ADD NEW TESTS ADDED IN 1.1.3 
 ***(diff between tests-fast.sh and tests-fast-oldversion.sh
 *** and tests-fast-valgrind.sh and tests-fast-valgrind-oldversion.sh)
-***TO *oldversion* versions prior to running oldversion tests so that
+***to *oldversion* versions prior to running oldversion tests so that
 ***they are executed for the old version (which will be 1.1.3)
 
   time sh tests-fast.sh > tests-fast.out
@@ -425,7 +438,8 @@ name.
 Look at err-files/valg.1.err and make sure there's no memory
 leaks or errors. Ensure line count from the greps are all the same.
 
-  grep "ERROR SUMMARY" err-files/valg.1.err
+  grep "ERROR SUMMARY" err-files/valg.1.err | nl
+  grep "ERROR SUMMARY" err-files/valg.1.err | grep " 0 errors from 0 contexts (suppressed: 0 from 0)" | wc -l
   grep "in use at exit" err-files/valg.1.err | nl
   grep "total heap usage" err-files/valg.1.err | nl
   grep "All heap blocks were freed -- no leaks are possible" err-files/valg.1.err | nl
@@ -539,9 +553,17 @@ to do (at Janelia) the compile farm tests from one directory because
 the file system was shared.
 
 For here, I'll actually copy the src tarball (via public ftp site):
-UPDATE VERSION AS NECESSARY
-  wget http://ftp.ncbi.nlm.nih.gov/pub/nawrocki/infernal-1.1.2.tar.gz 
-  tar xvfz infernal-1.1.2.tar.gz
+
+First put it on the ftp site, and call it test.tar.gz, out of an
+abundance of caution that an untested tarball gets out
+  ssh cbbdev21
+  cp $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz $FTPDIR/test.tar.gz  
+  
+Then go onto the computer you are going to test on, and in a notebook
+subdirectory (e.g. 19_1108_inf_1p1p3_release/test-install/)
+  curl -k -L -o test.tar.gz http://ftp.ncbi.nlm.nih.gov/pub/nawrocki/test.tar.gz
+  tar xvfz test.tar.gz
+  cd infernal-1.1.3
 
 Then build and run tests:
 
@@ -551,7 +573,7 @@ Then build and run tests:
   make check >> build.out 2>&1
   make devcheck >> build.out 2>&1
 
-1line:./configure > build.out 2>&1;make >> build.out 2>&1;make dev >> build.out 2>&1;make check >> build.out 2>&1;make devcheck >> build.out 2>&1;
+1line: ./configure > build.out 2>&1;make >> build.out 2>&1;make dev >> build.out 2>&1;make check >> build.out 2>&1;make devcheck >> build.out 2>&1;
 
   Check build.out 
 
@@ -563,15 +585,15 @@ Then build and run tests:
 
 Then do the same in hmmer and easel (to test those 'release'
 versions). Actually do this by removing the src distro, unpacking it
-again, and redoing for hmmer and then easel. For hmmer, you'll need to
-copy all the easel files into hmmer.
-
+again, and redoing for hmmer and then easel. For hmmer, in 1.1.2 we
+copied all the easel files into hmmer (with 'cp -r ../easel ./easel'),
+but in 1.1.3 we just use the existing symlink and so skip that step.
+   
 Do hmmer:
    cd ..
-   rm -rf infernal-1.1.2
-   tar xvf infernal-1.1.2.tar.gz
-   cd infernal-1.1.2/hmmer
-   cp -r ../easel ./easel
+   rm -rf infernal-1.1.3
+   tar xvfz test.tar.gz
+   cd infernal-1.1.3/hmmer
    sh ./configure > build.out 2>&1
    make >> build.out 2>&1
    make dev >> build.out 2>&1
@@ -585,9 +607,9 @@ Do hmmer:
 
 And finally easel:
    cd ../..
-   rm -rf infernal-1.1.2
-   tar xvf infernal-1.1.2.tar.gz
-   cd infernal-1.1.2/easel
+   rm -rf infernal-1.1.3
+   tar xvfz test.tar.gz
+   cd infernal-1.1.3/easel
    sh ./configure > build.out 2>&1
    make >> build.out 2>&1
    make dev >> build.out 2>&1
@@ -599,13 +621,25 @@ And finally easel:
  run anecdotal tests
    make clean
 
-              inf  hmmer easel 
-macbook pro   pass pass  pass
-cbbdev21      pass pass  pass
-ebi           pass pass  pass
-ody           pass pass  pass
+For first post-1.1.3 release, try compiling with icc on odyssey
+using "./configure CC=icc" when configuring.
+When I tried that for 1.1.3, I got a configure error:
+configure: ::::::::::--- no vector instruction set ---::::::::::
+configure: HMMER3 requires SSE or VMX vector instructions.
+configure: Supported platforms are x86 (Intel/AMD) and PowerPC.
+configure: error: No supported vectorization found for your machine.
 
-DIDN'T DO ncbimac2056 FOR 1.1.2 (did macbook pro)
+              inf  hmmer easel 
+macbook pro   pass pass  fail(avx)
+cbbdev21      pass pass  fail(avx)
+ebi           pass pass  pass
+ody-gcc       pass pass  pass
+ncbimac       pass rung  todo
+DIDN'T DO ncbimac2056 FOR 1.1.3 (did macbook pro)
+
+*** Save build.out output for each build (infernal/hmmer/easel) in top
+*** level directories in each notebook dir on each host,
+*** e.g. infernal.build.out, hmmer.build.out, easel.build.out.
 
 ================================================================
 = Binary distros
@@ -627,10 +661,10 @@ Three builds:
   cygwin
 
 linux-intel-gcc:
-  ssh cbbdev13
+  ssh cbbdev21
   export INFERNAL_DISTRO=linux-intel-gcc
   cd ${INFERNAL_RELEASE_NOTEBOOK}/Distros
-  tar zxf ~/releases/infernal-${INFERNAL_VERSION}.tar.gz
+  tar zxf $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz
   mv infernal-${INFERNAL_VERSION} infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   cd infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   mkdir binaries
@@ -661,11 +695,19 @@ Look at build-${INFERNAL_DISTRO}.out
 
 macosx-intel build (on my Mac Desktop):
 You'll need to update the release notebook dir here next release
-  export INFERNAL_DISTRO=macosx-intel
-  export INFERNAL_RELEASE_NOTEBOOK=$UH/notebook/16_0611_inf_1p1p2_release
-  export INFERNAL_VERSION=1.1.2
+Note the 'local', this is because I can only access my home dir from 
+my desktop, not $INF
+on cbbdev21
+  cp $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz ~/releases/  
 
-  cd ${INFERNAL_RELEASE_NOTEBOOK}/Distros
+on mac desktop:
+  export INFERNAL_DISTRO=macosx-intel
+  export INFERNAL_RELEASE_NOTEBOOK=$UH/notebook/19_1108_local_inf_1p1p3_release
+  export INFERNAL_VERSION=1.1.3
+
+  cd ${INFERNAL_RELEASE_NOTEBOOK}
+  mkdir Distros
+  cd Distros
   tar zxf $UH/releases/infernal-${INFERNAL_VERSION}.tar.gz
   mv infernal-${INFERNAL_VERSION} infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   cd infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
@@ -756,9 +798,9 @@ linux-intel-gcc: ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSIO
 macosx-intel:    ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz
 cygwin:          notebook/14_0723_inf_1p1p1_cygwin/Distros/infernal-1.1.1-cygwin.tar.gz
 
-Copy linux-intel-gcc to a new directory on your home dir on login-eddy
+Copy linux-intel-gcc to a new directory at NCBI
 and test it with some anecdotal tets.
-Copy macosx-intel tar ball to your laptop and test it.
+Copy macosx-intel tar ball to your laptop and desktop and test it.
 Copy cygwin to another virtual machine or windows machine and test it.
 
 ================================================================
@@ -777,7 +819,7 @@ Copy cygwin to another virtual machine or windows machine and test it.
      https://rc.fas.harvard.edu/resources/documentation/linux/using-ssh-controlmaster-for-single-sign-on/)
 
      cp ~/releases/infernal-${INFERNAL_VERSION}/README ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/RELEASE-NOTES ./
+     cp ~/releases/infernal-${INFERNAL_VERSION}/RELEASE-1.1.3.md ./
      cp ~/releases/infernal-${INFERNAL_VERSION}/LICENSE ./
      cp ~/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ./
      cp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz ./
@@ -785,7 +827,7 @@ Copy cygwin to another virtual machine or windows machine and test it.
      cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz ./
 
      rm infernal.tar.gz 
-     ln -s infernal-1.1.2.tar.gz infernal.tar.gz
+     ln -s infernal-1.1.3.tar.gz infernal.tar.gz
 
    Update index.html, which is in a different directory:
      cd $INF/web/infernal/  
@@ -815,7 +857,7 @@ it into ~/releases/infernal-release instead of
    cd ~/releases 
    rm -rf infernal-release
 
-   ssh cbbdev13
+   ssh cbbdev21
    git clone https://github.com/EddyRivasLab/infernal.git infernal-release
    cd infernal-release
    git checkout release-${INFERNAL_VERSION}
