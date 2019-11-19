@@ -875,7 +875,6 @@ $INF/releases/infernal-${INFERNAL_VERSION}, like so:
    git checkout release-${INFERNAL_VERSION}
 
    git clone https://github.com/EddyRivasLab/easel.git
-   cd easel
 # checkout release branch if necessary, not necessary for 1.1.3
 
    git clone https://github.com/EddyRivasLab/hmmer.git
