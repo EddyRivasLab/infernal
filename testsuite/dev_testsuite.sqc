@@ -87,6 +87,9 @@
 1 exercise  bug/i39-build-O-0bp      !testsuite/bug-i39.pl! @src/cmbuild@
 1 exercise  bug/i43-oa-loc-beg       !testsuite/bug-i43.pl! @src/cmsearch@ !testsuite/bug-i43.cm! !testsuite/bug-i43.fa!
 1 exercise  bug/i44-mapstr           !testsuite/bug-i44.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i45-alidisplay-EL    !testsuite/bug-i45.pl! @src/cmsearch@ !testsuite/bug-i45.cm! !testsuite/bug-i45a.fa! !testsuite/bug-i45b.fa!
+1 exercise  bug/i47-cmbuild-p7ml     !testsuite/bug-i47.pl! @src/cmbuild@
+1 exercise  bug/i49-hmmonly-ovlp     !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
 
 ################################################################
 # Option tests
@@ -116,6 +119,7 @@
 1  exercise    search/v       @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4       @src/cmsearch@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4F3     @src/cmsearch@ -Z 1000 --trmF3 --noali --hmmonly %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/zbp     @src/cmsearch@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
 1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.C.CM% !testsuite/1k-4.fa!
@@ -139,6 +143,8 @@
 1  exercise    press/zC       @src/cmpress@ %ZBP.C.CM%
 1  exercise    press/4C       @src/cmpress@ %4.C.CM%
 1  exercise    press/5C       @src/cmpress@ %5.C.CM%
+1  prep        build/se       @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
+1  exercise    press/se       @src/cmpress@ %SE.CM%
 
 # cmscan exercises (cmscan requires a press'd CM file with E-values)
 1  exercise    scan/help/1    @src/cmscan@ -h
@@ -154,7 +160,11 @@
 1  exercise    scan/4C        @src/cmscan@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/4C     rm -f %4.C.CM%.*
 1  exercise    scan/5C        @src/cmscan@ --fmt 2 --tblout %5.C.TBLOUT% --oskip --oclan --clanin !testsuite/5.claninfo! -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    scan/5CF3      @src/cmscan@ --trmF3 --noali --hmmonly -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/5C     rm -f %5.C.CM%.*
+1  exercise    scan/se        @src/cmscan@ --hmmonly %SE.CM% !testsuite/se.fa!
+1  exercise    scan/seF3      @src/cmscan@ --trmF3 --noali --hmmonly %SE.CM% !testsuite/se.fa!
+1  prep        cleanup/SE     rm -f %SE.CM%.*
 
 # cmemit exercises
 1  exercise  emit/help/1      @src/cmemit@ -h
@@ -465,7 +475,10 @@
 1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0  -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:trna/esig     @src/cmbuild@ --esig 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
+1  exercise  build:trna/esig     @src/cmbuild@ --esigma 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
+1  exercise  build:pkhav/emx1    @src/cmbuild@ --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  exercise  build:pkhav/emx2    @src/cmbuild@ --emaxseq 5.0 --esigma 60. -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  exercise  build:pkhav/emx2    @src/cmbuild@ --emaxseq 5.0 --esigma 80. -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 
 # --refine
 1  exercise  build:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -1335,6 +1348,12 @@
 1  exercise  scan:4/100k/maxtau   @src/cmscan@  --maxtau 0.3 %4.CM% %4100K%
 1  exercise  scan:v/1k/seed0      @src/cmscan@  --seed 0 %V.CM% %V1K%
 1  exercise  scan:v/1k/seed1      @src/cmscan@  --seed 1 %V.CM% %V1K%
+1  exercise  scan:4/100k/onepas   @src/cmscan@  --onepass %4.CM% %4100K%
+1  exercise  scan:4/100k/lnepas   @src/cmscan@  --olonepass %4.CM% %4100K%
+1  exercise  scan:4/100k/noiter   @src/cmscan@  --noiter %4.CM% %410K%
+1  exercise  scan:4/100k/onlytr   @src/cmscan@  --onlytrunc %4.CM% %4100K%
+1  exercise  scan:4/100k/5tr      @src/cmscan@  --5trunc %4.CM% %4100K%
+1  exercise  scan:4/100k/3tr      @src/cmscan@  --3trunc %4.CM% %4100K%
 
 # cleanup, specific to cmscan.sqc (not in cmsearch.sqc)
 1  prep      scan:cleanup/tC      rm -f %T.CM%.*
@@ -1615,6 +1634,12 @@
 1  exercise  search:4/100k/maxtau   @src/cmsearch@  --maxtau 0.4 %4.CM% %4100K%
 1  exercise  search:v/1k/seed0      @src/cmsearch@  --seed 0 %V.CM% %V1K%
 1  exercise  search:v/1k/seed1      @src/cmsearch@  --seed 1 %V.CM% %V1K%
+1  exercise  search:4/100k/onepas   @src/cmsearch@  --onepass %4.CM% %4100K%
+1  exercise  search:4/100k/lnepas   @src/cmsearch@  --olonepass %4.CM% %4100K%
+1  exercise  search:4/100k/noiter   @src/cmsearch@  --noiter %4.CM% %410K%
+1  exercise  search:4/100k/onlytr   @src/cmsearch@  --onlytrunc %4.CM% %4100K%
+1  exercise  search:4/100k/5tr      @src/cmsearch@  --5trunc %4.CM% %4100K%
+1  exercise  search:4/100k/3tr      @src/cmsearch@  --3trunc %4.CM% %4100K%
 
 ##################################################################
 ##################################################################

@@ -1,13 +1,8 @@
 /* cm_qdband.c (formerly bandcyk.c)
  *
  * SRE, Wed Nov 20 07:46:56 2002 [flight home from Airlie mtg]
- * SVN $Id$
  * 
  * Banded CYK implementation.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -176,8 +171,8 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
   int      dv;			/* Delta for state v */
   int      leftn;		/* length of left subsequence under a bifurc */
   double   pdf; 		/* P(<=n) or P(>=n) for this state v         */
-  int     *touch;               /* touch[y] = # higher states depending on y */
-  ESL_STACK *beamstack;         /* pool of beams we can reuse  */
+  int     *touch       = NULL;  /* touch[y] = # higher states depending on y */
+  ESL_STACK *beamstack = NULL;  /* pool of beams we can reuse  */
   double  *tmp;                 /* for freeing beamstack only */
   int      yoffset;             /* counter over children */
   double  *gamma0_loc = NULL;   /* length distribution of  local hits (gamma[0]) */
@@ -654,7 +649,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma)
    */
   *ret_gamma = gamma;
   esl_randomness_Destroy(r);
-  ESL_DPRINTF1(("Returning %d from BandMonteCarlo() (1 is passed, 0 failed)\n", status));
+  ESL_DPRINTF1(("#DEBUG: Returning %d from BandMonteCarlo() (1 is passed, 0 failed)\n", status));
   return status;
 
  ERROR:

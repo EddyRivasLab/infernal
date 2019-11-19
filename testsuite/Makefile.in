@@ -5,7 +5,7 @@ VPATH          = @srcdir@
 SQCLEVEL    = 1
 DEVSQCLEVEL = 2
 
-ESLDIR = @INFERNAL_ESLDIR@
+ESLDIR  = @INFERNAL_ESLDIR@
 
 # beautification magic stolen from git 
 #
@@ -24,12 +24,14 @@ endif
 
 
 check: 
+	@command -v python3 >/dev/null 2>&1 || { echo >&2 "python3 is required for 'make check', but is not in your PATH. Aborting."; exit 1; }
 	@echo 
 	@echo Running Infernal test suite...
 	@echo
 	@${srcdir}/../${ESLDIR}/devkit/sqc ${SQCLEVEL} ${srcdir}/testsuite.sqc .. ${srcdir}/..
 
 devcheck: 
+	@command -v python3 >/dev/null 2>&1 || { echo >&2 "python3 is required for 'make devcheck', but is not in your PATH. Aborting."; exit 1; }
 	@echo 
 	@echo Running Infernal developer test suite...
 	@echo
@@ -122,6 +124,4 @@ clean:
 distclean: clean
 	-rm -f Makefile
 
-################################################################
-# @LICENSE@
-################################################################
+

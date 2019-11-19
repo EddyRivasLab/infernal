@@ -1,12 +1,7 @@
 /* cm_p7_modelmaker.c
  * EPN, Tue Aug  5 15:32:34 2008
- * SVN $Id: cm_modelmaker.c 2327 2008-02-13 22:09:06Z nawrockie $
  *
- * Construct a p7 model from CM and it's CP9 HMM.
- *
- *****************************************************************
- * @LICENSE@
- *****************************************************************
+ * Construct a p7 model from CM and its CP9 HMM.
  */
 #include "esl_config.h"
 #include "p7_config.h"
@@ -34,7 +29,7 @@
 /* Function: BuildP7HMM_MatchEmitsOnly()
  * Incept:   EPN, Tue Aug  5 15:33:00 2008
  * 
- * Purpose:  Create and fill a P7_HMM object from a CM and it's CP9 HMM.
+ * Purpose:  Create and fill a P7_HMM object from a CM and its CP9 HMM.
  *           Copy only the match emissions of the CP9 HMM, the rest of 
  *           the p7 model parameters are irrelevant. 
  * 
@@ -209,7 +204,13 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
 
   cm->mlp7->eff_nseq = cm->eff_nseq;
   cm->mlp7->nseq     = cm->nseq;
-  cm->mlp7->checksum = 0;
+  if(cm->flags & CMH_CHKSUM) { 
+    cm->mlp7->checksum = cm->checksum;
+    cm->mlp7->flags |= p7H_CHKSUM;
+  }    
+  else { 
+    cm->mlp7->checksum = 0;
+  }
 
   /* set the model composition */
   if ((status = p7_hmm_SetComposition(cm->mlp7)) != eslOK) ESL_XFAIL(status, errbuf, "out of memory");

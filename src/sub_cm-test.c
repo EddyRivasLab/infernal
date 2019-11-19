@@ -8,9 +8,6 @@
  * main model by determining the expected number of
  * times each state is entered. 
  * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"

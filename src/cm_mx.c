@@ -46,7 +46,6 @@
  *      hits for CM DP search functions
  *
  * EPN, Fri Oct 26 05:04:34 2007
- * SVN $Id$
  */
 
 #include "esl_config.h"
@@ -183,7 +182,7 @@ cm_mx_GrowTo(CM_t *cm, CM_MX *mx, char *errbuf, int L, float size_limit)
 
   if((status = cm_mx_SizeNeeded(cm, errbuf, L, &ncells, &Mb_needed)) != eslOK) return status;
   /*printf("Non-banded matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("Non-banded matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: Non-banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away
@@ -535,7 +534,7 @@ cm_tr_mx_GrowTo(CM_t *cm, CM_TR_MX *mx, char *errbuf, int L, float size_limit)
 
   if((status = cm_tr_mx_SizeNeeded(cm, errbuf, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
   /*printf("Non-banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("Non-banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: Non-banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full {J,L,R.T}matrices? or can we get away
@@ -974,7 +973,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
 
   if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
   /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
-  ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* check if we should free and reallocate the matrix */
@@ -1376,7 +1375,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
 
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
   /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* check if we should free the matrix */
@@ -1971,7 +1970,7 @@ cm_shadow_mx_GrowTo(CM_t *cm, CM_SHADOW_MX *mx, char *errbuf, int L, float size_
 
   if((status = cm_shadow_mx_SizeNeeded(cm, errbuf, L, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("Non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("Non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: Non-banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full yshadow and kshadow matrices? 
@@ -2415,7 +2414,7 @@ cm_tr_shadow_mx_GrowTo(CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float
 
   if((status = cm_tr_shadow_mx_SizeNeeded(cm, errbuf, L, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("Non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("Non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: Non-banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full {J,L,R}yshadow and {J,L,R,T}kshadow matrices? 
@@ -2978,7 +2977,7 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
 
   if((status = cm_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &y_ncells, &k_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: HMM banded shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded shadow DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* check if we should free the matrix, because it is significantly bigger than we need */
@@ -3476,7 +3475,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
   
   if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cp9b, &Jy_ncells, &Ly_ncells, &Ry_ncells, &Jk_ncells, &Lk_ncells, &Rk_ncells, &Tk_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: HMM banded Tr shadow matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr shadow DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* check if we should free the matrix */
@@ -4230,7 +4229,7 @@ cm_emit_mx_GrowTo(CM_t *cm, CM_EMIT_MX *mx, char *errbuf, int L, float size_limi
 
   if((status = cm_emit_mx_SizeNeeded(cm, errbuf, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("Non-banded matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("Non-banded emit matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: Non-banded emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded emit mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away
@@ -4298,9 +4297,9 @@ cm_emit_mx_GrowTo(CM_t *cm, CM_EMIT_MX *mx, char *errbuf, int L, float size_limi
   }
   mx->r_pp[mx->M] = NULL;
     
-#if eslDEBUGLEVEL >= 1  
-  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
-  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+#if eslDEBUGLEVEL >= 1   
+  printf("#DEBUG: l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("#DEBUG: r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
 #endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
@@ -4623,7 +4622,7 @@ cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float siz
 
   if((status = cm_tr_emit_mx_SizeNeeded(cm, errbuf, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("Non-banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("Non-banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: Non-banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested non-banded truncated emit mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away
@@ -4705,8 +4704,8 @@ cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float siz
   mx->Jr_pp[mx->M] = NULL;
     
 #if eslDEBUGLEVEL >= 1
-  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
-  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+  printf("#DEBUG: l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("#DEBUG: r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
 #endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
@@ -5014,7 +5013,7 @@ cm_hb_emit_mx_GrowTo(CM_t *cm, CM_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b
 
   if((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: HMM banded emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away
@@ -5087,8 +5086,8 @@ cm_hb_emit_mx_GrowTo(CM_t *cm, CM_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t *cp9b
   mx->r_pp[mx->M] = NULL;
     
 #if eslDEBUGLEVEL >= 1
-  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
-  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+  printf("#DEBUG: l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("#DEBUG: r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
 #endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);
@@ -5408,7 +5407,7 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
 
   if((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, &l_ncells, &r_ncells, &Mb_needed)) != eslOK) return status;
   /*printf("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed);*/
-  ESL_DPRINTF2(("HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("#DEBUG: HMM banded truncated emit matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded emit mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away
@@ -5494,8 +5493,8 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
   mx->Jr_pp[mx->M] = NULL;
     
 #if eslDEBUGLEVEL >= 1
-  printf("l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
-  printf("r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
+  printf("#DEBUG: l_ncells %10" PRId64 " %10" PRId64 "\n", l_cur_size, mx->l_ncells_valid);
+  printf("#DEBUG: r_ncells %10" PRId64 " %10" PRId64 "\n", r_cur_size, mx->r_ncells_valid);
 #endif
   assert(l_cur_size == mx->l_ncells_valid);
   assert(r_cur_size == mx->r_ncells_valid);

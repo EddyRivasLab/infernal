@@ -1,12 +1,7 @@
 /* cm.c
  * SRE, Sat Jul 29 09:01:20 2000 [St. Louis]
- * SVN $Id$
  * 
  * Routines for dealing with the CM data structure.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -383,6 +378,8 @@ FreeCM(CM_t *cm)
 {
   int i;
 
+  if (! cm) return;
+
   if (cm->smx       != NULL) cm_scan_mx_Destroy   (cm, cm->smx);   /* free this early, it needs some info from cm->stid */
   if (cm->trsmx     != NULL) cm_tr_scan_mx_Destroy(cm, cm->trsmx); /* ditto */
 
@@ -572,18 +569,18 @@ CMSetNullModel(CM_t *cm, float *null)
 int
 CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
 {
-  /* Contract check */
-  if(abc  == NULL) cm_Fail("ERROR in CMReadNullModel, abc is NULL.\n");
-
-  int status;
+  FILE  *fp   = NULL;
   float *null = NULL;
-  FILE *fp;
-  char *buf = NULL;
-  char *s;
-  int   n;			/* length of buf */
-  int   x;
-  char *tok;
-  float sum;
+  char  *buf  = NULL;
+  char  *s;
+  int    n;			/* length of buf */
+  int    x;
+  char  *tok;
+  float  sum;
+  int    status;
+
+  /* Contract check */
+  if (!abc) cm_Fail("ERROR in CMReadNullModel, abc is NULL.\n");
 
   ESL_ALLOC(null, sizeof(float) * abc->K);
   n   = 0;
@@ -616,14 +613,15 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   esl_vec_FNorm(null, abc->K);
     
   *ret_null = null;
-  if(buf  != NULL) free(buf);
+  free(buf);
   fclose(fp);
   return eslOK;
 
  ERROR:
+  *ret_null = NULL;  // no pun intended
   fclose(fp);
-  if(buf  != NULL) free(buf);
-  if(null != NULL) free(null);
+  free(buf);
+  free(null);
   return status;
 }
 
@@ -2848,12 +2846,17 @@ cm_AppendComlog(CM_t *cm, int argc, char **argv, int add_seed, uint32_t seed)
 int
 cm_SetCtime(CM_t *cm)
 {
-  char    *s = NULL;
-  time_t   date;
-  int      status;
+  char       *s = NULL;
+  time_t      date;
+  int         status;
+  const char *sde = getenv("SOURCE_DATE_EPOCH");
 
   ESL_ALLOC(s, 32);
-  if ((date = time(NULL)) == -1)               { status = eslESYS; goto ERROR; }
+  if (sde) {
+    date = strtoul(sde, NULL, 0);
+  } else {
+    if ((date = time(NULL)) == -1)             { status = eslESYS; goto ERROR; }
+  }
   if (ctime_r(&date, s) == NULL)               { status = eslESYS; goto ERROR; }
   if ((status = esl_strchop(s, -1)) != eslOK)  {                   goto ERROR; }
   
@@ -4932,16 +4935,16 @@ InsertsGivenNodeIndex(CM_t *cm, int nd, int *ret_i1, int *ret_i2)
 int
 cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **ret_gtr)
 {
-  int status;
-  int  nd, apos, v, cpos;
-  Parsetree_t *gtr = NULL;
-  ESL_STACK   *pda;
+  Parsetree_t *gtr       = NULL;
+  ESL_STACK   *pda       = NULL;
   int         *matassign = NULL; /* 1..alen   array; 0=insert col, 1=match col */
   int         *elassign  = NULL; /* 1..alen   array; 0=match/ins col, 1=EL col */
-  int         *c2a_map = NULL;  /* [1..cm->clen] map from consensus (match) positions to alignment positions */
+  int         *c2a_map   = NULL;  /* [1..cm->clen] map from consensus (match) positions to alignment positions */
+  int  nd, apos, v, cpos;
   int i, j, k, el_i, el_j; /* position counters */
+  int status;
 
-  if(msa->rf  == NULL) ESL_FAIL(eslEINVAL, errbuf, "msa->rf is NULL in cm_Guidetree()");
+  if (msa->rf  == NULL) ESL_FAIL(eslEINVAL, errbuf, "msa->rf is NULL in cm_Guidetree()");
 
   /* create a map from consensus positions to alignment positions, 
    * and fill in matassign and elassign, all for convenience later
@@ -4976,7 +4979,7 @@ cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **ret_gtr)
    * emitmap in display.c:CreateEmitMap()) because we have to deal
    * with inserts and ELs in the MSA.
    */
-  if ((pda  = esl_stack_ICreate()) == NULL) goto ERROR;
+  if ((pda  = esl_stack_ICreate()) == NULL) { status = eslEMEM; goto ERROR; }
   if((status = esl_stack_IPush(pda, 1))         != eslOK) goto ERROR;	/* emitl */
   if((status = esl_stack_IPush(pda, msa->alen)) != eslOK) goto ERROR;	/* emitr */
   if((status = esl_stack_IPush(pda, 0))         != eslOK) goto ERROR;	/* node index */
@@ -5097,21 +5100,25 @@ cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **ret_gtr)
 	if((status = esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]])) != eslOK) goto ERROR;
       }
     }	/* while something's on the stack */
+
+
+
   esl_stack_Destroy(pda);
+  free(elassign);
+  free(matassign);
+  free(c2a_map);
 
-  if(c2a_map)   free(c2a_map);
-  if(elassign)  free(elassign);
-  if(matassign) free(matassign);
   *ret_gtr = gtr;
-
   return eslOK;
 
  ERROR: 
-  if(elassign)  free(elassign);
-  if(matassign) free(matassign);
-  if(c2a_map)   free(c2a_map);
-  if(gtr)       FreeParsetree(gtr);
+  esl_stack_Destroy(pda);
+  free(elassign);
+  free(matassign);
+  free(c2a_map);
 
+  *ret_gtr = NULL;
+  FreeParsetree(gtr);
   return status;
 }
 

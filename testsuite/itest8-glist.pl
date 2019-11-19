@@ -8,8 +8,6 @@
 #
 # EPN, Mon Apr 30 13:00:38 2012
 # Similar to itest5-pipeline.pl
-# SVN $URL$
-# SVN $Id$
 
 BEGIN {
     $builddir  = shift;

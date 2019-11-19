@@ -3,7 +3,6 @@
  * moved to cove 2.0, Mon Sep  6 13:34:55 1993
  * cove4: SRE 29 Feb 2000 [Seattle]
  * infernal: SRE, Fri Jul 28 08:55:47 2000 [StL]
- * SVN $Id$
  * 
  * Unlike a traceback of a normal HMM alignment, which is linear,
  * the traceback of a CM is a tree structure. Here
@@ -107,14 +106,17 @@ GrowParsetree(Parsetree_t *tr)
 void
 FreeParsetree(Parsetree_t *tr)
 {
-  free(tr->emitl);
-  free(tr->emitr);
-  free(tr->state);
-  free(tr->mode);
-  free(tr->nxtl);
-  free(tr->nxtr);
-  free(tr->prv);
-  free(tr);
+  if (tr)
+    {
+      free(tr->emitl);
+      free(tr->emitr);
+      free(tr->state);
+      free(tr->mode);
+      free(tr->nxtl);
+      free(tr->nxtr);
+      free(tr->prv);
+      free(tr);
+    }
 }
 
 /* Function: SizeofParsetree()
@@ -868,8 +870,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   /* We're getting closer.
    * Now we know the size of the MSA, allocate it. 
    */
-  msa = esl_msa_Create(nseq, -1);
-  if(msa == NULL) goto ERROR;
+  if ((msa = esl_msa_Create(nseq, -1)) == NULL) { status = eslEMEM; goto ERROR; }
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = NULL;
@@ -1710,7 +1711,6 @@ leftjustify(const ESL_ALPHABET *abc, char *s, int n)
 int
 EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N)
 {
-  int status;
   Parsetree_t *tr = NULL;       /* parse tree under construction */
   ESL_STACK *pda = NULL;        /* pushdown automaton for traversing parse tree */              
   ESL_STACK *gsq = NULL;        /* growing sequence under construction */
@@ -1728,6 +1728,8 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
   int lpos;                     /* tmp variable for inserting EL trace node */
   float *tmp_tvec = NULL;       /* tmp transition vector to choose from, 
 				 * for dealing with local end transitions */
+  int status;
+
   /* Contract check */
   if(cm->flags & CMH_LOCAL_END && (fabs(sreEXP2(cm->el_selfsc) - 1.0) < 0.01))
     ESL_FAIL(eslEINVAL, errbuf, "EL self transition probability %f is too high, would emit long (too long) EL insertions.", sreEXP2(cm->el_selfsc));
@@ -1737,8 +1739,8 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
     ESL_FAIL(eslEINVAL, errbuf, "EmitParsetree requires a sequence name for the sequence it's creating.");
 
   tr  = CreateParsetree(100);
-  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
-  if((gsq = esl_stack_CCreate()) == NULL) goto ERROR;
+  if ((pda = esl_stack_ICreate()) == NULL) {status = eslEMEM; goto ERROR; }
+  if ((gsq = esl_stack_CCreate()) == NULL) {status = eslEMEM; goto ERROR; }
   N   = 0;			
   ESL_ALLOC(tmp_tvec, sizeof(float) * (MAXCONNECT+1)); /* enough room for max possible transitions, plus
 							* a local end transition */
@@ -2031,7 +2033,7 @@ ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
   score += sreLOG2(omega);
   
   /* Return the correction to the bit score. */
-  ESL_DPRINTF1(("ParsetreeScoreCorrectionNull2 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF1(("#DEBUG: ParsetreeScoreCorrectionNull2 return sc: %f\n", LogSum2(0., score)));
   free(sc);
   free(p);
   score = LogSum2(0., score);
@@ -2123,7 +2125,7 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
 
   /* Return the correction to the bit score. */
   /*printf("ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score));*/
-  ESL_DPRINTF1(("ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF1(("#DEBUG: ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
   free(sc);
   free(p);
   score = LogSum2(0., score);
@@ -2191,7 +2193,7 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
-  ESL_DPRINTF3(("ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF3(("#DEBUG: ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
   score = LogSum2(0., score);
   *ret_sc = score;
   return;
@@ -2477,19 +2479,14 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       sdr       = 0; /* this prevents EL from affecting first/final_emit */
       is_left   = TRUE; 
       is_right  = TRUE;
-      nd        = cm->ndidx[prv_v];
-      /* tricky case: if previous node was not a LEFT emitter, the EL will emit at lpos, not after it */
-      if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) { 
-	insert_sd = 1;
-      }
-      else { 
-	insert_sd = 0;
-      }
-      /* importantly, lpos and rpos remain as they were for the previous state/nd */
+      nd        = 1 + cm->ndidx[prv_v]; /* calculate node that EL replaced */
+      lpos      = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) ? cm->emap->lpos[nd] : cm->emap->lpos[nd] + 1;
+      rpos      = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) ? cm->emap->rpos[nd] : cm->emap->rpos[nd] - 1;
     }
 
+
     if(is_left) { 
-      if(ModeEmitsLeft(mode)) { 
+      if(ModeEmitsLeft(mode) || v == cm->M) { 
 	cfrom_emit = ESL_MIN(cfrom_emit, lpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
 	cto_emit   = ESL_MAX(cto_emit,   lpos);
 	if(sdl > 0 && cm->sttype[v] != IL_st) { /* inserts don't impact first_emit/final_emit */
@@ -2499,8 +2496,8 @@ ParsetreeToCMBounds(CM_t *cm, Parsetree_t *tr, int have_i0, int have_j0, char *e
       }
     }
     if(is_right) { 
-      if(ModeEmitsRight(mode)) { 
-	cfrom_emit = ESL_MIN(cfrom_emit, rpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
+      if(ModeEmitsRight(mode) || v == cm->M) { 
+        cfrom_emit = ESL_MIN(cfrom_emit, rpos + insert_sd); /* '+ insert_sd' for cfrom b/c we insert after match/delete */
 	cto_emit   = ESL_MAX(cto_emit,   rpos);
 	if(sdr > 0 && cm->sttype[v] != IR_st) { /* inserts don't impact first_emit/final_emit */
 	  first_emit = ESL_MIN(first_emit, rpos);
@@ -2612,7 +2609,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *pda       = NULL;   /* the stack */
   int          vec_size;           /* size of pA, validA */
   int          cur_vec_size;       /* number of elements we're currently using in pA, validA */ 
@@ -2641,8 +2638,7 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   /* Stochastically traceback through the TrInside matrix 
    * this section of code is adapted from cm_dpsmall.c:insideT(). 
    */
-  pda = esl_stack_ICreate();
-  if(pda == NULL) goto ERROR;
+  if ((pda = esl_stack_ICreate()) == NULL) { status = eslEMEM; goto ERROR; }
 
   v = 0;
   j = d = L;
@@ -2784,17 +2780,17 @@ cm_StochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_MX *mx, E
   if(validA    != NULL) free(validA);
 
 #if eslDEBUGLEVEL >= 2 
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %.4f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %.4f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_sc   != NULL) *ret_sc   = fsc;
 
-  ESL_DPRINTF1(("cm_StochasticParsetree() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_StochasticParsetree() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
@@ -2842,7 +2838,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *pda       = NULL;   /* the stack */
   int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
   int          cur_vec_size;       /* number of elements we're currently using in pA, validA, y_modeA, z_modeA, kA, yoffsetA */
@@ -2851,16 +2847,15 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
   float        fsc = 0.;           /* score of the parsetree we're sampling */
   int          choice;             /* index represeting sampled choice */
-  int          sd, sdl, sdr;       /* state delta, state left delta, state right delta */
+  int          sd, sdr;            /* state delta, state right delta */
 
   /* variables used in HMM banded version but no nonbanded version */
-  int      jp_v, dp_v;    /* j - jmin[v], d - hdmin[v][jp_v] */
+  int      jp_v;          /* j - jmin[v] */
   int      jp_y, dp_y ;   /* j - jmin[y], d - hdmin[y][jp_y] */
   int      jp_z, kp_z;    /* j - jmin[z], d - hdmin[z][jp_z] */
   int      jp_y_sdr;      /* j - jmin[y] - vms_sdr */
   int      dp_y_sd;       /* hdmin[y][jp_y_vms_sdr] - vms_sd */
   int      jp_0;          /* j offset in ROOT_S's (v==0) j band */
-  int      Lp_0;          /* L offset in ROOT_S's (v==0) d band */
   int      kmin, kmax;    /* min/max k */
 
   /* the DP matrix */
@@ -2885,7 +2880,6 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
   if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
@@ -2894,14 +2888,12 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   /* Stochastically traceback through the TrInside matrix 
    * this section of code is adapted from cm_dpsmall.c:insideT(). 
    */
-  pda = esl_stack_ICreate();
-  if(pda == NULL) goto ERROR;
+  if ((pda = esl_stack_ICreate()) == NULL) { status = eslEMEM; goto ERROR; }
 
   v = 0;
   j = d = L;
   i = 1;
   jp_v = j - jmin[v];
-  dp_v = d - hdmin[v][jp_v];
   fsc = 0.;
   while (1) {
     if (cm->sttype[v] == B_st) {
@@ -2979,7 +2971,6 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	/* add in emission score (or 0.0 if we're a non-emitter) */
 	fsc += get_femission_score(cm, dsq, v, i, j); 
 	sd  = StateDelta(cm->sttype[v]);
-	sdl = StateLeftDelta(cm->sttype[v]);
 	sdr = StateRightDelta(cm->sttype[v]);
 
 	/* set pA[] as (float-ized) log odds scores for each child we can transit to, 
@@ -3072,17 +3063,17 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   if(validA    != NULL) free(validA);
 
 #if eslDEBUGLEVEL >= 2 
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_sc   != NULL) *ret_sc   = fsc;
 
-  ESL_DPRINTF1(("cm_StochasticParsetreeHB() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_StochasticParsetreeHB() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
@@ -3134,7 +3125,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *i_pda     = NULL;   /* the stack, integers */
   ESL_STACK   *c_pda     = NULL;   /* the stack, characters */
   int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
@@ -3158,7 +3149,7 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   float   *JpA = NULL;                /* prob vector for possible transitions to take, J mode */
   float   *LpA = NULL;                /* prob vector for possible transitions to take, L mode */
   float   *RpA = NULL;                /* prob vector for possible transitions to take, R mode */
-  int      vms_sd, vms_sdl, vms_sdr;  /* mode-specific state delta, state left delta, state right delta */
+  int      vms_sd, vms_sdr;           /* mode-specific state delta, state right delta */
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T;       /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends */
@@ -3201,7 +3192,8 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrStochasticParsetree(), unexpected pass idx: %d", pass_idx);
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
-  if(preset_mode == TRMODE_UNKNOWN) { 
+  parsetree_mode = preset_mode;
+  if (preset_mode == TRMODE_UNKNOWN) { 
     cur_vec_size = 4;
     pA[0] = Jalpha[0][L][L]; validA[0] = TRUE; 
     pA[1] = Lalpha[0][L][L]; validA[1] = TRUE; 
@@ -3214,9 +3206,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
     else if(choice == 2) parsetree_mode = TRMODE_R;
     else if(choice == 3) parsetree_mode = TRMODE_T;
     /*printf("cm_TrStochasticParsetree() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);*/
-  }
-  else { /* preset_mode != TRMODE_UNKNOWN, enforce sampled parsetree mode is preset_mode */
-    parsetree_mode = preset_mode;
   }
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
@@ -3434,7 +3423,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  /* determine mode-specific state delta values, and which modes we can transition to */
 	  if(v_mode == TRMODE_J) { 
 	    vms_sd  = StateDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = TRUE;
 	    do_L    = FALSE;
@@ -3442,7 +3430,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  }
 	  else if(v_mode == TRMODE_L) { 
 	    vms_sd  = StateLeftDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = 0;
 	    do_J    = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from L to J mode only if a right emitter */
 	    do_L    = TRUE;
@@ -3450,7 +3437,6 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
 	  }
 	  else if(v_mode == TRMODE_R) { 
 	    vms_sd  = StateRightDelta(cm->sttype[v]);
-	    vms_sdl = 0;
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = (StateLeftDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from R to J mode only if a left emitter */
 	    do_L    = FALSE;
@@ -3576,18 +3562,18 @@ cm_TrStochasticParsetree(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char prese
   if(RpA       != NULL) free(RpA);
 
 #if eslDEBUGLEVEL >= 2 
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %.4f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %.4f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 
   if(ret_sc   != NULL) *ret_sc   = fsc;
 
-  ESL_DPRINTF1(("cm_TrStochasticParsetree() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrStochasticParsetree() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:
@@ -3649,7 +3635,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   int          d;                  /* j - i + 1; the current subseq length */
   int          k;                  /* right subseq fragment length for bifurcs */
   int          bifparent;          /* for connecting bifurcs */
-  Parsetree_t *tr;                 /* trace we're building */
+  Parsetree_t *tr        = NULL;   /* trace we're building */
   ESL_STACK   *i_pda     = NULL;   /* the stack, integers */
   ESL_STACK   *c_pda     = NULL;   /* the stack, characters */
   int          vec_size;           /* size of pA, validA, y_modeA, z_modeA, kA, yoffsetA */
@@ -3673,7 +3659,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   float   *JpA = NULL;                /* prob vector for possible transitions to take, J mode */
   float   *LpA = NULL;                /* prob vector for possible transitions to take, L mode */
   float   *RpA = NULL;                /* prob vector for possible transitions to take, R mode */
-  int      vms_sd, vms_sdl, vms_sdr;  /* mode-specific state delta, state left delta, state right delta */
+  int      vms_sd, vms_sdr;           /* mode-specific state delta, state right delta */
   int      do_J, do_L, do_R, do_T;    /* allow transitions to J, L, R modes from current state? */
   int      filled_L, filled_R, filled_T; /* will we ever use L, R, and T matrices? (determined from <preset_mode>) */
   int      allow_S_trunc_end;         /* set to true to allow d==0 BEGL_S and BEGR_S truncated ends, even if outside bands */
@@ -3681,7 +3667,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   float    trpenalty;                 /* truncation penalty, differs based on pass_idx and if we're local or global */
 
   /* variables used in HMM banded version but no nonbanded version */
-  int      jp_v, dp_v;    /* j - jmin[v], d - hdmin[v][jp_v] */
+  int      jp_v;          /* j - jmin[v] */
   int      jp_y, dp_y ;   /* j - jmin[y], d - hdmin[y][jp_y] */
   int      jp_z, kp_z;    /* j - jmin[z], d - hdmin[z][jp_z] */
   int      dp_z;          /* d - hdmin[z][jp_z] */
@@ -3748,7 +3734,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   Lp_0 = L - hdmin[0][jp_0];
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
-  if(preset_mode == TRMODE_UNKNOWN) { 
+  parsetree_mode = preset_mode;
+  if (preset_mode == TRMODE_UNKNOWN) { 
     cur_vec_size = 4;
     if(cp9b->Jvalid[0]) pA[0] = Jalpha[0][jp_0][Lp_0];
     if(cp9b->Lvalid[0]) pA[1] = Lalpha[0][jp_0][Lp_0];
@@ -3761,9 +3748,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
     else if(choice == 2) parsetree_mode = TRMODE_R;
     else if(choice == 3) parsetree_mode = TRMODE_T;
     /*printf("cm_TrStochasticParsetreeHB() sampled %s (%g %g %g %g)\n", MarginalMode(parsetree_mode), pA[0], pA[1], pA[2], pA[3]);*/
-  }
-  else { /* preset_mode != TRMODE_UNKNOWN, enforce sampled parsetree mode is preset_mode */
-    parsetree_mode = preset_mode;
   }
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
@@ -3785,7 +3769,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   i = 1;
   v_mode = parsetree_mode;
   jp_v = j - jmin[v];
-  dp_v = d - hdmin[v][jp_v];
   fsc = 0.;
   while (1) {
     /* check for super special case in truncated alignment sampling: */
@@ -3801,9 +3784,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       allow_S_trunc_end = TRUE; /* this sets yoffset to USED_TRUNC_END in the final 'else' of the code block below */
     }
     else if(cm->sttype[v] != EL_st) { 
-      /* update all-important jp_v and dp_v (j and d band-offset indices) */
+      /* update all-important jp_v (j band-offset index) */
       jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
       allow_S_trunc_end = FALSE;
       /* check for errors */
       if(j > jmax[v])        ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), j: %d > jmax[%d] (%d)\n", j, v, jmax[v]);
@@ -4060,7 +4042,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  /* determine mode-specific state delta values, and which modes we can transition to */
 	  if(v_mode == TRMODE_J) { 
 	    vms_sd  = StateDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = TRUE;
 	    do_L    = FALSE;
@@ -4068,7 +4049,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  }
 	  else if(v_mode == TRMODE_L) { 
 	    vms_sd  = StateLeftDelta(cm->sttype[v]);
-	    vms_sdl = StateLeftDelta(cm->sttype[v]);
 	    vms_sdr = 0;
 	    do_J    = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from L to J mode only a right emitter */
 	    do_L    = TRUE;
@@ -4076,7 +4056,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  }
 	  else if(v_mode == TRMODE_R) { 
 	    vms_sd  = StateRightDelta(cm->sttype[v]);
-	    vms_sdl = 0;
 	    vms_sdr = StateRightDelta(cm->sttype[v]);
 	    do_J    = (StateLeftDelta(cm->sttype[v]) == 1) ? TRUE : FALSE; /* can transition from R to J mode only a leftt emitter */
 	    do_L    = FALSE;
@@ -4208,18 +4187,18 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   if(RpA       != NULL) free(RpA);
 
 #if eslDEBUGLEVEL >= 2
-  ParsetreeDump(stdout, tr, cm, dsq);
+  /* ParsetreeDump(stdout, tr, cm, dsq); */
   float sc;
   ParsetreeScore(cm, cm->emap, errbuf, tr, dsq, FALSE, &sc, NULL, NULL, NULL, NULL);
-  printf("parsetree score: %f\n", sc);
-  printf("fsc:             %.4f\n", fsc);
+  printf("#DEBUG: parsetree score: %f\n", sc);
+  printf("#DEBUG: fsc:             %.4f\n", fsc);
 #endif
 
   if(ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
   if(ret_mode != NULL) *ret_mode = parsetree_mode; 
   if(ret_sc   != NULL) *ret_sc   = fsc;
     
-  ESL_DPRINTF1(("cm_TrStochasticParsetreeHB() return sc: %f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cm_TrStochasticParsetreeHB() return sc: %f\n", fsc));
   return eslOK;
 
  ERROR:

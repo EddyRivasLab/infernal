@@ -5,11 +5,6 @@
  * parse of a target sequence using CM. Bands are derived
  * from CM plan 9 HMM (CP9 HMM) Forward/Backward parses of
  * the target.
- * 
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************
  */
 
 #include "esl_config.h"
@@ -359,7 +354,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
-  ESL_DPRINTF1(("bands validated.\n"));
+  ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm); 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
@@ -400,6 +395,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            doing_search - TRUE if we're going to use these HMM bands for search, not alignment
  *            do_sample    - TRUE if bands will eventually be used for sampling a parsetree
  *            do_post      - TRUE if bands will eventually be used for posterior alignment
+ *            do_iterate   - TRUE to attempt to iteratively tighten bands until matrix is small enough
  *            maxtau       - max value allowed for cm->tau
  *            xtau         - we multiply tau by this at each iteration (must be > 1.1)
  *            ret_Mb       - RETURN: required Mb for HB mx for cm->tau upon exit.
@@ -410,7 +406,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
  *            A different error code upon an error, errbuf is filled.
  */
 int
-cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, float *ret_Mb)
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb)
 {
   int   status;
   int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
@@ -433,11 +429,15 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
     /* check if we can stop iterating, three ways we can
      * case 1: matrix is now smaller than our limit.
-     * case 2: do_trunc == FALSE && tau has reached its limit
-     * case 3: do_trunc == TRUE  && tau, thresh1 and thresh have all reached their limits
+     * case 2: do_iterate == FALSE
+     * case 3: do_trunc == FALSE && tau has reached its limit
+     * case 4: do_trunc == TRUE  && tau, thresh1 and thresh have all reached their limits
      */
     if(hbmx_Mb <  size_limit) { 
       break; /* our matrix will be small enough, break out of while(1) */
+    }
+    if(! do_iterate) { 
+      break; /* do_iterate is FALSE */
     }
     if(tau_at_limit && thresh1_at_limit && thresh2_at_limit) { /* if do_trunc is FALSE, thresh{1,2}_at_limit were init'ed as TRUE */
       break; /* tau, thresh1 and thresh2 have all reached their limits, break out of while (1) */
@@ -1255,17 +1255,8 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
   if(hd_needed != cp9b->hd_needed) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hd_needed inconsistent.");
 
   for(v = 0; v < cm->M; v++) {
-    sd          = StateDelta(cm->sttype[v]);
-    max_sdl_sdr = ESL_MAX(StateLeftDelta(cm->sttype[v]), StateRightDelta(cm->sttype[v]));
-    dn          = do_trunc ? max_sdl_sdr : sd;
-    /* if (do_trunc) d can be 1 for MP states, this is why we use dn
-     * here.  Note: d can't be 0 for ML/IL in R mode, MR/IR in L
-     * mode even though you might think it could be. We'll always do
-     * a truncated begin with d=1 for L,R marginal alignments. */
-    if(cp9b->jmin[v] != -1) { 
-      if(cp9b->jmin[v] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmin[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmin[v], dn);
-      if(cp9b->jmax[v] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmax[v], dn);
-    }
+    assert((cp9b->imin[v] == -1 && cp9b->imax[v] == -2) || (cp9b->imin[v] >= 0 && cp9b->imax[v] >= 0)); 
+    assert((cp9b->jmin[v] == -1 && cp9b->jmax[v] == -2) || (cp9b->jmin[v] >= 0 && cp9b->jmax[v] >= 0)); 
   }
 
   for(v = 0; v < cm->M; v++) {
@@ -1691,8 +1682,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 	  jmax[v] = r_dx[rpos];
 
 	  v++; /* v is MATP_IL */
-	  jmin[v] = r_nn_j[rpos-1]; 
-	  jmax[v] = r_nx_j[rpos-1]; 
+	  jmin[v] = r_nn_j[rpos-1];
+	  jmax[v] = r_nx_j[rpos-1];
 
 	  v++; /* v is MATP_IR */
 	  jmin[v] = r_in[rpos-1];
@@ -1932,8 +1923,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
    * 4. if(!do_trunc) for MP states, enforce jmin/jmax allow at least 2 residues to be emitted
    */
   for(v = 0; v < cm->M; v++) { 
-    assert((imin[v] == -1 && imax[v] == -2) || (imin[v] >= 0 && imax[v] >= 0)); 
-    assert((jmin[v] == -1 && jmax[v] == -2) || (jmin[v] >= 0 && jmax[v] >= 0)); 
     ESL_DASSERT1(((imin[v] == -1 && imax[v] == -2) || (imin[v] >= 0 && imax[v] >= 0))); 
     ESL_DASSERT1(((jmin[v] == -1 && jmax[v] == -2) || (jmin[v] >= 0 && jmax[v] >= 0))); 
     if(imin[v] == -1 || jmin[v] == -1) { 
@@ -1971,7 +1960,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
 
-  #if 0
+#if 0
   if(do_trunc) { 
     for(v = 0; v < cm->M; v++) { 
       printf("dotrunc: %d ijband v: %4d nd: %4d  %4s  %2s  i: %5d - %5d  j: %5d - %5d\n", do_trunc, v, cm->ndidx[v], 
@@ -1980,7 +1969,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 	     imin[v], imax[v], jmin[v], jmax[v]);
     }
   }
-  #endif
+#endif
 
   /* A final, brutal hack. If the hmm used to derive bands has local
    * begins, ends and ELs on, it's possible (but extremely rare
@@ -2722,7 +2711,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
     if((!local_begins_ends_on) && (r_mn[k] > r_mx[k]) && (r_dn[k] > r_dx[k])) { 
       assert(k != 0);
       ESL_DASSERT1((just_filled_gap == FALSE));
-      ESL_DPRINTF1(("! HMM node %d is unreachable hmm!\n", k)); 
+      ESL_DPRINTF1(("#DEBUG: ! HMM node %d is unreachable hmm!\n", k)); 
       if(was_unr[k]) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "HMMBandsEnforceValidParse() node k %d was determined unreachable in second pass! Shouldn't happen (coding error).\n", k);
       was_unr[k] = TRUE;
       /* expand the bands so k becomes reachable, using a greedy technique */
@@ -2735,7 +2724,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
       k -= 2;
     }
     else if(just_filled_gap == TRUE) { 
-      ESL_DPRINTF1(("! HMM node %d filled a gap!\n", k));
+      ESL_DPRINTF1(("#DEBUG: ! HMM node %d filled a gap!\n", k));
       if(filled_gap[k] == TRUE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "HMMBandsEnforceValidParse() node k %d needed a gap filled in second pass! Shouldn't happen (coding error).\n", k);
       filled_gap[k] = TRUE;
       /* to ensure we can now reach node k, we simply decrement k by 2, then
@@ -2910,7 +2899,7 @@ HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int
     if(cp9b->pn_max_i[k-1] != -1) cp9b->pn_max_i[k-1] = ESL_MAX(cp9b->pn_max_i[k-1], nxt_n);
     else                          cp9b->pn_max_i[k-1] = nxt_n;
     ESL_DASSERT1((cp9b->pn_max_i[k-1] >= cp9b->pn_min_i[k-1]));
-    ESL_DPRINTF1(("scenario 1 reset k from %d to %d\n", k+2, k));
+    ESL_DPRINTF1(("#DEBUG: scenario 1 reset k from %d to %d\n", k+2, k));
   }
   else { 
     /* scenario 2: the opposite of scenario 1. All possible parses that reach node k-1 have already emitted too many
@@ -2924,7 +2913,7 @@ HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int
       cp9b->pn_min_d[kp] = cp9b->pn_max_d[kp] = r_prv_min; /* enforce this delete state is used */
       kp++;
     }
-    ESL_DPRINTF1(("scenario 2 reset k from %d to %d (kp: %d r_prv_min: %d (+1=%d for match))\n", k, k-2, kp, r_prv_min, r_prv_min+1));
+    ESL_DPRINTF1(("#DEBUG: scenario 2 reset k from %d to %d (kp: %d r_prv_min: %d (+1=%d for match))\n", k, k-2, kp, r_prv_min, r_prv_min+1));
   }
   return eslOK;
 }
@@ -2958,26 +2947,16 @@ HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int
 int
 HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn)
 {
-  int left_min, left_max;    /* min1/max1 if min1 <= min2, else min2/max2 */
-  int right_min, right_max;  /* min2/max2 if min1 <= min2, else min1/max1 */
+  int left_max;              /* min1/max1 if min1 <= min2, else min2/max2 */
+  int right_min;             /* min2/max2 if min1 <= min2, else min1/max1 */
   int in, ix;                /* min/max residue for I_k, calc'ed here */
 
   ESL_DASSERT1((k != 0));
   ESL_DASSERT1((max1 >= min1));
   ESL_DASSERT1((max2 >= min2));
 	       
-  if(min1 <= min2) { 
-    left_min = min1; 
-    left_max = max1;
-    right_min = min2;
-    right_max = max2;
-  }
-  else { 
-    left_min = min2; 
-    left_max = max2;
-    right_min = min1;
-    right_max = max1;
-  }
+  if (min1 <= min2) { left_max = max1;  right_min = min2; }
+  else              { left_max = max2;  right_min = min1; }
   ESL_DASSERT1((right_min - left_max > 1)); 
 
   /* determine in and ix */
@@ -4585,7 +4564,7 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
   int min_i, max_i, min_j, max_j;
 
 #if eslDEBUGLEVEL >= 1   
-  printf("cp9_ShiftCMBands(), i: %d j: %d Lp: %d\n", i, j, Lp);
+  printf("#DEBUG: cp9_ShiftCMBands(), i: %d j: %d Lp: %d\n", i, j, Lp);
 #endif
 
   for(v = 0; v < cm->M; v++) { 
@@ -4960,7 +4939,7 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
       cp9b->Tvalid[v] = FALSE;
     }
 #if eslDEBUGLEVEL >= 1
-    printf("v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
+    printf("#DEBUG: v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
 	   cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);
 #endif
   }

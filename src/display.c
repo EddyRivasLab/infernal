@@ -1,13 +1,8 @@
 /* display.c
  * SRE, Thu May 23 08:18:05 2002 [St. Louis]
- * SVN $Id$
  * 
  * Routines for formatting and displaying parse trees
  * for output.
- * 
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -660,7 +655,7 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc)
   CMConsensus_t *con = NULL;    /* growing consensus info */
   char     *cseq = NULL;        /* growing consensus sequence display string   */
   char     *cstr = NULL;        /* growing consensus structure display string  */
-  int      *ct;			/* growing ct Zuker pairing partnet string     */
+  int      *ct = NULL;	        /* growing ct Zuker pairing partnet string     */
   int      *lpos = NULL;        /* maps node->left consensus position, [0..nodes-1] */
   int      *rpos = NULL;        /* maps node->right consensus position, [0..nodes-1] */
   int       cpos;		/* current position in cseq, cstr              */
@@ -960,7 +955,7 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   int *inface;
   int *outface;
   int  nd, left, right, parent;
-  int  v,w,y;
+  int  v,y;
 
   ESL_ALLOC(inface,  sizeof(int) * cm->nodes);
   ESL_ALLOC(outface, sizeof(int) * cm->nodes);
@@ -1004,7 +999,6 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
       else if (cm->ndtype[nd] == BEGR_nd)
 	{
 	  parent = cm->ndidx[cm->plast[v]];
-	  w      = cm->nodemap[parent];
 	  left   = cm->ndidx[cm->cfirst[y]];
 	  outface[nd] = outface[parent] + inface[left];
 	}

@@ -16,7 +16,6 @@
  *      hits for CM and CP9 DP search functions
  *
  * EPN, Fri Oct 26 05:04:34 2007
- * SVN $Id$
  */
 
 #include <stdio.h>

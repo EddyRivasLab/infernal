@@ -1,7 +1,6 @@
 /* cmbuild: covariance model construction from a multiple sequence alignment.
  *
  * SRE, Thu Jul 27 13:19:43 2000 [StL]
- * SVN $Id: cmbuild.c 3399 2010-11-05 19:27:46Z nawrockie $
  */
 
 #include "esl_config.h"
@@ -89,6 +88,7 @@ static ESL_OPTIONS options[] = {
   { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set CM target relative entropy to <x>",             5 },
   { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "set eff seq # for all models to <x>",                           5 },
   { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",      5 },
+  { "--emaxseq", eslARG_REAL,      NULL,    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set maximum effective sequence number to <x>",      5 },
   { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",           5 }, 
   { "--esigma",  eslARG_REAL,    "45.0",    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set sigma param to <x>",                            5 },
 
@@ -138,15 +138,18 @@ static ESL_OPTIONS options[] = {
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer verbose output options */
-  /* name        type          default  env   range toggles reqs  incomp help  docgroup*/
-  { "--verbose", eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                              109 },
-  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                      109 },
-  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",         109 },
-  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",     109 },
-  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>", 109 },
-  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                 109 },
-  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",    109 },
-  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>", 109 },
+  /* name           type          default  env   range toggles reqs  incomp help  docgroup*/
+  { "--verbose",    eslARG_NONE,    FALSE, NULL, NULL,   NULL, NULL, NULL,  "be verbose with output",                                      109 },
+  { "--cfile",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save count vectors to file <f>",                              109 },
+  { "--efile",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save emission score information to file <f>",                 109 },
+  { "--tfile",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "dump individual sequence parsetrees to file <f>",             109 },
+  { "--cmtbl",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of CM topology to file <f>",         109 },
+  { "--emap",       eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save consensus emit map to file <f>",                         109 },
+  { "--gtree",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",            109 },
+  { "--gtbl",       eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>",         109 },
+  { "--occfile",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CM state to <f>",             109 },
+  { "--cp9occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CP9 ML HMM state) to <f>",    109 },
+  { "--fp7occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each filter P7 HMM state) to <f>", 109 },
 
   /* Building multiple CMs after clustering input MSA */
   /* name        type            default env   range      toggles reqs  incomp    help  docgroup*/
@@ -211,6 +214,9 @@ struct cfg_s {
   FILE         *gfp;            /* for --gtree */
   FILE         *gtblfp;         /* for --gtbl */
   FILE         *tfp;            /* for --tfile */
+  FILE         *occfp;          /* for --occfile */
+  FILE         *cp9occfp;       /* for --cp9occfile */
+  FILE         *fp7occfp;       /* for --fp7occfile */
   FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
   FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
@@ -252,6 +258,9 @@ static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm
 static int    dump_emission_info(FILE *fp, CM_t *cm, char *errbuf);
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
+static void  dump_cm_occupancy_values(FILE *fp, CM_t *cm);
+static void  dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9);
+static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
 
  int
  main(int argc, char **argv)
@@ -294,6 +303,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    cfg.cdfp       = NULL;
    cfg.refinefp   = NULL;
    cfg.rdfp       = NULL;
+   cfg.occfp      = NULL;
+   cfg.cp9occfp   = NULL;
+   cfg.fp7occfp   = NULL;
 
    if (esl_opt_IsOn(go, "--informat")) {
      cfg.fmt = esl_msafile_EncodeFormat(esl_opt_GetString(go, "--informat"));
@@ -346,7 +358,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 
    /* Clean up the cfg. */
    /* close all output files */
-   if (cfg.postmsafp || cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp) { 
+   if (cfg.postmsafp || cfg.cfp || cfg.escfp || cfg.tblfp || cfg.efp || cfg.gfp || cfg.gtblfp || cfg.tfp || cfg.cdfp || cfg.refinefp || cfg.rdfp || cfg.occfp || cfg.cp9occfp || cfg.fp7occfp) { 
      fprintf(cfg.ofp, "#\n");
    }
    if (cfg.postmsafp != NULL) {
@@ -392,6 +404,18 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if (cfg.rdfp != NULL) {
      fprintf(cfg.ofp, "# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
      fclose(cfg.rdfp); 
+   }
+   if (cfg.occfp != NULL) {
+     fprintf(cfg.ofp, "# Expected occupancy values for each CM state saved in file %s.\n", esl_opt_GetString(go, "--occfile"));
+     fclose(cfg.occfp); 
+   }
+   if (cfg.cp9occfp != NULL) {
+     fprintf(cfg.ofp, "# Expected occupancy values for each CM CP9 HMM state saved in file %s.\n", esl_opt_GetString(go, "--cp9occfile"));
+     fclose(cfg.cp9occfp); 
+   }
+   if (cfg.fp7occfp != NULL) {
+     fprintf(cfg.ofp, "# Expected occupancy values for each filter P7 HMM state saved in file %s.\n", esl_opt_GetString(go, "--fp7occfile"));
+     fclose(cfg.fp7occfp); 
    }
 
    if (cfg.afp        != NULL) esl_msafile_Close(cfg.afp);
@@ -666,6 +690,7 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
   if (esl_opt_IsUsed(go, "--ere"))         { fprintf(ofp, "# minimum rel entropy target:                         %f bits\n",   esl_opt_GetReal(go, "--ere")); }
   if (esl_opt_IsUsed(go, "--eset"))        { fprintf(ofp, "# effective seq number:                               set to %f\n", esl_opt_GetReal(go, "--eset")); }
   if (esl_opt_IsUsed(go, "--eminseq"))     { fprintf(ofp, "# minimum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--eminseq")); }
+  if (esl_opt_IsUsed(go, "--emaxseq"))     { fprintf(ofp, "# maximum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--emaxseq")); }
   if (esl_opt_IsUsed(go, "--ehmmre"))      { fprintf(ofp, "# minimum ML CP9 HMM rel entropy target:              %f bits\n",   esl_opt_GetReal(go, "--ehmmre")); }
   if (esl_opt_IsUsed(go, "--esigma"))      { fprintf(ofp, "# entropy target sigma parameter:                     %f bits\n",   esl_opt_GetReal(go, "--esigma")); }
 
@@ -715,6 +740,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
   if (esl_opt_IsUsed(go, "--emap"))        { fprintf(ofp, "# saving consensus emit map to file:                  %s\n", esl_opt_GetString(go, "--emap")); }
   if (esl_opt_IsUsed(go, "--gtree"))       { fprintf(ofp, "# saving tree description of master tree to file:     %s\n", esl_opt_GetString(go, "--gtree")); }
   if (esl_opt_IsUsed(go, "--gtbl"))        { fprintf(ofp, "# saving tabular description of master tree to file:  %s\n", esl_opt_GetString(go, "--gtbl")); }
+  if (esl_opt_IsUsed(go, "--occfile"))     { fprintf(ofp, "# saving CM expected occupancy values to file:        %s\n", esl_opt_GetString(go, "--occfile")); }
+  if (esl_opt_IsUsed(go, "--cp9occfile"))  { fprintf(ofp, "# saving ML CP9 expected occupancy values to file:    %s\n", esl_opt_GetString(go, "--cp9occfile")); }
+  if (esl_opt_IsUsed(go, "--fp7occfile"))  { fprintf(ofp, "# saving filter P7 expected occupancy values to file: %s\n", esl_opt_GetString(go, "--fp7occfile")); }
 
   if (esl_opt_IsUsed(go, "--ctarget"))     { fprintf(ofp, "# building >1 CMs from each MSA; target num CMs:      %d\n", esl_opt_GetInteger(go, "--ctarget")); }
   if (esl_opt_IsUsed(go, "--cmaxid"))      { fprintf(ofp, "# building >1 CMs from each MSA; max id b/t clusters: %g\n", esl_opt_GetReal(go, "--cmaxid")); }
@@ -909,6 +937,21 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
        if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	 cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
      }
+   /* optionally, open occ file */
+   if (esl_opt_GetString(go, "--occfile") != NULL) {
+     if ((cfg->occfp = fopen(esl_opt_GetString(go, "--occfile"), "w")) == NULL) 
+       ESL_FAIL(eslFAIL, errbuf, "Failed to open --occfile output file %s\n", esl_opt_GetString(go, "--occfile"));
+   }
+   /* optionally, open cp9occ file */
+   if (esl_opt_GetString(go, "--cp9occfile") != NULL) {
+     if ((cfg->cp9occfp = fopen(esl_opt_GetString(go, "--cp9occfile"), "w")) == NULL) 
+       ESL_FAIL(eslFAIL, errbuf, "Failed to open --cp9occfile output file %s\n", esl_opt_GetString(go, "--cp9occfile"));
+   }
+   /* optionally, open fp7occ file */
+   if (esl_opt_GetString(go, "--fp7occfile") != NULL) {
+     if ((cfg->fp7occfp = fopen(esl_opt_GetString(go, "--fp7occfile"), "w")) == NULL) 
+       ESL_FAIL(eslFAIL, errbuf, "Failed to open --fp7occfile output file %s\n", esl_opt_GetString(go, "--fp7occfile"));
+   }
 
    if (cfg->pri     == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
    if (cfg->null    == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
@@ -936,6 +979,9 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
+   cm->checksum = checksum;
+   cm->flags   |= CMH_CHKSUM;
+
    if((CMCountNodetype(cm, MATP_nd) == 0)     && 
       (! esl_opt_GetBoolean(go, "--v1p0"))    && 
       (! esl_opt_GetBoolean(go, "--p56"))     && 
@@ -954,11 +1000,10 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
    if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
    if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
-   /* if <pretend_cm_is_hmm> we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
-   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm, pretend_cm_is_hmm))          != eslOK) goto ERROR;
-
-   cm->checksum = checksum;
-   cm->flags   |= CMH_CHKSUM;
+   /* if <pretend_cm_is_hmm> OR --p7ml used, then we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
+   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm,
+                                                (pretend_cm_is_hmm || esl_opt_GetBoolean(go, "--p7ml"))))
+        != eslOK) goto ERROR;
 
    *ret_cm = cm;
    return eslOK;
@@ -1242,6 +1287,12 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
    if(cfg->gfp    != NULL) MasterTraceDisplay(cfg->gfp, mtr, cm);
    /* save base pair info, if nec */
    if(cfg->escfp   != NULL) if((status = dump_emission_info(cfg->escfp, cm, errbuf)) != eslOK) return status;
+   /* save CM occ values, if nec */
+   if(cfg->occfp != NULL) dump_cm_occupancy_values(cfg->occfp, cm);  
+   /* save cp9 occ values, if nec */
+   if(cfg->cp9occfp != NULL) dump_cp9_occupancy_values(cfg->cp9occfp, cm->name, cm->cp9);
+   /* save fp7 occ values, if nec */
+   if(cfg->fp7occfp != NULL) dump_fp7_occupancy_values(cfg->fp7occfp, cm->name, cm->fp7);
 
    /* save parsetrees if nec */
    if(cfg->tfp != NULL) { 
@@ -1686,14 +1737,21 @@ static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 	 etarget = set_target_relent(go, cm->abc, clen, CMCountNodetype(cm, MATP_nd));
        }
 
-       status = cm_EntropyWeight(cm, pri, etarget, esl_opt_GetReal(go, "--eminseq"), FALSE, &hmm_re, &neff);
+       status = cm_EntropyWeight(cm, pri, etarget, 
+                                 esl_opt_GetReal(go, "--eminseq"), 
+                                 (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                 FALSE, &hmm_re, &neff);
        /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
 	* recalculate neff so HMM relative entropy of <x> is achieved.
 	*/
        if( esl_opt_IsOn(go, "--ehmmre")) { 
 	 hmm_etarget = esl_opt_GetReal(go, "--ehmmre"); 
+         printf("hmm_etarget: %f\n", hmm_etarget);
 	 if(hmm_re < hmm_etarget) { 
-	   status = cm_EntropyWeight(cm, pri, hmm_etarget, esl_opt_GetReal(go, "--eminseq"), TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+	   status = cm_EntropyWeight(cm, pri, hmm_etarget, 
+                                     esl_opt_GetReal(go, "--eminseq"), 
+                                     (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                     TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
 	   if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
 	   else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
 	   used_hmm_etarget = TRUE;
@@ -2015,6 +2073,10 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
      * also set cfg->fp7_bld->arch_strategy as p7_ARCH_HAND.
      */
     amsa = esl_msa_Clone(msa);
+    /* if msa had bit score cutoffs, get rid of those, they pertain to the CM, not to the HMM */
+    amsa->cutset[eslMSA_GA1] = amsa->cutset[eslMSA_GA2] = FALSE;
+    amsa->cutset[eslMSA_TC1] = amsa->cutset[eslMSA_TC2] = FALSE;
+    amsa->cutset[eslMSA_NC1] = amsa->cutset[eslMSA_NC2] = FALSE;
     if(amsa->rf != NULL) free(amsa->rf);
     ESL_ALLOC(amsa->rf, sizeof(char) * (amsa->alen+1));
     if(! (cm->flags & CMH_MAP)) { cm_Fail("Unable to create additional p7 HMM, CM has no map, this shouldn't happen"); }
@@ -2024,8 +2086,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     cfg->fp7_bld->arch_strategy = p7_ARCH_HAND;
     
     if ((status = p7_Builder(cfg->fp7_bld, amsa, cfg->fp7_bg, &fhmm, 
-			     /*opt_trarr=*/NULL, /*opt_gm=*/NULL, /*opt_om=*/NULL, /*opt_postmsa=*/NULL,
-			     /*seqweights_w_fp=*/NULL, /*seqweights_e_fp=*/NULL)) != eslOK)
+			     /*opt_trarr=*/NULL, /*opt_gm=*/NULL, /*opt_om=*/NULL, /*opt_postmsa=*/NULL)) != eslOK)
       { strcpy(errbuf, cfg->fp7_bld->errbuf); return status; }
 
     /* remove the RF annotation, it only exists because we created amsa->rf above */
@@ -2055,7 +2116,10 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
        */
       if ((status =  build_model(go, cfg, errbuf, FALSE, msa, &acm, NULL, NULL)) != eslOK) return status;
       fhmm_re = p7_MeanMatchRelativeEntropy(fhmm, cfg->fp7_bg);
-      status = cm_EntropyWeight(acm, cfg->pri, fhmm_re, esl_opt_GetReal(go, "--eminseq"), TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+      
+      status = cm_EntropyWeight(acm, cfg->pri, fhmm_re, esl_opt_GetReal(go, "--eminseq"), 
+                                (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                TRUE, &mlp7_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
       acm->eff_nseq = neff;
@@ -3070,28 +3134,28 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   /* Transition priors: taken from hmmer's p7_prior.c::p7_prior_CreateNucleic() */
   /* Roughly, learned from rmark benchmark - hand-beautified (trimming overspecified significant digits)
    */
-  pri->tm->pq[0]       = 1.0;
+  pri->tm->q[0]       = 1.0;
   pri->tm->alpha[0][0] = 2.0; // TMM
   pri->tm->alpha[0][1] = 0.1; // TMI
   pri->tm->alpha[0][2] = 0.1; // TMD
 
-  pri->ti->pq[0]       = 1.0;
+  pri->ti->q[0]       = 1.0;
   pri->ti->alpha[0][0] = 0.06; // TIM
   pri->ti->alpha[0][1] = 0.2; // TII
 
-  pri->td->pq[0]       = 1.0;
+  pri->td->q[0]       = 1.0;
   pri->td->alpha[0][0] = 0.1; // TDM
   pri->td->alpha[0][1] = 0.2; // TDD
 
   /* Match emission priors  */
   for (q = 0; q < num_comp; q++)
     {
-      pri->em->pq[q] = defmq[q];
+      pri->em->q[q] = defmq[q];
       esl_vec_DCopy(defm[q], 4, pri->em->alpha[q]);
     }
 
   /* Insert emission priors. */
-  pri->ei->pq[0] = 1.0;
+  pri->ei->q[0] = 1.0;
   esl_vec_DSet(pri->ei->alpha[0], 4, 1.0);
 
   return pri;
@@ -3101,7 +3165,100 @@ P7_PRIOR *cm_p7_prior_CreateNucleic(void)
   return NULL;
 }
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
+/* Function: dump_cm_occupancy_values()
+ * Date:     EPN, Tue Jul 17 19:53:06 2018 [Benasque]
+ *
+ * Purpose: Calculate and dump CM occupancy values, the expected
+ *          number of times each CM state is entered.
+ *
+ * Returns: void
+ */
+static void
+dump_cm_occupancy_values(FILE *fp, CM_t *cm)
+{
+  double *psi; /* expected num times each state visited in HMM*/
+  int     v;
 
+  psi = cm_ExpectedStateOccupancy(cm);
+
+  fprintf(fp, "# model_name: %s\n", cm->name);
+  fprintf(fp, "# number_of_states: %d\n", cm->M);
+  fprintf(fp, "# columns: <state_idx> <state_expected_occupancy>\n");
+  for(v = 0; v < cm->M; v++) { 
+    fprintf(fp, "%d %.5f\n", v, psi[v]);
+  }
+  fprintf(fp, "//\n");
+
+  free(psi);
+
+  return;
+}
+
+/* Function: dump_cp9_occupancy_values()
+ * Date:     EPN, Tue Jul 17 19:22:57 2018 [Benasque]
+ *
+ * Purpose: Calculate and dump ML CP9 HMM occupancy values, the
+ *          expected number of times each state is entered.
+ *
+ * Returns: void
+ */
+static void
+dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9)
+{
+  int        k;
+  double   **phi;     /* expected num times each state visited in HMM*/
+
+  fill_phi_cp9(cp9, &phi, 1, FALSE);
+
+  fprintf(fp, "# model_name: %s\n", name);
+  fprintf(fp, "# number_of_nodes: %d\n", cp9->M);
+  fprintf(fp, "# columns: <node_idx> <expected_occupancy_match> <expected_occupancy_insert> <expected_occupancy_delete>\n");
+  for(k = 0; k <= cp9->M; k++) { 
+    fprintf(fp, "%d %.5f %.5f %.5f\n", k, phi[k][HMMMATCH], phi[k][HMMINSERT], phi[k][HMMDELETE]);
+  }
+  fprintf(fp, "//\n");
+
+  for(k = 0; k <= cp9->M; k++) free(phi[k]);
+  free(phi);
+
+  return;
+}
+
+/* Function: dump_fp7_occupancy_values()
+ * Date:     EPN, Tue Jul 17 19:22:57 2018 [Benasque]
+ *
+ * Purpose: Calculate and dump filter P7 HMM occupancy values, the
+ *          expected number of times each CM state is entered.
+ *
+ * Returns: void
+ */
+static void
+dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7)
+{
+  int       status;
+  int        k;
+  float     *mocc = NULL;
+  float     *iocc = NULL;
+
+  ESL_ALLOC(mocc, sizeof(float) * (p7->M+1));
+  ESL_ALLOC(iocc, sizeof(float) * (p7->M+1));
+
+  if (p7_hmm_CalculateOccupancy(p7, mocc, iocc) != eslOK) cm_Fail("Error in p7_hmm_CalculateOccupancy()");
+
+  fprintf(fp, "# model_name: %s\n", name);
+  fprintf(fp, "# number_of_nodes: %d\n", p7->M);
+  fprintf(fp, "# columns: <node_idx> <expected_occupancy_match> <expected_occupancy_insert> <expected_occupancy_delete>\n");
+  for(k = 0; k <= p7->M; k++) { 
+    fprintf(fp, "%d %.5f %.5f %.5f\n", k, mocc[k], iocc[k], 1. - mocc[k]);
+  }
+  fprintf(fp, "//\n");
+
+  free(mocc);
+  free(iocc);
+
+  return;
+  
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return; /* NEVERREACHED */
+}

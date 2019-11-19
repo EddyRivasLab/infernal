@@ -1378,5 +1378,160 @@ pseudoknotted broken basepair are both correctly removed.
 
 //
 #### 
-####  1.1.2 release: June 2014
+####  1.1.2 release: 7 July 2016
 ####
+
+ID              i45
+TITLE		cmsearch incorrect model boundaries in alidisplay with local ends at terminii
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/17_0207_inf_cmsearch_alidisplay_bug/00LOG.txt
+                (NCBI)
+REPORTED_BY     Azat Badretdin
+CLOSED_DATE     EPN, Tue Feb 21 10:10:22 2017
+DESCRIPTION    
+
+Model boundaries are not correctly calculated when local ends are used
+in R mode as the first (5'-most) model position, in L mode as the
+final (3'-most) model position, or in T mode as either the first
+(5'-most) or final (3'-most) position(s).
+
+The reason is that I decided to allow L and R (and T) model EL
+emissions relatively late in the development of the 1.1 code, and did
+not 'fully' implement it. Specifically I forgot to modify the code in
+cm_parsetree.c::ParsetreeToCMBounds() that determines the 'cfrom_emit'
+and 'cto_emit' values. 
+
+Azat found this bug because he wrote a parser for cmsearch standard
+output, including CM_ALIDISPLAY alignments, and when this bug occurs
+it results in model boundaries which exceed cm->clen (in the case of
+the 5' bug, which is the only real world example yet found).
+
+The fix is to modify a block of code in
+cm_parsetree.c::ParsetreeToCMBounds() to properly account for local
+end emissions in L and R (and T) modes, and to modify the 
+boundaries of those EL sub-parsetrees. Previously we were using the
+node that transitioned into the EL to calculate those boundaries, 
+when it should be the node that the EL replaces.
+//
+
+ID              i46
+TITLE		cmsearch alidisplay model coordinate formatting error
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/17_0207_inf_cmsearch_alidisplay_bug/00LOG.txt
+                (NCBI)
+REPORTED_BY     Azat Badretdin
+CLOSED_DATE     EPN, Tue Feb 28 08:23:40 2017
+DESCRIPTION    
+
+The width of the coordinate field in cm_alidisplay_Print() was being
+calculated as the maximum of sqfrom, sqto (sequence boundaries) and
+ad->cfrom_emit, ad->cto_emit (model boundaries). The coordinate width
+should have been (and now is) calculated as the maximum of sqfrom,
+sqto, ad->cfrom_span and ad->cto_span, because it is the cfrom_span
+and cto_span values that are actually printed in the alidisplay. 
+
+cfrom_span and cto_span only differ from cfrom_emit and cto_emit in
+the case of truncated alignment. This bug caused a formatting error in
+rare cases on the 3' end of alignments when the model boundary for a
+block of an alidisplay exceeded cto_emit. Because we are taking a max,
+this bug never affected the 5' end where cfrom_span will always be 1
+if it is different from cfrom_emit.
+
+Azat found this bug because he wrote a parser for cmsearch standard
+output, including CM_ALIDISPLAY alignments, which must have been
+converting lines of alidisplay output into arrays and checking that
+they all made sense at the same indices.
+
+This bug is sufficiently simple that I didn't feel the need to create
+a test script for it in the testsuite.
+//
+
+ID              i47
+TITLE		cmbuild --p7ml option does nothing
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/17_0304_inf_cmbuild_p7ml
+                (NCBI)
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Mon Mar 19 16:02:06 2018
+DESCRIPTION    
+
+The --p7ml option to cmbuild did nothing in version 1.1.2. The fix was
+simple enough, to modify the call to build_and_calibrate_p7_filter()
+to include a check for whether the --p7ml option was used. Previously,
+it was passing in a boolean value for whether the ML P7 HMM should be
+used as the filter, but it just wasn't related to the --p7ml option
+being used or not. What that boolean was related to was whether the CM
+had 0 basepairs or not. If a CM had 0 basepairs we were using the ML
+P7 HMM of that CM as its filter, because intuitively that makes sense:
+the CM is itself basically like an HMM and the ML P7 HMM is going to
+be as similar as a P7 HMM can possibly be to that HMM, so we should
+use it to filter.
+
+//
+
+ID              i48
+TITLE		qsort callback random return value
+STATUS          CLOSED
+XREF            /panfs/pan1/infernal/notebook/18_0521_inf_qsort_helpers_bug/infernal
+                (NCBI)
+REPORTED_BY     Yuri Gribov (github username: yugr)
+                https://github.com/EddyRivasLab/infernal/issues/11
+CLOSED_DATE     EPN, Wed May 23 05:40:21 2018
+DESCRIPTION    
+
+Some of the functions used by qsort() to sort hits in cm_tophits,
+namely hit_sorter_by_evalue() and hit_sorter_by_position(), were not
+returning value '0' for input in which all compared fields for the two
+hits being compared were equal. Instead, 1 or -1 was being returned,
+in ways that Yuri explained 'may return random result when input
+structs have all compared fields equal. This in turn may causes
+inconsistent order or even crashes in some qsort implementations.' The
+fix, as Yuri suggested was simply to update the final comparison so
+that '0' is returned if all fields are equal, that is if both '<' and
+'>' comparisons of final field checked (and all other fields checked)
+returns false.
+
+//
+
+ID              i49
+TITLE		cmsearch/cmscan hmmonly missing overlapping hits
+STATUS          CLOSED
+XREF            NCBI: notebook/19_0923_vadr_jira_fp50_discont
+REPORTED_BY     Linda Yankie
+                JIRA:FP-50
+CLOSED_DATE     EPN, Sat Nov  9 16:25:25 2019
+DESCRIPTION    
+
+The hmmonly search/scan pipeline as implemented before the bug fix
+could return overlapping hits in the sequence, specifically by the
+p7_domaindef_ByPosteriorHeuristics() function. nhmmer will report both
+overlapping hits, but infernal assumes overlapping hits are redundant
+(identical hits that exist due to overlapping windows in the sequence
+that get analyzed independently by the search/scan pipeline as it
+splits up large sequences into overlapping chunks) and removes
+them. This is because all functions that return CM hits (as opposed to
+HMM hits) guarantee no overlaps. Also, post-processing tools that I've
+written assume no infernal output hits to the same model will
+overlap. I may have stated this in publications and documentation as
+well.
+
+We could either (A) allow overlaps in this hmmonly search case (like
+nhmmer) or (B) remove the overlaps (which 1.1.2 did before the bug
+fix), or (C) trim hits to remove overlaps. I implemented (C). (A) was
+undesirable because it would require too many changes to too many
+functions (assumption that no non-redundant hits overlap affects
+multiple functions). (B) was undesirable because sometimes the
+overlapping hits are significant (high bit scores) and only overlap by
+a few nucleotides out of many (e.g. 3 nt overlap between two 1000 nt
+long hits). The bug fix implemented (C) identifies when two hits
+returned by p7_domaindef_ByPosteriorHeuristics() overlap in
+cm_pipeline.c:pli_final_stage_hmmonly(), and calls
+p7_domaindef_ByPosteriorHeuristics() on a trimmed version of one of
+the two hits that overlap. This hit is trimmed such that it no longer
+overlaps with the other hit. So any hit returned by the secondary call
+to p7_domaindef_ByPosteriorHeuristics() is guaranteed to not overlap
+with any other hit, thus guaranteeing no non-redundant overlapping
+hits are returned from pli_final_stage_hmmonly().
+
+//
+

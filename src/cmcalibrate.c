@@ -272,7 +272,7 @@ main(int argc, char **argv)
 #if eslDEBUGLEVEL >= 1
   pid_t pid;
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 
@@ -1623,7 +1623,7 @@ initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int i;
   int cmi = cfg->ncm-1;
 
-  ESL_DPRINTF1(("initializing cmstats\n"));
+  ESL_DPRINTF1(("#DEBUG: initializing cmstats\n"));
 
   ESL_ALLOC(cfg->expAA[cmi], sizeof(ExpInfo_t *) * EXP_NMODES);
   for(i = 0; i < EXP_NMODES; i++) cfg->expAA[cmi][i] = CreateExpInfo();
@@ -2295,6 +2295,3 @@ void print_required_memory_tail(int ncpus)
   return;
 }
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

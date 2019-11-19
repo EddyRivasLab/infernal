@@ -26,7 +26,7 @@ on most modern processors. Infernal requires either an x86-compatible
 (IA32, IA64, or Intel64) processor that supports the SSE2 vector
 instruction set, or a PowerPC processor that supports the Altivec/VMX
 instruction set. If your platform does not support one of these vector
-instruction sets, you won’t be able to install and run Infernal 1.1 on
+instruction sets, you won't be able to install and run Infernal 1.1 on
 it.
 
 -------------------------------------------------------------

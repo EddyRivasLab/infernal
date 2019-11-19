@@ -33,9 +33,6 @@
  *   XRefIInsideScan()
  *
  * EPN, Wed Sep 12 16:53:32 2007
- *****************************************************************
- * @LICENSE@
- *****************************************************************  
  */
 
 #include "esl_config.h"
@@ -129,7 +126,7 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   int       h;                  /* counter over hits */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
+  if(! (cm->flags & CMH_BITS))             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
@@ -675,7 +672,7 @@ FastCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, i
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
-  ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: FastCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -756,7 +753,7 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   /*printf("in RefCYKScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
+  if(! (cm->flags & CMH_BITS))             ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CM_SEARCH_INSIDE flag raised");
@@ -1063,7 +1060,7 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
 
-  ESL_DPRINTF1(("RefCYKScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: RefCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -1147,7 +1144,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   /*printf("in FastIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
@@ -1687,7 +1684,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
-  ESL_DPRINTF1(("FastIInsideScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: FastIInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -1772,7 +1769,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   /*printf("in FastFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
+  if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
@@ -2314,7 +2311,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
-  ESL_DPRINTF1(("FastFInsideScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: FastFInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -2398,7 +2395,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   /*printf("in RefIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
@@ -2693,7 +2690,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
-  ESL_DPRINTF1(("RefIInsideScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: RefIInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -2775,7 +2772,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   /*printf("in RefFInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
+  if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, i0: %" PRId64 " j0: %" PRId64 "d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
@@ -3069,7 +3066,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
   
-  ESL_DPRINTF1(("RefFInsideScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("#DEBUG: RefFInsideScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
  ERROR:
@@ -3194,7 +3191,7 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
   /* convert to per residue */
   for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= Leff;
 
-  ESL_DPRINTF1(("cm_CountSearchDPCalcs(), vcalcs[0]: %f\n", vcalcs[0]));
+  ESL_DPRINTF1(("#DEBUG: cm_CountSearchDPCalcs(), vcalcs[0]: %f\n", vcalcs[0]));
   /* for (v = cm->M-1; v >= 0; v--) printf("vcalcs[%4d]: %.3f\n", v, vcalcs[v]); */
   
   if(ret_calcs != NULL)  *ret_calcs  = vcalcs[0];
@@ -3285,7 +3282,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
   if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), cm->cp9b is NULL.\n");
 
-  ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
+  ESL_DPRINTF1(("#DEBUG: cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -3737,7 +3734,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
   if (ret_sc != NULL) *ret_sc = vsc_root;
-  ESL_DPRINTF1(("FastCYKScanHB() return sc: %f\n", vsc_root));
+  ESL_DPRINTF1(("#DEBUG: FastCYKScanHB() return sc: %f\n", vsc_root));
   return eslOK;
 
  ERROR: 
@@ -4252,7 +4249,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
   if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
   if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
 
-  ESL_DPRINTF1(("FastFInsideScanHB() return sc: %f\n", vsc_root));
+  ESL_DPRINTF1(("#DEBUG: FastFInsideScanHB() return sc: %f\n", vsc_root));
   if (ret_sc != NULL) *ret_sc = vsc_root;
   return eslOK;
 

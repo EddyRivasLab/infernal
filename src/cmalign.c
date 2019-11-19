@@ -280,7 +280,7 @@ main(int argc, char **argv)
   pid_t pid;
   /* get the process id */
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 
@@ -623,6 +623,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     esl_workqueue_Destroy(queue);
     esl_threads_Destroy(threadObj);
   }
+  if(init_sqA != NULL) free(init_sqA); /* init_sqA will be NULL if and only if ncpus == 0 */
 #endif
   if(r != NULL) esl_randomness_Destroy(r);
   for(k = 0; k < infocnt; ++k) { 
@@ -1087,7 +1088,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif
 	if(si == sq_block->count) { 
 	  have_work = FALSE;
-	  ESL_DPRINTF1(("MPI master has sent all %d of its sequences\n", sq_block->count));
+	  ESL_DPRINTF1(("#DEBUG: MPI master has sent all %d of its sequences\n", sq_block->count));
 #if DEBUGMPI
 	  printf("master is out of work\n");
 #endif 
@@ -2521,6 +2522,3 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
   return; /* NEVERREACHED */
 }
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/

@@ -11,7 +11,6 @@
  *    4. Debugging/dev code.
  *    5. Benchmark driver.
  *    6. Test driver.
- *    7. Copyright and license information.
  * 
  * EPN, Tue May 24 13:03:31 2011
  */
@@ -31,7 +30,6 @@
 
 static int     remove_or_mark_overlaps_one_seq_fast  (CM_TOPHITS *th, int64_t idx1, int64_t idx2, int do_remove, char *errbuf);
 static int     remove_or_mark_overlaps_one_seq_memeff(CM_TOPHITS *th, int64_t idx1, int64_t idx2, int do_remove, char *errbuf);
-static int64_t overlap_nres(int64_t from1, int64_t to1, int64_t from2, int64_t to2, int64_t *ret_nes, char *errbuf);
 
 /*****************************************************************
  * 1. The CM_TOPHITS object
@@ -192,8 +190,8 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
 /* hit_sorter_by_evalue(), hit_sorter_for_overlap_removal, hit_sorter_for_overlap_markup_clans_only, 
  * hit_sorter_for_overlap_markup_clans_agnostic and hit_sorter_by_position: qsort's pawns, below */
 static int
-  hit_sorter_by_evalue(const void *vh1, const void *vh2) 
-  {
+hit_sorter_by_evalue(const void *vh1, const void *vh2) 
+{
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
@@ -208,7 +206,11 @@ static int
       else {
 	if      (h1->start > h2->start) return  1; /* third key, start position, low to high */
 	else if (h1->start < h2->start) return -1;
-	else                            return  (h1->pass_idx < h2->pass_idx ? 1 : -1 ); /* fourth key, pass_idx, high to low */
+	else { 
+	  if     (h1->pass_idx < h2->pass_idx)  return  1; /* fourth key, pass_idx, high to low */
+	  else if(h1->pass_idx > h2->pass_idx)  return -1; 
+	  else                                  return  0;
+        }
       }
     }
   }
@@ -316,24 +318,32 @@ hit_sorter_by_position(const void *vh1, const void *vh2)
   CM_HIT *h1 = *((CM_HIT **) vh1);  /* don't ask. don't change. Don't Panic. */
   CM_HIT *h2 = *((CM_HIT **) vh2);
 
-  if      (h1->cm_idx > h2->cm_idx)     return  1; /* first key, cm_idx (unique id for models), low to high */
-  else if (h1->cm_idx < h2->cm_idx)     return -1; /* first key, cm_idx (unique id for models), low to high */
+  if      (h1->cm_idx > h2->cm_idx)       return  1; /* first key, cm_idx (unique id for models), low to high */
+  else if (h1->cm_idx < h2->cm_idx)       return -1; /* first key, cm_idx (unique id for models), low to high */
   else { 
-    if      (h1->seq_idx > h2->seq_idx) return  1; /* second key, seq_idx (unique id for sequences), low to high */
-    else if (h1->seq_idx < h2->seq_idx) return -1;
+    if      (h1->seq_idx > h2->seq_idx)   return  1; /* second key, seq_idx (unique id for sequences), low to high */
+    else if (h1->seq_idx < h2->seq_idx)   return -1;
     else { 
       /* same sequence, sort by strand, stop position then start position (if revcomp) or start position then stop position (if !revcomp) */
-      if     (h1->in_rc > h2->in_rc)    return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
-      else if(h1->in_rc < h2->in_rc)    return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
+      if     (h1->in_rc > h2->in_rc)      return  1; /* third key, strand (h1->in_rc = 1, h1->in_rc = 0), forward, then reverse */
+      else if(h1->in_rc < h2->in_rc)      return -1; /*                   (h1->in_rc = 0, h2->in_rc = 1), forward, then reverse */
       else if(h1->in_rc) { 
-	if     (h1->stop > h2->stop)    return  1; /* both revcomp:     fourth key is stop  position, low to high */
-	else if(h1->stop < h2->stop)    return -1; 
-	else                            return (h1->start  > h2->start  ? 1 : -1 ); /* both revcomp, same stop position, fourth key is start position, low to high */
+	if     (h1->stop > h2->stop)      return  1; /* both revcomp:     fourth key is stop  position, low to high */
+	else if(h1->stop < h2->stop)      return -1; 
+	else  { 
+          if     (h1->start > h2->start)  return  1; /* both revcomp, same stop position, fifth key is start position, low to high */
+          else if(h1->start < h2->start)  return -1; 
+          else                            return  0;
+        }
       }
-      else               {
-	if     (h1->start > h2->start)  return  1; /* both !revcomp:    fourth key is start position, low to high */
-	else if(h1->start < h2->start)  return -1; 
-	else                            return (h1->stop  > h2->stop    ? 1 : -1 ); /* both !revcomp, same start position, fourth key is stop position, low to high */
+      else {
+	if     (h1->start > h2->start)    return  1; /* both !revcomp:    fourth key is start position, low to high */
+	else if(h1->start < h2->start)    return -1; 
+	else  { 
+          if     (h1->stop > h2->stop)    return  1; /* both !revcomp, same start position, fifth key is stop position, low to high */
+          else if(h1->stop < h2->stop)    return -1; 
+          else                            return  0;
+        }
       }
     }
   }
@@ -1305,6 +1315,54 @@ cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans_only, char *errbuf)
     th->unsrt[i].srcL = srcL[th->unsrt[i].seq_idx];
   }  
 
+  return eslOK;
+}
+
+/* Function:  cm_tophits_OverlapNres()
+ * Synopsis:  Helper function for determining overlap fractions.
+ * Incept:    EPN, Tue Jun  5 09:29:41 2018
+ *
+ * Purpose: Determines the number of residues overlapping between
+ *          from1..to1 and from2..to2, and returns it in <*ret_nres>.
+ *          in) given an array of <nseqs> source lengths indexed by seq_idx.
+ *
+ * Args:      from1     - start position of region 1, must be <= to1
+ *            to1       - stop position of region 1, must be >= from1
+ *            from2     - start position of region 2, must be <= to2
+ *            to2       - stop position of region 2, must be >= from1
+ *            ret_nres  - RETURN: number of residues of overlap between region 1 and 2, 0 if none
+ *            errbuf    - error buffer for error message, if eslOK is not returned
+ * 
+ * Returns: eslOK on success
+ *          eslEINVAL if the following is not true: from1 <= to1, from2 <= to2.
+ *                    and errbuf filled with an error message.
+ *          eslEINCONCEIVABLE if inconceivable situation arises
+ */
+int64_t cm_tophits_OverlapNres(int64_t from1, int64_t to1, int64_t from2, int64_t to2, int64_t *ret_nres, char *errbuf) 
+{
+  int64_t tmp;
+  int64_t nres;
+
+  if(from1 > to1) ESL_FAIL(eslEINVAL, errbuf, "in cm_tophits_OverlapNres, from1 (%" PRId64 ") > to1 (%" PRId64 ")", from1, to1);
+  if(from2 > to2) ESL_FAIL(eslEINVAL, errbuf, "in cm_tophits_OverlapNres, from2 (%" PRId64 ") > to2 (%" PRId64 ")", from2, to2);
+
+  /* wwap if nec so that from1 <= <from2. */
+  if(from1 > from2) { 
+    tmp   = from1; from1 = from2; from2 = tmp;
+    tmp   =   to1;   to1 =   to2;   to2 = tmp;
+  }
+
+  /* 3 possible cases:
+   * Case 1. from1 <=   to1 <  from2 <=   to2  overlap is 0
+   * Case 2. from1 <= from2 <=   to1 <    to2  
+   * Case 3. from1 <= from2 <=   to2 <=   to1
+  */
+  if     (to1 < from2) { nres =  0; }                 /* case 1 */
+  else if(to1 <   to2) { nres = (to1 - from2 + 1); }  /* case 2 */
+  else if(to2 <=  to1) { nres = (to2 - from2 + 1); }  /* case 3 */
+  else                 { ESL_FAIL(eslEINCONCEIVABLE, errbuf, "unforeseen case in cm_tophits_OverlapNres(), from1..to1 (%" PRId64 "..%" PRId64 ") from2..to 2(%" PRId64 "..%" PRId64 ")", from1, to1, from2, to2); }
+
+  *ret_nres = nres;
   return eslOK;
 }
 
@@ -2412,14 +2470,14 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
           if(! th->hit[as]->in_rc) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "hit %d in_rc (%" PRId64 "..%" PRId64 ") but any_oidx (%" PRId64 " %" PRId64 "..%" PRId64 ") is not", h, th->hit[h]->start, th->hit[h]->stop, as, th->hit[as]->start, th->hit[as]->stop);
           len1 = th->hit[h]->start  - th->hit[h]->stop  + 1;
           len2 = th->hit[as]->start - th->hit[as]->stop + 1;
-          status = overlap_nres(th->hit[h]->stop, th->hit[h]->start, th->hit[as]->stop, th->hit[as]->start, &nres, errbuf);
+          status = cm_tophits_OverlapNres(th->hit[h]->stop, th->hit[h]->start, th->hit[as]->stop, th->hit[as]->start, &nres, errbuf);
           if(status != eslOK) goto ERROR;
         }
         else {
           if(th->hit[as]->in_rc) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "hit %d not in_rc (%" PRId64 "..%" PRId64 ") but any_oidx (%" PRId64 " %" PRId64 "..%" PRId64 ") is ", h, th->hit[h]->start, th->hit[h]->stop, as, th->hit[as]->start, th->hit[as]->stop);
           len1 = th->hit[h]->stop  - th->hit[h]->start  + 1;
           len2 = th->hit[as]->stop - th->hit[as]->start + 1;
-          status = overlap_nres(th->hit[h]->start, th->hit[h]->stop, th->hit[as]->start, th->hit[as]->stop, &nres, errbuf);
+          status = cm_tophits_OverlapNres(th->hit[h]->start, th->hit[h]->stop, th->hit[as]->start, th->hit[as]->stop, &nres, errbuf);
           if(status != eslOK) goto ERROR;
         }
         sprintf(any_ofctstr1, "%6.3f", (float) nres / (float) len1);
@@ -2431,14 +2489,14 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
           if(! th->hit[ws]->in_rc) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "hit %d in_rc (%" PRId64 "..%" PRId64 ") but win_oidx (%" PRId64 " %" PRId64 "..%" PRId64 ") is not", h, th->hit[h]->start, th->hit[h]->stop, ws, th->hit[ws]->start, th->hit[ws]->stop);
           len1 = th->hit[h]->start  - th->hit[h]->stop  + 1;
           len2 = th->hit[ws]->start - th->hit[ws]->stop + 1;
-          status = overlap_nres(th->hit[h]->stop, th->hit[h]->start, th->hit[ws]->stop, th->hit[ws]->start, &nres, errbuf);
+          status = cm_tophits_OverlapNres(th->hit[h]->stop, th->hit[h]->start, th->hit[ws]->stop, th->hit[ws]->start, &nres, errbuf);
           if(status != eslOK) goto ERROR;
         }
         else { 
           if(th->hit[ws]->in_rc) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "hit %d not in_rc (%" PRId64 "..%" PRId64 ") but win_oidx (%" PRId64 " %" PRId64 "..%" PRId64 ") is ", h, th->hit[h]->start, th->hit[h]->stop, ws, th->hit[ws]->start, th->hit[ws]->stop);
           len1 = th->hit[h]->stop  - th->hit[h]->start  + 1;
           len2 = th->hit[ws]->stop - th->hit[ws]->start + 1;
-          status = overlap_nres(th->hit[h]->start, th->hit[h]->stop, th->hit[ws]->start, th->hit[ws]->stop, &nres, errbuf);
+          status = cm_tophits_OverlapNres(th->hit[h]->start, th->hit[h]->stop, th->hit[ws]->start, th->hit[ws]->stop, &nres, errbuf);
           if(status != eslOK) goto ERROR;
         }
         sprintf(win_ofctstr1, "%6.3f", (float) nres / (float) len1);
@@ -2561,44 +2619,6 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   return status;
 }
 
-/* Helper function for determining overlap fractions. 
- *
- * overlap_nres(): determines the number of residues overlapping between
- *                 from1..to1 and from2..to2, and returns it in <*ret_nres>.
- *                 eturns 0 if no overlap.
- * 
- *                 The following must hold: from1 <= to1, from2 <= to2.
- *                 If either is not true, then we return eslEINVAL and 
- *                 fill errbuf with an error message.
- *                
- */
-int64_t overlap_nres(int64_t from1, int64_t to1, int64_t from2, int64_t to2, int64_t *ret_nres, char *errbuf) 
-{
-  int64_t tmp;
-  int64_t nres;
-
-  if(from1 > to1) ESL_FAIL(eslEINVAL, errbuf, "in overlap_nres, from1 (%" PRId64 ") > to1 (%" PRId64 ")", from1, to1);
-  if(from2 > to2) ESL_FAIL(eslEINVAL, errbuf, "in overlap_nres, from2 (%" PRId64 ") > to2 (%" PRId64 ")", from2, to2);
-
-  /* wwap if nec so that from1 <= <from2. */
-  if(from1 > from2) { 
-    tmp   = from1; from1 = from2; from2 = tmp;
-    tmp   =   to1;   to1 =   to2;   to2 = tmp;
-  }
-
-  /* 3 possible cases:
-   * Case 1. from1 <=   to1 <  from2 <=   to2  overlap is 0
-   * Case 2. from1 <= from2 <=   to1 <    to2  
-   * Case 3. from1 <= from2 <=   to2 <=   to1
-  */
-  if     (to1 < from2) { nres =  0; }                 /* case 1 */
-  else if(to1 <   to2) { nres = (to1 - from2 + 1); }  /* case 2 */
-  else if(to2 <=  to1) { nres = (to2 - from2 + 1); }  /* case 3 */
-  else                 { ESL_FAIL(eslEINCONCEIVABLE, errbuf, "unforeseen case in overlap_nres(), from1..to1 (%" PRId64 "..%" PRId64 ") from2..to 2(%" PRId64 "..%" PRId64 ")", from1, to1, from2, to2); }
-
-  *ret_nres = nres;
-  return eslOK;
-}
 
 /* Function:  cm_tophits_F3TabularTargets1()
  * Synopsis:  Output format for a top target hits list in special
@@ -3608,7 +3628,5 @@ main(int argc, char **argv)
   return eslOK;
 }
 #endif /*CM_TOPHITS_TESTDRIVE*/
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
+
 

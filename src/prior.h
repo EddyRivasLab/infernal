@@ -1,15 +1,15 @@
-#ifndef PRIOR_INCLUDED
-#define PRIOR_INCLUDED
-
 /* prior.h
  * Dirichlet priors for parameterizing a new model.
  * 
  * Original code from Eric Nawrocki; adapted by SRE.
  * SRE, Thu Apr  7 10:16:54 2005
- * SVN $Id$
  */
+#ifndef PRIOR_INCLUDED
+#define PRIOR_INCLUDED
 
-#include <esl_dirichlet.h>
+#include <stdio.h>
+
+#include "esl_mixchlet.h"
 #include "structs.h"
 
 /* Structure: Prior_t

@@ -1,6 +1,5 @@
 /* cm_modelconfig.c
  * SRE, Wed May  8 14:30:38 2002 [St. Louis]
- * SVN $Id$
  * 
  * Configuring a covariance model. The desideratum is for a CM to be
  * configured exactly once. This is done via the cm_Configure() or
@@ -23,9 +22,6 @@
  * command-line options of Infernal applications) may screw something
  * up in the model.
  *
- ******************************************************************
- * @LICENSE@
- ******************************************************************
  */
 
 #include "esl_config.h"

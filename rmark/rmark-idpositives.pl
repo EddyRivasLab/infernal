@@ -13,7 +13,6 @@
 # Usage:    perl identify-positives.pl <posfile> <sorted rmark output>
 # Example:  ./identify-positives.pl rmark3.pos sorted-cmsearch.out 
 #
-# SVN $Id$
 #
 use strict;
 my $usage          = "Usage: perl identify-positives <posfile> <rmark outfile>\n";

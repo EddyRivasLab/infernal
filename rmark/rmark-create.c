@@ -690,13 +690,12 @@ find_sets_greedily(struct cfg_s *cfg, ESL_MSA *msa, int do_xtest, int **ret_i_am
   int *i_am_train      = NULL;
   int *i_am_best_test  = NULL;
   int *i_am_best_train = NULL;
+  ESL_DMATRIX *S       = NULL; /* pairwise identity matrix */
   int  i, j, k;
   int  ntest, ntrain;
   int  nbest_test, nbest_train;
   int  status;
   int  add_j_to_test;
-
-  ESL_DMATRIX *S; /* pairwise identity matrix */
 
   ESL_ALLOC(i_am_test,       sizeof(int) * msa->nseq);
   ESL_ALLOC(i_am_train,      sizeof(int) * msa->nseq);
@@ -1319,6 +1318,7 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
   else if (esl_opt_GetBoolean(go, "--markov0")) status = esl_rsq_XMarkov0  (cfg->r, sq->dsq, L, cfg->abc->Kp, sq->dsq);
   else if (esl_opt_GetBoolean(go, "--markov1")) status = esl_rsq_XMarkov1  (cfg->r, sq->dsq, L, cfg->abc->Kp, sq->dsq);
   else if (esl_opt_GetBoolean(go, "--iid"))     status = esl_rsq_xIID      (cfg->r, cfg->fq, cfg->abc->K, L, sq->dsq);
+  else esl_fatal("no randomization option? this can't happen.");
   if (status != eslOK) esl_fatal("esl's shuffling failed");
 
   memcpy(dsq, sq->dsq+1, sizeof(ESL_DSQ) * L);

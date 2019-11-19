@@ -1718,8 +1718,8 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
 #if eslDEBUGLEVEL >= 1
 	      if(tmap_val == -1)
 		{
-		  printf("tmap ERROR 1\n");
-		  printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, ((int) cm->stid[x]), ((int) (cm->ndtype[cm->ndidx[v]+is_insert])), ((int) cm->stid[v]));
+		  printf("#DEBUG: tmap ERROR 1\n");
+		  printf("#DEBUG: v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, ((int) cm->stid[x]), ((int) (cm->ndtype[cm->ndidx[v]+is_insert])), ((int) cm->stid[v]));
 		  exit(1);
 		}
 #endif

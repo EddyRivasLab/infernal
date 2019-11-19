@@ -46,7 +46,6 @@
  *   41. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
  *   42. CM_ALNDATA:         information for alignment of a sequence to a CM
  *   43. Routines in Infernal's exposed API
- *   44. Copyright and license information
  *   
  * Also, see impl_{sse,vmx}/impl_{sse,vmx}.h for additional API
  * specific to the acceleration layer.
@@ -60,7 +59,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
-#include "esl_dirichlet.h"
+#include "esl_mixdchlet.h"
 #include "esl_random.h"
 #include "esl_msa.h"
 #include "esl_sq.h"
@@ -2199,17 +2198,19 @@ typedef struct cm_pipeline_s {
   P7_DOMAINDEF   *ddef;		/* domain definition workflow               */
 
   /* miscellaneous parameters */
-  float         mxsize_limit;   /* maximum size in Mb allowed for HB alignment           */
-  int           mxsize_set;     /* TRUE if mxsize_limit was set by user (default: FALSE) */
-  int           be_verbose;     /* TRUE for verbose reporting mode          */
-  int           do_top;         /* TRUE to do top    strand (usually TRUE)  */
-  int           do_bot;         /* TRUE to do bottom strand (usually TRUE)  */
-  int           show_accessions;/* TRUE to output accessions not names      */
-  int           show_alignments;/* TRUE to compute and output alignments (default)*/
-  double        maxtau;         /* max tau when tightening bands            */
-  int           do_wcx;         /* TRUE to set cm->W as cm->clen * wcx      */
-  float         wcx;            /* set W as cm->clen * wcx, ignoring W from CM file */
-  int           do_one_cmpass;  /* TRUE to only use CM for best scoring HMM pass if envelope encompasses full sequence */
+  float         mxsize_limit;       /* maximum size in Mb allowed for HB alignment           */
+  int           mxsize_set;         /* TRUE if mxsize_limit was set by user (default: FALSE) */
+  int           be_verbose;         /* TRUE for verbose reporting mode          */
+  int           do_top;             /* TRUE to do top    strand (usually TRUE)  */
+  int           do_bot;             /* TRUE to do bottom strand (usually TRUE)  */
+  int           show_accessions;    /* TRUE to output accessions not names      */
+  int           show_alignments;    /* TRUE to compute and output alignments (default)*/
+  double        maxtau;             /* max tau when tightening bands            */
+  int           do_wcx;             /* TRUE to set cm->W as cm->clen * wcx      */
+  float         wcx;                /* set W as cm->clen * wcx, ignoring W from CM file */
+  int           do_one_cmpass;      /* TRUE to only use CM for best scoring HMM pass if envelope encompasses full sequence */
+  int           do_one_cmpass_olap; /* TRUE to only use CM for best scoring HMM pass if all envelopes overlap > 50% */
+  int           do_not_iterate;     /* TRUE to *not* iteratively tighten bands to get alignment that will fit in the matrix */
   /* these are all currently hard-coded, in cm_pipeline_Create() */
   float         smult;          /* 2.0;  W multiplier for window splitting */
   float         wmult;          /* 1.0;  maxW will be max of wmult * cm->W and cmult * cm->clen */
@@ -3020,6 +3021,7 @@ extern int         cm_tophits_ComputeEvalues(CM_TOPHITS *th, double eZ, int ista
 extern int         cm_tophits_RemoveOrMarkOverlaps(CM_TOPHITS *th, int do_clans_only, char *errbuf);
 extern int         cm_tophits_UpdateHitPositions(CM_TOPHITS *th, int hit_start, int64_t seq_start, int in_revcomp);
 extern int         cm_tophits_SetSourceLengths(CM_TOPHITS *th, int64_t *srcL, uint64_t nseqs);
+extern int64_t     cm_tophits_OverlapNres(int64_t from1, int64_t to1, int64_t from2, int64_t to2, int64_t *ret_nes, char *errbuf);
 
 extern int cm_tophits_Threshold(CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
@@ -3192,7 +3194,7 @@ extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
 
 /* from eweight.c */
-extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff);
+extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, double max_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff);
 extern void   cm_Rescale(CM_t *hmm, float scale);
 extern void   cp9_Rescale(CP9_t *hmm, float scale);
 extern double cm_MeanMatchInfo(const CM_t *cm);
@@ -3212,7 +3214,7 @@ extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
-extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, float *ret_Mb);
+extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
@@ -3311,7 +3313,4 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
 
 #endif /*INFERNALH_INCLUDED*/
 
-/************************************************************
- * @LICENSE@
- ************************************************************/
 
