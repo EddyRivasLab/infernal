@@ -191,35 +191,20 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   cd infernal-${INFERNAL_VERSION}
   git checkout release-${INFERNAL_VERSION}
 
-  git clone https://github.com/EddyRivasLab/easel.git
-  cd easel
-# checkout a release branch if nec, otherwise just master
-  git checkout master
-  cd ..
-# checkout a release branch above if nec
-
   git clone https://github.com/EddyRivasLab/hmmer.git
-  cd hmmer
-# checkout a release branch if nec, otherwise just master
-  git checkout master
-# the crucial symlink so hmmer's autoconf will work, we remove it shortly
-# MAKE SURE YOU'RE IN hmmer DIR
-  ln -s ../easel easel
-  cd ..
+# checkout a release branch if nec, otherwise just leave at master
 
-  autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
+  git clone https://github.com/EddyRivasLab/easel.git
+# checkout a release branch if nec, otherwise just leave at master
 
-# IMPORTANT: remove the symlink we just made above in hmmer
-# otherwise it will mess up configure when it tries to 
-# make the same symlink, we need to do it above to get autoconf
-# to work in hmmer, then we remove it, and then configure makes
-# it again
+# don't autoconf in hmmer and easel, hmmer-3.3 did not have a
+# configure in easel/, so I followed that
 
-  (cd hmmer; rm easel)
+  autoconf
   ./configure; 
   . release-notes/LICENSE.sh
 # Note that we *leave* the easel symlink in hmmer that 'configure' just
-# created again, we would *not* want to do this if we were using the
+# created, we would *not* want to do this if we were using the
 # 'h' tar flag below to make a tarball without symlinks for windows
 # compatability but we abandoned that in 1.1.3.
 
@@ -287,7 +272,6 @@ Download test.pdf and look at it.
    rm -rf Manuscripts
    rm -rf release-notes
    rm -rf autobuild
-   rm makeTAGS.sh
 
 CHECK FOR ANY WEIRD conf*** (e.g. confQy52wQ) directories, and delete if you find them
 this burned me in 1.1.2 release.
@@ -328,6 +312,7 @@ Delete TO-DO sections and clean up for public consumption.
    cd ..
    tar cvf infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
    gzip infernal-${INFERNAL_VERSION}.tar
+   cp infernal-${INFERNAL_VERSION}.tar.gz $FTPDIR/test.tar.gz
 
    1.1rc1: 11.7 Mb (gzipped)
    1.1rc2: 19.1 Mb (gzipped, diff b/c of documentation directories)
@@ -337,9 +322,15 @@ Delete TO-DO sections and clean up for public consumption.
    1.1.1:  19.5 Mb (gzipped) added large testsuite/bug-i43.cm file
    --- git flow ---
    1.1.2:  19.4 Mb (gzipped)
-   1.1.3:  30.0 Mb (gzipped)
+   1.1.3:  29.9 Mb (gzipped)
 
 All subsequent tests are on this source distro.
+
+At this point it makes sense to try to make the binary distros,
+because they are the only stage that checks 'make install'. If you
+wait until the end and see a problem with 'make install' you have to
+restart from the beginning (which happened for 1.1.3), so it's better
+to try now so you notice those problems early.
 
 ================================================================
 = Build for testing
@@ -353,6 +344,7 @@ On cbbdev21 (our compile host):
   ssh cbbdev21
   cd $INF/releases/infernal-${INFERNAL_VERSION}
   mkdir build-gcc-mpi
+
   cd build-gcc-mpi
   ../configure --enable-mpi > build.out   2>&1
   make            >> build.out	 2>&1
@@ -582,12 +574,18 @@ versions). Actually do this by removing the src distro, unpacking it
 again, and redoing for hmmer and then easel. For hmmer, in 1.1.2 we
 copied all the easel files into hmmer (with 'cp -r ../easel ./easel'),
 but in 1.1.3 we just use the existing symlink and so skip that step.
+Note we also have to build the configure script with 'autoconf'.
+
+This step is just to be extra careful about the hmmer and easel
+packages. If they're already releases, it may not be necessary.
+
    
 Do hmmer:
    cd ..
    rm -rf infernal-1.1.3
    tar xvfz test.tar.gz
    cd infernal-1.1.3/hmmer
+   autoconf
    sh ./configure > build.out 2>&1
    make >> build.out 2>&1
    make dev >> build.out 2>&1
@@ -604,6 +602,7 @@ And finally easel:
    rm -rf infernal-1.1.3
    tar xvfz test.tar.gz
    cd infernal-1.1.3/easel
+   autoconf
    sh ./configure > build.out 2>&1
    make >> build.out 2>&1
    make dev >> build.out 2>&1
@@ -623,9 +622,9 @@ configure: HMMER3 requires SSE or VMX vector instructions.
 configure: Supported platforms are x86 (Intel/AMD) and PowerPC.
 configure: error: No supported vectorization found for your machine.
 
-              inf  hmmer easel 
-macbook pro   pass pass  fail[1-avx]
-cbbdev21      pass pass  fail[1-avx]
+              inf  hmmer easel              
+macbook pro   pass pass  fail(1-avx)
+cbbdev21      pass pass  fail(1-avx)
 ebi           pass pass  pass
 ody-gcc       pass pass  pass
 ncbimac       pass pass  pass
@@ -674,7 +673,7 @@ linux-intel-gcc:
 
 Look at build-${INFERNAL_DISTRO}.out
 
-Previously we removed the share subdir, but Userguide explains to readers that man pages will be in share/man/man1/
+Previously we removed the 'share' subdir, but Userguide explains to readers that man pages will be in share/man/man1/
 so we leave it.
 
   cd ..
@@ -798,6 +797,7 @@ everything looks normal and all tests pass:
   ON MACBOOK PRO:
     emacs notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out
 
+--------
 Test these Distro tarballs:
 
 linux-intel-gcc: ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz
@@ -876,85 +876,87 @@ $INF/releases/infernal-${INFERNAL_VERSION}, like so:
 
    git clone https://github.com/EddyRivasLab/easel.git
    cd easel
-   git checkout release-0.43
-   cd ..
+# checkout release branch if necessary, not necessary for 1.1.3
 
    git clone https://github.com/EddyRivasLab/hmmer.git
-   cd hmmer
-   git checkout release-3.1b3
+# checkout release branch if necessary, not necessary for 1.1.3
 
- Now, to merge to master and then develop for easel:
- CAREFUL HERE... NO FAT FINGERS
+ If you need to make easel and/or hmmer releases, you need to merge
+ their release branches and make the releases, if not skip to infernal
+ section below
 
- DO THIS IN A NON-SCREEN SHELL SO GIT DOESN'T MESS UP WHEN TRYING TO OPEN AN EMACS WINDOW
- FOR YOUR COMMIT MESSAGES!
+ ~~~~~~~~~~~~~~~~~~~~~~~
+ Below when merging, you may get conflicts.   
+ If you get conflicts in file x when you merge:
+ - fix the conflicts in file x
+ - git add x
+ - git commit -m "Fixed conflicts in x"
+ POSSIBLY CHECK WITH SEAN/TRAVIS TO MAKE SURE IT'S OKAY IF YOU PUSH
+ THE SPECIFIC CHANGES YOU JUST MADE
+ - git push
+ ~~~~~~~~~~~~~~~~~~~~~~~
+
+ Easel, if you need to make a release:
+   cd $INF/releases/infernal-release/easel
+   git checkout master
+   git merge --no-ff release-0.43 -m "Merges release-0.43 into master"
+   git tag -a easel-0.43
+   git push origin easel-0.43
+
+ Switch to develop and merge their too
+   git checkout develop
+   git merge --no-ff release-0.43 -m "Merges release-0.43 into develop"
+   git push
+
+ Delete release branch (if ready):
+   git branch -d release-0.43
+   git push origin --delete release-0.43
+   
+ HMMER, if you need to make a release
+   cd $INF/releases/infernal-release/hmmer
+   git checkout master 
+   git merge --no-ff release-3.1b3 -m "Merges release-3.1b3 into master"
+   git tag -a hmmer-3.1b3
+   git push origin hmmer-3.1b3
+
+ Switch to develop and merge their too
+   git checkout develop
+   git merge --no-ff release-3.1b3 -m "Merges release-0.3.1b3 into develop"
+   git push
+
+ Delete release branch (if ready):
+   git branch -d release-3.1b3
+   git push origin --delete release-3.1b3
+
+ --
+ Pick up here if you needed to make hmmer/easel releases or not:
+
+ Tag infernal release in hmmer and easel:
 
    cd $INF/releases/infernal-release/easel
    git checkout master
-   git merge --no-ff release-0.43 # probably just accept default log message
-   git tag -a 0.43
-   git push origin 0.43
-   git tag -a infernal-1.1.2
-   git push origin infernal-1.1.2
-   git push
-*** I think all 3 pushes may be overkill (first one seems to have pushed the merge as well), 
-    but I did 3 for 1.1.2 and it worked.    
+   git tag -a -m "Tags easel 0.46 for infernal-1.1.3 release" infernal-1.1.3
+   git push origin infernal-1.1.3
 
- Now switch to develop and merge there too
-   git checkout develop
-   git merge --no-ff release-0.43 # probably just accept default log message
-   git push
-   git branch -d release-0.43
-   git push origin --delete release-0.43
-
- Now for HMMER:
- AGAIN YOU NEED TO BE ON A NON-SCREEN SHELL SO GIT CAN PULL UP AN
- EMACS WINDOW
    cd $INF/releases/infernal-release/hmmer
-   git checkout h3-master 
-   git merge --no-ff release-3.1b3
-   
-YOU MAY GET CONFLICTS, IF SO, DO THIS: 
-- FIX THE CONFLICTS IN EMACS FOR FILE x (JUST LIKE IN SVN)
-- git add x
-- git commit -m "Fixed conflicts in x"
-POSSIBLY CHECK WITH SEAN/TRAVIS TO MAKE SURE IT'S OKAY IF YOU PUSH
-THE SPECIFIC CHANGES YOU JUST MADE
-- git push
+   git tag -a -m "Tags hmmer 3.3 for infernal-1.1.3 release" infernal-1.1.3
+   git push origin infernal-1.1.3
 
-   git tag -a 3.1b3   
-   git push origin 3.1b3
-   git tag -a infernal-1.1.2
-   git push origin infernal-1.1.2
+ Now for Infernal:
+
+   cd $INF/releases/infernal-release
+   git checkout master
+   git merge --no-ff release-1.1.3 -m "Merges release-1.1.3 into master"
+   git tag -a infernal-1.1.3
+   git push origin infernal-1.1.3
    git push
-*** I think all 3 pushes may be overkill (first one seems to have pushed the merge as well), 
-    but I did 3 for 1.1.2 and it worked.    
-
-  Now switch to h3-develop (NOT develop) and merge there too
-    git checkout h3-develop
-    git branch # just a check
-    git merge --no-ff release-3.1b3 # probably just accept default log message
-    git push
-    git branch -d release-3.1b3
-    git push origin --delete release-3.1b3
-
- Now, finally, for Infernal,
- AGAIN YOU NEED TO BE ON A NON-SCREEN SHELL SO GIT CAN PULL UP AN
- EMACS WINDOW
-
-    cd $INF/releases/infernal-release
-    git checkout master
-    git merge --no-ff release-1.1.2 # probably just accept default log message
-    git tag -a 1.1.2
-    git push origin 1.1.2
-    git push
 
 Now merge release branch back to develop:
-    git checkout develop
-    git merge --no-ff release-1.1.2
-    git push
-    git branch -d release-1.1.2        
-    git push origin --delete release-1.1.2
+   git checkout develop
+   git merge --no-ff release-1.1.3 -m "Merges release-1.1.3 into develop"
+   git push
+   git branch -d release-1.1.3
+   git push origin --delete release-1.1.3
 
 Then email Sean and tell him to do a 'make' for the website.
 
@@ -992,3 +994,5 @@ Release history
 1.1.1  - EPN, Wed Jul 23 11:11:49 2014   r4711  Easel:r918
 ---- git flow ----
 1.1.2  - EPN, Fri Jul  1 23:08:39 2016   HMMER:3.1b3 Easel:0.43
+1.1.3  - EPN, Tue Nov 19 16:01:07 2019   HMMER:3.3   Easel:0.46
+
