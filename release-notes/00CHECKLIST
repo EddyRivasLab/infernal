@@ -191,10 +191,6 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   cd infernal-${INFERNAL_VERSION}
   git checkout release-${INFERNAL_VERSION}
 
-# note we don't use EASEL_VERSION and HMMER_VERSION here by setting it
-# in our .bashrc, because we want to make sure
-# the release_notes/LICENSE.sh call below does that correctly
-
   git clone https://github.com/EddyRivasLab/easel.git
   cd easel
 # checkout a release branch if nec, otherwise just master
@@ -207,6 +203,7 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 # checkout a release branch if nec, otherwise just master
   git checkout master
 # the crucial symlink so hmmer's autoconf will work, we remove it shortly
+# MAKE SURE YOU'RE IN hmmer DIR
   ln -s ../easel easel
   cd ..
 
@@ -246,12 +243,9 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    echo ${EASEL_COPYRIGHT}
 
 * As of 1.1.3, no longer necessary to do analogous commands for hmmer
-  and easel
-   # Note: I don't do anything for HMMER or Easel here, but up until 
-   # 1.1.2 I did. Sean changed how he does this in HMMER and Easel
-   # (this = deal with fact that version, date, copyright need to be
-   # updated in some files each release). I should find out how he 
-   # does it now and make infernal consitent with that before 1.1.4.
+  and easel, these are handled by AC_CONFIG_FILES() calls in configure.ac.
+  I should make the analogous changes for infernal, but currently (as of 
+  1.1.3) we still use the sedition method below:
 
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" README
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" INSTALL
@@ -546,7 +540,7 @@ cbbdev21
 my Mac Desktop
 ody (Harvard)
 EBI 
-Mac laptop (if convenient)
+Mac laptop
 
 One issue is that these are all different file systems, whereas I used
 to do (at Janelia) the compile farm tests from one directory because
@@ -630,12 +624,11 @@ configure: Supported platforms are x86 (Intel/AMD) and PowerPC.
 configure: error: No supported vectorization found for your machine.
 
               inf  hmmer easel 
-macbook pro   pass pass  fail(avx)
-cbbdev21      pass pass  fail(avx)
+macbook pro   pass pass  fail[1-avx]
+cbbdev21      pass pass  fail[1-avx]
 ebi           pass pass  pass
 ody-gcc       pass pass  pass
-ncbimac       pass rung  todo
-DIDN'T DO ncbimac2056 FOR 1.1.3 (did macbook pro)
+ncbimac       pass pass  pass
 
 *** Save build.out output for each build (infernal/hmmer/easel) in top
 *** level directories in each notebook dir on each host,
@@ -651,14 +644,12 @@ DIDN'T DO ncbimac2056 FOR 1.1.3 (did macbook pro)
 Note: the configure call differs from the one Sean uses in hmmer. I
 specify --prefix. If I don't do that I get a 'make install' error
 because I don't have permission to change the permissions on the man
-directory. Also, as a result I have to delete the share/ directory
-after I install. (Sean doesn't have to do that b/c his build won't
-create it).
+directory. 
 
-Three builds:
+Two or three builds:
   linux-intel-gcc
   macosx-intel
-  cygwin
+  cygwin (POSTPONED UNTIL AFTER INITIAL 1.1.3 RELEASE, IF AT ALL)
 
 linux-intel-gcc:
   ssh cbbdev21
@@ -683,17 +674,23 @@ linux-intel-gcc:
 
 Look at build-${INFERNAL_DISTRO}.out
 
-  rm -rf ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}/share
+Previously we removed the share subdir, but Userguide explains to readers that man pages will be in share/man/man1/
+so we leave it.
 
   cd ..
   rm -rf build-${INFERNAL_DISTRO}
 ***LOOK FOR WEIRD conf*** DIRS FILES AND DELETE THEM IF THEY EXIST 
   cd .. 
-  tar cfh infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+***NOTE DO NOT USE 'h' FLAG (WE DID IN 1.1.2, BUT NOT IN 1.1.3, SEE NOTE ABOVE (SEARCH FOR 'h')***
+  tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
-
 macosx-intel build (on my Mac Desktop):
+NOTE: we build this in your home dir, NOT in $INF
+That means you'll have two Distros subdirs, which can get confusing.
+We need to build in home dir at NCBI because your desktop can't
+access $INF.
+
 You'll need to update the release notebook dir here next release
 Note the 'local', this is because I can only access my home dir from 
 my desktop, not $INF
@@ -726,16 +723,25 @@ on mac desktop:
 
 Look at build-${INFERNAL_DISTRO}.out
 
-  rm -rf ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}/share
+Previously we removed the share subdir, but Userguide explains to readers that man pages will be in share/man/man1/
+so we leave it.
 
   cd ..
   rm -rf build-${INFERNAL_DISTRO}
 ***LOOK FOR WEIRD conf*** DIRS FILES AND DELETE THEM IF THEY EXIST 
   cd .. 
-  tar cfh infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+***NOTE DO NOT USE 'h' FLAG (WE DID IN 1.1.2, BUT NOT IN 1.1.3, SEE NOTE ABOVE (SEARCH FOR 'h')***
+  tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
+Copy to $INF notebook from home dir notebook:
+On cbbdev:
+  cp -r PATH-TO-HOME-INFERNAL-NOTEBOOK-DIR/Distros/* ${INFERNAL_RELEASE_NOTEBOOK}/Distros/
 
+
+POSTPONED UNTIL AFTER 1.1.3 RELEASE, IF AT ALL:
+YOU'LL NEED TO UPDATE THIS AS YOU GO, I DON'T THINK IT'S
+BEEN UPDATED SINCE 1.1.1.
 cygwin (on a Windows VM):
   Copy tarball of src release to ssh.janelia.org so I can get it onto my cygwin virtual machine
     scp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz nawrockie@ssh.janelia.org:~/
@@ -811,20 +817,26 @@ Copy cygwin to another virtual machine or windows machine and test it.
 
     We can do this by copying it to our local copy of Sean's web git repo:
 
-    cd $INF/web/eddylab.org/site/software/infernal/
+    Don't be confused by the infernal.org git repo on github, that's
+    for the logos and such not the actual source code and files we
+    want to add here.
 
+    cd $INF/web/eddylab.org/site/software/infernal/
     (Or checkout new working copy of Sean's website with:
      'git clone nawrocke@ody:/n/eddyfs01/gitrepo/web.git'
      After setting up your ~/.ssh/config file as explained here:
      https://rc.fas.harvard.edu/resources/documentation/linux/using-ssh-controlmaster-for-single-sign-on/)
 
-     cp ~/releases/infernal-${INFERNAL_VERSION}/README ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/RELEASE-1.1.3.md ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/LICENSE ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/README ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/RELEASE-1.1.3.md ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/LICENSE ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz ./
      cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz  ./
      cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz ./
+
+   Remove the old release notes:
+     git rm $INF/releases/infernal-${INFERNAL_VERSION}/RELEASE-xxx
 
      rm infernal.tar.gz 
      ln -s infernal-1.1.3.tar.gz infernal.tar.gz
@@ -851,10 +863,10 @@ distros created and tested, we can finalize with git:
 
 You'll want a fresh git repo to work in, so follow the instructions in 
 Creating a source distribution to clone and switch branches, but do 
-it into ~/releases/infernal-release instead of
-~/releases/infernal-${INFERNAL_VERSION}, like so:
+it into $INF/releases/infernal-release instead of
+$INF/releases/infernal-${INFERNAL_VERSION}, like so:
 
-   cd ~/releases 
+   cd $INF/releases 
    rm -rf infernal-release
 
    ssh cbbdev21
@@ -877,7 +889,7 @@ it into ~/releases/infernal-release instead of
  DO THIS IN A NON-SCREEN SHELL SO GIT DOESN'T MESS UP WHEN TRYING TO OPEN AN EMACS WINDOW
  FOR YOUR COMMIT MESSAGES!
 
-   cd ~/releases/infernal-release/easel
+   cd $INF/releases/infernal-release/easel
    git checkout master
    git merge --no-ff release-0.43 # probably just accept default log message
    git tag -a 0.43
@@ -898,7 +910,7 @@ it into ~/releases/infernal-release instead of
  Now for HMMER:
  AGAIN YOU NEED TO BE ON A NON-SCREEN SHELL SO GIT CAN PULL UP AN
  EMACS WINDOW
-   cd ~/releases/infernal-release/hmmer
+   cd $INF/releases/infernal-release/hmmer
    git checkout h3-master 
    git merge --no-ff release-3.1b3
    
@@ -930,7 +942,7 @@ THE SPECIFIC CHANGES YOU JUST MADE
  AGAIN YOU NEED TO BE ON A NON-SCREEN SHELL SO GIT CAN PULL UP AN
  EMACS WINDOW
 
-    cd ~/releases/infernal-release
+    cd $INF/releases/infernal-release
     git checkout master
     git merge --no-ff release-1.1.2 # probably just accept default log message
     git tag -a 1.1.2
