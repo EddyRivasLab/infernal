@@ -361,8 +361,7 @@ Define the minimum allowed effective sequence number as
 Define the maximum allowed effective sequence number as
 .I <x>.
 This number can be larger than the number of sequences in the
-alignment. Note that 
-
+alignment.
 
 .TP 
 .BI --ehmmre " <x>"

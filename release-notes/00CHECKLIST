@@ -1,7 +1,7 @@
 Checklist for an Infernal release.
-EPN, Fri Jun 24 10:17:16 2016
+EPN, Mon Nov 18 13:09:06 2019
 
-Updated for 1.1.2 release, based partly on SSU-ALIGN 0.1.1's 00CHECKLIST
+Updated for 1.1.3 release.
 -------------------------------------
 
 Git repositories:       https://github.com/EddyRivasLab/infernal.git
@@ -27,96 +27,43 @@ https://github.com/EddyRivasLab/easel/wiki
 
 2. Create release branches of easel, hmmer and infernal.
 
-   (from https://github.com/EddyRivasLab/infernal/wiki)
+   See https://github.com/EddyRivasLab/infernal/wiki
+   ## **Making a release**
 
-   NOTE FOR THE 1.1.2 RELEASE I DID NOT FOLLOW THIS EXACTLY:
+   NOTE FOR THE 1.1.2 and 1.1.3 RELEASES I DID NOT FOLLOW THIS
+   EXACTLY:
    instead of finalizing the hmmer and easel releases completely
    before the 1.1.2 release, I waited until I was sure that 
    Infernal 1.1.2 was good to go, then I finalized those releases
    (merged to master and develop). 
-   See the notes underneath this block enclosed by ~~~~~~~~~~~~~
-   for details.
-
-   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   To make a release, you're going to make a release branch of the code,
-   and of any other repos it depends on. For example, for an Infernal
-   release, you're going to make release branches in HMMER and Easel
-   too. You assign appropriate version numbers to each, test and
-   stabilize. When everything is ready, you merge to master and tag that
-   commit with the version number; then you also merge back to develop,
-   and delete the release branch.
-
-   For example, here's the git flow for an Infernal release, depending on
-   HMMER and Easel. Suppose Infernal is currently at 1.1.2, HMMER is
-   currently at 3.2.1, and Easel is currently at 0.2.3. Suppose we decide
-   this release will be Infernal 1.2, and it depends on some new features
-   in HMMER so we need to make a new HMMER 3.2.2 release, but we can use
-   the last stable Easel release as it is. Then first we go over to Easel
-   and just make a tag:
-
-     $ cd easel
-     $ git checkout master
-     $ git tag -a infernal-1.2
-     $ git push origin infernal-1.2
-
-   then we go over to make a new release from HMMER3's h3-develop branch:
-
-     $ cd hmmer3
-     $ git checkout -b release-3.2.2 h3-develop
-       # change version numbers to 3.2.2; also dates, copyrights
-     $ git commit -a -m "Version number bumped to 3.2.2"
-       # do and commit any other work needed to test/stabilize H3 release
-     $ git checkout h3-master
-     $ git merge --no-ff release-3.2.2
-     $ git tag -a 3.2.2
-     $ git tag -a infernal-1.2    # This records that Infernal 1.2 release depends on HMMER 3.2.2
-       # Now merge release branch back to develop...
-     $ git checkout h3-develop
-     $ git merge --no-ff release-3.2.2
-     $ git branch -d release-3.2.2
-    
-   and finally, we do the same pattern on Infernal itself:
-
-     $ cd infernal
-     $ git checkout -b release-1.2 develop 
-       # change version numbers to 1.2; also dates, copyrights  
-     $ git commit -a -m "Version number bumped to 1.2"
-       # do and commit any other work needed to test/stabilize Infernal release
-     $ git checkout master
-     $ git merge --no-ff release-1.2
-     $ git tag -a 1.2
-       # Now merge release branch back to develop...
-     $ git checkout develop
-     $ git merge --no-ff release-1.2  
-     Dependencies always have a tag for their own release (Easel 0.2.4),
-     and may have additional tags for packages that depend on them
-     (HMMER 3.2.2 bundles Easel 0.2.4? Then there's a hmmer-3.2.2 tag
-     pointing to that Easel commit object).
-     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   See the notes below for details.
 
    - create easel release branch
 
      $ cd easel
      $ git checkout develop
 
-     # make sure develop is up to date with master (should be 0
-     # commits behind master) via github
+     # make sure develop is up to date with master (should be 0 or 1
+     # commit behind master (I think it's impossible to have them
+     # exactly even...)) via github
 
      $ git checkout -b release-0.43 develop
 
      # bump version and release date in configure.ac
+     # bump date in LICENSE
+
      # make sure it builds cleanly 
      # do the following on as many systems as are available
      # I did NCBI, my mac, EBI and Odyssey
-     # make check; make dev; testsuite/valgrind_report.pl . .
-     # (FOR 1.1.2, valgrind_report.pl didn't work at
-     # NCBI due to format of valgrind output and NCBI's
-     # version requires the --orig option for some reason.)
+     # In infernal: 'autoconf; sh ./configure', then 
+     # in easel: 'make; make check; make dev; testsuite/valgrind_report.pl'
+     # (1.1.3: add '--orig' option to 'valgrind' call in 
+     #  valgrind_report.pl to get it to work at NCBI.)
      #
      # do some anecdotal testing of miniapps, make sure
      # version, date are correct.
 
-     # push release branch to master
+     # push release branch to origin
      $ git push origin release-0.43
 
      # don't merge to master/develop or tag yet, wait
@@ -126,16 +73,17 @@ https://github.com/EddyRivasLab/easel/wiki
    - create hmmer release branch
 
      $ cd hmmer
-     $ git checkout h3-develop
+     $ git checkout develop
 
-     # make sure h3-develop is up to date with h3-master
-     # (I actually don't know how to do this because github only
-     # lists how many commits behind 'master' you are)
+     # make sure develop is up to date with master (should be 0 or 1
+     # commit behind master (I think it's impossible to have them
+     # exactly even...)) via github
 
      $ git checkout -b release-3.1b3 h3-develop
 
-     # bump version and release date of hmmer and easel
-     # in configure.ac
+     # bump version and release date in configure.ac
+     # bump date in LICENSE 
+
      # make sure it builds cleanly 
      # do the following on as many systems as are available
      # I did NCBI, my mac, EBI and Odyssey
@@ -184,12 +132,11 @@ https://github.com/EddyRivasLab/easel/wiki
 
 * Write the release notes in releases/.
   To gather information, check:
+   feature branches and commit messages on github
    Infernal Bugs/BUGTRAX - update this file to mark release that fixed
                            bugs, and divider indicating release.
 
-   feature branches and commit messages on github
-
-   When done, git add the new RELEASE-xxx file.
+   When done, git add the new RELEASE-xxx.md file.
 
 * Edit .bashrc
   I use the following environment variables in the scripting below:
@@ -229,7 +176,9 @@ ${INFERNAL_VERSION}, ${EASEL_VERSION}, and ${HMMER_VERSION} tags used
 below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
 @HMMER_VERSION@ in configure.ac, Makefile.
 
-* cd ~/releases
+* cd $INF/releases
+# this used to be ~/releases, but my home dir is so small at NCBI, I
+# use a different dir
 
 * Delete any old releases of the same number
    rm -rf infernal-${INFERNAL_VERSION}
@@ -237,32 +186,29 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    rm -f  infernal-${INFERNAL_VERSION}.tar.gz
 
 * Clone from git and checkout release branches
-  ssh cbbdev13
+  ssh cbbdev21
   git clone https://github.com/EddyRivasLab/infernal.git infernal-${INFERNAL_VERSION}
   cd infernal-${INFERNAL_VERSION}
   git checkout release-${INFERNAL_VERSION}
 
-# note we don't use EASEL_VERSION and HMMER_VERSION here by setting it
-# in our .bashrc, because we want to make sure
-# the release_notes/LICENSE call below does that correctly
+  git clone https://github.com/EddyRivasLab/hmmer.git
+# checkout a release branch if nec, otherwise just leave at master
 
   git clone https://github.com/EddyRivasLab/easel.git
-  cd easel
-  git checkout release-0.43
-  cd ..
+# checkout a release branch if nec, otherwise just leave at master
 
-  git clone https://github.com/EddyRivasLab/hmmer.git
-  cd hmmer
-  git checkout release-3.1b3
-# the crucial aclocal.m4 symlink UP one dir   
-  ln -s ../easel/aclocal.m4 aclocal.m4
-  cd ..
+# don't autoconf in hmmer and easel, hmmer-3.3 did not have a
+# configure in easel/, so I followed that
 
-  autoconf; (cd easel; autoconf); (cd hmmer; autoconf);
+  autoconf
   ./configure; 
   . release-notes/LICENSE.sh
+# Note that we *leave* the easel symlink in hmmer that 'configure' just
+# created, we would *not* want to do this if we were using the
+# 'h' tar flag below to make a tarball without symlinks for windows
+# compatability but we abandoned that in 1.1.3.
 
-* Check that svn has file permissions right. 
+* Check that git has file permissions right. 
   Both of these should have no output.
    find . ! -perm -u+r -print
    find . -perm o+x ! -perm -u+x -print
@@ -281,21 +227,16 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    echo ${HMMER_COPYRIGHT}
    echo ${EASEL_COPYRIGHT}
 
-* must do Easel and HMMER first
-
-   easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/00README
-   easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/INSTALL
-   easel/devkit/sedition EASEL_VERSION ${EASEL_VERSION} EASEL_DATE "${EASEL_DATE}" EASEL_COPYRIGHT "${EASEL_COPYRIGHT}" easel/LICENSE.tag
-   find easel -type f -exec easel/devkit/sedition-pp LICENSE easel/LICENSE.tag {} \;   
-
-   easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/INSTALL
-   easel/devkit/sedition HMMER_VERSION ${HMMER_VERSION} HMMER_DATE "${HMMER_DATE}" HMMER_COPYRIGHT "${HMMER_COPYRIGHT}" hmmer/release-notes/LICENSE.tag
-   find hmmer -type f -exec easel/devkit/sedition-pp LICENSE hmmer/release-notes/LICENSE.tag {} \;   
+* As of 1.1.3, no longer necessary to do analogous commands for hmmer
+  and easel, these are handled by AC_CONFIG_FILES() calls in configure.ac.
+  I should make the analogous changes for infernal, but currently (as of 
+  1.1.3) we still use the sedition method below:
 
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" README
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" INSTALL
    easel/devkit/sedition INFERNAL_VERSION ${INFERNAL_VERSION} INFERNAL_DATE "${INFERNAL_DATE}" INFERNAL_COPYRIGHT "${INFERNAL_COPYRIGHT}" release-notes/LICENSE.tag
    find .     -type f -exec easel/devkit/sedition-pp LICENSE release-notes/LICENSE.tag {} \;
+   # final command above takes a minute or so
 
    cd documentation/manpages/
    for manpage in *.man; do \
@@ -309,6 +250,9 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    make
    mv Userguide.pdf ../../Userguide.pdf
    cd ../..
+   cp Userguide.pdf $FTPDIR/test.pdf
+
+Download test.pdf and look at it.   
 
 * clean up files that don't belong in the distro, 
   IMPORTANTLY INCLUDING THE .git SUBDIRS IN INFERNAL, HMMER AND EASEL
@@ -322,31 +266,29 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
   us.
 
    make distclean
-   cp   release-notes/RELEASE-${INFERNAL_VERSION} RELEASE-NOTES
+   cp   release-notes/RELEASE-${INFERNAL_VERSION}.md .
    rm -rf .git
    rm -rf Bugs
    rm -rf Manuscripts
    rm -rf release-notes
    rm -rf autobuild
-   rm makeTAGS.sh
 
 CHECK FOR ANY WEIRD conf*** (e.g. confQy52wQ) directories, and delete if you find them
 this burned me in 1.1.2 release.
 
+   # Check latest hmmer release and see what directories are saved in
+   # that release and mirror that her
    cd hmmer
    rm -rf .git
-   rm -rf bugs
    rm -rf contrib
    rm -rf release-notes
-   rm -rf test-speed
    rm -rf autobuild
-   rm -rf autom4te.cache 
 
+   # Check latest hmmer release's easel subdir and see what
+   # directories are saved in that release and mirror that her
    cd ../easel
    rm -rf .git
-   rm -f  00CHECKLIST LICENSE.csh.in LICENSE.tag 
    cd ..
-
 
    rm *~
 
@@ -354,20 +296,23 @@ this burned me in 1.1.2 release.
   (Sean's command in HMMER that I skipped because I'm not sure what it
   does: cat RELEASE-NOTES | dumpnotes )
     
-   emacs RELEASE-NOTES
+   emacs RELEASE-{$INFERNAL_VERSION}.md
    rm *~
 Delete TO-DO sections and clean up for public consumption.
 
   (Again, not sure of this command that Sean uses for hmmer: 'texclean')
 
 * package
-* The 'h' option on tar is --dereference: it may only be 
-* available in gnu tar. It dereferences symlinks and makes
-* them copies instead. Windows systems can't deal w/ symlinks,
-* we're told.
+* For 1.1.2 we used the 'h' option with the 'tar' command below
+* to dereference the symlinks, but in 1.1.3 we left them in because
+* two hmmer testsuite exercises required them. 
+* Windows systems can't deal w/ symlinks, we're told.
+* I plan to work around this if/when I make a cygwin binary distro.
+
    cd ..
-   tar cvfh infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
+   tar cvf infernal-${INFERNAL_VERSION}.tar infernal-${INFERNAL_VERSION}
    gzip infernal-${INFERNAL_VERSION}.tar
+   cp infernal-${INFERNAL_VERSION}.tar.gz $FTPDIR/test.tar.gz
 
    1.1rc1: 11.7 Mb (gzipped)
    1.1rc2: 19.1 Mb (gzipped, diff b/c of documentation directories)
@@ -377,8 +322,15 @@ Delete TO-DO sections and clean up for public consumption.
    1.1.1:  19.5 Mb (gzipped) added large testsuite/bug-i43.cm file
    --- git flow ---
    1.1.2:  19.4 Mb (gzipped)
+   1.1.3:  29.9 Mb (gzipped)
 
 All subsequent tests are on this source distro.
+
+At this point it makes sense to try to make the binary distros,
+because they are the only stage that checks 'make install'. If you
+wait until the end and see a problem with 'make install' you have to
+restart from the beginning (which happened for 1.1.3), so it's better
+to try now so you notice those problems early.
 
 ================================================================
 = Build for testing
@@ -388,10 +340,11 @@ We'll build two sets of the executables on cbbdev** for testing
 (build-gcc-mpi and build-icc), for which we'll run tests locally
 (tests-fast.sh) and on the compute farm (tests-slow.sh).
 
-On cbbdev13 (our compile host):
-  ssh cbbdev13
-  cd ~/releases/infernal-${INFERNAL_VERSION}
+On cbbdev21 (our compile host):
+  ssh cbbdev21
+  cd $INF/releases/infernal-${INFERNAL_VERSION}
   mkdir build-gcc-mpi
+
   cd build-gcc-mpi
   ../configure --enable-mpi > build.out   2>&1
   make            >> build.out	 2>&1
@@ -401,8 +354,8 @@ On cbbdev13 (our compile host):
 
 1 line: ../configure --enable-mpi > build.out 2>&1; make >> build.out 2>&1; make dev >> build.out 2>&1; make check >> build.out 2>&1; make devcheck >> build.out 2>&1
 
-  ssh cbbdev13
-  cd ~/releases/infernal-${INFERNAL_VERSION}
+  ssh cbbdev21
+  cd $INF/releases/infernal-${INFERNAL_VERSION}
   mkdir build-icc
   cd build-icc
   ../configure CC=icc > build.out  2>&1
@@ -436,7 +389,7 @@ manually look at each line for errors.
 These instructions should work post-1.1rc2:
 
 Set up tests:
-  ssh cbbdev13
+  ssh cbbdev21
   cd ${INFERNAL_RELEASE_NOTEBOOK}
   mkdir tests
   mkdir tests/out-files/
@@ -448,9 +401,15 @@ Set up tests:
   sh cp-required-files.sh
 
 Run tests:
-tests-fast*.sh          run on cbbdev13,                 takes about 1 minute
-tests-fast-valgrind*.sh run valgrind tests on cbbdev13y, takes about 30 minutes
+tests-fast*.sh          run on cbbdev21,                 takes about 1 minute
+tests-fast-valgrind*.sh run valgrind tests on cbbdev21,  takes about 30 minutes
 tests-slow*.sh          submit to compute farm,          takes about 2.5 hours
+
+***FOR FIRST RELEASE POST 1.1.3, ADD NEW TESTS ADDED IN 1.1.3 
+***(diff between tests-fast.sh and tests-fast-oldversion.sh
+*** and tests-fast-valgrind.sh and tests-fast-valgrind-oldversion.sh)
+***to *oldversion* versions prior to running oldversion tests so that
+***they are executed for the old version (which will be 1.1.3)
 
   time sh tests-fast.sh > tests-fast.out
   time sh tests-fast-oldversion.sh > tests-fast-oldversion.out
@@ -463,15 +422,19 @@ because current and old version tests create and use files of the same
 name.  
 
 Look at err-files/valg.1.err and make sure there's no memory
-leaks or errors.
+leaks or errors. Ensure line count from the greps are all the same.
+
+  grep "ERROR SUMMARY" err-files/valg.1.err | nl
+  grep "ERROR SUMMARY" err-files/valg.1.err | grep " 0 errors from 0 contexts (suppressed: 0 from 0)" | wc -l
+  grep "in use at exit" err-files/valg.1.err | nl
+  grep "total heap usage" err-files/valg.1.err | nl
+  grep "All heap blocks were freed -- no leaks are possible" err-files/valg.1.err | nl
 
   diff tests-fast-valgrind.out tests-fast-valgrind-oldversion.out > tests-fast-valgrind.diff
   sh tests-slow.sh
   sh tests-slow-oldversion.sh 
 
 Wait for these to finish (about 3 hours)
-***FOR FIRST RELEASE POST 1.1.2, ADD TO DIFF-SLOW SO NEW 1.1.2 TESTS
-***ARE DIFFED (e.g. cmscan --fmt 2)
   sh regressify-slow.sh 
   sh regressify-slow-oldversion.sh
   sh diff-slow.sh > tests-slow.diff
@@ -490,20 +453,20 @@ Then run some anecdotal tests.
      mkdir anecdotes
 Some examples:
      cd anecdotes
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.cm
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.old.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.cm
+     $INF/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmfetch ~/db/rfam/rfam_12.1/Rfam.cm 5S_rRNA > 5S.old.cm
      diff 5S.cm 5S.old.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.old.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmsearch 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmpress 5S.cm
-     ~/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmpress 5S.old.cm
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.old.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch -A 5S.sto 5S.cm /panfs/pan1/infernal/db/other-genomes/hvol.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
-     ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmalign 5S.cm 5S.fa 
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmstat 5S.old.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmsearch 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmpress 5S.cm
+     $INF/releases/infernal-${INFERNAL_OLDVERSION}/build-gcc-mpi/src/cmpress 5S.old.cm
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmscan 5S.old.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmsearch -A 5S.sto 5S.cm $INF/db/other-genomes/hvol.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/easel/miniapps/esl-reformat fasta 5S.sto > 5S.fa
+     $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/src/cmalign 5S.cm 5S.fa 
 
 Also, do a rmark3 benchmark with default settings and --mid for
 both new and old versions.	      
@@ -523,7 +486,6 @@ update release)
      sh build.sh
 Wait for all jobs to finish (about 1 minute)
      sh calibrate.sh
-STILL TODO
 Wait for all jobs to finish (about 30 minutes, if cluster is nearly empty)
      cat models/*.cm > models/rmark3.cm     
 
@@ -533,17 +495,14 @@ Wait for all jobs to finish (about 30 minutes, if cluster is nearly empty)
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-symlink.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-all.sh ./
      cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/do-pp.sh ./
-Edit version number (may not be necessary) in do-symlink.sh, do-all.sh, do-pp.sh
-     emacs do-symlink.sh     
-     emacs do-all.sh
-     emacs do-pp.sh
-     sh do-symlink.sh
+     cp ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/tmp-rmark-master.pl ./
 
 NOTE: as of 1.1, do-all.sh won't work as written b/c it's set-up 
-for Janelia's cluster. As of 1.1.3 and beyond, you should be able
-to look at/copy
+for Janelia's cluster. That's why we copy 
 ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/tmp-rmark-master.pl 
+and use that
 
+     sh do-symlink.sh
      sh do-all.sh 
 Wait for jobs to finish (approximately 20 min)
 
@@ -552,15 +511,16 @@ need to copy the 'rmark-rocplot' executable from a build dir into the
 rmark directory, because rmark-pp.sh expects all the rmark scripts to
 be in the same dir, then delete it when we're done with it:
 
-     cp ~/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/rmark/rmark-rocplot ~/releases/infernal-${INFERNAL_VERSION}/rmark/
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/build-gcc-mpi/rmark/rmark-rocplot $INF/releases/infernal-${INFERNAL_VERSION}/rmark/
      sh do-pp.sh 
 Wait for jobs to finish (approximately 5 min)
-     rm ~/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-rocplot
+     rm $INF/releases/infernal-${INFERNAL_VERSION}/rmark/rmark-rocplot
       
 Compare the old and current .sum files.
 and with the .sum files in ${INFERNAL_OLDRELEASE_NOTEBOOK}/tests/rmark3/	 
 
 Check the userguide (Userguide.pdf).
+    cp $INF/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ${INFERNAL_RELEASE_NOTEBOOK}/tests/
 
 ================================================================
 = Build and check on all compile farm nodes
@@ -572,16 +532,24 @@ cbbdev21
 my Mac Desktop
 ody (Harvard)
 EBI 
-Mac laptop (if convenient)
+Mac laptop
 
 One issue is that these are all different file systems, whereas I used
 to do (at Janelia) the compile farm tests from one directory because
 the file system was shared.
 
 For here, I'll actually copy the src tarball (via public ftp site):
-UPDATE VERSION AS NECESSARY
-  wget http://ftp.ncbi.nlm.nih.gov/pub/nawrocki/infernal-1.1.2.tar.gz 
-  tar xvfz infernal-1.1.2.tar.gz
+
+First put it on the ftp site, and call it test.tar.gz, out of an
+abundance of caution that an untested tarball gets out
+  ssh cbbdev21
+  cp $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz $FTPDIR/test.tar.gz  
+  
+Then go onto the computer you are going to test on, and in a notebook
+subdirectory (e.g. 19_1108_inf_1p1p3_release/test-install/)
+  curl -k -L -o test.tar.gz http://ftp.ncbi.nlm.nih.gov/pub/nawrocki/test.tar.gz
+  tar xvfz test.tar.gz
+  cd infernal-1.1.3
 
 Then build and run tests:
 
@@ -591,7 +559,7 @@ Then build and run tests:
   make check >> build.out 2>&1
   make devcheck >> build.out 2>&1
 
-1line:./configure > build.out 2>&1;make >> build.out 2>&1;make dev >> build.out 2>&1;make check >> build.out 2>&1;make devcheck >> build.out 2>&1;
+1line: ./configure > build.out 2>&1;make >> build.out 2>&1;make dev >> build.out 2>&1;make check >> build.out 2>&1;make devcheck >> build.out 2>&1;
 
   Check build.out 
 
@@ -603,15 +571,21 @@ Then build and run tests:
 
 Then do the same in hmmer and easel (to test those 'release'
 versions). Actually do this by removing the src distro, unpacking it
-again, and redoing for hmmer and then easel. For hmmer, you'll need to
-copy all the easel files into hmmer.
+again, and redoing for hmmer and then easel. For hmmer, in 1.1.2 we
+copied all the easel files into hmmer (with 'cp -r ../easel ./easel'),
+but in 1.1.3 we just use the existing symlink and so skip that step.
+Note we also have to build the configure script with 'autoconf'.
 
+This step is just to be extra careful about the hmmer and easel
+packages. If they're already releases, it may not be necessary.
+
+   
 Do hmmer:
    cd ..
-   rm -rf infernal-1.1.2
-   tar xvf infernal-1.1.2.tar.gz
-   cd infernal-1.1.2/hmmer
-   cp -r ../easel ./easel
+   rm -rf infernal-1.1.3
+   tar xvfz test.tar.gz
+   cd infernal-1.1.3/hmmer
+   autoconf
    sh ./configure > build.out 2>&1
    make >> build.out 2>&1
    make dev >> build.out 2>&1
@@ -625,9 +599,10 @@ Do hmmer:
 
 And finally easel:
    cd ../..
-   rm -rf infernal-1.1.2
-   tar xvf infernal-1.1.2.tar.gz
-   cd infernal-1.1.2/easel
+   rm -rf infernal-1.1.3
+   tar xvfz test.tar.gz
+   cd infernal-1.1.3/easel
+   autoconf
    sh ./configure > build.out 2>&1
    make >> build.out 2>&1
    make dev >> build.out 2>&1
@@ -639,13 +614,24 @@ And finally easel:
  run anecdotal tests
    make clean
 
-              inf  hmmer easel 
-macbook pro   pass pass  pass
-cbbdev21      pass pass  pass
-ebi           pass pass  pass
-ody           pass pass  pass
+For first post-1.1.3 release, try compiling with icc on odyssey
+using "./configure CC=icc" when configuring.
+When I tried that for 1.1.3, I got a configure error:
+configure: ::::::::::--- no vector instruction set ---::::::::::
+configure: HMMER3 requires SSE or VMX vector instructions.
+configure: Supported platforms are x86 (Intel/AMD) and PowerPC.
+configure: error: No supported vectorization found for your machine.
 
-DIDN'T DO ncbimac2056 FOR 1.1.2 (did macbook pro)
+              inf  hmmer easel              
+macbook pro   pass pass  fail(1-avx)
+cbbdev21      pass pass  fail(1-avx)
+ebi           pass pass  pass
+ody-gcc       pass pass  pass
+ncbimac       pass pass  pass
+
+*** Save build.out output for each build (infernal/hmmer/easel) in top
+*** level directories in each notebook dir on each host,
+*** e.g. infernal.build.out, hmmer.build.out, easel.build.out.
 
 ================================================================
 = Binary distros
@@ -657,20 +643,18 @@ DIDN'T DO ncbimac2056 FOR 1.1.2 (did macbook pro)
 Note: the configure call differs from the one Sean uses in hmmer. I
 specify --prefix. If I don't do that I get a 'make install' error
 because I don't have permission to change the permissions on the man
-directory. Also, as a result I have to delete the share/ directory
-after I install. (Sean doesn't have to do that b/c his build won't
-create it).
+directory. 
 
-Three builds:
+Two or three builds:
   linux-intel-gcc
   macosx-intel
-  cygwin
+  cygwin (POSTPONED UNTIL AFTER INITIAL 1.1.3 RELEASE, IF AT ALL)
 
 linux-intel-gcc:
-  ssh cbbdev13
+  ssh cbbdev21
   export INFERNAL_DISTRO=linux-intel-gcc
   cd ${INFERNAL_RELEASE_NOTEBOOK}/Distros
-  tar zxf ~/releases/infernal-${INFERNAL_VERSION}.tar.gz
+  tar zxf $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz
   mv infernal-${INFERNAL_VERSION} infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   cd infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   mkdir binaries
@@ -689,23 +673,37 @@ linux-intel-gcc:
 
 Look at build-${INFERNAL_DISTRO}.out
 
-  rm -rf ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}/share
+Previously we removed the 'share' subdir, but Userguide explains to readers that man pages will be in share/man/man1/
+so we leave it.
 
   cd ..
   rm -rf build-${INFERNAL_DISTRO}
 ***LOOK FOR WEIRD conf*** DIRS FILES AND DELETE THEM IF THEY EXIST 
   cd .. 
-  tar cfh infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+***NOTE DO NOT USE 'h' FLAG (WE DID IN 1.1.2, BUT NOT IN 1.1.3, SEE NOTE ABOVE (SEARCH FOR 'h')***
+  tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
-
 macosx-intel build (on my Mac Desktop):
-You'll need to update the release notebook dir here next release
-  export INFERNAL_DISTRO=macosx-intel
-  export INFERNAL_RELEASE_NOTEBOOK=$UH/notebook/16_0611_inf_1p1p2_release
-  export INFERNAL_VERSION=1.1.2
+NOTE: we build this in your home dir, NOT in $INF
+That means you'll have two Distros subdirs, which can get confusing.
+We need to build in home dir at NCBI because your desktop can't
+access $INF.
 
-  cd ${INFERNAL_RELEASE_NOTEBOOK}/Distros
+You'll need to update the release notebook dir here next release
+Note the 'local', this is because I can only access my home dir from 
+my desktop, not $INF
+on cbbdev21
+  cp $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz ~/releases/  
+
+on mac desktop:
+  export INFERNAL_DISTRO=macosx-intel
+  export INFERNAL_RELEASE_NOTEBOOK=$UH/notebook/19_1108_local_inf_1p1p3_release
+  export INFERNAL_VERSION=1.1.3
+
+  cd ${INFERNAL_RELEASE_NOTEBOOK}
+  mkdir Distros
+  cd Distros
   tar zxf $UH/releases/infernal-${INFERNAL_VERSION}.tar.gz
   mv infernal-${INFERNAL_VERSION} infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   cd infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
@@ -724,16 +722,25 @@ You'll need to update the release notebook dir here next release
 
 Look at build-${INFERNAL_DISTRO}.out
 
-  rm -rf ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}/share
+Previously we removed the share subdir, but Userguide explains to readers that man pages will be in share/man/man1/
+so we leave it.
 
   cd ..
   rm -rf build-${INFERNAL_DISTRO}
 ***LOOK FOR WEIRD conf*** DIRS FILES AND DELETE THEM IF THEY EXIST 
   cd .. 
-  tar cfh infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
+***NOTE DO NOT USE 'h' FLAG (WE DID IN 1.1.2, BUT NOT IN 1.1.3, SEE NOTE ABOVE (SEARCH FOR 'h')***
+  tar cf infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar  infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}
   gzip infernal-${INFERNAL_VERSION}-${INFERNAL_DISTRO}.tar
 
+Copy to $INF notebook from home dir notebook:
+On cbbdev:
+  cp -r PATH-TO-HOME-INFERNAL-NOTEBOOK-DIR/Distros/* ${INFERNAL_RELEASE_NOTEBOOK}/Distros/
 
+
+POSTPONED UNTIL AFTER 1.1.3 RELEASE, IF AT ALL:
+YOU'LL NEED TO UPDATE THIS AS YOU GO, I DON'T THINK IT'S
+BEEN UPDATED SINCE 1.1.1.
 cygwin (on a Windows VM):
   Copy tarball of src release to ssh.janelia.org so I can get it onto my cygwin virtual machine
     scp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz nawrockie@ssh.janelia.org:~/
@@ -790,15 +797,16 @@ everything looks normal and all tests pass:
   ON MACBOOK PRO:
     emacs notebook/14_0723_inf_1p1p1_cygwin/Distros/build-infernal-1.1.1-cygwin.out
 
+--------
 Test these Distro tarballs:
 
 linux-intel-gcc: ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz
 macosx-intel:    ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz
 cygwin:          notebook/14_0723_inf_1p1p1_cygwin/Distros/infernal-1.1.1-cygwin.tar.gz
 
-Copy linux-intel-gcc to a new directory on your home dir on login-eddy
+Copy linux-intel-gcc to a new directory at NCBI
 and test it with some anecdotal tets.
-Copy macosx-intel tar ball to your laptop and test it.
+Copy macosx-intel tar ball to your laptop and desktop and test it.
 Copy cygwin to another virtual machine or windows machine and test it.
 
 ================================================================
@@ -809,26 +817,32 @@ Copy cygwin to another virtual machine or windows machine and test it.
 
     We can do this by copying it to our local copy of Sean's web git repo:
 
-    cd /panfs/pan1/infernal/web/eddylab.org/site/software/infernal/
+    Don't be confused by the infernal.org git repo on github, that's
+    for the logos and such not the actual source code and files we
+    want to add here.
 
+    cd $INF/web/eddylab.org/site/software/infernal/
     (Or checkout new working copy of Sean's website with:
      'git clone nawrocke@ody:/n/eddyfs01/gitrepo/web.git'
      After setting up your ~/.ssh/config file as explained here:
      https://rc.fas.harvard.edu/resources/documentation/linux/using-ssh-controlmaster-for-single-sign-on/)
 
-     cp ~/releases/infernal-${INFERNAL_VERSION}/README ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/RELEASE-NOTES ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/LICENSE ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ./
-     cp ~/releases/infernal-${INFERNAL_VERSION}.tar.gz ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/README ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/RELEASE-1.1.3.md ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/LICENSE ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}/Userguide.pdf ./
+     cp $INF/releases/infernal-${INFERNAL_VERSION}.tar.gz ./
      cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-linux-intel-gcc.tar.gz  ./
      cp ${INFERNAL_RELEASE_NOTEBOOK}/Distros/infernal-${INFERNAL_VERSION}-macosx-intel.tar.gz ./
 
+   Remove the old release notes:
+     git rm $INF/releases/infernal-${INFERNAL_VERSION}/RELEASE-xxx
+
      rm infernal.tar.gz 
-     ln -s infernal-1.1.2.tar.gz infernal.tar.gz
+     ln -s infernal-1.1.3.tar.gz infernal.tar.gz
 
    Update index.html, which is in a different directory:
-     cd /panfs/pan1/infernal/web/infernal/  
+     cd $INF/web/infernal/  
    update index.html    
 
      - search for all instances of the version (e.g. 1.1.2)
@@ -849,98 +863,99 @@ distros created and tested, we can finalize with git:
 
 You'll want a fresh git repo to work in, so follow the instructions in 
 Creating a source distribution to clone and switch branches, but do 
-it into ~/releases/infernal-release instead of
-~/releases/infernal-${INFERNAL_VERSION}, like so:
+it into $INF/releases/infernal-release instead of
+$INF/releases/infernal-${INFERNAL_VERSION}, like so:
 
-   cd ~/releases 
+   cd $INF/releases 
    rm -rf infernal-release
 
-   ssh cbbdev13
+   ssh cbbdev21
    git clone https://github.com/EddyRivasLab/infernal.git infernal-release
    cd infernal-release
    git checkout release-${INFERNAL_VERSION}
 
    git clone https://github.com/EddyRivasLab/easel.git
-   cd easel
-   git checkout release-0.43
-   cd ..
+# checkout release branch if necessary, not necessary for 1.1.3
 
    git clone https://github.com/EddyRivasLab/hmmer.git
-   cd hmmer
-   git checkout release-3.1b3
+# checkout release branch if necessary, not necessary for 1.1.3
 
- Now, to merge to master and then develop for easel:
- CAREFUL HERE... NO FAT FINGERS
+ If you need to make easel and/or hmmer releases, you need to merge
+ their release branches and make the releases, if not skip to infernal
+ section below
 
- DO THIS IN A NON-SCREEN SHELL SO GIT DOESN'T MESS UP WHEN TRYING TO OPEN AN EMACS WINDOW
- FOR YOUR COMMIT MESSAGES!
+ ~~~~~~~~~~~~~~~~~~~~~~~
+ Below when merging, you may get conflicts.   
+ If you get conflicts in file x when you merge:
+ - fix the conflicts in file x
+ - git add x
+ - git commit -m "Fixed conflicts in x"
+ POSSIBLY CHECK WITH SEAN/TRAVIS TO MAKE SURE IT'S OKAY IF YOU PUSH
+ THE SPECIFIC CHANGES YOU JUST MADE
+ - git push
+ ~~~~~~~~~~~~~~~~~~~~~~~
 
-   cd ~/releases/infernal-release/easel
+ Easel, if you need to make a release:
+   cd $INF/releases/infernal-release/easel
    git checkout master
-   git merge --no-ff release-0.43 # probably just accept default log message
-   git tag -a 0.43
-   git push origin 0.43
-   git tag -a infernal-1.1.2
-   git push origin infernal-1.1.2
-   git push
-*** I think all 3 pushes may be overkill (first one seems to have pushed the merge as well), 
-    but I did 3 for 1.1.2 and it worked.    
+   git merge --no-ff release-0.43 -m "Merges release-0.43 into master"
+   git tag -a easel-0.43
+   git push origin easel-0.43
 
- Now switch to develop and merge there too
+ Switch to develop and merge their too
    git checkout develop
-   git merge --no-ff release-0.43 # probably just accept default log message
+   git merge --no-ff release-0.43 -m "Merges release-0.43 into develop"
    git push
+
+ Delete release branch (if ready):
    git branch -d release-0.43
    git push origin --delete release-0.43
-
- Now for HMMER:
- AGAIN YOU NEED TO BE ON A NON-SCREEN SHELL SO GIT CAN PULL UP AN
- EMACS WINDOW
-   cd ~/releases/infernal-release/hmmer
-   git checkout h3-master 
-   git merge --no-ff release-3.1b3
    
-YOU MAY GET CONFLICTS, IF SO, DO THIS: 
-- FIX THE CONFLICTS IN EMACS FOR FILE x (JUST LIKE IN SVN)
-- git add x
-- git commit -m "Fixed conflicts in x"
-POSSIBLY CHECK WITH SEAN/TRAVIS TO MAKE SURE IT'S OKAY IF YOU PUSH
-THE SPECIFIC CHANGES YOU JUST MADE
-- git push
+ HMMER, if you need to make a release
+   cd $INF/releases/infernal-release/hmmer
+   git checkout master 
+   git merge --no-ff release-3.1b3 -m "Merges release-3.1b3 into master"
+   git tag -a hmmer-3.1b3
+   git push origin hmmer-3.1b3
 
-   git tag -a 3.1b3   
-   git push origin 3.1b3
-   git tag -a infernal-1.1.2
-   git push origin infernal-1.1.2
+ Switch to develop and merge their too
+   git checkout develop
+   git merge --no-ff release-3.1b3 -m "Merges release-0.3.1b3 into develop"
    git push
-*** I think all 3 pushes may be overkill (first one seems to have pushed the merge as well), 
-    but I did 3 for 1.1.2 and it worked.    
 
-  Now switch to h3-develop (NOT develop) and merge there too
-    git checkout h3-develop
-    git branch # just a check
-    git merge --no-ff release-3.1b3 # probably just accept default log message
-    git push
-    git branch -d release-3.1b3
-    git push origin --delete release-3.1b3
+ Delete release branch (if ready):
+   git branch -d release-3.1b3
+   git push origin --delete release-3.1b3
 
- Now, finally, for Infernal,
- AGAIN YOU NEED TO BE ON A NON-SCREEN SHELL SO GIT CAN PULL UP AN
- EMACS WINDOW
+ --
+ Pick up here if you needed to make hmmer/easel releases or not:
 
-    cd ~/releases/infernal-release
-    git checkout master
-    git merge --no-ff release-1.1.2 # probably just accept default log message
-    git tag -a 1.1.2
-    git push origin 1.1.2
-    git push
+ Tag infernal release in hmmer and easel:
+
+   cd $INF/releases/infernal-release/easel
+   git checkout master
+   git tag -a -m "Tags easel 0.46 for infernal-1.1.3 release" infernal-1.1.3
+   git push origin infernal-1.1.3
+
+   cd $INF/releases/infernal-release/hmmer
+   git tag -a -m "Tags hmmer 3.3 for infernal-1.1.3 release" infernal-1.1.3
+   git push origin infernal-1.1.3
+
+ Now for Infernal:
+
+   cd $INF/releases/infernal-release
+   git checkout master
+   git merge --no-ff release-1.1.3 -m "Merges release-1.1.3 into master"
+   git tag -a infernal-1.1.3
+   git push origin infernal-1.1.3
+   git push
 
 Now merge release branch back to develop:
-    git checkout develop
-    git merge --no-ff release-1.1.2
-    git push
-    git branch -d release-1.1.2        
-    git push origin --delete release-1.1.2
+   git checkout develop
+   git merge --no-ff release-1.1.3 -m "Merges release-1.1.3 into develop"
+   git push
+   git branch -d release-1.1.3
+   git push origin --delete release-1.1.3
 
 Then email Sean and tell him to do a 'make' for the website.
 
@@ -978,3 +993,5 @@ Release history
 1.1.1  - EPN, Wed Jul 23 11:11:49 2014   r4711  Easel:r918
 ---- git flow ----
 1.1.2  - EPN, Fri Jul  1 23:08:39 2016   HMMER:3.1b3 Easel:0.43
+1.1.3  - EPN, Tue Nov 19 16:01:07 2019   HMMER:3.3   Easel:0.46
+

@@ -75,7 +75,7 @@ m4_include([easel/m4/esl_pic_flags.m4])
 # 2. AC_INIT
 ################################################################
 
-AC_INIT(Infernal, 1.1.2, eric.nawrocki@nih.gov, infernal)
+AC_INIT(Infernal, 1.1.3, eric.nawrocki@nih.gov, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 esl_cflags_env_set=no
@@ -106,8 +106,8 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="July 2016"
-INFERNAL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
+INFERNAL_DATE="Nov 2019"
+INFERNAL_COPYRIGHT="Copyright (C) 2019 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://eddylab.org/infernal/"
@@ -115,20 +115,20 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="July 2016"
-HMMER_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute."
-HMMER_LICENSE="Freely distributed under the BSD open source licence."
-HMMER_VERSION="3.1b3"
+HMMER_DATE="Nov 2019"
+HMMER_COPYRIGHT="Copyright (C) 2019 Howard Hughes Medical Institute."
+HMMER_LICENSE="Freely distributed under the BSD open source license."
+HMMER_VERSION="3.3"
 HMMER_URL="http://hmmer.org/"
+
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="July 2016"
-EASEL_COPYRIGHT="Copyright (C) 2016 Howard Hughes Medical Institute"
-EASEL_LICENSE="Freely distributed under a BSD open source license."
-EASEL_VERSION="0.43"
+EASEL_DATE="Nov 2019"
+EASEL_COPYRIGHT="Copyright (C) 2019 Howard Hughes Medical Institute."
+EASEL_LICENSE="Freely distributed under the BSD open source license."
+EASEL_VERSION="0.46"
 EASEL_URL="http://bioeasel.org/"
-
 
 AC_SUBST(INFERNAL_DATE)
 AC_SUBST(INFERNAL_COPYRIGHT)
@@ -144,6 +144,7 @@ AC_SUBST(HMMER_COPYRIGHT)
 AC_SUBST(HMMER_LICENSE)
 AC_SUBST(HMMER_VERSION)
 AC_SUBST(HMMER_URL)
+
 AC_SUBST(HMMER_ESLDIR)
 AC_SUBST(HMMER_SADIR)
 
@@ -609,9 +610,6 @@ AC_SYS_LARGEFILE
 # 13. Config subdirs and files 
 ################################################################
 
-AC_CONFIG_HEADERS([easel/decoy_config.h])   # Put this first to keep gnu 'autoheader' from overwriting a real config file.
-AC_CONFIG_HEADERS(src/config.h)
-
 # Infernal Makefiles.
 AC_CONFIG_FILES([ \
   Makefile                         \
@@ -629,7 +627,6 @@ if test -d release-notes; then
   AC_CONFIG_FILES(release-notes/LICENSE.sh)
 fi
 
-
 # HMMER3 Makefiles.
 AC_CONFIG_FILES([ \
   hmmer/Makefile                                    \
@@ -644,9 +641,6 @@ AC_CONFIG_FILES([ \
   hmmer/libdivsufsort/Makefile                      \
   ])
 
-AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
-AC_CONFIG_HEADERS(hmmer/libdivsufsort/divsufsort.h)
-
 # Easel Makefiles.
 AC_CONFIG_FILES([ \
   easel/Makefile               \
@@ -654,7 +648,74 @@ AC_CONFIG_FILES([ \
   easel/testsuite/Makefile     \
   easel/documentation/Makefile \
   ])
+
+# Substitutions in HMMER Userguide .tex files
+# HMMER_VERSION, HMMER_DATE, HMMER_COPYRIGHT
+AC_CONFIG_FILES([ \
+  hmmer/documentation/userguide/titlepage.tex  \
+  hmmer/documentation/userguide/titlepage_daemon.tex  \
+  hmmer/documentation/userguide/copyright.tex  \
+  ])
+
+# Substitutions in HMMER man pages:
+# HMMER_VERSION, HMMER_DATE, HMMER_COPYRIGHT, HMMER_LICENSE, HMMER_URL
+AC_CONFIG_FILES([ \
+  hmmer/documentation/man/alimask.man     \
+  hmmer/documentation/man/hmmalign.man    \
+  hmmer/documentation/man/hmmbuild.man    \
+  hmmer/documentation/man/hmmc2.man       \
+  hmmer/documentation/man/hmmconvert.man  \
+  hmmer/documentation/man/hmmemit.man     \
+  hmmer/documentation/man/hmmer.man       \
+  hmmer/documentation/man/hmmfetch.man    \
+  hmmer/documentation/man/hmmlogo.man     \
+  hmmer/documentation/man/hmmpgmd.man     \
+  hmmer/documentation/man/hmmpgmd_shard.man     \
+  hmmer/documentation/man/hmmpress.man    \
+  hmmer/documentation/man/hmmscan.man     \
+  hmmer/documentation/man/hmmsearch.man   \
+  hmmer/documentation/man/hmmsim.man      \
+  hmmer/documentation/man/hmmstat.man     \
+  hmmer/documentation/man/jackhmmer.man   \
+  hmmer/documentation/man/makehmmerdb.man \
+  hmmer/documentation/man/nhmmer.man      \
+  hmmer/documentation/man/nhmmscan.man    \
+  hmmer/documentation/man/phmmer.man      \
+  ])
+
+# Substitutions in Easel man pages:
+# EASEL_VERSION, EASEL_DATE, EASEL_COPYRIGHT, EASEL_LICENSE, EASEL_URL
+AC_CONFIG_FILES([ \
+  easel/miniapps/esl-afetch.man      \
+  easel/miniapps/esl-alimanip.man    \
+  easel/miniapps/esl-alimap.man      \
+  easel/miniapps/esl-alimask.man     \
+  easel/miniapps/esl-alimerge.man    \
+  easel/miniapps/esl-alipid.man      \
+  easel/miniapps/esl-alirev.man      \
+  easel/miniapps/esl-alistat.man     \
+  easel/miniapps/esl-compalign.man   \
+  easel/miniapps/esl-compstruct.man  \
+  easel/miniapps/esl-construct.man   \
+  easel/miniapps/esl-histplot.man    \
+  easel/miniapps/esl-mask.man        \
+  easel/miniapps/esl-mixdchlet.man   \
+  easel/miniapps/esl-reformat.man    \
+  easel/miniapps/esl-selectn.man     \
+  easel/miniapps/esl-seqrange.man    \
+  easel/miniapps/esl-seqstat.man     \
+  easel/miniapps/esl-sfetch.man      \
+  easel/miniapps/esl-shuffle.man     \
+  easel/miniapps/esl-ssdraw.man      \
+  easel/miniapps/esl-translate.man   \
+  easel/miniapps/esl-weight.man      \
+ ])
+
+AC_CONFIG_HEADERS([easel/decoy_config.h])   # Put this first to keep gnu 'autoheader' from overwriting a real config file.
+AC_CONFIG_HEADERS(src/config.h)
+AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
 AC_CONFIG_HEADERS([easel/esl_config.h])
+AC_CONFIG_HEADERS(hmmer/libdivsufsort/divsufsort.h)
 
 
 
