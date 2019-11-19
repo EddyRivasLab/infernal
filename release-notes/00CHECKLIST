@@ -244,6 +244,10 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    done
    cd ../..
 
+* CHECK LICENSE AND README FOR @INFERNAL_*@ STRINGS THAT DON'T GET
+  REPLACED, THESE EXISTED IN README IN 1.1.2 and 1.1.3 RELEASES!
+  I GUESS I NEVER NOTICED THEM BETWEEN 1.1.2 and 1.1.3 (3 YEARS)!
+
 * compile documentation
    cd documentation/userguide
    chmod +x ../../easel/devkit/rmanprocess.pl
