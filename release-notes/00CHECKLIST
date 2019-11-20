@@ -244,10 +244,6 @@ below should match @INFERNAL_VERSION@, @EASEL_VERSION@ and
    done
    cd ../..
 
-* CHECK LICENSE AND README FOR @INFERNAL_*@ STRINGS THAT DON'T GET
-  REPLACED, THESE EXISTED IN README IN 1.1.2 and 1.1.3 RELEASES!
-  I GUESS I NEVER NOTICED THEM BETWEEN 1.1.2 and 1.1.3 (3 YEARS)!
-
 * compile documentation
    cd documentation/userguide
    chmod +x ../../easel/devkit/rmanprocess.pl
@@ -819,18 +815,22 @@ Copy cygwin to another virtual machine or windows machine and test it.
 
 * copy to ftp site 
 
-    We can do this by copying it to our local copy of Sean's web git repo:
+    We can do this by copying it to our local copy of Sean's
+    eddylab.org and infernal.org git repos:
 
-    Don't be confused by the infernal.org git repo on github, that's
-    for the logos and such not the actual source code and files we
-    want to add here.
+    eddylab.org is on odyssey:
+    /n/eddyfs01/gitrepo/eddylab.org.git
 
-    cd $INF/web/eddylab.org/site/software/infernal/
+    infernal.org is on github:
+    https://github.com/EddyRivasLab/infernal.org
+
+    cd $INF/eddylab.org
     (Or checkout new working copy of Sean's website with:
-     'git clone nawrocke@ody:/n/eddyfs01/gitrepo/web.git'
+     'git clone nawrocke@ody:/n/eddyfs01/gitrepo/eddylab.org.git'
      After setting up your ~/.ssh/config file as explained here:
      https://rc.fas.harvard.edu/resources/documentation/linux/using-ssh-controlmaster-for-single-sign-on/)
 
+     cd $INF/eddylab.org/site/software/infernal
      cp $INF/releases/infernal-${INFERNAL_VERSION}/README ./
      cp $INF/releases/infernal-${INFERNAL_VERSION}/RELEASE-1.1.3.md ./
      cp $INF/releases/infernal-${INFERNAL_VERSION}/LICENSE ./
@@ -846,11 +846,13 @@ Copy cygwin to another virtual machine or windows machine and test it.
      ln -s infernal-1.1.3.tar.gz infernal.tar.gz
 
    Update index.html, which is in a different directory:
-     cd $INF/web/infernal/  
+     cd $INF/infernal.org/
    update index.html    
 
      - search for all instances of the version (e.g. 1.1.2)
        and update them.
+     - consider updating Further Reference with any new papers related
+       to Infernal/Rfam
 
    Add everything to git and commit it, and push it.
 
