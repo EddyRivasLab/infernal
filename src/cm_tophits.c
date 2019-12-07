@@ -2780,8 +2780,10 @@ cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipe
   fprintf(ofp, "# Query file:      %s\n",      (qfile    == NULL) ? "[none]" : qfile);
   fprintf(ofp, "# Target file:     %s\n",      (tfile    == NULL) ? "[none]" : tfile);
   fprintf(ofp, "# Option settings: %s\n",      spoof_cmd);
-  fprintf(ofp, "# Current dir:     %s\n",      (cwd      == NULL) ? "[unknown]" : cwd);
-  fprintf(ofp, "# Date:            %s",        timestamp); /* timestamp ends in \n */
+  if (getenv("SOURCE_DATE_EPOCH") != NULL) {
+    fprintf(ofp, "# Current dir:     %s\n",      (cwd      == NULL) ? "[unknown]" : cwd);
+    fprintf(ofp, "# Date:            %s",        timestamp); /* timestamp ends in \n */
+  }
   fprintf(ofp, "# [ok]\n");
 
   free(spoof_cmd);
