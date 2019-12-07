@@ -891,7 +891,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
        * overlap should be retained in the ReadWindow step. */
     }
 
-    sstatus = esl_sqio_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, /*max_sequences=*/-1, TRUE);  // SRE: is it ok to pass -1 for max_seqs? That's a new arg to ReadBlock().
+    sstatus = esl_sqio_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, /*max_sequences=*/-1, /*max_init_window=*/TRUE, TRUE);  
 
     if (sstatus == eslOK) { /* we read a block */
       if(! block->complete) { 
