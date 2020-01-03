@@ -746,7 +746,7 @@ option.
 
 .TP
 .B --oskip
-Omit any hit h from the tabular output file that satisifies the
+Omit any hit h from the tabular output file that satisfies the
 following: another hit h2 overlaps with h and the E-value of h2 is
 lower than that of h. Hit h will not appear in the tabular output
 file, although it will still exist in the standard output. 
