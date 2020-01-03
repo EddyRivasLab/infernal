@@ -2702,7 +2702,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
  * Date:     EPN, Sun Nov  4 16:02:17 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference scanning Inside that uses integer scores. 
+ *           a reference scanning Inside that uses float scores. 
  *           This function is slower but easier to understand than 
  *           FastIInsideScan().
  *
@@ -2726,7 +2726,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
- * Note:     This function is heavily synchronized with RefCYKScan() and RefFInsideScan(), 
+ * Note:     This function is heavily synchronized with RefCYKScan() and RefIInsideScan(), 
  *           any change to this function should be mirrored in those functions. 
  *
  * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
