@@ -74,6 +74,7 @@
 1 exercise  bug/i45-alidisplay-EL    !testsuite/bug-i45.pl! @src/cmsearch@ !testsuite/bug-i45.cm! !testsuite/bug-i45a.fa! !testsuite/bug-i45b.fa!
 1 exercise  bug/i47-cmbuild-p7ml     !testsuite/bug-i47.pl! @src/cmbuild@
 1 exercise  bug/i49-hmmonly-ovlp     !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
+1 exercise  iss21-cmbuild-rf-pb      !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 
 ################################################################
 # Option tests

@@ -487,7 +487,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
@@ -517,7 +517,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
@@ -981,7 +981,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
 #if DEBUGMPI
@@ -1010,7 +1010,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 

@@ -51,7 +51,7 @@ Interface) can be also be used for parallelization with the
 .B --mpi 
 option if Infernal was built with MPI enabled, but using more than 161
 processors is not recommended because increasing past 161 won't
-accelerate the calibration.  See the Installation seciton of the user
+accelerate the calibration.  See the Installation section of the user
 guide for more information.
 
 .PP

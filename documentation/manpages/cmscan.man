@@ -746,11 +746,11 @@ option.
 
 .TP
 .B --oskip
-Omit any hit h from the tabular output file that satisifies the
+Omit any hit h from the tabular output file that satisfies the
 following: another hit h2 overlaps with h and the E-value of h2 is
-lower than that of h. Hit h will not appear in the tabular output
-file, although it will still exist in the standard output. 
-This option must be used in combination with
+lower than that of h, and h2 is itself not omitted. Hit h will not
+appear in the tabular output file, although it will still exist in the
+standard output.  This option must be used in combination with
 .BI --fmt " 2"
 .B --tblout
 because overlap annotation is only output in format 2 of the tabular
