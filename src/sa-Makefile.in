@@ -24,9 +24,6 @@ LIBS  = @LIBS@ -lm
 AR     = @AR@ rcv 
 RANLIB = @RANLIB@
 
-# configuration for optional MPI functionality
-MPILIBS   = @MPILIBS@
-
 # Where the build arena is (module .h and .o files)
 #
 MYLIBS   = -leasel 
