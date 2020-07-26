@@ -258,16 +258,12 @@ AX_PROG_CC_MPI([test x"$enable_mpi" = xyes],
     [ if test x"$enable_mpi" = xyes; then
         AC_MSG_ERROR([MPI library not found for --enable-mpi]);
       fi])
+AC_PROG_CC_STDC
 AC_PROG_CPP
 AC_PROG_INSTALL
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 AC_PROG_LN_S
-
-# AC_PROG_CC_STDC wants to append -c99 to icc; icc doesn't like this.
-if test "$ax_cv_c_compiler_vendor" != "intel"; then
-  AC_PROG_CC_STDC
-fi
 
 # Select our default optimization flags in CFLAGS.
 #  --enable-gcov, --enable-gprof, and --enable-debugging are mutually exclusive.
