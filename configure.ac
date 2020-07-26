@@ -247,7 +247,6 @@ fi
 # 5. Checks for programs, including ${CC} and ${CFLAGS}.
 ################################################################
 
-AC_PROG_CC
 # Choose our compiler - which might be mpicc, if enable_mpi is "yes".
 #   AX_PROG_CC_MPI will call AC_PROG_CC if enable_mpi is "no".
 #
