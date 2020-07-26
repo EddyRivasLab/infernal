@@ -83,7 +83,7 @@ ${OBJS}:     ${HDRS}
 ${PROGOBJS}: ${HDRS}
 
 ${PROGS}: % : %.o ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLDIR}/libeasel.a  
-	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
+	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${LIBS}
 
 .c.o:  
 	${QUIET_CC}${CC} ${CFLAGS} ${SSE_CFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<
