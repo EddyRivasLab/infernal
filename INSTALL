@@ -32,28 +32,18 @@ it.
 -------------------------------------------------------------
 Starting from a Git Repo: 
 
-If you have cloned the Infernal Git repository, there's
-some additional stuff you need to do one-time-only in your new working
-directory.
+If you have cloned the Infernal Git repository, you'll also
+need to clone easel and hmmer too:
 
-First you need to clone easel and hmmer too:
-  cd infernal
-  git clone https://github.com/EddyRivasLab/easel.git
-  git clone https://github.com/EddyRivasLab/hmmer.git
+   $ cd infernal
+   $ git clone https://github.com/EddyRivasLab/hmmer
+   $ (cd hmmer; git checkout tags/infernal-@INFERNAL_VERSION@)
+   $ git clone https://github.com/EddyRivasLab/easel
+   $ (cd easel; git checkout tags/infernal-@INFERNAL_VERSION@)
+   $ autoconf
 
-And switch to the h3-master branch:
-  cd hmmer
-  git checkout h3-master
-
-You may want to switch to the 'develop' branch of infernal, the
-'h3-develop' branch of hmmer and the 'develop' branch of easel if you
-want the in-development code.
-
-And finally:
-   ln -s easel/aclocal.m4 aclocal.m4
-   (cd hmmer; ln -s ../easel/aclocal.m4 aclocal.m4;)
-   autoconf
-   (cd easel; autoconf; cd ../hmmer; autoconf;)
+You may want to switch to the 'develop' branches of infernal, hmmer
+and easel if you want the in-development code.
 
 -------------------------------------------------------------
 The Infernal development team
