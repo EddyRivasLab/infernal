@@ -30,90 +30,14 @@ https://github.com/EddyRivasLab/easel/wiki
    See https://github.com/EddyRivasLab/infernal/wiki
    ## **Making a release**
 
-   NOTE FOR THE 1.1.2 and 1.1.3 RELEASES I DID NOT FOLLOW THIS
-   EXACTLY:
-   instead of finalizing the hmmer and easel releases completely
-   before the 1.1.2 release, I waited until I was sure that 
-   Infernal 1.1.2 was good to go, then I finalized those releases
-   (merged to master and develop). 
-   See the notes below for details.
+   Follow those instructions until you get to the part that says
+   "Now proceed with the rest of the release process for Infernal (see
+   release-notes/00CHECKLIST)", at which point come back here.
 
-   - create easel release branch
-
-     $ cd easel
-     $ git checkout develop
-
-     # make sure develop is up to date with master (should be 0 or 1
-     # commit behind master (I think it's impossible to have them
-     # exactly even...)) via github
-
-     $ git checkout -b release-0.43 develop
-
-     # bump version and release date in configure.ac
-     # bump date in LICENSE
-
-     # make sure it builds cleanly 
+   Make sure infernal builds cleanly
      # do the following on as many systems as are available
      # I did NCBI, my mac, EBI and Odyssey
-     # In infernal: 'autoconf; sh ./configure', then 
-     # in easel: 'make; make check; make dev; testsuite/valgrind_report.pl'
-     # (1.1.3: add '--orig' option to 'valgrind' call in 
-     #  valgrind_report.pl to get it to work at NCBI.)
-     #
-     # do some anecdotal testing of miniapps, make sure
-     # version, date are correct.
-
-     # push release branch to origin
-     $ git push origin release-0.43
-
-     # don't merge to master/develop or tag yet, wait
-     # until your done testing Infernal. There may be
-     # something you need to fix/change in easel.
-
-   - create hmmer release branch
-
-     $ cd hmmer
-     $ git checkout develop
-
-     # make sure develop is up to date with master (should be 0 or 1
-     # commit behind master (I think it's impossible to have them
-     # exactly even...)) via github
-
-     $ git checkout -b release-3.1b3 h3-develop
-
-     # bump version and release date in configure.ac
-     # bump date in LICENSE 
-
-     # make sure it builds cleanly 
-     # do the following on as many systems as are available
-     # I did NCBI, my mac, EBI and Odyssey
-     # make check; make dev; 
-     # do some anecdotal testing of programs, make sure
-     # version, date are correct.
-
-     # push release branch to master
-     $ git push origin release-3.1b3
-
-     # don't merge to master/develop or tag yet, wait
-     # until your done testing Infernal. There may be
-     # something you need to fix/change in easel.
-     
-   - create infernal release branch
-   
-     $ cd infernal
-     $ git checkout develop
-     
-     # make sure develop is up to date with master (should be 0
-     # commits behind master) via github
-
-     $ git checkout -b release-1.1.2 develop
-
-     # bump version and release date of infernal, hmmer and easel
-     # in configure.ac
-     # make sure it builds cleanly 
-     # do the following on as many systems as are available
-     # I did NCBI, my mac, EBI and Odyssey
-     # make check; make devcheck; 
+     # autoconf; sh ./configure; make; make check; make devcheck; 
      # do some anecdotal testing of programs, make sure
      # version, date are correct.
 
