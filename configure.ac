@@ -106,7 +106,7 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="Nov 2020"
+INFERNAL_DATE="Dec 2020"
 INFERNAL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
