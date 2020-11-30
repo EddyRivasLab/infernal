@@ -115,19 +115,19 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="Jul 2020"
+HMMER_DATE="Nov 2020"
 HMMER_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the BSD open source license."
-HMMER_VERSION="3.3.1"
+HMMER_VERSION="3.3.2"
 HMMER_URL="http://hmmer.org/"
 
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="Jul 2020"
+EASEL_DATE="Nov 2020"
 EASEL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 EASEL_LICENSE="Freely distributed under the BSD open source license."
-EASEL_VERSION="0.47"
+EASEL_VERSION="0.48"
 EASEL_URL="http://bioeasel.org/"
 
 AC_SUBST(INFERNAL_DATE)
