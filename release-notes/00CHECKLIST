@@ -56,9 +56,12 @@ https://github.com/EddyRivasLab/easel/wiki
 
 * Write the release notes in releases/.
   To gather information, check:
-   feature branches and commit messages on github
-   Infernal Bugs/BUGTRAX - update this file to mark release that fixed
-                           bugs, and divider indicating release.
+   - GitHub's compare feature, e.g.:
+      https://github.com/EddyRivasLab/infernal/compare/master...release-1.1.4
+   - GitHub issues
+   - release notes for corresponding HMMER and easel releases
+   - feature branches and commit messages on github
+   - no longer using Bugs/BUGTRAX
 
    When done, git add the new RELEASE-xxx.md file.
 
@@ -75,15 +78,13 @@ https://github.com/EddyRivasLab/easel/wiki
 
    . ~/.bashrc
 
-* Update the User guide
-  Do this in the git repo you've checked out in
-  $INFERNAL_RELEASE_NOTEBOOK 
+* Update the User guide (do this in your git repo, at NCBI, where you
+  can build it).
 
   - Update version numbers in the installation section.
-  - Redo the tutorial exercises and add new output from new version.
-    Test with regression info, hopefully in
-    $INFERNAL_OLDRELEASE_NOTEBOOK/infernal/ or 
-    $INFERNAL_OLDRELEASE_NOTEBOOK/wd-infernal/.
+  - make a new directory $INFERNAL_RELEASE_NOTEBOOK/uguide and do the
+    tutorial excercises, compare with info in
+    $INFERNAL_OLDRELEASE_NOTEBOOK/uguide
   - Search all .tex documents for old version and update as necessary.
   - Commit and push all changes.
 
