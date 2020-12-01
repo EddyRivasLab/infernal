@@ -111,7 +111,7 @@ distclean: clean
 	   done ;\
 	fi
 	-rm -f symlinks.stamp
-	-rm -f titlepage.tex manpages.tex
+	-rm -f titlepage.tex copyright.tex manpages.tex
 	-rm -f Userguide.pdf
 	-rm -f Makefile
 
