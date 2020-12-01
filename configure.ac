@@ -611,16 +611,30 @@ AC_CONFIG_FILES([ \
 if test "$impl_choice" = "sse"; then
   AC_CONFIG_FILES([src/impl_sse/Makefile])
 fi
-if test -d release-notes; then
-  AC_CONFIG_FILES(release-notes/LICENSE.sh)
-fi
 
 # Substitutions in Userguide .tex files
 # INFERNAL_VERSION, INFERNAL_DATE, INFERNAL_COPYRIGHT
 AC_CONFIG_FILES([ \
   documentation/userguide/titlepage.tex  \
-  documentation/userguide/titlepage_daemon.tex  \
   documentation/userguide/copyright.tex  \
+  ])
+
+# Substitutions in Infernal man pages:
+# INFERNAL_VERSION, INFERNAL_DATE, INFERNAL_COPYRIGHT, INFERNAL_LICENSE, INFERNAL_URL
+AC_CONFIG_FILES([ \
+  documentation/man/cmalign.man       \
+  documentation/man/cmbuild.man       \
+  documentation/man/cmcalibrate.man   \
+  documentation/man/cmconvert.man     \
+  documentation/man/cmemit.man        \
+  documentation/man/cmfetch.man       \
+  documentation/man/cmpress.man       \
+  documentation/man/cmscan.man        \
+  documentation/man/cmsearch.man      \
+  documentation/man/cmsearch_dual.man \
+  documentation/man/cmstat.man        \
+  documentation/man/infernal.man      \
+  documentation/man/sse_cmsearch.man  \
   ])
 
 # HMMER3 Makefiles.
