@@ -605,7 +605,7 @@ AC_CONFIG_FILES([ \
   testsuite/Makefile               \
   rmark/Makefile                   \
   documentation/Makefile           \
-  documentation/manpages/Makefile  \
+  documentation/man/Makefile       \
   documentation/userguide/Makefile \
   ])
 if test "$impl_choice" = "sse"; then
@@ -614,6 +614,14 @@ fi
 if test -d release-notes; then
   AC_CONFIG_FILES(release-notes/LICENSE.sh)
 fi
+
+# Substitutions in Userguide .tex files
+# INFERNAL_VERSION, INFERNAL_DATE, INFERNAL_COPYRIGHT
+AC_CONFIG_FILES([ \
+  documentation/userguide/titlepage.tex  \
+  documentation/userguide/titlepage_daemon.tex  \
+  documentation/userguide/copyright.tex  \
+  ])
 
 # HMMER3 Makefiles.
 AC_CONFIG_FILES([ \

@@ -28,16 +28,16 @@ SEDITION      = ${top_srcdir}/easel/devkit/sedition
 RMANPROCESS   = ${top_srcdir}/easel/devkit/rmanprocess.pl
 
 MANPAGES = \
-	${top_srcdir}/documentation/manpages/cmalign.man\
-	${top_srcdir}/documentation/manpages/cmbuild.man\
-	${top_srcdir}/documentation/manpages/cmcalibrate.man\
-	${top_srcdir}/documentation/manpages/cmconvert.man\
-	${top_srcdir}/documentation/manpages/cmemit.man\
-	${top_srcdir}/documentation/manpages/cmfetch.man\
-	${top_srcdir}/documentation/manpages/cmpress.man\
-	${top_srcdir}/documentation/manpages/cmscan.man\
-	${top_srcdir}/documentation/manpages/cmsearch.man\
-	${top_srcdir}/documentation/manpages/cmstat.man\
+	${top_srcdir}/documentation/man/cmalign.man\
+	${top_srcdir}/documentation/man/cmbuild.man\
+	${top_srcdir}/documentation/man/cmcalibrate.man\
+	${top_srcdir}/documentation/man/cmconvert.man\
+	${top_srcdir}/documentation/man/cmemit.man\
+	${top_srcdir}/documentation/man/cmfetch.man\
+	${top_srcdir}/documentation/man/cmpress.man\
+	${top_srcdir}/documentation/man/cmscan.man\
+	${top_srcdir}/documentation/man/cmsearch.man\
+	${top_srcdir}/documentation/man/cmstat.man\
 
 TEXFILES =\
 	cmbuild.tex\
