@@ -248,12 +248,6 @@ uninstall:
 	done
 # no programs currently get installed from IMPLDIR
 
-distclean: clean
-ifdef IMPLDIR
-	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} distclean
-endif
-	-rm -f Makefile config.h
-
 clean:
 ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
@@ -265,5 +259,15 @@ endif
 	for prog in ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS}; do \
 	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
 	done
+ifndef V
+	@echo '     ' CLEAN src
+endif
+
+distclean: clean
+ifdef IMPLDIR
+	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} distclean
+endif
+	-rm -f Makefile config.h
+
 
 

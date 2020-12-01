@@ -57,5 +57,3 @@ distclean:
 	-rm -f *~ 
 	-rm -f *.man
 	-rm -f Makefile
-
-

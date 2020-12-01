@@ -89,9 +89,6 @@ ${PROGS}: % : %.o ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLD
 .c.o:  
 	${QUIET_CC}${CC} ${CFLAGS} ${PIC_CFLAGS} ${PTHREAD_CFLAGS} ${SSE_CFLAGS} ${CPPFLAGS} ${DEFS} ${MYINCDIRS} -o $@ -c $<
 
-distclean: clean
-	-rm -f Makefile 
-
 clean:
 	-rm -f libinfernal-impl.stamp
 	-rm -f *.o *~ Makefile.bak core ${PROGS} TAGS gmon.out cscope.out
@@ -99,6 +96,10 @@ clean:
 	for prog in ${PROGS}; do \
 	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
 	done
+ifndef V
+	@echo '     ' CLEAN impl_sse
+endif
 
-
+distclean: clean
+	-rm -f Makefile 
 

@@ -103,6 +103,9 @@ uninstall:
 clean:
 	-rm -f latex.log
 	-rm -f main.aux main.bbl main.blg main.log main.toc x.log *~
+ifndef V
+	@echo '     ' CLEAN userguide
+endif
 
 distclean: clean
 	if test "x${srcdir}" != "x."; then \
