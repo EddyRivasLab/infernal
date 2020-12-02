@@ -1,19 +1,16 @@
 \newpage
-\begin{fullwidth}
-  ~\vfill
-  \thispagestyle{empty}
-  \setlength{\parindent}{0pt}
-  \setlength{\parskip}{\baselineskip}
+\vspace*{\fill}
+\begin{flushleft}
 
-\par
+\vspace{2em}
 @INFERNAL_COPYRIGHT@
 
-\par
+\vspace{2em}
 Infernal and its documentation are freely distributed under the 
 3-Clause BSD open source license. For a copy of the license, see
-\href {opensource.org/licenses/BSD-3-Clause}.
+\url{opensource.org/licenses/BSD-3-Clause}.
 
-\par
+\vspace{2em}
 Infernal development is supported by the Intramural Research Program
 of the National Library of Medicine at the US National Institutes of
 Health, and also by the National Human Genome Research Institute of
@@ -22,7 +19,7 @@ R01HG009116. The content is solely the responsibility of the authors
 and does not necessarily represent the official views of the National
 Institutes of Health.
 
-\end{fullwidth}
+\end{flushleft}
 
 
 
