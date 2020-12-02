@@ -39,7 +39,7 @@ MANS =  infernal\
 
 install:
 	for file in ${MANS}; do \
-	   ${INSTALL} -m 0755 ${srcdir}/$$file.man ${DESTDIR}${man1dir}/$${file}${man1ext} ;\
+	   ${INSTALL} -m 0664 $$file.man ${DESTDIR}${man1dir}/$${file}${man1ext} ;\
 	done
 
 uninstall:
