@@ -1441,7 +1441,8 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
    }
 
-   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(w      != NULL) esl_stopwatch_Destroy(w);
+   if(mw_cfg != NULL) esl_msaweight_cfg_Destroy(mw_cfg);
    return eslOK;
  }
 
