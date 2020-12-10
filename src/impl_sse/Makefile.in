@@ -10,13 +10,15 @@ bindir      = @bindir@
 libdir      = @libdir@
 includedir  = @includedir@
 
-CC          = @CC@
-CFLAGS      = @CFLAGS@ @PTHREAD_CFLAGS@
-SSE_CFLAGS  = @SSE_CFLAGS@
-CPPFLAGS    = @CPPFLAGS@
-LDFLAGS     = @LDFLAGS@
-DEFS        = @DEFS@
-LIBS        = -linfernal -lhmmer -leasel @LIBS@ -lm
+CC             = @CC@
+CFLAGS         = @CFLAGS@
+PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
+PIC_CFLAGS     = @PIC_CFLAGS@
+SSE_CFLAGS     = @SSE_CFLAGS@
+CPPFLAGS       = @CPPFLAGS@
+LDFLAGS        = @LDFLAGS@
+DEFS           = @DEFS@
+LIBS           = -linfernal -lhmmer -leasel @LIBS@ -lm
 
 AR          = @AR@ 
 RANLIB      = @RANLIB@
@@ -24,7 +26,6 @@ INSTALL     = @INSTALL@
 
 ESLDIR         = @INFERNAL_ESLDIR@
 HMMERDIR       = @INFERNAL_HMMERDIR@
-#MYLIBDIRS      = -L../../${HMMERDIR}/src -L../../${ESLDIR} -L..
 MYLIBDIRS      = -L../../${ESLDIR} -L../../${HMMERDIR}/src -L..
 MYINCDIRS      = -I../../${ESLDIR} \
 		 -I${top_srcdir}/easel \
@@ -83,13 +84,10 @@ ${OBJS}:     ${HDRS}
 ${PROGOBJS}: ${HDRS}
 
 ${PROGS}: % : %.o ../libinfernal.a ../../${HMMERDIR}/src/libhmmer.a ../../${ESLDIR}/libeasel.a  
-	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${MPILIBS} ${LIBS}
+	${QUIET_GEN}${CC} ${CFLAGS} ${PIC_CFLAGS} ${PTHREAD_CFLAGS} ${SSE_CFLAGS} ${CPPFLAGS} ${LDFLAGS} ${DEFS} ${MYLIBDIRS} ${MYINCDIRS} -o $@ $@.o ${LIBS}
 
 .c.o:  
-	${QUIET_CC}${CC} ${CFLAGS} ${SSE_CFLAGS} ${CPPFLAGS} ${DEFS} ${PTHREAD_CFLAGS} ${MYINCDIRS} -o $@ -c $<
-
-distclean: clean
-	-rm -f Makefile 
+	${QUIET_CC}${CC} ${CFLAGS} ${PIC_CFLAGS} ${PTHREAD_CFLAGS} ${SSE_CFLAGS} ${CPPFLAGS} ${DEFS} ${MYINCDIRS} -o $@ -c $<
 
 clean:
 	-rm -f libinfernal-impl.stamp
@@ -98,6 +96,10 @@ clean:
 	for prog in ${PROGS}; do \
 	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
 	done
+ifndef V
+	@echo '     ' CLEAN impl_sse
+endif
 
-
+distclean: clean
+	-rm -f Makefile 
 

@@ -115,7 +115,7 @@ include Rfam GA, TC, and/or NC bit score thresholds the
 and/or
 .B --cut_nc 
 options can be used to display E-values that correspond to the bit
-score thresholds. Seperate bit scores or E-values will be displayed
+score thresholds. Separate bit scores or E-values will be displayed
 for each of the four possible CM search algorithm and model
 configuration pairs: local Inside, local CYK, glocal Inside and glocal
 CYK.
@@ -260,10 +260,6 @@ web page
 .SH AUTHOR
 
 .nf
-The Eddy/Rivas Laboratory
-Janelia Farm Research Campus
-19700 Helix Drive
-Ashburn VA 20147 USA
 http://eddylab.org
 .fi
 

@@ -1361,7 +1361,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int cl
    */
   esl_wuss_nopseudo(ss_cons, ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (clen+1) * sizeof(int));
-  if ((status = esl_wuss2ct(ss_cons, clen, ct)) != eslOK) ESL_FAIL(status, errbuf, "Consensus string is inconsisent in ConsensusModelMaker().");
+  if ((status = esl_wuss2ct(ss_cons, clen, ct)) != eslOK) ESL_FAIL(status, errbuf, "Consensus string is inconsistent in ConsensusModelMaker().");
 
   /* 2. Construct a guide tree. 
    *    This codes is borrowed from HandModelmaker(), where it

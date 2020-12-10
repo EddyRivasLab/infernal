@@ -1,62 +1,17 @@
 Brief installation instructions 
-Infernal @INFERNAL_VERSION@; @INFERNAL_DATE@
--------------------------------------------------------------
+Infernal 1.1.4 (Dec 2020)
 
-These are quick installation instructions. For complete documentation,
-including customization and troubleshooting, please see the
-Installation chapter in the Infernal User's Guide (Userguide.pdf).
+Starting from a source distribution, infernal-1.1.4.tar.gz:
+   uncompress infernal-1.1.4.tar.gz  
+   tar xf infernal-1.1.4.tar
+   cd infernal-1.1.4
+   ./configure
+   make
+   make check                        # optional: automated tests
+   make install                      # optional: install Infernal programs and man pages
+   (cd hmmer; make install)          # optional: install HMMER programs too
+   (cd easel; make install)          # optional: install Easel tools too
 
-Starting from a source distribution, infernal-@INFERNAL_VERSION@.tar.gz:
- uncompress:                uncompress infernal-@INFERNAL_VERSION@.tar.gz  
- unpack:                    tar xf infernal-@INFERNAL_VERSION@.tar
- move into new directory:   cd infernal-@INFERNAL_VERSION@
- configure:                 ./configure
- build:                     make
- automated tests:           make check
- automated install:         make install
-
-Infernal is designed to run on POSIX-compatible platforms, including
-UNIX, Linux and MacOS/X. The POSIX standard essentially includes all
-operating systems except Microsoft Windows. We have tested most
-extensively on Linux and on MacOS/X, because these are the machines we
-develop on.
-
-Infernal depends on vector parallelization methods that are supported
-on most modern processors. Infernal requires either an x86-compatible
-(IA32, IA64, or Intel64) processor that supports the SSE2 vector
-instruction set, or a PowerPC processor that supports the Altivec/VMX
-instruction set. If your platform does not support one of these vector
-instruction sets, you won't be able to install and run Infernal 1.1 on
-it.
-
--------------------------------------------------------------
-Starting from a Git Repo: 
-
-If you have cloned the Infernal Git repository, there's
-some additional stuff you need to do one-time-only in your new working
-directory.
-
-First you need to clone easel and hmmer too:
-  cd infernal
-  git clone https://github.com/EddyRivasLab/easel.git
-  git clone https://github.com/EddyRivasLab/hmmer.git
-
-And switch to the h3-master branch:
-  cd hmmer
-  git checkout h3-master
-
-You may want to switch to the 'develop' branch of infernal, the
-'h3-develop' branch of hmmer and the 'develop' branch of easel if you
-want the in-development code.
-
-And finally:
-   ln -s easel/aclocal.m4 aclocal.m4
-   (cd hmmer; ln -s ../easel/aclocal.m4 aclocal.m4;)
-   autoconf
-   (cd easel; autoconf; cd ../hmmer; autoconf;)
-
--------------------------------------------------------------
-The Infernal development team
-github.com/EddyRivasLab/infernal/
-http://eddylab.org/infernal
-
+For more details including customization, supported platforms, and
+troubleshooting, see the Installation chapter in the Infernal User's
+Guide (Userguide.pdf).

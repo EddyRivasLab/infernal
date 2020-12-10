@@ -1423,9 +1423,15 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
      fflush(cfg->ofp); 
    }
 
+   // set up the msaweight configuration, only relevant for --wpb (default)
+   ESL_MSAWEIGHT_CFG *mw_cfg = esl_msaweight_cfg_Create();
+   mw_cfg->ignore_rf  =  esl_opt_GetBoolean(go, "--hand") ? 0 : 1; // if --hand is used, do not ignore RF, else do
+
+   if      (esl_opt_GetBoolean(go, "--wnone"))                  esl_vec_DSet(msa->wgt, msa->nseq, 1.);
+
    if      (esl_opt_GetBoolean(go, "--wnone"))                  esl_vec_DSet(msa->wgt, msa->nseq, 1.);
    else if (esl_opt_GetBoolean(go, "--wgiven"))                 ;
-   else if (esl_opt_GetBoolean(go, "--wpb"))                    esl_msaweight_PB(msa);
+   else if (esl_opt_GetBoolean(go, "--wpb"))                    esl_msaweight_PB_adv(mw_cfg, msa, NULL);
    else if (esl_opt_GetBoolean(go, "--wgsc"))                   esl_msaweight_GSC(msa);
    else if (esl_opt_GetBoolean(go, "--wblosum"))                esl_msaweight_BLOSUM(msa, esl_opt_GetReal(go, "--wid"));
 
@@ -1435,7 +1441,8 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
    }
 
-   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(w      != NULL) esl_stopwatch_Destroy(w);
+   if(mw_cfg != NULL) esl_msaweight_cfg_Destroy(mw_cfg);
    return eslOK;
  }
 

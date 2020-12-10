@@ -201,12 +201,12 @@ and you'll see some output that looks like:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1.3 (November 2019)
-# Copyright (C) 2019 Howard Hughes Medical Institute.
+# INFERNAL 1.1.4 (Dec 2020)
+# Copyright (C) 2020 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5.cm
-# alignment file:                                     tRNA5.sto
+# alignment file:                                     tutorial/tRNA5.sto
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #                                                                      rel entropy
 #                                                                      -----------
@@ -214,7 +214,7 @@ and you'll see some output that looks like:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5                       5     3.73     74    72   21    2 0.783 0.489 
 #
-# CPU time: 0.17u 0.00s 00:00:00.17 Elapsed: 00:00:00.18
+# CPU time: 0.26u 0.00s 00:00:00.26 Elapsed: 00:00:00.27
 \end{sreoutput}
 
 If your input file had contained more than one alignment, you'd get
@@ -286,36 +286,36 @@ You should see something like this:
 
 \begin{sreoutput}
 # cmcalibrate :: fit exponential tails for CM E-values
-# INFERNAL 1.1.3 (November 2019)
-# Copyright (C) 2019 Howard Hughes Medical Institute.
+# INFERNAL 1.1.4 (Dec 2020)
+# Copyright (C) 2020 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                     tRNA5.cm
 # forecast mode (no calibration):              on
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #
-# Forecasting running time for CM calibration(s) on 8 cpus:
+# Forecasting running time for CM calibration(s) on 32 cpus:
 #
 #                          predicted
 #                       running time
 # model name            (hr:min:sec)
 # --------------------  ------------
-  tRNA5                     00:02:34
+  tRNA5                     00:00:58
 #
-# CPU time: 0.11u 0.00s 00:00:00.11 Elapsed: 00:00:00.12
+# CPU time: 0.18u 0.01s 00:00:00.19 Elapsed: 00:00:00.18
 [ok]
 \end{sreoutput}
 
 The header comes first, telling you what program you ran, on what file
-and with what options. This calibration will use 8 CPUs, your output
+and with what options. This calibration will use 32 CPUs, your output
 %                                                ^^
 may vary depending on how many cores you have available on the machine
 you're using. (If you are planning to use MPI to parallelize the
 calibration (see the Installation section), you can specify the number
 of CPUs for the time estimate as \otext{<n>} with the
-\otext{--nforecast <n>} option.) Using 8 CPUs, \prog{cmcalibrate}
+\otext{--nforecast <n>} option.) Using 32 CPUs, \prog{cmcalibrate}
 estimates the time required for calibration on the machine I'm using
-at about two and a half minutes.
+at about one minute.
 
 Feel free to perform the calibration yourself if you'd like (with the
 command \otext{cmcalibrate tRNA5.cm}). However, we've included the file
@@ -341,13 +341,13 @@ your ran, on what, and with what options:
 
 \begin{sreoutput}
 # cmsearch :: search CM(s) against a sequence database
-# INFERNAL 1.1.3 (November 2019)
-# Copyright (C) 2019 Howard Hughes Medical Institute.
+# INFERNAL 1.1.4 (Dec 2020)
+# Copyright (C) 2020 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query CM file:                         tRNA5.cm
 # target sequence database:              tutorial/mrum-genome.fa
-# number of worker threads:              8
+# number of worker threads:              32
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \end{sreoutput}
 
@@ -678,7 +678,7 @@ Envelopes passing glocal HMM envelope defn filter:              99  (0.001331); 
 Envelopes passing  local CM  CYK           filter:              60  (0.0007629); expected (0.0001)
 Total CM hits reported:                                         56  (0.0007205); includes 0 truncated hit(s)
 
-# CPU time: 1.71u 0.04s 00:00:01.75 Elapsed: 00:00:02.58
+# CPU time: 1.91u 0.09s 00:00:02.00 Elapsed: 00:00:01.09
 //
 [ok]
 \end{sreoutput}
@@ -797,8 +797,8 @@ described above. In this search there were 56 such hits.
 %                                          ^^
 
 Finally, the running time of the search is reported, in CPU time and
-elapsed time. This search took about 3.5 seconds (wall
-clock time) running on eight cores. 
+elapsed time. This search took about 1 second (wall
+clock time) running on 32 cores. 
 %                      ^^^^^^^^^^^
 \subsubsection{Truncated RNA detection}
 
@@ -943,13 +943,13 @@ The header and the first section of the output will look like:
 
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
-# INFERNAL 1.1.3 (November 2019)
-# Copyright (C) 2019 Howard Hughes Medical Institute.
+# INFERNAL 1.1.4 (Dec 2020)
+# Copyright (C) 2020 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query sequence file:                   tutorial/metag-example.fa
 # target CM database:                    minifam.cm
-# number of worker threads:              8
+# number of worker threads:              32
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Query:       AAGA01015927.1  [L=943]
@@ -1012,7 +1012,7 @@ Internal CM pipeline statistics summary:
 Query sequence(s):                                               1  (1886 residues searched)
 Query sequences re-searched for truncated hits:                  1  (834.7 residues re-searched, avg per model)
 Target model(s):                                                 3  (382 consensus positions)
-Windows   passing  local HMM SSV           filter:              19  (0.3754); expected (0.35)
+Windows   passing  local HMM SSV           filter:              20  (0.3992); expected (0.35)
 Windows   passing  local HMM Viterbi       filter:                  (off)
 Windows   passing  local HMM Viterbi  bias filter:                  (off)
 Windows   passing  local HMM Forward       filter:               4  (0.07976); expected (0.02)
@@ -1023,7 +1023,7 @@ Envelopes passing glocal HMM envelope defn filter:               3  (0.03357); e
 Envelopes passing  local CM  CYK           filter:               3  (0.03357); expected (0.0001)
 Total CM hits reported:                                          3  (0.03222); includes 0 truncated hit(s)
 
-# CPU time: 0.03u 0.00s 00:00:00.03 Elapsed: 00:00:00.12
+# CPU time: 0.06u 0.03s 00:00:00.09 Elapsed: 00:00:00.05
 //
 \end{widesreoutput}
 
@@ -1069,12 +1069,12 @@ Hit alignments:
 >> Cobalamin  Cobalamin riboswitch
  rank     E-value  score  bias mdl mdl from   mdl to       seq from      seq to       acc trunc   gc
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
-  (1) !   7.9e-09   29.7   0.0  cm       31      190 ~]         934         832 - ~. 0.92    5' 0.48
+  (1) !   6.6e-09   29.9   0.0  cm       31      190 ~]         934         832 - ~. 0.92    5' 0.48
 
                                  ???              v           v      v    v                                     ???? NC
                      ~~~~~~______>>>,,,,,(((,,,<.<<<<_______>>>>>,,<<<____>>>,<<<---<<<<~~~~~~>>>>---->>>,,,,)))]]]] CS
-       Cobalamin   1 <[30]*agucagggguuAAaaGGGAAc.ccGGUGcaAauCCgggGCuGcCCCCgCaACUGUAAgcGg*[61]*cCgcgAGCCAGGAGACCuGCCg 173
-                           + + +     + AA: GGAA: : GGUG AAAUCC ::+C:G CCC  C:ACUGUAA:C:        :G:+AG+CAG A AC :  C 
+       Cobalamin   1 <[30]*agucggggguuAAaaGGGAAc.ccGGUGcaAauCCgggGCuGcCCCCgCaACUGUAAgcGg*[61]*cCgcgAGCCAGGAGACCuGCCg 173
+                           + + G     + AA: GGAA: : GGUG AAAUCC ::+C:G CCC  C:ACUGUAA:C:        :G:+AG+CAG A AC :  C 
   AAFY01022046.1 934 <[ 0]*GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCACUGUAACCAG*[ 4]*UUGGAAGUCAG-AUACUCUUCU 849
                      ......44455677788899******9899***********************************96...7..69*********.9********* PP
 
@@ -1165,9 +1165,9 @@ character.
 
 The Rfam database \url{http://rfam.xfam.org/} is a collection
 of RNA families, each represented by a CM and multiple sequence
-alignment used to build that CM. As of November 2019, the current release
+alignment used to build that CM. As of December 2020, the current release
 %                                      ^^^^^^^^^^^^^
-is 14.1, which includes 3016 families. The Rfam website allows
+is 14.3, which includes 3446 families. The Rfam website allows
 web-based searches using \prog{cmscan} of the Rfam CM database against
 query sequences that the user can upload. Alternatively, you can perform
 the same searches by running \prog{cmscan} locally, as shown in this
@@ -1176,11 +1176,11 @@ be annotating your dataset for most known types of structural RNAs
 with a single command.
 
 To complete this step of the tutorial you'll need to download the Rfam
-14.1 CM file from here: \\
-\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.1/Rfam.cm.gz} 
+14.3 CM file from here: \\
+\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.3/Rfam.cm.gz} 
 and gunzipping it, like this: 
 
-\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.1/Rfam.cm.gz} 
+\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.3/Rfam.cm.gz} 
 
 \user{gunzip Rfam.cm.gz}
 
@@ -1195,13 +1195,12 @@ options are required. Each of these options is explained below. The
 full command is (split up into two lines so it fits on the page): 
 
 \indent\indent\small\verb+> cmscan --rfam --cut_ga --nohmmonly --tblout mrum-genome.tblout --fmt 2 \+\\
-\indent\indent\small\verb+> --clanin testsuite/Rfam.14.1.clanin Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan+\\
+\indent\indent\small\verb+> --clanin tutorial/Rfam.14.3.clanin Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan+\\
 
 This command will take at least several minutes and possibly up to
 about 30 minutes depending on the number of cores and speed of your
 computer. 
 
-HERE HERE 
 The command line options used in the above command are as follows:
 
 \begin{sreitems}{\emprog{--nohmmonly}}
@@ -1217,7 +1216,7 @@ The command line options used in the above command are as follows:
   by Rfam curators as the bit score at and above which all hits are
   believed to be true homologs to the model. These determinations were made based on
   observed hit results against the large Rfamseq database used by
-  Rfam \citep{Nawrocki15}.
+  Rfam~\citep{Nawrocki15}.
 %
 \item[\otext{--nohmmonly}] All models, even those with zero basepairs,
   are run in CM mode (not HMM mode). This ensures all GA cutoffs, which were
@@ -1232,7 +1231,7 @@ The command line options used in the above command are as follows:
   format. 
 %
 \item[\otext{--clanin}] Clan information should be read
-  from the file \prog{testsuite/Rfam.12.1.claninfo}. This file lists
+  from the file \prog{tutorial/Rfam.14.3.claninfo}. This file lists
   which models belong to the same clan. Clans are groups of models
   that are homologous and therefore it is expected that some hits to
   these models will overlap. For example, the LSU\_rRNA\_archaea and
@@ -1313,7 +1312,7 @@ to produce overlapping hits due to their homology, Rfam has grouped
 them into the same \emph{clan}, note the ``CL00112'' value in the ``clan
 %                                          ^^^^^^^
 name'' column for all three hits. This clan information was provided
-in the \prog{rfam.14.1.claninfo} input file we provided to \prog{cmscan}
+in the \prog{rfam.14.3.claninfo} input file we provided to \prog{cmscan}
 by using the \prog{--clanin} option. 
 
 The ``olp'' column indicates that hit 1 is the highest scoring of the
@@ -1356,7 +1355,7 @@ The output of this is a Stockholm format multiple alignment file:
 
 \begin{tinysreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1.3
+#=GF AU Infernal 1.1.4
 
 mrum-tRNA.1          GGAGCUAUAGCUCAAU..GGC..AGAGCGUUUGGCUGACAU........................................CCAAAAGGUUAUGGGUUCGAUUCCCUUUAGCCCCA
 #=GR mrum-tRNA.1  PP ****************..***..******************........................................***********************************
@@ -1484,7 +1483,7 @@ below so it will fit on the page):
 \label{cmalign-cobalamin}
 \begin{sreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1.3
+#=GF AU Infernal 1.1.4
 
 Cobalamin.1         ------------------------------GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCA
 #=GR Cobalamin.1 PP ..............................44455677788899******9899***************************
@@ -1588,11 +1587,11 @@ identical:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1.3 (November 2019)
-# Copyright (C) 2019 Howard Hughes Medical Institute.
+# INFERNAL 1.1.4 (Dec 2020)
+# Copyright (C) 2020 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# CM file:                                            tRNA-noss.cm
+# CM file:                                            tRNA5-noss.cm
 # alignment file:                                     tutorial/tRNA5-noss.sto
 # ignore secondary structure, if any:                 yes
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1602,7 +1601,7 @@ identical:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5-noss                  5     5.00     74    72    0    0 0.552 0.552 
 #
-# CPU time: 0.07u 0.00s 00:00:00.07 Elapsed: 00:00:00.08
+# CPU time: 0.13u 0.00s 00:00:00.13 Elapsed: 00:00:00.15
 \end{sreoutput}
 
 The output reports that this model has 0 basepairs (``bps'') (the
@@ -1621,7 +1620,7 @@ to be calibrated prior to running \prog{cmsearch}\footnote{Zero
 Now, let's repeat the search of the \emph{M. ruminantium} genome but
 using our structureless tRNA model: 
 
-\user{cmsearch tRNA5-noss.cm tutorial/mrum-genome.fa}\\
+\user{cmsearch tRNA5-noss.cm tutorial/mrum-genome.fa}\\o
 
 This search is faster than the first one because only profile HMM
 algorithms are used this time around. Take a look at the list of hits:
@@ -1848,12 +1847,12 @@ To build the hand-specified model from this alignment, do:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1.3 (November 2019)
-# Copyright (C) 2019 Howard Hughes Medical Institute.
+# INFERNAL 1.1.4 (Dec 2020)
+# Copyright (C) 2020 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5-hand.cm
-# alignment file:                                     ../infernal/tutorial/tRNA5-hand.sto
+# alignment file:                                     tutorial/tRNA5-hand.sto
 # use #=GC RF annotation to define consensus columns: yes
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #                                                                      rel entropy
@@ -1862,7 +1861,7 @@ To build the hand-specified model from this alignment, do:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5-hand                  5     3.59     74    74   21    2 0.763 0.476 
 #
-# CPU time: 0.16u 0.00s 00:00:00.16 Elapsed: 00:00:00.17
+# CPU time: 0.33u 0.01s 00:00:00.34 Elapsed: 00:00:00.35
 \end{sreoutput}
 
 The output reports that the model now has 74 match (consensus)

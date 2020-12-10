@@ -2419,8 +2419,9 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
       if(th->hit[h]->win_oidx != -1) has_overlapA[th->hit[h]->win_oidx] = TRUE; 
       sorted_idxA[th->hit[h]->hit_idx] = h; /* save sorted idx */
       /* and save the output index we'll use for this hit */
+      maybe_skip = ((th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP) && (th->hit[h]->win_oidx != -1)) ? 1 : 0;
       if ((th->hit[h]->flags & CM_HIT_IS_REPORTED) &&  /* hit is REPORTED */
-          (skip_overlaps == FALSE || (! (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP)))) { /* hit won't be skipped b/c it's an overlap */
+          ((skip_overlaps == FALSE) || (maybe_skip == FALSE))) { /* hit won't be skipped b/c it's an overlap */
         noutput++;
         output_idxA[h] = noutput; /* save output idx */
       }
@@ -2456,8 +2457,9 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   }
   for (h = 0; h < th->N; h++) { 
     /* next complex 'if' statement checks if will we output info on this hit */
+    maybe_skip = ((th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP) && (th->hit[h]->win_oidx != -1)) ? 1 : 0;
     if ((th->hit[h]->flags & CM_HIT_IS_REPORTED) && /* hit is REPORTED */
-        ((skip_overlaps == FALSE) || (! (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP)))) { /* hit won't be skipped b/c it's an overlap */
+        ((skip_overlaps == FALSE) || (maybe_skip == FALSE))) { /* hit won't be skipped b/c it's an overlap */
       as = (th->hit[h]->any_oidx == -1) ? -1 : sorted_idxA[th->hit[h]->any_oidx]; /* for convenience */
       ws = (th->hit[h]->win_oidx == -1) ? -1 : sorted_idxA[th->hit[h]->win_oidx]; /* for convenience */
       ao = (th->hit[h]->any_oidx == -1) ? -1 : output_idxA[sorted_idxA[th->hit[h]->any_oidx]]; /* for convenience */
@@ -2502,9 +2504,28 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
         sprintf(win_ofctstr1, "%6.3f", (float) nres / (float) len1);
         sprintf(win_ofctstr2, "%6.3f", (float) nres / (float) len2);
       }
-      if     (th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP) { sprintf(olp_str, " = "); maybe_skip = TRUE;  }
-      else if(has_overlapA[th->hit[h]->hit_idx] == TRUE)    { sprintf(olp_str, " ^ "); maybe_skip = FALSE; }
-      else                                                  { sprintf(olp_str, " * "); maybe_skip = FALSE; }
+      // determine overlap string 
+      if(th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP) { 
+        if(ws == -1) { 
+          // has >= 1 overlaps but none of these are '^' hits,
+          // these hits were grouped together with other '=' hits
+          // in versions 1.1.2 and 1.1.3 
+          sprintf(olp_str, " $ ");
+        }
+        else { 
+          // has => 1 overlaps, and >= 1 of them are higher scoring 
+          // and is itself a '^' hit 
+          sprintf(olp_str, " = ");
+        }
+      }
+      else if(has_overlapA[th->hit[h]->hit_idx] == TRUE) { 
+        // has >= 1 overlaps but all are below it in hit list 
+        sprintf(olp_str, " ^ ");
+      }
+      else { 
+        // zero overlaps
+        sprintf(olp_str, " * ");
+      }
 
       /* make sure the clan name string makes sense */
       if(th->hit[h]->clan_idx != -1) { 

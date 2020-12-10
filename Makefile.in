@@ -50,10 +50,13 @@ man1ext     = .1
 
 # Compiler configuration
 #
-CC        = @CC@
-CFLAGS    = @CFLAGS@
-LDFLAGS   = -static @LDFLAGS@
-CPPFLAGS  = @CPPFLAGS@
+CC             = @CC@
+CFLAGS         = @CFLAGS@
+PTHREAD_CFLAGS = @PTHREAD_CFLAGS@ 
+SSE_CFLAGS     = @SSE_CFLAGS@
+VMX_CFLAGS     = @VMX_CFLAGS@
+LDFLAGS        = -static @LDFLAGS@
+CPPFLAGS       = @CPPFLAGS@
 
 # Other tools
 #
@@ -66,6 +69,7 @@ INSTALL   = @INSTALL@
 QUIET_SUBDIR0 = +${MAKE} -C #space separator after -c
 QUIET_SUBDIR1 = 
 ifndef V
+	QUIET         = @
 	QUIET_CC      = @echo '    ' CC $@;
 	QUIET_GEN     = @echo '    ' GEN $@;
 	QUIET_AR      = @echo '    ' AR $@;
@@ -174,7 +178,10 @@ clean:
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} clean
 	${QUIET_SUBDIR0}${HMMERDIR}   ${QUIET_SUBDIR1} clean
 	${QUIET_SUBDIR0}${ESLDIR}     ${QUIET_SUBDIR1} clean
-	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
+	${QUIET}-rm -f *.o *~ Makefile.bak core TAGS TAGS.part gmon.out
+ifndef V
+	@echo '     ' CLEAN infernal
+endif
 
 # "make distclean" leaves a pristine source distribution.
 #
@@ -185,13 +192,16 @@ distclean:
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}${HMMERDIR}   ${QUIET_SUBDIR1} distclean
 # no need to distclean in easel/ because distclean in hmmer/ already did that (and easel/Makefile has been deleted)
-	-rm config.log config.status
-	-rm -rf autom4te.cache
-	-rm -f *.o *~ Makefile.bak core TAGS gmon.out
-	-rm -f cscope.po.out cscope.out cscope.in.out cscope.files
-	-rm -f release-notes/LICENSE.sh
-	-rm -f src/impl
-	-rm Makefile
+	${QUIET}-rm config.log config.status
+	${QUIET}-rm -rf autom4te.cache
+	${QUIET}-rm -f *.o *~ Makefile.bak core TAGS TAGS.part gmon.out
+	${QUIET}-rm -f cscope.po.out cscope.out cscope.in.out cscope.files
+	${QUIET}-rm -f release-notes/LICENSE.sh
+	${QUIET}-rm -f src/impl
+	${QUIET}-rm Makefile
+ifndef V
+	@echo '     ' CLEAN infernal
+endif
 
 # "make TAGS": emacs etags database, for searching the whole source tree.
 TAGS:

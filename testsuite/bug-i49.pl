@@ -31,7 +31,7 @@ if ($ok) {
     $ok = 0;
   }
 }
-foreach $tmpfile ("i31.tbl") { 
+foreach $tmpfile ("i49.tbl") { 
   unlink $tmpfile if -e $tmpfile;
 }
 

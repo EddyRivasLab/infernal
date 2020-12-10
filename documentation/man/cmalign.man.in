@@ -309,7 +309,7 @@ only cells within the bands need be allocated.
 
 Importantly, HMM banding sacrifices the guarantee of determining the
 optimally accurarte or optimal alignment, which will be missed if it
-lies outside the bands. The tau paramater is the amount of probability
+lies outside the bands. The tau parameter is the amount of probability
 mass considered negligible during HMM band calculation; lower values
 of tau yield greater speedups but also a greater chance of missing the
 optimal alignment. The default tau is 1E-7, determined empirically as
@@ -500,7 +500,7 @@ in previous versions of
 .B --mapstr
 Must be used in combination with 
 .BI --mapali " <f>".
-Propogate structural information for any pseudoknots that exist in
+Propagate structural information for any pseudoknots that exist in
 .I <f> 
 to the output alignment. A similar option to this one was called
 .B --withstr 
@@ -628,9 +628,5 @@ web page
 .SH AUTHOR
 
 .nf
-The Eddy/Rivas Laboratory
-Janelia Farm Research Campus
-19700 Helix Drive
-Ashburn VA 20147 USA
 http://eddylab.org
 .fi

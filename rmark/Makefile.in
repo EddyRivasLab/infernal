@@ -2,14 +2,16 @@ top_srcdir = @top_srcdir@
 srcdir     = @srcdir@
 VPATH      = @srcdir@ 
 
-CC       = @CC@
-CFLAGS   = @CFLAGS@ @PTHREAD_CFLAGS@
-CPPFLAGS = @CPPFLAGS@
-LDFLAGS  = @LDFLAGS@
-DEFS     = @DEFS@
-LIBS     = -lhmmer -leasel @LIBS@ @PTHREAD_LIBS@ -lm
-MPILIBS  = @MPILIBS@
-IMPLDIR  = impl_@IMPL_CHOICE@
+CC             = @CC@
+CFLAGS         = @CFLAGS@ @PTHREAD_CFLAGS@
+SSE_CFLAGS     = @SSE_CFLAGS@ 
+VMX_CFLAGS     = @VMX_CFLAGS@ 
+PTHREAD_CFLAGS = @PTHREAD_CFLAGS@ 
+CPPFLAGS       = @CPPFLAGS@
+LDFLAGS        = @LDFLAGS@
+DEFS           = @DEFS@
+LIBS           = -lhmmer -leasel @LIBS@ @PTHREAD_LIBS@ -lm
+IMPLDIR        = impl_@IMPL_CHOICE@
 
 SRCDIR   = ../src
 ESLDIR   = @INFERNAL_ESLDIR@
@@ -43,15 +45,12 @@ all:    ${PROGS}
 dev:    ${PROGS}
 
 ${PROGS}: % : %.o ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a 
-	${QUIET_GEN}${CC} ${CFLAGS} ${DEFS} ${LDFLAGS} -L../${HMMERDIR}/src -L../${ESLDIR} -L${SRCDIR} -o $@ $@.o ${LIBS}
+	${QUIET_GEN}${CC} ${CPPFLAGS} ${CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${PTHREAD_CFLAGS} ${DEFS} ${LDFLAGS} -L../${HMMERDIR}/src -L../${ESLDIR} -L${SRCDIR} -o $@ $@.o ${LIBS}
 
 ${PROGOBJS}: ../${HMMERDIR}/src/hmmer.h ../${HMMERDIR}/src/p7_config.h ../src/infernal.h ../src/config.h
 
 .c.o: 
 	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${DEFS} -o $@ -c $<		
-
-distclean: clean
-	-rm -f Makefile
 
 clean:
 	-rm -f *.o *~  ${PROGS} TAGS
@@ -59,6 +58,11 @@ clean:
 	for prog in ${PROGS}; do \
 	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
 	done
+ifndef V
+	@echo '     ' CLEAN rmark
+endif
 
+distclean: clean
+	-rm -f Makefile
 
 
