@@ -1,22 +1,35 @@
 Infernal - inference of RNA secondary structural alignments
-Copyright (C) 1991-2019      Sean R. Eddy
-Copyright (C) 2005-2019      Eric P. Nawrocki
+Copyright (C) 1991-2020      Sean R. Eddy
+Copyright (C) 2005-2020      Eric P. Nawrocki
 Copyright (C) 2005-2011      Diana L. Kolbe
 Copyright (C) 2004           Zasha Weinberg
 Copyright (C) 1990           Don G.Gilbert
-Copyright (C) 2000-2019      Howard Hughes Medical Institute
+Copyright (C) 2000-2020      Howard Hughes Medical Institute
+Copyright (C) 2015-2020      President and Fellows of Harvard College
 Copyright (C) 1995-2006      Washington University School of Medicine
 Copyright (C) 1992-1995      MRC Laboratory of Molecular Biology
 Copyright (C) 2004           University of Washington, Seattle
 Copyright (C) 1986,1993,1995 University of Toronto
 Copyright (C) 1989-2001      Free Software Foundation
 Copyright (C) 1991           Massachussetts Institute of Technology
-All rights reserved.
+-----------------------------------------------------------------------
 
-------------------------------------------------------------------
+Infernal includes the HMMER software package, which is also open
+source and BSD licensed. See hmmer/LICENSE.
 
-Infernal is open source software, freely distributed under the terms of a
-standard BSD (Berkeley Software Distribution) license:
+Infernal uses the Easel software library, which is also open source and
+BSD licensed. See easel/LICENSE.
+
+Infernal development is supported in part by the Intramural Research
+Program of the National Library of Medicine at the US National
+Institutes of Health, and also by the National Human Genome Research
+Institute of the US National Institutes of Health under grant number
+R01HG009116. The content is solely the responsibility of the authors
+and does not necessarily represent the official views of the National
+Institutes of Health.
+
+Infernal source code is distributed as open source under the terms of
+the BSD three-clause license:
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions
@@ -30,7 +43,7 @@ standard BSD (Berkeley Software Distribution) license:
       disclaimer in the documentation and/or other materials provided
       with the distribution.
 
-   3. Neither the name of the copyright holder nor the names of its
+   3. Neither the name of any copyright holder nor the names of 
       contributors may be used to endorse or promote products derived
       from this software without specific prior written permission.
 
@@ -46,12 +59,3 @@ standard BSD (Berkeley Software Distribution) license:
    STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
    OF THE POSSIBILITY OF SUCH DAMAGE.
-
-------------------------------------------------------------------
-
-Infernal includes the HMMER software package, which is also open source and
-BSD licensed. See hmmer/LICENSE.
-
-Infernal uses the Easel software library, which is also open source and
-BSD licensed. See easel/LICENSE.
-

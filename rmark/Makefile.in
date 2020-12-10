@@ -52,15 +52,17 @@ ${PROGOBJS}: ../${HMMERDIR}/src/hmmer.h ../${HMMERDIR}/src/p7_config.h ../src/in
 .c.o: 
 	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${DEFS} -o $@ -c $<		
 
-distclean: clean
-	-rm -f Makefile
-
 clean:
 	-rm -f *.o *~  ${PROGS} TAGS
 	-rm -f *.gcno
 	for prog in ${PROGS}; do \
 	   if test -d $$prog.dSYM; then rm -rf $$prog.dSYM; fi ;\
 	done
+ifndef V
+	@echo '     ' CLEAN rmark
+endif
 
+distclean: clean
+	-rm -f Makefile
 
 

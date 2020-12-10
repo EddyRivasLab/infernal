@@ -1,4 +1,4 @@
-INFERNAL1/a [1.1.3 | November 2019]
+INFERNAL1/a [1.1.4 | Dec 2020]
 NAME     tRNA5
 STATES   230
 NODES    61
@@ -8,9 +8,9 @@ ALPH     RNA
 RF       no
 CONS     yes
 MAP      yes
-DATE     Sat Nov 16 15:07:53 2019
-COM      [1] ../infernal/src/cmbuild tRNA5.cm ../infernal/tutorial/tRNA5.sto
-COM      [2] ../infernal/src/cmcalibrate tRNA5.cm
+DATE     Mon Nov 30 12:13:44 2020
+COM      [1] cmbuild tRNA5.cm tutorial/tRNA5.sto
+COM      [2] cmcalibrate tRNA5.cm
 PBEGIN   0.05
 PEND     0.05
 WBETA    1e-07
@@ -321,7 +321,7 @@ CM
                                              [ END    41 ]      -      - - - - -
      E   229   228 3    -1     0     0     0     0     0                                                 
 //
-HMMER3/f [i3.2 | November 2019]
+HMMER3/f [3.3.2 | Nov 2020]
 NAME  tRNA5
 LENG  72
 MAXL  152
@@ -331,8 +331,8 @@ MM    no
 CONS  yes
 CS    yes
 MAP   yes
-DATE  Sat Nov 16 15:07:53 2019
-COM   [1] ../infernal/src/cmbuild tRNA5.cm ../infernal/tutorial/tRNA5.sto
+DATE  Mon Nov 30 12:13:44 2020
+COM   [1] cmbuild tRNA5.cm tutorial/tRNA5.sto
 NSEQ  5
 EFFN  4.575195
 CKSUM 3535941971

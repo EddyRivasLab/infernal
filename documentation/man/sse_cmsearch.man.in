@@ -1,29 +1,24 @@
-.TH "cmsearch_dual" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
+.TH "sse_cmsearch" 1 "@INFERNAL_DATE@" "Infernal @INFERNAL_VERSION@" "Infernal Manual"
 
 .SH NAME
 .TP
-cmsearch_dual - search covariance model(s) against a sequence database using two filter pipelines
+sse_cmsearch - search covariance models against a sequence database using an SSE implementation
 
 .SH SYNOPSIS
-.B cmsearch_dual
+.B sse_cmsearch
 .I [options]
 .I <cmfile>
 .I <seqdb>
 
 .SH DESCRIPTION
-.B cmsearch_dual
+.B sse_cmsearch
 uses the covariance model (CM) in
 .I <cmfile>
 to search for homologous RNAs in 
 .I <seqdb>,
-and outputs high-scoring alignments.
-.B cmsearch_dual
-runs both the standard filter pipeline of 
-.B cmsearch
-and the structure-based filter pipeline of 
-.B sse_cmsearch
-and combines the results in a single, sorted
-results list.
+and outputs high-scoring alignments,
+using a structural filter pipeline 
+implemented with SSE parallel code.
 
 .PP
 Currently, the sequence file must be in FASTA format.
@@ -35,21 +30,23 @@ CM file is produced by the
 program, from a given RNA sequence alignment of known 
 consensus structure.
 CM files must be calibrated prior to running 
-.B cmsearch_dual
+.B sse_cmsearch
 with the 
 .B cmcalibrate 
-program.
+program. 
 
 .PP
-.B cmsearch_dual
-output is in the same format used by 
-.B cmsearch;
-consult the user guide for more detail.
+.B sse_cmsearch
+output is designed for processing by the 
+.B cmsearch_dual 
+script;
+.B --glbf 3
+gives coordinates and scores of the final results list.
 
 .SH OPTIONS
 
 .TP
-.B --help
+.B -h
 Print brief help, including summary of available options.
 
 .TP
@@ -62,36 +59,35 @@ is defined as the total number of nucleotides in
 times 2, because both strands of each target sequence will be searched.
 
 .TP 
-.B -P <n>
-Directly specify the path 
-.I <n>
-to 
-.B cmsearch.
-This is unecessary if 
-.B cmsearch
-is installed and available in your path.
+.B --toponly
+Only search the top (Watson) strand of the sequences in
+.I <seqdb>.
+By default, both strands are searched.
+This will halve the database size (Z).
 
-.TP 
-.B -Q <n>
-Directly specify the path 
-.I <n>
-to 
-.B sse_cmsearch.
-This is usually necessary because 
-.B sse_cmsearch
-is not installed by Infernal, but it is built on systems with SSE
-parallelization capability. It can be found in the src/impl_sse/
-directory.
+.TP
+.BI --s1-F " <x>"
+Set stage 1 cutoff to estimated filter pass rate
+.I <x>,
+where 
+.I <x>
+is a real number between 0 and 1.
 
-.TP 
-.B -R <n>
-Directly specify the path 
-.I <n>
-to 
-.B esl-sfetch.
-This is unecessary if 
-.B esl-sfetch
-is installed and available in your path.
+.TP
+.BI --s2-P " <x>"
+Set stage 2 cutoff to a p-value of 
+.I <x>,
+where 
+.I <x>
+is a real number between 0 and 1.
+
+.TP
+.BI --s3-E " <x>"
+Set stage 2 cutoff to a e-value of 
+.I <x>,
+where 
+.I <x>
+is a positive real number.
 
 
 .SH SEE ALSO 
@@ -121,9 +117,5 @@ web page
 .SH AUTHOR
 
 .nf
-The Eddy/Rivas Laboratory
-Janelia Farm Research Campus
-19700 Helix Drive
-Ashburn VA 20147 USA
 http://eddylab.org
 .fi

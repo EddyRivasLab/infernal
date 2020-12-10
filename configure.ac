@@ -75,7 +75,7 @@ m4_include([easel/m4/esl_pic_flags.m4])
 # 2. AC_INIT
 ################################################################
 
-AC_INIT(Infernal, 1.1.3, eric.nawrocki@nih.gov, infernal)
+AC_INIT(Infernal, 1.1.4, eric.nawrocki@nih.gov, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 esl_cflags_env_set=no
@@ -106,8 +106,8 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="Nov 2019"
-INFERNAL_COPYRIGHT="Copyright (C) 2019 Howard Hughes Medical Institute."
+INFERNAL_DATE="Dec 2020"
+INFERNAL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://eddylab.org/infernal/"
@@ -115,19 +115,19 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="Nov 2019"
-HMMER_COPYRIGHT="Copyright (C) 2019 Howard Hughes Medical Institute."
+HMMER_DATE="Nov 2020"
+HMMER_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the BSD open source license."
-HMMER_VERSION="3.3"
+HMMER_VERSION="3.3.2"
 HMMER_URL="http://hmmer.org/"
 
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="Nov 2019"
-EASEL_COPYRIGHT="Copyright (C) 2019 Howard Hughes Medical Institute."
+EASEL_DATE="Nov 2020"
+EASEL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 EASEL_LICENSE="Freely distributed under the BSD open source license."
-EASEL_VERSION="0.46"
+EASEL_VERSION="0.48"
 EASEL_URL="http://bioeasel.org/"
 
 AC_SUBST(INFERNAL_DATE)
@@ -605,15 +605,37 @@ AC_CONFIG_FILES([ \
   testsuite/Makefile               \
   rmark/Makefile                   \
   documentation/Makefile           \
-  documentation/manpages/Makefile  \
+  documentation/man/Makefile       \
   documentation/userguide/Makefile \
   ])
 if test "$impl_choice" = "sse"; then
   AC_CONFIG_FILES([src/impl_sse/Makefile])
 fi
-if test -d release-notes; then
-  AC_CONFIG_FILES(release-notes/LICENSE.sh)
-fi
+
+# Substitutions in Userguide .tex files
+# INFERNAL_VERSION, INFERNAL_DATE, INFERNAL_COPYRIGHT
+AC_CONFIG_FILES([ \
+  documentation/userguide/titlepage.tex  \
+  documentation/userguide/copyright.tex  \
+  ])
+
+# Substitutions in Infernal man pages:
+# INFERNAL_VERSION, INFERNAL_DATE, INFERNAL_COPYRIGHT, INFERNAL_LICENSE, INFERNAL_URL
+AC_CONFIG_FILES([ \
+  documentation/man/cmalign.man       \
+  documentation/man/cmbuild.man       \
+  documentation/man/cmcalibrate.man   \
+  documentation/man/cmconvert.man     \
+  documentation/man/cmemit.man        \
+  documentation/man/cmfetch.man       \
+  documentation/man/cmpress.man       \
+  documentation/man/cmscan.man        \
+  documentation/man/cmsearch.man      \
+  documentation/man/cmsearch_dual.man \
+  documentation/man/cmstat.man        \
+  documentation/man/infernal.man      \
+  documentation/man/sse_cmsearch.man  \
+  ])
 
 # HMMER3 Makefiles.
 AC_CONFIG_FILES([ \
