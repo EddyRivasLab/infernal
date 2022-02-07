@@ -63,6 +63,7 @@ m4_include([easel/m4/ax_compiler_vendor.m4])
 m4_include([easel/m4/ax_check_compile_flag.m4])
 m4_include([easel/m4/ax_gcc_func_attribute.m4])
 
+m4_include([easel/m4/esl_neon.m4])
 m4_include([easel/m4/esl_sse.m4])
 m4_include([easel/m4/esl_vmx.m4])
 
@@ -218,6 +219,7 @@ esac
 AC_ARG_ENABLE(gcov,    [AS_HELP_STRING([--enable-gcov],    [compile for code coverage testing])],        enable_gcov=$enableval,    enable_gcov=no)
 AC_ARG_ENABLE(gprof,   [AS_HELP_STRING([--enable-gprof],   [compile for gcc code profiling])],           enable_gprof=$enableval,   enable_gprof=no)
 
+AC_ARG_ENABLE(neon,    [AS_HELP_STRING([--enable-neon],    [enable our ARM Neon vector code])],          enable_neon=$enableval,    enable_neon=check)
 AC_ARG_ENABLE(sse,     [AS_HELP_STRING([--enable-sse],     [enable our SSE vector code])],               enable_sse=$enableval,     enable_sse=check)
 AC_ARG_ENABLE(vmx,     [AS_HELP_STRING([--enable-vmx],     [enable our Altivec/VMX vector code])],       enable_vmx=$enableval,     enable_vmx=check)
 
@@ -232,11 +234,13 @@ AC_ARG_WITH(gsl,       [AS_HELP_STRING([--with-gsl],       [use the GSL, GNU Sci
 # If a vector implementation is force-selected, make sure only one is,
 # and turn off checking for the others.
 vecsel=0
+if test "$enable_neon"    = "yes"; then vecsel=$((vecsel+1)); fi
 if test "$enable_sse"     = "yes"; then vecsel=$((vecsel+1)); fi
 if test "$enable_vmx"     = "yes"; then vecsel=$((vecsel+1)); fi
 if   [[ $vecsel -gt 1 ]]; then
-  AC_MSG_ERROR([Select only one implementation: sse or vmx])
+  AC_MSG_ERROR([Select only one implementation: sse, neon or vmx])
 elif [[ $vecsel -eq 1 ]]; then
+  if test "$enable_neon"  = "check"; then enable_neon="no";  fi
   if test "$enable_sse"   = "check"; then enable_sse="no";   fi
   if test "$enable_vmx"   = "check"; then enable_vmx="no";   fi
 fi
@@ -282,8 +286,8 @@ elif test "$enable_debugging" != "no"; then
    if test "$GCC" = "yes"; then
       CFLAGS="-g -Wall"
    fi
-elif test "$esl_cflags_env_set" != "yes"; then
-   CFLAGS="-O3"
+else
+   CFLAGS="${CFLAGS} -O3"
 fi
 
 # PIC (position-independent code) for shared library support
@@ -327,6 +331,23 @@ fi
 #    - set shell variable $esl_have_foo to "yes"
 #    - set shell var $esl_foo_cflags to any necessary compiler flags
 #
+if test "$enable_neon" = "yes" || test "$enable_neon" = "check"; then
+  ESL_NEON([
+    AC_DEFINE(eslENABLE_NEON, 1, [Enable ARM Neon vector implementation])
+    AS_VAR_IF([esl_have_neon_aarch64],[yes],[AC_DEFINE(eslHAVE_NEON_AARCH64, 1, [Set to enable the ARM AARCH64 version of NEON])])
+    AC_SUBST([HMMERIMPLLIB], ["impl_neon/libhmmerimpl.a"])
+    NEON_CFLAGS="$esl_neon_cflags"
+    AC_SUBST(NEON_CFLAGS)
+    enable_neon=yes
+    impl_choice=neon
+    ],[
+    if test "$enable_neon" = "yes"; then
+      AC_MSG_FAILURE([Unable to compile our ARM Neon implementations. Try another compiler?])
+    fi
+    enable_neon=no
+    ])
+fi
+
 if test "$enable_vmx" = "yes" || test "$enable_vmx" = "check"; then
   ESL_VMX([
     AC_DEFINE(eslENABLE_VMX, 1, [Enable Altivec/VMX vector implementation])
@@ -359,15 +380,17 @@ if test "$enable_sse" = "yes" || test "$enable_sse" = "check"; then
     ])
 fi
 
-# Infernal has to have either SSE or VMX.
+# Infernal has to have either SSE, Neon or VMX.
 case "$impl_choice" in 
+neon) AC_MSG_NOTICE([Activating ARM Neon vector DP implementation])
+      ;;
 sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE vector DP implementation]) 
       ;;
 vmx)  AC_MSG_NOTICE([Activating Altivec/VMX vector DP implementation])   
       ;;
 *)    AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
-      AC_MSG_NOTICE([Infernal requires SSE or VMX vector instructions.])
-      AC_MSG_NOTICE([Supported platforms are x86 (Intel/AMD) and PowerPC.])
+      AC_MSG_NOTICE([Infernal requires SSE, NEON or VMX vector instructions.])
+      AC_MSG_NOTICE([Supported platforms are x86 (Intel/AMD), ARM (v7 or later) and PowerPC.])
       AC_MSG_ERROR([No supported vectorization found for your machine.])
       ;;
 esac
@@ -478,6 +501,16 @@ AC_CHECK_HEADERS([sys/sysctl.h], [], [],
 #endif
 ]])
 
+# arm_neon.h requires the simd cflags and little endian mode
+if test "$impl_choice" = "neon"; then
+   esl_save_CFLAGS="$CFLAGS"
+   esl_save_CPPFLAGS="$CPPFLAGS"
+   CFLAGS="$CFLAGS $NEON_CFLAGS"
+   CPPFLAGS="$CPPFLAGS $NEON_CFLAGS"
+   AC_CHECK_HEADERS([arm_neon.h])
+   CFLAGS="$esl_save_CFLAGS"
+   CPPFLAGS="$esl_save_CPPFLAGS"
+fi
 
 # altivec.h requires the simd cflags
 # For reasons I don't understand, this needs to come after any other CHECK_HEADERS().
@@ -518,14 +551,22 @@ AC_C_BIGENDIAN([
   ],[
   if test "$enable_vmx" = "yes"; then
     AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
-    AC_MSG_NOTICE([Infernal Altivec/VMX only supports bigendian platforms: e.g. ppc64 not ppc64le])
+    AC_MSG_NOTICE([Infernal Altivec/VMX only supports big-endian platforms: e.g. ppc64 not ppc64le])
     AC_MSG_ERROR([No supported vectorization found for your machine.])
+  elif test "$enable_neon" = "yes"; then
+    AX_CHECK_COMPILE_FLAG([-mlittle-endian], [NEON_CFLAGS="$NEON_CFLAGS -mlittle-endian"], [], [$NEON_CFLAGS])
   fi
   ],[
+  if test "$enable_neon" = "yes"; then
+    AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
+    AC_MSG_NOTICE([Infernal NEON only supports little-endian platforms: e.g. aarch64 not aarch64be])
+    AC_MSG_ERROR([No supported vectorization found for your machine.])
+  else
     AC_MSG_NOTICE([::::::::::--- no vector instruction set ---::::::::::])
     AC_MSG_NOTICE([Couldn't determine byte order for your platform.])
-    AC_MSG_NOTICE([Infernal's vector code is sensitive to byte order.])
+    AC_MSG_NOTICE([Infernal vector code is sensitive to byte order.])
     AC_MSG_ERROR([No supported vectorization found for your machine.])
+  fi
   ])
 
 
@@ -748,7 +789,8 @@ AC_OUTPUT
 echo "
 
 INFERNAL configuration:
-    compiler:             ${CC} ${CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS}
+    compiler:             ${CC} ${CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${NEON_CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS}
+    host:                 $host
     linker:               ${LDFLAGS}
     libraries:            ${LIBS} ${PTHREAD_LIBS}
     DP implementation:    ${impl_choice}
