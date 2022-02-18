@@ -270,10 +270,10 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
     case p7T_C:		/* C(i) comes from E(i) */
       if   (P7XMX(i,p7G_C) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible C reached at i=%d", i);
 
-      if (esl_FCompare(P7XMX(i, p7G_C), P7XMX(i-1, p7G_C) + tloop, tol) == eslOK) {
+      if (esl_FCompare_old(P7XMX(i, p7G_C), P7XMX(i-1, p7G_C) + tloop, tol) == eslOK) {
 	tr->i[tr->N-1]    = i--;  /* first C doesn't emit: subsequent ones do */
 	status = p7_trace_Append(tr, p7T_C, 0, 0);
-      } else if (esl_FCompare(P7XMX(i, p7G_C), P7XMX(i, p7G_E) + tec, tol) == eslOK) 
+      } else if (esl_FCompare_old(P7XMX(i, p7G_C), P7XMX(i, p7G_E) + tec, tol) == eslOK) 
 	status = p7_trace_Append(tr, p7T_E, 0, 0);
       else ESL_XEXCEPTION(eslFAIL, "C at i=%d couldn't be traced", i);
       break;
@@ -281,10 +281,10 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
     case p7T_E:		/* E connects from any M state. k set here */
       if (P7XMX(i, p7G_E) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible E reached at i=%d", i);
 
-      if (esl_FCompare(P7XMX(i, p7G_E), P7MMX(i,M), tol) == eslOK) { k = M; status = p7_trace_Append(tr, p7T_M, M, i); }
+      if (esl_FCompare_old(P7XMX(i, p7G_E), P7MMX(i,M), tol) == eslOK) { k = M; status = p7_trace_Append(tr, p7T_M, M, i); }
       else {
 	for (k = M-1; k >= 1; k--)
-	  if (esl_FCompare(P7XMX(i, p7G_E), P7MMX(i,k) + esc, tol) == eslOK)
+	  if (esl_FCompare_old(P7XMX(i, p7G_E), P7MMX(i,k) + esc, tol) == eslOK)
 	    { status = p7_trace_Append(tr, p7T_M, k, i); break; }
 	if (k < 0) ESL_XEXCEPTION(eslFAIL, "E at i=%d couldn't be traced", i);
       }
@@ -292,8 +292,8 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 
     case p7T_M:			/* M connects from i-1,k-1, or B */
       if (P7MMX(i,k) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible M reached at k=%d,i=%d", k,i);
-      if      (esl_FCompare(P7MMX(i,k), P7XMX(i-1,p7G_B) + tbmk  + P7MSC(k), tol) == eslOK) status = p7_trace_Append(tr, p7T_B, 0,   0);
-      else if (esl_FCompare(P7MMX(i,k), P7MMX(i-1,k-1)           + P7MSC(k), tol) == eslOK) { 
+      if      (esl_FCompare_old(P7MMX(i,k), P7XMX(i-1,p7G_B) + tbmk  + P7MSC(k), tol) == eslOK) status = p7_trace_Append(tr, p7T_B, 0,   0);
+      else if (esl_FCompare_old(P7MMX(i,k), P7MMX(i-1,k-1)           + P7MSC(k), tol) == eslOK) { 
 	status = p7_trace_Append(tr, p7T_M, k-1, i-1);
 	/*if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} */
 	/*if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} */
@@ -316,7 +316,7 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
       if (P7XMX(i, p7G_N) <= p7_IMPOSSIBLE) ESL_XEXCEPTION(eslFAIL, "impossible N reached at i=%d", i);
 
       if (i == 0) status = p7_trace_Append(tr, p7T_S, 0, 0);
-      else if (esl_FCompare(P7XMX(i,p7G_N), P7XMX(i-1, p7G_N) + tloop, tol) == eslOK)
+      else if (esl_FCompare_old(P7XMX(i,p7G_N), P7XMX(i-1, p7G_N) + tloop, tol) == eslOK)
 	{
 	  tr->i[tr->N-1] = i--;
 	  status = p7_trace_Append(tr, p7T_N, 0, 0);
@@ -327,9 +327,9 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
     case p7T_B:			/* B connects from N, J */
       if (P7XMX(i,p7G_B) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible B reached at i=%d", i);
 
-      if (esl_FCompare(P7XMX(i,p7G_B), P7XMX(i, p7G_N) + tmove, tol)  == eslOK)
+      if (esl_FCompare_old(P7XMX(i,p7G_B), P7XMX(i, p7G_N) + tmove, tol)  == eslOK)
 	status = p7_trace_Append(tr, p7T_N, 0, 0);
-      else if (esl_FCompare(P7XMX(i,p7G_B),  P7XMX(i, p7G_J) + tmove, tol) == eslOK)
+      else if (esl_FCompare_old(P7XMX(i,p7G_B),  P7XMX(i, p7G_J) + tmove, tol) == eslOK)
 	status = p7_trace_Append(tr, p7T_J, 0, 0);
       else  ESL_XEXCEPTION(eslFAIL, "B at i=%d couldn't be traced", i);
       break;
@@ -337,10 +337,10 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
     case p7T_J:			/* J connects from E(i) or J(i-1) */
       if (P7XMX(i,p7G_J) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible J reached at i=%d", i);
 
-      if (esl_FCompare(P7XMX(i,p7G_J), P7XMX(i-1,p7G_J) + tloop, tol) == eslOK) {
+      if (esl_FCompare_old(P7XMX(i,p7G_J), P7XMX(i-1,p7G_J) + tloop, tol) == eslOK) {
 	tr->i[tr->N-1] = i--;
 	status = p7_trace_Append(tr, p7T_J, 0, 0);
-      } else if (esl_FCompare(P7XMX(i,p7G_J), P7XMX(i,p7G_E) + tec, tol) == eslOK) 
+      } else if (esl_FCompare_old(P7XMX(i,p7G_J), P7XMX(i,p7G_E) + tec, tol) == eslOK) 
 	status = p7_trace_Append(tr, p7T_E, 0, 0);
       else  ESL_XEXCEPTION(eslFAIL, "J at i=%d couldn't be traced", i);
       break;
@@ -471,7 +471,7 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
   int n = 0;
   int ip;
 
-  do_sc   = (esl_FCompare(0., min_sc, tol) == eslOK) ? FALSE : TRUE;
+  do_sc   = (esl_FCompare_old(0., min_sc, tol) == eslOK) ? FALSE : TRUE;
   do_end  = (min_end == 0)  ? FALSE : TRUE;
   do_len  = (min_len == 1) ? FALSE : TRUE;
 
