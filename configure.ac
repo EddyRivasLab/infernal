@@ -51,7 +51,7 @@
 ################################################################
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it. 2.63 was released in 2008.
-AC_PREREQ(2.63)
+AC_PREREQ([2.71])
 
 
 # Our extra macros are with Easel, in easel/m4
@@ -76,7 +76,7 @@ m4_include([easel/m4/esl_pic_flags.m4])
 # 2. AC_INIT
 ################################################################
 
-AC_INIT(Infernal, 1.1.4, eric.nawrocki@nih.gov, infernal)
+AC_INIT([Infernal],[1.1.4],[eric.nawrocki@nih.gov],[infernal])
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 esl_cflags_env_set=no
@@ -262,7 +262,7 @@ AX_PROG_CC_MPI([test x"$enable_mpi" = xyes],
     [ if test x"$enable_mpi" = xyes; then
         AC_MSG_ERROR([MPI library not found for --enable-mpi]);
       fi])
-AC_PROG_CC_STDC
+AC_PROG_CC
 AC_PROG_CPP
 AC_PROG_INSTALL
 AC_PROG_RANLIB
