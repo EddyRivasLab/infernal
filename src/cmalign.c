@@ -422,8 +422,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
-  if (esl_opt_IsOn  (go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
-  else                             esl_threads_CPUCount(&ncpus);
+  ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
   if (ncpus > 0) {
       threadObj = esl_threads_Create(&pipeline_thread);
       queue = esl_workqueue_Create(ncpus * 2);
