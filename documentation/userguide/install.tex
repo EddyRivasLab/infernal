@@ -116,21 +116,30 @@ configure script will identify whether your platform supports POSIX
 threads (almost all platforms do), and will automatically compile in
 multithreading support.
 
+To disable multithreading at compile time, compile from source with
+the \ccode{--disable-threads} flag to \ccode{./configure}.
 If you want to disable multithreading at compile time, recompile from
-source after giving the \ccode{--disable-threads} flag to
-\ccode{./configure}.
 
-By default, our multithreaded programs will use all available cores on
-your machine. You can control the number of cores each Infernal process
-will use for computation with the \ccode{--cpu <x>} command line
-option or the \ccode{INFERNAL\_NCPU} environment variable. Even with a
-single processing thread (\ccode{--cpu 1}), INFERNAL will devote a second
-execution thread to database input, resulting in speedup
-over serial execution.
+Multithreaded Infernal programs use master/worker parallelization, with
+\ccode{<n>} worker threads and one master thread. When Infernal is run on
+a machine with multiple available cores, the default number of worker
+threads is four\footnote{Set by a compile-time configuration option,
+  \ccode{CMNCPU}, in \ccode{src/config.h.in}.}. You can control the
+number of cores each Infernal process will use for computation with the
+\ccode{--cpu <n>} command line option or the \ccode{INFERNAL\_NCPU}
+environment variable.
 
-If you specify \ccode{--cpu 0}, the program will run in serial-only
-mode, with no threads. This might be useful if you suspect something
-is awry with the threaded parallel implementation.
+If you specify \ccode{--cpu 0}, an Infernal program will run in
+serial-only mode, with no threading. We use this in debugging when we
+suspect something is awry with the parallel implementation, but it's
+not something you'd generally want to do in your work.  Even with a
+single worker thread (\ccode{--cpu 1}), Infernal will be faster than
+serial-only mode, because the master thread handles input and output.
+
+If you are running Infernal on a cluster that enforces policy on the
+number of cores a process can use, you may need to count both the
+workers and the master: you may need to tell your cluster management
+software that Infernal needs \ccode{<n>}+1 cores.
 
 \subsection{MPI parallelization for clusters is optional}
 
