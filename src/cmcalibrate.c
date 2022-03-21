@@ -99,7 +99,7 @@ static ESL_OPTIONS options[] = {
   { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        5 },
   { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   5 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT,     NULL,"INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",            5 },
+  { "--cpu",        eslARG_INT, CMNCPU,  "INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",      5 },
 #endif
 #ifdef HAVE_MPI
   { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    5 },  
@@ -184,7 +184,7 @@ static void mpi_failure  (char *format, ...);
 
 /* Functions to avoid code duplication for common tasks */
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus, int ncpus);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus, int ncpus);
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int do_local);
@@ -192,14 +192,14 @@ static int  initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDOMNESS *r, ESL_DSQ **ret_dsq);
 static int  set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf);
-static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus);
+static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int relevant_ncpus);
 static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
 static void print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec);
 static void print_summary(const struct cfg_s *cfg);
 static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
 static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
 static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
-static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk);
+static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk);
 static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded);
 static void print_required_memory_tail(int ncpus);
 
@@ -452,7 +452,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
   int      tmp_nrandhits;         /* temporary number of rand hits found */
   float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
-  int      available_ncpus = 1;   /* number of CPUs available */
+  int      relevant_ncpus = 1;    /* number of CPUs being used or would be used if --forecast or --memreq not used */
   ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
 
   /* variables needed for threaded implementation */
@@ -470,13 +470,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* initialize thread data */
   if      (esl_opt_IsUsed(go, "--forecast")) ncpus = 0;
   else if (esl_opt_IsUsed(go, "--memreq"))   ncpus = 0;
-  else if (esl_opt_IsOn  (go, "--cpu"))      ncpus = esl_opt_GetInteger(go, "--cpu");
-  else                                       esl_threads_CPUCount(&ncpus);
+  else                                       ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
   if (ncpus > 0) {
       threadObj = esl_threads_Create(&pipeline_thread);
       queue = esl_workqueue_Create(ncpus * 2);
   }
-  esl_threads_CPUCount(&available_ncpus);
+  relevant_ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
 
   infocnt = (ncpus == 0) ? 1 : ncpus;
@@ -487,7 +486,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile, available_ncpus, ncpus);
+    output_header(stdout, go, cfg->cmfile, relevant_ncpus, ncpus);
 
     if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
     if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
@@ -518,7 +517,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   while (qhstatus == eslOK) {
     cfg->ncm++;
     cmi = cfg->ncm-1;
-    if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, available_ncpus);
+    if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, relevant_ncpus);
     if((status = expand_exp_and_name_arrays(cfg))                              != eslOK) cm_Fail("out of memory");
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
 
@@ -527,12 +526,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
 
     if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
-      print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE, esl_opt_IsUsed(go, "--nonbanded"));
+      print_required_memory(cm, cfg->L, cfg->N, relevant_ncpus, (cmi == 0) ? TRUE : FALSE, esl_opt_IsUsed(go, "--nonbanded"));
     }
     else { /* normal case */
       if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
       if(! esl_opt_GetBoolean(go, "--noforecast")) { 
-        if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
+        if((status = forecast_time(go, cfg, errbuf, cm, ncpus, relevant_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
       }
       else { 
         psec = 0.;
@@ -648,7 +647,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   } /* end of while(qhstatus == eslOK) */
   if(qhstatus != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   
-  if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(available_ncpus);
+  if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(relevant_ncpus);
   else if(cfg->ncm > 1)              print_total_time(go, total_asec, total_psec);
 
 #ifdef HMMER_THREADS
@@ -917,7 +916,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile, 0, cfg->nproc); /* 0 is 'available_ncpus', irrelevant (only used if --forecast, which is incompatible with --mpi) */
+    output_header(stdout, go, cfg->cmfile, 0, cfg->nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --mpi */
 
     /* master needs to be able to generate sequences only for timing predictions */
     if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
@@ -1386,7 +1385,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 }
 
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus, int ncpus)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus, int ncpus)
 {
   cm_banner(ofp, go->argv[0], banner);
   
@@ -1809,12 +1808,12 @@ set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf)
  * Output functions called by masters. 
  */
 static void
-print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus)
+print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int relevant_ncpus)
 {
   printf("#\n");
   if(esl_opt_IsUsed(go, "--forecast")) { 
     printf("# Forecasting running time for CM calibration(s) on %d cpus:\n", 
-	   (esl_opt_IsUsed(go, "--nforecast") ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus));
+	   (esl_opt_IsUsed(go, "--nforecast") ? esl_opt_GetInteger(go, "--nforecast") : relevant_ncpus));
     printf("#\n");
     printf("# %-20s  %12s\n", "", " predicted");
     printf("# %-20s  %12s\n", "", "running time");
@@ -2088,7 +2087,7 @@ process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutof
  *           eslOK on success.
  *
  */
-int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk)
+int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk)
 {
   int      status;
   int      L;                /* length of sequence we'll generate and search to get time estimate, 2 * cm->W */
@@ -2168,7 +2167,7 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   psec *= (float) cfg->L * (float) cfg->N;
   /* correct for parallelization */
   if(esl_opt_IsUsed(go, "--forecast")) { 
-    denom = (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus;
+    denom = (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : relevant_ncpus;
     psec /= (float) ESL_MAX(1, denom);
     /* Note, this is correct for MPI but will be slightly off for
      * threaded - because all threads do searches, whereas in MPI
