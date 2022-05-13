@@ -62,6 +62,8 @@ typedef struct {
   int64_t           nhits;     /* number of hits in scA                   */
   float             cutoff;    /* minimum hit score to keep               */
   int               nequals;   /* number of '=' to print for current mode */
+  int               ipart;     /* partition index if --part, else -1      */
+  int               npart;     /* total num partitions if --part, else -1 */
 } WORKER_INFO;
 
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
@@ -96,8 +98,9 @@ static ESL_OPTIONS options[] = {
   { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with commands for each partition to <f>", 5 },
   { "--lfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with list of partition out files to <f>", 5 },
   { "--root",       eslARG_STRING,     NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, set root for partition output files to <s>", 5 },
-  { "--part",       eslARG_INT,        NULL, NULL,            NULL,      NULL,    "--pfile", "--split", "run partition <n> only", 5 },
-  { "--pfile",      eslARG_INT,        NULL, NULL,            NULL,      NULL,     "--part", "--split", "with --part, save scores to file <f>", 5 },
+  { "--part",       eslARG_INT,        NULL, NULL,            NULL,      NULL,"--ptot,--pfile", "--split", "run partition <n> only", 5 },
+  { "--ptot",       eslARG_INT,        NULL, NULL,            NULL,      NULL,     "--part", "--split", "total number of partitions is <n>", 5 },
+  { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,     "--part", "--split", "with --part, save scores to file <f>", 5 },
   /* Other options: */
   { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         6 },
   { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 6 },
@@ -303,9 +306,10 @@ main(int argc, char **argv)
 
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     for(i = 1; i <= nsplit; i++) { 
-      fprintf(cfg.cfp, "%s --part %d --ofile %s.%d %s\n", 
+      fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
               argv[0], /* cmcalibrate command */
               i,       /* index of this partition */
+              esl_opt_GetInteger(go, "--ptot"), /* total number of partitions */
               esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg.cmfile, /* root of output file */
               i,       /* index of this partition */
               cfg.cmfile); /* cm file name */
@@ -335,6 +339,11 @@ main(int argc, char **argv)
     
     if (esl_opt_GetBoolean(go, "--mpi")) 
       {
+        /* make sure --part is not used (they're not set as incompatible because --mpi is not always a valid option) */
+        if(esl_opt_IsUsed(go, "--part")) { 
+          cm_Fail("--part and --mpi are incompatible, rerun cmcalibrate --split without --mpi");
+        }
+
         cfg.do_mpi     = TRUE;
         MPI_Init(&argc, &argv);
         MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
@@ -650,6 +659,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    info[i].nhits   = 0;
 	    info[i].cutoff  = cfg->sc_cutoff;
 	    info[i].nequals = nequals;
+	    info[i].ipart   = esl_opt_IsUsed(go, "--part") ? esl_opt_GetInteger(go, "--part") : -1;
+	    info[i].npart   = esl_opt_IsUsed(go, "--ptot") ? esl_opt_GetInteger(go, "--ptot") : -1;
 #ifdef HMMER_THREADS
 	    if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
@@ -746,13 +757,40 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   int  equalidx; /* when i reaches this, we updated progress bar by printing a '=' */
   int  equalcnt; /* number of sequences that need to be searched to warrant a '=' */
   int  nprinted = 0; /* number of equals printed thus far */
+  int  nsearch  = 0; /* number of sequences to search, will be sq_block->count unless --part is used */
+
+  /* variables related to --part */
+  int *searchme_A = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
+  ESL_ALLOC(searchme_A, sizeof(int) * sq_block->count);
 
   /* reinitialize array of hit scores */
   info->nhits = 0;
   if(info->scA != NULL) free(info->scA);
 
+  /* Determine which sequences to search
+   * o if --part not used: search all sequences (normal)
+   * o if --part used: only search 1/npart sequences
+   *   not these won't be consecutive sequences, 
+   *   e.g. if 10 seqs and 3 parts, part 1 is seqs 1,4,7,10 (simpler to implement this way)
+   */
+  if(info->ipart != -1) { 
+    esl_vec_ISet(searchme_A, sq_block->count, FALSE);
+    for(i = 0; i < sq_block->count; i++) { 
+      if(((i % info->npart) + 1) == info->ipart) { 
+        searchme_A[i] = TRUE;
+        nsearch++;
+        printf("HEYA set seq %d to TRUE nsearch %d\n", i, nsearch);
+      }
+    }
+  }
+  else { /* --part not used, search all sequences */
+    esl_vec_ISet(searchme_A, sq_block->count, TRUE);
+    nsearch = sq_block->count;
+  }
+  cm_Fail("done");
+
   /* determine how many sequences we need to complete to print a '=' to progress bar */
-  equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
+  equalcnt = (int) (((float) nsearch / (float) info->nequals) + 0.9999999);
   equalcnt = ESL_MAX(equalcnt, 1);
   equalidx = equalcnt;
 
@@ -1472,6 +1510,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus
   if (esl_opt_IsUsed(go, "--lfile"))     {     fprintf(ofp, "# saving split output list to file:            %s\n", esl_opt_GetString(go, "--lfile")); }
   if (esl_opt_IsUsed(go, "--part"))      {     fprintf(ofp, "# partition mode, partition number:            %d\n", esl_opt_GetInteger(go, "--part")); }
   if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
+  if (esl_opt_IsUsed(go, "--ptot"))      {     fprintf(ofp, "# total number of partitions:                  %d\n", esl_opt_GetInteger(go, "--ptot")); }
 
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
@@ -2080,8 +2119,7 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
  *
  * Purpose:  Perform search workunit, which consists of a CM, digitized sequence
  *           and indices i and j. The job is to search dsq from i..j and return 
- *           search results in <*ret_results>. Called by cmsearch and cmcalibrate,
- *           which is why it's here and not local in cmsearch.c.
+ *           search results in <*ret_results>.
  *
  * Args:     cm              - the covariance model, must have valid searchinfo (si).
  *           errbuf          - char buffer for reporting errors
