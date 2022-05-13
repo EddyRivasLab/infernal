@@ -92,7 +92,7 @@ static ESL_OPTIONS options[] = {
   { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
   { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
   /* Options for split mode */
-  { "--split",      eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--cfile,--lfile",  NULL, "split calibration into <n> partitions to run independently",      5 },
+  { "--split",      eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--cfile,--lfile","--forecast", "split calibration into <n> partitions to run independently",      5 },
   { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with commands for each partition to <f>", 5 },
   { "--lfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with list of partition out files to <f>", 5 },
   { "--root",       eslARG_STRING,     NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, set root for partition output files to <s>", 5 },
@@ -300,6 +300,8 @@ main(int argc, char **argv)
     else { 
       ESL_FAIL(eslFAIL, errbuf, "--lfile is required in combination with --split\n");
     }
+
+    output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     for(i = 1; i <= nsplit; i++) { 
       fprintf(cfg.cfp, "%s --part %d --ofile %s.%d %s\n", 
               argv[0], /* cmcalibrate command */
@@ -430,14 +432,6 @@ main(int argc, char **argv)
       fclose(cfg.xfp);
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
-    if (cfg.cfp   != NULL) { 
-      fclose(cfg.cfp);
-      printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
-    }
-    if (cfg.lfp   != NULL) { 
-      fclose(cfg.lfp);
-      printf("# List of eventual output files for each partition saved to file %s.\n", esl_opt_GetString(go, "--lfile"));
-    }
 
     if (cfg.expAA   != NULL) free(cfg.expAA);
     if (cfg.namesA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
@@ -446,6 +440,15 @@ main(int argc, char **argv)
     if (cfg.cmfp   != NULL) cm_file_Close(cfg.cmfp);
     if (cfg.expAA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]  != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
     if (cfg.namesA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+
+    if (cfg.cfp   != NULL) { 
+      fclose(cfg.cfp);
+      printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
+    }
+    if (cfg.lfp   != NULL) { 
+      fclose(cfg.lfp);
+      printf("# List of eventual output files for each partition saved to file %s.\n", esl_opt_GetString(go, "--lfile"));
+    }
   }
 
   /* clean up */
