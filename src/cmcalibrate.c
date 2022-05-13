@@ -91,19 +91,26 @@ static ESL_OPTIONS options[] = {
   { "--qqfile",     eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save Q-Q plot for score histograms to file <f>",        4 },
   { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
   { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
+  /* Options for split mode */
+  { "--split",      eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--cfile,--lfile",  NULL, "split calibration into <n> partitions to run independently",      5 },
+  { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with commands for each partition to <f>", 5 },
+  { "--lfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with list of partition out files to <f>", 5 },
+  { "--root",       eslARG_STRING,     NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, set root for partition output files to <s>", 5 },
+  { "--part",       eslARG_INT,        NULL, NULL,            NULL,      NULL,    "--pfile", "--split", "run partition <n> only", 5 },
+  { "--pfile",      eslARG_INT,        NULL, NULL,            NULL,      NULL,     "--part", "--split", "with --part, save scores to file <f>", 5 },
   /* Other options: */
-  { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         5 },
-  { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 5 },
-  { "--nonbanded",  eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,  "--beta", "do not use QDB",                                              5 },
-  { "--nonull3",    eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "turn OFF the NULL3 post hoc additional null model",           5 },
-  { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        5 },
-  { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   5 },
+  { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         6 },
+  { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 6 },
+  { "--nonbanded",  eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,  "--beta", "do not use QDB",                                              6 },
+  { "--nonull3",    eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "turn OFF the NULL3 post hoc additional null model",           6 },
+  { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        6 },
+  { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   6 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT, CMNCPU,  "INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",      5 },
+  { "--cpu",        eslARG_INT, CMNCPU,  "INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",      6 },
 #endif
 #ifdef HAVE_MPI
-  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    5 },  
-  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb",                   5 },  
+  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    6 },  
+  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb",                   6 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -157,6 +164,8 @@ struct cfg_s {
   FILE            *qfp;               /* optional output for exp tail QQ file */
   FILE            *ffp;               /* optional output for exp tail fit file */
   FILE            *xfp;               /* optional output for exp tail fit scores */
+  FILE            *cfp;               /* optional output for commands in split mode */
+  FILE            *lfp;               /* optional output for output files in split mode */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -215,6 +224,9 @@ main(int argc, char **argv)
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
+
+  int  do_split; /* is --split used? */
+  int  nsplit;   /* value from --split, if used */
   
   /* Set processor specific flags */
   impl_Init();
@@ -226,6 +238,7 @@ main(int argc, char **argv)
   cfg.nproc        = 0;                   /* this gets reset below, if we init MPI */
   cfg.my_rank      = 0;                   /* this gets reset below, if we init MPI */
   cfg.r            = NULL; 
+  cfg.r_est        = NULL; 
   cfg.abc          = NULL; 
   cfg.w            = NULL; 
   cfg.cmalloc      = 128;
@@ -246,6 +259,8 @@ main(int argc, char **argv)
   cfg.qfp          = NULL; /* remains NULL for mpi workers */
   cfg.ffp          = NULL; /* remains NULL for mpi workers */
   cfg.xfp          = NULL; /* remains NULL for mpi workers */
+  cfg.cfp          = NULL; /* remains NULL for mpi workers */
+  cfg.lfp          = NULL; /* remains NULL for mpi workers */
 
   ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
   ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
@@ -264,45 +279,79 @@ main(int argc, char **argv)
   process_commandline(argc, argv, &go, &(cfg.cmfile));
   cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
 
-  /* Figure out who we are, and send control there: 
-   * we might be an MPI master, an MPI worker, or a serial program.
-   */
+  /* Deal with --split if nec */
+  do_split = esl_opt_IsUsed(go, "--split") ? 1 : 0;
+  if(do_split) { 
+    nsplit = esl_opt_GetInteger(go, "--split");
+    if(cfg.N < nsplit) { 
+      ESL_FAIL(eslFAIL, errbuf, "Trying to split into %d partitions, but only have %d sequences, retry with <= %d partitions\n", nsplit, cfg.N, cfg.N);
+    }
+    if (esl_opt_GetString(go, "--cfile") != NULL) {
+      if ((cfg.cfp = fopen(esl_opt_GetString(go, "--cfile"), "w")) == NULL)
+        ESL_FAIL(eslFAIL, errbuf, "Failed to open command file %s for writing\n", esl_opt_GetString(go, "--cfile"));
+    }
+    else { 
+      ESL_FAIL(eslFAIL, errbuf, "--cfile is required in combination with --split\n");
+    }
+    if (esl_opt_GetString(go, "--lfile") != NULL) {
+      if ((cfg.lfp = fopen(esl_opt_GetString(go, "--lfile"), "w")) == NULL)
+        ESL_FAIL(eslFAIL, errbuf, "Failed to open list file %s for writing\n", esl_opt_GetString(go, "--lfile"));
+    }
+    else { 
+      ESL_FAIL(eslFAIL, errbuf, "--lfile is required in combination with --split\n");
+    }
+    for(i = 1; i <= nsplit; i++) { 
+      fprintf(cfg.cfp, "%s --part %d --ofile %s.%d %s\n", 
+              argv[0], /* cmcalibrate command */
+              i,       /* index of this partition */
+              esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg.cmfile, /* root of output file */
+              i,       /* index of this partition */
+              cfg.cmfile); /* cm file name */
+      fprintf(cfg.lfp, "%s.%d\n",
+              esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg.cmfile, /* root of output file */
+              i);     /* index of this partition */
+    }
+  }
+  else { /* ! do_split */
+    /* Figure out who we are, and send control there: 
+     * we might be an MPI master, an MPI worker, or a serial program.
+     */
 #ifdef HAVE_MPI
-
+    
 #if eslDEBUGLEVEL >= 1
-  pid_t pid;
-  pid = getpid();
-  printf("#DEBUG: The process id is %d\n", pid);
-  fflush(stdout);
+    pid_t pid;
+    pid = getpid();
+    printf("#DEBUG: The process id is %d\n", pid);
+    fflush(stdout);
 #endif
-
-  /* pause the execution of the programs execution until the user has a
-   * chance to attach with a debugger and send a signal to resume execution
-   * i.e. (gdb) signal SIGCONT
-   */
-  if (esl_opt_GetBoolean(go, "--stall")) pause();
-
-  if (esl_opt_GetBoolean(go, "--mpi")) 
-    {
-      cfg.do_mpi     = TRUE;
-      MPI_Init(&argc, &argv);
-      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
-      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
-
-      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
-
-      if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
-      else 		    status = mpi_master(go, &cfg);
-
-      MPI_Finalize();
-    }
-  else
+    
+    /* pause the execution of the programs execution until the user has a
+     * chance to attach with a debugger and send a signal to resume execution
+     * i.e. (gdb) signal SIGCONT
+     */
+    if (esl_opt_GetBoolean(go, "--stall")) pause();
+    
+    if (esl_opt_GetBoolean(go, "--mpi")) 
+      {
+        cfg.do_mpi     = TRUE;
+        MPI_Init(&argc, &argv);
+        MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
+        MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
+        
+        if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
+        
+        if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
+        else 		    status = mpi_master(go, &cfg);
+        
+        MPI_Finalize();
+      }
+    else
 #endif /*HAVE_MPI*/
-    {
-      serial_master(go, &cfg);
-    }
-
-  if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) { /* master, serial or mpi */
+      {
+        serial_master(go, &cfg);
+      }
+  } /* end of 'else' entered if !do_split */
+  if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq")) && (! do_split)) { /* master, serial or mpi */
     /* before writing new CM file, output summary statistics (this requires cfg->expAA) */
     print_summary(&cfg);
 
@@ -359,7 +408,7 @@ main(int argc, char **argv)
     cfg.tmpfile = NULL;
     
     /* master specific cleaning */
-    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp) printf("#\n");
+    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp || cfg.cfp || cfg.lfp) printf("#\n");
 
     if (cfg.hfp   != NULL) { 
       fclose(cfg.hfp);
@@ -381,10 +430,18 @@ main(int argc, char **argv)
       fclose(cfg.xfp);
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
+    if (cfg.cfp   != NULL) { 
+      fclose(cfg.cfp);
+      printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
+    }
+    if (cfg.lfp   != NULL) { 
+      fclose(cfg.lfp);
+      printf("# List of eventual output files for each partition saved to file %s.\n", esl_opt_GetString(go, "--lfile"));
+    }
 
     if (cfg.expAA   != NULL) free(cfg.expAA);
     if (cfg.namesA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
-  } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) */
+  } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq")) && (! do_split)) */
   else { /* non-master or --forecast or --memreq-specific cleaning */
     if (cfg.cmfp   != NULL) cm_file_Close(cfg.cmfp);
     if (cfg.expAA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]  != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
@@ -1365,8 +1422,10 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
     puts("\nOptional output files:");
     esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-    puts("\nOther options:");
+    puts("\nOptions controlling split mode:");
     esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+    puts("\nOther options:");
+    esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
     exit(0);
   }    
 
@@ -1404,6 +1463,12 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus
   if (esl_opt_IsUsed(go, "--qqfile"))    {     fprintf(ofp, "# saving Q-Q plot for histograms to file:      %s\n", esl_opt_GetString(go, "--qqfile")); }
   if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
   if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
+
+  if (esl_opt_IsUsed(go, "--split"))     {     fprintf(ofp, "# split mode, number of partions:              %d\n", esl_opt_GetInteger(go,"--split")); }
+  if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving split commands to file:               %s\n", esl_opt_GetString(go, "--cfile")); }
+  if (esl_opt_IsUsed(go, "--lfile"))     {     fprintf(ofp, "# saving split output list to file:            %s\n", esl_opt_GetString(go, "--lfile")); }
+  if (esl_opt_IsUsed(go, "--part"))      {     fprintf(ofp, "# partition mode, partition number:            %d\n", esl_opt_GetInteger(go, "--part")); }
+  if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
 
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
@@ -2293,4 +2358,5 @@ void print_required_memory_tail(int ncpus)
 
   return;
 }
+
 
