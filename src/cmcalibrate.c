@@ -160,6 +160,9 @@ struct cfg_s {
   int              nproc;
   int              do_stall;          /* TRUE to stall the program until gdb attaches */
 
+  /* partition */
+  int              do_part;           /* TRUE if --part, we won't fit any histograms */
+
   /* Masters only (i/o streams) */
   CM_FILE         *cmfp;	      /* open input CM file stream       */
   FILE            *hfp;               /* optional output for exp tail histograms */
@@ -168,7 +171,8 @@ struct cfg_s {
   FILE            *ffp;               /* optional output for exp tail fit file */
   FILE            *xfp;               /* optional output for exp tail fit scores */
   FILE            *cfp;               /* optional output for commands in split mode */
-  FILE            *lfp;               /* optional output for output files in split mode */
+  FILE            *lfp;               /* optional output for list of files in split mode */
+  FILE            *pfp;               /* optional output for scores files with --part mode */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -230,6 +234,7 @@ main(int argc, char **argv)
 
   int  do_split; /* is --split used? */
   int  nsplit;   /* value from --split, if used */
+  int  do_part;  /* is --part used? */
   
   /* Set processor specific flags */
   impl_Init();
@@ -264,6 +269,7 @@ main(int argc, char **argv)
   cfg.xfp          = NULL; /* remains NULL for mpi workers */
   cfg.cfp          = NULL; /* remains NULL for mpi workers */
   cfg.lfp          = NULL; /* remains NULL for mpi workers */
+  cfg.pfp          = NULL; /* remains NULL for mpi workers */
 
   ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
   ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
@@ -282,8 +288,21 @@ main(int argc, char **argv)
   process_commandline(argc, argv, &go, &(cfg.cmfile));
   cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
 
+
+  /* If --part, open --pfile */
+  do_part = esl_opt_IsUsed(go, "--part") ? TRUE : FALSE;
+  if(do_part) { 
+    if (esl_opt_GetString(go, "--pfile") != NULL) {
+      if ((cfg.pfp = fopen(esl_opt_GetString(go, "--pfile"), "w")) == NULL)
+        ESL_FAIL(eslFAIL, errbuf, "Failed to open partition score file %s for writing\n", esl_opt_GetString(go, "--pfile"));
+    }
+    else { 
+      ESL_FAIL(eslFAIL, errbuf, "--pfile is required in combination with --part\n");
+    }
+  }
+
   /* Deal with --split if nec */
-  do_split = esl_opt_IsUsed(go, "--split") ? 1 : 0;
+  do_split = esl_opt_IsUsed(go, "--split") ? TRUE : FALSE;
   if(do_split) { 
     nsplit = esl_opt_GetInteger(go, "--split");
     if(cfg.N < nsplit) { 
@@ -303,7 +322,6 @@ main(int argc, char **argv)
     else { 
       ESL_FAIL(eslFAIL, errbuf, "--lfile is required in combination with --split\n");
     }
-
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     for(i = 1; i <= nsplit; i++) { 
       fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
@@ -362,7 +380,12 @@ main(int argc, char **argv)
         serial_master(go, &cfg);
       }
   } /* end of 'else' entered if !do_split */
-  if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq")) && (! do_split)) { /* master, serial or mpi */
+  if(cfg.my_rank == 0 && 
+     (! esl_opt_IsUsed(go, "--forecast")) && 
+     (! esl_opt_IsUsed(go, "--memreq"))   && 
+     (! do_split)                         && 
+     (! do_part)) { /* master, serial or mpi (not --split and not --part) */
+
     /* before writing new CM file, output summary statistics (this requires cfg->expAA) */
     print_summary(&cfg);
 
@@ -474,15 +497,7 @@ main(int argc, char **argv)
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
     printf("[ok]\n");
   }
-  if(cfg.ghmm_eAA != NULL) { 
-    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_eAA[i]); 
-    free(cfg.ghmm_eAA);
-  }
-  if(cfg.ghmm_tAA != NULL) { 
-    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_tAA[i]); 
-    free(cfg.ghmm_tAA);
-  }
-  if(cfg.ghmm_sA != NULL) free(cfg.ghmm_sA);
+
 
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
@@ -687,10 +702,17 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fprintf(cfg->ffp, "# CM: %s\n", cm->name);
 	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
-	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
-	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
-
+          if(cfg->pfp != NULL) { /* --part and --pfile used, partition mode: output scores to pfp and don't fit histogram */
+            fprintf(cfg->pfp, "%" PRId64 "", merged_nhits);
+            for(i = 0; i < merged_nhits; i++) { 
+              fprintf(cfg->pfp, " %.5f", merged_scA[i]);
+            }
+          }
+          else { 
+            if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+            SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+            if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
+          }
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
 	
 	esl_stopwatch_Stop(cfg->w);
@@ -779,7 +801,6 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
       if(((i % info->npart) + 1) == info->ipart) { 
         searchme_A[i] = TRUE;
         nsearch++;
-        printf("HEYA set seq %d to TRUE nsearch %d\n", i, nsearch);
       }
     }
   }
@@ -787,7 +808,6 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
     esl_vec_ISet(searchme_A, sq_block->count, TRUE);
     nsearch = sq_block->count;
   }
-  cm_Fail("done");
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
   equalcnt = (int) (((float) nsearch / (float) info->nequals) + 0.9999999);
@@ -795,14 +815,17 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   equalidx = equalcnt;
 
   for(i = 0; i < sq_block->count; i++) { 
-    if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
-    /* append copy of hit scores to scA */
-    if(th->N > 0) { 
-      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
-      for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
-      info->nhits += th->N;
+    if(searchme_A[i]) { /* searchme_A[i] is always TRUE unless --part used */
+      printf("processing workunit %d of %d\n", i, sq_block->count);
+      if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
+      /* append copy of hit scores to scA */
+      if(th->N > 0) { 
+        ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
+        for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
+        info->nhits += th->N;
+      }
+      cm_tophits_Destroy(th);
     }
-    cm_tophits_Destroy(th);
     if ((i+1) == equalidx) { 
       putchar('='); 
       fflush(stdout);
