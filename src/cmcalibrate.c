@@ -93,14 +93,14 @@ static ESL_OPTIONS options[] = {
   { "--qqfile",     eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save Q-Q plot for score histograms to file <f>",        4 },
   { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
   { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
-  /* Options for split mode */
-  { "--split",      eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--cfile,--lfile","--forecast", "split calibration into <n> partitions to run independently",      5 },
-  { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with commands for each partition to <f>", 5 },
-  { "--lfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, save file with list of partition out files to <f>", 5 },
-  { "--root",       eslARG_STRING,     NULL, NULL,            NULL,      NULL,    "--split",      NULL, "with --split, set root for partition output files to <s>", 5 },
-  { "--part",       eslARG_INT,        NULL, NULL,            NULL,      NULL,"--ptot,--pfile", "--split", "run partition <n> only", 5 },
-  { "--ptot",       eslARG_INT,        NULL, NULL,            NULL,      NULL,     "--part", "--split", "total number of partitions is <n>", 5 },
-  { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,     "--part", "--split", "with --part, save scores to file <f>", 5 },
+  /* Options for split or partition or merge modes */
+  { "--split",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,    "--ptot,--cfile","--forecast",   "prepare partitioned calibration",      5 },
+  { "--merge",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,    "--ptot",        "--forecast",   "merge scores from <n2> partitions for calibration",        5 },
+  { "--part",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,    "--ptot,--pfile",   NULL,        "this is partition number <n> (1..<n2> from --ptot <n2>)",      5 }, 
+  { "--ptot",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,         NULL,      NULL,        "total number of partitions is <n>",  5 }, 
+  { "--root",       eslARG_STRING,     NULL, NULL,            NULL,      NULL,         NULL,      NULL,        "with --split, set root for partition output files to <s>", 5 },
+  { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL,        "with --split, save file with commands for each partition to <f>", 5 },
+  { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,     "--part", "--split",        "with --part, save scores to file <f>", 5 },
   /* Other options: */
   { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         6 },
   { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 6 },
@@ -218,6 +218,7 @@ static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
 static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk);
 static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded);
 static void print_required_memory_tail(int ncpus);
+static int  read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA);
 
 int
 main(int argc, char **argv)
@@ -288,8 +289,9 @@ main(int argc, char **argv)
   process_commandline(argc, argv, &go, &(cfg.cmfile));
   cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
 
+  /* If --merge, open input file */
 
-  /* If --part, open --pfile */
+  /* If --part, open --pfile file */
   do_part = esl_opt_IsUsed(go, "--part") ? TRUE : FALSE;
   if(do_part) { 
     if (esl_opt_GetString(go, "--pfile") != NULL) {
@@ -315,16 +317,9 @@ main(int argc, char **argv)
     else { 
       ESL_FAIL(eslFAIL, errbuf, "--cfile is required in combination with --split\n");
     }
-    if (esl_opt_GetString(go, "--lfile") != NULL) {
-      if ((cfg.lfp = fopen(esl_opt_GetString(go, "--lfile"), "w")) == NULL)
-        ESL_FAIL(eslFAIL, errbuf, "Failed to open list file %s for writing\n", esl_opt_GetString(go, "--lfile"));
-    }
-    else { 
-      ESL_FAIL(eslFAIL, errbuf, "--lfile is required in combination with --split\n");
-    }
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     for(i = 1; i <= nsplit; i++) { 
-      fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
+      fprintf(cfg.cfp, "%s --part %d -n %d --pfile %s.%d %s\n", 
               argv[0], /* cmcalibrate command */
               i,       /* index of this partition */
               esl_opt_GetInteger(go, "--ptot"), /* total number of partitions */
@@ -370,7 +365,7 @@ main(int argc, char **argv)
         if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
         
         if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
-        else 		    status = mpi_master(go, &cfg);
+        else 	  	      status = mpi_master(go, &cfg);
         
         MPI_Finalize();
       }
@@ -408,7 +403,10 @@ main(int argc, char **argv)
       if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
       if(cm->expA != NULL) { 
-	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
+	for(i = 0; i < EXP_NMODES; i++) {
+          free(cm->expA[i]);
+        }
+        free(cm->expA);
       }
 
       cm->expA   = cfg.expAA[cmi];
@@ -477,10 +475,6 @@ main(int argc, char **argv)
       fclose(cfg.cfp);
       printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
     }
-    if (cfg.lfp   != NULL) { 
-      fclose(cfg.lfp);
-      printf("# List of eventual output files for each partition saved to file %s.\n", esl_opt_GetString(go, "--lfile"));
-    }
   }
 
   /* clean up */
@@ -539,6 +533,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      relevant_ncpus = 1;    /* number of CPUs being used or would be used if --forecast or --memreq not used */
   ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
 
+  /* variables related to --merge */
+  int        do_merge;              /* TRUE if --merge, else FALSE */
+  int64_t   *pmerged_nhitsA = NULL; /* [0..EXP_NMODES-1] number of hits reported for all seqs for each exp mode, read from input score files from each partition */
+  float    **pmerged_scAA = NULL;   /* [0..EXP_NMODES-1][0..merged_nhits-1] hit scores for all seqs for each exp mode */
+
   /* variables needed for threaded implementation */
   ESL_SQ         **init_sqA  = NULL; /* for initializing workers */
   WORKER_INFO     *info      = NULL; /* the worker info */
@@ -547,7 +546,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_THREADS     *threadObj = NULL;
   ESL_WORK_QUEUE  *queue     = NULL;
 #endif
-  
+
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
 #ifdef HMMER_THREADS
@@ -564,6 +563,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   infocnt = (ncpus == 0) ? 1 : ncpus;
   ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
+
+  do_merge = esl_opt_GetBoolean(go, "--merge");
 
   /* <cfg->abc> is not known 'til first CM is read. Could be DNA or RNA*/
   qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
@@ -623,93 +624,104 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
       total_psec += psec;
       print_forecasted_time(go, cfg, errbuf, cm, psec);
-      
-      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block))           != eslOK) cm_Fail(errbuf);
-      
+
+      if(do_merge) { /* open the scores files, read the scores for this CM, then close the files */
+        if((status = read_partition_scores_files_for_one_cm(go, cfg, errbuf, cmi, &pmerged_scAA, &pmerged_nhitsA)) != eslOK) cm_Fail(errbuf);
+      }
+      else { 
+        if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
+      }
+
       if(! esl_opt_IsUsed(go, "--forecast")) { 
-	esl_stopwatch_Start(cfg->w);
-	for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-
-	  /* clone CM for each worker, do this here so --forecast and --memreq don't do it */
-	  if(exp_mode == 0) { 
-	    for (i = 0; i < infocnt; i++) {
-	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	    }
-	  }
-
-	  /* do we need to switch from global configuration to local? */
-	  if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
-	    /* switch from global to local by copying the current exptail stats from <cm>
-	     * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
-	     * way because as a rule we don't allow reconfiguration of CMs (to limit
-	     * execution paths through configuration functions)
-	     */
-	    FreeCM(cm);
-	    cm = nc_cm;
-	    if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
-	    for (i = 0; i < infocnt; i++) {
-	      if(info[i].cm  != NULL) { FreeCM(info[i].cm); info[i].cm = NULL; } 
-	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	    }
-	  }
-	  /* set search_opts and determine how many '=' to print to status bar for this mode, 
-	   * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
-	   */
-	  if(ExpModeIsInside(exp_mode)) { 
-	    cm->search_opts |= CM_SEARCH_INSIDE; 
-	    for (i = 0; i < infocnt; i++) info[i].cm->search_opts |= CM_SEARCH_INSIDE;
-	    nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  else { 
-	    cm->search_opts &= ~CM_SEARCH_INSIDE; 
-	    for (i = 0; i < infocnt; i++) info[i].cm->search_opts &= ~CM_SEARCH_INSIDE;
-	    nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  fflush(stdout);
-	  
-	  /* initialize worker info */
-	  for (i = 0; i < infocnt; ++i) {
-	    if(info[i].scA != NULL) free(info[i].scA);
-	    info[i].scA     = NULL;
-	    info[i].nhits   = 0;
-	    info[i].cutoff  = cfg->sc_cutoff;
-	    info[i].nequals = nequals;
-	    info[i].ipart   = esl_opt_IsUsed(go, "--part") ? esl_opt_GetInteger(go, "--part") : -1;
-	    info[i].npart   = esl_opt_IsUsed(go, "--ptot") ? esl_opt_GetInteger(go, "--ptot") : -1;
+        esl_stopwatch_Start(cfg->w);
+        for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+          if(! do_merge) { /* we don't do the searches if --merge */
+            /* clone CM for each worker, do this here so --forecast and --memreq don't do it */
+            if(exp_mode == 0) { 
+              for (i = 0; i < infocnt; i++) {
+                if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+              }
+            }
+            
+            /* do we need to switch from global configuration to local? */
+            if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+              /* switch from global to local by copying the current exptail stats from <cm>
+               * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+               * way because as a rule we don't allow reconfiguration of CMs (to limit
+               * execution paths through configuration functions)
+               */
+              FreeCM(cm);
+              cm = nc_cm;
+              if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
+              for (i = 0; i < infocnt; i++) {
+                if(info[i].cm  != NULL) { FreeCM(info[i].cm); info[i].cm = NULL; } 
+                if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+              }
+            }
+            /* set search_opts and determine how many '=' to print to status bar for this mode, 
+             * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
+             */
+            if(ExpModeIsInside(exp_mode)) { 
+              cm->search_opts |= CM_SEARCH_INSIDE; 
+              for (i = 0; i < infocnt; i++) info[i].cm->search_opts |= CM_SEARCH_INSIDE;
+              nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+            }
+            else { 
+              cm->search_opts &= ~CM_SEARCH_INSIDE; 
+              for (i = 0; i < infocnt; i++) info[i].cm->search_opts &= ~CM_SEARCH_INSIDE;
+              nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+            }
+            fflush(stdout);
+            
+            /* initialize worker info */
+            for (i = 0; i < infocnt; ++i) {
+              if(info[i].scA != NULL) free(info[i].scA);
+              info[i].scA     = NULL;
+              info[i].nhits   = 0;
+              info[i].cutoff  = cfg->sc_cutoff;
+              info[i].nequals = nequals;
+              info[i].ipart   = esl_opt_IsUsed(go, "--part") ? esl_opt_GetInteger(go, "--part") : -1;
+              info[i].npart   = esl_opt_IsUsed(go, "--ptot") ? esl_opt_GetInteger(go, "--ptot") : -1;
 #ifdef HMMER_THREADS
-	    if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
+              if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
-	  }
-	  
+            }
+            
 #ifdef HMMER_THREADS
-	  if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
-	  else            status = serial_loop(info, errbuf, sq_block);
+            if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
+            else            status = serial_loop(info, errbuf, sq_block);
 #else
-	  status = serial_loop(info, errbuf, sq_block);
+            status = serial_loop(info, errbuf, sq_block);
 #endif
-	  if(status != eslOK) cm_Fail(errbuf);
-	  
-	  merged_nhits = 0;
-	  for (i = 0; i < infocnt; ++i) {
-	    if(info[i].nhits > 0) { 
-	      ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
-	      for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
-	      merged_nhits += info[i].nhits;
-	    }
-	  }
-	  
+            if(status != eslOK) cm_Fail(errbuf);
+
+            merged_nhits = 0;
+            for (i = 0; i < infocnt; ++i) {
+              if(info[i].nhits > 0) { 
+                ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
+                for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
+                merged_nhits += info[i].nhits;
+              }
+            }
+          } /* end of 'if(! do_merge)' */
+
 	  if(cfg->ffp != NULL) { 
 	    fprintf(cfg->ffp, "# CM: %s\n", cm->name);
 	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
+
           if(cfg->pfp != NULL) { /* --part and --pfile used, partition mode: output scores to pfp and don't fit histogram */
             fprintf(cfg->pfp, "%" PRId64 "", merged_nhits);
             for(i = 0; i < merged_nhits; i++) { 
               fprintf(cfg->pfp, " %.5f", merged_scA[i]);
             }
+            fprintf(cfg->pfp, "\n");
           }
-          else { 
-            if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+          else { /* normal mode (cfg->pfp is NULL, so --part now used), fit the histogram */
+            if((status = fit_histogram(go, cfg, errbuf, 
+                                       ((do_merge) ? pmerged_scAA[exp_mode]   : merged_scA), 
+                                       ((do_merge) ? pmerged_nhitsA[exp_mode] : merged_nhits),
+                                       exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
             SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
             if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
           }
@@ -1528,12 +1540,13 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus
   if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
   if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
 
-  if (esl_opt_IsUsed(go, "--split"))     {     fprintf(ofp, "# split mode, number of partions:              %d\n", esl_opt_GetInteger(go,"--split")); }
-  if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving split commands to file:               %s\n", esl_opt_GetString(go, "--cfile")); }
-  if (esl_opt_IsUsed(go, "--lfile"))     {     fprintf(ofp, "# saving split output list to file:            %s\n", esl_opt_GetString(go, "--lfile")); }
+  if (esl_opt_IsUsed(go, "--split"))     {     fprintf(ofp, "# split mode:                                  on\n"); }
+  if (esl_opt_IsUsed(go, "--merge"))     {     fprintf(ofp, "# merge mode:                                  on\n"); }
   if (esl_opt_IsUsed(go, "--part"))      {     fprintf(ofp, "# partition mode, partition number:            %d\n", esl_opt_GetInteger(go, "--part")); }
-  if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
   if (esl_opt_IsUsed(go, "--ptot"))      {     fprintf(ofp, "# total number of partitions:                  %d\n", esl_opt_GetInteger(go, "--ptot")); }
+  if (esl_opt_IsUsed(go, "--root"))      {     fprintf(ofp, "# root name for output files:                  %s\n", esl_opt_GetString(go, "--root")); }
+  if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving split commands to file:               %s\n", esl_opt_GetString(go, "--cfile")); }
+  if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
 
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
@@ -2423,4 +2436,108 @@ void print_required_memory_tail(int ncpus)
   return;
 }
 
+/* Function: read_partition_scores_files_for_one_cm()
+ * Date:     EPN, Wed May 18 14:04:26 2022
+ *
+ * Purpose:  Read scores for all exp modes from all partition scores files for 
+ *           CM index <cmi> and store them in *ret_pmerged_scAA and *ret_pmerged_nhitsA.
+ *
+ * Returns:  eslOK on success, else an error code and fills errbuf with error message.
+ */
+static int 
+read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA)
+{
+  int status;
+  int ptot = esl_opt_GetInteger(go, "--ptot");
+  int exp_mode = 0;
 
+  int64_t  *pmerged_nhitsA = NULL; /* [0..EXP_NMODES-1] number of hits reported for all seqs for each exp mode, read from input score files from each partition */
+  float   **pmerged_scAA = NULL;   /* [0..EXP_NMODES-1][0..merged_nhits-1] hit scores for all seqs for each exp mode */
+
+  int cm_idx; 
+  int p;      /* counter over partitions */
+  int i;      /* counter over hits */
+  int64_t ip; /* offset for index in pmerged_scAA[0..EXP_NMODES-1] */
+
+  FILE *pfp;
+
+  char         *tok1 = NULL;
+  ESL_FILEPARSER *efp = NULL;
+
+  int64_t nhits;
+  float sc;
+  char *filename = NULL;
+
+  printf("in read_partition_scores_files_for_one_cm, ptot: %d\n", ptot);
+
+  /* initialize storage for scores */
+  ESL_ALLOC(pmerged_nhitsA, sizeof(int64_t) * EXP_NMODES);
+  ESL_ALLOC(pmerged_scAA,   sizeof(float *) * EXP_NMODES);
+  for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+    pmerged_nhitsA[exp_mode] = 0;
+    pmerged_scAA[exp_mode]   = NULL;
+  }
+  
+  /* open each of the partitions' scores files and read the scores (for the appropriate cm) */
+  for(p = 1; p <= ptot; p++) { 
+    /* determine file name */
+    if (esl_sprintf(&filename, "%s.%d", (esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg->cmfile), p) != eslOK) ESL_XFAIL(status, errbuf, "esl_sprintf failed"); 
+    if ((pfp = fopen(filename, "r")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open partition file %s\n", filename);
+    if ((efp = esl_fileparser_Create(pfp)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Unable to create fileparser, out of memory?");
+    esl_fileparser_SetCommentChar(efp, '#');
+    printf("Reading scores file %s\n", filename);
+
+    /* should be 1 line per CM/exp_mode pair */
+    /* read through CMs we've already dealt with */
+    for(cm_idx = 0; cm_idx < cmi; cm_idx++) { 
+      for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
+        status = esl_fileparser_NextLine(efp);
+        if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+        if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      }
+    }
+
+    /* Read scores data for the CM we are interested in */
+    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
+      status = esl_fileparser_NextLine(efp);
+      if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      status = esl_fileparser_GetTokenOnLine(efp, &tok1, NULL);
+      if(status != eslOK)  ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
+      printf("tok1: %s\n", tok1);
+      if ((nhits = atoi(tok1)) == 0) ESL_XFAIL(status, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok1, efp->linenumber, 
+                                               (esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg->cmfile), p); 
+      printf("nhits: %" PRId64 "\n", nhits);
+      ip = pmerged_nhitsA[exp_mode];
+      pmerged_nhitsA[exp_mode] += nhits;
+      ESL_REALLOC(pmerged_scAA[exp_mode], sizeof(float) * pmerged_nhitsA[exp_mode]);
+      for(i = 0; i < nhits; i++) { 
+        status = esl_fileparser_GetTokenOnLine(efp, &tok1, NULL);
+        if ((sc = atof(tok1)) == 0) ESL_XFAIL(status, errbuf, "Invalid hit score %s, hit number %d on line %d of partition file %s.%d", tok1, (i+1), efp->linenumber, 
+                                              (esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg->cmfile), p); 
+        pmerged_scAA[exp_mode][(ip+i)] = sc;
+        //printf("e %d hit %d sc %.5f\n", exp_mode, i, sc);
+      }
+    }
+  }
+  fclose(pfp);
+  
+  *ret_pmerged_scAAA   = pmerged_scAA;
+  *ret_pmerged_nhitsAA = pmerged_nhitsA;
+  
+  return eslOK;
+
+ ERROR:
+  if (pmerged_nhitsA != NULL) {
+    free(pmerged_nhitsA); 
+  }
+  pmerged_nhitsA = NULL;
+  if (pmerged_scAA   != NULL) { 
+    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+      if(pmerged_scAA[exp_mode] != NULL) { 
+        
+      }
+    }
+  }
+  return status;
+}
