@@ -171,7 +171,6 @@ struct cfg_s {
   FILE            *ffp;               /* optional output for exp tail fit file */
   FILE            *xfp;               /* optional output for exp tail fit scores */
   FILE            *cfp;               /* optional output for commands in split mode */
-  FILE            *lfp;               /* optional output for list of files in split mode */
   FILE            *pfp;               /* optional output for scores files with --part mode */
 };
 
@@ -234,7 +233,7 @@ main(int argc, char **argv)
   esl_stopwatch_Start(w);
 
   int  do_split; /* is --split used? */
-  int  nsplit;   /* value from --split, if used */
+  int  npart;    /* value from --ptot */
   int  do_part;  /* is --part used? */
   
   /* Set processor specific flags */
@@ -269,7 +268,6 @@ main(int argc, char **argv)
   cfg.ffp          = NULL; /* remains NULL for mpi workers */
   cfg.xfp          = NULL; /* remains NULL for mpi workers */
   cfg.cfp          = NULL; /* remains NULL for mpi workers */
-  cfg.lfp          = NULL; /* remains NULL for mpi workers */
   cfg.pfp          = NULL; /* remains NULL for mpi workers */
 
   ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
@@ -304,11 +302,11 @@ main(int argc, char **argv)
   }
 
   /* Deal with --split if nec */
-  do_split = esl_opt_IsUsed(go, "--split") ? TRUE : FALSE;
+  do_split = esl_opt_GetBoolean(go, "--split");
   if(do_split) { 
-    nsplit = esl_opt_GetInteger(go, "--split");
-    if(cfg.N < nsplit) { 
-      ESL_FAIL(eslFAIL, errbuf, "Trying to split into %d partitions, but only have %d sequences, retry with <= %d partitions\n", nsplit, cfg.N, cfg.N);
+    npart = esl_opt_GetInteger(go, "--ptot");
+    if(cfg.N < npart) { 
+      ESL_FAIL(eslFAIL, errbuf, "Trying to split into %d partitions, but only have %d sequences, retry with <= %d partitions\n", npart, cfg.N, cfg.N);
     }
     if (esl_opt_GetString(go, "--cfile") != NULL) {
       if ((cfg.cfp = fopen(esl_opt_GetString(go, "--cfile"), "w")) == NULL)
@@ -318,17 +316,14 @@ main(int argc, char **argv)
       ESL_FAIL(eslFAIL, errbuf, "--cfile is required in combination with --split\n");
     }
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
-    for(i = 1; i <= nsplit; i++) { 
-      fprintf(cfg.cfp, "%s --part %d -n %d --pfile %s.%d %s\n", 
+    for(i = 1; i <= npart; i++) { 
+      fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
               argv[0], /* cmcalibrate command */
               i,       /* index of this partition */
               esl_opt_GetInteger(go, "--ptot"), /* total number of partitions */
               esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg.cmfile, /* root of output file */
               i,       /* index of this partition */
               cfg.cmfile); /* cm file name */
-      fprintf(cfg.lfp, "%s.%d\n",
-              esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg.cmfile, /* root of output file */
-              i);     /* index of this partition */
     }
   }
   else { /* ! do_split */
@@ -440,7 +435,7 @@ main(int argc, char **argv)
     cfg.tmpfile = NULL;
     
     /* master specific cleaning */
-    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp || cfg.cfp || cfg.lfp) printf("#\n");
+    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp || cfg.cfp) printf("#\n");
 
     if (cfg.hfp   != NULL) { 
       fclose(cfg.hfp);
@@ -791,7 +786,6 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   int  equalidx; /* when i reaches this, we updated progress bar by printing a '=' */
   int  equalcnt; /* number of sequences that need to be searched to warrant a '=' */
   int  nprinted = 0; /* number of equals printed thus far */
-  int  nsearch  = 0; /* number of sequences to search, will be sq_block->count unless --part is used */
 
   /* variables related to --part */
   int *searchme_A = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
@@ -802,27 +796,26 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   if(info->scA != NULL) free(info->scA);
 
   /* Determine which sequences to search
-   * o if --part not used: search all sequences (normal)
-   * o if --part used: only search 1/npart sequences
-   *   not these won't be consecutive sequences, 
-   *   e.g. if 10 seqs and 3 parts, part 1 is seqs 1,4,7,10 (simpler to implement this way)
+   *  if --part not used: search all sequences (normal)
+   *  if --part used: only search (1/npart) fraction of the sequences
+   *                  these won't be consecutive sequences, 
+   *                  e.g. if 10 seqs and 3 parts, part 1 is seqs 1,4,7,10 
+   *                  (very simple to implement this way, see block below)
    */
   if(info->ipart != -1) { 
     esl_vec_ISet(searchme_A, sq_block->count, FALSE);
     for(i = 0; i < sq_block->count; i++) { 
       if(((i % info->npart) + 1) == info->ipart) { 
         searchme_A[i] = TRUE;
-        nsearch++;
       }
     }
   }
   else { /* --part not used, search all sequences */
     esl_vec_ISet(searchme_A, sq_block->count, TRUE);
-    nsearch = sq_block->count;
   }
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
-  equalcnt = (int) (((float) nsearch / (float) info->nequals) + 0.9999999);
+  equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
   equalcnt = ESL_MAX(equalcnt, 1);
   equalidx = equalcnt;
 
@@ -868,8 +861,31 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   int     equalcnt; /* number of sequences that need to be searched to warrant a '=' */
   int     nprinted = 0; /* number of equals printed thus far */
 
+  /* variables related to --part */
+  int *searchme_A = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
+  ESL_ALLOC(searchme_A, sizeof(int) * sq_block->count);
+
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
+
+  /* Determine which sequences to search
+   *  if --part not used: search all sequences (normal)
+   *  if --part used: only search (1/npart) fraction of the sequences
+   *                  these won't be consecutive sequences, 
+   *                  e.g. if 10 seqs and 3 parts, part 1 is seqs 1,4,7,10 
+   *                  (very simple to implement this way, see block below)
+   */
+  if(info->ipart != -1) { 
+    esl_vec_ISet(searchme_A, sq_block->count, FALSE);
+    for(i = 0; i < sq_block->count; i++) { 
+      if(((i % info->npart) + 1) == info->ipart) { 
+        searchme_A[i] = TRUE;
+      }
+    }
+  }
+  else { /* --part not used, search all sequences */
+    esl_vec_ISet(searchme_A, sq_block->count, TRUE);
+  }
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
   equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
@@ -881,10 +897,12 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
 
   /* Main loop: */
   for(i = 0; i < sq_block->count; i++) { 
-    sq = (ESL_SQ *) new_sq;
-    sq = sq_block->list + i;
-    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
-    if (status != eslOK) cm_Fail("Work queue reader failed");
+    if(searchme_A[i]) { 
+      sq = (ESL_SQ *) new_sq;
+      sq = sq_block->list + i;
+      status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
+      if (status != eslOK) cm_Fail("Work queue reader failed");
+    }
     if ((i+1) == equalidx) { 
       putchar('='); 
       fflush(stdout);
@@ -909,6 +927,10 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
 
   esl_sq_Destroy(empty_sq);
   return status;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NEVERREACHED */
 }
 
 /* pipeline_thread()
