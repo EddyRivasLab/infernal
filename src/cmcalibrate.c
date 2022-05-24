@@ -128,6 +128,7 @@ struct cfg_s {
   double            *gc_freq;            /* gc frequence [0..100], only used if --gc */
   ExpInfo_t       ***expAA;              /* the exponential tail info, 1st dim: 1 for each CM, 2nd dim: EXP_NMODES */
   char             **namesA;             /* names of all the CMs we'll calibrate */
+  char             **comlogsA;           /* comlog for each CM, only relevant if --merge */
   int                ncm;                /* what number CM we're on */
   int                cmalloc;            /* number of expAA we have allocated (1st dim) */
   char              *tmpfile;            /* tmp file we're writing to */
@@ -271,10 +272,12 @@ main(int argc, char **argv)
   cfg.cfp          = NULL; /* remains NULL for mpi workers */
   cfg.pfp          = NULL; /* remains NULL for mpi workers */
 
-  ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
-  ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.expAA,    sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.namesA,   sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.comlogsA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
   for(i = 0; i < cfg.cmalloc; i++) cfg.expAA[i]  = NULL; 
   for(i = 0; i < cfg.cmalloc; i++) cfg.namesA[i] = NULL; 
+  for(i = 0; i < cfg.cmalloc; i++) cfg.comlogsA[i] = NULL; 
 
   ESL_DASSERT1((EXP_CM_GC  == 0));
   ESL_DASSERT1((EXP_CM_GI  == 1));
@@ -426,6 +429,12 @@ main(int argc, char **argv)
       cm->expA   = cfg.expAA[cmi];
       cm->flags |= CMH_EXPTAIL_STATS; 
 
+      if(esl_opt_GetBoolean(go, "--merge")) { 
+        printf("HEYA comlogsA[%d] %s\n", cmi, cfg.comlogsA[cmi]);
+        status = esl_strcat(&cm->comlog, -1, cfg.comlogsA[cmi], -1);
+        if(status != eslOK) cm_Fail("Problem copying comlog from partition score files to CM file");
+      }
+
       cm_AppendComlog(cm, go->argc, go->argv, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
 
       if(cfg.cmfp->is_binary) { 
@@ -477,13 +486,15 @@ main(int argc, char **argv)
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
 
-    if (cfg.expAA   != NULL) free(cfg.expAA);
-    if (cfg.namesA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+    if (cfg.expAA    != NULL) free(cfg.expAA);
+    if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
+    if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
   } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq")) && (! do_split)) */
   else { /* non-master or --forecast or --memreq-specific cleaning */
-    if (cfg.cmfp   != NULL) cm_file_Close(cfg.cmfp);
-    if (cfg.expAA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]  != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
-    if (cfg.namesA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+    if (cfg.cmfp     != NULL) cm_file_Close(cfg.cmfp);
+    if (cfg.expAA    != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]    != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
+    if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
+    if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
 
     if (cfg.cfp   != NULL) { 
       fclose(cfg.cfp);
@@ -617,9 +628,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     cfg->ncm++;
     cmi = cfg->ncm-1;
     if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, relevant_ncpus);
-    if((status = expand_exp_and_name_arrays(cfg))                              != eslOK) cm_Fail("out of memory");
-    if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
-
+    if((status = expand_exp_and_name_arrays(cfg))               != eslOK) cm_Fail("out of memory");
+    if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi]))) != eslOK) cm_Fail("unable to duplicate CM name");
     /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
     if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
@@ -742,6 +752,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
             if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
           }
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
+
 	
 	esl_stopwatch_Stop(cfg->w);
 	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
@@ -2116,9 +2127,13 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
   int i;
 
   if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
-    ESL_REALLOC(cfg->expAA,  sizeof(ExpInfo_t **) * (cfg->cmalloc + 128));
-    ESL_REALLOC(cfg->namesA, sizeof(char *)       * (cfg->cmalloc + 128));
-    for(i = cfg->cmalloc; i < cfg->cmalloc + 128; i++) cfg->namesA[i] = NULL;
+    ESL_REALLOC(cfg->expAA,    sizeof(ExpInfo_t **) * (cfg->cmalloc + 128));
+    ESL_REALLOC(cfg->namesA,   sizeof(char *)       * (cfg->cmalloc + 128));
+    ESL_REALLOC(cfg->comlogsA, sizeof(char *)       * (cfg->cmalloc + 128));
+    for(i = cfg->cmalloc; i < cfg->cmalloc + 128; i++) { 
+      cfg->namesA[i] = NULL;
+      cfg->comlogsA[i] = NULL;
+    }
     cfg->cmalloc += 128;
   }
   return eslOK;
@@ -2518,12 +2533,9 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 
   FILE *pfp;
 
-  char         *tok = NULL;
-  int64_t       toklen = 0;
+  char           *tok = NULL;
   ESL_FILEPARSER *efp = NULL;
 
-  int ntok = 0; /* number of tokens in first line command */
-  char **comtok_A = NULL; 
   int64_t nhits;
   float sc;
   char *filename = NULL;
@@ -2555,32 +2567,18 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
       }
     }
 
-    /* Now we are at the CM we currently care about first line should
-     * be command used, store each token separately in comtok_A, we do
-     * this instead of storing the full string so that we can use
-     * cm_AppendComlog()
+    /* Now we are at the CM we currently care about
+     * first line should be command used, if this is the first partition,
+     * store it in cfg->comlogsA[cmi] for later output to CM file 
      */
-    ntok = 0;
     status = esl_fileparser_NextLine(efp); /* places us on the next line */
     if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
     if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
-    while ((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) == eslOK) { 
-      ESL_REALLOC(comtok_A, sizeof(char *) * (ntok+1));
-      if((status = esl_strdup(tok, toklen, &(comtok_A[ntok]))) != eslOK) { 
-        ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
-      }
-      printf("token %d %s == %s\n", ntok, tok, comtok_A[ntok]);
-      ntok++;
+    if(p == 1) { 
+      status = esl_fileparser_GetRemainingLine(efp, &(cfg->comlogsA[cmi]));
+      if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
     }
-    printf("ntok: %d\n", ntok);
-    if (status != eslEOL) ESL_XFAIL(status, errbuf, "Problem reading first line of file %s, on CM index %d\n", filename, (cm_idx+1));
-    cm_AppendComlog(cm, ntok, comtok_A, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
-    for(i = 0; i < ntok; i++) { 
-      free(comtok_A[i]);
-      comtok_A[i] = NULL;
-    }
-    free(comtok_A);
-    comtok_A = NULL;
 
     /* Read scores data for the CM we are interested in */
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
@@ -2611,13 +2609,6 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   return eslOK;
 
  ERROR:
-  for(i = 0; i < ntok; i++) { 
-    free(comtok_A[i]);
-    comtok_A[i] = NULL;
-  }
-  free(comtok_A);
-  comtok_A = NULL;
-
   if (pmerged_nhitsA != NULL) {
     free(pmerged_nhitsA); 
   }
