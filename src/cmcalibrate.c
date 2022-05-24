@@ -218,7 +218,7 @@ static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
 static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk);
 static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded);
 static void print_required_memory_tail(int ncpus);
-static int  read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA);
+static int  read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA);
 
 int
 main(int argc, char **argv)
@@ -294,8 +294,14 @@ main(int argc, char **argv)
   do_part = esl_opt_IsUsed(go, "--part") ? TRUE : FALSE;
   if(do_part) { 
     if (esl_opt_GetString(go, "--pfile") != NULL) {
-      if ((cfg.pfp = fopen(esl_opt_GetString(go, "--pfile"), "w")) == NULL)
+      if ((cfg.pfp = fopen(esl_opt_GetString(go, "--pfile"), "w")) == NULL) {
         ESL_FAIL(eslFAIL, errbuf, "Failed to open partition score file %s for writing\n", esl_opt_GetString(go, "--pfile"));
+      }
+      /* output command line, when cmcalibrate is called with --merge this will be added to CM file */
+      for (i = 0; i < go->argc-1; i++) { 
+        fprintf(cfg.pfp, "%s ", go->argv[i]);
+      }
+      fprintf(cfg.pfp, "%s\n", go->argv[(go->argc-1)]);
     }
     else { 
       ESL_FAIL(eslFAIL, errbuf, "--pfile is required in combination with --part\n");
@@ -636,7 +642,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       if(do_merge) { /* open the scores files, read the scores for this CM, then close the files */
-        if((status = read_partition_scores_files_for_one_cm(go, cfg, errbuf, cmi, &pmerged_scAA, &pmerged_nhitsA)) != eslOK) cm_Fail(errbuf);
+        if((status = read_partition_scores_files_for_one_cm(go, cfg, errbuf, cm, cmi, &pmerged_scAA, &pmerged_nhitsA)) != eslOK) cm_Fail(errbuf);
       }
       else { 
         if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
@@ -838,7 +844,6 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
 
   for(i = 0; i < sq_block->count; i++) { 
     if(searchme_A[i]) { /* searchme_A[i] is always TRUE unless --part used */
-      printf("processing workunit %d of %d\n", i, sq_block->count);
       if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
       /* append copy of hit scores to scA */
       if(th->N > 0) { 
@@ -2497,7 +2502,7 @@ void print_required_memory_tail(int ncpus)
  * Returns:  eslOK on success, else an error code and fills errbuf with error message.
  */
 static int 
-read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA)
+read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA)
 {
   int status;
   int ptot = esl_opt_GetInteger(go, "--ptot");
@@ -2513,9 +2518,12 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 
   FILE *pfp;
 
-  char         *tok1 = NULL;
+  char         *tok = NULL;
+  int64_t       toklen = 0;
   ESL_FILEPARSER *efp = NULL;
 
+  int ntok = 0; /* number of tokens in first line command */
+  char **comtok_A = NULL; 
   int64_t nhits;
   float sc;
   char *filename = NULL;
@@ -2539,28 +2547,56 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     /* should be 1 line per CM/exp_mode pair */
     /* read through CMs we've already dealt with */
     for(cm_idx = 0; cm_idx < cmi; cm_idx++) { 
+      status = esl_fileparser_NextLine(efp); /* skip command line */
       for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
-        status = esl_fileparser_NextLine(efp);
+        status = esl_fileparser_NextLine(efp); /* skip line with scores for this exp_mode */
         if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
         if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
       }
     }
+
+    /* Now we are at the CM we currently care about first line should
+     * be command used, store each token separately in comtok_A, we do
+     * this instead of storing the full string so that we can use
+     * cm_AppendComlog()
+     */
+    ntok = 0;
+    status = esl_fileparser_NextLine(efp); /* places us on the next line */
+    if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+    if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+    while ((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) == eslOK) { 
+      ESL_REALLOC(comtok_A, sizeof(char *) * (ntok+1));
+      if((status = esl_strdup(tok, toklen, &(comtok_A[ntok]))) != eslOK) { 
+        ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      }
+      printf("token %d %s == %s\n", ntok, tok, comtok_A[ntok]);
+      ntok++;
+    }
+    printf("ntok: %d\n", ntok);
+    if (status != eslEOL) ESL_XFAIL(status, errbuf, "Problem reading first line of file %s, on CM index %d\n", filename, (cm_idx+1));
+    cm_AppendComlog(cm, ntok, comtok_A, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
+    for(i = 0; i < ntok; i++) { 
+      free(comtok_A[i]);
+      comtok_A[i] = NULL;
+    }
+    free(comtok_A);
+    comtok_A = NULL;
 
     /* Read scores data for the CM we are interested in */
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
       status = esl_fileparser_NextLine(efp);
       if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
-      status = esl_fileparser_GetTokenOnLine(efp, &tok1, NULL);
+      status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL);
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
-      if ((nhits = atoi(tok1)) == 0) ESL_XFAIL(status, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok1, efp->linenumber, 
+      if ((nhits = atoi(tok)) == 0) ESL_XFAIL(status, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok, efp->linenumber, 
                                                (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
       ip = pmerged_nhitsA[exp_mode];
       pmerged_nhitsA[exp_mode] += nhits;
       ESL_REALLOC(pmerged_scAA[exp_mode], sizeof(float) * pmerged_nhitsA[exp_mode]);
       for(i = 0; i < nhits; i++) { 
-        status = esl_fileparser_GetTokenOnLine(efp, &tok1, NULL);
-        if ((sc = atof(tok1)) == 0) ESL_XFAIL(status, errbuf, "Invalid hit score %s, hit number %d on line %d of partition file %s.%d", tok1, (i+1), efp->linenumber, 
+        status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL);
+        if ((sc = atof(tok)) == 0) ESL_XFAIL(status, errbuf, "Invalid hit score %s, hit number %d on line %d of partition file %s.%d", tok, (i+1), efp->linenumber, 
                                               (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
         pmerged_scAA[exp_mode][(ip+i)] = sc;
         //printf("e %d hit %d sc %.5f\n", exp_mode, i, sc);
@@ -2575,6 +2611,13 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   return eslOK;
 
  ERROR:
+  for(i = 0; i < ntok; i++) { 
+    free(comtok_A[i]);
+    comtok_A[i] = NULL;
+  }
+  free(comtok_A);
+  comtok_A = NULL;
+
   if (pmerged_nhitsA != NULL) {
     free(pmerged_nhitsA); 
   }
