@@ -94,13 +94,14 @@ static ESL_OPTIONS options[] = {
   { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
   { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
   /* Options for split or partition or merge modes */
-  { "--split",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,    "--ptot,--cfile","--forecast",   "prepare partitioned calibration",      5 },
-  { "--merge",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,    "--ptot",        "--forecast",   "merge scores from <n2> partitions for calibration",        5 },
-  { "--part",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,    "--ptot,--pfile",   NULL,        "this is partition number <n> (1..<n2> from --ptot <n2>)",      5 }, 
-  { "--ptot",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,         NULL,      NULL,        "total number of partitions is <n>",  5 }, 
-  { "--root",       eslARG_STRING,     NULL, NULL,            NULL,      NULL,         NULL,      NULL,        "with --split, set root for partition output files to <s>", 5 },
-  { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,    "--split",      NULL,        "with --split, save file with commands for each partition to <f>", 5 },
-  { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,     "--part", "--split",        "with --part, save scores to file <f>", 5 },
+  { "--split",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,"--ptot,--cfile",   "--forecast",   "prepare partitioned calibration",      5 },
+  { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,       "--split",   NULL,           "with --split, save file with commands for each partition to <f>", 5 },
+  { "--cbash",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,       "--cfile",   NULL,           "with --split, output commands as a bash for loop script", 5 },
+  { "--part",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--ptot,--pfile",   NULL,           "this is partition number <n> (1..<n2> from --ptot <n2>)",      5 }, 
+  { "--ptot",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,            NULL,   NULL,           "total number of partitions is <n>",  5 }, 
+  { "--proot",      eslARG_STRING,     NULL, NULL,            NULL,      NULL,            NULL,   NULL,           "with --split, set root for partition output files to <s>", 5 },
+  { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,        "--part",   "--split",      "with --part, save scores to file <f>", 5 },
+  { "--merge",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,        "--ptot",   "--forecast",   "merge scores from multiple partitions for calibration", 5 },
   /* Other options: */
   { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         6 },
   { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 6 },
@@ -316,14 +317,26 @@ main(int argc, char **argv)
       ESL_FAIL(eslFAIL, errbuf, "--cfile is required in combination with --split\n");
     }
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
-    for(i = 1; i <= npart; i++) { 
-      fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
+    if(esl_opt_GetBoolean(go, "--cbash")) { 
+      fprintf(cfg.cfp, "# !/bin/bash\n");
+      fprintf(cfg.cfp, "for ((i = 1; i <= %d; i++)); do\n", esl_opt_GetInteger(go, "--ptot"));
+      fprintf(cfg.cfp, "  %s --part $i --ptot %d --pfile %s.$i %s\n", 
               argv[0], /* cmcalibrate command */
-              i,       /* index of this partition */
               esl_opt_GetInteger(go, "--ptot"), /* total number of partitions */
-              esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg.cmfile, /* root of output file */
-              i,       /* index of this partition */
+              esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg.cmfile, /* root of output file */
               cfg.cmfile); /* cm file name */
+      fprintf(cfg.cfp, "done\n");
+    }
+    else { /* --cbash not used, list each command on separate line */
+      for(i = 1; i <= npart; i++) { 
+        fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
+                argv[0], /* cmcalibrate command */
+                i,       /* index of this partition */
+                esl_opt_GetInteger(go, "--ptot"), /* total number of partitions */
+                esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg.cmfile, /* root of output file */
+                i,       /* index of this partition */
+                cfg.cmfile); /* cm file name */
+      }
     }
   }
   else { /* ! do_split */
@@ -610,7 +623,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     else { /* normal case */
       if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-      if(! esl_opt_GetBoolean(go, "--noforecast")) { 
+      if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBoolean(go, "--merge"))) { 
         if((status = forecast_time(go, cfg, errbuf, cm, ncpus, relevant_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
       }
       else { 
@@ -618,7 +631,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
         ins_v_cyk = INS_V_CYK_GUESS;
       }
       total_psec += psec;
-      print_forecasted_time(go, cfg, errbuf, cm, psec);
+      if(! esl_opt_GetBoolean(go, "--merge")) { 
+        print_forecasted_time(go, cfg, errbuf, cm, psec);
+      }
 
       if(do_merge) { /* open the scores files, read the scores for this CM, then close the files */
         if((status = read_partition_scores_files_for_one_cm(go, cfg, errbuf, cmi, &pmerged_scAA, &pmerged_nhitsA)) != eslOK) cm_Fail(errbuf);
@@ -724,8 +739,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	
 	esl_stopwatch_Stop(cfg->w);
 	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-	printf("]  %12s\n", time_buf);
-	fflush(stdout);
+        if(! esl_opt_GetBoolean(go, "--merge")) { 
+          printf("]  %12s\n", time_buf);
+          fflush(stdout);
+        }
 	total_asec += cfg->w->elapsed;
 	
       } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
@@ -1092,7 +1109,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
     if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
-    if(! esl_opt_GetBoolean(go, "--noforecast")) { 
+    if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBooelan(go, "--merge"))) { 
       if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
     }
     else { 
@@ -1100,7 +1117,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       ins_v_cyk = INS_V_CYK_GUESS;
     }
     total_psec += psec;
-    print_forecasted_time(go, cfg, errbuf, cm, psec);
+    if(! esl_opt_GetBoolean(go, "--merge")) { 
+      print_forecasted_time(go, cfg, errbuf, cm, psec);
+    }
 
     /* Time forecast complete, send ready signal to all workers. 
      * (This 'fixes' bug i35: in 1.1rc1, calibrations for large models 
@@ -1265,9 +1284,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     } /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
        
     esl_stopwatch_Stop(cfg->w);
-    FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-    printf("]  %12s\n", time_buf);
-    fflush(stdout);
+    if(! esl_opt_GetBoolean(go, "--merge")) { 
+      FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+      printf("]  %12s\n", time_buf);
+      fflush(stdout);
+    }
     asec        = cfg->w->elapsed;
     total_asec += cfg->w->elapsed;
        
@@ -1563,12 +1584,13 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus
   if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
 
   if (esl_opt_IsUsed(go, "--split"))     {     fprintf(ofp, "# split mode:                                  on\n"); }
-  if (esl_opt_IsUsed(go, "--merge"))     {     fprintf(ofp, "# merge mode:                                  on\n"); }
+  if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving partition commands to file:           %s\n", esl_opt_GetString(go, "--cfile")); }
+  if (esl_opt_IsUsed(go, "--cbash"))     {     fprintf(ofp, "# saving partition commands as bash script:    on\n"); }
   if (esl_opt_IsUsed(go, "--part"))      {     fprintf(ofp, "# partition mode, partition number:            %d\n", esl_opt_GetInteger(go, "--part")); }
   if (esl_opt_IsUsed(go, "--ptot"))      {     fprintf(ofp, "# total number of partitions:                  %d\n", esl_opt_GetInteger(go, "--ptot")); }
-  if (esl_opt_IsUsed(go, "--root"))      {     fprintf(ofp, "# root name for output files:                  %s\n", esl_opt_GetString(go, "--root")); }
-  if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving split commands to file:               %s\n", esl_opt_GetString(go, "--cfile")); }
+  if (esl_opt_IsUsed(go, "--proot"))     {     fprintf(ofp, "# root name for partition output files:        %s\n", esl_opt_GetString(go, "--proot")); }
   if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
+  if (esl_opt_IsUsed(go, "--merge"))     {     fprintf(ofp, "# merge mode:                                  on\n"); }
 
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
@@ -1985,6 +2007,10 @@ print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg
     printf("# %-20s  %12s\n", "model name", "(hr:min:sec)");
     printf("# %-20s  %12s\n", "--------------------", "------------");
   }
+  else if(esl_opt_IsUsed(go, "--merge")) { 
+    printf("# Merging partition scores and calibrating CM(s):\n");
+    printf("#\n");
+  }
   else { 
     printf("# Calibrating CM(s):\n");
     printf("#\n");
@@ -2000,6 +2026,10 @@ static void
 print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec)
 {
   char  time_buf[128];	      /* for printing run time */
+
+  if(esl_opt_IsUsed(go, "--ptot")) { 
+    psec = (psec / esl_opt_GetInteger(go, "--ptot"));
+  }
 
   if(esl_opt_GetBoolean(go, "--noforecast")) { /* no forecast performed, print '?' */
     printf("  %-20s  %12s", cm->name, "?");
@@ -2490,8 +2520,6 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   float sc;
   char *filename = NULL;
 
-  printf("in read_partition_scores_files_for_one_cm, ptot: %d\n", ptot);
-
   /* initialize storage for scores */
   ESL_ALLOC(pmerged_nhitsA, sizeof(int64_t) * EXP_NMODES);
   ESL_ALLOC(pmerged_scAA,   sizeof(float *) * EXP_NMODES);
@@ -2503,11 +2531,10 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   /* open each of the partitions' scores files and read the scores (for the appropriate cm) */
   for(p = 1; p <= ptot; p++) { 
     /* determine file name */
-    if (esl_sprintf(&filename, "%s.%d", (esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg->cmfile), p) != eslOK) ESL_XFAIL(status, errbuf, "esl_sprintf failed"); 
+    if (esl_sprintf(&filename, "%s.%d", (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p) != eslOK) ESL_XFAIL(status, errbuf, "esl_sprintf failed"); 
     if ((pfp = fopen(filename, "r")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open partition file %s\n", filename);
     if ((efp = esl_fileparser_Create(pfp)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Unable to create fileparser, out of memory?");
     esl_fileparser_SetCommentChar(efp, '#');
-    printf("Reading scores file %s\n", filename);
 
     /* should be 1 line per CM/exp_mode pair */
     /* read through CMs we've already dealt with */
@@ -2526,17 +2553,15 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
       status = esl_fileparser_GetTokenOnLine(efp, &tok1, NULL);
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
-      printf("tok1: %s\n", tok1);
       if ((nhits = atoi(tok1)) == 0) ESL_XFAIL(status, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok1, efp->linenumber, 
-                                               (esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg->cmfile), p); 
-      printf("nhits: %" PRId64 "\n", nhits);
+                                               (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
       ip = pmerged_nhitsA[exp_mode];
       pmerged_nhitsA[exp_mode] += nhits;
       ESL_REALLOC(pmerged_scAA[exp_mode], sizeof(float) * pmerged_nhitsA[exp_mode]);
       for(i = 0; i < nhits; i++) { 
         status = esl_fileparser_GetTokenOnLine(efp, &tok1, NULL);
         if ((sc = atof(tok1)) == 0) ESL_XFAIL(status, errbuf, "Invalid hit score %s, hit number %d on line %d of partition file %s.%d", tok1, (i+1), efp->linenumber, 
-                                              (esl_opt_IsUsed(go, "--root") ? esl_opt_GetString(go, "--root") : cfg->cmfile), p); 
+                                              (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
         pmerged_scAA[exp_mode][(ip+i)] = sc;
         //printf("e %d hit %d sc %.5f\n", exp_mode, i, sc);
       }
