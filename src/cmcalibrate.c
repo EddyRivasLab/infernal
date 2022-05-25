@@ -214,7 +214,7 @@ static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg
 static void print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec);
 static void print_summary(const struct cfg_s *cfg);
 static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
-static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
+static int  generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
 static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
 static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk);
 static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded);
@@ -431,6 +431,7 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "--merge")) { 
         printf("HEYA comlogsA[%d] %s\n", cmi, cfg.comlogsA[cmi]);
+        status = esl_strcat(&cm->comlog, -1, "\n", -1);
         status = esl_strcat(&cm->comlog, -1, cfg.comlogsA[cmi], -1);
         if(status != eslOK) cm_Fail("Problem copying comlog from partition score files to CM file");
       }
@@ -503,12 +504,13 @@ main(int argc, char **argv)
   }
 
   /* clean up */
-  if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
-  if (cfg.w       != NULL) esl_stopwatch_Destroy(cfg.w);
-  if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.r_est   != NULL) esl_randomness_Destroy(cfg.r_est);
-  if (cfg.tmpfile != NULL) free(cfg.tmpfile);
-  if (cfg.dnull   != NULL) free(cfg.dnull);
+  if (cfg.abc      != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.w        != NULL) esl_stopwatch_Destroy(cfg.w);
+  if (cfg.r        != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.r_est    != NULL) esl_randomness_Destroy(cfg.r_est);
+  if (cfg.tmpfile  != NULL) free(cfg.tmpfile);
+  if (cfg.dnull    != NULL) free(cfg.dnull);
+
 
   esl_stopwatch_Stop(w);
   if (cfg.my_rank == 0) { 
@@ -598,7 +600,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* One-time initializations after alphabet <abc> becomes known */
     output_header(stdout, go, cfg->cmfile, relevant_ncpus, ncpus);
 
-    if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    if(! do_merge) { 
+      if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    }
     if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
     
     for (i = 0; i < infocnt; ++i)    {
@@ -631,7 +635,9 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = expand_exp_and_name_arrays(cfg))               != eslOK) cm_Fail("out of memory");
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi]))) != eslOK) cm_Fail("unable to duplicate CM name");
     /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
-    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+    if(! do_merge) { 
+      if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+    }
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
 
     if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
@@ -654,7 +660,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       if(do_merge) { /* open the scores files, read the scores for this CM, then close the files */
         if((status = read_partition_scores_files_for_one_cm(go, cfg, errbuf, cm, cmi, &pmerged_scAA, &pmerged_nhitsA)) != eslOK) cm_Fail(errbuf);
       }
-      else { 
+      else { /* ! do_merge, normal case, generate sequences to use for calibration */
         if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
       }
 
@@ -753,6 +759,21 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           }
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
 
+        /* free pmerged* data only after all exp_modes are done, b/c
+         * they were read all at once prior to the for(exp_mode...)
+         * loop that ends above 
+         */
+        for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++)
+          if(pmerged_scAA[exp_mode] != NULL) { 
+            free(pmerged_scAA[exp_mode]); 
+            pmerged_scAA[exp_mode] = NULL;
+          }
+        free(pmerged_scAA); 
+        pmerged_scAA = NULL;
+        if(pmerged_nhitsA != NULL) { 
+          free(pmerged_nhitsA);
+          pmerged_nhitsA = NULL;
+        }
 	
 	esl_stopwatch_Stop(cfg->w);
 	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
@@ -2142,7 +2163,6 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
   return status;
 }
 
-
 /* Function: generate_sequences()
  * Date:     EPN, Fri Dec 16 09:41:32 2011
  *
@@ -2162,7 +2182,7 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
  *           eslEMEM if out of memory.
  */
 int
-generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block)
+generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block)
 {
   int           status;
   ESL_SQ_BLOCK *sq_block = NULL;
@@ -2210,6 +2230,30 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
   }
   sq_block->first_seqidx = 0;
   sq_block->complete     = TRUE;
+
+  /* free the HMM parameters, we don't need these anymore */
+  if (cfg->ghmm_sA  != NULL) free(cfg->ghmm_sA);
+  cfg->ghmm_sA = NULL;
+  if (cfg->ghmm_tAA != NULL) { 
+    for(i = 0; i < cfg->ghmm_nstates; i++) { 
+      if(cfg->ghmm_tAA[i] != NULL) { 
+        free(cfg->ghmm_tAA[i]);
+        cfg->ghmm_tAA[i] = NULL;
+      }
+    }
+    free(cfg->ghmm_tAA);
+    cfg->ghmm_tAA = NULL;
+  }
+  if (cfg->ghmm_eAA != NULL) { 
+    for(i = 0; i < cfg->ghmm_nstates; i++) { 
+      if(cfg->ghmm_eAA[i] != NULL) { 
+        free(cfg->ghmm_eAA[i]);
+        cfg->ghmm_eAA[i] = NULL;
+      }
+    }
+    free(cfg->ghmm_eAA);
+    cfg->ghmm_eAA = NULL;
+  }
 
   *ret_sq_block = sq_block;
   return eslOK;
@@ -2575,9 +2619,10 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
     if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
     if(p == 1) { 
-      status = esl_fileparser_GetRemainingLine(efp, &(cfg->comlogsA[cmi]));
+      status = esl_fileparser_GetRemainingLine(efp, &tok);
       if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      if((status = esl_strdup(tok, -1, &(cfg->comlogsA[cmi]))) != eslOK) goto ERROR;
     }
 
     /* Read scores data for the CM we are interested in */
@@ -2600,15 +2645,26 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
         //printf("e %d hit %d sc %.5f\n", exp_mode, i, sc);
       }
     }
+    if(efp != NULL) { esl_fileparser_Destroy(efp); efp = NULL; }
+    if(filename != NULL) { free(filename); filename = NULL; }
+    fclose(pfp);
   }
-  fclose(pfp);
   
   *ret_pmerged_scAAA   = pmerged_scAA;
   *ret_pmerged_nhitsAA = pmerged_nhitsA;
-  
+
+  if(filename != NULL) free(filename);
+  filename = NULL;
+
   return eslOK;
 
  ERROR:
+  if(filename != NULL) free(filename);
+  filename = NULL;
+
+  if(efp != NULL) esl_fileparser_Destroy(efp);
+  efp = NULL;
+
   if (pmerged_nhitsA != NULL) {
     free(pmerged_nhitsA); 
   }
