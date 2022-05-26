@@ -300,11 +300,6 @@ main(int argc, char **argv)
       if ((cfg.pfp = fopen(esl_opt_GetString(go, "--pfile"), "w")) == NULL) {
         ESL_FAIL(eslFAIL, errbuf, "Failed to open partition score file %s for writing\n", esl_opt_GetString(go, "--pfile"));
       }
-      /* output command line, when cmcalibrate is called with --merge this will be added to CM file */
-      for (i = 0; i < go->argc-1; i++) { 
-        fprintf(cfg.pfp, "%s ", go->argv[i]);
-      }
-      fprintf(cfg.pfp, "%s\n", go->argv[(go->argc-1)]);
     }
     else { 
       ESL_FAIL(eslFAIL, errbuf, "--pfile is required in combination with --part\n");
@@ -338,11 +333,12 @@ main(int argc, char **argv)
     }
     else { /* --cbash not used, list each command on separate line */
       for(i = 1; i <= npart; i++) { 
-        fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%d %s\n", 
+        fprintf(cfg.cfp, "%s --part %d --ptot %d --pfile %s.%s%d %s\n", 
                 argv[0], /* cmcalibrate command */
                 i,       /* index of this partition */
                 esl_opt_GetInteger(go, "--ptot"), /* total number of partitions */
                 esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg.cmfile, /* root of output file */
+                esl_opt_IsUsed(go, "--proot") ? ""                               : "calib.",   /* "calib." unless --proot used */
                 i,       /* index of this partition */
                 cfg.cmfile); /* cm file name */
       }
@@ -514,7 +510,9 @@ main(int argc, char **argv)
   if (cfg.r_est    != NULL) esl_randomness_Destroy(cfg.r_est);
   if (cfg.tmpfile  != NULL) free(cfg.tmpfile);
   if (cfg.dnull    != NULL) free(cfg.dnull);
-
+  if (cfg.ghmm_sA  != NULL) free(cfg.ghmm_sA);
+  if (cfg.ghmm_tAA != NULL) { for(i = 0; i < cfg.ghmm_nstates; i++) if(cfg.ghmm_tAA[i] != NULL) free(cfg.ghmm_tAA[i]); free(cfg.ghmm_tAA); }
+  if (cfg.ghmm_eAA != NULL) { for(i = 0; i < cfg.ghmm_nstates; i++) if(cfg.ghmm_eAA[i] != NULL) free(cfg.ghmm_eAA[i]); free(cfg.ghmm_eAA); }
 
   esl_stopwatch_Stop(w);
   if (cfg.my_rank == 0) { 
@@ -638,6 +636,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, relevant_ncpus);
     if((status = expand_exp_and_name_arrays(cfg))               != eslOK) cm_Fail("out of memory");
     if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi]))) != eslOK) cm_Fail("unable to duplicate CM name");
+
+    if(cfg->pfp != NULL) { /* --part and --pfile used, partition mode: output command to pfp */
+      /* output command line, when cmcalibrate is called with --merge this will be added to CM file */
+      for (i = 0; i < go->argc-1; i++) { 
+        fprintf(cfg->pfp, "%s ", go->argv[i]);
+      }
+      fprintf(cfg->pfp, "%s\n", go->argv[(go->argc-1)]);
+    }
     /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
     if(! do_merge) { 
       if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
@@ -810,6 +816,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   
   if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(relevant_ncpus);
   else if(cfg->ncm > 1)              print_total_time(go, total_asec, total_psec);
+
+  /* free the generative HMM parameters */
 
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
@@ -2247,30 +2255,6 @@ generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   sq_block->first_seqidx = 0;
   sq_block->complete     = TRUE;
 
-  /* free the HMM parameters, we don't need these anymore */
-  if (cfg->ghmm_sA  != NULL) free(cfg->ghmm_sA);
-  cfg->ghmm_sA = NULL;
-  if (cfg->ghmm_tAA != NULL) { 
-    for(i = 0; i < cfg->ghmm_nstates; i++) { 
-      if(cfg->ghmm_tAA[i] != NULL) { 
-        free(cfg->ghmm_tAA[i]);
-        cfg->ghmm_tAA[i] = NULL;
-      }
-    }
-    free(cfg->ghmm_tAA);
-    cfg->ghmm_tAA = NULL;
-  }
-  if (cfg->ghmm_eAA != NULL) { 
-    for(i = 0; i < cfg->ghmm_nstates; i++) { 
-      if(cfg->ghmm_eAA[i] != NULL) { 
-        free(cfg->ghmm_eAA[i]);
-        cfg->ghmm_eAA[i] = NULL;
-      }
-    }
-    free(cfg->ghmm_eAA);
-    cfg->ghmm_eAA = NULL;
-  }
-
   *ret_sq_block = sq_block;
   return eslOK;
 
@@ -2619,7 +2603,7 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     /* should be 1 line per CM/exp_mode pair */
     /* read through CMs we've already dealt with */
     for(cm_idx = 0; cm_idx < cmi; cm_idx++) { 
-      status = esl_fileparser_NextLine(efp); /* skip command line */
+      status = esl_fileparser_NextLine(efp); /* skip command line, only exists for 1st CM */
       for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
         status = esl_fileparser_NextLine(efp); /* skip line with scores for this exp_mode */
         if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
