@@ -491,12 +491,16 @@ main(int argc, char **argv)
     if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
     if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
   } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq")) && (! do_split)) */
-  else { /* non-master or --forecast or --memreq-specific cleaning */
+  else { /* non-master, --forecast, --memreq, --part and --split -specific cleaning */
     if (cfg.cmfp     != NULL) cm_file_Close(cfg.cmfp);
     if (cfg.expAA    != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]    != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
     if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
     if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
 
+    if (cfg.pfp   != NULL) { 
+      fclose(cfg.pfp);
+      printf("# Scores for this partition for later merge saved to file %s.\n", esl_opt_GetString(go, "--pfile"));
+    }
     if (cfg.cfp   != NULL) { 
       fclose(cfg.cfp);
       printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
@@ -755,21 +759,23 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
                                        ((do_merge) ? pmerged_nhitsA[exp_mode] : merged_nhits),
                                        exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
             SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
-            if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
           }
+          if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
 
         /* free pmerged* data only after all exp_modes are done, b/c
          * they were read all at once prior to the for(exp_mode...)
          * loop that ends above 
          */
-        for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++)
-          if(pmerged_scAA[exp_mode] != NULL) { 
-            free(pmerged_scAA[exp_mode]); 
-            pmerged_scAA[exp_mode] = NULL;
-          }
-        free(pmerged_scAA); 
-        pmerged_scAA = NULL;
+        if(pmerged_scAA != NULL) { 
+          for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++)
+            if(pmerged_scAA[exp_mode] != NULL) { 
+              free(pmerged_scAA[exp_mode]); 
+              pmerged_scAA[exp_mode] = NULL;
+            }
+          free(pmerged_scAA); 
+          pmerged_scAA = NULL;
+        }
         if(pmerged_nhitsA != NULL) { 
           free(pmerged_nhitsA);
           pmerged_nhitsA = NULL;
@@ -843,8 +849,8 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   int  nprinted = 0; /* number of equals printed thus far */
 
   /* variables related to --part */
-  int *searchme_A = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
-  ESL_ALLOC(searchme_A, sizeof(int) * sq_block->count);
+  int *searchmeA = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
+  ESL_ALLOC(searchmeA, sizeof(int) * sq_block->count);
 
   /* reinitialize array of hit scores */
   info->nhits = 0;
@@ -858,15 +864,15 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
    *                  (very simple to implement this way, see block below)
    */
   if(info->ipart != -1) { 
-    esl_vec_ISet(searchme_A, sq_block->count, FALSE);
+    esl_vec_ISet(searchmeA, sq_block->count, FALSE);
     for(i = 0; i < sq_block->count; i++) { 
       if(((i % info->npart) + 1) == info->ipart) { 
-        searchme_A[i] = TRUE;
+        searchmeA[i] = TRUE;
       }
     }
   }
   else { /* --part not used, search all sequences */
-    esl_vec_ISet(searchme_A, sq_block->count, TRUE);
+    esl_vec_ISet(searchmeA, sq_block->count, TRUE);
   }
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
@@ -875,7 +881,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   equalidx = equalcnt;
 
   for(i = 0; i < sq_block->count; i++) { 
-    if(searchme_A[i]) { /* searchme_A[i] is always TRUE unless --part used */
+    if(searchmeA[i]) { /* searchmeA[i] is always TRUE unless --part used */
       if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
       /* append copy of hit scores to scA */
       if(th->N > 0) { 
@@ -894,9 +900,19 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   }
   while(nprinted < info->nequals) { putchar('='); fflush(stdout); nprinted++; } 
 
+  if(searchmeA != NULL) { 
+    free(searchmeA);
+    searchmeA = NULL;
+  }
+
   return eslOK;
   
  ERROR: 
+  if(searchmeA != NULL) { 
+    free(searchmeA);
+    searchmeA = NULL;
+  }
+
   ESL_FAIL(status, errbuf, "out of memory");
   return status; /* NEVERREACHED */
 }
@@ -916,8 +932,8 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   int     nprinted = 0; /* number of equals printed thus far */
 
   /* variables related to --part */
-  int *searchme_A = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
-  ESL_ALLOC(searchme_A, sizeof(int) * sq_block->count);
+  int *searchmeA = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
+  ESL_ALLOC(searchmeA, sizeof(int) * sq_block->count);
 
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
@@ -930,15 +946,15 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
    *                  (very simple to implement this way, see block below)
    */
   if(info->ipart != -1) { 
-    esl_vec_ISet(searchme_A, sq_block->count, FALSE);
+    esl_vec_ISet(searchmeA, sq_block->count, FALSE);
     for(i = 0; i < sq_block->count; i++) { 
       if(((i % info->npart) + 1) == info->ipart) { 
-        searchme_A[i] = TRUE;
+        searchmeA[i] = TRUE;
       }
     }
   }
   else { /* --part not used, search all sequences */
-    esl_vec_ISet(searchme_A, sq_block->count, TRUE);
+    esl_vec_ISet(searchmeA, sq_block->count, TRUE);
   }
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
@@ -951,7 +967,7 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
 
   /* Main loop: */
   for(i = 0; i < sq_block->count; i++) { 
-    if(searchme_A[i]) { 
+    if(searchmeA[i]) { 
       sq = (ESL_SQ *) new_sq;
       sq = sq_block->list + i;
       status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
