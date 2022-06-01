@@ -234,13 +234,16 @@ main(int argc, char **argv)
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
 
-  int  do_split; /* is --split used? */
-  int  npart;    /* value from --ptot */
-  int  do_part;  /* is --part used? */
-  /* variables used if do_split to recreat options string */
-  char *cmdopt = NULL;
-  int optlen = 0;
-  int n      = 0;
+  /* variables related to --split and --part */
+  int  do_split;    /* is --split used? */
+  int  npart;       /* value from --ptot */
+  int  do_part;     /* is --part used? */
+  CM_t *cm = NULL;  /* the CM, only filled if --split */
+
+  /* variables used if do_split to recreate options string */
+  char *cmdopt = NULL; /* command line string */
+  int optlen = 0;      /* length of option string */
+  int n      = 0;      /* token length */
 
   /* Set processor specific flags */
   impl_Init();
@@ -324,6 +327,13 @@ main(int argc, char **argv)
     else { 
       ESL_FAIL(eslFAIL, errbuf, "--cfile is required in combination with --split\n");
     }
+
+    /* make sure the CM file exists and we can read it */
+    /* open CM file */
+    if((status = cm_file_Open(cfg.cmfile, NULL, FALSE, &(cfg.cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail(cfg.cmfp->errbuf);
+    if(cm != NULL) FreeCM(cm);
+
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     /* get command line options, code adapted from esl_opt_SpoofCmdline */
     /* Application name/path */
