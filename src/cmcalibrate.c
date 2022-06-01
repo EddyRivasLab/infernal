@@ -453,7 +453,6 @@ main(int argc, char **argv)
       cm->flags |= CMH_EXPTAIL_STATS; 
 
       if(esl_opt_GetBoolean(go, "--merge")) { 
-        printf("HEYA comlogsA[%d] %s\n", cmi, cfg.comlogsA[cmi]);
         status = esl_strcat(&cm->comlog, -1, "\n", -1);
         status = esl_strcat(&cm->comlog, -1, cfg.comlogsA[cmi], -1);
         if(status != eslOK) cm_Fail("Problem copying comlog from partition score files to CM file");
@@ -2686,7 +2685,6 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
                     tok, (i+1), efp->linenumber, (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
         }
         pmerged_scAA[exp_mode][(ip+i)] = sc;
-        //printf("e %d hit %d sc %.5f\n", exp_mode, i, sc);
       }
     }
     if(efp != NULL) { esl_fileparser_Destroy(efp); efp = NULL; }
