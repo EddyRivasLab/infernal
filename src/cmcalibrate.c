@@ -97,7 +97,7 @@ static ESL_OPTIONS options[] = {
   { "--split",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,"--ptot,--cfile",   "--forecast",   "prepare partitioned calibration",      5 },
   { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,       "--split",   NULL,           "with --split, save file with commands for each partition to <f>", 5 },
   { "--cbash",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,       "--cfile",   NULL,           "with --split, output commands as a bash for loop script", 5 },
-  { "--proot",      eslARG_STRING,     NULL, NULL,            NULL,      NULL,       "--split",   NULL,           "with --split, set root for partition output files to <s>", 5 },
+  { "--proot",      eslARG_STRING,     NULL, NULL,            NULL,      NULL,         NULL,   NULL,              "with --split or --merge, root for partition output files is <s>", 5 },
   { "--part",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--ptot,--pfile",   NULL,           "this is partition number <n> (1..<n2> from --ptot <n2>)",      5 }, 
   { "--ptot",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,            NULL,   NULL,           "total number of partitions is <n>",  5 }, 
   { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,        "--part",   "--split",      "with --part, save scores to file <f>", 5 },
@@ -297,8 +297,6 @@ main(int argc, char **argv)
   FLogsumInit();
   process_commandline(argc, argv, &go, &(cfg.cmfile));
   cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
-
-  /* If --merge, open input file */
 
   /* If --part, open --pfile file */
   do_part = esl_opt_IsUsed(go, "--part") ? TRUE : FALSE;
@@ -538,11 +536,12 @@ main(int argc, char **argv)
       printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
       printf("#\n");
       printf("# Command to merge per-partition scores after all commands are finished:\n");
-      printf("# %s --merge --ptot %d %s%s%s\n", 
+      printf("# %s --merge --ptot %d %s%s%s%s\n", 
              go->argv[0],                      /* cmcalibrate command */
              esl_opt_GetInteger(go, "--ptot"), /* --ptot <n> option   */
              esl_opt_IsUsed(go, "--proot") ? "--proot " : "", 
              esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : "", 
+             esl_opt_IsUsed(go, "--proot") ? " " : "",
              cfg.cmfile);
     }
   }
@@ -1646,7 +1645,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
     puts("\nOptional output files:");
     esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-    puts("\nOptions controlling split mode:");
+    puts("\nOptions controlling split, partition and merge modes:");
     esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
     puts("\nOther options:");
     esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
@@ -1691,7 +1690,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus
   if (esl_opt_IsUsed(go, "--split"))     {     fprintf(ofp, "# split mode:                                  on\n"); }
   if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving partition commands to file:           %s\n", esl_opt_GetString(go, "--cfile")); }
   if (esl_opt_IsUsed(go, "--cbash"))     {     fprintf(ofp, "# saving partition commands as bash script:    on\n"); }
-  if (esl_opt_IsUsed(go, "--proot"))     {     fprintf(ofp, "# root name for partition output files:        %s\n", esl_opt_GetString(go, "--proot")); }
+  if (esl_opt_IsUsed(go, "--proot"))     {     fprintf(ofp, "# root name for partition score files :        %s\n", esl_opt_GetString(go, "--proot")); }
   if (esl_opt_IsUsed(go, "--part"))      {     fprintf(ofp, "# partition mode, partition number:            %d\n", esl_opt_GetInteger(go, "--part")); }
   if (esl_opt_IsUsed(go, "--ptot"))      {     fprintf(ofp, "# total number of partitions:                  %d\n", esl_opt_GetInteger(go, "--ptot")); }
   if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
@@ -2641,10 +2640,10 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     
   for(p = 1; p <= ptot; p++) { 
     /* determine file name */
-    if (esl_sprintf(&filename, "%s.%s%d", 
-                    (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), 
-                    (esl_opt_IsUsed(go, "--proot") ? ""                               : "calib."), 
-                    p) != eslOK) ESL_XFAIL(status, errbuf, "esl_sprintf failed"); 
+    if ((status = esl_sprintf(&filename, "%s.%s%d", 
+                              (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), 
+                              (esl_opt_IsUsed(go, "--proot") ? ""                               : "calib."), 
+                              p) != eslOK)) ESL_XFAIL(status, errbuf, "esl_sprintf failed"); 
     if ((pfp = fopen(filename, "r")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open partition file %s\n", filename);
     if ((efp = esl_fileparser_Create(pfp)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Unable to create fileparser, out of memory?");
     esl_fileparser_SetCommentChar(efp, '#');
@@ -2681,19 +2680,18 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
       status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL);
       if(status != eslOK)  ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
-      if ((nhits = atoi(tok)) == 0) ESL_XFAIL(status, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok, efp->linenumber, 
-                                               (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
+      nhits = atoi(tok);
+      if(nhits < 0) ESL_XFAIL(eslFAIL, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok, efp->linenumber, 
+                              (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
       ip = pmerged_nhitsA[exp_mode];
       pmerged_nhitsA[exp_mode] += nhits;
+
       ESL_REALLOC(pmerged_scAA[exp_mode], sizeof(float) * pmerged_nhitsA[exp_mode]);
       for(i = 0; i < nhits; i++) { 
         if((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) != eslOK) { 
           ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
         }
-        if ((sc = atof(tok)) == 0) { 
-          ESL_XFAIL(status, errbuf, "Invalid hit score %s, hit number %d on line %d of partition file %s.%d", 
-                    tok, (i+1), efp->linenumber, (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
-        }
+        sc = atof(tok);
         pmerged_scAA[exp_mode][(ip+i)] = sc;
       }
     }
@@ -2702,7 +2700,7 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     fclose(pfp);
   }
   printf("done.\n");
-  
+
   *ret_pmerged_scAAA   = pmerged_scAA;
   *ret_pmerged_nhitsAA = pmerged_nhitsA;
 
@@ -2722,12 +2720,15 @@ read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     free(pmerged_nhitsA); 
   }
   pmerged_nhitsA = NULL;
-  if (pmerged_scAA   != NULL) { 
+  if (pmerged_scAA != NULL) { 
     for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
       if(pmerged_scAA[exp_mode] != NULL) { 
-        
+        free(pmerged_scAA[exp_mode]);
+        pmerged_scAA[exp_mode] = NULL;
       }
     }
   }
+  pmerged_scAA = NULL;
+
   return status;
 }
