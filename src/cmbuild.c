@@ -148,8 +148,8 @@ static ESL_OPTIONS options[] = {
   { "--gtree",      eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tree description of master tree to file <f>",            109 },
   { "--gtbl",       eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save tabular description of master tree to file <f>",         109 },
   { "--occfile",    eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CM state to <f>",             109 },
-  { "--cp9occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CP9 ML HMM state) to <f>",    109 },
-  { "--fp7occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each filter P7 HMM state) to <f>", 109 },
+  { "--cp9occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each CP9 ML HMM state to <f>",     109 },
+  { "--fp7occfile", eslARG_OUTFILE,  NULL, NULL, NULL,   NULL, NULL, NULL,  "save expected occupancy of each filter P7 HMM state to <f>",  109 },
 
   /* Building multiple CMs after clustering input MSA */
   /* name        type            default env   range      toggles reqs  incomp    help  docgroup*/
