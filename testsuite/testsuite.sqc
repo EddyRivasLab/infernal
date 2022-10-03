@@ -231,6 +231,29 @@
 1  exercise  calibrate/tFC      @src/cmcalibrate@ --forecast %TRNA.CM%
 1  prep      build/se           @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
 1  exercise  calibrate/se       @src/cmcalibrate@ -L 0.1 %SE.CM%
+1  prep      build2/se          @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
+1  exercise  calib/split/se     @src/cmcalibrate@ --proot se.tmp --split --ptot 10 --cfile %SE.CFILE% -L 0.1 %SE.CM%
+1  exercise  calib/part1/se     @src/cmcalibrate@ --part 1  --ptot 10 --pfile se.tmp.1  -L 0.1 %SE.CM%
+1  exercise  calib/part2/se     @src/cmcalibrate@ --part 2  --ptot 10 --pfile se.tmp.2  -L 0.1 %SE.CM%
+1  exercise  calib/part3/se     @src/cmcalibrate@ --part 3  --ptot 10 --pfile se.tmp.3  -L 0.1 %SE.CM%
+1  exercise  calib/part4/se     @src/cmcalibrate@ --part 4  --ptot 10 --pfile se.tmp.4  -L 0.1 %SE.CM%
+1  exercise  calib/part5/se     @src/cmcalibrate@ --part 5  --ptot 10 --pfile se.tmp.5  -L 0.1 %SE.CM%
+1  exercise  calib/part6/se     @src/cmcalibrate@ --part 6  --ptot 10 --pfile se.tmp.6  -L 0.1 %SE.CM%
+1  exercise  calib/part7/se     @src/cmcalibrate@ --part 7  --ptot 10 --pfile se.tmp.7  -L 0.1 %SE.CM%
+1  exercise  calib/part8/se     @src/cmcalibrate@ --part 8  --ptot 10 --pfile se.tmp.8  -L 0.1 %SE.CM%
+1  exercise  calib/part9/se     @src/cmcalibrate@ --part 9  --ptot 10 --pfile se.tmp.9  -L 0.1 %SE.CM%
+1  exercise  calib/part10/se    @src/cmcalibrate@ --part 10 --ptot 10 --pfile se.tmp.10 -L 0.1 %SE.CM%
+1  exercise  calib/merge/se     @src/cmcalibrate@ --proot se.tmp --merge --ptot 10 -L 0.1 %SE.CM%
+1  prep      cleanup/se/1       rm se.tmp.1
+1  prep      cleanup/se/2       rm se.tmp.2
+1  prep      cleanup/se/3       rm se.tmp.3
+1  prep      cleanup/se/4       rm se.tmp.4
+1  prep      cleanup/se/5       rm se.tmp.5
+1  prep      cleanup/se/6       rm se.tmp.6
+1  prep      cleanup/se/7       rm se.tmp.7
+1  prep      cleanup/se/8       rm se.tmp.8
+1  prep      cleanup/se/9       rm se.tmp.9
+1  prep      cleanup/se/10      rm se.tmp.10
 
 # cmfetch exercises
 1  exercise  fetch/4/index      @src/cmfetch@ --index %4.CM% 
