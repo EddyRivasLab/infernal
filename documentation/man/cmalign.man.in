@@ -430,6 +430,7 @@ allows CM alignment within practical memory limits,
 reducing the memory required for alignment LSU rRNA, the largest known
 RNAs, from 150 Gb to less than 300 Mb.
 This option can only be used in combination with
+.B --noprob,
 .B --nonbanded,
 .B --notrunc,
 and
