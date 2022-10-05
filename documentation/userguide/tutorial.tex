@@ -551,7 +551,9 @@ target sequence.
 
 The next column is labeled ``acc'' and is the average posterior
 probability of the aligned target sequence residues; effectively, the
-expected accuracy per residue of the alignment.
+expected accuracy per residue of the alignment. (This field may be
+absent and replaced by a ``cyksc'' in certain situations, as explained
+more below.)
 
 The final two columns indicate whether the hit is truncated or not and
 the GC fraction of the hit. These are redundant with the columns of
@@ -652,7 +654,18 @@ line will be included in each block, with RF annotation.  If the model
 used for the alignment was an HMM (the ``mdl'' column reads ``hmm'')
 then the \otext{NC} line will be absent from each alignment
 block. We'll see example of all three of these cases later in the
-tutorial.
+tutorial. Finally, the \otext{PP} line will be absent if
+\prog{cmsearch} has determined that calculating posterior
+probabilities for the optimal posterior accuracy alignment would have
+required more than a preset amount of memory (that amount is
+autodetermined based on model size, but is capped at a maximum of
+512Mb for the largest models, unless the \emprog{--mxsize} option is
+used to increase it). If the \otext{PP} line is absent, the tabular
+``acc'' field described above will be absent and replaced with a
+``cyksc'' field which reports the bit score of the highest scoring CYK
+alignment, and the displayed alignment will be the alignment computed
+by the CYK algorithm which requires less memory than the ``optimal
+posterior accuracy'' alignment.
 
 After hit number 43, there's 13 more hit alignments for hits number 44
 through 56. 
