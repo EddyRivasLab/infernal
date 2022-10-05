@@ -147,6 +147,7 @@ main(int argc, char **argv)
   exit(0);
 
  ERROR:
+  fprintf(stderr, "%s\n", errbuf);
   close_dbfiles(dbf, status);
   p7_bg_Destroy(bg);
   cm_file_Close(cmfp);
