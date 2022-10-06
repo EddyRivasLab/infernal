@@ -770,6 +770,28 @@ cm_tophits_GetMaxClanLength(CM_TOPHITS *h, ESL_KEYHASH *clan_name_kh)
   return max;
 }
 
+/* Function:  cm_tophits_GetMaxModelLength()
+ * Synopsis:  Returns the length of the maximum model length in hit list.
+ * Incept:    EPN, Thu Oct  6 15:19:40 2022
+ *
+ * Purpose:   Returns the length of the longest model clen (ad->clen)
+ *            of all the registered hits, in chars. This is useful when
+ *            deciding how to format output.
+ */
+int
+cm_tophits_GetMaxModelLength(CM_TOPHITS *h)
+{
+  int i, max;
+
+  max = 0;
+  for (i = 0; i < h->N; i++) {
+    if(h->unsrt[i].ad) { 
+      max = ESL_MAX(max, integer_textwidth(h->unsrt[i].ad->clen));
+    }
+  }
+  return max;
+}
+
 /* Function:  cm_tophits_Reuse()
  * Synopsis:  Reuse a hit list, freeing internals.
  * Incept:    EPN, Tue May 24 13:36:15 2011
@@ -2343,7 +2365,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   int idxw1  = ESL_MAX(4, integer_textwidth(th->N));
   int idxw2  = ESL_MAX(6, integer_textwidth(th->N));
   int clanw  = ESL_MAX(9, cm_tophits_GetMaxClanLength(th, clan_name_kh));
-  int clenw  = 7; // mdl_len, we don't expect a model > 10M positions 
+  int clenw  = ESL_MAX(7, cm_tophits_GetMaxModelLength(th));
   int srcLw  = ESL_MAX(7, cm_tophits_GetMaxTargetLength(th));
 
   /* variables used only if pli->do_trm_F3 */
@@ -2679,7 +2701,7 @@ cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   int qaccw  = ((qacc != NULL) ? ESL_MAX(9, strlen(qacc)) : 9);
   int taccw  = ESL_MAX(9, cm_tophits_GetMaxAccessionLength(th));
   int posw   = ESL_MAX(8, cm_tophits_GetMaxPositionLength(th));
-  int clenw  = 7; // mdl_len, we don't expect a model > 10M positions 
+  int clenw  = ESL_MAX(7, cm_tophits_GetMaxModelLength(th));
   int srcLw  = ESL_MAX(7, cm_tophits_GetMaxTargetLength(th));
 
   char *qnamestr = NULL;
