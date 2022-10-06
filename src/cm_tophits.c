@@ -2343,6 +2343,11 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   int idxw1  = ESL_MAX(4, integer_textwidth(th->N));
   int idxw2  = ESL_MAX(6, integer_textwidth(th->N));
   int clanw  = ESL_MAX(9, cm_tophits_GetMaxClanLength(th, clan_name_kh));
+  int clenw  = ESL_MAX(8, cm_tophits_GetMaxTargetLength(th));
+  int srcLw  = 7; // mdl_len, we don't expect a model > 10M positions 
+
+  printf("HEYA clenw: %d\n", clenw);
+  printf("HEYA srcLw: %d\n", srcLw);
 
   /* variables used only if pli->do_trm_F3 */
   char   lseq, rseq;
@@ -2375,6 +2380,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   char *win_ofctstr1 = NULL;
   char *win_ofctstr2 = NULL;
   char *clannamestr  = NULL;
+  char *clenstr      = NULL;
+  char *srcLstr      = NULL;
 
   if(pli->mode != CM_SCAN_MODELS) { /* we'll only possibly have overlaps if in scan mode */
     ESL_XFAIL(eslEINVAL, errbuf, "Trying to output in format 2, but not in SCAN mode");
@@ -2396,6 +2403,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   ESL_ALLOC(win_ofctstr1, sizeof(char) * 7);         /* string for fractional overlap b/t current hit and hit win_oidx wrt current hit */
   ESL_ALLOC(win_ofctstr2, sizeof(char) * 7);         /* string for fractional overlap b/t current hit and hit win_oidx wrt hit win_oidx */
   ESL_ALLOC(clannamestr,  sizeof(char) * clanw);     /* string for output of clan name */
+  ESL_ALLOC(clenstr,      sizeof(char) * (clenw+1)); 
+  ESL_ALLOC(srcLstr,      sizeof(char) * (srcLw+1)); 
 
   for(i = 0; i < idxw1-1;  i++) { idxstr1[i]  = '-'; } idxstr1[idxw1-1]   = '\0'; /* need to account for single '#' */
   for(i = 0; i < idxw2;    i++) { idxstr2[i]  = '-'; } idxstr2[idxw2]     = '\0';
@@ -2405,6 +2414,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   for(i = 0; i < qaccw;    i++) { qaccstr[i]  = '-'; } qaccstr[qaccw]     = '\0';
   for(i = 0; i < clanw;    i++) { clanstr[i]  = '-'; } clanstr[clanw]     = '\0';
   for(i = 0; i < posw;     i++) { posstr[i]   = '-'; } posstr[posw]       = '\0';
+  for(i = 0; i < clenw;    i++) { clenstr[i]  = '-'; } clenstr[clenw]     = '\0';
+  for(i = 0; i < srcLw;    i++) { srcLstr[i]  = '-'; } srcLstr[srcLw]     = '\0';
 
   if(th->N > 0) { 
     ESL_ALLOC(sorted_idxA, sizeof(int64_t) * th->N);
@@ -2443,16 +2454,17 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
               posw, posstr, posw, posstr, "------", "------", "-----------", "---", idxstr2, "------", "------", idxstr2, "------", "------");
     }
     else { /* pli->do_trm_F3 is FALSE, default output mode */
-      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %*s %6s %6s %*s %6s %6s %-s\n",
+      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %*s %6s %6s %*s %6s %6s %*s %*s %-s\n",
               idxw1-1, "idx", tnamew, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", clanw, "clan name",
               "mdl", "mdl from", "mdl to", 
               posw, "seq from", posw, "seq to", 
               "strand", "trunc", "pass", "gc", "bias", "score", "E-value", "inc", 
-              "olp", idxw2, "anyidx", "afrct1", "afrct2", idxw2, "winidx", "wfrct1", "wfrct2", "description of target");
-      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %s %s %s %s %s %s %s\n",
+              "olp", idxw2, "anyidx", "afrct1", "afrct2", idxw2, "winidx", "wfrct1", "wfrct2", 
+              clenw, "mdl len", srcLw, "seq len", "description of target");
+      fprintf(ofp, "#%-*s %-*s %-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %3s %s %s %s %s %s %s %*s %*s %s\n",
               idxw1-1, idxstr1, tnamew, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, clanw, clanstr,
               "---", "--------", "--------", 
-              posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", "---", idxstr2, "------", "------", idxstr2, "------", "------", "---------------------");
+              posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", "---", idxstr2, "------", "------", idxstr2, "------", "------", clenw, clenstr, srcLw, srcLstr, "---------------------");
     }
   }
   for (h = 0; h < th->N; h++) { 
@@ -2563,7 +2575,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr2);
         }
         else { /* pli->do_trm_F3 is FALSE, default output mode */
-          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %s\n",
+          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %*" PRId64 " %*" PRId64 " %s\n",
                   idxw1, noutput,
                   tnamew, th->hit[h]->name,
                   taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
@@ -2589,6 +2601,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   idxw2, (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_oidxstr,
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr1,
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr2,
+                  clenw, th->hit[h]->ad->clen, srcLw, th->hit[h]->srcL, 
                   (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
         }
       }
@@ -2610,6 +2623,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(win_ofctstr1 != NULL) free(win_ofctstr1);
   if(win_ofctstr2 != NULL) free(win_ofctstr2);
   if(clannamestr  != NULL) free(clannamestr);
+  if(clenstr      != NULL) free(clenstr);
+  if(srcLstr      != NULL) free(srcLstr);
   if(sorted_idxA  != NULL) free(sorted_idxA);
   if(output_idxA  != NULL) free(output_idxA);
   if(has_overlapA != NULL) free(has_overlapA);
@@ -2633,7 +2648,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   if(win_ofctstr1 != NULL) free(win_ofctstr1);
   if(win_ofctstr2 != NULL) free(win_ofctstr2);
   if(clannamestr  != NULL) free(clannamestr);
-  if(sorted_idxA  != NULL) free(sorted_idxA);
+  if(clenstr      != NULL) free(clenstr);
+  if(srcLstr      != NULL) free(srcLstr);
   if(output_idxA  != NULL) free(output_idxA);
   if(has_overlapA != NULL) free(has_overlapA);
 
