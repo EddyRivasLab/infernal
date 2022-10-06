@@ -51,6 +51,7 @@ static ESL_OPTIONS options[] = {
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
   { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
   { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
+  { "--consrf",    eslARG_NONE,    FALSE,   NULL, NULL,         NULL,  "--hand",         NULL, "with --hand, rewrite RF line with consensus sequence",           2 },
 
   /* Other model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -665,6 +666,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
   if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
   if (esl_opt_IsUsed(go, "--noss"))        { fprintf(ofp, "# ignore secondary structure, if any:                 yes\n"); }
   if (esl_opt_IsUsed(go, "--rsearch"))     { fprintf(ofp, "# RSEARCH parameterization mode w/RIBOSUM mx file:    %s\n", esl_opt_GetString(go, "--rsearch")); }
+  if (esl_opt_IsUsed(go, "--consrf"))      { fprintf(ofp, "# rewrite RF as consensus sequence with --hand:       yes\n"); }
   if (esl_opt_IsUsed(go, "--betaW"))       { fprintf(ofp, "# tail loss probability for defining W:               %g\n", esl_opt_GetReal(go, "--betaW")); }
   if (esl_opt_IsUsed(go, "--beta1"))       { fprintf(ofp, "# tail loss probability for defining tight QDBs:      %g\n", esl_opt_GetReal(go, "--beta1")); }
   if (esl_opt_IsUsed(go, "--beta2"))       { fprintf(ofp, "# tail loss probability for defining loose QDBs:      %g\n", esl_opt_GetReal(go, "--beta2")); }
@@ -1614,7 +1616,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
  }
 
  /* annotate()
-  * Transfer annotation information from MSA to new HMM.
+  * Transfer annotation information from MSA to new CM.
   * 
   * We've ensured the msa has a name in set_msa_name() so if 
   * for some inconceivable reason it doesn't 
@@ -1956,6 +1958,12 @@ set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   if ((status = cm_SetConsensus  (cm, cm->cmcons, NULL)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to calculate consensus sequence");
 
+  if(esl_opt_IsUsed(go, "--consrf")) {
+    /* overwrite cm->rf with cm->cmcons->cseq */
+    if(cm->rf == NULL || (! (cm->flags & CMH_RF))) ESL_XFAIL(status, errbuf, "Failed to overwrite RF with consensus (--consrf)");
+    strcpy(cm->rf, cm->consensus);
+  }
+  
   if (cfg->be_verbose) { 
     fprintf(cfg->ofp, "done.  ");
     esl_stopwatch_Stop(w);
