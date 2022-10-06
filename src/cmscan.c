@@ -1562,7 +1562,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fprintf(ofp, "\n\n");
 	}
       }
-      
+
       if (tblfp != NULL) { 
         if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
           if(pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, th, pli, (seq_idx == 1)); 
@@ -1572,6 +1572,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
             mpi_failure(errbuf);
           }
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          if(pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, th, pli, (seq_idx == 1)); 
+          else               cm_tophits_TabularTargets3  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+          // --fmt 3 and --trmF3 are actually incompatible
         }
       }
 
