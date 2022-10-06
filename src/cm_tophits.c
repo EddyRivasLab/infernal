@@ -2343,11 +2343,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   int idxw1  = ESL_MAX(4, integer_textwidth(th->N));
   int idxw2  = ESL_MAX(6, integer_textwidth(th->N));
   int clanw  = ESL_MAX(9, cm_tophits_GetMaxClanLength(th, clan_name_kh));
-  int clenw  = ESL_MAX(8, cm_tophits_GetMaxTargetLength(th));
-  int srcLw  = 7; // mdl_len, we don't expect a model > 10M positions 
-
-  printf("HEYA clenw: %d\n", clenw);
-  printf("HEYA srcLw: %d\n", srcLw);
+  int clenw  = 7; // mdl_len, we don't expect a model > 10M positions 
+  int srcLw  = ESL_MAX(7, cm_tophits_GetMaxTargetLength(th));
 
   /* variables used only if pli->do_trm_F3 */
   char   lseq, rseq;
@@ -2575,7 +2572,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr2);
         }
         else { /* pli->do_trm_F3 is FALSE, default output mode */
-          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %*" PRId64 " %*" PRId64 " %s\n",
+          fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %*d %*" PRId64 " %s\n",
                   idxw1, noutput,
                   tnamew, th->hit[h]->name,
                   taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
@@ -2656,6 +2653,117 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
   return status;
 }
 
+/* Function:  cm_tophits_TabularTargets3()
+ * Synopsis:  Output parsable table of per-sequence hits in format '3'.
+ * Incept:    EPN, Thu Oct  6 14:15:09 2022
+ *
+ * Purpose:   Output a parseable table of reportable per-sequence hits
+ *            in sorted tophits list <th> in an easily parsed ASCII
+ *            tabular form to stream <ofp>, using final pipeline
+ *            accounting stored in <pli>. Format #3 (introduced
+ *            in 1.1.5). Identical to format 1 but with 'mdl_len' and
+#             'seq_len' fields added prior to 'description'.
+ *            
+ *            Designed to be concatenated for multiple queries and
+ *            multiple top hits list.
+ *
+ * Returns:   <eslOK> on success.
+ */
+int
+cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header)
+{
+  int status;
+  int i;
+  int tnamew = ESL_MAX(20, cm_tophits_GetMaxNameLength(th));
+  int qnamew = ESL_MAX(20, strlen(qname));
+  int qaccw  = ((qacc != NULL) ? ESL_MAX(9, strlen(qacc)) : 9);
+  int taccw  = ESL_MAX(9, cm_tophits_GetMaxAccessionLength(th));
+  int posw   = ESL_MAX(8, cm_tophits_GetMaxPositionLength(th));
+  int clenw  = 7; // mdl_len, we don't expect a model > 10M positions 
+  int srcLw  = ESL_MAX(7, cm_tophits_GetMaxTargetLength(th));
+
+  char *qnamestr = NULL;
+  char *tnamestr = NULL;
+  char *qaccstr  = NULL;
+  char *taccstr  = NULL;
+  char *posstr   = NULL;
+  char *clenstr  = NULL;
+  char *srcLstr  = NULL;
+
+  ESL_ALLOC(tnamestr, sizeof(char) * (tnamew));
+  ESL_ALLOC(taccstr,  sizeof(char) * (taccw+1));
+  ESL_ALLOC(qnamestr, sizeof(char) * (qnamew+1));
+  ESL_ALLOC(qaccstr,  sizeof(char) * (qaccw+1));
+  ESL_ALLOC(posstr,   sizeof(char) * (posw+1));
+  ESL_ALLOC(clenstr,  sizeof(char) * (clenw+1)); 
+  ESL_ALLOC(srcLstr,  sizeof(char) * (srcLw+1)); 
+
+  for(i = 0; i < tnamew-1; i++) { tnamestr[i] = '-'; } tnamestr[tnamew-1] = '\0'; /* need to account for single '#' */
+  for(i = 0; i < taccw;    i++) { taccstr[i]  = '-'; } taccstr[taccw]     = '\0';
+  for(i = 0; i < qnamew;   i++) { qnamestr[i] = '-'; } qnamestr[qnamew]   = '\0';
+  for(i = 0; i < qaccw;    i++) { qaccstr[i]  = '-'; } qaccstr[qaccw]     = '\0';
+  for(i = 0; i < posw;     i++) { posstr[i]   = '-'; } posstr[posw]       = '\0';
+  for(i = 0; i < clenw;    i++) { clenstr[i]  = '-'; } clenstr[clenw]     = '\0';
+  for(i = 0; i < srcLw;    i++) { srcLstr[i]  = '-'; } srcLstr[srcLw]     = '\0';
+
+  int h;
+
+  if (show_header) { 
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %3s %8s %8s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %*s %*s %-s\n",
+	    tnamew-1, "target name", taccw, "accession",  qnamew, "query name", qaccw, "accession", 
+	    "mdl", "mdl from", "mdl to", 
+	    posw, "seq from", posw, "seq to", "strand", "trunc", "pass", "gc", "bias", "score", "E-value", "inc", clenw, "mdl len", srcLw, "seq len", "description of target");
+    fprintf(ofp, "#%-*s %-*s %-*s %-*s %-3s %-7s %-7s %*s %*s %6s %5s %4s %4s %5s %6s %9s %3s %*s %*s %s\n",
+	    tnamew-1, tnamestr, taccw, taccstr, qnamew, qnamestr, qaccw, qaccstr, 
+	    "---", "--------", "--------", 
+	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", 
+            clenw, clenstr, srcLw, srcLstr, "---------------------");
+  }
+  for (h = 0; h < th->N; h++) { 
+    if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
+      //      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
+      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %*d %*" PRId64 " %s\n",
+	      tnamew, th->hit[h]->name,
+	      taccw,  ((th->hit[h]->acc != NULL && th->hit[h]->acc[0] != '\0') ? th->hit[h]->acc : "-"),
+	      qnamew, qname,
+	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
+	      th->hit[h]->hmmonly ? "hmm" : "cm",
+	      th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit,
+	      posw, th->hit[h]->start,
+	      posw, th->hit[h]->stop,
+	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
+	      cm_alidisplay_TruncString(th->hit[h]->ad), 
+	      th->hit[h]->pass_idx, 
+	      th->hit[h]->ad->gc,
+	      th->hit[h]->bias,
+	      th->hit[h]->score,
+	      th->hit[h]->evalue,
+	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? "!" : "?"),
+              clenw, th->hit[h]->ad->clen, srcLw, th->hit[h]->srcL, 
+	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
+    }
+  }
+  if(qnamestr != NULL) free(qnamestr);
+  if(tnamestr != NULL) free(tnamestr);
+  if(qaccstr  != NULL) free(qaccstr);
+  if(taccstr  != NULL) free(taccstr);
+  if(posstr   != NULL) free(posstr);
+  if(clenstr  != NULL) free(clenstr);
+  if(srcLstr  != NULL) free(srcLstr);
+
+  return eslOK;
+
+ ERROR:
+  if(qnamestr != NULL) free(qnamestr);
+  if(tnamestr != NULL) free(tnamestr);
+  if(qaccstr  != NULL) free(qaccstr);
+  if(taccstr  != NULL) free(taccstr);
+  if(posstr   != NULL) free(posstr);
+  if(clenstr  != NULL) free(clenstr);
+  if(srcLstr  != NULL) free(srcLstr);
+
+  return status;
+}
 
 /* Function:  cm_tophits_F3TabularTargets1()
  * Synopsis:  Output format for a top target hits list in special

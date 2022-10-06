@@ -123,7 +123,7 @@ static ESL_OPTIONS options[] = {
   /* Control of output */
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
-  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=2",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
+  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
@@ -357,6 +357,11 @@ main(int argc, char **argv)
   FLogsumInit();
   p7_FLogsumInit();		/* we're going to use table-driven Logsum() approximations at times */
   process_commandline(argc, argv, &go, &cfg.cmfile, &cfg.seqfile);    
+
+  /* enforce incompatible option combos too complex for ESL_GETOPTS */
+  if((esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+    cm_Fail("--fmt 3 doesn't make sense in combination with --trmF3");
+  }
 
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
@@ -711,6 +716,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
             esl_fatal(errbuf);
           }
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          if(tinfo[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, tinfo[0].th, tinfo[0].pli, (seq_idx == 1)); 
+          else                        cm_tophits_TabularTargets3  (tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1));
+          // --fmt 3 and --trmF3 are actually incompatible
         }
       }
       esl_stopwatch_Stop(w);

@@ -3031,6 +3031,7 @@ extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used
 extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
 extern int cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, ESL_KEYHASH *clan_name_kh, int skip_overlaps, char *errbuf);
+extern int cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_F3TabularTargets1(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
