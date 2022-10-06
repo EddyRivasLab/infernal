@@ -491,6 +491,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   return eslOK;
 
  ERROR: 
+  fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
   cm->tau = save_tau;
   if(cm->cp9b != NULL) { 
     cm->cp9b->thresh1 = save_thresh1;
