@@ -358,11 +358,6 @@ main(int argc, char **argv)
   p7_FLogsumInit();		/* we're going to use table-driven Logsum() approximations at times */
   process_commandline(argc, argv, &go, &cfg.cmfile, &cfg.seqfile);    
 
-  /* enforce incompatible option combos too complex for ESL_GETOPTS */
-  if((esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
-    cm_Fail("--fmt 3 doesn't make sense in combination with --trmF3");
-  }
-
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
    */
@@ -2119,13 +2114,13 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
     else if(esl_opt_IsUsed(go, "--beta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	printf("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+	puts("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
 	goto ERROR;
       }
     }
     else if(esl_opt_IsUsed(go, "--fbeta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	printf("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
+	puts("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
 	goto ERROR;
       }
     }
@@ -2137,15 +2132,21 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    */
   if(esl_opt_IsUsed(go, "--clanin")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      printf("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
+      puts("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
       goto ERROR;  
     }
   }
   if(esl_opt_IsUsed(go, "--oclan")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      printf("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
+      puts("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
       goto ERROR;  
     }
+  }
+
+  /* enforce incompatible option combos too complex for ESL_GETOPTS */
+  if((esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+    puts("--fmt 3 doesn't make sense in combination with --trmF3");
+    goto ERROR;
   }
 
   /* Finally, check for incompatible option combinations I *do* know

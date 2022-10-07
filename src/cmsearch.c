@@ -385,14 +385,6 @@ main(int argc, char **argv)
   p7_FLogsumInit();        /* we're going to use table-driven Logsum() approximations at times */
   process_commandline(argc, argv, &go, &cfg.cmfile, &cfg.dbfile);    
 
-  /* enforce incompatible option combos too complex for ESL_GETOPTS */
-  if((esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
-    cm_Fail("--fmt 3 doesn't make sense in combination with --trmF3");
-  }
-  if(esl_opt_GetInteger(go, "--fmt") == 2) { 
-    cm_Fail("--fmt 3 only makes sense with cmscan, because cmsearch can't determine overlaps");
-  }
-
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
    */
@@ -1819,16 +1811,25 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
     else if(esl_opt_IsUsed(go, "--beta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	printf("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+	puts("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
 	goto ERROR;
       }
     }
     else if(esl_opt_IsUsed(go, "--fbeta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	printf("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
+	puts("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
 	goto ERROR;
       }
     }
+  }
+
+  if((esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+    puts("--fmt 3 doesn't make sense in combination with --trmF3");
+    goto ERROR;
+  }
+  if(esl_opt_GetInteger(go, "--fmt") == 2) { 
+    puts("--fmt 3 only makes sense with cmscan, because cmsearch can't determine overlaps");
+    goto ERROR;
   }
 
   /* Finally, check for incompatible option combinations I *do* know
