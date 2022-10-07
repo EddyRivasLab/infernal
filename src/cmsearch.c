@@ -100,7 +100,7 @@ static ESL_OPTIONS options[] = {
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "-A",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save multiple alignment of all significant hits to file <s>",  2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
-  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
+  { "--fmt",        eslARG_INT,      "1", NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
