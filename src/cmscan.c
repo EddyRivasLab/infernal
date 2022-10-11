@@ -123,7 +123,7 @@ static ESL_OPTIONS options[] = {
   /* Control of output */
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
-  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=2",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
+  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
@@ -711,6 +711,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
             esl_fatal(errbuf);
           }
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          if(tinfo[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, tinfo[0].th, tinfo[0].pli, (seq_idx == 1)); 
+          else                        cm_tophits_TabularTargets3  (tblfp, qsq->name, qsq->acc, tinfo[0].th, tinfo[0].pli, (seq_idx == 1));
+          // --fmt 3 and --trmF3 are actually incompatible
         }
       }
       esl_stopwatch_Stop(w);
@@ -1552,7 +1557,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fprintf(ofp, "\n\n");
 	}
       }
-      
+
       if (tblfp != NULL) { 
         if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
           if(pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, th, pli, (seq_idx == 1)); 
@@ -1562,6 +1567,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           if((status = cm_tophits_TabularTargets2(tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1), clan_name_kh, esl_opt_GetBoolean(go, "--oskip"), errbuf)) != eslOK) { 
             mpi_failure(errbuf);
           }
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          if(pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, th, pli, (seq_idx == 1)); 
+          else               cm_tophits_TabularTargets3  (tblfp, qsq->name, qsq->acc, th, pli, (seq_idx == 1));
+          // --fmt 3 and --trmF3 are actually incompatible
         }
       }
 
@@ -2116,21 +2126,33 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
-  /* '--clanin' and '--oclan' only make sense with '--fmt 2',
+  /* '--clanin', '--oclan', and '--oskip' only make sense with '--fmt 2',
    * esl_getopts enforces --fmt is used, but not necessarily
    * with '2' as the argument. 
    */
   if(esl_opt_IsUsed(go, "--clanin")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      printf("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
+      puts("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
       goto ERROR;  
     }
   }
   if(esl_opt_IsUsed(go, "--oclan")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      printf("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
+      puts("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
       goto ERROR;  
     }
+  }
+  if(esl_opt_IsUsed(go, "--oskip")) { 
+    if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
+      puts("Failed to parse command line: with --oskip, the additional option of --fmt <n> is required with <n> == 2"); 
+      goto ERROR;  
+    }
+  }
+
+  /* --fmt 3 doesn't make sense with --trmF3 */
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+    puts("--fmt 3 doesn't make sense in combination with --trmF3");
+    goto ERROR;
   }
 
   /* Finally, check for incompatible option combinations I *do* know

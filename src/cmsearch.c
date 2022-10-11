@@ -100,6 +100,7 @@ static ESL_OPTIONS options[] = {
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "-A",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save multiple alignment of all significant hits to file <s>",  2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
+  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
@@ -689,8 +690,19 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
     if (tblfp != NULL) { 
-      if(info[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
-      else                       cm_tophits_TabularTargets1  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+      if(info[0].pli->do_trm_F3) { 
+        cm_tophits_F3TabularTargets1(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
+      }
+      else { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
+          cm_tophits_TabularTargets1  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          cm_tophits_TabularTargets3  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1));
+        }
+        // --fmt 2 causes early failure
+        // --fmt 3 and --trmF3 are actually incompatible
+      }
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -1365,8 +1377,19 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     if (tblfp != NULL) { 
-      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info->th, info->pli, (cm_idx == 1)); 
-      else                     cm_tophits_TabularTargets1(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+      if(info.pli->do_trm_F3) { 
+        cm_tophits_F3TabularTargets1(tblfp, info.th, info.pli, (cm_idx == 1)); 
+      }
+      else { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
+          cm_tophits_TabularTargets1  (tblfp, info.cm->name, info.cm->acc, info.th, info.pli, (cm_idx == 1)); 
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          cm_tophits_TabularTargets3  (tblfp, info.cm->name, info.cm->acc, info.th, info.pli, (cm_idx == 1));
+        }
+        // --fmt 2 causes early failure
+        // --fmt 3 and --trmF3 are actually incompatible
+      }
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -1798,6 +1821,15 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 	goto ERROR;
       }
     }
+  }
+
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+    puts("--fmt 3 doesn't make sense in combination with --trmF3");
+    goto ERROR;
+  }
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 2)) { 
+    puts("--fmt 3 only makes sense with cmscan, because cmsearch can't determine overlaps");
+    goto ERROR;
   }
 
   /* Finally, check for incompatible option combinations I *do* know
