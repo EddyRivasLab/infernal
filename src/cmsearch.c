@@ -100,7 +100,7 @@ static ESL_OPTIONS options[] = {
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "-A",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save multiple alignment of all significant hits to file <s>",  2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
-  { "--fmt",        eslARG_INT,      "1", NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
+  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
@@ -1811,23 +1811,23 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
     else if(esl_opt_IsUsed(go, "--beta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	puts("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+	printf("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
 	goto ERROR;
       }
     }
     else if(esl_opt_IsUsed(go, "--fbeta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	puts("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
+	printf("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
 	goto ERROR;
       }
     }
   }
 
-  if((esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
     puts("--fmt 3 doesn't make sense in combination with --trmF3");
     goto ERROR;
   }
-  if(esl_opt_GetInteger(go, "--fmt") == 2) { 
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 2)) { 
     puts("--fmt 3 only makes sense with cmscan, because cmsearch can't determine overlaps");
     goto ERROR;
   }
