@@ -105,6 +105,7 @@
 1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4       @src/cmsearch@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4F3     @src/cmsearch@ -Z 1000 --trmF3 --noali --hmmonly %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4f      @src/cmsearch@ -Z 1000 --fmt 3 --tblout %4.C.FMT3.TBLOUT% %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/zbp     @src/cmsearch@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
 1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.C.CM% !testsuite/1k-4.fa!
@@ -145,6 +146,7 @@
 1  exercise    scan/4C        @src/cmscan@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/4C     rm -f %4.C.CM%.*
 1  exercise    scan/5C        @src/cmscan@ --fmt 2 --tblout %5.C.TBLOUT% --oskip --oclan --clanin !testsuite/5.claninfo! -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    scan/5C3       @src/cmscan@ --fmt 3 --tblout %5.C.3.TBLOUT% -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    scan/5CF3      @src/cmscan@ --trmF3 --noali --hmmonly -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/5C     rm -f %5.C.CM%.*
 1  exercise    scan/se        @src/cmscan@ --hmmonly %SE.CM% !testsuite/se.fa!
