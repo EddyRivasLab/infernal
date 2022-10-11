@@ -3677,7 +3677,7 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
 	esl_vec_ICopy(mother_cm->itsc[mv], cm->cnum[v], cm->itsc[v]);
 #if eslDEBUGLEVEL >= 1
 	for(x = 0; x < cm->cnum[v]; x++) { 
-	  if(esl_FCompare(mother_cm->t[mv][x], cm->t[v][x], 1E-5) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "You've got it wrong, mother_cm->t[mv:%d][x:%d] %.3f != cm->t[v:%d][x:%d] %.3f\n", mv, x, mother_cm->t[mv][x], v, x, cm->t[v][x]);
+	  if(esl_FCompare_old(mother_cm->t[mv][x], cm->t[v][x], 1E-5) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "You've got it wrong, mother_cm->t[mv:%d][x:%d] %.3f != cm->t[v:%d][x:%d] %.3f\n", mv, x, mother_cm->t[mv][x], v, x, cm->t[v][x]);
 	}
 #endif
       }

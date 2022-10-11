@@ -62,6 +62,8 @@ typedef struct {
   int64_t           nhits;     /* number of hits in scA                   */
   float             cutoff;    /* minimum hit score to keep               */
   int               nequals;   /* number of '=' to print for current mode */
+  int               ipart;     /* partition index if --part, else -1      */
+  int               npart;     /* total num partitions if --part, else -1 */
 } WORKER_INFO;
 
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
@@ -91,19 +93,28 @@ static ESL_OPTIONS options[] = {
   { "--qqfile",     eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save Q-Q plot for score histograms to file <f>",        4 },
   { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
   { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
+  /* Options for split or partition or merge modes */
+  { "--split",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,"--ptot,--cfile",   "--forecast",   "prepare partitioned calibration",      5 },
+  { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,       "--split",   NULL,           "with --split, save file with commands for each partition to <f>", 5 },
+  { "--cbash",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,       "--cfile",   NULL,           "with --split, output commands as a bash for loop script", 5 },
+  { "--proot",      eslARG_STRING,     NULL, NULL,            NULL,      NULL,         NULL,   NULL,              "with --split or --merge, root for partition output files is <s>", 5 },
+  { "--part",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,"--ptot,--pfile",   NULL,           "this is partition number <n> (1..<n2> from --ptot <n2>)",      5 }, 
+  { "--ptot",       eslARG_INT,        NULL, NULL,           "n>0",      NULL,            NULL,   NULL,           "total number of partitions is <n>",  5 }, 
+  { "--pfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,        "--part",   "--split",      "with --part, save scores to file <f>", 5 },
+  { "--merge",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,        "--ptot",   "--forecast",   "merge scores from multiple partitions for calibration", 5 },
   /* Other options: */
-  { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         5 },
-  { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 5 },
-  { "--nonbanded",  eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,  "--beta", "do not use QDB",                                              5 },
-  { "--nonull3",    eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "turn OFF the NULL3 post hoc additional null model",           5 },
-  { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        5 },
-  { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   5 },
+  { "--seed",       eslARG_INT,       "181", NULL,          "n>=0",      NULL,         NULL,      NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)",         6 },
+  { "--beta",       eslARG_REAL,    "1E-15", NULL,           "x>0",      NULL,         NULL,      NULL, "set tail loss prob for query dependent banding (QDB) to <x>", 6 },
+  { "--nonbanded",  eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,  "--beta", "do not use QDB",                                              6 },
+  { "--nonull3",    eslARG_NONE,      FALSE, NULL,            NULL,      NULL,         NULL,      NULL, "turn OFF the NULL3 post hoc additional null model",           6 },
+  { "--random",     eslARG_NONE,       NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content of random null background model of CM",        6 },
+  { "--gc",         eslARG_INFILE,     NULL, NULL,            NULL,      NULL,         NULL,      NULL, "use GC content distribution from file <f>",                   6 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT,     NULL,"INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",            5 },
+  { "--cpu",        eslARG_INT, CMNCPU,  "INFERNAL_NCPU",   "n>=0",      NULL,         NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",      6 },
 #endif
 #ifdef HAVE_MPI
-  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    5 },  
-  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb",                   5 },  
+  { "--mpi",        eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,     MPIOPTS, "run as an MPI parallel program",                                    6 },  
+  { "--stall",      eslARG_NONE,    FALSE,  NULL,      NULL,      NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb",                   6 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -117,6 +128,7 @@ struct cfg_s {
   double            *gc_freq;            /* gc frequence [0..100], only used if --gc */
   ExpInfo_t       ***expAA;              /* the exponential tail info, 1st dim: 1 for each CM, 2nd dim: EXP_NMODES */
   char             **namesA;             /* names of all the CMs we'll calibrate */
+  char             **comlogsA;           /* comlog for each CM, only relevant if --merge */
   int                ncm;                /* what number CM we're on */
   int                cmalloc;            /* number of expAA we have allocated (1st dim) */
   char              *tmpfile;            /* tmp file we're writing to */
@@ -150,6 +162,9 @@ struct cfg_s {
   int              nproc;
   int              do_stall;          /* TRUE to stall the program until gdb attaches */
 
+  /* partition */
+  int              do_part;           /* TRUE if --part, we won't fit any histograms */
+
   /* Masters only (i/o streams) */
   CM_FILE         *cmfp;	      /* open input CM file stream       */
   FILE            *hfp;               /* optional output for exp tail histograms */
@@ -157,6 +172,8 @@ struct cfg_s {
   FILE            *qfp;               /* optional output for exp tail QQ file */
   FILE            *ffp;               /* optional output for exp tail fit file */
   FILE            *xfp;               /* optional output for exp tail fit scores */
+  FILE            *cfp;               /* optional output for commands in split mode */
+  FILE            *pfp;               /* optional output for scores files with --part mode */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -184,7 +201,7 @@ static void mpi_failure  (char *format, ...);
 
 /* Functions to avoid code duplication for common tasks */
 static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile);
-static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus, int ncpus);
+static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus, int ncpus);
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int do_local);
@@ -192,16 +209,17 @@ static int  initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_RANDOMNESS *r, ESL_DSQ **ret_dsq);
 static int  set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf);
-static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus);
+static void print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int relevant_ncpus);
 static void print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec);
 static void print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec);
 static void print_summary(const struct cfg_s *cfg);
 static int  expand_exp_and_name_arrays(struct cfg_s *cfg);
-static int  generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
+static int  generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block);
 static int  process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
-static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk);
+static int  forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk);
 static void print_required_memory(CM_t *cm, int L, int N, int ncpus, int do_header, int do_nonbanded);
 static void print_required_memory_tail(int ncpus);
+static int  read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA);
 
 int
 main(int argc, char **argv)
@@ -215,7 +233,18 @@ main(int argc, char **argv)
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
-  
+
+  /* variables related to --split and --part */
+  int  do_split;    /* is --split used? */
+  int  npart;       /* value from --ptot */
+  int  do_part;     /* is --part used? */
+  CM_t *cm = NULL;  /* the CM, only filled if --split */
+
+  /* variables used if do_split to recreate options string */
+  char *cmdopt = NULL; /* command line string */
+  int optlen = 0;      /* length of option string */
+  int n      = 0;      /* token length */
+
   /* Set processor specific flags */
   impl_Init();
 
@@ -226,6 +255,7 @@ main(int argc, char **argv)
   cfg.nproc        = 0;                   /* this gets reset below, if we init MPI */
   cfg.my_rank      = 0;                   /* this gets reset below, if we init MPI */
   cfg.r            = NULL; 
+  cfg.r_est        = NULL; 
   cfg.abc          = NULL; 
   cfg.w            = NULL; 
   cfg.cmalloc      = 128;
@@ -246,11 +276,15 @@ main(int argc, char **argv)
   cfg.qfp          = NULL; /* remains NULL for mpi workers */
   cfg.ffp          = NULL; /* remains NULL for mpi workers */
   cfg.xfp          = NULL; /* remains NULL for mpi workers */
+  cfg.cfp          = NULL; /* remains NULL for mpi workers */
+  cfg.pfp          = NULL; /* remains NULL for mpi workers */
 
-  ESL_ALLOC(cfg.expAA,  sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
-  ESL_ALLOC(cfg.namesA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.expAA,    sizeof(ExpInfo_t **) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.namesA,   sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
+  ESL_ALLOC(cfg.comlogsA, sizeof(char       *) * cfg.cmalloc); /* this will grow if needed */
   for(i = 0; i < cfg.cmalloc; i++) cfg.expAA[i]  = NULL; 
   for(i = 0; i < cfg.cmalloc; i++) cfg.namesA[i] = NULL; 
+  for(i = 0; i < cfg.cmalloc; i++) cfg.comlogsA[i] = NULL; 
 
   ESL_DASSERT1((EXP_CM_GC  == 0));
   ESL_DASSERT1((EXP_CM_GI  == 1));
@@ -264,45 +298,137 @@ main(int argc, char **argv)
   process_commandline(argc, argv, &go, &(cfg.cmfile));
   cfg.N = (int) (((esl_opt_GetReal(go, "-L") * 1000000.) / (float) cfg.L) + 0.5);
 
-  /* Figure out who we are, and send control there: 
-   * we might be an MPI master, an MPI worker, or a serial program.
-   */
+  /* If --part, open --pfile file */
+  do_part = esl_opt_IsUsed(go, "--part") ? TRUE : FALSE;
+  if(do_part) { 
+    if (esl_opt_GetString(go, "--pfile") != NULL) {
+      if ((cfg.pfp = fopen(esl_opt_GetString(go, "--pfile"), "w")) == NULL) {
+        ESL_FAIL(eslFAIL, errbuf, "Failed to open partition score file %s for writing\n", esl_opt_GetString(go, "--pfile"));
+      }
+    }
+    else { 
+      ESL_FAIL(eslFAIL, errbuf, "--pfile is required in combination with --part\n");
+    }
+  }
+
+  /* Deal with --split if nec */
+  do_split = esl_opt_GetBoolean(go, "--split");
+  if(do_split) { 
+    npart = esl_opt_GetInteger(go, "--ptot");
+    if(cfg.N < npart) { 
+      ESL_FAIL(eslFAIL, errbuf, "Trying to split into %d partitions, but only have %d sequences, retry with <= %d partitions\n", npart, cfg.N, cfg.N);
+    }
+    if (esl_opt_GetString(go, "--cfile") != NULL) {
+      if ((cfg.cfp = fopen(esl_opt_GetString(go, "--cfile"), "w")) == NULL)
+        ESL_FAIL(eslFAIL, errbuf, "Failed to open command file %s for writing\n", esl_opt_GetString(go, "--cfile"));
+    }
+    else { 
+      ESL_FAIL(eslFAIL, errbuf, "--cfile is required in combination with --split\n");
+    }
+
+    /* make sure the CM file exists and we can read it */
+    /* open CM file */
+    if((status = cm_file_Open(cfg.cmfile, NULL, FALSE, &(cfg.cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail(cfg.cmfp->errbuf);
+    if(cm != NULL) FreeCM(cm);
+
+    output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
+    /* get command line options, code adapted from esl_opt_SpoofCmdline */
+    /* Application name/path */
+    optlen = strlen(go->argv[0]) + 1;
+    ESL_ALLOC(cmdopt, sizeof(char) * (optlen+1));
+    sprintf(cmdopt, "%s ", go->argv[0]);
+    for (i = 0; i < go->nopts; i++) {
+      /* skip --split, --cfile, --proot, --cbash options */
+      if((strcmp(go->opt[i].name, "--split") != 0) && 
+         (strcmp(go->opt[i].name, "--cfile") != 0) && 
+         (strcmp(go->opt[i].name, "--cbash") != 0) && 
+         (strcmp(go->opt[i].name, "--proot"))) { 
+        if (go->setby[i] != eslARG_SETBY_DEFAULT) {
+          if (go->opt[i].type == eslARG_NONE) n = strlen(go->opt[i].name) + 1;
+          else                                n = (strlen(go->opt[i].name) + strlen(go->val[i])) + 2;
+          ESL_REALLOC(cmdopt, sizeof(char) * (optlen + n + 1));
+          
+          if (go->opt[i].type == eslARG_NONE) sprintf(cmdopt + optlen, "%s ",    go->opt[i].name);
+          else                                sprintf(cmdopt + optlen, "%s %s ", go->opt[i].name, go->val[i]);
+          
+          optlen += n;
+        }
+      }
+    }
+
+    if(esl_opt_GetBoolean(go, "--cbash")) { 
+      fprintf(cfg.cfp, "# !/bin/bash\n");
+      fprintf(cfg.cfp, "for ((i = 1; i <= %d; i++)); do\n", esl_opt_GetInteger(go, "--ptot"));
+      fprintf(cfg.cfp, "  %s--part $i --pfile %s.%s$i %s\n", 
+              cmdopt,  /* executable and options, will include --ptot */
+              esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg.cmfile, /* root of output file */
+              esl_opt_IsUsed(go, "--proot") ? ""                               : "calib.",   /* "calib." unless --proot used */
+              cfg.cmfile); /* cm file name */
+      fprintf(cfg.cfp, "done\n");
+    }
+    else { /* --cbash not used, list each command on separate line */
+      for(i = 1; i <= npart; i++) { 
+        fprintf(cfg.cfp, "%s--part %d --pfile %s.%s%d %s\n", 
+                cmdopt,  /* executable and options, will include --ptot */
+                i, 
+                esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg.cmfile, /* root of output file */
+                esl_opt_IsUsed(go, "--proot") ? ""                               : "calib.",   /* "calib." unless --proot used */
+                i,       /* index of this partition */
+                cfg.cmfile); /* cm file name */
+      }
+    }
+  }
+  else { /* ! do_split */
+    /* Figure out who we are, and send control there: 
+     * we might be an MPI master, an MPI worker, or a serial program.
+     */
 #ifdef HAVE_MPI
-
+    
 #if eslDEBUGLEVEL >= 1
-  pid_t pid;
-  pid = getpid();
-  printf("#DEBUG: The process id is %d\n", pid);
-  fflush(stdout);
+    pid_t pid;
+    pid = getpid();
+    printf("#DEBUG: The process id is %d\n", pid);
+    fflush(stdout);
 #endif
+    
+    /* pause the execution of the programs execution until the user has a
+     * chance to attach with a debugger and send a signal to resume execution
+     * i.e. (gdb) signal SIGCONT
+     */
+    if (esl_opt_GetBoolean(go, "--stall")) pause();
+    
+    if (esl_opt_GetBoolean(go, "--mpi")) 
+      {
+        /* make sure --part is not used (they're not set as incompatible because --mpi is not always a valid option) */
+        if(esl_opt_IsUsed(go, "--part")) { 
+          cm_Fail("--part and --mpi are incompatible, rerun cmcalibrate --split without --mpi");
+        }
 
-  /* pause the execution of the programs execution until the user has a
-   * chance to attach with a debugger and send a signal to resume execution
-   * i.e. (gdb) signal SIGCONT
-   */
-  if (esl_opt_GetBoolean(go, "--stall")) pause();
-
-  if (esl_opt_GetBoolean(go, "--mpi")) 
-    {
-      cfg.do_mpi     = TRUE;
-      MPI_Init(&argc, &argv);
-      MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
-      MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
-
-      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
-
-      if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
-      else 		    status = mpi_master(go, &cfg);
-
-      MPI_Finalize();
-    }
-  else
+        cfg.do_mpi     = TRUE;
+        MPI_Init(&argc, &argv);
+        MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
+        MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
+        
+        if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
+        
+        if (cfg.my_rank > 0)  status = mpi_worker(go, &cfg);
+        else 	  	      status = mpi_master(go, &cfg);
+        
+        MPI_Finalize();
+      }
+    else
 #endif /*HAVE_MPI*/
-    {
-      serial_master(go, &cfg);
-    }
+      {
+        serial_master(go, &cfg);
+      }
+  } /* end of 'else' entered if !do_split */
+  if(cfg.my_rank == 0 && 
+     (! esl_opt_IsUsed(go, "--forecast")) && 
+     (! esl_opt_IsUsed(go, "--memreq"))   && 
+     (! do_split)                         && 
+     (! do_part)) { /* master, serial or mpi (not --split and not --part) */
 
-  if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) { /* master, serial or mpi */
     /* before writing new CM file, output summary statistics (this requires cfg->expAA) */
     print_summary(&cfg);
 
@@ -325,11 +451,20 @@ main(int argc, char **argv)
       if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
       if(cm->expA != NULL) { 
-	for(i = 0; i < EXP_NMODES; i++)  free(cm->expA[i]); free(cm->expA);
+	for(i = 0; i < EXP_NMODES; i++) {
+          free(cm->expA[i]);
+        }
+        free(cm->expA);
       }
 
       cm->expA   = cfg.expAA[cmi];
       cm->flags |= CMH_EXPTAIL_STATS; 
+
+      if(esl_opt_GetBoolean(go, "--merge")) { 
+        status = esl_strcat(&cm->comlog, -1, "\n", -1);
+        status = esl_strcat(&cm->comlog, -1, cfg.comlogsA[cmi], -1);
+        if(status != eslOK) cm_Fail("Problem copying comlog from partition score files to CM file");
+      }
 
       cm_AppendComlog(cm, go->argc, go->argv, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
 
@@ -359,7 +494,7 @@ main(int argc, char **argv)
     cfg.tmpfile = NULL;
     
     /* master specific cleaning */
-    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp) printf("#\n");
+    if (cfg.hfp || cfg.sfp || cfg.qfp || cfg.ffp || cfg.xfp || cfg.cfp) printf("#\n");
 
     if (cfg.hfp   != NULL) { 
       fclose(cfg.hfp);
@@ -382,22 +517,46 @@ main(int argc, char **argv)
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
     }
 
-    if (cfg.expAA   != NULL) free(cfg.expAA);
-    if (cfg.namesA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
-  } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq"))) */
-  else { /* non-master or --forecast or --memreq-specific cleaning */
-    if (cfg.cmfp   != NULL) cm_file_Close(cfg.cmfp);
-    if (cfg.expAA  != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]  != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
-    if (cfg.namesA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i] != NULL) free(cfg.namesA[i]); free(cfg.namesA); }
+    if (cfg.expAA    != NULL) free(cfg.expAA);
+    if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
+    if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
+  } /* end of if(cfg.my_rank == 0 && (! esl_opt_IsUsed(go, "--forecast")) && (! esl_opt_IsUsed(go, "--memreq")) && (! do_split)) */
+  else { /* non-master, --forecast, --memreq, --part and --split -specific cleaning */
+    if (cfg.cmfp     != NULL) cm_file_Close(cfg.cmfp);
+    if (cfg.expAA    != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]    != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
+    if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
+    if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
+
+    if (cfg.pfp   != NULL) { 
+      fclose(cfg.pfp);
+      printf("# Scores for this partition for later merge saved to file %s.\n", esl_opt_GetString(go, "--pfile"));
+    }
+    if (cfg.cfp   != NULL) { 
+      fclose(cfg.cfp);
+      printf("# List of commands for each partition saved to file %s.\n", esl_opt_GetString(go, "--cfile"));
+      printf("#\n");
+      printf("# Command to merge per-partition scores after all commands are finished:\n");
+      printf("# %s --merge --ptot %d %s%s%s%s\n", 
+             go->argv[0],                      /* cmcalibrate command */
+             esl_opt_GetInteger(go, "--ptot"), /* --ptot <n> option   */
+             esl_opt_IsUsed(go, "--proot") ? "--proot " : "", 
+             esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : "", 
+             esl_opt_IsUsed(go, "--proot") ? " " : "",
+             cfg.cmfile);
+    }
   }
 
   /* clean up */
-  if (cfg.abc     != NULL) esl_alphabet_Destroy(cfg.abc);
-  if (cfg.w       != NULL) esl_stopwatch_Destroy(cfg.w);
-  if (cfg.r       != NULL) esl_randomness_Destroy(cfg.r);
-  if (cfg.r_est   != NULL) esl_randomness_Destroy(cfg.r_est);
-  if (cfg.tmpfile != NULL) free(cfg.tmpfile);
-  if (cfg.dnull   != NULL) free(cfg.dnull);
+  if (cfg.abc      != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.w        != NULL) esl_stopwatch_Destroy(cfg.w);
+  if (cfg.r        != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.r_est    != NULL) esl_randomness_Destroy(cfg.r_est);
+  if (cfg.tmpfile  != NULL) free(cfg.tmpfile);
+  if (cfg.dnull    != NULL) free(cfg.dnull);
+  if (cfg.ghmm_sA  != NULL) free(cfg.ghmm_sA);
+  if (cfg.ghmm_tAA != NULL) { for(i = 0; i < cfg.ghmm_nstates; i++) if(cfg.ghmm_tAA[i] != NULL) free(cfg.ghmm_tAA[i]); free(cfg.ghmm_tAA); }
+  if (cfg.ghmm_eAA != NULL) { for(i = 0; i < cfg.ghmm_nstates; i++) if(cfg.ghmm_eAA[i] != NULL) free(cfg.ghmm_eAA[i]); free(cfg.ghmm_eAA); }
+  if (cmdopt       != NULL) free(cmdopt);
 
   esl_stopwatch_Stop(w);
   if (cfg.my_rank == 0) { 
@@ -405,15 +564,6 @@ main(int argc, char **argv)
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
     printf("[ok]\n");
   }
-  if(cfg.ghmm_eAA != NULL) { 
-    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_eAA[i]); 
-    free(cfg.ghmm_eAA);
-  }
-  if(cfg.ghmm_tAA != NULL) { 
-    for(i = 0; i < cfg.ghmm_nstates; i++) free(cfg.ghmm_tAA[i]); 
-    free(cfg.ghmm_tAA);
-  }
-  if(cfg.ghmm_sA != NULL) free(cfg.ghmm_sA);
 
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
@@ -452,8 +602,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting exp tails */
   int      tmp_nrandhits;         /* temporary number of rand hits found */
   float    tmp_tailp;             /* temporary tail mass probability fit to an exponential */
-  int      available_ncpus = 1;   /* number of CPUs available */
+  int      relevant_ncpus = 1;    /* number of CPUs being used or would be used if --forecast or --memreq not used */
   ESL_SQ_BLOCK *sq_block  = NULL; /* block of sequences */
+
+  /* variables related to --merge */
+  int        do_merge;              /* TRUE if --merge, else FALSE */
+  int64_t   *pmerged_nhitsA = NULL; /* [0..EXP_NMODES-1] number of hits reported for all seqs for each exp mode, read from input score files from each partition */
+  float    **pmerged_scAA = NULL;   /* [0..EXP_NMODES-1][0..merged_nhits-1] hit scores for all seqs for each exp mode */
 
   /* variables needed for threaded implementation */
   ESL_SQ         **init_sqA  = NULL; /* for initializing workers */
@@ -463,33 +618,36 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_THREADS     *threadObj = NULL;
   ESL_WORK_QUEUE  *queue     = NULL;
 #endif
-  
+
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
   if      (esl_opt_IsUsed(go, "--forecast")) ncpus = 0;
   else if (esl_opt_IsUsed(go, "--memreq"))   ncpus = 0;
-  else if (esl_opt_IsOn  (go, "--cpu"))      ncpus = esl_opt_GetInteger(go, "--cpu");
-  else                                       esl_threads_CPUCount(&ncpus);
+  else                                       ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
   if (ncpus > 0) {
       threadObj = esl_threads_Create(&pipeline_thread);
       queue = esl_workqueue_Create(ncpus * 2);
   }
-  esl_threads_CPUCount(&available_ncpus);
+  relevant_ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
 
   infocnt = (ncpus == 0) ? 1 : ncpus;
   ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
+
+  do_merge = esl_opt_GetBoolean(go, "--merge");
 
   /* <cfg->abc> is not known 'til first CM is read. Could be DNA or RNA*/
   qhstatus = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile, available_ncpus, ncpus);
+    output_header(stdout, go, cfg->cmfile, relevant_ncpus, ncpus);
 
-    if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    if(! do_merge) { 
+      if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
+    }
     if((status = set_dnull(cfg, cm, errbuf)) != eslOK) cm_Fail("unable to create set_dnull\n%s\n", errbuf);
     
     for (i = 0; i < infocnt; ++i)    {
@@ -518,115 +676,166 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   while (qhstatus == eslOK) {
     cfg->ncm++;
     cmi = cfg->ncm-1;
-    if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, available_ncpus);
-    if((status = expand_exp_and_name_arrays(cfg))                              != eslOK) cm_Fail("out of memory");
-    if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi])))                != eslOK) cm_Fail("unable to duplicate CM name");
+    if(cmi == 0 && (! esl_opt_IsUsed(go, "--memreq"))) print_calibration_column_headings(go, cfg, errbuf, cm, relevant_ncpus);
+    if((status = expand_exp_and_name_arrays(cfg))               != eslOK) cm_Fail("out of memory");
+    if((status = esl_strdup(cm->name, -1, &(cfg->namesA[cmi]))) != eslOK) cm_Fail("unable to duplicate CM name");
 
+    if(cfg->pfp != NULL) { /* --part and --pfile used, partition mode: output command to pfp */
+      /* output command line, when cmcalibrate is called with --merge this will be added to CM file */
+      for (i = 0; i < go->argc-1; i++) { 
+        fprintf(cfg->pfp, "%s ", go->argv[i]);
+      }
+      fprintf(cfg->pfp, "%s\n", go->argv[(go->argc-1)]);
+    }
     /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
-    if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+    if(! do_merge) { 
+      if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
+    }
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
 
     if(esl_opt_IsUsed(go, "--memreq")) { /* special case: if --memreq, print required memory and skip to reading next CM */
-      print_required_memory(cm, cfg->L, cfg->N, available_ncpus, (cmi == 0) ? TRUE : FALSE, esl_opt_IsUsed(go, "--nonbanded"));
+      print_required_memory(cm, cfg->L, cfg->N, relevant_ncpus, (cmi == 0) ? TRUE : FALSE, esl_opt_IsUsed(go, "--nonbanded"));
     }
     else { /* normal case */
       if((status = initialize_stats(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-      if(! esl_opt_GetBoolean(go, "--noforecast")) { 
-        if((status = forecast_time(go, cfg, errbuf, cm, ncpus, available_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
+      if((! esl_opt_GetBoolean(go, "--noforecast")) && (! do_merge)) { 
+        if((status = forecast_time(go, cfg, errbuf, cm, ncpus, relevant_ncpus, &psec, &ins_v_cyk)) != eslOK) cm_Fail(errbuf); 
       }
       else { 
         psec = 0.;
         ins_v_cyk = INS_V_CYK_GUESS;
       }
       total_psec += psec;
-      print_forecasted_time(go, cfg, errbuf, cm, psec);
-      
-      if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block))           != eslOK) cm_Fail(errbuf);
-      
+      if(! do_merge) { 
+        print_forecasted_time(go, cfg, errbuf, cm, psec);
+      }
+
+      if(do_merge) { /* open the scores files, read the scores for this CM, then close the files */
+        if((status = read_partition_scores_files_for_one_cm(go, cfg, errbuf, cm, cmi, &pmerged_scAA, &pmerged_nhitsA)) != eslOK) cm_Fail(errbuf);
+      }
+      else { /* ! do_merge, normal case, generate sequences to use for calibration */
+        if((status = generate_sequences(go, cfg, errbuf, cm, &sq_block)) != eslOK) cm_Fail(errbuf);
+      }
+
       if(! esl_opt_IsUsed(go, "--forecast")) { 
-	esl_stopwatch_Start(cfg->w);
-	for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-
-	  /* clone CM for each worker, do this here so --forecast and --memreq don't do it */
-	  if(exp_mode == 0) { 
-	    for (i = 0; i < infocnt; i++) {
-	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	    }
-	  }
-
-	  /* do we need to switch from global configuration to local? */
-	  if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
-	    /* switch from global to local by copying the current exptail stats from <cm>
-	     * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
-	     * way because as a rule we don't allow reconfiguration of CMs (to limit
-	     * execution paths through configuration functions)
-	     */
-	    FreeCM(cm);
-	    cm = nc_cm;
-	    if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
-	    for (i = 0; i < infocnt; i++) {
-	      if(info[i].cm  != NULL) { FreeCM(info[i].cm); info[i].cm = NULL; } 
-	      if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
-	    }
-	  }
-	  /* set search_opts and determine how many '=' to print to status bar for this mode, 
-	   * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
-	   */
-	  if(ExpModeIsInside(exp_mode)) { 
-	    cm->search_opts |= CM_SEARCH_INSIDE; 
-	    for (i = 0; i < infocnt; i++) info[i].cm->search_opts |= CM_SEARCH_INSIDE;
-	    nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  else { 
-	    cm->search_opts &= ~CM_SEARCH_INSIDE; 
-	    for (i = 0; i < infocnt; i++) info[i].cm->search_opts &= ~CM_SEARCH_INSIDE;
-	    nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
-	  }
-	  fflush(stdout);
-	  
-	  /* initialize worker info */
-	  for (i = 0; i < infocnt; ++i) {
-	    if(info[i].scA != NULL) free(info[i].scA);
-	    info[i].scA     = NULL;
-	    info[i].nhits   = 0;
-	    info[i].cutoff  = cfg->sc_cutoff;
-	    info[i].nequals = nequals;
+        esl_stopwatch_Start(cfg->w);
+        for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+          if(! do_merge) { /* we don't do the searches if --merge */
+            /* clone CM for each worker, do this here so --forecast and --memreq don't do it */
+            if(exp_mode == 0) { 
+              for (i = 0; i < infocnt; i++) {
+                if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+              }
+            }
+            
+            /* do we need to switch from global configuration to local? */
+            if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
+              /* switch from global to local by copying the current exptail stats from <cm>
+               * into <nc_cm> and then configure <nc_cm> for local mode. We do it this
+               * way because as a rule we don't allow reconfiguration of CMs (to limit
+               * execution paths through configuration functions)
+               */
+              FreeCM(cm);
+              cm = nc_cm;
+              if((status = initialize_cm(go, cfg, errbuf, cm, TRUE)) != eslOK) cm_Fail(errbuf);
+              for (i = 0; i < infocnt; i++) {
+                if(info[i].cm  != NULL) { FreeCM(info[i].cm); info[i].cm = NULL; } 
+                if((status = cm_Clone(cm, errbuf, &(info[i].cm))) != eslOK) cm_Fail(errbuf);
+              }
+            }
+            /* set search_opts and determine how many '=' to print to status bar for this mode, 
+             * there is space for 20 '=' for glocal (cyk + ins) and 20 '=' for local (cyk + ins)
+             */
+            if(ExpModeIsInside(exp_mode)) { 
+              cm->search_opts |= CM_SEARCH_INSIDE; 
+              for (i = 0; i < infocnt; i++) info[i].cm->search_opts |= CM_SEARCH_INSIDE;
+              nequals = 20 - (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+            }
+            else { 
+              cm->search_opts &= ~CM_SEARCH_INSIDE; 
+              for (i = 0; i < infocnt; i++) info[i].cm->search_opts &= ~CM_SEARCH_INSIDE;
+              nequals = (int) ((20. / (float) (ins_v_cyk+1)) + 0.5); /* round up */
+            }
+            fflush(stdout);
+            
+            /* initialize worker info */
+            for (i = 0; i < infocnt; ++i) {
+              if(info[i].scA != NULL) free(info[i].scA);
+              info[i].scA     = NULL;
+              info[i].nhits   = 0;
+              info[i].cutoff  = cfg->sc_cutoff;
+              info[i].nequals = nequals;
+              info[i].ipart   = esl_opt_IsUsed(go, "--part") ? esl_opt_GetInteger(go, "--part") : -1;
+              info[i].npart   = esl_opt_IsUsed(go, "--ptot") ? esl_opt_GetInteger(go, "--ptot") : -1;
 #ifdef HMMER_THREADS
-	    if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
+              if (ncpus > 0) esl_threads_AddThread(threadObj, &info[i]);
 #endif
-	  }
-	  
+            }
+            
 #ifdef HMMER_THREADS
-	  if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
-	  else            status = serial_loop(info, errbuf, sq_block);
+            if (ncpus > 0)  status = thread_loop(info, errbuf, threadObj, queue, sq_block);
+            else            status = serial_loop(info, errbuf, sq_block);
 #else
-	  status = serial_loop(info, errbuf, sq_block);
+            status = serial_loop(info, errbuf, sq_block);
 #endif
-	  if(status != eslOK) cm_Fail(errbuf);
-	  
-	  merged_nhits = 0;
-	  for (i = 0; i < infocnt; ++i) {
-	    if(info[i].nhits > 0) { 
-	      ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
-	      for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
-	      merged_nhits += info[i].nhits;
-	    }
-	  }
-	  
+            if(status != eslOK) cm_Fail(errbuf);
+
+            merged_nhits = 0;
+            for (i = 0; i < infocnt; ++i) {
+              if(info[i].nhits > 0) { 
+                ESL_REALLOC(merged_scA, sizeof(float) * (merged_nhits + info[i].nhits)); /* this works even if merged_scA == NULL */
+                for(h = 0; h < info[i].nhits; h++) merged_scA[(merged_nhits+h)] = info[i].scA[h];
+                merged_nhits += info[i].nhits;
+              }
+            }
+          } /* end of 'if(! do_merge)' */
+
 	  if(cfg->ffp != NULL) { 
 	    fprintf(cfg->ffp, "# CM: %s\n", cm->name);
 	    fprintf(cfg->ffp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
-	  if((status = fit_histogram(go, cfg, errbuf, merged_scA, merged_nhits, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
-	  if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
 
+          if(cfg->pfp != NULL) { /* --part and --pfile used, partition mode: output scores to pfp and don't fit histogram */
+            fprintf(cfg->pfp, "%" PRId64 "", merged_nhits);
+            for(i = 0; i < merged_nhits; i++) { 
+              fprintf(cfg->pfp, " %.5f", merged_scA[i]);
+            }
+            fprintf(cfg->pfp, "\n");
+          }
+          else { /* normal mode (cfg->pfp is NULL, so --part now used), fit the histogram */
+            if((status = fit_histogram(go, cfg, errbuf, 
+                                       ((do_merge) ? pmerged_scAA[exp_mode]   : merged_scA), 
+                                       ((do_merge) ? pmerged_nhitsA[exp_mode] : merged_nhits),
+                                       exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+            SetExpInfo(cfg->expAA[cmi][exp_mode], tmp_lambda, tmp_mu, (double) (cfg->L * cfg->N), tmp_nrandhits, tmp_tailp);
+          }
+          if(merged_scA != NULL) { free(merged_scA); merged_scA = NULL; }
 	} /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
+
+        /* free pmerged* data only after all exp_modes are done, b/c
+         * they were read all at once prior to the for(exp_mode...)
+         * loop that ends above 
+         */
+        if(pmerged_scAA != NULL) { 
+          for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++)
+            if(pmerged_scAA[exp_mode] != NULL) { 
+              free(pmerged_scAA[exp_mode]); 
+              pmerged_scAA[exp_mode] = NULL;
+            }
+          free(pmerged_scAA); 
+          pmerged_scAA = NULL;
+        }
+        if(pmerged_nhitsA != NULL) { 
+          free(pmerged_nhitsA);
+          pmerged_nhitsA = NULL;
+        }
 	
 	esl_stopwatch_Stop(cfg->w);
 	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-	printf("]  %12s\n", time_buf);
-	fflush(stdout);
+        if(! do_merge) { 
+          printf("]  %12s\n", time_buf);
+          fflush(stdout);
+        }
 	total_asec += cfg->w->elapsed;
 	
       } /* end of if(! esl_opt_IsUsed(go, "--forecast")) */
@@ -648,8 +857,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   } /* end of while(qhstatus == eslOK) */
   if(qhstatus != eslEOF) cm_Fail(cfg->cmfp->errbuf);
   
-  if(esl_opt_IsUsed(go, "--memreq")) print_required_memory_tail(available_ncpus);
-  else if(cfg->ncm > 1)              print_total_time(go, total_asec, total_psec);
+  if(esl_opt_IsUsed(go, "--memreq"))      print_required_memory_tail(relevant_ncpus);
+  else if((cfg->ncm > 1) && (! do_merge)) print_total_time(go, total_asec, total_psec);
+
+  /* free the generative HMM parameters */
 
 #ifdef HMMER_THREADS
   if (ncpus > 0) {
@@ -688,9 +899,32 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   int  equalcnt; /* number of sequences that need to be searched to warrant a '=' */
   int  nprinted = 0; /* number of equals printed thus far */
 
+  /* variables related to --part */
+  int *searchmeA = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
+  ESL_ALLOC(searchmeA, sizeof(int) * sq_block->count);
+
   /* reinitialize array of hit scores */
   info->nhits = 0;
   if(info->scA != NULL) free(info->scA);
+
+  /* Determine which sequences to search
+   *  if --part not used: search all sequences (normal)
+   *  if --part used: only search (1/npart) fraction of the sequences
+   *                  these won't be consecutive sequences, 
+   *                  e.g. if 10 seqs and 3 parts, part 1 is seqs 1,4,7,10 
+   *                  (very simple to implement this way, see block below)
+   */
+  if(info->ipart != -1) { 
+    esl_vec_ISet(searchmeA, sq_block->count, FALSE);
+    for(i = 0; i < sq_block->count; i++) { 
+      if(((i % info->npart) + 1) == info->ipart) { 
+        searchmeA[i] = TRUE;
+      }
+    }
+  }
+  else { /* --part not used, search all sequences */
+    esl_vec_ISet(searchmeA, sq_block->count, TRUE);
+  }
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
   equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
@@ -698,14 +932,16 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   equalidx = equalcnt;
 
   for(i = 0; i < sq_block->count; i++) { 
-    if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
-    /* append copy of hit scores to scA */
-    if(th->N > 0) { 
-      ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
-      for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
-      info->nhits += th->N;
+    if(searchmeA[i]) { /* searchmeA[i] is always TRUE unless --part used */
+      if((status = process_search_workunit(info->cm, errbuf, sq_block->list[i].dsq, sq_block->list[i].L, info->cutoff, &th)) != eslOK) cm_Fail(errbuf);
+      /* append copy of hit scores to scA */
+      if(th->N > 0) { 
+        ESL_REALLOC(info->scA, sizeof(float) * (info->nhits + th->N)); /* this works even if info->scA == NULL */
+        for(h = 0; h < th->N; h++) info->scA[(info->nhits+h)] = th->unsrt[h].score;
+        info->nhits += th->N;
+      }
+      cm_tophits_Destroy(th);
     }
-    cm_tophits_Destroy(th);
     if ((i+1) == equalidx) { 
       putchar('='); 
       fflush(stdout);
@@ -715,9 +951,19 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block)
   }
   while(nprinted < info->nequals) { putchar('='); fflush(stdout); nprinted++; } 
 
+  if(searchmeA != NULL) { 
+    free(searchmeA);
+    searchmeA = NULL;
+  }
+
   return eslOK;
   
  ERROR: 
+  if(searchmeA != NULL) { 
+    free(searchmeA);
+    searchmeA = NULL;
+  }
+
   ESL_FAIL(status, errbuf, "out of memory");
   return status; /* NEVERREACHED */
 }
@@ -736,8 +982,31 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   int     equalcnt; /* number of sequences that need to be searched to warrant a '=' */
   int     nprinted = 0; /* number of equals printed thus far */
 
+  /* variables related to --part */
+  int *searchmeA = NULL; /* [0..sq_block->count-1]: 1 if we search this seq, 0 if not */
+  ESL_ALLOC(searchmeA, sizeof(int) * sq_block->count);
+
   esl_workqueue_Reset(queue);
   esl_threads_WaitForStart(obj);
+
+  /* Determine which sequences to search
+   *  if --part not used: search all sequences (normal)
+   *  if --part used: only search (1/npart) fraction of the sequences
+   *                  these won't be consecutive sequences, 
+   *                  e.g. if 10 seqs and 3 parts, part 1 is seqs 1,4,7,10 
+   *                  (very simple to implement this way, see block below)
+   */
+  if(info->ipart != -1) { 
+    esl_vec_ISet(searchmeA, sq_block->count, FALSE);
+    for(i = 0; i < sq_block->count; i++) { 
+      if(((i % info->npart) + 1) == info->ipart) { 
+        searchmeA[i] = TRUE;
+      }
+    }
+  }
+  else { /* --part not used, search all sequences */
+    esl_vec_ISet(searchmeA, sq_block->count, TRUE);
+  }
 
   /* determine how many sequences we need to complete to print a '=' to progress bar */
   equalcnt = (int) (((float) sq_block->count / (float) info->nequals) + 0.9999999);
@@ -749,10 +1018,12 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
 
   /* Main loop: */
   for(i = 0; i < sq_block->count; i++) { 
-    sq = (ESL_SQ *) new_sq;
-    sq = sq_block->list + i;
-    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
-    if (status != eslOK) cm_Fail("Work queue reader failed");
+    if(searchmeA[i]) { 
+      sq = (ESL_SQ *) new_sq;
+      sq = sq_block->list + i;
+      status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
+      if (status != eslOK) cm_Fail("Work queue reader failed");
+    }
     if ((i+1) == equalidx) { 
       putchar('='); 
       fflush(stdout);
@@ -777,6 +1048,10 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
 
   esl_sq_Destroy(empty_sq);
   return status;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "out of memory");
+  return status; /* NEVERREACHED */
 }
 
 /* pipeline_thread()
@@ -917,7 +1192,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if (qhstatus == eslOK) {
     /* One-time initializations after alphabet <abc> becomes known */
-    output_header(stdout, go, cfg->cmfile, 0, cfg->nproc); /* 0 is 'available_ncpus', irrelevant (only used if --forecast, which is incompatible with --mpi) */
+    output_header(stdout, go, cfg->cmfile, 0, cfg->nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --mpi */
 
     /* master needs to be able to generate sequences only for timing predictions */
     if((status = CreateGenomicHMM(cfg->abc, errbuf, &(cfg->ghmm_sA), &(cfg->ghmm_tAA), &(cfg->ghmm_eAA), &cfg->ghmm_nstates)) != eslOK) cm_Fail("unable to create generative HMM\n%s", errbuf);
@@ -938,7 +1213,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
     if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
-    if(! esl_opt_GetBoolean(go, "--noforecast")) { 
+    if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBooelan(go, "--merge"))) { 
       if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
     }
     else { 
@@ -946,7 +1221,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       ins_v_cyk = INS_V_CYK_GUESS;
     }
     total_psec += psec;
-    print_forecasted_time(go, cfg, errbuf, cm, psec);
+    if(! esl_opt_GetBoolean(go, "--merge")) { 
+      print_forecasted_time(go, cfg, errbuf, cm, psec);
+    }
 
     /* Time forecast complete, send ready signal to all workers. 
      * (This 'fixes' bug i35: in 1.1rc1, calibrations for large models 
@@ -1111,9 +1388,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     } /* end of for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) */
        
     esl_stopwatch_Stop(cfg->w);
-    FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
-    printf("]  %12s\n", time_buf);
-    fflush(stdout);
+    if(! esl_opt_GetBoolean(go, "--merge")) { 
+      FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+      printf("]  %12s\n", time_buf);
+      fflush(stdout);
+    }
     asec        = cfg->w->elapsed;
     total_asec += cfg->w->elapsed;
        
@@ -1366,8 +1645,10 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
     puts("\nOptional output files:");
     esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-    puts("\nOther options:");
+    puts("\nOptions controlling split, partition and merge modes:");
     esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+    puts("\nOther options:");
+    esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
     exit(0);
   }    
 
@@ -1386,7 +1667,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 }
 
 static int
-output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpus, int ncpus)
+output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus, int ncpus)
 {
   cm_banner(ofp, go->argv[0], banner);
   
@@ -1405,6 +1686,15 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int available_ncpu
   if (esl_opt_IsUsed(go, "--qqfile"))    {     fprintf(ofp, "# saving Q-Q plot for histograms to file:      %s\n", esl_opt_GetString(go, "--qqfile")); }
   if (esl_opt_IsUsed(go, "--ffile"))     {     fprintf(ofp, "# saving lambdas for tail fit probs to file:   %s\n", esl_opt_GetString(go, "--ffile")); }
   if (esl_opt_IsUsed(go, "--xfile"))     {     fprintf(ofp, "# saving scores from fit tails to file:        %s\n", esl_opt_GetString(go, "--xfile")); }
+
+  if (esl_opt_IsUsed(go, "--split"))     {     fprintf(ofp, "# split mode:                                  on\n"); }
+  if (esl_opt_IsUsed(go, "--cfile"))     {     fprintf(ofp, "# saving partition commands to file:           %s\n", esl_opt_GetString(go, "--cfile")); }
+  if (esl_opt_IsUsed(go, "--cbash"))     {     fprintf(ofp, "# saving partition commands as bash script:    on\n"); }
+  if (esl_opt_IsUsed(go, "--proot"))     {     fprintf(ofp, "# root name for partition score files :        %s\n", esl_opt_GetString(go, "--proot")); }
+  if (esl_opt_IsUsed(go, "--part"))      {     fprintf(ofp, "# partition mode, partition number:            %d\n", esl_opt_GetInteger(go, "--part")); }
+  if (esl_opt_IsUsed(go, "--ptot"))      {     fprintf(ofp, "# total number of partitions:                  %d\n", esl_opt_GetInteger(go, "--ptot")); }
+  if (esl_opt_IsUsed(go, "--pfile"))     {     fprintf(ofp, "# saving scores for this partition to file:    %s\n", esl_opt_GetString(go, "--pfile")); }
+  if (esl_opt_IsUsed(go, "--merge"))     {     fprintf(ofp, "# merge mode:                                  on\n"); }
 
   if (esl_opt_IsUsed(go, "--seed"))      {
     if (esl_opt_GetInteger(go, "--seed") == 0) fprintf(ofp, "# random number seed:                          one-time arbitrary\n");
@@ -1809,17 +2099,21 @@ set_dnull(struct cfg_s *cfg, CM_t *cm, char *errbuf)
  * Output functions called by masters. 
  */
 static void
-print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int available_ncpus)
+print_calibration_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int relevant_ncpus)
 {
   printf("#\n");
   if(esl_opt_IsUsed(go, "--forecast")) { 
     printf("# Forecasting running time for CM calibration(s) on %d cpus:\n", 
-	   (esl_opt_IsUsed(go, "--nforecast") ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus));
+	   (esl_opt_IsUsed(go, "--nforecast") ? esl_opt_GetInteger(go, "--nforecast") : relevant_ncpus));
     printf("#\n");
     printf("# %-20s  %12s\n", "", " predicted");
     printf("# %-20s  %12s\n", "", "running time");
     printf("# %-20s  %12s\n", "model name", "(hr:min:sec)");
     printf("# %-20s  %12s\n", "--------------------", "------------");
+  }
+  else if(esl_opt_IsUsed(go, "--merge")) { 
+    printf("# Merging partition scores and calibrating CM(s):\n");
+    printf("#\n");
   }
   else { 
     printf("# Calibrating CM(s):\n");
@@ -1836,6 +2130,10 @@ static void
 print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec)
 {
   char  time_buf[128];	      /* for printing run time */
+
+  if(esl_opt_IsUsed(go, "--ptot")) { 
+    psec = (psec / esl_opt_GetInteger(go, "--ptot"));
+  }
 
   if(esl_opt_GetBoolean(go, "--noforecast")) { /* no forecast performed, print '?' */
     printf("  %-20s  %12s", cm->name, "?");
@@ -1917,9 +2215,13 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
   int i;
 
   if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
-    ESL_REALLOC(cfg->expAA,  sizeof(ExpInfo_t **) * (cfg->cmalloc + 128));
-    ESL_REALLOC(cfg->namesA, sizeof(char *)       * (cfg->cmalloc + 128));
-    for(i = cfg->cmalloc; i < cfg->cmalloc + 128; i++) cfg->namesA[i] = NULL;
+    ESL_REALLOC(cfg->expAA,    sizeof(ExpInfo_t **) * (cfg->cmalloc + 128));
+    ESL_REALLOC(cfg->namesA,   sizeof(char *)       * (cfg->cmalloc + 128));
+    ESL_REALLOC(cfg->comlogsA, sizeof(char *)       * (cfg->cmalloc + 128));
+    for(i = cfg->cmalloc; i < cfg->cmalloc + 128; i++) { 
+      cfg->namesA[i] = NULL;
+      cfg->comlogsA[i] = NULL;
+    }
     cfg->cmalloc += 128;
   }
   return eslOK;
@@ -1927,7 +2229,6 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
  ERROR:
   return status;
 }
-
 
 /* Function: generate_sequences()
  * Date:     EPN, Fri Dec 16 09:41:32 2011
@@ -1948,7 +2249,7 @@ expand_exp_and_name_arrays(struct cfg_s *cfg)
  *           eslEMEM if out of memory.
  */
 int
-generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block)
+generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_SQ_BLOCK **ret_sq_block)
 {
   int           status;
   ESL_SQ_BLOCK *sq_block = NULL;
@@ -2013,8 +2314,7 @@ generate_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf,
  *
  * Purpose:  Perform search workunit, which consists of a CM, digitized sequence
  *           and indices i and j. The job is to search dsq from i..j and return 
- *           search results in <*ret_results>. Called by cmsearch and cmcalibrate,
- *           which is why it's here and not local in cmsearch.c.
+ *           search results in <*ret_results>.
  *
  * Args:     cm              - the covariance model, must have valid searchinfo (si).
  *           errbuf          - char buffer for reporting errors
@@ -2088,7 +2388,7 @@ process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutof
  *           eslOK on success.
  *
  */
-int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int available_ncpus, double *ret_psec, int *ret_ins_v_cyk)
+int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int ncpus, int relevant_ncpus, double *ret_psec, int *ret_ins_v_cyk)
 {
   int      status;
   int      L;                /* length of sequence we'll generate and search to get time estimate, 2 * cm->W */
@@ -2168,7 +2468,7 @@ int forecast_time(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   psec *= (float) cfg->L * (float) cfg->N;
   /* correct for parallelization */
   if(esl_opt_IsUsed(go, "--forecast")) { 
-    denom = (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : available_ncpus;
+    denom = (esl_opt_IsUsed(go, "--nforecast")) ? esl_opt_GetInteger(go, "--nforecast") : relevant_ncpus;
     psec /= (float) ESL_MAX(1, denom);
     /* Note, this is correct for MPI but will be slightly off for
      * threaded - because all threads do searches, whereas in MPI
@@ -2295,3 +2595,140 @@ void print_required_memory_tail(int ncpus)
   return;
 }
 
+/* Function: read_partition_scores_files_for_one_cm()
+ * Date:     EPN, Wed May 18 14:04:26 2022
+ *
+ * Purpose:  Read scores for all exp modes from all partition scores files for 
+ *           CM index <cmi> and store them in *ret_pmerged_scAA and *ret_pmerged_nhitsA.
+ *
+ * Returns:  eslOK on success, else an error code and fills errbuf with error message.
+ */
+static int 
+read_partition_scores_files_for_one_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int cmi, float ***ret_pmerged_scAAA, int64_t **ret_pmerged_nhitsAA)
+{
+  int status;
+  int ptot = esl_opt_GetInteger(go, "--ptot");
+  int exp_mode = 0;
+
+  int64_t  *pmerged_nhitsA = NULL; /* [0..EXP_NMODES-1] number of hits reported for all seqs for each exp mode, read from input score files from each partition */
+  float   **pmerged_scAA = NULL;   /* [0..EXP_NMODES-1][0..merged_nhits-1] hit scores for all seqs for each exp mode */
+
+  int cm_idx; 
+  int p;      /* counter over partitions */
+  int i;      /* counter over hits */
+  int64_t ip; /* offset for index in pmerged_scAA[0..EXP_NMODES-1] */
+
+  FILE *pfp;
+
+  char           *tok = NULL;
+  ESL_FILEPARSER *efp = NULL;
+
+  int64_t nhits;
+  float sc;
+  char *filename = NULL;
+
+  /* initialize storage for scores */
+  ESL_ALLOC(pmerged_nhitsA, sizeof(int64_t) * EXP_NMODES);
+  ESL_ALLOC(pmerged_scAA,   sizeof(float *) * EXP_NMODES);
+  for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+    pmerged_nhitsA[exp_mode] = 0;
+    pmerged_scAA[exp_mode]   = NULL;
+  }
+  
+  /* open each of the partitions' scores files and read the scores (for the appropriate cm) */
+  printf("# Reading scores for CM number %d named %s ... ", (cmi+1), cm->name);
+    
+  for(p = 1; p <= ptot; p++) { 
+    /* determine file name */
+    if ((status = esl_sprintf(&filename, "%s.%s%d", 
+                              (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), 
+                              (esl_opt_IsUsed(go, "--proot") ? ""                               : "calib."), 
+                              p) != eslOK)) ESL_XFAIL(status, errbuf, "esl_sprintf failed"); 
+    if ((pfp = fopen(filename, "r")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open partition file %s\n", filename);
+    if ((efp = esl_fileparser_Create(pfp)) == NULL) ESL_XFAIL(eslFAIL, errbuf, "Unable to create fileparser, out of memory?");
+    esl_fileparser_SetCommentChar(efp, '#');
+    
+    /* should be 1 line per CM/exp_mode pair */
+    /* read through CMs we've already dealt with */
+    for(cm_idx = 0; cm_idx < cmi; cm_idx++) { 
+      status = esl_fileparser_NextLine(efp); /* skip command line, only exists for 1st CM */
+      for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
+        status = esl_fileparser_NextLine(efp); /* skip line with scores for this exp_mode */
+        if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+        if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      }
+    }
+
+    /* Now we are at the CM we currently care about
+     * first line should be command used, if this is the first partition,
+     * store it in cfg->comlogsA[cmi] for later output to CM file 
+     */
+    status = esl_fileparser_NextLine(efp); /* places us on the next line */
+    if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+    if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+    if(p == 1) { 
+      status = esl_fileparser_GetRemainingLine(efp, &tok);
+      if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      if((status = esl_strdup(tok, -1, &(cfg->comlogsA[cmi]))) != eslOK) goto ERROR;
+    }
+
+    /* Read scores data for the CM we are interested in */
+    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
+      status = esl_fileparser_NextLine(efp);
+      if(status == eslEOF) ESL_XFAIL(status, errbuf, "Ran out of lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      if(status != eslOK)  ESL_XFAIL(status, errbuf, "Problem reading lines in file %s, on CM index %d\n", filename, (cm_idx+1));
+      status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL);
+      if(status != eslOK)  ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
+      nhits = atoi(tok);
+      if(nhits < 0) ESL_XFAIL(eslFAIL, errbuf, "Invalid number of hits %s on line %d of partition file %s.%d", tok, efp->linenumber, 
+                              (esl_opt_IsUsed(go, "--proot") ? esl_opt_GetString(go, "--proot") : cfg->cmfile), p); 
+      ip = pmerged_nhitsA[exp_mode];
+      pmerged_nhitsA[exp_mode] += nhits;
+
+      ESL_REALLOC(pmerged_scAA[exp_mode], sizeof(float) * pmerged_nhitsA[exp_mode]);
+      for(i = 0; i < nhits; i++) { 
+        if((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) != eslOK) { 
+          ESL_XFAIL(status, errbuf, "Unexpected early end to line %d in file %s\n", efp->linenumber, filename);
+        }
+        sc = atof(tok);
+        pmerged_scAA[exp_mode][(ip+i)] = sc;
+      }
+    }
+    if(efp != NULL) { esl_fileparser_Destroy(efp); efp = NULL; }
+    if(filename != NULL) { free(filename); filename = NULL; }
+    fclose(pfp);
+  }
+  printf("done.\n");
+
+  *ret_pmerged_scAAA   = pmerged_scAA;
+  *ret_pmerged_nhitsAA = pmerged_nhitsA;
+
+  if(filename != NULL) free(filename);
+  filename = NULL;
+
+  return eslOK;
+
+ ERROR:
+  if(filename != NULL) free(filename);
+  filename = NULL;
+
+  if(efp != NULL) esl_fileparser_Destroy(efp);
+  efp = NULL;
+
+  if (pmerged_nhitsA != NULL) {
+    free(pmerged_nhitsA); 
+  }
+  pmerged_nhitsA = NULL;
+  if (pmerged_scAA != NULL) { 
+    for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
+      if(pmerged_scAA[exp_mode] != NULL) { 
+        free(pmerged_scAA[exp_mode]);
+        pmerged_scAA[exp_mode] = NULL;
+      }
+    }
+  }
+  pmerged_scAA = NULL;
+
+  return status;
+}

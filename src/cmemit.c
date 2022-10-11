@@ -34,7 +34,7 @@ static ESL_OPTIONS options[] = {
   { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "show brief help on version and usage",                                 1 },
   { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "send sequence output to file <f>, not stdout",                         1 },
   { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,        "generate <n> sequences",                                               1 },
-  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as unaligned FASTA [default]",               1 },
+  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as unaligned FASTA",                         1 },
   { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as an alignment",                            1 },
   { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,        "generate a single \"consensus\" sequence only",                        1, },
   { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c",     "embed emitted sequences within larger random sequences of length <n>", 1 },
