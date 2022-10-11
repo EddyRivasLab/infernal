@@ -76,9 +76,6 @@ typedef struct {
 
 #define ACCOPTS      "--hbanded,--nonbanded"                 /* Exclusive choice for acceleration or not */
 #define ALGOPTS      "--cyk,--optacc,--sample"               /* Exclusive choice for algorithm */
-#define ICWOPTACC    "--cyk,--optacc,--sample,--small"       /* Incompatible with --optacc,--sample (except their selves) */
-#define ICWSMALL     "--optacc,--sample,--mxsize"            /* Incompatible with --small */
-#define REQDWSMALL   "--cyk,--noprob,--nonbanded,--notrunc"  /* Required with --small (can remove --notrunc if TrDnC() bug fixed) */
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
@@ -93,9 +90,9 @@ static ESL_OPTIONS options[] = {
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
   { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
   /* options controlling the alignment algorithm */
-  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     ICWOPTACC, "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
+  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     "--small", "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
   { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "use the CYK algorithm",                                           2 },
-  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "sample alignment of each seq from posterior distribution",        2 },
+  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,     "--small", "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
   { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g",        NULL, "build sub CM for columns b/t HMM predicted start/end points",     2 },
@@ -106,7 +103,7 @@ static ESL_OPTIONS options[] = {
   { "--fixedtau",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            "--nonbanded", "do not adjust tau (tighten bands) until mx size is < limit", 3 },
   { "--maxtau",      eslARG_REAL,      "0.05", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
-  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,  REQDWSMALL,                 ICWSMALL, "use small memory divide and conquer (d&c) algorithm",        3 },
+  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
@@ -1409,6 +1406,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     goto ERROR;
   }
 
+  /* Check for incompatible option combinations too complex for esl_getopts to enforce during declaration */
+
 #ifdef HMMER_THREADS
   /* if --sample, enforce that --cpu 0 is used if HMMER_THREADS, otherwise number of threads would
    * affect the sampled alignments (each thread requires its own RNG) 
@@ -1438,6 +1437,20 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nERROR: --verbose only makes sense in combination with -o or --sfile\n");
     goto ERROR;
   }	
+
+  /* Finally, check for incompatible option combinations that
+   * esl_getopts can handle, but that would require an error message
+   * like: "Option 'x' is incompatible with options
+   * y1,y2,y3,y4....yn", where there's so many y's that the message is
+   * truncated because errbuf runs out of space. As a workaround we
+   * laboriously check for all incompatible options of that type here.
+   */
+  if(esl_opt_IsUsed(go, "--small")) { 
+    if((! esl_opt_IsUsed(go, "--cyk")) || (! esl_opt_IsUsed(go, "--noprob")) || (! esl_opt_IsUsed(go, "--nonbanded")) || (! esl_opt_IsUsed(go, "--notrunc"))) { 
+      puts("Failed to parse command line: Option --small requires --cyk, --noprob, --nonbanded, --notrunc"); 
+      goto ERROR; 
+    }
+  }
 
   *ret_go     = go;
   *ret_infmt  = infmt;
