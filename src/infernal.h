@@ -2654,7 +2654,7 @@ int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
-extern int   cm_AlignSizeNeededHB (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
+extern int   cm_AlignSizeNeededHB (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotb, float *ret_totmb);
 extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_MX *mx,    CM_SHADOW_MX    *shmx, CM_MX    *post_mx, CM_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_CYKInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_sc);
@@ -2680,7 +2680,7 @@ extern char  Fscore2postcode(float sc);
 
 /* from cm_dpalign_trunc.c */
 extern int  cm_TrAlignSizeNeeded    (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
-extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
+extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotmb, float *ret_totmb);
 
 extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -3138,6 +3138,7 @@ extern CP9_MX *CreateCP9Matrix(int N, int M);
 extern void    FreeCP9Matrix  (CP9_MX *mx);
 extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
 extern void    InitializeCP9Matrix(CP9_MX *mx);
+extern int     SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
