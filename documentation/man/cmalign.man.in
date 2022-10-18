@@ -340,7 +340,7 @@ bands.
 .BI --mxsize " <x>"
 Set the maximum allowable total DP matrix size to 
 .I <x>
-megabytes. By default this size is 1028 Mb. 
+megabytes. By default this size is 1024 Mb. 
 This should be large enough for the vast majority of alignments,
 however if it is not 
 .B cmalign 
