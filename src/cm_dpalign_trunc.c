@@ -883,16 +883,18 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
  *
  *           Return <eslERANGE> if required size exceeds size_limit.
  *           
- * Args:     cm         - the covariance model
- *           errbuf     - char buffer for reporting errors
- *           L          - length of sequence 
- *           size_limit - max size in Mb for all required matrices, return eslERANGE if exceeded
- *           do_sample  - TRUE to sample a parsetree from the Inside matrix
- *           do_post    - TRUE to do posteriors
- *           ret_mxmb   - RETURN: size in Mb of required CM_TR_HB_MX (we'll need 2 of these if do_post)
- *           ret_emxmb  - RETURN: size in Mb of required CM_TR_HB_EMIT_MX   (0. if we won't need one) 
- *           ret_shmxmb - RETURN: size in Mb of required CM_TR_HB_SHADOW_MX (0. if we won't need one)
- *           ret_totmb  - RETURN: size in Mb of all required matrices 
+ * Args:     cm          - the covariance model
+ *           errbuf      - char buffer for reporting errors
+ *           L           - length of sequence 
+ *           size_limit  - max size in Mb for all required matrices, return eslERANGE if exceeded
+ *           do_sample   - TRUE to sample a parsetree from the Inside matrix
+ *           do_post     - TRUE to do posteriors
+ *           ret_mxmb    - RETURN: size in Mb of required CM_TR_HB_MX (we'll need 2 of these if do_post)
+ *           ret_emxmb   - RETURN: size in Mb of required CM_TR_HB_EMIT_MX   (0. if we won't need one) 
+ *           ret_shmxmb  - RETURN: size in Mb of required CM_TR_HB_SHADOW_MX (0. if we won't need one)
+ *           ret_cp9mxmb - RETURN: size in Mb of all CP9 matrices needed (fwd and possibly bck) 
+ *           ret_cmtotmb - RETURN: size in Mb of all CM matrices (ret_mxmb + ret_emxmb + ret_shmxmb) 
+ *           ret_totmb   - RETURN: size in Mb of all required matrices 
  * 
  * Returns: <eslOK> on success.
  * 
@@ -901,28 +903,31 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
  */
 int
 cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
-		       float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb)
+		       float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, 
+                       float *ret_cmtotmb, float *ret_totmb)
 {
   int          status;
-  float        totmb    = 0.;  /* total Mb required for all matrices (that must be simultaneously in memory) */
+  float        totmb    = 0.;  /* total Mb required for all matrices including cp9 matrices (that must be simultaneously in memory) */
+  float        cmtotmb  = 0.;  /* total Mb required for all CM matrices */
   float        mxmb     = 0.;  /* Mb required for CM_MX */
   float        emxmb    = 0.;  /* Mb required for CM_EMIT_MX */
   float        shmxmb   = 0.;  /* Mb required for CM_SHADOW_MX */
+  float        cp9mxmb  = 0.;  /* Mb required for two CP9_MX */
 
   /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
 
   /* we will always need an Inside or CYK matrix */
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &mxmb)) != eslOK) return status;
-  totmb = mxmb;
+  cmtotmb = mxmb;
 
   /* if calc'ing posteriors, we'll also need an Outside matrix (which
    * we'll reuse as the Posterior matrix, so only count it once) and
    * an emit matrix.
    */
   if(do_post) { 
-    totmb += mxmb; 
+    cmtotmb += mxmb; 
     if((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, &emxmb)) != eslOK) return status;
-    totmb += emxmb;
+    cmtotmb += emxmb;
   }
 
   /* if we're not sampling an alignment, we'll also need a shadow
@@ -930,26 +935,35 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
    */
   if(! do_sample) { 
     if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cm->cp9b, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &shmxmb)) != eslOK) return status;
-    totmb += shmxmb;
+    cmtotmb += shmxmb;
   }
 
-  if (ret_mxmb   != NULL) *ret_mxmb    = mxmb;
-  if (ret_emxmb  != NULL) *ret_emxmb   = emxmb;
-  if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
-  if (ret_totmb  != NULL) *ret_totmb   = totmb;
+  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, NULL, NULL);
+  cp9mxmb += cp9mxmb; /* add size of bck matrix */
+
+  totmb = cmtotmb + cp9mxmb;
+
+  if (ret_mxmb    != NULL) *ret_mxmb    = mxmb;
+  if (ret_emxmb   != NULL) *ret_emxmb   = emxmb;
+  if (ret_shmxmb  != NULL) *ret_shmxmb  = shmxmb;
+  if (ret_cp9mxmb != NULL) *ret_cp9mxmb = cp9mxmb;
+  if (ret_cmtotmb != NULL) *ret_cmtotmb = cmtotmb;
+  if (ret_totmb   != NULL) *ret_totmb   = totmb;
 
 #if eslDEBUGLEVEL >= 1  
   printf("#DEBUG: cm_TrAlignSizeNeededHB()\n");
-  printf("#DEBUG: \t mxmb:  %.2f\n", mxmb);
-  printf("#DEBUG: \t emxmb: %.2f\n", emxmb);
-  printf("#DEBUG: \t shmxmb:%.2f\n", shmxmb);
-  printf("#DEBUG: \t totmb: %.2f\n", totmb);
-  printf("#DEBUG: \t limit: %.2f\n", size_limit);
+  printf("#DEBUG: \t mxmb:    %.2f\n", mxmb);
+  printf("#DEBUG: \t emxmb:   %.2f\n", emxmb);
+  printf("#DEBUG: \t shmxmb:  %.2f\n", shmxmb);
+  printf("#DEBUG: \t cp9mxmb: %.2f\n", cp9mxmb);
+  printf("#DEBUG: \t cmtotmb: %.2f\n", cmtotmb);
+  printf("#DEBUG: \t totmb:   %.2f\n", totmb);
+  printf("#DEBUG: \t limit:   %.2f\n", size_limit);
 #endif
 
   /*printf("cm_TrAlignSizeNeededHB() returning %.2f\n", mxmb);*/
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
+  if(cmtotmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded trc DP mxes need %.1f>%.1f Mb limit (HMM mxes need an extra %.1f Mb).\nUse --mxsize, --maxtau or --tau.", cmtotmb, (float) size_limit, cp9mxmb);
   
   return eslOK;
 }

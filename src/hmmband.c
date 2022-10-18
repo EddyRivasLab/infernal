@@ -410,7 +410,10 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 {
   int   status;
   int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
-  float hbmx_Mb;  /* approximate size in Mb required for HMM banded matrix */
+  /* sizes of matrices, note enforce hbmx_Mb < size_limit, not tot_Mb < size_limit */
+  float cp9mx_Mb = 0.; /* approximate size in Mb required for CP9 matrices */
+  float hbmx_Mb;       /* approximate size in Mb required for HMM banded matrix */
+  float tot_Mb;        /* cp9mx_Mb + hbmx_Mb */
   int   tau_at_limit     = FALSE;
   int   thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
   int   thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
@@ -422,12 +425,12 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
     }
     else { 
-      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
-      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
+      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
       if(status != eslOK && status != eslERANGE) return status;
     }      
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
-    /* check if we can stop iterating, three ways we can
+    /* check if we can stop iterating, 4 ways we can
      * case 1: matrix is now smaller than our limit.
      * case 2: do_iterate == FALSE
      * case 3: do_trunc == FALSE && tau has reached its limit
