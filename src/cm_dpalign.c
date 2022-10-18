@@ -579,7 +579,7 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   printf("#DEBUG: \t limit:   %.2f\n", size_limit);
 #endif
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
+  if(cmtotmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded std DP mxes need %.1f>%.1f Mb limit (HMM mxes need an extra %.1f Mb).\nUse --mxsize, --maxtau or --tau.", cmtotmb, (float) size_limit, cp9mxmb);
 
   return eslOK;
 }
