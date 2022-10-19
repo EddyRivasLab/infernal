@@ -1758,7 +1758,7 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
 			  TRUE,  /* use_rf */
 			  FALSE, /* use_el, no */
 			  FALSE, /* use_wts, irrelevant */
-			  0.5,   /* gapthresh, irrelevant */
+			  0.5,   /* symfrac, irrelevant */
 			  NULL,  /* returned CM, irrelevant */
 			  &mtr); /* guide tree */
   if(status != eslOK) return status;

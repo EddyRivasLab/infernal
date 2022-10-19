@@ -83,15 +83,15 @@ static int check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *u
  *           the EL state. As of now, <use_el> should only be TRUE if
  *           called internally using a Infernal constructed
  *           <msa>. That is, we do not expect it to be called during
- *           cmbuild's build procedure. So we expected the use of EL
- *           columns in athe MSA to always be valid.
+ *           cmbuild's build procedure. So we expect the use of EL
+ *           columns in the MSA to always be valid.
  *
  * Args:     msa       - multiple alignment to build model from
  *           errbuf    - for error messages
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           use_el    - TRUE to model RF '~' columns with the E state
  *           use_wts   - TRUE to consider sequence weights from msa when determining match/insert
- *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
+ *           symfrac   - nucleotide occupancy thresh for defining a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
@@ -101,7 +101,7 @@ static int check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *u
  *           eslEINVAL on invalid input, ret_cm and ret_gtr set to NULL.
  */
 int
-HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
+HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float symfrac, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int          status;
   CM_t        *cm        = NULL; /* new covariance model                       */
@@ -127,6 +127,9 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   int  kp;                       /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
   float gaps = 0.;               /* counter over gaps */
   int  el_i, el_j;               /* i and j, before accounting for ELs */
+  float r;		         /* weighted residue count              */
+  float totwgt;	                 /* weighted residue+gap count          */
+  float wgt;	                 /* weight of a sequence                */
 
   /* Contract check */
   if (msa->ss_cons == NULL)            ESL_XFAIL(eslEINCOMPAT, errbuf, "HandModelmaker(): No consensus structure annotation available for the alignment.");
@@ -141,11 +144,11 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
    *    EPN, Wed Sep 29 13:26:51 2010 
    *    Post-v1.0.2 change, if (use_rf == FALSE) and (use_wts == TRUE): 
    *    match/insert columns are defined based on gap frequency in the
-   *    alignment *taking weights into account*. That is <= gapthresh
-   *    of the fraction of weighted sequences must have gaps to define
-   *    an match column.  Previously (infernal v0.1->1.0.2) 
-   *    <= gapthresh of the actual number of sequences (unweighted) 
-   *    need have gaps to be a match, this is still allowed if (use_wts
+   *    alignment *taking weights into account*. That is >= symfrac
+   *    of the fraction of weighted sequences must be non-gaps to define
+   *    a match column.  Previously (infernal v0.1->1.0.2) 
+   *    >= symfrac of the actual number of sequences (unweighted) 
+   *    had to be non-gaps to be a match, this is still allowed if (use_wts
    *    is FALSE).
    */
   ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
@@ -165,20 +168,18 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
 			 (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
 			  ? FALSE : TRUE;
   }
-  else if(! use_wts) { 
-    for (apos = 1; apos <= msa->alen; apos++) { 
-      gaps = 0.;
-      for (idx = 0; idx < msa->nseq; idx++) 
-	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += 1.0;
-      matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
-    }
-  }
   else { 
     for (apos = 1; apos <= msa->alen; apos++) { 
-      gaps = 0.;
-      for (idx = 0; idx < msa->nseq; idx++) 
-	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += msa->wgt[idx];
-      matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
+      r = totwgt = 0.;
+      for (idx = 0; idx < msa->nseq; idx++) { 
+        wgt = (use_wts) ? msa->wgt[idx] : 1.0;
+        if       (esl_abc_XIsResidue(msa->abc, msa->ax[idx][apos])) { r += wgt; totwgt += wgt; }
+        else if  (esl_abc_XIsGap(msa->abc,     msa->ax[idx][apos])) {           totwgt += wgt; }
+        else if  (esl_abc_XIsMissing(msa->abc, msa->ax[idx][apos])) continue;
+      }
+      if (r > 0. && r / totwgt >= symfrac) matassign[apos] = TRUE;
+      else                                 matassign[apos] = FALSE;
+      printf("matassign[%3d]: %d\n", apos, matassign[apos]);
     }
   }
 

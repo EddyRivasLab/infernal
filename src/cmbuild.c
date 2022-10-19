@@ -979,10 +979,8 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-   esl_msafile_Write(stdout, msa, eslMSAFILE_STOCKHOLM);
    if ((status =  esl_msa_MarkFragments_old    (msa, esl_opt_GetReal(go, "--fragthresh")))             != eslOK) goto ERROR;
    esl_msafile_Write(stdout, msa, eslMSAFILE_STOCKHOLM);
-   exit(0);
    if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
    cm->checksum = checksum;
@@ -1485,7 +1483,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    use_wts = (use_rf || esl_opt_GetBoolean(go, "--v1p0")) ? FALSE : TRUE;
    if((status = HandModelmaker(msa, errbuf, use_rf, 
 			       FALSE, /* use_el: never when building a model */
-			       use_wts, (1. - esl_opt_GetReal(go, "--symfrac")), &cm, &mtr)) != eslOK) return status;
+			       use_wts, esl_opt_GetReal(go, "--symfrac"), &cm, &mtr)) != eslOK) return status;
 
    /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
    if( esl_opt_IsOn(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
