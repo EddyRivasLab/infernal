@@ -49,6 +49,7 @@ static ESL_OPTIONS options[] = {
   { "--fast",      eslARG_NONE,"default",   NULL, NULL,      CONOPTS,      NULL,         NULL, "assign cols w/ >= symfrac residues as consensus",                2 },
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
+  { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "if L <= x*alen, tag sequence as a fragment",                     2 },
   { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
   { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
 
@@ -657,9 +658,10 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
 					     fprintf(ofp, "# alignment file:                                     %s\n", alifile);
   if (esl_opt_IsUsed(go, "-n"))            { fprintf(ofp, "# name (the single) CM:                               %s\n", esl_opt_GetString(go, "-n")); }
   if (esl_opt_IsUsed(go, "-F"))            { fprintf(ofp, "# overwrite CM file if necessary:                     yes\n"); }
-  if (esl_opt_IsUsed(go, "-o"))            { fprintf(ofp, "# output directed to file:                            %s\n", esl_opt_GetString(go, "-o")); }
-  if (esl_opt_IsUsed(go, "-O"))            { fprintf(ofp, "# processed alignment resaved to:                     %s\n", esl_opt_GetString(go, "-O")); }
-  if (esl_opt_IsUsed(go, "--symfrac"))     { fprintf(ofp, "# minimum symbol fraction in a consensus column:      %g\n", esl_opt_GetReal(go, "--symfrac")); }
+  if (esl_opt_IsUsed(go, "-o"))            { fprintf(ofp, "# output directed to file:                            %s\n",   esl_opt_GetString(go, "-o")); }
+  if (esl_opt_IsUsed(go, "-O"))            { fprintf(ofp, "# processed alignment resaved to:                     %s\n",   esl_opt_GetString(go, "-O")); }
+  if (esl_opt_IsUsed(go, "--symfrac"))     { fprintf(ofp, "# minimum symbol fraction in a consensus column:      %g\n",   esl_opt_GetReal(go, "--symfrac")); }
+  if (esl_opt_IsUsed(go, "--fragthresh"))  { fprintf(ofp, "# seq called frag if L <= x*alen:                     %.3f\n", esl_opt_GetReal(go, "--fragthresh")); }
   if (esl_opt_IsUsed(go, "--hand"))        { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
   if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
   if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
@@ -977,6 +979,10 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+   esl_msafile_Write(stdout, msa, eslMSAFILE_STOCKHOLM);
+   if ((status =  esl_msa_MarkFragments_old    (msa, esl_opt_GetReal(go, "--fragthresh")))             != eslOK) goto ERROR;
+   esl_msafile_Write(stdout, msa, eslMSAFILE_STOCKHOLM);
+   exit(0);
    if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
    cm->checksum = checksum;
