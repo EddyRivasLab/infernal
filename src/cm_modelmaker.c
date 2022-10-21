@@ -46,6 +46,7 @@
 
 static int check_for_pknots(char *cs, int alen);
 static int check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *used_el, const int *nxt_mi, const int *nxt_el, int i0, int j0, int *ret_goto_el, int *ret_i, int *ret_j);
+static int trunc_mode_for_trace_node(int emitl, int emitr, int spos, int epos);
 
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
@@ -957,11 +958,33 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 			        */
   int         apos, apos2, prv_mi, prv_el; /* helpers for filling nxt_emit_mi, nxt_emit_el */
   int         goto_el;         /* TRUE if we should transit to EL, FALSE if not */
+  int         spos, epos;      /* first/final non-missing positions for ax for purposes of dealing with truncated begins
+                                * 1..spos-1, and epos+1..alen are missing data, so if spos==1 and epos==alen there is no missing data in ax 
+                                */
 
   tr  = CreateParsetree(25);
   pda = esl_stack_ICreate();
 
   ended   = FALSE;
+
+  /* We preprocess the aligned seq ax so we can deal with truncated alignments */
+  spos = 1;
+  epos = alen;
+  for (apos = 1; apos <= alen; apos++) { 
+    if(! esl_abc_XIsMissing(cm->abc, ax[apos])) break;
+    spos++;
+  }
+  for (apos = alen; apos >= 1; apos--) { 
+    if(! esl_abc_XIsMissing(cm->abc, ax[apos])) break;
+    epos--;
+  }
+  if((spos > alen) || (epos < 1)) { 
+    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): entire aligned sequence is missing data");
+  }
+  /* if spos > 1:    1..spos-1    are ~ (missing), indicating truncated alignment starts at spos */
+  /* if epos < alen: epos+1..alen are ~ (missing), indicating truncated alignment ends   at epos */
+  printf("spos: %d\n", spos);
+  printf("epos: %d\n", epos);
 
   /* If used_el is non-NULL then we need to fill <nxt_mi> with the next match/insert 
    * emission and next EL emission <nxt_el> so we can identify transitions to EL 
@@ -1004,15 +1027,22 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	 * ended is always FALSE when we get here.
 	 */
       case ROOT_nd:
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
+	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
+	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0, 
+                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
 	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1, 
+                                           trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
+
 	  }
 	}
 	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
 	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	  }
 	}
 	break;
@@ -1025,7 +1055,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
       case BIF_nd:
 	if (ended) break;
 	state = CalculateStateIndex(cm, node, BIF_B);
-	tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	//tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx  = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                        trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 	if((status = esl_stack_IPush(pda, ended))   != eslOK) goto ERROR; /* remember our ending status */
 	if((status = esl_stack_IPush(pda, tidx))    != eslOK) goto ERROR; /* remember index in tr; we pop in BEGR */
 	break;
@@ -1049,7 +1081,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATP_nd we've ended but see an emission, ELs probably incorrectly handled");
 
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 
 	if(type == MATP_MP && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
 	  /* Check if we should use an EL. */
@@ -1058,7 +1092,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	  }
 	  if(goto_el) { 
 	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	    ended = TRUE;
 	  }
 	}
@@ -1067,14 +1103,18 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	state = CalculateStateIndex(cm, node, MATP_IL);
 	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
 	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state, 
+                                           trunc_mode_for_trace_node(i, gtr->emitr[node]-1, spos, epos));
 	  }
 	}
 
 	state = CalculateStateIndex(cm, node, MATP_IR);
 	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
 	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
+            tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	  }
 	}
 	break;
@@ -1093,7 +1133,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATL_nd we've ended but see an emission, ELs probably incorrectly handled");
 
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 
 	if(type == MATL_ML && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
 	  /* Check if we should use an EL. */
@@ -1102,7 +1144,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	  }
 	  if(goto_el) { 
 	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	    ended = TRUE;
 	  }
 	}
@@ -1111,7 +1155,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	state = CalculateStateIndex(cm, node, MATL_IL);
 	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
 	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
+                                           trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
 	  }
 	}
 	break;
@@ -1126,7 +1172,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATR_nd we've ended but see an emission, ELs probably incorrectly handled");
 
 	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 	if(type == MATR_MR && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
 	  /* Check if we should use an EL */
 	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
@@ -1134,7 +1182,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	  }
 	  if(goto_el) { 
 	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	    ended = TRUE;
 	  }
 	}
@@ -1143,7 +1193,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	state = CalculateStateIndex(cm, node, MATR_IR);
 	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
 	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state, 
+                                           trunc_mode_for_trace_node(gtr->emitl[node], j, spos, epos));
 	  }
 	}
 	break;
@@ -1155,7 +1207,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
       case BEGL_nd:
 	if (ended)     break;
 	state = CalculateStateIndex(cm, node, BEGL_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 
 	if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
 	  /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR */
@@ -1164,7 +1218,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	  }
 	  if(goto_el) { 
 	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+            //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
+            tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	    ended = TRUE;
 	  }
 	}
@@ -1183,7 +1239,8 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	
 	if(ended)      break;
 	state = CalculateStateIndex(cm, node, BEGR_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 
 	if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
 	  /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR, BEGL */
@@ -1192,7 +1249,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	  }
 	  if(goto_el) { 
 	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+            //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+            tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                           trunc_mode_for_trace_node(i, j, spos, epos));
 	    ended = TRUE;
 	  }
 	}
@@ -1201,7 +1260,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	state = CalculateStateIndex(cm, node, BEGR_IL);
 	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
 	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
+                                           trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
 	  }
 	}
 	break;
@@ -1212,7 +1273,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	case END_nd:
 	  if (! ended) {
 	    state = CalculateStateIndex(cm, node, END_E);
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
+	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
+	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state, 
+                                           trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
 	  }
 	  break;
 	  
@@ -1306,6 +1369,28 @@ check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *used_el, con
   *ret_i       = 0;
   *ret_j       = 0;
   return eslEINVAL;
+}
+
+/* Function:  trunc_mode_for_trace_node
+ * Date:      EPN, Thu Oct 20 11:32:46 2022
+ *
+ * Purpose:   Helper function for Transmogrify(). Determine the 
+ *            truncation mode for a trace node based on the 
+ *            left and right emit positions (emitl and emitr)
+ *            and the first position that is not missing data due
+ *            to truncation at 5' end (spos) and final position
+ *            that is not missing data due to truncation at 3' end.
+ *
+ * Returns:   TRMODE_J, TRMODE_L, TRMODE_R or TRMODE_T
+ *
+ */
+static int
+trunc_mode_for_trace_node(int emitl, int emitr, int spos, int epos)
+{
+  if(emitl >= spos && emitr <= epos) return TRMODE_J;
+  if(emitl >= spos && emitr >  epos) return TRMODE_L;
+  if(emitl  < spos && emitr <= epos) return TRMODE_R;
+  if(emitl  < spos && emitr >  epos) return TRMODE_T;
 }
 
 /* Function: ConsensusModelmaker()
