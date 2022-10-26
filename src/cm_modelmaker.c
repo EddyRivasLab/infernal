@@ -973,6 +973,8 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   int         first_emit_node; /* minimum indexed node that emits a nt left or right */
   int         final_bif_node;  /* maximum indexed BIF node with subtree that spans full sequence */
   int         mode_first_node; /* truncation mode of first node, necessary to get ROOT_S mode correct */
+  int         seen_left;       /* set to TRUE if we have at least one state in TRMODE_L */
+  int         seen_right;      /* set to TRUE if we have at least one state in TRMODE_R */
   int         *used_A = NULL;  /* [0..n..cm->nodes-1] TRUE if node n used in this parsetree, FALSE if not, 
                                 * necessary to determine if BEGL_S or BEGR_S nodes need to be visited, they
                                 * only are if their BIF_B parent is. 
@@ -1035,19 +1037,21 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   first_node      = -1;
   first_emit_node = -1;
   final_bif_node  = -1;
+  seen_left = FALSE;
+  seen_right = FALSE;
   if(do_trunc) { 
     for (node = 0; node < cm->nodes; node++) { 
-      if(first_emit_node == -1) { 
-        if((gtr->emitl[node] < gtr->emitl[gtr->nxtl[node]]) &&
-           (gtr->emitl[node] >= spos) && 
-           (gtr->emitl[node] <= epos)) { /* we emit left from this node */
-          first_emit_node = node; 
-        }
-        if((gtr->emitr[node] > gtr->emitr[gtr->nxtl[node]]) &&
-           (gtr->emitr[node] >= spos) && 
-           (gtr->emitr[node] <= epos)) { /* we emit right from this node */
-          first_emit_node = node; 
-        }
+      if((gtr->emitl[node] < gtr->emitl[gtr->nxtl[node]]) &&
+         (gtr->emitl[node] >= spos) && 
+         (gtr->emitl[node] <= epos)) { /* we emit left from this node */
+        if(first_emit_node == -1) first_emit_node = node; 
+        if((trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos)) == TRMODE_L) seen_left = TRUE;
+      }
+      if((gtr->emitr[node] > gtr->emitr[gtr->nxtl[node]]) &&
+         (gtr->emitr[node] >= spos) && 
+         (gtr->emitr[node] <= epos)) { /* we emit right from this node */
+        if(first_emit_node == -1) first_emit_node = node; 
+        if((trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos)) == TRMODE_R) seen_right = TRUE;
       }
       if((gtr->state[node] == BIF_nd) &&  
          (gtr->emitl[node] <= spos) && 
@@ -1062,8 +1066,13 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
     else if (final_bif_node == -1) { 
       first_node = first_emit_node;
     }
-    else { /* neither first_emit_node nor final_bif_node are -1, choose whichever comes first */
-      first_node = ESL_MIN(first_emit_node, final_bif_node);
+    else { /* neither first_emit_node nor final_bif_node are -1 */
+      if(seen_left && seen_right) { 
+        first_node = final_bif_node;
+      }
+      else { 
+        first_node = first_emit_node;
+      }
     }
     /* the mode of the first node is relevant because ROOT_nd states will have this mode too and we can't infer 
      * it from the ROOT's subtree */
@@ -1116,7 +1125,6 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1, 
                                            mode_first_node); /* use mode of first node, which is probably first node AFTER root */
 
-            seen_emit = TRUE;
 	  }
 	}
 	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
@@ -1124,7 +1132,6 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
 	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2, 
                                            mode_first_node); /* use mode of first node, which is probably first node AFTER root */
-            seen_emit = TRUE;
 	  }
 	}
 	break;
