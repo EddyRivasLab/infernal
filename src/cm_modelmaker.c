@@ -1094,283 +1094,296 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   }
   for (node = 0; node < cm->nodes; node++) { 
     if(node != 0 && node < first_node) continue; /* skip early nodes prior to first node determined above */
-      if(do_trunc && gtr->state[node] != BEGL_nd && gtr->state[node] != BEGR_nd && 
-         ((spos > gtr->emitl[node] && spos > gtr->emitr[node]) ||  /* entire subtree has 0 emits due to truncation */
-          (epos < gtr->emitl[node] && epos < gtr->emitr[node]))) { /* entire subtree has 0 emits due to truncation */
-        continue; /* skip nodes not visited due to truncation */
+    printf("node: %d emitl: %d emitr: %d spos: %d epos: %d\n", node, gtr->emitl[node], gtr->emitr[node], spos, epos);
+    /* determine if we should skip this node */
+    if(do_trunc) { 
+      if(gtr->state[node] == END_nd) { 
+        if((spos > gtr->emitr[node]) || 
+           (epos < gtr->emitr[node])) { 
+          /* END_E subtree is outside spos..epos, ignore emitl because emitl[node] = emitr[node]+1 */
+          continue;
+        }
       }
-      if(do_trunc && (gtr->state[node] == BEGL_nd || gtr->state[node] == BEGR_nd) && (! used_A[gtr->prv[node]])) { 
-        /* BEGL or BEGR, and parent BIF was NOT used in this parsetree so we skip it */
-        continue;
+      else if(gtr->state[node] == BEGL_nd || gtr->state[node] == BEGR_nd) { 
+        if(! used_A[gtr->prv[node]]) { 
+          /* parent BIF_B not used, so don't use this BEGL or BEGR node either */
+          continue;
+        }
       }
-      if(do_trunc) { 
-        used_A[node] = TRUE;
+      else { /* not BEGL,BEGR,END */
+        if((spos > gtr->emitl[node] && spos > gtr->emitr[node]) || 
+           (epos < gtr->emitl[node] && epos < gtr->emitr[node])) {
+          /* entire subtree has 0 emits due to truncation */
+          continue; /* skip nodes not visited due to truncation */
+        }
       }
-
-      /* A (big) switch on node type.
-       */
-      switch (gtr->state[node]) { /* e.g. switch on node type: */
-
-	/* The root node.
-	 * Assume ROOT_S=0, ROOT_IL=1, ROOT_IR=2.
-	 * ended is always FALSE when we get here.
-	 */
-      case ROOT_nd:
-	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
-	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0, 
-                                       mode_first_node); /* use mode of first node, which is probably first node AFTER root */
-	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1, 
-                                           mode_first_node); /* use mode of first node, which is probably first node AFTER root */
-
-	  }
-	}
-	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2, 
-                                           mode_first_node); /* use mode of first node, which is probably first node AFTER root */
-	  }
-	}
-	break;
-
-	/* A bifurcation node.
-	 * Assume that we'll process the BEGL node next; push info
-	 * for BEGR onto the PDA.
-	 * If we ended above here, the B doesn't go into the parsetree.
-	 */
-      case BIF_nd:
-	if (ended) break;
-	state = CalculateStateIndex(cm, node, BIF_B);
-	//tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	tidx  = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
-                                        trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-	if((status = esl_stack_IPush(pda, ended))   != eslOK) goto ERROR; /* remember our ending status */
-	if((status = esl_stack_IPush(pda, tidx))    != eslOK) goto ERROR; /* remember index in tr; we pop in BEGR */
-	break;
-
-	/* A MATP node.
-	 * If we see '-','-' in the seq and we ended already,
-	 * then we did an EL above here, just skip the node.
-         * Else, this is a real state: emission or deletion.
-         *    If we thought we ended, that's invalid input.
-         *    Else, attach this guy. 
-	 */
-      case MATP_nd:
-	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
-	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
-	  else                                               type = MATP_MR;
-	} else {
-	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
-	  else                                               type = MATP_MP;
-	}
-	if (type == MATP_D && ended) break; /* used an EL above here, skip the node */
-	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATP_nd we've ended but see an emission, ELs probably incorrectly handled");
-
-	state = CalculateStateIndex(cm, node, type);
-	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
-                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-        
-	if(type == MATP_MP && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
-	  /* Check if we should use an EL. */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATP_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
-                                           trunc_mode_for_trace_node(i, j, spos, epos));
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, MATP_IL);
-	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state, 
-                                           trunc_mode_for_trace_node(i, gtr->emitr[node]-1, spos, epos));
-	  }
-	}
-
-	state = CalculateStateIndex(cm, node, MATP_IR);
-	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
-            tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
-                                           trunc_mode_for_trace_node(i, j, spos, epos));
-	  }
-	}
-	break;
-
-	/* A MATL node.
-	 * If we see '-','-' in the seq and we ended already,
-	 * then we did an EL above here, just skip the node.
-	 * Else, this is a real state (emission or deletion).
-	 *   If we thought we ended, this is invalid input.
-	 *   Else, attach this guy.
-	 */
-      case MATL_nd:
-	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
-	else                                               type = MATL_ML;
-	if (type == MATL_D && ended) break; /* used an EL above here, skip this node */
-	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATL_nd we've ended but see an emission, ELs probably incorrectly handled");
-
-	state = CalculateStateIndex(cm, node, type);
-	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
-                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-	if(type == MATL_ML && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
-	  /* Check if we should use an EL. */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATL_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
-                                           trunc_mode_for_trace_node(i, j, spos, epos));
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, MATL_IL);
-	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
-                                           trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
-	  }
-	}
-	break;
-
-	/* MATR node. 
-	 * Similar logic as MATL above.
-	 */
-	case MATR_nd:
-	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
-	else                                               type = MATR_MR;
-	if (type == MATR_D && ended) break; /* used an EL above here, skip this node */
-	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATR_nd we've ended but see an emission, ELs probably incorrectly handled");
-
-	state = CalculateStateIndex(cm, node, type);
-	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
-                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-	if(type == MATR_MR && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
-	  /* Check if we should use an EL */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
-                                           trunc_mode_for_trace_node(i, j, spos, epos));
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, MATR_IR);
-	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state, 
-                                           trunc_mode_for_trace_node(gtr->emitl[node], j, spos, epos));
-	  }
-	}
-	break;
-
-	/* BEGL_nd. 
-	 * If ended, skip node. 
-	 * Else, attach it.
-	 */
-      case BEGL_nd:
-	if (ended)     break;
-	state = CalculateStateIndex(cm, node, BEGL_S);
-	//tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
-                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-
-	if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
-	  /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-            //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
-            tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
-                                           trunc_mode_for_trace_node(i, j, spos, epos));
-	    ended = TRUE;
-	  }
-	}
-	break;
-
-	/* BEGR_nd.
-	 * Pop off info on whether we ended above this node in the CM.
-	 * If ended, skip node. 
-	 * Logic different than BEGL above, because BEGR is dealing
-	 * with an insert left state. For the insert, if we think
-	 * we've ended already, that's an invalid input.
-	 */
-	case BEGR_nd:
-	esl_stack_IPop(pda, &tidx);    /* recover parent bifurcation's index in trace */
-	esl_stack_IPop(pda, &ended);   /* did we end above here? */
-	
-	if(ended)      break;
-	state = CalculateStateIndex(cm, node, BEGR_S);
-	tidx = InsertTraceNodewithMode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
-                                           trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-
-	if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
-	  /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR, BEGL */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-            //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-            tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
-                                           trunc_mode_for_trace_node(i, j, spos, epos));
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, BEGR_IL);
-	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
-                                           trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
-	  }
-	}
-	break;
-	
-	/* An END node.
-	 * If we've already ended (on EL), skip. 
-	 */
-	case END_nd:
-	  if (! ended) {
-	    state = CalculateStateIndex(cm, node, END_E);
-	    //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
-	    tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state, 
-                                           trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
-	  }
-	  break;
-	  
-	default: 
-	  ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): bogus node type");
-      }
+      /* if we get here, this node will be in the parsetree, keep track for potential children BEGL/BEGR */
+      used_A[node] = TRUE; 
     }
+    /* A (big) switch on node type.
+     */
+    switch (gtr->state[node]) { /* e.g. switch on node type: */
+      
+      /* The root node.
+       * Assume ROOT_S=0, ROOT_IL=1, ROOT_IR=2.
+       * ended is always FALSE when we get here.
+       */
+    case ROOT_nd:
+      //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0, 
+                                     mode_first_node); /* use mode of first node, which is probably first node AFTER root */
+      for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1, 
+                                         mode_first_node); /* use mode of first node, which is probably first node AFTER root */
+          
+        }
+      }
+      for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2, 
+                                         mode_first_node); /* use mode of first node, which is probably first node AFTER root */
+        }
+      }
+      break;
+      
+      /* A bifurcation node.
+       * Assume that we'll process the BEGL node next; push info
+       * for BEGR onto the PDA.
+       * If we ended above here, the B doesn't go into the parsetree.
+       */
+    case BIF_nd:
+      if (ended) break;
+      state = CalculateStateIndex(cm, node, BIF_B);
+      //tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+      tidx  = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                      trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+      if((status = esl_stack_IPush(pda, ended))   != eslOK) goto ERROR; /* remember our ending status */
+      if((status = esl_stack_IPush(pda, tidx))    != eslOK) goto ERROR; /* remember index in tr; we pop in BEGR */
+      break;
+      
+      /* A MATP node.
+       * If we see '-','-' in the seq and we ended already,
+       * then we did an EL above here, just skip the node.
+       * Else, this is a real state: emission or deletion.
+       *    If we thought we ended, that's invalid input.
+       *    Else, attach this guy. 
+       */
+    case MATP_nd:
+      if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
+        if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
+        else                                               type = MATP_MR;
+      } else {
+        if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
+        else                                               type = MATP_MP;
+      }
+      if (type == MATP_D && ended) break; /* used an EL above here, skip the node */
+      if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATP_nd we've ended but see an emission, ELs probably incorrectly handled");
+
+      state = CalculateStateIndex(cm, node, type);
+      //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+        
+      if(type == MATP_MP && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
+        /* Check if we should use an EL. */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATP_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         trunc_mode_for_trace_node(i, j, spos, epos));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, MATP_IL);
+      for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state, 
+                                         trunc_mode_for_trace_node(i, gtr->emitr[node]-1, spos, epos));
+        }
+      }
+
+      state = CalculateStateIndex(cm, node, MATP_IR);
+      for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         trunc_mode_for_trace_node(i, j, spos, epos));
+        }
+      }
+      break;
+
+      /* A MATL node.
+       * If we see '-','-' in the seq and we ended already,
+       * then we did an EL above here, just skip the node.
+       * Else, this is a real state (emission or deletion).
+       *   If we thought we ended, this is invalid input.
+       *   Else, attach this guy.
+       */
+    case MATL_nd:
+      if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
+      else                                               type = MATL_ML;
+      if (type == MATL_D && ended) break; /* used an EL above here, skip this node */
+      if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATL_nd we've ended but see an emission, ELs probably incorrectly handled");
+
+      state = CalculateStateIndex(cm, node, type);
+      //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+      if(type == MATL_ML && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
+        /* Check if we should use an EL. */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATL_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         trunc_mode_for_trace_node(i, j, spos, epos));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, MATL_IL);
+      for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
+                                         trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
+        }
+      }
+      break;
+
+      /* MATR node. 
+       * Similar logic as MATL above.
+       */
+    case MATR_nd:
+      if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
+      else                                               type = MATR_MR;
+      if (type == MATR_D && ended) break; /* used an EL above here, skip this node */
+      if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATR_nd we've ended but see an emission, ELs probably incorrectly handled");
+
+      state = CalculateStateIndex(cm, node, type);
+      //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+      if(type == MATR_MR && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
+        /* Check if we should use an EL */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         trunc_mode_for_trace_node(i, j, spos, epos));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, MATR_IR);
+      for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state, 
+                                         trunc_mode_for_trace_node(gtr->emitl[node], j, spos, epos));
+        }
+      }
+      break;
+
+      /* BEGL_nd. 
+       * If ended, skip node. 
+       * Else, attach it.
+       */
+    case BEGL_nd:
+      if (ended)     break;
+      state = CalculateStateIndex(cm, node, BEGL_S);
+      //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+
+      if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
+        /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         trunc_mode_for_trace_node(i, j, spos, epos));
+          ended = TRUE;
+        }
+      }
+      break;
+
+      /* BEGR_nd.
+       * Pop off info on whether we ended above this node in the CM.
+       * If ended, skip node. 
+       * Logic different than BEGL above, because BEGR is dealing
+       * with an insert left state. For the insert, if we think
+       * we've ended already, that's an invalid input.
+       */
+    case BEGR_nd:
+      esl_stack_IPop(pda, &tidx);    /* recover parent bifurcation's index in trace */
+      esl_stack_IPop(pda, &ended);   /* did we end above here? */
+	
+      if(ended)      break;
+      state = CalculateStateIndex(cm, node, BEGR_S);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+
+      if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
+        /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR, BEGL */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         trunc_mode_for_trace_node(i, j, spos, epos));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, BEGR_IL);
+      for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+          //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
+                                         trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos));
+        }
+      }
+      break;
+	
+      /* An END node.
+       * If we've already ended (on EL), skip. 
+       */
+    case END_nd:
+      if (! ended) {
+        state = CalculateStateIndex(cm, node, END_E);
+        //tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
+        tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state, 
+                                       trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos));
+      }
+      break;
+	  
+    default: 
+      ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): bogus node type");
+    }
+  }
   if(pda    != NULL) esl_stack_Destroy(pda);
   if(nxt_mi != NULL) free(nxt_mi);
   if(nxt_el != NULL) free(nxt_el);
