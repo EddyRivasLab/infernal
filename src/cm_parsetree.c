@@ -274,7 +274,131 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
     }
   }
 }    
+
+/* Function: ParsetreeCountExceptTruncatedMPs()
+ * Date:     EPN, Thu Nov  3 15:16:05 2022
+ *
+ * Purpose:  Count a parsetree into a counts-based CM structure,
+ *           in the course of estimating new CM probability parameters.
+ *           This version of the function is truncation-mode-aware
+ *           which affects emissions, but not transitions.
+ *           Some emissions are skipped (e.g. ML emissions in TRMODE_R mode)
+ *           and MP states not in TRMODE_J are *skipped*.
+ *           After the cm->e counts for all sequences are collected,
+ *           ParsetreeCountOnlyTruncatedMPs() should be called for each 
+ *           parsetree. The reason two functions are necessary is that
+ *           ParsetreeCountOnlyTruncatedMPs() uses the counts in cm->e
+ *           to determine mean posterior estimates using Dirichlet priors.
+ *
+ * Args:     cm  - CM to collect counts in
+ *           tr  - the parse tree to collect from.
+ *           dsq - digitized sequence that we're counting symbols from
+ *           wgt - weight on this sequence (often just 1.0)
+ *
+ * Returns:  (void)
+ */
+void
+ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
+{
+  int tidx;			/* counter through positions in the parsetree        */
+  int v,z;			/* parent, child state index in CM                   */
+
+		/* trivial preorder traverse, since we're already numbered that way */
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    if (v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+
+      /* count transition */
+      if(tidx < (tr->n-1)) { 
+        z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+      
+        if (z == cm->M)                
+          cm->end[v] += wgt;
+        else if (v == 0 && z - cm->cfirst[v] >= cm->cnum[v])
+          cm->begin[z] += wgt;
+        else
+          cm->t[v][z - cm->cfirst[v]] += wgt; 
+      }
+
+      /* count emission */
+      if(tr->mode[tidx] == TRMODE_J) { 
+        if (cm->sttype[v] == MP_st) { 
+          PairCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
+        }
+        else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
+        }
+        else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
+        }
+      }
+      else if (tr->mode[tidx] == TRMODE_L) {
+        if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
+        }
+        /* skip MP, will handle this later in ParsetreeCountOnlyTruncatedMPs() */
+      }
+      else if(tr->mode[tidx] == TRMODE_R) { 
+        if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
+        }
+        /* skip MP, will handle this later in ParsetreeCountOnlyTruncatedMPs() */
+      }
+    }
+  }
+  return;
+}    
     
+
+/* Function: ParsetreeCountOnlyTruncatedMPs()
+ * Date:     EPN, Fri Nov  4 12:11:58 2022
+ *
+ * Purpose:  Count truncated MP emissions, for which either the left
+ *           or right symbol is missing into a counts-based CM structure,
+ *           using mean posterior estimates and a Dirichlet prior and
+ *           already collected counts in cm->e of full MP emissions (left
+ *           and right symbol both present). This function should be 
+ *           called for each parsetree after ParsetreeCountExceptTruncatedMPs()
+ *           has been called for all parsetrees, so that the mean posterior
+ *           estimates are based on all complete basepairs.
+ *           This function requires dbl_e a double version of cm->e to 
+ *           be passed in. This should be a copy of the floats in cm->e
+ *           *after* ParsetreeCountExceptTruncatedMPs() is called and 
+ *           *before* this function is called for any parsetrees, as
+ *           it is a copy of the counts of all non-truncated MP emissions.
+ *
+ *           The counts in cm->e[v] will be updated, but dbl_e[v] will be
+ *           unchanged by this function.
+ * 
+ * Args:     cm  - CM to collect counts in
+ *           tr  - the parse tree to collect from.
+ *           dsq - digitized sequence that we're counting symbols from
+ *           wgt - weight on this sequence (often just 1.0)
+ *           
+ *           pri - the Dirichlet prior to use
+ *
+ * Returns:  (void)
+ */
+void
+ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt, double **dbl_e, const Prior_t *pri)
+{
+  int tidx;			/* counter through positions in the parsetree        */
+  int v,z;			/* parent, child state index in CM                   */
+  int i;                        /* counter over basepairs */
+
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    if ((v != cm->M) && (cm->sttype[v] == MP_st)) { 
+      if (tr->mode[tidx] == TRMODE_L) {
+        PairCountMarginal(cm->abc, dbl_e[v], cm->e[v], dsq[tr->emitl[tidx]], esl_abc_XGetMissing(cm->abc), wgt, pri);
+      }
+      else if (tr->mode[tidx] == TRMODE_R) {
+        PairCountMarginal(cm->abc, dbl_e[v], cm->e[v], esl_abc_XGetMissing(cm->abc), dsq[tr->emitr[tidx]], wgt, pri);
+      }
+    }
+  }
+  return;
+}    
 /* Function: ParsetreeScore()
  * Date:     SRE, Wed Aug  2 13:54:07 2000 [St. Louis]
  *

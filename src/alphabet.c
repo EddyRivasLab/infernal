@@ -89,6 +89,98 @@ PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, 
   return; /* never reached */
 }
 
+/* Function: PairCountMarginal()
+ * Date:     EPN, Fri Nov  4 10:43:58 2022
+ *
+ * Purpose:  Marginal-aware version of PairCount in which 
+ *           exactly one of syml and symr is missing data '~'
+ *           due to a sequence truncation. We partition <wt> 
+ *           across the 4 possible values that '~' could be
+ *           based on a mean posterior estimate using the 
+ *           Dirichlet prior <pri> and the existing counts
+ *           from full MP states in <counters>.
+ *
+ *           <counters> should already be filled with *all* MP counts
+ *           for non-truncated MP states that emitted both a left and
+ *           right symbol so that the Dirichlet prior can use those
+ *           counts when determining mean posterior estimates.
+ *
+ * Args:     abc      - pointer to the internal alphabet
+ *           counters - vector to count into [0..abc->K^2-1]
+ *           syml     - index of left  symbol  [0..abc->sym_iupac-1] or abc->Kp-1 if missing (~)
+ *           symr     - index of right symbol  [0..abc->sym_iupac-1] or abc->Kp-1 if missing (~)
+ *           wt       - weight to use for the count (often 1.0).          
+ *           pri      - the dirichlet prior to use
+ * 
+ * Returns:  void
+ */
+void
+PairCountMarginal(const ESL_ALPHABET *abc, double *nonmarg_counters, float *updated_counters, ESL_DSQ syml, ESL_DSQ symr, float wt, const Prior_t *pri)
+{
+  int     status;         /* easel status */
+  double *probs = NULL;   /* double copy of probability parameters for each of the 16 possible basepairs */
+  double sum;             /* sum of probs that include syml or symr */
+  int    l, r;            /* counters */
+
+  ESL_ALLOC(probs,  sizeof(double) * pri->maxnalpha);
+
+  /* handle case where symr is missing */
+  if(esl_abc_XIsMissing(abc, symr)) { 
+    if(esl_abc_XIsMissing(abc, syml)) { 
+      cm_Fail("PairCountMarginal() entered with both syml and symr missing");
+    }
+    if(syml < abc->K) { /* syml is not degenerate */
+      esl_mixdchlet_MPParameters(pri->mbp, nonmarg_counters, probs);
+      /* sum probs for all basepairs that include syml as the left half
+       * then partition out <wt> weighted by that proportion 
+       */
+      sum = 0.;
+      for (r = 0; r < abc->K; r++) {
+        sum += probs[syml * abc->K + r];
+      }
+      for (r = 0; r < abc->K; r++) {
+	updated_counters[syml * abc->K + r] += (probs[syml * abc->K + r] / sum) * wt;
+      }
+    }
+    else { 
+      cm_Fail("Add code for degenerate left");
+    }
+  }
+  /* handle case where syml is missing */
+  else if(esl_abc_XIsMissing(abc, syml)) { 
+    if(esl_abc_XIsMissing(abc, symr)) { 
+      cm_Fail("PairCountMarginal() entered with both syml and symr missing");
+    }
+    if(symr < abc->K) { /* symr is not degenerate */
+      esl_mixdchlet_MPParameters(pri->mbp, nonmarg_counters, probs);
+      /* sum probs for all basepairs that include symr as the right half
+       * then partition out <wt> weighted by that proportion 
+       */
+      sum = 0.;
+      for (l = 0; l < abc->K; l++) {
+        sum += probs[l * abc->K + symr];
+      }
+      for (l = 0; l < abc->K; l++) {
+	updated_counters[l * abc->K + symr] += (probs[l * abc->K + symr] / sum) * wt;
+      }
+    }
+    else { 
+      cm_Fail("Add code for degenerate right");
+    }
+  }
+  else { 
+    cm_Fail("PairCountMarginal() entered with neither syml or symr missing");
+  }
+  if(probs != NULL) free(probs);
+
+  return;
+
+ ERROR:
+  if(probs != NULL) free(probs);
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
+
 float
 DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr)
 {

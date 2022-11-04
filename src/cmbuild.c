@@ -255,13 +255,14 @@ static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, fl
 static int    flatten_insert_emissions(CM_t *cm);
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
-static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int    print_countvectors(FILE *fp, CM_t *cm);
 static int    dump_emission_info(FILE *fp, CM_t *cm, char *errbuf);
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 static void  dump_cm_occupancy_values(FILE *fp, CM_t *cm);
 static void  dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9);
 static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
+static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
  int
  main(int argc, char **argv)
@@ -986,16 +987,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    cm->checksum = checksum;
    cm->flags   |= CMH_CHKSUM;
 
-   if((CMCountNodetype(cm, MATP_nd) == 0)     && 
-      (! esl_opt_GetBoolean(go, "--v1p0"))    && 
-      (! esl_opt_GetBoolean(go, "--p56"))     && 
-      (! esl_opt_GetBoolean(go, "--noh3pri")) && 
-      (! esl_opt_IsUsed    (go, "--prior"))) { 
-     pretend_cm_is_hmm = TRUE;
-   }
-   else { 
-     pretend_cm_is_hmm = FALSE;
-   }
+   pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
    pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
 
    if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
@@ -1301,13 +1293,13 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    /* save parsetrees if nec */
    if(cfg->tfp != NULL) { 
      for (i = 0; i < msa->nseq; i++) { 
-       fprintf(cfg->tfp, "> %s\n", msa->sqname[i]);
+       //fprintf(cfg->tfp, ">%s\n", msa->sqname[i]);
 
-       if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-       fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
-       fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-       ParsetreeDump(cfg->tfp, tr[i], cm, msa->ax[i]);
-       fprintf(cfg->tfp, "//\n");
+       //if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
+       //fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
+       //fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+       //ParsetreeDump(cfg->tfp, tr[i], cm, msa->ax[i]);
+       //fprintf(cfg->tfp, "//\n");
      }
    }
 
@@ -1470,7 +1462,11 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    int use_rf;
    int use_wts;
    int* used_el = NULL;
-   int pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+   int pretend_cm_is_hmm;   /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+   double **dbl_e = NULL;   /* copy of cm->e in doubles */
+   Prior_t *pri2use = NULL; /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
+   int v;                   /* counter over states */
+   int a;                   /* counter over symbols */
 
    if (cfg->be_verbose && do_print) {
      w = esl_stopwatch_Create();
@@ -1500,9 +1496,6 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
        FreeCM(cm);
        cm = new;
      }
-   pretend_cm_is_hmm = ((CMCountNodetype(cm, MATP_nd) > 0)   || 
-			esl_opt_GetBoolean(go, "--noh3pri")  || 
-			esl_opt_GetBoolean(go, "--v1p0")) ? FALSE : TRUE;
 
    /* get counts */
    ESL_ALLOC(tr, sizeof(Parsetree_t *) * (msa->nseq));
@@ -1521,14 +1514,48 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
     */
    ESL_ALLOC(used_el, sizeof(int) * (msa->alen+1));
    esl_vec_ISet(used_el, msa->alen+1, FALSE);
+
+   pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
+   pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
+
    for (idx = 0; idx < msa->nseq; idx++) {
      if((status = Transmogrify(cm, errbuf, mtr, msa->ax[idx], used_el, msa->alen, &(tr[idx]))) != eslOK) return status;
      if(pretend_cm_is_hmm) { 
        if((status = cm_parsetree_Doctor(cm, errbuf, tr[idx], NULL, NULL)) != eslOK) return status;
      }
-     ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
-     /*ParsetreeDump(cfg->ofp, tr[idx], cm, msa->ax[idx]);*/
+     //ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
+     ParsetreeCountExceptTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
+     if(do_print) { 
+       fprintf(cfg->tfp, ">%s\n", msa->sqname[idx]);
+       ParsetreeDump(cfg->tfp, tr[idx], cm, msa->ax[idx]);
+     }
    }
+   if ((status = print_countvectors(stdout, cm)) != eslOK) goto ERROR;
+   /* make a copy of the emission count vectors, but in double format,
+    * we want a stable copy of these counts to use to determine mean
+    * posterior estimates using a dirichlet prior, and we don't want
+    * those counts to change as we count truncated MP emissions in
+    * each parsetree, which would make CM parameterization dependent
+    * on the order of sequences in the input alignment and would make
+    * mean posterior estimates based on partial MP emissions which
+    * seems dubious. (We need it to be doubles because doubles are
+    * required by esl_mixdchlet_MPParamaters().)
+    */
+   ESL_ALLOC(dbl_e, cm->M * sizeof(double *));
+   for(v = 0; v < cm->M; v++) { 
+     dbl_e[v] = NULL;
+     if(cm->sttype[v] == MP_st) { 
+       ESL_ALLOC(dbl_e[v], cm->abc->K * cm->abc->K * sizeof(double)); 
+       for(a = 0; a < (cm->abc->K * cm->abc->K); a++) { 
+         dbl_e[v][a] = (double) cm->e[v][a];
+       }
+     }
+   }
+   for (idx = 0; idx < msa->nseq; idx++) {
+     ParsetreeCountOnlyTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx], dbl_e, pri2use);
+   }
+   if ((status = print_countvectors(stdout, cm)) != eslOK) goto ERROR;
+
    free(used_el);
    cm->nseq     = msa->nseq;
    cm->eff_nseq = msa->nseq;
@@ -1595,7 +1622,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
     * Used primarily for making data files for training priors.
     */
    if (cfg->cfp != NULL) { 
-     if ((status = print_countvectors(cfg, errbuf, cm)) != eslOK) goto ERROR;
+     if ((status = print_countvectors(cfg->cfp, cm)) != eslOK) goto ERROR;
    }
 
    *ret_cm  = cm;
@@ -1610,10 +1637,28 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    else *ret_msa_tr = tr;
 
    if(w != NULL) esl_stopwatch_Destroy(w);
-
+   if(dbl_e != NULL) { 
+     for(v = 0; v < cm->M; v++) { 
+       if(dbl_e[v] != NULL) {
+         free(dbl_e[v]);
+       }
+     }
+     free(dbl_e);
+     dbl_e = NULL;
+   }
    return eslOK;
 
   ERROR:
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(dbl_e != NULL) { 
+     for(v = 0; v < cm->M; v++) { 
+       if(dbl_e[v] != NULL) {
+         free(dbl_e[v]);
+       }
+     }
+     free(dbl_e);
+     dbl_e = NULL;
+   }
    return status;
  }
 
@@ -2328,43 +2373,41 @@ set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *ms
  * Purpose:  Save emission count vectors to a file.
  *           Used to gather data for training Dirichlet priors.
  *
- * Args:     cfile  - name of file to save vectors to.
+ * Args:     ofp    - open file to output count vectors to.
  *           cm     - a model containing counts (before probify'ing)
  *
  */
 static int
-print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+print_countvectors(FILE *ofp, CM_t *cm)
 {
   int   v,x;
-
-  if(cfg->cfp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "save_countvectors(), but cfg->cfp is NULL, shouldn't happen.");
 
   /* Print emission counts */
   for (v = 0; v < cm->M; v++) {
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) { 
-      fprintf(cfg->cfp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
+      fprintf(ofp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
       if (cm->sttype[v] == MP_st) {
 	for (x = 0; x < cm->abc->K*cm->abc->K; x++)
-	  fprintf(cfg->cfp, "%8.3f ", cm->e[v][x]);
+	  fprintf(ofp, "%8.3f ", cm->e[v][x]);
       } else {
 	for (x = 0; x < cm->abc->K; x++)
-	  fprintf(cfg->cfp, "%8.3f ", cm->e[v][x]);
+	  fprintf(ofp, "%8.3f ", cm->e[v][x]);
       }
-      fprintf(cfg->cfp, "\n");
+      fprintf(ofp, "\n");
     }
   }
 
   /* Print transition counts */
   for (v = 0; v < cm->M; v++) {
     if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
-      fprintf(cfg->cfp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
+      fprintf(ofp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
       for (x = 0; x < cm->cnum[v]; x++) {
-	fprintf(cfg->cfp, "%8.3f ", cm->t[v][x]);
+	fprintf(ofp, "%8.3f ", cm->t[v][x]);
       }
-      fprintf(cfg->cfp, "\n");
+      fprintf(ofp, "\n");
     }
   }
-  fprintf(cfg->cfp, "//\n");
+  fprintf(ofp, "//\n");
   return eslOK;
 }
 
@@ -3272,4 +3315,31 @@ dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7)
  ERROR:
   cm_Fail("memory allocation error.");
   return; /* NEVERREACHED */
+}
+
+/* Function: determine_pretend_cm_is_hmm()
+ * Date:     EPN, Thu Nov  3 15:23:27 2022
+ *
+ * Purpose: Determine if we are going to pretend the CM 
+ *          is an HMM for parameterization purposes.
+ *
+ * Returns: TRUE or FALSE
+ */
+static int
+determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm)
+{
+  int pretend_cm_is_hmm;
+
+  if((CMCountNodetype(cm, MATP_nd) == 0)     && 
+     (! esl_opt_GetBoolean(go, "--v1p0"))    && 
+     (! esl_opt_GetBoolean(go, "--p56"))     && 
+     (! esl_opt_GetBoolean(go, "--noh3pri")) && 
+     (! esl_opt_IsUsed    (go, "--prior"))) { 
+    pretend_cm_is_hmm = TRUE;
+  }
+  else { 
+    pretend_cm_is_hmm = FALSE;
+  }
+
+  return pretend_cm_is_hmm;
 }

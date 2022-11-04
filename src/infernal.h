@@ -2913,6 +2913,8 @@ extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, int em
 extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, char mode);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
+extern void         ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
+extern void         ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt, double **dbl_e, const Prior_t *pri);
 extern int          ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc, float *ret_primary_sc, int *ret_spos, int *ret_epos);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
@@ -3160,6 +3162,7 @@ extern int   CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *
 
 /* from alphabet.c */
 extern void   PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, float wt);
+extern void   PairCountMarginal(const ESL_ALPHABET *abc, double *nonmarg_counters, float *updated_counters, ESL_DSQ syml, ESL_DSQ symr, float wt, const Prior_t *pri);
 extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr);
 extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, ESL_DSQ syml, ESL_DSQ symr);
 extern char   resolve_degenerate (ESL_RANDOMNESS *r, char c);
