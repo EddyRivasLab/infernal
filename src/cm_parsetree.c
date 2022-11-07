@@ -306,10 +306,16 @@ ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float 
 		/* trivial preorder traverse, since we're already numbered that way */
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
-    if (v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
-
+    if ((v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) && 
+        ((tr->mode[tidx] == TRMODE_J) || (tr->nxtl[tidx] != -1))) { 
+      /* when mode is not TRMODE_J some nodes may have nxtl -1 because they don't
+       * attach lower, e.g. BEGL_S state in TRMODE_J */
+    
       /* count transition */
       if(tidx < (tr->n-1)) { 
+        if(tr->nxtl[tidx] == -1) { 
+          cm_Fail("ParsetreeCountExceptTruncatedMPs() unexpectedly left child == -1");
+        }
         z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
       
         if (z == cm->M)                
@@ -383,7 +389,7 @@ void
 ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt, double **dbl_e, const Prior_t *pri)
 {
   int tidx;			/* counter through positions in the parsetree        */
-  int v,z;			/* parent, child state index in CM                   */
+  int v;			/* state index in CM */
   int i;                        /* counter over basepairs */
 
   for (tidx = 0; tidx < tr->n; tidx++) {
