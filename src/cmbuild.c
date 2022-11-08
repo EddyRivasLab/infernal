@@ -981,7 +981,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  esl_msa_MarkFragments_old    (msa, esl_opt_GetReal(go, "--fragthresh")))             != eslOK) goto ERROR;
-   esl_msafile_Write(stdout, msa, eslMSAFILE_STOCKHOLM);
    if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
    cm->checksum = checksum;
@@ -1293,13 +1292,13 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    /* save parsetrees if nec */
    if(cfg->tfp != NULL) { 
      for (i = 0; i < msa->nseq; i++) { 
-       //fprintf(cfg->tfp, ">%s\n", msa->sqname[i]);
+       fprintf(cfg->tfp, ">%s\n", msa->sqname[i]);
 
-       //if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-       //fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
-       //fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-       //ParsetreeDump(cfg->tfp, tr[i], cm, msa->ax[i]);
-       //fprintf(cfg->tfp, "//\n");
+       if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
+       fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
+       fprintf(cfg->tfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+       ParsetreeDump(cfg->tfp, tr[i], cm, msa->ax[i]);
+       fprintf(cfg->tfp, "//\n");
      }
    }
 
@@ -1523,23 +1522,20 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      if(pretend_cm_is_hmm) { 
        if((status = cm_parsetree_Doctor(cm, errbuf, tr[idx], NULL, NULL)) != eslOK) return status;
      }
-     //ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
      ParsetreeCountExceptTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
-     if(do_print) { 
-       fprintf(cfg->tfp, ">%s\n", msa->sqname[idx]);
-       ParsetreeDump(cfg->tfp, tr[idx], cm, msa->ax[idx]);
-     }
+     /*ParsetreeDump(cfg->ofp, tr[idx], cm, msa->ax[idx]);*/
    }
-   if ((status = print_countvectors(stdout, cm)) != eslOK) goto ERROR;
+
    /* make a copy of the emission count vectors, but in double format,
     * we want a stable copy of these counts to use to determine mean
     * posterior estimates using a dirichlet prior, and we don't want
-    * those counts to change as we count truncated MP emissions in
-    * each parsetree, which would make CM parameterization dependent
-    * on the order of sequences in the input alignment and would make
-    * mean posterior estimates based on partial MP emissions which
-    * seems dubious. (We need it to be doubles because doubles are
-    * required by esl_mixdchlet_MPParamaters().)
+    * those counts to change as we add counts from truncated MP
+    * emissions in each parsetree, which would make CM
+    * parameterization dependent on the order of sequences in the
+    * input alignment and would make mean posterior estimates based on
+    * partial MP emissions, which seems dubious. (We need it to be
+    * doubles because doubles are required by
+    * esl_mixdchlet_MPParamaters().)
     */
    ESL_ALLOC(dbl_e, cm->M * sizeof(double *));
    for(v = 0; v < cm->M; v++) { 
@@ -1554,7 +1550,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    for (idx = 0; idx < msa->nseq; idx++) {
      ParsetreeCountOnlyTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx], dbl_e, pri2use);
    }
-   if ((status = print_countvectors(stdout, cm)) != eslOK) goto ERROR;
 
    free(used_el);
    cm->nseq     = msa->nseq;
