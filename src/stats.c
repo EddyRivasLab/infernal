@@ -66,7 +66,7 @@ int debug_print_expinfo_array(CM_t *cm, char *errbuf, ExpInfo_t **expA)
  */
 int debug_print_expinfo(ExpInfo_t *exp)
 {
-  if(exp->is_valid) printf("cur_eff_dbsize: %f lambda: %f mu_extrap: %f mu_orig: %f dbsize: %.0f nrandhits: %d tailp: %f (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
+  if(exp->is_valid) printf("cur_eff_dbsize: %f lambda: %f mu_extrap: %f mu_orig: %f dbsize: %.0f nrandhits: %d tailp: %g (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
   else              printf("invalid (not yet set)\n");
   fflush(stdout);
   return eslOK;
