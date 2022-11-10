@@ -61,6 +61,7 @@ PROGS = cmalign\
 	cmpress\
 	cmscan\
 	cmsearch\
+	cmsim\
 	cmstat\
 	trcyk\
 	bandcyk-montecarlo-test\
@@ -89,6 +90,7 @@ PROGOBJS = \
 	cmfetch.o\
 	cmscore.o\
 	cmsearch.o\
+	cmsim.o\
 	cmstat.o\
 	trcyk.o\
 	bandcyk-montecarlo-test.o\
