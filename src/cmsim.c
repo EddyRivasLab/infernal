@@ -105,7 +105,7 @@ static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf,
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static int collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, CM_t *cm_for_sampling, int N, int L, int *ret_scN, float **ret_scA);
-static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nhits_tail, double *ret_nhits_total);
+static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nhits_tail, double *ret_nhits_total, double *ret_scaled_nhits_tail, double *ret_scaled_nhits_total);
 static int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr);
 static int impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits);
 static int process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, CM_TOPHITS **ret_th);
@@ -333,7 +333,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       }
 
-      if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nhits_tail, &nhits_total)) != eslOK) cm_Fail(errbuf);
+      if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nhits_tail, &nhits_total, NULL, NULL)) != eslOK) cm_Fail(errbuf);
       avg_hitlen = (double) cfg->rsumL / (double) nhits_total;
       printf("Random  seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n", 
 	     "mu", mu, "lambda", lambda, "nhits_total", nhits_total, "tailp", tailp, "avg_len", avg_hitlen, "nhits_tail", (nhits_total * tailp));
@@ -349,7 +349,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  nhits_to_fit = a * ((float) cfg->rsumL / 1000000.);
 	  tailp = nhits_to_fit / (float) rscN;
           if(nhits_to_fit > 0 && tailp <= 1.) { 
-            if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nhits_tail, &nhits_total)) != eslOK) cm_Fail(errbuf);
+            if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nhits_tail, &nhits_total, NULL, NULL)) != eslOK) cm_Fail(errbuf);
             fprintf(cfg->rfp, "  %.9f  %10.6f  %10.4f  %10.4f  %12.6f  %12.6f\n", 
                     tailp,
                     lambda, 
@@ -380,9 +380,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("sum_cct: %f\n", sum_cct);
 
       tailp = esl_opt_GetReal(go, "--itailp");
-      if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, sscN, exp_mode, &mu, &lambda, &scaled_nhits_tail, &scaled_nhits_total)) != eslOK) cm_Fail(errbuf);
-      printf("Sampled seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s:  %9.5f\n\t%12s: %9.5f\n\n", 
-	     "mu", mu, "lambda", lambda, "scaled_nhits_tail", scaled_nhits_tail, "scaled_nhits_total", scaled_nhits_total, "tailp", tailp);
+      if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, sscN, exp_mode, &mu, &lambda, &nhits_tail, &nhits_total, &scaled_nhits_tail, &scaled_nhits_total)) != eslOK) cm_Fail(errbuf);
+      printf("Sampled seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s:  %9.5f\n\t%12s: %9.5f\n\t%12s:  %9.5f\n\t%12s: %9.5f\n\n",
+	     "mu", mu, "lambda", lambda, "nhits_tail", nhits_tail, "nhits_total", nhits_total, "scaled_nhits_tail", scaled_nhits_tail, "scaled_nhits_total", scaled_nhits_total, "tailp", tailp);
 
       sc_tailp = ((float) scaled_nhits_tail / (float) nhits_total);
       printf("non-scaled demon:\n");
@@ -402,14 +402,14 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* output to --ifile, if nec */
       if(cfg->ifp != NULL) { 
-	fprintf(cfg->ifp, "# %12s  %12s  %12s  %10s  %10s  %10s  %10s  %12s  %12s\n", "tail pmass",   "scled pmass",  "scled pmass2", "lambda",     "mu_extrap",  "mu_extrap2", "mu_orig",    "s nhits tail", "s nhits totl");
-	fprintf(cfg->ifp, "# %12s  %12s  %12s  %10s  %10s  %10s  %10s  %12s  %12s\n", "------------", "------------", "------------", "----------", "----------", "----------", "----------", "------------", "------------");
-	for(a = 1.; a >= 0.5; a -= 0.02) { 
+	fprintf(cfg->ifp, "# %12s  %12s  %12s  %10s  %10s  %10s  %10s  %12s  %12s  %12s  %12s\n", "tail pmass",   "scled pmass",  "scled pmass2", "lambda",     "mu_extrap",  "mu_extrap2", "mu_orig",    "nhits tail",   "nhits total",  "s nhits tail", "s nhits totl");
+	fprintf(cfg->ifp, "# %12s  %12s  %12s  %10s  %10s  %10s  %10s  %12s  %12s  %12s  %12s  \n", "------------", "------------", "------------", "----------", "----------", "----------", "----------", "------------", "------------", "------------", "------------");
+	for(a = 1.; a >= 0.02; a -= 0.02) { 
 	  tailp = a;
-	  if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, sscN, exp_mode, &mu, &lambda, &scaled_nhits_tail, &scaled_nhits_total)) != eslOK) cm_Fail(errbuf);
+	  if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, sscN, exp_mode, &mu, &lambda, &nhits_tail, &nhits_total, &scaled_nhits_tail, &scaled_nhits_total)) != eslOK) cm_Fail(errbuf);
 	  sc_tailp  = ((float) scaled_nhits_tail / (float) nhits_total);
 	  sc_tailp2 = ((float) scaled_nhits_tail / (float) scaled_nhits_total);
-	  fprintf(cfg->ifp, "  %12.9f  %12g  %12g  %10.4f  %10.4f  %10.4f  %10.4f  %12g  %12g\n", 
+	  fprintf(cfg->ifp, "  %12.9f  %12g  %12g  %10.4f  %10.4f  %10.4f  %10.4f  %12g  %12g  %12g  %12g\n", 
 		  tailp,
 		  sc_tailp,
 		  sc_tailp2,
@@ -417,6 +417,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  (mu - log(1./sc_tailp)  / lambda), 
 		  (mu - log(1./sc_tailp2) / lambda), 
 		  mu, 
+		  nhits_tail,
+		  nhits_total, 
 		  scaled_nhits_tail,
 		  scaled_nhits_total);
 	}
@@ -587,8 +589,9 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
     min_ssc = (esl_opt_IsUsed(go, "--iT")) ? esl_opt_GetReal(go, "--iT") : -eslINFINITY;
     if(cm_for_sampling == NULL) cm_Fail("in collect_scores(), do_sample is TRUE but cm_for_sampling is NULL");
   }
+  do_rcmL = esl_opt_GetBoolean(go, "--rcmL");
 
-  printf("in collect_scores, do_sample: %d N: %d L: %d\n", do_sample, N, L);
+  printf("in collect_scores, do_sample: %d N: %d L: %d do_rcmL: %d cm_len_distro_N: %d\n", do_sample, N, L, do_rcmL);
   
   /* get HMM for generating random seqs, if nec */
   if(esl_opt_GetBoolean(go, "--rhmm")) { 
@@ -598,11 +601,10 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   /* Search sequences and collect score histograms */
   /* Following code block was stolen and modified from cmcalibrate.c */
   scN  = 0;
-  do_rcmL = esl_opt_GetBoolean(go, "--rcmL");
-  cm_len_distro_N = esl_opt_GetInteger(go, "--rcmN");
   if((! do_sample) && (do_rcmL)) { 
-    ESL_ALLOC(cm_len_distro, (sizeof(int64_t) * cm_len_distro_N));
-    for(i = 0; i < cm_len_distro_N; i++) { 
+    N = esl_opt_GetInteger(go, "--rcmN");
+    ESL_ALLOC(cm_len_distro, (sizeof(int64_t) * N));
+    for(i = 0; i < N; i++) { 
       if((status = sample_sequence_from_cm(cfg, errbuf, cm_for_sampling, &L, &dsq, &tr)) != eslOK) cm_Fail(errbuf);
       cm_len_distro[i] = L;
       free(dsq);
@@ -618,9 +620,9 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
       cur_L = L;
     }
     else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
-      cur_L = (do_rcmL) ? cm_len_distro[(esl_rnd_Roll(cfg->r, cm_len_distro_N))] : cfg->rL;
+      cur_L = (do_rcmL) ? cm_len_distro[(esl_rnd_Roll(cfg->r, N))] : cfg->rL;
       if(esl_opt_GetBoolean(go, "--rhmm")) { 
-	if((status = SampleGenomicSequenceFromHMM(cfg->r, cm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, cur_L, &dsq)) != eslOK) cm_Fail(errbuf);
+        if((status = SampleGenomicSequenceFromHMM(cfg->r, cm->abc, errbuf, ghmm_sA, ghmm_tAA, ghmm_eAA, ghmm_nstates, cur_L, &dsq)) != eslOK) cm_Fail(errbuf);
       }	
       else { 
 	ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (cfg->rL+2));
@@ -709,7 +711,7 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
  * is given as <scores>.
  */
 static int
-fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nhits_tail, double *ret_nhits_total)
+fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nhits_tail, double *ret_nhits_total, double *ret_scaled_nhits_tail, double *ret_scaled_nhits_total)
 {
   int status;
   double mu;
@@ -733,11 +735,13 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tail
     if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
     printf("%4d %.3f\n", i, scores[i]);
   }
-  esl_histogram_Plot(stdout, h);
+  printf("HEYA, plotting histogram, do_impt: %d\n", do_impt);
+ esl_histogram_Plot(stdout, h);
 
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailp' fraction */
-  if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram.", tailp);
+  if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram (do_impt: %d)\n", tailp, do_impt);
   nhits_in_tail = n;
+  printf("nhits_in_tail: %d tailp: %g\n", nhits_in_tail, tailp);
 
   if(do_impt) { 
     /* determine scaled sum of all scores */
@@ -765,8 +769,10 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tail
   *ret_mu     = mu;
   *ret_lambda = lambda;
   if(do_impt) { 
-    *ret_nhits_total = scaled_nhits_total;
-    *ret_nhits_tail  = scaled_nhits_tail;
+    *ret_nhits_total = h->n;
+    *ret_nhits_tail  = nhits_in_tail;
+    *ret_scaled_nhits_total = scaled_nhits_total;
+    *ret_scaled_nhits_tail  = scaled_nhits_tail;
   }
   else { 
     *ret_nhits_total = h->n;
