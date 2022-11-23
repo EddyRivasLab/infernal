@@ -51,6 +51,7 @@ static ESL_OPTIONS options[] = {
   { "--iall",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "count all hits to sampled seqs, not just best",     1 },
   { "--itailp",  eslARG_REAL,  "0.5",  NULL, "0.0<x<=1.0",NULL, NULL, NULL, "sampled seqs: set fraction of tail to fit to exp to <x>", 1 },
   { "--inonbanded",eslARG_NONE, FALSE, NULL, NULL,      NULL,  NULL, NULL, "do not use HMM bands to score sampled sequences",   1 },
+  { "--ifromx",  eslARG_INFILE,  NULL, NULL, NULL,      NULL,  NULL, NULL, "read impt sample scores from file <f>", 1 },
   { "--nonull3", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "turn OFF the NULL3 post hoc additional null model",      1 },
   { "--beta",    eslARG_REAL,  "1e-15",NULL, "0<x<1",   NULL,  NULL, NULL,     "set tail loss prob for QDB calculation to <x>", 1 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--beta", "do not use QDBs", 1 },
@@ -92,6 +93,9 @@ struct cfg_s {
   /* optional output files */
   FILE         *ifp;	        /* output file for impt sample fits */
   FILE         *rfp;	        /* output file for random sample fits */
+
+  /* optional input files */
+  FILE         *xfp;	        /* input file for xfile scores */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -105,6 +109,7 @@ static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf,
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static int collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, CM_t *cm_for_sampling, int N, int L, int *ret_scN, float **ret_scA);
+static int read_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int *ret_scN, float **ret_scA);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nhits_tail, double *ret_nhits_total, double *ret_scaled_nhits_tail, double *ret_scaled_nhits_total);
 static int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr);
 static int impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits);
@@ -167,6 +172,7 @@ main(int argc, char **argv)
 
   cfg.ifp   = NULL; 
   cfg.rfp   = NULL; 
+  cfg.xfp   = NULL; 
 
   cm_banner(stdout, argv[0], banner);
 
@@ -188,6 +194,9 @@ main(int argc, char **argv)
     fclose(cfg.rfp);
     printf("# Random sequence histogram fits to various tail masses saved to file %s.\n", esl_opt_GetString(go, "--rfile"));
   }
+  if (cfg.xfp   != NULL) { 
+    fclose(cfg.xfp);
+  }
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
@@ -204,6 +213,7 @@ main(int argc, char **argv)
  *    cfg->cmfp    - open CM file
  *    cfg->ifp     - optional output file (--ifile)
  *    cfg->rfp     - optional output file (--rfile)
+ *    cfg->xfp     - optional input file  (--xfile)
  *    cfg->r       - source of randomness
  */
 static int
@@ -224,6 +234,13 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open important sampling fit save file %s for writing\n", esl_opt_GetString(go, "--rfile"));
   }
 
+  /* open input files, if nec */
+  if (esl_opt_GetString(go, "--ifromx") != NULL) { 
+    if ((cfg->xfp = fopen(esl_opt_GetString(go, "--ifromx"), "r")) == NULL) {
+      cm_Fail("Failed to open xfile file %s\n", esl_opt_GetString(go, "--ifromx"));
+    }
+  }
+  
   /* create RNG */
   cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
   if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
@@ -366,14 +383,19 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm->search_opts |= CM_SEARCH_HBANDED;
       }
 
-      if((status = collect_scores(go, cfg, errbuf, cm, cm_for_sampling, cfg->sN, -1, &sscN, &sscA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
+      if(cfg->xfp != NULL) { /* read scores from input file */
+        if((status = read_scores(go, cfg, errbuf, &sscN, &sscA) != eslOK)) cm_Fail(errbuf); 
+      }
+      else { 
+        if((status = collect_scores(go, cfg, errbuf, cm, cm_for_sampling, cfg->sN, -1, &sscN, &sscA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
+      }
       int i;
       for(i = 0; i < sscN; i++) { 
-	cct = 1./ (pow(2., sscA[i]));
-	min_cct = ESL_MIN(min_cct, cct);
-	max_cct = ESL_MAX(max_cct, cct);
-	sum_cct += cct;
-	/*printf("SCALED   %5d  %6.2f bits   %12.10f\n", i, sscA[i], cct);*/
+        cct = 1./ (pow(2., sscA[i]));
+        min_cct = ESL_MIN(min_cct, cct);
+        max_cct = ESL_MAX(max_cct, cct);
+        sum_cct += cct;
+        /*printf("SCALED   %5d  %6.2f bits   %12.10f\n", i, sscA[i], cct);*/
       }
       printf("min_cct: %f\n", min_cct);
       printf("max_cct: %f\n", max_cct);
@@ -613,10 +635,23 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
     }
   }
 
+  int64_t Nsamples = 0;
+  float tr_sc;
   for(i = 0; i < N; i++) { 
     /* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
     if(do_sample) { 
       if((status = sample_sequence_from_cm(cfg, errbuf, cm_for_sampling, &L, &dsq, &tr)) != eslOK) cm_Fail(errbuf);
+      Nsamples++;
+      if((status = ParsetreeScore(cm_for_sampling, NULL, errbuf, tr, dsq, FALSE, &tr_sc, NULL, NULL, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+      while((tr_sc < -4.) || (tr_sc > 8.)) { 
+        free(dsq);
+        FreeParsetree(tr);
+        if((status = sample_sequence_from_cm(cfg, errbuf, cm_for_sampling, &L, &dsq, &tr)) != eslOK) cm_Fail(errbuf);
+        Nsamples++;
+        if((status = ParsetreeScore(cm_for_sampling, NULL, errbuf, tr, dsq, FALSE, &tr_sc, NULL, NULL, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+        
+      }
+      printf("HEYA! i: %d Nsamples: %" PRId64 " sc: %.2f\n", i, Nsamples, tr_sc);
       cur_L = L;
     }
     else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
@@ -694,6 +729,62 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   }
 
   if(cm_len_distro != NULL) free(cm_len_distro);
+
+  *ret_scN = scN;
+  *ret_scA = scA;
+  
+  return eslOK;
+  
+ ERROR: 
+  cm_Fail("Out of memory.");
+  return eslEMEM;
+}
+
+/* read_scores()
+ *
+ * Read scores from cfg->xfp until // is read
+ * 
+ */
+static int
+read_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, int *ret_scN, float **ret_scA)
+{
+  int               status; 
+  int               scN = 0;      /* number of hits reported thus far, for all seqs */
+  float            *scA = NULL;   /* [0..rscN-1] hit scores for all seqs */
+  ESL_FILEPARSER   *efp = NULL;
+  char             *tok = NULL;
+  int               n2alloc = 10;
+  int               nalloc  = 0;
+  int               keep_going;
+
+  printf("in read_scores()\n");
+
+  nalloc = n2alloc;
+  ESL_ALLOC(scA, sizeof(float) * nalloc);
+  
+  if(cfg->xfp == NULL) cm_Fail("ERROR in read_scores() xfp is NULL");
+  if ((efp = esl_fileparser_Create(cfg->xfp)) == NULL) cm_Fail("In read_scores(), unable to create fileparser, out of memory?");
+
+  /* each line should have 1 token */
+  keep_going = 1;
+  while(keep_going) { 
+    printf("scN: %d\n", scN);
+    if((status = esl_fileparser_NextLine(efp)) != eslOK) { cm_Fail("In read_scores(), unable to move to next line"); }
+    if((status = esl_fileparser_GetTokenOnLine(efp, &tok, NULL)) != eslOK) { cm_Fail("In read_scores(), unable to read tok"); }
+    printf("tok: %s\n", tok);
+    if(strncmp(tok, "&", 1) == 0) { 
+      printf("reading & scN: %d\n", scN);
+      keep_going = 0;
+    }
+    else { 
+      if(scN == nalloc) { 
+        nalloc += n2alloc;
+        ESL_REALLOC(scA, sizeof(float) * nalloc);
+      }      
+      scA[scN] = atof(tok);
+      scN++;
+    }
+  }
 
   *ret_scN = scN;
   *ret_scA = scA;
