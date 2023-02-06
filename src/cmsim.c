@@ -47,6 +47,7 @@ static ESL_OPTIONS options[] = {
   { "--rtailn-loc", eslARG_INT, "750", NULL, "n>=100",  NULL,  NULL,"--rtailp","fit the top <n> hits/Mb in random histogram for glocal modes", 2 },
   { "--iN",      eslARG_INT,   "1000", NULL, "n>0",     NULL,  NULL, NULL, "number of sampled target seqs",                     1 },
   { "--iT",      eslARG_REAL,    NULL, NULL, NULL,      NULL,  NULL, NULL, "set min bit sc for hits in sampled seqs to <x>",    1 },
+  { "--imaxsc",  eslARG_REAL,"100000.",NULL, NULL,      NULL,  NULL, NULL, "set max score of parsetree to accept to <x>, reject those above this score", 1 },
   { "--ilocal",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "allow local begins/ends in sampled target seqs",    1 },
   { "--iall",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "count all hits to sampled seqs, not just best",     1 },
   { "--itailp",  eslARG_REAL,  "0.5",  NULL, "0.0<x<=1.0",NULL, NULL, NULL, "sampled seqs: set fraction of tail to fit to exp to <x>", 1 },
@@ -314,8 +315,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       if(do_exponentiate) { 
         if((status = cm_Clone(cm, errbuf, &cm_for_sampling)) != eslOK) cm_Fail("unable to clone CM");
-        if((status = cm_Configure(cm_for_sampling, errbuf, -1)) != eslOK) cm_Fail(errbuf);
         cm_Exponentiate(cm_for_sampling, esl_opt_GetReal(go, "--exp"));
+        if((status = cm_Configure(cm_for_sampling, errbuf, -1)) != eslOK) cm_Fail(errbuf);
       }
       else { 
         cm_for_sampling = cm;
@@ -505,8 +506,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
    * local begins/ends, otherwise, they can't */
   if(! esl_opt_GetBoolean(go, "--ilocal")) { 
     cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
-    cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
+  cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
 
   return eslOK;
 }
@@ -606,6 +607,8 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   double **ghmm_tAA = NULL;       /* transition probabilities [0..nstates-1][0..nstates-1] */
   double **ghmm_eAA = NULL;       /* emission probabilities   [0..nstates-1][0..abc->K-1] */
 
+  double maxsc = esl_opt_GetReal(go, "--imaxsc");
+
   do_sample = (L == -1) ? TRUE : FALSE;
   if(do_sample) { 
     min_ssc = (esl_opt_IsUsed(go, "--iT")) ? esl_opt_GetReal(go, "--iT") : -eslINFINITY;
@@ -638,12 +641,11 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   int64_t Nsamples = 0;
   float tr_sc;
   for(i = 0; i < N; i++) { 
-    /* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
     if(do_sample) { 
       if((status = sample_sequence_from_cm(cfg, errbuf, cm_for_sampling, &L, &dsq, &tr)) != eslOK) cm_Fail(errbuf);
       Nsamples++;
       if((status = ParsetreeScore(cm_for_sampling, NULL, errbuf, tr, dsq, FALSE, &tr_sc, NULL, NULL, NULL, NULL)) != eslOK) cm_Fail(errbuf);
-      while((tr_sc < -4.) || (tr_sc > 8.)) { 
+      while(tr_sc > maxsc) { 
         free(dsq);
         FreeParsetree(tr);
         if((status = sample_sequence_from_cm(cfg, errbuf, cm_for_sampling, &L, &dsq, &tr)) != eslOK) cm_Fail(errbuf);
@@ -652,6 +654,11 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
         
       }
       printf("HEYA! i: %d Nsamples: %" PRId64 " sc: %.2f\n", i, Nsamples, tr_sc);
+      if(tr_sc < -1000) { 
+        ParsetreeDump(stdout, tr, cm_for_sampling, dsq);
+        cm_Fail("done");
+      }
+
       cur_L = L;
     }
     else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
