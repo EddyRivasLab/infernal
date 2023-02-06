@@ -234,6 +234,7 @@ static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
+static int    mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
@@ -971,16 +972,17 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
  static int
  process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
  {
-   int      status;
-   uint32_t checksum = 0;      /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
-   CM_t    *cm = NULL;         /* the CM */
-   int      pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
-   Prior_t *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
+   int           status;
+   uint32_t      checksum = 0;      /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
+   CM_t         *cm = NULL;         /* the CM */
+   int           pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+   Prior_t      *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
 
    if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-   if ((status =  esl_msa_MarkFragments_old    (msa, esl_opt_GetReal(go, "--fragthresh")))             != eslOK) goto ERROR;
+   /*   if ((status =  esl_msa_MarkFragments_old    (msa, esl_opt_GetReal(go, "--fragthresh")))             != eslOK) goto ERROR; */
+   if ((status =  mark_fragments               (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
    cm->checksum = checksum;
@@ -1334,6 +1336,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
        }
      }
      if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sq, msa->wgt, tr, NULL, msa->nseq, NULL, NULL, TRUE, FALSE, &omsa)) != eslOK) return status;
+     /* Mark fragments */
+     if ((status =  mark_fragments(go, cfg, errbuf, omsa)) != eslOK) goto ERROR;
      /* Transfer information from old MSA to new */
      esl_msa_SetName     (omsa, msa->name, -1);
      esl_msa_SetDesc     (omsa, msa->desc, -1);
@@ -1441,6 +1445,81 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    return eslOK;
  }
 
+ /* mark_fragments()
+  * Define fragment sequences in the MSA and replace 
+  * terminal gaps with missing data symbols.
+  * 
+  */
+ static int
+ mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
+ {
+   int status = eslOK;
+   ESL_STOPWATCH *w = NULL;
+   ESL_BITFIELD *fragassign = NULL; /* [0..i..msa->nseq-1] 1 if seq i is a fragment else 0 */
+   int i;   /* counter over sequences */
+   int pos; /* counter over alignment positions */
+
+   if (cfg->be_verbose) {
+     w = esl_stopwatch_Create();
+     esl_stopwatch_Start(w);
+     fprintf(cfg->ofp, "%-40s ... ", "Marking fragments");
+     fflush(cfg->ofp);
+   }
+
+   if ((status =  esl_msa_MarkFragments(msa, esl_opt_GetReal(go, "--fragthresh"), &fragassign)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to mark fragments");
+   /* update MSA so fragments have missing data at ends */
+   for (i = 0; i < msa->nseq; i++) { 
+     printf("HEYA checking seq %d\n", i);
+     if (esl_bitfield_IsSet(fragassign, i)) { 
+       printf("HEYA it is a fragment\n");
+       if (msa->flags & eslMSA_DIGITAL) {
+         printf("HEYA is digital\n");
+         for (pos = 1; pos <= msa->alen; pos++) {
+           if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
+           msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
+         }
+         for (pos = msa->alen; pos >= 1; pos--) {	  
+           if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
+           msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
+         }
+       }
+       
+       if (! (msa->flags & eslMSA_DIGITAL)) { 
+         printf("HEYA is NOT digital\n");
+         for (pos = 0; pos < msa->alen; pos++) {
+           if (isalnum(msa->aseq[i][pos])) break;
+           msa->aseq[i][pos] = '~';
+         }
+         for (pos = msa->alen-1; pos >= 0; pos--) {	  
+           if (isalnum(msa->aseq[i][pos])) break;
+           msa->aseq[i][pos] = '~';
+         }
+       }
+     }
+   }
+
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "done.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+
+   if(w          != NULL) esl_stopwatch_Destroy(w);
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign);
+   w = NULL;
+   fragassign = NULL;
+   return eslOK;
+
+  ERROR:
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "FAILED.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+   if(w          != NULL) esl_stopwatch_Destroy(w);
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign);
+   return status;
+ }
 
  /* build_model():
   * Given <msa>, collect counts;
@@ -2512,8 +2591,6 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
   cm_Fail("memory allocation error.");
   return status; /* NEVERREACHED */
 }
-
-
 
 /* Function: MSADivide()
  * EPN, Wed Mar 21 17:26:39 2007
