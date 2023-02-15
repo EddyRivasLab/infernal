@@ -237,6 +237,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
     free(dataA);
   }
   *ret_dataA = NULL;
+  fprintf(stderr, "Problem during alignment of sequence %s\n", sqp->name);
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "DispatchSqBlockAlignment(), out of memory");
   else return status; /* errbuf was filled by DispatchSqAlignment() */
 }
@@ -490,7 +491,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   return eslOK;
 
  ERROR: 
-  fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
   cm->tau = save_tau;
   if(cm->cp9b != NULL) { 
     cm->cp9b->thresh1 = save_thresh1;
