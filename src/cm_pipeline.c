@@ -330,13 +330,6 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_trunc_5p_ends = FALSE;
     pli->do_trunc_3p_ends = FALSE;
   }
-  else if(esl_opt_GetBoolean(go, "--onlytrunc")) { 
-    pli->do_trunc_ends    = FALSE;
-    pli->do_trunc_any     = TRUE;
-    pli->do_trunc_only    = FALSE;
-    pli->do_trunc_5p_ends = FALSE;
-    pli->do_trunc_3p_ends = FALSE;
-  }
   else if(esl_opt_GetBoolean(go, "--notrunc")) { 
     pli->do_trunc_ends    = FALSE;
     pli->do_trunc_any     = FALSE;
