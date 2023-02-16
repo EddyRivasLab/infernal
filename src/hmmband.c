@@ -320,7 +320,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 				 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
-  cp9b->tau = cm->tau;
 
   /* Step 3: (only if truncated alignments are possible)
    * Calculate occupancy and candidate states for marginal alignments 
@@ -4859,8 +4858,8 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
 
-#if 0
-  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+#if eslDEBUGLEVEL >= 1   
+  printf("Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
     printf("sp2: %4d\n\t", cp9b->sp2);
     printf("ep2: %4d\n\t", cp9b->ep2);
@@ -4941,7 +4940,7 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
     else { 
       cp9b->Tvalid[v] = FALSE;
     }
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
     printf("#DEBUG: v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
 	   cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);
 #endif

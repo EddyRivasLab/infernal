@@ -1443,7 +1443,7 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), mx is NULL.\n");
   if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "TrCYKScanHB(), cm->cp9 is NULL.\n");
 
-  ESL_DPRINTF1(("#DEBUG: cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMALNBANDS));
+  ESL_DPRINTF1(("#DEBUG: TrCYKScanHB(): env_cutoff: %.3f cm->search_opts & CM_SEARCH_HMMALNBANDS: %d\n", env_cutoff, cm->search_opts & CM_SEARCH_HMMALNBANDS));
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
