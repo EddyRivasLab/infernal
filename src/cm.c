@@ -4262,6 +4262,16 @@ cm_ExpectedStateOccupancy(CM_t *cm)
   char  ***tmap = NULL;  /* transition map */
   float  **t_copy = NULL;  /* copy of transition probabilities */
   double *psi = NULL;
+  double tol = 0.001;
+  /* tol is difference from 1.0 we allow for summed psi of split set states
+   * it is larger for really big models, 
+   * tolerance is (clen/25000) * 0.001, with minimum of 0.001 
+   * so it's 0.001 unless clen > 25000
+   * (from v1.1 to v1.1.4 it was 0.001 for all models)
+   */
+  if(cm->clen > 25000) { 
+    tol = ((float) cm->clen / 25000.) * 0.001;
+  }
 
   /* make a copy of the CM transitions */
   ESL_ALLOC(t_copy,    cm->M * sizeof(float *));
@@ -4317,14 +4327,15 @@ cm_ExpectedStateOccupancy(CM_t *cm)
     }
   }
   /* Sanity check. For any node the sum of psi values over
-   * all split set states should be 1.0. */
+   * all split set states should be 1.0 (or close to it, see definition of tol above)
+   */
   for(nd = 0; nd < cm->nodes; nd++) { 
     summed_psi = 0.;
     nstates = TotalStatesInNode(cm->ndtype[nd]);
     for(v = cm->nodemap[nd]; v < cm->nodemap[nd] + nstates; v++) { 
       if(cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) summed_psi += psi[v];
     }
-    if((summed_psi < 0.999) || (summed_psi > 1.001)) { 
+    if((summed_psi < (1. - tol)) || (summed_psi > (1.0 + tol))) { 
       cm_Fail("summed psi of split states in node %d not 1.0 but : %f\n", nd, summed_psi);
     }
     /* printf("split summed psi[%d]: %f\n", nd, summed_psi); */

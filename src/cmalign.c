@@ -657,6 +657,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 {
   int status;
   int i;  /* counter over sequences */
+  ESL_SQ  *sqp = NULL; /* ptr to a ESL_SQ, only used if there's an error */
 
   /* allocate dataA */
   info->n = sq_block->count;
@@ -680,7 +681,11 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 				   info->w, info->w_tot, r, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
-    if(status != eslOK) cm_Fail(errbuf);
+    if(status != eslOK) { 
+      sqp = (sq_block->list + i);
+      fprintf(stderr, "Problem during alignment of sequence %s\n", sqp->name);
+      cm_Fail(errbuf);
+    }
   }
   return eslOK;
   
@@ -839,7 +844,10 @@ pipeline_thread(void *arg)
 				   info->w, info->w_tot, NULL, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
-    if(status != eslOK) cm_Fail(errbuf);
+    if(status != eslOK) { 
+      fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
+      cm_Fail(errbuf);
+    }
 
     i++;
     info->n++;
@@ -1274,7 +1282,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 				     info.w, info.w_tot, NULL, &data);
 	info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
       }
-      if(status != eslOK) mpi_failure(errbuf);
+      if(status != eslOK) { 
+        fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
+        mpi_failure(errbuf);
+      }
 
       /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
       status = cm_alndata_MPISend(data, FALSE, errbuf, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
