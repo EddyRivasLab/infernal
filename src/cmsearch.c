@@ -1837,7 +1837,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     goto ERROR;
   }
   if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 2)) { 
-    puts("--fmt 3 only makes sense with cmscan, because cmsearch can't determine overlaps");
+    puts("--fmt 2 only makes sense with cmscan, because cmsearch can't determine overlaps");
     goto ERROR;
   }
 
