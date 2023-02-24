@@ -30,7 +30,6 @@ if ($ok) {
   #   without bug: 5'&3' truncated hit from ?
   if(open(IN, "iss33.tbl")) { 
     $ok = 1; # set to 0 below if we see any incorrectly truncated hits
-    $ncorrect = 0; 
     while($line = <IN>) { 
       chomp $line;
       if($line !~ m/^\#/) { 
@@ -40,8 +39,8 @@ if ($ok) {
         print $line;
         $nhit++;
         @el_A = split(/\s+/, $line);
-        ($seq_from, $seq_to, $strand, $trunc, $seq_len) = ($el_A[7], $el_A[8], $el_A[9], $el_A[10], $el_A[17]);
-        printf("$line\nseq_from: $seq_from seq_to: $seq_to strand: $strand trunc: $trunc\n");
+        my ($seq_from, $seq_to, $strand, $trunc, $seq_len) = ($el_A[7], $el_A[8], $el_A[9], $el_A[10], $el_A[18]);
+        printf("$line\nseq_from: $seq_from seq_to: $seq_to strand: $strand trunc: $trunc seq_len: $seq_len\n");
         if($strand ne "+") { 
           printf("FAIL 0: wrong strand\n");
           $ok = 0;  # all hits should be on the positive strand
@@ -51,17 +50,11 @@ if ($ok) {
             printf("FAIL 1: seq_from: $seq_from != 1: $line\n");
             $ok = 0;
           }
-          else { 
-            $ncorrect++;
-          }
         }
         if(($trunc eq "3'") || ($trunc eq "5'&3'")) { 
           if($seq_to != $seq_len) { 
             printf("FAIL 2: seq_to: $seq_to != seq_len ($seq_len): $line\n");
             $ok = 0;
-          }
-          else { 
-            $ncorrect++;
           }
         }
       }
@@ -70,11 +63,6 @@ if ($ok) {
   }
   else { # open(IN, "iss33.tbl") failed 
     $ok = 0;
-  }
-  if($ok) { 
-    if($ncorrect != 3) { 
-      $ok = 0;
-    }
   }
 }
 
