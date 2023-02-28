@@ -75,7 +75,7 @@
 1 exercise  bug/i47-cmbuild-p7ml     !testsuite/bug-i47.pl! @src/cmbuild@
 1 exercise  bug/i49-hmmonly-ovlp     !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
 1 exercise  iss21-cmbuild-rf-pb      !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
-1 exercise  iss33-trunc-pipeline     !testsuite/iss33-trunc-pipeline.pl! @@ !! %OUTFILES%
+1 exercise  iss33-trunc-pipeline     !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 
 ################################################################
 # Option tests
