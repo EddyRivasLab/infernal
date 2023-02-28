@@ -3317,6 +3317,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   int64_t          nenv = 0;               /* number of hits that survived CYK filter */
   int64_t         *es = NULL;              /* [0..si..nenv-1] start posn of surviving envelope si */
   int64_t         *ee = NULL;              /* [0..si..nenv-1] end   posn of surviving envelope si */
+  int              enforce_i0;             /* TRUE if first nt must be included in eventual parsetree */
+  int              enforce_j0;             /* TRUE if final nt must be included in eventual parsetree */
 
   if (sq->n == 0)  return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (np7env == 0) return eslOK;    /* if there's no envelopes to search in, return */
@@ -3332,6 +3334,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   }
   cm = *opt_cm;
   save_tau = cm->tau;
+
+  enforce_i0 = cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) ? TRUE : FALSE;
+  enforce_j0 = cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) ? TRUE : FALSE;
 
   ESL_ALLOC(i_surv, sizeof(int) * np7env); 
   esl_vec_ISet(i_surv, np7env, FALSE);
@@ -3372,8 +3377,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     nenv++;
     /* update envelope boundaries, if nec */
     if(pli->do_fcykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
-      p7es[i] = cyk_envi;
-      p7ee[i] = cyk_envj;
+      if(! enforce_i0) { p7es[i] = cyk_envi; }
+      if(! enforce_j0) { p7ee[i] = cyk_envj; }
     }
 
 #if eslDEBUGLEVEL >= 2
