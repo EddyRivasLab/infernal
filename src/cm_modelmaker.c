@@ -1093,13 +1093,13 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
       tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0, 
                                      (do_trunc ? trunc_mode : TRMODE_J)); /* if do_trunc: use mode of first node */
       for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
-        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1, 
                                          (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos) : TRMODE_J));
         }
       }
       for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (! esl_abc_XIsMissing(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2, 
                                          (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
         }
@@ -1158,7 +1158,7 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 
       state = CalculateStateIndex(cm, node, MATP_IL);
       for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
-        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state, 
                                          (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node]-1, spos, epos) : TRMODE_J));
         }
@@ -1166,7 +1166,7 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 
       state = CalculateStateIndex(cm, node, MATP_IR);
       for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (! esl_abc_XIsMissing(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
                                          (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
         }
@@ -1205,7 +1205,7 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 
       state = CalculateStateIndex(cm, node, MATL_IL);
       for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
-        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
                                          (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos) : TRMODE_J));
         }
@@ -1240,7 +1240,7 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 
       state = CalculateStateIndex(cm, node, MATR_IR);
       for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (! esl_abc_XIsMissing(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state, 
                                          (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], j, spos, epos) : TRMODE_J));
         }
@@ -1303,7 +1303,7 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
 
       state = CalculateStateIndex(cm, node, BEGR_IL);
       for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
-        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
           tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
                                          (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos) : TRMODE_J));
         }
