@@ -390,7 +390,6 @@ ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wg
 {
   int tidx;			/* counter through positions in the parsetree        */
   int v;			/* state index in CM */
-  int i;                        /* counter over basepairs */
 
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
