@@ -112,7 +112,6 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   int         *elassign  = NULL; /* 1..alen   array; 0=match/ins col, 1=EL col */
   int         *ct        = NULL; /* 0..alen-1 base pair partners array         */
   int          apos;		 /* counter over columns of alignment          */
-  int          idx;		 /* counter over sequences in the alignment    */
   int          v;		 /* index of current node                      */
   int          i,j,k;	         /* subsequence indices                        */
   int  type;			 /* type of node we're working on              */
@@ -127,9 +126,6 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   int  k_cpos, i_cpos, j_cpos;   /* consensus position that k, i, j (alignment positions) correspond to */
   int  kp;                       /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
   int  el_i, el_j;               /* i and j, before accounting for ELs */
-  float r;		         /* weighted residue count              */
-  float totwgt;	                 /* weighted residue+gap count          */
-  float wgt;	                 /* weight of a sequence                */
 
   /* Contract check */
   if (msa->ss_cons == NULL)            ESL_XFAIL(eslEINCOMPAT, errbuf, "HandModelmaker(): No consensus structure annotation available for the alignment.");
@@ -140,48 +136,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
-   *
-   *    EPN, Wed Sep 29 13:26:51 2010 
-   *    Post-v1.0.2 change, if (use_rf == FALSE) and (use_wts == TRUE): 
-   *    match/insert columns are defined based on gap frequency in the
-   *    alignment *taking weights into account*. That is >= symfrac
-   *    of the fraction of weighted sequences must be non-gaps to define
-   *    a match column.  Previously (infernal v0.1->1.0.2) 
-   *    >= symfrac of the actual number of sequences (unweighted) 
-   *    had to be non-gaps to be a match, this is still allowed if (use_wts
-   *    is FALSE).
    */
-  ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
-
-  /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
-  if (use_rf) { 
-    /* Define match based on RF char, if gap or missing ('-_.~')
-     * then insert, else match. 
-     * 
-     * It's impt we don't count '~' as a match column b/c we don't
-     * want a match column to have RF == '~' in a cmalign output
-     * alignment as that would screw the merging of subalignments in
-     * cmalign, which assumes '~' RF columns are EL inserts.
-     */
-    for (apos = 1; apos <= msa->alen; apos++)
-      matassign[apos] = ((esl_abc_CIsGap    (msa->abc, msa->rf[apos-1])) || /* CIsGap     returns true for '.', '_' and '-' only (they're equivalent, see create_rna() in esl_alphabet.c()) */
-			 (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
-			  ? FALSE : TRUE;
-  }
-  else { 
-    for (apos = 1; apos <= msa->alen; apos++) { 
-      r = totwgt = 0.;
-      for (idx = 0; idx < msa->nseq; idx++) { 
-        wgt = (use_wts) ? msa->wgt[idx] : 1.0;
-        if       (esl_abc_XIsResidue(msa->abc, msa->ax[idx][apos])) { r += wgt; totwgt += wgt; }
-        else if  (esl_abc_XIsGap(msa->abc,     msa->ax[idx][apos])) {           totwgt += wgt; }
-        else if  (esl_abc_XIsMissing(msa->abc, msa->ax[idx][apos])) continue;
-      }
-      if (r > 0. && r / totwgt >= symfrac) matassign[apos] = TRUE;
-      else                                 matassign[apos] = FALSE;
-      printf("matassign[%3d]: %d\n", apos, matassign[apos]);
-    }
-  }
+  AssignMatchColumnsForMsa(msa, errbuf, use_rf, use_wts, symfrac, &matassign);
 
   /* 2. Determine EL assignments, if necessary.
    *    elassign is 1..alen. Values are 1 if a EL column, 0 if match or insert column.
@@ -530,6 +486,85 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   return status; /* never reached */
 }
 
+/* Function: AssignMatchColumnsForMsa()
+ * Date:     EPN, Tue Mar  7 13:17:14 2023
+ * 
+ * Purpose:  Given an MSA, determine which positions will be 'match' (consensus)
+ *           positions and which will be insert. Reference annotation (msa->rf)
+ *           if used if <use_rf> is TRUE, else any column for which the fraction of 
+ *           sequences (weighted by msa->wgt if <use_wts>) is at least <symfrac>
+ *           is defined as a match column and all other columns are inserts.
+ *           Assignments returned in <ret_matassign>.
+ * 
+ * Args:     msa           - the multiple alignment 
+ *           errbuf        - for error messages
+ *           use_rf        - TRUE to use RF annotation to determine match/insert
+ *           use_wts       - TRUE to consider sequence weights from msa when determining match/insert
+ *           symfrac       - nucleotide occupancy thresh for defining a match column (if use_rf=FALSE)
+ *           ret_matassign - RETURN: [1..i..msa->alen] 1 if i is match column, 0 if not
+ *           
+ * Return:   eslOK on success;
+ *           eslEMEM if we run out of memory, ret_matassign set to NULL
+ *           eslEINCOMPAT on contract violation, ret_matassign set to NULL
+ */
+int
+AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float symfrac, int **ret_matassign)
+{
+  int   status;           /* return status                       */
+  int   apos;             /* counter over columns of alignment   */
+  int   idx;		  /* counter over sequences in the alignment    */
+  float r;		  /* weighted residue count              */
+  float totwgt;	          /* weighted residue+gap count          */
+  float wgt;	          /* weight of a sequence                */
+  int  *matassign = NULL; /* 1..alen   array; 0=insert col, 1=match col */
+
+  /* Contract check */
+  if (! (msa->flags & eslMSA_DIGITAL)) ESL_XFAIL(eslEINCOMPAT, errbuf, "AssignMatchColumnsForMsa(): MSA is not digitized.");
+  if (  use_rf && msa->rf  == NULL)    ESL_XFAIL(eslEINCOMPAT, errbuf, "AssignMatchColumnsForMsa(): No reference annotation available for the alignment.");
+  if (! use_rf && msa->wgt == NULL)    ESL_XFAIL(eslEINCOMPAT, errbuf, "AssignMatchColumnsForMsa(): use_rf is FALSE, and msa->wgt is NULL.");
+
+  ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
+  matassign[0] = 0; /* irrelevant, matassign is 1..alen */
+
+  /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
+  if (use_rf) { 
+    /* Define match based on RF char, if gap or missing ('-_.~')
+     * then insert, else match. 
+     * 
+     * It's impt we don't count '~' as a match column b/c we don't
+     * want a match column to have RF == '~' in a cmalign output
+     * alignment as that would screw the merging of subalignments in
+     * cmalign, which assumes '~' RF columns are EL inserts.
+     */
+    for (apos = 1; apos <= msa->alen; apos++)
+      matassign[apos] = ((esl_abc_CIsGap    (msa->abc, msa->rf[apos-1])) || /* CIsGap     returns true for '.', '_' and '-' only (they're equivalent, see create_rna() in esl_alphabet.c()) */
+			 (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
+			  ? FALSE : TRUE;
+  }
+  else { 
+    for (apos = 1; apos <= msa->alen; apos++) { 
+      r = totwgt = 0.;
+      for (idx = 0; idx < msa->nseq; idx++) { 
+        wgt = (use_wts) ? msa->wgt[idx] : 1.0;
+        if       (esl_abc_XIsResidue(msa->abc, msa->ax[idx][apos])) { r += wgt; totwgt += wgt; }
+        else if  (esl_abc_XIsGap(msa->abc,     msa->ax[idx][apos])) {           totwgt += wgt; }
+        else if  (esl_abc_XIsMissing(msa->abc, msa->ax[idx][apos])) continue;
+      }
+      if (r > 0. && r / totwgt >= symfrac) matassign[apos] = TRUE;
+      else                                 matassign[apos] = FALSE;
+      printf("matassign[%3d]: %d\n", apos, matassign[apos]);
+    }
+  }
+
+  *ret_matassign = matassign;
+  return eslOK;
+
+ ERROR:
+  free(matassign);
+  *ret_matassign = NULL;
+  if(status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "HandModelmaker(): memory allocation error.");
+  return status; /* never reached */
+}
 
 /* Function: cm_from_guide()
  * Date:     SRE, Sat Jul 29 09:25:49 2000 [St. Louis]
