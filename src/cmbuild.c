@@ -49,7 +49,7 @@ static ESL_OPTIONS options[] = {
   { "--fast",      eslARG_NONE,"default",   NULL, NULL,      CONOPTS,      NULL,         NULL, "assign cols w/ >= symfrac residues as consensus",                2 },
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
-  { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "if L <= x*alen, tag sequence as a fragment",                     2 },
+  { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "if aligned seq spans <= x*alen, tag seq as a fragment",          2 },
   { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
   { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
 
@@ -2228,7 +2228,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
      * The --p7hemit option makes it so HMMER emissions are used instead
      * of the marginalized CM emissions.
      *
-     * NOTE: We could avoid this if we had a way or using Infernal's
+     * NOTE: We could avoid this if we had a way of using Infernal's
      * emission priors (there are different prior for base pairs and
      * singlets) in p7_Builder(), but that would require parsing the
      * secondary structure and getting an Infernal function into
