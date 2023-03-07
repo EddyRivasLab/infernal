@@ -352,8 +352,30 @@ ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float 
       }
     }
   }
+
+  /* check for a special case: if final two nodes of the parsetree are 
+   * identical insert emissions, this means we have a truncated parsetree 
+   * that may contribute to an IL/IR self transition that will be problematically
+   * high (BandCalculationEngine() may estimate a very high W for example)
+   * so we perform a hack to increase the transition count out of this insert
+   * state to the first match state of the following node
+   */
+  if((tr->state[(tr->n-2)] == tr->state[(tr->n-1)]) && 
+     (tr->mode[(tr->n-2)]  == tr->mode[(tr->n-1)])) { 
+    /* final two nodes have same state and truncation mode */
+    v = tr->state[(tr->n-1)];
+    if((cm->sttype[v] == IL_st && (tr->mode[(tr->n-1)] == TRMODE_J || tr->mode[(tr->n-1)] == TRMODE_L)) || 
+       (cm->sttype[v] == IR_st && (tr->mode[(tr->n-1)] == TRMODE_J || tr->mode[(tr->n-1)] == TRMODE_R))) { 
+      /* for all inserts, first transition is to itself (cm->cfirst[v])
+       * for all inserts except MATP_IL, second transition is to first reachable state in the next node, 
+       * for MATP_IL second transition is to MATP_IR, third is to first reachable state in the next node
+       */
+      cm->t[v][NumReachableInserts(cm->stid[v])] += wgt; 
+    }
+  }
+
   return;
-}    
+}
     
 
 /* Function: ParsetreeCountOnlyTruncatedMPs()
