@@ -50,6 +50,7 @@ static ESL_OPTIONS options[] = {
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
   { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "if aligned seq spans <= x*alen, tag seq as a fragment",          2 },
+  { "--fragnrfpos",eslARG_INT,     NULL,    NULL, "n>=0",       NULL,  "--hand","--fragthresh","w/--hand, seqs w/ > <n> 5' or 3' consensus gaps are fragments",  2 },
   { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
   { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
 
@@ -1006,13 +1007,15 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
    *ret_cm = cm;
 
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); fragassign = NULL;
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
+   fragassign = NULL;
    return eslOK;
 
   ERROR:
    if(cm != NULL) FreeCM(cm);
    *ret_cm = NULL;
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); fragassign = NULL;
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
+   fragassign = NULL;
    return status;
  }
 
@@ -1362,11 +1365,13 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      free(a2ua_map);
    } 
 
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); fragassign = NULL;
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
+   fragassign = NULL;
    return eslOK;
 
   ERROR: 
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); fragassign = NULL;
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
+   fragassign = NULL;
    cm_Fail("in output_result(), out of memory");
    return status; /* NEVERREACHED */
  }
@@ -1468,6 +1473,14 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    int status = eslOK;
    ESL_STOPWATCH *w = NULL;
 
+   /* variables only used if --fragnrfpos is used */
+   int *matassign = NULL;            /* [1..alen] array; 0=insert col, 1=match col */
+   ESL_BITFIELD *fragassign = NULL;  /* [0..msa->nseq-1], set if seq is defined as a fragment */
+   int idx; /* counter over sequences */
+   int lpos, rpos; /* counter over alignment positions */
+   int lrfpos_gap; /* number of 5'-terminal consensus gaps in current sequence */
+   int rrfpos_gap; /* number of 3'-terminal consensus gaps in current sequence */
+
    if (cfg->be_verbose) {
      w = esl_stopwatch_Create();
      esl_stopwatch_Start(w);
@@ -1475,7 +1488,45 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      fflush(cfg->ofp);
    }
 
-   if ((status = esl_msa_MarkFragments(msa, esl_opt_GetReal(go, "--fragthresh"), ret_fragassign)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to mark fragments");
+   if(esl_opt_IsUsed(go, "--fragnrfpos") && esl_opt_IsUsed(go, "--hand")) { /* --fragnrfpos requires --hand (also enforced by getopts above) */
+     if(msa->rf == NULL) { 
+       cm_Fail("--hand used but MSA does not have RF annotation"); 
+     }
+     if ((fragassign = esl_bitfield_Create(msa->nseq)) == NULL) { status = eslEMEM; goto ERROR; }
+     AssignMatchColumnsForMsa(msa, errbuf, /*use_rf=*/TRUE, /*use_wts=*/FALSE, esl_opt_GetReal(go, "--symfrac"), &matassign);
+     for (idx = 0; idx < msa->nseq; idx++) { 
+       lrfpos_gap = 0;
+       rrfpos_gap = 0;
+       for (lpos = 1; lpos <= msa->alen; lpos++) { 
+         if (matassign[lpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][lpos])) { 
+             lpos = msa->alen + 1; /* breaks loop */
+           }
+           else { 
+             lrfpos_gap++;
+           }
+         }
+       }
+       for (rpos = msa->alen; rpos >= 1; rpos--) { 
+         if (matassign[rpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][rpos])) { 
+             rpos = 0; /* breaks loop */
+           }
+           else { 
+             rrfpos_gap++;
+           }
+         }
+       }
+       if((lrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos")) || 
+          (rrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos"))) { 
+         esl_bitfield_Set(fragassign, idx);
+       }
+     }
+     *ret_fragassign = fragassign;
+   } /* end of if(--fragnrfpos && --hand) */
+   else {
+     if ((status = esl_msa_MarkFragments(msa, esl_opt_GetReal(go, "--fragthresh"), ret_fragassign)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to mark fragments");
+   }
 
    if (cfg->be_verbose) { 
      fprintf(cfg->ofp, "done.  ");
@@ -1484,7 +1535,9 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    }
 
    if(w != NULL) esl_stopwatch_Destroy(w);
+   if(matassign != NULL) free(matassign); 
    w = NULL;
+   matassign = NULL;
    return eslOK;
 
   ERROR:
@@ -1494,6 +1547,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
    }
    if(w != NULL) esl_stopwatch_Destroy(w);
+   if(matassign != NULL) free(matassign); 
+   if(fragassign != NULL) free(fragassign);
    return status;
  }
 
@@ -1511,7 +1566,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
  static int
  annotate_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD *fragassign)
  {
-   int status = eslOK;
    ESL_STOPWATCH *w = NULL;
    int i;   /* counter over sequences */
    int pos; /* counter over alignment positions */
@@ -1556,7 +1610,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
    }
 
-   if(w != NULL) esl_stopwatch_Destroy(w); w = NULL;
+   if(w != NULL) esl_stopwatch_Destroy(w); 
+   w = NULL;
    return eslOK;
 
  }
