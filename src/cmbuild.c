@@ -33,6 +33,7 @@
 #define CONOPTS "--fast,--hand,--rsearch"                      /* Exclusive options for model construction                    */
 #define WGTOPTS "--wpb,--wgsc,--wblosum,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
+#define FRAGOPTS "--fragthresh,--fragnrfpos,--fraggiven"       /* Exclusive options for fragment definition                   */
 #define CLUSTOPTS "--ctarget,--cmaxid,--call,--corig,--cdump"  /* options for clustering the input aln and building a CM from each cluster */
 
 static ESL_OPTIONS options[] = {
@@ -49,10 +50,11 @@ static ESL_OPTIONS options[] = {
   { "--fast",      eslARG_NONE,"default",   NULL, NULL,      CONOPTS,      NULL,         NULL, "assign cols w/ >= symfrac residues as consensus",                2 },
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
-  { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "if aligned seq spans <= x*alen, tag seq as a fragment",          2 },
-  { "--fragnrfpos",eslARG_INT,     NULL,    NULL, "n>=0",       NULL,  "--hand","--fragthresh","w/--hand, seqs w/ > <n> 5' or 3' consensus gaps are fragments",  2 },
-  { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
-  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
+  { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",FRAGOPTS,      NULL,         NULL, "if aligned seq spans <= x*alen, tag seq as a fragment",          2 },
+  { "--fragnrfpos", eslARG_INT,    NULL,    NULL, "n>=0",   FRAGOPTS,  "--hand",         NULL, "w/--hand, seqs w/ > <n> 5' or 3' consensus gaps are fragments",  2 },
+  { "--fraggiven", eslARG_NONE,    FALSE,   NULL,  NULL,    FRAGOPTS,      NULL,         NULL, "use fragment info, if any, in input MSA, don't infer frags",     2 },
+  { "--noss",      eslARG_NONE,    FALSE,   NULL,  NULL,        NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
+  { "--rsearch", eslARG_INFILE,     NULL,    NULL, NULL,     CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
 
   /* Other model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -236,6 +238,7 @@ static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    assign_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign);
+static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign);
 static int    annotate_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD *fragassign);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
@@ -984,8 +987,13 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    if ((status =  check_and_clean_msa  (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  esl_msa_Checksum     (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-   if ((status =  assign_fragments     (go, cfg, errbuf, msa, &fragassign))                    != eslOK) goto ERROR;
-   if ((status =  annotate_fragments   (go, cfg, errbuf, msa, fragassign))                     != eslOK) goto ERROR;
+   if(esl_opt_GetBoolean(go, "--fraggiven")) { 
+     if ((status =  check_fragments      (go, cfg, errbuf, msa, /*fragassign=*/NULL))          != eslOK) goto ERROR;
+   }
+   else { 
+     if ((status =  assign_fragments     (go, cfg, errbuf, msa, &fragassign))                  != eslOK) goto ERROR;
+     if ((status =  annotate_fragments   (go, cfg, errbuf, msa, fragassign))                   != eslOK) goto ERROR;
+   }
    if ((status =  build_model          (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
    cm->checksum = checksum;
@@ -1329,10 +1337,16 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      for(i = 0; i < msa->nseq; i++) { 
        if((status = esl_sq_FetchFromMSA(msa, i, &(sq[i]))) != eslOK) ESL_FAIL(status, errbuf, "problem creating -O output alignment, probably out of memory");
      }
-     /* define fragments, using the original MSA (not the possibly doctored omsa below because
-      * for model building we defined fragments using the original MSA) 
+     /* define fragments, using the original MSA (not the possibly doctored omsa we are
+      * about to create below because for model building we defined fragments using the 
+      * original MSA) 
       */
-     if ((status = assign_fragments(go, cfg, errbuf, msa, &fragassign)) != eslOK) goto ERROR;
+     if(esl_opt_GetBoolean(go, "--fraggiven")) { 
+       if ((status =  check_fragments(go, cfg, errbuf, msa, &fragassign)) != eslOK) goto ERROR;
+     }
+     else { 
+       if ((status = assign_fragments(go, cfg, errbuf, msa, &fragassign)) != eslOK) goto ERROR;
+     }
 
      /* for each sequence, convert aligned coordinates in each parsetree to unaligned coordinates */
      for(i = 0; i < msa->nseq; i++) { 
@@ -1552,6 +1566,139 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    return status;
  }
 
+ /* check_fragments()
+  * Check which sequences in an MSA are annotated as fragments. 
+  * Also check that ~ only exist before first residue and after final residue.
+  * <ret_fragassign>: RETURN, [0..i..msa->nseq-1], set if seq i is fragment, can be NULL if not wanted
+  * Dies: if internal ~ found for any sequence
+  */
+ static int
+ check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign)
+ {
+   int status = eslOK;
+   ESL_STOPWATCH *w = NULL;
+
+   ESL_BITFIELD *fragassign = NULL;  /* [0..msa->nseq-1], set if seq is defined as a fragment */
+   int idx; /* counter over sequences */
+   int lpos, rpos; /* counter over alignment positions */
+   int spos, epos; /* first/final residue for sequence */
+   int lmiss, rmiss; /* number of consecutive missing data symbols at 5' and 3' ends */
+
+   if (cfg->be_verbose) {
+     w = esl_stopwatch_Create();
+     esl_stopwatch_Start(w);
+     fprintf(cfg->ofp, "%-40s ... ", "Checking fragments");
+     fflush(cfg->ofp);
+   }
+
+   if (! (msa->flags & eslMSA_DIGITAL)) {
+     cm_Fail("ERROR in check_fragments, msa is not digitized");
+   }
+
+   if(ret_fragassign != NULL) { 
+     if ((fragassign = esl_bitfield_Create(msa->nseq)) == NULL) { status = eslEMEM; goto ERROR; }
+   }
+
+   /* sequence should either have 0 missing (~) or
+    * all ~ before first residue *and* all ~ after final residue
+    */
+   for (idx = 0; idx < msa->nseq; idx++) { 
+     spos = lmiss = 0;
+     if (msa->flags & eslMSA_DIGITAL) {
+       for (lpos = 1; lpos <= msa->alen; lpos++) { 
+         if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][lpos])) { 
+           spos = lpos;
+           lpos = msa->alen+1; // breaks loop
+         }
+         else if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][lpos])) { 
+           lmiss++;
+         }
+       }
+     }
+     else { /* MSA is text mode */
+       for (lpos = 0; lpos < msa->alen; lpos++) { 
+         if (isalnum(msa->aseq[idx][lpos])) { 
+           spos = lpos+1;
+           lpos = msa->alen; // breaks loop
+         }
+         else if(strchr("~", msa->aseq[idx][lpos]) != NULL) { 
+           lmiss++;
+         }
+       }
+     }
+     if(spos == 0) cm_Fail("Sequence %d has 0 residues", idx+1);
+
+     epos = msa->alen+1;
+     rmiss = 0;
+     if (msa->flags & eslMSA_DIGITAL) {
+       for (rpos = msa->alen; rpos >= 1; rpos--) { 
+         if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][rpos])) { 
+           epos = rpos;
+           rpos = 0; // breaks loop
+         }
+         else if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][rpos])) { 
+           rmiss++;
+         }
+       }
+     }
+     else { /* MSA is text mode */
+       for (rpos = msa->alen-1; rpos >= 0; rpos--) { 
+         if (isalnum(msa->aseq[idx][rpos])) { 
+           epos = rpos+1;
+           rpos = -1; // breaks loop
+         }
+         else if(strchr("~", msa->aseq[idx][rpos]) != NULL) { 
+           rmiss++;
+         }
+       }
+     }
+     if(epos == (msa->alen+1)) cm_Fail("Sequence %d has 0 residues", idx+1);
+
+     /* check if sequence is a fragment or not */
+     if(lmiss > 0 || rmiss > 0) { 
+       if(lmiss != (spos-1)) { 
+         cm_Fail("Sequence %d seems to be a fragment but first residue is position %d and it only has %d ~ at 5' end (should be %d)", idx+1, spos, lmiss, spos-1);
+       }
+       if(rmiss != (msa->alen - epos)) { 
+         cm_Fail("Sequence %d seems to be a fragment but final residue is position %d and it only has %d ~ at 3' end (should be %d)", idx+1, epos, rmiss, msa->alen-epos);
+       }
+       if(ret_fragassign != NULL) { 
+         esl_bitfield_Set(fragassign, idx);
+       }
+     }
+     /* finally make sure there's no internal ~ */
+     for (lpos = spos; lpos <= epos; lpos++) { 
+       if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][lpos])) { 
+         cm_Fail("Sequence %d has ~ at position %d, but these should only occur before first residue or after final residue", lpos);
+       }
+     }
+   }
+
+   if(ret_fragassign != NULL) { 
+     *ret_fragassign = fragassign;
+   }
+
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "done.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   w = NULL;
+   return eslOK;
+
+  ERROR:
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "FAILED.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(fragassign != NULL) free(fragassign);
+   return status;
+ }
+
  /* annotate_fragments()
   * Given a bitfield defining which sequences are fragments, for those
   * that are fragments, modify the positions before and after final
@@ -1585,7 +1732,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
            if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
            msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
          }
-         for (pos = msa->alen; pos >= 1; pos--) {	  
+         for (pos = msa->alen; pos >= 1; pos--) {  
            if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
            msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
          }
@@ -1596,7 +1743,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
            if (isalnum(msa->aseq[i][pos])) break;
            msa->aseq[i][pos] = '~';
          }
-         for (pos = msa->alen-1; pos >= 0; pos--) {	  
+         for (pos = msa->alen-1; pos >= 0; pos--) {  
            if (isalnum(msa->aseq[i][pos])) break;
            msa->aseq[i][pos] = '~';
          }
