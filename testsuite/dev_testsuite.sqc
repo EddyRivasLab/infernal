@@ -496,6 +496,18 @@
 1  exercise  build:se/n2o        @src/cmbuild@ --n2omega 0.03125 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/n3o        @src/cmbuild@ --n3omega 0.03125 -F %SE.CM% !testsuite/se.sto! 
 
+# fragment definition
+1  exercise  build:se/fthresh1   @src/cmbuild@ --fragthresh 1.0 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fthresh0   @src/cmbuild@ --fragthresh 0.0 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/ffail1     @src/cmbuild@ --hand --fragthresh 0.5 --fragnrfpos 3 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/ffail2     @src/cmbuild@ --fragthresh 0.5 --fraggiven -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/ffail3     @src/cmbuild@ --hand --fragnrfpos 5 --fraggiven -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/fnrffail   @src/cmbuild@ --fragnrfpos 3 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fnrf3      @src/cmbuild@ --hand --fragnrfpos 3 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fnrf6      @src/cmbuild@ --hand --fragnrfpos 6 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fgiven     @src/cmbuild@ --fraggiven -F %SE.CM% !testsuite/se.frag2.sto! 
+1  fail      build:se/fgfail     @src/cmbuild@ --fraggiven -F %SE.CM% !testsuite/se.frag3.sto! 
+
 # seq weighting
 1  exercise  build:se/wgsc       @src/cmbuild@ --wgsc -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/wgsc       @src/cmbuild@ --wpb -F %SE.CM% !testsuite/se.sto! 

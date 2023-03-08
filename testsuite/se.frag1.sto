@@ -1,0 +1,9 @@
+# STOCKHOLM 1.0
+
+human              .AAGACUUCGGAUCUGGCG.ACA.CCC.
+human2             .-------CGGAUCUGGCG.ACA.---.
+mouse              aUACACUUCGGAUG-CACC.AAA.GUGa
+orc                .AGGUCUUC-GCACGGGCAgCCAcUUC.
+#=GC SS_cons       .::<<<____>->>:<<-<.___.>>>.
+#=GC RF            x...x.x.xxx.x.x.xxx.xx.xxxxx
+//
