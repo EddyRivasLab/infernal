@@ -229,7 +229,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     ESL_ALLOC(tmpppA, sizeof(char *) * 1);
     tmpppA[0] = adata->ppstr;
   }
-  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, &tmpmsa)) != eslOK) goto ERROR;
+  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, /*allow_trunc=*/FALSE, &tmpmsa)) != eslOK) goto ERROR;
   esl_sq_Destroy(tmpsqA[0]);
   free(tmpsqA); tmpsqA = NULL; 
   free(tmptrA); tmptrA = NULL; /* don't free tmptrA[0], it was just used as a pointer */

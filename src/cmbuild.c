@@ -131,6 +131,7 @@ static ESL_OPTIONS options[] = {
   { "--seed",      eslARG_INT,        "0", NULL, "n>=0",  NULL,  "--gibbs",           NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)",    8 },
   { "--cyk",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, use CYK instead of optimal accuracy",                   8 },
   { "--notrunc",   eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, do not use truncated alignment algorithm",              8 },
+  { "--miss",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, mark seqs w/terminal gaps as fragments",                8 },
   /* below are only shown with --devhelp */
   { "--sub",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine", "--notrunc,-l", "w/--refine, use sub CM for columns b/t HMM start/end points",     108 },
   { "--nonbanded", eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "do not use bands to accelerate alignment with --refine",          108 },
@@ -1151,7 +1152,11 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
        msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
        /* get list of pointers to sq's, parsetrees in dataA, to pass to Parsetrees2Alignment() */
        for(i = 0; i < nseq; i++) { tmp_sqpA[i] = dataA[i]->sq; tmp_trpA[i] = dataA[i]->tr; } 
-       if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmp_sqpA, NULL, tmp_trpA, NULL, nseq, NULL, NULL, FALSE, FALSE, &msa)) != eslOK) 
+       if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmp_sqpA, NULL, tmp_trpA, NULL, nseq, NULL, NULL, 
+                                         /*do_full=*/     TRUE,  /* we want all match columns */
+                                         /*do_matchonly=*/FALSE, /* we don't want ONLY match columns */
+                                         /*allow_trunc=*/ esl_opt_GetBoolean(go, "--miss"), /* if --miss, mark fragments with ~ */
+                                         &msa)) != eslOK) 
 	 ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
        if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
        esl_msa_Digitize(cm->abc, msa, NULL);
@@ -1364,7 +1369,11 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 	 if(tr[i]->emitr[x] != -1) tr[i]->emitr[x] = a2ua_map[tr[i]->emitr[x]];
        }
      }
-     if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sq, msa->wgt, tr, NULL, msa->nseq, NULL, NULL, TRUE, FALSE, &omsa)) != eslOK) return status;
+     if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sq, msa->wgt, tr, NULL, msa->nseq, NULL, NULL, 
+                                       /*do_full=*/TRUE, 
+                                       /*do_matchonly=*/FALSE, 
+                                       /*allow_trunc=*/TRUE,
+                                       &omsa)) != eslOK) return status;
      /* Annotate fragments */
      if ((status = annotate_fragments(go, cfg, errbuf, omsa, fragassign)) != eslOK) goto ERROR;
      /* Transfer information from old MSA to new */
