@@ -1058,6 +1058,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   trunc_begin_node = -1;
   trunc_mode = TRMODE_J;
   if(do_trunc) { 
+    tr->is_std   = FALSE;      /* set is_std to FALSE */
+    tr->pass_idx = PLI_PASS_5P_AND_3P_FORCE; /* this makes Parsetrees2Alignment() add ~ appropriately if its called */
+
     /* initialize used_A we'll need in the main preorder traversal below */
     ESL_ALLOC(used_A, sizeof(int) * cm->nodes);
     esl_vec_ISet(used_A, cm->nodes, FALSE);
