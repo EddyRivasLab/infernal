@@ -1217,24 +1217,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       }
     } /* end traversal over trace i. */
 
-    /* if the parsetree is truncated, add ~ before and/or after final residue */
-    if((! tr[i]->is_std)) { 
-      if(cm_pli_PassEnforcesFirstRes(tr[i]->pass_idx)) { 
-        /* all alignment positions prior to first residue will be ~ */
-        for(apos = 0; apos < alen; apos++) { 
-          if(isalpha(tmp_aseq[apos])) break;
-          tmp_aseq[apos] = '~';
-        }
-      }
-      if(cm_pli_PassEnforcesFinalRes(tr[i]->pass_idx)) { 
-        /* all alignment positions after final residue will be ~ */
-        for(apos = msa->alen-1; apos >= 0; apos--) { 
-          if(isalpha(tmp_aseq[apos])) break;
-          tmp_aseq[apos] = '~';
-        }
-      }
-    }
-
     /* copy tmp_aseq to the msa */
     if((status = esl_strdup(tmp_aseq, msa->alen, &(msa->aseq[i]))) != eslOK) goto ERROR;
 
@@ -1316,6 +1298,24 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  leftjustify(abc, msa->aseq[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	}
+    }
+
+    /* if the parsetree is truncated, add ~ before and/or after final residue */
+    if((! tr[i]->is_std)) { 
+      if(cm_pli_PassEnforcesFirstRes(tr[i]->pass_idx)) { 
+        /* all alignment positions prior to first residue will be ~ */
+        for(apos = 0; apos < alen; apos++) { 
+          if(isalpha(msa->aseq[i][apos])) break;
+          msa->aseq[i][apos] = esl_abc_CGetMissing(abc);
+        }
+      }
+      if(cm_pli_PassEnforcesFinalRes(tr[i]->pass_idx)) { 
+        /* all alignment positions after final residue will be ~ */
+        for(apos = msa->alen-1; apos >= 0; apos--) { 
+          if(isalpha(msa->aseq[i][apos])) break;
+          msa->aseq[i][apos] = esl_abc_CGetMissing(abc);
+        }
+      }
     }
     
     /* output insert and/or EL info to the insertfp and elfp output files, if nec */
