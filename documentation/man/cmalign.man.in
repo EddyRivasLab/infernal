@@ -548,6 +548,20 @@ be useful when creating very large alignments that require a lot of
 memory and disk space, most of which is necessary only to deal with insert
 columns that are gaps in most sequences.
 
+.TP
+.B --miss
+In the output alignment, use missing data characters ('~') before the
+first residue and after the final residue of each sequence to indicate
+the sequence was aligned with a truncated alignment algorithm. The
+aligned sequences would be considered fragments if the alignment was
+used subsequently as input to
+.B cmbuild
+with the 
+.B --fraggiven
+option. This option has no effect if 
+.B --notrunc
+is also used. 
+
 .TP 
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
