@@ -1427,7 +1427,9 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   a2u_map[0] = -1; /* invalid */
   upos = 1;
   for(apos = 1; apos <= msa->alen; apos++) { 
-    a2u_map[apos] = (esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) ? -1 : upos++; 
+    a2u_map[apos] = ((esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) || 
+                     (esl_abc_XIsMissing(msa->abc, msa->ax[0][apos])))
+      ? -1 : upos++; 
   }
   ulen = upos;
   for(x = 0; x < tr->n; x++) { 
