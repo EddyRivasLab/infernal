@@ -1403,6 +1403,21 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   for(apos = 0; apos < msa->alen; apos++) { 
     used_el[apos+1] = (msa->rf[apos] == '~') ? TRUE : FALSE;
   }
+
+  /* determine if we're truncated and if so add missing (~) chars to ax */
+  if(cm_alidisplay_Is5PTrunc(ad)) { 
+    for (apos = 1; apos <= msa->alen; apos++) {
+      if (esl_abc_XIsResidue(cm->abc, msa->ax[0][apos])) break;
+      msa->ax[0][apos] = esl_abc_XGetMissing(cm->abc);
+    }
+  }
+  if(cm_alidisplay_Is3PTrunc(ad)) { 
+    for (apos = msa->alen; apos >= 1; apos--) {	  
+      if (esl_abc_XIsResidue(cm->abc, msa->ax[0][apos])) break;
+      msa->ax[0][apos] = esl_abc_XGetMissing(cm->abc);
+    }
+  }
+
   if((status = Transmogrify(cm, errbuf, mtr, msa->ax[0], used_el, msa->alen, &tr)) != eslOK) goto ERROR;
   /* tr is in alignment coords, convert it to unaligned coords.
    * First we construct a map of aligned to unaligned coords, then
