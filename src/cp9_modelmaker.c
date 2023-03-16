@@ -2105,7 +2105,11 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS  *r, CM
 	free(name);
       }
       /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(cm, errbuf, cm->abc, sq, NULL, tr, NULL, msa_nseq, NULL, NULL, TRUE, FALSE, &msa);
+      Parsetrees2Alignment(cm, errbuf, cm->abc, sq, NULL, tr, NULL, msa_nseq, NULL, NULL, 
+                           /*do_full=*/TRUE, 
+                           /*do_matchonly=*/FALSE, 
+                           /*allow_trunc=*/FALSE,
+                           &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL) ESL_FAIL(eslEINCOMPAT, errbuf, "CP9_check_by_sampling(): sampled MSA should NOT be digitized.\n");
       

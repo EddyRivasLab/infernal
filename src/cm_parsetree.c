@@ -835,6 +835,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           elfp         - file to print per-seq EL insert information to (NULL if none)
  *           do_full      - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
+ *           allow_trunc  - TRUE to add missing (~) chars to truncated parsetrees, FALSE not to
  *           ret_msa      - RETURN: MSA, alloc'ed/created here
  *
  * Returns:  eslOK on success, eslEMEM on memory error, eslEINVALID on contract violation.
@@ -844,7 +845,8 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 int
 Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, double *wgt, 
 		     Parsetree_t **tr, char **postcode, int nseq, 
-		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa)
+		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int allow_trunc,
+                     ESL_MSA **ret_msa)
 {
   int          status;          /* easel status flag */
   CMEmitMap_t *emap  = NULL;    /* ptr to cm->emap, for convenience */
@@ -1298,6 +1300,24 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  leftjustify(abc, msa->aseq[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	}
+    }
+
+    /* if allow_trunc and the parsetree is truncated, add ~ before and/or after final residue */
+    if(allow_trunc && (! tr[i]->is_std)) { 
+      if(cm_pli_PassEnforcesFirstRes(tr[i]->pass_idx)) { 
+        /* all alignment positions prior to first residue will be ~ */
+        for(apos = 0; apos < alen; apos++) { 
+          if(isalpha(msa->aseq[i][apos])) break;
+          msa->aseq[i][apos] = esl_abc_CGetMissing(abc);
+        }
+      }
+      if(cm_pli_PassEnforcesFinalRes(tr[i]->pass_idx)) { 
+        /* all alignment positions after final residue will be ~ */
+        for(apos = msa->alen-1; apos >= 0; apos--) { 
+          if(isalpha(msa->aseq[i][apos])) break;
+          msa->aseq[i][apos] = esl_abc_CGetMissing(abc);
+        }
+      }
     }
     
     /* output insert and/or EL info to the insertfp and elfp output files, if nec */

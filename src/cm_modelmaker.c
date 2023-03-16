@@ -998,6 +998,8 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   int         spos, epos;      /* first/final non-missing positions for ax for purposes of dealing with truncations
                                 * 1..spos-1, and epos+1..alen are missing data, so if spos==1 and epos==alen there is no missing data in ax 
                                 */
+  int         trunc_5p;        /* TRUE if seqeuence is truncated on 5' end, else FALSE */
+  int         trunc_3p;        /* TRUE if seqeuence is truncated on 5' end, else TRUE */
   int         trunc_begin_node;/* if do_trunc, this is the first node we will visit after the ROOT_nd,
                                 * the final node with a subtree that spans full sequence */
   int         trunc_mode;      /* if do_trunc: truncation mode of trunc_begin_node */
@@ -1027,7 +1029,9 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   }
   /* if spos > 1:    1..spos-1    are ~ (missing), truncated alignment starts at spos */
   /* if epos < alen: epos+1..alen are ~ (missing), truncated alignment ends   at epos */
-  do_trunc = (spos == 1 && epos == alen) ? FALSE : TRUE;
+  trunc_5p = (spos > 1)    ? TRUE : FALSE;
+  trunc_3p = (epos < alen) ? TRUE : FALSE;
+  do_trunc = (trunc_5p || trunc_3p) ? TRUE : FALSE;
   
   /* If used_el is non-NULL then we need to fill <nxt_mi> with the next match/insert 
    * emission and next EL emission <nxt_el> so we can identify transitions to EL 
@@ -1059,7 +1063,21 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   trunc_mode = TRMODE_J;
   if(do_trunc) { 
     tr->is_std   = FALSE;      /* set is_std to FALSE */
-    tr->pass_idx = PLI_PASS_5P_AND_3P_FORCE; /* this makes Parsetrees2Alignment() add ~ appropriately if its called */
+    /* Set pass_idx for this truncated parsetree, inferred based on trunc_5p and trunc_3p which 
+     * themselves are defined based on presence of ~ before/after first/final residue above.
+     * Possible values are restricted to PLI_PASS_5P_AND_3P_FORCE, PLI_PASS_5P_ONLY_FORCE or PLI_PASS_3P_ONLY_FORCE
+     * even though if this parsetree is for a pipeline hit, it could have been found
+     * in a different pipeline pass (e.g. PLI_PASS_5P_AND_3P_ANY). Also some hits
+     * with ~ on 5' end but not 3' may have been found in PLI_PASS_5P_AND_3P_FORCE.
+     * So we are kind of overloading tr->pass_idx for convenience here to use downstream
+     * in Parsetrees2Alignment() to add ~ at 5' and/or 3' end. 
+     */
+    if(trunc_5p) {
+      tr->pass_idx = (trunc_3p) ? PLI_PASS_5P_AND_3P_FORCE : PLI_PASS_5P_ONLY_FORCE;
+    }
+    else { /* do_trunc is only true if trunc_5p or trunc_3p, so if !trunc_5p then trunc_3p == TRUE */
+      tr->pass_idx = PLI_PASS_3P_ONLY_FORCE;
+    }
 
     /* initialize used_A we'll need in the main preorder traversal below */
     ESL_ALLOC(used_A, sizeof(int) * cm->nodes);

@@ -583,6 +583,16 @@ information on this in the
 .B cmalign
 manual page.
 
+.TP
+.B --miss
+With 
+.B --refine,
+in the final alignment and each intermediate alignment, consider all
+sequences with terminal gaps as fragments for purposes of building
+models from those alignments. You may want to do this if you have many
+sequences that are not full length, e.g. fragmentary because only part
+of it was sequenced.
+
 .PP
 Use 
 .B --devhelp 
