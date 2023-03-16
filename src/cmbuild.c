@@ -238,9 +238,8 @@ static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
-static int    assign_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign);
-static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign);
-static int    annotate_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD *fragassign);
+static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
+static int    mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
@@ -819,7 +818,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    if (esl_opt_GetString(go, "--prior") != NULL) { 
      FILE *pfp;
      if ((pfp = fopen(esl_opt_GetString(go, "--prior"), "r")) == NULL) cm_Fail("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
-     if ((cfg->pri = Prior_Read(pfp)) == NULL)       	                 cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
+     if ((cfg->pri = Prior_Read(pfp)) == NULL)     	               cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
      fclose(pfp);
      cfg->pri_zerobp = NULL;
    }
@@ -983,17 +982,15 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    CM_t         *cm = NULL;         /* the CM */
    int           pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
    Prior_t      *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
-   ESL_BITFIELD *fragassign = NULL; /* [0..i..msa->nseq-1]: 1 if seq i is a fragment, else 0 */       
 
    if ((status =  check_and_clean_msa  (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if ((status =  esl_msa_Checksum     (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if(esl_opt_GetBoolean(go, "--fraggiven")) { 
-     if ((status =  check_fragments      (go, cfg, errbuf, msa, /*fragassign=*/NULL))          != eslOK) goto ERROR;
+     if ((status =  check_fragments      (go, cfg, errbuf, msa))                               != eslOK) goto ERROR;
    }
    else { 
-     if ((status =  assign_fragments     (go, cfg, errbuf, msa, &fragassign))                  != eslOK) goto ERROR;
-     if ((status =  annotate_fragments   (go, cfg, errbuf, msa, fragassign))                   != eslOK) goto ERROR;
+     if ((status =  mark_fragments       (go, cfg, errbuf, msa))                               != eslOK) goto ERROR;
    }
    if ((status =  build_model          (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
@@ -1016,15 +1013,11 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
    *ret_cm = cm;
 
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
-   fragassign = NULL;
    return eslOK;
 
   ERROR:
    if(cm != NULL) FreeCM(cm);
    *ret_cm = NULL;
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
-   fragassign = NULL;
    return status;
  }
 
@@ -1267,7 +1260,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    int status;
    int i;
    float sc, struct_sc;
-   ESL_BITFIELD *fragassign = NULL; /* [0..i..msa->nseq-1]: 1 if seq i is a fragment, else 0 */       
 
    if(msaidx == 1 && cmidx == 1) { 
      if((status = print_column_headings(go, cfg, errbuf)) != eslOK) return status;
@@ -1342,16 +1334,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      for(i = 0; i < msa->nseq; i++) { 
        if((status = esl_sq_FetchFromMSA(msa, i, &(sq[i]))) != eslOK) ESL_FAIL(status, errbuf, "problem creating -O output alignment, probably out of memory");
      }
-     /* define fragments, using the original MSA (not the possibly doctored omsa we are
-      * about to create below because for model building we defined fragments using the 
-      * original MSA) 
-      */
-     if(esl_opt_GetBoolean(go, "--fraggiven")) { 
-       if ((status =  check_fragments(go, cfg, errbuf, msa, &fragassign)) != eslOK) goto ERROR;
-     }
-     else { 
-       if ((status = assign_fragments(go, cfg, errbuf, msa, &fragassign)) != eslOK) goto ERROR;
-     }
 
      /* for each sequence, convert aligned coordinates in each parsetree to unaligned coordinates */
      for(i = 0; i < msa->nseq; i++) { 
@@ -1374,8 +1356,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
                                        /*do_matchonly=*/FALSE, 
                                        /*allow_trunc=*/TRUE,
                                        &omsa)) != eslOK) return status;
-     /* Annotate fragments */
-     if ((status = annotate_fragments(go, cfg, errbuf, omsa, fragassign)) != eslOK) goto ERROR;
      /* Transfer information from old MSA to new */
      esl_msa_SetName     (omsa, msa->name, -1);
      esl_msa_SetDesc     (omsa, msa->desc, -1);
@@ -1388,13 +1368,9 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      free(a2ua_map);
    } 
 
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
-   fragassign = NULL;
    return eslOK;
 
   ERROR: 
-   if(fragassign != NULL) esl_bitfield_Destroy(fragassign); 
-   fragassign = NULL;
    cm_Fail("in output_result(), out of memory");
    return status; /* NEVERREACHED */
  }
@@ -1576,18 +1552,22 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
  }
 
  /* check_fragments()
-  * Check which sequences in an MSA are annotated as fragments. 
-  * Also check that ~ only exist before first residue and after final residue.
-  * <ret_fragassign>: RETURN, [0..i..msa->nseq-1], set if seq i is fragment, can be NULL if not wanted
-  * Dies: if internal ~ found for any sequence
+  * With --fraggiven, we use fragment info in the input msa instead of 
+  * defining fragments based on sequence length. This function is called
+  * only when --fraggiven is used, and checks that for each aligned
+  * seq: 
+  * - either all or no characters before the first residue are ~
+  * - either all or no characters after  the final residue are ~
+  * - there are no internal ~ values (after first residue but before final one)
+  * 
+  * Dies: if any of the 3 checks above fails
   */
  static int
- check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign)
+ check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
  {
    int status = eslOK;
    ESL_STOPWATCH *w = NULL;
 
-   ESL_BITFIELD *fragassign = NULL;  /* [0..msa->nseq-1], set if seq is defined as a fragment */
    int idx; /* counter over sequences */
    int lpos, rpos; /* counter over alignment positions */
    int spos, epos; /* first/final residue for sequence */
@@ -1604,12 +1584,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      cm_Fail("ERROR in check_fragments, msa is not digitized");
    }
 
-   if(ret_fragassign != NULL) { 
-     if ((fragassign = esl_bitfield_Create(msa->nseq)) == NULL) { status = eslEMEM; goto ERROR; }
-   }
-
    /* sequence should either have 0 missing (~) or
-    * all ~ before first residue *and* all ~ after final residue
+    * all ~ before first residue *and/or* all ~ after final residue
     */
    for (idx = 0; idx < msa->nseq; idx++) { 
      spos = lmiss = 0;
@@ -1620,17 +1596,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
            lpos = msa->alen+1; // breaks loop
          }
          else if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][lpos])) { 
-           lmiss++;
-         }
-       }
-     }
-     else { /* MSA is text mode */
-       for (lpos = 0; lpos < msa->alen; lpos++) { 
-         if (isalnum(msa->aseq[idx][lpos])) { 
-           spos = lpos+1;
-           lpos = msa->alen; // breaks loop
-         }
-         else if(strchr("~", msa->aseq[idx][lpos]) != NULL) { 
            lmiss++;
          }
        }
@@ -1650,30 +1615,14 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
          }
        }
      }
-     else { /* MSA is text mode */
-       for (rpos = msa->alen-1; rpos >= 0; rpos--) { 
-         if (isalnum(msa->aseq[idx][rpos])) { 
-           epos = rpos+1;
-           rpos = -1; // breaks loop
-         }
-         else if(strchr("~", msa->aseq[idx][rpos]) != NULL) { 
-           rmiss++;
-         }
-       }
-     }
      if(epos == (msa->alen+1)) cm_Fail("Sequence %d has 0 residues", idx+1);
 
      /* check if sequence is a fragment or not */
-     if(lmiss > 0 || rmiss > 0) { 
-       if(lmiss != (spos-1)) { 
-         cm_Fail("Sequence %d seems to be a fragment but first residue is position %d and it only has %d ~ at 5' end (should be %d)", idx+1, spos, lmiss, spos-1);
-       }
-       if(rmiss != (msa->alen - epos)) { 
+     if((lmiss > 0) && (lmiss != (spos-1))) { 
+       cm_Fail("Sequence %d seems to be a fragment but first residue is position %d and it only has %d ~ at 5' end (should be %d)", idx+1, spos, lmiss, spos-1);
+     }
+     if((rmiss > 0) && (rmiss != (msa->alen - epos))) { 
          cm_Fail("Sequence %d seems to be a fragment but final residue is position %d and it only has %d ~ at 3' end (should be %d)", idx+1, epos, rmiss, msa->alen-epos);
-       }
-       if(ret_fragassign != NULL) { 
-         esl_bitfield_Set(fragassign, idx);
-       }
      }
      /* finally make sure there's no internal ~ */
      for (lpos = spos; lpos <= epos; lpos++) { 
@@ -1681,10 +1630,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
          cm_Fail("Sequence %d has ~ at position %d, but these should only occur before first residue or after final residue", lpos);
        }
      }
-   }
-
-   if(ret_fragassign != NULL) { 
-     *ret_fragassign = fragassign;
    }
 
    if (cfg->be_verbose) { 
@@ -1704,58 +1649,86 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
    }
    if(w != NULL) esl_stopwatch_Destroy(w);
-   if(fragassign != NULL) free(fragassign);
    return status;
  }
 
- /* annotate_fragments()
-  * Given a bitfield defining which sequences are fragments, for those
-  * that are fragments, modify the positions before and after final
-  * nongap to be missing data.
+ /* mark_fragments()
+  * Define fragment sequences in the MSA and replace 
+  * terminal gaps with missing data symbols.
   * 
-  * We need this function AND assign_fragments() because with -O
-  * we need to call assign_fragments() on the input MSA and
-  * annotate_fragments() on the output MSA which may have been
-  * doctored (and thus wouldn't give the same assignment of 
-  * fragments).
   */
  static int
- annotate_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD *fragassign)
+ mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
  {
+   int status;
    ESL_STOPWATCH *w = NULL;
+   ESL_BITFIELD *fragassign = NULL; /* [0..i..msa->nseq-1] 1 if seq i is a fragment else 0 */
    int i;   /* counter over sequences */
    int pos; /* counter over alignment positions */
+
+   /* variables only used if --fragnrfpos is used */
+   int *matassign = NULL;            /* [1..alen] array; 0=insert col, 1=match col */
+   int lpos, rpos; /* counter over alignment positions */
+   int lrfpos_gap; /* number of 5'-terminal consensus gaps in current sequence */
+   int rrfpos_gap; /* number of 3'-terminal consensus gaps in current sequence */
 
    if (cfg->be_verbose) {
      w = esl_stopwatch_Create();
      esl_stopwatch_Start(w);
-     fprintf(cfg->ofp, "%-40s ... ", "Annotating fragments");
+     fprintf(cfg->ofp, "%-40s ... ", "Marking fragments");
      fflush(cfg->ofp);
    }
 
-   /* update MSA so fragments have missing data at ends */
-   for (i = 0; i < msa->nseq; i++) { 
-     if (esl_bitfield_IsSet(fragassign, i)) { 
-       if (msa->flags & eslMSA_DIGITAL) {
-         for (pos = 1; pos <= msa->alen; pos++) {
-           if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
-           msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
-         }
-         for (pos = msa->alen; pos >= 1; pos--) {  
-           if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
-           msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
+   if (! (msa->flags & eslMSA_DIGITAL)) cm_Fail("ERROR in mark_fragments() msa is not digitized");
+   
+   if(esl_opt_IsUsed(go, "--fragnrfpos") && esl_opt_IsUsed(go, "--hand")) { /* --fragnrfpos requires --hand (also enforced by getopts above) */
+     if(msa->rf == NULL) cm_Fail("--hand used but MSA does not have RF annotation"); 
+     if ((fragassign = esl_bitfield_Create(msa->nseq)) == NULL) { status = eslEMEM; goto ERROR; }
+     AssignMatchColumnsForMsa(msa, errbuf, /*use_rf=*/TRUE, /*use_wts=*/FALSE, esl_opt_GetReal(go, "--symfrac"), &matassign);
+     for (i = 0; i < msa->nseq; i++) { 
+       lrfpos_gap = 0;
+       rrfpos_gap = 0;
+       for (lpos = 1; lpos <= msa->alen; lpos++) { 
+         if (matassign[lpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[i][lpos])) { 
+             lpos = msa->alen + 1; /* breaks loop */
+           }
+           else { 
+             lrfpos_gap++;
+           }
          }
        }
-       
-       if (! (msa->flags & eslMSA_DIGITAL)) { 
-         for (pos = 0; pos < msa->alen; pos++) {
-           if (isalnum(msa->aseq[i][pos])) break;
-           msa->aseq[i][pos] = '~';
+       for (rpos = msa->alen; rpos >= 1; rpos--) { 
+         if (matassign[rpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[i][rpos])) { 
+             rpos = 0; /* breaks loop */
+           }
+           else { 
+             rrfpos_gap++;
+           }
          }
-         for (pos = msa->alen-1; pos >= 0; pos--) {  
-           if (isalnum(msa->aseq[i][pos])) break;
-           msa->aseq[i][pos] = '~';
-         }
+       }
+       if((lrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos")) || 
+          (rrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos"))) { 
+         esl_bitfield_Set(fragassign, i);
+       }
+     }
+   } /* end of if(--fragnrfpos && --hand) */
+   else { 
+     /* determine fragments based on fragthresh */
+     if ((status =  esl_msa_MarkFragments(msa, esl_opt_GetReal(go, "--fragthresh"), &fragassign)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to mark fragments");
+   }
+
+   /* regardless of how we defined fragments, update MSA so fragments have missing data at ends */
+   for (i = 0; i < msa->nseq; i++) { 
+     if (esl_bitfield_IsSet(fragassign, i)) { 
+       for (pos = 1; pos <= msa->alen; pos++) {
+         if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
+         msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
+       }
+       for (pos = msa->alen; pos >= 1; pos--) {	  
+         if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
+         msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
        }
      }
    }
@@ -1767,9 +1740,20 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    }
 
    if(w != NULL) esl_stopwatch_Destroy(w); 
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign);
    w = NULL;
+   fragassign = NULL;
    return eslOK;
 
+  ERROR:
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "FAILED.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+   if(w          != NULL) esl_stopwatch_Destroy(w);
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign);
+   return status;
  }
 
  /* build_model():
