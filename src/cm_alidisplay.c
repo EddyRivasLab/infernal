@@ -229,7 +229,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     ESL_ALLOC(tmpppA, sizeof(char *) * 1);
     tmpppA[0] = adata->ppstr;
   }
-  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, &tmpmsa)) != eslOK) goto ERROR;
+  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, /*allow_trunc=*/FALSE, &tmpmsa)) != eslOK) goto ERROR;
   esl_sq_Destroy(tmpsqA[0]);
   free(tmpsqA); tmpsqA = NULL; 
   free(tmptrA); tmptrA = NULL; /* don't free tmptrA[0], it was just used as a pointer */
@@ -1403,6 +1403,21 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   for(apos = 0; apos < msa->alen; apos++) { 
     used_el[apos+1] = (msa->rf[apos] == '~') ? TRUE : FALSE;
   }
+
+  /* determine if we're truncated and if so add missing (~) chars to ax */
+  if(cm_alidisplay_Is5PTrunc(ad)) { 
+    for (apos = 1; apos <= msa->alen; apos++) {
+      if (esl_abc_XIsResidue(cm->abc, msa->ax[0][apos])) break;
+      msa->ax[0][apos] = esl_abc_XGetMissing(cm->abc);
+    }
+  }
+  if(cm_alidisplay_Is3PTrunc(ad)) { 
+    for (apos = msa->alen; apos >= 1; apos--) {	  
+      if (esl_abc_XIsResidue(cm->abc, msa->ax[0][apos])) break;
+      msa->ax[0][apos] = esl_abc_XGetMissing(cm->abc);
+    }
+  }
+
   if((status = Transmogrify(cm, errbuf, mtr, msa->ax[0], used_el, msa->alen, &tr)) != eslOK) goto ERROR;
   /* tr is in alignment coords, convert it to unaligned coords.
    * First we construct a map of aligned to unaligned coords, then
@@ -1412,7 +1427,9 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   a2u_map[0] = -1; /* invalid */
   upos = 1;
   for(apos = 1; apos <= msa->alen; apos++) { 
-    a2u_map[apos] = (esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) ? -1 : upos++; 
+    a2u_map[apos] = ((esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) || 
+                     (esl_abc_XIsMissing(msa->abc, msa->ax[0][apos])))
+      ? -1 : upos++; 
   }
   ulen = upos;
   for(x = 0; x < tr->n; x++) { 

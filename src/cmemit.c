@@ -524,8 +524,9 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       }
     if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqA, NULL, trA, NULL, nseq,
 				      NULL, NULL, /* we're not printing to insert, EL info files */
-				      TRUE,  /* we want all match columns */
-				      FALSE, /* we don't want ONLY match columns */
+    				      /*do_full=*/     TRUE,  /* we want all match columns */
+				      /*do_matchonly=*/FALSE, /* we don't want ONLY match columns */
+                                      /*allow_trunc=*/ FALSE, /* we don't want to add missing (~) chars to truncated parsetrees */
 				      &msa) != eslOK))
       ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
   }

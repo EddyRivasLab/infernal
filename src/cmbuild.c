@@ -33,6 +33,7 @@
 #define CONOPTS "--fast,--hand,--rsearch"                      /* Exclusive options for model construction                    */
 #define WGTOPTS "--wpb,--wgsc,--wblosum,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone,--eset"                        /* Exclusive options for effective sequence number calculation */
+#define FRAGOPTS "--fragthresh,--fragnrfpos,--fraggiven"       /* Exclusive options for fragment definition                   */
 #define CLUSTOPTS "--ctarget,--cmaxid,--call,--corig,--cdump"  /* options for clustering the input aln and building a CM from each cluster */
 
 static ESL_OPTIONS options[] = {
@@ -49,8 +50,11 @@ static ESL_OPTIONS options[] = {
   { "--fast",      eslARG_NONE,"default",   NULL, NULL,      CONOPTS,      NULL,         NULL, "assign cols w/ >= symfrac residues as consensus",                2 },
   { "--hand",      eslARG_NONE,    FALSE,   NULL, NULL,      CONOPTS,      NULL,         NULL, "use reference coordinate annotation to specify consensus",       2 },
   { "--symfrac",   eslARG_REAL,    "0.5",   NULL, "0<=x<=1",    NULL,      NULL,         NULL, "fraction of non-gaps to require in a consensus column [0..1]",   2 },
-  { "--noss",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
-  { "--rsearch",   eslARG_INFILE,  NULL,    NULL, NULL,      CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
+  { "--fragthresh",eslARG_REAL,    "0.5",   NULL, "0<=x<=1",FRAGOPTS,      NULL,         NULL, "if aligned seq spans <= x*alen, tag seq as a fragment",          2 },
+  { "--fragnrfpos", eslARG_INT,    NULL,    NULL, "n>=0",   FRAGOPTS,  "--hand",         NULL, "w/--hand, seqs w/ > <n> 5' or 3' consensus gaps are fragments",  2 },
+  { "--fraggiven", eslARG_NONE,    FALSE,   NULL,  NULL,    FRAGOPTS,      NULL,         NULL, "use fragment info, if any, in input MSA, don't infer frags",     2 },
+  { "--noss",      eslARG_NONE,    FALSE,   NULL,  NULL,        NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
+  { "--rsearch", eslARG_INFILE,     NULL,    NULL, NULL,     CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
 
   /* Other model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -127,6 +131,7 @@ static ESL_OPTIONS options[] = {
   { "--seed",      eslARG_INT,        "0", NULL, "n>=0",  NULL,  "--gibbs",           NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)",    8 },
   { "--cyk",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, use CYK instead of optimal accuracy",                   8 },
   { "--notrunc",   eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, do not use truncated alignment algorithm",              8 },
+  { "--miss",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, mark seqs w/terminal gaps as fragments",                8 },
   /* below are only shown with --devhelp */
   { "--sub",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine", "--notrunc,-l", "w/--refine, use sub CM for columns b/t HMM start/end points",     108 },
   { "--nonbanded", eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "do not use bands to accelerate alignment with --refine",          108 },
@@ -233,6 +238,8 @@ static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
+static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
+static int    mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
@@ -254,13 +261,14 @@ static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, fl
 static int    flatten_insert_emissions(CM_t *cm);
 static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
-static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int    print_countvectors(FILE *fp, CM_t *cm);
 static int    dump_emission_info(FILE *fp, CM_t *cm, char *errbuf);
 static P7_PRIOR * p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 static void  dump_cm_occupancy_values(FILE *fp, CM_t *cm);
 static void  dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9);
 static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
+static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
  int
  main(int argc, char **argv)
@@ -657,9 +665,10 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
 					     fprintf(ofp, "# alignment file:                                     %s\n", alifile);
   if (esl_opt_IsUsed(go, "-n"))            { fprintf(ofp, "# name (the single) CM:                               %s\n", esl_opt_GetString(go, "-n")); }
   if (esl_opt_IsUsed(go, "-F"))            { fprintf(ofp, "# overwrite CM file if necessary:                     yes\n"); }
-  if (esl_opt_IsUsed(go, "-o"))            { fprintf(ofp, "# output directed to file:                            %s\n", esl_opt_GetString(go, "-o")); }
-  if (esl_opt_IsUsed(go, "-O"))            { fprintf(ofp, "# processed alignment resaved to:                     %s\n", esl_opt_GetString(go, "-O")); }
-  if (esl_opt_IsUsed(go, "--symfrac"))     { fprintf(ofp, "# minimum symbol fraction in a consensus column:      %g\n", esl_opt_GetReal(go, "--symfrac")); }
+  if (esl_opt_IsUsed(go, "-o"))            { fprintf(ofp, "# output directed to file:                            %s\n",   esl_opt_GetString(go, "-o")); }
+  if (esl_opt_IsUsed(go, "-O"))            { fprintf(ofp, "# processed alignment resaved to:                     %s\n",   esl_opt_GetString(go, "-O")); }
+  if (esl_opt_IsUsed(go, "--symfrac"))     { fprintf(ofp, "# minimum symbol fraction in a consensus column:      %g\n",   esl_opt_GetReal(go, "--symfrac")); }
+  if (esl_opt_IsUsed(go, "--fragthresh"))  { fprintf(ofp, "# seq called frag if L <= x*alen:                     %.3f\n", esl_opt_GetReal(go, "--fragthresh")); }
   if (esl_opt_IsUsed(go, "--hand"))        { fprintf(ofp, "# use #=GC RF annotation to define consensus columns: yes\n"); }
   if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
   if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
@@ -809,7 +818,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    if (esl_opt_GetString(go, "--prior") != NULL) { 
      FILE *pfp;
      if ((pfp = fopen(esl_opt_GetString(go, "--prior"), "r")) == NULL) cm_Fail("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
-     if ((cfg->pri = Prior_Read(pfp)) == NULL)       	                 cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
+     if ((cfg->pri = Prior_Read(pfp)) == NULL)     	               cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
      fclose(pfp);
      cfg->pri_zerobp = NULL;
    }
@@ -968,30 +977,27 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
  static int
  process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
  {
-   int      status;
-   uint32_t checksum = 0;      /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
-   CM_t    *cm = NULL;         /* the CM */
-   int      pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
-   Prior_t *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
+   int           status;
+   uint32_t      checksum = 0;      /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
+   CM_t         *cm = NULL;         /* the CM */
+   int           pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+   Prior_t      *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
 
-   if ((status =  check_and_clean_msa          (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-   if ((status =  esl_msa_Checksum             (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
-   if ((status =  set_relative_weights         (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
-   if ((status =  build_model                  (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
+   if ((status =  check_and_clean_msa  (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+   if ((status =  esl_msa_Checksum     (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
+   if ((status =  set_relative_weights (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+   if(esl_opt_GetBoolean(go, "--fraggiven")) { 
+     if ((status =  check_fragments      (go, cfg, errbuf, msa))                               != eslOK) goto ERROR;
+   }
+   else { 
+     if ((status =  mark_fragments       (go, cfg, errbuf, msa))                               != eslOK) goto ERROR;
+   }
+   if ((status =  build_model          (go, cfg, errbuf, TRUE, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
 
    cm->checksum = checksum;
    cm->flags   |= CMH_CHKSUM;
 
-   if((CMCountNodetype(cm, MATP_nd) == 0)     && 
-      (! esl_opt_GetBoolean(go, "--v1p0"))    && 
-      (! esl_opt_GetBoolean(go, "--p56"))     && 
-      (! esl_opt_GetBoolean(go, "--noh3pri")) && 
-      (! esl_opt_IsUsed    (go, "--prior"))) { 
-     pretend_cm_is_hmm = TRUE;
-   }
-   else { 
-     pretend_cm_is_hmm = FALSE;
-   }
+   pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
    pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
 
    if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
@@ -1006,6 +1012,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
         != eslOK) goto ERROR;
 
    *ret_cm = cm;
+
    return eslOK;
 
   ERROR:
@@ -1138,7 +1145,11 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
        msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
        /* get list of pointers to sq's, parsetrees in dataA, to pass to Parsetrees2Alignment() */
        for(i = 0; i < nseq; i++) { tmp_sqpA[i] = dataA[i]->sq; tmp_trpA[i] = dataA[i]->tr; } 
-       if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmp_sqpA, NULL, tmp_trpA, NULL, nseq, NULL, NULL, FALSE, FALSE, &msa)) != eslOK) 
+       if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmp_sqpA, NULL, tmp_trpA, NULL, nseq, NULL, NULL, 
+                                         /*do_full=*/     TRUE,  /* we want all match columns */
+                                         /*do_matchonly=*/FALSE, /* we don't want ONLY match columns */
+                                         /*allow_trunc=*/ esl_opt_GetBoolean(go, "--miss"), /* if --miss, mark fragments with ~ */
+                                         &msa)) != eslOK) 
 	 ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
        if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
        esl_msa_Digitize(cm->abc, msa, NULL);
@@ -1297,7 +1308,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    /* save parsetrees if nec */
    if(cfg->tfp != NULL) { 
      for (i = 0; i < msa->nseq; i++) { 
-       fprintf(cfg->tfp, "> %s\n", msa->sqname[i]);
+       fprintf(cfg->tfp, ">%s\n", msa->sqname[i]);
 
        if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
        fprintf(cfg->tfp, "  %16s %.2f bits\n", "SCORE:", sc);
@@ -1317,11 +1328,13 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
      ESL_MSA *omsa     = NULL;
      int     *a2ua_map = NULL;
      int      apos, uapos, x;  
+
      ESL_ALLOC(sq, sizeof(ESL_SQ *)  * msa->nseq); 
      ESL_ALLOC(a2ua_map, sizeof(int) * (msa->alen+1));
      for(i = 0; i < msa->nseq; i++) { 
        if((status = esl_sq_FetchFromMSA(msa, i, &(sq[i]))) != eslOK) ESL_FAIL(status, errbuf, "problem creating -O output alignment, probably out of memory");
      }
+
      /* for each sequence, convert aligned coordinates in each parsetree to unaligned coordinates */
      for(i = 0; i < msa->nseq; i++) { 
        /* create a2ua_map: map of aligned positions to unaligned positions, 
@@ -1338,7 +1351,11 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
 	 if(tr[i]->emitr[x] != -1) tr[i]->emitr[x] = a2ua_map[tr[i]->emitr[x]];
        }
      }
-     if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sq, msa->wgt, tr, NULL, msa->nseq, NULL, NULL, TRUE, FALSE, &omsa)) != eslOK) return status;
+     if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sq, msa->wgt, tr, NULL, msa->nseq, NULL, NULL, 
+                                       /*do_full=*/TRUE, 
+                                       /*do_matchonly=*/FALSE, 
+                                       /*allow_trunc=*/TRUE,
+                                       &omsa)) != eslOK) return status;
      /* Transfer information from old MSA to new */
      esl_msa_SetName     (omsa, msa->name, -1);
      esl_msa_SetDesc     (omsa, msa->desc, -1);
@@ -1446,6 +1463,298 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    return eslOK;
  }
 
+ /* assign_fragments()
+  * Define fragment sequences in an MSA.
+  */
+ static int
+ assign_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, ESL_BITFIELD **ret_fragassign)
+ {
+   int status = eslOK;
+   ESL_STOPWATCH *w = NULL;
+
+   /* variables only used if --fragnrfpos is used */
+   int *matassign = NULL;            /* [1..alen] array; 0=insert col, 1=match col */
+   ESL_BITFIELD *fragassign = NULL;  /* [0..msa->nseq-1], set if seq is defined as a fragment */
+   int idx; /* counter over sequences */
+   int lpos, rpos; /* counter over alignment positions */
+   int lrfpos_gap; /* number of 5'-terminal consensus gaps in current sequence */
+   int rrfpos_gap; /* number of 3'-terminal consensus gaps in current sequence */
+
+   if (cfg->be_verbose) {
+     w = esl_stopwatch_Create();
+     esl_stopwatch_Start(w);
+     fprintf(cfg->ofp, "%-40s ... ", "Assigning fragments");
+     fflush(cfg->ofp);
+   }
+
+   if(esl_opt_IsUsed(go, "--fragnrfpos") && esl_opt_IsUsed(go, "--hand")) { /* --fragnrfpos requires --hand (also enforced by getopts above) */
+     if(msa->rf == NULL) { 
+       cm_Fail("--hand used but MSA does not have RF annotation"); 
+     }
+     if ((fragassign = esl_bitfield_Create(msa->nseq)) == NULL) { status = eslEMEM; goto ERROR; }
+     AssignMatchColumnsForMsa(msa, errbuf, /*use_rf=*/TRUE, /*use_wts=*/FALSE, esl_opt_GetReal(go, "--symfrac"), &matassign);
+     for (idx = 0; idx < msa->nseq; idx++) { 
+       lrfpos_gap = 0;
+       rrfpos_gap = 0;
+       for (lpos = 1; lpos <= msa->alen; lpos++) { 
+         if (matassign[lpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][lpos])) { 
+             lpos = msa->alen + 1; /* breaks loop */
+           }
+           else { 
+             lrfpos_gap++;
+           }
+         }
+       }
+       for (rpos = msa->alen; rpos >= 1; rpos--) { 
+         if (matassign[rpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][rpos])) { 
+             rpos = 0; /* breaks loop */
+           }
+           else { 
+             rrfpos_gap++;
+           }
+         }
+       }
+       if((lrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos")) || 
+          (rrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos"))) { 
+         esl_bitfield_Set(fragassign, idx);
+       }
+     }
+     *ret_fragassign = fragassign;
+   } /* end of if(--fragnrfpos && --hand) */
+   else {
+     if ((status = esl_msa_MarkFragments(msa, esl_opt_GetReal(go, "--fragthresh"), ret_fragassign)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to mark fragments");
+   }
+
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "done.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(matassign != NULL) free(matassign); 
+   w = NULL;
+   matassign = NULL;
+   return eslOK;
+
+  ERROR:
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "FAILED.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(matassign != NULL) free(matassign); 
+   if(fragassign != NULL) free(fragassign);
+   return status;
+ }
+
+ /* check_fragments()
+  * With --fraggiven, we use fragment info in the input msa instead of 
+  * defining fragments based on sequence length. This function is called
+  * only when --fraggiven is used, and checks that for each aligned
+  * seq: 
+  * - either all or no characters before the first residue are ~
+  * - either all or no characters after  the final residue are ~
+  * - there are no internal ~ values (after first residue but before final one)
+  * 
+  * Dies: if any of the 3 checks above fails
+  */
+ static int
+ check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
+ {
+   int status = eslOK;
+   ESL_STOPWATCH *w = NULL;
+
+   int idx; /* counter over sequences */
+   int lpos, rpos; /* counter over alignment positions */
+   int spos, epos; /* first/final residue for sequence */
+   int lmiss, rmiss; /* number of consecutive missing data symbols at 5' and 3' ends */
+
+   if (cfg->be_verbose) {
+     w = esl_stopwatch_Create();
+     esl_stopwatch_Start(w);
+     fprintf(cfg->ofp, "%-40s ... ", "Checking fragments");
+     fflush(cfg->ofp);
+   }
+
+   if (! (msa->flags & eslMSA_DIGITAL)) {
+     cm_Fail("ERROR in check_fragments, msa is not digitized");
+   }
+
+   /* sequence should either have 0 missing (~) or
+    * all ~ before first residue *and/or* all ~ after final residue
+    */
+   for (idx = 0; idx < msa->nseq; idx++) { 
+     spos = lmiss = 0;
+     if (msa->flags & eslMSA_DIGITAL) {
+       for (lpos = 1; lpos <= msa->alen; lpos++) { 
+         if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][lpos])) { 
+           spos = lpos;
+           lpos = msa->alen+1; // breaks loop
+         }
+         else if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][lpos])) { 
+           lmiss++;
+         }
+       }
+     }
+     if(spos == 0) cm_Fail("Sequence %d has 0 residues", idx+1);
+
+     epos = msa->alen+1;
+     rmiss = 0;
+     if (msa->flags & eslMSA_DIGITAL) {
+       for (rpos = msa->alen; rpos >= 1; rpos--) { 
+         if(esl_abc_XIsResidue(msa->abc, msa->ax[idx][rpos])) { 
+           epos = rpos;
+           rpos = 0; // breaks loop
+         }
+         else if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][rpos])) { 
+           rmiss++;
+         }
+       }
+     }
+     if(epos == (msa->alen+1)) cm_Fail("Sequence %d has 0 residues", idx+1);
+
+     /* check if sequence is a fragment or not */
+     if((lmiss > 0) && (lmiss != (spos-1))) { 
+       cm_Fail("Sequence %d seems to be a fragment but first residue is position %d and it only has %d ~ at 5' end (should be %d)", idx+1, spos, lmiss, spos-1);
+     }
+     if((rmiss > 0) && (rmiss != (msa->alen - epos))) { 
+         cm_Fail("Sequence %d seems to be a fragment but final residue is position %d and it only has %d ~ at 3' end (should be %d)", idx+1, epos, rmiss, msa->alen-epos);
+     }
+     /* finally make sure there's no internal ~ */
+     for (lpos = spos; lpos <= epos; lpos++) { 
+       if(esl_abc_XIsMissing(msa->abc, msa->ax[idx][lpos])) { 
+         cm_Fail("Sequence %d has ~ at position %d, but these should only occur before first residue or after final residue", lpos);
+       }
+     }
+   }
+
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "done.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   w = NULL;
+   return eslOK;
+
+  ERROR:
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "FAILED.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   return status;
+ }
+
+ /* mark_fragments()
+  * Define fragment sequences in the MSA and replace 
+  * terminal gaps with missing data symbols.
+  * 
+  */
+ static int
+ mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
+ {
+   int status;
+   ESL_STOPWATCH *w = NULL;
+   ESL_BITFIELD *fragassign = NULL; /* [0..i..msa->nseq-1] 1 if seq i is a fragment else 0 */
+   int i;   /* counter over sequences */
+   int pos; /* counter over alignment positions */
+
+   /* variables only used if --fragnrfpos is used */
+   int *matassign = NULL;            /* [1..alen] array; 0=insert col, 1=match col */
+   int lpos, rpos; /* counter over alignment positions */
+   int lrfpos_gap; /* number of 5'-terminal consensus gaps in current sequence */
+   int rrfpos_gap; /* number of 3'-terminal consensus gaps in current sequence */
+
+   if (cfg->be_verbose) {
+     w = esl_stopwatch_Create();
+     esl_stopwatch_Start(w);
+     fprintf(cfg->ofp, "%-40s ... ", "Marking fragments");
+     fflush(cfg->ofp);
+   }
+
+   if (! (msa->flags & eslMSA_DIGITAL)) cm_Fail("ERROR in mark_fragments() msa is not digitized");
+   
+   if(esl_opt_IsUsed(go, "--fragnrfpos") && esl_opt_IsUsed(go, "--hand")) { /* --fragnrfpos requires --hand (also enforced by getopts above) */
+     if(msa->rf == NULL) cm_Fail("--hand used but MSA does not have RF annotation"); 
+     if ((fragassign = esl_bitfield_Create(msa->nseq)) == NULL) { status = eslEMEM; goto ERROR; }
+     AssignMatchColumnsForMsa(msa, errbuf, /*use_rf=*/TRUE, /*use_wts=*/FALSE, esl_opt_GetReal(go, "--symfrac"), &matassign);
+     for (i = 0; i < msa->nseq; i++) { 
+       lrfpos_gap = 0;
+       rrfpos_gap = 0;
+       for (lpos = 1; lpos <= msa->alen; lpos++) { 
+         if (matassign[lpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[i][lpos])) { 
+             lpos = msa->alen + 1; /* breaks loop */
+           }
+           else { 
+             lrfpos_gap++;
+           }
+         }
+       }
+       for (rpos = msa->alen; rpos >= 1; rpos--) { 
+         if (matassign[rpos]) { 
+           if(esl_abc_XIsResidue(msa->abc, msa->ax[i][rpos])) { 
+             rpos = 0; /* breaks loop */
+           }
+           else { 
+             rrfpos_gap++;
+           }
+         }
+       }
+       if((lrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos")) || 
+          (rrfpos_gap > esl_opt_GetInteger(go, "--fragnrfpos"))) { 
+         esl_bitfield_Set(fragassign, i);
+       }
+     }
+   } /* end of if(--fragnrfpos && --hand) */
+   else { 
+     /* determine fragments based on fragthresh */
+     if ((status =  esl_msa_MarkFragments(msa, esl_opt_GetReal(go, "--fragthresh"), &fragassign)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to mark fragments");
+   }
+
+   /* regardless of how we defined fragments, update MSA so fragments have missing data at ends */
+   for (i = 0; i < msa->nseq; i++) { 
+     if (esl_bitfield_IsSet(fragassign, i)) { 
+       for (pos = 1; pos <= msa->alen; pos++) {
+         if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
+         msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
+       }
+       for (pos = msa->alen; pos >= 1; pos--) {	  
+         if (esl_abc_XIsResidue(msa->abc, msa->ax[i][pos])) break;
+         msa->ax[i][pos] = esl_abc_XGetMissing(msa->abc);
+       }
+     }
+   }
+
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "done.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+
+   if(w != NULL) esl_stopwatch_Destroy(w); 
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign);
+   w = NULL;
+   fragassign = NULL;
+   return eslOK;
+
+  ERROR:
+   if (cfg->be_verbose) { 
+     fprintf(cfg->ofp, "FAILED.  ");
+     esl_stopwatch_Stop(w);
+     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
+   }
+   if(w          != NULL) esl_stopwatch_Destroy(w);
+   if(fragassign != NULL) esl_bitfield_Destroy(fragassign);
+   return status;
+ }
 
  /* build_model():
   * Given <msa>, collect counts;
@@ -1466,7 +1775,11 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    int use_rf;
    int use_wts;
    int* used_el = NULL;
-   int pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+   int pretend_cm_is_hmm;   /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
+   double **dbl_e = NULL;   /* copy of cm->e in doubles */
+   Prior_t *pri2use = NULL; /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
+   int v;                   /* counter over states */
+   int a;                   /* counter over symbols */
 
    if (cfg->be_verbose && do_print) {
      w = esl_stopwatch_Create();
@@ -1479,7 +1792,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    use_wts = (use_rf || esl_opt_GetBoolean(go, "--v1p0")) ? FALSE : TRUE;
    if((status = HandModelmaker(msa, errbuf, use_rf, 
 			       FALSE, /* use_el: never when building a model */
-			       use_wts, (1. - esl_opt_GetReal(go, "--symfrac")), &cm, &mtr)) != eslOK) return status;
+			       use_wts, esl_opt_GetReal(go, "--symfrac"), &cm, &mtr)) != eslOK) return status;
 
    /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
    if( esl_opt_IsOn(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
@@ -1496,9 +1809,6 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
        FreeCM(cm);
        cm = new;
      }
-   pretend_cm_is_hmm = ((CMCountNodetype(cm, MATP_nd) > 0)   || 
-			esl_opt_GetBoolean(go, "--noh3pri")  || 
-			esl_opt_GetBoolean(go, "--v1p0")) ? FALSE : TRUE;
 
    /* get counts */
    ESL_ALLOC(tr, sizeof(Parsetree_t *) * (msa->nseq));
@@ -1517,14 +1827,44 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
     */
    ESL_ALLOC(used_el, sizeof(int) * (msa->alen+1));
    esl_vec_ISet(used_el, msa->alen+1, FALSE);
+
+   pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
+   pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
+
    for (idx = 0; idx < msa->nseq; idx++) {
      if((status = Transmogrify(cm, errbuf, mtr, msa->ax[idx], used_el, msa->alen, &(tr[idx]))) != eslOK) return status;
      if(pretend_cm_is_hmm) { 
        if((status = cm_parsetree_Doctor(cm, errbuf, tr[idx], NULL, NULL)) != eslOK) return status;
      }
-     ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
+     ParsetreeCountExceptTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
      /*ParsetreeDump(cfg->ofp, tr[idx], cm, msa->ax[idx]);*/
    }
+
+   /* make a copy of the emission count vectors, but in double format,
+    * we want a stable copy of these counts to use to determine mean
+    * posterior estimates using a dirichlet prior, and we don't want
+    * those counts to change as we add counts from truncated MP
+    * emissions in each parsetree, which would make CM
+    * parameterization dependent on the order of sequences in the
+    * input alignment and would make mean posterior estimates based on
+    * partial MP emissions, which seems dubious. (We need it to be
+    * doubles because doubles are required by
+    * esl_mixdchlet_MPParamaters().)
+    */
+   ESL_ALLOC(dbl_e, cm->M * sizeof(double *));
+   for(v = 0; v < cm->M; v++) { 
+     dbl_e[v] = NULL;
+     if(cm->sttype[v] == MP_st) { 
+       ESL_ALLOC(dbl_e[v], cm->abc->K * cm->abc->K * sizeof(double)); 
+       for(a = 0; a < (cm->abc->K * cm->abc->K); a++) { 
+         dbl_e[v][a] = (double) cm->e[v][a];
+       }
+     }
+   }
+   for (idx = 0; idx < msa->nseq; idx++) {
+     ParsetreeCountOnlyTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx], dbl_e, pri2use);
+   }
+
    free(used_el);
    cm->nseq     = msa->nseq;
    cm->eff_nseq = msa->nseq;
@@ -1591,7 +1931,7 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
     * Used primarily for making data files for training priors.
     */
    if (cfg->cfp != NULL) { 
-     if ((status = print_countvectors(cfg, errbuf, cm)) != eslOK) goto ERROR;
+     if ((status = print_countvectors(cfg->cfp, cm)) != eslOK) goto ERROR;
    }
 
    *ret_cm  = cm;
@@ -1606,10 +1946,28 @@ static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
    else *ret_msa_tr = tr;
 
    if(w != NULL) esl_stopwatch_Destroy(w);
-
+   if(dbl_e != NULL) { 
+     for(v = 0; v < cm->M; v++) { 
+       if(dbl_e[v] != NULL) {
+         free(dbl_e[v]);
+       }
+     }
+     free(dbl_e);
+     dbl_e = NULL;
+   }
    return eslOK;
 
   ERROR:
+   if(w != NULL) esl_stopwatch_Destroy(w);
+   if(dbl_e != NULL) { 
+     for(v = 0; v < cm->M; v++) { 
+       if(dbl_e[v] != NULL) {
+         free(dbl_e[v]);
+       }
+     }
+     free(dbl_e);
+     dbl_e = NULL;
+   }
    return status;
  }
 
@@ -2065,7 +2423,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
      * The --p7hemit option makes it so HMMER emissions are used instead
      * of the marginalized CM emissions.
      *
-     * NOTE: We could avoid this if we had a way or using Infernal's
+     * NOTE: We could avoid this if we had a way of using Infernal's
      * emission priors (there are different prior for base pairs and
      * singlets) in p7_Builder(), but that would require parsing the
      * secondary structure and getting an Infernal function into
@@ -2324,43 +2682,41 @@ set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *ms
  * Purpose:  Save emission count vectors to a file.
  *           Used to gather data for training Dirichlet priors.
  *
- * Args:     cfile  - name of file to save vectors to.
+ * Args:     ofp    - open file to output count vectors to.
  *           cm     - a model containing counts (before probify'ing)
  *
  */
 static int
-print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+print_countvectors(FILE *ofp, CM_t *cm)
 {
   int   v,x;
-
-  if(cfg->cfp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "save_countvectors(), but cfg->cfp is NULL, shouldn't happen.");
 
   /* Print emission counts */
   for (v = 0; v < cm->M; v++) {
     if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) { 
-      fprintf(cfg->cfp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
+      fprintf(ofp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
       if (cm->sttype[v] == MP_st) {
 	for (x = 0; x < cm->abc->K*cm->abc->K; x++)
-	  fprintf(cfg->cfp, "%8.3f ", cm->e[v][x]);
+	  fprintf(ofp, "%8.3f ", cm->e[v][x]);
       } else {
 	for (x = 0; x < cm->abc->K; x++)
-	  fprintf(cfg->cfp, "%8.3f ", cm->e[v][x]);
+	  fprintf(ofp, "%8.3f ", cm->e[v][x]);
       }
-      fprintf(cfg->cfp, "\n");
+      fprintf(ofp, "\n");
     }
   }
 
   /* Print transition counts */
   for (v = 0; v < cm->M; v++) {
     if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
-      fprintf(cfg->cfp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
+      fprintf(ofp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
       for (x = 0; x < cm->cnum[v]; x++) {
-	fprintf(cfg->cfp, "%8.3f ", cm->t[v][x]);
+	fprintf(ofp, "%8.3f ", cm->t[v][x]);
       }
-      fprintf(cfg->cfp, "\n");
+      fprintf(ofp, "\n");
     }
   }
-  fprintf(cfg->cfp, "//\n");
+  fprintf(ofp, "//\n");
   return eslOK;
 }
 
@@ -2470,8 +2826,6 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
   cm_Fail("memory allocation error.");
   return status; /* NEVERREACHED */
 }
-
-
 
 /* Function: MSADivide()
  * EPN, Wed Mar 21 17:26:39 2007
@@ -3268,4 +3622,31 @@ dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7)
  ERROR:
   cm_Fail("memory allocation error.");
   return; /* NEVERREACHED */
+}
+
+/* Function: determine_pretend_cm_is_hmm()
+ * Date:     EPN, Thu Nov  3 15:23:27 2022
+ *
+ * Purpose: Determine if we are going to pretend the CM 
+ *          is an HMM for parameterization purposes.
+ *
+ * Returns: TRUE or FALSE
+ */
+static int
+determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm)
+{
+  int pretend_cm_is_hmm;
+
+  if((CMCountNodetype(cm, MATP_nd) == 0)     && 
+     (! esl_opt_GetBoolean(go, "--v1p0"))    && 
+     (! esl_opt_GetBoolean(go, "--p56"))     && 
+     (! esl_opt_GetBoolean(go, "--noh3pri")) && 
+     (! esl_opt_IsUsed    (go, "--prior"))) { 
+    pretend_cm_is_hmm = TRUE;
+  }
+  else { 
+    pretend_cm_is_hmm = FALSE;
+  }
+
+  return pretend_cm_is_hmm;
 }

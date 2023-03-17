@@ -89,6 +89,152 @@ PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, 
   return; /* never reached */
 }
 
+/* Function: PairCountMarginal()
+ * Date:     EPN, Fri Nov  4 10:43:58 2022
+ *
+ * Purpose:  Marginal-aware version of PairCount in which 
+ *           exactly one of syml and symr is missing data '~'
+ *           due to a sequence truncation. We partition <wt> 
+ *           across the 4 possible values that '~' could be
+ *           based on a mean posterior estimate using the 
+ *           Dirichlet prior <pri> and the existing counts
+ *           from full MP states in <counters>.
+ *
+ *           <counters> should already be filled with *all* MP counts
+ *           for non-truncated MP states that emitted both a left and
+ *           right symbol so that the Dirichlet prior can use those
+ *           counts when determining mean posterior estimates.
+ *
+ * Args:     abc      - pointer to the internal alphabet
+ *           counters - vector to count into [0..abc->K^2-1]
+ *           syml     - index of left  symbol  [0..abc->sym_iupac-1] or abc->Kp-1 if missing (~)
+ *           symr     - index of right symbol  [0..abc->sym_iupac-1] or abc->Kp-1 if missing (~)
+ *           wt       - weight to use for the count (often 1.0).          
+ *           pri      - the dirichlet prior to use
+ * 
+ * Returns:  void
+ */
+void
+PairCountMarginal(const ESL_ALPHABET *abc, double *nonmarg_counters, float *updated_counters, ESL_DSQ syml, ESL_DSQ symr, float wt, const Prior_t *pri)
+{
+  int     status;         /* easel status */
+  double *probs = NULL;   /* double copy of probability parameters for each of the 16 possible basepairs */
+  double sum;             /* sum of probs that include syml or symr */
+  int    l, r;            /* counters */
+  float  *left  = NULL;   /* only used in case syml is degenerate */
+  float  *right = NULL;   /* only used in case symr is degenerate */
+
+  ESL_ALLOC(probs,  sizeof(double) * pri->maxnalpha);
+
+  /* organization of this function:
+   * handle case where symr is missing:
+   *   - handle case where syml is not degenerate 
+   *   - handle case where syml is degenerate 
+   * handle case where syml is missing:
+   *   - handle case where symr is not degenerate 
+   *   - handle case where symr is degenerate 
+   */
+
+  /* handle case where symr is missing */
+  if(esl_abc_XIsMissing(abc, symr)) { 
+    if(esl_abc_XIsMissing(abc, syml)) { 
+      cm_Fail("PairCountMarginal() entered with both syml and symr missing");
+    }
+    esl_mixdchlet_MPParameters(pri->mbp, nonmarg_counters, probs);
+    if(syml < abc->K) { /* syml is not degenerate */
+      /* sum Dirichlet MP probs for all basepairs that include syml as the left half
+       * then partition out <wt> by that proportion */
+      sum = 0.;
+      for (r = 0; r < abc->K; r++) {
+        sum += probs[syml * abc->K + r];
+      }
+      for (r = 0; r < abc->K; r++) {
+	updated_counters[syml * abc->K + r] += (probs[syml * abc->K + r] / sum) * wt;
+      }
+    }
+    else { /* syml is degenerate, need to also spread wt across the canonical nt the ambiguity is consistent with */
+      /* the logic here is similar to in PairCount() */
+      ESL_ALLOC(left,  (sizeof(float) * abc->K));
+      esl_vec_FSet(left, abc->K, 0.);
+      esl_abc_FCount(abc, left, syml, 1.0); 
+      /* 1.0 above could actually be any number, b/c we compute sum in 1st nested 
+       * for loop and then divide by it it second nested for loop below */
+
+      /* as above for non-degenerate case, sum Dirichlet MP probs for
+       * all basepairs that include syml as the left half then
+       * partition out <wt> by that proportion */
+      sum = 0.;
+      for (l = 0; l < abc->K; l++) {
+        for (r = 0; r < abc->K; r++) {
+          sum += probs[l * abc->K + r] * left[l]; /* left[l] == 0. for any canonical nt syml is inconsistent with */
+        }
+      }
+      for (l = 0; l < abc->K; l++) {
+        for (r = 0; r < abc->K; r++) {
+          updated_counters[l * abc->K + r] += ((probs[l * abc->K + r] * left[l]) / sum) * wt;
+        }
+      }
+    }
+  }
+  /* handle case where syml is missing */
+  else if(esl_abc_XIsMissing(abc, syml)) { 
+    if(esl_abc_XIsMissing(abc, symr)) { 
+      cm_Fail("PairCountMarginal() entered with both syml and symr missing");
+    }
+    esl_mixdchlet_MPParameters(pri->mbp, nonmarg_counters, probs);
+    if(symr < abc->K) { /* symr is not degenerate */
+      /* sum Dirichlet MP probs for all basepairs that include symr as the right half
+       * then partition out <wt> by that proportion */
+      sum = 0.;
+      for (l = 0; l < abc->K; l++) {
+        sum += probs[l * abc->K + symr];
+      }
+      for (l = 0; l < abc->K; l++) {
+	updated_counters[l * abc->K + symr] += (probs[l * abc->K + symr] / sum) * wt;
+      }
+    }
+    else { /* symr is degenerate, need to also spread wt across the canonical nt the ambiguity is consistent with */
+      /* the logic here is similar to in PairCount() */
+      ESL_ALLOC(right, (sizeof(float) * abc->K));
+      esl_vec_FSet(right, abc->K, 0.);
+      esl_abc_FCount(abc, right, symr, 1.0);
+      /* 1.0 above could actually be any number, b/c we compute sum in 1st nested 
+       * for loop and then divide by it it second nested for loop below */
+
+      /* as above for non-degenerate case, sum Dirichlet MP probs for
+       * all basepairs that include symr as the right half then
+       * partition out <wt> by that proportion */
+      sum = 0.;
+      for (l = 0; l < abc->K; l++) {
+        for (r = 0; r < abc->K; r++) {
+          sum += probs[l * abc->K + r] * right[r]; /* right[r] == 0. for any canonical nt syml is inconsistent with */
+        }
+      }
+      for (l = 0; l < abc->K; l++) {
+        for (r = 0; r < abc->K; r++) {
+          updated_counters[l * abc->K + r] += ((probs[l * abc->K + r] * right[r]) / sum) * wt;
+        }
+      }
+    }
+  }
+  else { 
+    cm_Fail("PairCountMarginal() entered with neither syml or symr missing");
+  }
+  if(probs != NULL) free(probs);
+  if(left  != NULL) free(left);
+  if(right != NULL) free(right);
+
+  return;
+
+ ERROR:
+  if(probs != NULL) free(probs);
+  if(left  != NULL) free(left);
+  if(right != NULL) free(right);
+
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
+
 float
 DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr)
 {

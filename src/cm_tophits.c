@@ -2164,7 +2164,7 @@ cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_hb, int us
  *            values. <errbuf> is filled in all cases.
  */
 int
-cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa)
+cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, int allow_trunc, ESL_MSA **ret_msa)
 {
   ESL_SQ      **sqarr = NULL; /* [0..ninc-1] array of sequences, one for each hit */
   Parsetree_t **trarr = NULL; /* [0..ninc-1] array of parsetrees, one for each hit */
@@ -2204,7 +2204,8 @@ cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret
   }
   
   /* create the alignment */
-  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sqarr, NULL, trarr, pparr, ninc, NULL, NULL, TRUE, FALSE, &msa)) != eslOK) goto ERROR;
+  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, sqarr, NULL, trarr, pparr, ninc, NULL, NULL, 
+                                    /*do_full=*/TRUE, /*do_matchonly=*/FALSE, /*allow_trunc=*/allow_trunc, &msa)) != eslOK) goto ERROR;
 
   /* Clean up */
   for (y = 0; y < ninc; y++) esl_sq_Destroy(sqarr[y]);

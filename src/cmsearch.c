@@ -115,6 +115,7 @@ static ESL_OPTIONS options[] = {
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
   { "--textw",      eslARG_INT,    "120", NULL, "n>=120",NULL,  NULL, "--notextw",      "set max width of ASCII text output lines",                     2 },
   { "--verbose",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "report extra information; mainly useful for debugging",        2 },
+  { "--nomiss",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "-A",  NULL,            "with -A, do not mark truncated hits with missing (~) chars",   2 },
   /* Control of reporting thresholds */
   /* name           type         default   env  range toggles   reqs   incomp  help                                                            docgroup*/
   { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  NULL, /* see *** above */ "report sequences <= this E-value threshold in output",         3 },
@@ -720,7 +721,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
-      if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, &msa)) == eslOK) { 
+      if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, /*allow_trunc=*/(! esl_opt_GetBoolean(go, "--nomiss")), &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) esl_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
 	  else           esl_msafile_Write(afp, msa, eslMSAFILE_PFAM);
@@ -1408,7 +1409,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
-      if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, &msa)) == eslOK) { 
+      if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, /*allow_trunc=*/(! esl_opt_GetBoolean(go, "--nomiss")), &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) esl_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
 	  else           esl_msafile_Write(afp, msa, eslMSAFILE_PFAM);
