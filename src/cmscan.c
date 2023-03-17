@@ -81,13 +81,6 @@ typedef struct {
   int              *clan_idxA;    /* [0..cm_idx..nmodels-1] idx of clan this model belongs to, or -1 if none */
 } READER_INFO;
 
-#define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
-#define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define FMODEOPTS   "--FZ,--hmmonly,--rfam,--mid,--nohmm,--max"
-#define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
-#define TRUNCOPTS   "-g,--notrunc,--anytrunc,--onlytrunc,--5trunc,--3trunc"
-
 /* ** Large sets of options are InCompatible With (ICW) --max, --nohmm,
  * --mid, --rfam, --FZ, Previously (before these were commented out) I
  * used this defines in the 'incompatible with' field of the
