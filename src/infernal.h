@@ -2063,13 +2063,14 @@ typedef struct cm_file_s {
  * on it.
  * 
  * Not all passes are performed in a pipeline. If pli->do_trunc_ends,
- * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends, passes
- * 1 and 2 are performed. If pli->do_trunc_3p_ends, passes 1
- * and 3 are performed. If pli->do_trunc_any, passes 1 and 5 are
- * performed. If pli->do_trunc_only, only pass 5 is performed.
- * If pli->do_only_trunc_5p_and_3p_ends, only pass 4 is
- * performed. If pli->do_hmmonly_cur, only pass 6 is performed. If
- * none of these flags is TRUE only pass 1 is performed.
+ * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends, passes 1
+ * and 2 are performed. If pli->do_trunc_3p_ends, passes 1 and 3 are
+ * performed. If pli->do_trunc_any, passes 1, 2, 3, 4 and 5 are
+ * performed. If pli->do_trunc_int, passes 1, and 5 are performed. If
+ * pli->do_trunc_only, only pass 5 is performed.  If
+ * pli->do_only_trunc_5p_and_3p_ends, only pass 4 is performed. If
+ * pli->do_hmmonly_cur, only pass 6 is performed. If none of these
+ * flags is TRUE only pass 1 is performed.
  *
  * These values have two interrelated but different roles:
  *
@@ -2279,8 +2280,9 @@ typedef struct cm_pipeline_s {
 
   /* truncated sequence detection parameters */
   int     do_trunc_ends;                /* TRUE to use truncated CM algs at sequence ends */
-  int     do_trunc_any;                 /* TRUE to use truncated CM algs for entire sequences */
-  int     do_trunc_only;                /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_any;                 /* TRUE to use truncated CM algs for terminii and entire sequences */
+  int     do_trunc_int;                 /* TRUE to use truncated CM algs for entire sequences (but not terminii) */
+  int     do_trunc_only;                /* TRUE to use truncated CM algs for entire sequences (but not terminii, don't use std algs either) */
   int     do_trunc_5p_ends;             /* TRUE to use truncated CM algs only at 5' ends (added for RNAVORE, post 1.1.1) */
   int     do_trunc_3p_ends;             /* TRUE to use truncated CM algs only at 3' ends (added for RNAVORE, post 1.1.1) */
 
