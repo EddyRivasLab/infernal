@@ -218,6 +218,9 @@ esac
 
 AC_ARG_ENABLE(gcov,    [AS_HELP_STRING([--enable-gcov],    [compile for code coverage testing])],        enable_gcov=$enableval,    enable_gcov=no)
 AC_ARG_ENABLE(gprof,   [AS_HELP_STRING([--enable-gprof],   [compile for gcc code profiling])],           enable_gprof=$enableval,   enable_gprof=no)
+AC_ARG_ENABLE(asan,    [AS_HELP_STRING([--enable-asan],    [compile with address sanitizer]) ],          enable_asan=$enableval,    enable_asan=no)
+AC_ARG_ENABLE(tsan,    [AS_HELP_STRING([--enable-tsan],    [compile with thread sanitizer]) ],           enable_tsan=$enableval,    enable_tsan=no)
+AC_ARG_ENABLE(fortify, [AS_HELP_STRING([--enable-fortify=x],[compile with -D_FORTIFY_SOURCE=x]) ],       enable_fortify=$enableval, enable_fortify=no)
 
 AC_ARG_ENABLE(neon,    [AS_HELP_STRING([--enable-neon],    [enable our ARM Neon vector code])],          enable_neon=$enableval,    enable_neon=check)
 AC_ARG_ENABLE(sse,     [AS_HELP_STRING([--enable-sse],     [enable our SSE vector code])],               enable_sse=$enableval,     enable_sse=check)
@@ -269,6 +272,7 @@ AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 AC_PROG_LN_S
 
+
 # Select our default optimization flags in CFLAGS.
 #  --enable-gcov, --enable-gprof, and --enable-debugging are mutually exclusive.
 #
@@ -290,11 +294,34 @@ else
    CFLAGS="${CFLAGS} -O3"
 fi
 
+
+# See if we should be passing -D_ENABLE_FORTIFY
+if test "$enable_fortify" != "no"; then
+  CFLAGS="${CFLAGS} -D_FORTIFY_SOURCE=$enable_fortify"
+fi
+
+
+# Turn on a sanitizer, if asked.
+#
+if test "$enable_asan" = "yes"; then
+  CFLAGS="$CFLAGS -fsanitize=address"
+  LDFLAGS="$LDFLAGS -fsanitize=address"
+fi
+if test "$enable_tsan" = "yes"; then
+  if test "$enable_asan" = "yes"; then  
+    AC_MSG_FAILURE([The address and thread sanitizers are incompatible. Use only one of --enable-asan and --enable-tsan])
+  fi
+  CFLAGS="$CFLAGS -fsanitize=threads"
+  LDFLAGS="$LDFLAGS -fsanitize=threads"
+fi
+
+
 # PIC (position-independent code) for shared library support
 #
 if test "$enable_pic" = "yes"; then
    ESL_PIC_FLAGS
 fi
+
 
 # Support for POSIX multithreading (we should generally have this)
 #
