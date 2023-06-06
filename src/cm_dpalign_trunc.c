@@ -1288,6 +1288,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int      d_sdl;           /* d - sdl */
   int      d_sdr;           /* d - sdr */
   float    tsc;             /* a transition score */
+  int64_t  c;               /* 64-bit int counter */
 
   /* other variables used in truncated version, but not standard version (not in cm_CYKInsideAlign()) */
   int   b, Jb, Lb, Rb, Tb;      /* local entry state rooting overall and {J,L,R,T} optimal parsetrees using */
@@ -1336,16 +1337,16 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
   if(cm->flags & CMH_LOCAL_END) { 
@@ -1899,6 +1900,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   int      sdl;         /* StateLeftDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v]) */
   int      j_sdr;       /* j - sdr */
+  int64_t  c;           /* 64-bit int counter */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
@@ -1995,16 +1997,16 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
    * Note: we could optimize by skipping this step and using el_scA[d] to
@@ -4343,6 +4345,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      d_sdl;           /* d - sdl */
   int      d_sdr;           /* d - sdr */
   int      have_el;         /* TRUE if local ends are on in the CM, otherwise FALSE */
+  int64_t  c;               /* 64-bit int counter */
 
   /* other variables used in truncated version, but not standard version (not in cm_OptAccAlign()) */
   int   b = 0;		    /* best truncated entry state */
@@ -4395,16 +4398,16 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* a special optimal accuracy specific step, initialize Jyshadow intelligently for d == 0 
    * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
@@ -4976,6 +4979,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;           /* j - sdr */
   int      have_el;         /* TRUE if local ends are on in the CM, otherwise FALSE */
+  int64_t  c;               /* 64-bit int counter */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      ip_v;               /* offset i index for state v */
@@ -5070,16 +5074,16 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* a special optimal accuracy specific step, initialize Jyshadow intelligently for d == 0 
    * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)

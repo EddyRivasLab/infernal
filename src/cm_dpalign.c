@@ -859,6 +859,7 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      j_sdr;       /* j - sdr */
   int      d_sd;        /* d - sd */
   float    tsc;         /* a transition score */
+  int64_t  c;           /* 64-bit int counter */
 
   /* the DP matrix */
   float ***alpha   = mx->dp;        /* pointer to the alpha DP matrix */
@@ -875,7 +876,7 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   /* initialize all cells of the matrix to IMPOSSIBLE, all cells of shadow matrix to USED_EL */
   esl_vec_FSet(mx->dp_mem, mx->ncells_valid, IMPOSSIBLE);
-  for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
+  for(c = 0; c < shmx->y_ncells_valid; c++) shmx->yshadow_mem[c] = USED_EL;
   esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, USED_EL);
 
   /* precalcuate all possible local end scores, for local end emits of 1..L residues */
@@ -1112,7 +1113,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   float   *el_scA;      /* [0..d..L-1] probability of local end emissions of length d */
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
-  int      j_sdr;              /* j - sdr */
+  int      j_sdr;       /* j - sdr */
+  int      c;           /* 64-bit int counter */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
@@ -1170,7 +1172,7 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
-  if(shmx->y_ncells_valid > 0) for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
+  if(shmx->y_ncells_valid > 0) for(c = 0; c < shmx->y_ncells_valid; c++) shmx->yshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0);
 
@@ -2216,6 +2218,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
   int      j_sdr;       /* j - sdr */
   int      d_sd;        /* d - sd */
   int      have_el;     /* TRUE if CM has local ends on, otherwise FALSE */
+  int      c;           /* 64-bit counter */
 
   /* the DP matrices */
   float ***alpha   = mx->dp;       /* pointer to the alpha DP matrix, we'll store optimal parse in  */
@@ -2234,7 +2237,7 @@ cm_OptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM
 
   /* initialize all cells of the matrix */
   if(  mx->ncells_valid   > 0) esl_vec_FSet(mx->dp_mem, mx->ncells_valid, IMPOSSIBLE);
-  if(shmx->y_ncells_valid > 0) for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
+  if(shmx->y_ncells_valid > 0) for(c = 0; c < shmx->y_ncells_valid; c++) shmx->yshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
 
@@ -2520,6 +2523,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      have_el;     /* TRUE if CM has local ends on, otherwise FALSE */
+  int64_t  c;           /* 64-bit int counter */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      ip_v;               /* offset i index for state v */
@@ -2572,7 +2576,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 
   /* initialize all cells of the matrix */
   if(  mx->ncells_valid   > 0) esl_vec_FSet(mx->dp_mem, mx->ncells_valid, IMPOSSIBLE);
-  if(shmx->y_ncells_valid > 0) for(i = 0; i < shmx->y_ncells_valid; i++) shmx->yshadow_mem[i] = USED_EL;
+  if(shmx->y_ncells_valid > 0) for(c = 0; c < shmx->y_ncells_valid; c++) shmx->yshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0); 
 
