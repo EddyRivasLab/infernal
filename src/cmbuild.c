@@ -822,8 +822,12 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      fclose(pfp);
      cfg->pri_zerobp = NULL;
    }
-   else if(esl_opt_GetBoolean(go, "--p56") || esl_opt_GetBoolean(go, "--v1p0") || esl_opt_GetBoolean(go, "--noh3pri")) { 
+   else if(esl_opt_GetBoolean(go, "--p56") || esl_opt_GetBoolean(go, "--v1p0")) { 
      cfg->pri        = Prior_Default_v0p56_through_v1p02();
+     cfg->pri_zerobp = NULL;
+   }
+   else if(esl_opt_GetBoolean(go, "--noh3pri")) { 
+     cfg->pri        = Prior_Default(FALSE);
      cfg->pri_zerobp = NULL;
    }
    else { 
