@@ -2587,8 +2587,8 @@ configure_root_inserts(CM_t *cm, float to_insert_prob, float self_insert_prob)
   if((to_insert_prob <= 0.) || to_insert_prob > 0.4) { 
     cm_Fail("ERROR with --flankselfins <x>, <x> should be > 0. and < 0.9");
   }
-  if((to_insert_prob + self_insert_prob) > 0.97) { 
-    cm_Fail("ERROR with --flanktoins <x1> and --flankselfins <x2>, <x1> + <x2> must be less than 0.97");
+  if((to_insert_prob + self_insert_prob) > 0.95) { 
+    cm_Fail("ERROR with --flanktoins <x1> and --flankselfins <x2>, <x1> + <x2> must be less than 0.95");
   }
 
   /* Deal with transitions out of ROOT_S first 
