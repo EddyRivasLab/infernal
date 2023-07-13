@@ -587,14 +587,19 @@ include extra sequence at the 5' and/or 3' ends. Without using this
 option 
 .B cmalign 
 tends to mess up alignments at the end, especially for models with
-zero basepairs. 
+zero basepairs. This option should not be necessary when aligning
+sequences identified by 
+.B cmsearch
+or 
+.B cmscan
+because they should not include extra sequence at the ends.
 This option must be used in combination with the 
 -BI --flankselfins " <x2>" 
 option. Recommended values to use are 0.1 for 
 .I <x1>
 and 0.8 for
 .I <x2>
-, but the best performing pair of values will likely vary for
+, but the best performing pair of values may vary for
 different models.
 .I <x1>
 must be greater than 0.0 and less than 0.4, and the sum of
