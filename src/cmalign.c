@@ -120,6 +120,8 @@ static ESL_OPTIONS options[] = {
   { "--matchonly",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "include only match columns in output alignment",             5 },
   { "--miss",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "mark seqs w/terminal gaps as fragments w/missing (~) chars", 5 },
   { "--ileaved",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--outformat","force output in interleaved Stockholm format",                5 },
+  { "--flanktoins",  eslARG_REAL,        NULL, NULL,   "0<x<0.4",       NULL,"--flankselfins",      NULL, "change transition probs into ROOT_IL/IR to <x> (e.g. 0.1)",  5 }, 
+  { "--flankselfins",eslARG_REAL,        NULL, NULL,   "0<x<0.9",       NULL,"--flanktoins",        NULL, "change self transit probs for ROOT_IL/IR to <x> (e.g. 0.8)", 5 }, 
   { "--regress",  eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL, "--ileaved",    "--mapali", "save regression test data to file <f>",                      5 }, 
   { "--verbose",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "report extra information; mainly useful for debugging",      5 },
   /*{ "--noannot",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not add cmalign execution annotation to the alignment",   5 },*/
@@ -204,6 +206,7 @@ static int  create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_
 static void update_maxins_and_maxel(ESL_MSA *msa, int clen, int64_t alen, int *maxins, int *maxel);
 static int  determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, int **ret_ngap_insA, int **ret_ngap_elA, int **ret_ngap_eitherA, char *errbuf);
 static void inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_elA, char **ret_ss_cons2print, char **ret_rf2print);
+static void configure_root_inserts(CM_t *cm, float to_insert_prob, float self_insert_prob);
 
 int
 main(int argc, char **argv)
@@ -1653,6 +1656,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   
   cm->tau    = esl_opt_GetReal(go, "--tau");
   cm->maxtau = esl_opt_GetReal(go, "--maxtau");
+
+  if((esl_opt_IsUsed(go, "--flanktoins")) && (esl_opt_IsUsed(go, "--flankselfins"))) { 
+    configure_root_inserts(cm, esl_opt_GetReal(go, "--flanktoins"), esl_opt_GetReal(go, "--flankselfins"));
+  }
   
   /* configure */
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status; 
@@ -2548,5 +2555,102 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
  ERROR:
   cm_Fail("Allocation error when creating final alignment RF and SS_cons.");
   return; /* NEVERREACHED */
+}
+
+/* configure_root_inserts
+ *                   
+ * Modify the transition probabilities into and out of the 
+ * ROOT_IL and ROOT_IR states. 
+ * The motivation is to allow cmalign to more accurately
+ * align sequences that have extra nonhomologous sequence
+ * on the ends. Defaultly-paramaterized models (especially
+ * those with zero basepairs) tend to mess up the alignment
+ * at the ends if there are extra nucleotides. 
+ *
+ * The value of 'prob' was limited to be 0. < prob < 0.4 by
+ * getopts but we also do a sanity check here.
+ * 
+ * Returns void.
+ */
+void
+configure_root_inserts(CM_t *cm, float to_insert_prob, float self_insert_prob)
+{
+  int status;
+
+  float state0_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
+  float state1_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
+  float state2_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
+
+  if((to_insert_prob <= 0.) || to_insert_prob > 0.4) { 
+    cm_Fail("ERROR with --flanktoins <x>, <x> should be > 0. and < 0.4");
+  }
+  if((to_insert_prob <= 0.) || to_insert_prob > 0.4) { 
+    cm_Fail("ERROR with --flankselfins <x>, <x> should be > 0. and < 0.9");
+  }
+  if((to_insert_prob + self_insert_prob) > 0.95) { 
+    cm_Fail("ERROR with --flanktoins <x1> and --flankselfins <x2>, <x1> + <x2> must be less than 0.95");
+  }
+
+  /* Deal with transitions out of ROOT_S first 
+   * first  transition out of ROOT_S is always to ROOT_IL 
+   * second transition out of ROOT_S is always to ROOT_IR 
+   * third  transition out of ROOT_S is always to 'match' state in split set of next node, e.g. MATL_ML, MATR_MR, MATP_MP or BIF_B 
+   * remaining number of transitions depend on next node type, but are all 'delete' states (unless BIF) 
+   */
+  cm->t[0][0] = to_insert_prob;   /* ROOT_S  -> ROOT_IL */
+  cm->t[0][1] = to_insert_prob;   /* ROOT_S  -> ROOT_IR */
+  state0_sum = to_insert_prob + to_insert_prob;
+
+  cm->t[1][0] = self_insert_prob; /* ROOT_IL -> ROOT_IL */
+  cm->t[1][1] = to_insert_prob;   /* ROOT_IL -> ROOT_IR */
+  state1_sum = self_insert_prob + to_insert_prob;
+
+  cm->t[2][0] = self_insert_prob; /* ROOT_IR -> ROOT_IR */
+  state2_sum = self_insert_prob;
+  
+  /* 3/4 of the remaining to_insert_probability goes to the match state, unless BIF_B */
+  if(cm->ndtype[1] == BIF_nd) { 
+    cm->t[0][2] = 1. - state0_sum; /* ROOT_S  -> BIF_B */
+
+    cm->t[1][2] = 1. - state1_sum; /* ROOT_IL -> BIF_B */
+
+    cm->t[2][1] = 1. - state2_sum; /* ROOT_IR -> BIF_B */
+  }
+  else if(cm->ndtype[1] == MATP_nd) { 
+    cm->t[0][2] =  (1. - state0_sum) * 0.75;       /* ROOT_S -> MATP_MP */
+    cm->t[0][3] = ((1. - state0_sum) * 0.25) / 3.; /* ROOT_S -> MATP_ML */
+    cm->t[0][4] = ((1. - state0_sum) * 0.25) / 3.; /* ROOT_S -> MATP_MR */
+    cm->t[0][5] = ((1. - state0_sum) * 0.25) / 3.; /* ROOT_S -> MATP_D */
+
+    cm->t[1][2] =  (1. - state1_sum) * 0.75;       /* ROOT_IL -> MATP_MP */
+    cm->t[1][3] = ((1. - state1_sum) * 0.25) / 3.; /* ROOT_IL -> MATP_ML */
+    cm->t[1][4] = ((1. - state1_sum) * 0.25) / 3.; /* ROOT_IL -> MATP_MR */
+    cm->t[1][5] = ((1. - state1_sum) * 0.25) / 3.; /* ROOT_IL -> MATP_D */
+
+    cm->t[2][1] =  (1. - state2_sum) * 0.75;       /* ROOT_IR -> MATP_MP */
+    cm->t[2][2] = ((1. - state2_sum) * 0.25) / 3.; /* ROOT_IR -> MATP_ML */
+    cm->t[2][3] = ((1. - state2_sum) * 0.25) / 3.; /* ROOT_IR -> MATP_MR */
+    cm->t[2][4] = ((1. - state2_sum) * 0.25) / 3.; /* ROOT_IR -> MATP_MR */
+  }  
+  else if((cm->ndtype[1] == MATL_nd) || (cm->ndtype[1] == MATR_nd)) { 
+    cm->t[0][2] = (1. - state0_sum) * 0.75; /* ROOT_S -> MAT{L,R}_M{L,R} */
+    cm->t[0][3] = (1. - state0_sum) * 0.25; /* ROOT_S -> MAT{L,R}_D */
+
+    cm->t[1][2] = (1. - state1_sum) * 0.75; /* ROOT_IL -> MAT{L,R}_M{L,R} */
+    cm->t[1][3] = (1. - state1_sum) * 0.25; /* ROOT_IL -> MAT{L,R}_D */
+
+    cm->t[2][1] = (1. - state2_sum) * 0.75; /* ROOT_IR -> MAT{L,R}_M{L,R} */
+    cm->t[2][2] = (1. - state2_sum) * 0.25; /* ROOT_IR -> MAT{L,R}_D */
+  }  
+  else { 
+    cm_Fail("ERROR, with --flankins, unexpected second node type, not one of BIF, MATP, MATL or MATR");
+  }
+
+  /* should already be normalized, but to be safe: */
+  esl_vec_FNorm(cm->t[0], cm->cnum[0]);
+  esl_vec_FNorm(cm->t[1], cm->cnum[1]);
+  esl_vec_FNorm(cm->t[2], cm->cnum[2]);
+
+  return;
 }
 

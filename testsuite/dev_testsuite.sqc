@@ -381,6 +381,7 @@
 1  exercise  align:t/miss         @src/cmalign@  --miss      %TRNA.CM% !testsuite/se.fa!
 1  exercise  align:t/ileaved      @src/cmalign@  --ileaved   %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/regress      @src/cmalign@  --ileaved --regress %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/flankins     @src/cmalign@  --flanktoins 0.1 --flankselfins 0.8 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --informat and --outformat
 1  exercise  align:t/infmt1       @src/cmalign@  %TRNA.CM% !testsuite/3trnas.gb!
