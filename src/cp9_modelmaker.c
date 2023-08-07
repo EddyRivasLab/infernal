@@ -13,8 +13,8 @@
  * expected number of times each corresponding CM state is entered.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <math.h>

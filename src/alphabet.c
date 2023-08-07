@@ -4,8 +4,8 @@
  * Stuff having to do with manipulating symbols in the (RNA) alphabet.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <string.h>

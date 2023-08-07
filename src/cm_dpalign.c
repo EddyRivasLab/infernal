@@ -54,8 +54,8 @@
  * EPN, Thu Sep 29 10:44:19 2011
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -5836,7 +5836,7 @@ cm_InitializeOptAccShadowDZeroHB(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, char 
  * ./benchmark-align <cmfile>
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

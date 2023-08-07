@@ -53,8 +53,8 @@
 #ifndef INFERNALH_INCLUDED
 #define INFERNALH_INCLUDED
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include "easel.h"

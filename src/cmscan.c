@@ -3,8 +3,8 @@
  * EPN, Tue Jun 28 04:33:27 2011
  * SRE, Mon Oct 20 08:28:05 2008 [Janelia] (hmmscan.c)
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

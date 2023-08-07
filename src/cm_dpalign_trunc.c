@@ -106,8 +106,8 @@
  * EPN, Wed Sep  7 12:13:00 2011
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -9898,8 +9898,8 @@ cm_TrFillFromMode(char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
  * ./benchmark-trunc-align <cmfile>
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

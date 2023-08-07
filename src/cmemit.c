@@ -5,7 +5,7 @@
  * Easelfied: EPN, Tue Aug 14 07:01:44 2007 
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

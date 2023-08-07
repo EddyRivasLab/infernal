@@ -14,8 +14,8 @@
  * 
  * EPN, Tue May 24 13:03:31 2011
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -3161,8 +3161,8 @@ cm_hit_Dump(FILE *fp, const CM_HIT *h)
   
   If needed, we do have opportunity for optimization, however - especially in memory handling.
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -3354,8 +3354,8 @@ main(int argc, char **argv)
   gcc -o cm_tophits_utest -std=gnu99 -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_TOPHITS_TESTDRIVE cm_tophits.c -linfernal -lhmmer -leasel -lm 
   ./cm_tophits_utest
 */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>

@@ -3,7 +3,7 @@
  * SRE, Thu Jul 27 13:19:43 2000 [StL]
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

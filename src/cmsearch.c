@@ -4,8 +4,8 @@
  * Based on HMMER3's nhmmer.c and hmmsearch.c.
  * EPN, Fri Sep 24 10:58:08 2010
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

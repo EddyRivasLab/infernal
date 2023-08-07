@@ -16,8 +16,8 @@
  *    10. Test driver.
  *    11. Example.
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -3602,8 +3602,8 @@ multiline(FILE *fp, const char *pfx, char *s)
   icc -pthread                 -O3 -static -o cm_file_benchmark -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_FILE_BENCHMARK cm_file.c -linfernal -lhmmer -leasel -lm 
   ./cm_file_benchmark Rfam.cm
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -3710,8 +3710,8 @@ main(int argc, char **argv)
 #ifdef CMFILE_EXAMPLE
 /* gcc -g -Wall -DCMFILE_EXAMPLE -I. -I../easel -L. -L../easel -o cmfile_example cm_file.c -linfernal -lhmmer -leasel -lm
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include "easel.h"

@@ -48,8 +48,8 @@
  * EPN, Fri Oct 26 05:04:34 2007
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

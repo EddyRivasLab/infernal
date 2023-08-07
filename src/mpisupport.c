@@ -4,8 +4,8 @@
  * EPN, Mon Aug 27 12:38:13 2007
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #ifdef HAVE_MPI

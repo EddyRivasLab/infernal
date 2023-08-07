@@ -4,8 +4,8 @@
  * SRE, Thu Jul 25 11:28:03 2002 [St. Louis]
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"	
 
 #include <stdio.h>

@@ -3,8 +3,8 @@
  *
  * Construct a p7 model from CM and its CP9 HMM.
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>

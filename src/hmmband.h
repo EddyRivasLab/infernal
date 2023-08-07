@@ -12,7 +12,7 @@
  * the end of the hmmband.c file.
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include "easel.h"         

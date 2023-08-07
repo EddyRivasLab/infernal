@@ -9,8 +9,8 @@
  * EPN, Wed Sep 12 16:53:32 2007
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -1432,7 +1432,7 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
  * ./benchmark-cp9_dp <cmfile>
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -1586,8 +1586,8 @@ main(int argc, char **argv)
  * ./debug-cp9_dp <cmfile> <fafile>
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
