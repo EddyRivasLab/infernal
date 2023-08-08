@@ -92,9 +92,9 @@ $tag1 = "<cmfile>";   $arg1 = "$srcdir/testsuite/$model1.c.cm";
 $tag2 = "<seqfile>";  $arg2 = "$tmppfx.fa10"; 
 if ($verbose) { print "$tag...\n"; }
 
-`$prog $arg1 $arg2         | grep -v "^#DEBUG" > $tmppfx.out1`;   if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
-`cat $arg1 | $prog - $arg2 | grep -v "^#DEBUG" > $tmppfx.out2`;   if ($?) { die "FAIL: $tag - $tag2\n"; }
-`cat $arg2 | $prog $arg1 - | grep -v "^#DEBUG" > $tmppfx.out3`;   if ($?) { die "FAIL: $tag $tag1 -\n"; }
+`$prog --cpu 1 $arg1 $arg2         | grep -v "^#DEBUG" > $tmppfx.out1`;   if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
+`cat $arg1 | $prog --cpu 1 - $arg2 | grep -v "^#DEBUG" > $tmppfx.out2`;   if ($?) { die "FAIL: $tag - $tag2\n"; }
+`cat $arg2 | $prog --cpu 1 $arg1 - | grep -v "^#DEBUG" > $tmppfx.out3`;   if ($?) { die "FAIL: $tag $tag1 -\n"; }
 
 `diff -b $tmppfx.out1 $tmppfx.out2 2>&1 > /dev/null`; if ($?) { die "FAIL: $tag results differ if $tag1 comes through stdin\n"; }
 `diff -b $tmppfx.out1 $tmppfx.out3 2>&1 > /dev/null`; if ($?) { die "FAIL: $tag results differ if $tag2 comes through stdin\n"; }
@@ -212,9 +212,9 @@ $tag2 = "<seqfile>";      $arg2 = "$tmppfx.fa2";
 if ($verbose) { print "$tag...\n"; }
 
 # need to repress $tmppfx.cm, we deleted pressed files above
-`$builddir/src/cmpress $arg1`;                               if ($?) { die "FAIL: cmpress\n"; }
-`$prog $arg1 $arg2         | grep -v "^#" > $tmppfx.out1`;   if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
-`cat $arg2 | $prog $arg1 - | grep -v "^#" > $tmppfx.out2`;   if ($?) { die "FAIL: $tag $tag1 -\n"; }
+`$builddir/src/cmpress $arg1`;                                       if ($?) { die "FAIL: cmpress\n"; }
+`$prog --cpu 1 $arg1 $arg2         | grep -v "^#" > $tmppfx.out1`;   if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
+`cat $arg2 | $prog --cpu 1 $arg1 - | grep -v "^#" > $tmppfx.out2`;   if ($?) { die "FAIL: $tag $tag1 -\n"; }
 
 `diff -b $tmppfx.out1 $tmppfx.out2 2>&1 > /dev/null`; 
 if ($?) { die "FAIL: $tag results differ if $arg2 comes from stdin\n"; }
@@ -237,8 +237,8 @@ $tag1 = "<cmfile>";         $arg1 = "$srcdir/testsuite/$model1.c.cm";
 $tag2 = "<seqdb>";          $arg2 = "$tmppfx.db";      
 if ($verbose) { print "$tag...\n"; }
 
-`$prog $arg1 $arg2          | grep -v "^#" > $tmppfx.out1`;  if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
-`cat $arg1 | $prog - $arg2  | grep -v "^#" > $tmppfx.out2`;  if ($?) { die "FAIL: $tag - $tag2\n"; }
+`$prog --cpu 1 $arg1 $arg2          | grep -v "^#" > $tmppfx.out1`;  if ($?) { die "FAIL: $tag $tag1 $tag2\n"; }
+`cat $arg1 | $prog --cpu 1 - $arg2  | grep -v "^#" > $tmppfx.out2`;  if ($?) { die "FAIL: $tag - $tag2\n"; }
 
 `diff -b $tmppfx.out1 $tmppfx.out2 2>&1 > /dev/null`;  if ($?) { die "FAIL: $prog results differ if $tag1 comes through stdin\n"; }
 
