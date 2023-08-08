@@ -2,22 +2,21 @@
 
 # Test cmsearch -A with fragments, and cmbuild --fraggiven using that -A output alignment.
 #
-# Usage:    ./itest11-search-frags.pl <builddir> <srcdir> <testsuitedir> <tmpfile prefix>
-# Example:  ./itest11-search-frags.pl ..         ..       .              tmpfoo
+# Usage:    ./itest11-search-frags.pl <builddir> <srcdir> <tmpfile prefix>
+# Example:  ./itest11-search-frags.pl ..         ..       tmpfoo
 #
 # EPN, Thu Mar 16 13:59:24 2023
 
 BEGIN {
     $builddir = shift;
     $srcdir   = shift;
-    $testsuitedir = shift;
     $tmppfx   = shift;
 }
 
 # Verify that we have all the executables we need for the test.
-if (! -x "$builddir/src/cmsearch")    { die "FAIL: didn't find cmsearch binary in $builddir/src\n";  }
-if (! -x "$builddir/src/cmbuild")     { die "FAIL: didn't find cmbuild binary in $builddir/src\n";  }
-if (! -r "$testsuitedir/Vault.c.cm")  { die "FAIL: didn't find $testsuitedir/Vault.c.cm\n"; }
+if (! -x "$builddir/src/cmsearch")       { die "FAIL: didn't find cmsearch binary in $builddir/src\n";  }
+if (! -x "$builddir/src/cmbuild")        { die "FAIL: didn't find cmbuild binary in $builddir/src\n";  }
+if (! -r "$srcdir/testsuite/Vault.c.cm") { die "FAIL: didn't find $srcdir/testsuite/Vault.c.cm\n"; }
 
 # Create our test files
 if (! open(SEQ1, ">$tmppfx.fa")) { print "FAIL: couldn't open $tmppfx.fa for writing";  exit 1; }
@@ -82,24 +81,37 @@ $pass_idx_H{"Vault-cmconsensus-5p-and-3p/1-44"}  = "4";
 #define PLI_PASS_3P_ONLY_FORCE   3  /* only 3' truncated alns allowed, final (j0) residue must be included */
 #define PLI_PASS_5P_AND_3P_FORCE 4  /* 5' and 3' truncated alns allowed, first & final (i0 & j0) residue must be included */
 
-
-######################
-# run cmsearch and make sure the -A output alignment is as expected
-printf("$builddir/src/cmsearch  --incT 10 -A $tmppfx.stk Vault.c.cm $tmppfx.fa 2>&1\n");
-`$builddir/src/cmsearch  --incT 10 -A $tmppfx.stk Vault.c.cm $tmppfx.fa 2>&1`; if ($? != 0) { die "FAIL: cmsearch failed\n"; }
-check_stk("$tmppfx.stk", \%ali_H);
-
-# run cmbuild using the -A output alignment as input, and make sure the parsetree file is as expected
-if(-e "$tmppfx.cm")     { unlink "$tmppfx.cm"; }
+# Create the test CM file
+`cat $srcdir/testsuite/Vault.c.cm > $tmppfx.cm`;  if ($?) { die "FAIL: cat\n"; }
+# remove any old cmpress'd files if they exist
 if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
 if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
 if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
 if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
 if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
-`$builddir/src/cmbuild -F --fraggiven --tfile $tmppfx.tfile $tmppfx.cm $tmppfx.stk 2>&1`; if ($? != 0) { die "FAIL: cmbuild failed\n"; }
+
+######################
+# run cmsearch and make sure the -A output alignment is as expected
+printf("$builddir/src/cmsearch  --incT 10 -A $tmppfx.stk $tmppfx.cm $tmppfx.fa 2>&1\n");
+`$builddir/src/cmsearch  --incT 10 -A $tmppfx.stk $tmppfx.cm $tmppfx.fa 2>&1`; if ($? != 0) { die "FAIL: cmsearch failed\n"; }
+check_stk("$tmppfx.stk", \%ali_H);
+
+# run cmbuild using the -A output alignment as input, and make sure the parsetree file is as expected
+if(-e "$tmppfx.cm2")     { unlink "$tmppfx.cm2"; }
+if(-e "$tmppfx.cm2.i1m") { unlink "$tmppfx.cm2.i1m"; }
+if(-e "$tmppfx.cm2.i1p") { unlink "$tmppfx.cm2.i1p"; }
+if(-e "$tmppfx.cm2.i1f") { unlink "$tmppfx.cm2.i1f"; }
+if(-e "$tmppfx.cm2.i1i") { unlink "$tmppfx.cm2.i1i"; }
+if(-e "$tmppfx.cm2.ssi") { unlink "$tmppfx.cm2.ssi"; }
+`$builddir/src/cmbuild -F --fraggiven --tfile $tmppfx.tfile $tmppfx.cm2 $tmppfx.stk 2>&1`; if ($? != 0) { die "FAIL: cmbuild failed\n"; }
 check_tfile("$tmppfx.tfile", \%is_std_H, \%pass_idx_H);
 
 print "ok\n";
+unlink <$tmppfx.cm*>;
+unlink "$tmppfx.stk";
+unlink "$tmppfx.fa";
+unlink "$tmppfx.tfile";
+
 exit 0;
 
 #############################

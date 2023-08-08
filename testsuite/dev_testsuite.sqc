@@ -61,7 +61,7 @@
 1 exercise  itest/scan-glist        !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
 1 exercise  itest/scan-overlaps     !testsuite/itest9-overlaps.pl!           @@ !! %OUTFILES%
 1 exercise  itest/build-frags       !testsuite/itest10-build-frags.pl!       @@ !! %OUTFILES%
-1 exercise  itest/search-frags      !testsuite/itest11-search-frags.pl!      @@ !! !testsuite! %OUTFILES%
+1 exercise  itest/search-frags      !testsuite/itest11-search-frags.pl!      @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
