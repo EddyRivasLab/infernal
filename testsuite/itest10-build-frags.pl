@@ -50,7 +50,12 @@ EOF
 close ALI1;
 close ALI2;
 
-if(-e "$tmppfx.cm") { unlink "$tmppfx.cm"; }
+if(-e "$tmppfx.cm")     { unlink "$tmppfx.cm"; }
+if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
+if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
+if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
+if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
+if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
 
 # span: 
 # seq1: 1.0

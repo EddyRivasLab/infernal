@@ -48,6 +48,17 @@ if (! -r "$srcdir/testsuite/$model2.c.cm")  { die "FAIL: can't read profile $mod
 # Create the test CM files
 `cat $srcdir/testsuite/$model1.c.cm > $tmppfx.cm`;  if ($?) { die "FAIL: cat\n"; }
 `cat $srcdir/testsuite/$model2.c.cm $srcdir/testsuite/$model1.c.cm > $tmppfx.cm2`; if ($?) { die "FAIL: cat\n"; }
+# remove any old cmpress'd files if they exist
+if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
+if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
+if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
+if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
+if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
+if(-e "$tmppfx.cm2.i1m") { unlink "$tmppfx.cm2.i1m"; }
+if(-e "$tmppfx.cm2.i1p") { unlink "$tmppfx.cm2.i1p"; }
+if(-e "$tmppfx.cm2.i1f") { unlink "$tmppfx.cm2.i1f"; }
+if(-e "$tmppfx.cm2.i1i") { unlink "$tmppfx.cm2.i1i"; }
+if(-e "$tmppfx.cm2.ssi") { unlink "$tmppfx.cm2.ssi"; }
 
 # Create a roughly 300Kb database against which to search
 $database   = "$tmppfx.fa";

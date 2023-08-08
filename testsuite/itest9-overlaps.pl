@@ -53,6 +53,12 @@ if (! -r "$srcdir/testsuite/$model3.c.cm")  { die "FAIL: can't read profile $mod
 
 # Create the test CM file
 `cat $srcdir/testsuite/$model1.c.cm $srcdir/testsuite/$model2.c.cm $srcdir/testsuite/$model3.c.cm > $tmppfx.cm`; if ($?) { die "FAIL: cat\n"; }
+# remove any old cmpress'd files if they exist
+if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
+if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
+if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
+if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
+if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
 
 # Create a roughly 30Kb database against which to search
 $database   = "$tmppfx.fa";

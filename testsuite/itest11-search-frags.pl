@@ -90,6 +90,12 @@ printf("$builddir/src/cmsearch  --incT 10 -A $tmppfx.stk Vault.c.cm $tmppfx.fa 2
 check_stk("$tmppfx.stk", \%ali_H);
 
 # run cmbuild using the -A output alignment as input, and make sure the parsetree file is as expected
+if(-e "$tmppfx.cm")     { unlink "$tmppfx.cm"; }
+if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
+if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
+if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
+if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
+if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
 `$builddir/src/cmbuild -F --fraggiven --tfile $tmppfx.tfile $tmppfx.cm $tmppfx.stk 2>&1`; if ($? != 0) { die "FAIL: cmbuild failed\n"; }
 check_tfile("$tmppfx.tfile", \%is_std_H, \%pass_idx_H);
 
