@@ -340,7 +340,7 @@ bands.
 .BI --mxsize " <x>"
 Set the maximum allowable total DP matrix size to 
 .I <x>
-megabytes. By default this size is 1028 Mb. 
+megabytes. By default this size is 1024 Mb. 
 This should be large enough for the vast majority of alignments,
 however if it is not 
 .B cmalign 
@@ -548,6 +548,20 @@ be useful when creating very large alignments that require a lot of
 memory and disk space, most of which is necessary only to deal with insert
 columns that are gaps in most sequences.
 
+.TP
+.B --miss
+In the output alignment, use missing data characters ('~') before the
+first residue and after the final residue of each sequence to indicate
+the sequence was aligned with a truncated alignment algorithm. The
+aligned sequences would be considered fragments if the alignment was
+used subsequently as input to
+.B cmbuild
+with the 
+.B --fraggiven
+option. This option has no effect if 
+.B --notrunc
+is also used. 
+
 .TP 
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
@@ -561,6 +575,47 @@ For this reason,
 .B --ileaved 
 will only work for alignments of up to 100,000 sequences or a
 total of 100,000,000 aligned nucleotides.
+
+.TP 
+.BI --flanktoins " <x1>"
+Change the transition probabilities from the ROOT_S state to the
+ROOT_IL and ROOT_IR states, and from the ROOT_IL to the ROOT_IR state
+to 
+.I <x1>.
+This option is meant to be helpful only when aligning sequences that
+include extra sequence at the 5' and/or 3' ends. Without using this
+option 
+.B cmalign 
+tends to mess up alignments at the end, especially for models with
+zero basepairs. This option should not be necessary when aligning
+sequences identified by 
+.B cmsearch
+or 
+.B cmscan
+because they should not include extra sequence at the ends.
+This option must be used in combination with the 
+-BI --flankselfins " <x2>" 
+option. Recommended values to use are 0.1 for 
+.I <x1>
+and 0.8 for
+.I <x2>
+, but the best performing pair of values may vary for
+different models.
+.I <x1>
+must be greater than 0.0 and less than 0.4, and the sum of
+.I <x1> 
+and 
+.I <x2>
+must be less than 0.95.
+
+.TP 
+.BI --flankselfins " <x1>"
+Change the self-transition probabilities for the ROOT_IL and ROOT_IR
+states to 
+.I <x2>.
+This option must be used in combination with the 
+-BI --flanktoins " <x1>" 
+option. See the explanation of that option above for more information.
 
 .TP 
 .BI --regress " <s>"

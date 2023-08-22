@@ -193,10 +193,18 @@ Set the main output's line length limit to
 characters per line. The default is 120.
 
 .TP 
-.BI --verbose
+.B --verbose
 Include extra search pipeline statistics in the main output, including
 filter survival statistics for truncated hit detection and number of
 envelopes discarded due to matrix size overflows. 
+
+.TP 
+.B --nomiss
+With -A, in the output alignment, do not mark truncated hits as
+fragmentary by using missing data '~' characters before the first
+residue (for 5' truncated hits) and/or after the final residue (for 3'
+truncated hits). By default, missing data characters ('~') will be
+used in this way to mark truncated hits.
 
 .SH OPTIONS CONTROLLING REPORTING THRESHOLDS
 
@@ -546,7 +554,12 @@ sequence. By default, 5' truncated hits must include the first residue of
 their target sequence and 3' truncated hits must include the final
 residue of their target sequence. With this option you may observe
 fewer full length hits that extend to the beginning and end of the
-query CM.
+query CM. As of version 1.1.5, truncated hits that end at sequence terminii
+with a lower score penalty than internally truncated hits are also
+considered (these were not considered in 1.1x versions prior to 1.1.5).
+To reproduce the behavior of this option from v1.1.4, use the
+.B --inttrunc
+option instead.
 
 .TP 
 .B --nonull3

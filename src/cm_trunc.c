@@ -7,8 +7,8 @@
  *
  * EPN, Sat Jan 21 14:02:26 2012
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>

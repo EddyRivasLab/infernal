@@ -7,7 +7,7 @@
  * 
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -756,7 +756,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
  * ./benchmark-search <cmfile>
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

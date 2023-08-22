@@ -4,8 +4,8 @@
  * SRE, Thu Jul 25 11:28:03 2002 [St. Louis]
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"	
 
 #include <stdio.h>
@@ -76,9 +76,6 @@ typedef struct {
 
 #define ACCOPTS      "--hbanded,--nonbanded"                 /* Exclusive choice for acceleration or not */
 #define ALGOPTS      "--cyk,--optacc,--sample"               /* Exclusive choice for algorithm */
-#define ICWOPTACC    "--cyk,--optacc,--sample,--small"       /* Incompatible with --optacc,--sample (except their selves) */
-#define ICWSMALL     "--optacc,--sample,--mxsize"            /* Incompatible with --small */
-#define REQDWSMALL   "--cyk,--noprob,--nonbanded,--notrunc"  /* Required with --small (can remove --notrunc if TrDnC() bug fixed) */
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
@@ -93,20 +90,20 @@ static ESL_OPTIONS options[] = {
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
   { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
   /* options controlling the alignment algorithm */
-  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     ICWOPTACC, "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
+  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     "--small", "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
   { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "use the CYK algorithm",                                           2 },
-  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "sample alignment of each seq from posterior distribution",        2 },
+  { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,     "--small", "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
   { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g",        NULL, "build sub CM for columns b/t HMM predicted start/end points",     2 },
   /* options affecting speed and memory */
   { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands",               3 },
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
-  { "--mxsize",      eslARG_REAL,    "1028.0", NULL,      "x>0.",       NULL,        NULL,                     NULL, "set maximum allowable DP matrix size to <x> Mb",             3 },
+  { "--mxsize",      eslARG_REAL,    "1024.0", NULL,      "x>0.",       NULL,        NULL,                     NULL, "set maximum allowable DP matrix size to <x> Mb",             3 },
   { "--fixedtau",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            "--nonbanded", "do not adjust tau (tighten bands) until mx size is < limit", 3 },
   { "--maxtau",      eslARG_REAL,      "0.05", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
-  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,  REQDWSMALL,                 ICWSMALL, "use small memory divide and conquer (d&c) algorithm",        3 },
+  { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
@@ -121,7 +118,10 @@ static ESL_OPTIONS options[] = {
   { "--dnaout",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "output alignment as DNA (not RNA) sequence data",            5 },
   { "--noprob",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not include posterior probabilities in the alignment",    5 },
   { "--matchonly",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "include only match columns in output alignment",             5 },
+  { "--miss",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "mark seqs w/terminal gaps as fragments w/missing (~) chars", 5 },
   { "--ileaved",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--outformat","force output in interleaved Stockholm format",                5 },
+  { "--flanktoins",  eslARG_REAL,        NULL, NULL,   "0<x<0.4",       NULL,"--flankselfins",      NULL, "change transition probs into ROOT_IL/IR to <x> (e.g. 0.1)",  5 }, 
+  { "--flankselfins",eslARG_REAL,        NULL, NULL,   "0<x<0.9",       NULL,"--flanktoins",        NULL, "change self transit probs for ROOT_IL/IR to <x> (e.g. 0.8)", 5 }, 
   { "--regress",  eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL, "--ileaved",    "--mapali", "save regression test data to file <f>",                      5 }, 
   { "--verbose",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "report extra information; mainly useful for debugging",      5 },
   /*{ "--noannot",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not add cmalign execution annotation to the alignment",   5 },*/
@@ -206,6 +206,7 @@ static int  create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_
 static void update_maxins_and_maxel(ESL_MSA *msa, int clen, int64_t alen, int *maxins, int *maxel);
 static int  determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, int **ret_ngap_insA, int **ret_ngap_elA, int **ret_ngap_eitherA, char *errbuf);
 static void inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_elA, char **ret_ss_cons2print, char **ret_rf2print);
+static void configure_root_inserts(CM_t *cm, float to_insert_prob, float self_insert_prob);
 
 int
 main(int argc, char **argv)
@@ -660,6 +661,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 {
   int status;
   int i;  /* counter over sequences */
+  ESL_SQ  *sqp = NULL; /* ptr to a ESL_SQ, only used if there's an error */
 
   /* allocate dataA */
   info->n = sq_block->count;
@@ -683,7 +685,11 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
 				   info->w, info->w_tot, r, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
-    if(status != eslOK) cm_Fail(errbuf);
+    if(status != eslOK) { 
+      sqp = (sq_block->list + i);
+      fprintf(stderr, "Problem during alignment of sequence %s\n", sqp->name);
+      cm_Fail(errbuf);
+    }
   }
   return eslOK;
   
@@ -842,7 +848,10 @@ pipeline_thread(void *arg)
 				   info->w, info->w_tot, NULL, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
-    if(status != eslOK) cm_Fail(errbuf);
+    if(status != eslOK) { 
+      fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
+      cm_Fail(errbuf);
+    }
 
     i++;
     info->n++;
@@ -1277,7 +1286,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 				     info.w, info.w_tot, NULL, &data);
 	info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
       }
-      if(status != eslOK) mpi_failure(errbuf);
+      if(status != eslOK) { 
+        fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
+        mpi_failure(errbuf);
+      }
 
       /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
       status = cm_alndata_MPISend(data, FALSE, errbuf, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
@@ -1409,6 +1421,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     goto ERROR;
   }
 
+  /* Check for incompatible option combinations too complex for esl_getopts to enforce during declaration */
+
 #ifdef HMMER_THREADS
   /* if --sample, enforce that --cpu 0 is used if HMMER_THREADS, otherwise number of threads would
    * affect the sampled alignments (each thread requires its own RNG) 
@@ -1438,6 +1452,20 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nERROR: --verbose only makes sense in combination with -o or --sfile\n");
     goto ERROR;
   }	
+
+  /* Finally, check for incompatible option combinations that
+   * esl_getopts can handle, but that would require an error message
+   * like: "Option 'x' is incompatible with options
+   * y1,y2,y3,y4....yn", where there's so many y's that the message is
+   * truncated because errbuf runs out of space. As a workaround we
+   * laboriously check for all incompatible options of that type here.
+   */
+  if(esl_opt_IsUsed(go, "--small")) { 
+    if((! esl_opt_IsUsed(go, "--cyk")) || (! esl_opt_IsUsed(go, "--noprob")) || (! esl_opt_IsUsed(go, "--nonbanded")) || (! esl_opt_IsUsed(go, "--notrunc"))) { 
+      puts("Failed to parse command line: Option --small requires --cyk, --noprob, --nonbanded, --notrunc"); 
+      goto ERROR; 
+    }
+  }
 
   *ret_go     = go;
   *ret_infmt  = infmt;
@@ -1628,6 +1656,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   
   cm->tau    = esl_opt_GetReal(go, "--tau");
   cm->maxtau = esl_opt_GetReal(go, "--maxtau");
+
+  if((esl_opt_IsUsed(go, "--flanktoins")) && (esl_opt_IsUsed(go, "--flankselfins"))) { 
+    configure_root_inserts(cm, esl_opt_GetReal(go, "--flanktoins"), esl_opt_GetReal(go, "--flankselfins"));
+  }
   
   /* configure */
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status; 
@@ -1745,7 +1777,7 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
 			  TRUE,  /* use_rf */
 			  FALSE, /* use_el, no */
 			  FALSE, /* use_wts, irrelevant */
-			  0.5,   /* gapthresh, irrelevant */
+			  0.5,   /* symfrac, irrelevant */
 			  NULL,  /* returned CM, irrelevant */
 			  &mtr); /* guide tree */
   if(status != eslOK) return status;
@@ -1849,7 +1881,11 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
   ESL_ALLOC(sqpA,   sizeof(ESL_SQ *)      * ndata); for(j = 0; j < ndata; j++) sqpA[j]   = dataA[j]->sq;
   ESL_ALLOC(trA,    sizeof(Parsetree_t *) * ndata); for(j = 0; j < ndata; j++) trA[j]    = dataA[j]->tr;
   ESL_ALLOC(ppstrA, sizeof(char *)        * ndata); for(j = 0; j < ndata; j++) ppstrA[j] = dataA[j]->ppstr;
-  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqpA, NULL, trA, ppstrA, ndata, cfg->ifp, cfg->efp, TRUE, esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK) return status;
+  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqpA, NULL, trA, ppstrA, ndata, cfg->ifp, cfg->efp, 
+                                    /*do_full=*/TRUE, 
+                                    /*do_matchonly=*/esl_opt_GetBoolean(go, "--matchonly"), 
+                                    /*allow_trunc=*/esl_opt_GetBoolean(go, "--miss"), 
+                                    &msa)) != eslOK) return status;
 
   if(ofp == cfg->rfp) { /* --regress file, remove GF author annotation */
     free(msa->au);
@@ -2519,5 +2555,102 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
  ERROR:
   cm_Fail("Allocation error when creating final alignment RF and SS_cons.");
   return; /* NEVERREACHED */
+}
+
+/* configure_root_inserts
+ *                   
+ * Modify the transition probabilities into and out of the 
+ * ROOT_IL and ROOT_IR states. 
+ * The motivation is to allow cmalign to more accurately
+ * align sequences that have extra nonhomologous sequence
+ * on the ends. Defaultly-paramaterized models (especially
+ * those with zero basepairs) tend to mess up the alignment
+ * at the ends if there are extra nucleotides. 
+ *
+ * The value of 'prob' was limited to be 0. < prob < 0.4 by
+ * getopts but we also do a sanity check here.
+ * 
+ * Returns void.
+ */
+void
+configure_root_inserts(CM_t *cm, float to_insert_prob, float self_insert_prob)
+{
+  int status;
+
+  float state0_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
+  float state1_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
+  float state2_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
+
+  if((to_insert_prob <= 0.) || to_insert_prob > 0.4) { 
+    cm_Fail("ERROR with --flanktoins <x>, <x> should be > 0. and < 0.4");
+  }
+  if((to_insert_prob <= 0.) || to_insert_prob > 0.4) { 
+    cm_Fail("ERROR with --flankselfins <x>, <x> should be > 0. and < 0.9");
+  }
+  if((to_insert_prob + self_insert_prob) > 0.95) { 
+    cm_Fail("ERROR with --flanktoins <x1> and --flankselfins <x2>, <x1> + <x2> must be less than 0.95");
+  }
+
+  /* Deal with transitions out of ROOT_S first 
+   * first  transition out of ROOT_S is always to ROOT_IL 
+   * second transition out of ROOT_S is always to ROOT_IR 
+   * third  transition out of ROOT_S is always to 'match' state in split set of next node, e.g. MATL_ML, MATR_MR, MATP_MP or BIF_B 
+   * remaining number of transitions depend on next node type, but are all 'delete' states (unless BIF) 
+   */
+  cm->t[0][0] = to_insert_prob;   /* ROOT_S  -> ROOT_IL */
+  cm->t[0][1] = to_insert_prob;   /* ROOT_S  -> ROOT_IR */
+  state0_sum = to_insert_prob + to_insert_prob;
+
+  cm->t[1][0] = self_insert_prob; /* ROOT_IL -> ROOT_IL */
+  cm->t[1][1] = to_insert_prob;   /* ROOT_IL -> ROOT_IR */
+  state1_sum = self_insert_prob + to_insert_prob;
+
+  cm->t[2][0] = self_insert_prob; /* ROOT_IR -> ROOT_IR */
+  state2_sum = self_insert_prob;
+  
+  /* 3/4 of the remaining to_insert_probability goes to the match state, unless BIF_B */
+  if(cm->ndtype[1] == BIF_nd) { 
+    cm->t[0][2] = 1. - state0_sum; /* ROOT_S  -> BIF_B */
+
+    cm->t[1][2] = 1. - state1_sum; /* ROOT_IL -> BIF_B */
+
+    cm->t[2][1] = 1. - state2_sum; /* ROOT_IR -> BIF_B */
+  }
+  else if(cm->ndtype[1] == MATP_nd) { 
+    cm->t[0][2] =  (1. - state0_sum) * 0.75;       /* ROOT_S -> MATP_MP */
+    cm->t[0][3] = ((1. - state0_sum) * 0.25) / 3.; /* ROOT_S -> MATP_ML */
+    cm->t[0][4] = ((1. - state0_sum) * 0.25) / 3.; /* ROOT_S -> MATP_MR */
+    cm->t[0][5] = ((1. - state0_sum) * 0.25) / 3.; /* ROOT_S -> MATP_D */
+
+    cm->t[1][2] =  (1. - state1_sum) * 0.75;       /* ROOT_IL -> MATP_MP */
+    cm->t[1][3] = ((1. - state1_sum) * 0.25) / 3.; /* ROOT_IL -> MATP_ML */
+    cm->t[1][4] = ((1. - state1_sum) * 0.25) / 3.; /* ROOT_IL -> MATP_MR */
+    cm->t[1][5] = ((1. - state1_sum) * 0.25) / 3.; /* ROOT_IL -> MATP_D */
+
+    cm->t[2][1] =  (1. - state2_sum) * 0.75;       /* ROOT_IR -> MATP_MP */
+    cm->t[2][2] = ((1. - state2_sum) * 0.25) / 3.; /* ROOT_IR -> MATP_ML */
+    cm->t[2][3] = ((1. - state2_sum) * 0.25) / 3.; /* ROOT_IR -> MATP_MR */
+    cm->t[2][4] = ((1. - state2_sum) * 0.25) / 3.; /* ROOT_IR -> MATP_MR */
+  }  
+  else if((cm->ndtype[1] == MATL_nd) || (cm->ndtype[1] == MATR_nd)) { 
+    cm->t[0][2] = (1. - state0_sum) * 0.75; /* ROOT_S -> MAT{L,R}_M{L,R} */
+    cm->t[0][3] = (1. - state0_sum) * 0.25; /* ROOT_S -> MAT{L,R}_D */
+
+    cm->t[1][2] = (1. - state1_sum) * 0.75; /* ROOT_IL -> MAT{L,R}_M{L,R} */
+    cm->t[1][3] = (1. - state1_sum) * 0.25; /* ROOT_IL -> MAT{L,R}_D */
+
+    cm->t[2][1] = (1. - state2_sum) * 0.75; /* ROOT_IR -> MAT{L,R}_M{L,R} */
+    cm->t[2][2] = (1. - state2_sum) * 0.25; /* ROOT_IR -> MAT{L,R}_D */
+  }  
+  else { 
+    cm_Fail("ERROR, with --flankins, unexpected second node type, not one of BIF, MATP, MATL or MATR");
+  }
+
+  /* should already be normalized, but to be safe: */
+  esl_vec_FNorm(cm->t[0], cm->cnum[0]);
+  esl_vec_FNorm(cm->t[1], cm->cnum[1]);
+  esl_vec_FNorm(cm->t[2], cm->cnum[2]);
+
+  return;
 }
 

@@ -12,8 +12,8 @@
  * If any chi-square is less than a threshold (0.01), fail.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

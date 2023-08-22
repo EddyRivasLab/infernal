@@ -5,16 +5,19 @@
 \subsection{Target hits tables}
 
 The \ccode{--tblout} output option in \prog{cmsearch} and
-\prog{cmscan} produces \emph{target hits tables}. There are two
+\prog{cmscan} produces \emph{target hits tables}. There are three
 different formats of target hits table, which are both described
 below. By default, both \prog{cmsearch} and \prog{cmscan} produce the
 target hits table in \emph{format 1}. Format 1 is the only format that
-was used by Infernal versions 1.1rc1 through 1.1.1. As of version 1.1.2,
-with \prog{cmscan}, the \ccode{--fmt 2} option can be used in
+was used by Infernal versions 1.1rc1 through 1.1.1. As of version
+1.1.2, with \prog{cmscan}, the \ccode{--fmt 2} option can be used in
 combination with \ccode{--tblout} to produce a target hits table in
-the alternative \emph{format 2}.  Both formats 1 and 2 target hits
-table consist of one line for each different query/target comparison
-that met the reporting thresholds, ranked by decreasing statistical
+the alternative \emph{format 2}.  As of version 1.1.5, with
+\prog{cmscan} or \prog{cmsearch}, the \ccode{--fmt 3} option can be
+used to add two additional fields (sequence length and model length)
+to the standard format 1 files.  All three format target hits table
+consist of one line for each different query/target comparison that
+met the reporting thresholds, ranked by decreasing statistical
 significance (increasing E-value).
 
 \subsubsection{Target hits table format 1}
@@ -134,7 +137,12 @@ target sequence description, as follows:\footnote{The \ccode{tblout}
 \subsubsection{Target hits table format 2}
 \label{tabular-format2}
 
-Format 2 includes all 18 of the fields from format 1 in the same order, plus 9
+With the \prog{cmscan} program, the \ccode{--fmt 2} in combination with
+\ccode{--tblout} option can be used to change the format of the
+tabular output file for format 2 that includes additional information
+on overlapping hits. Format 2 output is not possible from
+\prog{cmsearch} because it is unable to calculate overlap information.
+Format 2 includes all 18 of the fields from format 1 in the same order, plus 11
 additional fields that are interspersed between some of the 18 from
 format 1, as follows:
 
@@ -157,7 +165,7 @@ format 1, as follows:
 
 \end{description}
 
-The following seven fields all occur in format 2 between fields 17
+The following nine fields all occur in format 2 between fields 17
 ('inc:') and 18 ('description of target') from format 1. 
 
 \begin{description}
@@ -246,6 +254,37 @@ always be \ccode{-}.  For hits with \ccode{-} in the ``winidx''
 field, this field will always be \ccode{-}.  
 For hits with \ccode{"} in the ``winidx''
 field, this field will always be \ccode{"}.  
+
+\item[\emprog{mdl len:}]
+The consensus length of the profile (CM or HMM) for this hit.
+
+\item[\emprog{seq len:}]
+The total length of the sequence for this hit.
+
+\end{description}
+
+\subsubsection{Target hits table format 3}
+\label{tabular-format3}
+
+With the \prog{cmsearch} and \prog{cmscan} programs, the \ccode{--fmt 3} 
+in combination with \ccode{--tblout} option can be used to change
+the format of the tabular output file to format 3 that includes all of
+the fields in format 1 with two additional fields: the full length of
+the sequence and model involved in each hit. The first 17 fields of
+format 3 are identical to format 1, followed by the two additional
+fields, and the final field is the ``description'' field from format
+1. The two additional fields are:
+
+\begin{description}
+
+\item[\emprog{mdl len:}]
+The consensus length of the profile (CM or HMM) for this hit.
+
+\item[\emprog{seq len:}]
+The total length of the sequence for this hit.
+
+The following nine fields all occur in format 2 between fields 17
+('inc:') and 18 ('description of target') from format 1. 
 
 \end{description}
 

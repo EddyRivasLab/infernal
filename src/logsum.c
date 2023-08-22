@@ -56,8 +56,8 @@
  *
  * NOTE: there is no FLogSumInit() function in old Infernal.
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <math.h>

@@ -6,7 +6,7 @@
 
 #ifndef _stats_h
 #define _stats_h
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include "esl_sqio.h"

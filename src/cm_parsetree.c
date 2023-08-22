@@ -14,8 +14,8 @@
  * end is signified by a final NULL ptr.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -249,27 +249,183 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
 		/* trivial preorder traverse, since we're already numbered that way */
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
-    if (v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) 
-      {
-	z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+    if (v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
 
-	if (z == cm->M)                
-	  cm->end[v] += wgt;
-	else if (v == 0 && z - cm->cfirst[v] >= cm->cnum[v])
-	  cm->begin[z] += wgt;
-	else
-	  cm->t[v][z - cm->cfirst[v]] += wgt; 
-
-	if (cm->sttype[v] == MP_st) 
-	  PairCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
-	else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
-	  esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
-	else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
-	  esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
+      /* count transition */
+      if(tidx < (tr->n-1)) { 
+        printf("tidx: %d\n", tidx);
+        z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+      
+        if (z == cm->M)                
+          cm->end[v] += wgt;
+        else if (v == 0 && z - cm->cfirst[v] >= cm->cnum[v])
+          cm->begin[z] += wgt;
+        else
+          cm->t[v][z - cm->cfirst[v]] += wgt; 
       }
+
+      /* count emission */
+      if (cm->sttype[v] == MP_st) 
+        PairCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
+      else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) 
+        esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
+      else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) 
+        esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
+    }
   }
 }    
+
+/* Function: ParsetreeCountExceptTruncatedMPs()
+ * Date:     EPN, Thu Nov  3 15:16:05 2022
+ *
+ * Purpose:  Count a parsetree into a counts-based CM structure,
+ *           in the course of estimating new CM probability parameters.
+ *           This version of the function is truncation-mode-aware
+ *           which affects emissions, but not transitions.
+ *           Some emissions are skipped (e.g. ML emissions in TRMODE_R mode)
+ *           and MP states not in TRMODE_J are *skipped*.
+ *           After the cm->e counts for all sequences are collected,
+ *           ParsetreeCountOnlyTruncatedMPs() should be called for each 
+ *           parsetree. The reason two functions are necessary is that
+ *           ParsetreeCountOnlyTruncatedMPs() uses the counts in cm->e
+ *           to determine mean posterior estimates using Dirichlet priors.
+ *
+ * Args:     cm  - CM to collect counts in
+ *           tr  - the parse tree to collect from.
+ *           dsq - digitized sequence that we're counting symbols from
+ *           wgt - weight on this sequence (often just 1.0)
+ *
+ * Returns:  (void)
+ */
+void
+ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
+{
+  int tidx;			/* counter through positions in the parsetree        */
+  int v,z;			/* parent, child state index in CM                   */
+
+		/* trivial preorder traverse, since we're already numbered that way */
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    if ((v != cm->M && cm->sttype[v] != E_st && cm->sttype[v] != B_st) && 
+        ((tr->mode[tidx] == TRMODE_J) || (tr->nxtl[tidx] != -1))) { 
+      /* when mode is not TRMODE_J some nodes may have nxtl -1 because they don't
+       * attach lower, e.g. BEGL_S state in TRMODE_J */
     
+      /* count transition */
+      if(tidx < (tr->n-1)) { 
+        if(tr->nxtl[tidx] == -1) { 
+          cm_Fail("ParsetreeCountExceptTruncatedMPs() unexpectedly left child == -1");
+        }
+        z = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
+      
+        if (z == cm->M)                
+          cm->end[v] += wgt;
+        else if (v == 0 && z - cm->cfirst[v] >= cm->cnum[v])
+          cm->begin[z] += wgt;
+        else
+          cm->t[v][z - cm->cfirst[v]] += wgt; 
+      }
+
+      /* count emission */
+      if(tr->mode[tidx] == TRMODE_J) { 
+        if (cm->sttype[v] == MP_st) { 
+          PairCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], dsq[tr->emitr[tidx]], wgt);
+        }
+        else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
+        }
+        else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
+        }
+      }
+      else if (tr->mode[tidx] == TRMODE_L) {
+        if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitl[tidx]], wgt);
+        }
+        /* skip MP, will handle this later in ParsetreeCountOnlyTruncatedMPs() */
+      }
+      else if(tr->mode[tidx] == TRMODE_R) { 
+        if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+          esl_abc_FCount(cm->abc, cm->e[v], dsq[tr->emitr[tidx]], wgt);
+        }
+        /* skip MP, will handle this later in ParsetreeCountOnlyTruncatedMPs() */
+      }
+    }
+  }
+
+  /* check for a special case: if final two nodes of the parsetree are 
+   * identical insert emissions, this means we have a truncated parsetree 
+   * that may contribute to an IL/IR self transition that will be problematically
+   * high (BandCalculationEngine() may estimate a very high W for example)
+   * so we perform a hack to increase the transition count out of this insert
+   * state to the first match state of the following node
+   */
+  if((tr->state[(tr->n-2)] == tr->state[(tr->n-1)]) && 
+     (tr->mode[(tr->n-2)]  == tr->mode[(tr->n-1)])) { 
+    /* final two nodes have same state and truncation mode */
+    v = tr->state[(tr->n-1)];
+    if((cm->sttype[v] == IL_st && (tr->mode[(tr->n-1)] == TRMODE_J || tr->mode[(tr->n-1)] == TRMODE_L)) || 
+       (cm->sttype[v] == IR_st && (tr->mode[(tr->n-1)] == TRMODE_J || tr->mode[(tr->n-1)] == TRMODE_R))) { 
+      /* for all inserts, first transition is to itself (cm->cfirst[v])
+       * for all inserts except MATP_IL, second transition is to first reachable state in the next node, 
+       * for MATP_IL second transition is to MATP_IR, third is to first reachable state in the next node
+       */
+      cm->t[v][NumReachableInserts(cm->stid[v])] += wgt; 
+    }
+  }
+
+  return;
+}
+    
+
+/* Function: ParsetreeCountOnlyTruncatedMPs()
+ * Date:     EPN, Fri Nov  4 12:11:58 2022
+ *
+ * Purpose:  Count truncated MP emissions, for which either the left
+ *           or right symbol is missing into a counts-based CM structure,
+ *           using mean posterior estimates and a Dirichlet prior and
+ *           already collected counts in cm->e of full MP emissions (left
+ *           and right symbol both present). This function should be 
+ *           called for each parsetree after ParsetreeCountExceptTruncatedMPs()
+ *           has been called for all parsetrees, so that the mean posterior
+ *           estimates are based on all complete basepairs.
+ *           This function requires dbl_e a double version of cm->e to 
+ *           be passed in. This should be a copy of the floats in cm->e
+ *           *after* ParsetreeCountExceptTruncatedMPs() is called and 
+ *           *before* this function is called for any parsetrees, as
+ *           it is a copy of the counts of all non-truncated MP emissions.
+ *
+ *           The counts in cm->e[v] will be updated, but dbl_e[v] will be
+ *           unchanged by this function.
+ * 
+ * Args:     cm  - CM to collect counts in
+ *           tr  - the parse tree to collect from.
+ *           dsq - digitized sequence that we're counting symbols from
+ *           wgt - weight on this sequence (often just 1.0)
+ *           
+ *           pri - the Dirichlet prior to use
+ *
+ * Returns:  (void)
+ */
+void
+ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt, double **dbl_e, const Prior_t *pri)
+{
+  int tidx;			/* counter through positions in the parsetree        */
+  int v;			/* state index in CM */
+
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    if ((v != cm->M) && (cm->sttype[v] == MP_st)) { 
+      if (tr->mode[tidx] == TRMODE_L) {
+        PairCountMarginal(cm->abc, dbl_e[v], cm->e[v], dsq[tr->emitl[tidx]], esl_abc_XGetMissing(cm->abc), wgt, pri);
+      }
+      else if (tr->mode[tidx] == TRMODE_R) {
+        PairCountMarginal(cm->abc, dbl_e[v], cm->e[v], esl_abc_XGetMissing(cm->abc), dsq[tr->emitr[tidx]], wgt, pri);
+      }
+    }
+  }
+  return;
+}    
 /* Function: ParsetreeScore()
  * Date:     SRE, Wed Aug  2 13:54:07 2000 [St. Louis]
  *
@@ -679,6 +835,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           elfp         - file to print per-seq EL insert information to (NULL if none)
  *           do_full      - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
+ *           allow_trunc  - TRUE to add missing (~) chars to truncated parsetrees, FALSE not to
  *           ret_msa      - RETURN: MSA, alloc'ed/created here
  *
  * Returns:  eslOK on success, eslEMEM on memory error, eslEINVALID on contract violation.
@@ -688,7 +845,8 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 int
 Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, double *wgt, 
 		     Parsetree_t **tr, char **postcode, int nseq, 
-		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa)
+		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int allow_trunc,
+                     ESL_MSA **ret_msa)
 {
   int          status;          /* easel status flag */
   CMEmitMap_t *emap  = NULL;    /* ptr to cm->emap, for convenience */
@@ -1142,6 +1300,24 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  leftjustify(abc, msa->aseq[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	  if(do_cur_post) leftjustify(abc, msa->pp[i]+matmap[emap->clen]+1 + maxel[emap->clen] + maxil[emap->clen], maxir[emap->clen]);
 	}
+    }
+
+    /* if allow_trunc and the parsetree is truncated, add ~ before and/or after final residue */
+    if(allow_trunc && (! tr[i]->is_std)) { 
+      if(cm_pli_PassEnforcesFirstRes(tr[i]->pass_idx)) { 
+        /* all alignment positions prior to first residue will be ~ */
+        for(apos = 0; apos < alen; apos++) { 
+          if(isalpha(msa->aseq[i][apos])) break;
+          msa->aseq[i][apos] = esl_abc_CGetMissing(abc);
+        }
+      }
+      if(cm_pli_PassEnforcesFinalRes(tr[i]->pass_idx)) { 
+        /* all alignment positions after final residue will be ~ */
+        for(apos = msa->alen-1; apos >= 0; apos--) { 
+          if(isalpha(msa->aseq[i][apos])) break;
+          msa->aseq[i][apos] = esl_abc_CGetMissing(abc);
+        }
+      }
     }
     
     /* output insert and/or EL info to the insertfp and elfp output files, if nec */
@@ -4247,6 +4423,22 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
  *           process we'll zero out any transitions involving ROOT_IL
  *           and ROOT_IR states in cm_zero_flanking_insert_counts().
  *
+ *           There are three possibilities for the truncation
+ *           modes of the nodes:
+ *           1. all TRMODE_J nodes     ending with an END_nd
+ *           2. all TRMODE_L nodes not ending with an END_nd
+ *           3. starts in TRMODE_R and switches to TRMODE_J at some
+ *              point (should be after 2 nodes ROOT_S and then first 
+ *              MATL_ML) and stays TRMODE_J until the end, and final
+ *              node is an END_nd.
+ *           Case 3 is rare but happens if the first nt is emitted from
+ *           a IL state, because the implementation of Transmogrify()
+ *           makes it so the transition from ROOT_S is to the MATL_ML 
+ *           above the node with the IL in TRMODE_R.
+ *  
+ *           We verify we have one of these 3 cases and fail with an
+ *           error if not.
+ *
  *           HMMER's p7_trace_Doctor() notes:
  *           Plan 7 disallows D->I and I->D "chatter" transitions.
  *           However, these transitions will be implied by many
@@ -4273,64 +4465,128 @@ cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *
 {
   int opos;			/* position in old parsetree           */
   int npos;			/* position in new parsetree (<= opos) */
-  int first_matl = 0;           /* position in old parsetree of first MATL_* state */
   int x;                        /* position ctr in parsetree */
   int ndi, nid;			/* number of DI, ID transitions doctored */
+  int mode;                     /* truncation mode of the parsetree, it should be either all J or all L */
+  int final_non_end;            /* final parsetree node that is NOT an END_E */
+  int mode_case;                /* 1, 2, or 3, case of truncation modes */
+  int start_node;               /* node to start overwrite at, if mode_case is 1 or 2, this will be 0, else it will be 2 */
 
-  /* first, validate the parsetree, should be ROOT_S->[ROOT_IL]_n->[ROOT_IR]_n->[MATL_{M,I,D}]_n->END_E */
+  /* determine which of the 3 cases we have regarding truncation modes: 
+   * 1. all nodes are TRMODE_J 
+   * 2. all nodes are TRMODE_L
+   * 3. first two nodes are TRMODE_R, all remaining nodes TRMODE_J 
+   */
+  /* check for case 1 */
+  mode_case = 1;
+  for(x = 0; x < tr->n; x++) { 
+    if(tr->mode[x] != TRMODE_J) { 
+      mode_case = -1;
+      x = tr->n;
+    }
+  }
+  if(mode_case == -1) { 
+    /* not case 1 */
+    mode_case = 2;
+    for(x = 0; x < tr->n; x++) { 
+      if(tr->mode[x] != TRMODE_L) { 
+        mode_case = -1;
+        x = tr->n;
+      }
+    }
+  }
+  if(mode_case == -1) { 
+    /* not case 1 or 2 */
+    mode_case = 3; /* first two nodes are ROOT_S and MATL_ML both in TRMODE_R */
+    if((tr->mode[0] == TRMODE_R) && (tr->mode[1] == TRMODE_R) && (cm->stid[tr->state[0]] == ROOT_S) && (cm->stid[tr->state[1]] == MATL_ML)) { 
+      /* the rest should be TRMODE_J */
+      for(x = 2; x < tr->n; x++) { 
+        if(tr->mode[x] != TRMODE_J) { 
+          mode_case = -1;
+          x = tr->n;
+        }
+      }
+    }
+  }
+  if(mode_case == -1) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unable to determine case of truncation mode");
+  }
+    
+  if(mode_case == 1) { 
+    mode = TRMODE_J;
+    start_node = 0;
+    final_non_end = tr->n-2;
+    if(cm->stid[tr->state[tr->n-1]] != END_E) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() case 1 mode J parsetree doesn't end with an END_E state\n");
+    }
+  }
+  else if(mode_case == 2) {
+    mode = TRMODE_L;
+    start_node = 0;
+    final_non_end = tr->n-1;
+    if(cm->stid[tr->state[tr->n-1]] == END_E) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() case 2 mode L parsetree ends with an END_E state\n");
+    }
+  }
+  else { /* mode_case = 3 */
+    mode = TRMODE_J;
+    start_node = 2;
+    final_non_end = tr->n-2;
+    if(cm->stid[tr->state[tr->n-1]] != END_E) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() case 3 parsetree doesn't end with an END_E state\n");
+    }
+  }
+
+  /* should start with ROOT_S */
   if(cm->stid[tr->state[0]] != ROOT_S) { 
     ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't begin with a ROOT_S state\n");
   }
-  if(cm->stid[tr->state[tr->n-1]] != END_E) { 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't end with an END_E state\n");
-  }
-  /* find first not ROOT_IL/ROOT_IR */
+  /* validate the parsetree, should be ROOT_S->[ROOT_IL]_n->[ROOT_IR]_n->[MATL_{M,I,D}]_n 
+   * further if mode is TRMODE_J, final node should be END_E, otherwise it should NOT be END_E
+   */
   x = 1;
-  while(cm->stid[tr->state[x]] == ROOT_IL || cm->stid[tr->state[x]] == ROOT_IR) x++;
-  if(cm->stid[tr->state[x]] != MATL_ML && cm->stid[tr->state[x]] != MATL_IL && cm->stid[tr->state[x]] != MATL_D) { 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected first non-ROOT node state in parsetree %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
+  while(cm->stid[tr->state[x]] == ROOT_IL || cm->stid[tr->state[x]] == ROOT_IR) { 
+    x++;
+    if(x >= tr->n) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree is all ROOT states\n");
+    }
   }
-  first_matl = x;
-  /* verify all states after first not ROOT_IL/ROOT_IR are MATL states until END_E */
-  for(x = first_matl; x < tr->n-1; x++) { 
+  /* all remaining states should be MATL_ML, MATL_IL, or MATL_D states until the END_E (if we have one)  */
+  for(; x <= final_non_end; x++) { 
     if((cm->stid[tr->state[x]] != MATL_ML) && 
        (cm->stid[tr->state[x]] != MATL_IL) && 
        (cm->stid[tr->state[x]] != MATL_D)) { 
       ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected state id %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
     }
   }
-  /* also validate that the mode is always TRMODE_J */
-  for(x = 0; x < tr->n; x++) { 
-    if(tr->mode[x] != TRMODE_J) ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected non TRMODE_J mode");
-  }
 
   /* overwrite the trace from left to right */
-  ndi  = nid  = 0;
-  opos = npos = 0;
-  while (opos < tr->n) {
+  ndi  = nid  = 0; 
+  opos = npos = start_node; /* will be '0' if case 1 or 2, '2' if case 3, for case 3, leave first two nodes untouched */
+  while (opos < tr->n) { 
     /* first set data that is predetermined since we know we're all MATL nodes: 
-     * mode:  always TRMODE_J (we already checked)
-     * nxtl:  always points to next position (unless END_E, which we'll fix at end)
+     * mode:  always TRMODE_J or TRMODE_L (we already checked), stored in mode from above
+     * nxtl:  always points to next position (except for final node, which we'll fix at end)
      * nxtr:  always -1 
      * prv:   always npos-1
      * emitr: always == tr->emitr[opos] (only right emitters we'll have are ROOT_IRs)
      * at next parsetree node.
      */ 
-    tr->mode[npos]  = TRMODE_J;
+    tr->mode[npos]  = mode;
     tr->nxtl[npos]  = npos+1;
     tr->nxtr[npos]  = -1;
     tr->prv[npos]   = npos-1;  /* even correct for npos == 0 */
     tr->emitr[npos] = tr->emitr[opos]; /* this never changes */
 
     /* fix implied D->I transitions; D transforms to M, I pulled in */
-    if (cm->stid[tr->state[opos]] == MATL_D && cm->stid[tr->state[opos+1]] == MATL_IL) {
+    if ((opos < (tr->n-1)) && (cm->stid[tr->state[opos]] == MATL_D) && (cm->stid[tr->state[opos+1]] == MATL_IL)) {
       tr->state[npos] = tr->state[opos] - 1; /* MATL_D --> MATL_ML */
       tr->emitl[npos] = tr->emitl[opos+1];   /* insert char moves back */
       opos += 2;
       npos += 1;
       ndi++;
     } /* fix implied I->D transitions; D transforms to M, I is pushed in */
-    else if (cm->stid[tr->state[opos]] == MATL_IL && cm->stid[tr->state[opos+1]] == MATL_D) {
+    else if ((opos < (tr->n-1)) && (cm->stid[tr->state[opos]] == MATL_IL) && (cm->stid[tr->state[opos+1]] == MATL_D)) {
       tr->state[npos] = tr->state[opos+1] - 1; /* MATL_D --> MATL_ML */
       tr->emitl[npos] = tr->emitl[opos];       /* insert char moves back */
       opos += 2;
@@ -4344,10 +4600,13 @@ cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *
       npos++;
     }
   }
-  tr->n = npos;
-  /* fix nxtl and emitr for final node */
-  tr->emitr[tr->n-1] = -1;
-  tr->nxtl[tr->n-1]  = -1;
+  tr->n    = npos;
+  /* fix nxtl and possible emitr for the final node */
+  tr->nxtl[tr->n-1] = -1;
+  if((mode_case == 1) || (mode_case == 3)) { /* cases 1 and 3 only case that ends with END_E */
+    /* emitr for END_E are always -1 */
+    tr->emitr[tr->n-1] = -1;
+  }
 
   /* we don't have to worry about changing anything else
    * (i.e. is_std, nalloc, memblock, pass_idx, trpenalty)

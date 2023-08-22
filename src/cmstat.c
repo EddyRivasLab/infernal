@@ -4,7 +4,7 @@
  * Based on SRE's hmmstat.c from HMMER3.
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

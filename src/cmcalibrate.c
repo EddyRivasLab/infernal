@@ -6,8 +6,8 @@
  * based on HMMER-2.3.2's hmmcalibrate.c from SRE
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"	
 
 #include <assert.h>

@@ -9,8 +9,8 @@
  *
  * EPN, Fri Jan  6 09:00:31 2012
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -237,6 +237,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
     free(dataA);
   }
   *ret_dataA = NULL;
+  fprintf(stderr, "Problem during alignment of sequence %s\n", sqp->name);
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "DispatchSqBlockAlignment(), out of memory");
   else return status; /* errbuf was filled by DispatchSqAlignment() */
 }
@@ -423,26 +424,25 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       if(w != NULL) esl_stopwatch_Start(w);
       if(do_trunc) { 
 	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
-					    NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
+					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
       	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
 				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
 				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
       }
       else { 
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
-					  NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
+					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
 	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx, 
 				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
       }
-      /* add size of CP9 matrices used for calculating bands */
-      mb_tot += ((float) cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
-      mb_tot += ((float) cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
-      if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
-	mb_tot += ((float) orig_cm->cp9_mx->ncells_valid  * sizeof(int)) / 1000000.;
-	mb_tot += ((float) orig_cm->cp9_bmx->ncells_valid * sizeof(int)) / 1000000.;
-      }
     }
   }
+
+  if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
+    mb_tot += orig_cm->cp9_mx->size_Mb;
+    mb_tot += orig_cm->cp9_bmx->size_Mb;
+  }
+
   if(w != NULL) esl_stopwatch_Stop(w);
   secs_aln = (w == NULL) ? 0. : w->elapsed;
 

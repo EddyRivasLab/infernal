@@ -48,8 +48,8 @@
  * EPN, Fri Oct 26 05:04:34 2007
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -107,18 +107,18 @@ cm_mx_Create(int M)
   ESL_ALLOC(mx->dp,  sizeof(float **) * (M+1));
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
+  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
 
   for (v = 0; v < M; v++) {
-    ESL_ALLOC(mx->dp[v], sizeof(float *) * (allocL));
-    mx->dp[v][0]  = mx->dp_mem + v * (allocL) * (allocW);
+    ESL_ALLOC(mx->dp[v], sizeof(float *) * (int64_t) allocL);
+    mx->dp[v][0]  = mx->dp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
   }
   /* allocate EL deck */
-  ESL_ALLOC(mx->dp[M], sizeof(float *) * (allocL));
-  mx->dp[M][0]  = mx->dp_mem + M * (allocL) * (allocW);
+  ESL_ALLOC(mx->dp[M], sizeof(float *) * (int64_t) allocL);
+  mx->dp[M][0]  = mx->dp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
   
   mx->M              = M;
-  mx->ncells_alloc   = (M+1)*(allocL)*(allocW);
+  mx->ncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
   mx->L              = allocL; /* allocL = 1 */
 
 
@@ -191,9 +191,9 @@ cm_mx_GrowTo(CM_t *cm, CM_MX *mx, char *errbuf, int L, float size_limit)
    */
   realloced = FALSE;
   if (ncells > mx->ncells_alloc) { 
-      ESL_RALLOC(mx->dp_mem, p, sizeof(float) * ncells);
-      mx->ncells_alloc = ncells;
-      realloced = TRUE;
+    ESL_RALLOC(mx->dp_mem, p, sizeof(float) * ncells);
+    mx->ncells_alloc = ncells;
+    realloced = TRUE;
   }
 
   /* Determine the size of our matrix based on the size it needed to be (Mb_needed).
@@ -350,9 +350,9 @@ cm_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_ncells, float *ret_
 
   for(v = 0; v < cm->M; v++) { 
     Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->dp[v][] ptrs */
-    ncells += (int) ((L+2) * (L+1) * 0.5); 
+    ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
   }
-  if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+  if(have_el) ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); /* space for EL deck */
 
   Mb_needed += sizeof(float) * ncells; /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
@@ -416,23 +416,23 @@ cm_tr_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Tdp,  sizeof(float **) * (M+1)); /* ptrs to non-ROOT_S and non-B states will be NULL */
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->Jdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (B+1) * (allocL) * (allocW)); /* +1 is for the special ROOT_S deck */
+  ESL_ALLOC(mx->Jdp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (int64_t) (B+1) * (int64_t) allocL * (int64_t) allocW); /* +1 is for the special ROOT_S deck */
 
   b = 0;
   for (v = 0; v < M; v++) {
-    ESL_ALLOC(mx->Jdp[v], sizeof(float *) * (allocL));
-    ESL_ALLOC(mx->Ldp[v], sizeof(float *) * (allocL));
-    ESL_ALLOC(mx->Rdp[v], sizeof(float *) * (allocL));
-    mx->Jdp[v][0]  = mx->Jdp_mem + v * (allocL) * (allocW);
-    mx->Ldp[v][0]  = mx->Ldp_mem + v * (allocL) * (allocW);
-    mx->Rdp[v][0]  = mx->Rdp_mem + v * (allocL) * (allocW);
+    ESL_ALLOC(mx->Jdp[v], sizeof(float *) * (int64_t) allocL);
+    ESL_ALLOC(mx->Ldp[v], sizeof(float *) * (int64_t) allocL);
+    ESL_ALLOC(mx->Rdp[v], sizeof(float *) * (int64_t) allocL);
+    mx->Jdp[v][0]  = mx->Jdp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
+    mx->Ldp[v][0]  = mx->Ldp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
+    mx->Rdp[v][0]  = mx->Rdp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
 
     if(cm->sttype[v] == B_st || v == 0) { /* only B states and ROOT_S are valid */
-      ESL_ALLOC(mx->Tdp[v], sizeof(float *) * (allocL));
-      mx->Tdp[v][0] = mx->Tdp_mem + b * (allocL) * (allocW);
+      ESL_ALLOC(mx->Tdp[v], sizeof(float *) * (int64_t) allocL);
+      mx->Tdp[v][0] = mx->Tdp_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
       b++;
     }
     else { 
@@ -440,21 +440,21 @@ cm_tr_mx_Create(CM_t *cm)
     }
   }
   /* allocate EL deck, for J, L, and R */
-  ESL_ALLOC(mx->Jdp[M], sizeof(float *) * (allocL));
-  ESL_ALLOC(mx->Ldp[M], sizeof(float *) * (allocL));
-  ESL_ALLOC(mx->Rdp[M], sizeof(float *) * (allocL));
-  mx->Jdp[M][0]  = mx->Jdp_mem + M * (allocL) * (allocW);
-  mx->Ldp[M][0]  = mx->Ldp_mem + M * (allocL) * (allocW);
-  mx->Rdp[M][0]  = mx->Rdp_mem + M * (allocL) * (allocW);
+  ESL_ALLOC(mx->Jdp[M], sizeof(float *) * (int64_t) allocL);
+  ESL_ALLOC(mx->Ldp[M], sizeof(float *) * (int64_t) allocL);
+  ESL_ALLOC(mx->Rdp[M], sizeof(float *) * (int64_t) allocL);
+  mx->Jdp[M][0]  = mx->Jdp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
+  mx->Ldp[M][0]  = mx->Ldp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
+  mx->Rdp[M][0]  = mx->Rdp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
 
   mx->Tdp[M]  = NULL;
   
   mx->M               = M;
   mx->B               = B;
-  mx->Jncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Lncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Rncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Tncells_alloc   = (B+1)*(allocL)*(allocW);
+  mx->Jncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
+  mx->Lncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
+  mx->Rncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
+  mx->Tncells_alloc   = (int64_t) (B+1) * (int64_t) allocL * (int64_t) allocW;
   mx->Jncells_valid   = 0;
   mx->Lncells_valid   = 0;
   mx->Rncells_valid   = 0;
@@ -816,9 +816,9 @@ cm_tr_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_Jncells, int64_t
   Jncells = 0;
   Lncells = 0;
   Rncells = 0;
-  Tncells   = 0;
+  Tncells = 0;
   Mb_needed = (float) 
-    (sizeof(CM_TR_MX)                 + 
+    (sizeof(CM_TR_MX) + 
      (4 * (cm->M+1) * sizeof(float **))); /* mx->{J,L,R,T}dp[] ptrs */
 
   for(v = 0; v < cm->M; v++) { 
@@ -826,15 +826,15 @@ cm_tr_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_Jncells, int64_t
     Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[v][] ptrs */
     Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Rdp[v][] ptrs */
     if(cm->sttype[v] == B_st || v == 0) Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Tdp[v][] ptrs */
-    Jncells += (int) ((L+2) * (L+1) * 0.5); 
-    Lncells += (int) ((L+2) * (L+1) * 0.5); 
-    Rncells += (int) ((L+2) * (L+1) * 0.5); 
-    if(cm->sttype[v] == B_st || v == 0) Tncells += (int) ((L+2) * (L+1) * 0.5);
+    Jncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+    Lncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+    Rncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+    if(cm->sttype[v] == B_st || v == 0) Tncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5);
   }
   if(have_el) { /* space for EL deck */
-    Jncells += (int) ((L+2) * (L+1) * 0.5); 
-    Lncells += (int) ((L+2) * (L+1) * 0.5);
-    Rncells += (int) ((L+2) * (L+1) * 0.5);
+    Jncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+    Lncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5);
+    Rncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5);
   }
 
   Mb_needed += sizeof(float) * Jncells; /* mx->Jdp_mem */
@@ -892,15 +892,15 @@ cm_hb_mx_Create(int M)
   ESL_ALLOC(mx->dp,  sizeof(float **) * (M+1));
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->nrowsA, sizeof(int)    * (M+1));
+  ESL_ALLOC(mx->dp_mem, sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->nrowsA, sizeof(int)   * (int64_t) (M+1));
   for (v = 0; v <= M; v++) {
-    ESL_ALLOC(mx->dp[v], sizeof(float *) * (allocL));
+    ESL_ALLOC(mx->dp[v], sizeof(float *) * (int64_t) allocL);
     mx->nrowsA[v] = allocL;
-    mx->dp[v][0]  = mx->dp_mem + v * (allocL) * (allocW);
+    mx->dp[v][0]  = mx->dp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
   }
   mx->M            = M;
-  mx->ncells_alloc = (M+1)*(allocL)*(allocW);
+  mx->ncells_alloc = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
   mx->ncells_valid = 0;
   mx->L            = allocL; /* allocL = 1 */
 
@@ -1035,7 +1035,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(have_el) {
     for(jp = 0; jp <= L; jp++) { 
       mx->dp[mx->M][jp] = mx->dp_mem + cur_size;
-      cur_size     += jp + 1;
+      cur_size += jp + 1;
     }      
   }
   ESL_DASSERT1((cur_size == mx->ncells_valid));
@@ -1167,7 +1167,7 @@ cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *re
     for(jp = 0; jp <= jbw; jp++) 
       ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
   }
-  if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+  if(have_el) ncells += (int64_t) ( (int64_t) (L+2) * (int64_t) (L+1) * 0.5); /* space for EL deck */
 
   Mb_needed += sizeof(float) * ncells; /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
@@ -1224,33 +1224,33 @@ cm_tr_hb_mx_Create(CM_t *cm)
    *          remember deck M is special, as it has no bands, we allocate
    *          it only if nec (if local ends are on) in cm_tr_hb_mx_GrowTo()
    */
-  ESL_ALLOC(mx->Jdp,  sizeof(float **) * (M+1));
-  ESL_ALLOC(mx->Ldp,  sizeof(float **) * (M+1));
-  ESL_ALLOC(mx->Rdp,  sizeof(float **) * (M+1));
-  ESL_ALLOC(mx->Tdp,  sizeof(float **) * (M+1)); /* ptrs to non-ROOT_S and non-B states will be NULL */
+  ESL_ALLOC(mx->Jdp,  sizeof(float **) * (int64_t) (M+1));
+  ESL_ALLOC(mx->Ldp,  sizeof(float **) * (int64_t) (M+1));
+  ESL_ALLOC(mx->Rdp,  sizeof(float **) * (int64_t) (M+1));
+  ESL_ALLOC(mx->Tdp,  sizeof(float **) * (int64_t) (M+1)); /* ptrs to non-ROOT_S and non-B states will be NULL */
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->Jdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (B+1) * (allocL) * (allocW)); /* +1 is for the special ROOT_S deck */
-  ESL_ALLOC(mx->JnrowsA,  sizeof(int)   * (M+1));
-  ESL_ALLOC(mx->LnrowsA,  sizeof(int)   * (M+1));
-  ESL_ALLOC(mx->RnrowsA,  sizeof(int)   * (M+1));
-  ESL_ALLOC(mx->TnrowsA,  sizeof(int)   * (M+1));
+  ESL_ALLOC(mx->Jdp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->Ldp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->Rdp_mem,  sizeof(float) * (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->Tdp_mem,  sizeof(float) * (int64_t) (B+1) * (int64_t) allocL * (int64_t) allocW); /* +1 is for the special ROOT_S deck */
+  ESL_ALLOC(mx->JnrowsA,  sizeof(int)   * (int64_t) (M+1));
+  ESL_ALLOC(mx->LnrowsA,  sizeof(int)   * (int64_t) (M+1));
+  ESL_ALLOC(mx->RnrowsA,  sizeof(int)   * (int64_t) (M+1));
+  ESL_ALLOC(mx->TnrowsA,  sizeof(int)   * (int64_t) (M+1));
 
   b = 0;
   for (v = 0; v < M; v++) {
-    ESL_ALLOC(mx->Jdp[v], sizeof(float *) * (allocL));
-    ESL_ALLOC(mx->Ldp[v], sizeof(float *) * (allocL));
-    ESL_ALLOC(mx->Rdp[v], sizeof(float *) * (allocL));
-    mx->Jdp[v][0]  = mx->Jdp_mem + v * (allocL) * (allocW);
-    mx->Ldp[v][0]  = mx->Ldp_mem + v * (allocL) * (allocW);
-    mx->Rdp[v][0]  = mx->Rdp_mem + v * (allocL) * (allocW);
+    ESL_ALLOC(mx->Jdp[v], sizeof(float *) * (int64_t) allocL);
+    ESL_ALLOC(mx->Ldp[v], sizeof(float *) * (int64_t) allocL);
+    ESL_ALLOC(mx->Rdp[v], sizeof(float *) * (int64_t) allocL);
+    mx->Jdp[v][0]  = mx->Jdp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
+    mx->Ldp[v][0]  = mx->Ldp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
+    mx->Rdp[v][0]  = mx->Rdp_mem + (int64_t) v * (int64_t) allocL * (int64_t) allocW;
 
     if(cm->sttype[v] == B_st || v == 0) { /* only B states and ROOT_S are valid */
       ESL_ALLOC(mx->Tdp[v], sizeof(float *) * (allocL));
-      mx->Tdp[v][0] = mx->Tdp_mem + b * (allocL) * (allocW);
+      mx->Tdp[v][0] = mx->Tdp_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
       b++;
       mx->TnrowsA[v] = allocL;
     }
@@ -1263,16 +1263,16 @@ cm_tr_hb_mx_Create(CM_t *cm)
     mx->RnrowsA[v] = allocL;
   }
   /* allocate EL deck, for J, L, and R */
-  ESL_ALLOC(mx->Jdp[M], sizeof(float *) * (allocL));
-  mx->Jdp[M][0]  = mx->Jdp_mem + M * (allocL) * (allocW);
+  ESL_ALLOC(mx->Jdp[M], sizeof(float *) * (int64_t) allocL);
+  mx->Jdp[M][0]  = mx->Jdp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
   mx->JnrowsA[M] = allocL;
 
-  ESL_ALLOC(mx->Ldp[M], sizeof(float *) * (allocL));
-  mx->Ldp[M][0]  = mx->Ldp_mem + M * (allocL) * (allocW);
+  ESL_ALLOC(mx->Ldp[M], sizeof(float *) * (int64_t) allocL);
+  mx->Ldp[M][0]  = mx->Ldp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
   mx->LnrowsA[M] = allocL;
 
-  ESL_ALLOC(mx->Rdp[M], sizeof(float *) * (allocL));
-  mx->Rdp[M][0]  = mx->Rdp_mem + M * (allocL) * (allocW);
+  ESL_ALLOC(mx->Rdp[M], sizeof(float *) * (int64_t) allocL);
+  mx->Rdp[M][0]  = mx->Rdp_mem + (int64_t) M * (int64_t) allocL * (int64_t) allocW;
   mx->RnrowsA[M] = allocL;
 
   mx->Tdp[M]  = NULL;
@@ -1281,10 +1281,10 @@ cm_tr_hb_mx_Create(CM_t *cm)
   
   mx->M               = M;
   mx->B               = B;
-  mx->Jncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Lncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Rncells_alloc   = (M+1)*(allocL)*(allocW);
-  mx->Tncells_alloc   = (B+1)*(allocL)*(allocW);
+  mx->Jncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
+  mx->Lncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
+  mx->Rncells_alloc   = (int64_t) (M+1) * (int64_t) allocL * (int64_t) allocW;
+  mx->Tncells_alloc   = (int64_t) (B+1) * (int64_t) allocL * (int64_t) allocW;
   mx->Jncells_valid   = 0;
   mx->Lncells_valid   = 0;
   mx->Rncells_valid   = 0;
@@ -1395,7 +1395,7 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     mx->Tncells_alloc = 0;
   }
 
-  /* must we realloc the full {J,L,R.T}matrices? or can we get away with just
+  /* must we realloc the full {J,L,R,T}matrices? or can we get away with just
    * jiggering the pointers, if total required num cells is less
    * than or equal to what we already have alloc'ed?
    */
@@ -1773,7 +1773,7 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   Rncells = 0;
   Tncells = 0;
   Mb_needed = (float) 
-    (sizeof(CM_TR_HB_MX)                 + 
+    (sizeof(CM_TR_HB_MX) + 
      (4 * (cp9b->cm_M+1) * sizeof(float **))  + /* mx->{J,L,R}dp[] ptrs */
      (4 * (cp9b->cm_M+1) * sizeof(int)));       /* mx->{J,L,R,T}nrowsA ptrs */
 
@@ -1807,15 +1807,15 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   if(have_el) { /* space for EL deck */
     if(cp9b->Jvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Jdp[cm->M][] ptrs */
-      Jncells += (int) ((L+2) * (L+1) * 0.5); 
+      Jncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
     if(cp9b->Lvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
-      Lncells += (int) ((L+2) * (L+1) * 0.5); 
+      Lncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
     if(cp9b->Rvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
-      Rncells += (int) ((L+2) * (L+1) * 0.5); 
+      Rncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
   }
 
@@ -1882,28 +1882,28 @@ cm_shadow_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->kshadow,  sizeof(int **)  * M);
  
   /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->yshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->kshadow_mem,  sizeof(int)  * ESL_MAX(1, B * allocL * allocW)); // avoid 0 malloc
+  ESL_ALLOC(mx->yshadow_mem, sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW);
+  ESL_ALLOC(mx->kshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW)); // avoid 0 malloc
 
   b = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == B_st) { 
-      ESL_ALLOC(mx->kshadow[v], sizeof(int *) * (allocL));
-      mx->kshadow[v][0] = mx->kshadow_mem + b * (allocL) * (allocW);
+      ESL_ALLOC(mx->kshadow[v], sizeof(int *) * (int64_t) allocL);
+      mx->kshadow[v][0] = mx->kshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
       mx->yshadow[v] = NULL;
       b++;
     }
     else { 
-      ESL_ALLOC(mx->yshadow[v], sizeof(char *) * (allocL));
-      mx->yshadow[v][0] = mx->yshadow_mem + (v-b) * (allocL) * (allocW);
+      ESL_ALLOC(mx->yshadow[v], sizeof(char *) * (int64_t) allocL);
+      mx->yshadow[v][0] = mx->yshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
       mx->kshadow[v] = NULL;
     }
   }
   mx->M               = M;
   mx->B               = B;
-  mx->y_ncells_alloc = (M-B)*(allocL)*(allocW);
+  mx->y_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
   mx->y_ncells_valid = 0;
-  mx->k_ncells_alloc = (B)*(allocL)*(allocW);
+  mx->k_ncells_alloc = (int64_t) (B)   * (int64_t) allocL * (int64_t) allocW;
   mx->k_ncells_valid = 0;
   mx->L              = allocL; /* allocL = 1 */
 
@@ -1914,8 +1914,8 @@ cm_shadow_mx_Create(CM_t *cm)
      ((mx->M)        * sizeof(int **))             +  /* mx->kshadow[] ptrs */
      mx->y_ncells_alloc * sizeof(char)             +  /* mx->yshadow_mem */
      mx->k_ncells_alloc * sizeof(int)              +  /* mx->kshadow_mem */
-     (mx->B           * allocL * sizeof(int *))    +  /* mx->kshadow[v][] ptrs */
-     ((mx->M - mx->B) * allocL * sizeof(char *)));    /* mx->yshadow[v][] ptrs */
+     (int64_t) ((int64_t) mx->B *           (int64_t) allocL * sizeof(int *))    +  /* mx->kshadow[v][] ptrs */
+     (int64_t) ((int64_t) (mx->M - mx->B) * (int64_t) allocL * sizeof(char *)));    /* mx->yshadow[v][] ptrs */
     mx->size_Mb *= 0.000001; /* convert to Mb */
 
   return mx;
@@ -2172,11 +2172,11 @@ cm_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_ny_cells, in
   for(v = 0; v < cm->M; v++) { 
     if(cm->sttype[v] == B_st) { 
       Mb_needed += (float) (sizeof(int *) * (L+1)); /* mx->kshadow[v][] ptrs */
-      k_ncells += (int) ((L+2) * (L+1) * 0.5); 
+      k_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
     else { 
       Mb_needed += (float) (sizeof(char *) * (L+1)); /* mx->yshadow[v][] ptrs */
-      y_ncells += (int) ((L+2) * (L+1) * 0.5); 
+      y_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
   }
 
@@ -2259,36 +2259,36 @@ cm_tr_shadow_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Rkmode,    sizeof(char **) * M);
  
   /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->Jyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->Jyshadow_mem, (sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW));
   
-  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));  // avoid 0 malloc
-  ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
-  ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
-  ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));  // avoid 0 malloc
+  ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
 
-  ESL_ALLOC(mx->Lkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
-  ESL_ALLOC(mx->Rkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Lkmode_mem,   sizeof(char) * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Rkmode_mem,   sizeof(char) * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
 
   b = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == B_st) { 
-      ESL_ALLOC(mx->Jkshadow[v], sizeof(int *) * (allocL));
-      ESL_ALLOC(mx->Lkshadow[v], sizeof(int *) * (allocL));
-      ESL_ALLOC(mx->Rkshadow[v], sizeof(int *) * (allocL));
-      ESL_ALLOC(mx->Tkshadow[v], sizeof(int *) * (allocL));
+      ESL_ALLOC(mx->Jkshadow[v], sizeof(int *) * (int64_t) allocL);
+      ESL_ALLOC(mx->Lkshadow[v], sizeof(int *) * (int64_t) allocL);
+      ESL_ALLOC(mx->Rkshadow[v], sizeof(int *) * (int64_t) allocL);
+      ESL_ALLOC(mx->Tkshadow[v], sizeof(int *) * (int64_t) allocL);
 
-      ESL_ALLOC(mx->Lkmode[v],   sizeof(char *) * (allocL));
-      ESL_ALLOC(mx->Rkmode[v],   sizeof(char *) * (allocL));
+      ESL_ALLOC(mx->Lkmode[v],   sizeof(char *) * (int64_t) allocL);
+      ESL_ALLOC(mx->Rkmode[v],   sizeof(char *) * (int64_t) allocL);
 
-      mx->Jkshadow[v][0] = mx->Jkshadow_mem + b * (allocL) * (allocW);
-      mx->Lkshadow[v][0] = mx->Lkshadow_mem + b * (allocL) * (allocW);
-      mx->Rkshadow[v][0] = mx->Rkshadow_mem + b * (allocL) * (allocW);
-      mx->Tkshadow[v][0] = mx->Tkshadow_mem + b * (allocL) * (allocW);
+      mx->Jkshadow[v][0] = mx->Jkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Lkshadow[v][0] = mx->Lkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Rkshadow[v][0] = mx->Rkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Tkshadow[v][0] = mx->Tkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
 
-      mx->Lkmode[v][0]   = mx->Lkmode_mem   + b * (allocL) * (allocW);
-      mx->Rkmode[v][0]   = mx->Rkmode_mem   + b * (allocL) * (allocW);
+      mx->Lkmode[v][0]   = mx->Lkmode_mem   + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Rkmode[v][0]   = mx->Rkmode_mem   + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
 
       mx->Jyshadow[v] = NULL;
       mx->Lyshadow[v] = NULL;
@@ -2296,13 +2296,13 @@ cm_tr_shadow_mx_Create(CM_t *cm)
       b++;
     }
     else { 
-      ESL_ALLOC(mx->Jyshadow[v], sizeof(char *) * (allocL));
-      ESL_ALLOC(mx->Lyshadow[v], sizeof(char *) * (allocL));
-      ESL_ALLOC(mx->Ryshadow[v], sizeof(char *) * (allocL));
+      ESL_ALLOC(mx->Jyshadow[v], sizeof(char *) * (int64_t) allocL);
+      ESL_ALLOC(mx->Lyshadow[v], sizeof(char *) * (int64_t) allocL);
+      ESL_ALLOC(mx->Ryshadow[v], sizeof(char *) * (int64_t) allocL);
 
-      mx->Jyshadow[v][0] = mx->Jyshadow_mem + (v-b) * (allocL) * (allocW);
-      mx->Lyshadow[v][0] = mx->Lyshadow_mem + (v-b) * (allocL) * (allocW);
-      mx->Ryshadow[v][0] = mx->Ryshadow_mem + (v-b) * (allocL) * (allocW);
+      mx->Jyshadow[v][0] = mx->Jyshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
+      mx->Lyshadow[v][0] = mx->Lyshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
+      mx->Ryshadow[v][0] = mx->Ryshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
       mx->Jkshadow[v] = NULL;
       mx->Lkshadow[v] = NULL;
       mx->Rkshadow[v] = NULL;
@@ -2314,16 +2314,16 @@ cm_tr_shadow_mx_Create(CM_t *cm)
   }
   mx->M               = M;
   mx->B               = B;
-  mx->Jy_ncells_alloc = (M-B)*(allocL)*(allocW);
-  mx->Ly_ncells_alloc = (M-B)*(allocL)*(allocW);
-  mx->Ry_ncells_alloc = (M-B)*(allocL)*(allocW);
+  mx->Jy_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Ly_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Ry_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
   mx->Jy_ncells_valid = 0;
   mx->Ly_ncells_valid = 0;
   mx->Ry_ncells_valid = 0;
-  mx->Jk_ncells_alloc = (B)*(allocL)*(allocW);
-  mx->Lk_ncells_alloc = (B)*(allocL)*(allocW);
-  mx->Rk_ncells_alloc = (B)*(allocL)*(allocW);
-  mx->Tk_ncells_alloc = (B)*(allocL)*(allocW);
+  mx->Jk_ncells_alloc = (int64_t) (B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Lk_ncells_alloc = (int64_t) (B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Rk_ncells_alloc = (int64_t) (B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Tk_ncells_alloc = (int64_t) (B) * (int64_t) allocL * (int64_t) allocW;
   mx->Jk_ncells_valid = 0;
   mx->Rk_ncells_valid = 0;
   mx->Tk_ncells_valid = 0;
@@ -2541,9 +2541,9 @@ cm_tr_shadow_mx_GrowTo(CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float
 	mx->Jyshadow[v][jp] = mx->Jyshadow_mem + Jy_cur_size;
 	mx->Lyshadow[v][jp] = mx->Lyshadow_mem + Ly_cur_size;
 	mx->Ryshadow[v][jp] = mx->Ryshadow_mem + Ry_cur_size;
-	Jy_cur_size += jp+1;
-	Ly_cur_size += jp+1;
-	Ry_cur_size += jp+1;
+	Jy_cur_size += (int64_t) (jp+1);
+	Ly_cur_size += (int64_t) (jp+1);
+	Ry_cur_size += (int64_t) (jp+1);
       }
     }
     else {
@@ -2554,10 +2554,10 @@ cm_tr_shadow_mx_GrowTo(CM_t *cm, CM_TR_SHADOW_MX *mx, char *errbuf, int L, float
 	mx->Rkshadow[v][jp] = mx->Rkshadow_mem + Rk_cur_size;
 	mx->Rkmode[v][jp]   = mx->Rkmode_mem   + Rk_cur_size;
 	mx->Tkshadow[v][jp] = mx->Tkshadow_mem + Tk_cur_size;
-	Jk_cur_size += jp+1;
-	Lk_cur_size += jp+1;
-	Rk_cur_size += jp+1;
-	Tk_cur_size += jp+1;
+	Jk_cur_size += (int64_t) (jp+1);
+	Lk_cur_size += (int64_t) (jp+1);
+	Rk_cur_size += (int64_t) (jp+1);
+	Tk_cur_size += (int64_t) (jp+1);
       }
     }
   }
@@ -2794,18 +2794,18 @@ cm_tr_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_Jny_cells
       Mb_needed += (float) (sizeof(int *) * (L+1)); /* mx->Tkshadow[v][] ptrs */
       Mb_needed += (float) (sizeof(char *) * (L+1)); /* mx->Lkmode[v][] ptrs */
       Mb_needed += (float) (sizeof(char *) * (L+1)); /* mx->Rkmode[v][] ptrs */
-      Jk_ncells += (int) ((L+2) * (L+1) * 0.5); 
-      Lk_ncells += (int) ((L+2) * (L+1) * 0.5); 
-      Rk_ncells += (int) ((L+2) * (L+1) * 0.5); 
-      Tk_ncells += (int) ((L+2) * (L+1) * 0.5); 
+      Jk_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Lk_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Rk_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Tk_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
     else { 
       Mb_needed += (float) (sizeof(char *) * (L+1)); /* mx->Jyshadow[v][] ptrs */
       Mb_needed += (float) (sizeof(char *) * (L+1)); /* mx->Lyshadow[v][] ptrs */
       Mb_needed += (float) (sizeof(char *) * (L+1)); /* mx->Ryshadow[v][] ptrs */
-      Jy_ncells += (int) ((L+2) * (L+1) * 0.5); 
-      Ly_ncells += (int) ((L+2) * (L+1) * 0.5); 
-      Ry_ncells += (int) ((L+2) * (L+1) * 0.5); 
+      Jy_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Ly_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Ry_ncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
     }
   }
 
@@ -2886,25 +2886,25 @@ cm_hb_shadow_mx_Create(CM_t *cm)
   nb = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == B_st) { 
-      ESL_ALLOC(mx->kshadow[v], sizeof(int *) * (allocL));
-      mx->kshadow[v][0] = mx->kshadow_mem + nb * (allocL) * (allocW);
+      ESL_ALLOC(mx->kshadow[v], sizeof(int *) * (int64_t) allocL);
+      mx->kshadow[v][0] = mx->kshadow_mem + (int64_t) nb * (int64_t) allocL * (int64_t) allocW;
       mx->yshadow[v] = NULL;
       nb++;
     }
     else { 
-      ESL_ALLOC(mx->yshadow[v], sizeof(char *) * (allocL));
-      mx->yshadow[v][0] = mx->yshadow_mem + (v-nb) * (allocL) * (allocW);
+      ESL_ALLOC(mx->yshadow[v], sizeof(char *) * (int64_t) allocL);
+      mx->yshadow[v][0] = mx->yshadow_mem + (int64_t) (v-nb) * (int64_t) allocL * (int64_t) allocW;
       mx->kshadow[v] = NULL;
     }
     mx->nrowsA[v] = allocL;
   }
   mx->M              = M;
   mx->B              = nbifs;
-  mx->y_ncells_alloc = (M-nbifs)*(allocL)*(allocW);
+  mx->y_ncells_alloc = (int64_t) (M-nbifs) * (int64_t) allocL * (int64_t) allocW;
   mx->y_ncells_valid = 0;
-  mx->k_ncells_alloc = (nbifs)*(allocL)*(allocW);
+  mx->k_ncells_alloc = (int64_t) nbifs     * (int64_t) allocL * (int64_t) allocW;
   mx->k_ncells_valid = 0;
-  mx->L            = allocL; /* allocL = 1 */
+  mx->L              = allocL; /* allocL = 1 */
 
   /* calculate size, these are in order of when they were allocated */
   mx->size_Mb = (float) 
@@ -2914,8 +2914,8 @@ cm_hb_shadow_mx_Create(CM_t *cm)
      mx->y_ncells_alloc * sizeof(char)           +  /* mx->yshadow_mem */
      mx->k_ncells_alloc * sizeof(int)            +  /* mx->kshadow_mem */
      (mx->M        * sizeof(int))                +  /* mx->nrowsA */
-     (mx->B        * allocL * sizeof(int *))     +  /* mx->kshadow[v][] ptrs */
-     ((mx->M-mx->B)* allocL * sizeof(int *)));      /* mx->yshadow[v][] ptrs */
+     ((int64_t) mx->B         * (int64_t) allocL * sizeof(int *)) +  /* mx->kshadow[v][] ptrs */
+     ((int64_t) (mx->M-mx->B) * (int64_t) allocL * sizeof(int *)));      /* mx->yshadow[v][] ptrs */
   mx->size_Mb *= 0.000001; /* convert to Mb */
 
   return mx;
@@ -2963,7 +2963,7 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
   int     status;
   void   *p;
   int     v, jp;
-  int     y_cur_size, k_cur_size = 0;
+  int64_t y_cur_size, k_cur_size = 0;
   int64_t y_ncells, k_ncells;
   int     jbw;
   float   Mb_needed;   /* required size of matrix, given the bands */
@@ -3299,17 +3299,17 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
   ESL_ALLOC(mx->Rkmode,    sizeof(char **) * M);
  
   /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  ESL_ALLOC(mx->Jyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
-  ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (M-B) * (allocL) * (allocW)));
+  ESL_ALLOC(mx->Jyshadow_mem, (sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Lyshadow_mem, (sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Ryshadow_mem, (sizeof(char) * (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW));
   
-  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW)); // avoid 0 malloc
-  ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
-  ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
-  ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Jkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW)); // avoid 0 malloc
+  ESL_ALLOC(mx->Lkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Rkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Tkshadow_mem, sizeof(int)  * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
 
-  ESL_ALLOC(mx->Lkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
-  ESL_ALLOC(mx->Rkmode_mem,   sizeof(char) * ESL_MAX(1, B * allocL * allocW));
+  ESL_ALLOC(mx->Lkmode_mem,   sizeof(char) * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
+  ESL_ALLOC(mx->Rkmode_mem,   sizeof(char) * ESL_MAX(1, (int64_t) B * (int64_t) allocL * (int64_t) allocW));
 
   ESL_ALLOC(mx->JnrowsA, sizeof(int)      * M);
   ESL_ALLOC(mx->LnrowsA, sizeof(int)      * M);
@@ -3327,13 +3327,13 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
       ESL_ALLOC(mx->Lkmode[v],   sizeof(char *) * (allocL));
       ESL_ALLOC(mx->Rkmode[v],   sizeof(char *) * (allocL));
 
-      mx->Jkshadow[v][0] = mx->Jkshadow_mem + b * (allocL) * (allocW);
-      mx->Lkshadow[v][0] = mx->Lkshadow_mem + b * (allocL) * (allocW);
-      mx->Rkshadow[v][0] = mx->Rkshadow_mem + b * (allocL) * (allocW);
-      mx->Tkshadow[v][0] = mx->Tkshadow_mem + b * (allocL) * (allocW);
+      mx->Jkshadow[v][0] = mx->Jkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Lkshadow[v][0] = mx->Lkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Rkshadow[v][0] = mx->Rkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Tkshadow[v][0] = mx->Tkshadow_mem + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
 
-      mx->Lkmode[v][0]   = mx->Lkmode_mem   + b * (allocL) * (allocW);
-      mx->Rkmode[v][0]   = mx->Rkmode_mem   + b * (allocL) * (allocW);
+      mx->Lkmode[v][0]   = mx->Lkmode_mem   + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
+      mx->Rkmode[v][0]   = mx->Rkmode_mem   + (int64_t) b * (int64_t) allocL * (int64_t) allocW;
 
       mx->Jyshadow[v] = NULL;
       mx->Lyshadow[v] = NULL;
@@ -3345,9 +3345,9 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
       ESL_ALLOC(mx->Lyshadow[v], sizeof(char *) * (allocL));
       ESL_ALLOC(mx->Ryshadow[v], sizeof(char *) * (allocL));
 
-      mx->Jyshadow[v][0] = mx->Jyshadow_mem + (v-b) * (allocL) * (allocW);
-      mx->Lyshadow[v][0] = mx->Lyshadow_mem + (v-b) * (allocL) * (allocW);
-      mx->Ryshadow[v][0] = mx->Ryshadow_mem + (v-b) * (allocL) * (allocW);
+      mx->Jyshadow[v][0] = mx->Jyshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
+      mx->Lyshadow[v][0] = mx->Lyshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
+      mx->Ryshadow[v][0] = mx->Ryshadow_mem + (int64_t) (v-b) * (int64_t) allocL * (int64_t) allocW;
       mx->Jkshadow[v] = NULL;
       mx->Lkshadow[v] = NULL;
       mx->Rkshadow[v] = NULL;
@@ -3363,16 +3363,16 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
   }
   mx->M               = M;
   mx->B               = B;
-  mx->Jy_ncells_alloc = (M-B)*(allocL)*(allocW);
-  mx->Ly_ncells_alloc = (M-B)*(allocL)*(allocW);
-  mx->Ry_ncells_alloc = (M-B)*(allocL)*(allocW);
+  mx->Jy_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Ly_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
+  mx->Ry_ncells_alloc = (int64_t) (M-B) * (int64_t) allocL * (int64_t) allocW;
   mx->Jy_ncells_valid = 0;
   mx->Ly_ncells_valid = 0;
   mx->Ry_ncells_valid = 0;
-  mx->Jk_ncells_alloc = (B)*(allocL)*(allocW);
-  mx->Lk_ncells_alloc = (B)*(allocL)*(allocW);
-  mx->Rk_ncells_alloc = (B)*(allocL)*(allocW);
-  mx->Tk_ncells_alloc = (B)*(allocL)*(allocW);
+  mx->Jk_ncells_alloc = (int64_t) B * (int64_t) allocL * (int64_t) allocW;
+  mx->Lk_ncells_alloc = (int64_t) B * (int64_t) allocL * (int64_t) allocW;
+  mx->Rk_ncells_alloc = (int64_t) B * (int64_t) allocL * (int64_t) allocW;
+  mx->Tk_ncells_alloc = (int64_t) B * (int64_t) allocL * (int64_t) allocW;
   mx->Jk_ncells_valid = 0;
   mx->Rk_ncells_valid = 0;
   mx->Tk_ncells_valid = 0;
@@ -3392,9 +3392,9 @@ cm_tr_hb_shadow_mx_Create(CM_t *cm)
      mx->Tk_ncells_alloc * sizeof(int)                 +  /* mx->Tkshadow_mem */
      mx->Lk_ncells_alloc * sizeof(char)                +  /* mx->Lkmode_mem */
      mx->Rk_ncells_alloc * sizeof(char)                +  /* mx->Rkmode_mem */
-     (4 * (mx->M)        * sizeof(int))                +  /* mx->{J,L,R,T}nrowsA */
-     (4 * mx->B           * allocL * sizeof(int *))    +  /* mx->{J,L,R,T}kshadow[v][] ptrs */
-     (3 * (mx->M - mx->B) * allocL * sizeof(char *)));    /* mx->{J,L,R,T}kshadow[v][] ptrs */
+     (4 * (int64_t) (mx->M)         * sizeof(int))                +  /* mx->{J,L,R,T}nrowsA */
+     (4 * (int64_t) mx->B           * (int64_t) allocL * sizeof(int *))    +  /* mx->{J,L,R,T}kshadow[v][] ptrs */
+     (3 * (int64_t) (mx->M - mx->B) * (int64_t) allocL * sizeof(char *)));    /* mx->{J,L,R,T}kshadow[v][] ptrs */
     mx->size_Mb *= 0.000001; /* convert to Mb */
 
   return mx;
@@ -4054,14 +4054,14 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
     }
   }
   Mb_needed += sizeof(int)  * Jk_ncells; /* mx->Jkshadow_mem */
-  Mb_needed += sizeof(int)  * Lk_ncells; /* mx->Jkshadow_mem */
-  Mb_needed += sizeof(int)  * Rk_ncells; /* mx->Jkshadow_mem */
-  Mb_needed += sizeof(int)  * Tk_ncells; /* mx->Jkshadow_mem */
-  Mb_needed += sizeof(char) * Lk_ncells; /* mx->Jkmode_mem   */
-  Mb_needed += sizeof(char) * Rk_ncells; /* mx->Jkmode_mem   */
+  Mb_needed += sizeof(int)  * Lk_ncells; /* mx->Lkshadow_mem */
+  Mb_needed += sizeof(int)  * Rk_ncells; /* mx->Rkshadow_mem */
+  Mb_needed += sizeof(int)  * Tk_ncells; /* mx->Tkshadow_mem */
+  Mb_needed += sizeof(char) * Lk_ncells; /* mx->Lkmode_mem   */
+  Mb_needed += sizeof(char) * Rk_ncells; /* mx->Rkmode_mem   */
   Mb_needed += sizeof(char) * Jy_ncells; /* mx->Jyshadow_mem */
-  Mb_needed += sizeof(char) * Ly_ncells; /* mx->Jyshadow_mem */
-  Mb_needed += sizeof(char) * Ry_ncells; /* mx->Jyshadow_mem */
+  Mb_needed += sizeof(char) * Ly_ncells; /* mx->Lyshadow_mem */
+  Mb_needed += sizeof(char) * Ry_ncells; /* mx->Ryshadow_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
 
   if(ret_Jny_cells != NULL) *ret_Jny_cells = Jy_ncells;
@@ -4126,14 +4126,14 @@ cm_emit_mx_Create(CM_t *cm)
   }
   l_nstates_valid++; /* add 1 for the special left emitting EL state, cm->M */
 
-  ESL_ALLOC(mx->l_pp_mem,  sizeof(float) * (l_nstates_valid) * (allocL));
-  ESL_ALLOC(mx->r_pp_mem,  sizeof(float) * (r_nstates_valid) * (allocL));
+  ESL_ALLOC(mx->l_pp_mem,  sizeof(float) * (int64_t) l_nstates_valid * (int64_t) allocL);
+  ESL_ALLOC(mx->r_pp_mem,  sizeof(float) * (int64_t) r_nstates_valid * (int64_t) allocL);
 
   l_n = 0;
   r_n = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
-      mx->l_pp[v] = mx->l_pp_mem + l_n * (allocL);
+      mx->l_pp[v] = mx->l_pp_mem + (int64_t) l_n * (int64_t) allocL;
       l_n++;
     }
     else { 
@@ -4141,7 +4141,7 @@ cm_emit_mx_Create(CM_t *cm)
     }
 
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
-      mx->r_pp[v] = mx->r_pp_mem + r_n * (allocL);
+      mx->r_pp[v] = mx->r_pp_mem + (int64_t) r_n * (int64_t) allocL;
       r_n++;
     }
     else { 
@@ -4150,7 +4150,7 @@ cm_emit_mx_Create(CM_t *cm)
   }
     
   /* EL row */
-  mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
+  mx->l_pp[M] = mx->l_pp_mem + (int64_t) l_n * (int64_t) allocL;
   mx->r_pp[M] = NULL;
 
   /* finally allocate the sum vector */
@@ -4158,9 +4158,9 @@ cm_emit_mx_Create(CM_t *cm)
 
   mx->M               = M;
   mx->l_ncells_valid  = 0;
-  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->l_ncells_alloc  = (int64_t) l_nstates_valid * (int64_t) allocL;
   mx->r_ncells_valid  = 0;
-  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->r_ncells_alloc  = (int64_t) r_nstates_valid * (int64_t) allocL;
   mx->L               = allocL-1; /* allocL = 2 */
 
   /* calculate size, these are in order of when they were allocated */
@@ -4417,7 +4417,7 @@ cm_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, int L, int64_t *ret_l_ncells, int6
   }
   if(have_el) l_ncells += L+1; /* space for EL deck */
 
-  Mb_needed += sizeof(float) * (l_ncells + r_ncells + (L+1)); /* mx->l_pp_mem, mx->r_pp_mem, mx->sum */
+  Mb_needed += sizeof(float) * (l_ncells + r_ncells + (int64_t) (L+1)); /* mx->l_pp_mem, mx->r_pp_mem, mx->sum */
   Mb_needed *= 0.000001; /* convert to megabytes */
 
   if(ret_l_ncells != NULL) *ret_l_ncells = l_ncells;
@@ -4494,8 +4494,8 @@ cm_tr_emit_mx_Create(CM_t *cm)
   r_n = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
-      mx->Jl_pp[v] = mx->Jl_pp_mem + l_n * (allocL);
-      mx->Ll_pp[v] = mx->Ll_pp_mem + l_n * (allocL);
+      mx->Jl_pp[v] = mx->Jl_pp_mem + (int64_t) l_n * (int64_t) allocL;
+      mx->Ll_pp[v] = mx->Ll_pp_mem + (int64_t) l_n * (int64_t) allocL;
       l_n++;
     }
     else { 
@@ -4504,8 +4504,8 @@ cm_tr_emit_mx_Create(CM_t *cm)
     }
 
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
-      mx->Jr_pp[v] = mx->Jr_pp_mem + r_n * (allocL);
-      mx->Rr_pp[v] = mx->Rr_pp_mem + r_n * (allocL);
+      mx->Jr_pp[v] = mx->Jr_pp_mem + (int64_t) r_n * (int64_t) allocL;
+      mx->Rr_pp[v] = mx->Rr_pp_mem + (int64_t) r_n * (int64_t) allocL;
       r_n++;
     }
     else { 
@@ -4515,9 +4515,9 @@ cm_tr_emit_mx_Create(CM_t *cm)
   }
     
   /* setup EL row, invalid in Jr */
-  mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
-  mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
-  mx->Rr_pp[M] = mx->Rr_pp_mem + r_n * (allocL);
+  mx->Jl_pp[M] = mx->Jl_pp_mem + (int64_t) l_n * (int64_t) allocL;
+  mx->Ll_pp[M] = mx->Ll_pp_mem + (int64_t) l_n * (int64_t) allocL;
+  mx->Rr_pp[M] = mx->Rr_pp_mem + (int64_t) r_n * (int64_t) allocL;
 
   mx->Jr_pp[M] = NULL;
   
@@ -4526,9 +4526,9 @@ cm_tr_emit_mx_Create(CM_t *cm)
 
   mx->M                = M;
   mx->l_ncells_valid  = 0;
-  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->l_ncells_alloc  = (int64_t) l_nstates_valid * (int64_t) allocL;
   mx->r_ncells_valid  = 0;
-  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->r_ncells_alloc  = (int64_t) r_nstates_valid * (int64_t) allocL;
   mx->L                = allocL-1; /* allocL = 2 */
 
   /* calculate size, these are in order of when they were allocated */
@@ -4645,7 +4645,7 @@ cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float siz
       r_realloced = TRUE;
   }
   if (L > mx->L) { 
-    ESL_RALLOC(mx->sum, p, sizeof(float) * (L+1));
+    ESL_RALLOC(mx->sum, p, sizeof(float) * (int64_t) (L+1));
     sum_realloced = TRUE;
   }      
 
@@ -4681,20 +4681,20 @@ cm_tr_emit_mx_GrowTo(CM_t *cm, CM_TR_EMIT_MX *mx, char *errbuf, int L, float siz
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
       mx->Jl_pp[v] = mx->Jl_pp_mem + l_cur_size;
       mx->Ll_pp[v] = mx->Ll_pp_mem + l_cur_size;
-      l_cur_size += L+1;
+      l_cur_size += (int64_t) (L+1);
     }
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
       mx->Jr_pp[v] = mx->Jr_pp_mem + r_cur_size;
       mx->Rr_pp[v] = mx->Rr_pp_mem + r_cur_size;
-      r_cur_size += L+1;
+      r_cur_size += (int64_t) (L+1);
     }
   }
   if(have_el) { 
     mx->Jl_pp[mx->M] = mx->Jl_pp_mem + l_cur_size;
     mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size; 
     mx->Rr_pp[mx->M] = mx->Rr_pp_mem + r_cur_size; 
-    l_cur_size += L+1;
-    r_cur_size += L+1;
+    l_cur_size += (int64_t) (L+1);
+    r_cur_size += (int64_t) (L+1);
   }
   else { 
     mx->Jl_pp[mx->M] = NULL;
@@ -4914,7 +4914,7 @@ cm_hb_emit_mx_Create(CM_t *cm)
   r_n = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
-      mx->l_pp[v] = mx->l_pp_mem + l_n * (allocL);
+      mx->l_pp[v] = mx->l_pp_mem + (int64_t) l_n * (int64_t) allocL;
       l_n++;
     }
     else { 
@@ -4922,7 +4922,7 @@ cm_hb_emit_mx_Create(CM_t *cm)
     }
 
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
-      mx->r_pp[v] = mx->r_pp_mem + r_n * (allocL);
+      mx->r_pp[v] = mx->r_pp_mem + (int64_t) r_n * (int64_t) allocL;
       r_n++;
     }
     else { 
@@ -4931,7 +4931,7 @@ cm_hb_emit_mx_Create(CM_t *cm)
   }
     
   /* EL row */
-  mx->l_pp[M] = mx->l_pp_mem + l_n * (allocL);
+  mx->l_pp[M] = mx->l_pp_mem + (int64_t) l_n * (int64_t) allocL;
   mx->r_pp[M] = NULL;
   
   /* finally allocate the sum vector */
@@ -4939,9 +4939,9 @@ cm_hb_emit_mx_Create(CM_t *cm)
 
   mx->M               = M;
   mx->l_ncells_valid  = 0;
-  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->l_ncells_alloc  = (int64_t) l_nstates_valid * (int64_t) allocL;
   mx->r_ncells_valid  = 0;
-  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->r_ncells_alloc  = (int64_t) r_nstates_valid * (int64_t) allocL;
   mx->L               = allocL-1; /* allocL = 2 */
   mx->cp9b            = NULL;
   /* calculate size, these are in order of when they were allocated */
@@ -5298,8 +5298,8 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
   r_n = 0;
   for (v = 0; v < M; v++) {
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) { 
-      mx->Jl_pp[v] = mx->Jl_pp_mem + l_n * (allocL);
-      mx->Ll_pp[v] = mx->Ll_pp_mem + l_n * (allocL);
+      mx->Jl_pp[v] = mx->Jl_pp_mem + (int64_t) l_n * (int64_t) allocL;
+      mx->Ll_pp[v] = mx->Ll_pp_mem + (int64_t) l_n * (int64_t) allocL;
       l_n++;
     }
     else { 
@@ -5308,8 +5308,8 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
     }
 
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) { 
-      mx->Jr_pp[v] = mx->Jr_pp_mem + r_n * (allocL);
-      mx->Rr_pp[v] = mx->Rr_pp_mem + r_n * (allocL);
+      mx->Jr_pp[v] = mx->Jr_pp_mem + (int64_t) r_n * (int64_t) allocL;
+      mx->Rr_pp[v] = mx->Rr_pp_mem + (int64_t) r_n * (int64_t) allocL;
       r_n++;
     }
     else { 
@@ -5319,9 +5319,9 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
   }
     
   /* allocate EL row, invalid in Jr */
-  mx->Jl_pp[M] = mx->Jl_pp_mem + l_n * (allocL);
-  mx->Ll_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
-  mx->Rr_pp[M] = mx->Ll_pp_mem + l_n * (allocL);
+  mx->Jl_pp[M] = mx->Jl_pp_mem + (int64_t) l_n * (int64_t) allocL;
+  mx->Ll_pp[M] = mx->Ll_pp_mem + (int64_t) l_n * (int64_t) allocL;
+  mx->Rr_pp[M] = mx->Ll_pp_mem + (int64_t) l_n * (int64_t) allocL;
   mx->Jr_pp[M] = NULL;
 
   /* finally allocate the sum vector */
@@ -5329,9 +5329,9 @@ cm_tr_hb_emit_mx_Create(CM_t *cm)
 
   mx->M               = M;
   mx->l_ncells_valid  = 0;
-  mx->l_ncells_alloc  = (l_nstates_valid) * (allocL);
+  mx->l_ncells_alloc  = (int64_t) l_nstates_valid * (int64_t) allocL;
   mx->r_ncells_valid  = 0;
-  mx->r_ncells_alloc  = (r_nstates_valid) * (allocL);
+  mx->r_ncells_alloc  = (int64_t) r_nstates_valid * (int64_t) allocL;
   mx->L               = allocL-1; /* allocL = 2 */
   mx->cp9b            = NULL;
   /* calculate size, these are in order of when they were allocated */
@@ -5482,8 +5482,8 @@ cm_tr_hb_emit_mx_GrowTo(CM_t *cm, CM_TR_HB_EMIT_MX *mx, char *errbuf, CP9Bands_t
     mx->Jl_pp[mx->M] = mx->Jl_pp_mem + l_cur_size;
     mx->Ll_pp[mx->M] = mx->Ll_pp_mem + l_cur_size;
     mx->Rr_pp[mx->M] = mx->Rr_pp_mem + r_cur_size;
-    l_cur_size += L+1;
-    r_cur_size += L+1;
+    l_cur_size += (int64_t) (L+1);
+    r_cur_size += (int64_t) (L+1);
   }
   else { 
     mx->Jl_pp[mx->M] = NULL;
@@ -5656,7 +5656,7 @@ cm_tr_hb_emit_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int
     r_ncells += L+1; /* space for EL deck */
   }
 
-  Mb_needed += sizeof(float) * (l_ncells + l_ncells + r_ncells + r_ncells + (L+1)); 
+  Mb_needed += sizeof(float) * (l_ncells + l_ncells + r_ncells + r_ncells + (int64_t) (L+1)); 
   /* mx->Jl_pp_mem, mx->Ll_pp_mem, mx->Jr_pp_mem, mx->Rr_pp_mem, mx->sum */
   Mb_needed *= 0.000001; /* convert to megabytes */
 

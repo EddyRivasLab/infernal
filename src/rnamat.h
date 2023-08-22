@@ -11,7 +11,7 @@
 #ifndef _RNAMAT_H
 #define _RNAMAT_H
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include "easel.h"

@@ -25,8 +25,8 @@
  *   sequence positions.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -46,6 +46,7 @@
 
 static int check_for_pknots(char *cs, int alen);
 static int check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *used_el, const int *nxt_mi, const int *nxt_el, int i0, int j0, int *ret_goto_el, int *ret_i, int *ret_j);
+static int trunc_mode_for_trace_node(int emitl, int emitr, int spos, int epos);
 
 /* Function: HandModelmaker()
  * Incept:   SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
@@ -83,15 +84,15 @@ static int check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *u
  *           the EL state. As of now, <use_el> should only be TRUE if
  *           called internally using a Infernal constructed
  *           <msa>. That is, we do not expect it to be called during
- *           cmbuild's build procedure. So we expected the use of EL
- *           columns in athe MSA to always be valid.
+ *           cmbuild's build procedure. So we expect the use of EL
+ *           columns in the MSA to always be valid.
  *
  * Args:     msa       - multiple alignment to build model from
  *           errbuf    - for error messages
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           use_el    - TRUE to model RF '~' columns with the E state
  *           use_wts   - TRUE to consider sequence weights from msa when determining match/insert
- *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
+ *           symfrac   - nucleotide occupancy thresh for defining a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
@@ -101,7 +102,7 @@ static int check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *u
  *           eslEINVAL on invalid input, ret_cm and ret_gtr set to NULL.
  */
 int
-HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
+HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float symfrac, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int          status;
   CM_t        *cm        = NULL; /* new covariance model                       */
@@ -111,7 +112,6 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   int         *elassign  = NULL; /* 1..alen   array; 0=match/ins col, 1=EL col */
   int         *ct        = NULL; /* 0..alen-1 base pair partners array         */
   int          apos;		 /* counter over columns of alignment          */
-  int          idx;		 /* counter over sequences in the alignment    */
   int          v;		 /* index of current node                      */
   int          i,j,k;	         /* subsequence indices                        */
   int  type;			 /* type of node we're working on              */
@@ -125,7 +125,6 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   int  cpos;                     /* consensus position counter */
   int  k_cpos, i_cpos, j_cpos;   /* consensus position that k, i, j (alignment positions) correspond to */
   int  kp;                       /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
-  float gaps = 0.;               /* counter over gaps */
   int  el_i, el_j;               /* i and j, before accounting for ELs */
 
   /* Contract check */
@@ -137,50 +136,8 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
-   *
-   *    EPN, Wed Sep 29 13:26:51 2010 
-   *    Post-v1.0.2 change, if (use_rf == FALSE) and (use_wts == TRUE): 
-   *    match/insert columns are defined based on gap frequency in the
-   *    alignment *taking weights into account*. That is <= gapthresh
-   *    of the fraction of weighted sequences must have gaps to define
-   *    an match column.  Previously (infernal v0.1->1.0.2) 
-   *    <= gapthresh of the actual number of sequences (unweighted) 
-   *    need have gaps to be a match, this is still allowed if (use_wts
-   *    is FALSE).
    */
-  ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
-
-  /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
-  if (use_rf) { 
-    /* Define match based on RF char, if gap or missing ('-_.~')
-     * then insert, else match. 
-     * 
-     * It's impt we don't count '~' as a match column b/c we don't
-     * want a match column to have RF == '~' in a cmalign output
-     * alignment as that would screw the merging of subalignments in
-     * cmalign, which assumes '~' RF columns are EL inserts.
-     */
-    for (apos = 1; apos <= msa->alen; apos++)
-      matassign[apos] = ((esl_abc_CIsGap    (msa->abc, msa->rf[apos-1])) || /* CIsGap     returns true for '.', '_' and '-' only (they're equivalent, see create_rna() in esl_alphabet.c()) */
-			 (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
-			  ? FALSE : TRUE;
-  }
-  else if(! use_wts) { 
-    for (apos = 1; apos <= msa->alen; apos++) { 
-      gaps = 0.;
-      for (idx = 0; idx < msa->nseq; idx++) 
-	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += 1.0;
-      matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
-    }
-  }
-  else { 
-    for (apos = 1; apos <= msa->alen; apos++) { 
-      gaps = 0.;
-      for (idx = 0; idx < msa->nseq; idx++) 
-	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps += msa->wgt[idx];
-      matassign[apos] = ((gaps / (float) msa->nseq) > gapthresh) ? 0 : 1;
-    }
-  }
+  AssignMatchColumnsForMsa(msa, errbuf, use_rf, use_wts, symfrac, &matassign);
 
   /* 2. Determine EL assignments, if necessary.
    *    elassign is 1..alen. Values are 1 if a EL column, 0 if match or insert column.
@@ -529,6 +486,85 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
   return status; /* never reached */
 }
 
+/* Function: AssignMatchColumnsForMsa()
+ * Date:     EPN, Tue Mar  7 13:17:14 2023
+ * 
+ * Purpose:  Given an MSA, determine which positions will be 'match' (consensus)
+ *           positions and which will be insert. Reference annotation (msa->rf)
+ *           if used if <use_rf> is TRUE, else any column for which the fraction of 
+ *           sequences (weighted by msa->wgt if <use_wts>) is at least <symfrac>
+ *           is defined as a match column and all other columns are inserts.
+ *           Assignments returned in <ret_matassign>.
+ * 
+ * Args:     msa           - the multiple alignment 
+ *           errbuf        - for error messages
+ *           use_rf        - TRUE to use RF annotation to determine match/insert
+ *           use_wts       - TRUE to consider sequence weights from msa when determining match/insert
+ *           symfrac       - nucleotide occupancy thresh for defining a match column (if use_rf=FALSE)
+ *           ret_matassign - RETURN: [1..i..msa->alen] 1 if i is match column, 0 if not
+ *           
+ * Return:   eslOK on success;
+ *           eslEMEM if we run out of memory, ret_matassign set to NULL
+ *           eslEINCOMPAT on contract violation, ret_matassign set to NULL
+ */
+int
+AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float symfrac, int **ret_matassign)
+{
+  int   status;           /* return status                       */
+  int   apos;             /* counter over columns of alignment   */
+  int   idx;		  /* counter over sequences in the alignment    */
+  float r;		  /* weighted residue count              */
+  float totwgt;	          /* weighted residue+gap count          */
+  float wgt;	          /* weight of a sequence                */
+  int  *matassign = NULL; /* 1..alen   array; 0=insert col, 1=match col */
+
+  /* Contract check */
+  if (! (msa->flags & eslMSA_DIGITAL)) ESL_XFAIL(eslEINCOMPAT, errbuf, "AssignMatchColumnsForMsa(): MSA is not digitized.");
+  if (  use_rf && msa->rf  == NULL)    ESL_XFAIL(eslEINCOMPAT, errbuf, "AssignMatchColumnsForMsa(): No reference annotation available for the alignment.");
+  if (! use_rf && msa->wgt == NULL)    ESL_XFAIL(eslEINCOMPAT, errbuf, "AssignMatchColumnsForMsa(): use_rf is FALSE, and msa->wgt is NULL.");
+
+  ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
+  matassign[0] = 0; /* irrelevant, matassign is 1..alen */
+
+  /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
+  if (use_rf) { 
+    /* Define match based on RF char, if gap or missing ('-_.~')
+     * then insert, else match. 
+     * 
+     * It's impt we don't count '~' as a match column b/c we don't
+     * want a match column to have RF == '~' in a cmalign output
+     * alignment as that would screw the merging of subalignments in
+     * cmalign, which assumes '~' RF columns are EL inserts.
+     */
+    for (apos = 1; apos <= msa->alen; apos++)
+      matassign[apos] = ((esl_abc_CIsGap    (msa->abc, msa->rf[apos-1])) || /* CIsGap     returns true for '.', '_' and '-' only (they're equivalent, see create_rna() in esl_alphabet.c()) */
+			 (esl_abc_CIsMissing(msa->abc, msa->rf[apos-1])))   /* CIsMissing returns true for '~' only */
+			  ? FALSE : TRUE;
+  }
+  else { 
+    for (apos = 1; apos <= msa->alen; apos++) { 
+      r = totwgt = 0.;
+      for (idx = 0; idx < msa->nseq; idx++) { 
+        wgt = (use_wts) ? msa->wgt[idx] : 1.0;
+        if       (esl_abc_XIsResidue(msa->abc, msa->ax[idx][apos])) { r += wgt; totwgt += wgt; }
+        else if  (esl_abc_XIsGap(msa->abc,     msa->ax[idx][apos])) {           totwgt += wgt; }
+        else if  (esl_abc_XIsMissing(msa->abc, msa->ax[idx][apos])) continue;
+      }
+      if (r > 0. && r / totwgt >= symfrac) matassign[apos] = TRUE;
+      else                                 matassign[apos] = FALSE;
+      printf("matassign[%3d]: %d\n", apos, matassign[apos]);
+    }
+  }
+
+  *ret_matassign = matassign;
+  return eslOK;
+
+ ERROR:
+  free(matassign);
+  *ret_matassign = NULL;
+  if(status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "HandModelmaker(): memory allocation error.");
+  return status; /* never reached */
+}
 
 /* Function: cm_from_guide()
  * Date:     SRE, Sat Jul 29 09:25:49 2000 [St. Louis]
@@ -957,11 +993,46 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   int         apos, apos2, prv_mi, prv_el; /* helpers for filling nxt_emit_mi, nxt_emit_el */
   int         goto_el;         /* TRUE if we should transit to EL, FALSE if not */
 
+  /* variables related to dealing with truncated alignments */
+  int         do_trunc;        /* TRUE if we have any missing nt due to truncations */
+  int         spos, epos;      /* first/final non-missing positions for ax for purposes of dealing with truncations
+                                * 1..spos-1, and epos+1..alen are missing data, so if spos==1 and epos==alen there is no missing data in ax 
+                                */
+  int         trunc_5p;        /* TRUE if seqeuence is truncated on 5' end, else FALSE */
+  int         trunc_3p;        /* TRUE if seqeuence is truncated on 5' end, else TRUE */
+  int         trunc_begin_node;/* if do_trunc, this is the first node we will visit after the ROOT_nd,
+                                * the final node with a subtree that spans full sequence */
+  int         trunc_mode;      /* if do_trunc: truncation mode of trunc_begin_node */
+  int         *used_A = NULL;  /* [0..n..cm->nodes-1] TRUE if node n used in this parsetree, FALSE if not, 
+                                * necessary to determine if BEGL_S or BEGR_S nodes need to be visited, they
+                                * only are if their BIF_B parent is. 
+                                */
+
   tr  = CreateParsetree(25);
   pda = esl_stack_ICreate();
 
   ended   = FALSE;
 
+  /* We preprocess the aligned seq ax so we can deal with truncated alignments */
+  spos = 1;
+  epos = alen;
+  for (apos = 1; apos <= alen; apos++) { 
+    if(! esl_abc_XIsMissing(cm->abc, ax[apos])) break;
+    spos++;
+  }
+  for (apos = alen; apos >= 1; apos--) { 
+    if(! esl_abc_XIsMissing(cm->abc, ax[apos])) break;
+    epos--;
+  }
+  if((spos > alen) || (epos < 1)) { 
+    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): entire aligned sequence is missing data");
+  }
+  /* if spos > 1:    1..spos-1    are ~ (missing), truncated alignment starts at spos */
+  /* if epos < alen: epos+1..alen are ~ (missing), truncated alignment ends   at epos */
+  trunc_5p = (spos > 1)    ? TRUE : FALSE;
+  trunc_3p = (epos < alen) ? TRUE : FALSE;
+  do_trunc = (trunc_5p || trunc_3p) ? TRUE : FALSE;
+  
   /* If used_el is non-NULL then we need to fill <nxt_mi> with the next match/insert 
    * emission and next EL emission <nxt_el> so we can identify transitions to EL 
    * when necessary. 
@@ -988,240 +1059,332 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
     /* don't worry about final consecutive string of gaps/ELs for nxt_mi/nxt_el, these were initialized to alen+1, which is correct */
   }
 
-  /* Because the gtr is already indexed in a preorder traversal,
+  trunc_begin_node = -1;
+  trunc_mode = TRMODE_J;
+  if(do_trunc) { 
+    tr->is_std   = FALSE;      /* set is_std to FALSE */
+    /* Set pass_idx for this truncated parsetree, inferred based on trunc_5p and trunc_3p which 
+     * themselves are defined based on presence of ~ before/after first/final residue above.
+     * Possible values are restricted to PLI_PASS_5P_AND_3P_FORCE, PLI_PASS_5P_ONLY_FORCE or PLI_PASS_3P_ONLY_FORCE
+     * even though if this parsetree is for a pipeline hit, it could have been found
+     * in a different pipeline pass (e.g. PLI_PASS_5P_AND_3P_ANY). Also some hits
+     * with ~ on 5' end but not 3' may have been found in PLI_PASS_5P_AND_3P_FORCE.
+     * So we are kind of overloading tr->pass_idx for convenience here to use downstream
+     * in Parsetrees2Alignment() to add ~ at 5' and/or 3' end. 
+     */
+    if(trunc_5p) {
+      tr->pass_idx = (trunc_3p) ? PLI_PASS_5P_AND_3P_FORCE : PLI_PASS_5P_ONLY_FORCE;
+    }
+    else { /* do_trunc is only true if trunc_5p or trunc_3p, so if !trunc_5p then trunc_3p == TRUE */
+      tr->pass_idx = PLI_PASS_3P_ONLY_FORCE;
+    }
+
+    /* initialize used_A we'll need in the main preorder traversal below */
+    ESL_ALLOC(used_A, sizeof(int) * cm->nodes);
+    esl_vec_ISet(used_A, cm->nodes, FALSE);
+
+    /* if we're truncated, do a preorder traversal to determine the first node we will use after the ROOT,
+     * this is the final node with a subtree that spans the spos..epos (the entire sequence) */
+    for (node = 0; node < cm->nodes; node++) { 
+      trunc_mode = trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos);
+      if((gtr->emitl[node] <= spos) && 
+         (gtr->emitr[node] >= epos)) {  /* the full sequence is emitted from this nodes subtree */
+        trunc_begin_node = node; 
+      }        
+    }
+    if(trunc_begin_node == -1) { 
+      ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() do_trunc TRUE, no node's subtree spans spos..epos");
+    }
+    /* save mode of first trace node, the ROOT_S state will have this mode too and we can't infer it from the ROOT's subtree */
+    trunc_mode = trunc_mode_for_trace_node(gtr->emitl[trunc_begin_node], gtr->emitr[trunc_begin_node], spos, epos);
+  }
+
+  /* Main loop to build the parsetree. 
+   * Because the gtr is already indexed in a preorder traversal,
    * we can preorder traverse it easily w/ a for loop...
    */
   tidx = -1;			/* first state to attach to; -1 is special case for attaching root */
-  for (node = 0; node < cm->nodes; node++)
-    {
-      /* A (big) switch on node type.
+  for (node = 0; node < cm->nodes; node++) { 
+    if(do_trunc) { 
+      /* do_trunc is TRUE, determine if we should skip this node, 
+       * 4 reasons to skip: 
+       * - this node is prior to first node we'll use (trunc_begin_node) determined above
+       * - BEGL/BEGR node for which parent BIF was not used
+       * - END node outside spos..epos 
+       * - non BEGL/BEGR/END with entire subtree lpos..epos outside of spos..epos
        */
-      switch (gtr->state[node]) { /* e.g. switch on node type: */
-
-	/* The root node.
-	 * Assume ROOT_S=0, ROOT_IL=1, ROOT_IR=2.
-	 * ended is always FALSE when we get here.
-	 */
-      case ROOT_nd:
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0);
-	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1);
-	  }
-	}
-	for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2);	
-	  }
-	}
-	break;
-
-	/* A bifurcation node.
-	 * Assume that we'll process the BEGL node next; push info
-	 * for BEGR onto the PDA.
-	 * If we ended above here, the B doesn't go into the parsetree.
-	 */
-      case BIF_nd:
-	if (ended) break;
-	state = CalculateStateIndex(cm, node, BIF_B);
-	tidx  = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	if((status = esl_stack_IPush(pda, ended))   != eslOK) goto ERROR; /* remember our ending status */
-	if((status = esl_stack_IPush(pda, tidx))    != eslOK) goto ERROR; /* remember index in tr; we pop in BEGR */
-	break;
-
-	/* A MATP node.
-	 * If we see '-','-' in the seq and we ended already,
-	 * then we did an EL above here, just skip the node.
-         * Else, this is a real state: emission or deletion.
-         *    If we thought we ended, that's invalid input.
-         *    Else, attach this guy. 
-	 */
-      case MATP_nd:
-	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
-	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
-	  else                                               type = MATP_MR;
-	} else {
-	  if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
-	  else                                               type = MATP_MP;
-	}
-	if (type == MATP_D && ended) break; /* used an EL above here, skip the node */
-	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATP_nd we've ended but see an emission, ELs probably incorrectly handled");
-
-	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-
-	if(type == MATP_MP && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
-	  /* Check if we should use an EL. */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATP_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, MATP_IL);
-	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state);
-	  }
-	}
-
-	state = CalculateStateIndex(cm, node, MATP_IR);
-	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state); 
-	  }
-	}
-	break;
-
-	/* A MATL node.
-	 * If we see '-','-' in the seq and we ended already,
-	 * then we did an EL above here, just skip the node.
-	 * Else, this is a real state (emission or deletion).
-	 *   If we thought we ended, this is invalid input.
-	 *   Else, attach this guy.
-	 */
-      case MATL_nd:
-	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
-	else                                               type = MATL_ML;
-	if (type == MATL_D && ended) break; /* used an EL above here, skip this node */
-	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATL_nd we've ended but see an emission, ELs probably incorrectly handled");
-
-	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-
-	if(type == MATL_ML && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
-	  /* Check if we should use an EL. */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATL_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, MATL_IL);
-	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
-	  }
-	}
-	break;
-
-	/* MATR node. 
-	 * Similar logic as MATL above.
-	 */
-	case MATR_nd:
-	if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
-	else                                               type = MATR_MR;
-	if (type == MATR_D && ended) break; /* used an EL above here, skip this node */
-	if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATR_nd we've ended but see an emission, ELs probably incorrectly handled");
-
-	state = CalculateStateIndex(cm, node, type);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-	if(type == MATR_MR && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
-	  /* Check if we should use an EL */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, MATR_IR);
-	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state);
-	  }
-	}
-	break;
-
-	/* BEGL_nd. 
-	 * If ended, skip node. 
-	 * Else, attach it.
-	 */
-      case BEGL_nd:
-	if (ended)     break;
-	state = CalculateStateIndex(cm, node, BEGL_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-
-	if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
-	  /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    ended = TRUE;
-	  }
-	}
-	break;
-
-	/* BEGR_nd.
-	 * Pop off info on whether we ended above this node in the CM.
-	 * If ended, skip node. 
-	 * Logic different than BEGL above, because BEGR is dealing
-	 * with an insert left state. For the insert, if we think
-	 * we've ended already, that's an invalid input.
-	 */
-	case BEGR_nd:
-	esl_stack_IPop(pda, &tidx);    /* recover parent bifurcation's index in trace */
-	esl_stack_IPop(pda, &ended);   /* did we end above here? */
-	
-	if(ended)      break;
-	state = CalculateStateIndex(cm, node, BEGR_S);
-	tidx = InsertTraceNode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state);
-
-	if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
-	  /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR, BEGL */
-	  if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
-	    ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
-	  }
-	  if(goto_el) { 
-	    state = cm->M;
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);
-	    ended = TRUE;
-	  }
-	}
-	if(ended) break;
-
-	state = CalculateStateIndex(cm, node, BEGR_IL);
-	for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
-	  if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state);
-	  }
-	}
-	break;
-	
-	/* An END node.
-	 * If we've already ended (on EL), skip. 
-	 */
-	case END_nd:
-	  if (! ended) {
-	    state = CalculateStateIndex(cm, node, END_E);
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state);
-	  }
-	  break;
-	  
-	default: 
-	  ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): bogus node type");
+      if(node != 0 && node < trunc_begin_node) { 
+        continue; /* skip early nodes prior to first node determined above */
       }
+      else if(gtr->state[node] == BEGL_nd || gtr->state[node] == BEGR_nd) { 
+        if(! used_A[gtr->prv[node]]) { 
+          /* parent BIF_B not used, so don't use this BEGL or BEGR node either */
+          continue;
+        }
+      }
+      else if(gtr->state[node] == END_nd) { 
+        if(spos > gtr->emitr[node] || epos < gtr->emitr[node]) { 
+          /* END_E subtree is outside spos..epos, ignore emitl because emitl[node] = emitr[node]+1 */
+          continue;
+        }
+      }
+      else { /* not BEGL,BEGR,END */
+        if((spos > gtr->emitl[node] && spos > gtr->emitr[node]) || 
+           (epos < gtr->emitl[node] && epos < gtr->emitr[node])) {
+          /* entire subtree has 0 emits due to truncation */
+          continue; /* skip nodes not visited due to truncation */
+        }
+      }
+      /* if we get here, this node will be in the parsetree, keep track for potential children BEGL/BEGR */
+      used_A[node] = TRUE; 
     }
+    /* A (big) switch on node type.
+     */
+    switch (gtr->state[node]) { /* e.g. switch on node type: */
+      /* The root node.
+       * Assume ROOT_S=0, ROOT_IL=1, ROOT_IR=2.
+       * ended is always FALSE when we get here.
+       */
+    case ROOT_nd:
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], 0, 
+                                     (do_trunc ? trunc_mode : TRMODE_J)); /* if do_trunc: use mode of first node */
+      for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], 1, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos) : TRMODE_J));
+        }
+      }
+      for (j = gtr->emitr[node]; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (! esl_abc_XIsMissing(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, 2, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+        }
+      }
+      break;
+      
+      /* A bifurcation node.
+       * Assume that we'll process the BEGL node next; push info
+       * for BEGR onto the PDA.
+       * If we ended above here, the B doesn't go into the parsetree.
+       */
+    case BIF_nd:
+      if (ended) break;
+      state = CalculateStateIndex(cm, node, BIF_B);
+      tidx  = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                      (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J));
+      if((status = esl_stack_IPush(pda, ended))   != eslOK) goto ERROR; /* remember our ending status */
+      if((status = esl_stack_IPush(pda, tidx))    != eslOK) goto ERROR; /* remember index in tr; we pop in BEGR */
+      break;
+      
+      /* A MATP node.
+       * If we see '-','-' in the seq and we ended already,
+       * then we did an EL above here, just skip the node.
+       * Else, this is a real state: emission or deletion.
+       *    If we thought we ended, that's invalid input.
+       *    Else, attach this guy. 
+       */
+    case MATP_nd:
+      if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) {
+        if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_D;
+        else                                               type = MATP_MR;
+      } else {
+        if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATP_ML;
+        else                                               type = MATP_MP;
+      }
+      if (type == MATP_D && ended) break; /* used an EL above here, skip the node */
+      if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATP_nd we've ended but see an emission, ELs probably incorrectly handled");
+
+      state = CalculateStateIndex(cm, node, type);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     (do_trunc) ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J);
+        
+      if(type == MATP_MP && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
+        /* Check if we should use an EL. */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATP_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, MATP_IL);
+      for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) {
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node]-1, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node]-1, spos, epos) : TRMODE_J));
+        }
+      }
+
+      state = CalculateStateIndex(cm, node, MATP_IR);
+      for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (! esl_abc_XIsMissing(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) { 
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+        }
+      }
+      break;
+
+      /* A MATL node.
+       * If we see '-','-' in the seq and we ended already,
+       * then we did an EL above here, just skip the node.
+       * Else, this is a real state (emission or deletion).
+       *   If we thought we ended, this is invalid input.
+       *   Else, attach this guy.
+       */
+    case MATL_nd:
+      if (esl_abc_XIsGap(cm->abc, ax[gtr->emitl[node]])) type = MATL_D;
+      else                                               type = MATL_ML;
+      if (type == MATL_D && ended) break; /* used an EL above here, skip this node */
+      if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATL_nd we've ended but see an emission, ELs probably incorrectly handled");
+
+      state = CalculateStateIndex(cm, node, type);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J));
+      if(type == MATL_ML && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
+        /* Check if we should use an EL. */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node]+1, gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATL_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, MATL_IL);
+      for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++) {
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos) : TRMODE_J));
+        }
+      }
+      break;
+
+      /* MATR node. 
+       * Similar logic as MATL above.
+       */
+    case MATR_nd:
+      if (esl_abc_XIsGap(cm->abc, ax[gtr->emitr[node]])) type = MATR_D;
+      else                                               type = MATR_MR;
+      if (type == MATR_D && ended) break; /* used an EL above here, skip this node */
+      if (ended) ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): MATR_nd we've ended but see an emission, ELs probably incorrectly handled");
+
+      state = CalculateStateIndex(cm, node, type);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J));
+      if(type == MATR_MR && used_el != NULL && cm->ndtype[node+1] != END_nd) { 
+        /* Check if we should use an EL */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node]-1, &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, MATR_IR);
+      for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[j])) && (! esl_abc_XIsMissing(cm->abc, ax[j])) && (used_el == NULL || (! used_el[j]))) {
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], j, spos, epos) : TRMODE_J));
+        }
+      }
+      break;
+
+      /* BEGL_nd. 
+       * If ended, skip node. 
+       * Else, attach it.
+       */
+    case BEGL_nd:
+      if (ended)     break;
+      state = CalculateStateIndex(cm, node, BEGL_S);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J));
+
+      if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
+        /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+          ended = TRUE;
+        }
+      }
+      break;
+
+      /* BEGR_nd.
+       * Pop off info on whether we ended above this node in the CM.
+       * If ended, skip node. 
+       * Logic different than BEGL above, because BEGR is dealing
+       * with an insert left state. For the insert, if we think
+       * we've ended already, that's an invalid input.
+       */
+    case BEGR_nd:
+      esl_stack_IPop(pda, &tidx);    /* recover parent bifurcation's index in trace */
+      esl_stack_IPop(pda, &ended);   /* did we end above here? */
+	
+      if(ended)      break;
+      state = CalculateStateIndex(cm, node, BEGR_S);
+      tidx = InsertTraceNodewithMode(tr, tidx, TRACE_RIGHT_CHILD, gtr->emitl[node], gtr->emitr[node], state, 
+                                     (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J));
+
+      if(cm->ndtype[node+1] != END_nd && used_el != NULL) { 
+        /* Check if we should use an EL. Same rule as above for MATP, MATL, MATR, BEGL */
+        if((status = check_for_el(ax, cm->abc, used_el, nxt_mi, nxt_el, gtr->emitl[node], gtr->emitr[node], &goto_el, &i, &j)) != eslOK) {
+          ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify() MATR_nd ELs incorrectly handled");
+        }
+        if(goto_el) { 
+          state = cm->M;
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, j, state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, j, spos, epos) : TRMODE_J));
+          ended = TRUE;
+        }
+      }
+      if(ended) break;
+
+      state = CalculateStateIndex(cm, node, BEGR_IL);
+      for (i = gtr->emitl[node]; i < gtr->emitl[gtr->nxtl[node]]; i++) { 
+        if ((! esl_abc_XIsGap(cm->abc, ax[i])) && (! esl_abc_XIsMissing(cm->abc, ax[i])) && (used_el == NULL || (! used_el[i]))) { 
+          tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, i, gtr->emitr[node], state, 
+                                         (do_trunc ? trunc_mode_for_trace_node(i, gtr->emitr[node], spos, epos) : TRMODE_J));
+        }
+      }
+      break;
+	
+      /* An END node.
+       * If we've already ended (on EL), skip. 
+       */
+    case END_nd:
+      if (! ended) {
+        state = CalculateStateIndex(cm, node, END_E);
+        tidx = InsertTraceNodewithMode(tr, tidx, TRACE_LEFT_CHILD, -1, -1, state, 
+                                       (do_trunc ? trunc_mode_for_trace_node(gtr->emitl[node], gtr->emitr[node], spos, epos) : TRMODE_J));
+      }
+      break;
+	  
+    default: 
+      ESL_XFAIL(eslEINVAL, errbuf, "Transmogrify(): bogus node type");
+    }
+  }
   if(pda    != NULL) esl_stack_Destroy(pda);
   if(nxt_mi != NULL) free(nxt_mi);
   if(nxt_el != NULL) free(nxt_el);
+  if(used_A != NULL) free(used_A);
 
   *ret_tr = tr;
   return eslOK;
@@ -1230,6 +1393,7 @@ Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el
   if(pda    != NULL) esl_stack_Destroy(pda);
   if(nxt_mi != NULL) free(nxt_mi);
   if(nxt_el != NULL) free(nxt_el);
+  if(used_A != NULL) free(used_A);
   if(tr     != NULL) FreeParsetree(tr);
   *ret_tr = NULL;
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "Out of memory");
@@ -1305,6 +1469,29 @@ check_for_el(const ESL_DSQ *ax, const ESL_ALPHABET *abc, const int *used_el, con
   *ret_i       = 0;
   *ret_j       = 0;
   return eslEINVAL;
+}
+
+/* Function:  trunc_mode_for_trace_node
+ * Date:      EPN, Thu Oct 20 11:32:46 2022
+ *
+ * Purpose:   Helper function for Transmogrify(). Determine the 
+ *            truncation mode for a trace node based on the 
+ *            left and right emit positions (emitl and emitr)
+ *            and the first position that is not missing data due
+ *            to truncation at 5' end (spos) and final position
+ *            that is not missing data due to truncation at 3' end.
+ *
+ * Returns:   TRMODE_J, TRMODE_L, TRMODE_R or TRMODE_T
+ *
+ */
+static int
+trunc_mode_for_trace_node(int emitl, int emitr, int spos, int epos)
+{
+  if(emitl >= spos && emitr <= epos) return TRMODE_J;
+  if(emitl >= spos && emitr >  epos) return TRMODE_L;
+  if(emitl  < spos && emitr <= epos) return TRMODE_R;
+  if(emitl  < spos && emitr >  epos) return TRMODE_T;
+  return TRMODE_UNKNOWN; /* never reached */
 }
 
 /* Function: ConsensusModelmaker()

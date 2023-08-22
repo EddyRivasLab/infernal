@@ -60,37 +60,41 @@
 1 exercise  itest/trunc             !testsuite/itest7-trunc.pl!              @@ !! %OUTFILES%
 1 exercise  itest/scan-glist        !testsuite/itest8-glist.pl!              @@ !! %OUTFILES%
 1 exercise  itest/scan-overlaps     !testsuite/itest9-overlaps.pl!           @@ !! %OUTFILES%
+1 exercise  itest/build-frags       !testsuite/itest10-build-frags.pl!       @@ !! %OUTFILES%
+1 exercise  itest/search-frags      !testsuite/itest11-search-frags.pl!      @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@  
 
 ################################################################
 # Fixed bug tests
 ################################################################
 
-1 exercise  bug/i1-vault-sscons      !testsuite/bug-i1.pl! @src/cmbuild@ @src/cmalign@
-1 prep      bug/i2-cmalign-leak      @src/cmbuild@ -F %CM% !testsuite/bug-i2.sto!
-1 exercise  bug/i2-cmalign-leak      @src/cmalign@ --notrunc %CM% !testsuite/bug-i2.fa!
-1 exercise  bug/i11-bld-detach       !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i12-aln-outside      !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i13-aln-sub          !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i14-aln-oa-zero      !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
-1 exercise  bug/i15-aln-bif-imp      !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
-1 exercise  bug/i28-srch-bndcln      !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
-1 exercise  bug/i29-cnv-1p0-nft      !testsuite/bug-i29.pl! @src/cmconvert@ !testsuite/bug-i29.cm!
-1 exercise  bug/i30-srch-zeroln      !testsuite/bug-i30.pl! @src/cmbuild@ @src/cmsearch@
-1 exercise  bug/i31-neg-dbsize       !testsuite/bug-i31.pl! @src/cmsearch@ !testsuite/bug-i31.cm! !testsuite/bug-i31.fa!
-1 exercise  bug/i32-refine-ss        !testsuite/bug-i32.pl! @src/cmbuild@
-1 exercise  bug/i33-cmsearch-A       !testsuite/bug-i33.pl! @src/cmsearch@ @src/cmbuild@ !testsuite/bug-i33.cm!
-1 exercise  bug/i34-cmalign-EL       !testsuite/bug-i34.pl! @src/cmalign@ !testsuite/bug-i34.cm!
-1 exercise  bug/i36-hbanded-tb       !testsuite/bug-i36.pl! @src/cmsearch@ !testsuite/bug-i36.cm!
-1 exercise  bug/i37-bandshift        !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
-1 exercise  bug/i38-mapali-noss      !testsuite/bug-i38.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i39-build-O-0bp      !testsuite/bug-i39.pl! @src/cmbuild@
-1 exercise  bug/i43-oa-loc-beg       !testsuite/bug-i43.pl! @src/cmsearch@ !testsuite/bug-i43.cm! !testsuite/bug-i43.fa!
-1 exercise  bug/i44-mapstr           !testsuite/bug-i44.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i45-alidisplay-EL    !testsuite/bug-i45.pl! @src/cmsearch@ !testsuite/bug-i45.cm! !testsuite/bug-i45a.fa! !testsuite/bug-i45b.fa!
-1 exercise  bug/i47-cmbuild-p7ml     !testsuite/bug-i47.pl! @src/cmbuild@
-1 exercise  bug/i49-hmmonly-ovlp     !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
-1 exercise  iss21-cmbuild-rf-pb      !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
+1 exercise  bug/i1-vault-sscons   !testsuite/bug-i1.pl! @src/cmbuild@ @src/cmalign@
+1 prep      bug/i2-cmalign-leak   @src/cmbuild@ -F %CM% !testsuite/bug-i2.sto!
+1 exercise  bug/i2-cmalign-leak   @src/cmalign@ --notrunc %CM% !testsuite/bug-i2.fa!
+1 exercise  bug/i11-bld-detach    !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i12-aln-outside   !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i13-aln-sub       !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i14-aln-oa-zero   !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
+1 exercise  bug/i15-aln-bif-imp   !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
+1 exercise  bug/i28-srch-bndcln   !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
+1 exercise  bug/i29-cnv-1p0-nft   !testsuite/bug-i29.pl! @src/cmconvert@ !testsuite/bug-i29.cm!
+1 exercise  bug/i30-srch-zeroln   !testsuite/bug-i30.pl! @src/cmbuild@ @src/cmsearch@
+1 exercise  bug/i31-neg-dbsize    !testsuite/bug-i31.pl! @src/cmsearch@ !testsuite/bug-i31.cm! !testsuite/bug-i31.fa!
+1 exercise  bug/i32-refine-ss     !testsuite/bug-i32.pl! @src/cmbuild@
+1 exercise  bug/i33-cmsearch-A    !testsuite/bug-i33.pl! @src/cmsearch@ @src/cmbuild@ !testsuite/bug-i33.cm!
+1 exercise  bug/i34-cmalign-EL    !testsuite/bug-i34.pl! @src/cmalign@ !testsuite/bug-i34.cm!
+1 exercise  bug/i36-hbanded-tb    !testsuite/bug-i36.pl! @src/cmsearch@ !testsuite/bug-i36.cm!
+1 exercise  bug/i37-bandshift     !testsuite/bug-i37.pl! @src/cmsearch@ !testsuite/bug-i37.cm!
+1 exercise  bug/i38-mapali-noss   !testsuite/bug-i38.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i39-build-O-0bp   !testsuite/bug-i39.pl! @src/cmbuild@
+1 exercise  bug/i43-oa-loc-beg    !testsuite/bug-i43.pl! @src/cmsearch@ !testsuite/bug-i43.cm! !testsuite/bug-i43.fa!
+1 exercise  bug/i44-mapstr        !testsuite/bug-i44.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i45-alidisplay-EL !testsuite/bug-i45.pl! @src/cmsearch@ !testsuite/bug-i45.cm! !testsuite/bug-i45a.fa! !testsuite/bug-i45b.fa!
+1 exercise  bug/i47-cmbuild-p7ml  !testsuite/bug-i47.pl! @src/cmbuild@
+1 exercise  bug/i49-hmmonly-ovlp  !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
+1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
+1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
+1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!
 
 ################################################################
 # Option tests
@@ -121,10 +125,17 @@
 1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4       @src/cmsearch@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4F3     @src/cmsearch@ -Z 1000 --trmF3 --noali --hmmonly %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4f      @src/cmsearch@ -Z 1000 --fmt 3 --tblout %4.C.FMT3.TBLOUT% %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/zbp     @src/cmsearch@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
 1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.C.CM% !testsuite/1k-4.fa!
 1  exercise    search/zbp/A   @src/cmsearch@ -Z 1000 -A %ZBP.AMSA% %ZBP.C.CM% !testsuite/1k-snR75.fa!
+# test --fmt, requires --tblout, and --fmt 2 should fail (only legal with cmscan)
+1  exercise    search/zbp/Af1 @src/cmsearch@ --tblout %TMP1.TBLOUT% --fmt 1 -Z 1000 -A %ZBP.AMSA% %ZBP.C.CM% !testsuite/1k-snR75.fa!
+1  exercise    search/zbp/Af3 @src/cmsearch@ --tblout %TMP2.TBLOUT% --fmt 3 -Z 1000 -A %ZBP.AMSA% %ZBP.C.CM% !testsuite/1k-snR75.fa!
+1  exercise    search/tf1     @src/cmsearch@ --tblout %TMP3.TBLOUT% --fmt 1 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+1  fail        search/tf2     @src/cmsearch@ --tblout %TMP4.TBLOUT% --fmt 2 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/tf3     @src/cmsearch@ --tblout %TMP5.TBLOUT% --fmt 3 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 
 # cmstat exercises 
 1  exercise    stat/help/1    @src/cmstat@ -h
@@ -161,6 +172,7 @@
 1  exercise    scan/4C        @src/cmscan@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/4C     rm -f %4.C.CM%.*
 1  exercise    scan/5C        @src/cmscan@ --fmt 2 --tblout %5.C.TBLOUT% --oskip --oclan --clanin !testsuite/5.claninfo! -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    scan/5C3       @src/cmscan@ --fmt 3 --tblout %5.C.3.TBLOUT% -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    scan/5CF3      @src/cmscan@ --trmF3 --noali --hmmonly -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/5C     rm -f %5.C.CM%.*
 1  exercise    scan/se        @src/cmscan@ --hmmonly %SE.CM% !testsuite/se.fa!
@@ -366,8 +378,10 @@
 1  exercise  align:t/dnaout       @src/cmalign@  --dnaout    %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/noprob       @src/cmalign@  --noprob    %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/match        @src/cmalign@  --matchonly %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/miss         @src/cmalign@  --miss      %TRNA.CM% !testsuite/se.fa!
 1  exercise  align:t/ileaved      @src/cmalign@  --ileaved   %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/regress      @src/cmalign@  --ileaved --regress %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/flankins     @src/cmalign@  --flanktoins 0.1 --flankselfins 0.8 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 # --informat and --outformat
 1  exercise  align:t/infmt1       @src/cmalign@  %TRNA.CM% !testsuite/3trnas.gb!
@@ -486,6 +500,18 @@
 1  exercise  build:se/n2o        @src/cmbuild@ --n2omega 0.03125 -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/n3o        @src/cmbuild@ --n3omega 0.03125 -F %SE.CM% !testsuite/se.sto! 
 
+# fragment definition
+1  exercise  build:se/fthresh1   @src/cmbuild@ --fragthresh 1.0 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fthresh0   @src/cmbuild@ --fragthresh 0.0 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/ffail1     @src/cmbuild@ --hand --fragthresh 0.5 --fragnrfpos 3 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/ffail2     @src/cmbuild@ --fragthresh 0.5 --fraggiven -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/ffail3     @src/cmbuild@ --hand --fragnrfpos 5 --fraggiven -F %SE.CM% !testsuite/se.frag1.sto! 
+1  fail      build:se/fnrffail   @src/cmbuild@ --fragnrfpos 3 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fnrf3      @src/cmbuild@ --hand --fragnrfpos 3 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fnrf6      @src/cmbuild@ --hand --fragnrfpos 6 -F %SE.CM% !testsuite/se.frag1.sto! 
+1  exercise  build:se/fgiven     @src/cmbuild@ --fraggiven -F %SE.CM% !testsuite/se.frag2.sto! 
+1  fail      build:se/fgfail     @src/cmbuild@ --fraggiven -F %SE.CM% !testsuite/se.frag3.sto! 
+
 # seq weighting
 1  exercise  build:se/wgsc       @src/cmbuild@ --wgsc -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/wgsc       @src/cmbuild@ --wpb -F %SE.CM% !testsuite/se.sto! 
@@ -511,6 +537,7 @@
 2  exercise  build:vault/gbs     @src/cmbuild@ -F --gibbs --seed 33 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 2  exercise  build:vault/cyk     @src/cmbuild@ -F --cyk --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 1  exercise  build:se/nt         @src/cmbuild@ -F --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
+1  exercise  build:se/miss       @src/cmbuild@ -F --miss --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/sub        @src/cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nb         @src/cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nbnt       @src/cmbuild@ -F --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -1157,9 +1184,9 @@
 
 1  exercise  scan:4/emit/glist  @src/cmscan@ --glist !testsuite/2name.list! %4.CM% %4EMIT%
 
-# new-as-of-1.2 exercises with new cmscan options --fmt, --clanin, --oclan, --oskip
 1  exercise  scan:5/emit/fmt1   @src/cmscan@ --fmt 1 --tblout %TMPOUT% %5.CM% %5EMIT%
 1  exercise  scan:5/emit/fmt2   @src/cmscan@ --fmt 2 --tblout %TMPOUT% %5.CM% %5EMIT%
+1  exercise  scan:5/emit/fmt3   @src/cmscan@ --fmt 3 --tblout %TMPOUT% %5.CM% %5EMIT%
 1  exercise  scan:5/emit/clan   @src/cmscan@ --clanin !testsuite/5.claninfo! --fmt 2 --tblout %TMPOUT% %5.CM% %5EMIT%
 1  exercise  scan:5/emit/oclan  @src/cmscan@ --oclan --clanin !testsuite/5.claninfo! --fmt 2 --tblout %TMPOUT% %5.CM% %5EMIT%
 1  exercise  scan:5/emit/oskip1 @src/cmscan@ --oskip --fmt 2 --tblout %TMPOUT% %5.CM% %5EMIT%
@@ -1456,6 +1483,7 @@
 
 1  exercise  search:t/A        @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %T.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  search:4/1k/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.CM% !testsuite/1k-4.fa!
+1  exercise  search:4/1k/Anm   @src/cmsearch@ -Z 1000 -A %4.AMSA% --nomiss %4.CM% !testsuite/1k-4.fa!
 
 1  exercise  search:t/10k/g    @src/cmsearch@  -g %T.CM% %T10K%
 1  exercise  search:v/10k/g    @src/cmsearch@  -g %V.CM% %V10K%

@@ -552,8 +552,8 @@ target sequence.
 The next column is labeled ``acc'' and is the average posterior
 probability of the aligned target sequence residues; effectively, the
 expected accuracy per residue of the alignment. (This field may be
-absent and replaced by a ``cyksc'' in certain situations, as explained
-more below.)
+absent and replaced by a column labeled ``cyksc'' in certain
+situations, as explained more below.)
 
 The final two columns indicate whether the hit is truncated or not and
 the GC fraction of the hit. These are redundant with the columns of
@@ -673,6 +673,8 @@ through 56.
 Finally, at the bottom of the file, you'll see some summary
 statistics. For example, at the bottom of the tRNA search output,
 you'll find something like:
+
+\newpage
 
 \begin{sreoutput}
 Internal CM pipeline statistics summary:
@@ -952,8 +954,6 @@ To scan the sequences with our database:
 
 The header and the first section of the output will look like:
 
-\newpage
-
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
 # INFERNAL 1.1.4 (Dec 2020)
@@ -1018,6 +1018,8 @@ the same as in \prog{cmsearch}. The 5S alignment is:
 
 After the three sequences, you'll see a pipeline statistics summary
 report:
+
+\newpage
 
 \begin{widesreoutput}
 Internal CM pipeline statistics summary:
@@ -1633,12 +1635,10 @@ to be calibrated prior to running \prog{cmsearch}\footnote{Zero
 Now, let's repeat the search of the \emph{M. ruminantium} genome but
 using our structureless tRNA model: 
 
-\user{cmsearch tRNA5-noss.cm tutorial/mrum-genome.fa}\\o
+\user{cmsearch tRNA5-noss.cm tutorial/mrum-genome.fa}\\
 
 This search is faster than the first one because only profile HMM
 algorithms are used this time around. Take a look at the list of hits:
-
-\newpage
 
 \begin{sreoutput}
  rank     E-value  score  bias  sequence      start     end   mdl trunc   gc  description
@@ -1701,6 +1701,8 @@ see Figure 1.9 of \citep{Nawrocki09}}.
 
 HMM hit alignments differ slightly from CM hit alignments. Take a look
 at the first alignment:
+
+\newpage
 
 \begin{sreoutput}
 >> NC_013790.1  Methanobrevibacter ruminantium M1 chromosome, complete genome
@@ -1898,6 +1900,8 @@ tRNA model built with default \prog{cmbuild} parameters (though not
 identical since the model now has two additional match positions). The
 important difference involves the hit alignments. Take a look at the
 alignment for hit number 46 as an illustrative example:
+
+\newpage
 
 \begin{widesreoutput}
 >> NC_013790.1  Methanobrevibacter ruminantium M1 chromosome, complete genome

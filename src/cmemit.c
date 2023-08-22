@@ -5,7 +5,7 @@
  * Easelfied: EPN, Tue Aug 14 07:01:44 2007 
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -524,8 +524,9 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       }
     if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqA, NULL, trA, NULL, nseq,
 				      NULL, NULL, /* we're not printing to insert, EL info files */
-				      TRUE,  /* we want all match columns */
-				      FALSE, /* we don't want ONLY match columns */
+    				      /*do_full=*/     TRUE,  /* we want all match columns */
+				      /*do_matchonly=*/FALSE, /* we don't want ONLY match columns */
+                                      /*allow_trunc=*/ FALSE, /* we don't want to add missing (~) chars to truncated parsetrees */
 				      &msa) != eslOK))
       ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
   }

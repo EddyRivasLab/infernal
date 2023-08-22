@@ -5,8 +5,8 @@
  * Test the CM -> CP9 HMM construction procedure.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

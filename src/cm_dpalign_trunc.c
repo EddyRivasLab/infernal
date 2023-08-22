@@ -106,8 +106,8 @@
  * EPN, Wed Sep  7 12:13:00 2011
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -883,16 +883,18 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
  *
  *           Return <eslERANGE> if required size exceeds size_limit.
  *           
- * Args:     cm         - the covariance model
- *           errbuf     - char buffer for reporting errors
- *           L          - length of sequence 
- *           size_limit - max size in Mb for all required matrices, return eslERANGE if exceeded
- *           do_sample  - TRUE to sample a parsetree from the Inside matrix
- *           do_post    - TRUE to do posteriors
- *           ret_mxmb   - RETURN: size in Mb of required CM_TR_HB_MX (we'll need 2 of these if do_post)
- *           ret_emxmb  - RETURN: size in Mb of required CM_TR_HB_EMIT_MX   (0. if we won't need one) 
- *           ret_shmxmb - RETURN: size in Mb of required CM_TR_HB_SHADOW_MX (0. if we won't need one)
- *           ret_totmb  - RETURN: size in Mb of all required matrices 
+ * Args:     cm          - the covariance model
+ *           errbuf      - char buffer for reporting errors
+ *           L           - length of sequence 
+ *           size_limit  - max size in Mb for all required matrices, return eslERANGE if exceeded
+ *           do_sample   - TRUE to sample a parsetree from the Inside matrix
+ *           do_post     - TRUE to do posteriors
+ *           ret_mxmb    - RETURN: size in Mb of required CM_TR_HB_MX (we'll need 2 of these if do_post)
+ *           ret_emxmb   - RETURN: size in Mb of required CM_TR_HB_EMIT_MX   (0. if we won't need one) 
+ *           ret_shmxmb  - RETURN: size in Mb of required CM_TR_HB_SHADOW_MX (0. if we won't need one)
+ *           ret_cp9mxmb - RETURN: size in Mb of all CP9 matrices needed (fwd and possibly bck) 
+ *           ret_cmtotmb - RETURN: size in Mb of all CM matrices (ret_mxmb + ret_emxmb + ret_shmxmb) 
+ *           ret_totmb   - RETURN: size in Mb of all required matrices 
  * 
  * Returns: <eslOK> on success.
  * 
@@ -901,28 +903,31 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
  */
 int
 cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
-		       float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb)
+		       float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, 
+                       float *ret_cmtotmb, float *ret_totmb)
 {
   int          status;
-  float        totmb    = 0.;  /* total Mb required for all matrices (that must be simultaneously in memory) */
+  float        totmb    = 0.;  /* total Mb required for all matrices including cp9 matrices (that must be simultaneously in memory) */
+  float        cmtotmb  = 0.;  /* total Mb required for all CM matrices */
   float        mxmb     = 0.;  /* Mb required for CM_MX */
   float        emxmb    = 0.;  /* Mb required for CM_EMIT_MX */
   float        shmxmb   = 0.;  /* Mb required for CM_SHADOW_MX */
+  float        cp9mxmb  = 0.;  /* Mb required for two CP9_MX */
 
   /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
 
   /* we will always need an Inside or CYK matrix */
   if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &mxmb)) != eslOK) return status;
-  totmb = mxmb;
+  cmtotmb = mxmb;
 
   /* if calc'ing posteriors, we'll also need an Outside matrix (which
    * we'll reuse as the Posterior matrix, so only count it once) and
    * an emit matrix.
    */
   if(do_post) { 
-    totmb += mxmb; 
+    cmtotmb += mxmb; 
     if((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, &emxmb)) != eslOK) return status;
-    totmb += emxmb;
+    cmtotmb += emxmb;
   }
 
   /* if we're not sampling an alignment, we'll also need a shadow
@@ -930,26 +935,35 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
    */
   if(! do_sample) { 
     if((status = cm_tr_hb_shadow_mx_SizeNeeded(cm, errbuf, cm->cp9b, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &shmxmb)) != eslOK) return status;
-    totmb += shmxmb;
+    cmtotmb += shmxmb;
   }
 
-  if (ret_mxmb   != NULL) *ret_mxmb    = mxmb;
-  if (ret_emxmb  != NULL) *ret_emxmb   = emxmb;
-  if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
-  if (ret_totmb  != NULL) *ret_totmb   = totmb;
+  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, NULL, NULL);
+  cp9mxmb += cp9mxmb; /* add size of bck matrix */
+
+  totmb = cmtotmb + cp9mxmb;
+
+  if (ret_mxmb    != NULL) *ret_mxmb    = mxmb;
+  if (ret_emxmb   != NULL) *ret_emxmb   = emxmb;
+  if (ret_shmxmb  != NULL) *ret_shmxmb  = shmxmb;
+  if (ret_cp9mxmb != NULL) *ret_cp9mxmb = cp9mxmb;
+  if (ret_cmtotmb != NULL) *ret_cmtotmb = cmtotmb;
+  if (ret_totmb   != NULL) *ret_totmb   = totmb;
 
 #if eslDEBUGLEVEL >= 1  
   printf("#DEBUG: cm_TrAlignSizeNeededHB()\n");
-  printf("#DEBUG: \t mxmb:  %.2f\n", mxmb);
-  printf("#DEBUG: \t emxmb: %.2f\n", emxmb);
-  printf("#DEBUG: \t shmxmb:%.2f\n", shmxmb);
-  printf("#DEBUG: \t totmb: %.2f\n", totmb);
-  printf("#DEBUG: \t limit: %.2f\n", size_limit);
+  printf("#DEBUG: \t mxmb:    %.2f\n", mxmb);
+  printf("#DEBUG: \t emxmb:   %.2f\n", emxmb);
+  printf("#DEBUG: \t shmxmb:  %.2f\n", shmxmb);
+  printf("#DEBUG: \t cp9mxmb: %.2f\n", cp9mxmb);
+  printf("#DEBUG: \t cmtotmb: %.2f\n", cmtotmb);
+  printf("#DEBUG: \t totmb:   %.2f\n", totmb);
+  printf("#DEBUG: \t limit:   %.2f\n", size_limit);
 #endif
 
   /*printf("cm_TrAlignSizeNeededHB() returning %.2f\n", mxmb);*/
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded truncated alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
+  if(cmtotmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded trc DP mxes need %.1f>%.1f Mb limit (HMM mxes need an extra %.1f Mb).\nUse --mxsize, --maxtau or --tau.", cmtotmb, (float) size_limit, cp9mxmb);
   
   return eslOK;
 }
@@ -1274,6 +1288,7 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   int      d_sdl;           /* d - sdl */
   int      d_sdr;           /* d - sdr */
   float    tsc;             /* a transition score */
+  int64_t  c;               /* 64-bit int counter */
 
   /* other variables used in truncated version, but not standard version (not in cm_CYKInsideAlign()) */
   int   b, Jb, Lb, Rb, Tb;      /* local entry state rooting overall and {J,L,R,T} optimal parsetrees using */
@@ -1322,16 +1337,16 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
   if(cm->flags & CMH_LOCAL_END) { 
@@ -1885,6 +1900,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   int      sdl;         /* StateLeftDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v]) */
   int      j_sdr;       /* j - sdr */
+  int64_t  c;           /* 64-bit int counter */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
@@ -1981,16 +1997,16 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
    * Note: we could optimize by skipping this step and using el_scA[d] to
@@ -4329,6 +4345,7 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      d_sdl;           /* d - sdl */
   int      d_sdr;           /* d - sdr */
   int      have_el;         /* TRUE if local ends are on in the CM, otherwise FALSE */
+  int64_t  c;               /* 64-bit int counter */
 
   /* other variables used in truncated version, but not standard version (not in cm_OptAccAlign()) */
   int   b = 0;		    /* best truncated entry state */
@@ -4381,16 +4398,16 @@ cm_TrOptAccAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will almost certainly be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* a special optimal accuracy specific step, initialize Jyshadow intelligently for d == 0 
    * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
@@ -4962,6 +4979,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   int      sdr;             /* StateRightDelta(cm->sttype[v] */
   int      j_sdr;           /* j - sdr */
   int      have_el;         /* TRUE if local ends are on in the CM, otherwise FALSE */
+  int64_t  c;               /* 64-bit int counter */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      ip_v;               /* offset i index for state v */
@@ -5056,16 +5074,16 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(  mx->Lncells_valid   > 0 && fill_L) esl_vec_FSet(mx->Ldp_mem, mx->Lncells_valid, IMPOSSIBLE);
   if(  mx->Rncells_valid   > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(  mx->Tncells_valid   > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
-  if(shmx->Jy_ncells_valid > 0)           for(i = 0; i < shmx->Jy_ncells_valid; i++) shmx->Jyshadow_mem[i] = USED_EL;
-  if(shmx->Ly_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Ly_ncells_valid; i++) shmx->Lyshadow_mem[i] = USED_EL;
-  if(shmx->Ry_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Ry_ncells_valid; i++) shmx->Ryshadow_mem[i] = USED_EL;
+  if(shmx->Jy_ncells_valid > 0)           for(c = 0; c < shmx->Jy_ncells_valid; c++) shmx->Jyshadow_mem[c] = USED_EL;
+  if(shmx->Ly_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Ly_ncells_valid; c++) shmx->Lyshadow_mem[c] = USED_EL;
+  if(shmx->Ry_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Ry_ncells_valid; c++) shmx->Ryshadow_mem[c] = USED_EL;
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->Jk_ncells_valid > 0)           esl_vec_ISet(shmx->Jkshadow_mem, shmx->Jk_ncells_valid, 0);
   if(shmx->Lk_ncells_valid > 0 && fill_L) esl_vec_ISet(shmx->Lkshadow_mem, shmx->Lk_ncells_valid, 0);
   if(shmx->Rk_ncells_valid > 0 && fill_R) esl_vec_ISet(shmx->Rkshadow_mem, shmx->Rk_ncells_valid, 0);
   if(shmx->Tk_ncells_valid > 0 && fill_T) esl_vec_ISet(shmx->Tkshadow_mem, shmx->Tk_ncells_valid, 0);
-  if(shmx->Lk_ncells_valid > 0 && fill_L) for(i = 0; i < shmx->Lk_ncells_valid; i++) shmx->Lkmode_mem[i] = TRMODE_J;
-  if(shmx->Rk_ncells_valid > 0 && fill_R) for(i = 0; i < shmx->Rk_ncells_valid; i++) shmx->Rkmode_mem[i] = TRMODE_J;
+  if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
+  if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
   /* a special optimal accuracy specific step, initialize Jyshadow intelligently for d == 0 
    * (necessary b/c zero length parsetees have 0 emits and so always score IMPOSSIBLE)
@@ -9880,8 +9898,8 @@ cm_TrFillFromMode(char mode, int *ret_fill_L, int *ret_fill_R, int *ret_fill_T)
  * ./benchmark-trunc-align <cmfile>
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>

@@ -6,7 +6,7 @@
  * 
  * EPN, Fri Apr 29 14:00:58 2011
  */
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
