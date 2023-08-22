@@ -277,6 +277,14 @@ single stranded residue and base pair substitution scores. For more
 information see the RSEARCH publication (Klein and Eddy, BMC
 Bioinformatics 4:44, 2003).
 
+.TP
+.B --consrf
+With 
+.B --hand 
+use the model's consensus sequence for the model 
+reference annotation instead of the RF annotation from the input
+alignment. 
+
 .SH OTHER MODEL CONSTRUCTION OPTIONS
 
 .TP 
