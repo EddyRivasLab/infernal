@@ -570,7 +570,12 @@ sequence. By default, 5' truncated hits must include the first residue of
 their target sequence and 3' truncated hits must include the final
 residue of their target sequence. With this option you may observe
 fewer full length hits that extend to the beginning and end of the
-query CM.
+query CM. As of version 1.1.5, truncated hits that end at sequence terminii
+with a lower score penalty than internally truncated hits are also
+considered (these were not considered in 1.1x versions prior to 1.1.5).
+To reproduce the behavior of this option from v1.1.4, use the
+.B --inttrunc
+option instead.
 
 .TP
 .B --nonull3

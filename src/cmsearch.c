@@ -66,8 +66,8 @@ typedef struct {
  * options which are actually incompatible with a lot of other
  * options. 
  * 
- * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
- * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
+ * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
+ * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
  * #define ICWMID   "--max,--nohmm,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
  * #define ICWDF    "--max,--nohmm,--mid,--rfam,--FZ"
  * #define ICWRFAM  "--max,--nohmm,--mid,--default,--FZ"
@@ -84,8 +84,8 @@ typedef struct {
  * #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
  * #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
  * #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
- * #define TRUNCOPTS   "-g,--notrunc,--anytrunc,--onlytrunc,--5trunc,--3trunc"
- * #define NOTRUNCOPTS "--anytrunc,--onlytrunc,--5trunc,--3trunc"
+ * #define TRUNCOPTS   "-g,--notrunc,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc"
+ * #define NOTRUNCOPTS "--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc"
  * #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
  * 
  */                     
@@ -141,8 +141,8 @@ static ESL_OPTIONS options[] = {
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "do not allow truncated hits at sequence termini",      7 },
-  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "allow full and truncated hits anywhere within sequences",          7 },
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "do not allow truncated hits at sequence termini",                7 },
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "allow full+truncated hits at terminii and anywhere within seqs", 7 },
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",              7 },
   { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed alnment mx size to <x> Mb [df: autodetermined]", 7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed size of search DP matrices to <x> Mb",           7 },
@@ -241,9 +241,10 @@ static ESL_OPTIONS options[] = {
   { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",     "use CM only for best scoring HMM pass for full seq envelopes",  108 },
   { "--olonepass",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "use CM only f. best sc'ing HMM pass f. overlapping envelopes",  108 },
   { "--noiter",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb", "do not iteratively tighten bands when necessary",               108 },
-  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",                  108 },
-  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",                     108 },
-  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",                     108 },
+  { "--inttrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow full and truncated hits anywhere within sequences",   108 },
+  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",      108 },
+  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",         108 },
+  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",         108 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
   { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 108 },
@@ -1890,6 +1891,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --max is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --inttrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --max is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --3trunc");     goto ERROR; }
@@ -1930,6 +1932,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --inttrunc");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --3trunc");     goto ERROR; }
@@ -2010,6 +2013,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --inttrunc");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --3trunc");     goto ERROR; }
@@ -2076,41 +2080,41 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
-  // #define TRUNCOPTS   "-g,--notrunc,--anytrunc,--onlytrunc,--5trunc,--3trunc"
+  // #define TRUNCOPTS   "-g,--notrunc,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc"
   // #define NOTRUNCOPTS "--anytrunc,--onlytrunc,--5trunc,--3trunc"
   if(esl_opt_IsUsed(go, "--notrunc")) { 
-    if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --notrunc is incompatible with --anytrunc,--onlytrunc,--5trunc,--3trunc");
+    if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --notrunc is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--anytrunc")) { 
-    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --anytrunc is incompatible with -g,--notrunc,--onlytrunc,--5trunc,--3trunc");
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --anytrunc is incompatible with -g,--notrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "-g")) { 
-    if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option -g is incompatible with --anytrunc,--onlytrunc,--5trunc,--3trunc");
+    if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option -g is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--onlytrunc")) { 
-    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --onlytrunc is incompatible with -g,--anytrunc,--notrunc,--5trunc,--3trunc");
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --onlytrunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--5trunc,--3trunc");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--5trunc")) { 
-    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--notrunc,--onlytrunc,--3trunc");
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--3trunc");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--3trunc")) { 
-    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc"))) { 
-      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--notrunc,--onlytrunc,--5trunc");
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc"))) { 
+      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--5trunc");
       goto ERROR; 
     }
   }
@@ -2237,6 +2241,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--hmmonly"))    fprintf(ofp, "# HMM-only mode (for all models):        on [CM will not be used]\n");
   if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
   if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
+  if (esl_opt_IsUsed(go, "--inttrunc"))   fprintf(ofp, "# allowing internally truncated seqs:    on\n");
   if (esl_opt_IsUsed(go, "--onlytrunc"))  fprintf(ofp, "# only allowing truncated seqs anywhere: on\n");
   if (esl_opt_IsUsed(go, "--5trunc"))     fprintf(ofp, "# allowing 5' truncated seqs only:       on\n");
   if (esl_opt_IsUsed(go, "--3trunc"))     fprintf(ofp, "# allowing 3' truncated seqs only:       on\n");
@@ -2645,7 +2650,7 @@ configure_cm(WORKER_INFO *info)
 int
 setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 { 
-  int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--anytrunc")) ? FALSE : TRUE;
+  int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--inttrunc")) ? FALSE : TRUE;
 
   /* set up the HMM filter-related structures */
   info->gm = p7_profile_Create (info->cm->fp7->M, info->cm->abc);
