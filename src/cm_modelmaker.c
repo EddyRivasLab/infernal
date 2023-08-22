@@ -552,7 +552,6 @@ AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, fl
       }
       if (r > 0. && r / totwgt >= symfrac) matassign[apos] = TRUE;
       else                                 matassign[apos] = FALSE;
-      printf("matassign[%3d]: %d\n", apos, matassign[apos]);
     }
   }
 
@@ -562,7 +561,7 @@ AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, fl
  ERROR:
   free(matassign);
   *ret_matassign = NULL;
-  if(status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "HandModelmaker(): memory allocation error.");
+  if(status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "AssignMatchColumnsForMsa(): memory allocation error.");
   return status; /* never reached */
 }
 
