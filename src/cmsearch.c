@@ -2627,6 +2627,11 @@ configure_cm(WORKER_INFO *info)
 
   W_from_cmdline = info->pli->do_wcx ? (int) (info->cm->clen * info->pli->wcx) : -1; /* -1: use W from CM file */
   if((status = cm_Configure(info->cm, info->pli->errbuf, W_from_cmdline)) != eslOK) return status;
+  if((info->cm->rf != NULL) && (info->cm->cmcons != NULL) && (esl_strcmp(info->cm->rf, info->cm->cmcons->cseq))) { 
+    free(info->cm->rf); 
+    info->cm->rf = NULL;
+    info->cm->flags &= ~CMH_RF;
+  }
 
   return eslOK;
 }
