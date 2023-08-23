@@ -845,21 +845,23 @@ INFERNAL configuration:
     host:                 $host
     linker:               ${LDFLAGS}
     libraries:            ${LIBS} ${PTHREAD_LIBS}
-    DP implementation:    ${impl_choice}
+    DP implementation:    ${impl_choice}"
 
 
 if test x"$HAVE_PYTHON3" = x"yes"; then echo "
 Now do 'make'  to build INFERNAL, and optionally:
        'make check'  to run self tests,
        'make install'  to install programs and man pages.
+       '(cd hmmer; make install)' to install HMMER tools.
+       '(cd easel; make install)' to install Easel tools.
 ";
 else echo "
     (No python3 found, so 'make check' is disabled.)
 
 Now do 'make'  to build INFERNAL, and optionally:
        'make install'  to install programs and man pages.
-       '(cd hmmer; make install)'  to install HMMER tools.
-       '(cd easel; make install)'  to install Easel tools.
+       '(cd hmmer; make install)' to install HMMER tools.
+       '(cd easel; make install)' to install Easel tools.
 ";
 fi
 
