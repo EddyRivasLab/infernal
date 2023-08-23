@@ -1047,9 +1047,11 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   esl_workqueue_Complete(queue);  
 
   esl_sq_Destroy(empty_sq);
+  if(searchmeA != NULL) free(searchmeA);
   return status;
 
  ERROR: 
+  if(searchmeA != NULL) free(searchmeA);
   ESL_FAIL(status, errbuf, "out of memory");
   return status; /* NEVERREACHED */
 }
