@@ -28,16 +28,17 @@
 #   1. autoconf requirements
 #   2. AC_INIT
 #   3. info on the package
-#   4. checks for programs, including ${CC}, ${CFLAGS}
-#   5. checks for libraries
-#   6. checks for header files
-#   7. checks for types
-#   8. checks for structures
-#   9. checks for compiler characteristics
-#  10. checks for library functions
-#  11. checks for system services
-#  12. AC_CONFIG_FILES
-#  13. AC_OUTPUT
+#   4. Process the ./configure command line
+#   5. checks for programs, including ${CC}, ${CFLAGS}
+#   6. checks for libraries
+#   7. checks for header files
+#   8. checks for types
+#   9. checks for structures
+#  10. checks for compiler characteristics
+#  11. checks for library functions
+#  12. checks for system services
+#  13. AC_CONFIG_FILES
+#  14. AC_OUTPUT
 #
 # Use full 3-arg form of AC_DEFINE() macros. autoheader chokes if you
 # don't.  We don't use autoheader (we only use autoconf, out of the
@@ -51,7 +52,7 @@
 ################################################################
 
 # Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it. 2.63 was released in 2008.
-AC_PREREQ([2.71])
+AC_PREREQ([2.69])
 
 
 # Our extra macros are with Easel, in easel/m4
@@ -257,6 +258,15 @@ fi
 # Choose our compiler - which might be mpicc, if enable_mpi is "yes".
 #   AX_PROG_CC_MPI will call AC_PROG_CC if enable_mpi is "no".
 #
+# If CFLAGS hasn't been set by the user, set it to an empty string
+# in the environment. This prevents AC_PROG_CC from setting it to
+# "-g -O2" or "-g". Some of our --enable-* options will add to CFLAGS.
+#
+# The `: ${CFLAGS=""}` shell syntax uses the null operator `:` to
+# discard the output of `${CFLAGS=""}`, which returns the value of
+# CFLAGS if already set.
+#
+: ${CFLAGS=""}
 AX_PROG_CC_MPI([test x"$enable_mpi" = xyes],
     [AC_DEFINE(HAVE_MPI,  1, [Use MPI parallelization])
      AC_DEFINE(HMMER_MPI, 1, [Use MPI parallelization])
@@ -268,6 +278,7 @@ AX_PROG_CC_MPI([test x"$enable_mpi" = xyes],
 AC_PROG_CC
 AC_PROG_CPP
 AC_PROG_INSTALL
+AC_CHECK_TOOL([STRIP],[strip])
 AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 AC_PROG_LN_S
@@ -277,23 +288,24 @@ AC_PROG_LN_S
 #  --enable-gcov, --enable-gprof, and --enable-debugging are mutually exclusive.
 #
 if test "$enable_gcov" = "yes"; then
-   if test "$esl_cflags_env_set" = "yes"; then 
+   if test "$esl_cflags_env_set" = "yes"; then
      AC_MSG_ERROR([--enable-gcov overrides CFLAGS, so don't set CFLAGS])
    fi
    CFLAGS="-g -Wall -fprofile-arcs -ftest-coverage"
 elif test "$enable_gprof" = "yes"; then
-   if test "$esl_cflags_env_set" = "yes"; then 
+   if test "$esl_cflags_env_set" = "yes"; then
      AC_MSG_ERROR([--enable-gprof overrides CFLAGS, so don't set CFLAGS])
    fi
    CFLAGS="-O -g -pg"
 elif test "$enable_debugging" != "no"; then
    if test "$GCC" = "yes"; then
-      CFLAGS="-g -Wall"
+      CFLAGS="${CFLAGS} -g -Wall"
+   else
+      AC_MSG_ERROR([--enable-debugging only works for a gcc-like compiler])
    fi
-else
-   CFLAGS="${CFLAGS} -O3"
+elif test x"${CFLAGS}" = x; then
+   CFLAGS="-O3"
 fi
-
 
 # See if we should be passing -D_ENABLE_FORTIFY
 if test "$enable_fortify" != "no"; then
@@ -306,13 +318,15 @@ fi
 if test "$enable_asan" = "yes"; then
   CFLAGS="$CFLAGS -fsanitize=address"
   LDFLAGS="$LDFLAGS -fsanitize=address"
+  AC_DEFINE(eslENABLE_ASAN, 1, [Using address sanitizer])
 fi
 if test "$enable_tsan" = "yes"; then
   if test "$enable_asan" = "yes"; then  
     AC_MSG_FAILURE([The address and thread sanitizers are incompatible. Use only one of --enable-asan and --enable-tsan])
   fi
-  CFLAGS="$CFLAGS -fsanitize=threads"
-  LDFLAGS="$LDFLAGS -fsanitize=threads"
+  CFLAGS="$CFLAGS -fsanitize=thread"
+  LDFLAGS="$LDFLAGS -fsanitize=thread"
+  AC_DEFINE(eslENABLE_TSAN, 1, [Using threads sanitizer])
 fi
 
 
@@ -364,6 +378,7 @@ if test "$enable_neon" = "yes" || test "$enable_neon" = "check"; then
     AS_VAR_IF([esl_have_neon_aarch64],[yes],[AC_DEFINE(eslHAVE_NEON_AARCH64, 1, [Set to enable the ARM AARCH64 version of NEON])])
     AC_SUBST([HMMERIMPLLIB], ["impl_neon/libhmmerimpl.a"])
     NEON_CFLAGS="$esl_neon_cflags"
+    INFERNAL_IMPLDIR=""
     AC_SUBST(NEON_CFLAGS)
     enable_neon=yes
     impl_choice=neon
@@ -381,6 +396,7 @@ if test "$enable_vmx" = "yes" || test "$enable_vmx" = "check"; then
     AC_SUBST([HMMERIMPLLIB], ["impl_vmx/libhmmerimpl.a"])
     VMX_CFLAGS=$esl_vmx_cflags
     INFERNAL_IMPLDIR=""
+    AC_SUBST(VMX_CFLAGS)
     enable_vmx=yes
     impl_choice=vmx
     ],[
@@ -395,8 +411,9 @@ if test "$enable_sse" = "yes" || test "$enable_sse" = "check"; then
   ESL_SSE([
     AC_DEFINE(eslENABLE_SSE, 1, [Enable SSE vector implementation])
     AC_SUBST([HMMERIMPLLIB], ["impl_sse/libhmmerimpl.a"])
-    SSE_CFLAGS=$esl_sse_cflags
     INFERNAL_IMPLDIR="impl_sse"
+    SSE_CFLAGS=$esl_sse_cflags
+    AC_SUBST(SSE_CFLAGS)
     enable_sse=yes
     impl_choice=sse
     ],[
@@ -478,13 +495,11 @@ else
 fi
 
 
-# We need python, specifically python3, for 'make check' and
-# some dev tools. Makefiles check for themselves, but we 
-# also check in ./configure, so we don't recommend
-# 'make check' to the user if they can't use it.
-# 
-AC_PATH_PROG([PYTHON3], [python3])
-
+# We need python 3 for 'make check' and some dev tools. sqc checks
+# too, as does the Makefile, but we also check in ./configure, so we
+# don't recommend 'make check' to the user if they can't use it.
+#
+AC_CHECK_PROG(HAVE_PYTHON3, python3, yes)
 
 
 ################################################################
