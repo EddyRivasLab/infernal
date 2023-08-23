@@ -117,19 +117,19 @@ INFERNAL_ESLDIR="easel"
 INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
-HMMER_DATE="Nov 2020"
+HMMER_DATE="Aug 2023"
 HMMER_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the BSD open source license."
-HMMER_VERSION="3.3.2"
+HMMER_VERSION="3.4"
 HMMER_URL="http://hmmer.org/"
 
 HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
-EASEL_DATE="Nov 2020"
+EASEL_DATE="Aug 2023"
 EASEL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
 EASEL_LICENSE="Freely distributed under the BSD open source license."
-EASEL_VERSION="0.48"
+EASEL_VERSION="0.49"
 EASEL_URL="http://bioeasel.org/"
 
 AC_SUBST(INFERNAL_DATE)
@@ -503,7 +503,7 @@ AC_CHECK_PROG(HAVE_PYTHON3, python3, yes)
 
 
 ################################################################
-# 5. Checks for libraries
+# 6. Checks for libraries
 ################################################################
 
 # We could check for LIBGSL here, but that check caused problems in the Infernal
@@ -511,8 +511,18 @@ AC_CHECK_PROG(HAVE_PYTHON3, python3, yes)
 # anyway according to Sean. We still need to define LIBGSL though, because Easel
 # has files with @LIBGSL@ in them.
 LIBGSL=
-AC_SUBST([LIBGSL])
-
+AS_IF([test "x$with_gsl" != xno],
+      [AC_CHECK_LIB([gsl], [gsl_expm1],
+           [AC_SUBST([LIBGSL], ["-lgsl -lgslcblas"])
+            AC_DEFINE([HAVE_LIBGSL], [1], [Define if you have libgsl])
+           ],
+           [if test "x$with_gsl" != xcheck; then
+             AC_MSG_FAILURE(
+               [--with-gsl was given, but GSL library was not found])
+            fi
+           ],
+           [-lgslcblas]
+        )])
 
 # Easel stopwatch high-res timer may try to use clock_gettime,
 # which may be in librt
@@ -520,7 +530,7 @@ AC_SEARCH_LIBS(clock_gettime, [rt posix4])
 
 
 ################################################################
-# 7. Checks for headers
+# 7. Checks for header files
 ################################################################
 
 # Defines HAVE_SYS_TYPES_H, HAVE_STDINT_H, etc.
@@ -662,10 +672,10 @@ AC_CHECK_FUNCS(stat)
 AC_CHECK_FUNCS(fstat)
 AC_CHECK_FUNCS(erfc)
 
-AC_CHECK_FUNCS(ntohs, , AC_CHECK_LIB(socket, ntohs))
-AC_CHECK_FUNCS(ntohl, , AC_CHECK_LIB(socket, ntohl))
-AC_CHECK_FUNCS(htons, , AC_CHECK_LIB(socket, htons))
-AC_CHECK_FUNCS(htonl, , AC_CHECK_LIB(socket, htonl))
+AC_SEARCH_LIBS(ntohs,     socket)
+AC_SEARCH_LIBS(ntohl,     socket)
+AC_SEARCH_LIBS(htons,     socket)
+AC_SEARCH_LIBS(htonl,     socket)
 AC_SEARCH_LIBS(socket,    socket)
 AC_SEARCH_LIBS(inet_pton, nsl)
 
@@ -836,19 +846,20 @@ INFERNAL configuration:
     linker:               ${LDFLAGS}
     libraries:            ${LIBS} ${PTHREAD_LIBS}
     DP implementation:    ${impl_choice}
-    python3:              ${ac_cv_path_PYTHON3}"
 
 
-if test ${PYTHON3}; then echo "
+if test x"$HAVE_PYTHON3" = x"yes"; then echo "
 Now do 'make'  to build INFERNAL, and optionally:
        'make check'  to run self tests,
        'make install'  to install programs and man pages.
 ";
 else echo "
-    (No python3 found, so 'make check' self tests are disabled.)
+    (No python3 found, so 'make check' is disabled.)
 
 Now do 'make'  to build INFERNAL, and optionally:
        'make install'  to install programs and man pages.
+       '(cd hmmer; make install)'  to install HMMER tools.
+       '(cd easel; make install)'  to install Easel tools.
 ";
 fi
 
