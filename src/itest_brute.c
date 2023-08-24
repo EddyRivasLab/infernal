@@ -408,7 +408,11 @@ main(int argc, char **argv)
 	    
 	FreeCM(cm);
 	cm_mx_Destroy(mx);
+	cm_mx_Destroy(out_mx);
 	cm_shadow_mx_Destroy(shmx);
+	cm_tr_mx_Destroy(trmx);
+	cm_tr_mx_Destroy(out_trmx);
+	cm_tr_shadow_mx_Destroy(trshmx);
       }
   }
   esl_alphabet_Destroy(abc);
