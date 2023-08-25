@@ -559,7 +559,7 @@ AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, fl
   return eslOK;
 
  ERROR:
-  free(matassign);
+  if(matassign != NULL) free(matassign);
   *ret_matassign = NULL;
   if(status == eslEMEM) ESL_FAIL(eslEMEM, errbuf, "AssignMatchColumnsForMsa(): memory allocation error.");
   return status; /* never reached */

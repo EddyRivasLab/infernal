@@ -4069,6 +4069,10 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
                 hit->flags |= CM_HIT_IS_INCLUDED;
             }
           }
+        } /* end of 'if(dom_score >= pli->T)' */
+        else { /* hit wasn't above threshold, don't forget to destroy it */
+          p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
+          pli->ddef->dcl[d].ad = NULL;
         }
       } /* end of 'else' entered if this domain didn't overlap with previous one */
     } /* end of for(d = 0; d < pli->ddef->ndom; d++) */ 

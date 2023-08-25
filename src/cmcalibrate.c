@@ -526,7 +526,6 @@ main(int argc, char **argv)
     if (cfg.expAA    != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.expAA[i]    != NULL) { for(i2 = 0; i2 < EXP_NMODES; i2++) { free(cfg.expAA[i][i2]); } free(cfg.expAA[i]); } free(cfg.expAA);  }
     if (cfg.namesA   != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.namesA[i]   != NULL) free(cfg.namesA[i]);   free(cfg.namesA); }
     if (cfg.comlogsA != NULL) { for(i = 0; i < cfg.cmalloc; i++) if(cfg.comlogsA[i] != NULL) free(cfg.comlogsA[i]); free(cfg.comlogsA); }
-
     if (cfg.pfp   != NULL) { 
       fclose(cfg.pfp);
       printf("# Scores for this partition for later merge saved to file %s.\n", esl_opt_GetString(go, "--pfile"));
@@ -551,6 +550,7 @@ main(int argc, char **argv)
   if (cfg.w        != NULL) esl_stopwatch_Destroy(cfg.w);
   if (cfg.r        != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.r_est    != NULL) esl_randomness_Destroy(cfg.r_est);
+  if (cfg.gc_freq  != NULL) free(cfg.gc_freq);
   if (cfg.tmpfile  != NULL) free(cfg.tmpfile);
   if (cfg.dnull    != NULL) free(cfg.dnull);
   if (cfg.ghmm_sA  != NULL) free(cfg.ghmm_sA);
@@ -688,7 +688,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(cfg->pfp, "%s\n", go->argv[(go->argc-1)]);
     }
     /* clone the non-configured CM we just read, we'll come back to it when we switch from global to local */
-    if(! do_merge) { 
+    if((! do_merge) && (! esl_opt_IsUsed(go, "--memreq"))) { 
       if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) cm_Fail("unable to clone CM");
     }
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))                    != eslOK) cm_Fail(errbuf);
@@ -1047,9 +1047,11 @@ thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *q
   esl_workqueue_Complete(queue);  
 
   esl_sq_Destroy(empty_sq);
+  if(searchmeA != NULL) free(searchmeA);
   return status;
 
  ERROR: 
+  if(searchmeA != NULL) free(searchmeA);
   ESL_FAIL(status, errbuf, "out of memory");
   return status; /* NEVERREACHED */
 }

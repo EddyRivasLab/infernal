@@ -3873,7 +3873,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
    int        y, yoffset;
    int        bifparent;
 
-   ShadowMats_t *all_shadow;
+   ShadowMats_t *all_shadow = NULL;
    all_shadow = malloc(sizeof(ShadowMats_t));
 
 /*
@@ -4060,6 +4060,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
    free_vjd_shadow_matrix(T_shadow, cm, i0, j0);
    free_vjd_shadow_matrix(Lmode_shadow, cm, i0, j0);
    free_vjd_shadow_matrix(Rmode_shadow, cm, i0, j0);
+   if(all_shadow != NULL) free(all_shadow);
 
    return sc;
 
