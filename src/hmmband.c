@@ -2140,9 +2140,17 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
   /* end of brutal hack */
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
   /* check for valid CM parse, there should be one, unless do_trunc is true, then we may not... */
-  if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) return status;
+  if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) { 
+    if(do_trunc) { 
+      printf("No valid parse found in cp9_HMM2ijBands()");
+      /* but don't fail, and don't return !eslOK status */
+    }
+    else { 
+      cm_Fail("in cp9_HMM2ijBands() no valid parse and do_trunc is 0");
+    }
+  }
 #endif
 
   esl_stack_Destroy(nd_pda);

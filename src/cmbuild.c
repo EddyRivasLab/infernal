@@ -1170,6 +1170,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 	 FreeCM(cm);
 	 FreeParsetree(mtr);
 	 for(i = 0; i < nseq; i++) FreeParsetree(trA[i]);
+         free(trA);
        }
        cm  = NULL; /* even if iter == 1; we set cm to NULL, so we don't klobber init_cm */
        mtr = NULL;
@@ -1483,7 +1484,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
  static int
  check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
  {
-   int status = eslOK;
    ESL_STOPWATCH *w = NULL;
 
    int idx; /* counter over sequences */
@@ -1559,15 +1559,6 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    if(w != NULL) esl_stopwatch_Destroy(w);
    w = NULL;
    return eslOK;
-
-  ERROR:
-   if (cfg->be_verbose) { 
-     fprintf(cfg->ofp, "FAILED.  ");
-     esl_stopwatch_Stop(w);
-     esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");
-   }
-   if(w != NULL) esl_stopwatch_Destroy(w);
-   return status;
  }
 
  /* mark_fragments()
@@ -1689,8 +1680,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
  build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
  {
    int status;
-   Parsetree_t     **tr;
-   Parsetree_t     *mtr;
+   Parsetree_t     **tr = NULL;
+   Parsetree_t     *mtr = NULL;
    int idx;
    CM_t *cm;
    ESL_STOPWATCH *w = NULL;
@@ -1880,6 +1871,13 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    return eslOK;
 
   ERROR:
+   if(mtr != NULL) FreeParsetree(mtr);
+   if(tr != NULL) { 
+     for(idx = 0; idx < msa->nseq; idx++)
+       FreeParsetree(tr[idx]);
+     free(tr);
+     tr = NULL;
+   }
    if(w != NULL) esl_stopwatch_Destroy(w);
    if(dbl_e != NULL) { 
      for(v = 0; v < cm->M; v++) { 

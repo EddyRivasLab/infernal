@@ -4156,10 +4156,10 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int   midnode;
   int   b;			/* optimal choice for a 0->b local begin  */
   float bsc;			/* score if we use the local begin */
-  int     *imin;                /* minimum i bound for each state v; [0..y-w] 
+  int  *imin = NULL;            /* minimum i bound for each state v; [0..y-w] 
                                  * calculated using *dmin; offset from v, the
 				 * band that corresponds to state v, is imin[v-w] */
-  int     *imax;                /* maximum i bound for each state v; [0..y-w] 
+  int  *imax = NULL;            /* maximum i bound for each state v; [0..y-w] 
                                  * calculated using *dmax; offset from v, the
 				 * band that corresponds to state v, is imax[v-w] */
 
@@ -4274,6 +4274,8 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    */
   if (best_v == -1) {
     v_splitter_b(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, dmin, dmax);    
+    if(imin != NULL) free(imin);
+    if(imax != NULL) free(imax);
     return;
   }
 
