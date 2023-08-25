@@ -1932,9 +1932,9 @@ Sometimes sequences in the \prog{cmbuild} input alignment are sequence
 \emph{fragments} with missing data at the 5' or 3' ends. Gaps at the
 ends of fragments are treated as missing data by \prog{cmbuild}
 instead of as deletions. The definition of fragments can be important
-because if sequences have missing sequence at the end but are not
+because if sequences have missing data at the end but are not
 defined as fragments then the parameters of the resulting model will
-reflect that deletions are common at the beginning and/or end of the
+incorrectly reflect that deletions are common at the beginning and/or end of the
 sequence and the model will be less specific for full length matches
 to the model. To build the best model from a given alignment, all sequences
 with missing data should be defined as fragments.
@@ -1949,11 +1949,11 @@ alignment contains RF annotation like the example above, the
 combination to define a sequence as a fragment if it has more than
 \prog{<n>} terminal gaps in nongap RF positions at the 5' \emph{or} 3'
 ends. Finally, fragments can be defined manually in the input alignment
-using \prog{~} characters at the ends of fragments as explained below.
+using \verb+~+ characters at the ends of fragments as explained more below.
 
 The following modified version of the tRNA alignment will help
 illustrate the different fragment definition options. It can be found in
-the file \otext{tutorial/tRNA5-hand.frag.sto}
+the file \otext{tutorial/tRNA5-hand.frag.sto}:
 
 \begin{sreoutput}
 # STOCKHOLM 1.0
@@ -1970,18 +1970,20 @@ tRNA5             ..GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUC
 
 If this alignment is used as input to \prog{cmbuild} with the command:
 
-\user{cmbuild -O tRNA-hand.O.stk tRNA-hand.frag.cm tutorial/tRNA5-hand.frag.sto}
+\user{cmbuild -O tRNA-hand.O.stk tRNA-hand.frag.cm tutorial/tRNA5-hand.frag.sto}\\
 
 then only the \prog{tRNA4} sequence will be defined as a fragment,
 because it spans positions $37$ to $60$ out of a total of $74$
 positions ($(60-37+1)/74 = 0.324$) which is less than the $0.5$
-threshold. The \prog{tRNA2} sequence spans positions $17$ to $66$ and
+threshold. The \prog{tRNA1} sequence spans positions $17$ to $66$ and
 so is above the threshold $((66-17+1)/74 = 0.676)$. Due to the \prog{-O}
 option above, \prog{cmbuild} saved the annotated alignment file to 
-\prog{tRNA-hand.O.stk}. That file indicates that \prog{tRNA4} is
-a fragment by the \prog{~} characters as terminal gaps (also note that
+\prog{tRNA-hand.O.stk}. That file, shown below, indicates that \prog{tRNA4} is
+defined as a fragment with the \verb+~+ characters used for terminal gaps (also note that
 the RF annotation has been changed to the consensus sequence because
-\prog{--hand} was not used).
+\prog{--hand} was not used):
+
+\newpage
 
 \begin{sreoutput}
 # STOCKHOLM 1.0
@@ -2004,13 +2006,16 @@ tRNA5        --GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUU
 //
 \end{sreoutput}
 
-If \prog{--hand} and \prog{--fragnrfpos 5} options are used with this
-command:
+Fragments can be defined differently if \prog{--hand} and
+\prog{--fragnrfpos 5} options are used, with the following command:
 
-\user{cmbuild --hand --fragnrfpos 5 -O tRNA-hand.O.2.stk tRNA-hand.frag2.cm tutorial/tRNA5-hand.frag.sto}
-
-then both \prog{tRNA1} and \prog{tRNA4} sequences are defined as
-fragments because they include more than 5 gaps in nongap RF positions
+%\user{cmbuild --hand --fragnrfpos 5 -O tRNA-hand.O.2.stk tRNA-hand.frag2.cm tutorial/tRNA5-hand.frag.sto}\\
+\begin{widesreoutput}
+> cmbuild --hand --fragnrfpos 5 -O tRNA-hand.O.2.stk tRNA-hand.frag2.cm tutorial/tRNA5-hand.frag.sto
+\end{widesreoutput}
+  
+In this case, both \prog{tRNA1} and \prog{tRNA4} sequences are defined as
+fragments because they include more than $5$ gaps in nongap RF positions
 at the 5' or 3' ends (in this case both ends). Again, the fragment
 definitions are indicated in the output alignment file
 \prog{tRNA-hand.O.2.stk}:
@@ -2044,9 +2049,9 @@ Alternatively, if fragments are annotated in the input alignment, the
 \begin{sreoutput}
 # STOCKHOLM 1.0
 
-tRNA1             ~~~~~~~~~~~~~~~~UGGG~AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG~~~~~~~~
-tRNA2             UCCGAUAUAGUGUAAC~GGCUAUCACAUCACGCUUUCACCGUGGAGA~CCGGGGUUCGACUCCCCGUAUCGGAG
-tRNA3             UCCGUGAUAGUUUAAU~GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA~UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA1             ~~~~~~~~~~~~~~~~UGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG~~~~~~~~
+tRNA2             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UCGGGGUUCAAUUCCCCGUCGCGGAG
 tRNA4             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~AAAUCUGUUGGUCCUUAGUUCGAU~~~~~~~~~~~~~~
 tRNA5             ~~GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
 #=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<<<<<.......>>>>>>>>>>>>.
@@ -2058,4 +2063,9 @@ The command to build a model using the fragment definitions in
 that alignment is:
 
 \user{cmbuild --fraggiven tRNA-hand.fraggiven.cm tutorial/tRNA5-hand.fraggiven.sto}
+
+Fragments can be annotated with \verb+~+ characters in this way
+either by manually editing the file, or by using alignments output
+by the \prog{cmsearch} program using the \prog{-A} option, which will
+have sequences detected with missing data annotated as fragments.
 

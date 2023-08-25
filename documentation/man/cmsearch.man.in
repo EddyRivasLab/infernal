@@ -204,7 +204,11 @@ With -A, in the output alignment, do not mark truncated hits as
 fragmentary by using missing data '~' characters before the first
 residue (for 5' truncated hits) and/or after the final residue (for 3'
 truncated hits). By default, missing data characters ('~') will be
-used in this way to mark truncated hits.
+used in this way to mark truncated hits as fragments. The cmbuild
+program can use these fragment definitions in input alignment files if
+the
+.B --fraggiven
+option is used.
 
 .SH OPTIONS CONTROLLING REPORTING THRESHOLDS
 
