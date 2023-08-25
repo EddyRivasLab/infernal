@@ -1925,3 +1925,137 @@ bottom of the alignment. All inserts in the alignment are annotated as
 (annotated as \otext{[vlp]} in the training alignment) contains 8
 inserted residues. The RF annotation will also be transferred to
 multiple alignments created with \prog{cmalign}.
+
+\subsection{Building models from fragmentary sequences}
+
+Sometimes sequences in the \prog{cmbuild} input alignment are sequence
+\emph{fragments} with missing data at the 5' or 3' ends. Gaps at the
+ends of fragments are treated as missing data by \prog{cmbuild}
+instead of as deletions. The definition of fragments can be important
+because if sequences have missing sequence at the end but are not
+defined as fragments then the parameters of the resulting model will
+reflect that deletions are common at the beginning and/or end of the
+sequence and the model will be less specific for full length matches
+to the model. To build the best model from a given alignment, all sequences
+with missing data should be defined as fragments.
+
+By default, \prog{cmbuild} will try to guess which sequences are
+fragments by defining any sequence which spans less than $0.5$ fraction of the
+length of the input alignment as a fragment, but this
+fraction can be changed to \prog{<x>} with the \prog{--fragthresh <x>}
+option. There are two other ways to define fragments. If the
+alignment contains RF annotation like the example above, the 
+\prog{--hand} and \prog{--fragnrfpos <n>} options can be used in
+combination to define a sequence as a fragment if it has more than
+\prog{<n>} terminal gaps in nongap RF positions at the 5' \emph{or} 3'
+ends. Finally, fragments can be defined manually in the input alignment
+using \prog{~} characters at the ends of fragments as explained below.
+
+The following modified version of the tRNA alignment will help
+illustrate the different fragment definition options. It can be found in
+the file \otext{tutorial/tRNA5-hand.frag.sto}
+
+\begin{sreoutput}
+# STOCKHOLM 1.0
+
+tRNA1             ................UGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG........
+tRNA2             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4             ....................................AAAUCUGUUGGUCCUUAGUUCGAU..............
+tRNA5             ..GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<<<<<.......>>>>>>>>>>>>.
+#=GC RF           [accep]======[=Dloop=]============acd=======[vlp]=====[Tloop]=====[accep]=
+//
+\end{sreoutput}
+
+If this alignment is used as input to \prog{cmbuild} with the command:
+
+\user{cmbuild -O tRNA-hand.O.stk tRNA-hand.frag.cm tutorial/tRNA5-hand.frag.sto}
+
+then only the \prog{tRNA4} sequence will be defined as a fragment,
+because it spans positions $37$ to $60$ out of a total of $74$
+positions ($(60-37+1)/74 = 0.324$) which is less than the $0.5$
+threshold. The \prog{tRNA2} sequence spans positions $17$ to $66$ and
+so is above the threshold $((66-17+1)/74 = 0.676)$. Due to the \prog{-O}
+option above, \prog{cmbuild} saved the annotated alignment file to 
+\prog{tRNA-hand.O.stk}. That file indicates that \prog{tRNA4} is
+a fragment by the \prog{~} characters as terminal gaps (also note that
+the RF annotation has been changed to the consensus sequence because
+\prog{--hand} was not used).
+
+\begin{sreoutput}
+# STOCKHOLM 1.0
+#=GF ID tRNA5-hand.frag
+#=GF AU Infernal 1.1.5
+
+#=GS tRNA1 WT 0.89
+#=GS tRNA2 WT 0.99
+#=GS tRNA3 WT 1.07
+#=GS tRNA4 WT 0.86
+#=GS tRNA5 WT 1.19
+
+tRNA1        ----------------UGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG--------
+tRNA2        UCCGAUAUAGUGUAAC-GGCuAUCACAUCACGCUUUCACCGUGGAGA-CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3        UCCGUGAUAGUUUAAU-GGUcAGAAUGGGCGCUUGUCGCGUGCCAGA-UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~AAAUCUGUUGGUCCUUAGUUCGAU~~~~~~~~~~~~~~
+tRNA5        --GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons (((((((,,<<<<_______._>>>>,<<<<<_______>>>>>,,,,,<<<<<_______>>>>>))))))):
+#=GC RF      uccgacAUAGugcAAUUGGu.AgcaCGccagcCUuucAagcuggAGgUCCgggGUUCGAUUCcccGUgucggag
+//
+\end{sreoutput}
+
+If \prog{--hand} and \prog{--fragnrfpos 5} options are used with this
+command:
+
+\user{cmbuild --hand --fragnrfpos 5 -O tRNA-hand.O.2.stk tRNA-hand.frag2.cm tutorial/tRNA5-hand.frag.sto}
+
+then both \prog{tRNA1} and \prog{tRNA4} sequences are defined as
+fragments because they include more than 5 gaps in nongap RF positions
+at the 5' or 3' ends (in this case both ends). Again, the fragment
+definitions are indicated in the output alignment file
+\prog{tRNA-hand.O.2.stk}:
+
+\begin{sreoutput}
+# STOCKHOLM 1.0
+#=GF ID tRNA5-hand.frag
+#=GF AU Infernal 1.1.4
+
+#=GS tRNA1 WT 0.90
+#=GS tRNA2 WT 0.99
+#=GS tRNA3 WT 1.07
+#=GS tRNA4 WT 0.85
+#=GS tRNA5 WT 1.19
+
+tRNA1        ~~~~~~~~~~~~~~~~UGGG-AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG~~~~~~~~
+tRNA2        UCCGAUAUAGUGUAAC-GGCUAUCACAUCACGCUUUCACCGUGGAGA-CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3        UCCGUGAUAGUUUAAU-GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA-UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~AAAUCUGUUGGUCCUUAGUUCGAU~~~~~~~~~~~~~~
+tRNA5        --GCACAUGGCGCAGUUGGU-AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons (((((((,,<<<<_________>>>>,<<<<<_______>>>>>,,,,,<<<<<_______>>>>>))))))):
+#=GC RF      [accep]======[=Dloop=]============acd=======[vlp]=====[Tloop]=====[accep]=
+//
+\end{sreoutput}
+
+Alternatively, if fragments are annotated in the input alignment, the 
+\prog{--fraggiven} option can be used. The
+\prog{tutorial/tRNA5-hand.frag2.sto} shows an example with the \prog{tRNA1},
+\prog{tRNA2} and \prog{tRNA5} sequences all defined as fragments:
+
+\begin{sreoutput}
+# STOCKHOLM 1.0
+
+tRNA1             ~~~~~~~~~~~~~~~~UGGG~AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG~~~~~~~~
+tRNA2             UCCGAUAUAGUGUAAC~GGCUAUCACAUCACGCUUUCACCGUGGAGA~CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3             UCCGUGAUAGUUUAAU~GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA~UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~AAAUCUGUUGGUCCUUAGUUCGAU~~~~~~~~~~~~~~
+tRNA5             ~~GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<<<<<.......>>>>>>>>>>>>.
+#=GC RF           [accep]======[=Dloop=]============acd=======[vlp]=====[Tloop]=====[accep]=
+//
+\end{sreoutput}
+
+The command to build a model using the fragment definitions in
+that alignment is:
+
+\user{cmbuild --fraggiven tRNA-hand.fraggiven.cm tutorial/tRNA5-hand.fraggiven.sto}
+
