@@ -2069,3 +2069,15 @@ either by manually editing the file, or by using alignments output
 by the \prog{cmsearch} program using the \prog{-A} option, which will
 have sequences detected with missing data annotated as fragments.
 
+\subsection{Parallelizing calibration of large models by splitting
+  into partitions}
+
+For large models, like small and large subunit (SSU and LSU) ribosomal
+RNA models, the \prog{cmcalibrate} step can be extremely slow and
+require a large amount of memory. Parallelization with multithreading
+can help, but memory can still be limiting. For example, the
+eukaryotic LSU rRNA model from Rfam (RF02543) requires about 14Gb of
+RAM per thread and X hours\footnote{The \prog{--memreq} option to
+  \prog{cmcalibrate} can be used to estimate the required memory.}
+MPI parallelization is also implemented for \prog{cmcalibrate} but not
+very widely available An alternative way to parallelize

@@ -589,7 +589,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
        (   esl_opt_GetBoolean(go, "-g"))           || 
        ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
       /* we're NOT running HMM-only pipeline variant, we need CM E-value stats */
-      if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
+      if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s.\nYou may need to run cmcalibrate.", tinfo->cm->name);
     }
        
     /* seqfile may need to be rewound (multiquery mode) */
