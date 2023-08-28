@@ -2069,3 +2069,140 @@ either by manually editing the file, or by using alignments output
 by the \prog{cmsearch} program using the \prog{-A} option, which will
 have sequences detected with missing data annotated as fragments.
 
+\newpage
+
+\subsection{Parallelizing calibration of large models by splitting
+  into partitions}
+
+For large models, like small and large subunit ribosomal RNA (SSU and
+LSU rRNA) models, the \prog{cmcalibrate} step can be extremely slow
+and require a large amount of memory. Parallelization with
+multithreading can help, but memory can still be limiting. For
+example, the eukaryotic LSU rRNA model from Rfam (RF02543) requires
+about 14Gb of RAM per thread and roughly 30 hours on 12 threads (so
+168Gb RAM total) for calibration\footnote{The \prog{--memreq} and
+  \prog{--forecast} options to \prog{cmcalibrate} can be used to
+  estimate the required memory and time, respectively.}.  MPI
+parallelization is also implemented for \prog{cmcalibrate} but not all
+systems are set up to use it. If you have access to a compute farm or
+cluster, an alternative way to parallelize calibration is
+using the \prog{--split} and \prog{--merge} options introduced in
+version 1.1.5 which allow parallelization across different CPUs
+without using MPI by partitioning the calibration calculations. To use
+this method to parallelize calibration of a Cobalamin riboswitch CM
+in the file built from the \prog{tutorial/Cobalamin.sto} alignment, we
+first build the model with the command:
+
+\user{cmbuild Cobalamin.cm tutorial/Cobalamin.sto}
+
+Then the first step for the parallelized calibration is to create the
+script that will execute the calibration calculations for each partition:
+
+\user{cmcalibrate --split --ptot 16 --cfile Cobalamin.cfile Cobalamin.cm}
+
+This will result in the following output:
+
+\begin{sreoutput}
+# cmcalibrate :: fit exponential tails for CM E-values
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     Cobalamin.cm
+# split mode:                                  on
+# saving partition commands to file:           Cobalamin.cfile
+# total number of partitions:                  16
+# number of worker threads:                    0
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# List of commands for each partition saved to file Cobalamin.cfile.
+#
+# Command to merge per-partition scores after all commands are finished:
+# cmcalibrate --merge --ptot 16 Cobalamin.cm
+#
+# CPU time: 0.00u 0.00s 00:00:00.00 Elapsed: 00:00:00.00
+[ok]
+\end{sreoutput}
+
+And will have created the file \prog{Cobalamin.cfile} which will look
+like:
+
+\begin{sreoutput}
+cmcalibrate --ptot 16 --part 1 --pfile Cobalamin.cm.calib.1 Cobalamin.cm
+cmcalibrate --ptot 16 --part 2 --pfile Cobalamin.cm.calib.2 Cobalamin.cm
+cmcalibrate --ptot 16 --part 3 --pfile Cobalamin.cm.calib.3 Cobalamin.cm
+cmcalibrate --ptot 16 --part 4 --pfile Cobalamin.cm.calib.4 Cobalamin.cm
+cmcalibrate --ptot 16 --part 5 --pfile Cobalamin.cm.calib.5 Cobalamin.cm
+cmcalibrate --ptot 16 --part 6 --pfile Cobalamin.cm.calib.6 Cobalamin.cm
+cmcalibrate --ptot 16 --part 7 --pfile Cobalamin.cm.calib.7 Cobalamin.cm
+cmcalibrate --ptot 16 --part 8 --pfile Cobalamin.cm.calib.8 Cobalamin.cm
+cmcalibrate --ptot 16 --part 9 --pfile Cobalamin.cm.calib.9 Cobalamin.cm
+cmcalibrate --ptot 16 --part 10 --pfile Cobalamin.cm.calib.10 Cobalamin.cm
+cmcalibrate --ptot 16 --part 11 --pfile Cobalamin.cm.calib.11 Cobalamin.cm
+cmcalibrate --ptot 16 --part 12 --pfile Cobalamin.cm.calib.12 Cobalamin.cm
+cmcalibrate --ptot 16 --part 13 --pfile Cobalamin.cm.calib.13 Cobalamin.cm
+cmcalibrate --ptot 16 --part 14 --pfile Cobalamin.cm.calib.14 Cobalamin.cm
+cmcalibrate --ptot 16 --part 15 --pfile Cobalamin.cm.calib.15 Cobalamin.cm
+cmcalibrate --ptot 16 --part 16 --pfile Cobalamin.cm.calib.16 Cobalamin.cm
+\end{sreoutput}
+
+Alternatively, if the \prog{--cbash} option is added to the above
+command the \prog{Cobalamin.cfile} would be a more compact bash
+shell script with a for loop:
+
+\begin{sreoutput}
+# !/bin/bash
+for ((i = 1; i <= 16; i++)); do
+  cmcalibrate --ptot 16 --part $i --pfile Cobalamin.cm.calib.$i Cobalamin.cm
+done
+\end{sreoutput}
+
+For this command, we specified that there by 16 partitions with the
+option \prog{--ptot 16}, but this number can be as high as
+160. This is because by default there are 160 10Kb sequences (1.6Mb
+total) searched during the calibration, so the minimal workunit is 
+a search of a single 10Kb sequence. If the \prog{-L} option is used to
+modify the 1.6Mb total length, then the maximum allowed \prog{<n>}
+with \prog{--ptot <n>} will change accordingly (see the
+\prog{cmcalibrate} manual page in section 8 of this guide for more
+details on \prog{cmcalibrate} options).
+
+If you'd like to use additional options for the calibration, for
+example if you want to specify that each partition use only one thread
+with the \prog{--cpu 1} option, or run in non-threaded serial mode
+with \prog{--cpu 0}, perhaps to limit the required amount of RAM, you
+should specify those additional option in the original command above
+that includes \prog{--split} and they will be included in the
+partition commands in the \prog{Cobalamin.cfile} script.
+
+The next step is to run these 16 commands. If you execute either of
+these scripts without modification, the 16 partition commands will run
+in serial, one after the other. This would not save any time or reduce
+memory requirement versus a standard \prog{cmcalibrate} command like
+those shown earlier in this tutorial. So for this approach to make any
+sense, you will need to modify the \prog{Cobalamin.cfile} file so that
+it will run on a compute cluster. For example, if you use Sun Grid
+Engine (SGE) and the program \prog{qsub} to submit jobs to a cluster,
+then you might modify the \prog{Cobalamin.cfile} file to something
+like:
+
+\begin{sreoutput}
+# !/bin/bash
+for ((i = 1; i <= 16; i++)); do
+  qsub -n Cobalamin.$i -V -o Cobalamin.$i.out -e Cobalamin.$i.err -m n \
+  ``cmcalibrate --ptot 16 --part $i --pfile Cobalamin.cm.calib.$i Cobalamin.cm''
+done
+\end{sreoutput}
+
+The modified script can then be used to submit all 16 jobs. When they
+are all finished the final step is to merge the results and update the
+CM file with the calibration statistics:
+
+\user{cmcalibrate --merge --ptot 16 Cobalamin.cm}
+
+After this, you will be able to use the \prog{cmsearch} and
+\prog{cmscan} with \prog{Cobalamin.cm}. The E-value-related statistics
+that are added to the \prog{Cobalamin.cm} file using this split/merge
+approach will be identical to those added with standard
+\prog{cmcalibrate} (unless the \prog{--seed <n>} option is used to
+change the seeding of the random number generator).
+
