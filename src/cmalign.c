@@ -2575,8 +2575,6 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
 void
 configure_root_inserts(CM_t *cm, float to_insert_prob, float self_insert_prob)
 {
-  int status;
-
   float state0_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
   float state1_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */
   float state2_sum = 0.; /* will store cumulative prob of transitinos out of state 1 */

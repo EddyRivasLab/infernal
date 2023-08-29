@@ -39,7 +39,7 @@ static int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9M
 					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
 static int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
 static int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
 static int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
 #endif
 
@@ -3001,7 +3001,7 @@ HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int m
   return eslOK;
 }
 
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
 /* Function: CMBandsCheckValidParse()
  * Incept:   EPN, Tue Feb  5 07:59:48 2008
  * 

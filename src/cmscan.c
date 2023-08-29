@@ -1693,7 +1693,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   char            *mpi_buf  = NULL;              /* buffer used to pack/unpack structures */
   int              mpi_size = 0;                 /* size of the allocated buffer */
   int64_t          seq_idx  = 0;                 /* index of sequence we're currently working on */
-  int64_t          cm_idx   = 0;                 /* index of model    we're currently working on */
   double           eZ;                           /* effective database size                      */
   int64_t          prv_posn = 0;                 /* position of previous chunk for cur seq, 0 if first chunk */
   ESL_DSQ         *save_dsq = NULL;              /* pointer to original qsq->dsq data */

@@ -1164,7 +1164,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
   int      exp_mode;              /* ctr over exp tail modes */
   double   psec;                  /* predicted number of seconds for calibrating current CM */
-  double   asec;                  /* predicted number of seconds for calibrating current CM */
   double   total_psec = 0.;       /* predicted number of seconds for calibrating all CMs */
   double   total_asec = 0.;       /* predicted number of seconds for calibrating all CMs */
   int64_t  merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
@@ -1215,7 +1214,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
     if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
-    if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBooelan(go, "--merge"))) { 
+    if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBoolean(go, "--merge"))) { 
       if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
     }
     else { 
@@ -1395,7 +1394,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("]  %12s\n", time_buf);
       fflush(stdout);
     }
-    asec        = cfg->w->elapsed;
     total_asec += cfg->w->elapsed;
        
     FreeCM(cm);
@@ -1432,7 +1430,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t    *cm    = NULL;          /* the CM */
   CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
   int      i, h;                  /* counters */
-  int      cmi;                   /* CM index, which model we're working on */
   int      exp_mode;              /* ctr over exp tail modes */
 
   char    *mpibuf  = NULL;        /* buffer used to pack/unpack structures */
@@ -1466,7 +1463,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) mpi_failure("unable to clone CM");
 
     cfg->ncm++;
-    cmi = cfg->ncm-1;
 
     if((status = expand_exp_and_name_arrays(cfg))                    != eslOK) mpi_failure("out of memory");
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) mpi_failure(errbuf);

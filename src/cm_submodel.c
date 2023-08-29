@@ -786,21 +786,18 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
    * CMLogoddsify(sub_cm);
    */
 
-  if(print_flag)
-    {
-      ofp = fopen("sub.cm", "w");
-      if(print_flag)  printf("%-40s ... ", "Saving model to file"); fflush(stdout);
-      if(print_flag)  cm_file_WriteASCII(ofp, -1, sub_cm);
-      if(print_flag)  printf("done.\n");
-    }
-
-  if(print_flag)
-    {
-      printf("\nDEBUG PRINT OF ORIG_CM PARAMETERS:\n");
-      debug_print_cm_params(stdout, orig_cm);
-      printf("\nDEBUG PRINT OF SUB_CM PARAMETERS:\n");
-      debug_print_cm_params(stdout, sub_cm);
-    }    
+  if(print_flag) { 
+    ofp = fopen("sub.cm", "w");
+    printf("%-40s ... ", "Saving model to file"); 
+    fflush(stdout);
+    cm_file_WriteASCII(ofp, -1, sub_cm);
+    printf("done.\n");
+    
+    printf("\nDEBUG PRINT OF ORIG_CM PARAMETERS:\n");
+    debug_print_cm_params(stdout, orig_cm);
+    printf("\nDEBUG PRINT OF SUB_CM PARAMETERS:\n");
+    debug_print_cm_params(stdout, sub_cm);
+  }    
 
   /* Cleanup and exit. */
   cm_FreeTransitionMap(tmap);
