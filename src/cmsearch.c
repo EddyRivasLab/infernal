@@ -946,26 +946,28 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
        */ 
       esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
     }
+    /* Capture "complete" status prior to placing current block into the work
+     * queue, to avoid appearance of a race condition. With only one reader
+     * thread, there isn't really a race risk, since "complete" is only set
+     * during the esl_sqio_ReadBlock() function call earlier in this loop
+     * (i.e. "complete" isn't altered by the worker threads). 
+     */
+    prv_block_complete = block->complete;
 
     if (sstatus == eslOK) { 
-      /* note that this isn't an 'else if', sstatus may have been eslEOF before but just set to eslOK */
-      /* Capture "complete" status prior to placing current block into the work
-       * queue, to avoid appearance of a race condition. With only one reader
-       * thread, there isn't really a race risk, since "complete" is only set
-       * during the esl_sqio_ReadBlock() function call earlier in this loop
-       * (i.e. "complete" isn't altered by the worker threads)*/
-      int prv_block_complete = block->complete;
       status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
       if (status != eslOK) esl_fatal("Work queue reader failed");
+    }
 
-      /* newBlock needs all this information so the next ReadBlock call will know what to do */
-      ((ESL_SQ_BLOCK *)newBlock)->complete = prv_block_complete;
-      if (! prv_block_complete) { 
-        // Push the captured copy of the previously-read sequence into the new block,
-        // in preparation for ReadWindow  (double copy ... slower than necessary)
-        esl_sq_Copy(tmpsq, ((ESL_SQ_BLOCK *)newBlock)->list);
-        ((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
-      }
+    /* newBlock needs all this information so the next ReadBlock call will know what to do */
+    ((ESL_SQ_BLOCK *)newBlock)->complete = prv_block_complete;
+    if (! prv_block_complete) { 
+      /* Push the captured copy of the previously-read sequence into the new block,
+       * in preparation for ReadWindow (we've now copied this seq twice, to avoid the
+       * race condition. 
+       */
+      esl_sq_Copy(tmpsq, ((ESL_SQ_BLOCK *)newBlock)->list);
+      ((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
     }
   }
 
