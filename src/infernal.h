@@ -2038,6 +2038,7 @@ typedef struct cm_file_s {
 #endif
 
   char          errbuf[eslERRBUFSIZE];
+  char          msv_errbuf[eslERRBUFSIZE]; /* cm_p7_oprofile_ReadMSV uses this instead of errbuf, avoiding a thread race */
 } CM_FILE;
 
 /* note on <fname>, above:

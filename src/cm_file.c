@@ -202,21 +202,22 @@ cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
   int         toklen;
 
   ESL_ALLOC(cmfp, sizeof(CM_FILE));
-  cmfp->f            = NULL;
-  cmfp->fname        = NULL;
-  cmfp->do_gzip      = FALSE;
-  cmfp->do_stdin     = FALSE;
-  cmfp->newly_opened = TRUE;	/* well, it will be, real soon now */
-  cmfp->is_pressed   = FALSE;
+  cmfp->f             = NULL;
+  cmfp->fname         = NULL;
+  cmfp->do_gzip       = FALSE;
+  cmfp->do_stdin      = FALSE;
+  cmfp->newly_opened  = TRUE;	/* well, it will be, real soon now */
+  cmfp->is_pressed    = FALSE;
 #ifdef HMMER_THREADS
-  cmfp->syncRead     = FALSE;
+  cmfp->syncRead      = FALSE;
 #endif
-  cmfp->parser       = NULL;
-  cmfp->efp          = NULL;
-  cmfp->ffp          = NULL;
-  cmfp->pfp          = NULL;
-  cmfp->ssi          = NULL;
-  cmfp->errbuf[0]    = '\0';
+  cmfp->parser        = NULL;
+  cmfp->efp           = NULL;
+  cmfp->ffp           = NULL;
+  cmfp->pfp           = NULL;
+  cmfp->ssi           = NULL;
+  cmfp->errbuf[0]     = '\0';
+  cmfp->msv_errbuf[0] = '\0';
 
   if ((cmfp->efp = esl_fileparser_CreateMapped(buffer, size))         == NULL)   { status = eslEMEM; goto ERROR; }
   if ((status = esl_fileparser_SetCommentChar(cmfp->efp, '#'))        != eslOK)  goto ERROR;
@@ -266,23 +267,24 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   int         toklen;
 
   ESL_ALLOC(cmfp, sizeof(CM_FILE));
-  cmfp->f            = NULL;
-  cmfp->fname        = NULL;
-  cmfp->do_gzip      = FALSE;
-  cmfp->do_stdin     = FALSE;
-  cmfp->newly_opened = TRUE;	/* well, it will be, real soon now */
-  cmfp->is_pressed   = FALSE;
-  cmfp->is_binary    = FALSE;
+  cmfp->f             = NULL;
+  cmfp->fname         = NULL;
+  cmfp->do_gzip       = FALSE;
+  cmfp->do_stdin      = FALSE;
+  cmfp->newly_opened  = TRUE;	/* well, it will be, real soon now */
+  cmfp->is_pressed    = FALSE;
+  cmfp->is_binary     = FALSE;
 #ifdef HMMER_THREADS
-  cmfp->syncRead     = FALSE;
+  cmfp->syncRead      = FALSE;
 #endif
-  cmfp->parser       = NULL;
-  cmfp->efp          = NULL;
-  cmfp->hfp          = NULL;
-  cmfp->ffp          = NULL;
-  cmfp->pfp          = NULL;
-  cmfp->ssi          = NULL;
-  cmfp->errbuf[0]    = '\0';
+  cmfp->parser        = NULL;
+  cmfp->efp           = NULL;
+  cmfp->hfp           = NULL;
+  cmfp->ffp           = NULL;
+  cmfp->pfp           = NULL;
+  cmfp->ssi           = NULL;
+  cmfp->errbuf[0]     = '\0';
+  cmfp->msv_errbuf[0] = '\0';
 
   /* 1. There's two special reading modes that have limited indexing
    *    and optimization capability: reading from standard input, and 
@@ -1359,7 +1361,7 @@ cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset)
  *            Returns <eslEINCOMPAT> if the HMM we read is incompatible
  *            with the existing alphabet <*byp_abc> led us to expect.
  *            
- *            On any returned error, <cmfp->errbuf> contains an
+ *            On any returned error, <cmfp->msv_errbuf> contains an
  *            informative error message.
  *
  * Throws:    <eslEMEM> on allocation error.
@@ -1377,30 +1379,34 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
   float gflambda;                  /* glocal fwd lambda parameter for current hmm */
   P7_OPROFILE *om = NULL;          /* the om we've read */
 
-  cmfp->errbuf[0] = '\0';
-  if (cmfp->ffp == NULL)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
+  /* We use cmfp->msv_errbuf here instead of cmfp->errbuf to avoid a
+   * thread race in cmscan with read_bin_1p1_cm which also uses
+   * cmfp->errbuf. 
+   */
+  cmfp->msv_errbuf[0] = '\0'; // don't touch cmfp->errbuf, master is exclusively using ReadMSV, workers are using cm_file_Read()
+  if (cmfp->ffp == NULL)    ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "no MSV profile file; cmpress probably wasn't run");
 
   if (feof(cmfp->ffp))                                           { status = eslEOF; goto ERROR; } /* normal EOF: no more profiles */
   if (! fread( (char *) &magic, sizeof(uint32_t), 1, cmfp->ffp)) { status = eslEOF; goto ERROR; }
-  if (magic != v1a_fmagic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic; not a CM database?");
+  if (magic != v1a_fmagic)  ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "bad magic; not a CM database?");
     
-  if (! fread( (char *) &cm_offset,       sizeof(off_t),    1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM offset");
-  if (! fread( (char *) &cm_clen,         sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM consensus length");
-  if (! fread( (char *) &cm_W,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM window length (W)");
-  if (! fread( (char *) &cm_nbp,          sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM number of bps");
-  if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd mu parameter");
-  if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
+  if (! fread( (char *) &cm_offset,       sizeof(off_t),    1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM offset");
+  if (! fread( (char *) &cm_clen,         sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM consensus length");
+  if (! fread( (char *) &cm_W,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM window length (W)");
+  if (! fread( (char *) &cm_nbp,          sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM number of bps");
+  if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read glocal fwd mu parameter");
+  if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read glocal fwd lambda parameter");
   
   /* move HMM file position (cmfp->hfp->ffp) to where we are in CM file (cmfp->ffp) */
-  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)               ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "failed to set position for HMM file parser (MSV)");
+  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)               ESL_XFAIL(eslEINCOMPAT, cmfp->msv_errbuf, "failed to set position for HMM file parser (MSV)");
   if (read_scores) { 
-    if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om))     != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed to read MSV filter model");
+    if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om))     != eslOK) ESL_XFAIL(status,       cmfp->msv_errbuf, "failed to read MSV filter model");
   }
   else { 
-    if ((status = p7_oprofile_ReadInfoMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed to read MSV info");
+    if ((status = p7_oprofile_ReadInfoMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->msv_errbuf, "failed to read MSV info");
   }
   /* move CM file position (cmfp->ffp) to where we are in HMM file (cmfp->hfp->ffp) */
-  if (fseeko(cmfp->ffp, ftello(cmfp->hfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
+  if (fseeko(cmfp->ffp, ftello(cmfp->hfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->msv_errbuf, "Failed to set position for CM file parser (MSV)");
 
   if(ret_cm_offset != NULL) *ret_cm_offset  = cm_offset; 
   if(ret_cm_clen   != NULL) *ret_cm_clen    = cm_clen; 
@@ -2755,7 +2761,8 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
  * EPN, Wed Aug 30 13:01:21 2023
  * Despite above comment, I modified read_{asc,bin}30hmm below to
  * avoid a race condition, to use hfp->rr_errbuf instead of 
- * hfp->errbuf. See comments in the comments for more details.
+ * hfp->errbuf. See comment near top of read_asc30hmm for more
+ * info.
  */
 
 /* Parsing save files from HMMER 3.x
