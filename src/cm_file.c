@@ -202,21 +202,22 @@ cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
   int         toklen;
 
   ESL_ALLOC(cmfp, sizeof(CM_FILE));
-  cmfp->f            = NULL;
-  cmfp->fname        = NULL;
-  cmfp->do_gzip      = FALSE;
-  cmfp->do_stdin     = FALSE;
-  cmfp->newly_opened = TRUE;	/* well, it will be, real soon now */
-  cmfp->is_pressed   = FALSE;
+  cmfp->f             = NULL;
+  cmfp->fname         = NULL;
+  cmfp->do_gzip       = FALSE;
+  cmfp->do_stdin      = FALSE;
+  cmfp->newly_opened  = TRUE;	/* well, it will be, real soon now */
+  cmfp->is_pressed    = FALSE;
 #ifdef HMMER_THREADS
-  cmfp->syncRead     = FALSE;
+  cmfp->syncRead      = FALSE;
 #endif
-  cmfp->parser       = NULL;
-  cmfp->efp          = NULL;
-  cmfp->ffp          = NULL;
-  cmfp->pfp          = NULL;
-  cmfp->ssi          = NULL;
-  cmfp->errbuf[0]    = '\0';
+  cmfp->parser        = NULL;
+  cmfp->efp           = NULL;
+  cmfp->ffp           = NULL;
+  cmfp->pfp           = NULL;
+  cmfp->ssi           = NULL;
+  cmfp->errbuf[0]     = '\0';
+  cmfp->msv_errbuf[0] = '\0';
 
   if ((cmfp->efp = esl_fileparser_CreateMapped(buffer, size))         == NULL)   { status = eslEMEM; goto ERROR; }
   if ((status = esl_fileparser_SetCommentChar(cmfp->efp, '#'))        != eslOK)  goto ERROR;
@@ -266,23 +267,24 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   int         toklen;
 
   ESL_ALLOC(cmfp, sizeof(CM_FILE));
-  cmfp->f            = NULL;
-  cmfp->fname        = NULL;
-  cmfp->do_gzip      = FALSE;
-  cmfp->do_stdin     = FALSE;
-  cmfp->newly_opened = TRUE;	/* well, it will be, real soon now */
-  cmfp->is_pressed   = FALSE;
-  cmfp->is_binary    = FALSE;
+  cmfp->f             = NULL;
+  cmfp->fname         = NULL;
+  cmfp->do_gzip       = FALSE;
+  cmfp->do_stdin      = FALSE;
+  cmfp->newly_opened  = TRUE;	/* well, it will be, real soon now */
+  cmfp->is_pressed    = FALSE;
+  cmfp->is_binary     = FALSE;
 #ifdef HMMER_THREADS
-  cmfp->syncRead     = FALSE;
+  cmfp->syncRead      = FALSE;
 #endif
-  cmfp->parser       = NULL;
-  cmfp->efp          = NULL;
-  cmfp->hfp          = NULL;
-  cmfp->ffp          = NULL;
-  cmfp->pfp          = NULL;
-  cmfp->ssi          = NULL;
-  cmfp->errbuf[0]    = '\0';
+  cmfp->parser        = NULL;
+  cmfp->efp           = NULL;
+  cmfp->hfp           = NULL;
+  cmfp->ffp           = NULL;
+  cmfp->pfp           = NULL;
+  cmfp->ssi           = NULL;
+  cmfp->errbuf[0]     = '\0';
+  cmfp->msv_errbuf[0] = '\0';
 
   /* 1. There's two special reading modes that have limited indexing
    *    and optimization capability: reading from standard input, and 
@@ -412,6 +414,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   cmfp->hfp->pfp          = NULL;
   cmfp->hfp->ssi          = NULL;      /* not sure if this should point to cmfp->ssi */
   cmfp->hfp->errbuf[0]    = '\0';
+  cmfp->hfp->rr_errbuf[0] = '\0';
   if ((status = esl_strdup(cmfp->fname, -1, &(cmfp->hfp->fname))) != eslOK) goto ERROR;
 
   /* 6. If we found and opened a binary model file .i1m, open the rest of 
@@ -1358,7 +1361,7 @@ cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset)
  *            Returns <eslEINCOMPAT> if the HMM we read is incompatible
  *            with the existing alphabet <*byp_abc> led us to expect.
  *            
- *            On any returned error, <cmfp->errbuf> contains an
+ *            On any returned error, <cmfp->msv_errbuf> contains an
  *            informative error message.
  *
  * Throws:    <eslEMEM> on allocation error.
@@ -1376,30 +1379,34 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
   float gflambda;                  /* glocal fwd lambda parameter for current hmm */
   P7_OPROFILE *om = NULL;          /* the om we've read */
 
-  cmfp->errbuf[0] = '\0';
-  if (cmfp->ffp == NULL)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no MSV profile file; cmpress probably wasn't run");
+  /* We use cmfp->msv_errbuf here instead of cmfp->errbuf to avoid a
+   * thread race in cmscan with read_bin_1p1_cm which also uses
+   * cmfp->errbuf. 
+   */
+  cmfp->msv_errbuf[0] = '\0'; // don't touch cmfp->errbuf, master is exclusively using ReadMSV, workers are using cm_file_Read()
+  if (cmfp->ffp == NULL)    ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "no MSV profile file; cmpress probably wasn't run");
 
   if (feof(cmfp->ffp))                                           { status = eslEOF; goto ERROR; } /* normal EOF: no more profiles */
   if (! fread( (char *) &magic, sizeof(uint32_t), 1, cmfp->ffp)) { status = eslEOF; goto ERROR; }
-  if (magic != v1a_fmagic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic; not a CM database?");
+  if (magic != v1a_fmagic)  ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "bad magic; not a CM database?");
     
-  if (! fread( (char *) &cm_offset,       sizeof(off_t),    1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM offset");
-  if (! fread( (char *) &cm_clen,         sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM consensus length");
-  if (! fread( (char *) &cm_W,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM window length (W)");
-  if (! fread( (char *) &cm_nbp,          sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM number of bps");
-  if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd mu parameter");
-  if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read glocal fwd lambda parameter");
+  if (! fread( (char *) &cm_offset,       sizeof(off_t),    1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM offset");
+  if (! fread( (char *) &cm_clen,         sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM consensus length");
+  if (! fread( (char *) &cm_W,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM window length (W)");
+  if (! fread( (char *) &cm_nbp,          sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read CM number of bps");
+  if (! fread( (char *) &gfmu,            sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read glocal fwd mu parameter");
+  if (! fread( (char *) &gflambda,        sizeof(int),      1, cmfp->ffp)) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "failed to read glocal fwd lambda parameter");
   
   /* move HMM file position (cmfp->hfp->ffp) to where we are in CM file (cmfp->ffp) */
-  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)               ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "failed to set position for HMM file parser (MSV)");
+  if (fseeko(cmfp->hfp->ffp, ftello(cmfp->ffp), SEEK_SET) != 0)               ESL_XFAIL(eslEINCOMPAT, cmfp->msv_errbuf, "failed to set position for HMM file parser (MSV)");
   if (read_scores) { 
-    if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om))     != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed to read MSV filter model");
+    if ((status = p7_oprofile_ReadMSV(cmfp->hfp, byp_abc, &om))     != eslOK) ESL_XFAIL(status,       cmfp->msv_errbuf, "failed to read MSV filter model");
   }
   else { 
-    if ((status = p7_oprofile_ReadInfoMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->errbuf, "failed to read MSV info");
+    if ((status = p7_oprofile_ReadInfoMSV(cmfp->hfp, byp_abc, &om)) != eslOK) ESL_XFAIL(status,       cmfp->msv_errbuf, "failed to read MSV info");
   }
   /* move CM file position (cmfp->ffp) to where we are in HMM file (cmfp->hfp->ffp) */
-  if (fseeko(cmfp->ffp, ftello(cmfp->hfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->errbuf, "Failed to set position for CM file parser (MSV)");
+  if (fseeko(cmfp->ffp, ftello(cmfp->hfp->ffp), SEEK_SET) != 0) ESL_XFAIL(eslEINCOMPAT, cmfp->msv_errbuf, "Failed to set position for CM file parser (MSV)");
 
   if(ret_cm_offset != NULL) *ret_cm_offset  = cm_offset; 
   if(ret_cm_clen   != NULL) *ret_cm_clen    = cm_clen; 
@@ -2750,6 +2757,12 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
  * This isn't the right way to do it, but it's what we did.  Do NOT
  * edit these here. If you edit them in H3, you MUST bring those edits
  * here.  [SRE:24-Jan-17]
+ * 
+ * EPN, Wed Aug 30 13:01:21 2023
+ * Despite above comment, I modified read_{asc,bin}30hmm below to
+ * avoid a race condition, to use hfp->rr_errbuf instead of 
+ * hfp->errbuf. See comment near top of read_asc30hmm for more
+ * info.
  */
 
 /* Parsing save files from HMMER 3.x
@@ -2778,7 +2791,7 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
  * 
  * When these normal errors occur, the caller can construct its error
  * message from:
- *    <hfp->errbuf>:    contains an informative error message
+ *    <hfp->rr_errbuf>: contains an informative error message
  *    <hfp->fname>:     name of the HMM file (or '-' if STDIN)
  * and if <hfp->efp> is non-<NULL>, the HMM file is in ASCII text, 
  * and the caller may also use:
@@ -2806,7 +2819,21 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
   int           status;
   uint32_t      statstracker = 0;
 
-  hfp->errbuf[0] = '\0';
+  /* The following line is the only difference infernal and hmmer's
+   * p7_hmmfile.c version of this function. In infernal we avoid use 
+   * of hfp->errbuf to avoid a race condition in cmscan. That 
+   * race previously occurred because the master 
+   * modified hfp->errbuf in cm_p7_oprofile_ReadMSV 
+   * but workers also modified hfp->errbuf (previous to this change)
+   * it they reached the glocal envelope definition stage of
+   * cm_Pipeline() when the full (non-optimized) HMM is read.
+   * This is related to Sean's fix to a similar race condition in 
+   * hmmscan in which he added the rr_errbuf buffer for use in
+   * p7_oprofile_ReadRest (hmmer commit 3867dac and github issues #277
+   * and #278.)
+   */
+
+  hfp->rr_errbuf[0] = '\0'; /* hmmer version of this function uses hfp->errbuf, don't use that here, see above comment */
 
   if (hfp->newly_opened)
     {
@@ -2820,126 +2847,126 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
 
       /* First line of file: "HMMER3/f". Allocate shell for HMM annotation information (we don't know K,M yet) */
       if ((status = esl_fileparser_NextLine(hfp->efp))                   != eslOK)  goto ERROR;  /* EOF here is normal; could also be a thrown EMEM */
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tag, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "unexpected absence of tokens on data line");
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tag, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "unexpected absence of tokens on data line");
 
-      if      (hfp->format == p7_HMMFILE_3f) { if (strcmp(tag, "HMMER3/f") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/f tag: bad format or not a HMMER save file?"); }
-      else if (hfp->format == p7_HMMFILE_3e) { if (strcmp(tag, "HMMER3/e") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/e tag: bad format or not a HMMER save file?"); }
-      else if (hfp->format == p7_HMMFILE_3d) { if (strcmp(tag, "HMMER3/d") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/d tag: bad format or not a HMMER save file?"); }
-      else if (hfp->format == p7_HMMFILE_3c) { if (strcmp(tag, "HMMER3/c") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/c tag: bad format or not a HMMER save file?"); }
-      else if (hfp->format == p7_HMMFILE_3b) { if (strcmp(tag, "HMMER3/b") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/b tag: bad format or not a HMMER save file?"); }
-      else if (hfp->format == p7_HMMFILE_3a) { if (strcmp(tag, "HMMER3/a") != 0)     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Didn't find HMMER3/a tag: bad format or not a HMMER save file?"); }
-      else                                                                           ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No such HMM file format code: this shouldn't happen");
+      if      (hfp->format == p7_HMMFILE_3f) { if (strcmp(tag, "HMMER3/f") != 0)     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Didn't find HMMER3/f tag: bad format or not a HMMER save file?"); }
+      else if (hfp->format == p7_HMMFILE_3e) { if (strcmp(tag, "HMMER3/e") != 0)     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Didn't find HMMER3/e tag: bad format or not a HMMER save file?"); }
+      else if (hfp->format == p7_HMMFILE_3d) { if (strcmp(tag, "HMMER3/d") != 0)     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Didn't find HMMER3/d tag: bad format or not a HMMER save file?"); }
+      else if (hfp->format == p7_HMMFILE_3c) { if (strcmp(tag, "HMMER3/c") != 0)     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Didn't find HMMER3/c tag: bad format or not a HMMER save file?"); }
+      else if (hfp->format == p7_HMMFILE_3b) { if (strcmp(tag, "HMMER3/b") != 0)     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Didn't find HMMER3/b tag: bad format or not a HMMER save file?"); }
+      else if (hfp->format == p7_HMMFILE_3a) { if (strcmp(tag, "HMMER3/a") != 0)     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Didn't find HMMER3/a tag: bad format or not a HMMER save file?"); }
+      else                                                                           ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "No such HMM file format code: this shouldn't happen");
     }
 
-  if ((hmm = p7_hmm_CreateShell())                                   == NULL)   ESL_XFAIL(eslEMEM,    hfp->errbuf, "allocation failure, HMM shell");
+  if ((hmm = p7_hmm_CreateShell())                                   == NULL)   ESL_XFAIL(eslEMEM,    hfp->rr_errbuf, "allocation failure, HMM shell");
   hmm->offset = offset;
 
   /* Header section */
   while ((status = esl_fileparser_NextLine(hfp->efp)) == eslOK)
     {
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tag, NULL))     != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "Premature end of line");
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tag, NULL))     != eslOK)   ESL_XFAIL(status,    hfp->rr_errbuf, "Premature end of line");
 
       if (strcmp(tag, "NAME") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "No name found on NAME line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->rr_errbuf, "No name found on NAME line");
 	p7_hmm_SetName(hmm, tok1);
       } 
 
       else if (strcmp(tag, "ACC") == 0)  {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "No accession found on ACC line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->rr_errbuf, "No accession found on ACC line");
 	p7_hmm_SetAccession(hmm, tok1);
       }  
 
       else if (strcmp(tag, "DESC") == 0) {
-	if ((status = esl_fileparser_GetRemainingLine(hfp->efp, &tok1))      != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "No description found on DESC line");
+	if ((status = esl_fileparser_GetRemainingLine(hfp->efp, &tok1))      != eslOK)   ESL_XFAIL(status,    hfp->rr_errbuf, "No description found on DESC line");
 	p7_hmm_SetDescription(hmm, tok1);
       } 
 
       else if (strcmp(tag, "LENG") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "No model length found on LENG line");
-	if ((hmm->M = atoi(tok1))                                            == 0)     ESL_XFAIL(status,    hfp->errbuf, "Invalid model length %s on LENG line", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,     hfp->rr_errbuf, "No model length found on LENG line");
+	if ((hmm->M = atoi(tok1))                                            == 0)       ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Invalid model length %s on LENG line", tok1);
       }  
 
       else if (hfp->format >= p7_HMMFILE_3c && strcmp(tag, "MAXL") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "No max length found on MAXL line");
-	if ((hmm->max_length = atoi(tok1))                                   == 0)     ESL_XFAIL(status,    hfp->errbuf, "Invalid max length %s on MAXL line", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,     hfp->rr_errbuf, "No max length found on MAXL line");
+	if ((hmm->max_length = atoi(tok1))                                   == 0)       ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Invalid max length %s on MAXL line", tok1);
       }
 
       else if (strcmp(tag, "ALPH") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,    hfp->errbuf, "No alphabet type found on ALPH");
-	if ((alphatype = esl_abc_EncodeType(tok1))                        == eslUNKNOWN) ESL_XFAIL(status,    hfp->errbuf, "Unrecognized alphabet type %s", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))  != eslOK)   ESL_XFAIL(status,     hfp->rr_errbuf, "No alphabet type found on ALPH");
+	if ((alphatype = esl_abc_EncodeType(tok1))                        == eslUNKNOWN) ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Unrecognized alphabet type %s", tok1);
 	if (*ret_abc == NULL) {
-	  if ((abc = esl_alphabet_Create(alphatype))                        == NULL)    ESL_XFAIL(eslEMEM,   hfp->errbuf, "Failed to create alphabet");
+	  if ((abc = esl_alphabet_Create(alphatype))                        == NULL)    ESL_XFAIL(eslEMEM,     hfp->rr_errbuf, "Failed to create alphabet");
 	} else {
-	  if ((*ret_abc)->type != alphatype)                                           ESL_XFAIL(eslEINCOMPAT,hfp->errbuf,"Alphabet type mismatch: was %s, but current HMM says %s", esl_abc_DecodeType( (*ret_abc)->type), tok1);
+	  if ((*ret_abc)->type != alphatype)                                           ESL_XFAIL(eslEINCOMPAT, hfp->rr_errbuf,"Alphabet type mismatch: was %s, but current HMM says %s", esl_abc_DecodeType( (*ret_abc)->type), tok1);
 	  abc = *ret_abc;
 	}
       } 
 
       else if (strcmp(tag, "RF") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,    hfp->errbuf, "No yes/no found for RF line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,    hfp->rr_errbuf, "No yes/no found for RF line");
 	if      (strcasecmp(tok1, "yes") == 0)
 	  hmm->flags |= p7H_RF;
-	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->errbuf, "RF header line must say yes/no, not %s", tok1);
+	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "RF header line must say yes/no, not %s", tok1);
       } 
 
       else if (strcmp(tag, "MM") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,    hfp->errbuf, "No yes/no found for MM line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,    hfp->rr_errbuf, "No yes/no found for MM line");
 	if      (strcasecmp(tok1, "yes") == 0)
 	  hmm->flags |= p7H_MMASK;
-	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->errbuf, "MM header line must say yes/no, not %s", tok1);
+	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "MM header line must say yes/no, not %s", tok1);
       }
 
 
       else if (strcmp(tag, "CONS") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "No yes/no found for CONS line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "No yes/no found for CONS line");
 	if (strcasecmp(tok1, "yes") == 0)
 	  hmm->flags |= p7H_CONS;
-	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->errbuf, "CONS header line must say yes/no, not %s", tok1);
+	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "CONS header line must say yes/no, not %s", tok1);
       } 
 
       else if (strcmp(tag, "CS") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "No yes/no found for CS line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "No yes/no found for CS line");
 	if (strcasecmp(tok1, "yes") == 0)
 	  hmm->flags |= p7H_CS;
-	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->errbuf, "CS header line must say yes/no, not %s", tok1);
+	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "CS header line must say yes/no, not %s", tok1);
       } 
 
       else if (strcmp(tag, "MAP") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "No yes/no found for MAP line");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "No yes/no found for MAP line");
 	if      (strcasecmp(tok1, "yes") == 0)
 	  hmm->flags |= p7H_MAP;
-	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->errbuf, "MAP header line must say yes/no, not %s", tok1);
+	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "MAP header line must say yes/no, not %s", tok1);
       } 
 
       else if (strcmp(tag, "DATE") == 0) {
-	if ((status = esl_fileparser_GetRemainingLine(hfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "No date found on DATE line");
-	if (esl_strdup(tok1, -1, &(hmm->ctime))                               != eslOK)  ESL_XFAIL(eslEMEM,    hfp->errbuf, "strdup() failed to set date");
+	if ((status = esl_fileparser_GetRemainingLine(hfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "No date found on DATE line");
+	if (esl_strdup(tok1, -1, &(hmm->ctime))                               != eslOK)  ESL_XFAIL(eslEMEM,    hfp->rr_errbuf, "strdup() failed to set date");
       }
 
       else if (strcmp(tag, "COM") == 0) {
 	/* just skip the first token; it's something like [1], numbering the command lines */
-	if ((status = esl_fileparser_GetTokenOnLine  (hfp->efp, &tok1, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "No command number on COM line");
-	if ((status = esl_fileparser_GetRemainingLine(hfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "No command on COM line");
+	if ((status = esl_fileparser_GetTokenOnLine  (hfp->efp, &tok1, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "No command number on COM line");
+	if ((status = esl_fileparser_GetRemainingLine(hfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "No command on COM line");
 	if (hmm->comlog == NULL) {
-	  if (esl_strdup(tok1, -1, &(hmm->comlog))                            != eslOK)  ESL_XFAIL(eslEMEM,    hfp->errbuf, "esl_strdup() failed");
+	  if (esl_strdup(tok1, -1, &(hmm->comlog))                            != eslOK)  ESL_XFAIL(eslEMEM,    hfp->rr_errbuf, "esl_strdup() failed");
 	} else {
-	  if (esl_strcat(&(hmm->comlog), -1, "\n", -1)                        != eslOK)  ESL_XFAIL(eslEMEM,    hfp->errbuf, "esl_strcat() failed");
-	  if (esl_strcat(&(hmm->comlog), -1, tok1,  -1)                       != eslOK)  ESL_XFAIL(eslEMEM,    hfp->errbuf, "esl_strcat() failed");
+	  if (esl_strcat(&(hmm->comlog), -1, "\n", -1)                        != eslOK)  ESL_XFAIL(eslEMEM,    hfp->rr_errbuf, "esl_strcat() failed");
+	  if (esl_strcat(&(hmm->comlog), -1, tok1,  -1)                       != eslOK)  ESL_XFAIL(eslEMEM,    hfp->rr_errbuf, "esl_strcat() failed");
 	}
       }
       
       else if (strcmp(tag, "NSEQ") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Nothing follows NSEQ tag");
-	if ((hmm->nseq = atoi(tok1)) == 0)                                               ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Invalid nseq on NSEQ line: should be integer, not %s", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Nothing follows NSEQ tag");
+	if ((hmm->nseq = atoi(tok1)) == 0)                                               ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Invalid nseq on NSEQ line: should be integer, not %s", tok1);
       }
 
       else if (strcmp(tag, "EFFN") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Nothing follows EFFN tag");
-	if ((hmm->eff_nseq = atof(tok1)) <= 0.0f)                                        ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Invalid eff_nseq on EFFN line: should be a real number, not %s", tok1);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Nothing follows EFFN tag");
+	if ((hmm->eff_nseq = atof(tok1)) <= 0.0f)                                        ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Invalid eff_nseq on EFFN line: should be a real number, not %s", tok1);
       }
 
       else if (strcmp(tag, "CKSUM") == 0) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Nothing follows CKSUM tag");
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Nothing follows CKSUM tag");
 	hmm->checksum = atoll(tok1); /* if atoi(), then you may truncate uint32_t checksums > 2^31-1 */
 	hmm->flags |= p7H_CHKSUM;
       }
@@ -2947,64 +2974,64 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
       else if (strcmp(tag, "STATS") == 0) {
 	if (hfp->format >= p7_HMMFILE_3b)
 	  {
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* LOCAL */
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* MSV | VITERBI | FORWARD */
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* mu | tau */
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok4, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* lambda */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* LOCAL */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* MSV | VITERBI | FORWARD */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* mu | tau */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok4, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* lambda */
 	    if (strcasecmp(tok1, "LOCAL") == 0)
 	      {
 		if      (strcasecmp(tok2, "MSV")     == 0)  { hmm->evparam[p7_MMU]  = atof(tok3); hmm->evparam[p7_MLAMBDA] = atof(tok4); statstracker |= 0x1; }
 		else if (strcasecmp(tok2, "VITERBI") == 0)  { hmm->evparam[p7_VMU]  = atof(tok3); hmm->evparam[p7_VLAMBDA] = atof(tok4); statstracker |= 0x2; }
 		else if (strcasecmp(tok2, "FORWARD") == 0)  { hmm->evparam[p7_FTAU] = atof(tok3); hmm->evparam[p7_FLAMBDA] = atof(tok4); statstracker |= 0x4; }
-		else ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Failed to parse STATS, %s unrecognized as field 3", tok2);
-	      } else ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Failed to parse STATS, %s unrecognized as field 2", tok1);
+		else ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Failed to parse STATS, %s unrecognized as field 3", tok2);
+	      } else ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Failed to parse STATS, %s unrecognized as field 2", tok1);
 	  }
 	else if (hfp->format == p7_HMMFILE_3a) /* reverse compatibility with 30a */
 	  {
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* LOCAL */
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* VLAMBDA | VMU | FTAU */
-	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on STATS line"); /* value */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* LOCAL */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* VLAMBDA | VMU | FTAU */
+	    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on STATS line"); /* value */
 	    if (strcasecmp(tok1, "LOCAL") == 0)
 	      {
 		if      (strcasecmp(tok2, "VLAMBDA") == 0)  { hmm->evparam[p7_MLAMBDA] = hmm->evparam[p7_VLAMBDA] = hmm->evparam[p7_FLAMBDA] = atof(tok3);  statstracker |= 0x1; }
 		else if (strcasecmp(tok2, "VMU")     == 0)  {                            hmm->evparam[p7_MMU]     = hmm->evparam[p7_VMU]     = atof(tok3);  statstracker |= 0x2; }
 		else if (strcasecmp(tok2, "FTAU")    == 0)  {                                                       hmm->evparam[p7_FTAU]    = atof(tok3);  statstracker |= 0x4; }
-		else ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Failed to parse STATS, %s unrecognized as field 3", tok2);
-	      } else ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Failed to parse STATS, %s unrecognized as field 2", tok1);
+		else ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Failed to parse STATS, %s unrecognized as field 3", tok2);
+	      } else ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Failed to parse STATS, %s unrecognized as field 2", tok1);
 	  }
       }
 
       else if (strcmp(tag, "GA") == 0) {
-        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on GA line");
+        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on GA line");
         hmm->cutoff[p7_GA1] = atof(tok1);
         if ( (abc->type == eslDNA || abc->type == eslRNA) ) { //if DNA, there's no need for a 2nd value (domain GA)
           hmm->cutoff[p7_GA2] = hmm->cutoff[p7_GA1];
         } else {
-          if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on GA line");
+          if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on GA line");
           hmm->cutoff[p7_GA2] = atof(tok2);
         }
         hmm->flags         |= p7H_GA;
       }
 
       else if (strcmp(tag, "TC") == 0) {
-        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on TC line");
+        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on TC line");
         hmm->cutoff[p7_TC1] = atof(tok1);
         if ( (abc->type == eslDNA || abc->type == eslRNA) ) { //if DNA, there's no need for a 2nd value (domain GA)
           hmm->cutoff[p7_TC2] = hmm->cutoff[p7_TC1];
         } else {
-          if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on TC line");
+          if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on TC line");
           hmm->cutoff[p7_TC2] = atof(tok2);
         }
         hmm->flags         |= p7H_TC;
       }
 
       else if (strcmp(tag, "NC") == 0) {
-        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on NC line");
+        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on NC line");
         hmm->cutoff[p7_NC1] = atof(tok1);
         if ( (abc->type == eslDNA || abc->type == eslRNA) ) { //if DNA, there's no need for a 2nd value (domain GA)
           hmm->cutoff[p7_NC2] = hmm->cutoff[p7_NC1];
         } else {
-          if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on NC line");
+          if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on NC line");
           hmm->cutoff[p7_NC2] = atof(tok2);
         }
         hmm->flags         |= p7H_NC;
@@ -3018,36 +3045,36 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
 
   /* If we saw one STATS line, we need all 3. (True for both 3/a and 3/b formats) */
   if      (statstracker == 0x7) hmm->flags |= p7H_STATS;
-  else if (statstracker != 0x0) ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Missing one or more STATS parameter lines");
+  else if (statstracker != 0x0) ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Missing one or more STATS parameter lines");
 
   
   /* Skip main model header lines; allocate body of HMM now that K,M are known */
-  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data before main model section");
-  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data before main model section");
-  if ((status = p7_hmm_CreateBody(hmm, hmm->M, abc))                          != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Failed to allocate body of the new HMM");
-  if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))         != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data before main model section");
+  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data before main model section");
+  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data before main model section");
+  if ((status = p7_hmm_CreateBody(hmm, hmm->M, abc))                          != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Failed to allocate body of the new HMM");
+  if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))         != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data before main model section");
 
   /* Optional model composition (filter null model) may immediately follow headers */
   if (strcmp(tok1, "COMPO") == 0) {
     for (x = 0; x < abc->K; x++)  {
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on COMPO line");
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on COMPO line");
       hmm->compo[x] = (*tok1 == '*' ? 0.0 : expf(-1.0 * atof(tok1)));
     }
     hmm->flags |= p7H_COMPO;
-    if ((status = esl_fileparser_NextLine(hfp->efp))                          != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data after COMPO line");  
-    if ((esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))                != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data after COMPO line");  
+    if ((status = esl_fileparser_NextLine(hfp->efp))                          != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data after COMPO line");  
+    if ((esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))                != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data after COMPO line");  
   }
 
   /* First two lines are node 0: insert emissions, then transitions from node 0 (begin) */
 
   hmm->ins[0][0] = (*tok1 == '*' ? 0.0 : expf(-1.0 *atof(tok1)));
   for (x = 1; x < abc->K; x++) {
-    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))       != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on insert line, node 0: expected %d, got %d\n", abc->K, x);
+    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))       != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on insert line, node 0: expected %d, got %d\n", abc->K, x);
     hmm->ins[0][x] = (*tok1 == '*' ? 0.0 : expf(-1.0 *atof(tok1)));
   }
-  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data in main model: no node 0 transition line");
+  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data in main model: no node 0 transition line");
   for (x = 0; x < p7H_NTRANSITIONS; x++) {
-    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))       != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few fields on begin (0) transition line");
+    if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))       != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few fields on begin (0) transition line");
     hmm->t[0][x] = (*tok1 == '*' ? 0.0 : expf(-1.0 *atof(tok1)));
   }
 
@@ -3055,54 +3082,54 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
   for (k = 1; k <= hmm->M; k++)
     {
 
-      if ((status = esl_fileparser_NextLine(hfp->efp))                        != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data in main model section, at node %d (expected %d)", k, hmm->M);
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data in main model section, at node %d (expected %d)", k, hmm->M);
-      if (atoi(tok1) != k)                                                               ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Expected match line to start with %d (of %d); saw %s", k, hmm->M, tok1);
+      if ((status = esl_fileparser_NextLine(hfp->efp))                        != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data in main model section, at node %d (expected %d)", k, hmm->M);
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data in main model section, at node %d (expected %d)", k, hmm->M);
+      if (atoi(tok1) != k)                                                               ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Expected match line to start with %d (of %d); saw %s", k, hmm->M, tok1);
       
       for (x = 0; x < abc->K; x++) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few probability fields on match line, node %d: expected %d, got %d\n", k, abc->K, x);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few probability fields on match line, node %d: expected %d, got %d\n", k, abc->K, x);
 	hmm->mat[k][x] = (*tok1 == '*' ? 0.0 : expf(-1.0 *atof(tok1)));
       }
       
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing MAP field on match line for node %d: should at least be -", k);
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Missing MAP field on match line for node %d: should at least be -", k);
       if (hmm->flags & p7H_MAP) hmm->map[k] = atoi(tok1);
 
       if (hfp->format >= p7_HMMFILE_3e) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing CONS field on match line for node %d: should at least be -", k);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Missing CONS field on match line for node %d: should at least be -", k);
 	if (hmm->flags & p7H_CONS) hmm->consensus[k] = *tok1;
       }
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing RF field on match line for node %d: should at least be -",  k);
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Missing RF field on match line for node %d: should at least be -",  k);
       if (hmm->flags & p7H_RF) hmm->rf[k]   = *tok1;
 
       if (hfp->format >= p7_HMMFILE_3f) {
-        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing MM field on match line for node %d: should at least be -", k);
+        if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Missing MM field on match line for node %d: should at least be -", k);
         if (hmm->flags & p7H_MMASK) hmm->mm[k] = *tok1;
       }
 
 
-      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Missing CS field on match line for node %d: should at least be -",  k);
+      if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))     != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Missing CS field on match line for node %d: should at least be -",  k);
       if (hmm->flags & p7H_CS) hmm->cs[k]   = *tok1;
 
       
-      if ((status = esl_fileparser_NextLine(hfp->efp))                        != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data in main model: no insert emission line, node %d", k);
+      if ((status = esl_fileparser_NextLine(hfp->efp))                        != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data in main model: no insert emission line, node %d", k);
       for (x = 0; x < abc->K; x++) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few probability fields on insert line, node %d: expected %d, got %d\n", k, abc->K, x);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few probability fields on insert line, node %d: expected %d, got %d\n", k, abc->K, x);
 	hmm->ins[k][x] = (*tok1 == '*' ? 0.0 : expf(-1.0 *atof(tok1)));
       }
-      if ((status = esl_fileparser_NextLine(hfp->efp))                        != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data in main model: no transition line, node %d", k);
+      if ((status = esl_fileparser_NextLine(hfp->efp))                        != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data in main model: no transition line, node %d", k);
       for (x = 0; x < p7H_NTRANSITIONS; x++) {
-	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Too few probability fields on transition line, node %d: expected %d, got %d\n", k, abc->K, x);
+	if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Too few probability fields on transition line, node %d: expected %d, got %d\n", k, abc->K, x);
 	hmm->t[k][x] = (*tok1 == '*' ? 0.0 : expf(-1.0 *atof(tok1)));
       }
     }
 
   /* The closing // */
-  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data: missing //?");
-  if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))         != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Premature end of data: missing //?");
-  if (strcmp(tok1, "//")                                                      != 0)      ESL_XFAIL(eslEFORMAT, hfp->errbuf, "Expected closing //; found %s instead", tok1);
+  if ((status = esl_fileparser_NextLine(hfp->efp))                            != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data: missing //?");
+  if ((status = esl_fileparser_GetTokenOnLine(hfp->efp, &tok1, NULL))         != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Premature end of data: missing //?");
+  if (strcmp(tok1, "//")                                                      != 0)      ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "Expected closing //; found %s instead", tok1);
 
   /* legacy issues */
-  if (hfp->format < p7_HMMFILE_3e && (status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Failed to set consensus on legacy HMM format");
+  if (hfp->format < p7_HMMFILE_3e && (status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Failed to set consensus on legacy HMM format");
 
   /* Finish up. */
   if (hmm->flags & p7H_RF)   { hmm->rf[0]        = ' '; hmm->rf[hmm->M+1]        = '\0'; }
@@ -3110,9 +3137,9 @@ read_asc30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
   if (hmm->flags & p7H_CONS) { hmm->consensus[0] = ' '; hmm->consensus[hmm->M+1] = '\0'; }
   if (hmm->flags & p7H_CS)   { hmm->cs[0]        = ' '; hmm->cs[hmm->M+1]        = '\0'; }
   if (hmm->flags & p7H_MAP)  { hmm->map[0]       = 0; }
-  if (hmm->name == NULL)    ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No NAME found for HMM");
-  if (hmm->M    <= 0)       ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No LENG found for HMM (or LENG <= 0)");
-  if (abc       == NULL)    ESL_XFAIL(eslEFORMAT, hfp->errbuf, "No ALPH found for HMM");
+  if (hmm->name == NULL)    ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "No NAME found for HMM");
+  if (hmm->M    <= 0)       ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "No LENG found for HMM (or LENG <= 0)");
+  if (abc       == NULL)    ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "No ALPH found for HMM");
 
   if (*ret_abc == NULL) *ret_abc = abc;
   if ( opt_hmm != NULL) *opt_hmm = hmm; else p7_hmm_Destroy(hmm);
@@ -3140,7 +3167,7 @@ read_bin30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
   off_t         offset = 0;
   int           status;
 
-  hfp->errbuf[0] = '\0';
+  hfp->rr_errbuf[0] = '\0'; /* hmmer version of this function uses hfp->errbuf, don't use that here, see comment near top of read_asc30hmm */
   if (feof(hfp->f))                                             { status = eslEOF;       goto ERROR; }
 
   if (hfp->newly_opened) 
@@ -3155,73 +3182,73 @@ read_bin30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
       }
       if (! fread((char *) &magic, sizeof(uint32_t), 1, hfp->f))    { status = eslEOF;       goto ERROR; }
 
-      if      (hfp->format == p7_HMMFILE_3f) { if (magic != v3f_magic)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "bad magic number at start of HMM");  }
-      else if (hfp->format == p7_HMMFILE_3e) { if (magic != v3e_magic)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "bad magic number at start of HMM");  }
-      else if (hfp->format == p7_HMMFILE_3d) { if (magic != v3d_magic)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "bad magic number at start of HMM");  }
-      else if (hfp->format == p7_HMMFILE_3c) { if (magic != v3c_magic)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "bad magic number at start of HMM");  }
-      else if (hfp->format == p7_HMMFILE_3b) { if (magic != v3b_magic)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "bad magic number at start of HMM");  }
-      else if (hfp->format == p7_HMMFILE_3a) { if (magic != v3a_magic)  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "bad magic number at start of HMM");  }
-      else                                                              ESL_XFAIL(eslEFORMAT, hfp->errbuf, "no such HMM file format code");      
+      if      (hfp->format == p7_HMMFILE_3f) { if (magic != v3f_magic)  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "bad magic number at start of HMM");  }
+      else if (hfp->format == p7_HMMFILE_3e) { if (magic != v3e_magic)  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "bad magic number at start of HMM");  }
+      else if (hfp->format == p7_HMMFILE_3d) { if (magic != v3d_magic)  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "bad magic number at start of HMM");  }
+      else if (hfp->format == p7_HMMFILE_3c) { if (magic != v3c_magic)  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "bad magic number at start of HMM");  }
+      else if (hfp->format == p7_HMMFILE_3b) { if (magic != v3b_magic)  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "bad magic number at start of HMM");  }
+      else if (hfp->format == p7_HMMFILE_3a) { if (magic != v3a_magic)  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "bad magic number at start of HMM");  }
+      else                                                              ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "no such HMM file format code");      
     }
 
   /* Allocate shell of the new HMM. 
    * Two-step allocation lets us read/set the flags first; 
    * then the later CreateBody() call will allocate optional internal fields we need. 
    */
-  if ((hmm = p7_hmm_CreateShell()) == NULL)                     ESL_XFAIL(eslEMEM, hfp->errbuf, "allocation failed, HMM shell");
+  if ((hmm = p7_hmm_CreateShell()) == NULL)                     ESL_XFAIL(eslEMEM, hfp->rr_errbuf, "allocation failed, HMM shell");
   hmm->offset = offset;
 
   /* Get sizes of things */
   /* xref J5/114 for a legacy use of <flags> for optional acc, desc annotation */
-  if (! fread((char *) &(hmm->flags),  sizeof(int), 1, hfp->f)) ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read flags");
-  if (! fread((char *) &(hmm->M),      sizeof(int), 1, hfp->f)) ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read model size M");
-  if (! fread((char *) &alphabet_type, sizeof(int), 1, hfp->f)) ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read alphabet_type");
+  if (! fread((char *) &(hmm->flags),  sizeof(int), 1, hfp->f)) ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read flags");
+  if (! fread((char *) &(hmm->M),      sizeof(int), 1, hfp->f)) ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read model size M");
+  if (! fread((char *) &alphabet_type, sizeof(int), 1, hfp->f)) ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read alphabet_type");
   
   /* Set or verify alphabet. */
   if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
-    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)     ESL_XFAIL(eslEMEM, hfp->errbuf, "allocation failed, alphabet");
+    if ((abc = esl_alphabet_Create(alphabet_type)) == NULL)     ESL_XFAIL(eslEMEM, hfp->rr_errbuf, "allocation failed, alphabet");
   } else {			/* already known: check it */
     abc = *ret_abc;
-    if (abc->type != alphabet_type)                             ESL_XFAIL(eslEINCOMPAT, hfp->errbuf, "Alphabet type mismatch: was %s, but current HMM says %s", esl_abc_DecodeType( abc->type), esl_abc_DecodeType(alphabet_type));
+    if (abc->type != alphabet_type)                             ESL_XFAIL(eslEINCOMPAT, hfp->rr_errbuf, "Alphabet type mismatch: was %s, but current HMM says %s", esl_abc_DecodeType( abc->type), esl_abc_DecodeType(alphabet_type));
   }
 
   /* Finish the allocation of the HMM
    */
-  if ((status = p7_hmm_CreateBody(hmm, hmm->M, abc)) != eslOK)  ESL_XFAIL(eslEMEM, hfp->errbuf, "allocation failed, HMM body");
+  if ((status = p7_hmm_CreateBody(hmm, hmm->M, abc)) != eslOK)  ESL_XFAIL(eslEMEM, hfp->rr_errbuf, "allocation failed, HMM body");
   
   /* Core model probabilities. */
   for (k = 1; k <= hmm->M; k++)
-    if (! fread((char *) hmm->mat[k], sizeof(float), hmm->abc->K,      hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read mat[%d]", k);
+    if (! fread((char *) hmm->mat[k], sizeof(float), hmm->abc->K,      hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read mat[%d]", k);
   for (k = 0; k <= hmm->M; k++)
-    if (! fread((char *) hmm->ins[k], sizeof(float), hmm->abc->K,      hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read ins[%d]", k);
+    if (! fread((char *) hmm->ins[k], sizeof(float), hmm->abc->K,      hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read ins[%d]", k);
   for (k = 0; k <= hmm->M; k++)
-    if (! fread((char *) hmm->t[k],   sizeof(float), p7H_NTRANSITIONS, hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read t[%d]", k);
+    if (! fread((char *) hmm->t[k],   sizeof(float), p7H_NTRANSITIONS, hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read t[%d]", k);
   
   /* Annotations. */
-  if (read_bin_string(hfp->f, &(hmm->name)) != eslOK)                                                ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read name");
-  if ((hmm->flags & p7H_ACC)  && read_bin_string(hfp->f, &(hmm->acc))  != eslOK)                     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read acc");
-  if ((hmm->flags & p7H_DESC) && read_bin_string(hfp->f, &(hmm->desc)) != eslOK)                     ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read desc");
-  if ((hmm->flags & p7H_RF)   && ! fread((char *) hmm->rf,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read rf");   /* +2: 1..M and trailing \0 */
-  if ((hmm->flags & p7H_MMASK)&& ! fread((char *) hmm->mm,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read mm");   /* +2: 1..M and trailing \0 */
-  if ((hmm->flags & p7H_CONS) && ! fread((char *) hmm->consensus, sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read consensus"); /* don't need to test for >=3e format, because the flag is sufficient (didn't exist pre-3e) */
-  if ((hmm->flags & p7H_CS)   && ! fread((char *) hmm->cs,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read cs");
-  if ((hmm->flags & p7H_CA)   && ! fread((char *) hmm->ca,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read ca");
-  if (read_bin_string(hfp->f, &(hmm->comlog)) != eslOK)                                              ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read comlog");
-  if (! fread((char *) &(hmm->nseq),       sizeof(int),   1, hfp->f))                                ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read nseq");
-  if (! fread((char *) &(hmm->eff_nseq),   sizeof(float), 1, hfp->f))                                ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read eff_nseq");
+  if (read_bin_string(hfp->f, &(hmm->name)) != eslOK)                                                ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read name");
+  if ((hmm->flags & p7H_ACC)  && read_bin_string(hfp->f, &(hmm->acc))  != eslOK)                     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read acc");
+  if ((hmm->flags & p7H_DESC) && read_bin_string(hfp->f, &(hmm->desc)) != eslOK)                     ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read desc");
+  if ((hmm->flags & p7H_RF)   && ! fread((char *) hmm->rf,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read rf");   /* +2: 1..M and trailing \0 */
+  if ((hmm->flags & p7H_MMASK)&& ! fread((char *) hmm->mm,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read mm");   /* +2: 1..M and trailing \0 */
+  if ((hmm->flags & p7H_CONS) && ! fread((char *) hmm->consensus, sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read consensus"); /* don't need to test for >=3e format, because the flag is sufficient (didn't exist pre-3e) */
+  if ((hmm->flags & p7H_CS)   && ! fread((char *) hmm->cs,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read cs");
+  if ((hmm->flags & p7H_CA)   && ! fread((char *) hmm->ca,        sizeof(char), hmm->M+2, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read ca");
+  if (read_bin_string(hfp->f, &(hmm->comlog)) != eslOK)                                              ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read comlog");
+  if (! fread((char *) &(hmm->nseq),       sizeof(int),   1, hfp->f))                                ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read nseq");
+  if (! fread((char *) &(hmm->eff_nseq),   sizeof(float), 1, hfp->f))                                ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read eff_nseq");
   if (hfp->format >= p7_HMMFILE_3c) {
-    if (! fread((char *) &(hmm->max_length), sizeof(int),   1, hfp->f))                         ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read max_length");
+    if (! fread((char *) &(hmm->max_length), sizeof(int),   1, hfp->f))                         ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read max_length");
   }
-  if (read_bin_string(hfp->f, &(hmm->ctime))  != eslOK)                                       ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read ctime");
-  if ((hmm->flags & p7H_MAP)  && ! fread((char *) hmm->map, sizeof(int), hmm->M+1, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read map");
-  if (! fread((char *) &(hmm->checksum), sizeof(uint32_t),1,hfp->f))                          ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read checksum");
+  if (read_bin_string(hfp->f, &(hmm->ctime))  != eslOK)                                       ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read ctime");
+  if ((hmm->flags & p7H_MAP)  && ! fread((char *) hmm->map, sizeof(int), hmm->M+1, hfp->f))   ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read map");
+  if (! fread((char *) &(hmm->checksum), sizeof(uint32_t),1,hfp->f))                          ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read checksum");
 
   /* E-value parameters and Pfam cutoffs */
   if (hfp->format >= p7_HMMFILE_3b) {
-    if (! fread((char *) hmm->evparam, sizeof(float), p7_NEVPARAM, hfp->f))                            ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read statistical params");
+    if (! fread((char *) hmm->evparam, sizeof(float), p7_NEVPARAM, hfp->f))                            ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read statistical params");
   } else if (hfp->format == p7_HMMFILE_3a) {
     /* a backward compatibility mode. 3/a files stored 3 floats: LAMBDA, MU, TAU. Read 3 #'s and carefully copy/rearrange them into new 6 format */
-    if (! fread((char *) hmm->evparam, sizeof(float), 3,           hfp->f))                            ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read statistical params");
+    if (! fread((char *) hmm->evparam, sizeof(float), 3,           hfp->f))                            ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read statistical params");
     hmm->evparam[p7_FLAMBDA] = hmm->evparam[0];
     hmm->evparam[p7_FTAU]    = hmm->evparam[2];
     hmm->evparam[p7_VLAMBDA] = hmm->evparam[0];
@@ -3229,11 +3256,11 @@ read_bin30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_hmm)
     hmm->evparam[p7_MLAMBDA] = hmm->evparam[p7_VLAMBDA];
     hmm->evparam[p7_MMU]     = hmm->evparam[p7_VMU];
   }
-  if (! fread((char *) hmm->cutoff,  sizeof(float), p7_NCUTOFFS, hfp->f))                            ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read Pfam score cutoffs");
-  if ((hmm->flags & p7H_COMPO) && ! fread((char *) hmm->compo, sizeof(float), hmm->abc->K, hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->errbuf, "failed to read model composition");
+  if (! fread((char *) hmm->cutoff,  sizeof(float), p7_NCUTOFFS, hfp->f))                            ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read Pfam score cutoffs");
+  if ((hmm->flags & p7H_COMPO) && ! fread((char *) hmm->compo, sizeof(float), hmm->abc->K, hfp->f))  ESL_XFAIL(eslEFORMAT, hfp->rr_errbuf, "failed to read model composition");
 
   /* other legacy issues */
-  if (hfp->format < p7_HMMFILE_3e && (status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->errbuf, "Failed to set consensus on legacy HMM format");
+  if (hfp->format < p7_HMMFILE_3e && (status = p7_hmm_SetConsensus(hmm, NULL)) != eslOK)  ESL_XFAIL(status,     hfp->rr_errbuf, "Failed to set consensus on legacy HMM format");
 
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   if ( opt_hmm != NULL) *opt_hmm = hmm; else p7_hmm_Destroy(hmm);
