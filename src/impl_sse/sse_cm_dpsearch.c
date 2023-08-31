@@ -312,20 +312,47 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
               for (d = 0; d < sW; d++) {
                 //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
                 //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
+
+                /* EPN, Thu Aug 31 13:27:50 2023 I commented out below
+                 * statement and replaced it with the one below it to
+                 * silence clang compiler warnings that claimed
+                 * ((j^j0)|d|1) and ((j^j0)|d|2) and ((j^j0)|d|3)
+                 * would always evaluate to true.  As part of the
+                 * release process (v1.1.5) we try to build with zero
+                 * compiler warnings so I made this change but am
+                 * leaving the original code for reference.
+                 */
+                /* original 4 lines: */
+                // vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]] : -eslINFINITY,
+                //                                     (  sW+d <= j && ((j^j0)|d|1) ) ? cm->oesc[v][dsq[j-(  sW+d)+1]] : -eslINFINITY,
+                //                                     (2*sW+d <= j && ((j^j0)|d|2) ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]] : -eslINFINITY,
+                //                                     (3*sW+d <= j && ((j^j0)|d|3) ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]] : -eslINFINITY);
+                /* modified 4 lines: */
                 vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]] : -eslINFINITY,
-                                                    (  sW+d <= j && ((j^j0)|d|1) ) ? cm->oesc[v][dsq[j-(  sW+d)+1]] : -eslINFINITY,
-                                                    (2*sW+d <= j && ((j^j0)|d|2) ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]] : -eslINFINITY,
-                                                    (3*sW+d <= j && ((j^j0)|d|3) ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]] : -eslINFINITY);
+                                                    (  sW+d <= j                 ) ? cm->oesc[v][dsq[j-(  sW+d)+1]] : -eslINFINITY,
+                                                    (2*sW+d <= j                 ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]] : -eslINFINITY,
+                                                    (3*sW+d <= j                 ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]] : -eslINFINITY);
               }
             }
             else if (cm->sttype[v] == MP_st) {
               for (d = 0; d < sW; d++) {
                 //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
                 //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
+
+                /* EPN, Thu Aug 31 13:31:16 2023 see comment in for
+                 * loop above explaining why these 4 lines are
+                 * commented out: 
+                 */
+                /* original 4 lines: */
+                //vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                //                                    (  sW+d <= j && ((j^j0)|d|1) ) ? cm->oesc[v][dsq[j-(  sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                //                                    (2*sW+d <= j && ((j^j0)|d|2) ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                //                                    (3*sW+d <= j && ((j^j0)|d|3) ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY);
+                /* modified 4 lines: */
                 vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
-                                                    (  sW+d <= j && ((j^j0)|d|1) ) ? cm->oesc[v][dsq[j-(  sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
-                                                    (2*sW+d <= j && ((j^j0)|d|2) ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
-                                                    (3*sW+d <= j && ((j^j0)|d|3) ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY);
+                                                    (  sW+d <= j                 ) ? cm->oesc[v][dsq[j-(  sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                    (2*sW+d <= j                 ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                    (3*sW+d <= j                 ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY);
               }
             }
             else

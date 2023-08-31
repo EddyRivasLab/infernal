@@ -3240,7 +3240,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, CMSu
 	  subinfo->apredict_ct[subinfo->imp_cc[nd]]++;
 	  apredict_total_ct++;
 	  if(print_flag)
-	    printf("PREDICTED VIOLATION[%3d]: TRUE | submap->spos: %3d | submap->epos: %3d | subinfo->imp_cc: %d\n", nd, submap->spos, submap->epos, subinfo->imp_cc[nd]);
+	    printf("PREDICTED VIOLATION[%3d]: TRUE | submap->spos: %3d | submap->epos: %3d | subinfo->imp_cc: %d (apredict_total_ct: %d)\n", nd, submap->spos, submap->epos, subinfo->imp_cc[nd], apredict_total_ct);
 	}
       else if(!violation[nd] && subinfo->imp_cc[nd] != 0)
 	{

@@ -1598,7 +1598,6 @@ cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
   int    posw;
   int    descw;
   char  *showname;
-  int    nprinted = 0;
   char   lseq, rseq;
 
   char *namestr     = NULL;
@@ -1623,7 +1622,6 @@ cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
   fprintf(ofp, " %1s %-*s %-*s %6s %*s %*s\n", "", namew, (pli->mode == CM_SEARCH_SEQS) ? "sequence" : "modelname", descw, (pli->mode == CM_SEARCH_SEQS) ? "modelname" : "sequence", " score", posw, "start", posw, "end");
   fprintf(ofp, " %1s %*s %*s %6s %*s %*s\n", "", namew, namestr, descw, descstr, "------", posw, posstr, posw, posstr);
   
-  nprinted = 0;
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
@@ -1653,7 +1651,6 @@ cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      lseq, rseq);
-      nprinted++;
     }
   }
   if (th->nreported == 0) fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
