@@ -404,7 +404,7 @@ main(int argc, char **argv)
 #if eslDEBUGLEVEL >= 1
   pid_t pid;
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 
