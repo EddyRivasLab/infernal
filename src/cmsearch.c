@@ -2789,7 +2789,7 @@ mpi_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char 
   int64_t L;    
   int i;
 
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "SSI index failed to open");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "SSI index failed to open");
 
   /* step through sequence SSI file to get database size */
   cfg->Z = 0;
@@ -2854,7 +2854,7 @@ mpi_add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int
   int64_t nseq = 0;
 
   /* Contract check, SSI should be valid */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
   /* we should have exactly 1 non-complete block */
   if(block_list->N != 1 || block_list->blocks == NULL || block_list->blocks[0]->complete) { 
     ESL_FAIL(eslFAIL, errbuf, "contract violation in next_block, block_list does not contain exactly 1 incomplete block");
@@ -2931,7 +2931,7 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
   MPI_BLOCK *cur_block = NULL; /* pointer to current block we are working on */        
 
   /* Contract check */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslFAIL, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
 
   /* Get length of 'next' sequence (next sequence in list of 
    * primary keys in SSI index, probably not the next sequence 
