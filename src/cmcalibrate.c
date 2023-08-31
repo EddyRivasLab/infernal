@@ -335,9 +335,9 @@ main(int argc, char **argv)
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     /* get command line options, code adapted from esl_opt_SpoofCmdline */
     /* Application name/path */
-    optlen = strlen(go->argv[0]) + 1;
+    optlen = strlen(go->argv[0]) + 1; // +1 for the space
     ESL_ALLOC(cmdopt, sizeof(char) * (optlen+1));
-    sprintf(cmdopt, "%s ", go->argv[0]);
+    snprintf(cmdopt, optlen+1, "%s ", go->argv[0]);
     for (i = 0; i < go->nopts; i++) {
       /* skip --split, --cfile, --proot, --cbash options */
       if((strcmp(go->opt[i].name, "--split") != 0) && 
@@ -349,8 +349,8 @@ main(int argc, char **argv)
           else                                n = (strlen(go->opt[i].name) + strlen(go->val[i])) + 2;
           ESL_REALLOC(cmdopt, sizeof(char) * (optlen + n + 1));
           
-          if (go->opt[i].type == eslARG_NONE) sprintf(cmdopt + optlen, "%s ",    go->opt[i].name);
-          else                                sprintf(cmdopt + optlen, "%s %s ", go->opt[i].name, go->val[i]);
+          if (go->opt[i].type == eslARG_NONE) snprintf(cmdopt + optlen, n+1, "%s ",    go->opt[i].name);
+          else                                snprintf(cmdopt + optlen, n+1, "%s %s ", go->opt[i].name, go->val[i]);
           
           optlen += n;
         }
@@ -831,7 +831,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
         }
 	
 	esl_stopwatch_Stop(cfg->w);
-	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+	FormatTimeString(time_buf, 128, cfg->w->elapsed, FALSE); /* 128: buffer size */
         if(! do_merge) { 
           printf("]  %12s\n", time_buf);
           fflush(stdout);
@@ -1390,7 +1390,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
        
     esl_stopwatch_Stop(cfg->w);
     if(! esl_opt_GetBoolean(go, "--merge")) { 
-      FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+      FormatTimeString(time_buf, 128, cfg->w->elapsed, FALSE); /* 128: buffer size */
       printf("]  %12s\n", time_buf);
       fflush(stdout);
     }
@@ -2137,7 +2137,7 @@ print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errb
     printf("  %-20s  %12s", cm->name, "?");
   }
   else { 
-    FormatTimeString(time_buf, psec, FALSE);
+    FormatTimeString(time_buf, 128, psec, FALSE); /* 128: buffer size */
     printf("  %-20s  %12s", cm->name, time_buf);
   }
   if(! esl_opt_IsUsed(go, "--forecast")) fputs("  [", stdout);
@@ -2154,14 +2154,14 @@ print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec)
 
   printf("# %20s  %12s", "--------------------", "------------");
   if(! esl_opt_IsUsed(go, "--forecast")) { 
-    FormatTimeString(time_buf, total_asec, FALSE);
+    FormatTimeString(time_buf, 128, total_asec, FALSE);
     printf("  %42s  %12s", "------------------------------------------", "------------");
   }
   printf("\n");
-  FormatTimeString(time_buf, total_psec, FALSE);
+  FormatTimeString(time_buf, 128, total_psec, FALSE); /* 128: buffer size */
   printf("# %-20s  %12s", "all models", time_buf);
   if(! esl_opt_IsUsed(go, "--forecast")) { 
-    FormatTimeString(time_buf, total_asec, FALSE);
+    FormatTimeString(time_buf, 128, total_asec, FALSE); /* 128: buffer size */
     printf("  %42s  %12s", "", time_buf);
   }
   printf("\n");

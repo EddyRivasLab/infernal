@@ -3196,7 +3196,7 @@ extern CMEmitMap_t   *CreateEmitMap(CM_t *cm);
 extern float          SizeofEmitMap(CM_t *cm, CMEmitMap_t *emap);
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
 extern void           FreeEmitMap(CMEmitMap_t *map);
-extern void           FormatTimeString(char *buf, double sec, int do_frac);
+extern void           FormatTimeString(char *buf, int n, double sec, int do_frac);
 extern int            GetDate(char *errbuf, char **ret_date);
 
 /* from errors.c */

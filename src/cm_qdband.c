@@ -623,8 +623,8 @@ BandMonteCarlo(CM_t *cm, int nsample, int Z, double ***ret_gamma)
   status = 1;			
   for (i = 0; i < nsample; i++)  {
     ESL_ALLOC(name, sizeof(char) * namelen);
-    sprintf(name, "seq%d", i+1);
-    if(EmitParsetree(cm, errbuf, r, NULL, FALSE, &tr, NULL, &seqlen) != eslOK) cm_Fail(errbuf);
+    snprintf(name, namelen, "seq%d", i+1);
+    if(EmitParsetree(cm, errbuf, r, name, FALSE, &tr, NULL, &seqlen) != eslOK) cm_Fail(errbuf);
     free(name);
     if (seqlen > Z) {
       FreeParsetree(tr);

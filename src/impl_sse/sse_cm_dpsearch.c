@@ -321,6 +321,10 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
                  * release process (v1.1.5) we try to build with zero
                  * compiler warnings so I made this change but am
                  * leaving the original code for reference.
+                 * If this code is revisited, look closely at these
+                 * four lines, I don't know what they are doing, but
+                 * Diana probably intended the '&& ((j^j0)|d|1)' part
+                 * to not be always true.
                  */
                 /* original 4 lines: */
                 // vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]] : -eslINFINITY,

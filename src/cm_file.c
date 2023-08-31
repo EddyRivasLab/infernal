@@ -3340,7 +3340,7 @@ prob2ascii(float p, float null)
   static char buffer[32];
 
   if (p == 0.0) return "*";
-  sprintf(buffer, "%.3f", sreLOG2(p/null));
+  snprintf(buffer, 32, "%.3f", sreLOG2(p/null)); /* 32 matches static buffer size */
   return buffer;
 }
 

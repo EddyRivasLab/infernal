@@ -214,8 +214,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ali->cstr+pos,  '~', numwidth+4);
-	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
-	sprintf(ali->aseq+pos, "*[%*d]*", numwidth, tinset);
+	snprintf(ali->cseq+pos, numwidth+5, "*[%*d]*", numwidth, qinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	snprintf(ali->aseq+pos, numwidth+5, "*[%*d]*", numwidth, tinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
 	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
 	continue;
@@ -402,8 +402,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ali->cstr+pos,  '~', numwidth+4);
-	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
-	sprintf(ali->aseq+pos, "*[%*d]*", numwidth, tinset);
+	snprintf(ali->cseq+pos, numwidth+5, "*[%*d]*", numwidth, qinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	snprintf(ali->aseq+pos, numwidth+5, "*[%*d]*", numwidth, tinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
 	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
       }
@@ -1247,18 +1247,19 @@ FreeEmitMap(CMEmitMap_t *map)
   free(map);
 }
 
-/* format_time_string()
+/* FormatTimeString()
  * Date:     SRE, Fri Nov 26 15:06:28 1999 [St. Louis]
  *
  * Purpose:  Given a number of seconds, format into
  *           hh:mm:ss.xx in a provided buffer.
  *
  * Args:     buf     - allocated space (128 is plenty!)
+ *           n       - size of buf (128 is plenty!)
  *           sec     - number of seconds
  *           do_frac - TRUE (1) to include hundredths of a sec
  */
 void
-FormatTimeString(char *buf, double sec, int do_frac)
+FormatTimeString(char *buf, int n, double sec, int do_frac)
 {
   int h, m, s, hs;
   
@@ -1267,9 +1268,9 @@ FormatTimeString(char *buf, double sec, int do_frac)
   s  = (int) (sec) - h * 3600 - m * 60;
   if (do_frac) {
     hs = (int) (sec * 100.) - h * 360000 - m * 6000 - s * 100;
-    sprintf(buf, "%02d:%02d:%02d.%02d", h,m,s,hs);
+    snprintf(buf, n, "%02d:%02d:%02d.%02d", h,m,s,hs);
   } else {
-    sprintf(buf, "%02d:%02d:%02d", h,m,s);
+    snprintf(buf, n, "%02d:%02d:%02d", h,m,s);
   }
 }
 

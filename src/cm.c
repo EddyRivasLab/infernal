@@ -2797,7 +2797,7 @@ cm_AppendComlog(CM_t *cm, int argc, char **argv, int add_seed, uint32_t seed)
 
   if(add_seed) { 
     ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-    sprintf(seedstr, " --seed %" PRIu32 " ", seed);
+    snprintf(seedstr, seedlen+10, " --seed %" PRIu32 " ", seed); /* buffer length is seedlen + length(" --seed  ") + 1 for null terminating char  */
     strcat(cm->comlog, seedstr);
     free(seedstr);
   }

@@ -2100,7 +2100,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS  *r, CM
 	msa_nseq = nsamples - nsampled;
       for (i = 0; i < msa_nseq; i++) {
 	ESL_ALLOC(name, sizeof(char) * namelen);
-	sprintf(name, "seq%d", i+1);
+	snprintf(name, namelen, "seq%d", i+1);
 	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) return status;
 	free(name);
       }

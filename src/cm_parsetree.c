@@ -884,7 +884,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   int         *e_cposA = NULL;  /* [0..nseq-1] the final consensus position filled by a nongap for seq i */
   int          s_cpos;          /* first consensus position filled by a nongap for current seq */
   int          e_cpos;          /* final consensus position filled by a nongap for current seq */
-
+  int          aulen;           /* length of author string for msa */
+  
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA) {  
@@ -1344,8 +1345,9 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
    */
   
   /* "author" info */
-  ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", INFERNAL_VERSION);
+  aulen = strlen(INFERNAL_VERSION)+10; /* 10 is length of "Infernal " + 1 for terminating null char */
+  ESL_ALLOC(msa->au, sizeof(char) * aulen);
+  snprintf(msa->au, aulen, "Infernal %s", INFERNAL_VERSION);
   
   /* per-seq info */
   for (i = 0; i < nseq; i++) { 

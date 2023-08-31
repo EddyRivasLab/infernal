@@ -2932,13 +2932,13 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
   for(i = 0; i < mmsa->nseq; i++)
     if(clust[i] != -1) 
       useme[clust[i]][i] = TRUE;
-  ESL_ALLOC(buffer, sizeof(char) * (IntMaxDigits() + 1));  /* IntMaxDigits() returns number of digits in INT_MAX */
+  ESL_ALLOC(buffer, sizeof(char) * (IntMaxDigits() + 2));  /* IntMaxDigits() returns number of digits in INT_MAX */
   for(m = 0; m < nc; m++) {
     if((status = esl_msa_SequenceSubset(mmsa, useme[m], &(cmsa[m]))) != eslOK) ESL_FAIL(status, errbuf, "MSADivide(), esl_msa_SequenceSubset error, status: %d.", status);
     /* rename the MSA it by adding ".<m+1>" */
     if(cmsa[m]->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSADivide(), an msa's name is NULL, shouldn't happen.");
     ndigits  = strlen(cmsa[m]->name);
-    ndigits += sprintf(buffer, ".%d", (m+1));
+    ndigits += snprintf(buffer, (IntMaxDigits() + 2), ".%d", (m+1));
     ESL_RALLOC(cmsa[m]->name, tmp, sizeof(char)*(ndigits+1));
     if ((status = esl_strcat(&cmsa[m]->name, -1, buffer, (ndigits+1))) != eslOK) goto ERROR;
     if ((status = esl_strchop(cmsa[m]->name, ndigits)) != eslOK) goto ERROR;

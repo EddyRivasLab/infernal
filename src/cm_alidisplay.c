@@ -324,8 +324,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(ntrunc_R > 0) { 
     /* wtrunc_R and ntrunc_R were calc'ed above */
     memset(ad->csline+pos,  '~', wtrunc_R);
-    sprintf(ad->model+pos, "<[%*d]*", wtrunc_R-4, ntrunc_R);
-    sprintf(ad->aseq+pos,  "<[%*s]*", wtrunc_R-4, "0");
+    snprintf(ad->model+pos, wtrunc_R+1, "<[%*d]*", wtrunc_R-4, ntrunc_R); /* +1 in size for null terminating char */
+    snprintf(ad->aseq+pos,  wtrunc_R+1, "<[%*s]*", wtrunc_R-4, "0");      /* +1 in size for null terminating char */
     if(adata->ppstr != NULL) { 
       for(x = 0; x < wtrunc_R; x++) ad->ppline[pos+x] = '.';
     }
@@ -368,8 +368,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ad->csline+pos,  '~', numwidth+4);
-	sprintf(ad->model+pos, "*[%*d]*", numwidth, qinset);
-	sprintf(ad->aseq+pos, "*[%*d]*", numwidth, tinset);
+	snprintf(ad->model+pos, numwidth+5, "*[%*d]*", numwidth, qinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	snprintf(ad->aseq+pos,  numwidth+5, "*[%*d]*", numwidth, tinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
 	if(cm->rf != NULL) memset(ad->rfline+pos,  '~', numwidth+4);
 	if(adata->ppstr != NULL) { 
 	  /* calculate the single character PP code for the average posterior 
@@ -581,8 +581,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(ntrunc_L > 0) { 
     /* wtrunc_L and ntrunc_L were calc'ed above */
     memset(ad->csline+pos,  '~', wtrunc_L);
-    sprintf(ad->model+pos, "*[%*d]>", wtrunc_L-4, ntrunc_L);
-    sprintf(ad->aseq+pos,  "*[%*s]>", wtrunc_L-4, "0");
+    snprintf(ad->model+pos, wtrunc_L+1, "*[%*d]>", wtrunc_L-4, ntrunc_L); /* +1 in size for null terminating char */
+    snprintf(ad->aseq+pos,  wtrunc_L+1, "*[%*s]>", wtrunc_L-4, "0");      /* +1 in size for null terminating char */
     if(adata->ppstr != NULL) { 
       for(x = 0; x < wtrunc_L; x++) ad->ppline[pos+x] = '.';
     }
