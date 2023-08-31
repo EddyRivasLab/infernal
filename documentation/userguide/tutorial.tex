@@ -2064,10 +2064,12 @@ that alignment is:
 
 \user{cmbuild --fraggiven tRNA-hand.fraggiven.cm tutorial/tRNA5-hand.fraggiven.sto}
 
-Fragments can be annotated with \verb+~+ characters in this way
-either by manually editing the file, or by using alignments output
-by the \prog{cmsearch} program using the \prog{-A} option, which will
-have sequences detected with missing data annotated as fragments.
+To obtain alignments annotated with fragments with \verb+~+
+characters, you can either manually edit an existing alignment file,
+or generate alignments with the \prog{cmsearch} program using the
+\prog{-A} option, or the \prog{cmalign} program with the \prog{--miss}
+option which will have sequences inferred to have missing data
+annotated as fragments.
 
 \newpage
 
