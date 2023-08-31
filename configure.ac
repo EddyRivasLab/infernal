@@ -834,20 +834,9 @@ AC_OUTPUT
 # get that to work here. I used AC_CONFIG_COMMANDS instead, but that
 # created a weird problem that configure wouldn't trap and remove its
 # ${ac_tmp} confXXXXXX directory.
-#
-# The symlink to easel/formats is conditional on location of srcdir
-# whether it is the same as build dir, in which case no symlink is
-# needed, it is a relative path or an absolute path.
+
 (cd hmmer/src && ${LN_S} -f impl_${impl_choice} impl)
 (cd hmmer     && ${LN_S} -f ../easel easel)
-case $srcdir in
-  .)  # We are building in place.
-  ;;  # do nothing, hmmer/easel/formats already exists
-  /* | ?:/* )  # Absolute path
-  (cd hmmer && ${LN_S} -f ${srcdir}/easel/formats easel/formats);; 
-  *) # Relative path
-  (cd hmmer && ${LN_S} -f ${srcdir}/../easel/formats easel/formats);;
-esac
 
 echo "
 
