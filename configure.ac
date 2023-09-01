@@ -77,7 +77,7 @@ m4_include([easel/m4/esl_pic_flags.m4])
 # 2. AC_INIT
 ################################################################
 
-AC_INIT([Infernal],[1.1.4],[eric.nawrocki@nih.gov],[infernal])
+AC_INIT([Infernal],[1.1.5],[eric.nawrocki@nih.gov],[infernal])
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 esl_cflags_env_set=no
@@ -108,8 +108,8 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="Dec 2020"
-INFERNAL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
+INFERNAL_DATE="Sep 2023"
+INFERNAL_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://eddylab.org/infernal/"
@@ -118,7 +118,7 @@ INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
 HMMER_DATE="Aug 2023"
-HMMER_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
+HMMER_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the BSD open source license."
 HMMER_VERSION="3.4"
 HMMER_URL="http://hmmer.org/"
@@ -127,7 +127,7 @@ HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
 EASEL_DATE="Aug 2023"
-EASEL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
+EASEL_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
 EASEL_LICENSE="Freely distributed under the BSD open source license."
 EASEL_VERSION="0.49"
 EASEL_URL="http://bioeasel.org/"
