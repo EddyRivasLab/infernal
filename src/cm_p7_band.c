@@ -1228,7 +1228,6 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   int          kpcur, kpprv, kpcur_el;
   int          kprv, kprvn, kprvx;
   int          kn, kx;
-  float        fsc;
 
   /* Contract checks */
   if(cp9 == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 is NULL.\n");
@@ -1611,11 +1610,11 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   }       
   /* No EL contribution here, can't go B->EL_* */
       
-  fsc = Scorify(mmx[i][0]);
+  /* final score (fsc) is Scorify(mmx[i][0]); */
   /**********************************************************************************/
   /* End of Backward recursion */
   
-  ESL_DPRINTF1(("#DEBUG: cp9_BackwardP7B() return score: %10.4f\n", fsc));
+  ESL_DPRINTF1(("#DEBUG: cp9_BackwardP7B() return score: %10.4f\n", Scorify(mmx[i][0])));
   return eslOK;
 }
 
