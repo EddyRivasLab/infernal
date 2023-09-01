@@ -116,6 +116,21 @@ are:
   Used to demonstrate expert annotation of model positions with
   \otext{cmbuild --hand}.
 %
+\item[\otext{tRNA5-hand.frag.sto}] A Stockholm alignment file similar
+  to \otext{tRNA5-hand.sto} but with some sequence data at the
+  beginning and end of sequences removed and replaced with gaps.  Used
+  to demonstrate model building with fragmentary sequence information.
+%
+\item[\otext{tRNA5-hand.frag2.sto}] Same as
+  \otext{tRNA5-hand.frag2.sto} except with the partial sequence
+  annotated as fragments. Used to demonstrate model building with
+  fragmentary sequence information.
+%
+\item[\otext{tRNA5-hand.fraggiven.sto}] Same as
+  \otext{tRNA5-hand.frag2.sto} except with the partial sequence
+  annotated as fragments. Used to demonstrate model building with
+  fragmentary sequence information.
+%
 \item[\otext{tRNA5-hand.c.cm}] A CM file built from
   \otext{tRNA5-hand.sto} with \prog{cmbuild} and calibrated with
   \prog{cmcalibrate}. 
@@ -201,8 +216,8 @@ and you'll see some output that looks like:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1.4 (Dec 2020)
-# Copyright (C) 2020 Howard Hughes Medical Institute.
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5.cm
@@ -214,7 +229,7 @@ and you'll see some output that looks like:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5                       5     3.73     74    72   21    2 0.783 0.489 
 #
-# CPU time: 0.26u 0.00s 00:00:00.26 Elapsed: 00:00:00.27
+# CPU time: 0.09u 0.00s 00:00:00.09 Elapsed: 00:00:00.10
 \end{sreoutput}
 
 If your input file had contained more than one alignment, you'd get
@@ -286,36 +301,35 @@ You should see something like this:
 
 \begin{sreoutput}
 # cmcalibrate :: fit exponential tails for CM E-values
-# INFERNAL 1.1.4 (Dec 2020)
-# Copyright (C) 2020 Howard Hughes Medical Institute.
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                     tRNA5.cm
 # forecast mode (no calibration):              on
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #
-# Forecasting running time for CM calibration(s) on 32 cpus:
+# Forecasting running time for CM calibration(s) on 4 cpus:
 #
 #                          predicted
 #                       running time
 # model name            (hr:min:sec)
 # --------------------  ------------
-  tRNA5                     00:00:58
+  tRNA5                     00:03:26
 #
-# CPU time: 0.18u 0.01s 00:00:00.19 Elapsed: 00:00:00.18
+# CPU time: 0.09u 0.00s 00:00:00.09 Elapsed: 00:00:00.09
 [ok]
 \end{sreoutput}
 
 The header comes first, telling you what program you ran, on what file
-and with what options. This calibration will use 32 CPUs, your output
-%                                                ^^
-may vary depending on how many cores you have available on the machine
-you're using. (If you are planning to use MPI to parallelize the
-calibration (see the Installation section), you can specify the number
-of CPUs for the time estimate as \otext{<n>} with the
-\otext{--nforecast <n>} option.) Using 32 CPUs, \prog{cmcalibrate}
+and with what options. This calibration will use 4 CPUs which is the
+default number for Infernal's multithreaded programs, but you can
+modify this to \otext{<n>} CPUs with the \otext{--nforecast <n>}
+option if you want to use a different number of CPUs or are planning
+on using MPI to parallelize the calibrate (see the Installation
+section). Using 4 CPUs, \prog{cmcalibrate}
 estimates the time required for calibration on the machine I'm using
-at about one minute.
+at about three and a half minutes.
 
 Feel free to perform the calibration yourself if you'd like (with the
 command \otext{cmcalibrate tRNA5.cm}). However, we've included the file
@@ -341,13 +355,13 @@ your ran, on what, and with what options:
 
 \begin{sreoutput}
 # cmsearch :: search CM(s) against a sequence database
-# INFERNAL 1.1.4 (Dec 2020)
-# Copyright (C) 2020 Howard Hughes Medical Institute.
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query CM file:                         tRNA5.cm
 # target sequence database:              tutorial/mrum-genome.fa
-# number of worker threads:              32
+# number of worker threads:              4
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \end{sreoutput}
 
@@ -355,6 +369,8 @@ The second section is a list of ranked top hits (sorted by E-value,
 most significant hit first):
 
 \begin{sreoutput}
+Query:       tRNA5  [CLEN=72]
+Hit scores:
  rank     E-value  score  bias  sequence      start     end   mdl trunc   gc  description
  ----   --------- ------ -----  ----------- ------- -------   --- ----- ----  -----------
   (1) !   1.4e-18   71.4   0.0  NC_013790.1  362026  361955 -  cm    no 0.50  Methanobrevibacter ruminantium M1 chromosome, complete genome
@@ -659,13 +675,13 @@ tutorial. Finally, the \otext{PP} line will be absent if
 probabilities for the optimal posterior accuracy alignment would have
 required more than a preset amount of memory (that amount is
 autodetermined based on model size, but is capped at a maximum of
-512Mb for the largest models, unless the \emprog{--mxsize} option is
+1024Mb for the largest models, unless the \emprog{--mxsize} option is
 used to increase it). If the \otext{PP} line is absent, the tabular
 ``acc'' field described above will be absent and replaced with a
 ``cyksc'' field which reports the bit score of the highest scoring CYK
 alignment, and the displayed alignment will be the alignment computed
-by the CYK algorithm which requires less memory than the ``optimal
-posterior accuracy'' alignment.
+by the CYK algorithm which requires less memory than the optimal
+posterior accuracy alignment.
 
 After hit number 43, there's 13 more hit alignments for hits number 44
 through 56. 
@@ -693,7 +709,7 @@ Envelopes passing glocal HMM envelope defn filter:              99  (0.001331); 
 Envelopes passing  local CM  CYK           filter:              60  (0.0007629); expected (0.0001)
 Total CM hits reported:                                         56  (0.0007205); includes 0 truncated hit(s)
 
-# CPU time: 1.91u 0.09s 00:00:02.00 Elapsed: 00:00:01.09
+# CPU time: 1.44u 0.03s 00:00:01.47 Elapsed: 00:00:02.91
 //
 [ok]
 \end{sreoutput}
@@ -769,7 +785,7 @@ model\footnote{The use of glocal Forward is another important
   difference between Infernal and HMMER3's (v3.0) pipeline. HMMER v3.0
   only uses local HMM algorithms.}  As with the local stage, an
 expected 0.5\% of the database is expected to survive. In this case,
-84 of the 134 windows, comprising about 0.2\% of the database,
+84 of the 133 windows, comprising about 0.2\% of the database,
 %^        ^^^
 survive. The bias filter is run again, this time applying a correction
 to the glocal Forward scores. For this search, 0 windows are removed at
@@ -812,8 +828,8 @@ described above. In this search there were 56 such hits.
 %                                          ^^
 
 Finally, the running time of the search is reported, in CPU time and
-elapsed time. This search took about 1 second (wall
-clock time) running on 32 cores. 
+elapsed time. This search took about 3 seconds (wall
+clock time) running on 4 cores. 
 %                      ^^^^^^^^^^^
 \subsubsection{Truncated RNA detection}
 
@@ -956,13 +972,13 @@ The header and the first section of the output will look like:
 
 \begin{sreoutput}
 # cmscan :: search sequence(s) against a CM database
-# INFERNAL 1.1.4 (Dec 2020)
-# Copyright (C) 2020 Howard Hughes Medical Institute.
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # query sequence file:                   tutorial/metag-example.fa
 # target CM database:                    minifam.cm
-# number of worker threads:              32
+# number of worker threads:              4
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 Query:       AAGA01015927.1  [L=943]
@@ -1038,7 +1054,7 @@ Envelopes passing glocal HMM envelope defn filter:               3  (0.03357); e
 Envelopes passing  local CM  CYK           filter:               3  (0.03357); expected (0.0001)
 Total CM hits reported:                                          3  (0.03222); includes 0 truncated hit(s)
 
-# CPU time: 0.06u 0.03s 00:00:00.09 Elapsed: 00:00:00.05
+# CPU time: 0.02u 0.00s 00:00:00.02 Elapsed: 00:00:00.09
 //
 \end{widesreoutput}
 
@@ -1180,9 +1196,9 @@ character.
 
 The Rfam database \url{http://rfam.xfam.org/} is a collection
 of RNA families, each represented by a CM and multiple sequence
-alignment used to build that CM. As of December 2020, the current release
-%                                      ^^^^^^^^^^^^^
-is 14.3, which includes 3446 families. The Rfam website allows
+alignment used to build that CM. As of September 2023, the current release
+%                                      ^^^^^^^^^^^^^^
+is 14.9, which includes 4108 families. The Rfam website allows
 web-based searches using \prog{cmscan} of the Rfam CM database against
 query sequences that the user can upload. Alternatively, you can perform
 the same searches by running \prog{cmscan} locally, as shown in this
@@ -1191,11 +1207,11 @@ be annotating your dataset for most known types of structural RNAs
 with a single command.
 
 To complete this step of the tutorial you'll need to download the Rfam
-14.3 CM file from here: \\
-\url{ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.3/Rfam.cm.gz} 
+14.9 CM file from here: \\
+\url{https://ftp.ebi.ac.uk/pub/databases/Rfam/14.9/Rfam.cm.gz}
 and gunzipping it, like this: 
 
-\user{wget ftp://ftp.ebi.ac.uk/pub/databases/Rfam/14.3/Rfam.cm.gz} 
+\user{curl -k -L -o Rfam.cm.gz https://ftp.ebi.ac.uk/pub/databases/Rfam/14.9/Rfam.cm.gz}
 
 \user{gunzip Rfam.cm.gz}
 
@@ -1210,7 +1226,7 @@ options are required. Each of these options is explained below. The
 full command is (split up into two lines so it fits on the page): 
 
 \indent\indent\small\verb+> cmscan --rfam --cut_ga --nohmmonly --tblout mrum-genome.tblout --fmt 2 \+\\
-\indent\indent\small\verb+> --clanin tutorial/Rfam.14.3.clanin Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan+\\
+\indent\indent\small\verb+> --clanin tutorial/Rfam.14.9.clanin Rfam.cm tutorial/mrum-genome.fa > mrum-genome.cmscan+\\
 
 This command will take at least several minutes and possibly up to
 about 30 minutes depending on the number of cores and speed of your
@@ -1246,7 +1262,7 @@ The command line options used in the above command are as follows:
   format. 
 %
 \item[\otext{--clanin}] Clan information should be read
-  from the file \prog{tutorial/Rfam.14.3.claninfo}. This file lists
+  from the file \prog{tutorial/Rfam.14.9.claninfo}. This file lists
   which models belong to the same clan. Clans are groups of models
   that are homologous and therefore it is expected that some hits to
   these models will overlap. For example, the LSU\_rRNA\_archaea and
@@ -1327,7 +1343,7 @@ to produce overlapping hits due to their homology, Rfam has grouped
 them into the same \emph{clan}, note the ``CL00112'' value in the ``clan
 %                                          ^^^^^^^
 name'' column for all three hits. This clan information was provided
-in the \prog{rfam.14.3.claninfo} input file we provided to \prog{cmscan}
+in the \prog{rfam.14.9.claninfo} input file we provided to \prog{cmscan}
 by using the \prog{--clanin} option. 
 
 The ``olp'' column indicates that hit 1 is the highest scoring of the
@@ -1370,7 +1386,7 @@ The output of this is a Stockholm format multiple alignment file:
 
 \begin{tinysreoutput}
 # STOCKHOLM 1.0
-#=GF AU Infernal 1.1.4
+#=GF AU Infernal 1.1.5
 
 mrum-tRNA.1          GGAGCUAUAGCUCAAU..GGC..AGAGCGUUUGGCUGACAU........................................CCAAAAGGUUAUGGGUUCGAUUCCCUUUAGCCCCA
 #=GR mrum-tRNA.1  PP ****************..***..******************........................................***********************************
@@ -1467,7 +1483,7 @@ Enough about the sequences in the alignment. Now notice all those
 \otext{PP} annotation lines. That's posterior probability annotation,
 as in the single sequence alignments that \prog{cmscan} and
 \prog{cmsearch} showed. This essentially represents the confidence
-that each residue is aligned where it should be. 
+that each residue is aligned where it should be.
 
 Er, I mean, ``assigned'', not ``aligned''. The posterior probability
 assigned to an inserted residue is the probability that it is assigned
@@ -1481,11 +1497,7 @@ inserted residues, that choice is arbitrary.
 \subsubsection{cmalign assumes sequences may be truncated}
 \prog{cmalign} assumes that input sequences may be truncated and uses
 specialized dynamic programming algorithms to align them appropriately
-based on that assumption\footnote{In versions 1.0 through 1.0.2, the
-  \prog{cmalign} \ccode{--sub} option was recommended when input
-  sequences may have been truncated. This option still exists in this
-  version but we believe the new default mode should do a better job
-  of correctly aligning truncated sequences.}. Importantly, output
+based on that assumption. Importantly, output
 alignments from \prog{cmalign} do not indicate when sequences have
 been truncated, as those from \prog{cmsearch} and \prog{cmscan} do. As
 an example, use the \ccode{tutorial/Cobalamin.c.cm} model to align the
@@ -1572,9 +1584,8 @@ Likewise, profile HMMs are more appropriate than CMs for modeling RNAs
 of unknown structure. For such RNAs, a profile HMM search may reveal
 additional homologs that can help elucidate the conserved structure
 for the family, if there is one. Given the multiple homologs, you can
-use other programs like RNAalifold \citep{Bernhart08,Hofacker02} or
-WAR \citep{Torarinsson08b} (a webserver that includes implementations
-of several programs) to try to predict the conserved secondary
+use other programs like RNAalifold~\citep{Bernhart08,Hofacker02} or
+Locarna~\citep{Will12} to try to predict the conserved secondary
 structure of a collection of homologous RNAs. Currently, Infernal
 itself does not have the capability of predicting structure, but it's
 predecessor COVE did with the \prog{covet} program, still available at
@@ -1602,8 +1613,8 @@ identical:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1.4 (Dec 2020)
-# Copyright (C) 2020 Howard Hughes Medical Institute.
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5-noss.cm
@@ -1616,7 +1627,7 @@ identical:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5-noss                  5     5.00     74    72    0    0 0.552 0.552 
 #
-# CPU time: 0.13u 0.00s 00:00:00.13 Elapsed: 00:00:00.15
+# CPU time: 0.05u 0.00s 00:00:00.05 Elapsed: 00:00:00.06
 \end{sreoutput}
 
 The output reports that this model has 0 basepairs (``bps'') (the
@@ -1862,8 +1873,8 @@ To build the hand-specified model from this alignment, do:
 
 \begin{sreoutput}
 # cmbuild :: covariance model construction from multiple sequence alignments
-# INFERNAL 1.1.4 (Dec 2020)
-# Copyright (C) 2020 Howard Hughes Medical Institute.
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
 # Freely distributed under the BSD open source license.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # CM file:                                            tRNA5-hand.cm
@@ -1876,7 +1887,7 @@ To build the hand-specified model from this alignment, do:
 # ------ -------------------- -------- -------- ------ ----- ---- ---- ----- ----- -----------
        1 tRNA5-hand                  5     3.59     74    74   21    2 0.763 0.476 
 #
-# CPU time: 0.33u 0.01s 00:00:00.34 Elapsed: 00:00:00.35
+# CPU time: 0.09u 0.00s 00:00:00.09 Elapsed: 00:00:00.10
 \end{sreoutput}
 
 The output reports that the model now has 74 match (consensus)
@@ -1935,12 +1946,12 @@ instead of as deletions. The definition of fragments can be important
 because if sequences have missing data at the end but are not
 defined as fragments then the parameters of the resulting model will
 incorrectly reflect that deletions are common at the beginning and/or end of the
-sequence and the model will be less specific for full length matches
+sequence. Such a model will be less specific for full length matches
 to the model. To build the best model from a given alignment, all sequences
 with missing data should be defined as fragments.
 
 By default, \prog{cmbuild} will try to guess which sequences are
-fragments by defining any sequence which spans less than $0.5$ fraction of the
+fragments by defining any sequence which spans less than 0.5 fraction of the
 length of the input alignment as a fragment, but this
 fraction can be changed to \prog{<x>} with the \prog{--fragthresh <x>}
 option. There are two other ways to define fragments. If the
@@ -1953,7 +1964,7 @@ using \verb+~+ characters at the ends of fragments as explained more below.
 
 The following modified version of the tRNA alignment will help
 illustrate the different fragment definition options. It can be found in
-the file \otext{tutorial/tRNA5-hand.frag.sto}:
+the file \prog{tutorial/tRNA5-hand.frag.sto}:
 
 \begin{sreoutput}
 # STOCKHOLM 1.0
@@ -1991,25 +2002,24 @@ the RF annotation has been changed to the consensus sequence because
 #=GF AU Infernal 1.1.5
 
 #=GS tRNA1 WT 0.89
-#=GS tRNA2 WT 0.99
-#=GS tRNA3 WT 1.07
+#=GS tRNA2 WT 1.00
+#=GS tRNA3 WT 1.08
 #=GS tRNA4 WT 0.86
-#=GS tRNA5 WT 1.19
+#=GS tRNA5 WT 1.17
 
-tRNA1        ----------------UGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG--------
-tRNA2        UCCGAUAUAGUGUAAC-GGCuAUCACAUCACGCUUUCACCGUGGAGA-CCGGGGUUCGACUCCCCGUAUCGGAG
-tRNA3        UCCGUGAUAGUUUAAU-GGUcAGAAUGGGCGCUUGUCGCGUGCCAGA-UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA1        ----------------uGGG-AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG--------
+tRNA2        UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA-CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3        UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA-UCGGGGUUCAAUUCCCCGUCGCGGAG
 tRNA4        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~AAAUCUGUUGGUCCUUAGUUCGAU~~~~~~~~~~~~~~
-tRNA5        --GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
-#=GC SS_cons (((((((,,<<<<_______._>>>>,<<<<<_______>>>>>,,,,,<<<<<_______>>>>>))))))):
-#=GC RF      uccgacAUAGugcAAUUGGu.AgcaCGccagcCUuucAagcuggAGgUCCgggGUUCGAUUCcccGUgucggag
+tRNA5        --GCACAUGGCGCAGUuGGU-AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons (((((((,,<<<<___._____>>>>,<<<<<_______>>>>>,,,,,<<<<<_______>>>>>))))))):
+#=GC RF      UCcgacAUAGugcAAU.GGuuAgcaCGcccgcCUuucAagcgggAGgUCCgggGUUCGAUUCcccGUgucgGAg
 //
 \end{sreoutput}
 
 Fragments can be defined differently if \prog{--hand} and
 \prog{--fragnrfpos 5} options are used, with the following command:
 
-%\user{cmbuild --hand --fragnrfpos 5 -O tRNA-hand.O.2.stk tRNA-hand.frag2.cm tutorial/tRNA5-hand.frag.sto}\\
 \begin{widesreoutput}
 > cmbuild --hand --fragnrfpos 5 -O tRNA-hand.O.2.stk tRNA-hand.frag2.cm tutorial/tRNA5-hand.frag.sto
 \end{widesreoutput}
@@ -2023,13 +2033,13 @@ definitions are indicated in the output alignment file
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF ID tRNA5-hand.frag
-#=GF AU Infernal 1.1.4
+#=GF AU Infernal 1.1.5
 
-#=GS tRNA1 WT 0.90
-#=GS tRNA2 WT 0.99
-#=GS tRNA3 WT 1.07
-#=GS tRNA4 WT 0.85
-#=GS tRNA5 WT 1.19
+#=GS tRNA1 WT 0.89
+#=GS tRNA2 WT 1.02
+#=GS tRNA3 WT 1.09
+#=GS tRNA4 WT 0.84
+#=GS tRNA5 WT 1.16
 
 tRNA1        ~~~~~~~~~~~~~~~~UGGG-AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG~~~~~~~~
 tRNA2        UCCGAUAUAGUGUAAC-GGCUAUCACAUCACGCUUUCACCGUGGAGA-CCGGGGUUCGACUCCCCGUAUCGGAG
@@ -2043,7 +2053,7 @@ tRNA5        --GCACAUGGCGCAGUUGGU-AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUU
 
 Alternatively, if fragments are annotated in the input alignment, the 
 \prog{--fraggiven} option can be used. The
-\prog{tutorial/tRNA5-hand.frag2.sto} shows an example with the \prog{tRNA1},
+\prog{tutorial/tRNA5-hand.fraggiven.sto} shows an example with the \prog{tRNA1},
 \prog{tRNA2} and \prog{tRNA5} sequences all defined as fragments:
 
 \begin{sreoutput}
@@ -2119,7 +2129,7 @@ This will result in the following output:
 # List of commands for each partition saved to file Cobalamin.cfile.
 #
 # Command to merge per-partition scores after all commands are finished:
-# cmcalibrate --merge --ptot 16 Cobalamin.cm
+# src/cmcalibrate --merge --ptot 16 Cobalamin.cm
 #
 # CPU time: 0.00u 0.00s 00:00:00.00 Elapsed: 00:00:00.00
 [ok]
@@ -2245,11 +2255,11 @@ command onto three lines):
 %note: can't use \user{} here because too many special characters
 %(believe me I tried). Only difference between \user{} and the way
 %I've done it below is that we're not bold, oh well. 
-\indent\indent\small\verb+> cmsearch --tblout tRNA5.mrum-genome.tbl tRNA5.cm mrum-genome.fa+ \\
+\indent\indent\small\verb+> cmsearch --tblout tRNA5.mrum-genome.tbl tRNA5.c.cm mrum-genome.fa+ \\
 \indent\indent\small\verb+> esl-sfetch --index mrum-genome.fa+ \\
 \indent\indent\small\verb+> cat tRNA5.mrum-genome.tbl | grep -v ^# | grep ! \ + \\
 \indent\indent\small\verb+> | awk '{ printf(``%s/%s-%s %s %s %s\n'', $1, $8, $9, $8, $9, $1); }' \ + \\
-\indent\indent\small\verb+> | esl-sfetch -Cf mrum-genome.fa - | ../src/cmalign tRNA5.cm - + \\
+\indent\indent\small\verb+> | esl-sfetch -Cf mrum-genome.fa - | cmalign tRNA5.cm - + \\
 
 The first command performed the search using the CM file
 \ccode{tRNA5.c.cm} and sequence file \ccode{mrum-genome.fa} (these
