@@ -264,13 +264,89 @@ book \citep{Durbin98}.
 Finally, Sean Eddy writes about HMMER, Infernal and other lab projects in
 his blog \textbf{Cryptogenomicon} \url{http://cryptogenomicon.org/}).
 
-\begin{srefaq}{How do I cite Infernal?}
-The Infernal 1.1 paper (Infernal 1.1: 100-fold faster RNA homology
-searches, EP Nawrocki and SR Eddy. Bioinformatics, 29:2933-2935,
-2013.) is the most appropriate paper to cite. If you’re writing for an
-enlightened (url-friendly) journal, you may want to cite the webpage
-\url{http://eddylab.org/infernal/} because it is kept up-to-date.
-\end{srefaq}
+\subsection{How do I cite Infernal?}
+
+If you'd like to cite a paper, please cite the Infernal 1.1 application
+note in \emph{Bioinformatics}:
+
+Infernal 1.1: 100-fold faster RNA homology searches.
+EP Nawrocki and SR Eddy.
+Bioinformatics, 29:2933-2935, 2013.
+
+The most appropriate citation is to the web site,
+\url{http://eddylab.org/infernal/}. You should also cite what version
+of the software you used. We archive all old versions, so anyone
+should be able to obtain the version you used, when exact
+reproducibility of an analysis is an issue.
+
+The version number is in the header of most output files. To see it
+quickly, do something like \prog{cmscan -h} to get a help page, and
+the header will say:
+
+\begin{sreoutput}
+# cmscan :: search sequence(s) against a CM database
+# INFERNAL 1.1.5 (Sep 2023)
+# Copyright (C) 2023 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\end{sreoutput}
+
+So (from the second line there) this is from Infernal 1.1.5.
+
+\subsection{How do I report a bug?}
+
+Open an issue on our issue tracker at GitHub\footnote{GitHub issue
+  tracker: \url{https://github.com/EddyRivasLab/infernal/issues}} or email us,
+at \url{eric.nawrocki@nih.gov}.
+
+Before we can see what needs fixing, we almost always need to
+reproduce a bug on one of our machines. This means we want to have a
+small, reproducible test case that shows us the failure you're seeing.
+So if you're reporting a bug, please send us:
+
+\begin{itemize}
+ \item A brief description of what went wrong.
+ \item The command line(s) that reproduce the problem.
+ \item Copies of any files we need to run those command lines.
+ \item Information about what kind of hardware you're on, what
+   operating system, and (if you compiled the software yourself rather
+   than running precompiled binaries), what compiler and version you
+   used, with what configuration arguments.
+\end{itemize}
+
+Depending on how glaring the bug is, we may not need all this
+information, but any work you can put into giving us a clean
+reproducible test case doesn't hurt and often helps.
+
+The information about hardware, operating system, and compiler is
+important. Bugs are frequently specific to particular configurations
+of hardware/OS/compiler.  We have a wide variety of systems available
+for trying to reproduce bugs, and we'll try to match your system as
+closely as we can.
+
+If you first see a problem on some huge compute (like running a
+zillion query sequence over a huge profile database), it will really,
+really help us if you spend a bit of time yourself trying to isolate
+whether the problem really only manifests itself on that huge compute,
+or if you can isolate a smaller test case for us. The ideal bug report
+(for us) gives us everything we need to reproduce your problem in one
+email with at most some small attachments. 
+
+Remember, we're not a company with dedicated support staff -- we're a
+small lab of busy researchers like you. Somebody here is going to drop
+what they're doing to try to help you out. Try to save us some time,
+and we're more likely to stay in our usual good mood.
+
+If we're in our usual good mood, we'll reply quickly.  We'll probably
+tell you we fixed the bug in our development code, and that the fix
+will appear in the next Infernal release. This of course doesn't help you
+much, since nobody knows when the next Infernal release is going to be.
+So if possible, we'll usually try to describe a workaround for the
+bug.
+
+If the code fix is small, we might also tell you how to patch and
+recompile the code yourself. You may or may not want to do this.
+
 
 
 
