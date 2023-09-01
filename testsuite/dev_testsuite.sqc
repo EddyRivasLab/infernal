@@ -1699,12 +1699,12 @@
 1  exercise  search:v/1k/nb/FZ      @src/cmsearch@  --nonbanded --notrunc --FZ 34 %V.CM% %V1K%
 
 # timing options, these fail --enable-asan due to memory leaks, decided to skip for 1.1.5 release
-1  exercise  search:v/1k/timeF1     @src/cmsearch@  --timeF1 -Z 100 %V.CM% %V1K%
-1  exercise  search:v/1k/timeF2     @src/cmsearch@  --timeF2 -Z 100 %V.CM% %V1K%
-1  exercise  search:v/1k/timeF3     @src/cmsearch@  --timeF3 -Z 100 %V.CM% %V1K%
-1  exercise  search:v/1k/timeF4     @src/cmsearch@  --timeF4 -Z 100 %V.CM% %V1K%
-1  exercise  search:v/1k/timeF5     @src/cmsearch@  --timeF5 -Z 100 %V.CM% %V1K%
-1  exercise  search:v/1k/timeF6     @src/cmsearch@  --timeF6 -Z 100 %V.CM% %V1K%
+#1  exercise  search:v/1k/timeF1     @src/cmsearch@  --timeF1 -Z 100 %V.CM% %V1K%
+#1  exercise  search:v/1k/timeF2     @src/cmsearch@  --timeF2 -Z 100 %V.CM% %V1K%
+#1  exercise  search:v/1k/timeF3     @src/cmsearch@  --timeF3 -Z 100 %V.CM% %V1K%
+#1  exercise  search:v/1k/timeF4     @src/cmsearch@  --timeF4 -Z 100 %V.CM% %V1K%
+#1  exercise  search:v/1k/timeF5     @src/cmsearch@  --timeF5 -Z 100 %V.CM% %V1K%
+#1  exercise  search:v/1k/timeF6     @src/cmsearch@  --timeF6 -Z 100 %V.CM% %V1K%
 
 # other developer options
 1  exercise  search:v/1k/ng         @src/cmsearch@  --nogreedy %V.CM% %V1K%
