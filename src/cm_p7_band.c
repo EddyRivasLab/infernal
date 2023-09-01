@@ -20,8 +20,6 @@
 
 #include "infernal.h"
 
-#define  p7_IMPOSSIBLE -987654321
-
 /* Function:  p7_gmx_Match2DMatrix()
  * Synopsis:  Copy the dp match cells of a generic matrix 
  *            to a ESL_DMATRIX, for visualization with esl_dmx_Visualize()
@@ -313,7 +311,7 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
       break;
 
     case p7T_N:			/* N connects from S, N */
-      if (P7XMX(i, p7G_N) <= p7_IMPOSSIBLE) ESL_XEXCEPTION(eslFAIL, "impossible N reached at i=%d", i);
+      if (P7XMX(i, p7G_N) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible N reached at i=%d", i);
 
       if (i == 0) status = p7_trace_Append(tr, p7T_S, 0, 0);
       else if (esl_FCompare_old(P7XMX(i,p7G_N), P7XMX(i-1, p7G_N) + tloop, tol) == eslOK)
