@@ -44,8 +44,8 @@
    when searching for families that tend to be truncated within
    sequences (such as group I introns, or misassembled ribosomal
    RNAs), but this is no longer necessary. Now a single run with
-   `--anytrunc` will never miss any hits that a run without
-   `--anytrunc` would find.
+   `--anytrunc` will never miss any hits that a run with default
+   parameters would find.
 
  * Adds `--consrf` option to `cmbuild` for use in combination with the
    `--hand` option to define the RF annotation as the consensus
