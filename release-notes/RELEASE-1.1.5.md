@@ -8,16 +8,24 @@
    platforms, thanks to Silicon support in HMMER 3.4, which is used as
    a library by Infernal.
 
+ * The default number of cores used by the multithreaded programs
+   `cmalign`, `cmcalibrate`, `cmscan` and `cmsearch` is now 4, but can be
+   changed to `<n>` with the `--cpu <n>` option. In previous 1.1x
+   versions the default number of threads used was the number of CPUs
+   on the host. There is some empirical data on how these programs
+   scale with multiple threads on the infernal github wiki: 
+   https://github.com/EddyRivasLab/infernal/wiki/How-Infernal-Programs-Scale-On-Multiple-Processors
+
  * Adds support for building models from aligned fragmentary sequences
    in `cmbuild`. Previously, terminal gaps at the 5' and 3' ends of
-   sequences in the input alignment were consider deletions with
-   respect to the model, but now they are treated as missing data and
-   in sequences annotated as fragments leading to more appropriate
+   sequences in the input alignment were treated as deletions with
+   respect to the model, but now they are treated as missing data in
+   sequences annotated as fragments leading to more appropriate
    parameterization. An example in the tutorial of the user's guide
    demonstrates how to use new options to `cmbuild` to define
    fragments. Also, alignments generated with `cmalign --miss` or
-   `cmsearch -A` will have truncated hits with missing data annotated
-   as fragments.
+   `cmsearch -A` will annotate sequences with missing data as
+   fragments.
 
  * A new method of parallelizing `cmcalibrate` is available using the
    `--split` and `--merge` options. This may be useful for very large
@@ -29,28 +37,21 @@
    included in the tutorial in the user's guide.
 
  * The `--anytrunc` option to `cmscan` and `cmsearch` now results in
-   more hits that extend to the end of the sequence on the 5' and/or
-   3' ends. Previously, it was sometimes beneficial to run `cmscan` or
+   more hits that extend to the 5' and 3' ends of sequences.
+   Previously, it was sometimes beneficial to run `cmscan` or
    `cmsearch` twice, once with `--anytrunc` and once without it,
-   combine the resulting hits and then remove lower scoring overlaps
-   when searching for hits that can be truncated within sequences
-   (such as group I introns, or misassembled ribosomal RNAs), but this
-   is no longer necessary because a single run with `--anytrunc` will
-   never miss anything that a run without `--anytrunc` would find.
-
- * The default number of cores used by the multithreaded programs
-   `cmalign`, `cmcalibrate`, `cmscan` and `cmsearch` is now 4, but can be
-   changed to `<n>` with the `--cpu <n>` option. In previous 1.1x
-   versions the default number of threads used was the number of CPUs
-   on the host. There is some empirical data on how these programs
-   scale with multiple threads on the infernal github wiki: 
-   https://github.com/EddyRivasLab/infernal/wiki/How-Infernal-Programs-Scale-On-Multiple-Processors
+   combine the resulting hits, and then remove lower scoring overlaps
+   when searching for families that tend to be truncated within
+   sequences (such as group I introns, or misassembled ribosomal
+   RNAs), but this is no longer necessary. Now a single run with
+   `--anytrunc` will never miss any hits that a run without
+   `--anytrunc` would find.
 
  * Adds `--consrf` option to `cmbuild` for use in combination with the
-   `--hand` option to define the `RF` annotation as the consensus
-   sequence for the model. For users who define `RF` positions as `x`
+   `--hand` option to define the RF annotation as the consensus
+   sequence for the model. For users who define RF positions as `x`
    in input `cmbuild` alignments when using `--hand`, this option will
-   lead to more informative `RF` annotation in output `cmalign`
+   lead to more informative RF annotation in output `cmalign`
    alignments.
 
  * Adds a new tabular hits table output format for `cmscan` and
@@ -59,17 +60,25 @@
    additional fields, the model length and the total length of the
    sequence the hit derives from.
 
+## Other minor improvements:
+   
+ * various clarifications and typo fixes in the user's guide
+
+ * various compiler warnings fixed
+
+ * all sprintf() calls replaces with snprintf() or esl_sprintf()
+
 ## Bug fixes:
 
- * Fixes a bug that allowed in rare cases 5'/3' truncated
+ * fixes a bug that allowed in rare cases 5'/3' truncated
    `cmsearch` or `cmscan` hits to not include the first/final
    nucleotide of the sequence (github issue #33)
 
- * Fixes a bug that resulted in `cmalign` crashing if the dynamic
+ * fixes a bug that resulted in `cmalign` crashing if the dynamic
    programming matrices grew too large due to 32-bit integer
    overflows (github issue #35).
 
- * Fixes a bug with the `cmbuild --noh3pri` option that resulted in 
+ * fixes a bug with the `cmbuild --noh3pri` option that resulted in 
    use of the default prior from Infernal v0.56 to v1.0.2 instead of
    the current default prior (github issue #36).
 
