@@ -80,6 +80,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   int cpos_l, cpos_r;   	/* positions in consensus (1..clen)          */
   int spos_l, spos_r;		/* positions in dsq (1..L)                   */
   int have_pcodes;
+  int         nw;               /* number of chars written by snprintf, checked to avoid compiler warnings */
 
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -214,8 +215,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ali->cstr+pos,  '~', numwidth+4);
-	snprintf(ali->cseq+pos, numwidth+5, "*[%*d]*", numwidth, qinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
-	snprintf(ali->aseq+pos, numwidth+5, "*[%*d]*", numwidth, tinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	if((nw = snprintf(ali->cseq+pos, numwidth+5, "*[%*d]*", numwidth, qinset)) != (numwidth+4)) goto ERROR; /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	if((nw = snprintf(ali->aseq+pos, numwidth+5, "*[%*d]*", numwidth, tinset)) != (numwidth+4)) goto ERROR; /* +5 is length of "*[" + "]*" + 1 for null terminating char */
 	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
 	continue;
@@ -402,8 +403,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ali->cstr+pos,  '~', numwidth+4);
-	snprintf(ali->cseq+pos, numwidth+5, "*[%*d]*", numwidth, qinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
-	snprintf(ali->aseq+pos, numwidth+5, "*[%*d]*", numwidth, tinset); /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	if((nw = snprintf(ali->cseq+pos, numwidth+5, "*[%*d]*", numwidth, qinset)) != (numwidth+4)) goto ERROR; /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+        if((nw = snprintf(ali->aseq+pos, numwidth+5, "*[%*d]*", numwidth, tinset)) != (numwidth+4)) goto ERROR; /* +5 is length of "*[" + "]*" + 1 for null terminating char */
 	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
       }
