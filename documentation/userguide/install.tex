@@ -42,29 +42,45 @@ have a copy of Easel separately installed:
 
 \user{cd easel; make install} 
 
-That's it.  You can keep reading if you want to know more about
+That's it. You can keep reading if you want to know more about
 customizing a Infernal installation, or you can skip ahead to the next
 chapter, the tutorial.
 
 \subsection{System requirements}
 
-\paragraph{Operating system:} Infernal is designed to run on
-POSIX-compatible platforms, including UNIX, Linux and MacOS/X. The
-POSIX standard essentially includes all operating systems except
-Microsoft Windows. We have tested most extensively on Linux and on
-MacOS/X, because these are the machines we develop on.
+\paragraph{Operating system:} Infernal is designed for
+POSIX-compatible platforms, including Linux, Mac OS/X, and various
+UNIX OS's. The POSIX standard essentially includes all operating
+systems except Microsoft Windows.\footnote{Windows 10 includes a Linux
+  subsystem that allows you to install a Linux OS inside Windows, with
+  a bash command shell, and this should work fine. For older Windows,
+  there are add-on products available for making Windows more
+  POSIX-compliant and more compatible with GNU-ish configures and
+  builds. One such product is Cygwin,
+  \url{http://www.cygwin.com}{www.cygwin.com}, which is freely
+  available.}  We develop primarily on Mac OS/X and x86\_64/Linux
+(both Intel and AMD), and we test releases on a wider range of
+platforms.\footnote{Many thanks to the GCC Compile Farm Project for
+  providing access to some of the platforms that we use for testing.}
 
 \paragraph{Processor:} Infernal depends on vector parallelization methods
-that are supported on most modern processors. Infernal requires either an
-x86-compatible (IA32, IA64, or Intel64) processor that supports the
-SSE2 vector instruction set, or a PowerPC processor that supports the
-Altivec/VMX instruction set. SSE2 is supported on Intel processors
-from Pentium 4 on, and AMD processors from K8 (Athlon 64) on; we
-believe this includes almost all Intel processors since 2000 and AMD
-processors since 2003. Altivec/VMX is supported on Motorola G4, IBM
-G5, and IBM PowerPC processors starting with the Power6, which we
-believe includes almost all PowerPC-based desktop systems since 1999
-and servers since 2007.
+in HMMER, which Infernal uses as a library, that are
+processor-specific. Infernal supports three types of processors:
+x86-compatible (Intel/AMD) processors (SSE2 and AVX instruction sets),
+ARM processors such as new Macs (NEON instructions), and some PowerPC
+systems (Altivec/VMX instructions, big-endian mode only).
+
+SSE2 is supported on Intel processors from Pentium 4 on, and AMD
+processors from K8 (Athlon 64) on; we believe this includes almost all
+Intel processors since 2000 and AMD processors since 2003.
+
+Altivec/VMX is supported on Motorola G4, IBM G5, and IBM PowerPC
+processors starting with the Power6, which we believe includes almost
+all PowerPC-based desktop systems since 1999 and servers since
+2007.\footnote{If your platform does not support either of these
+  vector instruction sets -- or if you're on a ppc64le system that
+  supports VMX but in little-endian byte order -- the configure script
+  will stop with an error message.}
 
 If your platform does not support one of these vector instruction
 sets, you won't be able to install and run Infernal 1.1 on it.
@@ -75,29 +91,38 @@ specialized SIMD vector instructions. We hope to add support for the
 Sun SPARC VIS instruction set, for example. We believe that the code
 will be able to take advantage of GP-GPUs and FPGAs in the future.
 
-\paragraph{Compiler:} The source code is C conforming to POSIX and ANSI
-C99 standards. It should compile with any ANSI C99 compliant compiler,
-including the GNU C compiler \prog{gcc}. 
-% as of 1.1.2, I don't test on icc anymore:
-We test the code using both
-the \prog{gcc} and \prog{icc} compilers.
-% We find that \prog{icc}
-%produces somewhat faster code at present.
+\paragraph{Compiler:} The source code conforms to ANSI
+C99 and POSIX standards. It should compile with any ANSI C99 compliant
+compiler, including the freely available GNU C compiler \ccode{gcc}.
+We test the code most frequently using the GNU \ccode{gcc}, Apple
+\ccode{llvm/clang}, and Intel \ccode{icc} and \ccode{icx}
+compilers.\footnote{On OS/X, if you're compiling the source, make sure
+  you have XCode installed so that you have a C compiler.}
 
-\paragraph{Libraries and other installation requirements:} Infernal includes
-two software libraries, HMMER and Easel, which it will automatically
-compile during its installation process.  By default, Infernal does
-not require any additional libraries to be installed by you, other
-than standard ANSI C99 libraries that should already be present on a
-system that can compile C code. Bundling HMMER and Easel instead of
-making them separate installation requirements is a deliberate design
-decision to simplify the installation process.\footnote{If you install
-standalone HMMER (which also bundles Easel), this may become an
-annoyance; you'll have multiple instantiations of HMMER and Easel
-lying around. Unfortunately this is necessary as Infernal requires the
-specific versions of HMMER and Easel bundled within it. Also, the
-Easel API is not yet stable enough to decouple it from the
-applications that use it.}
+We depend on IEEE754-compliant floating point math.\footnote{With one
+  highly technical exception; on x86-compatible CPUs, we deliberately
+  turn on a CPU mode called FTZ (flush-to-zero).}  Most C compilers,
+including gcc and clang, are IEEE754-compliant by default. \textbf{Do
+  not use their \ccode{\-\-fast-math} option.} The Intel compiler icc/icx
+defaults to using an unsafe ``fast-math'' mode. If you want to use an
+Intel compiler, you must turn on IEEE754 compliance with an option
+such as \ccode{-fp-model strict}; for example, you could configure for
+Intel icx with \ccode{./configure CC=icx CFLAGS='-O3 -fp-model=strict'}.
+
+\paragraph{Libraries and other installation requirements:}
+Infernal includes two software libraries, HMMER and Easel, which it
+will automatically compile during its installation process.  By
+default, Infernal does not require any additional libraries to be
+installed by you, other than standard ANSI C99 libraries that should
+already be present on a system that can compile C code. Bundling HMMER
+and Easel instead of making them separate installation requirements is
+a deliberate design decision to simplify the installation
+process.\footnote{If you install standalone HMMER (which also bundles
+  Easel), this may become an annoyance; you'll have multiple
+  instantiations of HMMER and Easel lying around. Unfortunately this
+  is necessary as Infernal requires the specific versions of HMMER and
+  Easel bundled within it. Also, the Easel API is not yet stable
+  enough to decouple it from the applications that use it.}
 
 Configuration and compilation use several UNIX utilities. Although
 these utilities are available on all UNIX/Linux/MacOS systems, old
@@ -106,6 +131,15 @@ script and Makefiles are hoping to find. We aim to build on anything,
 even old Ebay'ed junk, but if you have an old system, you may want to
 hedge your bets and install up-to-date versions of GNU tools such as
 GNU make and GNU grep.
+
+Running the test suite (and some of our development tools, if you
+delve deep into our codebase) requires Perl and Python3 to be
+installed.  If you don't have them (which should be rare), \ccode{make
+  check} won't work for you, but that's ok because \ccode{make} and
+\ccode{make install} will still work fine.
+
+Compiling the user guide itself (this document) does require
+the additional tool \ccode{rman} to be installed.
 
 \subsection{Multithreaded parallelization for multicores is the default}
 
@@ -203,6 +237,15 @@ system's \ccode{make} does not, you can always install GNU make.
   Runs automated test suites in Infernal, and the HMMER and Easel
   libraries.
 
+\item[\emprog{pdf}]
+  Compiles this user guide.
+
+\item[\emprog{install}]
+  Installs programs and man pages.
+
+\item[\emprog{uninstall}]
+  Removes programs and man pages from where \ccode{make install} put them.
+
 \item[\emprog{clean}]
   Removes all files generated by compilation (by
   \ccode{make}). Configuration (files generated by
@@ -218,15 +261,6 @@ system's \ccode{make} does not, you can always install GNU make.
   clean}), to be sure old configuration files aren't used
   accidentally.
 \end{sreitems}
-
-\subsection{Why is the output of 'make' so clean?}
-
-Because we're hiding what's really going on with the compilation with
-a pretty wrapper.  If you want to see what the command lines really
-look like, in all their ugly glory, pass a \ccode{V=1} option (V for
-``verbose'') to \ccode{make}, as in:
-
-\user{make V=1}
 
 \subsection{What gets installed by 'make install', and where?}
 
@@ -275,6 +309,18 @@ your \ccode{\$PATH}, \ccode{/usr/local/infernal/share/man} to your
 These variables only affect \ccode{make install}. Infernal executables
 have no pathnames compiled into them.
 
+\subsection{Seeing more output from 'make'}
+
+By default, our \ccode{make} hides what's really going on with the
+compilation with a pretty wrapper that we stole from the source for
+\ccode{git}. If you want to see what the command lines really look like
+in all their ugly glory, pass a \ccode{V=1} option (V for ``verbose'')
+to \ccode{make}, as in:
+
+  \vspace{1ex}
+  \user{make V=1}
+  \vspace{1ex}
+
 \subsection{Staged installations in a buildroot, for a packaging system}
 
 Infernal's \ccode{make install} supports staged installations, accepting
@@ -292,14 +338,6 @@ or compilation, try just building in the source tree instead. Some
 \ccode{make} versions don't support the VPATH mechanism needed to use
 separate build trees. Another workaround is to install GNU make.
 
-\paragraph{Configuration fails, complaining that the CFLAGS don't
-  work.} Our configure script uses an Autoconf macro,
-  \ccode{AX\_CC\_MAXOPT}, that tries to guess good optimization flags
-  for your compiler. In very rare cases, we've seen it guess wrong.
-  You can always set \ccode{CFLAGS} yourself with something like:
-
-\user{./configure CFLAGS=-O}
-
 \paragraph{Configuration fails, complaining ``no acceptable grep could
   be found''.} We've seen this happen on our Sun Sparc/Solaris
 machine. It's a known issue in GNU autoconf. You can either install
@@ -308,16 +346,6 @@ grep (or whatever grep you have) is ok by explicitly setting
 \ccode{GREP}:
 
 \user{./configure GREP=/usr/xpg4/bin/grep}
-
-\paragraph{Configuration fails with an error message saying that no
-  SSE or VMX capability exists.}
-This is what you get if
-your system has a processor that we don't yet support the fast
-vector-parallel implementation of HMM filters that Infernal
-uses. We currently only support Intel/AMD
-compatible processors and PowerPC compatible processors. You'll have
-to install an older version of (version 1.0.2) if you want to use
-Infernal on other processors.
 
 \paragraph{Many 'make check' tests fail.} We have one report of a
 system that failed to link multithread-capable system C libraries
