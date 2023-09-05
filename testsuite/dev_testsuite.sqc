@@ -365,10 +365,10 @@
 1  exercise  align:t/tau2         @src/cmalign@  --tau 1E-13 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/mxsize       @src/cmalign@  --mxsize 128. %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/mxsize2      @src/cmalign@  --mxsize 0.20 %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  exercise  align:t/fixedtau     @src/cmalign@  --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  fail      align:t/fixedtau     @src/cmalign@  --mxsize 0.20 --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/fxedtau      @src/cmalign@  --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:t/fxedtau2     @src/cmalign@  --cpu 0 --mxsize 0.20 --fixedtau %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/maxtau       @src/cmalign@  --mxsize 0.20 --maxtau 0.001 %TRNA.CM% !testsuite/emitted-tRNA.fa!
-1  fail      align:t/maxtau2      @src/cmalign@  --mxsize 0.20 --maxtau 1E-6 %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:t/maxtau2      @src/cmalign@  --cpu 0 --mxsize 0.20 --maxtau 1E-6 %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 1  exercise  align:t/tfile        @src/cmalign@  --tfile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:t/ifile        @src/cmalign@  --ifile  %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
