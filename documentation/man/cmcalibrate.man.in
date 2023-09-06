@@ -103,7 +103,8 @@ again with the
 .B --merge
 and 
 .BI --ptot " <n>" 
-options. See the "Parallelizing cmcalibrate" section of the user guide
+options. See the "Parallelizing calibration of large models by
+splitting into partitions" subsection of the tutorial in the user's guide
 for more information.
 
 .PP
