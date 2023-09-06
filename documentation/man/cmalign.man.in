@@ -594,7 +594,7 @@ or
 .B cmscan
 because they should not include extra sequence at the ends.
 This option must be used in combination with the 
--BI --flankselfins " <x2>" 
+.BI --flankselfins " <x2>" 
 option. Recommended values to use are 0.1 for 
 .I <x1>
 and 0.8 for
@@ -614,7 +614,7 @@ Change the self-transition probabilities for the ROOT_IL and ROOT_IR
 states to 
 .I <x2>.
 This option must be used in combination with the 
--BI --flanktoins " <x1>" 
+.BI --flanktoins " <x1>" 
 option. See the explanation of that option above for more information.
 
 .TP 
