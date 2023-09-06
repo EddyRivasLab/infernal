@@ -609,7 +609,7 @@ and
 must be less than 0.95.
 
 .TP 
-.BI --flankselfins " <x1>"
+.BI --flankselfins " <x2>"
 Change the self-transition probabilities for the ROOT_IL and ROOT_IR
 states to 
 .I <x2>.
