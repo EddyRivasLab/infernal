@@ -77,7 +77,7 @@ m4_include([easel/m4/esl_pic_flags.m4])
 # 2. AC_INIT
 ################################################################
 
-AC_INIT([Infernal],[1.1.4],[eric.nawrocki@nih.gov],[infernal])
+AC_INIT([Infernal],[1.1.5],[eric.nawrocki@nih.gov],[infernal])
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 esl_cflags_env_set=no
@@ -108,8 +108,8 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="Dec 2020"
-INFERNAL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
+INFERNAL_DATE="Sep 2023"
+INFERNAL_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://eddylab.org/infernal/"
@@ -118,7 +118,7 @@ INFERNAL_HMMERDIR="hmmer"
 INFERNAL_SADIR="hmmer/libdivsufsort"
 
 HMMER_DATE="Aug 2023"
-HMMER_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
+HMMER_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the BSD open source license."
 HMMER_VERSION="3.4"
 HMMER_URL="http://hmmer.org/"
@@ -127,7 +127,7 @@ HMMER_ESLDIR="../easel"
 HMMER_SADIR="libdivsufsort"
 
 EASEL_DATE="Aug 2023"
-EASEL_COPYRIGHT="Copyright (C) 2020 Howard Hughes Medical Institute."
+EASEL_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
 EASEL_LICENSE="Freely distributed under the BSD open source license."
 EASEL_VERSION="0.49"
 EASEL_URL="http://bioeasel.org/"
@@ -834,20 +834,9 @@ AC_OUTPUT
 # get that to work here. I used AC_CONFIG_COMMANDS instead, but that
 # created a weird problem that configure wouldn't trap and remove its
 # ${ac_tmp} confXXXXXX directory.
-#
-# The symlink to easel/formats is conditional on location of srcdir
-# whether it is the same as build dir, in which case no symlink is
-# needed, it is a relative path or an absolute path.
+
 (cd hmmer/src && ${LN_S} -f impl_${impl_choice} impl)
 (cd hmmer     && ${LN_S} -f ../easel easel)
-case $srcdir in
-  .)  # We are building in place.
-  ;;  # do nothing, hmmer/easel/formats already exists
-  /* | ?:/* )  # Absolute path
-  (cd hmmer && ${LN_S} -f ${srcdir}/easel/formats easel/formats);; 
-  *) # Relative path
-  (cd hmmer && ${LN_S} -f ${srcdir}/../easel/formats easel/formats);;
-esac
 
 echo "
 

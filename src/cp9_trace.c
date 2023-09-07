@@ -954,6 +954,7 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
   int          max_ins_or_el[2];/* for regularizing (splitting) inserts */
   int          pass_offset[2];  /* for regularizing (splitting) inserts */
   int          pass;            /* for regularizing (splitting) inserts */
+  int          aulen;           /* length of author string for msa */
   char         errbuf[eslERRBUFSIZE];
 
   /* Contract checks */
@@ -1265,8 +1266,9 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
         
   msa->nseq = nseq;
   msa->alen = alen;
-  ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", INFERNAL_VERSION);
+  aulen = strlen(INFERNAL_VERSION)+10; /* 10 is length of "Infernal " + 1 for terminating null char */
+  ESL_ALLOC(msa->au, sizeof(char) * aulen);
+  snprintf(msa->au, aulen, "Infernal %s", INFERNAL_VERSION);
 
   /* copy names and weights */
   for (idx = 0; idx < nseq; idx++)

@@ -103,7 +103,8 @@ again with the
 .B --merge
 and 
 .BI --ptot " <n>" 
-options. See the "Parallelizing cmcalibrate" section of the user guide
+options. See the "Parallelizing calibration of large models by
+splitting into partitions" subsection of the tutorial in the user's guide
 for more information.
 
 .PP
@@ -328,7 +329,7 @@ By default they will be named
 .I "<s>.calib.<n>"
 where 
 .I "<s>"
-is the name to the CM file to be calibrated (including path).
+is the name of the CM file to be calibrated (including path).
 
 .TP
 .BI --part " <n>"
@@ -366,17 +367,19 @@ specify that scores for this partition be saved to file
 Merge scores from multiple previously executed partitions and
 calibrate CMs. If you used the option
 .BI --proot " <s>"
-with cmcalibrate when you ran it with
+with 
+.B cmcalibrate 
+when you ran it with
 .B --split
 to setup the partitions, use
 .BI --proot " <s>"
 again with
-.B --merge
-. (The full cmcalibrate 
-.B --merge
+.B --merge.
+The full 
+.B cmcalibrate --merge
 command to use will have been output to standard output 
-when the initial cmcalibrate 
-.B --split 
+when the initial 
+.B cmcalibrate --split 
 command was executed.
 
 .SH OTHER OPTIONS

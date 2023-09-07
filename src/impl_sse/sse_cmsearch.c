@@ -448,7 +448,7 @@ PIPELINE:
 
   free(s2_coord);
   if (ccm != NULL) cm_consensus_Free(ccm);
-  if (ocm != NULL) cm_optimized_Free(ocm); free(ocm);
+  if (ocm != NULL) { cm_optimized_Free(ocm); free(ocm); }
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);

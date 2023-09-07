@@ -60,7 +60,6 @@ main(int argc, char **argv)
   struct dbfiles *dbf        = NULL;
   uint16_t        fh         = 0;
   int             ncm        = 0;
-  uint64_t        tot_clen   = 0;
   off_t           cm_offset  = 0;
   off_t           fp7_offset = 0;
   char            errbuf[eslERRBUFSIZE];
@@ -94,7 +93,6 @@ main(int argc, char **argv)
       }
       
       ncm++;
-      tot_clen += cm->clen;
 
       gm = p7_profile_Create(cm->fp7->M, abc);
       p7_ProfileConfig(cm->fp7, bg, gm, 400, p7_LOCAL);

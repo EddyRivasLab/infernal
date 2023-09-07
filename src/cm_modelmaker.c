@@ -2071,8 +2071,8 @@ clean_cs(char *cs, int alen, int be_quiet)
   int   status;
   int   i;
   int  *ct;
-  int   nright = 0;
-  int   nleft = 0;
+  //int   nright = 0;
+  //int   nleft = 0;
   int   nbad = 0;
   char  example;
   int   first;
@@ -2100,8 +2100,8 @@ clean_cs(char *cs, int alen, int be_quiet)
    */
   for (i = 0; i < alen; i++)
     {
-      if      (strchr("{[(<", cs[i]) != NULL) nleft++;  
-      else if (strchr(">)]}", cs[i]) != NULL) nright++; 
+      if      (strchr("{[(<", cs[i]) != NULL) ; //nleft++;  
+      else if (strchr(">)]}", cs[i]) != NULL) ; //nright++; 
       else if (strchr(":_-,.~", cs[i]) != NULL) ;
       else if (has_pseudoknots && isalpha((int) cs[i])) cs[i] = '.';
       else {	/* count bad chars; remember first one; replace w/gap */

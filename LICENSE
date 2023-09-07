@@ -1,11 +1,11 @@
 Infernal - inference of RNA secondary structural alignments
-Copyright (C) 1991-2020      Sean R. Eddy
-Copyright (C) 2005-2020      Eric P. Nawrocki
+Copyright (C) 1991-2023      Sean R. Eddy
+Copyright (C) 2005-2023      Eric P. Nawrocki
 Copyright (C) 2005-2011      Diana L. Kolbe
 Copyright (C) 2004           Zasha Weinberg
 Copyright (C) 1990           Don G.Gilbert
-Copyright (C) 2000-2020      Howard Hughes Medical Institute
-Copyright (C) 2015-2020      President and Fellows of Harvard College
+Copyright (C) 2000-2023      Howard Hughes Medical Institute
+Copyright (C) 2015-2023      President and Fellows of Harvard College
 Copyright (C) 1995-2006      Washington University School of Medicine
 Copyright (C) 1992-1995      MRC Laboratory of Molecular Biology
 Copyright (C) 2004           University of Washington, Seattle
@@ -17,8 +17,8 @@ Copyright (C) 1991           Massachussetts Institute of Technology
 Infernal includes the HMMER software package, which is also open
 source and BSD licensed. See hmmer/LICENSE.
 
-Infernal uses the Easel software library, which is also open source and
-BSD licensed. See easel/LICENSE.
+Infernal includes the Easel software library, which is also open
+source and BSD licensed. See easel/LICENSE.
 
 Infernal development is supported in part by the Intramural Research
 Program of the National Library of Medicine at the US National

@@ -1,10 +1,10 @@
 Brief installation instructions 
-Infernal 1.1.4 (Dec 2020)
+Infernal 1.1.5 (Sep 2023)
 
-Starting from a source distribution, infernal-1.1.4.tar.gz:
-   uncompress infernal-1.1.4.tar.gz  
-   tar xf infernal-1.1.4.tar
-   cd infernal-1.1.4
+Starting from a source distribution, infernal-1.1.5.tar.gz:
+   uncompress infernal-1.1.5.tar.gz  
+   tar xf infernal-1.1.5.tar
+   cd infernal-1.1.5
    ./configure
    make
    make check                        # optional: automated tests

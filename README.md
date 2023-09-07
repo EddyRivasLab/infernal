@@ -26,7 +26,7 @@ and the Easel library, also at
 ```
    % wget http://eddylab.org/software/infernal/infernal.tar.gz
    % tar zxf infernal.tar.gz
-   % cd infernal-1.1.4
+   % cd infernal-1.1.5
    % ./configure --prefix /your/install/path
    % make
    % make check                 # optional: run automated tests
@@ -75,16 +75,16 @@ includes two main branches:
  * **master** is the stable branch for Infernal releases
  * **develop** is the Infernal development branch
 
-To build the most recent official release, currently v1.1.4, you'll
+To build the most recent official release, currently v1.1.5, you'll
 want to checkout the corresponding tags from the HMMER and Easel
 branches.
 
 ```
    % cd infernal
    % cd hmmer
-   % git checkout infernal-1.1.4
+   % git checkout infernal-1.1.5
    % cd easel
-   % git checkout infernal-1.1.4
+   % git checkout infernal-1.1.5
 ```
 
 To contribute to Infernal development, you want to be on the

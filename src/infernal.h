@@ -2038,6 +2038,7 @@ typedef struct cm_file_s {
 #endif
 
   char          errbuf[eslERRBUFSIZE];
+  char          msv_errbuf[eslERRBUFSIZE]; /* cm_p7_oprofile_ReadMSV uses this instead of errbuf, avoiding a thread race */
 } CM_FILE;
 
 /* note on <fname>, above:
@@ -3195,7 +3196,7 @@ extern CMEmitMap_t   *CreateEmitMap(CM_t *cm);
 extern float          SizeofEmitMap(CM_t *cm, CMEmitMap_t *emap);
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
 extern void           FreeEmitMap(CMEmitMap_t *map);
-extern void           FormatTimeString(char *buf, double sec, int do_frac);
+extern void           FormatTimeString(char *buf, int n, double sec, int do_frac);
 extern int            GetDate(char *errbuf, char **ret_date);
 
 /* from errors.c */

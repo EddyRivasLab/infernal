@@ -954,57 +954,57 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
    * So we assume we must match our Pack_size calls exactly to our Pack calls.
    */
   n = 0;
-  if (MPI_Pack_size(1, MPI_LONG_INT,      comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* mode */
-  if (MPI_Pack_size(1, MPI_LONG_INT,      comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* Z_setby */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nseqs */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nmodels */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nnodes */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nmodels_hmmonly */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nnodes_hmmonly */
-  if (MPI_Pack_size(1, MPI_DOUBLE,        comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* Z */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* cur_cm_idx */
-  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* cur_clan_idx */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* cur_seq_idx */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* cur_pass_idx */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* cur_hit_idx */
+  if (MPI_Pack_size(1, MPI_LONG_INT,      comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* mode */
+  if (MPI_Pack_size(1, MPI_LONG_INT,      comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* Z_setby */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nseqs */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nmodels */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nnodes */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nmodels_hmmonly */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nnodes_hmmonly */
+  if (MPI_Pack_size(1, MPI_DOUBLE,        comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* Z */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* cur_cm_idx */
+  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* cur_clan_idx */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* cur_seq_idx */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* cur_pass_idx */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* cur_hit_idx */
 
   for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* npli_top */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* npli_bot */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nres_top */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* nres_bot */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_msv */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_vit */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_fwd */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_gfwd */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_edef */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_cyk */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_ins */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_output */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_msvbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_vitbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_fwdbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_gfwdbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_past_edefbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* npli_top */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* npli_bot */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nres_top */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nres_bot */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_msv */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_vit */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_fwd */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_gfwd */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_edef */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_cyk */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_ins */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_output */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_msvbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_vitbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_fwdbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_gfwdbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_past_edefbias */
 
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_msv */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_vit */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_fwd */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_gfwd */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_edef */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_cyk */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_ins */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_output */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_msvbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_vitbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_fwdbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_gfwdbias */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pos_past_edefbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_msv */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_vit */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_fwd */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_gfwd */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_edef */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_cyk */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_ins */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_output */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_msvbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_vitbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_fwdbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_gfwdbias */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pos_past_edefbias */
     
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_overflow_fcyk  */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_overflow_final */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_aln_hb         */
-    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* n_aln_dccyk      */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_overflow_fcyk  */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_overflow_final */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_aln_hb         */
+    if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_aln_dccyk      */
   }
   /* Make sure the buffer is allocated appropriately */
   if (*buf == NULL || n > *nalloc) {
@@ -1463,26 +1463,29 @@ cm_hit_MPIPackSize(CM_HIT *hit, MPI_Comm comm, int *ret_n)
   CM_ALIDISPLAY *ad = hit->ad;
 
   /* CM_HIT data */
-  if (MPI_Pack_size(8,            MPI_LONG,   comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* start, stop, seq_idx, cm_idx, hit_idx, srcL, any_oidx, win_oidx */
-  if (MPI_Pack_size(8,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* in_rc, root, mode, clan_idx, pass_idx, hmmonly, glocal, has_evalue */
-  if (MPI_Pack_size(2,            MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* score, bias             */
-  if (MPI_Pack_size(4,            MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* pvalue, evalue, any_bitE, win_bitE */
-  if (MPI_Pack_size(1,            MPI_INT,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* flags                              */
+  if (MPI_Pack_size(8,            MPI_LONG,   comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* start, stop, seq_idx, cm_idx, hit_idx, srcL, any_oidx, win_oidx */
+  if (MPI_Pack_size(8,            MPI_INT,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* in_rc, root, mode, clan_idx, pass_idx, hmmonly, glocal, has_evalue */
+  if (MPI_Pack_size(2,            MPI_FLOAT,  comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* score, bias             */
+  if (MPI_Pack_size(4,            MPI_DOUBLE, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* pvalue, evalue, any_bitE, win_bitE */
+  if (MPI_Pack_size(1,            MPI_INT,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* flags                              */
 
-  if ((status = esl_mpi_PackOptSize(hit->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;  n += sz;
-  if ((status = esl_mpi_PackOptSize(hit->acc,  -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;  n += sz; 
-  if ((status = esl_mpi_PackOptSize(hit->desc, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;  n += sz; 
+  if ((status = esl_mpi_PackOptSize(hit->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;
+  n += sz;
+  if ((status = esl_mpi_PackOptSize(hit->acc,  -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;
+  n += sz; 
+  if ((status = esl_mpi_PackOptSize(hit->desc, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR;
+  n += sz; 
 
   /* CM_ALIDISPLAY data */
-  if (MPI_Pack_size(16,          MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* offset info              */
-  if (MPI_Pack_size(7,           MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* N, N_el, cfrom_emit, cto_emit, cfrom_span, cto_span, clen */
-  if (MPI_Pack_size(2,           MPI_LONG,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* sequence info            */
-  if (MPI_Pack_size(1,           MPI_DOUBLE,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* tau                      */
-  if (MPI_Pack_size(4,           MPI_FLOAT,   comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* sc, avgpp, gc, matrix_Mb */
-  if (MPI_Pack_size(1,           MPI_DOUBLE,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* elapsed_secs             */
-  if (MPI_Pack_size(1,           MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* hmmonly                  */
-  if (MPI_Pack_size(1,           MPI_INT,     comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* memsize                  */
-  if (MPI_Pack_size(ad->memsize, MPI_CHAR,    comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz;  /* mem                      */
+  if (MPI_Pack_size(16,          MPI_INT,     comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* offset info              */
+  if (MPI_Pack_size(7,           MPI_INT,     comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* N, N_el, cfrom_emit, cto_emit, cfrom_span, cto_span, clen */
+  if (MPI_Pack_size(2,           MPI_LONG,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* sequence info            */
+  if (MPI_Pack_size(1,           MPI_DOUBLE,  comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* tau                      */
+  if (MPI_Pack_size(4,           MPI_FLOAT,   comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* sc, avgpp, gc, matrix_Mb */
+  if (MPI_Pack_size(1,           MPI_DOUBLE,  comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* elapsed_secs             */
+  if (MPI_Pack_size(1,           MPI_INT,     comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* hmmonly                  */
+  if (MPI_Pack_size(1,           MPI_INT,     comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* memsize                  */
+  if (MPI_Pack_size(ad->memsize, MPI_CHAR,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* mem                      */
 
   *ret_n = n;
   return eslOK;
@@ -1785,31 +1788,31 @@ cm_alndata_MPISend(CM_ALNDATA *data, int include_sq, char *errbuf, int dest, int
    */
   n = 0;
   /* first tally up size of everything that's mandatory */
-  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* idx */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* sc */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pp */
-  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* spos */
-  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* epos */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* secs_band */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* secs_aln */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* secs_tot */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* mb_tot */
-  if (MPI_Pack_size(1, MPI_DOUBLE,        comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* tau */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* thresh1 */
-  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* thresh2 */
+  if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* idx */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* sc */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pp */
+  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* spos */
+  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* epos */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* secs_band */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* secs_aln */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* secs_tot */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* mb_tot */
+  if (MPI_Pack_size(1, MPI_DOUBLE,        comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* tau */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* thresh1 */
+  if (MPI_Pack_size(1, MPI_FLOAT,         comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* thresh2 */
   /* now the optional info */
-  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* include_sq */
-  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* has_tr */
-  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* has_ppstr */
+  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* include_sq */
+  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* has_tr */
+  if (MPI_Pack_size(1, MPI_INT,           comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* has_ppstr */
   if (include_sq) {
-    if ((status = esl_sq_MPIPackSize(data->sq, comm, &sz))       != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz; /* sq */
+    if ((status = esl_sq_MPIPackSize(data->sq, comm, &sz))       != eslOK) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* sq */
   }
   if (has_tr) { 
-    if ((status = cm_parsetree_MPIPackSize(data->tr, comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed"); n += sz; /* tr */
+    if ((status = cm_parsetree_MPIPackSize(data->tr, comm, &sz)) != eslOK) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* tr */
   }
   if (has_ppstr) { 
-    if (MPI_Pack_size(1,     MPI_LONG_LONG_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* pplen */
-    if (MPI_Pack_size(pplen, MPI_CHAR,          comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");  n += sz; /* ppstr */
+    if (MPI_Pack_size(1,     MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* pplen */
+    if (MPI_Pack_size(pplen, MPI_CHAR,          comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* ppstr */
   }
 
   /* Make sure the buffer is allocated appropriately */

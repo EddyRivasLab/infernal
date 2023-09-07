@@ -382,13 +382,15 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   double KL = 0.;
   float *pair_null;
   int i,j;
-  int KL_pair_denom = 0;
-  int KL_singlet_denom = 0;
   float left_e[cm->abc->K];
   float right_e[cm->abc->K];
-  double KL_pair = 0.;
-  double KL_pair_marg = 0.;
-  double KL_singlet = 0.;
+  /* variables only needed if we uncomment debug print statements at end of function
+   * int KL_pair_denom = 0;
+   * int KL_singlet_denom = 0;
+   * double KL_pair = 0.;
+   * double KL_pair_marg = 0.;
+   * double KL_singlet = 0.;
+   */
   
   ESL_ALLOC(pair_null, (sizeof(float) * cm->abc->K * cm->abc->K));
   for(i = 0; i < cm->abc->K; i++)
@@ -398,8 +400,8 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   for (v = 0; v < cm->M; v++) { 
     if(cm->stid[v] == MATP_MP) {
       KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
-      KL_pair += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
-      KL_pair_denom += 2;
+      // KL_pair += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
+      // KL_pair_denom += 2;
       /*printf("MP    (%5d) %6.3f\n", v, esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K)));*/
 
       /* calculate marginals */
@@ -411,7 +413,7 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
 	}
       }
       esl_vec_FNorm(left_e, cm->abc->K);
-      KL_pair_marg += esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K);
+      // KL_pair_marg += esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K);
       /*printf("cm       L %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K));*/
       /* right half */
       esl_vec_FSet(right_e, cm->abc->K, 0.);
@@ -420,13 +422,13 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
 	  right_e[i] += cm->e[v][j]; 
 	}
       }
-      KL_pair_marg += esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K);
+      // KL_pair_marg += esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K);
     }
     else if(cm->stid[v] == MATL_ML || 
 	    cm->stid[v] == MATR_MR) { 
       KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
-      KL_singlet += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
-      KL_singlet_denom += 1;
+      // KL_singlet += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
+      // KL_singlet_denom += 1;
       /*printf("ML/MR (%5d) %6.3f\n", v, esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K));*/
     }
   }  

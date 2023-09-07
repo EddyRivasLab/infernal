@@ -1529,7 +1529,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	showname = th->hit[h]->name;
       }
       
-      sprintf(cur_rankstr, "(%d)", nprinted+1);
+      snprintf(cur_rankstr, rankw+1, "(%d)", nprinted+1); /* +1 for null termination char */
 
       fprintf(ofp, " %*s %c %9.2g %6.1f %5.1f  %-*s %*" PRId64 " %*" PRId64 " %c %3s %5s %4.2f  ",
 	      rankw, cur_rankstr,
@@ -1598,7 +1598,6 @@ cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
   int    posw;
   int    descw;
   char  *showname;
-  int    nprinted = 0;
   char   lseq, rseq;
 
   char *namestr     = NULL;
@@ -1623,7 +1622,6 @@ cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
   fprintf(ofp, " %1s %-*s %-*s %6s %*s %*s\n", "", namew, (pli->mode == CM_SEARCH_SEQS) ? "sequence" : "modelname", descw, (pli->mode == CM_SEARCH_SEQS) ? "modelname" : "sequence", " score", posw, "start", posw, "end");
   fprintf(ofp, " %1s %*s %*s %6s %*s %*s\n", "", namew, namestr, descw, descstr, "------", posw, posstr, posw, posstr);
   
-  nprinted = 0;
   for (h = 0; h < th->N; h++) { 
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
@@ -1653,7 +1651,6 @@ cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli)
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      lseq, rseq);
-      nprinted++;
     }
   }
   if (th->nreported == 0) fprintf(ofp, "\n   [No hits detected that satisfy reporting thresholds]\n");
@@ -1775,7 +1772,7 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	else                  { rseq = th->hit[h]->ad->sqto == th->hit[h]->srcL ? ']' : '.'; }
       }
 
-      sprintf(cur_rankstr, "(%d)", nprinted+1);
+      snprintf(cur_rankstr, rankw+1, "(%d)", nprinted+1); /* +1 is for null termination char */
 
       fprintf(ofp, " %*s %c %9.2g %6.1f %5.1f %3s %8d %8d %c%c %11" PRId64 " %11" PRId64 " %c %c%c",
 	      rankw, cur_rankstr,
@@ -2499,7 +2496,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 
       /* format the strings to print for overlap indices and fractions */
       if(as != -1) { 
-        sprintf(any_oidxstr, "%" PRId64, ao);
+        snprintf(any_oidxstr, idxw2+1, "%" PRId64, ao); /* +1 for null termination char */
         if(th->hit[h]->in_rc) { 
           if(! th->hit[as]->in_rc) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "hit %d in_rc (%" PRId64 "..%" PRId64 ") but any_oidx (%" PRId64 " %" PRId64 "..%" PRId64 ") is not", h, th->hit[h]->start, th->hit[h]->stop, as, th->hit[as]->start, th->hit[as]->stop);
           len1 = th->hit[h]->start  - th->hit[h]->stop  + 1;
@@ -2514,11 +2511,11 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
           status = cm_tophits_OverlapNres(th->hit[h]->start, th->hit[h]->stop, th->hit[as]->start, th->hit[as]->stop, &nres, errbuf);
           if(status != eslOK) goto ERROR;
         }
-        sprintf(any_ofctstr1, "%6.3f", (float) nres / (float) len1);
-        sprintf(any_ofctstr2, "%6.3f", (float) nres / (float) len2);
+        snprintf(any_ofctstr1, 7, "%6.3f", (float) nres / (float) len1);
+        snprintf(any_ofctstr2, 7, "%6.3f", (float) nres / (float) len2);
       }
       if(ws != -1 && ws != as) { /* only calculate the win_* values if it's not identical to the any_* */
-        sprintf(win_oidxstr, "%" PRId64, wo);
+        snprintf(win_oidxstr, idxw2+1, "%" PRId64, wo); /* +1 for null termination char */
         if(th->hit[h]->in_rc) { 
           if(! th->hit[ws]->in_rc) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "hit %d in_rc (%" PRId64 "..%" PRId64 ") but win_oidx (%" PRId64 " %" PRId64 "..%" PRId64 ") is not", h, th->hit[h]->start, th->hit[h]->stop, ws, th->hit[ws]->start, th->hit[ws]->stop);
           len1 = th->hit[h]->start  - th->hit[h]->stop  + 1;
@@ -2533,8 +2530,8 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
           status = cm_tophits_OverlapNres(th->hit[h]->start, th->hit[h]->stop, th->hit[ws]->start, th->hit[ws]->stop, &nres, errbuf);
           if(status != eslOK) goto ERROR;
         }
-        sprintf(win_ofctstr1, "%6.3f", (float) nres / (float) len1);
-        sprintf(win_ofctstr2, "%6.3f", (float) nres / (float) len2);
+        snprintf(win_ofctstr1, 7, "%6.3f", (float) nres / (float) len1);
+        snprintf(win_ofctstr2, 7, "%6.3f", (float) nres / (float) len2);
       }
       // determine overlap string 
       if(th->hit[h]->flags & CM_HIT_IS_MARKED_OVERLAP) { 
@@ -2542,21 +2539,21 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
           // has >= 1 overlaps but none of these are '^' hits,
           // these hits were grouped together with other '=' hits
           // in versions 1.1.2 and 1.1.3 
-          sprintf(olp_str, " $ ");
+          snprintf(olp_str, 4, " $ ");
         }
         else { 
           // has => 1 overlaps, and >= 1 of them are higher scoring 
           // and is itself a '^' hit 
-          sprintf(olp_str, " = ");
+          snprintf(olp_str, 4, " = ");
         }
       }
       else if(has_overlapA[th->hit[h]->hit_idx] == TRUE) { 
         // has >= 1 overlaps but all are below it in hit list 
-        sprintf(olp_str, " ^ ");
+        snprintf(olp_str, 4, " ^ ");
       }
       else { 
         // zero overlaps
-        sprintf(olp_str, " * ");
+        snprintf(olp_str, 4, " * ");
       }
 
       /* make sure the clan name string makes sense */

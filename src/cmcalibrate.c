@@ -335,9 +335,9 @@ main(int argc, char **argv)
     output_header(stdout, go, cfg.cmfile, 0, cfg.nproc); /* 0 is 'relevant_ncpus', normally not important, only used if --forecast, which is incompatible with --split */
     /* get command line options, code adapted from esl_opt_SpoofCmdline */
     /* Application name/path */
-    optlen = strlen(go->argv[0]) + 1;
+    optlen = strlen(go->argv[0]) + 1; // +1 for the space
     ESL_ALLOC(cmdopt, sizeof(char) * (optlen+1));
-    sprintf(cmdopt, "%s ", go->argv[0]);
+    snprintf(cmdopt, optlen+1, "%s ", go->argv[0]);
     for (i = 0; i < go->nopts; i++) {
       /* skip --split, --cfile, --proot, --cbash options */
       if((strcmp(go->opt[i].name, "--split") != 0) && 
@@ -349,8 +349,8 @@ main(int argc, char **argv)
           else                                n = (strlen(go->opt[i].name) + strlen(go->val[i])) + 2;
           ESL_REALLOC(cmdopt, sizeof(char) * (optlen + n + 1));
           
-          if (go->opt[i].type == eslARG_NONE) sprintf(cmdopt + optlen, "%s ",    go->opt[i].name);
-          else                                sprintf(cmdopt + optlen, "%s %s ", go->opt[i].name, go->val[i]);
+          if (go->opt[i].type == eslARG_NONE) snprintf(cmdopt + optlen, n+1, "%s ",    go->opt[i].name);
+          else                                snprintf(cmdopt + optlen, n+1, "%s %s ", go->opt[i].name, go->val[i]);
           
           optlen += n;
         }
@@ -831,7 +831,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
         }
 	
 	esl_stopwatch_Stop(cfg->w);
-	FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+	FormatTimeString(time_buf, 128, cfg->w->elapsed, FALSE); /* 128: buffer size */
         if(! do_merge) { 
           printf("]  %12s\n", time_buf);
           fflush(stdout);
@@ -1164,7 +1164,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
   int      exp_mode;              /* ctr over exp tail modes */
   double   psec;                  /* predicted number of seconds for calibrating current CM */
-  double   asec;                  /* predicted number of seconds for calibrating current CM */
   double   total_psec = 0.;       /* predicted number of seconds for calibrating all CMs */
   double   total_asec = 0.;       /* predicted number of seconds for calibrating all CMs */
   int64_t  merged_nhits = 0;      /* number of hits reported thus far, for all seqs */
@@ -1215,7 +1214,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = initialize_stats(go, cfg, errbuf))                                   != eslOK) mpi_failure(errbuf);
 
     if(cmi == 0) print_calibration_column_headings(go, cfg, errbuf, cm, 1); /* 1 is irrelevant here, since --forecast can't have been enabled */
-    if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBooelan(go, "--merge"))) { 
+    if((! esl_opt_GetBoolean(go, "--noforecast")) && (! esl_opt_GetBoolean(go, "--merge"))) { 
       if((status = forecast_time(go, cfg, errbuf, cm, cfg->nproc-1, 1, &psec, &ins_v_cyk)) != eslOK) mpi_failure(errbuf); 
     }
     else { 
@@ -1391,11 +1390,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
        
     esl_stopwatch_Stop(cfg->w);
     if(! esl_opt_GetBoolean(go, "--merge")) { 
-      FormatTimeString(time_buf, cfg->w->elapsed, FALSE);
+      FormatTimeString(time_buf, 128, cfg->w->elapsed, FALSE); /* 128: buffer size */
       printf("]  %12s\n", time_buf);
       fflush(stdout);
     }
-    asec        = cfg->w->elapsed;
     total_asec += cfg->w->elapsed;
        
     FreeCM(cm);
@@ -1432,7 +1430,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t    *cm    = NULL;          /* the CM */
   CM_t    *nc_cm = NULL;          /* a non-configured copy of the CM */
   int      i, h;                  /* counters */
-  int      cmi;                   /* CM index, which model we're working on */
   int      exp_mode;              /* ctr over exp tail modes */
 
   char    *mpibuf  = NULL;        /* buffer used to pack/unpack structures */
@@ -1466,7 +1463,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status = cm_Clone(cm, errbuf, &nc_cm)) != eslOK) mpi_failure("unable to clone CM");
 
     cfg->ncm++;
-    cmi = cfg->ncm-1;
 
     if((status = expand_exp_and_name_arrays(cfg))                    != eslOK) mpi_failure("out of memory");
     if((status = initialize_cm(go, cfg, errbuf, cm, FALSE))          != eslOK) mpi_failure(errbuf);
@@ -2141,7 +2137,7 @@ print_forecasted_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errb
     printf("  %-20s  %12s", cm->name, "?");
   }
   else { 
-    FormatTimeString(time_buf, psec, FALSE);
+    FormatTimeString(time_buf, 128, psec, FALSE); /* 128: buffer size */
     printf("  %-20s  %12s", cm->name, time_buf);
   }
   if(! esl_opt_IsUsed(go, "--forecast")) fputs("  [", stdout);
@@ -2158,14 +2154,14 @@ print_total_time(const ESL_GETOPTS *go, double total_asec, double total_psec)
 
   printf("# %20s  %12s", "--------------------", "------------");
   if(! esl_opt_IsUsed(go, "--forecast")) { 
-    FormatTimeString(time_buf, total_asec, FALSE);
+    FormatTimeString(time_buf, 128, total_asec, FALSE);
     printf("  %42s  %12s", "------------------------------------------", "------------");
   }
   printf("\n");
-  FormatTimeString(time_buf, total_psec, FALSE);
+  FormatTimeString(time_buf, 128, total_psec, FALSE); /* 128: buffer size */
   printf("# %-20s  %12s", "all models", time_buf);
   if(! esl_opt_IsUsed(go, "--forecast")) { 
-    FormatTimeString(time_buf, total_asec, FALSE);
+    FormatTimeString(time_buf, 128, total_asec, FALSE); /* 128: buffer size */
     printf("  %42s  %12s", "", time_buf);
   }
   printf("\n");

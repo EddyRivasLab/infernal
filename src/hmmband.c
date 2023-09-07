@@ -1,3 +1,4 @@
+
 /* hmmband.c
  * EPN 12.16.05 
  * 
@@ -39,7 +40,7 @@ static int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9M
 					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
 static int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
 static int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
 static int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
 #endif
 
@@ -2967,7 +2968,6 @@ HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int
 int
 HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn)
 {
-  int left_max;              /* min1/max1 if min1 <= min2, else min2/max2 */
   int right_min;             /* min2/max2 if min1 <= min2, else min1/max1 */
   int in, ix;                /* min/max residue for I_k, calc'ed here */
 
@@ -2975,9 +2975,15 @@ HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int m
   ESL_DASSERT1((max1 >= min1));
   ESL_DASSERT1((max2 >= min2));
 	       
-  if (min1 <= min2) { left_max = max1;  right_min = min2; }
-  else              { left_max = max2;  right_min = min1; }
-  ESL_DASSERT1((right_min - left_max > 1)); 
+  if (min1 <= min2) { right_min = min2; }
+  else              { right_min = min1; }
+
+#if (eslDEBUGLEVEL >= 1)
+  int left_max;              /* min1/max1 if min1 <= min2, else min2/max2 */
+  if (min1 <= min2) { left_max = max1; }
+  else              { left_max = max2; }
+  assert(right_min - left_max > 1); 
+#endif
 
   /* determine in and ix */
   in = INT_MAX;
@@ -3001,7 +3007,7 @@ HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int m
   return eslOK;
 }
 
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
 /* Function: CMBandsCheckValidParse()
  * Incept:   EPN, Tue Feb  5 07:59:48 2008
  * 

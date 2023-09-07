@@ -786,21 +786,18 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
    * CMLogoddsify(sub_cm);
    */
 
-  if(print_flag)
-    {
-      ofp = fopen("sub.cm", "w");
-      if(print_flag)  printf("%-40s ... ", "Saving model to file"); fflush(stdout);
-      if(print_flag)  cm_file_WriteASCII(ofp, -1, sub_cm);
-      if(print_flag)  printf("done.\n");
-    }
-
-  if(print_flag)
-    {
-      printf("\nDEBUG PRINT OF ORIG_CM PARAMETERS:\n");
-      debug_print_cm_params(stdout, orig_cm);
-      printf("\nDEBUG PRINT OF SUB_CM PARAMETERS:\n");
-      debug_print_cm_params(stdout, sub_cm);
-    }    
+  if(print_flag) { 
+    ofp = fopen("sub.cm", "w");
+    printf("%-40s ... ", "Saving model to file"); 
+    fflush(stdout);
+    cm_file_WriteASCII(ofp, -1, sub_cm);
+    printf("done.\n");
+    
+    printf("\nDEBUG PRINT OF ORIG_CM PARAMETERS:\n");
+    debug_print_cm_params(stdout, orig_cm);
+    printf("\nDEBUG PRINT OF SUB_CM PARAMETERS:\n");
+    debug_print_cm_params(stdout, sub_cm);
+  }    
 
   /* Cleanup and exit. */
   cm_FreeTransitionMap(tmap);
@@ -3243,7 +3240,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, CMSu
 	  subinfo->apredict_ct[subinfo->imp_cc[nd]]++;
 	  apredict_total_ct++;
 	  if(print_flag)
-	    printf("PREDICTED VIOLATION[%3d]: TRUE | submap->spos: %3d | submap->epos: %3d | subinfo->imp_cc: %d\n", nd, submap->spos, submap->epos, subinfo->imp_cc[nd]);
+	    printf("PREDICTED VIOLATION[%3d]: TRUE | submap->spos: %3d | submap->epos: %3d | subinfo->imp_cc: %d (apredict_total_ct: %d)\n", nd, submap->spos, submap->epos, subinfo->imp_cc[nd], apredict_total_ct);
 	}
       else if(!violation[nd] && subinfo->imp_cc[nd] != 0)
 	{

@@ -404,7 +404,7 @@ main(int argc, char **argv)
 #if eslDEBUGLEVEL >= 1
   pid_t pid;
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 
@@ -935,20 +935,40 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
       ++eofCount;
     }
-    if (sstatus == eslOK) { /* note that this isn't an 'else if', sstatus may have been eslEOF before but just set to eslOK */
+    if (! block->complete ) {
+      /* The final sequence on the block was an incomplete window of the active sequence,
+       * so our next read will need a copy of it to correctly deal with overlapping
+       * regions. We capture a copy of the sequence here before sending it off to the
+       * pipeline to avoid odd race conditions that can occur otherwise.
+       * 
+       * This fix is new in v1.1.5 (2023) but originates from analogous code in 
+       * hmmer/src/nhmmer.c commit b3c27ff (2013) 
+       */ 
+      esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
+    }
+    /* Capture "complete" status prior to placing current block into the work
+     * queue, to avoid appearance of a race condition. With only one reader
+     * thread, there isn't really a race risk, since "complete" is only set
+     * during the esl_sqio_ReadBlock() function call earlier in this loop
+     * (i.e. "complete" isn't altered by the worker threads). 
+     */
+    prv_block_complete = block->complete;
+
+    if (sstatus == eslOK) { 
       status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
       if (status != eslOK) esl_fatal("Work queue reader failed");
     }
 
     /* newBlock needs all this information so the next ReadBlock call will know what to do */
-    ((ESL_SQ_BLOCK *)newBlock)->complete = block->complete;
-    if (! block->complete) {
-      /* the final sequence on the block was a probably-incomplete window of the active sequence, 
-       * so prep the next block to read in the next window */
-      esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
+    ((ESL_SQ_BLOCK *)newBlock)->complete = prv_block_complete;
+    if (! prv_block_complete) { 
+      /* Push the captured copy of the previously-read sequence into the new block,
+       * in preparation for ReadWindow (we've now copied this seq twice, to avoid the
+       * race condition. 
+       */
+      esl_sq_Copy(tmpsq, ((ESL_SQ_BLOCK *)newBlock)->list);
       ((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
     }
-    prv_block_complete = block->complete;
   }
 
   status = esl_workqueue_ReaderUpdate(queue, block, NULL);
@@ -1034,7 +1054,7 @@ pipeline_thread(void *arg)
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* subtract overlapping residues from previous window */
-	if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, TRUE); /* 'TRUE': we're not on bottom strand */
+	if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, TRUE); /* 'TRUE': we are on the bottom strand */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
@@ -1388,15 +1408,15 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     if (tblfp != NULL) { 
-      if(info.pli->do_trm_F3) { 
-        cm_tophits_F3TabularTargets1(tblfp, info.th, info.pli, (cm_idx == 1)); 
+      if(info->pli->do_trm_F3) { 
+        cm_tophits_F3TabularTargets1(tblfp, info->th, info->pli, (cm_idx == 1)); 
       }
       else { 
         if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
-          cm_tophits_TabularTargets1  (tblfp, info.cm->name, info.cm->acc, info.th, info.pli, (cm_idx == 1)); 
+          cm_tophits_TabularTargets1  (tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
         }
         else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
-          cm_tophits_TabularTargets3  (tblfp, info.cm->name, info.cm->acc, info.th, info.pli, (cm_idx == 1));
+          cm_tophits_TabularTargets3  (tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1));
         }
         // --fmt 2 causes early failure
         // --fmt 3 and --trmF3 are actually incompatible
@@ -2566,17 +2586,17 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
 void
 free_info(WORKER_INFO *info)
 { 
-  if(info->pli        != NULL) cm_pipeline_Destroy(info->pli, info->cm); info->pli        = NULL;
-  if(info->th         != NULL) cm_tophits_Destroy(info->th);             info->th         = NULL;
-  if(info->cm         != NULL) FreeCM(info->cm);                         info->cm         = NULL;
-  if(info->om         != NULL) p7_oprofile_Destroy(info->om);            info->om         = NULL;
-  if(info->gm         != NULL) p7_profile_Destroy(info->gm);             info->gm         = NULL;
-  if(info->Rgm        != NULL) p7_profile_Destroy(info->Rgm);            info->Rgm        = NULL;
-  if(info->Lgm        != NULL) p7_profile_Destroy(info->Lgm);            info->Lgm        = NULL;
-  if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL;
-  if(info->bg         != NULL) p7_bg_Destroy(info->bg);                  info->bg         = NULL;
-  if(info->p7_evparam != NULL) free(info->p7_evparam);                   info->p7_evparam = NULL;
-  if(info->msvdata    != NULL) p7_hmm_ScoreDataDestroy(info->msvdata);   info->msvdata    = NULL;
+  if(info->pli        != NULL) { cm_pipeline_Destroy(info->pli, info->cm); info->pli        = NULL; } 
+  if(info->th         != NULL) { cm_tophits_Destroy(info->th);             info->th         = NULL; }
+  if(info->cm         != NULL) { FreeCM(info->cm);                         info->cm         = NULL; }
+  if(info->om         != NULL) { p7_oprofile_Destroy(info->om);            info->om         = NULL; }
+  if(info->gm         != NULL) { p7_profile_Destroy(info->gm);             info->gm         = NULL; }
+  if(info->Rgm        != NULL) { p7_profile_Destroy(info->Rgm);            info->Rgm        = NULL; }
+  if(info->Lgm        != NULL) { p7_profile_Destroy(info->Lgm);            info->Lgm        = NULL; }
+  if(info->Tgm        != NULL) { p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL; }
+  if(info->bg         != NULL) { p7_bg_Destroy(info->bg);                  info->bg         = NULL; }
+  if(info->p7_evparam != NULL) { free(info->p7_evparam);                   info->p7_evparam = NULL; }
+  if(info->msvdata    != NULL) { p7_hmm_ScoreDataDestroy(info->msvdata);   info->msvdata    = NULL; }
 
   return;
 }
@@ -2744,8 +2764,8 @@ mpi_open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *
 {
   int status;
 
-  if (dbfp->data.ascii.do_gzip)   ESL_FAIL(status, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
-  if (dbfp->data.ascii.do_stdin)  ESL_FAIL(status, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
+  if (dbfp->data.ascii.do_gzip)   ESL_FAIL(eslEFORMAT, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
+  if (dbfp->data.ascii.do_stdin)  ESL_FAIL(eslEFORMAT, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
   status = esl_sqfile_OpenSSI(dbfp, NULL);
   if      (status == eslEFORMAT) ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format\n");
   else if (status == eslERANGE)  ESL_FAIL(status, errbuf, "SSI index for database file is in 64-bit format and we can't read it\n");
@@ -2769,7 +2789,7 @@ mpi_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char 
   int64_t L;    
   int i;
 
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "SSI index failed to open");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "SSI index failed to open");
 
   /* step through sequence SSI file to get database size */
   cfg->Z = 0;
@@ -2834,7 +2854,7 @@ mpi_add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int
   int64_t nseq = 0;
 
   /* Contract check, SSI should be valid */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
   /* we should have exactly 1 non-complete block */
   if(block_list->N != 1 || block_list->blocks == NULL || block_list->blocks[0]->complete) { 
     ESL_FAIL(eslFAIL, errbuf, "contract violation in next_block, block_list does not contain exactly 1 incomplete block");
@@ -2864,9 +2884,11 @@ mpi_add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int
     }
   }
 
-  /*printf("\nEnd of add_blocks()\n");
-    dump_mpi_block_list(stdout, block_list);
-    printf("\n");*/
+#if eslDEBUGLEVEL >= 1
+  printf("\nEnd of add_blocks()\n");
+  dump_mpi_block_list(stdout, block_list);
+  printf("\n");
+#endif
 
   *ret_pkey_idx = pkey_idx;
   *ret_noverlap = tot_noverlap;
@@ -2909,7 +2931,7 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
   MPI_BLOCK *cur_block = NULL; /* pointer to current block we are working on */        
 
   /* Contract check */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslFAIL, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
 
   /* Get length of 'next' sequence (next sequence in list of 
    * primary keys in SSI index, probably not the next sequence 

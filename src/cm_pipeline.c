@@ -2862,10 +2862,10 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     wb = new_wb;
   } /* end of 'if(nsurv_fwd > 0)' */
   else { 
-    if(ws != NULL) free(ws); ws = NULL;
-    if(we != NULL) free(we); we = NULL;
-    if(wp != NULL) free(wp); wp = NULL;
-    if(wb != NULL) free(wb); wb = NULL;
+    if(ws != NULL) { free(ws); ws = NULL; }
+    if(we != NULL) { free(we); we = NULL; }
+    if(wp != NULL) { free(wp); wp = NULL; }
+    if(wb != NULL) { free(wb); wb = NULL; }
   }
 
   if(survAA != NULL) { 
