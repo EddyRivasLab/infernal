@@ -1390,7 +1390,7 @@ read_hmmfile(char *filename, ESL_HMM **ret_hmm)
     hmm->pi[j++] = atof(tok);
   }
   if(j != hmm->M) { esl_fatal("ERROR parsing HMM file, wrong number of begin transitions, %d != %d", j, hmm->M); }
-  if(esl_FCompare(esl_vec_FSum(hmm->pi, hmm->M), 1., eslSMALLX1) != eslOK) { esl_fatal("ERROR parsing HMM file, begin probs don't sum to 1."); }
+  if(esl_FCompare_old(esl_vec_FSum(hmm->pi, hmm->M), 1., eslSMALLX1) != eslOK) { esl_fatal("ERROR parsing HMM file, begin probs don't sum to 1."); }
   esl_vec_FNorm(hmm->pi, hmm->M);
   if((status = esl_fileparser_NextLine(efp)) != eslOK) esl_fatal("ERROR parsing HMM file, ran out of lines too early.");
 
@@ -1401,7 +1401,7 @@ read_hmmfile(char *filename, ESL_HMM **ret_hmm)
       hmm->t[i][j++] = atof(tok);
     }
     if(j != (hmm->M+1)) { esl_fatal("ERROR parsing HMM file, wrong number of transitions for state %d", i); }
-    if(esl_FCompare(esl_vec_FSum(hmm->t[i], (hmm->M+1)), 1., 0.00001) != eslOK) { esl_fatal("ERROR parsing HMM file, trans probs state %d don't sum to 1.", i); }
+    if(esl_FCompare_old(esl_vec_FSum(hmm->t[i], (hmm->M+1)), 1., 0.00001) != eslOK) { esl_fatal("ERROR parsing HMM file, trans probs state %d don't sum to 1.", i); }
     esl_vec_FNorm(hmm->t[i], (hmm->M+1));
 
     if((status = esl_fileparser_NextLine(efp)) != eslOK) esl_fatal("ERROR parsing HMM file, ran out of lines too early.");
@@ -1414,7 +1414,7 @@ read_hmmfile(char *filename, ESL_HMM **ret_hmm)
       hmm->e[i][j++] = atof(tok);
     }
     if(j != (hmm->K)) { esl_fatal("ERROR parsing HMM file, wrong number of emissions for state %d", i); }
-    if(esl_FCompare(esl_vec_FSum(hmm->e[i], hmm->K), 1., 0.00001) != eslOK) { esl_fatal("ERROR parsing HMM file, emit probs state %d don't sum to 1.", i); }
+    if(esl_FCompare_old(esl_vec_FSum(hmm->e[i], hmm->K), 1., 0.00001) != eslOK) { esl_fatal("ERROR parsing HMM file, emit probs state %d don't sum to 1.", i); }
     esl_vec_FNorm(hmm->e[i], hmm->K);
 
     status = esl_fileparser_NextLine(efp);

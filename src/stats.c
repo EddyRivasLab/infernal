@@ -9,8 +9,8 @@
  * Robert J. Klein
  * Separate file started May 17, 2002
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -540,7 +540,7 @@ UpdateExpsForDBSize(CM_t *cm, char *errbuf, double dbsize)
 {
   int i;
   /* contract checks */
-  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats.");
+  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats\nYou may need to run cmcalibrate.");
 
   for(i = 0; i < EXP_NMODES; i++) { 
     cm->expA[i]->cur_eff_dbsize = (dbsize / cm->expA[i]->dbsize) * ((double) cm->expA[i]->nrandhits);

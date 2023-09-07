@@ -53,6 +53,7 @@ man1ext     = .1
 CC             = @CC@
 CFLAGS         = @CFLAGS@
 PTHREAD_CFLAGS = @PTHREAD_CFLAGS@ 
+NEON_CFLAGS    = @NEON_CFLAGS@
 SSE_CFLAGS     = @SSE_CFLAGS@
 VMX_CFLAGS     = @VMX_CFLAGS@
 LDFLAGS        = -static @LDFLAGS@
@@ -192,7 +193,7 @@ distclean:
 	${QUIET_SUBDIR0}documentation ${QUIET_SUBDIR1} distclean
 	${QUIET_SUBDIR0}${HMMERDIR}   ${QUIET_SUBDIR1} distclean
 # no need to distclean in easel/ because distclean in hmmer/ already did that (and easel/Makefile has been deleted)
-	${QUIET}-rm config.log config.status
+	${QUIET}-rm -f config.log config.status
 	${QUIET}-rm -rf autom4te.cache
 	${QUIET}-rm -f *.o *~ Makefile.bak core TAGS TAGS.part gmon.out
 	${QUIET}-rm -f cscope.po.out cscope.out cscope.in.out cscope.files

@@ -26,6 +26,14 @@
 #define RAMLIMIT 0
 #endif                                           
 
+/* CMNCPU sets the default number of CPU cores (worker threads)
+ *         used by multithreaded programs. Must be quoted, because
+ *         it's used to set default options.
+ */
+#ifndef CMNCPU
+#define CMNCPU  "4"
+#endif
+
 /* SRE_CONLEVEL will prob move to squid somewhere.
  *  Set to 1 to activate contract checking, during debugging.
  */                          

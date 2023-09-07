@@ -53,8 +53,8 @@
 #ifndef INFERNALH_INCLUDED
 #define INFERNALH_INCLUDED
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include "easel.h"
@@ -91,9 +91,9 @@
 #define DEFAULT_MAXTAU              0.1            /* default cm->maxtau, max allowed tau value during HMM band tightening */
 #define DEFAULT_CP9BANDS_THRESH1    0.01           /* default for CP9Bands_t thresh1, if occ[k] > thresh1 HMM posn k 'maybe used'  */
 #define DEFAULT_CP9BANDS_THRESH2    0.98           /* default for CP9Bands_t thresh2, if occ[k] > thresh2 HMM posn k 'likely used' */
-#define DEFAULT_HB_MXSIZE_MAX_MB    512.           /* maximum for auto-determined maximum HMM banded matrix size */
+#define DEFAULT_HB_MXSIZE_MAX_MB    1024.          /* maximum for auto-determined maximum HMM banded matrix size */
 #define DEFAULT_HB_MXSIZE_MAX_W     3000.          /* a CM window size (cm->W) of this or higher results in max matrix size (DEFAULT_HB_MXSIZE_MAX_MB) */
-#define DEFAULT_HB_MXSIZE_MIN_MB    128.           /* minimum for auto-determined maximum HMM banded matrix size */
+#define DEFAULT_HB_MXSIZE_MIN_MB    256.           /* minimum for auto-determined maximum HMM banded matrix size */
 #define DEFAULT_HB_MXSIZE_MIN_W     1000.          /* a CM window size (cm->W) of this or lower results in min matrix size (DEFAULT_HB_MXSIZE_MIN_MB) */
 
 /* Hard-coded values (not changeable by command-line options). 
@@ -485,7 +485,7 @@ typedef struct {
 } Prior_t;
 
 /*************************************************************************************
- * 10. ExpInfo_t: exponential tail information for E-values
+ * 9. ExpInfo_t: exponential tail information for E-values
  *************************************************************************************/
 
 /* Info on an exponential tail that describes score distribution in
@@ -520,7 +520,7 @@ typedef struct expinfo_s {
 #define EXP_NMODES 4
 
 /***********************************************************************************
- * 11. CP9_t: a CM Plan 9 HMM 
+ * 10. CP9_t: a CM Plan 9 HMM 
  ***********************************************************************************/
 
 /* Declaration of a CM Plan 9 profile-HMM structure.  Modified from a
@@ -706,7 +706,7 @@ enum cp9o_tsc_e {
 #define NHMMSTATETYPES 3
 
 /***********************************************************************************
- * 12. CP9_MX: a dynamic programming matrix for a CM Plan 9 HMM 
+ * 11. CP9_MX: a dynamic programming matrix for a CM Plan 9 HMM 
  ***********************************************************************************/
 
 /* Declaration of CM Plan9 dynamic programming matrix structure.
@@ -737,7 +737,7 @@ typedef struct cp9_mx_s {
 
 
 /*************************************************************************************
- * 13. CP9Bands_t:  sequence and CM specific HMM bands.
+ * 12. CP9Bands_t:  sequence and CM specific HMM bands.
  *************************************************************************************/
 
 /* Structure: CP9Bands_t
@@ -814,7 +814,7 @@ typedef struct cp9bands_s {
 } CP9Bands_t;
 
 /*************************************************************************************
- * 14. CP9trace_t: traceback structure for CP9 HMMs. 
+ * 13. CP9trace_t: traceback structure for CP9 HMMs. 
  *************************************************************************************/
 
 /* CM Plan 9 model state types
@@ -842,7 +842,7 @@ typedef struct cp9trace_s {
 } CP9trace_t;
 
 /*************************************************************************************
- * 15. CP9Map_t: map from a CM to a CP9 HMM and vice versa.
+ * 14. CP9Map_t: map from a CM to a CP9 HMM and vice versa.
  *************************************************************************************/
 
 /* Structure: CP9Map_t
@@ -882,7 +882,7 @@ typedef struct cp9map_s {
 
 
 /*************************************************************************************
- * 16. CMSubMap_t: map of a template CM to a sub CM and vice versa.
+ * 15. CMSubMap_t: map of a template CM to a sub CM and vice versa.
  *************************************************************************************/
 
 /* Structure: CMSubMap_t
@@ -914,7 +914,7 @@ typedef struct submap_s {
 
 
 /*************************************************************************************
- * 17. CMSubInfo_t: sub CM information, used for validating the sub CM construction procedure.
+ * 16. CMSubInfo_t: sub CM information, used for validating the sub CM construction procedure.
  *************************************************************************************/
 
 /* Structure: CMSubInfo_t
@@ -949,7 +949,7 @@ typedef struct subinfo_s {
 
 
 /*************************************************************************************
- * 18. RSEARCH constants.
+ * 17. RSEARCH constants.
  *************************************************************************************/
 
 /* RSEARCH defaults defined here */
@@ -1019,7 +1019,7 @@ typedef struct _fullmat_t {
 } fullmat_t;
 
 /***********************************************************************************
- * 19. CM_MX: CM dynamic programming matrix; non-banded, non-truncated.
+ * 18. CM_MX: CM dynamic programming matrix; non-banded, non-truncated.
  ***********************************************************************************/
 
 /* Declaration of CM dynamic programming matrices for alignment.
@@ -1055,7 +1055,7 @@ typedef struct cm_mx_s {
 } CM_MX;
 
 /***********************************************************************************
- * 20. CM_TR_MX: CM dynamic programming matrix; non-banded, truncated.
+ * 19. CM_TR_MX: CM dynamic programming matrix; non-banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_mx_s {
@@ -1084,7 +1084,7 @@ typedef struct cm_tr_mx_s {
 } CM_TR_MX;
 
 /***********************************************************************************
- * 21. CM_HB_MX: CM dynamic programming matrix; HMM banded, non-truncated.
+ * 20. CM_HB_MX: CM dynamic programming matrix; HMM banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_hb_mx_s {
@@ -1107,7 +1107,7 @@ typedef struct cm_hb_mx_s {
 } CM_HB_MX;
 
 /***********************************************************************************
- * 22. CM_TR_HB_MX: CM dynamic programming matrix; HMM banded, truncated.
+ * 21. CM_TR_HB_MX: CM dynamic programming matrix; HMM banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_hb_mx_s {
@@ -1147,7 +1147,7 @@ typedef struct cm_tr_hb_mx_s {
 
 
 /***********************************************************************************
- * 23. CM_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, non-truncated.
+ * 22. CM_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_shadow_mx_s {
@@ -1173,7 +1173,7 @@ typedef struct cm_shadow_mx_s {
 
 
 /***********************************************************************************
- * 24. CM_TR_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, truncated.
+ * 23. CM_TR_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_shadow_mx_s {
@@ -1227,7 +1227,7 @@ typedef struct cm_tr_shadow_mx_s {
 } CM_TR_SHADOW_MX;
 
 /***********************************************************************************
- * 25. CM_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, non-truncated.
+ * 24. CM_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_hb_shadow_mx_s {
@@ -1259,7 +1259,7 @@ typedef struct cm_hb_shadow_mx_s {
 
 
 /***********************************************************************************
- * 26. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated.
+ * 25. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_hb_shadow_mx_s {
@@ -1323,7 +1323,7 @@ typedef struct cm_tr_hb_shadow_mx_s {
 } CM_TR_HB_SHADOW_MX;
 
 /***********************************************************************************
- * 27. CM_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, non-truncated.
+ * 26. CM_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, non-truncated.
  ***********************************************************************************/
 
 /* CM_EMIT_MX: Two 2-dimensional matrices <l_pp> and <r_pp>
@@ -1383,7 +1383,7 @@ typedef struct cm_emit_mx_s {
 
 
 /***********************************************************************************
- * 28. CM_TR_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, truncated.
+ * 27. CM_TR_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, truncated.
  ***********************************************************************************/
 
 /* CM_TR_EMIT_MX: Same as CM_EMIT_MX except extended for truncated 
@@ -1448,7 +1448,7 @@ typedef struct cm_tr_emit_mx_s {
 
 
 /***********************************************************************************
- * 29. CM_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated.
+ * 28. CM_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated.
  ***********************************************************************************/
 
 /* CM_HB_EMIT_MX: HMM-banded version of CM_EMIT_MX (see the
@@ -1496,7 +1496,7 @@ typedef struct cm_hb_emit_mx_s {
 
 
 /***********************************************************************************
- * 30. CM_TR_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, truncated.
+ * 29. CM_TR_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, truncated.
  ***********************************************************************************/
 
 /* CM_TR_HB_EMIT_MX: HMM-banded version of CM_TR_EMIT_MX (see the
@@ -1543,7 +1543,7 @@ typedef struct cm_tr_hb_emit_mx_s {
 
 
 /***********************************************************************************
- * 31. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
+ * 30. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
  ***********************************************************************************/
 
 enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2, CM_QDBINFO_SETBY_SUBINIT };
@@ -1567,7 +1567,7 @@ typedef struct cm_qdbinfo_s {
 } CM_QDBINFO;
 
 /***********************************************************************************
- * 32. CM_SCAN_MX: matrices used for scanning CM DP algorithms; non-truncated.
+ * 31. CM_SCAN_MX: matrices used for scanning CM DP algorithms; non-truncated.
  ***********************************************************************************/
 
 /* Structure CM_SCAN_MX: 
@@ -1640,7 +1640,7 @@ typedef struct cm_scan_mx_s {
 
 
 /***********************************************************************************
- * 33. CM_TR_SCAN_MX: matrices used for scanning CM DP algorithms; truncated.
+ * 32. CM_TR_SCAN_MX: matrices used for scanning CM DP algorithms; truncated.
  ***********************************************************************************/
 
 /* Structure CM_TR_SCAN_MX: 
@@ -1713,7 +1713,7 @@ typedef struct cm_tr_scan_mx_s {
 
 
 /*************************************************************************************
- * 34. CM_TR_PENALTIES: pass, state and locality-specific truncated alignment penalties.
+ * 33. CM_TR_PENALTIES: pass, state and locality-specific truncated alignment penalties.
  *************************************************************************************/
 
 /* Truncation penalty parameters, we either allow 5' truncation, 3' truncation or both.
@@ -1741,7 +1741,7 @@ typedef struct cm_tr_penalties_s {
 
 
 /*****************************************************************
- * 35. CM_t: a covariance model
+ * 34. CM_t: a covariance model
  *****************************************************************/
 
 /* Structure: CM_t
@@ -2001,7 +2001,7 @@ typedef struct cm_s {
 #define CM_SEARCH_NULL3        (1<<11) /* use NULL3 score correction               */
 
 /*****************************************************************
- * 36. CM_FILE:  a CM save file or database, open for reading.
+ * 35. CM_FILE:  a CM save file or database, open for reading.
  *****************************************************************/
 /* These tags need to be in temporal order, so we can do tests
  * like "if (format >= CM_FILE_1a) ..."
@@ -2038,6 +2038,7 @@ typedef struct cm_file_s {
 #endif
 
   char          errbuf[eslERRBUFSIZE];
+  char          msv_errbuf[eslERRBUFSIZE]; /* cm_p7_oprofile_ReadMSV uses this instead of errbuf, avoiding a thread race */
 } CM_FILE;
 
 /* note on <fname>, above:
@@ -2053,7 +2054,7 @@ typedef struct cm_file_s {
 
 
 /***********************************************************************************
- * 37. CM_PLI_ACCT: pass specific statistics for a search/scan pipeline.
+ * 36. CM_PLI_ACCT: pass specific statistics for a search/scan pipeline.
  ***********************************************************************************/
 
 /* Pipeline pass indices. The pipeline potentially does multiple
@@ -2063,13 +2064,14 @@ typedef struct cm_file_s {
  * on it.
  * 
  * Not all passes are performed in a pipeline. If pli->do_trunc_ends,
- * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends, passes
- * 1 and 2 are performed. If pli->do_trunc_3p_ends, passes 1
- * and 3 are performed. If pli->do_trunc_any, passes 1 and 5 are
- * performed. If pli->do_trunc_only, only pass 5 is performed.
- * If pli->do_only_trunc_5p_and_3p_ends, only pass 4 is
- * performed. If pli->do_hmmonly_cur, only pass 6 is performed. If
- * none of these flags is TRUE only pass 1 is performed.
+ * passes 1,2,3,4 are performed. If pli->do_trunc_5p_ends, passes 1
+ * and 2 are performed. If pli->do_trunc_3p_ends, passes 1 and 3 are
+ * performed. If pli->do_trunc_any, passes 1, 2, 3, 4 and 5 are
+ * performed. If pli->do_trunc_int, passes 1, and 5 are performed. If
+ * pli->do_trunc_only, only pass 5 is performed.  If
+ * pli->do_only_trunc_5p_and_3p_ends, only pass 4 is performed. If
+ * pli->do_hmmonly_cur, only pass 6 is performed. If none of these
+ * flags is TRUE only pass 1 is performed.
  *
  * These values have two interrelated but different roles:
  *
@@ -2151,7 +2153,7 @@ typedef struct cm_pipeline_accounting_s {
 
 
 /***********************************************************************************
- * 38. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
+ * 37. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
  ***********************************************************************************/
 
 enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
@@ -2279,8 +2281,9 @@ typedef struct cm_pipeline_s {
 
   /* truncated sequence detection parameters */
   int     do_trunc_ends;                /* TRUE to use truncated CM algs at sequence ends */
-  int     do_trunc_any;                 /* TRUE to use truncated CM algs for entire sequences */
-  int     do_trunc_only;                /* TRUE to use truncated CM algs for entire sequences */
+  int     do_trunc_any;                 /* TRUE to use truncated CM algs for terminii and entire sequences */
+  int     do_trunc_int;                 /* TRUE to use truncated CM algs for entire sequences (but not terminii) */
+  int     do_trunc_only;                /* TRUE to use truncated CM algs for entire sequences (but not terminii, don't use std algs either) */
   int     do_trunc_5p_ends;             /* TRUE to use truncated CM algs only at 5' ends (added for RNAVORE, post 1.1.1) */
   int     do_trunc_3p_ends;             /* TRUE to use truncated CM algs only at 3' ends (added for RNAVORE, post 1.1.1) */
 
@@ -2337,7 +2340,7 @@ typedef struct cm_pipeline_s {
 
 
 /***********************************************************************************
- * 39. CM_ALIDISPLAY: an alignment formatted for printing (replaces FancyAli_t)
+ * 38. CM_ALIDISPLAY: an alignment formatted for printing (replaces FancyAli_t)
  ***********************************************************************************/
 
 /* Structure: CM_ALIDISPLAY
@@ -2397,7 +2400,7 @@ typedef struct cm_alidisplay_s {
 
 
 /***********************************************************************************
- * 40. CM_HIT: a hit between a CM and a sequence
+ * 39. CM_HIT: a hit between a CM and a sequence
  ***********************************************************************************/
 
 #define CM_HIT_FLAGS_DEFAULT 0
@@ -2453,7 +2456,7 @@ typedef struct cm_hit_s {
 
 
 /***********************************************************************************
- * 41. CM_TOPHITS: ranked list of top-scoring hits
+ * 40. CM_TOPHITS: ranked list of top-scoring hits
  ***********************************************************************************/
 
 /* Structure: CM_TOPHITS: Collection of hits that can be sorted by
@@ -2478,7 +2481,7 @@ typedef struct cm_tophits_s {
 
 
 /***********************************************************************************
- * 42. CM_P7_OM_BLOCK: block of P7_OPROFILEs and related info, for cmscan.
+ * 41. CM_P7_OM_BLOCK: block of P7_OPROFILEs and related info, for cmscan.
  ***********************************************************************************/
 
 typedef struct {
@@ -2498,7 +2501,7 @@ typedef struct {
 
 
 /***********************************************************************************
- * 43. CM_ALNDATA: information for alignment of a sequence to a CM.
+ * 42. CM_ALNDATA: information for alignment of a sequence to a CM.
  ***********************************************************************************/
 
 /* Structure CM_ALNDATA: Per-sequence information relevant to the
@@ -2526,7 +2529,7 @@ typedef struct {
 } CM_ALNDATA;
 
 /*****************************************************************
- * 45. Routines in Infernal's exposed API.
+ * 43. Routines in Infernal's exposed API.
  *****************************************************************/
 
 /* from cm.c */
@@ -2654,7 +2657,7 @@ int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
-extern int   cm_AlignSizeNeededHB (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
+extern int   cm_AlignSizeNeededHB (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotb, float *ret_totmb);
 extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_MX *mx,    CM_SHADOW_MX    *shmx, CM_MX    *post_mx, CM_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_CYKInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_sc);
@@ -2680,7 +2683,7 @@ extern char  Fscore2postcode(float sc);
 
 /* from cm_dpalign_trunc.c */
 extern int  cm_TrAlignSizeNeeded    (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
-extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
+extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotmb, float *ret_totmb);
 
 extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -2796,7 +2799,8 @@ extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *m
 extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin);
 
 /* from cm_modelmaker.c */
-extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
+extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float symfrac, CM_t **ret_cm, Parsetree_t **ret_mtr);
+extern int  AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float symfrac, int **ret_matassign);
 extern int  ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr);
 extern int  Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el, int alen, Parsetree_t **ret_tr);
 extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize);
@@ -2913,12 +2917,14 @@ extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, int em
 extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, char mode);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
+extern void         ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
+extern void         ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt, double **dbl_e, const Prior_t *pri);
 extern int          ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc, float *ret_primary_sc, int *ret_spos, int *ret_epos);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
-extern int          Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, double *wgt, Parsetree_t **tr, char **postcode, int nseq, FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa);
+extern int          Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, double *wgt, Parsetree_t **tr, char **postcode, int nseq, FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int allow_trunc, ESL_MSA **ret_msa);
 extern int          Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
@@ -3014,6 +3020,7 @@ extern int         cm_tophits_GetMaxDescLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxAccessionLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxShownLength(CM_TOPHITS *h);
 extern int         cm_tophits_GetMaxClanLength(CM_TOPHITS *h, ESL_KEYHASH *clan_name_kh);
+extern int         cm_tophits_GetMaxModelLength(CM_TOPHITS *h);
 extern int         cm_tophits_Reuse(CM_TOPHITS *h);
 extern void        cm_tophits_Destroy(CM_TOPHITS *h);
 extern int         cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th);
@@ -3028,9 +3035,10 @@ extern int cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int t
 extern int cm_tophits_F3Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli);
 extern int cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw);
 extern int cm_tophits_HitAlignmentStatistics(FILE *ofp, CM_TOPHITS *th, int used_cyk, int used_hb, double default_tau);
-extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, ESL_MSA **ret_msa);
+extern int cm_tophits_Alignment(CM_t *cm, const CM_TOPHITS *th, char *errbuf, int allow_trunc, ESL_MSA **ret_msa);
 extern int cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header, ESL_KEYHASH *clan_name_kh, int skip_overlaps, char *errbuf);
+extern int cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_F3TabularTargets1(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int show_header);
 extern int cm_tophits_TabularTail(FILE *ofp, const char *progname, enum cm_pipemodes_e pipemode, const char *qfile, const char *tfile, const ESL_GETOPTS *go);
 extern int cm_tophits_Dump(FILE *fp, const CM_TOPHITS *th);
@@ -3136,6 +3144,7 @@ extern CP9_MX *CreateCP9Matrix(int N, int M);
 extern void    FreeCP9Matrix  (CP9_MX *mx);
 extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
 extern void    InitializeCP9Matrix(CP9_MX *mx);
+extern int     SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
@@ -3157,6 +3166,7 @@ extern int   CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *
 
 /* from alphabet.c */
 extern void   PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, float wt);
+extern void   PairCountMarginal(const ESL_ALPHABET *abc, double *nonmarg_counters, float *updated_counters, ESL_DSQ syml, ESL_DSQ symr, float wt, const Prior_t *pri);
 extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr);
 extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, ESL_DSQ syml, ESL_DSQ symr);
 extern char   resolve_degenerate (ESL_RANDOMNESS *r, char c);
@@ -3186,7 +3196,7 @@ extern CMEmitMap_t   *CreateEmitMap(CM_t *cm);
 extern float          SizeofEmitMap(CM_t *cm, CMEmitMap_t *emap);
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
 extern void           FreeEmitMap(CMEmitMap_t *map);
-extern void           FormatTimeString(char *buf, double sec, int do_frac);
+extern void           FormatTimeString(char *buf, int n, double sec, int do_frac);
 extern int            GetDate(char *errbuf, char **ret_date);
 
 /* from errors.c */

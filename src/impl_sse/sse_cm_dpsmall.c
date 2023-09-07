@@ -37,7 +37,7 @@
 // FIXME: Assuming 'int' is 32-bit in the context of SSE hardware... 
 // not sure how well that actually holds
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -5696,7 +5696,7 @@ fprintf(stderr,"WARNING! sse_debug_print_alpha has not been converted to SSE!\n"
 /* gcc -std=gnu99 -msse2 -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src sse_cm_dpsmall.c -linfernal -lhmmer -leasel -lm -g -DIMPLSSE_SMALL_TEST -o sse-cyk
 */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

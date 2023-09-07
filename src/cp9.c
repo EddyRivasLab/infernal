@@ -8,8 +8,8 @@
  * 
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -148,7 +148,7 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
 
   /* end[0], begin[0], esc[0] and bsc[0] are never
    * used, set them to 0. and -INFTY */
-  hmm->end[0] = hmm->begin[0] = -INFTY;
+  hmm->end[0] = hmm->begin[0] = 0.;
   hmm->esc[0] = hmm->bsc[0] = -INFTY;
   
   ESL_ALLOC(hmm->has_el,     (M+1) * sizeof(int));

@@ -7,8 +7,8 @@
  *
  * EPN, Sat Jan 21 14:02:26 2012
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -558,7 +558,7 @@ cm_tr_penalties_Validate(CM_TR_PENALTIES *trp, CM_t *cm, double tol, char *errbu
     }
   }
   printf("L and R sump:  %.5f\n", sump);
-  if(esl_DCompare(1.0, sump, tol) != eslOK) ESL_FAIL(eslFAIL, errbuf, "cm_tr_penalties_Validate(), 5' and 3' truncation test failed (%g != 1.0)", sump);
+  if(esl_DCompare_old(1.0, sump, tol) != eslOK) ESL_FAIL(eslFAIL, errbuf, "cm_tr_penalties_Validate(), 5' and 3' truncation test failed (%g != 1.0)", sump);
 
   /* test 2: trp->l_ptyAA[TRPENALTY_5P_ONLY]: */
   sump = 0.;
@@ -590,7 +590,7 @@ cm_tr_penalties_Validate(CM_TR_PENALTIES *trp, CM_t *cm, double tol, char *errbu
     }
   }
   printf("L only  sump:  %.5f\n", sump);
-  if(esl_DCompare(1.0, sump, tol) != eslOK) ESL_FAIL(eslFAIL, errbuf, "cm_tr_penalties_Validate(), 5' only truncation test failed (%g != 1.0)", sump);
+  if(esl_DCompare_old(1.0, sump, tol) != eslOK) ESL_FAIL(eslFAIL, errbuf, "cm_tr_penalties_Validate(), 5' only truncation test failed (%g != 1.0)", sump);
 
   /* test 3: trp->l_ptyAA[TRPENALTY_3P_ONLY]: */
   sump = 0.;
@@ -622,7 +622,7 @@ cm_tr_penalties_Validate(CM_TR_PENALTIES *trp, CM_t *cm, double tol, char *errbu
     }
   }
   printf("R only  sump:  %.5f\n", sump);
-  if(esl_DCompare(1.0, sump, tol) != eslOK) ESL_FAIL(eslFAIL, errbuf, "cm_tr_penalties_Validate(), 3' only truncation test failed (%g != 1.0)", sump);
+  if(esl_DCompare_old(1.0, sump, tol) != eslOK) ESL_FAIL(eslFAIL, errbuf, "cm_tr_penalties_Validate(), 3' only truncation test failed (%g != 1.0)", sump);
   
   return eslOK;
 }

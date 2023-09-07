@@ -7,7 +7,7 @@
  * 
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -1181,7 +1181,7 @@ ResolveMSCYK(CM_TOPHITS *initial, int i0, int j0, int W, float cutoff) {
  * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c -linfernal -lhmmer -leasel -lm
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -1397,7 +1397,7 @@ nullL = cm->clen;
  * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c -linfernal -lhmmer -leasel -lm
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>

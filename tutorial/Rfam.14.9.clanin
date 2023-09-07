@@ -60,8 +60,8 @@ CL00122	NiCo	NiCo-AnGGAG
 CL00121	S15	S15-Methanomicrobia	S15-Halobacteria	S15-Flavobacteria
 CL00120	Twister-P5	twister-P3	twister-P1
 CL00001	tRNA	tmRNA	alpha_tmRNA	beta_tmRNA	cyano_tmRNA	tRNA-Sec	mt-tmRNA
-CL00002	RNaseP_nuc	RNaseP_bact_a	RNaseP_bact_b	RNase_MRP	RNaseP_arch	RNase_P
-CL00003	Metazoa_SRP	Bacteria_small_SRP	Fungi_SRP	Dictyostelium_SRP	Bacteria_large_SRP	Plant_SRP	Protozoa_SRP	Archaea_SRP
+CL00002	RNaseP_nuc	RNaseP_bact_a	RNaseP_bact_b	RNase_MRP	RNaseP_arch	RNase_P	RNaseP-T
+CL00003	Metazoa_SRP	Bacteria_small_SRP	Fungi_SRP	Dictyostelium_SRP	Bacteria_large_SRP	Plant_SRP	Protozoa_SRP	Archaea_SRP	Bacteroidales_small_SRP
 CL00004	Telomerase-vert	Telomerase-cil	Sacc_telomerase	Telomerase_Asco
 CL00005	U1	U1_yeast	U11	Gl_U1
 CL00006	U2	U12
@@ -76,6 +76,8 @@ CL00033	SNORA28	snopsi18S-841	snR80
 CL00032	SNORA27	SNORA26	snR42	S_pombe_snR42
 CL00039	SNORA56	snR8
 CL00038	SNORA66	snoR98	SNORA52	SNORA18	snoR80	snR49	snR5	S_pombe_snR5
+CL00131	Flavi_ISFV_repeat_Ra_Rb	Flavi_ISFV_repeat_Rb	Flavi_ISFV_repeat_Ra
+CL00132	snoR9	snoPyro_CD	sR47	sR60
 CL00127	c-di-GMP-II	c-di-GMP-II-GAG
 CL00126	c-di-GMP-I	c-di-GMP-I-GGC	c-di-GMP-I-UAU
 CL00022	SNORA3	snR11
@@ -96,6 +98,7 @@ CL00105	SraC_RyeA	SdsR_RyeB
 CL00104	HBV_epsilon	AHBV_epsilon
 CL00106	CsrB	CsrC	McaS	PrrB_RsmZ	RsmY	TwoAYGGAY	rsmX	Ysr186_sR026_CsrC	RsmW
 CL00108	suhB	ar15
+CL00129	cHP	DENV_SLA	Flavivirus-5UTR
 CL00128	C4	c4-2	c4-a1b1
 CL00057	SNORD39	snoZ7	snoZ101	SNORD65	snoR77Y	snR77
 CL00056	SNORD35	snoZ161_228	snR73

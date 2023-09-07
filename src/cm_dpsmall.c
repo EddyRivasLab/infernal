@@ -33,8 +33,8 @@
  *################################################################
  */  
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -4156,10 +4156,10 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int   midnode;
   int   b;			/* optimal choice for a 0->b local begin  */
   float bsc;			/* score if we use the local begin */
-  int     *imin;                /* minimum i bound for each state v; [0..y-w] 
+  int  *imin = NULL;            /* minimum i bound for each state v; [0..y-w] 
                                  * calculated using *dmin; offset from v, the
 				 * band that corresponds to state v, is imin[v-w] */
-  int     *imax;                /* maximum i bound for each state v; [0..y-w] 
+  int  *imax = NULL;            /* maximum i bound for each state v; [0..y-w] 
                                  * calculated using *dmax; offset from v, the
 				 * band that corresponds to state v, is imax[v-w] */
 
@@ -4274,6 +4274,8 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    */
   if (best_v == -1) {
     v_splitter_b(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, dmin, dmax);    
+    if(imin != NULL) free(imin);
+    if(imax != NULL) free(imax);
     return;
   }
 
@@ -6502,7 +6504,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
 {
   int      status;
   float  **end;         /* we re-use the end deck. */
-  int      nends;       /* counter that tracks when we can release end deck to the pool */
+  //int      nends;     /* counter that tracks when we can release end deck to the pool, not needed in me version*/
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
   int      j,d,i;	/* indices in sequence dimensions */
@@ -6529,7 +6531,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   end = alloc_vjd_deck(L, i0, j0);
-  nends = CMSubtreeCountStatetype(cm, vroot, E_st);
+  //nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
     end[j][0] = 0.;
@@ -6925,7 +6927,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
 		if (touch[y] == 0) 
 		  {
 		    if (cm->sttype[y] == E_st) { 
-		      nends--; 
+		      //nends--; 
 		      /* Original code : if (nends == 0) { deckpool_push(dpool, end); end = NULL;} */
 		      /* ME code deletes the previous line, we don't mess with end, because
 			 it is used later */

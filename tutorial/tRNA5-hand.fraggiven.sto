@@ -1,0 +1,10 @@
+# STOCKHOLM 1.0
+
+tRNA1             ~~~~~~~~~~~~~~~~UGGG.AGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUCCACAG~~~~~~~~
+tRNA2             UCCGAUAUAGUGUAAC.GGCUAUCACAUCACGCUUUCACCGUGGAGA.CCGGGGUUCGACUCCCCGUAUCGGAG
+tRNA3             UCCGUGAUAGUUUAAU.GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA.UCGGGGUUCAAUUCCCCGUCGCGGAG
+tRNA4             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~AAAUCUGUUGGUCCUUAGUUCGAU~~~~~~~~~~~~~~
+tRNA5             ~~GCACAUGGCGCAGUUGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCAUCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons      <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<<<<<.......>>>>>>>>>>>>.
+#=GC RF           [accep]======[=Dloop=]============acd=======[vlp]=====[Tloop]=====[accep]=
+//

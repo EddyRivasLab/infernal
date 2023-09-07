@@ -33,8 +33,8 @@
 
 /*  gcc   -o itest_brute     -std=gnu99 -g -Wall -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel itest_brute.c -linfernal -lhmmer -leasel -lm
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include "easel.h"
@@ -408,7 +408,11 @@ main(int argc, char **argv)
 	    
 	FreeCM(cm);
 	cm_mx_Destroy(mx);
+	cm_mx_Destroy(out_mx);
 	cm_shadow_mx_Destroy(shmx);
+	cm_tr_mx_Destroy(trmx);
+	cm_tr_mx_Destroy(out_trmx);
+	cm_tr_shadow_mx_Destroy(trshmx);
       }
   }
   esl_alphabet_Destroy(abc);

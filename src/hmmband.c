@@ -1,3 +1,4 @@
+
 /* hmmband.c
  * EPN 12.16.05 
  * 
@@ -7,8 +8,8 @@
  * the target.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -34,12 +35,12 @@ static int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *d
 					    int i0, int j0, int M, double p_thresh, int did_fwd_scan, int did_bck_scan, int do_old_hmm2ij, int debug_level);
 static void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_fwd_scan);
 static void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
-static int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, int *ret_did_expand, 
+static int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search,  
 					      int **ret_r_mn, int **ret_r_mx, int **ret_r_in,  int **ret_r_ix, int **ret_r_dn, int **ret_r_dx,
 					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
 static int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
 static int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
 static int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
 #endif
 
@@ -320,7 +321,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 				 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
-  cp9b->tau = cm->tau;
 
   /* Step 3: (only if truncated alignments are possible)
    * Calculate occupancy and candidate states for marginal alignments 
@@ -410,7 +410,10 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 {
   int   status;
   int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
-  float hbmx_Mb;  /* approximate size in Mb required for HMM banded matrix */
+  /* sizes of matrices, note enforce hbmx_Mb < size_limit, not tot_Mb < size_limit */
+  float cp9mx_Mb = 0.; /* approximate size in Mb required for CP9 matrices */
+  float hbmx_Mb;       /* approximate size in Mb required for HMM banded matrix */
+  float tot_Mb;        /* cp9mx_Mb + hbmx_Mb */
   int   tau_at_limit     = FALSE;
   int   thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
   int   thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
@@ -422,12 +425,12 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
     }
     else { 
-      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
-      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &hbmx_Mb); }
+      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
       if(status != eslOK && status != eslERANGE) return status;
     }      
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
-    /* check if we can stop iterating, three ways we can
+    /* check if we can stop iterating, 4 ways we can
      * case 1: matrix is now smaller than our limit.
      * case 2: do_iterate == FALSE
      * case 3: do_trunc == FALSE && tau has reached its limit
@@ -1587,7 +1590,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   esl_vec_ISet(jmax, cm->M, -2);
 
   /* Step 1: Check for valid HMM parse within the HMM bands, if there isn't one messily expand the bands so that there is one */
-  if((status = HMMBandsEnforceValidParse(cp9, cp9b, cp9map, errbuf, i0, j0, doing_search, NULL, 
+  if((status = HMMBandsEnforceValidParse(cp9, cp9b, cp9map, errbuf, i0, j0, doing_search,
 					 &r_mn, &r_mx, &r_in, &r_ix, &r_dn, &r_dx, &r_nn_i, &r_nx_i, &r_nn_j, &r_nx_j)) != eslOK) return status;
 
   /* debugging printf block */
@@ -2138,9 +2141,17 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
   /* end of brutal hack */
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
   /* check for valid CM parse, there should be one, unless do_trunc is true, then we may not... */
-  if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) return status;
+  if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) { 
+    if(do_trunc) { 
+      printf("No valid parse found in cp9_HMM2ijBands()");
+      /* but don't fail, and don't return !eslOK status */
+    }
+    else { 
+      cm_Fail("in cp9_HMM2ijBands() no valid parse and do_trunc is 0");
+    }
+  }
 #endif
 
   esl_stack_Destroy(nd_pda);
@@ -2205,20 +2216,30 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
  *           so worried about enforcing a valid parse and we skip
  *           this hack.
  *
- * Args:     cp9    - the HMM the bands were derived from
- *           cp9b   - the CP9 bands object
- *           cp9map - map from CM to cp9 
- *           errbuf - for error messages
- *           i0     - first residue of sequence we're using bands for 
- *           j0     - final residue of sequence we're using bands for 
+ * Args:     cp9          - the HMM the bands were derived from
+ *           cp9b         - the CP9 bands object
+ *           cp9map       - map from CM to cp9 
+ *           errbuf       - for error messages
+ *           i0           - first residue of sequence we're using bands for 
+ *           j0           - final residue of sequence we're using bands for 
+ *           doing_search - TRUE if we're going to use these HMM bands for search, not alignment
+ *           ret_r_mn;    - RETURN: [0..k..hmm_M] minimal residue position for which we can reach M_k (match state of node k) 
+ *           ret_r_mx;    - RETURN: [0..k..hmm_M] maximal residue position for which we can reach M_k (match state of node k) 
+ *           ret_r_in;    - RETURN: [0..k..hmm_M] minimal residue position for which we can reach I_k (insert state of node k) 
+ *           ret_r_ix;    - RETURN: [0..k..hmm_M] maximal residue position for which we can reach I_k (insert state of node k) 
+ *           ret_r_dn;    - RETURN: [0..k..hmm_M] minimal residue position for which we can reach D_k (delete state of node k) 
+ *           ret_r_dx;    - RETURN: [0..k..hmm_M] maximal residue position for which we can reach D_k (delete state of node k) 
+ *           ret_r_nn_i;  - RETURN  [0..k..hmm_M] minimal residue position for which we can reach node k (any of M_k, I_k, D_k)
+ *           ret_r_nx_j;  - RETURN  [0..k..hmm_M] minimal residue position for which we can reach node k (any of M_k, I_k, D_k)
+ *           ret_r_nn_j;  - RETURN  [0..k..hmm_M] minimal residue position for which we can reach node k (any of M_k, I_k, D_k)
+ *                          (see notes in cp9_HMM2ijBands() to see diff between ret_r_n{n,x}_i and ret_r_n{n,x}_j
  *
  * Returns:  eslOK on success
  *           eslEINCONCEIVABLE if we can't expand the bands to make a valid parse (shouldn't happen)
  *           eslEMEM if a memory allocation error occurs
- *           <ret_did_expand> set to TRUE if we had to expand the HMM bands, FALSE if not 
  */
 int
-HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, int *ret_did_expand, 
+HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search, 
 			  int **ret_r_mn, int **ret_r_mx, int **ret_r_in,  int **ret_r_ix, int **ret_r_dn, int **ret_r_dx,
 			  int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j)
 {
@@ -2244,7 +2265,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
   int *r_nn_j; /* [0..k..hmm_M] minimal residue position for which we can reach node k (any of M_k, I_k, D_k) */
   int *r_nx_j; /* [0..k..hmm_M] maximal residue position for which we can reach node k (any of M_k, I_k, D_k) */
   /* r_nn_i and r_nx_i are used when setting i bands, and r_nn_j and r_nx_j are used when setting j bands .
-   * The values can differ vecause of an off-by-one issue with the non-emitting (delete and M_0) states of the HMM:  
+   * The values can differ because of an off-by-one issue with the non-emitting (delete and M_0) states of the HMM:  
    * pn_min_d[k] = i, means posn i was last residue emitted prior to entering node k's delete state. However, for a CM,
    * if a delete states sub-parsetree is bounded by i' and j', this means positions i' and j' HAVE YET TO BE EMITTED.
    * For i states this means we have to add 1 to the delete band positions, but for j states we do not, the off-by-one
@@ -2947,7 +2968,6 @@ HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int
 int
 HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn)
 {
-  int left_max;              /* min1/max1 if min1 <= min2, else min2/max2 */
   int right_min;             /* min2/max2 if min1 <= min2, else min1/max1 */
   int in, ix;                /* min/max residue for I_k, calc'ed here */
 
@@ -2955,9 +2975,15 @@ HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int m
   ESL_DASSERT1((max1 >= min1));
   ESL_DASSERT1((max2 >= min2));
 	       
-  if (min1 <= min2) { left_max = max1;  right_min = min2; }
-  else              { left_max = max2;  right_min = min1; }
-  ESL_DASSERT1((right_min - left_max > 1)); 
+  if (min1 <= min2) { right_min = min2; }
+  else              { right_min = min1; }
+
+#if (eslDEBUGLEVEL >= 1)
+  int left_max;              /* min1/max1 if min1 <= min2, else min2/max2 */
+  if (min1 <= min2) { left_max = max1; }
+  else              { left_max = max2; }
+  assert(right_min - left_max > 1); 
+#endif
 
   /* determine in and ix */
   in = INT_MAX;
@@ -2981,7 +3007,7 @@ HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int m
   return eslOK;
 }
 
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
 /* Function: CMBandsCheckValidParse()
  * Incept:   EPN, Tue Feb  5 07:59:48 2008
  * 
@@ -4856,8 +4882,8 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
     cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax); /* j can't be more than j0 */
   }
 
-#if 0
-  printf("HEYA Returning from cp9_PredictStartAndEndPositions():\n\t");
+#if eslDEBUGLEVEL >= 1   
+  printf("Returning from cp9_PredictStartAndEndPositions():\n\t");
     printf("sp1: %4d\n\t", cp9b->sp1);
     printf("sp2: %4d\n\t", cp9b->sp2);
     printf("ep2: %4d\n\t", cp9b->ep2);
@@ -4938,7 +4964,7 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
     else { 
       cp9b->Tvalid[v] = FALSE;
     }
-#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 3
     printf("#DEBUG: v: %4d [%4d..%4d] %4s %2s %d%d%d%d\n", v, lpos, rpos, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), 
 	   cp9b->Jvalid[v], cp9b->Lvalid[v], cp9b->Rvalid[v], cp9b->Tvalid[v]);
 #endif

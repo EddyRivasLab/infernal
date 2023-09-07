@@ -126,7 +126,13 @@ of the model for consensus columns and '.' for insert columns, unless
 the 
 .B --hand
 option was used for specifying consensus positions, in which case it
-will be unchanged.
+will be unchanged. Any sequences defined as fragments will be
+annotated as well, using only
+.B ~
+characters before the first residue and after the final residue,
+unless the
+.B --fraggiven 
+option was used.
 
 .B --devhelp
 Print help, as with  
@@ -141,8 +147,6 @@ one-line descriptions output when
 is enabled, and the source code.
 
 .SH OPTIONS CONTROLLING MODEL CONSTRUCTION
-
-These options control how consensus columns are defined in an alignment.
 
 .TP
 .B --fast 
@@ -183,6 +187,53 @@ For example to reproduce behavior for a command of
 in a previous version, use
 .B cmbuild --symfrac " 0.2" 
 with this version.
+
+.TP
+.BI --fragthresh " <x>"
+We only want to count terminal gaps as deletions if the aligned
+sequence is known to be full-length, not if it is a fragment (for
+instance, because only part of it was sequenced). A fragment 
+is defined as any aligned sequence for which the fractional span,
+defined as its aligned length from its first to last residue divided
+by the total alignment length, is less than "0.8" (by default). Note
+that this differs from the way HMMER defines fragments (as of v3.3.2).
+Setting 
+.BI --fragthresh " 0" 
+will define no sequence as a
+fragment; you might want to do this if you know you have a carefully
+curated alignment of full-length sequences or want to mimic the
+behavior of older versions of Infernal (v1.1 to v1.1.4). Setting 
+.BI --fragthresh " 1" 
+will define all sequences as fragments. 
+The 
+.B --fragnrfpos 
+and 
+.B --fraggiven
+offer alternative ways to define fragments.
+
+.TP
+.BI --fragnrfpos " <n>"
+Define a sequence as a fragment if it has more than 
+.I <n>
+gaps in terminal consensus positions at the 5' 
+.B or 
+3' ends. This option can only be used in combination with the 
+.B --hand
+option, and if it is used, the 
+.B --fragthresh
+option is ignored.
+
+.TP
+.B --fraggiven
+Do not infer which sequences are fragments based on their lengths but 
+.B do 
+use fragment information in the input alignment, if there is any.
+For a sequence in the input alignment to be considered a fragment, all positions before (5' of) the
+first nucleotide and all positions after (3' of) the final nucleotide must be 
+.B ~
+symbols. Importantly,
+.B ~
+symbols are not allowed anywhere else in the alignment.
 
 .TP 
 .BI --noss
@@ -225,6 +276,14 @@ score matrices trained specifically for structural RNAs with separate
 single stranded residue and base pair substitution scores. For more
 information see the RSEARCH publication (Klein and Eddy, BMC
 Bioinformatics 4:44, 2003).
+
+.TP
+.B --consrf
+With 
+.B --hand 
+use the model's consensus sequence for the model 
+reference annotation instead of the RF annotation from the input
+alignment. 
 
 .SH OTHER MODEL CONSTRUCTION OPTIONS
 
@@ -531,6 +590,16 @@ turn off the the truncated alignment algorithm. There is more
 information on this in the 
 .B cmalign
 manual page.
+
+.TP
+.B --miss
+With 
+.B --refine,
+in the final alignment and each intermediate alignment, consider all
+sequences with terminal gaps as fragments for purposes of building
+models from those alignments. You may want to do this if you have many
+sequences that are not full length, e.g. fragmentary because only part
+of it was sequenced.
 
 .PP
 Use 

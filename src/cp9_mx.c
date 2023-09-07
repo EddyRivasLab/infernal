@@ -3,8 +3,8 @@
  * EPN, Wed Nov 28 05:11:51 2007
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -251,4 +251,46 @@ InitializeCP9Matrix(CP9_MX *mx)
   esl_vec_ISet(mx->elmx_mem, mx->ncells_valid, -INFTY);
   esl_vec_ISet(mx->erow, mx->rows, -INFTY);
   return;
+}
+
+/* Function: SizeNeededCP9Matrix()
+ * Date:     EPN, Fri Oct 14 13:40:04 2022
+ *           
+ * Purpose:  Determine size in Mb required for a CP9 matrix 
+ *           for a seq of length N, or 2 rows (if we're scanning in memory 
+ *           efficient mode, in this case N == 1, nrows = N+1).
+ * 
+ *           If kmin and kmax are non-NULL, the matrix will be a p7
+ *           HMM banded matrix as defined by bands in kmin, kmax.
+ *           In this case N must be length of the sequence. If caller
+ *           wants a non-banded CP9 matrix, pass kmin = kmax = NULL.
+ *
+ * Args:     N     - seq length to allocate for; N+1 rows
+ *           M     - size of model
+ *           kmin  - OPTIONAL: [0.1..i..N] minimum k for residue i
+ *           kmax  - OPTIONAL: [0.1..i..N] maximum k for residue i
+ *                   
+ * Return:   Mb needed for the CP9_MX
+ */
+int
+SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax)
+{
+  int i;
+  int64_t ncells_needed = 0;
+  int do_banded;
+  float ret_mb = 0.;
+
+  do_banded = (kmin != NULL && kmax == NULL) ?  TRUE : FALSE;
+  if(do_banded) { 
+    for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
+  }
+  else ncells_needed = (N+1) * (M+1);
+
+  ret_mb  = (float) sizeof(CP9_MX);
+  ret_mb += (float) (sizeof(int *) * (N+1) * 4);           /* mx->*mx ptrs */
+  ret_mb += (float) (sizeof(int)   * (ncells_needed * 4)); /* mx->*mx_mem */
+  ret_mb += (float) (sizeof(int)   * (N+1));               /* mx->erow */
+  ret_mb /= 1000000.;
+
+  return ret_mb;
 }

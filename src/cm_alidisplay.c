@@ -6,8 +6,8 @@
  *   2. The CM_ALIDISPLAY API.
  *   3. Debugging/dev code.
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
@@ -86,6 +86,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   int         sq_namelen, sq_acclen, sq_desclen;
   int         len, n;
   int         len_el; /* lengths for ad->aseq_el, ad->rfline_el and ad->ppline_el vars */
+  int         nw;     /* number of chars written by snprintf, checked to avoid compiler warnings */
 
   /* variables for constructing a single sequence MSA from passed-in
    * <tr> so we can copy it's aseq[0] to ad->aseq_el (we only need
@@ -229,7 +230,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
     ESL_ALLOC(tmpppA, sizeof(char *) * 1);
     tmpppA[0] = adata->ppstr;
   }
-  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, &tmpmsa)) != eslOK) goto ERROR;
+  if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, tmpsqA, NULL, tmptrA, tmpppA, 1, NULL, NULL, TRUE, FALSE, /*allow_trunc=*/FALSE, &tmpmsa)) != eslOK) goto ERROR;
   esl_sq_Destroy(tmpsqA[0]);
   free(tmpsqA); tmpsqA = NULL; 
   free(tmptrA); tmptrA = NULL; /* don't free tmptrA[0], it was just used as a pointer */
@@ -324,8 +325,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(ntrunc_R > 0) { 
     /* wtrunc_R and ntrunc_R were calc'ed above */
     memset(ad->csline+pos,  '~', wtrunc_R);
-    sprintf(ad->model+pos, "<[%*d]*", wtrunc_R-4, ntrunc_R);
-    sprintf(ad->aseq+pos,  "<[%*s]*", wtrunc_R-4, "0");
+    if((nw = snprintf(ad->model+pos, wtrunc_R+1, "<[%*d]*", wtrunc_R-4, ntrunc_R)) != wtrunc_R) goto ERROR; /* +1 in size for null terminating char */
+    if((nw = snprintf(ad->aseq+pos,  wtrunc_R+1, "<[%*s]*", wtrunc_R-4, "0"))      != wtrunc_R) goto ERROR; /* +1 in size for null terminating char */
     if(adata->ppstr != NULL) { 
       for(x = 0; x < wtrunc_R; x++) ad->ppline[pos+x] = '.';
     }
@@ -368,8 +369,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	ninset     = ESL_MAX(qinset,tinset);
 	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
 	memset(ad->csline+pos,  '~', numwidth+4);
-	sprintf(ad->model+pos, "*[%*d]*", numwidth, qinset);
-	sprintf(ad->aseq+pos, "*[%*d]*", numwidth, tinset);
+	if((nw = snprintf(ad->model+pos, numwidth+5, "*[%*d]*", numwidth, qinset)) != (numwidth+4)) goto ERROR; /* +5 is length of "*[" + "]*" + 1 for null terminating char */
+	if((nw = snprintf(ad->aseq+pos,  numwidth+5, "*[%*d]*", numwidth, tinset)) != (numwidth+4)) goto ERROR; /* +5 is length of "*[" + "]*" + 1 for null terminating char */
 	if(cm->rf != NULL) memset(ad->rfline+pos,  '~', numwidth+4);
 	if(adata->ppstr != NULL) { 
 	  /* calculate the single character PP code for the average posterior 
@@ -581,8 +582,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(ntrunc_L > 0) { 
     /* wtrunc_L and ntrunc_L were calc'ed above */
     memset(ad->csline+pos,  '~', wtrunc_L);
-    sprintf(ad->model+pos, "*[%*d]>", wtrunc_L-4, ntrunc_L);
-    sprintf(ad->aseq+pos,  "*[%*s]>", wtrunc_L-4, "0");
+    if((nw = snprintf(ad->model+pos, wtrunc_L+1, "*[%*d]>", wtrunc_L-4, ntrunc_L)) != wtrunc_L) goto ERROR; /* +1 in size for null terminating char */
+    if((nw = snprintf(ad->aseq+pos,  wtrunc_L+1, "*[%*s]>", wtrunc_L-4, "0"))      != wtrunc_L) goto ERROR; /* +1 in size for null terminating char */
     if(adata->ppstr != NULL) { 
       for(x = 0; x < wtrunc_L; x++) ad->ppline[pos+x] = '.';
     }
@@ -1403,6 +1404,21 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   for(apos = 0; apos < msa->alen; apos++) { 
     used_el[apos+1] = (msa->rf[apos] == '~') ? TRUE : FALSE;
   }
+
+  /* determine if we're truncated and if so add missing (~) chars to ax */
+  if(cm_alidisplay_Is5PTrunc(ad)) { 
+    for (apos = 1; apos <= msa->alen; apos++) {
+      if (esl_abc_XIsResidue(cm->abc, msa->ax[0][apos])) break;
+      msa->ax[0][apos] = esl_abc_XGetMissing(cm->abc);
+    }
+  }
+  if(cm_alidisplay_Is3PTrunc(ad)) { 
+    for (apos = msa->alen; apos >= 1; apos--) {	  
+      if (esl_abc_XIsResidue(cm->abc, msa->ax[0][apos])) break;
+      msa->ax[0][apos] = esl_abc_XGetMissing(cm->abc);
+    }
+  }
+
   if((status = Transmogrify(cm, errbuf, mtr, msa->ax[0], used_el, msa->alen, &tr)) != eslOK) goto ERROR;
   /* tr is in alignment coords, convert it to unaligned coords.
    * First we construct a map of aligned to unaligned coords, then
@@ -1412,7 +1428,9 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   a2u_map[0] = -1; /* invalid */
   upos = 1;
   for(apos = 1; apos <= msa->alen; apos++) { 
-    a2u_map[apos] = (esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) ? -1 : upos++; 
+    a2u_map[apos] = ((esl_abc_XIsGap(msa->abc, msa->ax[0][apos])) || 
+                     (esl_abc_XIsMissing(msa->abc, msa->ax[0][apos])))
+      ? -1 : upos++; 
   }
   ulen = upos;
   for(x = 0; x < tr->n; x++) { 

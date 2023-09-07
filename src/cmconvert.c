@@ -3,8 +3,8 @@
  * EPN, Fri Jul  1 05:11:15 2011
  * SRE, Thu Oct 16 08:57:43 2008 [janelia] (hmmconvert.c)
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 
 #include <stdio.h>
 #include <stdlib.h>

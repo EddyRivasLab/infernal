@@ -13,8 +13,8 @@
  * expected number of times each corresponding CM state is entered.
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <math.h>
@@ -2100,12 +2100,16 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS  *r, CM
 	msa_nseq = nsamples - nsampled;
       for (i = 0; i < msa_nseq; i++) {
 	ESL_ALLOC(name, sizeof(char) * namelen);
-	sprintf(name, "seq%d", i+1);
+	snprintf(name, namelen, "seq%d", i+1);
 	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) return status;
 	free(name);
       }
       /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(cm, errbuf, cm->abc, sq, NULL, tr, NULL, msa_nseq, NULL, NULL, TRUE, FALSE, &msa);
+      Parsetrees2Alignment(cm, errbuf, cm->abc, sq, NULL, tr, NULL, msa_nseq, NULL, NULL, 
+                           /*do_full=*/TRUE, 
+                           /*do_matchonly=*/FALSE, 
+                           /*allow_trunc=*/FALSE,
+                           &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL) ESL_FAIL(eslEINCOMPAT, errbuf, "CP9_check_by_sampling(): sampled MSA should NOT be digitized.\n");
       
@@ -2192,7 +2196,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS  *r, CM
       else if(subinfo != NULL && subinfo->imp_cc[nd] != 0) {
 	spredict_total_ct++;
 	subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
-	if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
+	if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d (spredict_total_ct: %d)\n", nd, spos, epos, subinfo->imp_cc[nd], spredict_total_ct);
       }
     }
     else if(subinfo != NULL && subinfo->imp_cc[nd] != 0) {
@@ -2408,7 +2412,7 @@ CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int prin
 	ret_val = FALSE;
       }
   }
-  else if(print_flag) printf("\n");
+  else if(print_flag) printf("d_nseq: %.3f", d_nseq); /* this is only to silence compiler warnings that d_nseq is never used */
 
   free(temp_ahmm_trans);
   free(temp_shmm_trans);

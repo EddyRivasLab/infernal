@@ -4,8 +4,8 @@
  * Based on HMMER3's nhmmer.c and hmmsearch.c.
  * EPN, Fri Sep 24 10:58:08 2010
  */
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -56,13 +56,6 @@ typedef struct {
   float             smxsize;     /* max size (Mb) of allowable scan mx (only relevant if --nohmm or --max) */
 } WORKER_INFO;
 
-#define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
-#define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
-#define FMODEOPTS   "--FZ,--hmmonly,--rfam,--mid,--nohmm,--max"
-#define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
-#define TRUNCOPTS   "-g,--notrunc,--anytrunc,--onlytrunc,--5trunc,--3trunc"
-
 /* ** Large sets of options are InCompatible With (ICW) --max, --nohmm,
  * --mid, --rfam, --FZ, Previously (before these were commented out) I
  * used this defines in the 'incompatible with' field of the
@@ -72,14 +65,30 @@ typedef struct {
  * confusingly) the 'incompatible with' field is empty for these
  * options which are actually incompatible with a lot of other
  * options. 
- *
- * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
- * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
+ * 
+ * #define ICWMAX   "--nohmm,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--noF6,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--F6,--ftau,--fsums,--fqdb,--fbeta,--fnonbanded,--nocykenv,--cykenvx,--tau,--sums,--nonbanded,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
+ * #define ICWNOHMM "--max,--mid,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--noF4,--doF1b,--noF2b,--noF3b,--noF4b,--doF5b,--F1,--F1b,--F2,--F2b,--F3,--F3b,--F4,--F4b,--F5,--ftau,--fsums,--tau,--sums,--rt1,--rt2,--rt3,--ns,--maxtau,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc,--onepass,--olonepass,--noiter"
  * #define ICWMID   "--max,--nohmm,--default,--rfam,--FZ,--noF1,--noF2,--noF3,--doF1b,--noF2b,--F1,--F1b,--F2,--F2b"
  * #define ICWDF    "--max,--nohmm,--mid,--rfam,--FZ"
  * #define ICWRFAM  "--max,--nohmm,--mid,--default,--FZ"
  * #define ICWFZ    "--max,--nohmm,--mid,--default,--rfam"
- */
+ * #define ICWTRMF3  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
+ * #define ICWHMMMAX  "--hmmF1,--hmmF2,--hmmF3,--hmmnobias" 
+ * #define ICWFNONBANDED  "--ftau,--fsums,--fqdb,--fbeta"
+ * #define ICWNONBANDED  "--tau,--sums,--qdb,--beta"
+ * #define ICWOLONEPASS  "--nohmm,--qdb,--fqdb,--onepass"
+ *
+ * *** The same is true for some other options combinations except
+ * instead of one option being incompatible with many others,
+ * every one in the group is incompatible with every other:
+ * #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
+ * #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
+ * #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
+ * #define TRUNCOPTS   "-g,--notrunc,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc"
+ * #define NOTRUNCOPTS "--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc"
+ * #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
+ * 
+ */                     
 
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
@@ -100,24 +109,26 @@ static ESL_OPTIONS options[] = {
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "-A",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save multiple alignment of all significant hits to file <s>",  2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
+  { "--fmt",        eslARG_INT,     NULL, NULL, "1<=n<=3",NULL,"--tblout",NULL,         "set hit table format to <n>",                                  2 },
   { "--acc",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "prefer accessions over names in output",                       2 },
   { "--noali",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "don't output alignments, so output is smaller",                2 },
   { "--notextw",    eslARG_NONE,    NULL, NULL, NULL,    NULL,  NULL, "--textw",        "unlimit ASCII text output line width",                         2 },
   { "--textw",      eslARG_INT,    "120", NULL, "n>=120",NULL,  NULL, "--notextw",      "set max width of ASCII text output lines",                     2 },
   { "--verbose",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "report extra information; mainly useful for debugging",        2 },
+  { "--nomiss",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "-A",  NULL,            "with -A, do not mark truncated hits with missing (~) chars",   2 },
   /* Control of reporting thresholds */
-  /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
-  { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  REPOPTS,         "report sequences <= this E-value threshold in output",         3 },
-  { "-T",           eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  REPOPTS,         "report sequences >= this score threshold in output",           3 },
+  /* name           type         default   env  range toggles   reqs   incomp  help                                                            docgroup*/
+  { "-E",           eslARG_REAL,  "10.0", NULL, "x>0",   NULL,  NULL,  NULL, /* see *** above */ "report sequences <= this E-value threshold in output",         3 },
+  { "-T",           eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "report sequences >= this score threshold in output",           3 },
   /* Control of inclusion (significance) thresholds */
-  /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
-  { "--incE",       eslARG_REAL,  "0.01", NULL, "x>0",   NULL,  NULL,  INCOPTS,         "consider sequences <= this E-value threshold as significant",  4 },
-  { "--incT",       eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  INCOPTS,         "consider sequences >= this score threshold as significant",    4 },
+  /* name           type         default   env  range toggles   reqs   incomp  help                                                            docgroup*/
+  { "--incE",       eslARG_REAL,  "0.01", NULL, "x>0",   NULL,  NULL,  NULL, /* see *** above */ "consider sequences <= this E-value threshold as significant",  4 },
+  { "--incT",       eslARG_REAL,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "consider sequences >= this score threshold as significant",    4 },
   /* Model-specific thresholding for both reporting and inclusion */
-  /* name           type         default   env  range toggles   reqs   incomp           help                                                            docgroup*/
-  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's GA gathering cutoffs as reporting thresholds",        5 },
-  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's NC noise cutoffs as reporting thresholds",            5 },
-  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  THRESHOPTS,      "use CM's TC trusted cutoffs as reporting thresholds",          5 },
+  /* name           type         default   env  range toggles   reqs   incomp  help                                                     docgroup*/
+  { "--cut_ga",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "use CM's GA gathering cutoffs as reporting thresholds",        5 },
+  { "--cut_nc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "use CM's NC noise cutoffs as reporting thresholds",            5 },
+  { "--cut_tc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "use CM's TC trusted cutoffs as reporting thresholds",          5 },
   /* Control of filtering mode/acceleration level */
   /* name           type         default   env  range toggles   reqs   incomp                   help                                                              docgroup*/
   { "--max",        eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "turn all heuristic filters off (slow)",                          6 },
@@ -130,8 +141,8 @@ static ESL_OPTIONS options[] = {
   { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
-  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--anytrunc,--onlytrunc,--5trunc,--3trunc", "do not allow truncated hits at sequence termini",      7 },
-  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,                      "allow full and truncated hits anywhere within sequences",          7 },
+  { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "do not allow truncated hits at sequence termini",                7 },
+  { "--anytrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "allow full+truncated hits at terminii and anywhere within seqs", 7 },
   { "--nonull3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "turn off the NULL3 post hoc additional null model",              7 },
   { "--mxsize",     eslARG_REAL,    NULL, NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed alnment mx size to <x> Mb [df: autodetermined]", 7 },
   { "--smxsize",    eslARG_REAL,  "128.", NULL, "x>0.1", NULL,  NULL,  NULL,                           "set max allowed size of search DP matrices to <x> Mb",           7 },
@@ -146,7 +157,7 @@ static ESL_OPTIONS options[] = {
   { "--oclan",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
   { "--oskip",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                           "BOGUS OPTION, NEVER ALLOWED",    999 },
 #ifdef HMMER_THREADS 
-  { "--cpu",        eslARG_INT, NULL,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                     "number of parallel CPU workers to use for multithreads",         7 },
+  { "--cpu",        eslARG_INT, CMNCPU,"INFERNAL_NCPU","n>=0",NULL,  NULL,  CPUOPTS,                   "number of parallel CPU workers to use for multithreads",         7 },
 #endif
 #ifdef HAVE_MPI
   { "--stall",      eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--mpi", NULL,                           "arrest after start: for debugging MPI under gdb",                7 },  
@@ -179,7 +190,7 @@ static ESL_OPTIONS options[] = {
   { "--F6",         eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL, "--noF6",         "Stage 6 (CYK) threshold:         promote hits w/ P <= <x>",  101 },
   /* Options for precise control of each stage of the HMM-only filter pipeline */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                         docgroup*/
-  { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmF1,--hmmF2,--hmmF3,--hmmnobias", "in HMM-only mode, turn off all filters",  102 },
+  { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see ** above */ "in HMM-only mode, turn off all filters",  102 },
   { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 1 (SSV) P value threshold to <x>", 102 },
   { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 2 (Vit) P value threshold to <x>", 102 },
   { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 3 (Fwd) P value threshold to <x>", 102 },
@@ -198,7 +209,7 @@ static ESL_OPTIONS options[] = {
   { "--fsums",      eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--fqdb",   "w/--fhbanded use posterior sums (widens bands)",                104 },
   { "--fqdb",       eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL,     "use QDBs in CYK filter round, not HMM bands",                   104 },
   { "--fbeta",      eslARG_REAL, "1e-7",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,     "set tail loss prob for CYK filter QDB calculation to <x>",      104 },
-  { "--fnonbanded", eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--ftau,--fsums,--fqdb,--fbeta","do not use any bands for CYK filter round",  104 },
+  { "--fnonbanded", eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL, /* see ** above */ "do not use any bands for CYK filter round",  104 },
   { "--nocykenv",   eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL, "--max",     "do not redefine envelopes after stage 6 based on CYK hits",    104 },
   { "--cykenvx",    eslARG_INT,    "10",  NULL, "n>=1",      NULL,    NULL, "--max",     "CYK envelope redefinition threshold multiplier, <n> * F6",     104 },
   /* Options for precise control of the final round of searching */
@@ -207,17 +218,17 @@ static ESL_OPTIONS options[] = {
   { "--sums",       eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--qdb",  "w/--hbanded use posterior sums (widens bands)",                    105 },
   { "--qdb",        eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL,  "use QDBs (instead of HMM bands) in final Inside round",            105 },
   { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,  "set tail loss prob for final Inside QDB calculation to <x>",       105 },
-  { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,"--tau,--sums,--qdb,--beta", "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
+  { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL, /* see ** above */ "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
-  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly",TIMINGOPTS, "terminate after Stage 3 Fwd and output surviving windows",       106 },
+  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", NULL, /* see ** above */ "terminate after Stage 3 Fwd and output surviving windows",       106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
-  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 1 SSV; for timing expts",          107 },
-  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 2 Vit; for timing expts",          107 },
-  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 3 Fwd; for timing expts",          107 },
-  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 4 glocal Fwd; for timing expts",   107 },
-  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 5 envelope def; for timing expts", 107 },
-  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, TIMINGOPTS,       "abort after Stage 6 CYK; for timing expts",          107 },
+  { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },
+  { "--timeF2",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 2 Vit; for timing expts",          107 },
+  { "--timeF3",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 3 Fwd; for timing expts",          107 },
+  { "--timeF4",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 4 glocal Fwd; for timing expts",   107 },
+  { "--timeF5",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 5 envelope def; for timing expts", 107 },
+  { "--timeF6",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 6 CYK; for timing expts",          107 },
   /* Other expert options */
   /* name          type          default   env  range toggles   reqs  incomp                 help                                                             docgroup*/
   { "--nogreedy",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                 "do not resolve hits with greedy algorithm, use optimal one",    108 },
@@ -227,12 +238,13 @@ static ESL_OPTIONS options[] = {
   { "--maxtau",     eslARG_REAL,  "0.05", NULL,"0<x<0.5",NULL,  NULL,  NULL,                 "set max tau <x> when tightening HMM bands",                     108 },
   { "--seed",       eslARG_INT,    "181", NULL, "n>=0",  NULL,  NULL,  NULL,                 "set RNG seed to <n> (if 0: one-time arbitrary seed)",           108 },
   { "--block",      eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL,  NULL,                 "BOGUS OPTION, NEVER ALLOWED",                                   999 },
-  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",           "use CM only for best scoring HMM pass for full seq envelopes",  108 },
-  { "--olonepass",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb,--onepass", "use CM only f. best sc'ing HMM pass f. overlapping envelopes",  108 },
+  { "--onepass",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb",     "use CM only for best scoring HMM pass for full seq envelopes",  108 },
+  { "--olonepass",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "use CM only f. best sc'ing HMM pass f. overlapping envelopes",  108 },
   { "--noiter",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,"--nohmm,--qdb,--fqdb", "do not iteratively tighten bands when necessary",               108 },
-  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,    "allow only truncated hits, anywhere within sequences",                  108 },
-  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,    "allow truncated hits only at 5' ends of sequences",                     108 },
-  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  TRUNCOPTS,    "allow truncated hits only at 3' ends of sequences",                     108 },
+  { "--inttrunc",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow full and truncated hits anywhere within sequences",   108 },
+  { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",      108 },
+  { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",         108 },
+  { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",         108 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
   { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 108 },
@@ -392,7 +404,7 @@ main(int argc, char **argv)
 #if eslDEBUGLEVEL >= 1
   pid_t pid;
   pid = getpid();
-  printf("The process id is %d\n", pid);
+  printf("#DEBUG: The process id is %d\n", pid);
   fflush(stdout);
 #endif
 
@@ -491,8 +503,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 #ifdef HMMER_THREADS
   /* initialize thread data */
-  if (esl_opt_IsOn(go, "--cpu")) ncpus = esl_opt_GetInteger(go, "--cpu");
-  else                                   esl_threads_CPUCount(&ncpus);
+  ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
   if (ncpus > 0) {
     threadObj = esl_threads_Create(&pipeline_thread);
     queue = esl_workqueue_Create(ncpus * 2);
@@ -578,7 +589,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
        (   esl_opt_GetBoolean(go, "-g"))           || 
        ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
       /* we're NOT running HMM-only pipeline variant, we need CM E-value stats */
-      if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s\n", tinfo->cm->name);
+      if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s.\nYou may need to run cmcalibrate.", tinfo->cm->name);
     }
        
     /* seqfile may need to be rewound (multiquery mode) */
@@ -690,8 +701,19 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
     if (tblfp != NULL) { 
-      if(info[0].pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
-      else                       cm_tophits_TabularTargets1  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+      if(info[0].pli->do_trm_F3) { 
+        cm_tophits_F3TabularTargets1(tblfp, info[0].th, info[0].pli, (cm_idx == 1)); 
+      }
+      else { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
+          cm_tophits_TabularTargets1  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1)); 
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          cm_tophits_TabularTargets3  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1));
+        }
+        // --fmt 2 causes early failure
+        // --fmt 3 and --trmF3 are actually incompatible
+      }
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -700,7 +722,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
-      if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, &msa)) == eslOK) { 
+      if((status = cm_tophits_Alignment(info[0].cm, info[0].th, errbuf, /*allow_trunc=*/(! esl_opt_GetBoolean(go, "--nomiss")), &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) esl_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
 	  else           esl_msafile_Write(afp, msa, eslMSAFILE_PFAM);
@@ -913,20 +935,40 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
       if (eofCount < esl_threads_GetWorkerCount(obj)) sstatus = eslOK;
       ++eofCount;
     }
-    if (sstatus == eslOK) { /* note that this isn't an 'else if', sstatus may have been eslEOF before but just set to eslOK */
+    if (! block->complete ) {
+      /* The final sequence on the block was an incomplete window of the active sequence,
+       * so our next read will need a copy of it to correctly deal with overlapping
+       * regions. We capture a copy of the sequence here before sending it off to the
+       * pipeline to avoid odd race conditions that can occur otherwise.
+       * 
+       * This fix is new in v1.1.5 (2023) but originates from analogous code in 
+       * hmmer/src/nhmmer.c commit b3c27ff (2013) 
+       */ 
+      esl_sq_Copy(block->list + (block->count - 1) , tmpsq);
+    }
+    /* Capture "complete" status prior to placing current block into the work
+     * queue, to avoid appearance of a race condition. With only one reader
+     * thread, there isn't really a race risk, since "complete" is only set
+     * during the esl_sqio_ReadBlock() function call earlier in this loop
+     * (i.e. "complete" isn't altered by the worker threads). 
+     */
+    prv_block_complete = block->complete;
+
+    if (sstatus == eslOK) { 
       status = esl_workqueue_ReaderUpdate(queue, block, &newBlock);
       if (status != eslOK) esl_fatal("Work queue reader failed");
     }
 
     /* newBlock needs all this information so the next ReadBlock call will know what to do */
-    ((ESL_SQ_BLOCK *)newBlock)->complete = block->complete;
-    if (! block->complete) {
-      /* the final sequence on the block was a probably-incomplete window of the active sequence, 
-       * so prep the next block to read in the next window */
-      esl_sq_Copy(block->list + (block->count - 1) , ((ESL_SQ_BLOCK *)newBlock)->list);
+    ((ESL_SQ_BLOCK *)newBlock)->complete = prv_block_complete;
+    if (! prv_block_complete) { 
+      /* Push the captured copy of the previously-read sequence into the new block,
+       * in preparation for ReadWindow (we've now copied this seq twice, to avoid the
+       * race condition. 
+       */
+      esl_sq_Copy(tmpsq, ((ESL_SQ_BLOCK *)newBlock)->list);
       ((ESL_SQ_BLOCK *)newBlock)->list->C = info->pli->maxW;
     }
-    prv_block_complete = block->complete;
   }
 
   status = esl_workqueue_ReaderUpdate(queue, block, NULL);
@@ -1012,7 +1054,7 @@ pipeline_thread(void *arg)
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* subtract overlapping residues from previous window */
-	if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, TRUE); /* 'TRUE': we're not on bottom strand */
+	if(dbsq->C > 0) cm_pli_AdjustNresForOverlaps(info->pli, dbsq->C, TRUE); /* 'TRUE': we are on the bottom strand */
 
 	/* modify hit positions to account for the position of the window in the full sequence */
 	cm_tophits_UpdateHitPositions(info->th, prv_pli_ntophits, dbsq->start, TRUE);
@@ -1366,8 +1408,19 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     if (tblfp != NULL) { 
-      if(info->pli->do_trm_F3) cm_tophits_F3TabularTargets1(tblfp, info->th, info->pli, (cm_idx == 1)); 
-      else                     cm_tophits_TabularTargets1(tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+      if(info->pli->do_trm_F3) { 
+        cm_tophits_F3TabularTargets1(tblfp, info->th, info->pli, (cm_idx == 1)); 
+      }
+      else { 
+        if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") == 1)) { /* fmt defaults to 1 */
+          cm_tophits_TabularTargets1  (tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1)); 
+        }
+        else if(esl_opt_GetInteger(go, "--fmt") == 3) { 
+          cm_tophits_TabularTargets3  (tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1));
+        }
+        // --fmt 2 causes early failure
+        // --fmt 3 and --trmF3 are actually incompatible
+      }
       fflush(tblfp);
     }
     esl_stopwatch_Stop(w);
@@ -1377,7 +1430,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* Output the results in an MSA (-A option) */
     if (afp) {
       ESL_MSA *msa = NULL;
-      if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, &msa)) == eslOK) { 
+      if((status = cm_tophits_Alignment(info->cm, info->th, errbuf, /*allow_trunc=*/(! esl_opt_GetBoolean(go, "--nomiss")), &msa)) == eslOK) { 
 	if(msa != NULL) { 
 	  if (textw > 0) esl_msafile_Write(afp, msa, eslMSAFILE_STOCKHOLM);
 	  else           esl_msafile_Write(afp, msa, eslMSAFILE_PFAM);
@@ -1801,6 +1854,15 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
+    puts("--fmt 3 doesn't make sense in combination with --trmF3");
+    goto ERROR;
+  }
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 2)) { 
+    puts("--fmt 2 only makes sense with cmscan, because cmsearch can't determine overlaps");
+    goto ERROR;
+  }
+
   /* Finally, check for incompatible option combinations I *do* know
    * how to disallow with esl_getopts, but that would require an error
    * message like: "Option 'x' is incompatible with options
@@ -1849,6 +1911,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --max is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --inttrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --max is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --3trunc");     goto ERROR; }
@@ -1889,6 +1952,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --inttrunc");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --3trunc");     goto ERROR; }
@@ -1969,6 +2033,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --maxtau");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --inttrunc");   goto ERROR; }
     if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onlytrunc");  goto ERROR; }
     if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --5trunc");     goto ERROR; }
     if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --3trunc");     goto ERROR; }
@@ -1987,6 +2052,170 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     if(esl_opt_IsUsed(go, "--cp9gloc"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cp9gloc");    goto ERROR; }
     if(esl_opt_IsUsed(go, "--null2"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --null2");      goto ERROR; }
   }
+
+  /* more incompatible combinations, listed here instead of within option definitions because the string of incompatible options is longer than errbuf */
+  // #define REPOPTS     "-E,-T,--cut_ga,--cut_nc,--cut_tc"
+  // #define INCOPTS     "--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
+  // #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
+  if(esl_opt_IsUsed(go, "-E")) { 
+    if((esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
+      puts("Failed to parse command line: Option -E is incompatible with -T,--cut_ga,--cut_nc,--cut_tc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "-T")) { 
+    if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
+      puts("Failed to parse command line: Option -T is incompatible with -E,--cut_ga,--cut_nc,--cut_tc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--incE")) { 
+    if((esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
+      puts("Failed to parse command line: Option --incE is incompatible with --incT,--cut_ga,--cut_nc,--cut_tc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--incT")) { 
+    if((esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
+      puts("Failed to parse command line: Option --incT is incompatible with --incE,--cut_ga,--cut_nc,--cut_tc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--cut_ga")) { 
+    if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
+      puts("Failed to parse command line: Option --cut_ga is incompatible with -E,-T,--incE,--incT,--cut_nc,--cut_tc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--cut_nc")) { 
+    if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
+      puts("Failed to parse command line: Option --cut_nc is incompatible with -E,-T,--incE,--incT,--cut_ga,--cut_tc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--cut_tc")) { 
+    if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc"))) { 
+      puts("Failed to parse command line: Option --cut_tc is incompatible with -E,-T,--incE,--incT,--cut_ga,--cut_nc");
+      goto ERROR; 
+    }
+  }
+
+  // #define TRUNCOPTS   "-g,--notrunc,--anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc"
+  // #define NOTRUNCOPTS "--anytrunc,--onlytrunc,--5trunc,--3trunc"
+  if(esl_opt_IsUsed(go, "--notrunc")) { 
+    if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --notrunc is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--anytrunc")) { 
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --anytrunc is incompatible with -g,--notrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "-g")) { 
+    if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option -g is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--onlytrunc")) { 
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --onlytrunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--5trunc,--3trunc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--5trunc")) { 
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
+      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--3trunc");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--3trunc")) { 
+    if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc"))) { 
+      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--5trunc");
+      goto ERROR; 
+    }
+  }
+
+  // #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
+  // #define ICWTRMF3  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
+  if(esl_opt_IsUsed(go, "--timeF1")) { 
+    if((esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
+      puts("Failed to parse command line: Option --timeF1 is incompatible with --timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--timeF2")) { 
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
+      puts("Failed to parse command line: Option --timeF2 is incompatible with --timeF1,--timeF3,--timeF4,--timeF5,--timeF6");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--timeF3")) { 
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
+      puts("Failed to parse command line: Option --timeF2 is incompatible with --timeF1,--timeF2,--timeF4,--timeF5,--timeF6");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--timeF4")) { 
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
+      puts("Failed to parse command line: Option --timeF4 is incompatible with --timeF1,--timeF2,--timeF3,--timeF5,--timeF6");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--timeF5")) { 
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
+      puts("Failed to parse command line: Option --timeF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF6");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--timeF6")) { 
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5"))) { 
+      puts("Failed to parse command line: Option --timeF6 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5");
+      goto ERROR; 
+    }
+  }
+  if(esl_opt_IsUsed(go, "--trmF3")) { 
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
+      puts("Failed to parse command line: Option --trmF3 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      goto ERROR; 
+    }
+  }
+
+  // #define ICWHMMMAX  "--hmmF1,--hmmF2,--hmmF3,--hmmnobias" 
+  if(esl_opt_IsUsed(go, "--hmmmax")) { 
+    if((esl_opt_IsUsed(go, "--hmmF1")) || (esl_opt_IsUsed(go, "--hmmF2")) || (esl_opt_IsUsed(go, "--hmmF3")) || (esl_opt_IsUsed(go, "--hmmnobias"))) { 
+      puts("Failed to parse command line: Option --hmmmax is incompatible with --hmmF1,--hmmF2,--hmmF3,--hmmnobias");
+      goto ERROR; 
+    }
+  }
+
+  // #define ICWFNONBANDED  "--ftau,--fsums,--fqdb,--fbeta"
+  if(esl_opt_IsUsed(go, "--fnonbanded")) { 
+    if((esl_opt_IsUsed(go, "--ftau")) || (esl_opt_IsUsed(go, "--fsums")) || (esl_opt_IsUsed(go, "--fqdb")) || (esl_opt_IsUsed(go, "--fbeta"))) { 
+      puts("Failed to parse command line: Option --fnonbanded is incompatible with --ftau,--fsums,--fqdb,--fbeta");
+      goto ERROR; 
+    }
+  }
+
+  // #define ICWNONBANDED  "--tau,--sums,--qdb,--beta"
+  if(esl_opt_IsUsed(go, "--nonbanded")) { 
+    if((esl_opt_IsUsed(go, "--tau")) || (esl_opt_IsUsed(go, "--sums")) || (esl_opt_IsUsed(go, "--qdb")) || (esl_opt_IsUsed(go, "--beta"))) { 
+      puts("Failed to parse command line: Option --nonbanded is incompatible with --tau,--sums,--qdb,--beta");
+      goto ERROR; 
+    }
+  }
+
+  // #define ICWOLONEPASS  "--nohmm,--qdb,--fqdb,--onepass"
+  if(esl_opt_IsUsed(go, "--olonepass")) { 
+    if((esl_opt_IsUsed(go, "--nohmm")) || (esl_opt_IsUsed(go, "--qdb")) || (esl_opt_IsUsed(go, "--fqdb")) || (esl_opt_IsUsed(go, "--onepass"))) { 
+      puts("Failed to parse command line: Option --olonepass is incompatible with --nohmm,--qdb,--fqdb,--onepass");
+      goto ERROR; 
+    }
+  }
+
 
   *ret_go = go;
   return;
@@ -2032,6 +2261,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--hmmonly"))    fprintf(ofp, "# HMM-only mode (for all models):        on [CM will not be used]\n");
   if (esl_opt_IsUsed(go, "--notrunc"))    fprintf(ofp, "# truncated sequence detection:          off\n");
   if (esl_opt_IsUsed(go, "--anytrunc"))   fprintf(ofp, "# allowing truncated sequences anywhere: on\n");
+  if (esl_opt_IsUsed(go, "--inttrunc"))   fprintf(ofp, "# allowing internally truncated seqs:    on\n");
   if (esl_opt_IsUsed(go, "--onlytrunc"))  fprintf(ofp, "# only allowing truncated seqs anywhere: on\n");
   if (esl_opt_IsUsed(go, "--5trunc"))     fprintf(ofp, "# allowing 5' truncated seqs only:       on\n");
   if (esl_opt_IsUsed(go, "--3trunc"))     fprintf(ofp, "# allowing 3' truncated seqs only:       on\n");
@@ -2356,17 +2586,17 @@ clone_info(ESL_GETOPTS *go, WORKER_INFO *src_info, WORKER_INFO *dest_infoA, int 
 void
 free_info(WORKER_INFO *info)
 { 
-  if(info->pli        != NULL) cm_pipeline_Destroy(info->pli, info->cm); info->pli        = NULL;
-  if(info->th         != NULL) cm_tophits_Destroy(info->th);             info->th         = NULL;
-  if(info->cm         != NULL) FreeCM(info->cm);                         info->cm         = NULL;
-  if(info->om         != NULL) p7_oprofile_Destroy(info->om);            info->om         = NULL;
-  if(info->gm         != NULL) p7_profile_Destroy(info->gm);             info->gm         = NULL;
-  if(info->Rgm        != NULL) p7_profile_Destroy(info->Rgm);            info->Rgm        = NULL;
-  if(info->Lgm        != NULL) p7_profile_Destroy(info->Lgm);            info->Lgm        = NULL;
-  if(info->Tgm        != NULL) p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL;
-  if(info->bg         != NULL) p7_bg_Destroy(info->bg);                  info->bg         = NULL;
-  if(info->p7_evparam != NULL) free(info->p7_evparam);                   info->p7_evparam = NULL;
-  if(info->msvdata    != NULL) p7_hmm_ScoreDataDestroy(info->msvdata);   info->msvdata    = NULL;
+  if(info->pli        != NULL) { cm_pipeline_Destroy(info->pli, info->cm); info->pli        = NULL; } 
+  if(info->th         != NULL) { cm_tophits_Destroy(info->th);             info->th         = NULL; }
+  if(info->cm         != NULL) { FreeCM(info->cm);                         info->cm         = NULL; }
+  if(info->om         != NULL) { p7_oprofile_Destroy(info->om);            info->om         = NULL; }
+  if(info->gm         != NULL) { p7_profile_Destroy(info->gm);             info->gm         = NULL; }
+  if(info->Rgm        != NULL) { p7_profile_Destroy(info->Rgm);            info->Rgm        = NULL; }
+  if(info->Lgm        != NULL) { p7_profile_Destroy(info->Lgm);            info->Lgm        = NULL; }
+  if(info->Tgm        != NULL) { p7_profile_Destroy(info->Tgm);            info->Tgm        = NULL; }
+  if(info->bg         != NULL) { p7_bg_Destroy(info->bg);                  info->bg         = NULL; }
+  if(info->p7_evparam != NULL) { free(info->p7_evparam);                   info->p7_evparam = NULL; }
+  if(info->msvdata    != NULL) { p7_hmm_ScoreDataDestroy(info->msvdata);   info->msvdata    = NULL; }
 
   return;
 }
@@ -2440,7 +2670,7 @@ configure_cm(WORKER_INFO *info)
 int
 setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 { 
-  int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--anytrunc")) ? FALSE : TRUE;
+  int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--inttrunc")) ? FALSE : TRUE;
 
   /* set up the HMM filter-related structures */
   info->gm = p7_profile_Create (info->cm->fp7->M, info->cm->abc);
@@ -2534,8 +2764,8 @@ mpi_open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *
 {
   int status;
 
-  if (dbfp->data.ascii.do_gzip)   ESL_FAIL(status, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
-  if (dbfp->data.ascii.do_stdin)  ESL_FAIL(status, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
+  if (dbfp->data.ascii.do_gzip)   ESL_FAIL(eslEFORMAT, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
+  if (dbfp->data.ascii.do_stdin)  ESL_FAIL(eslEFORMAT, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
   status = esl_sqfile_OpenSSI(dbfp, NULL);
   if      (status == eslEFORMAT) ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format\n");
   else if (status == eslERANGE)  ESL_FAIL(status, errbuf, "SSI index for database file is in 64-bit format and we can't read it\n");
@@ -2559,7 +2789,7 @@ mpi_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char 
   int64_t L;    
   int i;
 
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "SSI index failed to open");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "SSI index failed to open");
 
   /* step through sequence SSI file to get database size */
   cfg->Z = 0;
@@ -2624,7 +2854,7 @@ mpi_add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int
   int64_t nseq = 0;
 
   /* Contract check, SSI should be valid */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(status, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
   /* we should have exactly 1 non-complete block */
   if(block_list->N != 1 || block_list->blocks == NULL || block_list->blocks[0]->complete) { 
     ESL_FAIL(eslFAIL, errbuf, "contract violation in next_block, block_list does not contain exactly 1 incomplete block");
@@ -2654,9 +2884,11 @@ mpi_add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int
     }
   }
 
-  /*printf("\nEnd of add_blocks()\n");
-    dump_mpi_block_list(stdout, block_list);
-    printf("\n");*/
+#if eslDEBUGLEVEL >= 1
+  printf("\nEnd of add_blocks()\n");
+  dump_mpi_block_list(stdout, block_list);
+  printf("\n");
+#endif
 
   *ret_pkey_idx = pkey_idx;
   *ret_noverlap = tot_noverlap;
@@ -2699,7 +2931,7 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
   MPI_BLOCK *cur_block = NULL; /* pointer to current block we are working on */        
 
   /* Contract check */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslFAIL, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
 
   /* Get length of 'next' sequence (next sequence in list of 
    * primary keys in SSI index, probably not the next sequence 

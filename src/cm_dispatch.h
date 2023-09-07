@@ -9,7 +9,7 @@
 #ifndef CMDISPATCH_INCLUDED
 #define CMDISPATCH_INCLUDED
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include "easel.h"

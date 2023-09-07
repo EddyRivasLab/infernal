@@ -40,13 +40,19 @@ that include only models with zero basepairs before running
 is very slow. It takes a couple of hours
 to calibrate a single average sized CM on a single CPU. 
 .B cmcalibrate
-will run in parallel on all available cores if Infernal was built on a
+will run in parallel on four cores if Infernal was built on a
 system that supports POSIX threading (see the Installation section of
-the user guide for more information). Using 
+the user guide for more information) and that system has at 
+least 4 cores. Using 
 .B <n>
 cores will result in roughly
 .B <n>
--fold acceleration versus a single CPU.  MPI (Message Passing
+-fold acceleration versus a single CPU.  You can specify the 
+number of cores be 
+.B <n>
+to use with the 
+.BI --cpu " <n>" 
+option. MPI (Message Passing
 Interface) can be also be used for parallelization with the
 .B --mpi 
 option if Infernal was built with MPI enabled, but using more than 161
@@ -66,6 +72,40 @@ To predict the running time on
 processors with MPI, additionally use the
 .BI --nforecast " <n>"
 option.
+
+.PP
+Some large models require a lot of memory to calibrate. You can
+determine how much memory is required with the 
+.B --memreq
+option. For these models, you may be limited by the available RAM on
+your system. Another strategy for parallelization that can be useful
+when a lot of memory is required per core is to split the calibration
+into 
+.B <n> 
+separate computations or partitions, each of which can be performed separately,
+potentially in parallel if you have access to a computer cluster. The
+results from each computation can then be merged together for the
+final calibration. To do this, first run 
+.B cmcalibrate
+with the 
+.B --split,
+.BI --ptot " <n>"
+and 
+.BI --cfile " <f>"
+options, which will save the 
+.I "<n>"
+separate partition commands into the file
+.I "<f>".
+After all of these commands have been executed, you can then combine
+the results and create a calibrated model file by calling
+.Bi cmcalibrate
+again with the 
+.B --merge
+and 
+.BI --ptot " <n>" 
+options. See the "Parallelizing calibration of large models by
+splitting into partitions" subsection of the tutorial in the user's guide
+for more information.
 
 .PP
 The random sequences searched in 
@@ -253,6 +293,95 @@ delimited by a line with a single character "&". The file will contain
 one series for each of the four exponential tail fits in the following
 order: glocal CYK, glocal Inside, local CYK, and local Inside.
 
+.SH OPTIONS CONTROLLING SPLIT, PARTITION AND MERGE MODES:
+
+.TP
+.B --split
+Prepare a partitioned calibration. This option only works in
+combination with the 
+.BI --ptot " <n>"
+and 
+.BI --cfile " <f>"
+options, and will prepare a calibration split into 
+.I "<n>"
+separate partitions. The commands to run all of the partitions will be
+in the file
+.I "<f>".
+
+.TP
+.BI --cfile " <f>"
+With 
+.B --split,
+save the commands for all partitions to file 
+.I "<f>".
+
+.TP
+.BI --proot " <s>"
+With 
+.B --split,
+specify that the per-partition scores files 
+be named 
+.I "<s>.<n>"
+where 
+.I "<n>"
+is the partition index.
+By default they will be named 
+.I "<s>.calib.<n>"
+where 
+.I "<s>"
+is the name of the CM file to be calibrated (including path).
+
+.TP
+.BI --part " <n>"
+specify that this is partition
+.I "<n>"
+out of 
+.I "<n2>"
+from 
+.BI "--ptot <n2>".
+Must be used in combination with 
+.B "--ptot" 
+and
+.B "--pfile".
+
+.TP
+.BI --ptot " <n>"
+With
+.B --split, --part 
+or 
+.B --merge,
+specify that there are 
+.I "<n>"
+total partitions.
+
+.TP
+.BI --pfile " <f>"
+With
+.B --part ,
+specify that scores for this partition be saved to file
+.I "<f>"
+.
+
+.TP
+.B --merge
+Merge scores from multiple previously executed partitions and
+calibrate CMs. If you used the option
+.BI --proot " <s>"
+with 
+.B cmcalibrate 
+when you ran it with
+.B --split
+to setup the partitions, use
+.BI --proot " <s>"
+again with
+.B --merge.
+The full 
+.B cmcalibrate --merge
+command to use will have been output to standard output 
+when the initial 
+.B cmcalibrate --split 
+command was executed.
+
 .SH OTHER OPTIONS
 
 .TP
@@ -316,18 +445,16 @@ nucleotide distribution from the sequence file
 
 .TP
 .BI --cpu " <n>"
-Specify that 
-.I <n>
-parallel CPU workers be used. If 
-.I <n> 
-is set as "0", then the program will be run in serial mode, without
-using threads. 
-You can also control
-this number by setting an environment variable, 
-.I INFERNAL_NCPU.
-This option will only be available if the machine on
-which Infernal was built is capable of using POSIX threading (see the
-Installation section of the user guide for more information).
+Set the number of parallel worker threads to 
+.IR <n> .
+On multicore machines, the default is 4.
+You can also control this number by setting an environment variable, 
+.IR INFERNAL_NCPU .
+There is also a master thread, so the actual number of threads that
+Infernal spawns is
+.IR <n> +1.
+This option is not available if Infernal was compiled with POSIX threads
+support turned off.
 
 .TP
 .B --mpi

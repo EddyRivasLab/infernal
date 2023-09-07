@@ -340,7 +340,7 @@ bands.
 .BI --mxsize " <x>"
 Set the maximum allowable total DP matrix size to 
 .I <x>
-megabytes. By default this size is 1028 Mb. 
+megabytes. By default this size is 1024 Mb. 
 This should be large enough for the vast majority of alignments,
 however if it is not 
 .B cmalign 
@@ -430,6 +430,7 @@ allows CM alignment within practical memory limits,
 reducing the memory required for alignment LSU rRNA, the largest known
 RNAs, from 150 Gb to less than 300 Mb.
 This option can only be used in combination with
+.B --noprob,
 .B --nonbanded,
 .B --notrunc,
 and
@@ -547,6 +548,20 @@ be useful when creating very large alignments that require a lot of
 memory and disk space, most of which is necessary only to deal with insert
 columns that are gaps in most sequences.
 
+.TP
+.B --miss
+In the output alignment, use missing data characters ('~') before the
+first residue and after the final residue of each sequence to indicate
+the sequence was aligned with a truncated alignment algorithm. The
+aligned sequences would be considered fragments if the alignment was
+used subsequently as input to
+.B cmbuild
+with the 
+.B --fraggiven
+option. This option has no effect if 
+.B --notrunc
+is also used. 
+
 .TP 
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
@@ -560,6 +575,47 @@ For this reason,
 .B --ileaved 
 will only work for alignments of up to 100,000 sequences or a
 total of 100,000,000 aligned nucleotides.
+
+.TP 
+.BI --flanktoins " <x1>"
+Change the transition probabilities from the ROOT_S state to the
+ROOT_IL and ROOT_IR states, and from the ROOT_IL to the ROOT_IR state
+to 
+.I <x1>.
+This option is meant to be helpful only when aligning sequences that
+include extra sequence at the 5' and/or 3' ends. Without using this
+option 
+.B cmalign 
+tends to mess up alignments at the end, especially for models with
+zero basepairs. This option should not be necessary when aligning
+sequences identified by 
+.B cmsearch
+or 
+.B cmscan
+because they should not include extra sequence at the ends.
+This option must be used in combination with the 
+.BI --flankselfins " <x2>" 
+option. Recommended values to use are 0.1 for 
+.I <x1>
+and 0.8 for
+.I <x2>
+, but the best performing pair of values may vary for
+different models.
+.I <x1>
+must be greater than 0.0 and less than 0.4, and the sum of
+.I <x1> 
+and 
+.I <x2>
+must be less than 0.95.
+
+.TP 
+.BI --flankselfins " <x2>"
+Change the self-transition probabilities for the ROOT_IL and ROOT_IR
+states to 
+.I <x2>.
+This option must be used in combination with the 
+.BI --flanktoins " <x1>" 
+option. See the explanation of that option above for more information.
 
 .TP 
 .BI --regress " <s>"
@@ -580,18 +636,16 @@ is used). These are mainly useful for testing and debugging.
 
 .TP
 .BI --cpu " <n>"
-Specify that 
-.I <n>
-parallel CPU workers be used. If 
-.I <n> 
-is set as "0", then the program will be run in serial mode, without
-using threads. 
-You can also control
-this number by setting an environment variable, 
-.I INFERNAL_NCPU.
-This option will only be available if the machine on
-which Infernal was built is capable of using POSIX threading (see the
-Installation section of the user guide for more information).
+Set the number of parallel worker threads to 
+.IR <n> .
+On multicore machines, the default is 4.
+You can also control this number by setting an environment variable, 
+.IR INFERNAL_NCPU .
+There is also a master thread, so the actual number of threads that
+Infernal spawns is
+.IR <n> +1.
+This option is not available if Infernal was compiled with POSIX threads
+support turned off.
 
 .TP
 .B --mpi

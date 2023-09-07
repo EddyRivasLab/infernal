@@ -1369,11 +1369,16 @@ alignments must include all nucleotides of the sequence.
 
 The description above of the truncated variants of the pipeline
 describe Infernal's default behavior. You can turn off truncated hit
-detection with the \ccode{--notrunc} option. You can also modify how 
+detection with the \ccode{--notrunc} option. You can also modify how
 truncated hit detection works with the \ccode{--anytrunc} option. With
 \ccode{--anytrunc}, truncated hits are allowed to occur anywhere
 within a sequence, instead of necessarily including the first or final
-nucleotide. 
+nucleotide.\footnote{As of version 1.1.5, truncated hits that end at
+  sequence terminii with a lower score penalty than internally
+  truncated hits are also considered (these were not considered in
+  1.1x versions prior to 1.1.5).  To reproduce the behavior of
+  \ccode{--anytrunc} from v1.1.4, use the \ccode{--inttrunc} option
+  instead.}
 
 Importantly, the truncated variants of the pipeline are currently not
 implemented for use with non-HMM banded alignment. This means that the

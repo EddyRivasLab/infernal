@@ -5,7 +5,7 @@
  * Easelfied: EPN, Tue Aug 14 07:01:44 2007 
  */
 
-#include "esl_config.h"
+#include <esl_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -34,7 +34,7 @@ static ESL_OPTIONS options[] = {
   { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "show brief help on version and usage",                                 1 },
   { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "send sequence output to file <f>, not stdout",                         1 },
   { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,        "generate <n> sequences",                                               1 },
-  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as unaligned FASTA [default]",               1 },
+  { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as unaligned FASTA",                         1 },
   { "-a",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as an alignment",                            1 },
   { "-c",          eslARG_NONE,    FALSE,        NULL, NULL,   OUTOPTS,      NULL, NULL,        "generate a single \"consensus\" sequence only",                        1, },
   { "-e",          eslARG_INT,      NULL,        NULL, "n>0",  NULL,         NULL, "-a,-c",     "embed emitted sequences within larger random sequences of length <n>", 1 },
@@ -334,8 +334,9 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   }
   
   namelen = IntMaxDigits() + strlen("sample") + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
-  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
-  ESL_ALLOC(name, sizeof(char) * namelen);
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1; /* +1 for the dash */
+  else                 namelen += IntMaxDigits()   + 1; /* +1 for the dash first part of name will be cfg->ncm */
+  ESL_ALLOC(name, sizeof(char) * (namelen+1)); /* +1 for null terminating char */
   
   if(! cfg->use_cm) { 
     if ((gm = p7_profile_Create(cm->fp7->M, cm->fp7->abc))               == NULL)  cm_Fail("failed to create profile for filter HMM");
@@ -362,8 +363,8 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   
   for(i = 0; i < esl_opt_GetInteger(go, "-N"); i++)
     {
-      if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
-      else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
+      if(cm->name != NULL) snprintf(name, namelen+1, "%s-sample%d", cm->name, i+offset); /* +1 for null termination char */
+      else                 snprintf(name, namelen+1, "%d-sample%d", cfg->ncm, i+offset); /* +1 for null termination char */
       if(cfg->use_cm) { 
 	if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &esq, &L)) != eslOK) return status; /* TRUE: make sq digital */
 	esq->abc = cfg->abc_out;
@@ -503,8 +504,9 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   do_truncate = (esl_opt_IsOn(go, "--a5p") && esl_opt_IsOn(go, "--a3p")) ? TRUE : FALSE;
 
   namelen = IntMaxDigits() + strlen("sample") + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
-  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
-  ESL_ALLOC(name, sizeof(char) * namelen);
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1; /* +1 for the dash */
+  else                 namelen += IntMaxDigits()   + 1; /* +1 for the dash first part of name will be cfg->ncm */
+  ESL_ALLOC(name, sizeof(char) * (namelen+1)); /* +1 for null terminating char */
 
   ESL_ALLOC(sqA, sizeof(ESL_SQ *) * nseq);
   if(cfg->use_cm) ESL_ALLOC(trA,   sizeof(Parsetree_t *) * nseq);
@@ -512,8 +514,8 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   if(cfg->use_cm) { 
     for(i = 0; i < nseq; i++)
       {
-	if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
-	else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
+	if(cm->name != NULL) snprintf(name, namelen+1, "%s-sample%d", cm->name, i+offset); /* +1 for null termination char */
+	else                 snprintf(name, namelen+1, "%d-sample%d", cfg->ncm, i+offset); /* +1 for null termination char */
 	if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(trA[i]), &(sqA[i]), &L)) != eslOK) return status;
 	sqA[i]->abc = cfg->abc_out;
 	if(cfg->tfp != NULL) { 
@@ -524,8 +526,9 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       }
     if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sqA, NULL, trA, NULL, nseq,
 				      NULL, NULL, /* we're not printing to insert, EL info files */
-				      TRUE,  /* we want all match columns */
-				      FALSE, /* we don't want ONLY match columns */
+    				      /*do_full=*/     TRUE,  /* we want all match columns */
+				      /*do_matchonly=*/FALSE, /* we don't want ONLY match columns */
+                                      /*allow_trunc=*/ FALSE, /* we don't want to add missing (~) chars to truncated parsetrees */
 				      &msa) != eslOK))
       ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
   }
@@ -536,8 +539,8 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     }
     for (i = 0; i < nseq; i++) { 
       if (p7_CoreEmit(cfg->r, cm->fp7, sqA[i], p7trA[i]) != eslOK) cm_Fail("Failed to emit sequence");
-	if(cm->name != NULL) sprintf(name, "%s-sample%d", cm->name, i+offset);
-	else                 sprintf(name, "%d-sample%d", cfg->ncm, i+offset);
+      if(cm->name != NULL) snprintf(name, namelen+1, "%s-sample%d", cm->name, i+offset); /* +1 for null termination char */
+      else                 snprintf(name, namelen+1, "%d-sample%d", cfg->ncm, i+offset); /* +1 for null termination char */
       if (esl_sq_SetName(sqA[i], name) != eslOK) cm_Fail("Failed to set sequence name\n");
     }
     p7_tracealign_Seqs(sqA, p7trA, nseq, cm->fp7->M, p7_ALL_CONSENSUS_COLS, cm->fp7, &msa);

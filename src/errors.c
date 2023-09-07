@@ -14,8 +14,8 @@
  * SRE, Fri Jan 12 08:46:02 2007
  */
 
-#include "esl_config.h"
-#include "p7_config.h"
+#include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdlib.h>
