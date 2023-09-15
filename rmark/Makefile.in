@@ -50,7 +50,7 @@ ${PROGS}: % : %.o ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a
 ${PROGOBJS}: ../${HMMERDIR}/src/hmmer.h ../${HMMERDIR}/src/p7_config.h ../src/infernal.h ../src/config.h
 
 .c.o: 
-	${QUIET_CC}${CC} ${ESLINC} ${SRCINC} ${CFLAGS} ${DEFS} -o $@ -c $<		
+	${QUIET_CC}${CC} ${CPPFLAGS} ${ESLINC} ${SRCINC} ${CFLAGS} ${DEFS} -o $@ -c $<
 
 clean:
 	-rm -f *.o *~  ${PROGS} TAGS
