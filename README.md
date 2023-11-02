@@ -36,8 +36,8 @@ and the Easel library, also at
 ``` 
 
 Executable programs will be installed in `/your/install/path/bin`. If
-you leave this optional `./configure` argument off, the default prefix
-is `/usr/local`.
+you leave the optional `--prefix` argument off your `./configure`
+command,  the default prefix is `/usr/local`.
 
 Files to read in the source directory:
 
