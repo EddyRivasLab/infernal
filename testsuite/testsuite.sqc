@@ -79,6 +79,7 @@
 1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!
+1 exercise  iss40-incT            !testsuite/iss40-incT.pl! @src/cmsearch@ !testsuite/iss40.cm! !testsuite/iss40.fa!
 
 ################################################################
 # Option tests
