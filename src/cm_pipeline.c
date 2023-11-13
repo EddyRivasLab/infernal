@@ -865,8 +865,8 @@ cm_pli_TargetReportable(CM_PIPELINE *pli, float score, double Eval)
 int
 cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
 {
-  if      (  pli->by_E && Eval  <= pli->incE) return TRUE;
-  else if (! pli->by_E && score >= pli->incT) return TRUE;
+  if      (  pli->inc_by_E && Eval  <= pli->incE) return TRUE;
+  else if (! pli->inc_by_E && score >= pli->incT) return TRUE;
 
   return FALSE;
 }

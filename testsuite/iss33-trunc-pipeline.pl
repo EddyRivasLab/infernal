@@ -1,7 +1,7 @@
 #! /usr/bin/perl
 
-# github issue X - search/scan pipeline truncated (FORCE) passes allow hits 
-#                  that do not include first/final nucleotide in sequence
+# github issue 33 - search/scan pipeline truncated (FORCE) passes allow hits 
+#                   that do not include first/final nucleotide in sequence
 #
 # EPN, Thu Feb 23 12:00:29 2023
 #
