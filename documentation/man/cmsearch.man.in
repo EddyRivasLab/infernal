@@ -18,7 +18,7 @@ For each CM in
 .I <cmfile>,
 use that query CM to search the target database of sequences in
 .I <seqdb>,
-and output ranked lists of the sequences with the most significant
+and output ranked lists of the sequence regions with the most significant
 matches to the CM.
 To build CMs from multiple alignments, see
 .B cmbuild.
