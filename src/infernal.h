@@ -200,12 +200,13 @@ enum emitmode_e {
 #define E_st     7		/* end          */
 #define B_st     8		/* bifurcation  */
 #define EL_st    9              /* local end    */
+#define NULL_st  127            /* no such state */
 
 /* CM Node types (8) (cm->ndtype[])
  */
 #define NODETYPES 8		
 
-#define DUMMY_nd -1
+#define DUMMY_nd  127
 #define BIF_nd    0
 #define MATP_nd   1
 #define MATL_nd   2
@@ -219,7 +220,7 @@ enum emitmode_e {
  */
 #define UNIQUESTATES 21
 
-#define DUMMY   -1
+#define DUMMY   127
 #define ROOT_S  0
 #define ROOT_IL 1
 #define ROOT_IR 2
