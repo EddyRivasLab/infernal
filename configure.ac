@@ -780,7 +780,6 @@ AC_CONFIG_FILES([ \
   hmmer/documentation/man/hmmsim.man      \
   hmmer/documentation/man/hmmstat.man     \
   hmmer/documentation/man/jackhmmer.man   \
-  hmmer/documentation/man/makehmmerdb.man \
   hmmer/documentation/man/nhmmer.man      \
   hmmer/documentation/man/nhmmscan.man    \
   hmmer/documentation/man/phmmer.man      \
