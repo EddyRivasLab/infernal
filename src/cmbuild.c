@@ -2732,9 +2732,15 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
     ESL_ALLOC(map[i],   sizeof(int)  * (msa->alen+1));
     map[i][0] = -1; /* invalid */
     uapos = 1;
-    for(apos = 1; apos <= msa->alen; apos++)
-      if (!esl_abc_XIsGap(msa->abc, msa->ax[i][apos])) map[i][apos] = uapos++;
-      else                                             map[i][apos] = -1;
+    for(apos = 1; apos <= msa->alen; apos++) { 
+      if(esl_abc_XIsGap(msa->abc, msa->ax[i][apos]) ||
+         esl_abc_XIsMissing(msa->abc, msa->ax[i][apos])) {
+        map[i][apos] = -1;
+      }
+      else { /* not a gap, not missing */
+        map[i][apos] = uapos++;
+      }
+    }
   }
   for (i = 0; i < msa->nseq; i++) {
     /* tr[i] is in alignment coords, convert it to unaligned coords, */
