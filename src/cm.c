@@ -1413,7 +1413,7 @@ StateCode(char *s)
   else if (strcmp(s, "E")  == 0) return E_st;
   else if (strcmp(s, "B")  == 0) return B_st;
   else if (strcmp(s, "EL") == 0) return EL_st;
-  return -1;
+  return NULL_st;
 }
 char *
 Nodetype(int type) 
@@ -1443,7 +1443,7 @@ NodeCode(char *s)
   else if (strcmp(s, "BEGR") == 0) return BEGR_nd;
   else if (strcmp(s, "ROOT") == 0) return ROOT_nd;
   else if (strcmp(s, "END")  == 0) return END_nd;
-  return -1;
+  return DUMMY_nd;
 }
 char *
 UniqueStatetype(int type)
@@ -1509,7 +1509,7 @@ DeriveUniqueStateCode(int ndtype, int sttype)
   case BIF_nd:   
     switch (sttype) {
     case B_st:  return BIF_B;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case MATP_nd:  
     switch (sttype) {
@@ -1519,47 +1519,47 @@ DeriveUniqueStateCode(int ndtype, int sttype)
     case MR_st: return MATP_MR;
     case IL_st: return MATP_IL;
     case IR_st: return MATP_IR;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case MATL_nd:  
     switch (sttype) {
     case D_st:  return MATL_D;
     case ML_st: return MATL_ML;
     case IL_st: return MATL_IL;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case MATR_nd:  
     switch (sttype) {
     case D_st:  return MATR_D;
     case MR_st: return MATR_MR;
     case IR_st: return MATR_IR;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case BEGL_nd:  
     switch (sttype) {
     case S_st:  return BEGL_S;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case BEGR_nd:  
     switch (sttype) {
     case S_st:  return BEGR_S;
     case IL_st: return BEGR_IL;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case ROOT_nd:  
     switch (sttype) {
     case S_st:  return ROOT_S;
     case IL_st: return ROOT_IL;
     case IR_st: return ROOT_IR;
-    default:    return -1;
+    default:    return DUMMY;
     }
   case END_nd:   
     switch (sttype) {
     case E_st:  return END_E;
-    default:    return -1;
+    default:    return DUMMY;
     }
   default: 
-    return -1;
+    return DUMMY;
   }
 }
 

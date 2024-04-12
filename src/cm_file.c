@@ -1966,7 +1966,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
        */
 
       /* <statecode> */
-      if((cm->sttype[v] = StateCode(tok1)) == -1)                                        ESL_XFAIL(status,     cmfp->errbuf, "Invalid state type %s\n", tok1);
+      if((cm->sttype[v] = StateCode(tok1)) == NULL_st)                                   ESL_XFAIL(status,     cmfp->errbuf, "Invalid state type %s\n", tok1);
       
       /* <v> */
       if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK)     ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on state %d line: expected at least %d, got %d", v, 8, 1);
