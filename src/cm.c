@@ -4265,12 +4265,12 @@ cm_ExpectedStateOccupancy(CM_t *cm)
   double tol = 0.001;
   /* tol is difference from 1.0 we allow for summed psi of split set states
    * it is larger for really big models, 
-   * tolerance is (clen/25000) * 0.001, with minimum of 0.001 
-   * so it's 0.001 unless clen > 25000
+   * tolerance is (clen/PSI_LEN_THRESHOLD) * 0.001, with minimum of 0.001 
+   * so it's 0.001 unless clen > PSI_LEN_THRESHOLD (15000)
    * (from v1.1 to v1.1.4 it was 0.001 for all models)
    */
-  if(cm->clen > 25000) { 
-    tol = ((float) cm->clen / 25000.) * 0.001;
+  if(cm->clen > PSI_LEN_THRESHOLD) { 
+    tol = ((float) cm->clen / PSI_LEN_THRESHOLD) * 0.001;
   }
 
   /* make a copy of the CM transitions */
