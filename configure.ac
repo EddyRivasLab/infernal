@@ -788,29 +788,36 @@ AC_CONFIG_FILES([ \
 # Substitutions in Easel man pages:
 # EASEL_VERSION, EASEL_DATE, EASEL_COPYRIGHT, EASEL_LICENSE, EASEL_URL
 AC_CONFIG_FILES([ \
-  easel/miniapps/esl-afetch.man      \
-  easel/miniapps/esl-alimanip.man    \
-  easel/miniapps/esl-alimap.man      \
-  easel/miniapps/esl-alimask.man     \
-  easel/miniapps/esl-alimerge.man    \
-  easel/miniapps/esl-alipid.man      \
-  easel/miniapps/esl-alirev.man      \
-  easel/miniapps/esl-alistat.man     \
-  easel/miniapps/esl-compalign.man   \
-  easel/miniapps/esl-compstruct.man  \
-  easel/miniapps/esl-construct.man   \
-  easel/miniapps/esl-histplot.man    \
-  easel/miniapps/esl-mask.man        \
-  easel/miniapps/esl-mixdchlet.man   \
-  easel/miniapps/esl-reformat.man    \
-  easel/miniapps/esl-selectn.man     \
-  easel/miniapps/esl-seqrange.man    \
-  easel/miniapps/esl-seqstat.man     \
-  easel/miniapps/esl-sfetch.man      \
-  easel/miniapps/esl-shuffle.man     \
-  easel/miniapps/esl-ssdraw.man      \
-  easel/miniapps/esl-weight.man      \
- ])
+  easel/miniapps/easel.man             \
+  easel/miniapps/easel-afetch.man      \
+  easel/miniapps/easel-afetchn.man     \
+  easel/miniapps/easel-aindex.man      \
+  easel/miniapps/easel-alimanip.man    \
+  easel/miniapps/easel-alimap.man      \
+  easel/miniapps/easel-alipid.man      \
+  easel/miniapps/easel-alirev.man      \
+  easel/miniapps/easel-compalign.man   \
+  easel/miniapps/easel-compstruct.man  \
+  easel/miniapps/easel-construct.man   \
+  easel/miniapps/easel-downsample.man  \
+  easel/miniapps/easel-filter.man      \
+  easel/miniapps/easel-histplot.man    \
+  easel/miniapps/easel-kmer.man        \
+  easel/miniapps/easel-mask.man        \
+  easel/miniapps/easel-msashuf.man     \
+  easel/miniapps/easel-msastat.man     \
+  easel/miniapps/easel-reformat.man    \
+  easel/miniapps/easel-seqrange.man    \
+  easel/miniapps/easel-seqstat.man     \
+  easel/miniapps/easel-sfetch.man      \
+  easel/miniapps/easel-sfetchn.man     \
+  easel/miniapps/easel-shuffle.man     \
+  easel/miniapps/easel-sindex.man      \
+  easel/miniapps/easel-ssdraw.man      \
+  easel/miniapps/easel-synth.man       \
+  easel/miniapps/easel-translate.man   \
+  easel/miniapps/easel-weight.man  
+])
 
 AC_CONFIG_HEADERS([easel/decoy_config.h])   # Put this first to keep gnu 'autoheader' from overwriting a real config file.
 AC_CONFIG_HEADERS(src/config.h)
