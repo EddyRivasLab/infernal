@@ -2,21 +2,24 @@
 
 # Test the cmalign --mapali option.
 # 
-# Usage:    ./itest1-cmalign-mapali.pl  <cmalign binary>     <esl-reformat binary>        <testsuitedir> <tmpfile prefix>
-# Example:  ./itest1-cmalign-mapali.pl  ../src/cmalign    ../easel/miniapps/esl-reformat     .               foo
+# Usage:    ./itest1-cmalign-mapali.pl  <builddir> <srcdir> <tmpfile prefix>
+# Example:  ./itest1-cmalign-mapali.pl  ..         ..       foo
 #
 # EPN, Thu Apr 26 14:47:10 2012
 # Based on HMMER3's i6-hmmalign-mapali [SRE, Mon May 25 09:52:48 2009]
 
-$cmalign      = shift;
-$eslreformat  = shift;
-$testsuitedir = shift;
-$tmppfx       = shift;
+$builddir  = shift;
+$srcdir    = shift;
+$tmppfx    = shift;
 
-if (! -x "$cmalign")                 { print "FAIL: didn't find cmalign binary $cmalign\n";               exit 1; }  
-if (! -x "$eslreformat")             { print "FAIL: didn't find esl-reformat binary $eslreformat\n";      exit 1; } 
-if (! -r "$testsuitedir/Vault.c.cm") { print "FAIL: didn't find $testsuitedir/Vault.c.cm\n";     exit 1; }
-if (! -r "$testsuitedir/Vault.sto")  { print "FAIL: didn't find $testsuitedir/Vault.sto\n"; exit 1; }
+if (! -x "$builddir/src/cmalign")           { die "FAIL: didn't find cmalign in $builddir/src/";          }
+if (! -x "$builddir/easel/miniapps/easel")  { die "FAIL: didn't find easel in $builddir/easel/miniapps/"; }
+if (! -r "$srcdir/testsuite/Vault.c.cm")    { die "FAIL: didn't find Vault.c.cm in $srcdir/testsuite/";   }
+if (! -r "$srcdir/testsuite/Vault.sto")     { die "FAIL: didn't find Vault.sto in $srcdir/testsuite/";    }
+
+$cmalign      = "$builddir/src/cmalign";
+$eslreformat  = "$builddir/easel/miniapps/easel reformat";
+$testsuitedir = "$srcdir/testsuite";
 
 system("$eslreformat -u --rename foo fasta $testsuitedir/Vault.sto > $tmppfx.fa");
 if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }

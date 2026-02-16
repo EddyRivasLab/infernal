@@ -1,6 +1,6 @@
 #! /usr/bin/perl
 
-# Test that programs accept and reject argument of '-' (for reading
+# Test that programs accept or reject argument of '-' (for reading
 # data from stdin, rather than from files) as they're supposed to.
 #
 # Usage:   ./itest4-stdin.pl <builddir> <srcdir> <tmpfile prefix>
@@ -43,41 +43,39 @@ $model2   = "snR75";
 $model3   = "Vault";
 
 @i1progs =  ("cmalign", "cmbuild", "cmconvert", "cmemit", "cmfetch", "cmpress", "cmscan", "cmsearch", "cmstat");
-@eslprogs = ("esl-shuffle");
 
 # Verify that we have all the executables and datafiles we need for the test.
-foreach $i1prog  (@i1progs) { if (! -x "$builddir/src/$i1prog")             { die "FAIL: didn't find $i1prog executable in $builddir/src\n";              } }
-foreach $eslprog (@eslrogs) { if (! -x "$builddir/easel/miniapps/$eslprog") { die "FAIL: didn't find $eslprog executable in $builddir/easel/miniapps\n";  } }
+foreach $i1prog  (@i1progs) { if (! -x "$builddir/src/$i1prog") { die "FAIL: didn't find $i1prog executable in $builddir/src";  } }
 
-if (! -r "$srcdir/testsuite/$model1.c.cm")  { die "FAIL: can't read profile $model1.c.cm in $srcdir/testsuite\n"; }
-if (! -r "$srcdir/testsuite/$model2.c.cm")  { die "FAIL: can't read profile $model2.c.cm in $srcdir/testsuite\n"; }
-if (! -r "$srcdir/testsuite/$model3.c.cm")  { die "FAIL: can't read profile $model3.c.cm in $srcdir/testsuite\n"; }
+if (! -x "$builddir/easel/miniapps/easel")  { die "FAIL: didn't find easel executable in $builddir/easel/miniapps";  } 
+if (! -r "$srcdir/testsuite/$model1.c.cm")  { die "FAIL: can't read profile $model1.c.cm in $srcdir/testsuite";      }
+if (! -r "$srcdir/testsuite/$model2.c.cm")  { die "FAIL: can't read profile $model2.c.cm in $srcdir/testsuite";      }
+if (! -r "$srcdir/testsuite/$model3.c.cm")  { die "FAIL: can't read profile $model3.c.cm in $srcdir/testsuite";      }
+if (! -r "$srcdir/testsuite/$model1.sto")   { die "FAIL: can't read msa $model1.sto in $srcdir/testsuite";           }
+if (! -r "$srcdir/testsuite/$model2.sto")   { die "FAIL: can't read msa $model2.sto in $srcdir/testsuite";           }
+if (! -r "$srcdir/testsuite/$model3.sto")   { die "FAIL: can't read msa $model3.sto in $srcdir/testsuite";           }
 
-if (! -r "$srcdir/testsuite/$model1.sto") { die "FAIL: can't read msa $model1.sto in $srcdir/testsuite\n"; }
-if (! -r "$srcdir/testsuite/$model2.sto") { die "FAIL: can't read msa $model2.sto in $srcdir/testsuite\n"; }
-if (! -r "$srcdir/testsuite/$model3.sto") { die "FAIL: can't read msa $model3.sto in $srcdir/testsuite\n"; }
-
-`cat $srcdir/testsuite/$model1.c.cm $srcdir/testsuite/$model2.c.cm $srcdir/testsuite/$model3.c.cm > $tmppfx.cm`;  if ($?) { die "FAIL: cat\n"; }
+`cat $srcdir/testsuite/$model1.c.cm $srcdir/testsuite/$model2.c.cm $srcdir/testsuite/$model3.c.cm > $tmppfx.cm`;  if ($?) { die "FAIL: cat"; }
 if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
 if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
 if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
 if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
 if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
-`$builddir/src/cmpress $tmppfx.cm`;                                              if ($?) { die "FAIL: cmpress\n"; }
+`$builddir/src/cmpress $tmppfx.cm`;                                                 if ($?) { die "FAIL: cmpress"; }
 
-`cat $srcdir/testsuite/$model1.sto $srcdir/testsuite/$model2.sto $srcdir/testsuite/$model3.sto > $tmppfx.sto`;    if ($?) { die "FAIL: cat\n"; }
+`cat $srcdir/testsuite/$model1.sto $srcdir/testsuite/$model2.sto $srcdir/testsuite/$model3.sto > $tmppfx.sto`;    if ($?) { die "FAIL: cat"; }
 
-`$builddir/src/cmemit -c $srcdir/testsuite/$model1.c.cm > $tmppfx.fa1`;             if ($?) { die "FAIL: cmemit -c\n"; }
-`cat $tmppfx.fa1 > $tmppfx.fa2`;                                                  if ($?) { die "FAIL: cat\n"; } 
-`$builddir/src/cmemit -c $srcdir/testsuite/$model2.c.cm >> $tmppfx.fa2`;            if ($?) { die "FAIL: cmemit -c\n"; } 
-`$builddir/src/cmemit -c $srcdir/testsuite/$model3.c.cm >> $tmppfx.fa2`;            if ($?) { die "FAIL: cmemit -c\n"; } 
+`$builddir/src/cmemit -c $srcdir/testsuite/$model1.c.cm > $tmppfx.fa1`;             if ($?) { die "FAIL: cmemit -c"; }
+`cat $tmppfx.fa1 > $tmppfx.fa2`;                                                    if ($?) { die "FAIL: cat"; } 
+`$builddir/src/cmemit -c $srcdir/testsuite/$model2.c.cm >> $tmppfx.fa2`;            if ($?) { die "FAIL: cmemit -c"; } 
+`$builddir/src/cmemit -c $srcdir/testsuite/$model3.c.cm >> $tmppfx.fa2`;            if ($?) { die "FAIL: cmemit -c"; } 
 
-`$builddir/src/cmemit -N10 $srcdir/testsuite/$model1.c.cm > $tmppfx.fa10`;          if ($?) { die "FAIL: cmemit\n"; }
+`$builddir/src/cmemit -N10 $srcdir/testsuite/$model1.c.cm > $tmppfx.fa10`;          if ($?) { die "FAIL: cmemit"; }
 
-`$builddir/src/cmemit -N10 $srcdir/testsuite/$model1.c.cm > $tmppfx.db`;         if ($?) { die "FAIL: cmemit\n"; }
-`$builddir/src/cmemit -N10 $srcdir/testsuite/$model2.c.cm >> $tmppfx.db`;        if ($?) { die "FAIL: cmemit\n"; }
-`$builddir/src/cmemit -N10 $srcdir/testsuite/$model3.c.cm >> $tmppfx.db`;        if ($?) { die "FAIL: cmemit\n"; }
-`$builddir/easel/miniapps/esl-shuffle -G -N100 -L 80 --rna >> $tmppfx.db`;       if ($?) { die "FAIL: esl-shuffle\n"; }
+`$builddir/src/cmemit -N10 $srcdir/testsuite/$model1.c.cm > $tmppfx.db`;            if ($?) { die "FAIL: cmemit"; }
+`$builddir/src/cmemit -N10 $srcdir/testsuite/$model2.c.cm >> $tmppfx.db`;           if ($?) { die "FAIL: cmemit"; }
+`$builddir/src/cmemit -N10 $srcdir/testsuite/$model3.c.cm >> $tmppfx.db`;           if ($?) { die "FAIL: cmemit"; }
+`$builddir/easel/miniapps/easel synth rna 100 80 >> $tmppfx.db`;                    if ($?) { die "FAIL: easel synth"; }
 
 `echo $model1    > $tmppfx.key`;                                                    if ($?) { die "FAIL: cat\n"; }
 `echo $model2   >> $tmppfx.key`;                                                    if ($?) { die "FAIL: cat\n"; }

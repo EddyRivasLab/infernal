@@ -348,7 +348,7 @@ main(int argc, char **argv)
          * test 1 in separate_sets() or satisfied test 2 from
          * find_sets().  Extract and write out the training alignment. */
         if ((status = esl_msa_SequenceSubset(msa, i_am_train, &trainmsa)) != eslOK) goto ERROR;
-        esl_msa_MinimGaps(trainmsa, NULL, NULL, FALSE);
+        esl_msa_MinimGaps(trainmsa, FALSE);
         esl_msafile_Write(cfg.out_msafp, trainmsa, eslMSAFILE_STOCKHOLM);
 
         esl_dst_XAverageId(cfg.abc, trainmsa->ax, trainmsa->nseq, 10000, &avgid); /* 10000 is max_comparisons, before sampling kicks in */

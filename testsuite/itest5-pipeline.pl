@@ -36,14 +36,13 @@ $model1   = "tRNA";
 $model2   = "Plant_SRP";
 
 @i1progs  =  ( "cmemit", "cmpress", "cmsearch", "cmscan");
-@eslprogs =  ("esl-shuffle");
 
 # Verify that we have all the executables and datafiles we need for the test.
-foreach $i1prog  (@i1progs)  { if (! -x "$builddir/src/$i1prog")              { die "FAIL: didn't find $i1prog executable in $builddir/src\n";              } }
-foreach $eslprog (@eslprogs) { if (! -x "$builddir/easel/miniapps/$eslprog")  { die "FAIL: didn't find $eslprog executable in $builddir/easel/miniapps\n";  } }
+foreach $i1prog  (@i1progs)  { if (! -x "$builddir/src/$i1prog") { die "FAIL: didn't find $i1prog executable in $builddir/src"; } }
 
-if (! -r "$srcdir/testsuite/$model1.c.cm")  { die "FAIL: can't read profile $model1.c.cm in $srcdir/testsuite\n"; }
-if (! -r "$srcdir/testsuite/$model2.c.cm")  { die "FAIL: can't read profile $model2.c.cm in $srcdir/testsuite\n"; }
+if (! -x "$builddir/easel/miniapps/easel")  { die "FAIL: didn't find easel executable in $builddir/easel/miniapps"; } 
+if (! -r "$srcdir/testsuite/$model1.c.cm")  { die "FAIL: can't read profile $model1.c.cm in $srcdir/testsuite"; }
+if (! -r "$srcdir/testsuite/$model2.c.cm")  { die "FAIL: can't read profile $model2.c.cm in $srcdir/testsuite"; }
 
 # Create the test CM files
 `cat $srcdir/testsuite/$model1.c.cm > $tmppfx.cm`;  if ($?) { die "FAIL: cat\n"; }
@@ -62,11 +61,11 @@ if(-e "$tmppfx.cm2.ssi") { unlink "$tmppfx.cm2.ssi"; }
 
 # Create a roughly 300Kb database against which to search
 $database   = "$tmppfx.fa";
-do_cmd ( "$builddir/easel/miniapps/esl-shuffle --seed 1 --rna -G -N 1 -L 99900 > $tmppfx.fa" );
+do_cmd ( "$builddir/easel/miniapps/easel synth --seed 1 rna 1 99900 > $tmppfx.fa" );
 do_cmd ( "$builddir/src/cmemit -N 1 --seed 2 $tmppfx.cm | grep -v \"^\>\" >> $tmppfx.fa " );
-do_cmd ( "$builddir/easel/miniapps/esl-shuffle --seed 3 --rna -G -N 1 -L 99900 | grep -v \"^\>\" >> $tmppfx.fa" );
+do_cmd ( "$builddir/easel/miniapps/easel synth --seed 3 rna 1 99900 | grep -v \"^\>\" >> $tmppfx.fa" );
 do_cmd ( "$builddir/src/cmemit -N 1 --seed 4 $tmppfx.cm | grep -v \"^\>\" >> $tmppfx.fa " );
-do_cmd ( "$builddir/easel/miniapps/esl-shuffle --seed 5 --rna -G -N 1 -L 99900 | grep -v \"^\>\" >> $tmppfx.fa" );
+do_cmd ( "$builddir/easel/miniapps/easel synth --seed 5 rna 1 99900 | grep -v \"^\>\" >> $tmppfx.fa" );
 
 # cmsearch, single CM file
 $output = `$builddir/src/cmsearch -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
