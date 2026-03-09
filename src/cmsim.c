@@ -100,9 +100,9 @@ static void master(const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
-static int collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int N, int L, int *ret_scN, float **ret_scA);
-static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits);
-static int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr);
+static int collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int N, int L, int *ret_scN, float **ret_scA, float **ret_wtA);
+static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, float *weights, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits);
+static int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr, float *ret_parsetree_sc);
 static int impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits);
 
 int
@@ -247,8 +247,10 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int               exp_mode;      /* exp tail mode */
   int               rscN = 0;      /* number of hits in random seqs reported thus far, for all seqs */
   float            *rscA = NULL;   /* [0..rscN-1] hit scores for all random seqs */
+  float            *rwtA = NULL;   /* [0..rscN-1] importance weights for random seqs (not used, will be NULL) */
   int               sscN = 0;      /* number of hits in CM-sampled seqs reported thus far, for all seqs */
   float            *sscA = NULL;   /* [0..sscN-1] hit scores for all CM-sampled seqs */
+  float            *swtA = NULL;   /* [0..sscN-1] importance weights for CM-sampled seqs */
   float             min_cct = 1.;
   float             max_cct = 0.;
   float             sum_cct = 0.;
@@ -291,9 +293,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       UpdateSearchInfoForExpMode(cm, 0, exp_mode);
 
       /* Search random sequences and collect score histograms */
-      if((status = collect_scores(go, cfg, errbuf, cm, cfg->rN, cfg->rL, &rscN, &rscA) != eslOK)) cm_Fail(errbuf);
+      if((status = collect_scores(go, cfg, errbuf, cm, cfg->rN, cfg->rL, &rscN, &rscA, &rwtA) != eslOK)) cm_Fail(errbuf);
       tailp = esl_opt_GetReal(go, "--rtailp");
-      if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nrandhits)) != eslOK) cm_Fail(errbuf);
+      if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, NULL, rscN, exp_mode, &mu, &lambda, &nrandhits)) != eslOK) cm_Fail(errbuf);
       avg_hitlen = (double) (cfg->rL * cfg->rN) / (double) nrandhits;
       printf("Random  seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\n", 
 	     "mu", mu, "lambda", lambda, "nrandhits", nrandhits, "tailp", tailp, "avg_len", avg_hitlen);
@@ -306,7 +308,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	nfits = esl_opt_GetInteger(go, "--rnfit");
 	tailp_step = (tailp - esl_opt_GetReal(go, "--rmin")) / (float) nfits;
 	for (i = 0; i < nfits; i++) { 
-	  if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, rscN, exp_mode, &mu, &lambda, &nrandhits)) != eslOK) cm_Fail(errbuf);
+	  if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, NULL, rscN, exp_mode, &mu, &lambda, &nrandhits)) != eslOK) cm_Fail(errbuf);
 	  fprintf(cfg->rfp, "%g  %g  %g  %g  %g\n", 
 		  tailp,
 		  lambda, 
@@ -322,21 +324,23 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	cm->search_opts |= CM_SEARCH_HBANDED;
       }
 
-      if((status = collect_scores(go, cfg, errbuf, cm, cfg->sN, -1, &sscN, &sscA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
-      int i;
-      for(i = 0; i < sscN; i++) { 
-	cct = 1./ (pow(2., sscA[i]));
-	min_cct = ESL_MIN(min_cct, cct);
-	max_cct = ESL_MAX(max_cct, cct);
-	sum_cct += cct;
-	/*printf("SCALED   %5d  %6.2f bits   %12.10f\n", i, sscA[i], cct);*/
+      if((status = collect_scores(go, cfg, errbuf, cm, cfg->sN, -1, &sscN, &sscA, &swtA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
+      
+      /* Display weight statistics for debugging */
+      if(swtA != NULL) {
+	for(i = 0; i < sscN; i++) { 
+	  min_cct = ESL_MIN(min_cct, swtA[i]);
+	  max_cct = ESL_MAX(max_cct, swtA[i]);
+	  sum_cct += swtA[i];
+	  /*printf("WEIGHT   %5d  score: %6.2f bits   weight: %12.10f\n", i, sscA[i], swtA[i]);*/
+	}
+	printf("min_weight: %f\n", min_cct);
+	printf("max_weight: %f\n", max_cct);
+	printf("sum_weight: %f\n", sum_cct);
       }
-      printf("min_cct: %f\n", min_cct);
-      printf("max_cct: %f\n", max_cct);
-      printf("sum_cct: %f\n", sum_cct);
 
       tailp = esl_opt_GetReal(go, "--itailp");
-      if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, sscN, exp_mode, &mu, &lambda, &nsamphits)) != eslOK) cm_Fail(errbuf);
+      if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, swtA, sscN, exp_mode, &mu, &lambda, &nsamphits)) != eslOK) cm_Fail(errbuf);
       printf("Sampled seq fit histogram:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.5f\n\n", 
 	     "mu", mu, "lambda", lambda, "nsamphits", nsamphits, "tailp", tailp);
       sc_tailp = ((float) nsamphits / (float) nrandhits);
@@ -352,7 +356,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	nfits = esl_opt_GetInteger(go, "--infit");
 	tailp_step = (tailp - esl_opt_GetReal(go, "--imin")) / (float) nfits;
 	for (i = 0; i < nfits; i++) { 
-	  if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, sscN, exp_mode, &mu, &lambda, &nsamphits)) != eslOK) cm_Fail(errbuf);
+	  if((status = fit_histogram (go, cfg, errbuf, tailp, TRUE, sscA, swtA, sscN, exp_mode, &mu, &lambda, &nsamphits)) != eslOK) cm_Fail(errbuf);
 	  sc_tailp = ((float) nsamphits / (float) nrandhits);
 	  fprintf(cfg->ifp, "%g  %g  %g  %g  %g  %g  %g\n", 
 		  tailp, 
@@ -499,14 +503,16 @@ get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
  *    --rhmm).
  *
  * Return scores in <ret_scA> and number of scores in 
- * <ret_scN>.
+ * <ret_scN>. If sampling from CM, also return importance
+ * weights in <ret_wtA>.
  */
 static int
-collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int N, int L, int *ret_scN, float **ret_scA)
+collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int N, int L, int *ret_scN, float **ret_scA, float **ret_wtA)
 {
   int               status; 
   int               scN = 0;      /* number of hits reported thus far, for all seqs */
   float            *scA = NULL;   /* [0..rscN-1] hit scores for all seqs */
+  float            *wtA = NULL;   /* [0..rscN-1] importance weights for all seqs (if sampling from CM) */
   ESL_DSQ          *dsq = NULL;   /* digitized sequence to search */
   int               i, h;         /* counters */
   int               do_sample;    /* TRUE to sample from the CM, FALSE to sample random seqs */
@@ -514,6 +520,8 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   search_results_t *results;      /* results (hits) from current sequence */
   float             min_ssc = -eslINFINITY; /* minimum score to collect if(do_sample) */
   Parsetree_t      *tr = NULL;
+  float             parsetree_sc; /* parsetree score from CM_beta (for importance weight) */
+  float             weight;       /* importance weight = 2^(-parsetree_sc) */
 
   /* the HMM that generates sequences for exponential tail fitting */
   int      ghmm_nstates = 0;      /* number of states in the HMM */
@@ -538,7 +546,9 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   for(i = 0; i < N; i++) { 
     /* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
     if(do_sample) { 
-      if((status = sample_sequence_from_cm(cfg, errbuf, cm, &L, &dsq, &tr)) != eslOK) cm_Fail(errbuf);
+      if((status = sample_sequence_from_cm(cfg, errbuf, cm, &L, &dsq, &tr, &parsetree_sc)) != eslOK) cm_Fail(errbuf);
+      /* compute importance weight: w = 2^(-parsetree_sc) */
+      weight = pow(2.0, -parsetree_sc);
     }
     else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
       L = cfg->rL;
@@ -571,17 +581,33 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
     if(results->num_results > 0) { 
       if((! do_sample) || (esl_opt_GetBoolean(go, "--iall"))) { 
 	/* collect all hits */
-	if(i == 0) ESL_ALLOC (scA,      sizeof(float) * (scN + results->num_results));
-	else       ESL_RALLOC(scA, tmp, sizeof(float) * (scN + results->num_results));
-	for(h = 0; h < results->num_results; h++) scA[(scN+h)] = results->data[h].score;
+	if(i == 0) {
+	  ESL_ALLOC (scA,      sizeof(float) * (scN + results->num_results));
+	  if(do_sample) ESL_ALLOC (wtA,      sizeof(float) * (scN + results->num_results));
+	}
+	else {
+	  ESL_RALLOC(scA, tmp, sizeof(float) * (scN + results->num_results));
+	  if(do_sample) ESL_RALLOC(wtA, tmp, sizeof(float) * (scN + results->num_results));
+	}
+	for(h = 0; h < results->num_results; h++) {
+	  scA[(scN+h)] = results->data[h].score;
+	  if(do_sample) wtA[(scN+h)] = weight;
+	}
 	scN += results->num_results;
       }
       else { /* we're sampling and --iall not enabled, only collect top hit */
 	SortResultsByScore(results);
 	if(results->data[0].score > min_ssc) { 
-	  if(i == 0) ESL_ALLOC (scA,      sizeof(float) * (scN + 1));
-	  else       ESL_RALLOC(scA, tmp, sizeof(float) * (scN + 1));
+	  if(i == 0) {
+	    ESL_ALLOC (scA,      sizeof(float) * (scN + 1));
+	    ESL_ALLOC (wtA,      sizeof(float) * (scN + 1));
+	  }
+	  else {
+	    ESL_RALLOC(scA, tmp, sizeof(float) * (scN + 1));
+	    ESL_RALLOC(wtA, tmp, sizeof(float) * (scN + 1));
+	  }
 	  scA[scN] = results->data[0].score;
+	  wtA[scN] = weight;
 	  scN++;
 	}
       }
@@ -609,6 +635,7 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
 
   *ret_scN = scN;
   *ret_scA = scA;
+  if(ret_wtA != NULL) *ret_wtA = wtA;
   
   return eslOK;
   
@@ -620,16 +647,17 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
 
 /* fit_histogram()
  * Create, fill and fit the tail of a histogram to an exponential tail. Data to fill the histogram
- * is given as <scores>.
+ * is given as <scores>. If do_impt is TRUE, <weights> provides importance sampling weights.
  */
 static int
-fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits)
+fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, float *weights, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits)
 {
   int status;
   double mu;
   double lambda;
   int i;
   double *xv;         /* raw data from histogram */
+  double *wv = NULL;  /* weights corresponding to xv (if do_impt) */
   int     n,z;  
   double  params[2];
   double  nrandhits; 
@@ -674,15 +702,22 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tail
   if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram.", tailp);
 
   if(do_impt) { 
-    /* determine scaled sum of all scores */
+    /* Extract weights corresponding to the tail scores */
+    /* xv[] contains scores from the tail; we need to find corresponding weights */
+    /* Note: z is the index in the full array where the tail starts */
+    ESL_ALLOC(wv, sizeof(double) * n);
+    for(i = 0; i < n; i++) {
+      wv[i] = (double) weights[z + i];
+    }
+    
+    /* Compute total weight across all scores for normalization */
     scaled_nhits_total = 0.;
     for(i = 0; i < nscores; i++) {
-      scaled_nhits_total += 1. / (pow(2., scores[i]));
+      scaled_nhits_total += weights[i];
     }
-    //printf("scaled_nhits_total: %.2f\n", scaled_nhits_total);
-    /* fit only tailp tail mass to an exponential */
-    impt_exp_FitComplete(xv, n, &(params[0]), &(params[1]), &scaled_nhits_tail);
-    //printf("scaled_nhits_tail:   %.2f\n", scaled_nhits_tail);
+    
+    /* fit only tailp tail mass to an exponential using importance weights */
+    impt_exp_FitComplete(xv, wv, n, &(params[0]), &(params[1]), &scaled_nhits_tail);
   }
   else { 
     esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
@@ -713,6 +748,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tail
   //}
 
   esl_histogram_Destroy(h);
+  if(wv != NULL) free(wv);
 
   *ret_mu     = mu;
   *ret_lambda = lambda;
@@ -723,17 +759,18 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tail
 /* Function: sample_sequence_from_cm()
  * Date:     EPN, Mon May  2 08:44:53 2011
  * 
- * Purpose:  Generate a dsq from a CM and return it.
+ * Purpose:  Generate a dsq from a CM and return it, along with the parsetree score.
  *
  * Returns:  eslOK on success, ESL_DSQ is filled with newly alloc'ed dsq; some other status code on an error, 
  */
-int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr)
+int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr, float *ret_parsetree_sc)
 {
   int status;
   int L;
   ESL_SQ *sq;
   ESL_DSQ *dsq;
   Parsetree_t *tr = NULL;
+  float parsetree_sc;
 
   if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, &tr, &sq, &L)) != eslOK) return status;
   while(L == 0) { 
@@ -744,11 +781,18 @@ int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (sq->n+2));
   memcpy(dsq, sq->dsq, sizeof(ESL_DSQ) * (sq->n+2));
 
+  /* Calculate the parsetree score for importance sampling weight */
+  if((status = ParsetreeScore(cm, NULL, errbuf, tr, dsq, FALSE, &parsetree_sc, NULL, NULL, NULL, NULL)) != eslOK) {
+    esl_sq_Destroy(sq);
+    return status;
+  }
+
   esl_sq_Destroy(sq); 
 
   *ret_L  = L;
   *ret_dsq = dsq;
   *ret_tr = tr;
+  if(ret_parsetree_sc != NULL) *ret_parsetree_sc = parsetree_sc;
 
   return eslOK;
 
@@ -760,29 +804,32 @@ int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_
 
 /* Function:  impt_exp_FitComplete()
  * Incept:    SRE, Wed Aug 10 10:53:47 2005 [St. Louis]
+ *            Modified EPN for importance sampling weights
  *
- * Purpose:   Given an array of <n> samples <x[0]..x[n-1]>, fit
- *            them to an exponential distribution.
+ * Purpose:   Given an array of <n> samples <x[0]..x[n-1]> and
+ *            corresponding importance weights <w[0]..w[n-1]>, fit
+ *            them to an exponential distribution using weighted MLE.
  *            Return maximum likelihood parameters <ret_mu> and <ret_lambda>.
  *
  * Args:      x          - complete exponentially-distributed data [0..n-1]
+ *            w          - importance sampling weights [0..n-1]
  *            n          - number of samples in <x>
  *            ret_mu     - RETURN: lower bound of the distribution (all x_i >= mu)
  *            ret_lambda - RETURN: maximum likelihood estimate of lambda
- *            ret_scaled_nhits - RETURN: sum of scaled number of hits
+ *            ret_scaled_nhits - RETURN: sum of weights
  *
  * Returns:   <eslOK> on success.
  *
  * Xref:      STL9/138.
  */
 int
-impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits)
+impt_exp_FitComplete(double *x, double *w, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits)
 {
   double mu, mean;
   int    i;
 
-  double scaled_x = 0;
-  double scaled_n = 0;
+  double weighted_sum = 0;
+  double weight_total = 0;
   double diff = 0;
 
   /* ML mu is the lowest score. mu=x is ok in the exponential.
@@ -792,23 +839,22 @@ impt_exp_FitComplete(double *x, int n, double *ret_mu, double *ret_lambda, doubl
 
   mean = 0.;
   for (i = 0; i < n; i++) { 
-    diff     = x[i] - mu;
-    scaled_x = 1. / (pow(2., x[i]));
-    mean    += diff * scaled_x;
-    scaled_n += scaled_x;
+    diff          = x[i] - mu;
+    weighted_sum += diff * w[i];
+    weight_total += w[i];
 
-    /*printf("\t\ti: %4d  x[i]: %12.10f  diff: %12.10f  scaled_x: %12.10f  prod: %12.10f  scaled_n: %12.10f\n", 
-      i, x[i], diff, scaled_x, diff*scaled_x, scaled_n);*/
+    /*printf("\t\ti: %4d  x[i]: %12.10f  diff: %12.10f  w[i]: %12.10f  prod: %12.10f  weight_total: %12.10f\n", 
+      i, x[i], diff, w[i], diff*w[i], weight_total);*/
   }
-  mean /= scaled_n;
+  mean = weighted_sum / weight_total;
 
-  //printf("impt n:        %d\n", n);
-  //printf("impt scaled_n: %.3f\n", scaled_n);
-  //printf("impt mu:       %.3f\n", mu);
-  //printf("impt lambda:   %.3f\n", 1./mean);
+  //printf("impt n:            %d\n", n);
+  //printf("impt weight_total: %.3f\n", weight_total);
+  //printf("impt mu:           %.3f\n", mu);
+  //printf("impt lambda:       %.3f\n", 1./mean);
 
   *ret_mu     = mu;
   *ret_lambda = 1./mean;	/* ML estimate trivial & analytic */
-  *ret_scaled_nhits = scaled_n;     /* number of scaled hits */
+  *ret_scaled_nhits = weight_total;     /* total weight */
   return eslOK;
 }
