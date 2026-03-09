@@ -221,6 +221,7 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL, /* see ** above */ "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
   { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", NULL, /* see ** above */ "terminate after Stage 3 Fwd and output surviving windows",       106 },
+  { "--trmF5",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--hmmonly", NULL, /* see ** above */ "terminate after Stage 5 env def and output surviving envelopes", 106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },
@@ -2182,6 +2183,16 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       puts("Failed to parse command line: Option --trmF3 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
       goto ERROR; 
     }
+    if(esl_opt_IsUsed(go, "--trmF5")) {
+      puts("Failed to parse command line: Option --trmF3 is incompatible with --trmF5");
+      goto ERROR;
+    }
+  }
+  if(esl_opt_IsUsed(go, "--trmF5")) {
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) {
+      puts("Failed to parse command line: Option --trmF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      goto ERROR;
+    }
   }
 
   // #define ICWHMMMAX  "--hmmF1,--hmmF2,--hmmF3,--hmmnobias" 
@@ -2338,6 +2349,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--timeF6"))     fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
 
   if (esl_opt_IsUsed(go, "--trmF3"))      fprintf(ofp, "# terminate after Stage 3 Fwd:           on\n");
+  if (esl_opt_IsUsed(go, "--trmF5"))      fprintf(ofp, "# terminate after Stage 5 env defn:      on\n");
 
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");

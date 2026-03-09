@@ -2231,6 +2231,7 @@ typedef struct cm_pipeline_s {
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
   /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
   int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
+  int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
