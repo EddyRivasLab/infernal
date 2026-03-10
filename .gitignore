@@ -2,3 +2,75 @@ configure
 easel
 hmmer
 /TAGS
+
+# Editor / backup files
+*~
+\#*\#
+.vscode/
+
+# Local notes / ad hoc outputs
+PROJECT_SUMMARY_AND_PLAN.md
+cmscan_f5_sanity.out
+
+# Autotools / configure outputs
+autom4te.cache/
+config.log
+config.status
+Makefile
+
+# Core build outputs (top-level subdirs)
+src/Makefile
+src/config.h
+src/*.o
+src/*.a
+src/*.stamp
+src/cmalign
+src/cmbuild
+src/cmcalibrate
+src/cmconvert
+src/cmemit
+src/cmfetch
+src/cmpress
+src/cmscan
+src/cmsearch
+src/cmstat
+src/trcyk
+src/cp9-test
+src/sub_cm-test
+src/truncyk_check
+src/bandcyk-montecarlo-test
+src/bandcyk-truncation-test
+src/search.tbl
+src/save_infernal.h
+
+src/impl_sse/Makefile
+src/impl_sse/*.o
+src/impl_sse/*.stamp
+src/impl_sse/sse_cmsearch
+
+rmark/Makefile
+rmark/*.o
+rmark/rmark-create
+rmark/rmark-rocplot
+
+# Generated docs
+documentation/Makefile
+documentation/man/Makefile
+documentation/man/*.man
+documentation/userguide/Makefile
+documentation/userguide/Userguide.pdf
+documentation/userguide/symlinks.stamp
+documentation/userguide/titlepage.tex
+documentation/userguide/manpages.tex
+documentation/userguide/copyright.tex
+
+# Testsuite generated files
+testsuite/Makefile
+testsuite/esltmp*
+testsuite/*.i1f
+testsuite/*.i1i
+testsuite/*.i1m
+testsuite/*.i1p
+
+# Misc generated temp files
+release-notes/*.md~
