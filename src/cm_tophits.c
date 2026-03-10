@@ -1513,7 +1513,6 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
-    if (th->hit[h] == NULL) continue;
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
       if (! (th->hit[h]->flags & CM_HIT_IS_INCLUDED) && ! have_printed_incthresh) {
