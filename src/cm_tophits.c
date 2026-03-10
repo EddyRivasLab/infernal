@@ -1513,6 +1513,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
   
   nprinted = 0;
   for (h = 0; h < th->N; h++) { 
+    if (th->hit[h] == NULL) continue;
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED) { 
 
       if (! (th->hit[h]->flags & CM_HIT_IS_INCLUDED) && ! have_printed_incthresh) {
@@ -1542,8 +1543,8 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      th->hit[h]->hmmonly ? "hmm" : "cm",
-	      cm_alidisplay_TruncString(th->hit[h]->ad),
-	      th->hit[h]->ad->gc);
+        (th->hit[h]->ad != NULL) ? cm_alidisplay_TruncString(th->hit[h]->ad) : "-",
+        (th->hit[h]->ad != NULL) ? th->hit[h]->ad->gc : 0.0);
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "-" : th->hit[h]->desc);
       else           fprintf(ofp, "%s\n",           th->hit[h]->desc == NULL ? "-" : th->hit[h]->desc);

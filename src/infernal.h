@@ -3083,8 +3083,8 @@ extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *p
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
 
 /* from cm_p7_domaindef.c */
-extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb,
-						    P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2);
+extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
+              P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
 
 /* from cm_p7_modelconfig_trunc.c */
 extern int p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
