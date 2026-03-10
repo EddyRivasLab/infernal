@@ -57,7 +57,7 @@
 static int is_multidomain_region         (P7_DOMAINDEF *ddef, int i, int j);
 /* Note: is_multidomain_region is *identical* to the function of the same name in p7_domaindef.c*/
 static int glocal_region_trace_ensemble  (P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_DSQ *dsq, int ireg, int jreg, const P7_GMX *fwd, P7_GMX *wrk, int do_null2, int *ret_nc);
-static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_SQ *sq, P7_GMX *gx1, P7_GMX *gx2, 
+static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPROFILE *om, const ESL_SQ *sq, P7_GMX *gx1, P7_GMX *gx2, 
 					  int i, int j, int null2_is_done, int do_null2, int do_aln);
 
 /* Function:  p7_domaindef_GlocalByPosteriorHeuristics()
@@ -111,8 +111,9 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
  */
 int
 p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
+           P7_OPROFILE *om,
 					 P7_GMX *gxf, P7_GMX *gxb, P7_GMX *fwd, P7_GMX *bck, 
-					 P7_DOMAINDEF *ddef, int do_null2)
+           P7_DOMAINDEF *ddef, int do_null2, int do_aln)
 {
   int i, j;
   int triggered;
@@ -126,6 +127,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
   int save_mode_is_unihit;
   
   save_mode_is_unihit = (p7_IsMulti(save_mode)) ? FALSE : TRUE; /* if save_mode_is_unihit is TRUE, we never modify profile's configuration (length nor mode) */
+  if (do_aln && om == NULL) return eslEINVAL;
 
   if ((status = p7_domaindef_GrowTo(ddef, sq->n))       != eslOK) return status;  /* ddef's btot,etot,mocc now ready for seq of length n */
   /*printf("GDD P7 mode: %d\n", gm->mode);*/
@@ -206,7 +208,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
                  * happens. [xref J5/130].
 		 */
 		ddef->nenvelopes++;
-		if (glocal_rescore_isolated_domain(ddef, gm, sq, fwd, bck, i2, j2, TRUE, do_null2, FALSE) == eslOK) 
+    if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln) == eslOK) 
 		  last_j2 = j2;
 	      }
 	      p7_spensemble_Reuse(ddef->sp);
@@ -216,7 +218,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	    {
 	      /* The region looks simple, single domain; convert the region to an envelope. */
 	      ddef->nenvelopes++;
-	      glocal_rescore_isolated_domain(ddef, gm, sq, fwd, bck, i, j, FALSE, do_null2, FALSE);
+        glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i, j, FALSE, do_null2, do_aln);
 	    }
 	  i     = -1;
 	  triggered = FALSE;
@@ -495,7 +497,7 @@ glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL
  *         spec just makes its contents "undefined".
  */
 static int
-glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_SQ *sq, 
+glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPROFILE *om, const ESL_SQ *sq, 
 			       P7_GMX *gx1, P7_GMX *gx2, int i, int j, int null2_is_done, 
 			       int do_null2, int do_aln)
 {
@@ -561,7 +563,7 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const E
   dom->lnP           = 1.0;	/* gets set later by caller, using bitscore */
   dom->is_reported   = FALSE;	/* gets set later by caller */
   dom->is_included   = FALSE;	/* gets set later by caller */
-  dom->ad            = NULL;
+  dom->ad            = (do_aln ? p7_alidisplay_Create(ddef->tr, 0, om, sq, NULL) : NULL);
   dom->iali          = i;
   dom->jali          = j;
 
