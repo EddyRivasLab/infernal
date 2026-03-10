@@ -71,6 +71,8 @@ testsuite/*.i1f
 testsuite/*.i1i
 testsuite/*.i1m
 testsuite/*.i1p
+testsuite/iss33.tbl
+testsuite/iss42.rf.sto
 
 # Misc generated temp files
 release-notes/*.md~
