@@ -15,16 +15,25 @@
 #
 #
 use strict;
-my $usage          = "Usage: perl identify-positives <posfile> <rmark outfile>\n";
+my $usage = "Usage: perl identify-positives <posfile> <rmark outfile> [--resolve-overlap]\n";
 
-if(scalar(@ARGV) != 2) {   
+my $resolve_overlap = 0;
+if(scalar(@ARGV) < 2 || scalar(@ARGV) > 3) {
     print "Incorrect number of command line arguments.\n";
     print $usage;
-
     exit(1);
 }
 
 my($posfile, $outfile) = @ARGV;
+if(scalar(@ARGV) == 3) {
+    if($ARGV[2] eq "--resolve-overlap") {
+        $resolve_overlap = 1;
+    } else {
+        print "Unknown option: $ARGV[2]\n";
+        print $usage;
+        exit(1);
+    }
+}
 my $overlap_thr = 0.5;
 
 if (! -e $posfile) { die "$posfile doesn't exist"; }
@@ -277,40 +286,55 @@ foreach $pout_line (@pout_lines) {
 ################################################################# 
 sub CheckIfPositive {
     my $narg_expected = 12;
-    if(scalar(@_) != $narg_expected) { printf STDERR ("ERROR, CheckIfPositive() entered with %d != %d input arguments.\n", scalar(@_), $narg_expected); exit(1); } 
+    if(scalar(@_) != $narg_expected) { printf STDERR ("ERROR, CheckIfPositive() entered with %d != %d input arguments.\n", scalar(@_), $narg_expected); exit(1); }
     my ($target_from, $target_to, $target_ori, $overlap_thr, $pos_fam_HR, $pos_to_HR, $pos_ori_HR, $pos_idx_HR, $pos_order_AR, $ret_fam, $ret_strand, $ret_idx) = @_;
 
     my $fam = "decoy";
     my $strand = "decoy";
     my $idx = 0;
-    my $already_found_match = 0;
+    my $max_overlap = 0.0;
+    my $max_fam = "decoy";
+    my $max_strand = "decoy";
+    my $max_idx = 0;
+    my $n_matches = 0;
     my ($pos_from, $pos_to, $pos_fam, $pos_ori, $pos_idx, $overlap);
-    
-    # Exhaustively search for all positives that overlap this hit If
-    # more than one positive overlaps this hit, it's an error that we
-    # don't know how to deal with, so we die with an ERROR message.
-    # If speed of this script becomes an issue, this is the chunk of
-    # code to rewrite, probably with a binary search for overlaps
-    # (though you'd have to take care to deal with the possibility
-    # that one hit overlaps 2 positives).
-    foreach $pos_from (@{$pos_order_AR}) { 
-	if(! exists($pos_to_HR->{$pos_from}))  { die "ERROR, CheckIfPositive(), pos_to_HR->{$pos_from} does not exist"; }
-	if(! exists($pos_fam_HR->{$pos_from})) { die "ERROR, CheckIfPositive(), pos_fam_HR->{$pos_from} does not exist"; }
-	if(! exists($pos_ori_HR->{$pos_from})) { die "ERROR, CheckIfPositive(), pos_ori_HR->{$pos_from} does not exist"; }
-	$pos_to  = $pos_to_HR->{$pos_from};
-	$pos_fam = $pos_fam_HR->{$pos_from};
-	$pos_ori = $pos_ori_HR->{$pos_from};
-	$pos_idx = $pos_idx_HR->{$pos_from};
-	#printf("\tcalling GetOverlap: target: %d..%d pos: %d..%d $pos_fam $pos_ori $pos_idx\n", $target_from, $target_to, $pos_from, $pos_to);
-	$overlap = GetOverlap($target_from, $target_to, $pos_from, $pos_to);
-	if($overlap > $overlap_thr) { 
-	    #printf("\t\toverlap match!\n");
-	    if($already_found_match == 1) { die "ERROR, CheckIfPositive(), two positives overlap with $target_name $target_from..$target_to; not allowed"; }
-	    $fam = $pos_fam;
-	    $strand = ($pos_ori eq $target_ori) ? "same" : "opposite";
-	    $idx = $pos_idx;
-	    $already_found_match = 1;
-	}
+
+    foreach $pos_from (@{$pos_order_AR}) {
+        if(! exists($pos_to_HR->{$pos_from}))  { die "ERROR, CheckIfPositive(), pos_to_HR->{$pos_from} does not exist"; }
+        if(! exists($pos_fam_HR->{$pos_from})) { die "ERROR, CheckIfPositive(), pos_fam_HR->{$pos_from} does not exist"; }
+        if(! exists($pos_ori_HR->{$pos_from})) { die "ERROR, CheckIfPositive(), pos_ori_HR->{$pos_from} does not exist"; }
+        $pos_to  = $pos_to_HR->{$pos_from};
+        $pos_fam = $pos_fam_HR->{$pos_from};
+        $pos_ori = $pos_ori_HR->{$pos_from};
+        $pos_idx = $pos_idx_HR->{$pos_from};
+        $overlap = GetOverlap($target_from, $target_to, $pos_from, $pos_to);
+        if($overlap > $overlap_thr) {
+            $n_matches++;
+            if($overlap > $max_overlap) {
+                $max_overlap = $overlap;
+                $max_fam = $pos_fam;
+                $max_strand = ($pos_ori eq $target_ori) ? "same" : "opposite";
+                $max_idx = $pos_idx;
+            }
+        }
+    }
+    if($n_matches == 0) {
+        $fam = "decoy";
+        $strand = "decoy";
+        $idx = 0;
+    } elsif($n_matches == 1) {
+        $fam = $max_fam;
+        $strand = $max_strand;
+        $idx = $max_idx;
+    } else {
+        if($resolve_overlap) {
+            warn "WARNING: Multiple positives overlap with hit $target_from..$target_to; assigning to max-overlap positive.\n";
+            $fam = $max_fam;
+            $strand = $max_strand;
+            $idx = $max_idx;
+        } else {
+            die "ERROR, CheckIfPositive(), two positives overlap with $target_from..$target_to; not allowed";
+        }
     }
     $$ret_fam    = $fam;
     $$ret_strand = $strand;
