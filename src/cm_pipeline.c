@@ -377,7 +377,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
 
   /* Set Z, the search space size. This is used for E-value
    * calculations and for setting filter thresholds by default
-   * (i.e. if none of --max, --nohmm, --mid, --rfam are used) which is
+   * (i.e. if none of --max, --nohmm, --mid, --rfam, --trmF5 are used) which is
    * why we do this here, before setting filter thresholds.  The
    * database size was passed in, if -Z <x> enabled, we overwrite the
    * passed in value with <x>.
@@ -397,29 +397,31 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
    * independently of these.)
    *
    * Two steps:
-   * 1. Set filter parameters based on which of the five filtering strategies 
+  * 1. Set filter parameters based on which of the six filtering strategies 
    *    we're using.
    * 2. Overwrite any filter parameters set on the command-line.
    *
-   * The five exclusive filtering strategies: 
+  * The six exclusive filtering strategies: 
    * 1. --max:     turn off all filters
    * 2. --nohmm:   turn off all HMM filters
    * 3. --mid:     turn off MSV/Viterbi HMM filters
-   * 4. default:   use all filters with DB-size dependent thresholds
-   * 5. --rfam:    use all filters with strict thresholds (as if DB was size of RFAMSEQ)
+  * 4. --rfam:    use all filters with strict thresholds (as if DB was size of RFAMSEQ)
+  * 5. --trmF5:   use trmF5 benchmark-tuned defaults
+  * 6. default:   use all filters with DB-size dependent thresholds
    *
-   * strategy       F1?*  F2/F2b?  F3/F3b?  F4/F4b?    F5?**      F6?
-   * --------    -------  -------  -------  -------  -------  -------  
-   * --max           off      off      off      off      off      off
-   * --nohmm         off      off      off      off      off       on
-   * --mid           off      off       on       on       on       on
-   * default          on       on       on       on       on       on
-   * --rfam           on       on       on       on       on       on
+  * strategy       F1?*  F2/F2b?  F3/F3b?  F4/F4b?    F5?**      F6?
+  * --------    -------  -------  -------  -------  -------  -------  
+  * --max           off      off      off      off      off      off
+  * --nohmm         off      off      off      off      off       on
+  * --mid           off      off       on       on       on       on
+  * --rfam           on       on       on       on       on       on
+  * --trmF5          on       on       on       on       on       on
+  * default          on       on       on       on       on       on
    * 
    *   * By default, F1b is always off.
    *  ** By default, F5b is always off.
    *
-   * First set defaults, then make nec changes if --max, --nohmm, --mid, --rfam
+  * First set defaults, then make nec changes if --max, --nohmm, --mid, --rfam, --trmF5
    */
   pli->do_max            = FALSE;
   pli->do_nohmm          = FALSE;
@@ -488,8 +490,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->F6 = 0.0001;
     /* these are the same as the defaults for a 20 Gb database or larger */
   }
+  else if(esl_opt_GetBoolean(go, "--trmF5")) {
+    pli->F1 = 0.25;
+    pli->F2 = pli->F2b = 0.10;
+    pli->F3 = pli->F3b = 0.002;
+    pli->F4 = pli->F4b = 0.0002;
+    pli->F5 = pli->F5b = 0.0002;
+    pli->F6 = 0.0001;
+  }
   else { 
-    /* None of --max, --nohmm, --mid, --rfam, --hmmonly enabled, use
+    /* None of --max, --nohmm, --mid, --rfam, --trmF5, --hmmonly enabled, use
      * default strategy, set filter thresholds dependent on Z, which
      * was set above. These default thresholds are hard-coded and were
      * determined by a systematic search over possible filter
@@ -497,7 +507,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
      * ~nawrockie/notebook/11_0513_inf_dcmsearch_thresholds/00LOG
      */
     Z_Mb = esl_opt_IsOn(go, "--FZ") ? esl_opt_GetReal(go, "--FZ") : pli->Z / 1000000.;
-    /* None of --max, --nohmm, --mid, --rfam enabled, use default
+    /* None of --max, --nohmm, --mid, --rfam, --trmF5 enabled, use default
      * strategy, set filter thresholds dependent on Z, which was set
      * above. These default thresholds are hard-coded and were determined
      * by a systematic search over possible filter threshold combinations.
