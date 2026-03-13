@@ -1439,6 +1439,16 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     do_pass_5p_only_force = do_pass_3p_only_force = do_pass_5p_and_3p_force = do_pass_5p_and_3p_any = do_pass_hmm_only_any = FALSE;
   }
 
+  /* If --fullseqF5 is set, only run PLI_PASS_5P_AND_3P_FORCE (skip terminal passes and PLI_PASS_STD_ANY) */
+  if(pli->do_fullseq_F5 && pli->do_trm_F5) {
+    do_pass_std_any = FALSE;
+    do_pass_5p_only_force = FALSE;
+    do_pass_3p_only_force = FALSE;
+    do_pass_5p_and_3p_force = TRUE;
+    do_pass_5p_and_3p_any = FALSE;
+    do_pass_hmm_only_any = FALSE; 
+  } 
+
 #if eslDEBUGLEVEL >= 1
   printf("#DEBUG: in cm_Pipeline() %s\n", sq->name);
   printf("#DEBUG: do_pass_std_any:         %d\n", do_pass_std_any);
