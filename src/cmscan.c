@@ -1199,7 +1199,7 @@ pipeline_thread(void *arg)
             if(tinfo->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(tinfo->th, prv_ntophits, tinfo->qsq->start, tinfo->in_rc);
             
             if(tinfo->th->N != prv_ntophits && (! tinfo->pli->do_trm_F3)) { 
-              if(tinfo->pli->do_hmmonly_cur) eZ = tinfo->pli->Z / (float) om->max_length;
+              if(tinfo->pli->do_hmmonly_cur || tinfo->pli->do_trm_F5 || tinfo->pli->do_trm_F5) eZ = tinfo->pli->Z / (float) om->max_length;
               else                	  eZ = cm->expA[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
               cm_tophits_ComputeEvalues(tinfo->th, eZ, prv_ntophits);
             }
@@ -1922,7 +1922,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                     if(th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, qsq->start, in_rc);
                     
                     if(th->N != prv_ntophits) { 
-                      if(pli->do_hmmonly_cur) eZ = pli->Z / (float) om->max_length;
+                      if(pli->do_hmmonly_cur || pli->do_trm_F5) eZ = pli->Z / (float) om->max_length;
                       else                	  eZ = cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize;
                       cm_tophits_ComputeEvalues(th, eZ, prv_ntophits);
                     }
