@@ -1033,11 +1033,12 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     /* determine if we should use the special HMM only pipeline for this model,
      * if pli->do_hmmonly_never    == TRUE: we won't,
      * if pli->do_glocal_cm_cur    == TRUE: we won't,
+     * if pli->do_trm_F5           == TRUE: we won't (need glocal HMM alignment),
      * if pli->do_hmmonly_always   == TRUE: we will,
      * else we will only if model has 0 base pairs.
      */
     
-    if     (pli->do_hmmonly_never  || pli->do_glocal_cm_cur) pli->do_hmmonly_cur = FALSE;
+    if     (pli->do_hmmonly_never  || pli->do_glocal_cm_cur || pli->do_trm_F5) pli->do_hmmonly_cur = FALSE;
     else if(pli->do_hmmonly_always || cm_nbp == 0)           pli->do_hmmonly_cur = TRUE;
     else                                                     pli->do_hmmonly_cur = FALSE;
 
@@ -1576,7 +1577,6 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
         printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_env_def() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-        if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(p7eadAAA[p]), &(np7envA[p]))) != eslOK) return status;
 
         if(pli->do_trm_F5) {
           /* Memory estimation for glocal HMM alignment (--trmF5 mode) */
@@ -1588,6 +1588,11 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
           //fprintf(stdout, "#   P7_GMX allocation: %.2f GB (%.0f bytes)\n", memory_gb, (double) memory_bytes);
           //fprintf(stdout, "#   Calculation: 24 * L * M = 24 * %" PRId64 " * %" PRId64 " = %" PRId64 " bytes\n", L, M, memory_bytes);
           //fflush(stdout);
+        }
+        
+        if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(p7eadAAA[p]), &(np7envA[p]))) != eslOK) return status;
+
+        if(pli->do_trm_F5) {
 
           if((status = pli_trm_F5_create_hits(pli, cm_offset, sq2search, p7_evparam, p7esAA[p], p7eeAA[p], p7ebAA[p], p7eadAAA[p], np7envA[p], start_offset, hitlist, opt_cm)) != eslOK) return status;
           if(p7esAA[p]   != NULL) { free(p7esAA[p]);    p7esAA[p]   = NULL; }
