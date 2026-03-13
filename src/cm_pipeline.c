@@ -1081,7 +1081,18 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
 	pli->T = cm_p7_E2Score(pli->E, pli->Z, p7_max_length, p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
       }
     }
-    else { /* ! do_hmmonly_cur */
+    else if(pli->do_trm_F5) { 
+      /* --trmF5 terminates after HMM envelope definition (Stage 5) and doesn't 
+       * use CM algorithms, so we don't need CM E-value parameters. Works like
+       * do_hmmonly_cur: if using E-value thresholds, convert using HMM parameters.
+       * Only do this if p7_evparam is valid (not NULL), which is the case when
+       * we're in SEARCH mode or MSV mode, but not in SCAN/CM mode.
+       */
+      if(pli->by_E && p7_evparam != NULL) { 
+	pli->T = cm_p7_E2Score(pli->E, pli->Z, p7_max_length, p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      }
+    }
+    else { /* ! do_hmmonly_cur && ! do_trm_F5 */
       if((status = UpdateExpsForDBSize(cm, pli->errbuf, pli->Z)) != eslOK) return status;
       if(pli->by_E) { 
 	if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
@@ -1568,6 +1579,16 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
         if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(p7eadAAA[p]), &(np7envA[p]))) != eslOK) return status;
 
         if(pli->do_trm_F5) {
+          /* Memory estimation for glocal HMM alignment (--trmF5 mode) */
+          //int64_t L = sq2search->n;  /* sequence length */
+          //int64_t M = L;              /* model length = sequence length (1:1 ratio) */
+          //int64_t memory_bytes = 24 * L * M;  /* Forward + Backward P7_GMX matrices */
+          //double memory_gb = (double) memory_bytes / (1024.0 * 1024.0 * 1024.0);
+          //fprintf(stdout, "# MEMORY_ESTIMATE: Sequence %s (L=%" PRId64 " bp, M=%" PRId64 " states)\n", sq2search->name, L, M);
+          //fprintf(stdout, "#   P7_GMX allocation: %.2f GB (%.0f bytes)\n", memory_gb, (double) memory_bytes);
+          //fprintf(stdout, "#   Calculation: 24 * L * M = 24 * %" PRId64 " * %" PRId64 " = %" PRId64 " bytes\n", L, M, memory_bytes);
+          //fflush(stdout);
+
           if((status = pli_trm_F5_create_hits(pli, cm_offset, sq2search, p7_evparam, p7esAA[p], p7eeAA[p], p7ebAA[p], p7eadAAA[p], np7envA[p], start_offset, hitlist, opt_cm)) != eslOK) return status;
           if(p7esAA[p]   != NULL) { free(p7esAA[p]);    p7esAA[p]   = NULL; }
           if(p7eeAA[p]   != NULL) { free(p7eeAA[p]);    p7eeAA[p]   = NULL; }
