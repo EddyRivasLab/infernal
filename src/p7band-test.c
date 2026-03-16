@@ -168,8 +168,8 @@ main(int argc, char **argv)
   printf("P7 objects created\n"); fflush(stdout);
   
   /* Convert CM's P7 HMM to a profile */
-  printf("Configuring P7 profile as GLOCAL...\n"); fflush(stdout);
-  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_GLOCAL)) != eslOK)
+  printf("Configuring P7 profile as LOCAL...\n"); fflush(stdout);
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_LOCAL)) != eslOK)
     cm_Fail("Failed to configure P7 profile\n");
   printf("P7 profile configured\n"); fflush(stdout);
   
