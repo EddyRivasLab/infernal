@@ -17,6 +17,7 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
+#include "p7_gbands.h"
 
 #include "infernal.h"
 
@@ -2494,4 +2495,55 @@ P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
   kmin[0] = 0; /* hard-coded, M_0 is begin state, it must emit full sequence */
 
   return eslOK;
+}
+
+/* Function: p7_kbands2gbands()
+ * Date:     EPN, Sun Mar 16 2026
+ * 
+ * Purpose:  Convert k-indexed bands (kmin[i], kmax[i]) to HMMER's 
+ *           i-indexed P7_GBANDS structure. 
+ *           
+ *           kmin[i], kmax[i] specify the allowed range of HMM nodes
+ *           at each sequence position i. P7_GBANDS stores this as
+ *           segments of contiguous sequence positions, with per-row
+ *           node bands.
+ *           
+ * Args:     kmin   - [0..i..L] = k, min node k for residue i
+ *           kmax   - [0..i..L] = k, max node k for residue i
+ *           L      - length of sequence
+ *           M      - length of HMM model
+ *           ret_bnd - RETURN: newly allocated P7_GBANDS structure
+ *
+ * Returns:  <eslOK> on success, <ret_bnd> points to new P7_GBANDS.
+ *           <eslEMEM> on allocation failure.
+ *           
+ * Note:     Creates a single segment spanning i=1..L. Could be optimized
+ *           to create multiple segments for sparse bands, but simple
+ *           approach works fine for initial implementation.
+ */
+int
+p7_kbands2gbands(int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
+{
+  P7_GBANDS *bnd = NULL;
+  int        status;
+  int        i;
+
+  if ((bnd = p7_gbands_Create()) == NULL) { status = eslEMEM; goto ERROR; }
+  
+  /* Create a single segment from i=1..L */
+  for (i = 1; i <= L; i++) {
+    if ((status = p7_gbands_Append(bnd, i, kmin[i], kmax[i])) != eslOK) goto ERROR;
+  }
+  
+  /* Finalize the band structure */
+  bnd->L = L;
+  bnd->M = M;
+  
+  *ret_bnd = bnd;
+  return eslOK;
+  
+ ERROR:
+  if (bnd != NULL) p7_gbands_Destroy(bnd);
+  *ret_bnd = NULL;
+  return status;
 }

@@ -3082,6 +3082,7 @@ extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX 
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
+/* p7_kbands2gbands() declared locally in files that use it - requires p7_gbands.h */
 
 /* from cm_p7_domaindef.c */
 extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
