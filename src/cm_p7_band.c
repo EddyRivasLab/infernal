@@ -18,6 +18,7 @@
 
 #include "hmmer.h"
 #include "p7_gbands.h"
+#include "p7_gmxb.h"
 
 #include "infernal.h"
 
@@ -2546,4 +2547,184 @@ p7_kbands2gbands(int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
   if (bnd != NULL) p7_gbands_Destroy(bnd);
   *ret_bnd = NULL;
   return status;
+}
+
+/* Function: p7_GBackwardBanded()
+ * Date:     EPN, Sun Mar 16 2026
+ * 
+ * Purpose:  Banded Backward algorithm for P7 profile HMMs.
+ *           Adapted from Sean Eddy's p7_GForwardBanded() in 
+ *           hmmer/src/generic_fwdback_banded.c (2011) and p7_GBackward()
+ *           in hmmer/src/generic_fwdback.c.
+ *           
+ *           Calculate the Backward matrix for sequence <dsq> of length <L>,
+ *           using profile <gm>, constrained by bands in <gxb>.
+ *           
+ *           Works backwards through the sequence (i = L to 1) and through
+ *           model nodes within each row's band, computing the probability
+ *           of generating the rest of the sequence from each cell.
+ *           
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of sequence
+ *           gm     - profile
+ *           gxb    - banded DP matrix (contains P7_GBANDS structure)
+ *           opt_sc - optRETURN: Backward score in nats
+ *           
+ * Returns:  <eslOK> on success; <gxb> contains the Backward matrix,
+ *           <opt_sc> (if non-NULL) contains Backward score.
+ *           
+ * Note:     Like p7_GBackward(), this calculates the probability of
+ *           getting OUT of cell i,k, exclusive of emitting residue x_i.
+ *           
+ *           Emissions for row i are scored using dsq[i+1], because
+ *           Backward looks at what comes AFTER the current cell.
+ */
+int
+p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+{
+  int         *bnd_ip;                           /* ptr to segment band boundaries in gxb->bnd */
+  int         *bnd_kp;                           /* ptr to row band boundaries in gxb->bnd */
+  float       *dpc;                              /* ptr to current DP matrix cell */
+  float       *xpc;                              /* ptr to current special states */
+  float const *tsc    = gm->tsc;                 /* transition scores */
+  float const *rsc;                              /* residue scores for current row */
+  float       *dpn;                              /* ptr to next row DP matrix cell */
+  float       *last_dpc;                         /* used to reinitialize dpn */
+  int          ia, ib;                           /* segment boundaries */
+  int          next_ia;                          /* next segment's ia (for handling gaps) */
+  int          kac, kbc;                         /* current row band: kac..kbc */
+  int          kan, kbn;                         /* next row band: kan..kbn */
+  int          kbc2;                             /* if kbc==M, kbc2=M-1 */
+  float        xE, xN, xJ, xB, xC;               /* special state scores */
+  float        mnext, inext, dnext;              /* M,I,D scores from next row */
+  float        dc;                               /* current D(i,k) being calculated backwards */
+  float        sc;                               /* temporary score for M(i,k) */
+  int          g, i, k;                          /* segment, row, node indices */
+  float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+
+  /* We'll traverse segments backwards, and reconstruct band pointers backwards.
+   * Position pointers at the END of the arrays, we'll decrement them.
+   */
+  bnd_ip = gxb->bnd->imem + (gxb->bnd->nseg * 2);
+  bnd_kp = gxb->bnd->kmem + (gxb->bnd->nrow * 2);
+  dpc    = gxb->dp  + (gxb->bnd->ncell * p7G_NSCELLS);
+  xpc    = gxb->xmx + (gxb->bnd->nrow  * p7G_NXCELLS);
+  
+  /* Initialize: handle anything after the last segment */
+  xC      = gm->xsc[p7P_C][p7P_MOVE];
+  xE      = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ      = xB = xN = -eslINFINITY;
+  next_ia = L+1;
+
+  /* Main recursion: work backwards through segments */
+  for (g = gxb->bnd->nseg-1; g >= 0; g--)
+    {
+      ib = *(--bnd_ip);
+      ia = *(--bnd_ip);
+
+      /* Initialize special states for rows beyond this segment (next_ia-1...ib+1) */
+      if (next_ia > ib+1) {
+        xC = xC + (next_ia - ib - 1) * gm->xsc[p7P_C][p7P_LOOP];
+        xE = p7_FLogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]);
+        /* J,B,N remain -infinity for these positions */
+      }
+
+      /* Initialize next row bands for i=ib+1 (or end of sequence) */
+      kan = kbn = gm->M+1;
+      dpn = dpc;
+
+      /* Work backwards through rows in this segment */
+      for (i = ib; i >= ia; i--)
+        {
+          rsc      = (i < L) ? gm->rsc[dsq[i+1]] : NULL;
+          last_dpc = dpc;
+
+          /* Get current row's band */
+          kbc      = *(--bnd_kp);
+          kac      = *(--bnd_kp);
+          kbc2     = (kbc == gm->M ? kbc-1 : kbc);
+
+          /* Position dpn at the start of the next row's band */
+          dpn -= (kbn-kan+1) * p7G_NSCELLS;
+
+          /* Calculate special states FIRST (they depend on next row i+1) */
+          if (i < L) {
+            /* B state: sum over all M states in next row */
+            xB = -eslINFINITY;
+            for (k = ESL_MAX(1,kan); k <= ESL_MIN(gm->M, kbn); k++) {
+              if (k >= kan && k <= kbn) {
+                int offset = (k - kan) * p7G_NSCELLS;
+                xB = p7_FLogsum(xB, dpn[offset] + TSC(p7P_BM, k-1) + (rsc ? MSC(k) : 0));
+              }
+            }
+            xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+            xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+            xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+            xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+          }
+
+          /* Store special states */
+          *(--xpc) = xC;
+          *(--xpc) = xB;
+          *(--xpc) = xJ;
+          *(--xpc) = xN;
+          *(--xpc) = xE;
+
+          /* Handle M state: M_M gets E state */
+          if (kbc == gm->M) {
+            *(--dpc) = xE;              /* D_M */
+            *(--dpc) = -eslINFINITY;    /* I_M (doesn't exist) */
+            *(--dpc) = xE;              /* M_M */
+          }
+
+          /* Main recursion: work backwards through k = kbc2...kac */
+          dc = -eslINFINITY;
+          for (k = kbc2; k >= kac; k--)
+            {
+              /* Get scores from next row i+1 */
+              if (i < L && k+1 >= kan && k+1 <= kbn) {
+                int offset = (k+1 - kan) * p7G_NSCELLS;
+                mnext = dpn[offset]   + (rsc ? MSC(k+1) : 0);
+                dnext = dpn[offset+2];
+                if (k >= kan && k <= kbn) {
+                  int curr_offset = (k - kan) * p7G_NSCELLS;
+                  inext = dpn[curr_offset+1] + (rsc ? ISC(k) : 0);
+                } else {
+                  inext = -eslINFINITY;
+                }
+              } else {
+                mnext = inext = dnext = -eslINFINITY;
+              }
+
+              /* D(i,k) */
+              *(--dpc) = dc;
+              dc = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_DM, k), dnext + TSC(p7P_DD, k)),
+                             xE + esc);
+
+              /* I(i,k) */
+              *(--dpc) = p7_FLogsum(mnext + TSC(p7P_IM, k), inext + TSC(p7P_II, k));
+
+              /* M(i,k) */
+              *(--dpc) = sc = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
+                                        p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)));
+            }
+
+          dpn = last_dpc;
+          kan = kac;
+          kbn = kbc;
+        }
+      next_ia = ia;
+    }
+
+  /* Handle anything before the first segment (rows 0...first ia-1) */
+  /* At i=0, only N,B are reachable */
+  if (opt_sc != NULL) {
+    float final_score = xN;
+    if (next_ia > 1) {
+      final_score = final_score + (next_ia - 1) * gm->xsc[p7P_N][p7P_LOOP];
+    }
+    *opt_sc = final_score;
+  }
+
+  return eslOK;
 }
