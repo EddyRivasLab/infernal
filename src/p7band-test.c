@@ -21,6 +21,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <inttypes.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -30,8 +32,15 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
+#include "p7_gbands.h"
+#include "p7_gmxb.h"
 
 #include "infernal.h"
+
+/* Local declarations for functions not in infernal.h (due to type conflicts) */
+extern int             p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+extern int             p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
+extern int             my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 
 static ESL_OPTIONS options[] = {
   /* name           type         default   env  range   toggles   reqs   incomp     help                                                      docgroup*/
@@ -56,7 +65,11 @@ static char banner[] = "test MSV-derived P7 HMM banding";
 int 
 main(int argc, char **argv)
 {
+  printf("p7band-test starting...\n");
+  fflush(stdout);
   ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
+  printf("getopts created\n");
+  fflush(stdout);
   char           *cmfile  = esl_opt_GetArg(go, 1);
   char           *seqfile = esl_opt_GetArg(go, 2);
   int             status;
@@ -79,6 +92,16 @@ main(int argc, char **argv)
   int             n_aligned, n_gaps;
   float           bandwidth_avg, bandwidth_min, bandwidth_max;
   
+  /* For banded Forward/Backward testing */
+  P7_GBANDS      *bnd     = NULL;
+  P7_GMXB        *bx      = NULL;
+  P7_GMX         *fwd_gx  = NULL;  /* for unbanded Forward */
+  P7_GMX         *bck_gx  = NULL;  /* for unbanded Backward */
+  float           fwd_sc, bck_sc;   /* unbanded scores */
+  float           bfwd_sc, bbck_sc; /* banded scores */
+  double          fwd_time, bck_time, bfwd_time, bbck_time;
+  clock_t         t0, t1;
+  
   /* Get command line options */
   int    pad       = esl_opt_GetInteger(go, "--pad");
   float  minscore  = esl_opt_GetReal   (go, "--minscore");
@@ -95,19 +118,24 @@ main(int argc, char **argv)
   /*********************************************** 
    * Read CM file
    ***********************************************/
+  printf("About to read CM...\n"); fflush(stdout);
   if (be_verbose) printf("# Reading CM from %s...\n", cmfile);
   
   if ((status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf)) != eslOK) 
     cm_Fail("Failed to open covariance model save file %s\n%s\n", cmfile, errbuf);
+  printf("CM file opened\n"); fflush(stdout);
   if ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) != eslOK)
     cm_Fail("Failed to read CM from %s\n", cmfile);
+  printf("CM read\n"); fflush(stdout);
   cm_file_Close(cmfp);
   
   if (be_verbose) printf("# Read CM: %s (%d consensus positions)\n", cm->name, cm->clen);
 
   /* Configure CM - this will create P7 HMMs if they don't exist */
+  printf("About to configure CM...\n"); fflush(stdout);
   if ((status = cm_Configure(cm, errbuf, -1)) != eslOK)
     cm_Fail("Failed to configure CM\n%s\n", errbuf);
+  printf("CM configured\n"); fflush(stdout);
 
   /*********************************************** 
    * Read sequence file
@@ -132,17 +160,22 @@ main(int argc, char **argv)
    ***********************************************/
   
   /* Create P7 objects */
+  printf("Creating P7 objects...\n"); fflush(stdout);
   gm   = p7_profile_Create(cm->mlp7->M, abc);
   gx   = p7_gmx_Create(cm->mlp7->M, sq->n);
   bg   = p7_bg_Create(abc);
   p7tr = p7_trace_Create();
+  printf("P7 objects created\n"); fflush(stdout);
   
   /* Convert CM's P7 HMM to a profile */
-  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_LOCAL)) != eslOK)
+  printf("Configuring P7 profile as GLOCAL...\n"); fflush(stdout);
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_GLOCAL)) != eslOK)
     cm_Fail("Failed to configure P7 profile\n");
+  printf("P7 profile configured\n"); fflush(stdout);
   
   /* Allocate phi (occupancy probabilities) - required by p7_Seq2Bands() */
   /* Set to defaults that won't cause any pruning unless --phi is used */
+  printf("Allocating phi...\n"); fflush(stdout);
   if (be_verbose && do_phi) printf("# Calculating phi (occupancy probabilities)...\n");
   
   ESL_ALLOC(phi, sizeof(double *) * (cm->mlp7->M + 1));
@@ -160,6 +193,7 @@ main(int argc, char **argv)
       phi[k][HMMDELETE] = 0.0;
     }
   }
+  printf("phi allocated\n"); fflush(stdout);
 
   /*********************************************** 
    * Derive bands from MSV
@@ -182,10 +216,12 @@ main(int argc, char **argv)
   }
   
   /* Call the main banding function */
+  printf("Calling p7_Seq2Bands...\n"); fflush(stdout);
   status = p7_Seq2Bands(cm, errbuf, gm, gx, bg, p7tr, sq->dsq, sq->n,
                         phi, minscore, minlen, minend, 
                         minmprob, minmcprob, maxiprob, maxilprob, pad,
                         &i2k, &kmin, &kmax, &ncells);
+  printf("p7_Seq2Bands completed with status %d\n", status); fflush(stdout);
   
   if (status == eslEINCOMPAT) {
     printf("# WARNING: MSV trace was discontiguous - all alignments removed\n");
@@ -243,6 +279,140 @@ main(int argc, char **argv)
   printf("#\n");
 
   /*********************************************** 
+   * Test banded Forward/Backward
+   ***********************************************/
+  
+  if (be_verbose) {
+    printf("# Testing banded Forward/Backward...\\n");
+    printf("#   First 5 kmin/kmax values before conversion:\\n");
+    for (i = 1; i <= ESL_MIN(5, sq->n); i++) {
+      printf("#     row %d: kmin=%d, kmax=%d, i2k=%d\\n", i, kmin[i], kmax[i], i2k[i]);
+    }
+  }
+  
+  /* Convert kmin/kmax to P7_GBANDS structure */
+  printf("Calling p7_kbands2gbands...\n"); fflush(stdout);
+  status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, cm->mlp7->M, &bnd);
+  if (status != eslOK) cm_Fail("Failed to convert bands to P7_GBANDS (status=%d)\n", status);
+  printf("p7_kbands2gbands completed\n"); fflush(stdout);
+  
+  if (be_verbose) {
+    printf("#   P7_GBANDS created: %d segments, %" PRId64 " cells\n", bnd->nseg, bnd->ncell);
+    printf("#     L=%d, M=%d, nrow=%d\n", bnd->L, bnd->M, bnd->nrow);
+    if (bnd->nseg > 0) {
+      printf("#     First segment: ia=%d, ib=%d\n", bnd->imem[0], bnd->imem[1]);
+      if (bnd->nseg > 1) {
+        printf("#     Last segment: ia=%d, ib=%d\n", 
+               bnd->imem[(bnd->nseg-1)*2], bnd->imem[(bnd->nseg-1)*2+1]);
+      }
+    }
+    if (bnd->nrow > 0) {
+      printf("#     First row band: ka=%d, kb=%d\n", bnd->kmem[0], bnd->kmem[1]);
+      printf("#     Last row band: ka=%d, kb=%d\n", 
+             bnd->kmem[(bnd->nrow-1)*2], bnd->kmem[(bnd->nrow-1)*2+1]);
+    }
+    /* Dump first few rows of bands */
+    printf("#     First 5 row bands:\n");
+    for (i = 0; i < ESL_MIN(5, bnd->nrow); i++) {
+      printf("#       row %d: ka=%d, kb=%d\n", i+1, 
+             bnd->kmem[i*2], bnd->kmem[i*2+1]);
+    }
+  }
+  
+  /* Create banded matrix */
+  bx = p7_gmxb_Create(bnd);
+  if (bx == NULL) cm_Fail("Failed to create P7_GMXB\n");
+  
+  /* Create unbanded matrices for comparison */
+  printf("Creating unbanded matrices...\n");
+  fflush(stdout);
+  fwd_gx = p7_gmx_Create(cm->mlp7->M, sq->n);
+  bck_gx = p7_gmx_Create(cm->mlp7->M, sq->n);
+  if (fwd_gx == NULL || bck_gx == NULL) cm_Fail("Failed to create unbanded matrices\n");
+  
+  /* Run unbanded Forward (reference) */
+  printf("Running unbanded Forward...\n");
+  fflush(stdout);
+  t0 = clock();
+  status = p7_GForward(sq->dsq, sq->n, gm, fwd_gx, &fwd_sc);
+  t1 = clock();
+  if (status != eslOK) cm_Fail("Unbanded Forward failed\n");
+  fwd_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
+  printf("Unbanded Forward done: score=%.4f\n", fwd_sc);
+  fflush(stdout);
+  
+  if (be_verbose) {
+    printf("#   Unbanded Forward: score=%.4f, status=%d\n", fwd_sc, status);
+    printf("#   fwd_gx->M=%d, fwd_gx->L=%d\n", fwd_gx->M, (int)fwd_gx->L);
+  }
+  
+  /* Run banded Forward */
+  t0 = clock();
+  printf("About to call my_p7_GForwardBanded...\n");
+  fflush(stdout);
+  status = my_p7_GForwardBanded(sq->dsq, sq->n, gm, bx, &bfwd_sc);
+  t1 = clock();
+  printf("my_p7_GForwardBanded returned\n");
+  fflush(stdout);
+  if (status != eslOK) cm_Fail("Banded Forward failed\n");
+  bfwd_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
+  
+  if (be_verbose) {
+    printf("#   Banded Forward: score=%.4f, status=%d\n", bfwd_sc, status);
+    /* Check first few DP cells */
+    printf("#   First few bx->dp values: %.4f, %.4f, %.4f\n", 
+           bx->dp[0], bx->dp[1], bx->dp[2]);
+  }
+  
+  /* Run unbanded Backward (reference) */
+  t0 = clock();
+  status = p7_GBackward(sq->dsq, sq->n, gm, bck_gx, &bck_sc);
+  t1 = clock();
+  if (status != eslOK) cm_Fail("Unbanded Backward failed\n");
+  bck_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
+  
+  /* Run banded Backward */
+  t0 = clock();
+  status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bx, &bbck_sc);
+  t1 = clock();
+  if (status != eslOK) cm_Fail("Banded Backward failed\n");
+  bbck_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
+  
+  /* Compare scores */
+  float fwd_diff = fwd_sc - bfwd_sc;
+  float bck_diff = bck_sc - bbck_sc;
+  
+  printf("# Banded Forward/Backward validation:\n");
+  printf("#\n");
+  printf("# Forward scores:\n");
+  printf("#   Unbanded:          %.4f nats (%.4f ms)\n", fwd_sc, fwd_time * 1000);
+  printf("#   Banded:            %.4f nats (%.4f ms)\n", bfwd_sc, bfwd_time * 1000);
+  printf("#   Difference:        %.4f nats (%.6f bits)\n", fwd_diff, fwd_diff / eslCONST_LOG2);
+  printf("#   Speedup:           %.2fx\n", fwd_time / bfwd_time);
+  printf("#\n");
+  printf("# Backward scores:\n");
+  printf("#   Unbanded:          %.4f nats (%.4f ms)\n", bck_sc, bck_time * 1000);
+  printf("#   Banded:            %.4f nats (%.4f ms)\n", bbck_sc, bbck_time * 1000);
+  printf("#   Difference:        %.4f nats (%.6f bits)\n", bck_diff, bck_diff / eslCONST_LOG2);
+  printf("#   Speedup:           %.2fx\n", bck_time / bbck_time);
+  printf("#\n");
+  
+  /* Validate that scores match */
+  float tolerance = 0.01;  /* bits */
+  if (fabs(fwd_diff / eslCONST_LOG2) > tolerance) {
+    printf("# WARNING: Forward scores differ by more than %.2f bits!\n", tolerance);
+  } else {
+    printf("# PASS: Forward scores match within %.2f bits\n", tolerance);
+  }
+  
+  if (fabs(bck_diff / eslCONST_LOG2) > tolerance) {
+    printf("# WARNING: Backward scores differ by more than %.2f bits!\n", tolerance);
+  } else {
+    printf("# PASS: Backward scores match within %.2f bits\n", tolerance);
+  }
+  printf("#\n");
+
+  /*********************************************** 
    * Optionally dump bands
    ***********************************************/
   
@@ -266,6 +436,11 @@ main(int argc, char **argv)
     for (k = 0; k <= cm->mlp7->M; k++) free(phi[k]);
     free(phi);
   }
+  
+  if (bnd)    p7_gbands_Destroy(bnd);
+  if (bx)     p7_gmxb_Destroy(bx);
+  if (fwd_gx) p7_gmx_Destroy(fwd_gx);
+  if (bck_gx) p7_gmx_Destroy(bck_gx);
   
   p7_trace_Destroy(p7tr);
   p7_bg_Destroy(bg);

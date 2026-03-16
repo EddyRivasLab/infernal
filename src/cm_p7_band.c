@@ -2504,12 +2504,12 @@ P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
  * Purpose:  Convert k-indexed bands (kmin[i], kmax[i]) to HMMER's 
  *           i-indexed P7_GBANDS structure. 
  *           
- *           kmin[i], kmax[i] specify the allowed range of HMM nodes
- *           at each sequence position i. P7_GBANDS stores this as
- *           segments of contiguous sequence positions, with per-row
- *           node bands.
+ *           Only includes positions where i2k[i] != -1 (MSV-aligned positions).
+ *           Positions with i2k=-1 are excluded, creating gaps between segments.
+ *           This allows unaligned regions to use N/J/C states freely.
  *           
- * Args:     kmin   - [0..i..L] = k, min node k for residue i
+ * Args:     i2k    - [0..i..L] = k or -1, which HMM node aligns to residue i
+ *           kmin   - [0..i..L] = k, min node k for residue i
  *           kmax   - [0..i..L] = k, max node k for residue i
  *           L      - length of sequence
  *           M      - length of HMM model
@@ -2518,22 +2518,38 @@ P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
  * Returns:  <eslOK> on success, <ret_bnd> points to new P7_GBANDS.
  *           <eslEMEM> on allocation failure.
  *           
- * Note:     Creates a single segment spanning i=1..L. Could be optimized
- *           to create multiple segments for sparse bands, but simple
- *           approach works fine for initial implementation.
+ * Note:     Creates multiple segments for sparse alignments. Gaps between
+ *           segments are handled by special state transitions (N/J/C).
  */
 int
-p7_kbands2gbands(int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
+p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
 {
   P7_GBANDS *bnd = NULL;
   int        status;
   int        i;
+  int        ka, kb;
 
   if ((bnd = p7_gbands_Create()) == NULL) { status = eslEMEM; goto ERROR; }
   
-  /* Create a single segment from i=1..L */
+  /* Include all positions i=1..L, but widen bands for unaligned positions.
+   * For positions with i2k=-1 (no MSV alignment), if the inherited band is
+   * narrow, widen it to allow more flexibility for D states and special states.
+   * Clamp bands to valid range [1..M] - HMM nodes are 1-indexed.
+   */
   for (i = 1; i <= L; i++) {
-    if ((status = p7_gbands_Append(bnd, i, kmin[i], kmax[i])) != eslOK) goto ERROR;
+    ka = ESL_MAX(1, kmin[i]);  /* ensure ka >= 1 */
+    kb = ESL_MIN(M, kmax[i]);  /* ensure kb <= M */
+    
+    /* For unaligned positions with narrow bands, widen them significantly */
+    if (i2k[i] == -1 && (kb - ka + 1) < 0.5 * M) {
+      /* Widen to at least 50% of M for unaligned positions */
+      int band_center = (ka + kb) / 2;
+      int half_width = ESL_MAX((kb - ka + 1), M / 4);  /* at least 25% on each side */
+      ka = ESL_MAX(1, band_center - half_width);
+      kb = ESL_MIN(M, band_center + half_width);
+    }
+    
+    if ((status = p7_gbands_Append(bnd, i, ka, kb)) != eslOK) goto ERROR;
   }
   
   /* Finalize the band structure */
@@ -2547,6 +2563,131 @@ p7_kbands2gbands(int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
   if (bnd != NULL) p7_gbands_Destroy(bnd);
   *ret_bnd = NULL;
   return status;
+}
+
+/* Function: my_p7_GForwardBanded()
+ * Date:     EPN, Sun Mar 16 2026
+ * 
+ * Purpose:  Exact copy of p7_GForwardBanded() from HMMER.
+ *           Copied from hmmer/src/generic_fwdback_banded.c:p7_GForwardBanded()
+ *           GLOCAL mode only (entry at M_1, exit at M_M).
+ *           
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of sequence
+ *           gm     - profile
+ *           gxb    - banded DP matrix (contains P7_GBANDS structure)
+ *           opt_sc - optRETURN: Forward score in nats
+ *           
+ * Returns:  <eslOK> on success
+ */
+int
+my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+{
+  int         *bnd_ip = gxb->bnd->imem;          /* ptr to current ia, ib segment band in gxb->bnd */
+  int         *bnd_kp = gxb->bnd->kmem;		 /* ptr to current ka, kb row band in gxb->bnd     */
+  float       *dpc    = gxb->dp;	         /* ptr to current DP matrix cell */
+  float       *xpc    = gxb->xmx;		 /* ptr to current special cell   */
+  float const *tsc    = gm->tsc;		 /* sets up TSC() macro, access to profile's transitions */
+  float const *rsc;				 /* will be set up for MSC(), ISC() macros for residue scores */
+  float       *dpp;	                  	 /* ptr to previous DP matrix cell */
+  float       *last_dpc;			 /* used to reinitialize dpp after each row        */
+  int          ia, ib;				 /* current segment band is rows ia..ib            */
+  int          last_ib;				 /* intersegment interval is last_ib+1..ia-1       */
+  int          kac, kbc;			 /* current row band is kac..kbc                   */
+  int          kap, kbp;			 /* previous row band is kap..kbp                  */
+  int          kbc2;				 /* if kbc==M, kbc2=M-1, main loop goes kac..kbc2 and M is unrolled */
+  float        xE, xN, xJ, xB, xC;               /* tmp scores on special states. only stored when in row bands */
+  float        mvp, ivp, dvp;			 /* M,I,D cell values from previous row i-1     */
+  float        dc;				 /* precalculated D(i,k+1) value on current row */
+  float        sc;				 /* temporary score calculation M(i,k)          */
+  int          g, i, k;				 /* indices running over segments, residues (rows) x_i, model positions (cols) k  */
+  //float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  
+  xN      = 0.0f;
+  xJ      = -eslINFINITY;
+  xC      = -eslINFINITY;
+  last_ib = 0;
+
+  for (g = 0; g < gxb->bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      /* kap,kbp initialization for i=ia:
+       *  left overhang dpp advance must always eval to 0, 
+       *  {m,i,d}vp initialization must always eval to -eslINFINITY.
+       */
+      kap = kbp = gm->M+1;   
+      dpp = dpc;		/* re-initialize dpp */
+      
+      /* re-initialization: specials for previous row ia-1 just outside banded segment:  */
+      xE  = -eslINFINITY;
+      xN  = xN + (ia - last_ib - 1) * gm->xsc[p7P_N][p7P_LOOP];
+      xJ  = xJ + (ia - last_ib - 1) * gm->xsc[p7P_J][p7P_LOOP];
+      xB  = p7_FLogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+      xC  = xC + (ia - last_ib - 1) * gm->xsc[p7P_C][p7P_LOOP];
+
+      for (i = ia; i <= ib; i++)
+	{
+	  rsc      = gm->rsc[dsq[i]];   /* sets up MSC(k), ISC(k) residue scores for this row i */
+	  dc       = -eslINFINITY;
+	  xE       = -eslINFINITY;
+	  last_dpc = dpc;
+
+	  kac      = *bnd_kp++;         /* current row's band is cells k=kac..kbc  */
+	  kbc      = *bnd_kp++; 
+	  kbc2     = (kbc == gm->M ? kbc-1 : kbc); /* a "do_M" flag works too, but this way we avoid an if statement */
+
+	  /* dpp must advance by any left overhang of previous row; but no more than the entire row */
+	  dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) : 0);
+
+	  if (kac > kap && kac-1 <= kbp) { mvp = *dpp++;       ivp = *dpp++;       dvp = *dpp++;       }
+	  else                           { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+	  for (k = kac; k <= kbc2; k++)
+	    {
+	      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+						 p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+	      
+
+	      if (k >= kap && k <= kbp) {  mvp = *dpp++;       ivp = *dpp++;        dvp = *dpp++;       } 	      // an if seems unavoidable. alternatively, might unroll 
+	      else                      {  mvp = -eslINFINITY; ivp = -eslINFINITY;  dvp = -eslINFINITY; }	      // all possible (kap,kac)..(kbp,kbc) orderings, but this 
+                                                                                                                      // seems too complex
+
+	      *dpc++ = ISC(k) + p7_FLogsum( mvp + TSC(p7P_MI, k), ivp + TSC(p7P_II, k));
+
+	      //xE     = p7_FLogsum( p7_FLogsum(sc + esc, dc + esc), xE);/* Mk->E accumulation      */
+
+	      /* next D_k+1 */
+	      *dpc++ = dc;
+	      dc     = p7_FLogsum( sc + TSC(p7P_MD, k), dc + TSC(p7P_DD, k));	     
+	    }
+
+	  if (kbc2 < kbc) /* i.e., if kbc==M and we need to do the final M column: */
+	    {
+	      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+						 p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+	      *dpc++ = -eslINFINITY; 
+	      *dpc++ = dc;           
+	      xE     = p7_FLogsum( p7_FLogsum(sc, dc), xE);
+	    }
+
+	  *xpc++ = xE;
+	  *xpc++ = xN = xN + gm->xsc[p7P_N][p7P_LOOP];
+	  *xpc++ = xJ = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_LOOP],  xE + gm->xsc[p7P_E][p7P_MOVE]);
+	  *xpc++ = xB = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_MOVE],  xN + gm->xsc[p7P_N][p7P_MOVE]);
+	  *xpc++ = xC = p7_FLogsum( xE + gm->xsc[p7P_E][p7P_MOVE],  xC + gm->xsc[p7P_C][p7P_LOOP]);
+
+	  dpp = last_dpc;	/* this skips any right overhang on the previous row, so dpp advances (if necessary) to start of curr row */
+	  kap = kac;
+	  kbp = kbc;
+	}
+      last_ib = ib;
+    }
+
+  /* last_ib+1..L is outside any band segment, so it can only run through xC. */
+  if (opt_sc != NULL) *opt_sc = xC + (L-last_ib) *  gm->xsc[p7P_C][p7P_LOOP] + gm->xsc[p7P_C][p7P_MOVE];
+  return eslOK;
 }
 
 /* Function: p7_GBackwardBanded()
