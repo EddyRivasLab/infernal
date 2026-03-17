@@ -435,37 +435,6 @@ main(int argc, char **argv)
   if (status != eslOK) cm_Fail("Unbanded Backward failed\n");
   bck_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
   
-  /* Debug: print some unbanded Backward values for row L */
-  {
-    int L = sq->n;
-    printf("DEBUG unbanded Backward row L=%d:\n", L);
-    float *xmx = bck_gx->xmx;
-    float **dp  = bck_gx->dp;
-    
-    printf("  XMX(L,E)=%.4f\n", xmx[L * p7G_NXCELLS + p7G_E]);
-    for (int k = 1; k <= ESL_MIN(3, gm->M); k++) {
-      float Mk = dp[L][k * p7G_NSCELLS + p7G_M];
-      float Dk = dp[L][k * p7G_NSCELLS + p7G_D];
-      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, Mk, k, Dk);
-    }
-    for (int k = ESL_MAX(gm->M-2, 4); k <= gm->M; k++) {
-      float Mk = dp[L][k * p7G_NSCELLS + p7G_M];
-      float Dk = dp[L][k * p7G_NSCELLS + p7G_D];
-      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, Mk, k, Dk);
-    }
-    
-    /* Also print row L-1 */
-    printf("DEBUG unbanded Backward row L-1=%d:\n", L-1);
-    printf("  XMX(L-1,E)=%.4f, XMX(L-1,B)=%.4f\n", 
-           xmx[(L-1) * p7G_NXCELLS + p7G_E],
-           xmx[(L-1) * p7G_NXCELLS + p7G_B]);
-    for (int k = 1; k <= ESL_MIN(3, gm->M); k++) {
-      float Mk = dp[L-1][k * p7G_NSCELLS + p7G_M];
-      float Dk = dp[L-1][k * p7G_NSCELLS + p7G_D];
-      printf("  MMX(L-1,%d)=%.4f, DMX(L-1,%d)=%.4f\n", k, Mk, k, Dk);
-    }
-  }
-  
   /* Run banded Backward */
   t0 = clock();
   status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bx, &bbck_sc);
