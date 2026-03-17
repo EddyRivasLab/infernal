@@ -2814,12 +2814,14 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
              */
             dc = (kbc == gm->M) ? xE : -eslINFINITY;  /* dc starts as D(L,kbc2+1) */
             for (k = kbc2; k >= kac; k--) {
-              *(--dpc) = dc;              /* D(L,k) = value calculated in prev iteration */
-              *(--dpc) = -eslINFINITY;    /* I(L,k) = -inf */
-              *(--dpc) = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)); /* M(L,k) */
+              /* Calculate D(L,k) using D(L,k+1) which is in dc */
+              float dk = p7_FLogsum(xE + esc, dc + TSC(p7P_DD, k));
               
-              /* Calculate D(L,k-1) for next iteration, using D(L,k) we just stored */
-              dc = p7_FLogsum(xE + esc, dc + TSC(p7P_DD, k));
+              *(--dpc) = dk;                                          /* Store D(L,k) */
+              *(--dpc) = -eslINFINITY;                                /* Store I(L,k) = -inf */
+              *(--dpc) = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k));  /* Store M(L,k) using D(L,k+1) */
+              
+              dc = dk;  /* D(L,k) becomes D(L,k+1) for next iteration */
             }
 
             dpn = last_dpc;
@@ -2894,14 +2896,47 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
       next_ia = ia;
     }
 
-  /* Handle anything before the first segment (rows 0...first ia-1) */
-  /* At i=0, only N,B are reachable */
+  /* Handle row i=0: At i=0, only N,B are reachable 
+   * Following unbanded p7_GBackward() pattern */
   if (opt_sc != NULL) {
-    float final_score = xN;
+    float xB_0, xN_0;
+    float const *rsc = gm->rsc[dsq[1]];
+    
+    /* Account for N-loops from row next_ia-1 down to row 1 */
     if (next_ia > 1) {
-      final_score = final_score + (next_ia - 1) * gm->xsc[p7P_N][p7P_LOOP];
+      xN = xN + (next_ia - 1) * gm->xsc[p7P_N][p7P_LOOP];
     }
-    *opt_sc = final_score;
+    
+    /* Calculate B(0): sum over all M states in row 1 within bands
+     * B(0) = sum_k M(1,k) + TSC(BM,k-1) + MSC(k)
+     */
+    xB_0 = -eslINFINITY;
+    /* Find the bands for row i=1 (the first row after row 0) */
+    int k1min, k1max;
+    if (next_ia <= 1) {
+      /* Row 1 is in a segment, find its bands */
+      int *kp = gxb->bnd->kmem;  /* Start of band array */
+      k1min = kp[0];
+      k1max = kp[1];
+      
+      /* Sum over M(1,k) for k in band */
+      for (int k = k1min; k <= k1max; k++) {
+        if (k >= 1 && k <= gm->M) {
+          /* Access M(1,k) from the banded matrix */
+          int k_offset = (k - k1min) * p7G_NSCELLS;
+          float m1k = gxb->dp[k_offset + p7G_M];  /* M(1,k) */
+          xB_0 = p7_FLogsum(xB_0, m1k + TSC(p7P_BM, k-1) + MSC(k));
+        }
+      }
+    } else {
+      /* Row 1 is before any segment, so all M(1,k) = -inf, thus B(0) = -inf */
+      xB_0 = -eslINFINITY;
+    }
+    
+    /* Calculate N(0) = logsum(N(1) + N_LOOP, B(0) + N_MOVE) */
+    xN_0 = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB_0 + gm->xsc[p7P_N][p7P_MOVE]);
+    
+    *opt_sc = xN_0;
   }
 
   return eslOK;

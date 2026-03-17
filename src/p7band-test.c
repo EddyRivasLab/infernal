@@ -168,8 +168,8 @@ main(int argc, char **argv)
   printf("P7 objects created\n"); fflush(stdout);
   
   /* Convert CM's P7 HMM to a profile */
-  printf("Configuring P7 profile as LOCAL...\n"); fflush(stdout);
-  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_LOCAL)) != eslOK)
+  printf("Configuring P7 profile as GLOCAL...\n"); fflush(stdout);
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_GLOCAL)) != eslOK)
     cm_Fail("Failed to configure P7 profile\n");
   printf("P7 profile configured\n"); fflush(stdout);
   
@@ -215,18 +215,41 @@ main(int argc, char **argv)
     printf("#\n");
   }
   
-  /* Call the main banding function */
-  printf("Calling p7_Seq2Bands...\n"); fflush(stdout);
-  status = p7_Seq2Bands(cm, errbuf, gm, gx, bg, p7tr, sq->dsq, sq->n,
-                        phi, minscore, minlen, minend, 
-                        minmprob, minmcprob, maxiprob, maxilprob, pad,
-                        &i2k, &kmin, &kmax, &ncells);
-  printf("p7_Seq2Bands completed with status %d\n", status); fflush(stdout);
-  
-  if (status == eslEINCOMPAT) {
-    printf("# WARNING: MSV trace was discontiguous - all alignments removed\n");
-  } else if (status != eslOK) {
-    cm_Fail("p7_Seq2Bands() failed\n%s\n", errbuf);
+  /* TEMPORARY: Use full-width bands for testing */
+  if (1) {
+    /* Create full-width bands instead of using p7_Seq2Bands */
+    printf("Creating full-width bands (skipping p7_Seq2Bands)...\n"); fflush(stdout);
+    
+    /* Allocate arrays */
+    ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+    ESL_ALLOC(kmin, sizeof(int) * (sq->n + 1));
+    ESL_ALLOC(kmax, sizeof(int) * (sq->n + 1));
+    
+    /* Set full-width bands: all positions can align to all nodes */
+    for (i = 0; i <= sq->n; i++) {
+      i2k[i] = -1;  /* No MSV trace assignment */
+      kmin[i] = 1;
+      kmax[i] = cm->mlp7->M;
+    }
+    
+    ncells = sq->n * cm->mlp7->M;
+    status = eslOK;
+    
+    printf("Full-width bands created: %d cells\n", ncells); fflush(stdout);
+  } else {
+    /* Call the main banding function */
+    printf("Calling p7_Seq2Bands...\n"); fflush(stdout);
+    status = p7_Seq2Bands(cm, errbuf, gm, gx, bg, p7tr, sq->dsq, sq->n,
+                          phi, minscore, minlen, minend, 
+                          minmprob, minmcprob, maxiprob, maxilprob, pad,
+                          &i2k, &kmin, &kmax, &ncells);
+    printf("p7_Seq2Bands completed with status %d\n", status); fflush(stdout);
+    
+    if (status == eslEINCOMPAT) {
+      printf("# WARNING: MSV trace was discontiguous - all alignments removed\n");
+    } else if (status != eslOK) {
+      cm_Fail("p7_Seq2Bands() failed\n%s\n", errbuf);
+    }
   }
 
   /*********************************************** 
@@ -370,6 +393,28 @@ main(int argc, char **argv)
   t1 = clock();
   if (status != eslOK) cm_Fail("Unbanded Backward failed\n");
   bck_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
+  
+  /* Debug: print some unbanded Backward values for row L */
+  {
+    int L = sq->n;
+    printf("DEBUG unbanded Backward row L=%d:\n", L);
+    float *xmx = bck_gx->xmx;
+    float *dp  = bck_gx->dp;
+    #define MMX(i,k) (dp[(i)*gm->M*p7G_NSCELLS + (k)*p7G_NSCELLS + p7G_M])
+    #define DMX(i,k) (dp[(i)*gm->M*p7G_NSCELLS + (k)*p7G_NSCELLS + p7G_D])
+    #define XMX(i,s) (xmx[(i)*p7G_NXCELLS + (s)])
+    
+    printf("  XMX(L,E)=%.4f\n", XMX(L, p7G_E));
+    for (int k = 1; k <= ESL_MIN(3, gm->M); k++) {
+      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, MMX(L,k-1), k, DMX(L,k-1));
+    }
+    for (int k = ESL_MAX(gm->M-2, 4); k <= gm->M; k++) {
+      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, MMX(L,k-1), k, DMX(L,k-1));
+    }
+    #undef MMX
+    #undef DMX  
+   #undef XMX
+  }
   
   /* Run banded Backward */
   t0 = clock();
