@@ -2788,21 +2788,58 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
           /* Position dpn at the start of the next row's band */
           dpn -= (kbn-kan+1) * p7G_NSCELLS;
 
-          /* Calculate special states FIRST (they depend on next row i+1) */
-          if (i < L) {
-            /* B state: sum over all M states in next row */
-            xB = -eslINFINITY;
-            for (k = ESL_MAX(1,kan); k <= ESL_MIN(gm->M, kbn); k++) {
-              if (k >= kan && k <= kbn) {
-                int offset = (k - kan) * p7G_NSCELLS;
-                xB = p7_FLogsum(xB, dpn[offset] + TSC(p7P_BM, k-1) + (rsc ? MSC(k) : 0));
-              }
+          /* ROW L SPECIAL CASE: Initialize row L separately
+           * Following unbanded p7_GBackward() pattern where row L is
+           * initialized completely before main recursion.
+           */
+          if (i == L) {
+            /* Special states for row L */
+            *(--xpc) = xC;                       /* C */
+            *(--xpc) = xB = -eslINFINITY;        /* B */
+            *(--xpc) = xJ = -eslINFINITY;        /* J */
+            *(--xpc) = xN = -eslINFINITY;        /* N */
+            *(--xpc) = xE;                       /* E */
+
+            /* Initialize M_M, I_M, D_M */
+            if (kbc == gm->M) {
+              *(--dpc) = xE;              /* D_M <- E */
+              *(--dpc) = -eslINFINITY;    /* I_M (doesn't exist) */
+              *(--dpc) = xE;              /* M_M <- E */
             }
-            xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
-            xC = xC + gm->xsc[p7P_C][p7P_LOOP];
-            xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
-            xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+
+            /* Backwards sweep through k from M-1 (or kbc2) down to kac
+             * Row L formula: MMX(L,k) = p7_FLogsum(xE + esc, DMX(L,k+1) + TSC(p7P_MD,k))
+             *                DMX(L,k) = p7_FLogsum(xE + esc, DMX(L,k+1) + TSC(p7P_DD,k))
+             *                IMX(L,k) = -eslINFINITY
+             */
+            dc = (kbc == gm->M) ? xE : -eslINFINITY;  /* dc starts as D(L,kbc2+1) */
+            for (k = kbc2; k >= kac; k--) {
+              *(--dpc) = dc;              /* D(L,k) = value calculated in prev iteration */
+              *(--dpc) = -eslINFINITY;    /* I(L,k) = -inf */
+              *(--dpc) = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)); /* M(L,k) */
+              
+              /* Calculate D(L,k-1) for next iteration, using D(L,k) we just stored */
+              dc = p7_FLogsum(xE + esc, dc + TSC(p7P_DD, k));
+            }
+
+            dpn = last_dpc;
+            kan = kac;
+            kbn = kbc;
+            continue;  /* Skip normal row processing */
           }
+
+          /* NORMAL ROW (i < L): Calculate special states that depend on next row i+1 */
+          xB = -eslINFINITY;
+          for (k = ESL_MAX(1,kan); k <= ESL_MIN(gm->M, kbn); k++) {
+            if (k >= kan && k <= kbn) {
+              int offset = (k - kan) * p7G_NSCELLS;
+              xB = p7_FLogsum(xB, dpn[offset] + TSC(p7P_BM, k-1) + (rsc ? MSC(k) : 0));
+            }
+          }
+          xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+          xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+          xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+          xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
 
           /* Store special states */
           *(--xpc) = xC;
@@ -2811,7 +2848,7 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
           *(--xpc) = xN;
           *(--xpc) = xE;
 
-          /* Handle M state: M_M gets E state */
+          /* Handle M_M state: M_M gets E state */
           if (kbc == gm->M) {
             *(--dpc) = xE;              /* D_M */
             *(--dpc) = -eslINFINITY;    /* I_M (doesn't exist) */
@@ -2823,7 +2860,7 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
           for (k = kbc2; k >= kac; k--)
             {
               /* Get scores from next row i+1 */
-              if (i < L && k+1 >= kan && k+1 <= kbn) {
+              if (k+1 >= kan && k+1 <= kbn) {
                 int offset = (k+1 - kan) * p7G_NSCELLS;
                 mnext = dpn[offset]   + (rsc ? MSC(k+1) : 0);
                 dnext = dpn[offset+2];
