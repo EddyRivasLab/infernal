@@ -215,29 +215,42 @@ main(int argc, char **argv)
     printf("#\n");
   }
   
-  /* TEMPORARY: Use full-width bands for testing */
+  /* Create test bands (full-width or manually narrowed based on pad) */
   if (1) {
-    /* Create full-width bands instead of using p7_Seq2Bands */
-    printf("Creating full-width bands (skipping p7_Seq2Bands)...\n"); fflush(stdout);
+    /* Create bands with optional narrowing based on pad parameter */
+    if (pad < (cm->mlp7->M / 2)) {
+      printf("Creating narrow bands with pad=%d...\n", pad); fflush(stdout);
+    } else {
+      printf("Creating full-width bands (pad=%d covers full model)...\n", pad); fflush(stdout);
+    }
     
     /* Allocate arrays */
     ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
     ESL_ALLOC(kmin, sizeof(int) * (sq->n + 1));
     ESL_ALLOC(kmax, sizeof(int) * (sq->n + 1));
     
-    /* Set full-width bands: all positions can align to all nodes */
+    /* Set bands: constrained by pad around a simple diagonal i->k mapping */
+    ncells = 0;
     for (i = 0; i <= sq->n; i++) {
-      i2k[i] = -1;  /* No MSV trace assignment */
-      kmin[i] = 1;
-      kmax[i] = cm->mlp7->M;
+      /* Map sequence position i to model position k along a diagonal */
+      int k_center = (i * cm->mlp7->M) / sq->n;  /* Simple proportional mapping */
+      if (k_center < 1) k_center = 1;
+      if (k_center > cm->mlp7->M) k_center = cm->mlp7->M;
+      
+      i2k[i] = k_center;
+      kmin[i] = ESL_MAX(1, k_center - pad);
+      kmax[i] = ESL_MIN(cm->mlp7->M, k_center + pad);
+      
+      /* Count cells in bands */
+      if (i > 0) ncells += (kmax[i] - kmin[i] + 1);
     }
     
-    ncells = sq->n * cm->mlp7->M;
     status = eslOK;
-    
-    printf("Full-width bands created: %d cells\n", ncells); fflush(stdout);
+    int full_cells = sq->n * cm->mlp7->M;
+    printf("Bands created: %d cells (%.1f%% of full matrix)\n",
+           ncells, (100.0 * ncells) / full_cells); fflush(stdout);
   } else {
-    /* Call the main banding function */
+    /* Call the main banding function (requires MSV trace) */
     printf("Calling p7_Seq2Bands...\n"); fflush(stdout);
     status = p7_Seq2Bands(cm, errbuf, gm, gx, bg, p7tr, sq->dsq, sq->n,
                           phi, minscore, minlen, minend, 
