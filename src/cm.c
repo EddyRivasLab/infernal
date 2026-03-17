@@ -4262,15 +4262,17 @@ cm_ExpectedStateOccupancy(CM_t *cm)
   char  ***tmap = NULL;  /* transition map */
   float  **t_copy = NULL;  /* copy of transition probabilities */
   double *psi = NULL;
-  double tol = 0.001;
+  double tol = 0.002;
   /* tol is difference from 1.0 we allow for summed psi of split set states
    * it is larger for really big models, 
-   * tolerance is (clen/PSI_LEN_THRESHOLD) * 0.001, with minimum of 0.001 
-   * so it's 0.001 unless clen > PSI_LEN_THRESHOLD (15000)
-   * (from v1.1 to v1.1.4 it was 0.001 for all models)
+   * tolerance is (clen/PSI_LEN_THRESHOLD) * 0.002, with minimum of 0.002
+   * so it's 0.002 unless clen > PSI_LEN_THRESHOLD (15000)
+   * From v1.1 to v1.1.4 it was 0.001 for all models.
+   * In v1.1.5 the tol was 0.001, I doubled it to 0.002 before 1.1.6
+   * because it was failing for large >35Kb viral genome models
    */
   if(cm->clen > PSI_LEN_THRESHOLD) { 
-    tol = ((float) cm->clen / PSI_LEN_THRESHOLD) * 0.001;
+    tol = ((float) cm->clen / PSI_LEN_THRESHOLD) * 0.002;
   }
 
   /* make a copy of the CM transitions */
