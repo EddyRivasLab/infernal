@@ -54,6 +54,7 @@ static ESL_OPTIONS options[] = {
   { "--maxiprob",   eslARG_REAL,   "1.0",  NULL, "0<=x<=1", NULL,  NULL,  NULL,      "maximum insert state probability",                            0 },
   { "--maxilprob",  eslARG_REAL,   "1.0",  NULL, "0<=x<=1", NULL,  NULL,  NULL,      "maximum insert state probability to left",                    0 },
   { "--phi",        eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "calculate and use phi (occupancy) probabilities for pruning", 0 },
+  { "--fullseq",    eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "use full-width bands (kmin=1, kmax=M for all i); skip MSV",   0 },
   { "--dump",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "dump the bands (i, i2k, kmin, kmax) to stdout",              0 },
   { "--verbose",    eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "verbose output",                                              0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -112,6 +113,7 @@ main(int argc, char **argv)
   float  maxiprob  = esl_opt_GetReal   (go, "--maxiprob");
   float  maxilprob = esl_opt_GetReal   (go, "--maxilprob");
   int    do_phi    = esl_opt_GetBoolean(go, "--phi");
+  int    do_fullseq= esl_opt_GetBoolean(go, "--fullseq");
   int    do_dump   = esl_opt_GetBoolean(go, "--dump");
   int    be_verbose= esl_opt_GetBoolean(go, "--verbose");
 
@@ -215,36 +217,41 @@ main(int argc, char **argv)
     printf("#\n");
   }
   
-  /* Create test bands (full-width or manually narrowed based on pad) */
-  if (1) {
-    /* Create bands with optional narrowing based on pad parameter */
+  /* Create bands: full-width (--fullseq), diagonal+pad (default for testing), or MSV-derived */
+  if (do_fullseq) {
+    /* Full-width bands: all positions can align to all nodes */
+    printf("Creating full-width bands (kmin=1, kmax=M for all i)...\n"); fflush(stdout);
+    ESL_ALLOC(i2k,  sizeof(int) * (sq->n + 1));
+    ESL_ALLOC(kmin, sizeof(int) * (sq->n + 1));
+    ESL_ALLOC(kmax, sizeof(int) * (sq->n + 1));
+    for (i = 0; i <= sq->n; i++) {
+      i2k[i]  = -1;
+      kmin[i] = 1;
+      kmax[i] = cm->mlp7->M;
+    }
+    ncells = sq->n * cm->mlp7->M;
+    status = eslOK;
+    printf("Full-width bands: %d cells\n", ncells); fflush(stdout);
+  } else if (1) {
+    /* Diagonal+pad bands: simple proportional mapping of i->k, constrained by pad */
     if (pad < (cm->mlp7->M / 2)) {
       printf("Creating narrow bands with pad=%d...\n", pad); fflush(stdout);
     } else {
       printf("Creating full-width bands (pad=%d covers full model)...\n", pad); fflush(stdout);
     }
-    
-    /* Allocate arrays */
-    ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+    ESL_ALLOC(i2k,  sizeof(int) * (sq->n + 1));
     ESL_ALLOC(kmin, sizeof(int) * (sq->n + 1));
     ESL_ALLOC(kmax, sizeof(int) * (sq->n + 1));
-    
-    /* Set bands: constrained by pad around a simple diagonal i->k mapping */
     ncells = 0;
     for (i = 0; i <= sq->n; i++) {
-      /* Map sequence position i to model position k along a diagonal */
-      int k_center = (i * cm->mlp7->M) / sq->n;  /* Simple proportional mapping */
-      if (k_center < 1) k_center = 1;
-      if (k_center > cm->mlp7->M) k_center = cm->mlp7->M;
-      
-      i2k[i] = k_center;
-      kmin[i] = ESL_MAX(1, k_center - pad);
-      kmax[i] = ESL_MIN(cm->mlp7->M, k_center + pad);
-      
-      /* Count cells in bands */
+      int k_center = (i * cm->mlp7->M) / sq->n;
+      if (k_center < 1)             k_center = 1;
+      if (k_center > cm->mlp7->M)  k_center = cm->mlp7->M;
+      i2k[i]  = k_center;
+      kmin[i] = ESL_MAX(1,             k_center - pad);
+      kmax[i] = ESL_MIN(cm->mlp7->M,  k_center + pad);
       if (i > 0) ncells += (kmax[i] - kmin[i] + 1);
     }
-    
     status = eslOK;
     int full_cells = sq->n * cm->mlp7->M;
     printf("Bands created: %d cells (%.1f%% of full matrix)\n",

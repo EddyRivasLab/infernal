@@ -2639,7 +2639,7 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
 	  kbc2     = (kbc == gm->M ? kbc-1 : kbc); /* a "do_M" flag works too, but this way we avoid an if statement */
 
 	  /* dpp must advance by any left overhang of previous row; but no more than the entire row */
-	  dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) : 0);
+	  dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
 
 	  if (kac > kap && kac-1 <= kbp) { mvp = *dpp++;       ivp = *dpp++;       dvp = *dpp++;       }
 	  else                           { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
