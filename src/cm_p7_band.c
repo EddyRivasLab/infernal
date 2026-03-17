@@ -2785,9 +2785,6 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
           kac      = *(--bnd_kp);
           kbc2     = (kbc == gm->M ? kbc-1 : kbc);
 
-          /* Position dpn at the start of the next row's band */
-          dpn -= (kbn-kan+1) * p7G_NSCELLS;
-
           /* ROW L SPECIAL CASE: Initialize row L separately
            * Following unbanded p7_GBackward() pattern where row L is
            * initialized completely before main recursion.
@@ -2800,11 +2797,19 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
             *(--xpc) = xN = -eslINFINITY;        /* N */
             *(--xpc) = xE;                       /* E */
 
+            if (getenv("P7BAND_DEBUG")) {
+              printf("DEBUG Banded: RowL init: xE=%.4f, xC=%.4f, esc=%.4f\n", xE, xC, esc);
+              printf("DEBUG Banded: RowL: kac=%d, kbc=%d, kbc2=%d, M=%d\n", kac, kbc, kbc2, gm->M);
+            }
+
             /* Initialize M_M, I_M, D_M */
             if (kbc == gm->M) {
               *(--dpc) = xE;              /* D_M <- E */
               *(--dpc) = -eslINFINITY;    /* I_M (doesn't exist) */
               *(--dpc) = xE;              /* M_M <- E */
+              if (getenv("P7BAND_DEBUG")) {
+                printf("DEBUG Banded: RowL k=M=%d: M=%.4f, I=-inf, D=%.4f\n", gm->M, xE, xE);
+              }
             }
 
             /* Backwards sweep through k from M-1 (or kbc2) down to kac
@@ -2816,28 +2821,72 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
             for (k = kbc2; k >= kac; k--) {
               /* Calculate D(L,k) using D(L,k+1) which is in dc */
               float dk = p7_FLogsum(xE + esc, dc + TSC(p7P_DD, k));
+              float mk = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k));
               
               *(--dpc) = dk;                                          /* Store D(L,k) */
               *(--dpc) = -eslINFINITY;                                /* Store I(L,k) = -inf */
-              *(--dpc) = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k));  /* Store M(L,k) using D(L,k+1) */
+              *(--dpc) = mk;                                          /* Store M(L,k) using D(L,k+1) */
+              
+              if (getenv("P7BAND_DEBUG") && (k <= kac+2 || k >= kbc2-2)) {
+                printf("DEBUG Banded: RowL k=%d: M=%.4f, I=-inf, D=%.4f (dc=%.4f, TSC_MD=%.4f, TSC_DD=%.4f)\n",
+                       k, mk, dk, dc, TSC(p7P_MD,k), TSC(p7P_DD,k));
+              }
               
               dc = dk;  /* D(L,k) becomes D(L,k+1) for next iteration */
             }
+          
+          /* Debug output for complete row L */
+          if (getenv("P7BAND_DEBUG")) {
+            printf("DEBUG Banded Backward row i=%d:\n", L);
+            printf("  XMX(%d,E)=%.4f\n", L, xE);
+            float *rowstart = dpc;  /* dpc points to start of row L after loop */
+            /* Print first 3 and last 3 M,D values */
+            for (k = kac; k <= ESL_MIN(kac+2, kbc); k++) {
+              int offset = (k - kac) * p7G_NSCELLS;
+              printf("  MMX(%d,%d)=%.4f, DMX(%d,%d)=%.4f\n", 
+                     L, k, rowstart[offset], L, k, rowstart[offset+2]);
+            }
+            if (kbc > kac+2) {
+              for (k = ESL_MAX(kbc-2, kac+3); k <= kbc; k++) {
+                int offset = (k - kac) * p7G_NSCELLS;
+                printf("  MMX(%d,%d)=%.4f, DMX(%d,%d)=%.4f\n", 
+                       L, k, rowstart[offset], L, k, rowstart[offset+2]);
+              }
+            }
+          }
 
-            dpn = last_dpc;
+            dpn = dpc;  /* dpn now points to start of row L for row L-1 to read from */
             kan = kac;
             kbn = kbc;
             continue;  /* Skip normal row processing */
           }
 
           /* NORMAL ROW (i < L): Calculate special states that depend on next row i+1 */
+          if (getenv("P7BAND_DEBUG") && (i == 1 || i == L-1)) {
+            printf("DEBUG Banded: Row i=%d (normal): kan=%d, kbn=%d, rsc=%p\n", 
+                   i, kan, kbn, (void*)rsc);
+            printf("DEBUG Banded: Row i=%d: Computing xB from row i+1=%d\n", i, i+1);
+            printf("DEBUG Banded: Row i=%d: dpn pointer = dp + %ld\n", i, (long)(dpn - gxb->dp));
+          }
+          
           xB = -eslINFINITY;
           for (k = ESL_MAX(1,kan); k <= ESL_MIN(gm->M, kbn); k++) {
             if (k >= kan && k <= kbn) {
               int offset = (k - kan) * p7G_NSCELLS;
-              xB = p7_FLogsum(xB, dpn[offset] + TSC(p7P_BM, k-1) + (rsc ? MSC(k) : 0));
+              float m_next = dpn[offset];  /* M(i+1,k) */
+              float contrib = m_next + TSC(p7P_BM, k-1) + (rsc ? MSC(k) : 0);
+              if (getenv("P7BAND_DEBUG") && (i == 1 || i == L-1) && k <= 3) {
+                printf("DEBUG Banded: Row i=%d, k=%d: offset=%d, M(i+1,k)=%.4f, TSC_BM=%.4f, MSC=%.4f, contrib=%.4f\n",
+                       i, k, offset, m_next, TSC(p7P_BM,k-1), (rsc ? MSC(k) : 0), contrib);
+              }
+              xB = p7_FLogsum(xB, contrib);
             }
           }
+          
+          if (getenv("P7BAND_DEBUG") && (i == 1 || i == L-1)) {
+            printf("DEBUG Banded: Row i=%d: xB=%.4f\n", i, xB);
+          }
+          
           xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
           xC = xC + gm->xsc[p7P_C][p7P_LOOP];
           xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
@@ -2858,7 +2907,8 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
           }
 
           /* Main recursion: work backwards through k = kbc2...kac */
-          dc = -eslINFINITY;
+          /* Initialize dc to D(i,M): if kbc == M, then D(i,M) = xE; otherwise -inf */
+          dc = (kbc == gm->M) ? xE : -eslINFINITY;
           for (k = kbc2; k >= kac; k--)
             {
               /* Get scores from next row i+1 */
@@ -2876,20 +2926,114 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
                 mnext = inext = dnext = -eslINFINITY;
               }
 
-              /* D(i,k) */
-              *(--dpc) = dc;
-              dc = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_DM, k), dnext + TSC(p7P_DD, k)),
-                             xE + esc);
+              if (getenv("P7BAND_DEBUG") && i == L-1 && k == 1) {
+                printf("\nDEBUG BANDED: Computing M(%d,%d):\n", i, k);
+                printf("  kan=%d, kbn=%d (next row bands)\n", kan, kbn);
+                printf("  k+1=%d, checking if k+1 >= kan && k+1 <= kbn: %d >= %d && %d <= %d = %s\n",
+                       k+1, k+1, kan, k+1, kbn, (k+1 >= kan && k+1 <= kbn) ? "YES" : "NO");
+                printf("  XMX(i,E) = xE = %.8f\n", xE);
+                printf("  esc = %.8f\n", esc);
+                printf("  DMX(i,k+1) = dc = %.8f\n", dc);
+                printf("  TSC(MM,%d) = %.8f\n", k, TSC(p7P_MM,k));
+                printf("  TSC(MI,%d) = %.8f\n", k, TSC(p7P_MI,k));
+                printf("  TSC(MD,%d) = %.8f\n", k, TSC(p7P_MD,k));
+                if (k+1 >= kan && k+1 <= kbn) {
+                  int offset = (k+1 - kan) * p7G_NSCELLS;
+                  printf("  offset for k+1=%d: (%d - %d) * 3 = %d\n", k+1, k+1, kan, offset);
+                  printf("  MMX(i+1,k+1) = dpn[%d] = %.8f\n", offset, dpn[offset]);
+                  printf("  MSC(%d) = %.8f\n", k+1, rsc ? MSC(k+1) : 0);
+                  printf("  mnext = M(i+1,k+1) + MSC(k+1) = %.8f + %.8f = %.8f\n",
+                         dpn[offset], (rsc ? MSC(k+1) : 0), mnext);
+                  printf("  DNX(i+1,k+1) = dpn[%d] = %.8f\n", offset+2, dnext);
+                  printf("  Path M->M: %.8f + %.8f + %.8f = %.8f\n",
+                         dpn[offset], TSC(p7P_MM,k), (rsc ? MSC(k+1) : 0), 
+                         mnext + TSC(p7P_MM,k));
+                  
+                  if (k >= kan && k <= kbn) {
+                    int curr_offset = (k - kan) * p7G_NSCELLS;
+                    printf("  curr_offset for k=%d: (%d - %d) * 3 = %d\n", k, k, kan, curr_offset);
+                    printf("  IMX(i+1,k) = dpn[%d] = %.8f\n", curr_offset+1, dpn[curr_offset+1]);
+                    printf("  ISC(%d) = %.8f\n", k, rsc ? ISC(k) : 0);
+                    printf("  inext = I(i+1,k) + ISC(k) = %.8f + %.8f = %.8f\n",
+                           dpn[curr_offset+1], (rsc ? ISC(k) : 0), inext);
+                    printf("  Path I->M: %.8f + %.8f + %.8f = %.8f\n",
+                           dpn[curr_offset+1], TSC(p7P_MI,k), (rsc ? ISC(k) : 0),
+                           inext + TSC(p7P_MI,k));
+                  }
+                }
+                printf("  Path E->M: %.8f + %.8f = %.8f\n",
+                       xE, esc, xE + esc);
+                printf("  Path D->M: %.8f + %.8f = %.8f\n",
+                       dc, TSC(p7P_MD,k), dc + TSC(p7P_MD,k));
+              }
+
+              /* D(i,k) - compute BEFORE storing 
+               * D(i,k) = logsum(M(i+1,k+1) + TSC(DM,k) + MSC(k+1),
+               *                 D(i,k+1) + TSC(DD,k),
+               *                 xE + esc)
+               * Note: D(i,k+1) is in dc from previous iteration!
+               */
+              float dk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_DM, k), dc + TSC(p7P_DD, k)),
+                                    xE + esc);
+              
+              if (getenv("P7BAND_DEBUG") && i == L-1 && (k == 2 || k == 3 || k == 98)) {
+                printf("\nDEBUG BANDED: Computing D(%d,%d):\n", i, k);
+                printf("  mnext (M(i+1,k+1) + MSC(k+1)) = %.8f\n", mnext);
+                printf("  dc (D(i,k+1) from prev iter) = %.8f\n", dc);
+                printf("  dnext (D(i+1,k+1)) = %.8f [NOT USED for DD transition!]\n", dnext);
+                printf("  TSC(DM,%d) = %.8f\n", k, TSC(p7P_DM,k));
+                printf("  TSC(DD,%d) = %.8f\n", k, TSC(p7P_DD,k));
+                printf("  xE=%.8f, esc=%.8f\n", xE, esc);
+                printf("  Path M->D: %.8f + %.8f = %.8f\n", 
+                       mnext, TSC(p7P_DM,k), mnext + TSC(p7P_DM,k));
+                printf("  Path D->D: %.8f + %.8f = %.8f\n",
+                       dc, TSC(p7P_DD,k), dc + TSC(p7P_DD,k));
+                printf("  Path E->D: %.8f + %.8f = %.8f\n",
+                       xE, esc, xE + esc);
+                printf("  RESULT: D(%d,%d) = %.8f\n\n", i, k, dk);
+              }
+
+              *(--dpc) = dk;   /* Store D(i,k) */
 
               /* I(i,k) */
               *(--dpc) = p7_FLogsum(mnext + TSC(p7P_IM, k), inext + TSC(p7P_II, k));
 
-              /* M(i,k) */
-              *(--dpc) = sc = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
+              /* M(i,k) - uses dc which is D(i,k+1) from previous iteration */
+              float mk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
                                         p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)));
+              *(--dpc) = sc = mk;
+              
+              /* Update dc for next iteration */
+              dc = dk;
+              
+              if (getenv("P7BAND_DEBUG") && i == L-1 && k == 1) {
+                printf("  RESULT: M(%d,%d) = %.8f\n\n", i, k, mk);
+              }
             }
+          
+          /* Debug output for complete rows L and L-1 */
+          if (getenv("P7BAND_DEBUG") && (i == L || i == L-1)) {
+            printf("DEBUG Banded Backward row i=%d:\n", i);
+            printf("  XMX(%d,E)=%.4f\n", i, xE);
+            if (i == L-1) printf("  XMX(%d,B)=%.4f\n", i, xB);
+            float *rowstart = dpc;  /* dpc points to start of current row after loop */
+            for (k = kac; k <= kbc; k++) {
+              int offset = (k - kac) * p7G_NSCELLS;
+              printf("  MMX(%d,%d)=%.4f, DMX(%d,%d)=%.4f\n", 
+                     i, k, rowstart[offset], i, k, rowstart[offset+2]);
+              if (k >= 3 && k <= kac+2) break;  /* Print first 3 values */
+            }
+            /* Print last 3 values */
+            for (k = (kbc >= 3 ? kbc-2 : kac); k <= kbc; k++) {
+              if (k > kac+2) {  /* Don't reprint if already printed */
+                int offset = (k - kac) * p7G_NSCELLS;
+                printf("  MMX(%d,%d)=%.4f, DMX(%d,%d)=%.4f\n", 
+                       i, k, rowstart[offset], i, k, rowstart[offset+2]);
+              }
+            }
+          }
 
-          dpn = last_dpc;
+          dpn = dpc;  /* dpn now points to start of row i we just wrote, for next iteration's i-1 to read from */
           kan = kac;
           kbn = kbc;
         }

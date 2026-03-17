@@ -385,6 +385,47 @@ main(int argc, char **argv)
     /* Check first few DP cells */
     printf("#   First few bx->dp values: %.4f, %.4f, %.4f\n", 
            bx->dp[0], bx->dp[1], bx->dp[2]);
+    
+    /* Compare Forward matrices to verify banded storage access */
+    int L = sq->n;
+    int M = gm->M;
+    printf("\n# DEBUG: Comparing Forward matrices (row 1, first 5 k values)\n");
+    printf("# Note: With full-width bands, row i starts at dp[(i-1)*M*3]\n");
+    for (int k = 1; k <= ESL_MIN(5, M); k++) {
+      float M_u = fwd_gx->dp[1][k * p7G_NSCELLS + p7G_M];
+      float I_u = fwd_gx->dp[1][k * p7G_NSCELLS + p7G_I];
+      float D_u = fwd_gx->dp[1][k * p7G_NSCELLS + p7G_D];
+      
+      /* For banded with full-width bands:
+       * Row 1 (i=1) starts at dp[0], row 2 at dp[M*3], row 3 at dp[2*M*3], etc.
+       * Within row i, node k is at: (i-1)*M*3 + (k-1)*3
+       * But k in bands is relative to kmin, so for k=1..M with kmin=1: offset is (k-1)*3
+       */
+      int row_start = 0;  /* Row 1 starts at dp[0] */
+      float M_b = bx->dp[row_start + (k-1) * p7G_NSCELLS + p7G_M];
+      float I_b = bx->dp[row_start + (k-1) * p7G_NSCELLS + p7G_I];
+      float D_b = bx->dp[row_start + (k-1) * p7G_NSCELLS + p7G_D];
+      
+      printf("#  FWD Row 1, k=%d: M: %.4f vs %.4f (diff %.4f), I: %.4f vs %.4f, D: %.4f vs %.4f\n",
+             k, M_u, M_b, M_u-M_b, I_u, I_b, D_u, D_b);
+    }
+    
+    /* Check row L too */
+    printf("# Comparing Forward row L=%d (last 3 k values)\n", L);
+    int L_row_start = (L-1) * M * p7G_NSCELLS;
+    for (int k = M-2; k <= M; k++) {
+      float M_u = fwd_gx->dp[L][k * p7G_NSCELLS + p7G_M];
+      float I_u = fwd_gx->dp[L][k * p7G_NSCELLS + p7G_I];
+      float D_u = fwd_gx->dp[L][k * p7G_NSCELLS + p7G_D];
+      
+      float M_b = bx->dp[L_row_start + (k-1) * p7G_NSCELLS + p7G_M];
+      float I_b = bx->dp[L_row_start + (k-1) * p7G_NSCELLS + p7G_I];
+      float D_b = bx->dp[L_row_start + (k-1) * p7G_NSCELLS + p7G_D];
+      
+      printf("#  FWD Row L, k=%d: M: %.4f vs %.4f (diff %.4f), I: %.4f vs %.4f, D: %.4f vs %.4f\n",
+             k, M_u, M_b, M_u-M_b, I_u, I_b, D_u, D_b);
+    }
+    printf("\n");
   }
   
   /* Run unbanded Backward (reference) */
@@ -399,21 +440,30 @@ main(int argc, char **argv)
     int L = sq->n;
     printf("DEBUG unbanded Backward row L=%d:\n", L);
     float *xmx = bck_gx->xmx;
-    float *dp  = bck_gx->dp;
-    #define MMX(i,k) (dp[(i)*gm->M*p7G_NSCELLS + (k)*p7G_NSCELLS + p7G_M])
-    #define DMX(i,k) (dp[(i)*gm->M*p7G_NSCELLS + (k)*p7G_NSCELLS + p7G_D])
-    #define XMX(i,s) (xmx[(i)*p7G_NXCELLS + (s)])
+    float **dp  = bck_gx->dp;
     
-    printf("  XMX(L,E)=%.4f\n", XMX(L, p7G_E));
+    printf("  XMX(L,E)=%.4f\n", xmx[L * p7G_NXCELLS + p7G_E]);
     for (int k = 1; k <= ESL_MIN(3, gm->M); k++) {
-      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, MMX(L,k-1), k, DMX(L,k-1));
+      float Mk = dp[L][k * p7G_NSCELLS + p7G_M];
+      float Dk = dp[L][k * p7G_NSCELLS + p7G_D];
+      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, Mk, k, Dk);
     }
     for (int k = ESL_MAX(gm->M-2, 4); k <= gm->M; k++) {
-      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, MMX(L,k-1), k, DMX(L,k-1));
+      float Mk = dp[L][k * p7G_NSCELLS + p7G_M];
+      float Dk = dp[L][k * p7G_NSCELLS + p7G_D];
+      printf("  MMX(L,%d)=%.4f, DMX(L,%d)=%.4f\n", k, Mk, k, Dk);
     }
-    #undef MMX
-    #undef DMX  
-   #undef XMX
+    
+    /* Also print row L-1 */
+    printf("DEBUG unbanded Backward row L-1=%d:\n", L-1);
+    printf("  XMX(L-1,E)=%.4f, XMX(L-1,B)=%.4f\n", 
+           xmx[(L-1) * p7G_NXCELLS + p7G_E],
+           xmx[(L-1) * p7G_NXCELLS + p7G_B]);
+    for (int k = 1; k <= ESL_MIN(3, gm->M); k++) {
+      float Mk = dp[L-1][k * p7G_NSCELLS + p7G_M];
+      float Dk = dp[L-1][k * p7G_NSCELLS + p7G_D];
+      printf("  MMX(L-1,%d)=%.4f, DMX(L-1,%d)=%.4f\n", k, Mk, k, Dk);
+    }
   }
   
   /* Run banded Backward */
@@ -422,6 +472,66 @@ main(int argc, char **argv)
   t1 = clock();
   if (status != eslOK) cm_Fail("Banded Backward failed\n");
   bbck_time = (double)(t1 - t0) / CLOCKS_PER_SEC;
+  
+  /* Debug: Compare unbanded and banded Backward matrices */
+  if (be_verbose) {
+    int L = sq->n;
+    int M = gm->M;
+    printf("\n# DEBUG: Comparing Backward matrices (unbanded vs banded)\n");
+    
+    /* Compare special states for a few rows */
+    printf("# Special states:\n");
+    for (int i = 0; i <= ESL_MIN(2, L); i++) {
+      float xE_u = bck_gx->xmx[i * p7G_NXCELLS + p7G_E];
+      float xN_u = bck_gx->xmx[i * p7G_NXCELLS + p7G_N];
+      float xJ_u = bck_gx->xmx[i * p7G_NXCELLS + p7G_J];
+      float xB_u = bck_gx->xmx[i * p7G_NXCELLS + p7G_B];
+      float xC_u = bck_gx->xmx[i * p7G_NXCELLS + p7G_C];
+      
+      float xE_b = bx->xmx[i * p7G_NXCELLS + p7G_E];
+      float xN_b = bx->xmx[i * p7G_NXCELLS + p7G_N];
+      float xJ_b = bx->xmx[i * p7G_NXCELLS + p7G_J];
+      float xB_b = bx->xmx[i * p7G_NXCELLS + p7G_B];
+      float xC_b = bx->xmx[i * p7G_NXCELLS + p7G_C];
+      
+      printf("#  Row %d: xE: %.4f vs %.4f (diff %.4f), xB: %.4f vs %.4f (diff %.4f)\n",
+             i, xE_u, xE_b, xE_u-xE_b, xB_u, xB_b, xB_u-xB_b);
+      printf("#         xN: %.4f vs %.4f (diff %.4f), xJ: %.4f vs %.4f, xC: %.4f vs %.4f\n",
+             xN_u, xN_b, xN_u-xN_b, xJ_u, xJ_b, xC_u, xC_b);
+    }
+    
+    /* Compare row L - unbanded uses 2D array dp[i][k*p7G_NSCELLS+s] */
+    printf("# Row L=%d:\n", L);
+    for (int k = 1; k <= ESL_MIN(5, M); k++) {
+      float M_u = bck_gx->dp[L][k * p7G_NSCELLS + p7G_M];
+      float I_u = bck_gx->dp[L][k * p7G_NSCELLS + p7G_I];
+      float D_u = bck_gx->dp[L][k * p7G_NSCELLS + p7G_D];
+      
+      /* Banded uses 1D array indexed as [i*M*p7G_NSCELLS + k*p7G_NSCELLS + s] */
+      float M_b = bx->dp[L * M * p7G_NSCELLS + k * p7G_NSCELLS + p7G_M];
+      float I_b = bx->dp[L * M * p7G_NSCELLS + k * p7G_NSCELLS + p7G_I];
+      float D_b = bx->dp[L * M * p7G_NSCELLS + k * p7G_NSCELLS + p7G_D];
+      
+      printf("#  k=%d: M: %.4f vs %.4f (diff %.4f), D: %.4f vs %.4f (diff %.4f)\n",
+             k, M_u, M_b, M_u-M_b, D_u, D_b, D_u-D_b);
+    }
+    
+    /* Compare row 1 */
+    printf("# Row 1:\n");
+    for (int k = 1; k <= ESL_MIN(5, M); k++) {
+      float M_u = bck_gx->dp[1][k * p7G_NSCELLS + p7G_M];
+      float I_u = bck_gx->dp[1][k * p7G_NSCELLS + p7G_I];
+      float D_u = bck_gx->dp[1][k * p7G_NSCELLS + p7G_D];
+      
+      float M_b = bx->dp[1 * M * p7G_NSCELLS + k * p7G_NSCELLS + p7G_M];
+      float I_b = bx->dp[1 * M * p7G_NSCELLS + k * p7G_NSCELLS + p7G_I];
+      float D_b = bx->dp[1 * M * p7G_NSCELLS + k * p7G_NSCELLS + p7G_D];
+      
+      printf("#  k=%d: M: %.4f vs %.4f (diff %.4f), I: %.4f vs %.4f, D: %.4f vs %.4f\n",
+             k, M_u, M_b, M_u-M_b, I_u, I_b, D_u, D_b);
+    }
+    printf("\n");
+  }
   
   /* Compare scores */
   float fwd_diff = fwd_sc - bfwd_sc;
