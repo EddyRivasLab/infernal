@@ -587,32 +587,34 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
  * Synopsis:  Banded version of p7_domaindef_GlocalByPosteriorHeuristics().
  * Incept:    EPN, Wed Mar 18 2026
  *
- * Purpose:   Step 1 banded domaindef: for do_aln=FALSE, do_null2=FALSE,
- *            with a unihit (UNILOCAL/UNIGLOCAL) profile.
+ * Purpose:   Banded domaindef for unihit profiles. Hardcodes one domain
+ *            spanning 1..sq->n; sets envsc=fwdsc directly.
  *
- *            For the --trmF5 --fullseqF5 --noali --p7band use case,
- *            the profile Tgm is UNILOCAL and the sequence is the full
- *            window (i=1..L). Since the profile was not reconfigured
- *            between the F4 banded Forward and the domain rescore, the
- *            rescore envsc equals fwdsc directly.  We skip the full
- *            domain decoding / region-finding machinery and hardcode
- *            one domain spanning the full sequence.
+ *            When do_aln=TRUE, runs banded posterior decoding, OA DP,
+ *            and OA traceback to produce an alignment display. The
+ *            gxfb and gxbb matrices are overwritten (gxbb -> posteriors,
+ *            gxfb -> OA scores).
  *
- *            Limitation: Only correct for unihit profiles (no J states)
- *            where the single domain spans 1..sq->n.  The caller is
- *            responsible for enforcing this (currently only called from
- *            the --trmF5 --fullseqF5 --noali banded path).
+ *            When do_aln=FALSE, skips alignment (Step 1 --noali path).
  *
  * Returns:   <eslOK> on success.
  *            <eslEINCONCEIVABLE> if profile is not unihit.
  */
 int
 p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm,
+                                                P7_OPROFILE *om,
                                                 P7_GMXB *gxfb, P7_GMXB *gxbb,
-                                                float fwdsc, P7_DOMAINDEF *ddef)
+                                                float fwdsc, P7_DOMAINDEF *ddef,
+                                                int do_aln)
 {
   P7_DOMAIN *dom   = NULL;
+  float      oasc  = 0.0f;
   int        status;
+
+  /* banded functions declared in cm_p7_band.c */
+  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
 
   if (p7_IsMulti(gm->mode)) return eslEINCONCEIVABLE;
 
@@ -621,6 +623,19 @@ p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm
   ddef->nexpected = 1.0;
   ddef->nregions  = 1;
   ddef->nenvelopes++;
+
+  if (do_aln) {
+    /* Banded posterior decoding: gxbb overwritten with posteriors */
+    if ((status = p7_GDecodingBanded(gm, gxfb, gxbb, gxbb, fwdsc)) != eslOK) return status;
+
+    /* Banded OA fill: gxfb overwritten with OA scores */
+    if ((status = p7_GOptimalAccuracyBanded(gm, gxbb, gxfb, &oasc)) != eslOK) return status;
+
+    /* Banded OA traceback */
+    if ((status = p7_GOATraceBanded(gm, gxbb, gxfb, ddef->tr)) != eslOK) return status;
+
+    /* No coordinate adjustment needed: domain is 1..L, offset = 0 */
+  }
 
   /* Grow dcl[] if needed */
   if (ddef->ndom == ddef->nalloc) {
@@ -634,13 +649,13 @@ p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm
   dom->jenv          = sq->n;
   dom->envsc         = fwdsc;   /* in NATS; same as rescore Forward since profile not reconfigured */
   dom->domcorrection = 0.0;     /* no null2 */
-  dom->oasc          = 0.0;     /* no OA alignment */
+  dom->oasc          = oasc;
   dom->dombias       = 0.0;
   dom->bitscore      = 0.0;
   dom->lnP           = 1.0;
   dom->is_reported   = FALSE;
   dom->is_included   = FALSE;
-  dom->ad            = NULL;
+  dom->ad            = (do_aln ? p7_alidisplay_Create(ddef->tr, 0, om, sq, NULL) : NULL);
   dom->iali          = 1;
   dom->jali          = sq->n;
 

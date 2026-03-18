@@ -29,7 +29,7 @@
 extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 extern int p7_GBackwardBanded (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
-extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef);
+extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
 
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
@@ -3451,24 +3451,15 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	/* no length reconfiguration necessary */
 	if(pli->do_p7band && pli->gxfb != NULL) {
 	  /* Banded F5: run banded Backward and banded domaindef.
-	   * Only supported with --noali (do_aln=FALSE); if do_aln=TRUE, fall back to unbanded.
+	   * Supports both do_aln=TRUE (OA alignment) and do_aln=FALSE (--noali).
 	   */
-	  if(do_aln) {
-	    /* do_aln=TRUE requires OA alignment; banded domaindef not yet implemented for this.
-	     * Fall back: run unbanded Backward then unbanded domaindef. */
-	    p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
-	    p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
-	    if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK)
-	      ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
-	  } else {
-	    if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
-	    if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
-	    if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Tgm, pli->gxbb, &bcksc)) != eslOK)
-	      ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
-	    if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Tgm, pli->gxfb, pli->gxbb, fwdsc, pli->ddef)) != eslOK)
-	      ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
-	    p7_gbands_Destroy(bnd); bnd = NULL;
-	  }
+	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
+	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
+	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Tgm, pli->gxbb, &bcksc)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Tgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
+	  p7_gbands_Destroy(bnd); bnd = NULL;
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);

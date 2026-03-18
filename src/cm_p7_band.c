@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <float.h>
 #include <assert.h>
 
 #include "easel.h"
@@ -2969,4 +2970,559 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
   }
 
   return eslOK;
+}
+
+
+/* Function: p7_GDecodingBanded()
+ * Date:     EPN, Wed Mar 18 2026
+ *
+ * Purpose:  Banded posterior decoding. Given Forward and Backward banded
+ *           matrices <fwd> and <bck> (both using the same P7_GBANDS),
+ *           calculate posterior probabilities for each (i,k) cell.
+ *
+ *           <bck> may be overwritten with posteriors (pass bck == pp).
+ *           <fwd> is read-only (needs fwd xmx at row i-1 for N/J/C).
+ *
+ * Args:     gm         - profile
+ *           fwd        - banded Forward matrix
+ *           bck        - banded Backward matrix
+ *           pp         - RESULT: banded posterior matrix (may == bck)
+ *           overall_sc - Forward score in nats (fwdsc)
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
+		   P7_GMXB *pp, float overall_sc)
+{
+  int         *bnd_ip = fwd->bnd->imem;
+  int         *bnd_kp = fwd->bnd->kmem;
+  float const *fwd_dp = fwd->dp;
+  float const *bck_dp = bck->dp;
+  float       *pp_dp  = pp->dp;
+  float const *fwd_xp = fwd->xmx;
+  float const *bck_xp = bck->xmx;
+  float       *pp_xp  = pp->xmx;
+  int          ia, ib;
+  int          last_ib;
+  int          kac, kbc;
+  int          M = gm->M;
+  float        fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+  float        denom;
+  int          g, i, k;
+  int          nk;
+
+  fwd_xN_prev = 0.0f;
+  fwd_xJ_prev = -eslINFINITY;
+  fwd_xC_prev = -eslINFINITY;
+  last_ib     = 0;
+
+  for (g = 0; g < fwd->bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      /* Handle gap before this segment: advance prev specials through gap.
+       * Guard against 0*(-inf)=NaN.
+       */
+      { int gap = ia - last_ib - 1;
+        if (gap > 0) {
+	  fwd_xN_prev = fwd_xN_prev + gap * gm->xsc[p7P_N][p7P_LOOP];
+	  fwd_xJ_prev = fwd_xJ_prev + gap * gm->xsc[p7P_J][p7P_LOOP];
+	  fwd_xC_prev = fwd_xC_prev + gap * gm->xsc[p7P_C][p7P_LOOP];
+	}
+      }
+
+      for (i = ia; i <= ib; i++)
+	{
+	  kac = *bnd_kp++;
+	  kbc = *bnd_kp++;
+	  denom = 0.0f;
+
+	  for (k = kac; k <= kbc; k++)
+	    {
+	      /* M posterior */
+	      *pp_dp = expf(*fwd_dp + *bck_dp - overall_sc);
+	      denom += *pp_dp;
+	      pp_dp++; fwd_dp++; bck_dp++;
+
+	      /* I posterior */
+	      if (k < M) {
+		*pp_dp = expf(*fwd_dp + *bck_dp - overall_sc);
+		denom += *pp_dp;
+	      } else {
+		*pp_dp = 0.0f;
+	      }
+	      pp_dp++; fwd_dp++; bck_dp++;
+
+	      /* D posterior = 0 (D doesn't emit) */
+	      *pp_dp = 0.0f;
+	      pp_dp++; fwd_dp++; bck_dp++;
+	    }
+
+	  /* Special states: E=0, B=0; N/J/C use fwd(i-1) and bck(i) */
+	  pp_xp[p7G_E] = 0.0f;
+
+	  pp_xp[p7G_N] = expf(fwd_xN_prev + bck_xp[p7G_N] + gm->xsc[p7P_N][p7P_LOOP] - overall_sc);
+	  if (! isfinite(pp_xp[p7G_N])) pp_xp[p7G_N] = 0.0f;  /* guard NaN from -inf + -inf */
+	  denom += pp_xp[p7G_N];
+
+	  pp_xp[p7G_J] = expf(fwd_xJ_prev + bck_xp[p7G_J] + gm->xsc[p7P_J][p7P_LOOP] - overall_sc);
+	  if (! isfinite(pp_xp[p7G_J])) pp_xp[p7G_J] = 0.0f;
+	  denom += pp_xp[p7G_J];
+
+	  pp_xp[p7G_B] = 0.0f;
+
+	  pp_xp[p7G_C] = expf(fwd_xC_prev + bck_xp[p7G_C] + gm->xsc[p7P_C][p7P_LOOP] - overall_sc);
+	  if (! isfinite(pp_xp[p7G_C])) pp_xp[p7G_C] = 0.0f;
+	  denom += pp_xp[p7G_C];
+
+	  /* Row normalization */
+	  if (denom > 0.0f) {
+	    denom = 1.0f / denom;
+	    nk = (kbc - kac + 1);
+	    { float *p = pp_dp - nk * p7G_NSCELLS;
+	      for (k = kac; k <= kbc; k++) {
+		*p++ *= denom; /* M */
+		*p++ *= denom; /* I */
+		p++;           /* D stays 0 */
+	      }
+	    }
+	    pp_xp[p7G_N] *= denom;
+	    pp_xp[p7G_J] *= denom;
+	    pp_xp[p7G_C] *= denom;
+	  }
+
+	  /* Save current row's fwd specials as prev for next row */
+	  fwd_xN_prev = fwd_xp[p7G_N];
+	  fwd_xJ_prev = fwd_xp[p7G_J];
+	  fwd_xC_prev = fwd_xp[p7G_C];
+
+	  fwd_xp += p7G_NXCELLS;
+	  bck_xp += p7G_NXCELLS;
+	  pp_xp  += p7G_NXCELLS;
+	}
+      last_ib = ib;
+    }
+  return eslOK;
+}
+
+
+/* Function: p7_GOptimalAccuracyBanded()
+ * Date:     EPN, Wed Mar 18 2026
+ *
+ * Purpose:  Banded optimal accuracy DP fill. Same structure as banded
+ *           Forward, but uses ESL_MAX instead of p7_FLogsum, and adds
+ *           posterior probability as an accuracy reward for emitting states.
+ *
+ * Args:     gm    - profile
+ *           pp    - banded posterior matrix (from p7_GDecodingBanded)
+ *           gx    - RESULT: banded OA DP matrix (may share banding with pp)
+ *           ret_e - RETURN: OA score (expected # correct residues)
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
+			  P7_GMXB *gx, float *ret_e)
+{
+  /* TSCDELTA: 1.0 if transition is possible, FLT_MIN if not */
+#define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
+
+  int         *bnd_ip  = gx->bnd->imem;
+  int         *bnd_kp  = gx->bnd->kmem;
+  float       *dpc     = gx->dp;
+  float       *xpc     = gx->xmx;
+  float const *tsc     = gm->tsc;
+  float const *pp_dp;
+  float const *pp_xp   = pp->xmx;
+  float       *dpp;
+  float       *last_dpc;
+  int          ia, ib;
+  int          last_ib;
+  int          kac, kbc;
+  int          kap, kbp;
+  int          kbc2;
+  float        xE, xN, xJ, xB, xC;
+  float        mvp, ivp, dvp;
+  float        dc;
+  float        sc;
+  float        pp_m;
+  int          g, i, k;
+  int          M = gm->M;
+  float        esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  float        t1, t2;
+
+  xN      = 0.0f;
+  xJ      = -eslINFINITY;
+  xC      = -eslINFINITY;
+  last_ib = 0;
+  pp_dp   = pp->dp;
+
+  for (g = 0; g < gx->bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      kap = kbp = M + 1;
+      dpp = dpc;
+
+      /* Re-init specials for gap before this segment.
+       * In OA, N(i) = t1*(N(i-1) + pp_N(i)). For rows outside bands,
+       * pp_N is not stored, but for UNILOCAL N_LOOP=-inf so t1=FLT_MIN
+       * and the N contribution goes to ~0 anyway. Just mark as -inf for gap>0.
+       */
+      xE = -eslINFINITY;
+      { int gap = ia - last_ib - 1;
+	if (gap > 0) {
+	  xN = -eslINFINITY;
+	  xJ = -eslINFINITY;
+	  xC = -eslINFINITY;
+	}
+      }
+      xB = ESL_MAX( ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f) * xN,
+		     ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f) * xJ);
+
+      for (i = ia; i <= ib; i++)
+	{
+	  dc       = -eslINFINITY;
+	  xE       = -eslINFINITY;
+	  last_dpc = dpc;
+
+	  kac = *bnd_kp++;
+	  kbc = *bnd_kp++;
+	  kbc2 = (kbc == M ? kbc - 1 : kbc);
+
+	  /* dpp advance for left overhang */
+	  dpp += (kac - 1 > kap ? ESL_MIN(kac - kap - 1, kbp - kap + 1) * p7G_NSCELLS : 0);
+
+	  if (kac > kap && kac - 1 <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+	  else                              { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+	  for (k = kac; k <= kbc2; k++)
+	    {
+	      pp_m = *pp_dp;  /* pp_M(i,k) */
+
+	      /* M(i,k) = max(transitions) + pp_M(i,k) */
+	      *dpc++ = sc = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, k-1) * (mvp + pp_m),
+					    TSCDELTA(p7P_IM, k-1) * (ivp + pp_m)),
+				    ESL_MAX(TSCDELTA(p7P_DM, k-1) * (dvp + pp_m),
+					    TSCDELTA(p7P_BM, k-1) * (xB  + pp_m)));
+
+	      if (k >= kap && k <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+	      else                      { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+	      /* I(i,k) = max(transitions) + pp_I(i,k) */
+	      *dpc++ = ESL_MAX(TSCDELTA(p7P_MI, k) * (mvp + pp_dp[1]),
+			       TSCDELTA(p7P_II, k) * (ivp + pp_dp[1]));
+
+	      /* E update from M(i,k) */
+	      xE = ESL_MAX(xE, esc * sc);
+
+	      /* D(i,k) — no pp reward */
+	      *dpc++ = dc;
+	      dc = ESL_MAX(TSCDELTA(p7P_MD, k) * sc,
+			   TSCDELTA(p7P_DD, k) * dc);
+
+	      pp_dp += p7G_NSCELLS;
+	    }
+
+	  if (kbc2 < kbc) /* kbc == M: unrolled last node */
+	    {
+	      pp_m = *pp_dp;
+
+	      *dpc++ = sc = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, k-1) * (mvp + pp_m),
+					    TSCDELTA(p7P_IM, k-1) * (ivp + pp_m)),
+				    ESL_MAX(TSCDELTA(p7P_DM, k-1) * (dvp + pp_m),
+					    TSCDELTA(p7P_BM, k-1) * (xB  + pp_m)));
+	      *dpc++ = -eslINFINITY; /* no I_M */
+	      *dpc++ = dc;           /* D_M */
+
+	      /* E update: M_M and D_M always exit to E (no esc penalty at k=M) */
+	      xE = ESL_MAX(xE, ESL_MAX(sc, dc));
+
+	      pp_dp += p7G_NSCELLS;
+	    }
+
+	  /* Special states */
+	  *xpc++ = xE;
+
+	  t1 = ((gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xN = t1 * (xN + pp_xp[p7G_N]);
+
+	  t1 = ((gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  t2 = ((gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xJ = ESL_MAX(t1 * (xJ + pp_xp[p7G_J]), t2 * xE);
+
+	  t1 = ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  t2 = ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xB = ESL_MAX(t1 * xN, t2 * xJ);
+
+	  t1 = ((gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  t2 = ((gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xC = ESL_MAX(t1 * (xC + pp_xp[p7G_C]), t2 * xE);
+
+	  pp_xp += p7G_NXCELLS;
+	  dpp = last_dpc;
+	  kap = kac;
+	  kbp = kbc;
+	}
+      last_ib = ib;
+    }
+
+  if (ret_e != NULL) *ret_e = xC;
+  return eslOK;
+
+#undef TSCDELTA
+}
+
+
+/* Function: p7_GOATraceBanded()
+ * Date:     EPN, Wed Mar 18 2026
+ *
+ * Purpose:  Banded OA traceback. Traces back through banded OA matrix
+ *           to find the optimal accuracy alignment path.
+ *
+ *           Builds a lookup table for random access into the banded
+ *           matrices, then runs the same traceback logic as p7_GOATrace().
+ *
+ * Args:     gm  - profile
+ *           pp  - banded posterior matrix
+ *           gx  - banded OA DP matrix
+ *           tr  - RESULT: OA trace (caller provides, possibly via Reuse)
+ *
+ * Returns:  eslOK on success.
+ *           eslEMEM on allocation failure.
+ */
+int
+p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
+		  P7_TRACE *tr)
+{
+#define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
+
+  float const *tsc = gm->tsc;
+  P7_GBANDS   *bnd = gx->bnd;
+  int          L    = bnd->L;
+  int          M    = gm->M;
+  int          nrow = bnd->nrow;
+
+  /* Lookup tables for random access */
+  int64_t *dp_off  = NULL;   /* dp offset for each banded row */
+  int     *ka_arr  = NULL;   /* band ka for each banded row */
+  int     *kb_arr  = NULL;   /* band kb for each banded row */
+  int     *row_idx = NULL;   /* seq pos i -> banded row index r (-1 if outside) */
+
+  int      i, k, r, g;
+  int      ia, ib;
+  int     *ip, *kp;
+  int64_t  cum;
+  float    postprob;
+  int      sprv, scur;
+  int      status;
+
+  /* Allocate lookup tables */
+  ESL_ALLOC(dp_off,  sizeof(int64_t) * nrow);
+  ESL_ALLOC(ka_arr,  sizeof(int)     * nrow);
+  ESL_ALLOC(kb_arr,  sizeof(int)     * nrow);
+  ESL_ALLOC(row_idx, sizeof(int)     * (L + 1));
+
+  /* Fill lookup tables */
+  kp  = bnd->kmem;
+  cum = 0;
+  for (r = 0; r < nrow; r++) {
+    ka_arr[r]  = *kp++;
+    kb_arr[r]  = *kp++;
+    dp_off[r]  = cum;
+    cum       += (int64_t)(kb_arr[r] - ka_arr[r] + 1) * p7G_NSCELLS;
+  }
+
+  for (i = 0; i <= L; i++) row_idx[i] = -1;
+  ip = bnd->imem;
+  r  = 0;
+  for (g = 0; g < bnd->nseg; g++) {
+    ia = *ip++;
+    ib = *ip++;
+    for (i = ia; i <= ib; i++)
+      row_idx[i] = r++;
+  }
+
+  /* --- Helper macros for banded cell access --- */
+#define GXB_M(gxb, i, k) \
+  ( ((i) >= 0 && (i) <= L && row_idx[(i)] >= 0 && (k) >= ka_arr[row_idx[(i)]] && (k) <= kb_arr[row_idx[(i)]]) \
+    ? (gxb)->dp[dp_off[row_idx[(i)]] + ((k) - ka_arr[row_idx[(i)]]) * p7G_NSCELLS + p7G_M] \
+    : -eslINFINITY )
+
+#define GXB_I(gxb, i, k) \
+  ( ((i) >= 0 && (i) <= L && row_idx[(i)] >= 0 && (k) >= ka_arr[row_idx[(i)]] && (k) <= kb_arr[row_idx[(i)]]) \
+    ? (gxb)->dp[dp_off[row_idx[(i)]] + ((k) - ka_arr[row_idx[(i)]]) * p7G_NSCELLS + p7G_I] \
+    : -eslINFINITY )
+
+#define GXB_D(gxb, i, k) \
+  ( ((i) >= 0 && (i) <= L && row_idx[(i)] >= 0 && (k) >= ka_arr[row_idx[(i)]] && (k) <= kb_arr[row_idx[(i)]]) \
+    ? (gxb)->dp[dp_off[row_idx[(i)]] + ((k) - ka_arr[row_idx[(i)]]) * p7G_NSCELLS + p7G_D] \
+    : -eslINFINITY )
+
+  /* For xmx at i=0: OA fill initializes N(0)=0, B(0)=0, E/C/J(0)=-inf.
+   * Row 0 is not in the banded matrix, so return these initial values directly.
+   */
+#define GXB_XMX(gxb, i, s) \
+  ( ((i) == 0) \
+    ? (((s) == p7G_N || (s) == p7G_B) ? 0.0f : -eslINFINITY) \
+    : (((i) > 0 && (i) <= L && row_idx[(i)] >= 0) \
+       ? (gxb)->xmx[row_idx[(i)] * p7G_NXCELLS + (s)] \
+       : -eslINFINITY) )
+
+  /* --- Traceback --- */
+  i = L;
+  k = 0;
+
+  if ((status = p7_trace_AppendWithPP(tr, p7T_T, k, i, 0.0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_AppendWithPP(tr, p7T_C, k, i, 0.0)) != eslOK) goto ERROR;
+
+  sprv = p7T_C;
+  while (sprv != p7T_S)
+    {
+      switch (sprv) {
+
+      case p7T_M: /* select_m: which state was predecessor of M(i,k)? */
+	{
+	  float path[4];
+	  int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+	  path[0] = TSCDELTA(p7P_MM, k-1) * GXB_M(gx, i-1, k-1);
+	  path[1] = TSCDELTA(p7P_IM, k-1) * GXB_I(gx, i-1, k-1);
+	  path[2] = TSCDELTA(p7P_DM, k-1) * GXB_D(gx, i-1, k-1);
+	  path[3] = TSCDELTA(p7P_BM, k-1) * GXB_XMX(gx, i-1, p7G_B);
+	  scur = state[esl_vec_FArgMax(path, 4)];
+	  k--; i--;
+	}
+	break;
+
+      case p7T_D: /* select_d */
+	{
+	  float path[2];
+	  path[0] = TSCDELTA(p7P_MD, k-1) * GXB_M(gx, i, k-1);
+	  path[1] = TSCDELTA(p7P_DD, k-1) * GXB_D(gx, i, k-1);
+	  scur = (path[0] >= path[1]) ? p7T_M : p7T_D;
+	  k--;
+	}
+	break;
+
+      case p7T_I: /* select_i */
+	{
+	  float path[2];
+	  path[0] = TSCDELTA(p7P_MI, k) * GXB_M(gx, i-1, k);
+	  path[1] = TSCDELTA(p7P_II, k) * GXB_I(gx, i-1, k);
+	  scur = (path[0] >= path[1]) ? p7T_M : p7T_I;
+	  i--;
+	}
+	break;
+
+      case p7T_N: /* select_n */
+	scur = (i == 0) ? p7T_S : p7T_N;
+	break;
+
+      case p7T_C: /* select_c */
+	{
+	  float t1c = ((gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  float t2c = ((gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  float path[2];
+	  path[0] = t1c * (GXB_XMX(gx, i-1, p7G_C) + GXB_XMX(pp, i, p7G_C));
+	  path[1] = t2c *  GXB_XMX(gx, i, p7G_E);
+	  scur = (path[0] > path[1]) ? p7T_C : p7T_E;
+	}
+	break;
+
+      case p7T_J: /* select_j */
+	{
+	  float t1j = ((gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  float t2j = ((gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  float path[2];
+	  path[0] = t1j * (GXB_XMX(gx, i-1, p7G_J) + GXB_XMX(pp, i, p7G_J));
+	  path[1] = t2j *  GXB_XMX(gx, i, p7G_E);
+	  scur = (path[0] > path[1]) ? p7T_J : p7T_E;
+	}
+	break;
+
+      case p7T_E: /* select_e: which k did E come from? */
+	{
+	  float max  = -eslINFINITY;
+	  int   smax = -1;
+	  int   kmax = -1;
+	  int   ri   = row_idx[i];
+
+	  if (! p7_profile_IsLocal(gm)) {
+	    k = M;
+	    scur = (GXB_M(gx, i, M) >= GXB_D(gx, i, M)) ? p7T_M : p7T_D;
+	  } else {
+	    if (ri >= 0) {
+	      int ka = ka_arr[ri], kb = kb_arr[ri];
+	      for (k = ka; k <= kb; k++) {
+		float mv = GXB_M(gx, i, k);
+		float dv = GXB_D(gx, i, k);
+		if (mv >= max) { max = mv; smax = p7T_M; kmax = k; }
+		if (dv >  max) { max = dv; smax = p7T_D; kmax = k; }
+	      }
+	    }
+	    k    = kmax;
+	    scur = smax;
+	  }
+	}
+	break;
+
+      case p7T_B: /* select_b */
+	{
+	  float t1b = ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  float t2b = ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  float path[2];
+	  path[0] = t1b * GXB_XMX(gx, i, p7G_N);
+	  path[1] = t2b * GXB_XMX(gx, i, p7G_J);
+	  scur = (path[0] > path[1]) ? p7T_N : p7T_J;
+	}
+	break;
+
+      default:
+	ESL_EXCEPTION(eslEINVAL, "bogus state in traceback");
+      }
+
+      if (scur == -1) ESL_EXCEPTION(eslEINVAL, "OA banded traceback choice failed");
+
+      /* get_postprob */
+      switch (scur) {
+      case p7T_M: postprob = GXB_M(pp, i, k);                                      break;
+      case p7T_I: postprob = GXB_I(pp, i, k);                                      break;
+      case p7T_N: postprob = (scur == sprv) ? GXB_XMX(pp, i, p7G_N) : 0.0f;       break;
+      case p7T_C: postprob = (scur == sprv) ? GXB_XMX(pp, i, p7G_C) : 0.0f;       break;
+      case p7T_J: postprob = (scur == sprv) ? GXB_XMX(pp, i, p7G_J) : 0.0f;       break;
+      default:    postprob = 0.0f;                                                  break;
+      }
+
+      if ((status = p7_trace_AppendWithPP(tr, scur, k, i, postprob)) != eslOK) goto ERROR;
+
+      /* For NCJ self-loops, defer i decrement */
+      if ((scur == p7T_N || scur == p7T_J || scur == p7T_C) && scur == sprv) i--;
+      sprv = scur;
+    }
+
+  tr->M = M;
+  tr->L = L;
+  status = p7_trace_Reverse(tr);
+
+  free(dp_off);
+  free(ka_arr);
+  free(kb_arr);
+  free(row_idx);
+  return status;
+
+ ERROR:
+  if (dp_off)  free(dp_off);
+  if (ka_arr)  free(ka_arr);
+  if (kb_arr)  free(kb_arr);
+  if (row_idx) free(row_idx);
+  return status;
+
+#undef TSCDELTA
+#undef GXB_M
+#undef GXB_I
+#undef GXB_D
+#undef GXB_XMX
 }
