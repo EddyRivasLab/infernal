@@ -2501,7 +2501,7 @@ P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
 }
 
 /* Function: p7_kbands2gbands()
- * Date:     EPN, Sun Mar 16 2026
+ * Date:     EPN*, Sun Mar 16 2026
  * 
  * Purpose:  Convert k-indexed bands (kmin[i], kmax[i]) to HMMER's 
  *           i-indexed P7_GBANDS structure. 
@@ -2568,7 +2568,7 @@ p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_b
 }
 
 /* Function: my_p7_GForwardBanded()
- * Date:     EPN, Sun Mar 16 2026
+ * Date:     EPN*, Sun Mar 16 2026
  * 
  * Purpose:  Exact copy of p7_GForwardBanded() from HMMER.
  *           Copied from hmmer/src/generic_fwdback_banded.c:p7_GForwardBanded()
@@ -2700,7 +2700,7 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
 }
 
 /* Function: p7_GBackwardBanded()
- * Date:     EPN, Sun Mar 16 2026
+ * Date:     EPN*, Sun Mar 16 2026
  * 
  * Purpose:  Banded Backward algorithm for P7 profile HMMs.
  *           Adapted from Sean Eddy's p7_GForwardBanded() in 
@@ -2974,7 +2974,7 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
 
 
 /* Function: p7_GDecodingBanded()
- * Date:     EPN, Wed Mar 18 2026
+ * Date:     EPN*, Wed Mar 18 2026
  *
  * Purpose:  Banded posterior decoding. Given Forward and Backward banded
  *           matrices <fwd> and <bck> (both using the same P7_GBANDS),
@@ -3109,7 +3109,7 @@ p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
 
 
 /* Function: p7_GOptimalAccuracyBanded()
- * Date:     EPN, Wed Mar 18 2026
+ * Date:     EPN*, Wed Mar 18 2026
  *
  * Purpose:  Banded optimal accuracy DP fill. Same structure as banded
  *           Forward, but uses ESL_MAX instead of p7_FLogsum, and adds
@@ -3278,7 +3278,7 @@ p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
 
 
 /* Function: p7_GOATraceBanded()
- * Date:     EPN, Wed Mar 18 2026
+ * Date:     EPN*, Wed Mar 18 2026
  *
  * Purpose:  Banded OA traceback. Traces back through banded OA matrix
  *           to find the optimal accuracy alignment path.

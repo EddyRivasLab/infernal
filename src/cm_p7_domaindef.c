@@ -585,7 +585,7 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
 
 /* Function:  p7_domaindef_GlocalByPosteriorHeuristics_Banded()
  * Synopsis:  Banded version of p7_domaindef_GlocalByPosteriorHeuristics().
- * Incept:    EPN, Wed Mar 18 2026
+ * Incept:    EPN*, Wed Mar 18 2026
  *
  * Purpose:   Banded domaindef for unihit profiles. Hardcodes one domain
  *            spanning 1..sq->n; sets envsc=fwdsc directly.
