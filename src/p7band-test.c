@@ -55,6 +55,7 @@ static ESL_OPTIONS options[] = {
   { "--maxilprob",  eslARG_REAL,   "1.0",  NULL, "0<=x<=1", NULL,  NULL,  NULL,      "maximum insert state probability to left",                    0 },
   { "--phi",        eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "calculate and use phi (occupancy) probabilities for pruning", 0 },
   { "--fullseq",    eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "use full-width bands (kmin=1, kmax=M for all i); skip MSV",   0 },
+  { "--diagonal",   eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "use diagonal+pad bands (proportional i->k mapping); skip MSV", 0 },
   { "--dump",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "dump the bands (i, i2k, kmin, kmax) to stdout",              0 },
   { "--verbose",    eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,  NULL,      "verbose output",                                              0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -113,7 +114,8 @@ main(int argc, char **argv)
   float  maxiprob  = esl_opt_GetReal   (go, "--maxiprob");
   float  maxilprob = esl_opt_GetReal   (go, "--maxilprob");
   int    do_phi    = esl_opt_GetBoolean(go, "--phi");
-  int    do_fullseq= esl_opt_GetBoolean(go, "--fullseq");
+  int    do_fullseq   = esl_opt_GetBoolean(go, "--fullseq");
+  int    do_diagonal  = esl_opt_GetBoolean(go, "--diagonal");
   int    do_dump   = esl_opt_GetBoolean(go, "--dump");
   int    be_verbose= esl_opt_GetBoolean(go, "--verbose");
 
@@ -169,9 +171,9 @@ main(int argc, char **argv)
   p7tr = p7_trace_Create();
   printf("P7 objects created\n"); fflush(stdout);
   
-  /* Convert CM's P7 HMM to a profile */
-  printf("Configuring P7 profile as GLOCAL...\n"); fflush(stdout);
-  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_GLOCAL)) != eslOK)
+  /* Convert CM's P7 HMM to a profile - LOCAL for MSV/band derivation */
+  printf("Configuring P7 profile as LOCAL (for MSV/band derivation)...\n"); fflush(stdout);
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_LOCAL)) != eslOK)
     cm_Fail("Failed to configure P7 profile\n");
   printf("P7 profile configured\n"); fflush(stdout);
   
@@ -217,7 +219,7 @@ main(int argc, char **argv)
     printf("#\n");
   }
   
-  /* Create bands: full-width (--fullseq), diagonal+pad (default for testing), or MSV-derived */
+  /* Create bands: full-width (--fullseq), diagonal+pad (--diagonal), or MSV-derived (default) */
   if (do_fullseq) {
     /* Full-width bands: all positions can align to all nodes */
     printf("Creating full-width bands (kmin=1, kmax=M for all i)...\n"); fflush(stdout);
@@ -232,7 +234,7 @@ main(int argc, char **argv)
     ncells = sq->n * cm->mlp7->M;
     status = eslOK;
     printf("Full-width bands: %d cells\n", ncells); fflush(stdout);
-  } else if (1) {
+  } else if (do_diagonal) {
     /* Diagonal+pad bands: simple proportional mapping of i->k, constrained by pad */
     if (pad < (cm->mlp7->M / 2)) {
       printf("Creating narrow bands with pad=%d...\n", pad); fflush(stdout);
@@ -272,7 +274,12 @@ main(int argc, char **argv)
     }
   }
 
-  /*********************************************** 
+  /* Reconfigure profile as GLOCAL for banded Forward/Backward */
+  printf("Reconfiguring P7 profile as GLOCAL (for banded DP)...\n"); fflush(stdout);
+  if ((status = p7_ProfileConfig(cm->mlp7, bg, gm, sq->n, p7_GLOCAL)) != eslOK)
+    cm_Fail("Failed to reconfigure P7 profile as GLOCAL\n");
+
+  /***********************************************
    * Calculate and display statistics
    ***********************************************/
   
