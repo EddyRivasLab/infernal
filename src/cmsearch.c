@@ -224,6 +224,7 @@ static ESL_OPTIONS options[] = {
   { "--trmF5",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,    NULL, /* see ** above */ "terminate after Stage 5 env def and output surviving envelopes", 106 },
   { "--fullseqF5", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--trmF5", NULL, "skip HMM stages F1-F3, force full sequence into F5 stage",              106 },
   { "--p7band",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--trmF5,--fullseqF5", NULL, "use MSV-derived banded F4/F5 DP (experimental)",                106 },
+  { "--msvband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--p7band", "use MSV-derived bands for F4/F5 in standard pipeline (experimental)", 106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },

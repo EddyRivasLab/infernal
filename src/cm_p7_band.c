@@ -2319,6 +2319,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   int *kmin, *kmax;
   int ncells;
   int M = gm->M;  /* model length; equals cm->mlp7->M and cm->clen for RNA profiles */
+  ESL_STOPWATCH *s2b_watch = NULL;
 
   /* setup for all modes */
   p7_bg_SetLength(bg, L);
@@ -2330,41 +2331,41 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   gx->M = M;
   gx->L = L;
 
-  /* Step 1: MSV algorithm M->M transitions only 
-   * Step 2: traceback MSV to get pins 
-   * Step 3: prune pins
-   * Step 4: pins -> bands
-   */
-  
-  /* Step 1: MSV algorithm */
+  s2b_watch = esl_stopwatch_Create();
 
-  /* optimized MSV */
-  /*
-    p7_oprofile_ReconfigLength(cm->mlp7_om, L);
-    esl_stopwatch_Start(watch);    
-    my_p7_MSVFilter(dsq, L, cm->mlp7_om, ox, gx, &usc);
-    got    esl_stopwatch_Stop(watch); 
-    FormatTimeString(time_buf, watch->user, TRUE);
-    fprintf(stdout, "OMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
-  */
-
+  /* Step 1: GMSV algorithm */
+  esl_stopwatch_Start(s2b_watch);
   p7_GMSV(dsq, L, gm, gx, 2.0, &usc);
+  esl_stopwatch_Stop(s2b_watch);
+  fprintf(stderr, "#     Seq2Bands detail: GMSV=%.4f ms", s2b_watch->elapsed * 1000.0);
 
   /* Step 2: traceback MSV */
+  esl_stopwatch_Start(s2b_watch);
   status = my_p7_GTraceMSV(dsq, L, gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
+  esl_stopwatch_Stop(s2b_watch);
+  fprintf(stderr, "  Trace=%.4f ms", s2b_watch->elapsed * 1000.0);
 
   /* Step 3: prune pins */
+  esl_stopwatch_Start(s2b_watch);
   if(status == eslOK) { /* trace is valid */
     prune_i2k(i2k, iconflict, isc, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
   }
   else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */
     esl_vec_ISet(k2i, (M+1), -1);
     esl_vec_ISet(i2k, (L+1), -1);
+    esl_stopwatch_Destroy(s2b_watch);
+    fprintf(stderr, "  (discontiguous trace)\n");
     return status;
   }
+  esl_stopwatch_Stop(s2b_watch);
+  fprintf(stderr, "  Prune=%.4f ms", s2b_watch->elapsed * 1000.0);
 
   /* Step 4: pins -> bands */
-  if((status = p7_pins2bands(i2k, errbuf, L, M, pad7, &kmin, &kmax, &ncells)) != eslOK) return status;
+  esl_stopwatch_Start(s2b_watch);
+  if((status = p7_pins2bands(i2k, errbuf, L, M, pad7, &kmin, &kmax, &ncells)) != eslOK) { esl_stopwatch_Destroy(s2b_watch); return status; }
+  esl_stopwatch_Stop(s2b_watch);
+  fprintf(stderr, "  Pins2Bands=%.4f ms  (L=%d M=%d)\n", s2b_watch->elapsed * 1000.0, L, M);
+  esl_stopwatch_Destroy(s2b_watch);
   /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 
   /* print gmx in heatmap format */ 
@@ -2543,7 +2544,7 @@ p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_b
     kb = ESL_MIN(M, kmax[i]);  /* ensure kb <= M */
     
     /* For unaligned positions with narrow bands, widen them significantly */
-    if (i2k[i] == -1 && (kb - ka + 1) < 0.5 * M) {
+    if (i2k != NULL && i2k[i] == -1 && (kb - ka + 1) < 0.5 * M) {
       /* Widen to at least 50% of M for unaligned positions */
       int band_center = (ka + kb) / 2;
       int half_width = ESL_MAX((kb - ka + 1), M / 4);  /* at least 25% on each side */

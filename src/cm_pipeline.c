@@ -30,6 +30,7 @@ extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
 extern int p7_GBackwardBanded (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
+extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
@@ -203,6 +204,15 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if ((pli->p7tr = p7_trace_Create())                         == NULL) goto ERROR;
   pli->phi   = NULL;   /* allocated on first use when do_p7band=TRUE */
   pli->phi_M = 0;
+  pli->band_kmin = NULL;
+  pli->band_kmax = NULL;
+  pli->band_L    = 0;
+  pli->stg_time_F1F3     = 0.0;
+  pli->stg_time_gmsv     = 0.0;
+  pli->stg_time_seq2bands = 0.0;
+  pli->stg_time_F4       = 0.0;
+  pli->stg_time_F5       = 0.0;
+  pli->stg_time_F6       = 0.0;
 
   /* Initializations */
   pli->mode         = mode;
@@ -267,6 +277,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
   pli->do_p7band          = esl_opt_GetBoolean(go, "--p7band")     ? TRUE  : FALSE;
+  pli->do_msvband         = esl_opt_IsOn(go, "--msvband")         ? TRUE  : FALSE;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -860,6 +871,8 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->gxbb) p7_gmxb_Destroy(pli->gxbb);
   if (pli->p7tr) p7_trace_Destroy(pli->p7tr);
   if (pli->phi)  { int k; for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+  if (pli->band_kmin) free(pli->band_kmin);
+  if (pli->band_kmax) free(pli->band_kmax);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -1613,7 +1626,13 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	}
 	else {
 	  /* Normal F1-F3 filtering */
-	  if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
+	  { ESL_STOPWATCH *w_f1f3 = esl_stopwatch_Create();
+	    esl_stopwatch_Start(w_f1f3);
+	    if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) { esl_stopwatch_Destroy(w_f1f3); return status; }
+	    esl_stopwatch_Stop(w_f1f3);
+	    pli->stg_time_F1F3 += w_f1f3->elapsed;
+	    esl_stopwatch_Destroy(w_f1f3);
+	  }
 	}
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
@@ -1711,6 +1730,8 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   /* Second loop over each pipeline pass:
    * Complete all CM-based calculations.
    */
+  { ESL_STOPWATCH *w_f6 = esl_stopwatch_Create();
+    esl_stopwatch_Start(w_f6);
   for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { /* p will go from 1..6 */
     if(pli->do_trm_F3 || pli->do_trm_F5)                             continue; 
     if(best_pass != -1               && p != best_pass)              continue; 
@@ -1806,8 +1827,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(ee != NULL) { free(ee); ee   = NULL; }
     nenv = 0;
   } /* end of 'for(p = PLI_PASS_STD_ANY; p <= PLI_NPASSES; p++)', second loop over pipeline passes */
+    esl_stopwatch_Stop(w_f6);
+    pli->stg_time_F6 += w_f6->elapsed;
+    esl_stopwatch_Destroy(w_f6);
+  }
 
-  for(p = 0; p < NPLI_PASSES; p++) { 
+  for(p = 0; p < NPLI_PASSES; p++) {
     if(p7esAA && p7esAA[p]) free(p7esAA[p]);
     if(p7eeAA && p7eeAA[p]) free(p7eeAA[p]);
     if(p7ebAA && p7ebAA[p]) free(p7ebAA[p]);
@@ -1976,6 +2001,20 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (int) (pli->acct[PLI_PASS_CM_SUMMED].n_output) + 
 	    (int) (pli->acct[PLI_PASS_HMM_ONLY_ANY].n_output));
   }
+  /* Stage timing breakdown */
+  { double total_stg = pli->stg_time_F1F3 + pli->stg_time_seq2bands + pli->stg_time_F4 + pli->stg_time_F5 + pli->stg_time_F6;
+    if (total_stg > 0.001) { /* only print if we have meaningful timing data */
+      fprintf(ofp, "# Stage timing breakdown:\n");
+      fprintf(ofp, "#   F1-F3 (SSV/Vit/Fwd filters):  %8.2f sec  (%5.1f%%)\n", pli->stg_time_F1F3, 100.0 * pli->stg_time_F1F3 / total_stg);
+      if (pli->stg_time_seq2bands > 0.0)
+	fprintf(ofp, "#   Seq2Bands (MSV band deriv):   %8.2f sec  (%5.1f%%)\n", pli->stg_time_seq2bands, 100.0 * pli->stg_time_seq2bands / total_stg);
+      fprintf(ofp, "#   F4 (glocal Forward):          %8.2f sec  (%5.1f%%)\n", pli->stg_time_F4, 100.0 * pli->stg_time_F4 / total_stg);
+      fprintf(ofp, "#   F5 (envelope definition):     %8.2f sec  (%5.1f%%)\n", pli->stg_time_F5, 100.0 * pli->stg_time_F5 / total_stg);
+      fprintf(ofp, "#   F6+ (CM stages):              %8.2f sec  (%5.1f%%)\n", pli->stg_time_F6, 100.0 * pli->stg_time_F6 / total_stg);
+      fprintf(ofp, "#   Total (timed stages):         %8.2f sec\n", total_stg);
+    }
+  }
+
   if(w != NULL) esl_stopwatch_Display(ofp, w, "# CPU time: ");
 
   return eslOK;
@@ -3156,6 +3195,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 						       */
   float            Rgm_correction;    /* nat score correction for windows and envelopes defined with Rgm */
   float            Lgm_correction;    /* nat score correction for windows and envelopes defined with Lgm */
+  ESL_STOPWATCH   *stg_watch = NULL;  /* per-stage timing */
   int              do_aln;            /* TRUE if glocal domain-def should build OA alidisplays */
   /* variables for --p7band banded F4/F5 path */
   int             *i2k  = NULL;       /* MSV trace i->k mapping [0..L]         */
@@ -3179,6 +3219,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
    * possibly true if pli->do_trunc_any, pli->do_trunc_int or pli->do_trunc_only is TRUE).
    */
   do_local_envdef = (pli->cur_pass_idx == PLI_PASS_5P_AND_3P_ANY) ? TRUE : FALSE;
+
+  if ((stg_watch = esl_stopwatch_Create()) == NULL) goto ERROR;
 
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); // avoid 0 malloc
@@ -3358,41 +3400,177 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
-      else if(use_Rgm) { 
+      else if(use_Rgm) {
 	p7_ReconfigLength5PrimeTrunc(Rgm, wlen);
-	p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
-	p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	if(pli->do_msvband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --msvband: derive MSV bands, banded Forward */
+	  int save_mode_r = Rgm->mode;
+	  {
+	    int k; float *mocc = NULL, *iocc = NULL;
+	    if (pli->phi == NULL || Rgm->M > pli->phi_M) {
+	      if (pli->phi) { for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+	      ESL_ALLOC(pli->phi, sizeof(double *) * (Rgm->M + 1));
+	      for (k = 0; k <= Rgm->M; k++) { ESL_ALLOC(pli->phi[k], sizeof(double) * 3); pli->phi_M = k; }
+	    }
+	    ESL_ALLOC(mocc, sizeof(float) * (Rgm->M + 1));
+	    ESL_ALLOC(iocc, sizeof(float) * (Rgm->M + 1));
+	    p7_hmm_CalculateOccupancy(*opt_hmm, mocc, iocc);
+	    for (k = 0; k <= Rgm->M; k++) { pli->phi[k][HMMMATCH] = (double)mocc[k]; pli->phi[k][HMMINSERT] = (double)iocc[k]; pli->phi[k][HMMDELETE] = 0.0; }
+	    free(mocc); free(iocc);
+	  }
+	  p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
+	  status = p7_Seq2Bands(NULL, pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				&i2k, &kmin, &kmax, &ncells);
+	  /* restore Rgm: GLOCAL then 5PrimeTrunc */
+	  p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
+	  p7_ProfileConfig5PrimeTrunc(Rgm, (int)wlen);
+	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
+	  if(status == eslEINCOMPAT || ncells == 0) {
+	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
+	    p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Rgm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); i2k = NULL;
+	    if(pli->band_kmin) free(pli->band_kmin); if(pli->band_kmax) free(pli->band_kmax);
+	    pli->band_kmin = kmin; kmin = NULL; pli->band_kmax = kmax; kmax = NULL; pli->band_L = (int)wlen;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, Rgm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	  }
+	} else {
+	  p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
+	  p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	}
 	/*printf("Rfwdsc: %.4f\n", fwdsc);*/
-	/* We use local Fwd statistics to determine significance of
-	 * the score. GForward penalized 0. for ends and log(1/Rgm->M)
-	 * for begins into any state. No further correction is
-	 * required because GForward already properly accounted for
-	 * equiprobable begins and fixed ends out of node M.
-	 */
 	Rgm_correction = 0.;
 	safe_lfwdsc = fwdsc + Rgm_correction;
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
-      else if(use_Lgm) { 
+      else if(use_Lgm) {
 	p7_ReconfigLength3PrimeTrunc(Lgm, wlen);
-	p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
-	p7_GForward (seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	if(pli->do_msvband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --msvband: derive MSV bands, banded Forward */
+	  {
+	    int k; float *mocc = NULL, *iocc = NULL;
+	    if (pli->phi == NULL || Lgm->M > pli->phi_M) {
+	      if (pli->phi) { for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+	      ESL_ALLOC(pli->phi, sizeof(double *) * (Lgm->M + 1));
+	      for (k = 0; k <= Lgm->M; k++) { ESL_ALLOC(pli->phi[k], sizeof(double) * 3); pli->phi_M = k; }
+	    }
+	    ESL_ALLOC(mocc, sizeof(float) * (Lgm->M + 1));
+	    ESL_ALLOC(iocc, sizeof(float) * (Lgm->M + 1));
+	    p7_hmm_CalculateOccupancy(*opt_hmm, mocc, iocc);
+	    for (k = 0; k <= Lgm->M; k++) { pli->phi[k][HMMMATCH] = (double)mocc[k]; pli->phi[k][HMMINSERT] = (double)iocc[k]; pli->phi[k][HMMDELETE] = 0.0; }
+	    free(mocc); free(iocc);
+	  }
+	  p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
+	  status = p7_Seq2Bands(NULL, pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				&i2k, &kmin, &kmax, &ncells);
+	  /* restore Lgm: must go to GLOCAL first (3PrimeTrunc asserts non-local), then apply 3PrimeTrunc */
+	  p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
+	  p7_ProfileConfig3PrimeTrunc(*opt_hmm, Lgm, (int)wlen);
+	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
+	  if(status == eslEINCOMPAT || ncells == 0) {
+	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
+	    p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Lgm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); i2k = NULL;
+	    if(pli->band_kmin) free(pli->band_kmin); if(pli->band_kmax) free(pli->band_kmax);
+	    pli->band_kmin = kmin; kmin = NULL; pli->band_kmax = kmax; kmax = NULL; pli->band_L = (int)wlen;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, Lgm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	  }
+	} else {
+	  p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
+	  p7_GForward (seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	}
 	/*printf("Lfwdsc: %.4f\n", fwdsc);*/
-	/* We use local Fwd statistics to determine significance of
-	 * the score, but we need to correct for lack of equiprobable
-	 * begins and ends in fwdsc. We correct for fact that local
-	 * begins should be equiprobable.
-	 */
-	Lgm_correction = log(1./Lgm->M); 
-	safe_lfwdsc = fwdsc + Lgm_correction; 
+	Lgm_correction = log(1./Lgm->M);
+	safe_lfwdsc = fwdsc + Lgm_correction;
 	sc_for_pvalue = (safe_lfwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_LFTAU],  p7_evparam[CM_p7_LFLAMBDA]);
       }
       else if(use_gm) { /* normal case, not looking for truncated hits */
 	p7_ReconfigLength(gm, wlen);
-	p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	if(pli->do_msvband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --msvband: derive MSV bands, then run banded Forward */
+	  {
+	    int    k;
+	    float *mocc = NULL, *iocc = NULL;
+	    if (pli->phi == NULL || gm->M > pli->phi_M) {
+	      if (pli->phi) { for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+	      ESL_ALLOC(pli->phi, sizeof(double *) * (gm->M + 1));
+	      for (k = 0; k <= gm->M; k++) {
+		ESL_ALLOC(pli->phi[k], sizeof(double) * 3);
+		pli->phi_M = k;
+	      }
+	    }
+	    ESL_ALLOC(mocc, sizeof(float) * (gm->M + 1));
+	    ESL_ALLOC(iocc, sizeof(float) * (gm->M + 1));
+	    p7_hmm_CalculateOccupancy(*opt_hmm, mocc, iocc);
+	    for (k = 0; k <= gm->M; k++) {
+	      pli->phi[k][HMMMATCH]  = (double) mocc[k];
+	      pli->phi[k][HMMINSERT] = (double) iocc[k];
+	      pli->phi[k][HMMDELETE] = 0.0;
+	    }
+	    free(mocc); free(iocc);
+	  }
+	  esl_stopwatch_Start(stg_watch);
+	  p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_LOCAL);
+	  status = p7_Seq2Bands(NULL, pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				&i2k, &kmin, &kmax, &ncells);
+	  p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_GLOCAL);  /* restore glocal mode */
+	  esl_stopwatch_Stop(stg_watch);
+	  pli->stg_time_seq2bands += stg_watch->elapsed;
+	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
+	  if(status == eslEINCOMPAT || ncells == 0) {
+	    if(i2k)  { free(i2k);  i2k  = NULL; }
+	    if(kmin) { free(kmin); kmin = NULL; }
+	    if(kmax) { free(kmax); kmax = NULL; }
+	    esl_stopwatch_Start(stg_watch);
+	    p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	    esl_stopwatch_Stop(stg_watch);
+	    pli->stg_time_F4 += stg_watch->elapsed;
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, gm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); i2k = NULL;
+	    if(pli->band_kmin) free(pli->band_kmin);
+	    if(pli->band_kmax) free(pli->band_kmax);
+	    pli->band_kmin = kmin; kmin = NULL;
+	    pli->band_kmax = kmax; kmax = NULL;
+	    pli->band_L    = (int)wlen;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    esl_stopwatch_Start(stg_watch);
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, gm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	    esl_stopwatch_Stop(stg_watch);
+	    pli->stg_time_F4 += stg_watch->elapsed;
+	  }
+	} else {
+	  esl_stopwatch_Start(stg_watch);
+	  p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	  p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	  esl_stopwatch_Stop(stg_watch);
+	  pli->stg_time_F4 += stg_watch->elapsed;
+	}
 	/*printf(" fwdsc: %.4f\n", fwdsc);*/
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
@@ -3447,6 +3625,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
       /* this block needs to match up with if..else if...else if...else block calling p7_GForward above */
       do_aln = (pli->do_trm_F5 && pli->show_alignments);
+      esl_stopwatch_Start(stg_watch);  /* time F5 */
       if(use_Tgm) {
 	/* no length reconfiguration necessary */
 	if(pli->do_p7band && pli->gxfb != NULL) {
@@ -3468,26 +3647,66 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
 	/*printf("Tbcksc: %.4f\n", bcksc);*/
       }
-      else if(use_Rgm) { 
-	p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
-	p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
-  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");; 
+      else if(use_Rgm) {
+	if(pli->do_msvband && pli->gxfb != NULL && bnd != NULL) {
+	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
+	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
+	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Rgm, pli->gxbb, &bcksc)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Rgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
+	  p7_gbands_Destroy(bnd); bnd = NULL;
+	} else {
+	  p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
+	  p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	}
 	/*printf("Rbcksc: %.4f\n", bcksc);*/
       }
-      else if(use_Lgm) { 
-	p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
-	p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
-  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+      else if(use_Lgm) {
+	if(pli->do_msvband && pli->gxfb != NULL && bnd != NULL) {
+	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
+	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
+	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Lgm, pli->gxbb, &bcksc)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Lgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
+	  p7_gbands_Destroy(bnd); bnd = NULL;
+	} else {
+	  p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
+	  p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	}
 	/*printf("Lbcksc: %.4f\n", bcksc);*/
       }
       else { /* normal case, not looking for truncated hits */
-	p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
-	p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
-  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	if(pli->do_msvband && pli->gxfb != NULL && pli->band_kmin != NULL) {
+	  /* --msvband: banded F5 with multihit domaindef.
+	   * Uses banded Forward xmx for domain decoding, then
+	   * banded rescore for each domain using sub-bands.
+	   */
+	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
+	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
+	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, gm, pli->gxbb, &bcksc)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(
+		  seq, gm, om, pli->gxfb, pli->gxbb, fwdsc,
+		  pli->gfwd, pli->gbck, pli->ddef,
+		  pli->band_kmin, pli->band_kmax,
+		  pli->do_null2, do_aln)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded multihit glocal envelope defn");
+	  p7_gbands_Destroy(bnd); bnd = NULL;
+	} else {
+	  p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
+	  p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	}
 	/*printf(" bcksc: %.4f\n", bcksc);*/
       }
     } /* end of 'else' entered if (! do_local_envdef) */
-    
+    esl_stopwatch_Stop(stg_watch);
+    pli->stg_time_F5 += stg_watch->elapsed;
+
     if (status != eslOK) ESL_FAIL(status, pli->errbuf, "envelope definition workflow failure"); /* eslERANGE can happen */
     if (pli->ddef->nregions   == 0)  continue; /* score passed threshold but there's no discrete domains here       */
     if (pli->ddef->nenvelopes == 0)  continue; /* rarer: region was found, stochastic clustered, no envelopes found */
@@ -3592,9 +3811,11 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   *ret_ead  = ead;
   *ret_nenv = nenv;
 
+  if (stg_watch) esl_stopwatch_Destroy(stg_watch);
   return eslOK;
 
  ERROR:
+  if (stg_watch) esl_stopwatch_Destroy(stg_watch);
   ESL_EXCEPTION(eslEMEM, "Error: out of memory");
 }
 

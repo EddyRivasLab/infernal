@@ -665,3 +665,339 @@ p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm
  ERROR:
   return status;
 }
+
+
+/* Function:  p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit()
+ * Synopsis:  Banded domaindef for multihit GLOCAL profiles (--msvband).
+ * Incept:    EPN*, Wed Mar 18 2026
+ *
+ * Purpose:   Banded version of p7_domaindef_GlocalByPosteriorHeuristics()
+ *            for the standard pipeline (multihit GLOCAL profiles).
+ *
+ *            Uses banded Forward/Backward xmx for domain decoding, then
+ *            for each simple single-domain region, extracts sub-bands and
+ *            runs banded rescore (Forward/Backward/Decoding/OA/Trace).
+ *
+ *            For rare multidomain regions, falls back to unbanded rescore
+ *            using the provided P7_GMX fwd/bck matrices.
+ *
+ * Args:      sq      - sequence
+ *            gm      - profile (multihit GLOCAL)
+ *            om      - optimized profile (for alidisplay)
+ *            gxfb    - banded Forward matrix
+ *            gxbb    - banded Backward matrix
+ *            fwdsc   - Forward score in nats
+ *            fwd     - P7_GMX for unbanded fallback (resized as needed)
+ *            bck     - P7_GMX for unbanded fallback (resized as needed)
+ *            ddef    - domain definition structure
+ *            kmin    - [0..L] band lower bounds from MSV
+ *            kmax    - [0..L] band upper bounds from MSV
+ *            do_null2 - TRUE to compute null2 correction
+ *            do_aln   - TRUE to compute OA alignments
+ *
+ * Returns:   eslOK on success.
+ */
+int
+p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm,
+							 P7_OPROFILE *om,
+							 P7_GMXB *gxfb, P7_GMXB *gxbb,
+							 float fwdsc,
+							 P7_GMX *fwd, P7_GMX *bck,
+							 P7_DOMAINDEF *ddef,
+							 int *kmin, int *kmax,
+							 int do_null2, int do_aln)
+{
+  /* banded functions */
+  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd_bx, P7_GMXB *bck_bx, P7_GMXB *pp, float overall_sc);
+  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+  extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+  extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
+  extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
+
+  int          L = sq->n;
+  int          M = gm->M;
+  int          i, j, d, z;
+  int          triggered;
+  int          saveL     = gm->L;
+  int          save_mode = gm->mode;
+  int          save_mode_is_unihit;
+  float        overall_sc = fwdsc;  /* Forward score in nats */
+  float        njcp;
+  float        oasc;
+  int          status;
+
+  /* Banded xmx pointers for domain decoding */
+  float       *fwd_xmx = gxfb->xmx;
+  float       *bck_xmx = gxbb->xmx;
+  int          nrow     = gxfb->bnd->nrow;
+
+  /* Build row_idx: seq position i -> banded row index r */
+  int         *row_idx = NULL;
+  int         *bnd_ip;
+  int          ia, ib, r, g;
+
+  ESL_ALLOC(row_idx, sizeof(int) * (L + 1));
+  for (i = 0; i <= L; i++) row_idx[i] = -1;
+  bnd_ip = gxfb->bnd->imem;
+  r = 0;
+  for (g = 0; g < gxfb->bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    for (i = ia; i <= ib; i++) row_idx[i] = r++;
+  }
+
+  save_mode_is_unihit = (p7_IsMulti(save_mode)) ? FALSE : TRUE;
+  if (do_aln && om == NULL) { status = eslEINVAL; goto ERROR; }
+
+  if ((status = p7_domaindef_GrowTo(ddef, L)) != eslOK) goto ERROR;
+
+  /* --- Domain decoding from banded xmx --- */
+  /* Compute btot, etot, mocc from banded Forward/Backward xmx.
+   * This is the same calculation as p7_GDomainDecoding() but reads from P7_GMXB xmx.
+   */
+  {
+    float fwd_xN_prev = 0.0f, fwd_xJ_prev = -eslINFINITY, fwd_xC_prev = -eslINFINITY;
+    int   last_ib2 = 0;
+
+    ddef->btot[0] = 0.0;
+    ddef->etot[0] = 0.0;
+    ddef->mocc[0] = 0.0;
+
+    bnd_ip = gxfb->bnd->imem;
+    r = 0;
+    for (g = 0; g < gxfb->bnd->nseg; g++) {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+      /* For positions outside bands (gap), set mocc=0, btot/etot unchanged */
+      for (i = last_ib2 + 1; i < ia; i++) {
+	ddef->btot[i] = ddef->btot[i-1];
+	ddef->etot[i] = ddef->etot[i-1];
+	ddef->mocc[i] = 0.0;
+      }
+      /* Advance fwd prev specials through gap */
+      { int gap2 = ia - last_ib2 - 1;
+	if (gap2 > 0) {
+	  fwd_xN_prev = fwd_xN_prev + gap2 * gm->xsc[p7P_N][p7P_LOOP];
+	  fwd_xJ_prev = fwd_xJ_prev + gap2 * gm->xsc[p7P_J][p7P_LOOP];
+	  fwd_xC_prev = fwd_xC_prev + gap2 * gm->xsc[p7P_C][p7P_LOOP];
+	}
+      }
+      for (i = ia; i <= ib; i++) {
+	float fwd_B_prev, bck_B_prev;  /* B state at row i-1 */
+	float fwd_E_cur,  bck_E_cur;   /* E state at row i   */
+	float njcp_sum;
+
+	/* btot: uses B(i-1). Need fwd_B(i-1) and bck_B(i-1).
+	 * For i=ia (first row of segment), i-1 is outside bands.
+	 * fwd_B(0) = xsc[N][MOVE] (=N_MOVE), bck_B(0) needs row 0 Backward.
+	 * For simplicity, use the running prev variables for B.
+	 */
+	if (i == ia && ia == 1) {
+	  /* Row 0: fwd_B(0) = N_MOVE, bck_B(0) from banded Backward is not stored.
+	   * But bck_B(0) = overall_sc - fwd_B(0) for a properly normalized matrix.
+	   * So exp(fwd_B(0) + bck_B(0) - overall_sc) = 1.0 approximately.
+	   * Use fwd_xB_prev and bck_xB_prev from initialization.
+	   */
+	  fwd_B_prev = gm->xsc[p7P_N][p7P_MOVE]; /* fwd N(0) + N_MOVE = 0 + N_MOVE */
+	  bck_B_prev = overall_sc - fwd_B_prev;   /* reconstruct from overall score */
+	} else if (r > 0) {
+	  fwd_B_prev = fwd_xmx[(r-1) * p7G_NXCELLS + p7G_B];
+	  bck_B_prev = bck_xmx[(r-1) * p7G_NXCELLS + p7G_B];
+	} else {
+	  fwd_B_prev = -eslINFINITY;
+	  bck_B_prev = -eslINFINITY;
+	}
+	ddef->btot[i] = ddef->btot[i-1] + exp(fwd_B_prev + bck_B_prev - overall_sc);
+
+	/* etot: uses E(i) */
+	fwd_E_cur = fwd_xmx[r * p7G_NXCELLS + p7G_E];
+	bck_E_cur = bck_xmx[r * p7G_NXCELLS + p7G_E];
+	ddef->etot[i] = ddef->etot[i-1] + exp(fwd_E_cur + bck_E_cur - overall_sc);
+
+	/* mocc: 1 - P(N at i) - P(J at i) - P(C at i) */
+	njcp_sum  = expf(fwd_xN_prev + bck_xmx[r * p7G_NXCELLS + p7G_N] + gm->xsc[p7P_N][p7P_LOOP] - overall_sc);
+	njcp_sum += expf(fwd_xJ_prev + bck_xmx[r * p7G_NXCELLS + p7G_J] + gm->xsc[p7P_J][p7P_LOOP] - overall_sc);
+	njcp_sum += expf(fwd_xC_prev + bck_xmx[r * p7G_NXCELLS + p7G_C] + gm->xsc[p7P_C][p7P_LOOP] - overall_sc);
+	ddef->mocc[i] = 1.0 - njcp_sum;
+
+	/* Update fwd prev specials for next row */
+	fwd_xN_prev = fwd_xmx[r * p7G_NXCELLS + p7G_N];
+	fwd_xJ_prev = fwd_xmx[r * p7G_NXCELLS + p7G_J];
+	fwd_xC_prev = fwd_xmx[r * p7G_NXCELLS + p7G_C];
+	r++;
+      }
+      last_ib2 = ib;
+    }
+    /* Fill any trailing positions after last segment */
+    for (i = last_ib2 + 1; i <= L; i++) {
+      ddef->btot[i] = ddef->btot[i-1];
+      ddef->etot[i] = ddef->etot[i-1];
+      ddef->mocc[i] = 0.0;
+    }
+  }
+
+  esl_vec_FSet(ddef->n2sc, L+1, 0.0);
+  ddef->nexpected = ddef->btot[L];
+
+  if (! save_mode_is_unihit) p7_ReconfigUnihit(gm, saveL);
+
+  /* --- Region finding and domain rescoring --- */
+  i = -1;
+  triggered = FALSE;
+  for (j = 1; j <= L; j++)
+    {
+      if (! triggered)
+	{
+	  if      (ddef->mocc[j] - (ddef->btot[j] - ddef->btot[j-1]) < ddef->rt2) i = j;
+	  else if (i == -1)                                                         i = j;
+	  if      (ddef->mocc[j]                                      >= ddef->rt1) triggered = TRUE;
+	}
+      else if (ddef->mocc[j] - (ddef->etot[j] - ddef->etot[j-1]) < ddef->rt2)
+	{
+	  ddef->nregions++;
+
+	  if (is_multidomain_region(ddef, i, j))
+	    {
+	      /* Multidomain region: fall back to unbanded.
+	       * Need full P7_GMX matrices for stochastic trace ensemble.
+	       */
+	      if (save_mode_is_unihit) { status = eslEINCONCEIVABLE; goto ERROR; }
+
+	      ddef->nclustered++;
+	      p7_gmx_GrowTo(fwd, gm->M, j-i+1);
+	      p7_gmx_GrowTo(bck, gm->M, j-i+1);
+	      p7_ReconfigMultihit(gm, saveL);
+	      p7_GForward(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
+	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, do_null2, &d);
+	      p7_ReconfigUnihit(gm, saveL);
+
+	      { int last_j2 = 0;
+		int i2, j2, nc2;
+		for (nc2 = 0; nc2 < d; nc2++) {
+		  p7_spensemble_GetClusterCoords(ddef->sp, nc2, &i2, &j2, NULL, NULL, NULL);
+		  if (i2 <= last_j2) ddef->noverlaps++;
+		  ddef->nenvelopes++;
+		  /* unbanded rescore for multidomain */
+		  p7_gmx_GrowTo(fwd, gm->M, j2-i2+1);
+		  p7_gmx_GrowTo(bck, gm->M, j2-i2+1);
+		  if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln) == eslOK)
+		    last_j2 = j2;
+		}
+	      }
+	      p7_spensemble_Reuse(ddef->sp);
+	      p7_trace_Reuse(ddef->tr);
+	    }
+	  else
+	    {
+	      /* Simple single-domain region: use banded rescore. */
+	      ddef->nenvelopes++;
+
+	      /* Extract sub-bands for domain i..j, remap to 1..Ld */
+	      { int     Ld = j - i + 1;
+		int     p;
+		int    *sub_kmin = NULL;
+		int    *sub_kmax = NULL;
+		P7_GBANDS *sub_bnd = NULL;
+		P7_GMXB   *sub_fwd_bx = NULL;
+		P7_GMXB   *sub_bck_bx = NULL;
+		float      sub_fwdsc;
+		P7_DOMAIN *dom;
+
+		ESL_ALLOC(sub_kmin, sizeof(int) * (Ld + 1));
+		ESL_ALLOC(sub_kmax, sizeof(int) * (Ld + 1));
+		sub_kmin[0] = -1;
+		sub_kmax[0] = -1;
+		for (p = 1; p <= Ld; p++) {
+		  sub_kmin[p] = kmin[i + p - 1];
+		  sub_kmax[p] = kmax[i + p - 1];
+		}
+
+		if ((status = p7_kbands2gbands(NULL, sub_kmin, sub_kmax, Ld, M, &sub_bnd)) != eslOK) {
+		  free(sub_kmin); free(sub_kmax); goto ERROR;
+		}
+		free(sub_kmin); free(sub_kmax);
+
+		/* Banded Forward on domain subsequence */
+		if ((sub_fwd_bx = p7_gmxb_Create(sub_bnd)) == NULL) { p7_gbands_Destroy(sub_bnd); goto ERROR; }
+		if ((status = my_p7_GForwardBanded(sq->dsq + i - 1, Ld, gm, sub_fwd_bx, &sub_fwdsc)) != eslOK) {
+		  p7_gmxb_Destroy(sub_fwd_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		}
+
+		if (do_null2 || do_aln) {
+		  /* Banded Backward */
+		  if ((sub_bck_bx = p7_gmxb_Create(sub_bnd)) == NULL) {
+		    p7_gmxb_Destroy(sub_fwd_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		  }
+		  if ((status = p7_GBackwardBanded(sq->dsq + i - 1, Ld, gm, sub_bck_bx, NULL)) != eslOK) {
+		    p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		  }
+
+		  /* Banded Decoding: overwrites sub_bck_bx with posteriors */
+		  if ((status = p7_GDecodingBanded(gm, sub_fwd_bx, sub_bck_bx, sub_bck_bx, sub_fwdsc)) != eslOK) {
+		    p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		  }
+
+		  if (do_aln) {
+		    /* Banded OA: overwrites sub_fwd_bx with OA scores */
+		    if ((status = p7_GOptimalAccuracyBanded(gm, sub_bck_bx, sub_fwd_bx, &oasc)) != eslOK) {
+		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		    }
+		    /* Banded OA Trace */
+		    if ((status = p7_GOATraceBanded(gm, sub_bck_bx, sub_fwd_bx, ddef->tr)) != eslOK) {
+		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		    }
+		    /* Adjust trace coords: domain starts at position i in original sequence */
+		    for (z = 0; z < ddef->tr->N; z++)
+		      if (ddef->tr->i[z] > 0) ddef->tr->i[z] += i - 1;
+		  }
+		}
+
+		/* Store domain result */
+		if (ddef->ndom == ddef->nalloc) {
+		  void *pp;
+		  ESL_RALLOC(ddef->dcl, pp, sizeof(P7_DOMAIN) * (ddef->nalloc * 2));
+		  ddef->nalloc *= 2;
+		}
+		dom = &(ddef->dcl[ddef->ndom]);
+		dom->ienv          = i;
+		dom->jenv          = j;
+		dom->envsc         = sub_fwdsc;
+		dom->domcorrection = 0.0;  /* TODO: null2 if do_null2 */
+		dom->oasc          = do_aln ? oasc : 0.0;
+		dom->dombias       = 0.0;
+		dom->bitscore      = 0.0;
+		dom->lnP           = 1.0;
+		dom->is_reported   = FALSE;
+		dom->is_included   = FALSE;
+		dom->ad            = (do_aln ? p7_alidisplay_Create(ddef->tr, 0, om, sq, NULL) : NULL);
+		dom->iali          = i;
+		dom->jali          = j;
+		ddef->ndom++;
+
+		if (do_aln) p7_trace_Reuse(ddef->tr);
+		p7_gmxb_Destroy(sub_fwd_bx);
+		if (sub_bck_bx) p7_gmxb_Destroy(sub_bck_bx);
+		p7_gbands_Destroy(sub_bnd);
+	      }
+	    }
+	  i = -1;
+	  triggered = FALSE;
+	}
+    }
+
+  if (! save_mode_is_unihit) {
+    p7_ReconfigMultihit(gm, saveL);
+    gm->L = saveL;
+  }
+  free(row_idx);
+  return eslOK;
+
+ ERROR:
+  if (row_idx) free(row_idx);
+  if (! save_mode_is_unihit) {
+    p7_ReconfigMultihit(gm, saveL);
+    gm->L = saveL;
+  }
+  return status;
+}
