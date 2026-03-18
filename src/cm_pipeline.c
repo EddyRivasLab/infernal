@@ -20,12 +20,12 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
-#include "p7_gmxb.h"   /* P7_GMXB banded matrix, for --p7band */
-#include "p7_gbands.h" /* P7_GBANDS band boundaries, for --p7band */
+#include "p7_gmxb.h"   /* P7_GMXB banded matrix, for --msvband */
+#include "p7_gbands.h" /* P7_GBANDS band boundaries, for --msvband */
 
 #include "infernal.h"
 
-/* local declarations for banded F4/F5 functions (--p7band) */
+/* local declarations for banded F4/F5 functions (--msvband) */
 extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 extern int p7_GBackwardBanded (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
@@ -276,8 +276,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F3          = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
-  pli->do_p7band          = esl_opt_GetBoolean(go, "--p7band")     ? TRUE  : FALSE;
-  pli->do_msvband         = esl_opt_IsOn(go, "--msvband")         ? TRUE  : FALSE;
+  pli->do_msvband         = (esl_opt_IsOn(go, "--msvband")) ? TRUE  : FALSE;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -3197,7 +3196,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   float            Lgm_correction;    /* nat score correction for windows and envelopes defined with Lgm */
   ESL_STOPWATCH   *stg_watch = NULL;  /* per-stage timing */
   int              do_aln;            /* TRUE if glocal domain-def should build OA alidisplays */
-  /* variables for --p7band banded F4/F5 path */
+  /* variables for --msvband banded F4/F5 path */
   int             *i2k  = NULL;       /* MSV trace i->k mapping [0..L]         */
   int             *kmin = NULL;       /* band lower bound [0..L]                */
   int             *kmax = NULL;       /* band upper bound [0..L]                */
@@ -3327,7 +3326,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
        */
       if(use_Tgm) {
 	/* no length reconfiguration necessary */
-	if(pli->do_p7band) {
+	if(pli->do_msvband) {
 	  /* Banded F4: derive MSV bands then run banded Forward.
 	   * Profile must be temporarily LOCAL for p7_Seq2Bands() (MSV hangs on GLOCAL),
 	   * then restored to truncated mode. Currently only supported for use_Tgm.
@@ -3628,7 +3627,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       esl_stopwatch_Start(stg_watch);  /* time F5 */
       if(use_Tgm) {
 	/* no length reconfiguration necessary */
-	if(pli->do_p7band && pli->gxfb != NULL) {
+	if(pli->do_msvband && pli->gxfb != NULL) {
 	  /* Banded F5: run banded Backward and banded domaindef.
 	   * Supports both do_aln=TRUE (OA alignment) and do_aln=FALSE (--noali).
 	   */
