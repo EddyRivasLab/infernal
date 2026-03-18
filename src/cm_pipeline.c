@@ -20,8 +20,16 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
+#include "p7_gmxb.h"   /* P7_GMXB banded matrix, for --p7band */
+#include "p7_gbands.h" /* P7_GBANDS band boundaries, for --p7band */
 
 #include "infernal.h"
+
+/* local declarations for banded F4/F5 functions (--p7band) */
+extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
+extern int p7_GBackwardBanded (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
+extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef);
 
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
@@ -189,7 +197,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   if ((pli->gfwd = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
   if ((pli->gbck = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
   if ((pli->gxf  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
-  if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;     
+  if ((pli->gxb  = p7_gmx_Create(clen_hint, L_hint))         == NULL) goto ERROR;
+  pli->gxfb  = NULL;   /* allocated on first use when do_p7band=TRUE */
+  pli->gxbb  = NULL;
+  if ((pli->p7tr = p7_trace_Create())                         == NULL) goto ERROR;
+  pli->phi   = NULL;   /* allocated on first use when do_p7band=TRUE */
+  pli->phi_M = 0;
 
   /* Initializations */
   pli->mode         = mode;
@@ -253,6 +266,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F3          = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
+  pli->do_p7band          = esl_opt_GetBoolean(go, "--p7band")     ? TRUE  : FALSE;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -842,6 +856,10 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   p7_gmx_Destroy(pli->gbck);
   p7_gmx_Destroy(pli->gxf);
   p7_gmx_Destroy(pli->gxb);
+  if (pli->gxfb) p7_gmxb_Destroy(pli->gxfb);
+  if (pli->gxbb) p7_gmxb_Destroy(pli->gxbb);
+  if (pli->p7tr) p7_trace_Destroy(pli->p7tr);
+  if (pli->phi)  { int k; for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -3139,6 +3157,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   float            Rgm_correction;    /* nat score correction for windows and envelopes defined with Rgm */
   float            Lgm_correction;    /* nat score correction for windows and envelopes defined with Lgm */
   int              do_aln;            /* TRUE if glocal domain-def should build OA alidisplays */
+  /* variables for --p7band banded F4/F5 path */
+  int             *i2k  = NULL;       /* MSV trace i->k mapping [0..L]         */
+  int             *kmin = NULL;       /* band lower bound [0..L]                */
+  int             *kmax = NULL;       /* band upper bound [0..L]                */
+  int              ncells;            /* cells in banded matrix                 */
+  P7_GBANDS       *bnd  = NULL;       /* band boundaries for P7_GMXB           */
 
   if (sq->n == 0) return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (nwin == 0) { 
@@ -3252,17 +3276,80 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       status = p7_domaindef_ByPosteriorHeuristics (seq, NULL, om, pli->oxf, pli->oxb, pli->fwd, pli->bck, pli->ddef, bg, /*long_target=*/FALSE,
 						   /*bg_tmp=*/NULL, /*scores_arr=*/NULL, /*fwd_emissions_arr=*/NULL);
     }
-    else { 
+    else {
       /* We're defining envelopes in glocal mode, so we need to fill
        * generic fwd/bck matrices and pass them to
        * p7_domaindef_GlocalByPosteriorHeuristics(), but we have to do
-       * this differently depending on which pass we're in 
-       * (i.e. which type of *gm we're using). 
+       * this differently depending on which pass we're in
+       * (i.e. which type of *gm we're using).
        */
-      if(use_Tgm) { 
+      if(use_Tgm) {
 	/* no length reconfiguration necessary */
-	p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
-	p7_GForward (seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	if(pli->do_p7band) {
+	  /* Banded F4: derive MSV bands then run banded Forward.
+	   * Profile must be temporarily LOCAL for p7_Seq2Bands() (MSV hangs on GLOCAL),
+	   * then restored to truncated mode. Currently only supported for use_Tgm.
+	   */
+	  /* Allocate or grow phi if needed, then fill with real occupancy values.
+	   * p7_hmm_CalculateOccupancy() is O(M) from transition probs — negligible cost.
+	   */
+	  {
+	    int    k;
+	    float *mocc = NULL;   /* match occupancy [0..M]  */
+	    float *iocc = NULL;   /* insert occupancy [0..M] */
+	    if (pli->phi == NULL || Tgm->M > pli->phi_M) {
+	      if (pli->phi) { for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+	      ESL_ALLOC(pli->phi, sizeof(double *) * (Tgm->M + 1));
+	      for (k = 0; k <= Tgm->M; k++) {
+		ESL_ALLOC(pli->phi[k], sizeof(double) * 3);
+		pli->phi_M = k;   /* track allocation depth for safe cleanup on error */
+	      }
+	    }
+	    if (opt_hmm != NULL && *opt_hmm != NULL) {
+	      ESL_ALLOC(mocc, sizeof(float) * (Tgm->M + 1));
+	      ESL_ALLOC(iocc, sizeof(float) * (Tgm->M + 1));
+	      p7_hmm_CalculateOccupancy(*opt_hmm, mocc, iocc);
+	      for (k = 0; k <= Tgm->M; k++) {
+		pli->phi[k][HMMMATCH]  = (double) mocc[k];
+		pli->phi[k][HMMINSERT] = (double) iocc[k];
+		pli->phi[k][HMMDELETE] = 0.0;   /* not used by prune_i2k() */
+	      }
+	      free(mocc); free(iocc);
+	    } else {
+	      for (k = 0; k <= Tgm->M; k++) {
+		pli->phi[k][HMMMATCH]  = 1.0;   /* dummy: won't prune */
+		pli->phi[k][HMMINSERT] = 0.0;
+		pli->phi[k][HMMDELETE] = 0.0;
+	      }
+	    }
+	  }
+	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL);
+	  status = p7_Seq2Bands(NULL, pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				&i2k, &kmin, &kmax, &ncells);
+	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
+	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
+	  if(status == eslEINCOMPAT || ncells == 0) {
+	    /* MSV trace discontiguous/empty; fall back to unbanded */
+	    if(i2k)  { free(i2k);  i2k  = NULL; }
+	    if(kmin) { free(kmin); kmin = NULL; }
+	    if(kmax) { free(kmax); kmax = NULL; }
+	    p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Tgm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); free(kmin); free(kmax); i2k = kmin = kmax = NULL;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, Tgm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	  }
+	} else {
+	  p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
+	  p7_GForward(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	}
 	/*printf("Tfwdsc: %.4f\n", fwdsc);*/
 	/* We use local Fwd statistics to determine statistical
 	 * significance of this score, it has already had basically a
@@ -3360,11 +3447,34 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
       /* this block needs to match up with if..else if...else if...else block calling p7_GForward above */
       do_aln = (pli->do_trm_F5 && pli->show_alignments);
-      if(use_Tgm) { 
+      if(use_Tgm) {
 	/* no length reconfiguration necessary */
-	p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
-	p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
-  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn"); 
+	if(pli->do_p7band && pli->gxfb != NULL) {
+	  /* Banded F5: run banded Backward and banded domaindef.
+	   * Only supported with --noali (do_aln=FALSE); if do_aln=TRUE, fall back to unbanded.
+	   */
+	  if(do_aln) {
+	    /* do_aln=TRUE requires OA alignment; banded domaindef not yet implemented for this.
+	     * Fall back: run unbanded Backward then unbanded domaindef. */
+	    p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
+	    p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
+	    if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  } else {
+	    if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
+	    if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
+	    if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Tgm, pli->gxbb, &bcksc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
+	    if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Tgm, pli->gxfb, pli->gxbb, fwdsc, pli->ddef)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
+	    p7_gbands_Destroy(bnd); bnd = NULL;
+	  }
+	} else {
+	  p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
+	  p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK)
+	    ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	}
 	/*printf("Tbcksc: %.4f\n", bcksc);*/
       }
       else if(use_Rgm) { 

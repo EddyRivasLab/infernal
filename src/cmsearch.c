@@ -223,6 +223,7 @@ static ESL_OPTIONS options[] = {
   { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", NULL, /* see ** above */ "terminate after Stage 3 Fwd and output surviving windows",       106 },
   { "--trmF5",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,    NULL, /* see ** above */ "terminate after Stage 5 env def and output surviving envelopes", 106 },
   { "--fullseqF5", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--trmF5", NULL, "skip HMM stages F1-F3, force full sequence into F5 stage",              106 },
+  { "--p7band",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--trmF5,--fullseqF5,--noali", NULL, "use MSV-derived banded F4/F5 DP (experimental)",                106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },
@@ -830,7 +831,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
     if (info->pli->do_top) { 
       prv_pli_ntophits = info->th->N;
       if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
-			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+			       &(info->cm->fp7), &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* subtract overlapping residues from previous window */
@@ -845,7 +846,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
       prv_pli_ntophits = info->th->N;
       esl_sq_ReverseComplement(dbsq);
       if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
-			       NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+			       &(info->cm->fp7), &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
       cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
       /* subtract overlapping residues from previous window */
@@ -1038,7 +1039,7 @@ pipeline_thread(void *arg)
       if (info->pli->do_top) { 
 	prv_pli_ntophits = info->th->N;
 	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
-				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+				 &(info->cm->fp7), &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* subtract overlapping residues from previous window */
@@ -1053,7 +1054,7 @@ pipeline_thread(void *arg)
 	prv_pli_ntophits = info->th->N;
 	esl_sq_ReverseComplement(dbsq);
 	if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
-				 NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
+				 &(info->cm->fp7), &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) cm_Fail("cm_pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
 	/* subtract overlapping residues from previous window */
@@ -1650,7 +1651,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if (info->pli->do_top) { 
 	    prv_pli_ntophits = info->th->N;
 	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, FALSE, /* FALSE: not in reverse complement */
-				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
+				     &(info->cm->fp7), &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 
@@ -1664,7 +1665,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    esl_sq_ReverseComplement(dbsq);
 	    prv_pli_ntophits = info->th->N;
 	    if((status = cm_Pipeline(info->pli, info->cm->offset, info->om, info->bg, info->p7_evparam, info->msvdata, dbsq, info->th, TRUE, /* TRUE: in reverse complement */
-				     NULL, &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
+				     &(info->cm->fp7), &(info->gm), &(info->Rgm), &(info->Lgm), &(info->Tgm), &(info->cm))) != eslOK) 
 	      mpi_failure("cm_Pipeline() failed unexpected with status code %d\n%s\n", status, info->pli->errbuf);
 	    cm_pipeline_Reuse(info->pli); /* prepare for next search */
 

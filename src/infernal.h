@@ -66,6 +66,8 @@
 #include "esl_sqio.h"
 
 #include "hmmer.h"
+#include "p7_gbands.h"
+#include "p7_gmxb.h"
 
 #ifdef HAVE_MPI
 #include "mpi.h"
@@ -2174,6 +2176,11 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gxb;		/* generic Backward matrix                  */
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
+  P7_GMXB      *gxfb;		/* banded Forward matrix  (--p7band)        */
+  P7_GMXB      *gxbb;		/* banded Backward matrix (--p7band)        */
+  P7_TRACE     *p7tr;		/* P7 trace, for MSV band derivation        */
+  double      **phi;		/* HMM occupancy probs, for p7_Seq2Bands()  */
+  int           phi_M;		/* model length for which phi is allocated  */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
   ESL_ALPHABET *abc;            /* ptr to alphabet info */
@@ -2233,6 +2240,7 @@ typedef struct cm_pipeline_s {
   int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
   int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
   int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
+  int           do_p7band;       /* TRUE to use MSV-derived banded F4/F5 (--p7band)                 */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
@@ -3086,8 +3094,9 @@ extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos,
 /* p7_GBackwardBanded() declared locally in files that use it - requires p7_gmxb.h */
 
 /* from cm_p7_domaindef.c */
-extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
-              P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
+extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om,
+              P7_GMX *fwd, P7_GMX *bck, P7_GMX *gfwd, P7_GMX *gbck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
+/* p7_domaindef_GlocalByPosteriorHeuristics_Banded() declared locally - requires p7_gmxb.h */
 
 /* from cm_p7_modelconfig_trunc.c */
 extern int p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);

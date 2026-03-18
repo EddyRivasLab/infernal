@@ -51,6 +51,7 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
+#include "p7_gmxb.h"
 
 #include "infernal.h"
 
@@ -575,9 +576,77 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
   return eslOK;
 
  ERROR:
-  if(do_aln) { 
+  if(do_aln) {
     p7_trace_Reuse(ddef->tr);
   }
   return status;
 }
-  
+
+
+/* Function:  p7_domaindef_GlocalByPosteriorHeuristics_Banded()
+ * Synopsis:  Banded version of p7_domaindef_GlocalByPosteriorHeuristics().
+ * Incept:    EPN, Wed Mar 18 2026
+ *
+ * Purpose:   Step 1 banded domaindef: for do_aln=FALSE, do_null2=FALSE,
+ *            with a unihit (UNILOCAL/UNIGLOCAL) profile.
+ *
+ *            For the --trmF5 --fullseqF5 --noali --p7band use case,
+ *            the profile Tgm is UNILOCAL and the sequence is the full
+ *            window (i=1..L). Since the profile was not reconfigured
+ *            between the F4 banded Forward and the domain rescore, the
+ *            rescore envsc equals fwdsc directly.  We skip the full
+ *            domain decoding / region-finding machinery and hardcode
+ *            one domain spanning the full sequence.
+ *
+ *            Limitation: Only correct for unihit profiles (no J states)
+ *            where the single domain spans 1..sq->n.  The caller is
+ *            responsible for enforcing this (currently only called from
+ *            the --trmF5 --fullseqF5 --noali banded path).
+ *
+ * Returns:   <eslOK> on success.
+ *            <eslEINCONCEIVABLE> if profile is not unihit.
+ */
+int
+p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm,
+                                                P7_GMXB *gxfb, P7_GMXB *gxbb,
+                                                float fwdsc, P7_DOMAINDEF *ddef)
+{
+  P7_DOMAIN *dom   = NULL;
+  int        status;
+
+  if (p7_IsMulti(gm->mode)) return eslEINCONCEIVABLE;
+
+  if ((status = p7_domaindef_GrowTo(ddef, sq->n)) != eslOK) return status;
+
+  ddef->nexpected = 1.0;
+  ddef->nregions  = 1;
+  ddef->nenvelopes++;
+
+  /* Grow dcl[] if needed */
+  if (ddef->ndom == ddef->nalloc) {
+    void *p;
+    ESL_RALLOC(ddef->dcl, p, sizeof(P7_DOMAIN) * (ddef->nalloc * 2));
+    ddef->nalloc *= 2;
+  }
+  dom = &(ddef->dcl[ddef->ndom]);
+
+  dom->ienv          = 1;
+  dom->jenv          = sq->n;
+  dom->envsc         = fwdsc;   /* in NATS; same as rescore Forward since profile not reconfigured */
+  dom->domcorrection = 0.0;     /* no null2 */
+  dom->oasc          = 0.0;     /* no OA alignment */
+  dom->dombias       = 0.0;
+  dom->bitscore      = 0.0;
+  dom->lnP           = 1.0;
+  dom->is_reported   = FALSE;
+  dom->is_included   = FALSE;
+  dom->ad            = NULL;
+  dom->iali          = 1;
+  dom->jali          = sq->n;
+
+  ddef->ndom++;
+  return eslOK;
+
+ ERROR:
+  return status;
+}

@@ -2306,7 +2306,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
  * 
  */
 int
-p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 	     double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 	     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -2317,15 +2317,16 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   int *iconflict;
   int *kmin, *kmax;
   int ncells;
+  int M = gm->M;  /* model length; equals cm->mlp7->M and cm->clen for RNA profiles */
 
   /* setup for all modes */
   p7_bg_SetLength(bg, L);
   p7_bg_NullOne(bg, dsq, L, &nullsc);
 
   /* generic mode setup */
-  p7_gmx_GrowTo(gx, cm->mlp7->M, L); 
+  p7_gmx_GrowTo(gx, M, L);
   p7_ReconfigLength(gm, L);
-  gx->M = cm->mlp7->M;
+  gx->M = M;
   gx->L = L;
 
   /* Step 1: MSV algorithm M->M transitions only 
@@ -2355,14 +2356,14 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   if(status == eslOK) { /* trace is valid */
     prune_i2k(i2k, iconflict, isc, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
   }
-  else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */ 
-    esl_vec_ISet(k2i, (cm->mlp7->M+1), -1);
+  else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */
+    esl_vec_ISet(k2i, (M+1), -1);
     esl_vec_ISet(i2k, (L+1), -1);
     return status;
   }
 
   /* Step 4: pins -> bands */
-  if((status = p7_pins2bands(i2k, errbuf, L, cm->clen, pad7, &kmin, &kmax, &ncells)) != eslOK) return status;
+  if((status = p7_pins2bands(i2k, errbuf, L, M, pad7, &kmin, &kmax, &ncells)) != eslOK) return status;
   /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 
   /* print gmx in heatmap format */ 
@@ -2620,12 +2621,16 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
       kap = kbp = gm->M+1;   
       dpp = dpc;		/* re-initialize dpp */
       
-      /* re-initialization: specials for previous row ia-1 just outside banded segment:  */
+      /* re-initialization: specials for previous row ia-1 just outside banded segment.
+       * Guard n*xsc[LOOP] against n=0 with xsc[LOOP]=-inf: IEEE 754 gives 0*(-inf)=NaN.
+       * This occurs with truncated profiles (UNILOCAL/UNIGLOCAL) where LOOP = -inf.
+       */
       xE  = -eslINFINITY;
-      xN  = xN + (ia - last_ib - 1) * gm->xsc[p7P_N][p7P_LOOP];
-      xJ  = xJ + (ia - last_ib - 1) * gm->xsc[p7P_J][p7P_LOOP];
+      { int gap = ia - last_ib - 1;
+        if (gap > 0) { xN = xN + gap * gm->xsc[p7P_N][p7P_LOOP];
+	               xJ = xJ + gap * gm->xsc[p7P_J][p7P_LOOP];
+	               xC = xC + gap * gm->xsc[p7P_C][p7P_LOOP]; } }
       xB  = p7_FLogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
-      xC  = xC + (ia - last_ib - 1) * gm->xsc[p7P_C][p7P_LOOP];
 
       for (i = ia; i <= ib; i++)
 	{
@@ -2674,7 +2679,7 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
 
 	  *xpc++ = xE;
 	  *xpc++ = xN = xN + gm->xsc[p7P_N][p7P_LOOP];
-	  *xpc++ = xJ = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_LOOP],  xE + gm->xsc[p7P_E][p7P_MOVE]);
+	  *xpc++ = xJ = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_LOOP],  xE + gm->xsc[p7P_E][p7P_LOOP]);
 	  *xpc++ = xB = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_MOVE],  xN + gm->xsc[p7P_N][p7P_MOVE]);
 	  *xpc++ = xC = p7_FLogsum( xE + gm->xsc[p7P_E][p7P_MOVE],  xC + gm->xsc[p7P_C][p7P_LOOP]);
 
@@ -2685,8 +2690,11 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
       last_ib = ib;
     }
 
-  /* last_ib+1..L is outside any band segment, so it can only run through xC. */
-  if (opt_sc != NULL) *opt_sc = xC + (L-last_ib) *  gm->xsc[p7P_C][p7P_LOOP] + gm->xsc[p7P_C][p7P_MOVE];
+  /* last_ib+1..L is outside any band segment, so it can only run through xC.
+   * Guard against 0*(-inf)=NaN when tail=0 and xsc[C][LOOP]=-inf (truncated profiles).
+   */
+  if (opt_sc != NULL) { int tail = L - last_ib;
+    *opt_sc = (tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE]; }
   return eslOK;
 }
 
@@ -2730,7 +2738,6 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
   float const *tsc    = gm->tsc;                 /* transition scores */
   float const *rsc;                              /* residue scores for current row */
   float       *dpn;                              /* ptr to next row DP matrix cell */
-  float       *last_dpc;                         /* used to reinitialize dpn */
   int          ia, ib;                           /* segment boundaries */
   int          next_ia;                          /* next segment's ia (for handling gaps) */
   int          kac, kbc;                         /* current row band: kac..kbc */
@@ -2778,7 +2785,6 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
       for (i = ib; i >= ia; i--)
         {
           rsc      = (i < L) ? gm->rsc[dsq[i+1]] : NULL;
-          last_dpc = dpc;
 
           /* Get current row's band */
           kbc      = *(--bnd_kp);
