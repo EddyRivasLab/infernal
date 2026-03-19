@@ -220,6 +220,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->stg_time_F7_aln      = 0.0;
   pli->last_dispatch_cp9bands = 0.0;
   pli->last_dispatch_dp       = 0.0;
+  pli->p7gm = NULL;
+  pli->p7bg = NULL;
 
   /* Initializations */
   pli->mode         = mode;
@@ -1751,8 +1753,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
    */
   { ESL_STOPWATCH *w_f6 = esl_stopwatch_Create();
     esl_stopwatch_Start(w_f6);
+  /* Store p7 objects for use by pli_dispatch_cm_search() when --msvband */
+  if(pli->do_msvband && opt_gm != NULL) pli->p7gm = *opt_gm;
+  if(pli->do_msvband)                   pli->p7bg = bg;
+
   for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { /* p will go from 1..6 */
-    if(pli->do_trm_F3 || pli->do_trm_F5)                             continue; 
+    if(pli->do_trm_F3 || pli->do_trm_F5)                             continue;
     if(best_pass != -1               && p != best_pass)              continue; 
     if(p == PLI_PASS_STD_ANY         && (! do_pass_std_any))         continue;
     if(p == PLI_PASS_5P_ONLY_FORCE   && (! do_pass_5p_only_force))   continue;
@@ -4697,9 +4703,73 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     ESL_STOPWATCH *w_dp  = esl_stopwatch_Create();
 
     esl_stopwatch_Start(w_cp9);
-    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
-				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
-				  (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+    if(pli->do_msvband && !do_trunc && pli->p7gm != NULL && pli->p7bg != NULL) {
+      /* --msvband path: derive p7 bands for envelope, use banded CP9 F/B */
+      int    envL = (int)(stop - start + 1);
+      int   *p7_kmin = NULL, *p7_kmax = NULL, *p7_i2k = NULL;
+      int    p7_ncells;
+      float  p7_nullsc;
+      P7_PROFILE *gm_local = pli->p7gm;
+
+      /* Temporarily configure profile to LOCAL for MSV band derivation */
+      p7_ReconfigLength(gm_local, envL);
+      int save_mode = gm_local->mode;
+      p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_LOCAL);
+
+      p7_bg_SetLength(pli->p7bg, envL);
+      p7_bg_NullOne(pli->p7bg, dsq + start - 1, envL, &p7_nullsc);
+
+      p7_gmx_GrowTo(pli->gxf, gm_local->M, envL);
+      pli->gxf->M = gm_local->M;
+      pli->gxf->L = envL;
+
+      status = p7_Seq2Bands(NULL, pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
+			    pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/10,
+			    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+
+      /* Restore profile mode */
+      if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
+      else                       p7_ReconfigLength(gm_local, envL);
+
+      if(status == eslOK && p7_ncells > 0) {
+	/* Use banded CP9 F/B to derive CM bands */
+	status = cp9_Seq2BandsP7B(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
+				  dsq + start - 1, envL, cm->cp9b, p7_kmin, p7_kmax,
+				  (int)start, (int)stop, 0);
+	if(status == eslOK) {
+	  /* Check resulting CM banded matrix size */
+	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, envL, NULL, &hbmx_Mb)) != eslOK) {
+	    if(p7_i2k) free(p7_i2k); if(p7_kmin) free(p7_kmin); if(p7_kmax) free(p7_kmax);
+	    esl_stopwatch_Stop(w_cp9); pli->last_dispatch_cp9bands = w_cp9->elapsed;
+	    pli->last_dispatch_dp = 0.0;
+	    esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
+	    goto ERROR;
+	  }
+	  if(hbmx_Mb > mxsize_limit) {
+	    /* bands too wide, fall back to unbanded cp9_IterateSeq2Bands */
+	    status = eslERANGE;
+	  }
+	}
+      }
+      else {
+	/* MSV trace failed or empty; fall back to unbanded */
+	status = eslERANGE;
+      }
+      if(p7_i2k) free(p7_i2k); if(p7_kmin) free(p7_kmin); if(p7_kmax) free(p7_kmax);
+
+      if(status != eslOK) {
+	/* Fall back to standard unbanded cp9_IterateSeq2Bands */
+	status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
+				      TRUE, FALSE, FALSE,
+				      (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+      }
+    }
+    else {
+      /* Standard unbanded path */
+      status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
+				    TRUE, FALSE, FALSE,
+				    (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+    }
     esl_stopwatch_Stop(w_cp9);
     pli->last_dispatch_cp9bands = w_cp9->elapsed;
 

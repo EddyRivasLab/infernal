@@ -1237,7 +1237,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx is NULL.\n");
   if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx->M != cm->clen.\n");
-  if(cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 EL flag up!\n");
+  /* EL states are handled in the body of this function (unlike cp9_ForwardP7B) */
     
   M = cp9->M;
 
@@ -1617,6 +1617,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   /**********************************************************************************/
   /* End of Backward recursion */
   
+  if(ret_sc != NULL) *ret_sc = Scorify(mmx[i][0]);
   ESL_DPRINTF1(("#DEBUG: cp9_BackwardP7B() return score: %10.4f\n", Scorify(mmx[i][0])));
   return eslOK;
 }
@@ -1737,17 +1738,19 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
  *           fmx         - CP9 dp matrix for Forward()
  *           bmx         - CP9 dp matrix for Backward()
  *           pmx         - CP9 dp matrix to fill with posteriors, can == bmx
- *           dsq         - sequence in digitized form
+ *           dsq         - sequence in digitized form (1..L, offset so dsq[1] is first residue)
  *           L           - length of sequence we're aligning (1..L)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           kmin        - P7 dervied band to enforce: [0.i..L] = k, min node k for residue i
  *           kmax        - P7 derived band to enforce: [0.i..L] = k, min node k for residue i
+ *           i0          - first position in original sequence coords (for cp9_HMM2ijBands)
+ *           j0          - final position in original sequence coords (for cp9_HMM2ijBands)
  *           debug_level - verbosity level for debugging printf()s
  * Return:  eslOK on success;
- * 
+ *
  */
 int
-cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int debug_level)
+cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int debug_level)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
@@ -1775,32 +1778,53 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
    */
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
-  if((status = cp9_ForwardP7B (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-  if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, NULL)) != eslOK) return status;
 
-  if(cm->align_opts & CM_ALIGN_CHECKFB) { 
+  if(cm->align_opts & CM_ALIGN_CHECKFB) {
     if((status = cp9_CheckFBP7B(fmx, bmx, cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
   /* Step 2: F/B -> HMM bands. */
-  if(use_sums){
-    printf("USE SUMS!\n");
-    exit(1);
-  }
-  else {
-    if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
-				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
-    cp9b->tau = cm->tau;
+  { ESL_STOPWATCH *w_s2 = esl_stopwatch_Create();
+    esl_stopwatch_Start(w_s2);
+    if(use_sums){
+      printf("USE SUMS!\n");
+      exit(1);
+    }
+    else {
+      if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
+				      (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
+      cp9b->tau = cm->tau;
+    }
+    esl_stopwatch_Stop(w_s2);
+    fprintf(stderr, "#     cp9_Seq2BandsP7B Step2 FB2HMMBands: %.4f ms\n", w_s2->elapsed * 1000.0);
+    esl_stopwatch_Destroy(w_s2);
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 
-  /* Step 3: HMM bands  ->  CM bands. */
-  if(do_old_hmm2ij) { 
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, debug_level)) != eslOK) return status;
+  /* Step 2b: Shift HMM bands from 1..L to i0..j0 coordinate system.
+   * CP9 F/B operated in 1..L space, so pn_min/pn_max are in that range.
+   * cp9_HMM2ijBands expects them in i0..j0 space. */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    int k;
+    for(k = 0; k <= cp9b->hmm_M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
   }
-  else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, 1, L, FALSE, FALSE, debug_level)) != eslOK) return status;
+
+  /* Step 3: HMM bands  ->  CM bands. */
+  { ESL_STOPWATCH *w_s3 = esl_stopwatch_Create();
+    esl_stopwatch_Start(w_s3);
+    if(do_old_hmm2ij) {
+      if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
+    }
+    else {
+      if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, FALSE, debug_level)) != eslOK) return status;
     /* For debugging, uncomment this block:
        if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, FALSE, debug_level)) != eslOK) { 
        ESL_SQ *tmp;
@@ -1812,12 +1836,15 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
        return status; 
     }
     */
+    }
+    /* Use the CM bands on i and j to get bands on d, specific to j. */
+    /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
+    if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) { esl_stopwatch_Destroy(w_s3); return status; }
+    ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, FALSE, debug_level);
+    esl_stopwatch_Stop(w_s3);
+    fprintf(stderr, "#     cp9_Seq2BandsP7B Step3 HMM2ijBands: %.4f ms\n", w_s3->elapsed * 1000.0);
+    esl_stopwatch_Destroy(w_s3);
   }
-  
-  /* Use the CM bands on i and j to get bands on d, specific to j. */
-  /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
-  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, FALSE, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, 1, L, FALSE)) != eslOK) return status;
@@ -2250,6 +2277,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
   cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
   cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
 
+  /* Always print HMM bands for P7B path debugging */
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, (1.-p_thresh), 1);
 
   free(mass_m);
@@ -2337,13 +2365,11 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   esl_stopwatch_Start(s2b_watch);
   p7_GMSV(dsq, L, gm, gx, 2.0, &usc);
   esl_stopwatch_Stop(s2b_watch);
-  fprintf(stderr, "#     Seq2Bands detail: GMSV=%.4f ms", s2b_watch->elapsed * 1000.0);
 
   /* Step 2: traceback MSV */
   esl_stopwatch_Start(s2b_watch);
   status = my_p7_GTraceMSV(dsq, L, gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
   esl_stopwatch_Stop(s2b_watch);
-  fprintf(stderr, "  Trace=%.4f ms", s2b_watch->elapsed * 1000.0);
 
   /* Step 3: prune pins */
   esl_stopwatch_Start(s2b_watch);
@@ -2354,17 +2380,14 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
     esl_vec_ISet(k2i, (M+1), -1);
     esl_vec_ISet(i2k, (L+1), -1);
     esl_stopwatch_Destroy(s2b_watch);
-    fprintf(stderr, "  (discontiguous trace)\n");
     return status;
   }
   esl_stopwatch_Stop(s2b_watch);
-  fprintf(stderr, "  Prune=%.4f ms", s2b_watch->elapsed * 1000.0);
 
   /* Step 4: pins -> bands */
   esl_stopwatch_Start(s2b_watch);
   if((status = p7_pins2bands(i2k, errbuf, L, M, pad7, &kmin, &kmax, &ncells)) != eslOK) { esl_stopwatch_Destroy(s2b_watch); return status; }
   esl_stopwatch_Stop(s2b_watch);
-  fprintf(stderr, "  Pins2Bands=%.4f ms  (L=%d M=%d)\n", s2b_watch->elapsed * 1000.0, L, M);
   esl_stopwatch_Destroy(s2b_watch);
   /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 

@@ -168,7 +168,7 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   if(mx->M != M) ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), mx->M: %d != M passed in: %d\n", mx->M, M);
   if(N < 0)      ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), N: %d < 0\n", N);
 
-  do_banded = (kmin != NULL && kmax == NULL) ?  TRUE : FALSE;
+  do_banded = (kmin != NULL && kmax != NULL) ?  TRUE : FALSE;
   if(do_banded) { 
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
@@ -280,7 +280,7 @@ SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax)
   int do_banded;
   float ret_mb = 0.;
 
-  do_banded = (kmin != NULL && kmax == NULL) ?  TRUE : FALSE;
+  do_banded = (kmin != NULL && kmax != NULL) ?  TRUE : FALSE;
   if(do_banded) { 
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
