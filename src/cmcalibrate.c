@@ -22,6 +22,7 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_dmatrix.h"
+#include "esl_dsq.h"
 #include "esl_exponential.h"
 #include "esl_getopts.h"
 #include "esl_histogram.h"
@@ -2281,7 +2282,7 @@ generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
     free(sq->name); 
     sq->name = NULL;
 
-    if ((status = esl_abc_dsqdup(dsq, cfg->L, &(sq->dsq))) != eslOK) goto ERROR;
+    if ((status = esl_dsq_Clone(dsq, cfg->L, &(sq->dsq))) != eslOK) goto ERROR;
     free(dsq); /* we just duplicated it */
     sq->L = cfg->L; 
     /* set the name (we don't actually use it, but all valid ESL_SQ objects are supposed to have it) */

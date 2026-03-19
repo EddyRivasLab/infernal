@@ -26,6 +26,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_dsq.h"
 #include "esl_random.h"
 #include "esl_sq.h"
 #include "esl_sqio.h"
@@ -2510,7 +2511,7 @@ Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL
     for(apos = 1; apos <= msa->alen; apos++) 
       map[apos] = esl_abc_XIsGap(msa->abc, msa->ax[i][apos]) ? -1 : uapos++;
     /* get text seq, we need digitized AND text seqs for Transmogrify */
-    esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, aseq);
+    esl_dsq_Textize(msa->abc, msa->ax[i], msa->alen, aseq);
     esl_strdup(aseq, -1, &uaseq);
     /* dealign seq */
     esl_strdealign(uaseq, uaseq, "-_.~", NULL);
