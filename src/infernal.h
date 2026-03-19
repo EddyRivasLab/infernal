@@ -2190,7 +2190,14 @@ typedef struct cm_pipeline_s {
   double        stg_time_seq2bands; /* p7_Seq2Bands (includes GMSV)                */
   double        stg_time_F4;      /* F4 glocal Forward                             */
   double        stg_time_F5;      /* F5 envelope definition (Backward + domaindef) */
-  double        stg_time_F6;      /* F6+ CM stages (CYK, Inside, alignment)        */
+  double        stg_time_F6;      /* F6+ CM stages total                           */
+  double        stg_time_F6_cp9bands; /* cp9_IterateSeq2Bands in F6 CYK filter    */
+  double        stg_time_F6_cykdp;    /* CYK DP in F6                             */
+  double        stg_time_F7_cp9bands; /* cp9_IterateSeq2Bands in F7 final stage   */
+  double        stg_time_F7_dp;       /* Inside/CYK DP in F7 final stage          */
+  double        stg_time_F7_aln;      /* alignment (pli_align_hit) in F7          */
+  double        last_dispatch_cp9bands; /* temp: cp9 band time from last dispatch */
+  double        last_dispatch_dp;       /* temp: DP time from last dispatch       */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
   ESL_ALPHABET *abc;            /* ptr to alphabet info */

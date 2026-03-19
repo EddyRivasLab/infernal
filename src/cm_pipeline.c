@@ -213,6 +213,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->stg_time_F4       = 0.0;
   pli->stg_time_F5       = 0.0;
   pli->stg_time_F6       = 0.0;
+  pli->stg_time_F6_cp9bands = 0.0;
+  pli->stg_time_F6_cykdp    = 0.0;
+  pli->stg_time_F7_cp9bands = 0.0;
+  pli->stg_time_F7_dp       = 0.0;
+  pli->stg_time_F7_aln      = 0.0;
+  pli->last_dispatch_cp9bands = 0.0;
+  pli->last_dispatch_dp       = 0.0;
 
   /* Initializations */
   pli->mode         = mode;
@@ -1300,6 +1307,19 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
     p1->acct[p].n_aln_dccyk      += p2->acct[p].n_aln_dccyk;
   }
 
+  /* merge stage timing accumulators */
+  p1->stg_time_F1F3      += p2->stg_time_F1F3;
+  p1->stg_time_gmsv      += p2->stg_time_gmsv;
+  p1->stg_time_seq2bands += p2->stg_time_seq2bands;
+  p1->stg_time_F4        += p2->stg_time_F4;
+  p1->stg_time_F5        += p2->stg_time_F5;
+  p1->stg_time_F6        += p2->stg_time_F6;
+  p1->stg_time_F6_cp9bands += p2->stg_time_F6_cp9bands;
+  p1->stg_time_F6_cykdp    += p2->stg_time_F6_cykdp;
+  p1->stg_time_F7_cp9bands += p2->stg_time_F7_cp9bands;
+  p1->stg_time_F7_dp       += p2->stg_time_F7_dp;
+  p1->stg_time_F7_aln      += p2->stg_time_F7_aln;
+
   return eslOK;
 }
 
@@ -2010,6 +2030,13 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
       fprintf(ofp, "#   F4 (glocal Forward):          %8.2f sec  (%5.1f%%)\n", pli->stg_time_F4, 100.0 * pli->stg_time_F4 / total_stg);
       fprintf(ofp, "#   F5 (envelope definition):     %8.2f sec  (%5.1f%%)\n", pli->stg_time_F5, 100.0 * pli->stg_time_F5 / total_stg);
       fprintf(ofp, "#   F6+ (CM stages):              %8.2f sec  (%5.1f%%)\n", pli->stg_time_F6, 100.0 * pli->stg_time_F6 / total_stg);
+      if (pli->stg_time_F6 > 0.001) {
+	fprintf(ofp, "#     F6 cp9_Seq2Bands:          %8.2f sec  (%5.1f%%)\n", pli->stg_time_F6_cp9bands, 100.0 * pli->stg_time_F6_cp9bands / total_stg);
+	fprintf(ofp, "#     F6 CYK DP:                 %8.2f sec  (%5.1f%%)\n", pli->stg_time_F6_cykdp,    100.0 * pli->stg_time_F6_cykdp / total_stg);
+	fprintf(ofp, "#     F7 cp9_Seq2Bands:          %8.2f sec  (%5.1f%%)\n", pli->stg_time_F7_cp9bands, 100.0 * pli->stg_time_F7_cp9bands / total_stg);
+	fprintf(ofp, "#     F7 Inside/CYK DP:          %8.2f sec  (%5.1f%%)\n", pli->stg_time_F7_dp,       100.0 * pli->stg_time_F7_dp / total_stg);
+	fprintf(ofp, "#     F7 alignment:              %8.2f sec  (%5.1f%%)\n", pli->stg_time_F7_aln,      100.0 * pli->stg_time_F7_aln / total_stg);
+      }
       fprintf(ofp, "#   Total (timed stages):         %8.2f sec\n", total_stg);
     }
   }
@@ -3911,9 +3938,11 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     cm->search_opts  = pli->fcyk_cm_search_opts;
     cm->tau          = pli->fcyk_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
-    status = pli_dispatch_cm_search(pli, cm, sq->dsq, p7es[i], p7ee[i], NULL, 0., cyk_env_cutoff, qdbidx, &sc, 
-				    (pli->do_fcykenv) ? &cyk_envi : NULL, 
+    status = pli_dispatch_cm_search(pli, cm, sq->dsq, p7es[i], p7ee[i], NULL, 0., cyk_env_cutoff, qdbidx, &sc,
+				    (pli->do_fcykenv) ? &cyk_envi : NULL,
 				    (pli->do_fcykenv) ? &cyk_envj : NULL);
+    pli->stg_time_F6_cp9bands += pli->last_dispatch_cp9bands;
+    pli->stg_time_F6_cykdp    += pli->last_dispatch_dp;
 
     if(status == eslERANGE) {
       pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
@@ -4053,6 +4082,8 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
   cutoff          = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
   sq_hitlist      = cm_tophits_Create();
   status = pli_dispatch_cm_search(pli, cm, sq->dsq, 1, sq->n, sq_hitlist, cutoff, 0., qdbidx, &sc, NULL, NULL);
+  pli->stg_time_F6_cp9bands += pli->last_dispatch_cp9bands;
+  pli->stg_time_F6_cykdp    += pli->last_dispatch_dp;
   if(status == eslERANGE) ESL_FAIL(status, pli->errbuf, "pli_cyk_seq_filter(), internal error, trying to use a HMM banded matrix");
   else if(status != eslOK) return status;
 
@@ -4189,6 +4220,8 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     cm->tau          = pli->final_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB2_LOOSE;
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
+    pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
+    pli->stg_time_F7_dp       += pli->last_dispatch_dp;
     if(status == eslERANGE) {
       pli->acct[pli->cur_pass_idx].n_overflow_final++;
       continue; /* skip envelopes that would require too big a HMM banded matrix */
@@ -4269,7 +4302,13 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       if(scan_cp9b == NULL && (pli->cm_align_opts & CM_ALIGN_HBANDED)) { 
 	ESL_FAIL(eslEINVAL, pli->errbuf, "did not use HMM bands for Inside search stage, but will for hit alignment, this shouldn't happen");
       }
-      if((status = pli_align_hit(pli, cm, sq, hit)) != eslOK) return status;
+      { ESL_STOPWATCH *w_aln = esl_stopwatch_Create();
+        esl_stopwatch_Start(w_aln);
+        if((status = pli_align_hit(pli, cm, sq, hit)) != eslOK) { esl_stopwatch_Destroy(w_aln); return status; }
+        esl_stopwatch_Stop(w_aln);
+        pli->stg_time_F7_aln += w_aln->elapsed;
+        esl_stopwatch_Destroy(w_aln);
+      }
       
       /* Finally, if we're using model-specific bit score thresholds,
        * determine if the significance of the hit (is it reported
@@ -4653,47 +4692,58 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
          do_trunc, do_inside, cutoff, env_cutoff, do_hbanded, (hitlist == NULL) ? 0 : 1, (opt_envi == NULL && opt_envj == NULL) ? 0 : 1, start, stop); 
 #endif
 
-  if(do_hbanded) { 
-    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit, 
+  if(do_hbanded) {
+    ESL_STOPWATCH *w_cp9 = esl_stopwatch_Create();
+    ESL_STOPWATCH *w_dp  = esl_stopwatch_Create();
+
+    esl_stopwatch_Start(w_cp9);
+    status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
 				  TRUE, FALSE, FALSE, /* yes we're doing search, no we won't sample from mx, no we don't need posteriors (yet) */
 				  (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
-    if(status == eslERANGE) { 
-      /* HMM banded matrix exceeded mxsize_limit with tau of
-       * pli->maxtau. We kill this potential hit. The memory limit
-       * is acting as a filter. This is the only filter that is 
-       * used differently for different sized models. The bigger
-       * a model, the more likely it is to have a hit killed here.
-       */
-      goto ERROR; /* we'll return eslERANGE, and caller will increment pli->n_overflow_* */
+    esl_stopwatch_Stop(w_cp9);
+    pli->last_dispatch_cp9bands = w_cp9->elapsed;
+
+    if(status == eslERANGE) {
+      pli->last_dispatch_dp = 0.0;
+      esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
+      goto ERROR;
     }
-    else if(status != eslOK) { 
-      printf("pli_dispatch_cm_search(), error: %s\n", pli->errbuf); goto ERROR; 
+    else if(status != eslOK) {
+      pli->last_dispatch_dp = 0.0;
+      esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
+      printf("pli_dispatch_cm_search(), error: %s\n", pli->errbuf); goto ERROR;
     }
-    else if(status == eslOK) { 
+    else if(status == eslOK) {
       /* bands imply a matrix or size mxsize_limit or smaller with tau == cm->tau <= pli->maxtau */
+      esl_stopwatch_Start(w_dp);
       if(do_trunc) { /* HMM banded, truncated */
-	if(do_inside) { 
+	if(do_inside) {
 	  status = FTrInsideScanHB(cm, pli->errbuf, cm->trhb_mx, mxsize_limit, pli->cur_pass_idx, dsq, start, stop,
 				   cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
 	}
-	else { 
+	else {
 	  status = TrCYKScanHB(cm, pli->errbuf, cm->trhb_mx, mxsize_limit, pli->cur_pass_idx, dsq, start, stop,
 			       cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc);
 	}
       }
       else { /* HMM banded, not truncated */
-	if(do_inside) { 
+	if(do_inside) {
 	  status = FastFInsideScanHB(cm, pli->errbuf, cm->hb_mx, mxsize_limit, dsq, start, stop,
 				     cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
-	else { 
+	else {
 	  status = FastCYKScanHB(cm, pli->errbuf, cm->hb_mx, mxsize_limit, dsq, start, stop,
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
       }
+      esl_stopwatch_Stop(w_dp);
+      pli->last_dispatch_dp = w_dp->elapsed;
     }
+    esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
   }
-  else if (do_qdb_or_nonbanded) { 
+  else if (do_qdb_or_nonbanded) {
+    pli->last_dispatch_cp9bands = 0.0;
+    pli->last_dispatch_dp = 0.0;
     if(do_trunc) { 
       if(cm->trsmx == NULL) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_dispatch_cm_search(), need truncated scan mx but don't have one");
       if(do_inside) { /* not HMM banded, truncated */
