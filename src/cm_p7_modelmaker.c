@@ -316,6 +316,151 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   return status;
 }
 
+/* Function:  cm_p7_GForwardScoreOnly()
+ * Synopsis:  Two-row generic Forward, returning score only.
+ * Incept:    EPN*, Thu Mar 19 2026
+ *
+ * Purpose:   Compute the Forward score for digital sequence <dsq> of
+ *            length <L> against profile <gm>, using only two rows of
+ *            DP memory instead of the full L x M matrix used by
+ *            p7_GForward(). Only the final Forward score is returned;
+ *            no DP matrix is retained.
+ *
+ *            Adapted from p7_GForward() (hmmer/src/generic_fwdback.c)
+ *            and forward_row() (hmmer/src/generic_fwdback_chk.c).
+ *
+ *            This is intended for use in calibration (cm_p7_Tau()),
+ *            where we need Forward scores for many random sequences
+ *            but never need the full DP matrix. For large models
+ *            (M=35000, L=70000), this reduces memory from ~29 GB
+ *            to ~840 KB.
+ *
+ * Args:      dsq    - digital sequence, 1..L
+ *            L      - length of dsq
+ *            gm     - profile (configured for length L)
+ *            opt_sc - optRETURN: Forward lod score in nats
+ *
+ * Returns:   <eslOK> on success, <*opt_sc> is the Forward score in nats.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *opt_sc)
+{
+  int          status;
+  float const *tsc  = gm->tsc;
+  int          M    = gm->M;
+  float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  int          rowsize = (M+1) * p7G_NSCELLS + p7G_NXCELLS;  /* MID states + specials per row */
+  float       *mem  = NULL;    /* allocated memory for two rows */
+  float       *prev = NULL;    /* pointer to previous row */
+  float       *cur  = NULL;    /* pointer to current row */
+  float       *tmp;
+  int          i, k;
+
+  /* Macros for accessing states in a flat row.
+   * MID states are at row[k * p7G_NSCELLS + state].
+   * Specials are at row[(M+1) * p7G_NSCELLS + special].
+   */
+#define ROWMX(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
+#define ROWXM(row,s)   ((row)[(M+1) * p7G_NSCELLS + (s)])
+
+  p7_FLogsumInit();
+
+  ESL_ALLOC(mem, sizeof(float) * 2 * rowsize);
+  prev = mem;
+  cur  = mem + rowsize;
+
+  /* Initialization of row 0 */
+  for (k = 0; k <= M; k++)
+    ROWMX(prev, k, p7G_M) = ROWMX(prev, k, p7G_I) = ROWMX(prev, k, p7G_D) = -eslINFINITY;
+  ROWXM(prev, p7G_N) = 0;
+  ROWXM(prev, p7G_B) = gm->xsc[p7P_N][p7P_MOVE];
+  ROWXM(prev, p7G_E) = ROWXM(prev, p7G_C) = ROWXM(prev, p7G_J) = -eslINFINITY;
+
+  /* Recursion */
+  for (i = 1; i <= L; i++)
+    {
+      float const *rsc = gm->rsc[dsq[i]];
+      float sc;
+
+      ROWMX(cur, 0, p7G_M) = ROWMX(cur, 0, p7G_I) = ROWMX(cur, 0, p7G_D) = -eslINFINITY;
+      ROWXM(cur, p7G_E) = -eslINFINITY;
+
+      for (k = 1; k < M; k++)
+	{
+	  /* match state */
+	  sc = p7_FLogsum(p7_FLogsum(ROWMX(prev,k-1,p7G_M) + TSC(p7P_MM,k-1),
+				     ROWMX(prev,k-1,p7G_I) + TSC(p7P_IM,k-1)),
+			  p7_FLogsum(ROWMX(prev,k-1,p7G_D) + TSC(p7P_DM,k-1),
+				     ROWXM(prev,p7G_B)      + TSC(p7P_BM,k-1)));
+	  ROWMX(cur, k, p7G_M) = sc + MSC(k);
+
+	  /* insert state */
+	  sc = p7_FLogsum(ROWMX(prev,k,p7G_M) + TSC(p7P_MI,k),
+			  ROWMX(prev,k,p7G_I) + TSC(p7P_II,k));
+	  ROWMX(cur, k, p7G_I) = sc + ISC(k);
+
+	  /* delete state */
+	  ROWMX(cur, k, p7G_D) = p7_FLogsum(ROWMX(cur,k-1,p7G_M) + TSC(p7P_MD,k-1),
+					     ROWMX(cur,k-1,p7G_D) + TSC(p7P_DD,k-1));
+
+	  /* E state update */
+	  ROWXM(cur, p7G_E) = p7_FLogsum(p7_FLogsum(ROWMX(cur,k,p7G_M) + esc,
+						     ROWMX(cur,k,p7G_D) + esc),
+					  ROWXM(cur, p7G_E));
+	}
+
+      /* unrolled match state M_M */
+      sc = p7_FLogsum(p7_FLogsum(ROWMX(prev,M-1,p7G_M) + TSC(p7P_MM,M-1),
+				 ROWMX(prev,M-1,p7G_I) + TSC(p7P_IM,M-1)),
+		      p7_FLogsum(ROWMX(prev,M-1,p7G_D) + TSC(p7P_DM,M-1),
+				 ROWXM(prev,p7G_B)      + TSC(p7P_BM,M-1)));
+      ROWMX(cur, M, p7G_M) = sc + MSC(M);
+      ROWMX(cur, M, p7G_I) = -eslINFINITY;
+
+      /* unrolled delete state D_M */
+      ROWMX(cur, M, p7G_D) = p7_FLogsum(ROWMX(cur,M-1,p7G_M) + TSC(p7P_MD,M-1),
+					 ROWMX(cur,M-1,p7G_D) + TSC(p7P_DD,M-1));
+
+      /* unrolled E state update */
+      ROWXM(cur, p7G_E) = p7_FLogsum(p7_FLogsum(ROWMX(cur,M,p7G_M),
+						 ROWMX(cur,M,p7G_D)),
+				      ROWXM(cur, p7G_E));
+
+      /* J state */
+      ROWXM(cur, p7G_J) = p7_FLogsum(ROWXM(prev, p7G_J) + gm->xsc[p7P_J][p7P_LOOP],
+				      ROWXM(cur,  p7G_E) + gm->xsc[p7P_E][p7P_LOOP]);
+      /* C state */
+      ROWXM(cur, p7G_C) = p7_FLogsum(ROWXM(prev, p7G_C) + gm->xsc[p7P_C][p7P_LOOP],
+				      ROWXM(cur,  p7G_E) + gm->xsc[p7P_E][p7P_MOVE]);
+      /* N state */
+      ROWXM(cur, p7G_N) = ROWXM(prev, p7G_N) + gm->xsc[p7P_N][p7P_LOOP];
+
+      /* B state */
+      ROWXM(cur, p7G_B) = p7_FLogsum(ROWXM(cur, p7G_N) + gm->xsc[p7P_N][p7P_MOVE],
+				      ROWXM(cur, p7G_J) + gm->xsc[p7P_J][p7P_MOVE]);
+
+      /* swap rows */
+      tmp = prev; prev = cur; cur = tmp;
+    }
+
+  /* after the swap, prev holds the final row L */
+  if (opt_sc != NULL) *opt_sc = ROWXM(prev, p7G_C) + gm->xsc[p7P_C][p7P_MOVE];
+
+  free(mem);
+
+#undef ROWMX
+#undef ROWXM
+  return eslOK;
+
+ ERROR:
+  if (mem != NULL) free(mem);
+  if (opt_sc != NULL) *opt_sc = 0.;
+  return status;
+}
+
+
 /* Function:  cm_p7_Tau()
  * Synopsis:  Determine Forward tau by brief simulation.
  * Incept:    SRE, Thu Aug  9 15:08:39 2007 [Janelia] (p7_Tau())
@@ -344,7 +489,6 @@ int
 cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau)
 {
   P7_OMX  *ox = NULL;
-  P7_GMX  *gx = NULL;
 
   ESL_DSQ *dsq     = NULL;
   double  *xv      = NULL;
@@ -358,11 +502,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   if(om != NULL && gm != NULL) { status = eslEINVAL; goto ERROR; }
   do_generic = (gm != NULL) ? TRUE : FALSE;
 
-  if(do_generic) { 
-    gx = p7_gmx_Create(gm->M, L); /* DP matrix: for ForwardParser,  L rows */
-    if (gx == NULL) { status = eslEMEM; goto ERROR; }
-  }
-  else { 
+  if(! do_generic) {
     ox = p7_omx_Create(om->M, 0, L);     /* DP matrix: for ForwardParser,  L rows */
     if (ox == NULL) { status = eslEMEM; goto ERROR; }
   }
@@ -376,14 +516,14 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 
   for (i = 0; i < N; i++)
     {
-      if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR; 
-      if(do_generic) { 
-	if ((status = p7_GForward(dsq, L, gm, gx, &fsc))           != eslOK) goto ERROR;
+      if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR;
+      if(do_generic) {
+	if ((status = cm_p7_GForwardScoreOnly(dsq, L, gm, &fsc))   != eslOK) goto ERROR;
       }
-      else { 
+      else {
 	if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
       }
-      if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR; 
+      if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
       sc = (fsc - nullsc) / eslCONST_LOG2;
       xv[i] = sc;
     }
@@ -399,7 +539,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   free(xv);
   free(dsq);
   if (ox != NULL) p7_omx_Destroy(ox);
-  if (gx != NULL) p7_gmx_Destroy(gx);
+  /* gx removed: was never declared or used */
   return eslOK;
 
  ERROR:
@@ -407,7 +547,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   if (xv  != NULL) free(xv);
   if (dsq != NULL) free(dsq);
   if (ox  != NULL) p7_omx_Destroy(ox);
-  if (gx  != NULL) p7_gmx_Destroy(gx);
+  /* gx removed: was never declared or used */
   return status;
 }
 
