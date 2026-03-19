@@ -1100,13 +1100,13 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
 
 	/* el state */
 	sc = -INFTY;
-	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex:
 								  HMM nodes that map to right half of a MATP_MP) */
 	  {
-	    if(mmx[i][kpcur] != -INFTY) { 
+	    sc = mmx[i][kpcur] + CP9TSC(cp9O_MEL,k); /* M_k -> EL_k transition */
+	    if(INBAND(i-1, k)) { /* EL_k self-loop: only if k was in band at previous row */
 	      kpprv_el = k - kmin[(i-1)];
-	      sc = ILogsum(mmx[i][kpcur]  + CP9TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
-			   elmx[i-1][kpprv_el] + el_selfsc);      /* transitioned from cur node's EL state emitted ip on transition */
+	      sc = ILogsum(sc, elmx[i-1][kpprv_el] + el_selfsc);
 	    }
 	  }
 	elmx[i][kpcur] = sc;
