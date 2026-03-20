@@ -1847,7 +1847,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   }
 
 #if eslDEBUGLEVEL >= 1
-  if((status = cp9_ValidateBands(cm, errbuf, cp9b, 1, L, FALSE)) != eslOK) return status;
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, FALSE)) != eslOK) return status;
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm); 
