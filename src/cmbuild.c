@@ -4,6 +4,7 @@
  */
 
 #include <esl_config.h>
+#include <p7_config.h>
 #include "config.h"
 
 #include <stdio.h>
@@ -23,12 +24,19 @@
 #include "esl_msacluster.h"
 #include "esl_stack.h"
 #include "esl_stopwatch.h"
+#ifdef HMMER_THREADS
+#include "esl_threads.h"
+#endif
 #include "esl_tree.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
 
 #include "infernal.h"
+
+#ifdef HMMER_THREADS
+#define CPUOPTS     NULL
+#endif
 
 #define CONOPTS "--fast,--hand,--rsearch"                      /* Exclusive options for model construction                    */
 #define WGTOPTS "--wpb,--wgsc,--wblosum,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
@@ -44,6 +52,9 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout",            1 },
   { "-O",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "resave consensus/insert column annotated MSA to file <f>", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise hidden developer/expert options",   1 },
+#ifdef HMMER_THREADS
+  { "--cpu",     eslARG_INT, CMNCPU,"INFERNAL_NCPU","n>=0",  NULL,      NULL,   CPUOPTS, "number of parallel CPU workers to use for multithreads",   1 },
+#endif
 
   /* Expert model construction options */
   /* name          type            default  env  range       toggles       reqs        incomp  help  docgroup*/
@@ -123,6 +134,7 @@ static ESL_OPTIONS options[] = {
   { "--Egcmult", eslARG_REAL,   "2.0", NULL, "x>0.",  NULL,  NULL, NULL,        "length of seqs to search for glocal stats is <x> * cm->clen", 107 },
   { "--ElL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Elcmult", "length of seqs to search for local stats is <n>",             107 },
   { "--EgL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Egcmult", "length of seqs to search for glocal stats is <n>",            107 },
+  { "--Eseed",   eslARG_INT,     "42", NULL, "n>=0",  NULL,  NULL, NULL,        "set RNG seed for p7 calibration to <n> (0=arbitrary)",         107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -742,6 +754,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
   if (esl_opt_IsUsed(go, "--Egcmult"))     { fprintf(ofp, "# cm->clen multiplier for HMM glocal calib seq len:   %f\n", esl_opt_GetReal(go, "--Egcmult")); }
   if (esl_opt_IsUsed(go, "--ElL"))         { fprintf(ofp, "# seq length for local filter HMM calibration:        %d\n", esl_opt_GetInteger(go, "--ElL")); }
   if (esl_opt_IsUsed(go, "--EgL"))         { fprintf(ofp, "# seq length for glocal filter HMM calibration:       %d\n", esl_opt_GetInteger(go, "--EgL")); }
+  if (esl_opt_IsUsed(go, "--Eseed"))       { fprintf(ofp, "# RNG seed for p7 calibration:                        %d\n", esl_opt_GetInteger(go, "--Eseed")); }
 
   if (esl_opt_IsUsed(go, "--verbose"))     { fprintf(ofp, "# verbose mode:                                       on\n"); }
   if (esl_opt_IsUsed(go, "--cfile"))       { fprintf(ofp, "# saving count vectors to file:                       %s\n", esl_opt_GetString(go, "--cfile")); }
@@ -766,6 +779,9 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
   if (esl_opt_IsUsed(go, "--pebegin"))     { fprintf(ofp, "# set all local begins as equiprobable:               yes\n"); }
   if (esl_opt_IsUsed(go, "--pfend"))       { fprintf(ofp, "# set all local end probs to:                         %g\n", esl_opt_GetReal(go, "--pfend")); }
 
+#ifdef HMMER_THREADS
+  if (esl_opt_IsUsed(go, "--cpu"))        { fprintf(ofp, "# number of worker threads:                           %d\n", esl_opt_GetInteger(go, "--cpu")); }
+#endif
    fprintf(ofp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
    return;
@@ -2444,13 +2460,21 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   }
 
   /* calibrate the HMM filter */
-  if((status = cm_p7_Calibrate(fhmm, errbuf, 
-			       lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */    
-			       lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-			       lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
-			       &agfmu, &agflambda))  
-     != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
+  {
+    int ncpus = 0;
+#ifdef HMMER_THREADS
+    ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
+#endif
+    if((status = cm_p7_Calibrate(fhmm, errbuf,
+				 lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */
+				 lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
+				 lftailp,                                    /* fraction of tail mass to fit for local Fwd */
+				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
+				 esl_opt_GetInteger(go, "--Eseed"),           /* RNG seed for calibration */
+				 ncpus,
+				 &agfmu, &agflambda))
+       != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
+  }
 
   if((status = cm_p7_hmm_SetConsensus(fhmm)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter consensus annotation");
   if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda))       != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
