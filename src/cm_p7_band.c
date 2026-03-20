@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <float.h>
+#include <limits.h>
 #include <assert.h>
 
 #include "easel.h"
@@ -1810,35 +1811,6 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 
-  /* Step 2a: Set truncation candidate valid arrays.
-   * For truncated passes, conservatively set all states as valid for all modes.
-   * For non-truncated passes, only J mode is valid (standard behavior).
-   */
-  if(do_trunc) {
-    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
-    esl_vec_ISet(cp9b->Lvalid, cm->M+1, TRUE);
-    esl_vec_ISet(cp9b->Rvalid, cm->M+1, TRUE);
-    esl_vec_ISet(cp9b->Tvalid, cm->M+1, TRUE);
-    /* Set marginal bounds conservatively to full envelope range.
-     * cp9_PredictStartAndEndPositions() can't run on banded posteriors,
-     * so we allow any position as a marginal alignment boundary.
-     */
-    cp9b->Rmarg_imin = i0;
-    cp9b->Rmarg_imax = j0;
-    cp9b->Lmarg_jmin = i0;
-    cp9b->Lmarg_jmax = j0;
-    cp9b->sp1 = 1;
-    cp9b->sp2 = 1;
-    cp9b->ep1 = cp9b->hmm_M;
-    cp9b->ep2 = cp9b->hmm_M;
-  }
-  else {
-    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
-    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
-    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
-    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
-  }
-
   /* Step 2b: Shift HMM bands from 1..L to i0..j0 coordinate system.
    * CP9 F/B operated in 1..L space, so pn_min/pn_max are in that range.
    * cp9_HMM2ijBands expects them in i0..j0 space. */
@@ -1850,6 +1822,23 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
       if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
       if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
     }
+  }
+
+  /* Step 2c: Set truncation candidate valid arrays.
+   * Must be after Step 2b because Parts 3-4 of PredictStartAndEndPositions
+   * use pn_min/pn_max which need to be in i0..j0 coordinates.
+   * The posterior matrix (used in Parts 1-2) remains in 1..L coordinates,
+   * which is fine since those parts use band-relative indexing via kmin/kmax.
+   */
+  if(do_trunc) {
+    cp9_PredictStartAndEndPositionsP7B(pmx, cp9b, kmin, kmax, i0, j0);
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+  }
+  else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
 
   /* Step 3: HMM bands  ->  CM bands. */
@@ -1890,6 +1879,165 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
 
   return eslOK;
+}
+
+
+/* Function: cp9_PredictStartAndEndPositionsP7B()
+ * Date    : 2026-03-20
+ *
+ * Purpose:  Banded version of cp9_PredictStartAndEndPositions().
+ *           Computes sp1/sp2 (first HMM nodes with significant occupancy)
+ *           and ep1/ep2 (last such nodes) from banded CP9 posterior matrix,
+ *           then derives Rmarg_imin/imax and Lmarg_jmin/jmax.
+ *
+ *           The only difference from the unbanded version is that the
+ *           occupancy sum over rows for a given node k only visits rows
+ *           where k is within the P7 band [kmin[i]..kmax[i]], and uses
+ *           band-relative indexing to access the banded matrix.
+ *
+ * Args:     pmx   - banded CP9 posterior matrix (from cp9_PosteriorP7B)
+ *           cp9b  - CP9 bands, with pn_min/pn_max already filled
+ *           kmin  - [0..L] P7-derived min node for each row
+ *           kmax  - [0..L] P7-derived max node for each row
+ *           i0    - first position in original sequence coords
+ *           j0    - last position in original sequence coords
+ *
+ * Returns:  void. cp9b->sp1/sp2/ep1/ep2 and Rmarg/Lmarg bounds are set.
+ */
+void
+cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0)
+{
+  int i;
+  int k;
+  int L = j0-i0+1;
+  int   iocc;
+  float pocc;
+
+  /* Part 1: Find sp1/sp2 — first nodes (left to right) with significant occupancy */
+  k = 1;
+  cp9b->sp1 = cp9b->sp2 = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) {
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+      k++;
+    }
+    else {
+      iocc = -INFTY;
+      for(i = 0; i <= L; i++) {
+	if(k >= kmin[i] && k <= kmax[i]) {
+	  int kp = k - kmin[i];
+	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][kp], pmx->dmx[i][kp]));
+	}
+      }
+      pocc = Score2Prob(iocc, 1.);
+      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
+      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
+      k++;
+    }
+  }
+  if(k == cp9b->hmm_M+1) {
+    if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; }
+    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; }
+  }
+
+  /* Part 2: Find ep1/ep2 — last nodes (right to left) with significant occupancy */
+  if((cp9b->sp1 == cp9b->hmm_M+1) &&
+     (cp9b->sp2 == cp9b->hmm_M+1)) {
+    cp9b->ep1 = 0;
+    cp9b->ep2 = 0;
+  }
+  else {
+    cp9b->ep1 = cp9b->ep2 = -1;
+    k = cp9b->hmm_M;
+    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) {
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+	k--;
+      }
+      else {
+	iocc = -INFTY;
+	for(i = 0; i <= L; i++) {
+	  if(k >= kmin[i] && k <= kmax[i]) {
+	    int kp = k - kmin[i];
+	    iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][kp], pmx->dmx[i][kp]));
+	  }
+	}
+	pocc = Score2Prob(iocc, 1.);
+	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
+	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
+	k--;
+      }
+    }
+    if(k == 0) {
+      if(cp9b->ep1 == -1) { cp9b->ep1 = 0; }
+      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; }
+    }
+  }
+
+  /* Parts 3-4: Derive Rmarg_imin/imax from sp1/sp2, Lmarg_jmin/jmax from ep1/ep2.
+   * These only use pn_min/pn_max arrays (not the posterior matrix), so they are
+   * identical to the unbanded version.
+   */
+
+  /* set cp9b->Rmarg_imin */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imin = i0; }
+  else {
+    cp9b->Rmarg_imin = INT_MAX;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imin == INT_MAX || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imin = ESL_MAX(i0,   cp9b->Rmarg_imin);
+    cp9b->Rmarg_imin = ESL_MIN(j0+1, cp9b->Rmarg_imin);
+  }
+
+  /* set cp9b->Rmarg_imax */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imax = j0; }
+  else {
+    cp9b->Rmarg_imax = INT_MIN;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imax == INT_MIN || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imax = j0+1;
+    cp9b->Rmarg_imax = ESL_MAX(i0,   cp9b->Rmarg_imax);
+    cp9b->Rmarg_imax = ESL_MIN(j0+1, cp9b->Rmarg_imax);
+  }
+
+  /* set cp9b->Lmarg_jmin */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmin = i0-1; }
+  else {
+    cp9b->Lmarg_jmin = INT_MAX;
+    if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmin = i0-1;
+    cp9b->Lmarg_jmin = ESL_MAX(i0-1, cp9b->Lmarg_jmin);
+    cp9b->Lmarg_jmin = ESL_MIN(j0,   cp9b->Lmarg_jmin);
+  }
+
+  /* set cp9b->Lmarg_jmax */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmax = j0; }
+  else {
+    cp9b->Lmarg_jmax = INT_MIN;
+    if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmax = j0;
+    cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax);
+    cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax);
+  }
+
+  return;
 }
 
 

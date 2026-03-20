@@ -4703,7 +4703,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     ESL_STOPWATCH *w_dp  = esl_stopwatch_Create();
 
     esl_stopwatch_Start(w_cp9);
-    if(pli->do_msvband && !do_trunc && pli->p7gm != NULL && pli->p7bg != NULL) {
+    if(pli->do_msvband && pli->p7gm != NULL && pli->p7bg != NULL) {
       /* --msvband path: derive p7 bands for envelope, use banded CP9 F/B */
       int    envL = (int)(stop - start + 1);
       int   *p7_kmin = NULL, *p7_kmax = NULL, *p7_i2k = NULL;
