@@ -1726,12 +1726,9 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
  * Date    : EPN, Fri Aug 15 13:43:21 2008
  *
  * Purpose:  Given a CM with precalc'ed CP9 HMM, CP9Map, and HMMER3 plan 7
- *           HMM bands for the CP9 HMM DP matrices, a sequence and 
+ *           HMM bands for the CP9 HMM DP matrices, a sequence and
  *           a CP9Bands_t structure, calculate the CP9 HMM bands and store them
  *           in the CP9Bands_t structure.
- *           
- *           Note: this function was never updated to handle truncated 
- *           alignment.
  *
  * Args:     cm          - the covariance model
  *           errbuf      - char buffer for reporting errors
@@ -1745,18 +1742,20 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
  *           kmax        - P7 derived band to enforce: [0.i..L] = k, min node k for residue i
  *           i0          - first position in original sequence coords (for cp9_HMM2ijBands)
  *           j0          - final position in original sequence coords (for cp9_HMM2ijBands)
+ *           pass_idx    - pipeline pass index, determines truncation mode
  *           debug_level - verbosity level for debugging printf()s
  * Return:  eslOK on success;
  *
  */
 int
-cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int debug_level)
+cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
   int do_old_hmm2ij;
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
+  int do_trunc;       /* are we allowing truncated alignments? */
+  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM, always cm->cp9 (banded CP9 F/B uses standard cp9 regardless of truncation mode) */
 
   /* Contract checks */
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but cm->cp9map is NULL.\n");
@@ -1767,10 +1766,17 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   
   use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
 
-  /* Determine which cp9 HMM to use: If the CM has local begins on, use cm->cp9loc, else use cm->cp9glb */
+  /* Always use cm->cp9 for banded CP9 F/B, regardless of truncation mode.
+   * The P7-derived bands constrain which nodes are active at each position;
+   * the emission structure is the same across cp9/Lcp9/Rcp9/Tcp9 variants.
+   * For truncated passes, we set Jvalid/Lvalid/Rvalid/Tvalid conservatively
+   * (all TRUE) since we can't run cp9_PredictStartAndEndPositions on the
+   * banded posterior matrix.
+   */
   cp9 = cm->cp9;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, relevant cp9 is NULL.\n");
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cm->cp9 is NULL.\n");
 
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
@@ -1804,6 +1810,35 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 
+  /* Step 2a: Set truncation candidate valid arrays.
+   * For truncated passes, conservatively set all states as valid for all modes.
+   * For non-truncated passes, only J mode is valid (standard behavior).
+   */
+  if(do_trunc) {
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, TRUE);
+    /* Set marginal bounds conservatively to full envelope range.
+     * cp9_PredictStartAndEndPositions() can't run on banded posteriors,
+     * so we allow any position as a marginal alignment boundary.
+     */
+    cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imax = j0;
+    cp9b->Lmarg_jmin = i0;
+    cp9b->Lmarg_jmax = j0;
+    cp9b->sp1 = 1;
+    cp9b->sp2 = 1;
+    cp9b->ep1 = cp9b->hmm_M;
+    cp9b->ep2 = cp9b->hmm_M;
+  }
+  else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
+  }
+
   /* Step 2b: Shift HMM bands from 1..L to i0..j0 coordinate system.
    * CP9 F/B operated in 1..L space, so pn_min/pn_max are in that range.
    * cp9_HMM2ijBands expects them in i0..j0 space. */
@@ -1821,10 +1856,10 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   { ESL_STOPWATCH *w_s3 = esl_stopwatch_Create();
     esl_stopwatch_Start(w_s3);
     if(do_old_hmm2ij) {
-      if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
+      if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
     }
     else {
-      if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, FALSE, debug_level)) != eslOK) return status;
+      if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
     /* For debugging, uncomment this block:
        if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, FALSE, debug_level)) != eslOK) { 
        ESL_SQ *tmp;
@@ -1840,14 +1875,14 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     /* Use the CM bands on i and j to get bands on d, specific to j. */
     /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
     if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) { esl_stopwatch_Destroy(w_s3); return status; }
-    ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, FALSE, debug_level);
+    ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
     esl_stopwatch_Stop(w_s3);
     fprintf(stderr, "#     cp9_Seq2BandsP7B Step3 HMM2ijBands: %.4f ms\n", w_s3->elapsed * 1000.0);
     esl_stopwatch_Destroy(w_s3);
   }
 
 #if eslDEBUGLEVEL >= 1
-  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, FALSE)) != eslOK) return status;
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm); 

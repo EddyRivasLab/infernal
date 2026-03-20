@@ -4735,7 +4735,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	/* Use banded CP9 F/B to derive CM bands */
 	status = cp9_Seq2BandsP7B(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
 				  dsq + start - 1, envL, cm->cp9b, p7_kmin, p7_kmax,
-				  (int)start, (int)stop, 0);
+				  (int)start, (int)stop, pli->cur_pass_idx, 0);
 	if(status == eslOK) {
 	  /* Check resulting CM banded matrix size */
 	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, envL, NULL, &hbmx_Mb)) != eslOK) {
