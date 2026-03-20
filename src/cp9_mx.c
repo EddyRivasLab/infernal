@@ -164,39 +164,51 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   int do_banded;
   int cur_ncells = 0;
   int do_reallocate;
+  int do_grow_rows;
 
   if(mx->M != M) ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), mx->M: %d != M passed in: %d\n", mx->M, M);
   if(N < 0)      ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), N: %d < 0\n", N);
 
   do_banded = (kmin != NULL && kmax != NULL) ?  TRUE : FALSE;
-  if(do_banded) { 
+  if(do_banded) {
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
   else ncells_needed = (N+1) * (M+1);
   do_reallocate = (ncells_needed <= mx->ncells_allocated) ? FALSE : TRUE;
+  do_grow_rows  = (N > mx->rows) ? TRUE : FALSE;
 
-  if(do_reallocate) { 
-    /* we need more space */
+  /* Row pointer arrays (mmx, imx, dmx, elmx, erow) need N+1 entries.
+   * Cell arrays (*_mem) need ncells_needed entries.
+   * In banded mode, a longer sequence can need fewer cells than a
+   * shorter one (narrow bands), so these must be grown independently.
+   */
+  if(do_grow_rows) {
     ESL_RALLOC(mx->mmx,  p, sizeof(int *) * (N+1));
     ESL_RALLOC(mx->imx,  p, sizeof(int *) * (N+1));
     ESL_RALLOC(mx->dmx,  p, sizeof(int *) * (N+1));
-    ESL_RALLOC(mx->elmx, p, sizeof(int *) * (N+1)); 
+    ESL_RALLOC(mx->elmx, p, sizeof(int *) * (N+1));
     ESL_RALLOC(mx->erow, p, sizeof(int)   * (N+1));
+  }
+  if(do_reallocate) {
     ESL_RALLOC(mx->mmx_mem,  p, sizeof(int) * ncells_needed);
     ESL_RALLOC(mx->imx_mem,  p, sizeof(int) * ncells_needed);
     ESL_RALLOC(mx->dmx_mem,  p, sizeof(int) * ncells_needed);
     ESL_RALLOC(mx->elmx_mem, p, sizeof(int) * ncells_needed);
     mx->ncells_allocated = ncells_needed;
+  }
 
+  if(do_grow_rows || do_reallocate) {
     /* update size */
+    int nrows_for_size = (N > mx->rows) ? N : mx->rows;
+    int ncells_for_size = (ncells_needed > mx->ncells_allocated) ? ncells_needed : mx->ncells_allocated;
     mx->size_Mb =  (float) sizeof(CP9_MX);
-    mx->size_Mb += (float) (sizeof(int *) * (N+1) * 4);           /* mx->*mx ptrs */
-    mx->size_Mb += (float) (sizeof(int)   * (ncells_needed * 4)); /* mx->*mx_mem */
-    mx->size_Mb += (float) (sizeof(int)   * (N+1));               /* mx->erow */
+    mx->size_Mb += (float) (sizeof(int *) * (nrows_for_size+1) * 4);   /* mx->*mx ptrs */
+    mx->size_Mb += (float) (sizeof(int)   * (ncells_for_size * 4));     /* mx->*mx_mem */
+    mx->size_Mb += (float) (sizeof(int)   * (nrows_for_size+1));        /* mx->erow */
     mx->size_Mb /= 1000000.;
   }
 
-  if(do_banded || do_reallocate) { /* rearrange pointers */
+  if(do_banded || do_reallocate || do_grow_rows) { /* rearrange pointers */
     mx->mmx[0]  = mx->mmx_mem;
     mx->imx[0]  = mx->imx_mem;
     mx->dmx[0]  = mx->dmx_mem;
