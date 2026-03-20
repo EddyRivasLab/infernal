@@ -1419,9 +1419,9 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	  /* Finish off elmx[i][k] with possibility of coming from self (EL_k), 
 	   * elmx[i][k] will have been filled by block above for ks > current k,
 	   * no M_k -> EL_k' with k' > k */
-	  if(INBAND(i+1, k)) { 
+	  if(INBAND(i+1, k)) {
 	    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-	      elmx[i][k] = ILogsum(elmx[i][kpcur], elmx[i+1][kpprv] + cp9->el_selfsc);
+	      elmx[i][kpcur] = ILogsum(elmx[i][kpcur], elmx[i+1][kpprv] + cp9->el_selfsc);
 	  }
 	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_MM,k);
 	  imx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_IM,k);
