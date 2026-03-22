@@ -1331,7 +1331,7 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
       esl_vec_ISet(useme, msa->alen, FALSE);
       for(cpos = 0; cpos <= emap->clen; cpos++)
 	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
-      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
+      if((status = esl_msa_ColumnSubset(msa, useme)) != eslOK) return status;
       free(useme);
     }
 
