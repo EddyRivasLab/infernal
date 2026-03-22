@@ -51,6 +51,8 @@ static ESL_OPTIONS options[] = {
   { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "use NULL3 correction for random/sampled seqs",      1 },
   { "--beta",    eslARG_REAL,  "1e-7", NULL, "0<x<1",   NULL,  NULL, NULL,     "set tail loss prob for QDB calculation to <x>", 1 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--beta", "do not use QDBs", 1 },
+  { "--ilo",     eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set min parsetree score for accepted samples",           1 },
+  { "--ihi",     eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set max parsetree score for accepted samples",           1 },
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, NULL, "exponentiate CM probabilities by <x> before sampling",  1 },
   { "--seed",    eslARG_INT,    "181", NULL, "n>=0",    NULL,  NULL, NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "--mxsize",  eslARG_REAL,"2048.0", NULL, "x>0.",    NULL,  NULL, NULL, "set max HMM banded DP mx size to <x> Mb", 1 },
@@ -580,6 +582,10 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   Parsetree_t      *tr = NULL;
   float             parsetree_sc; /* parsetree score from CM (for importance weight) */
   float             weight;       /* importance weight = 2^(-parsetree_sc) */
+  float             ilo, ihi;     /* parsetree score range for rejection sampling */
+  int               do_filter;    /* TRUE if --ilo or --ihi is set */
+  int               n_emitted;    /* total number of parsetrees emitted (including rejected) */
+  int               n_rejected;   /* number of parsetrees rejected by score filter */
 
   /* the HMM that generates sequences for exponential tail fitting */
   int      ghmm_nstates = 0;      /* number of states in the HMM */
@@ -591,6 +597,13 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   if(do_sample) {
     min_ssc = (esl_opt_IsUsed(go, "--iT")) ? esl_opt_GetReal(go, "--iT") : -eslINFINITY;
   }
+
+  /* Set up parsetree score filtering for rejection sampling */
+  do_filter  = (esl_opt_IsOn(go, "--ilo") || esl_opt_IsOn(go, "--ihi")) ? TRUE : FALSE;
+  ilo        = esl_opt_IsOn(go, "--ilo") ? esl_opt_GetReal(go, "--ilo") : -eslINFINITY;
+  ihi        = esl_opt_IsOn(go, "--ihi") ? esl_opt_GetReal(go, "--ihi") :  eslINFINITY;
+  n_emitted  = 0;
+  n_rejected = 0;
 
   use_qdbs = (cm->search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
   cutoff   = -eslINFINITY; /* collect all hits */
@@ -610,10 +623,24 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
        * ParsetreeScore is computed by sample_sequence_from_cm using the
        * emission model, giving the correct importance weight. */
       if((status = sample_sequence_from_cm(cfg, errbuf, (emit_cm != NULL) ? emit_cm : cm, (emit_cm != NULL) ? emit_cm : cm, &L, &dsq, &tr, &parsetree_sc)) != eslOK) cm_Fail(errbuf);
+      n_emitted++;
+
+      /* Rejection sampling: if parsetree score is outside [ilo, ihi], reject
+       * and re-emit. Emission + scoring is fast (O(clen)); the expensive DP
+       * search only runs on accepted sequences. */
+      if(do_filter && (parsetree_sc < ilo || parsetree_sc > ihi)) {
+	n_rejected++;
+	free(dsq);
+	FreeParsetree(tr);
+	i--; /* retry this slot */
+	continue;
+      }
+
       /* compute importance weight: w = 2^(-parsetree_sc) */
       weight = pow(2.0, -parsetree_sc);
       if(esl_opt_GetBoolean(go, "-v")) {
-	printf("SEQ %5d  L: %4d  parsetree_sc: %8.3f  weight: %12.6g\n", i, L, parsetree_sc, weight);
+	printf("SEQ %5d  L: %4d  parsetree_sc: %8.3f  weight: %12.6g  (emitted: %d rejected: %d)\n",
+	       i, L, parsetree_sc, weight, n_emitted, n_rejected);
       }
     }
     else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
@@ -704,6 +731,13 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
     free(ghmm_eAA);
     free(ghmm_tAA);
     free(ghmm_sA);
+  }
+
+  /* Report rejection sampling statistics */
+  if(do_sample && do_filter) {
+    printf("Rejection sampling: %d emitted, %d accepted, %d rejected (%.4f%% acceptance rate)\n",
+	   n_emitted, n_emitted - n_rejected, n_rejected,
+	   (n_emitted > 0) ? 100.0 * (n_emitted - n_rejected) / (double) n_emitted : 0.);
   }
 
   *ret_scN = scN;
