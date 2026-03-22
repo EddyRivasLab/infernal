@@ -53,7 +53,8 @@ static ESL_OPTIONS options[] = {
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--beta", "do not use QDBs", 1 },
   { "--ilo",     eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set min parsetree score for accepted samples",           1 },
   { "--ihi",     eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set max parsetree score for accepted samples",           1 },
-  { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, NULL, "exponentiate CM probabilities by <x> before sampling",  1 },
+  { "--imix",    eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, "--exp", "set target avg parsetree score via null mixing",      1 },
+  { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, "--imix", "exponentiate CM probabilities by <x> before sampling",  1 },
   { "--seed",    eslARG_INT,    "181", NULL, "n>=0",    NULL,  NULL, NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "--mxsize",  eslARG_REAL,"2048.0", NULL, "x>0.",    NULL,  NULL, NULL, "set max HMM banded DP mx size to <x> Mb", 1 },
   { "--ifile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,  NULL, NULL, "save impt sample exp tail fits to <f>", 2 },
@@ -106,6 +107,8 @@ static int collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tailp, int do_impt, float *scores, float *weights, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, double *ret_nrandhits);
 static int sample_sequence_from_cm(struct cfg_s *cfg, char *errbuf, CM_t *emit_cm, CM_t *score_cm, int *ret_L, ESL_DSQ **ret_dsq, Parsetree_t **ret_tr, float *ret_parsetree_sc);
 static int impt_exp_FitComplete(double *x, double *w, int n, double *ret_mu, double *ret_lambda, double *ret_scaled_nhits);
+static double cm_ExpectedParsetreeScore(CM_t *cm, double alpha);
+static void   cm_MixWithNull(CM_t *cm, double alpha);
 
 int
 main(int argc, char **argv)
@@ -296,11 +299,39 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_ALLOC(match_expinfo, sizeof(ExpInfo_t *));
       match_expinfo = CreateExpInfo();
 
-      /* If --exp, clone unconfigured CM, exponentiate the clone for
-       * emission. The original CM is used for searching (to calibrate
-       * the original model). The clone is the proposal distribution. */
+      /* Create proposal distribution for importance sampling.
+       * --imix <target_sc>: mix CM emissions with null to achieve
+       *   target average parsetree score (binary search for alpha).
+       * --exp <x>: exponentiate CM probabilities by x (legacy method).
+       * The original CM is always used for searching. */
       emit_cm = NULL;
-      if(esl_opt_IsOn(go, "--exp")) {
+      if(esl_opt_IsOn(go, "--imix")) {
+	double target_sc = esl_opt_GetReal(go, "--imix");
+	double orig_sc   = cm_ExpectedParsetreeScore(cm, 0.0);
+	double lo = 0.0, hi = 1.0, mid, mid_sc;
+	int    iter;
+
+	if(target_sc >= orig_sc) {
+	  printf("Warning: --imix target %.1f >= expected score %.1f, using unmodified CM\n", target_sc, orig_sc);
+	}
+	else {
+	  if((status = cm_Clone(cm, errbuf, &emit_cm)) != eslOK) cm_Fail(errbuf);
+
+	  /* Binary search for alpha that gives target expected score */
+	  for(iter = 0; iter < 100; iter++) {
+	    mid = (lo + hi) / 2.0;
+	    mid_sc = cm_ExpectedParsetreeScore(cm, mid);
+	    if(fabs(mid_sc - target_sc) < 0.01) break; /* close enough */
+	    if(mid_sc > target_sc) lo = mid;  /* score too high, mix more null */
+	    else                   hi = mid;  /* score too low, mix less null */
+	  }
+	  printf("--imix: target_sc=%.1f orig_sc=%.1f alpha=%.6f achieved_sc=%.2f (%d iterations)\n",
+		 target_sc, orig_sc, mid, mid_sc, iter);
+	  cm_MixWithNull(emit_cm, mid);
+	  if((status = initialize_cm(go, cfg, emit_cm, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
+	}
+      }
+      else if(esl_opt_IsOn(go, "--exp")) {
 	if((status = cm_Clone(cm, errbuf, &emit_cm)) != eslOK) cm_Fail(errbuf);
 	cm_Exponentiate(emit_cm, esl_opt_GetReal(go, "--exp"));
 	if((status = initialize_cm(go, cfg, emit_cm, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -972,4 +1003,106 @@ impt_exp_FitComplete(double *x, double *w, int n, double *ret_mu, double *ret_la
   *ret_lambda = 1./mean;	/* ML estimate trivial & analytic */
   *ret_scaled_nhits = weight_total;     /* total weight */
   return eslOK;
+}
+
+
+/* Function: cm_ExpectedParsetreeScore()
+ *
+ * Purpose:  Compute the expected parsetree score (in bits) for a CM
+ *           whose emission probabilities are mixed with the null model
+ *           at level <alpha>:
+ *              q_k = (1-alpha)*e[v][k] + alpha*null[k]
+ *           The expected score is:
+ *              E = sum_v psi[v] * sum_k q_k * log2(q_k / null_k)
+ *           where psi[v] is the expected occupancy of state v
+ *           (from cm_ExpectedStateOccupancy).
+ *
+ *           alpha=0 gives the expected score for the original CM.
+ *           alpha=1 gives 0 (all emissions match null).
+ *
+ * Args:     cm    - the covariance model (must be in probability form)
+ *           alpha - mixing parameter, 0..1
+ *
+ * Returns:  expected parsetree score in bits
+ */
+double
+cm_ExpectedParsetreeScore(CM_t *cm, double alpha)
+{
+  double *psi = NULL;
+  double  E = 0.;
+  double  q;       /* mixed emission probability */
+  int     v, k, l;
+  int     K = cm->abc->K;
+
+  psi = cm_ExpectedStateOccupancy(cm);
+
+  for(v = 0; v < cm->M; v++) {
+    if(psi[v] == 0.) continue;
+
+    if(cm->sttype[v] == MP_st) {
+      /* pair emitter: q_{k,l} = (1-alpha)*e[v][k*K+l] + alpha*null[k]*null[l] */
+      for(k = 0; k < K; k++) {
+	for(l = 0; l < K; l++) {
+	  q = (1.0 - alpha) * cm->e[v][k*K+l] + alpha * cm->null[k] * cm->null[l];
+	  if(q > 0.) E += psi[v] * q * log2(q / (cm->null[k] * cm->null[l]));
+	}
+      }
+    }
+    else if(cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	    cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+      /* singlet emitter: q_k = (1-alpha)*e[v][k] + alpha*null[k] */
+      for(k = 0; k < K; k++) {
+	q = (1.0 - alpha) * cm->e[v][k] + alpha * cm->null[k];
+	if(q > 0.) E += psi[v] * q * log2(q / cm->null[k]);
+      }
+    }
+  }
+
+  free(psi);
+  return E;
+}
+
+
+/* Function: cm_MixWithNull()
+ *
+ * Purpose:  Modify emission probabilities of a CM by mixing with the
+ *           null model:
+ *              e[v][k] = (1-alpha)*e[v][k] + alpha*null[k]
+ *           for singlet emitters, and
+ *              e[v][k*K+l] = (1-alpha)*e[v][k*K+l] + alpha*null[k]*null[l]
+ *           for pair emitters.
+ *
+ *           Transitions are left untouched.
+ *
+ *           The CMH_BITS flag is cleared because log-odds scores are
+ *           now invalid and must be recalculated (cm_Configure will
+ *           do this).
+ *
+ * Args:     cm    - the covariance model
+ *           alpha - mixing parameter, 0..1
+ *
+ * Returns:  void
+ */
+void
+cm_MixWithNull(CM_t *cm, double alpha)
+{
+  int v, k, l;
+  int K = cm->abc->K;
+
+  for(v = 0; v < cm->M; v++) {
+    if(cm->sttype[v] == MP_st) {
+      for(k = 0; k < K; k++) {
+	for(l = 0; l < K; l++) {
+	  cm->e[v][k*K+l] = (1.0 - alpha) * cm->e[v][k*K+l] + alpha * cm->null[k] * cm->null[l];
+	}
+      }
+    }
+    else if(cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	    cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+      for(k = 0; k < K; k++) {
+	cm->e[v][k] = (1.0 - alpha) * cm->e[v][k] + alpha * cm->null[k];
+      }
+    }
+  }
+  cm->flags &= ~CMH_BITS; /* log-odds scores are now invalid */
 }
