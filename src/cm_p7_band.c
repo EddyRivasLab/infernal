@@ -582,21 +582,23 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   ESL_ALLOC(kmax, sizeof(int) * (L+1));
 
   /* traverse residues left to right to get kmins */
-  for(i = 0; i <= L; i++) { 
-    if(i2k[i] != -1) { 
-      if(kn >= i2k[i] && kn > 1) { 
-	ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error i: %d, i2k[i]: %d but current kn: %d\n", i, i2k[i], kn); 
+  for(i = 0; i <= L; i++) {
+    if(i2k[i] != -1) {
+      if(kn >= i2k[i] && kn > 1) {
+	i2k[i] = -1; /* non-monotone pin from multi-segment MSV trace; remove and continue */
       }
-      kn = ESL_MAX(1, i2k[i] - pad);
+      else {
+	kn = ESL_MAX(1, i2k[i] - pad);
+      }
     }
     kmin[i] = kn;
   }
 
   /* traverse nodes right to left to get imaxs */
-  for(i = L; i >= 0; i--) { 
-    if(i2k[i] != -1) { 
-      if(kx <= i2k[i] && kx < L) ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error: i: %d, i2k[i]: %d but current kx: %d\n", i, i2k[i], kx); 
-      kx = ESL_MIN(M, i2k[i] + pad);
+  for(i = L; i >= 0; i--) {
+    if(i2k[i] != -1) {
+      if(kx <= i2k[i] && kx < M) { i2k[i] = -1; } /* non-monotone pin; remove and continue */
+      else                        { kx = ESL_MIN(M, i2k[i] + pad); }
     }
     kmax[i] = kx;
   }
