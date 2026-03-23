@@ -51,9 +51,10 @@ static ESL_OPTIONS options[] = {
   { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "use NULL3 correction for random/sampled seqs",      1 },
   { "--beta",    eslARG_REAL,  "1e-7", NULL, "0<x<1",   NULL,  NULL, NULL,     "set tail loss prob for QDB calculation to <x>", 1 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, "--beta", "do not use QDBs", 1 },
-  { "--ilo",     eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set min parsetree score for accepted samples",           1 },
-  { "--ihi",     eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set max parsetree score for accepted samples",           1 },
-  { "--imix",    eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, "--exp", "set target avg parsetree score via null mixing",      1 },
+  { "--ilo",       eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set min parsetree score for accepted samples",             1 },
+  { "--ihi",       eslARG_REAL,   NULL,  NULL, NULL,      NULL,  NULL, NULL, "set max parsetree score for accepted samples",             1 },
+  { "--imix",      eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, "--exp", "set target avg parsetree score via null mixing",        1 },
+  { "--no-weight", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  NULL, NULL, "diagnostic: use weight=1 for all IS seqs",                1 },
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,  NULL, "--imix", "exponentiate CM probabilities by <x> before sampling",  1 },
   { "--seed",    eslARG_INT,    "181", NULL, "n>=0",    NULL,  NULL, NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "--mxsize",  eslARG_REAL,"2048.0", NULL, "x>0.",    NULL,  NULL, NULL, "set max HMM banded DP mx size to <x> Mb", 1 },
@@ -61,6 +62,9 @@ static ESL_OPTIONS options[] = {
   { "--infit",   eslARG_INT,    "100", NULL, NULL,      NULL,"--ifile",NULL,"with --ifile, do tail fits to <n> equally spaced tail probs", 2 },
   { "--imax",    eslARG_REAL,   "1.00",NULL, NULL,      NULL,"--rfile",NULL,"with --ifile, max tail prob to fit is <x>", 2 },
   { "--imin",    eslARG_REAL,   "0.01",NULL, NULL,      NULL,"--rfile",NULL,"with --ifile, min tail prob to fit is <x>", 2 },
+  { "--refN",    eslARG_INT,     NULL, NULL, "n>0",     NULL,  NULL, NULL, "reference: search <n> random seqs of length clen", 1 },
+  { "--refscfile",eslARG_OUTFILE,NULL, NULL, NULL,      NULL,"--refN",NULL,"with --refN, save all ref scores to <f>",           1 },
+  { "--reftailp",eslARG_REAL,  "0.02",NULL,"0.0<x<0.6",NULL,"--refN",NULL,"with --refN, tail fraction to fit to exp",          1 },
   { "--rfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,  NULL, NULL, "save random sample exp tail fits to <f>", 2 },
   { "--rnfit",   eslARG_INT,    "100", NULL, NULL,      NULL,"--rfile",NULL,"with --rfile, do tail fits to <n> equally spaced tail probs", 2 },
   { "--rmax",    eslARG_REAL,   "0.10",NULL, NULL,      NULL,"--rfile",NULL,"with --rfile, max tail prob to fit is <x>", 2 },
@@ -91,6 +95,7 @@ struct cfg_s {
   /* optional output files */
   FILE         *ifp;	        /* output file for impt sample fits */
   FILE         *rfp;	        /* output file for random sample fits */
+  FILE         *refscfp;        /* output file for reference scores (--refscfile) */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -223,6 +228,10 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if ((cfg->rfp = fopen(esl_opt_GetString(go, "--rfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open important sampling fit save file %s for writing\n", esl_opt_GetString(go, "--rfile"));
   }
+  if (esl_opt_GetString(go, "--refscfile") != NULL) {
+    if ((cfg->refscfp = fopen(esl_opt_GetString(go, "--refscfile"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open reference scores file %s for writing\n", esl_opt_GetString(go, "--refscfile"));
+  }
 
   /* create RNG */
   cfg->r = esl_randomness_CreateFast(esl_opt_GetInteger(go, "--seed"));
@@ -339,19 +348,48 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cm(go, cfg, cm, FALSE, errbuf)) != eslOK) cm_Fail(errbuf);
 
       printf("CM %d: %s\n", cfg->ncm, cm->name);
-      
+
+      /* --refN mode: search N random sequences of length clen, output all scores,
+       * fit exp tail, then skip IS and long random seq work for this CM. */
+      if(esl_opt_IsOn(go, "--refN")) {
+	int    refN   = esl_opt_GetInteger(go, "--refN");
+	float  reftailp = esl_opt_GetReal(go, "--reftailp");
+	int    refscN = 0;
+	float *refscA = NULL;
+	float *refwtA = NULL;
+	double ref_mu, ref_lambda, ref_nhits;
+	int    j;
+	cm->search_opts |= CM_SEARCH_INSIDE; /* local Inside */
+	if((status = collect_scores(go, cfg, errbuf, cm, NULL, refN, cm->clen, &refscN, &refscA, &refwtA)) != eslOK) cm_Fail(errbuf);
+	if((status = fit_histogram(go, cfg, errbuf, reftailp, FALSE, refscA, NULL, refscN, EXP_CM_LI, &ref_mu, &ref_lambda, &ref_nhits)) != eslOK) cm_Fail(errbuf);
+	printf("Reference (L=%d, N=%d) fit:\n\t%12s: %9.5f\n\t%12s: %9.5f\n\t%12s: %9.0f\n\t%12s: %9.5f\n\n",
+	       cm->clen, refN, "mu", ref_mu, "lambda", ref_lambda, "nhits", ref_nhits, "tailp", reftailp);
+	if(cfg->refscfp != NULL) {
+	  for(j = 0; j < refscN; j++) fprintf(cfg->refscfp, "%.4f\n", refscA[j]);
+	}
+	free(refscA);
+	FreeCM(cm);
+	continue; /* skip IS and long random seq for this CM */
+      }
+
       /* For now, search only with local inside */
       exp_mode = EXP_CM_LI;
       /* set CM_SEARCH_INSIDE flag for Inside mode (CYK is the default) */
       if(ExpModeIsInside(exp_mode)) {
 	cm->search_opts |= CM_SEARCH_INSIDE;
+	if(emit_cm != NULL) emit_cm->search_opts |= CM_SEARCH_INSIDE;
       }
       else {
 	cm->search_opts &= ~CM_SEARCH_INSIDE;
+	if(emit_cm != NULL) emit_cm->search_opts &= ~CM_SEARCH_INSIDE;
       }
 
-      /* Search random sequences and collect score histograms */
-      if((status = collect_scores(go, cfg, errbuf, cm, NULL, cfg->rN, cfg->rL, &rscN, &rscA, &rwtA) != eslOK)) cm_Fail(errbuf);
+      /* Search random sequences and collect score histograms.
+       * Diagnostic: if --no-weight, use emit_cm (the modified proposal) for
+       * random sequence searching so random and IS use the same model. */
+      { CM_t *rand_cm = (esl_opt_GetBoolean(go, "--no-weight") && emit_cm != NULL) ? emit_cm : cm;
+        if((status = collect_scores(go, cfg, errbuf, rand_cm, NULL, cfg->rN, cfg->rL, &rscN, &rscA, &rwtA) != eslOK)) cm_Fail(errbuf);
+      }
       tailp = esl_opt_GetReal(go, "--rtailp");
       if((status = fit_histogram (go, cfg, errbuf, tailp, FALSE, rscA, NULL, rscN, exp_mode, &mu, &lambda, &nrandhits)) != eslOK) cm_Fail(errbuf);
       avg_hitlen = (double) (cfg->rL * cfg->rN) / (double) nrandhits;
@@ -379,8 +417,12 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* Search CM-sampled sequences and collect score histograms.
        * emit_cm (if non-NULL) is the proposal distribution (exponentiated CM);
-       * cm is the original CM used for searching. */
-      if((status = collect_scores(go, cfg, errbuf, cm, emit_cm, cfg->sN, -1, &sscN, &sscA, &swtA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
+       * cm is the original CM used for searching.
+       * Diagnostic: if --no-weight, use emit_cm for searching too, so both
+       * random and IS sequences use the same model. */
+      { CM_t *is_search_cm = (esl_opt_GetBoolean(go, "--no-weight") && emit_cm != NULL) ? emit_cm : cm;
+        if((status = collect_scores(go, cfg, errbuf, is_search_cm, emit_cm, cfg->sN, -1, &sscN, &sscA, &swtA) != eslOK)) cm_Fail(errbuf); /* the -1 passed as L tells collect_scores to sample from the CM */
+      }
 
       /* Display weight and ESS statistics */
       if(swtA != NULL) {
@@ -667,8 +709,8 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
 	continue;
       }
 
-      /* compute importance weight: w = 2^(-parsetree_sc) */
-      weight = pow(2.0, -parsetree_sc);
+      /* compute importance weight: w = 2^(-parsetree_sc), or 1.0 if --no-weight */
+      weight = esl_opt_GetBoolean(go, "--no-weight") ? 1.0 : pow(2.0, -parsetree_sc);
       if(esl_opt_GetBoolean(go, "-v")) {
 	printf("SEQ %5d  L: %4d  parsetree_sc: %8.3f  weight: %12.6g  (emitted: %d rejected: %d)\n",
 	       i, L, parsetree_sc, weight, n_emitted, n_rejected);
