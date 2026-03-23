@@ -1366,7 +1366,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	  imx[i][kpcur]  = imx[i+1][kpprv] + CP9TSC(cp9O_II,M);
 	  imx[i][kpcur] += cp9->isc[dsq[i]][M];
       
-	  dmx[i][M]  = imx[i+1][kpprv] + CP9TSC(cp9O_DI,M); 
+	  dmx[i][kpcur]  = imx[i+1][kpprv] + CP9TSC(cp9O_DI,M);
 	}
 	else { 
 	  mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = -INFTY;
