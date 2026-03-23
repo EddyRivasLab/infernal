@@ -286,6 +286,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
   pli->do_msvband         = (esl_opt_IsOn(go, "--msvband")) ? TRUE  : FALSE;
+  pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad") ? esl_opt_GetInteger(go, "--p7bpad") : 3;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -3399,7 +3400,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
 	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
@@ -3452,7 +3453,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  /* restore Rgm: GLOCAL then 5PrimeTrunc */
 	  p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
@@ -3503,7 +3504,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  /* restore Lgm: must go to GLOCAL first (3PrimeTrunc asserts non-local), then apply 3PrimeTrunc */
 	  p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
@@ -3563,7 +3564,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  esl_stopwatch_Start(stg_watch);
 	  p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/3,
+				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_GLOCAL);  /* restore glocal mode */
 	  esl_stopwatch_Stop(stg_watch);

@@ -2262,6 +2262,7 @@ typedef struct cm_pipeline_s {
   int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
   int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
   int           do_msvband;      /* TRUE to use MSV-derived banded F4/F5 (--msvband)                     */
+  int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
