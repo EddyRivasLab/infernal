@@ -783,6 +783,18 @@ collect_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
 }
 
 
+/* ScoreWeight_t and compare_sw_asc: helper for sorting (score, weight) pairs
+ * together by score, used in fit_histogram() to keep weights aligned with scores.
+ */
+typedef struct { double sc; double wt; } ScoreWeight_t;
+static int compare_sw_asc(const void *a, const void *b) {
+  const ScoreWeight_t *sa = (const ScoreWeight_t *)a;
+  const ScoreWeight_t *sb = (const ScoreWeight_t *)b;
+  if (sa->sc < sb->sc) return -1;
+  if (sa->sc > sb->sc) return  1;
+  return 0;
+}
+
 /* fit_histogram()
  * Create, fill and fit the tail of a histogram to an exponential tail. Data to fill the histogram
  * is given as <scores>. If do_impt is TRUE, <weights> provides importance sampling weights.
@@ -839,23 +851,30 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tail
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailp' fraction */
   if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram.", tailp);
 
-  if(do_impt) { 
-    /* Extract weights corresponding to the tail scores */
-    /* xv[] contains scores from the tail; we need to find corresponding weights */
-    /* Note: z is the index in the full array where the tail starts */
-    ESL_ALLOC(wv, sizeof(double) * n);
-    for(i = 0; i < n; i++) {
-      wv[i] = (double) weights[z + i];
-    }
-    
-    /* Compute total weight across all scores for normalization */
+  if(do_impt) {
+    /* Sort (score, weight) pairs together by score so tail weights align with
+     * tail scores. weights[] is in insertion order; xv[] from GetTailByMass is
+     * in sorted order — they don't correspond by index. */
+    ScoreWeight_t *sw = NULL;
+    double        *xv_sorted = NULL;
+    ESL_ALLOC(sw, sizeof(ScoreWeight_t) * nscores);
+    for(i = 0; i < nscores; i++) { sw[i].sc = (double) scores[i]; sw[i].wt = (double) weights[i]; }
+    qsort(sw, nscores, sizeof(ScoreWeight_t), compare_sw_asc);
+
+    /* tail starts at index z in the sorted array (same z from GetTailByMass) */
+    ESL_ALLOC(xv_sorted, sizeof(double) * n);
+    ESL_ALLOC(wv,        sizeof(double) * n);
+    for(i = 0; i < n; i++) { xv_sorted[i] = sw[z + i].sc; wv[i] = sw[z + i].wt; }
+
+    /* total weight across all scores */
     scaled_nhits_total = 0.;
-    for(i = 0; i < nscores; i++) {
-      scaled_nhits_total += weights[i];
-    }
-    
-    /* fit only tailp tail mass to an exponential using importance weights */
-    impt_exp_FitComplete(xv, wv, n, &(params[0]), &(params[1]), &scaled_nhits_tail);
+    for(i = 0; i < nscores; i++) scaled_nhits_total += sw[i].wt;
+
+    free(sw);
+
+    /* fit exponential tail using correctly-matched (score, weight) pairs */
+    impt_exp_FitComplete(xv_sorted, wv, n, &(params[0]), &(params[1]), &scaled_nhits_tail);
+    free(xv_sorted);
   }
   else { 
     esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
