@@ -1107,7 +1107,8 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
  */
 int
 FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
-		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc, CM_TOPHITS **ret_raw_hitlist)
+		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc, CM_TOPHITS **ret_raw_hitlist,
+		int qc_v, int64_t qc_j, int qc_d, float *ret_qc_sc)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -1147,6 +1148,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   /*printf("in FastIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
 
   if (ret_raw_hitlist != NULL) *ret_raw_hitlist = NULL;
+  if (ret_qc_sc       != NULL) *ret_qc_sc       = IMPOSSIBLE;
 
   /* Contract check */
   if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -1641,11 +1643,22 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	}
       }
 
+      /* Query cell: extract alpha[qc_v][qc_j][qc_d] if requested.
+       * Returns beginsc[qc_v] + Inside(x[qc_j-qc_d+1..qc_j], qc_v) in bits.
+       * Must be done before jp/cur are overwritten by the next j iteration. */
+      if (ret_qc_sc != NULL && (int64_t)j == qc_j && qc_v > 0 && qc_d >= 1 && qc_d <= W) {
+	int qc_sc_int;
+	if (cm->stid[qc_v] == BEGL_S) qc_sc_int = alpha_begl[j%(W+1)][qc_v][qc_d];
+	else                            qc_sc_int = alpha[cur][qc_v][qc_d];
+	if (qc_sc_int != -INFTY && cm->ibeginsc[qc_v] != -INFTY)
+	  *ret_qc_sc = Scorify(cm->ibeginsc[qc_v] + qc_sc_int);
+      }
+
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
-      if(gamma != NULL) { 
+      if(gamma != NULL) {
 	if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act)) != eslOK) return status;
       }
-      if(tmp_hitlist != NULL) { 
+      if(tmp_hitlist != NULL) {
 	if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, dnA[0], dxA[0], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
       }
       /* cm_scan_mx_Dump(stdout, cm, j, i0, qdbidx, FALSE); */
@@ -4392,7 +4405,7 @@ main(int argc, char **argv)
     if (esl_opt_GetBoolean(go, "--iins")) { 
       cm->search_opts  |= CM_SEARCH_INSIDE;
       esl_stopwatch_Start(w);
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL, -1, -1, -1, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastIInsideScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");

@@ -4200,7 +4200,8 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       if(cm->smx == NULL) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_dispatch_cm_search(), need standard scan mx but don't have one");
       if(do_inside) { 
 	status = FastIInsideScan(cm, pli->errbuf, cm->smx, qdbidx, dsq, start, stop,
-				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc, NULL);
+				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc, NULL,
+				 -1, -1, -1, NULL);
       }
       else { 
 	status = FastCYKScan(cm, pli->errbuf, cm->smx, qdbidx, dsq, start, stop, 

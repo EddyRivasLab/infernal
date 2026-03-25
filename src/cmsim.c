@@ -985,10 +985,17 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     if (th == NULL)
       ESL_FAIL (eslEMEM, errbuf, "out of memory");
 
+    /* Query cell: get beginsc[v*] + Inside(x[il..ir], v*) directly from the DP.
+     * qc_v/qc_j/qc_d are set above in the do_isubtr block (or -1 if not applicable). */
+    float isubtr_qc_sc = IMPOSSIBLE;
     if (cm->search_opts & CM_SEARCH_INSIDE) {
       if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
                                      dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
-                                     NULL, NULL, NULL, NULL, NULL))
+                                     NULL, NULL, NULL, NULL, NULL,
+                                     (do_isubtr && do_sample) ? isubtr_best_v         : -1,
+                                     (do_isubtr && do_sample) ? (int64_t) isubtr_ir   : -1,
+                                     (do_isubtr && do_sample) ? isubtr_ir - isubtr_il + 1 : -1,
+                                     (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL))
           != eslOK)
         cm_Fail (errbuf);
     } else {
@@ -1000,25 +1007,24 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     }
     /* overlaps already removed inside FastCYKScan/FastIInsideScan */
 
-    /* do_isubtr: the IS weight is 2^(-candidate_sc), already set above.
-     * candidate_sc = cm->beginsc[v*] + subtree_sc[v*] is the correct IS weight
-     * because the proposal distribution generates x[il..ir] via one specific
-     * parsetree T'_v* (not the Inside sum). Using the Inside score would be
-     * incorrect (Inside sums all parsetrees; for large sub-regions Inside >>
-     * parsetree, destroying ESS). */
+    /* do_isubtr: update IS weight from query-cell Inside score if available.
+     * The initial weight (2^(-candidate_sc), set above) is the fallback.
+     * isubtr_qc_sc = beginsc[v*] + Inside(x[il..ir], v*) from the DP matrix.
+     * This marginalizes over all parsetrees generating x[il..ir] from v*,
+     * which is theoretically the correct IS weight for w(x) = P_null(x)/q(x).
+     * For short sub-trees it agrees with candidate_sc to within rounding. */
     if (do_isubtr && do_sample && isubtr_best_v != -1) {
-      /* Search the overlap-removed th for root==v* to track diagnostics. */
-      int found = FALSE;
-      for (h = 0; h < (int) th->N; h++) {
-        if (th->unsrt[h].root  == isubtr_best_v       &&
-            th->unsrt[h].start <= (int64_t) isubtr_ir &&
-            th->unsrt[h].stop  >= (int64_t) isubtr_il) {
-          found = TRUE;
-          break;
-        }
+      if (isubtr_qc_sc != IMPOSSIBLE) {
+        if (! esl_opt_GetBoolean (go, "--no-weight"))
+          weight = (float) pow (2.0, -isubtr_qc_sc);
+        if (esl_opt_GetBoolean (go, "-v"))
+          printf ("  INSIDE qc: v*=%d [%d..%d] inside_sc=%.3f  candidate_sc=%.3f  weight=%.6g\n",
+                  isubtr_best_v, isubtr_il, isubtr_ir,
+                  isubtr_qc_sc, isubtr_best_candidate, weight);
+        n_isubtr_hit_found++;
+      } else {
+        n_isubtr_hit_missing++;
       }
-      if (found) n_isubtr_hit_found++;
-      else        n_isubtr_hit_missing++;
     }
 
     /* accumulate dbsize: actual nt searched (unweighted for both IS and random).
