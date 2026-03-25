@@ -1094,17 +1094,20 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
  *           ret_envj        - RETURN: max position in any hit w/sc >= env_cutoff, set to -1 if no such hits exist, NULL if not wanted 
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
- * 
+ *           ret_raw_hitlist - RETURN: raw hitlist with ALL hits before overlap removal (caller
+ *                             must destroy); NULL if not wanted. Only populated in greedy
+ *                             (non-gamma) mode, i.e. when !(CM_SEARCH_CMNOTGREEDY).
+ *
  * Note:     This function is heavily synchronized with FastCYKScan() and FastFInsideScan(),
- *           any change to this function should be mirrored in those functions. 
+ *           any change to this function should be mirrored in those functions.
  *
  * Returns:  eslOK on success and RETURN variables updated (or not if NULL).
  *           eslEINCOMPAT on contract violation, errbuf if filled with informative error message.
  *           eslEMEM if out of memory, errbuf if filled with informative error message.
  */
 int
-FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, 
-		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc)
+FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
+		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc, CM_TOPHITS **ret_raw_hitlist)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -1142,6 +1145,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
   int       h;                  /* counter over hits */
 
   /*printf("in FastIInsideScan() local: %s\n", (cm->flags & CMH_LOCAL_BEGIN) ? "TRUE" : "FALSE");*/
+
+  if (ret_raw_hitlist != NULL) *ret_raw_hitlist = NULL;
 
   /* Contract check */
   if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -1656,8 +1661,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
     TBackGammaHitMx(gamma, hitlist, i0, j0);
     FreeGammaHitMx(gamma);    
   }
-  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist 
-   * then copy remaining hits to master <hitlist>. Then free tmp_hitlist.
+  /* If reporting hits in a greedy manner, remove overlaps greedily from the tmp_hitlist
+   * then copy remaining hits to master <hitlist>.
+   * If ret_raw_hitlist != NULL, return tmp_hitlist (with CM_HIT_IS_REMOVED_DUPLICATE flags set
+   * on removed hits) to the caller instead of destroying it. The caller must cm_tophits_Destroy it.
    */
   if(tmp_hitlist != NULL) {
     for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0; /* so overlaps can be removed */
@@ -1668,7 +1675,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
       }
     }
-    cm_tophits_Destroy(tmp_hitlist);
+    if (ret_raw_hitlist != NULL) *ret_raw_hitlist = tmp_hitlist;
+    else                          cm_tophits_Destroy(tmp_hitlist);
   }
 
   /* clean up and return */
@@ -4384,7 +4392,7 @@ main(int argc, char **argv)
     if (esl_opt_GetBoolean(go, "--iins")) { 
       cm->search_opts  |= CM_SEARCH_INSIDE;
       esl_stopwatch_Start(w);
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastIInsideScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");

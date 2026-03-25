@@ -988,7 +988,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     if (cm->search_opts & CM_SEARCH_INSIDE) {
       if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
                                      dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
-                                     NULL, NULL, NULL, NULL))
+                                     NULL, NULL, NULL, NULL, NULL))
           != eslOK)
         cm_Fail (errbuf);
     } else {
@@ -1000,26 +1000,23 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     }
     /* overlaps already removed inside FastCYKScan/FastIInsideScan */
 
-    /* do_isubtr: refine IS weight using the Inside score of the sub-region.
-     * Parsetree score underestimates proposal density (Inside >= parsetree);
-     * using the actual Inside score of the hit rooted at v* corrects this.
-     * th->unsrt[h].root == v* and hit overlaps [il..ir] identifies the target hit.
-     * If not found (shadowed by a higher-scoring null-flank hit after overlap removal),
-     * we keep the parsetree-based weight (best_candidate) as fallback. */
-    if (do_isubtr && do_sample && !esl_opt_GetBoolean (go, "--no-weight") && isubtr_best_v != -1) {
-      int   found   = FALSE;
-      float best_sc = isubtr_best_candidate;  /* fallback: parsetree-based candidate_sc */
+    /* do_isubtr: the IS weight is 2^(-candidate_sc), already set above.
+     * candidate_sc = cm->beginsc[v*] + subtree_sc[v*] is the correct IS weight
+     * because the proposal distribution generates x[il..ir] via one specific
+     * parsetree T'_v* (not the Inside sum). Using the Inside score would be
+     * incorrect (Inside sums all parsetrees; for large sub-regions Inside >>
+     * parsetree, destroying ESS). */
+    if (do_isubtr && do_sample && isubtr_best_v != -1) {
+      /* Search the overlap-removed th for root==v* to track diagnostics. */
+      int found = FALSE;
       for (h = 0; h < (int) th->N; h++) {
-        if (th->unsrt[h].root  == isubtr_best_v         &&
-            th->unsrt[h].start <= (int64_t) isubtr_ir   &&
+        if (th->unsrt[h].root  == isubtr_best_v       &&
+            th->unsrt[h].start <= (int64_t) isubtr_ir &&
             th->unsrt[h].stop  >= (int64_t) isubtr_il) {
-          if (!found || th->unsrt[h].score > best_sc) {
-            best_sc = th->unsrt[h].score;
-            found   = TRUE;
-          }
+          found = TRUE;
+          break;
         }
       }
-      weight = (float) pow (2.0, -best_sc);
       if (found) n_isubtr_hit_found++;
       else        n_isubtr_hit_missing++;
     }

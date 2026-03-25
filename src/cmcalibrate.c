@@ -2343,7 +2343,7 @@ process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutof
 				 th,                                    /* hitlist to add to */
 				 cm->search_opts & CM_SEARCH_NULL3,     /* do the NULL3 correction? */
 				 0., NULL, NULL,                        /* vars for redefining envelopes, which we won't do */
-				 NULL, NULL))                           /* ret_vsc, ret_sc, irrelevant here */
+				 NULL, NULL, NULL))                     /* ret_vsc, ret_sc, ret_raw_hitlist: irrelevant here */
        != eslOK) return status;
   }
   else { 
