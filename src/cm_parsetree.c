@@ -577,6 +577,131 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
   return eslOK;
 }
 
+/* Function: ParsetreeSubtreeScores()
+ * Incept:   EPN, Wed Mar 25, 2026
+ *
+ * Purpose:  Compute per-node subtree log-odds scores for a parsetree using
+ *           post-order traversal. ret_scores[tidx] is the sum of all emission
+ *           and transition log-odds scores (in bits) within the sub-parsetree
+ *           rooted at parsetree node tidx, NOT including any local begin score
+ *           that brought us to that node.
+ *
+ *           Used by importance sampling (--isubtr mode) to find a sub-parsetree
+ *           v* where cm->beginsc[v] + ret_scores[tidx] ≈ imu (target Inside
+ *           score), then splice the CM-emitted region into a null background.
+ *           The IS weight for that sample is 2^(-ret_scores[tidx_of_v*]).
+ *
+ * Args:     cm         - the CM (in local mode, with beginsc[] set)
+ *           errbuf     - for error messages
+ *           tr         - the parsetree (preorder stored)
+ *           dsq        - digitized sequence (1..L)
+ *           ret_scores - RETURN: newly allocated float[tr->n]; caller frees.
+ *                        scores[tidx] = subtree log-odds score at node tidx.
+ *
+ * Returns:  eslOK on success.
+ *           eslEINCOMPAT on contract violation.
+ *           eslEMEM on allocation failure.
+ */
+int
+ParsetreeSubtreeScores(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float **ret_scores)
+{
+  int    status;
+  int    tidx;           /* counter through parsetree nodes (preorder) */
+  int    v, y;           /* CM state indices */
+  ESL_DSQ symi, symj;   /* symbol indices for emissions */
+  char   mode;           /* alignment mode (TRMODE_J/L/R) */
+  int    sd;             /* state delta (residues emitted) */
+  float  own_sc;         /* emission + transition score for this node */
+  float *scores = NULL;  /* subtree score array, indexed by tidx */
+
+  if (dsq       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeSubtreeScores(): dsq is NULL");
+  if (ret_scores == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeSubtreeScores(): ret_scores is NULL");
+
+  ESL_ALLOC(scores, sizeof(float) * tr->n);
+  esl_vec_FSet(scores, tr->n, 0.0f);
+
+  /* Post-order traversal: process from last tidx to first.
+   * In a preorder-stored parsetree, children always have higher tidx
+   * than their parent, so processing in reverse order is post-order. */
+  for (tidx = tr->n - 1; tidx >= 0; tidx--) {
+    v = tr->state[tidx];
+
+    /* Accumulate children's subtree scores first */
+    scores[tidx] = 0.;
+    if (tr->nxtl[tidx] != -1) scores[tidx] += scores[tr->nxtl[tidx]];
+    if (tr->nxtr[tidx] != -1) scores[tidx] += scores[tr->nxtr[tidx]];
+
+    /* EL, E_st, B_st: no own score contribution */
+    if (v == cm->M)                continue; /* EL state */
+    if (cm->sttype[v] == E_st)     continue;
+    if (cm->sttype[v] == B_st)     continue;
+
+    /* Compute this node's own score: transition + emission.
+     * Mirrors the logic in ParsetreeScore(). */
+    own_sc = 0.;
+
+    /* Transition score */
+    if (tr->nxtl[tidx] == -1) {
+      own_sc += 0.; /* truncated end: no transition score */
+    } else {
+      y = tr->state[tr->nxtl[tidx]]; /* left child state */
+      if (v == 0) {
+        if (! tr->is_std) {
+          own_sc += tr->trpenalty;
+        } else if (cm->flags & CMH_LOCAL_BEGIN) {
+          own_sc += cm->beginsc[y];
+        } else {
+          own_sc += cm->tsc[v][y - cm->cfirst[v]];
+        }
+      } else if (y == cm->M) {
+        /* local end */
+        mode = tr->mode[tidx];
+        if      (mode == TRMODE_J) sd = StateDelta(cm->sttype[v]);
+        else if (mode == TRMODE_L) sd = StateLeftDelta(cm->sttype[v]);
+        else if (mode == TRMODE_R) sd = StateRightDelta(cm->sttype[v]);
+        else                       sd = StateDelta(cm->sttype[v]);
+        own_sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - sd));
+      } else {
+        own_sc += cm->tsc[v][y - cm->cfirst[v]];
+      }
+    }
+
+    /* Emission score */
+    mode = tr->mode[tidx];
+    if (cm->sttype[v] == MP_st) {
+      symi = dsq[tr->emitl[tidx]];
+      symj = dsq[tr->emitr[tidx]];
+      if (mode == TRMODE_J) {
+        if (symi < cm->abc->K && symj < cm->abc->K)
+          own_sc += cm->esc[v][(int)(symi * cm->abc->K + symj)];
+        else
+          own_sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
+      } else if (mode == TRMODE_L) {
+        own_sc += cm->lmesc[v][symi];
+      } else if (mode == TRMODE_R) {
+        own_sc += cm->rmesc[v][symj];
+      }
+    } else if ((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && ModeEmitsLeft(mode)) {
+      symi = dsq[tr->emitl[tidx]];
+      if (symi < cm->abc->K) own_sc += cm->esc[v][(int)symi];
+      else                   own_sc += esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
+    } else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && ModeEmitsRight(mode)) {
+      symj = dsq[tr->emitr[tidx]];
+      if (symj < cm->abc->K) own_sc += cm->esc[v][(int)symj];
+      else                   own_sc += esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
+    }
+
+    scores[tidx] += own_sc;
+  }
+
+  *ret_scores = scores;
+  return eslOK;
+
+ ERROR:
+  if (scores) free(scores);
+  return status;
+}
+
 
 
 

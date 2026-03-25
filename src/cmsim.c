@@ -69,6 +69,12 @@ static ESL_OPTIONS options[] = {
     "set max parsetree score for accepted samples", 1 },
   { "--imix", eslARG_REAL, NULL, NULL, NULL, NULL, NULL, "--exp",
     "set target avg parsetree score via null mixing", 1 },
+  { "--isubtr", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--ilo,--ihi",
+    "IS mode: sub-parsetree splice into null flanks", 1 },
+  { "--imu", eslARG_REAL, NULL, NULL, NULL, NULL, "--isubtr", NULL,
+    "target local Inside score (mu) for sub-parsetree IS", 1 },
+  { "--imutol", eslARG_REAL, "2.0", NULL, "x>0", NULL, "--isubtr", NULL,
+    "tolerance (bits) for sub-parsetree score match to --imu", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
     "diagnostic: use weight=1 for all IS seqs", 1 },
   { "--exp", eslARG_REAL, NULL, NULL, "x>0", NULL, NULL, "--imix",
@@ -805,6 +811,8 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   float weight;       /* importance weight = 2^(-parsetree_sc) */
   float ilo, ihi;     /* parsetree score range for rejection sampling */
   int do_filter;      /* TRUE if --ilo or --ihi is set */
+  int do_isubtr;      /* TRUE if --isubtr: sub-parsetree IS mode */
+  float imu;          /* target Inside score (--imu) for sub-parsetree IS */
   int n_emitted;      /* total number of parsetrees emitted (including rejected) */
   int n_rejected;     /* number of parsetrees rejected by score filter */
   double dbsize = 0.; /* effective searched nt: sum(w_i*L_i) for IS, N*L for random */
@@ -818,10 +826,12 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   do_sample = (L == -1) ? TRUE : FALSE;
 
   /* Set up parsetree score filtering for rejection sampling */
-  do_filter = (esl_opt_IsOn (go, "--ilo") || esl_opt_IsOn (go, "--ihi")) ? TRUE : FALSE;
-  ilo = esl_opt_IsOn (go, "--ilo") ? esl_opt_GetReal (go, "--ilo") : -eslINFINITY;
-  ihi = esl_opt_IsOn (go, "--ihi") ? esl_opt_GetReal (go, "--ihi") : eslINFINITY;
-  n_emitted = 0;
+  do_filter  = (esl_opt_IsOn (go, "--ilo") || esl_opt_IsOn (go, "--ihi")) ? TRUE : FALSE;
+  ilo        = esl_opt_IsOn (go, "--ilo") ? esl_opt_GetReal (go, "--ilo") : -eslINFINITY;
+  ihi        = esl_opt_IsOn (go, "--ihi") ? esl_opt_GetReal (go, "--ihi") : eslINFINITY;
+  do_isubtr  = esl_opt_GetBoolean (go, "--isubtr");
+  imu        = esl_opt_IsOn (go, "--imu") ? (float) esl_opt_GetReal (go, "--imu") : 0.;
+  n_emitted  = 0;
   n_rejected = 0;
 
   use_qdbs = (cm->search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
@@ -850,23 +860,91 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         cm_Fail (errbuf);
       n_emitted++;
 
-      /* Rejection sampling: if parsetree score is outside [ilo, ihi], reject
-       * and re-emit. Emission + scoring is fast (O(clen)); the expensive DP
-       * search only runs on accepted sequences. */
-      if (do_filter && (parsetree_sc < ilo || parsetree_sc > ihi)) {
-        n_rejected++;
-        free (dsq);
-        FreeParsetree (tr);
-        i--; /* retry this slot */
-        continue;
-      }
+      if (do_isubtr) {
+        /* Sub-parsetree IS mode: find the subtree rooted at v* whose
+         * candidate_sc = cm->beginsc[v*] + subtree_sc[v*] is in [imu, imu+imutol].
+         * Among qualifying subtrees pick the one with the smallest candidate_sc
+         * (closest to imu from above).  If none qualify, reject and re-emit.
+         * Splice null random sequence into the flanking positions.
+         * IS weight = 2^(-subtree_sc[v*]). */
+        float *subtree_sc = NULL;
+        int   best_tidx   = -1;
+        float best_above  = eslINFINITY; /* candidate_sc - imu for best so far */
+        float best_subtree_sc = 0.;
+        float best_candidate  = 0.;
+        float imutol = (float) esl_opt_GetReal (go, "--imutol");
+        int   tidx, il, ir, j;
 
-      /* compute importance weight: w = 2^(-parsetree_sc), or 1.0 if --no-weight */
-      weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : pow (2.0, -parsetree_sc);
-      if (esl_opt_GetBoolean (go, "-v")) {
-        printf ("SEQ %5d  L: %4d  parsetree_sc: %8.3f  weight: %12.6g  (emitted: %d "
-                "rejected: %d)\n",
-                i, L, parsetree_sc, weight, n_emitted, n_rejected);
+        if ((status = ParsetreeSubtreeScores (cm, errbuf, tr, dsq, &subtree_sc)) != eslOK)
+          cm_Fail (errbuf);
+
+        /* Find v* with minimum candidate_sc in [imu, imu + imutol]. */
+        for (tidx = 0; tidx < tr->n; tidx++) {
+          int v_t = tr->state[tidx];
+          if (v_t == cm->M) continue;                   /* EL state */
+          if (cm->sttype[v_t] == E_st) continue;
+          if (cm->sttype[v_t] == B_st) continue;
+          if (NOT_IMPOSSIBLE (cm->beginsc[v_t])) {
+            float candidate = cm->beginsc[v_t] + subtree_sc[tidx];
+            float above     = candidate - imu;
+            if (above >= 0. && above < imutol && above < best_above) {
+              best_above      = above;
+              best_tidx       = tidx;
+              best_subtree_sc = subtree_sc[tidx];
+              best_candidate  = candidate;
+            }
+          }
+        }
+        free (subtree_sc);
+        subtree_sc = NULL;
+
+        if (best_tidx == -1) {
+          /* No sub-parsetree in [imu, imu+imutol]; reject and re-emit. */
+          n_rejected++;
+          free (dsq);
+          FreeParsetree (tr);
+          tr  = NULL;
+          dsq = NULL;
+          i--;
+          continue;
+        }
+
+        /* Splice: overwrite flanking positions with null random residues */
+        il = tr->emitl[best_tidx];
+        ir = tr->emitr[best_tidx];
+        for (j = 1; j < il; j++)
+          dsq[j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+        for (j = ir + 1; j <= L; j++)
+          dsq[j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+
+        weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : (float) pow (2.0, -best_subtree_sc);
+        if (esl_opt_GetBoolean (go, "-v")) {
+          printf ("SEQ %5d  L: %4d  il: %4d  ir: %4d  candidate_sc: %8.3f  "
+                  "subtree_sc: %8.3f  weight: %12.6g  above_imu: %8.3f  (emitted: %d  rejected: %d)\n",
+                  i, L, il, ir, best_candidate, best_subtree_sc, weight, best_above, n_emitted,
+                  n_rejected);
+        }
+      } else {
+        /* Standard IS: rejection sampling on full parsetree score, then weight. */
+
+        /* Rejection sampling: if parsetree score is outside [ilo, ihi], reject
+         * and re-emit. Emission + scoring is fast (O(clen)); the expensive DP
+         * search only runs on accepted sequences. */
+        if (do_filter && (parsetree_sc < ilo || parsetree_sc > ihi)) {
+          n_rejected++;
+          free (dsq);
+          FreeParsetree (tr);
+          i--; /* retry this slot */
+          continue;
+        }
+
+        /* compute importance weight: w = 2^(-parsetree_sc), or 1.0 if --no-weight */
+        weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : (float) pow (2.0, -parsetree_sc);
+        if (esl_opt_GetBoolean (go, "-v")) {
+          printf ("SEQ %5d  L: %4d  parsetree_sc: %8.3f  weight: %12.6g  (emitted: %d "
+                  "rejected: %d)\n",
+                  i, L, parsetree_sc, weight, n_emitted, n_rejected);
+        }
       }
     } else { /* generate random sequence, either iid (25% ACGU) or from a 'genome-like' HMM */
       /* L was passed in as the desired sequence length (e.g. cm->clen for --refN, cfg->rL for
@@ -946,7 +1024,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   }
 
   /* Report rejection sampling statistics */
-  if (do_sample && do_filter) {
+  if (do_sample && (do_filter || do_isubtr)) {
     printf ("Rejection sampling: %d emitted, %d accepted, %d rejected (%.4f%% acceptance rate)\n",
             n_emitted, n_emitted - n_rejected, n_rejected,
             (n_emitted > 0) ? 100.0 * (n_emitted - n_rejected) / (double)n_emitted : 0.);

@@ -2924,6 +2924,7 @@ extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, floa
 extern void         ParsetreeCountExceptTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
 extern void         ParsetreeCountOnlyTruncatedMPs(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt, double **dbl_e, const Prior_t *pri);
 extern int          ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc, float *ret_primary_sc, int *ret_spos, int *ret_epos);
+extern int          ParsetreeSubtreeScores(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float **ret_scores);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
