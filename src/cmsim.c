@@ -811,8 +811,14 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   float weight;       /* importance weight = 2^(-parsetree_sc) */
   float ilo, ihi;     /* parsetree score range for rejection sampling */
   int do_filter;      /* TRUE if --ilo or --ihi is set */
-  int do_isubtr;      /* TRUE if --isubtr: sub-parsetree IS mode */
-  float imu;          /* target Inside score (--imu) for sub-parsetree IS */
+  int do_isubtr;              /* TRUE if --isubtr: sub-parsetree IS mode */
+  float imu;                  /* minimum candidate score (--imu) for sub-parsetree IS */
+  int   isubtr_best_v;        /* v* state index for current sequence (do_isubtr) */
+  int   isubtr_il;            /* emitl of chosen sub-parsetree */
+  int   isubtr_ir;            /* emitr of chosen sub-parsetree */
+  float isubtr_best_candidate;/* candidate_sc of chosen sub-parsetree (fallback weight) */
+  int   n_isubtr_hit_found;   /* sequences where th had a hit with root==v* */
+  int   n_isubtr_hit_missing; /* sequences where th had NO hit with root==v* */
   int n_emitted;      /* total number of parsetrees emitted (including rejected) */
   int n_rejected;     /* number of parsetrees rejected by score filter */
   double dbsize = 0.; /* effective searched nt: sum(w_i*L_i) for IS, N*L for random */
@@ -831,8 +837,14 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   ihi        = esl_opt_IsOn (go, "--ihi") ? esl_opt_GetReal (go, "--ihi") : eslINFINITY;
   do_isubtr  = esl_opt_GetBoolean (go, "--isubtr");
   imu        = esl_opt_IsOn (go, "--imu") ? (float) esl_opt_GetReal (go, "--imu") : 0.;
-  n_emitted  = 0;
-  n_rejected = 0;
+  n_emitted             = 0;
+  n_rejected            = 0;
+  n_isubtr_hit_found    = 0;
+  n_isubtr_hit_missing  = 0;
+  isubtr_best_v         = -1;
+  isubtr_il             = -1;
+  isubtr_ir             = -1;
+  isubtr_best_candidate = 0.;
 
   use_qdbs = (cm->search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
   cutoff = -eslINFINITY; /* collect all hits */
@@ -917,7 +929,13 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         for (j = ir + 1; j <= L; j++)
           dsq[j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
 
-        weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : (float) pow (2.0, -best_subtree_sc);
+        /* Save v*, [il..ir], candidate_sc for th lookup after FastIInsideScan */
+        isubtr_best_v         = tr->state[best_tidx];
+        isubtr_il             = il;
+        isubtr_ir             = ir;
+        isubtr_best_candidate = best_candidate;
+
+        weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : (float) pow (2.0, -best_candidate);
         if (esl_opt_GetBoolean (go, "-v")) {
           printf ("SEQ %5d  L: %4d  il: %4d  ir: %4d  candidate_sc: %8.3f  "
                   "subtree_sc: %8.3f  weight: %12.6g  above_imu: %8.3f  (emitted: %d  rejected: %d)\n",
@@ -982,6 +1000,30 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     }
     /* overlaps already removed inside FastCYKScan/FastIInsideScan */
 
+    /* do_isubtr: refine IS weight using the Inside score of the sub-region.
+     * Parsetree score underestimates proposal density (Inside >= parsetree);
+     * using the actual Inside score of the hit rooted at v* corrects this.
+     * th->unsrt[h].root == v* and hit overlaps [il..ir] identifies the target hit.
+     * If not found (shadowed by a higher-scoring null-flank hit after overlap removal),
+     * we keep the parsetree-based weight (best_candidate) as fallback. */
+    if (do_isubtr && do_sample && !esl_opt_GetBoolean (go, "--no-weight") && isubtr_best_v != -1) {
+      int   found   = FALSE;
+      float best_sc = isubtr_best_candidate;  /* fallback: parsetree-based candidate_sc */
+      for (h = 0; h < (int) th->N; h++) {
+        if (th->unsrt[h].root  == isubtr_best_v         &&
+            th->unsrt[h].start <= (int64_t) isubtr_ir   &&
+            th->unsrt[h].stop  >= (int64_t) isubtr_il) {
+          if (!found || th->unsrt[h].score > best_sc) {
+            best_sc = th->unsrt[h].score;
+            found   = TRUE;
+          }
+        }
+      }
+      weight = (float) pow (2.0, -best_sc);
+      if (found) n_isubtr_hit_found++;
+      else        n_isubtr_hit_missing++;
+    }
+
     /* accumulate dbsize: actual nt searched (unweighted for both IS and random).
      * The hits/Mb criterion counts data points, not IS-equivalent null sequence. */
     dbsize += (double)L;
@@ -1028,6 +1070,15 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     printf ("Rejection sampling: %d emitted, %d accepted, %d rejected (%.4f%% acceptance rate)\n",
             n_emitted, n_emitted - n_rejected, n_rejected,
             (n_emitted > 0) ? 100.0 * (n_emitted - n_rejected) / (double)n_emitted : 0.);
+  }
+  /* Report IS weight lookup statistics (do_isubtr only) */
+  if (do_isubtr && do_sample) {
+    int total = n_isubtr_hit_found + n_isubtr_hit_missing;
+    printf ("IS weight lookup: %d/%d (%.1f%%) used Inside score; %d (%.1f%%) fell back to parsetree\n",
+            n_isubtr_hit_found,  total,
+            (total > 0) ? 100.0 * n_isubtr_hit_found  / (double) total : 0.,
+            n_isubtr_hit_missing,
+            (total > 0) ? 100.0 * n_isubtr_hit_missing / (double) total : 0.);
   }
 
   *ret_scN = scN;
