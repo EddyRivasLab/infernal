@@ -285,8 +285,19 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F3          = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
-  pli->do_msvband         = (esl_opt_IsOn(go, "--msvband")) ? TRUE  : FALSE;
-  pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad") ? esl_opt_GetInteger(go, "--p7bpad") : 3;
+  pli->do_msvband         = (esl_opt_IsOn(go, "--msvband"))   ? TRUE  : FALSE;
+  pli->do_vitband         = (esl_opt_IsOn(go, "--vitband"))   ? TRUE  : FALSE;
+  pli->vitband_local      = (esl_opt_IsOn(go, "--vitblocal")) ? TRUE  : FALSE;
+  pli->nop7b_cp9b         = (esl_opt_IsOn(go, "--nop7b_cp9b"))   ? TRUE : FALSE;
+  pli->do_p7b_to_cp9b    = (esl_opt_IsOn(go, "--p7b_to_cp9b"))  ? TRUE : FALSE;
+  pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
+  pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
+  pli->p7len              = esl_opt_IsOn(go, "--p7len")     ? esl_opt_GetInteger(go, "--p7len")          : 0;
+  pli->p7end              = esl_opt_IsOn(go, "--p7end")     ? esl_opt_GetInteger(go, "--p7end")          : 0;
+  pli->p7mprob            = esl_opt_IsOn(go, "--p7mprob")   ? (float) esl_opt_GetReal(go, "--p7mprob")  : 0.0f;
+  pli->p7mcprob           = esl_opt_IsOn(go, "--p7mcprob")  ? (float) esl_opt_GetReal(go, "--p7mcprob") : 0.0f;
+  pli->p7iprob            = esl_opt_IsOn(go, "--p7iprob")   ? (float) esl_opt_GetReal(go, "--p7iprob")  : 1.0f;
+  pli->p7ilprob           = esl_opt_IsOn(go, "--p7ilprob")  ? (float) esl_opt_GetReal(go, "--p7ilprob") : 1.0f;
 
   /* hard-coded miscellaneous parameters that were command-line
    * settable in past testing, and could be in future testing.
@@ -1754,9 +1765,9 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
    */
   { ESL_STOPWATCH *w_f6 = esl_stopwatch_Create();
     esl_stopwatch_Start(w_f6);
-  /* Store p7 objects for use by pli_dispatch_cm_search() when --msvband */
-  if(pli->do_msvband && opt_gm != NULL) pli->p7gm = *opt_gm;
-  if(pli->do_msvband)                   pli->p7bg = bg;
+  /* Store p7 objects for use by pli_dispatch_cm_search() when --msvband or --vitband */
+  if((pli->do_msvband || pli->do_vitband) && opt_gm != NULL) pli->p7gm = *opt_gm;
+  if(pli->do_msvband || pli->do_vitband)                     pli->p7bg = bg;
 
   for(p = PLI_PASS_STD_ANY; p < NPLI_PASSES; p++) { /* p will go from 1..6 */
     if(pli->do_trm_F3 || pli->do_trm_F5)                             continue;
@@ -3400,12 +3411,40 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
+				pli->phi, pli->p7sc, pli->p7len, pli->p7end, pli->p7mprob, pli->p7mcprob, pli->p7iprob, pli->p7ilprob, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
 	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
 	  if(status == eslEINCOMPAT || ncells == 0) {
 	    /* MSV trace discontiguous/empty; fall back to unbanded */
+	    if(i2k)  { free(i2k);  i2k  = NULL; }
+	    if(kmin) { free(kmin); kmin = NULL; }
+	    if(kmax) { free(kmax); kmax = NULL; }
+	    p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Tgm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); free(kmin); free(kmax); i2k = kmin = kmax = NULL;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, Tgm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	  }
+	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --vitband: derive Viterbi bands then run banded Forward.
+	   * Profile is temporarily configured to GLOCAL (default) or LOCAL (--vitblocal),
+	   * then restored to truncated mode.
+	   */
+	  int vitband_mode = pli->vitband_local ? p7_LOCAL : p7_GLOCAL;
+	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, vitband_mode);
+	  status = p7_Seq2BandsVit(pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				   pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+	  if(!pli->vitband_local) p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL); /* p7_ProfileConfig5PrimeAnd3PrimeTrunc requires LOCAL */
+	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
+	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
+	  if(ncells == 0) {
 	    if(i2k)  { free(i2k);  i2k  = NULL; }
 	    if(kmin) { free(kmin); kmin = NULL; }
 	    if(kmax) { free(kmax); kmax = NULL; }
@@ -3453,13 +3492,46 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
+				pli->phi, pli->p7sc, pli->p7len, pli->p7end, pli->p7mprob, pli->p7mcprob, pli->p7iprob, pli->p7ilprob, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  /* restore Rgm: GLOCAL then 5PrimeTrunc */
 	  p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
 	  p7_ProfileConfig5PrimeTrunc(Rgm, (int)wlen);
 	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
 	  if(status == eslEINCOMPAT || ncells == 0) {
+	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
+	    p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Rgm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); i2k = NULL;
+	    if(pli->band_kmin) free(pli->band_kmin); if(pli->band_kmax) free(pli->band_kmax);
+	    pli->band_kmin = kmin; kmin = NULL; pli->band_kmax = kmax; kmax = NULL; pli->band_L = (int)wlen;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, Rgm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	  }
+	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --vitband: Viterbi bands for Rgm (5'-truncated glocal mode).
+	   * For GLOCAL (default): use Rgm as-is (already 5'-truncated glocal).
+	   * For LOCAL (--vitblocal): temporarily configure LOCAL, then restore.
+	   */
+	  if(pli->vitband_local) {
+	    int save_mode_r = Rgm->mode;
+	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
+	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
+	    p7_ProfileConfig5PrimeTrunc(Rgm, (int)wlen);
+	  } else {
+	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+	  }
+	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
+	  if(ncells == 0) {
 	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
 	    p7_GForward(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
@@ -3504,13 +3576,45 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
+				pli->phi, pli->p7sc, pli->p7len, pli->p7end, pli->p7mprob, pli->p7mcprob, pli->p7iprob, pli->p7ilprob, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  /* restore Lgm: must go to GLOCAL first (3PrimeTrunc asserts non-local), then apply 3PrimeTrunc */
 	  p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
 	  p7_ProfileConfig3PrimeTrunc(*opt_hmm, Lgm, (int)wlen);
 	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
 	  if(status == eslEINCOMPAT || ncells == 0) {
+	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
+	    p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	  } else {
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Lgm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); i2k = NULL;
+	    if(pli->band_kmin) free(pli->band_kmin); if(pli->band_kmax) free(pli->band_kmax);
+	    pli->band_kmin = kmin; kmin = NULL; pli->band_kmax = kmax; kmax = NULL; pli->band_L = (int)wlen;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, Lgm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	  }
+	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --vitband: Viterbi bands for Lgm (3'-truncated glocal mode).
+	   * For GLOCAL (default): use Lgm as-is (already 3'-truncated glocal).
+	   * For LOCAL (--vitblocal): temporarily configure LOCAL, then restore.
+	   */
+	  if(pli->vitband_local) {
+	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
+	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
+	    p7_ProfileConfig3PrimeTrunc(*opt_hmm, Lgm, (int)wlen);
+	  } else {
+	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+	  }
+	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
+	  if(ncells == 0) {
 	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
 	    p7_GForward(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
@@ -3564,13 +3668,93 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  esl_stopwatch_Start(stg_watch);
 	  p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2Bands(NULL, pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/pli->p7band_pad,
+				pli->phi, pli->p7sc, pli->p7len, pli->p7end, pli->p7mprob, pli->p7mcprob, pli->p7iprob, pli->p7ilprob, /*pad=*/pli->p7band_pad,
 				&i2k, &kmin, &kmax, &ncells);
 	  p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_GLOCAL);  /* restore glocal mode */
 	  esl_stopwatch_Stop(stg_watch);
 	  pli->stg_time_seq2bands += stg_watch->elapsed;
 	  if(status != eslOK && status != eslEINCOMPAT) ESL_FAIL(status, pli->errbuf, "p7_Seq2Bands() failed");
 	  if(status == eslEINCOMPAT || ncells == 0) {
+	    if(i2k)  { free(i2k);  i2k  = NULL; }
+	    if(kmin) { free(kmin); kmin = NULL; }
+	    if(kmax) { free(kmax); kmax = NULL; }
+	    esl_stopwatch_Start(stg_watch);
+	    p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	    p7_GForward(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	    esl_stopwatch_Stop(stg_watch);
+	    pli->stg_time_F4 += stg_watch->elapsed;
+	    fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
+		    " p7_Seq2Bands: FALLBACK(status=%d,ncells=%d) unbanded_fwdsc=%.3f\n",
+		    i, sq->name, ws[i], we[i], wlen, gm->M, status, ncells, fwdsc);
+	  } else {
+	    /* debug: summarize band range before using them */
+	    { int dbg_i, dbg_kmin_min=gm->M, dbg_kmax_max=0, dbg_npinned=0;
+	      int dbg_i_first_pin=-1, dbg_i_last_pin=-1, dbg_k_first_pin=-1, dbg_k_last_pin=-1;
+	      for(dbg_i=1; dbg_i<=(int)wlen; dbg_i++) {
+		if(kmin[dbg_i] >= 0) { dbg_kmin_min = ESL_MIN(dbg_kmin_min, kmin[dbg_i]); dbg_kmax_max = ESL_MAX(dbg_kmax_max, kmax[dbg_i]); dbg_npinned++; }
+	      }
+	      /* find first/last pinned sequence positions from i2k (not yet freed here) */
+	      for(dbg_i=1; dbg_i<=(int)wlen; dbg_i++) {
+		if(i2k[dbg_i] != -1) { if(dbg_i_first_pin == -1) { dbg_i_first_pin = dbg_i; dbg_k_first_pin = i2k[dbg_i]; } dbg_i_last_pin = dbg_i; dbg_k_last_pin = i2k[dbg_i]; }
+	      }
+	      fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
+		      " p7_Seq2Bands: OK ncells=%d kmin_min=%d kmax_max=%d npinned=%d"
+		      " first_pin=i%d:k%d last_pin=i%d:k%d\n",
+		      i, sq->name, ws[i], we[i], wlen, gm->M, ncells, dbg_kmin_min, dbg_kmax_max, dbg_npinned,
+		      dbg_i_first_pin, dbg_k_first_pin, dbg_i_last_pin, dbg_k_last_pin);
+	      /* print kmin/kmax at 5 evenly-spaced positions across the window */
+	      { int dbg_npt = 5, dbg_pt;
+		for(dbg_pt = 0; dbg_pt < dbg_npt; dbg_pt++) {
+		  dbg_i = 1 + (int)((wlen-1) * dbg_pt / (dbg_npt-1));
+		  fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s bands_at i=%5d: kmin=%3d kmax=%3d\n",
+			  i, sq->name, dbg_i, kmin[dbg_i], kmax[dbg_i]);
+		}
+	      }
+	    }
+	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
+	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, gm->M, &bnd)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
+	    free(i2k); i2k = NULL;
+	    if(pli->band_kmin) free(pli->band_kmin);
+	    if(pli->band_kmax) free(pli->band_kmax);
+	    pli->band_kmin = kmin; kmin = NULL;
+	    pli->band_kmax = kmax; kmax = NULL;
+	    pli->band_L    = (int)wlen;
+	    if(pli->gxfb) { p7_gmxb_Destroy(pli->gxfb); pli->gxfb = NULL; }
+	    if((pli->gxfb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed");
+	    esl_stopwatch_Start(stg_watch);
+	    if((status = my_p7_GForwardBanded(seq->dsq, (int)wlen, gm, pli->gxfb, &fwdsc)) != eslOK)
+	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
+	    esl_stopwatch_Stop(stg_watch);
+	    pli->stg_time_F4 += stg_watch->elapsed;
+	    /* debug: also run unbanded for comparison */
+	    { float dbg_unbanded_fwdsc;
+	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
+	      fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
+		      " banded_fwdsc=%.3f unbanded_fwdsc=%.3f delta=%.3f\n",
+		      i, sq->name, ws[i], we[i], wlen, gm->M,
+		      fwdsc, dbg_unbanded_fwdsc, dbg_unbanded_fwdsc - fwdsc);
+	    }
+	  }
+	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
+	  /* --vitband: derive Viterbi bands then run banded Forward.
+	   * For GLOCAL (default): gm is already in GLOCAL mode — no reconfiguration needed.
+	   * For LOCAL (--vitblocal): temporarily configure LOCAL, then restore to GLOCAL.
+	   */
+	  if(pli->vitband_local) {
+	    p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_LOCAL);
+	  }
+	  esl_stopwatch_Start(stg_watch);
+	  status = p7_Seq2BandsVit(pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
+				   pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+	  esl_stopwatch_Stop(stg_watch);
+	  pli->stg_time_seq2bands += stg_watch->elapsed;
+	  if(pli->vitband_local) {
+	    p7_ProfileConfig(*opt_hmm, bg, gm, (int)wlen, p7_GLOCAL);  /* restore glocal mode */
+	  }
+	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
+	  if(ncells == 0) {
 	    if(i2k)  { free(i2k);  i2k  = NULL; }
 	    if(kmin) { free(kmin); kmin = NULL; }
 	    if(kmax) { free(kmax); kmax = NULL; }
@@ -3604,16 +3788,19 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  esl_stopwatch_Stop(stg_watch);
 	  pli->stg_time_F4 += stg_watch->elapsed;
 	}
-	/*printf(" fwdsc: %.4f\n", fwdsc);*/
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+	fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
+		" sc=%.3f P=%.3g F4=%.3g %s\n",
+		i, sq->name, ws[i], we[i], sc_for_pvalue, P, pli->F4,
+		(P > pli->F4) ? "KILLED_F4" : "passes_F4");
       }
 
-#if eslDEBUGLEVEL >= 2	
-      if(P > pli->F4) { 
+#if eslDEBUGLEVEL >= 2
+      if(P > pli->F4) {
 	printf("#DEBUG: KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
       }
-#endif      
+#endif
       /* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
       if(P > pli->F4) continue;
 
@@ -3642,8 +3829,14 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
 	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
 	}
+	if(pli->do_msvband) {
+	  fprintf(stderr, "#MSVBAND_DBG: F4b win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
+		  " sc=%.3f P=%.3g F4b=%.3g %s\n",
+		  i, sq->name, ws[i], we[i], sc_for_pvalue, P, pli->F4b,
+		  (P > pli->F4b) ? "KILLED_F4b" : "passes_F4b");
+	}
 	if(P > pli->F4b) continue;
-#if eslDEBUGLEVEL >= 2 
+#if eslDEBUGLEVEL >= 2
 	printf("#DEBUG: SURVIVOR window %5d [%10" PRId64 "..%10" PRId64 "] survived gFwdBias  %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
 #endif 
 	pli->acct[pli->cur_pass_idx].n_past_gfwdbias++;
@@ -3661,7 +3854,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       esl_stopwatch_Start(stg_watch);  /* time F5 */
       if(use_Tgm) {
 	/* no length reconfiguration necessary */
-	if(pli->do_msvband && pli->gxfb != NULL) {
+	if((pli->do_msvband || pli->do_vitband) && pli->gxfb != NULL) {
 	  /* Banded F5: run banded Backward and banded domaindef.
 	   * Supports both do_aln=TRUE (OA alignment) and do_aln=FALSE (--noali).
 	   */
@@ -3681,7 +3874,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	/*printf("Tbcksc: %.4f\n", bcksc);*/
       }
       else if(use_Rgm) {
-	if(pli->do_msvband && pli->gxfb != NULL && bnd != NULL) {
+	if((pli->do_msvband || pli->do_vitband) && pli->gxfb != NULL && bnd != NULL) {
 	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
 	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
 	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Rgm, pli->gxbb, &bcksc)) != eslOK)
@@ -3697,7 +3890,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	/*printf("Rbcksc: %.4f\n", bcksc);*/
       }
       else if(use_Lgm) {
-	if(pli->do_msvband && pli->gxfb != NULL && bnd != NULL) {
+	if((pli->do_msvband || pli->do_vitband) && pli->gxfb != NULL && bnd != NULL) {
 	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
 	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
 	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Lgm, pli->gxbb, &bcksc)) != eslOK)
@@ -3713,8 +3906,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	/*printf("Lbcksc: %.4f\n", bcksc);*/
       }
       else { /* normal case, not looking for truncated hits */
-	if(pli->do_msvband && pli->gxfb != NULL && pli->band_kmin != NULL) {
-	  /* --msvband: banded F5 with multihit domaindef.
+	if((pli->do_msvband || pli->do_vitband) && pli->gxfb != NULL && pli->band_kmin != NULL) {
+	  /* --msvband/--vitband: banded F5 with multihit domaindef.
 	   * Uses banded Forward xmx for domain decoding, then
 	   * banded rescore for each domain using sub-bands.
 	   */
@@ -3741,11 +3934,19 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     pli->stg_time_F5 += stg_watch->elapsed;
 
     if (status != eslOK) ESL_FAIL(status, pli->errbuf, "envelope definition workflow failure"); /* eslERANGE can happen */
+    if(pli->do_msvband) {
+      fprintf(stderr, "#MSVBAND_DBG: F5 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
+	      " nregions=%d nenvelopes=%d ndom=%d %s\n",
+	      i, sq->name, ws[i], we[i],
+	      pli->ddef->nregions, pli->ddef->nenvelopes, pli->ddef->ndom,
+	      (pli->ddef->nregions == 0) ? "KILLED_F5(nregions=0)" :
+	      (pli->ddef->nenvelopes == 0) ? "KILLED_F5(nenvelopes=0)" : "has_envelopes");
+    }
     if (pli->ddef->nregions   == 0)  continue; /* score passed threshold but there's no discrete domains here       */
     if (pli->ddef->nenvelopes == 0)  continue; /* rarer: region was found, stochastic clustered, no envelopes found */
-    
+
     /* For each domain found in the p7_domaindef_*() function, determine if it passes our criteria */
-    for(d = 0; d < pli->ddef->ndom; d++) { 
+    for(d = 0; d < pli->ddef->ndom; d++) {
       
       if(do_local_envdef) { /* we called p7_domaindef_ByPosteriorHeuristics() above, which fills pli->ddef->dcl[d].ad, but we don't need it */
 	p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
@@ -3778,11 +3979,20 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       /***************************************************/
       
       /* check if we can skip this envelope based on its P-value */
-      if(P > pli->F5) { 
+      if(pli->do_msvband) {
+	fprintf(stderr, "#MSVBAND_DBG: F5 env  %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
+		" env_abs=[%6"PRId64"..%6"PRId64"] sc=%.3f P=%.3g F5=%.3g %s\n",
+		d, sq->name, ws[i], we[i],
+		pli->ddef->dcl[d].ienv + ws[i] - 1,
+		pli->ddef->dcl[d].jenv + ws[i] - 1,
+		env_sc_for_pvalue, P, pli->F5,
+		(P > pli->F5) ? "KILLED_F5" : "passes_F5");
+      }
+      if(P > pli->F5) {
 	if(pli->ddef->dcl[d].ad) p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
 	continue;
       }
-    
+
 #if eslDEBUGLEVEL >= 2
       printf("#DEBUG: SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived F5       %6.2f bits  P %g\n", pli->ddef->dcl[d].ienv + ws[i] - 1, pli->ddef->dcl[d].jenv + ws[i] - 1, env_sc_for_pvalue, P);
 #endif
@@ -4704,39 +4914,64 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     ESL_STOPWATCH *w_dp  = esl_stopwatch_Create();
 
     esl_stopwatch_Start(w_cp9);
-    if(pli->do_msvband && pli->p7gm != NULL && pli->p7bg != NULL) {
-      /* --msvband path: derive p7 bands for envelope, use banded CP9 F/B */
+    if((pli->do_msvband || pli->do_vitband) && (!pli->nop7b_cp9b || pli->do_p7b_to_cp9b) && pli->p7gm != NULL && pli->p7bg != NULL) {
+      /* --msvband/--vitband path: derive p7 bands for envelope, use banded CP9 F/B */
       int    envL = (int)(stop - start + 1);
       int   *p7_kmin = NULL, *p7_kmax = NULL, *p7_i2k = NULL;
       int    p7_ncells;
       float  p7_nullsc;
       P7_PROFILE *gm_local = pli->p7gm;
 
-      /* Temporarily configure profile to LOCAL for MSV band derivation */
       p7_ReconfigLength(gm_local, envL);
       int save_mode = gm_local->mode;
-      p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_LOCAL);
 
-      p7_bg_SetLength(pli->p7bg, envL);
-      p7_bg_NullOne(pli->p7bg, dsq + start - 1, envL, &p7_nullsc);
+      if(pli->do_msvband) {
+	/* --msvband: temporarily configure LOCAL for MSV band derivation */
+	p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_LOCAL);
 
-      p7_gmx_GrowTo(pli->gxf, gm_local->M, envL);
-      pli->gxf->M = gm_local->M;
-      pli->gxf->L = envL;
+	p7_bg_SetLength(pli->p7bg, envL);
+	p7_bg_NullOne(pli->p7bg, dsq + start - 1, envL, &p7_nullsc);
 
-      status = p7_Seq2Bands(NULL, pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
-			    pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, /*pad=*/10,
-			    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	p7_gmx_GrowTo(pli->gxf, gm_local->M, envL);
+	pli->gxf->M = gm_local->M;
+	pli->gxf->L = envL;
 
-      /* Restore profile mode */
-      if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
-      else                       p7_ReconfigLength(gm_local, envL);
+	status = p7_Seq2Bands(NULL, pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
+			      pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, pli->p7band_pad,
+			      &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+
+	/* Restore profile mode */
+	if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
+	else                       p7_ReconfigLength(gm_local, envL);
+      } else {
+	/* --vitband: configure for Viterbi band derivation (GLOCAL or LOCAL per --vitblocal) */
+	int vitband_mode = pli->vitband_local ? p7_LOCAL : p7_GLOCAL;
+	p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, vitband_mode);
+
+	p7_gmx_GrowTo(pli->gxf, gm_local->M, envL);
+	pli->gxf->M = gm_local->M;
+	pli->gxf->L = envL;
+
+	status = p7_Seq2BandsVit(pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
+				 pli->p7band_pad, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+
+	/* Restore profile mode */
+	if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
+	else                       p7_ReconfigLength(gm_local, envL);
+      }
 
       if(status == eslOK && p7_ncells > 0) {
-	/* Use banded CP9 F/B to derive CM bands */
-	status = cp9_Seq2BandsP7B(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
-				  dsq + start - 1, envL, cm->cp9b, p7_kmin, p7_kmax,
-				  (int)start, (int)stop, pli->cur_pass_idx, 0);
+	/* Use p7 bands to derive CM bands, via one of two methods */
+	if(pli->do_p7b_to_cp9b) {
+	  /* Direct p7->CP9 band conversion: O(L*avg_bandwidth), no CP9 F/B */
+	  status = p7bands_to_cp9bands(cm, pli->errbuf, p7_kmin, p7_kmax, envL,
+				       cm->cp9b, (int)start, (int)stop, pli->cur_pass_idx, 0);
+	} else {
+	  /* Default: p7-banded CP9 F/B */
+	  status = cp9_Seq2BandsP7B(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
+				    dsq + start - 1, envL, cm->cp9b, p7_kmin, p7_kmax,
+				    (int)start, (int)stop, pli->cur_pass_idx, 0);
+	}
 	if(status == eslOK) {
 	  /* Check resulting CM banded matrix size */
 	  if((status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, envL, NULL, &hbmx_Mb)) != eslOK) {

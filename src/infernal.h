@@ -2262,7 +2262,18 @@ typedef struct cm_pipeline_s {
   int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
   int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
   int           do_msvband;      /* TRUE to use MSV-derived banded F4/F5 (--msvband)                     */
+  int           do_vitband;      /* TRUE to use Viterbi-derived banded F4/F5 (--vitband)                 */
+  int           vitband_local;   /* TRUE to use local Viterbi for --vitband (default: glocal)            */
+  int           nop7b_cp9b;      /* TRUE to skip p7-banded CP9 F/B, use unbanded CP9 (--nop7b_cp9b)    */
+  int           do_p7b_to_cp9b; /* TRUE to use direct p7->CP9 band conversion, bypass CP9 F/B (--p7b_to_cp9b) */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
+  float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */
+  int           p7len;          /* min nmer length for prune_i2k() (--p7len)        */
+  int           p7end;          /* min dist from nmer end for prune_i2k() (--p7end) */
+  float         p7mprob;        /* min match phi prob for prune_i2k() (--p7mprob)   */
+  float         p7mcprob;       /* min cumul match phi prob for prune_i2k() (--p7mcprob) */
+  float         p7iprob;        /* max insert phi prob for prune_i2k() (--p7iprob)  */
+  float         p7ilprob;       /* max left-insert phi prob for prune_i2k() (--p7ilprob) */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
@@ -3103,12 +3114,15 @@ extern int          cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX 
 extern int          cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
 extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level);
+extern int          p7bands_to_cp9bands  (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
-extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
+				 int pad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);

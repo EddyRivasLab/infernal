@@ -299,7 +299,9 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 	status = p7_trace_Append(tr, p7T_M, k-1, i-1);
 	/*if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} */
 	/*if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} */
-	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) { 
+	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) {
+	  fprintf(stderr, "#MSVBAND_DBG: conflict at i=%d k=%d: i2k[i-1=%d]=%d k2i[k-1=%d]=%d\n",
+	          i, k, i-1, i2k[(i-1)], k-1, k2i[(k-1)]);
 	  iconflict[(k2i[(k-1)])] = TRUE; /* eventually remove pin kmer that included k we *thought* pinned i-1 */
 	  iconflict[(i-1)]        = TRUE; /* eventually remove pin kmer that includes k we currently think pins i-1 */
 	}
@@ -516,10 +518,10 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
 	  for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */
 	  mcprob = 1.;
 	}
-	else if (do_end && n >= min_len) { /* n >= min_len, remove those within do_end of end */
-	  for(j = (i - n);        j < (i - (n+1)) + min_end; j++) i2k[j] = -1; /* remove the part of the n-mer within nend residues of the beginning edge */
-	  for(j = (i - min_end);  j < i;                     j++) i2k[j] = -1; /* remove the part of the n-mer within nend residues of the end edge */
-	} 
+	else if (do_end && n > 0 && n >= min_len) { /* n >= min_len, remove those within do_end of end */
+	  for(j = (i - n); j < ESL_MIN(i, (i - (n+1)) + min_end); j++) i2k[j] = -1; /* remove the part of the n-mer within min_end residues of the beginning edge */
+	  for(j = ESL_MAX(1, i - min_end); j < i; j++) i2k[j] = -1;                   /* remove the part of the n-mer within min_end residues of the end edge */
+	}
 	if(i2k[i] == -1) { /* position i is not pinned */
 	  mcprob = 1.;  
 	  n = 0; 
@@ -540,8 +542,12 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
 	}
       }
     }
-    /* deal with possibility that last n residues were an n-mer, with n < min_len */
-    if(n > 0 && n < min_len) { for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */}
+    /* deal with possibility that last n residues were an n-mer ending at position L */
+    if(n > 0 && n < min_len) { for(j = (i - n); j < i; j++) i2k[j] = -1; }
+    else if(do_end && n > 0 && n >= min_len) {
+      for(j = (i - n); j < ESL_MIN(i, (i - (n+1)) + min_end); j++) i2k[j] = -1;
+      for(j = ESL_MAX(1, i - min_end); j < i; j++) i2k[j] = -1;
+    }
   }
 
   return eslOK;
@@ -832,9 +838,9 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
       kn = ESL_MAX(kn, (kmin[i-1]+1)); /* start at first cell from which we can look back to a valid cell at *mx[i-1][k-1] */
       kx = ESL_MIN(kmax[i], kmax[i-1]+1);
 
-      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */ 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -849,11 +855,11 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
 	/* FIX ME: inefficient! check B->M_K transition */
 	if(INBAND(i-1, 0)) { /* if i-1 is in k == 0's band */
 	  assert(kmin[(i-1)] == 0);
-	  if(mmx[i-1][0] != -INFTY) 
+	  if(mmx[i-1][0] != -INFTY)
 	   sc = ILogsum(sc, mmx[i-1][0] + CP9TSC(cp9O_BM,k));
 	}
 
-	if(sc != -INFTY) { 
+	if(sc != -INFTY) {
 	  mmx[i][kpcur] = sc + msc[k];
 	  /* E state update */
 	  endsc = ILogsum(endsc, mmx[i][kpcur] + CP9TSC(cp9O_ME,k));
@@ -869,8 +875,8 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
       kn = ESL_MAX(kmin[i], kmin[i-1]);
       kx = ESL_MIN(kmax[i], kmax[i-1]);
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -1059,12 +1065,12 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
       kn = ESL_MAX(kn, (kmin[i-1]+1)); /* start at first cell from which we can look back to a valid cell at *mx[i-1][k-1] */
       kx = ESL_MIN(kmax[i], kmax[i-1]+1);
 
-      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */ 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -1119,8 +1125,8 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
       kn = ESL_MAX(kmin[i], kmin[i-1]);
       kx = ESL_MIN(kmax[i], kmax[i-1]);
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -1398,8 +1404,8 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
       kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
       kx = ESL_MIN(kmax[i], kmax[i+1]-1);
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kx - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kx - kmin[i+1];
@@ -1879,6 +1885,201 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   if(debug_level > 0) debug_print_ij_bands(cm); 
 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
+
+  return eslOK;
+}
+
+
+/* Function: p7bands_to_cp9bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Convert p7 HMM bands (kmin[i]/kmax[i] per residue) directly to
+ *           CP9 HMM bands (pn_min/pn_max per node), bypassing the O(L*M)
+ *           CP9 Forward/Backward DP.
+ *
+ *           For each CP9 node k, the band covers all positions i where k is
+ *           within the p7 band: kmin[i] <= k <= kmax[i].  This is guaranteed
+ *           to produce bands at least as permissive (wide) as the p7-banded
+ *           CP9 F/B approach, because CP9 F/B constrained by p7 bands cannot
+ *           assign non-zero posterior to positions outside those bands.
+ *
+ * Args:     cm          - the covariance model
+ *           errbuf      - char buffer for reporting errors
+ *           kmin        - p7 bands: kmin[i] = min node k for residue i [0..L]
+ *           kmax        - p7 bands: kmax[i] = max node k for residue i [0..L]
+ *           L           - length of target subsequence (1..L)
+ *           cp9b        - PRE-ALLOCATED CP9 bands, filled here
+ *           i0          - first position in original sequence coords
+ *           j0          - final position in original sequence coords
+ *           pass_idx    - pipeline pass index, determines truncation mode
+ *           debug_level - verbosity level for debugging printf()s
+ *
+ * Returns:  eslOK on success
+ */
+int
+p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
+		    CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level)
+{
+  int   status;
+  int   i, k;
+  int   M            = cp9b->hmm_M;
+  int   do_old_hmm2ij;
+  int   do_trunc;
+  CP9_t *cp9;
+
+  /* Contract checks */
+  if(cm->cp9map == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cm->cp9map is NULL.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, neither CM_ALIGN_HBANDED nor CM_SEARCH_HBANDED is set.\n");
+  if(cm->tau > 0.5)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cm->tau (%f) > 0.5.\n", cm->tau);
+
+  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
+  cp9 = cm->cp9;
+  if(cp9 == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cm->cp9 is NULL.\n");
+
+  /* Initialize all bands to "unset" sentinel values:
+   * pn_min_* = L+2  (larger than any valid position, signals "not yet seen from left")
+   * pn_max_* = -1   (smaller than any valid position, signals "not yet seen from right") */
+  for(k = 0; k <= M; k++) {
+    cp9b->pn_min_m[k] = L + 2;
+    cp9b->pn_max_m[k] = -1;
+    cp9b->pn_min_i[k] = L + 2;
+    cp9b->pn_max_i[k] = -1;
+    cp9b->pn_min_d[k] = L + 2;
+    cp9b->pn_max_d[k] = -1;
+  }
+
+  /* Direct inversion: sweep i=1..L for match/insert/delete; handle i=0 specially.
+   * At i=0 (the "begin" position before any residues):
+   *   - Only M_0 (begin state) has non-zero posterior => set pn_min/max_m[0] = 0
+   *   - D_k for k>0 can have non-zero posterior (entering deletes from begin) => update d bands
+   *   - M_k and I_k for k>0 are -INFTY at i=0 => must NOT update m/i bands for k>0
+   *   Setting pn_min_m[k] = 0 for k>0 would cause imin[v] = 0 in cp9_HMM2ijBands,
+   *   which violates the requirement imin[v] >= i0 >= 1. */
+  cp9b->pn_min_m[0] = cp9b->pn_max_m[0] = 0;  /* M_0 (begin) is always at position 0 */
+  for(k = 1; k <= kmax[0]; k++) {               /* D_k for k>0 may be active at i=0 */
+    if(0 < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = 0;
+    if(0 > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = 0;
+  }
+
+  for(i = 1; i <= L; i++) {
+    for(k = kmin[i]; k <= kmax[i]; k++) {
+      if(i < cp9b->pn_min_m[k]) cp9b->pn_min_m[k] = i;
+      if(i > cp9b->pn_max_m[k]) cp9b->pn_max_m[k] = i;
+      if(i < cp9b->pn_min_i[k]) cp9b->pn_min_i[k] = i;
+      if(i > cp9b->pn_max_i[k]) cp9b->pn_max_i[k] = i;
+      if(i < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = i;
+      if(i > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = i;
+    }
+  }
+
+  /* Convert unset states (min still > max) to -1 sentinel used by downstream code */
+  for(k = 0; k <= M; k++) {
+    if(cp9b->pn_min_m[k] > cp9b->pn_max_m[k]) cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
+    if(cp9b->pn_min_i[k] > cp9b->pn_max_i[k]) cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
+    if(cp9b->pn_min_d[k] > cp9b->pn_max_d[k]) cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
+  }
+  cp9b->pn_min_d[0] = cp9b->pn_max_d[0] = -1; /* D_0 does not exist */
+
+  cp9b->tau = cm->tau;
+
+  /* Shift HMM bands from 1..L to i0..j0 coordinate system if needed */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    for(k = 0; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Set truncation candidate valid arrays.
+   * For non-truncated passes: Jvalid=TRUE, others=FALSE.
+   * For truncated passes: derive sp1/sp2/ep1/ep2 from the extent of the p7 bands,
+   *   then compute Rmarg/Lmarg bounds and call cp9_MarginalCandidatesFromStartEndPositions. */
+  if(do_trunc) {
+    /* sp1 = first node with any p7 coverage; ep1 = last such node.
+     * Set sp2=sp1, ep2=ep1 (no posterior to distinguish thresholds). */
+    int sp = M + 1, ep = 0;
+    for(i = 1; i <= L; i++) {
+      if(kmin[i] < sp) sp = kmin[i];
+      if(kmax[i] > ep) ep = kmax[i];
+    }
+    if(sp < 1)     sp = 1;
+    if(sp > M + 1) sp = M + 1;
+    if(ep < 0)     ep = 0;
+    if(ep > M)     ep = M;
+    cp9b->sp1 = cp9b->sp2 = sp;
+    cp9b->ep1 = cp9b->ep2 = ep;
+
+    /* Compute Rmarg_imin/imax from sp (mirrors Parts 3 of cp9_PredictStartAndEndPositionsP7B).
+     * At this point pn_min/max arrays are already in i0..j0 coords. */
+    if(cp9b->sp1 == M + 1) {
+      cp9b->Rmarg_imin = i0;
+      cp9b->Rmarg_imax = j0;
+    } else {
+      int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
+      if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
+      if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
+      if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
+      if(rmarg_imin == INT_MAX) rmarg_imin = i0;
+      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
+
+      if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
+      if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
+      if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
+      if(rmarg_imax == INT_MIN) rmarg_imax = j0 + 1;
+      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
+    }
+
+    /* Compute Lmarg_jmin/jmax from ep (mirrors Parts 4 of cp9_PredictStartAndEndPositionsP7B) */
+    if(cp9b->ep1 == 0) {
+      cp9b->Lmarg_jmin = i0 - 1;
+      cp9b->Lmarg_jmax = j0;
+    } else {
+      int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
+      if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
+      if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
+      if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
+      if(lmarg_jmin == INT_MAX) lmarg_jmin = i0 - 1;
+      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+
+      if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
+      if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
+      if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
+      if(lmarg_jmax == INT_MIN) lmarg_jmax = j0;
+      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+    }
+
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+  } else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
+  }
+
+  /* HMM bands -> CM ij bands */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+  } else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+  }
+
+  /* CM ij bands -> CM d bands */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+
+#if eslDEBUGLEVEL >= 1
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
+  ESL_DPRINTF1(("#DEBUG: p7bands_to_cp9bands bands validated.\n"));
+#endif
+  if(debug_level > 0) debug_print_ij_bands(cm);
 
   return eslOK;
 }
@@ -2556,6 +2757,16 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   status = my_p7_GTraceMSV(dsq, L, gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
   esl_stopwatch_Stop(s2b_watch);
 
+  /* Debug: print pins with isc scores before pruning */
+  if(status == eslOK) {
+    int dbg_i;
+    for(dbg_i = 1; dbg_i <= L; dbg_i++) {
+      if(i2k[dbg_i] != -1) {
+        fprintf(stderr, "#MSVBAND_DBG: isc pin i=%5d k=%4d isc=%7.4f\n", dbg_i, i2k[dbg_i], isc[dbg_i]);
+      }
+    }
+  }
+
   /* Step 3: prune pins */
   esl_stopwatch_Start(s2b_watch);
   if(status == eslOK) { /* trace is valid */
@@ -2599,6 +2810,117 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   free(k2i);
 
   return eslOK;
+}
+
+
+/* Function: p7_Seq2BandsVit()
+ * Incept:   EPN*
+ *
+ * Synopsis: Derive p7 bands from glocal Viterbi alignment.
+ *
+ * Purpose:  Given a profile <gm> already configured in the desired mode
+ *           (glocal, local, or truncated-glocal) and a digital sequence
+ *           <dsq> of length <L>, run p7_GViterbi(), traceback the optimal
+ *           alignment with p7_GTrace(), and derive per-residue kmin/kmax
+ *           bands suitable for banded glocal Forward.
+ *
+ *           Unlike p7_Seq2Bands() (which uses GMSV + my_p7_GTraceMSV),
+ *           the Viterbi trace is globally optimal and free of diagonal
+ *           conflicts, so no pin-conflict pruning is performed.
+ *
+ *           Profile mode is the caller's responsibility: configure gm
+ *           to p7_GLOCAL (or truncated equivalent) before calling, and
+ *           restore it afterward if needed.
+ *
+ * Args:     errbuf    - for error messages
+ *           gm        - profile, configured in desired mode by caller
+ *           gx        - generic DP matrix (will be grown as needed)
+ *           bg        - null model (unused; reserved for future)
+ *           p7_tr     - pre-allocated trace (will be reused)
+ *           dsq       - digital sequence, 1..L
+ *           L         - length of dsq
+ *           pad       - band half-width passed to p7_pins2bands()
+ *           ret_i2k   - RETURN: per-residue pin array (caller frees)
+ *           ret_kmin  - RETURN: per-residue kmin array (caller frees)
+ *           ret_kmax  - RETURN: per-residue kmax array (caller frees)
+ *           ret_ncells- RETURN: total banded cells; 0 = fall back to unbanded
+ *
+ * Returns:  eslOK on success.
+ *           eslFAIL if Viterbi finds no valid path; ret_* set to NULL,
+ *           ret_ncells set to 0; caller should fall back to unbanded Forward.
+ */
+int
+p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
+		ESL_DSQ *dsq, int L, int pad,
+		int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int    status;
+  float  sc;
+  int   *i2k  = NULL;
+  int   *kmin = NULL;
+  int   *kmax = NULL;
+  int    ncells = 0;
+  int    M = gm->M;
+  int    tpos;
+
+  /* Setup DP matrix */
+  p7_gmx_GrowTo(gx, M, L);
+  gx->M = M;
+  gx->L = L;
+
+  /* Step 1: Viterbi DP */
+  if ((status = p7_GViterbi(dsq, L, gm, gx, &sc)) != eslOK)
+    ESL_FAIL(status, errbuf, "p7_GViterbi() failed in p7_Seq2BandsVit()");
+
+  /* Step 2: Traceback.
+   * p7_GTrace() expects an empty trace (tr->N == 0); call Reuse() first.
+   * If no valid path (eslFAIL), return eslOK with ncells=0 so the
+   * caller falls back to unbanded Forward.
+   */
+  p7_trace_Reuse(p7_tr);
+  status = p7_GTrace(dsq, L, gm, gx, p7_tr);
+  if (status == eslFAIL) {
+    /* Empty trace: no valid Viterbi path. Signal caller to fall back. */
+    *ret_i2k    = NULL;
+    *ret_kmin   = NULL;
+    *ret_kmax   = NULL;
+    *ret_ncells = 0;
+    return eslOK;
+  }
+  if (status != eslOK) ESL_FAIL(status, errbuf, "p7_GTrace() failed in p7_Seq2BandsVit()");
+
+  /* Step 3: Populate i2k from M states in trace.
+   * Viterbi trace is non-conflicting by construction; no conflict handling needed.
+   * For multi-hit (glocal multihit mode via J state), both hits populate i2k
+   * at distinct sequence positions — no conflict.
+   */
+  ESL_ALLOC(i2k, sizeof(int) * (L + 1));
+  esl_vec_ISet(i2k, (L + 1), -1);
+
+  for (tpos = 0; tpos < p7_tr->N; tpos++) {
+    if (p7_tr->st[tpos] == p7T_M) {
+      int i = p7_tr->i[tpos];
+      int k = p7_tr->k[tpos];
+      if (i >= 1 && i <= L && k >= 1 && k <= M)
+	i2k[i] = k;
+    }
+  }
+
+  /* Step 4: Pins -> bands */
+  if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)
+    goto ERROR;
+
+  *ret_i2k    = i2k;
+  *ret_kmin   = kmin;
+  *ret_kmax   = kmax;
+  *ret_ncells = ncells;
+  return eslOK;
+
+ ERROR:
+  if (i2k)  free(i2k);
+  if (kmin) free(kmin);
+  if (kmax) free(kmax);
+  return status;
 }
 
 

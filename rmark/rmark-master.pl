@@ -265,11 +265,11 @@ if(! $do_indi) {
 	if((!$do_onejob_only) || ($onejob == $i)) { 
 	    if($do_mpi) { # turn exclusivity on, so we get all processors on our node, to run MPI with
 		#printf("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $debug_opt $build_opt $c_opt -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'\n");
-		system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+		system("qsub -V -cwd -b y -m n -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass -M $mpi_nprocs $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	    }
 	    else { 
               #print("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
-              system("qsub -V -cwd -b y -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
+              system("qsub -V -cwd -b y -m n -N $resultdir.$i -j y -o $resultdir/tbl$i.sge -R y -l excl=true '$rmark_script $posonly_opt $poswindowonly_opt $debug_opt $build_opt $c_opt $x_opt_to_pass $z_opt_to_pass $h_opt_to_pass $execdir $scriptdir $modeldir $resultdir $optsfile $resultdir/tbl.$i $msafile $posfile $fafile $resultdir/tbl$i.out'");
 	    }
 	}
     }
