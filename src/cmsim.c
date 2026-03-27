@@ -79,6 +79,10 @@ static ESL_OPTIONS options[] = {
     "IS mode: scan flanks only, add qc_sc directly as CM-region hit", 1 },
   { "--iflank-W", eslARG_INT,  "0",   NULL, "n>=0", NULL, "--iflank", NULL,
     "IS flank scan: cap window size W at <n> nt (0: use model W)", 1 },
+  { "--ipaint",   eslARG_NONE, FALSE, NULL, NULL, NULL, "--isubtr", "--iflank",
+    "painting mode: pack sub-scanned seqs into ~10Kb chunks", 1 },
+  { "--ipaint-L", eslARG_INT,  "10000", NULL, "n>0", NULL, "--ipaint", NULL,
+    "target mega-sequence length per chunk for --ipaint", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
     "diagnostic: use weight=1 for all IS seqs", 1 },
   { "--exp", eslARG_REAL, NULL, NULL, "x>0", NULL, NULL, "--imix",
@@ -817,6 +821,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   int do_filter;      /* TRUE if --ilo or --ihi is set */
   int do_isubtr;              /* TRUE if --isubtr: sub-parsetree IS mode */
   int do_iflank;              /* TRUE if --iflank: scan flanks only, add qc_sc as direct hit */
+  int do_ipaint;              /* TRUE if --ipaint: painting mode */
   CM_SCAN_MX *smx_flank = NULL; /* reduced-W scan matrix for flank scans (--iflank-W) */
   float imu;                  /* minimum candidate score (--imu) for sub-parsetree IS */
   int   isubtr_best_v;        /* v* state index for current sequence (do_isubtr) */
@@ -843,6 +848,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   ihi        = esl_opt_IsOn (go, "--ihi") ? esl_opt_GetReal (go, "--ihi") : eslINFINITY;
   do_isubtr  = esl_opt_GetBoolean (go, "--isubtr");
   do_iflank  = esl_opt_GetBoolean (go, "--iflank");
+  do_ipaint  = esl_opt_GetBoolean (go, "--ipaint");
   imu        = esl_opt_IsOn (go, "--imu") ? (float) esl_opt_GetReal (go, "--imu") : 0.;
   n_emitted             = 0;
   n_rejected            = 0;
@@ -883,6 +889,264 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   /* Search sequences and collect score histograms */
 
   scN = 0;
+
+  /* ================================================================
+   * --ipaint: painting mode.
+   * Pack multiple sub-scanned IS sequences into ~10Kb mega-sequences,
+   * then scan each mega-sequence once.  Each kept sequence contributes
+   * a guaranteed hit at its qc_sc score; flank regions (randomized)
+   * contribute additional hits.
+   * ================================================================ */
+  if (do_ipaint && do_isubtr && do_sample) {
+    int   ipaint_target_L = esl_opt_GetInteger (go, "--ipaint-L");
+    float imutol          = (float) esl_opt_GetReal (go, "--imutol");
+    int   n_chunks        = 0;
+    int   n_subscan       = 0;   /* total sub-scans performed */
+    int   n_paint_kept    = 0;   /* total sequences kept across all chunks */
+    int   n_paint_reject  = 0;   /* total sequences rejected (Viterbi or Inside filter) */
+
+    /* Per-chunk buffers (reused each chunk) */
+    int    seg_alloc = (ipaint_target_L / 50) + 16;   /* generous initial alloc */
+    int    n_seg     = 0;
+    int    mega_L    = 0;
+    ESL_DSQ **seg_dsq  = NULL;
+    int      *seg_L    = NULL;
+    int      *seg_il   = NULL;
+    int      *seg_ir   = NULL;
+    int      *seg_v    = NULL;
+    float    *seg_qcsc = NULL;
+    float    *seg_wt   = NULL;
+
+    ESL_ALLOC (seg_dsq,  sizeof (ESL_DSQ *) * seg_alloc);
+    ESL_ALLOC (seg_L,    sizeof (int)       * seg_alloc);
+    ESL_ALLOC (seg_il,   sizeof (int)       * seg_alloc);
+    ESL_ALLOC (seg_ir,   sizeof (int)       * seg_alloc);
+    ESL_ALLOC (seg_v,    sizeof (int)       * seg_alloc);
+    ESL_ALLOC (seg_qcsc, sizeof (float)     * seg_alloc);
+    ESL_ALLOC (seg_wt,   sizeof (float)     * seg_alloc);
+
+    for (i = 0; i < N; i++) {
+      /* --- Phase 1: emit, find v*, sub-scan, accept/reject --- */
+      if ((status = sample_sequence_from_cm (cfg, errbuf, (emit_cm != NULL) ? emit_cm : cm,
+                                             (emit_cm != NULL) ? emit_cm : cm, &L, &dsq, &tr,
+                                             &parsetree_sc))
+          != eslOK)
+        cm_Fail (errbuf);
+      n_emitted++;
+
+      /* Find v* via Viterbi sub-parsetree scores (same as --isubtr) */
+      {
+        float *subtree_sc = NULL;
+        int    best_tidx  = -1;
+        float  best_above = eslINFINITY;
+        float  best_subtree_sc_val = 0.;
+        float  best_cand  = 0.;
+        int    tidx, il, ir;
+
+        if ((status = ParsetreeSubtreeScores (cm, errbuf, tr, dsq, &subtree_sc)) != eslOK)
+          cm_Fail (errbuf);
+
+        for (tidx = 0; tidx < tr->n; tidx++) {
+          int v_t = tr->state[tidx];
+          if (v_t == cm->M) continue;
+          if (cm->sttype[v_t] == E_st) continue;
+          if (cm->sttype[v_t] == B_st) continue;
+          if (NOT_IMPOSSIBLE (cm->beginsc[v_t])) {
+            float candidate = cm->beginsc[v_t] + subtree_sc[tidx];
+            float above     = candidate - imu;
+            if (above >= 0. && above < imutol && above < best_above) {
+              best_above          = above;
+              best_tidx           = tidx;
+              best_subtree_sc_val = subtree_sc[tidx];
+              best_cand           = candidate;
+            }
+          }
+        }
+        free (subtree_sc);
+
+        if (best_tidx == -1) {
+          /* No qualifying sub-parsetree; reject */
+          n_rejected++;
+          n_paint_reject++;
+          free (dsq); dsq = NULL;
+          FreeParsetree (tr); tr = NULL;
+          i--;
+          continue;
+        }
+
+        isubtr_best_v         = tr->state[best_tidx];
+        isubtr_il             = tr->emitl[best_tidx];
+        isubtr_ir             = tr->emitr[best_tidx];
+        isubtr_best_candidate = best_cand;
+      }
+
+      /* Sub-scan [il..ir] to get true Inside score (qc_sc) */
+      {
+        int L_v = isubtr_ir - isubtr_il + 1;
+        float qc_sc = IMPOSSIBLE;
+        CM_TOPHITS *th_sub = cm_tophits_Create ();
+        if (th_sub == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+        if ((status = FastIInsideScan (cm, errbuf, cm->smx, SMX_NOQDB,
+                                       dsq, (int64_t) isubtr_il, (int64_t) isubtr_ir, cutoff,
+                                       th_sub, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                       NULL, NULL, NULL, NULL, NULL,
+                                       isubtr_best_v, (int64_t) isubtr_ir, L_v, &qc_sc))
+            != eslOK)
+          cm_Fail (errbuf);
+        cm_tophits_Destroy (th_sub);
+        n_subscan++;
+
+        if (qc_sc == IMPOSSIBLE)
+          qc_sc = isubtr_best_candidate;
+
+        weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : (float) pow (2.0, -qc_sc);
+
+        if (esl_opt_GetBoolean (go, "-v"))
+          printf ("  PAINT sub-scan %5d: v*=%d [%d..%d] L_v=%d qc_sc=%.3f cand=%.3f wt=%.4g\n",
+                  i, isubtr_best_v, isubtr_il, isubtr_ir, L_v, qc_sc, isubtr_best_candidate, weight);
+
+        /* Accept this sequence: store it for the mega-chunk */
+        /* (For now: accept all. Later: filter by target bin.) */
+
+        /* Grow buffers if needed */
+        if (n_seg >= seg_alloc) {
+          seg_alloc *= 2;
+          ESL_RALLOC (seg_dsq,  tmp, sizeof (ESL_DSQ *) * seg_alloc);
+          ESL_RALLOC (seg_L,    tmp, sizeof (int)       * seg_alloc);
+          ESL_RALLOC (seg_il,   tmp, sizeof (int)       * seg_alloc);
+          ESL_RALLOC (seg_ir,   tmp, sizeof (int)       * seg_alloc);
+          ESL_RALLOC (seg_v,    tmp, sizeof (int)       * seg_alloc);
+          ESL_RALLOC (seg_qcsc, tmp, sizeof (float)     * seg_alloc);
+          ESL_RALLOC (seg_wt,   tmp, sizeof (float)     * seg_alloc);
+        }
+        seg_dsq[n_seg]  = dsq;   dsq = NULL;   /* transfer ownership */
+        seg_L[n_seg]    = L;
+        seg_il[n_seg]   = isubtr_il;
+        seg_ir[n_seg]   = isubtr_ir;
+        seg_v[n_seg]    = isubtr_best_v;
+        seg_qcsc[n_seg] = qc_sc;
+        seg_wt[n_seg]   = weight;
+        n_seg++;
+        mega_L += L;
+        n_paint_kept++;
+      }
+
+      FreeParsetree (tr); tr = NULL;
+
+      /* --- Phase 2: when mega-chunk is full, build + scan --- */
+      if (mega_L >= ipaint_target_L || i == N - 1) {
+        int   k, pos;
+        int  *seg_start = NULL;  /* start position of each segment in mega-dsq (1-based) */
+        ESL_DSQ *mega_dsq = NULL;
+
+        ESL_ALLOC (seg_start, sizeof (int) * n_seg);
+        ESL_ALLOC (mega_dsq,  sizeof (ESL_DSQ) * (mega_L + 2));
+        mega_dsq[0] = eslDSQ_SENTINEL;
+
+        /* Build the mega-sequence: randomize flanks, concatenate */
+        pos = 1;
+        for (k = 0; k < n_seg; k++) {
+          int j;
+          seg_start[k] = pos;
+          /* Randomize flanks [1..il-1] and [ir+1..L] */
+          for (j = 1; j < seg_il[k]; j++)
+            seg_dsq[k][j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+          for (j = seg_ir[k] + 1; j <= seg_L[k]; j++)
+            seg_dsq[k][j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+          /* Copy segment to mega-dsq (dsq is 1-based; copy residues 1..L) */
+          memcpy (mega_dsq + pos, seg_dsq[k] + 1, sizeof (ESL_DSQ) * seg_L[k]);
+          pos += seg_L[k];
+        }
+        mega_dsq[pos] = eslDSQ_SENTINEL;
+
+        /* Scan the mega-sequence */
+        th = cm_tophits_Create ();
+        if (th == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+        if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                       mega_dsq, 1, mega_L, cutoff, th,
+                                       cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                       NULL, NULL, NULL, NULL, NULL,
+                                       -1, -1, -1, NULL))
+            != eslOK)
+          cm_Fail (errbuf);
+
+        /* Collect hits: assign per-segment IS weights */
+        if (th->N > 0) {
+          if (scN == 0) {
+            ESL_ALLOC  (scA, sizeof (float) * (scN + th->N));
+            ESL_ALLOC  (wtA, sizeof (float) * (scN + th->N));
+          } else {
+            ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th->N));
+            ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th->N));
+          }
+          for (h = 0; h < (int) th->N; h++) {
+            /* Determine which segment this hit belongs to.
+             * th->unsrt[h].start and .stop are 1-based positions in mega-dsq. */
+            int hit_start = th->unsrt[h].start;
+            int hit_stop  = th->unsrt[h].stop;
+            int seg_idx   = -1;
+            for (k = 0; k < n_seg; k++) {
+              int seg_end = seg_start[k] + seg_L[k] - 1;
+              if (hit_start >= seg_start[k] && hit_stop <= seg_end) {
+                seg_idx = k;
+                break;
+              }
+            }
+            if (seg_idx == -1) continue;  /* hit spans segment boundary, discard */
+
+            /* Weight depends on whether hit overlaps the CM region [il..ir].
+             * CM region positions in mega-dsq coords:
+             *   cm_start = seg_start[k] + (il - 1)
+             *   cm_end   = seg_start[k] + (ir - 1)
+             * If hit overlaps CM region: IS weight = 2^(-qc_sc).
+             * If hit is entirely in random flanks: weight = 1. */
+            {
+              int cm_start = seg_start[seg_idx] + (seg_il[seg_idx] - 1);
+              int cm_end   = seg_start[seg_idx] + (seg_ir[seg_idx] - 1);
+              float hit_wt;
+              if (hit_stop >= cm_start && hit_start <= cm_end)
+                hit_wt = seg_wt[seg_idx];  /* overlaps CM region: IS weight */
+              else
+                hit_wt = 1.0;              /* pure flank hit: null weight */
+              scA[scN] = th->unsrt[h].score;
+              wtA[scN] = hit_wt;
+            }
+            scN++;
+          }
+        }
+        dbsize += (double) mega_L;
+
+        n_chunks++;
+        if (esl_opt_GetBoolean (go, "-v"))
+          printf ("  PAINT chunk %d: %d seqs, mega_L=%d, %d hits collected\n",
+                  n_chunks, n_seg, mega_L, (int) th->N);
+
+        /* Free chunk resources */
+        cm_tophits_Destroy (th); th = NULL;
+        free (mega_dsq);
+        free (seg_start);
+        for (k = 0; k < n_seg; k++) free (seg_dsq[k]);
+        n_seg  = 0;
+        mega_L = 0;
+      }
+    } /* end for (i = 0; i < N; ...) */
+
+    /* Report painting statistics */
+    printf ("Painting: %d emitted, %d kept, %d rejected, %d sub-scans, %d chunks\n",
+            n_emitted, n_paint_kept, n_paint_reject, n_subscan, n_chunks);
+
+    /* Free painting buffers */
+    free (seg_dsq);
+    free (seg_L);
+    free (seg_il);
+    free (seg_ir);
+    free (seg_v);
+    free (seg_qcsc);
+    free (seg_wt);
+
+  } else
+  /* ================================================================ */
+
   for (i = 0; i < N; i++) {
     /* generate sequence */
     if (do_sample) {
