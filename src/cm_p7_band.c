@@ -2085,6 +2085,555 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
 }
 
 
+/* Function: p7banded_post_to_cp9bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Derive CP9 HMM bands from p7 glocal banded Forward and Backward
+ *           posterior probabilities, bypassing CP9 Forward/Backward entirely.
+ *
+ *           For each CP9 node k and state type (M/I/D), scans the banded
+ *           (i,k) cells and includes position i in the band for node k if
+ *           the posterior probability exceeds <thresh>:
+ *
+ *             post_M(i,k) = expf(gxfb->dp[...M...] + gxbb->dp[...M...] - fwdsc)
+ *
+ *           The p7 glocal F and B matrices are computed during F5 (envelope
+ *           definition) and are already available in pli->gxfb / pli->gxbb.
+ *           This approach gives tighter bands than the Viterbi-inversion in
+ *           p7bands_to_cp9bands() because posteriors concentrate probability
+ *           mass near the most likely alignment path, while still bypassing
+ *           the O(L*M) CP9 F/B DP.
+ *
+ *           Delete bands are set equal to match bands for each node k (D
+ *           states do not emit, so we mirror the match coverage).
+ *
+ *           The i=0 special case is handled identically to p7bands_to_cp9bands:
+ *           M_0 (begin state) is always at position 0; D_k for k in the first
+ *           band row may be active at position 0.
+ *
+ * Args:     cm          - the covariance model
+ *           errbuf      - char buffer for reporting errors
+ *           gxfb        - p7 banded glocal Forward matrix (from F5)
+ *           gxbb        - p7 banded glocal Backward matrix (from F5)
+ *           fwdsc       - Forward score in nats (from p7_GForwardBanded)
+ *           bnd         - band structure for gxfb/gxbb (passed explicitly to avoid use-after-free;
+ *                         caller keeps it alive via pli->p7bnd)
+ *           ws          - absolute start of the window that gxfb/gxbb were computed over
+ *                         (1-indexed in original sequence); used to map window-relative
+ *                         gxfb rows to absolute/envelope positions
+ *           L           - length of target subsequence (= j0 - i0 + 1)
+ *           cp9b        - PRE-ALLOCATED CP9 bands, filled here
+ *           i0          - first position (absolute) of the envelope
+ *           j0          - final position (absolute) of the envelope
+ *           pass_idx    - pipeline pass index, determines truncation mode
+ *           thresh      - posterior probability threshold (e.g. 1e-5):
+ *                         include position i for node k if post(i,k) >= thresh
+ *           debug_level - verbosity level for debugging printf()s
+ *
+ * Returns:  eslOK on success
+ */
+int
+p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
+			  P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
+			  P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0,
+			  int pass_idx, float thresh, int debug_level)
+{
+  int          status;
+  int          g, i, k;
+  int          M            = cp9b->hmm_M;
+  int          do_old_hmm2ij;
+  int          do_trunc;
+  CP9_t       *cp9;
+  int          ia, ib;
+  int          kac, kbc;
+  int         *bnd_ip;
+  int         *bnd_kp;
+  float const *fwd_dp;
+  float const *bck_dp;
+  float        log_thresh;
+  float        fM, bM, fI, bI;
+  int          nk;
+  int          first_kac, first_kbc; /* band of first row, for i=0 D_k handling */
+
+  /* Contract checks */
+  if(cm->cp9map == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cm->cp9map is NULL.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: neither CM_ALIGN_HBANDED nor CM_SEARCH_HBANDED is set.\n");
+  if(cm->tau > 0.5)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cm->tau (%f) > 0.5.\n", cm->tau);
+  if(gxfb == NULL || gxbb == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: gxfb or gxbb is NULL.\n");
+  if(bnd == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: bnd is NULL.\n");
+  if(bnd->nrow == 0)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: bnd has no banded rows.\n");
+
+  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
+  cp9 = cm->cp9;
+  if(cp9 == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cm->cp9 is NULL.\n");
+
+  log_thresh = logf(thresh);
+
+  /* Initialize all bands to "unset" sentinel values */
+  for(k = 0; k <= M; k++) {
+    cp9b->pn_min_m[k] = L + 2;
+    cp9b->pn_max_m[k] = -1;
+    cp9b->pn_min_i[k] = L + 2;
+    cp9b->pn_max_i[k] = -1;
+    cp9b->pn_min_d[k] = L + 2;
+    cp9b->pn_max_d[k] = -1;
+  }
+
+  /* Main posterior sweep over banded (i,k) cells.
+   * Walk fwd->dp and bck->dp in parallel (same P7_GBANDS layout).
+   * bnd is passed explicitly (not via gxfb->bnd) to avoid use-after-free
+   * when the caller transfers bnd ownership to pli->p7bnd. */
+  bnd_ip = bnd->imem;
+  bnd_kp = bnd->kmem;
+  fwd_dp = gxfb->dp;
+  bck_dp = gxbb->dp;
+
+  /* Record first row's band for i=0 D_k handling below */
+  first_kac = bnd->kmem[0];
+  first_kbc = bnd->kmem[1];
+
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+
+    for(i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      nk  = kbc - kac + 1;
+
+      /* Convert window-relative row i to absolute position, then to
+       * envelope-relative position ep (1-indexed within [i0..j0]).
+       * Skip rows outside the envelope. */
+      int abs_i = ws + i - 1;
+      int ep    = abs_i - i0 + 1;   /* 1-indexed within envelope */
+      if(abs_i >= i0 && abs_i <= j0) {
+	for(k = kac; k <= kbc; k++) {
+	  fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+	  bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+
+	  if(fM + bM - fwdsc > log_thresh) {
+	    if(ep < cp9b->pn_min_m[k]) cp9b->pn_min_m[k] = ep;
+	    if(ep > cp9b->pn_max_m[k]) cp9b->pn_max_m[k] = ep;
+	    /* Delete bands mirror match bands */
+	    if(k > 0) {
+	      if(ep < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = ep;
+	      if(ep > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = ep;
+	    }
+	  }
+
+	  if(k < M) {
+	    fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+	    bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+	    if(fI + bI - fwdsc > log_thresh) {
+	      if(ep < cp9b->pn_min_i[k]) cp9b->pn_min_i[k] = ep;
+	      if(ep > cp9b->pn_max_i[k]) cp9b->pn_max_i[k] = ep;
+	    }
+	  }
+	}
+      }
+      fwd_dp += nk * p7G_NSCELLS;
+      bck_dp += nk * p7G_NSCELLS;
+    }
+  }
+
+  /* Handle i=0 special case (same logic as p7bands_to_cp9bands):
+   *   M_0 (begin state) is always at position 0.
+   *   D_k for k in first_kac..first_kbc may be active at position 0
+   *   (entering the model via begin -> delete transitions). */
+  cp9b->pn_min_m[0] = cp9b->pn_max_m[0] = 0;
+  for(k = first_kac; k <= first_kbc; k++) {
+    if(k > 0) {
+      if(0 < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = 0;
+      if(0 > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = 0;
+    }
+  }
+
+  /* Convert unset states to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(cp9b->pn_min_m[k] > cp9b->pn_max_m[k]) cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
+    if(cp9b->pn_min_i[k] > cp9b->pn_max_i[k]) cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
+    if(cp9b->pn_min_d[k] > cp9b->pn_max_d[k]) cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
+  }
+  cp9b->pn_min_d[0] = cp9b->pn_max_d[0] = -1; /* D_0 does not exist */
+
+  cp9b->tau = cm->tau;
+
+  /* Shift HMM bands from 1..L to i0..j0 coordinate system if needed */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    for(k = 0; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Set truncation candidate valid arrays.
+   * For non-truncated passes: Jvalid=TRUE, others=FALSE.
+   * For truncated passes: derive sp/ep from the model extent covered by
+   *   the posterior, then compute Rmarg/Lmarg and call
+   *   cp9_MarginalCandidatesFromStartEndPositions. */
+  if(do_trunc) {
+    int sp = M + 1, ep = 0;
+    for(k = 1; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1 && k < sp) sp = k;
+      if(cp9b->pn_max_m[k] != -1 && k > ep) ep = k;
+    }
+    if(sp < 1)     sp = 1;
+    if(sp > M + 1) sp = M + 1;
+    if(ep < 0)     ep = 0;
+    if(ep > M)     ep = M;
+    cp9b->sp1 = cp9b->sp2 = sp;
+    cp9b->ep1 = cp9b->ep2 = ep;
+
+    /* Rmarg: from sp (mirrors p7bands_to_cp9bands) */
+    if(cp9b->sp1 == M + 1) {
+      cp9b->Rmarg_imin = i0;
+      cp9b->Rmarg_imax = j0;
+    } else {
+      int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
+      if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
+      if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
+      if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
+      if(rmarg_imin == INT_MAX)    rmarg_imin = i0;
+      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
+
+      if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
+      if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
+      if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
+      if(rmarg_imax == INT_MIN)    rmarg_imax = j0 + 1;
+      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
+    }
+
+    /* Lmarg: from ep */
+    if(cp9b->ep1 == 0) {
+      cp9b->Lmarg_jmin = i0 - 1;
+      cp9b->Lmarg_jmax = j0;
+    } else {
+      int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
+      if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
+      if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
+      if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
+      if(lmarg_jmin == INT_MAX)    lmarg_jmin = i0 - 1;
+      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+
+      if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
+      if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
+      if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
+      if(lmarg_jmax == INT_MIN)    lmarg_jmax = j0;
+      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+    }
+
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+  } else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
+  }
+
+  /* HMM bands -> CM ij bands */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+  } else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+  }
+
+  /* CM ij bands -> CM d bands */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+
+#if eslDEBUGLEVEL >= 1
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
+  ESL_DPRINTF1(("#DEBUG: p7banded_post_to_cp9bands bands validated.\n"));
+#endif
+  if(debug_level > 0) debug_print_ij_bands(cm);
+
+  return eslOK;
+}
+
+
+/* Function: p7banded_post_to_pn_bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Phase 1 of p7banded_post_to_cp9bands: sweep the banded Forward/
+ *           Backward matrices and fill per-node pn_min/max arrays.
+ *
+ *           Extracted so that the posterior sweep can be run at F5 time
+ *           (while gxfb/gxbb are valid) and the results stored per envelope,
+ *           decoupling them from the later CYK dispatch where gxfb/gxbb may
+ *           already point to a different window.
+ *
+ * Args:     gxfb      - p7 banded glocal Forward matrix (log-space)
+ *           gxbb      - p7 banded glocal Backward matrix (log-space)
+ *           fwdsc     - Forward score in nats
+ *           bnd       - band structure for gxfb/gxbb
+ *           ws        - absolute start of the window (1-indexed)
+ *           M         - number of HMM nodes (= length of pn_* arrays - 1)
+ *           i0        - first absolute position of the envelope
+ *           j0        - final absolute position of the envelope
+ *           thresh    - posterior probability threshold
+ *           L         - envelope length (j0 - i0 + 1)
+ *           pn_min_m  - [0..M] pre-allocated output: min match position
+ *           pn_max_m  - [0..M] pre-allocated output: max match position
+ *           pn_min_i  - [0..M] pre-allocated output: min insert position
+ *           pn_max_i  - [0..M] pre-allocated output: max insert position
+ *           pn_min_d  - [0..M] pre-allocated output: min delete position
+ *           pn_max_d  - [0..M] pre-allocated output: max delete position
+ *
+ *           Positions are stored in 1..L (envelope-relative) coordinates.
+ *           Unset nodes have pn_min[k] = pn_max[k] = -1.
+ *           Node 0 match band is always set to 0 (begin state special case).
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
+                           P7_GBANDS *bnd, int ws, int M, int i0, int j0,
+                           float thresh, int L,
+                           int *pn_min_m, int *pn_max_m,
+                           int *pn_min_i, int *pn_max_i,
+                           int *pn_min_d, int *pn_max_d)
+{
+  int          g, i, k;
+  int          ia, ib;
+  int          kac, kbc;
+  int         *bnd_ip;
+  int         *bnd_kp;
+  float const *fwd_dp;
+  float const *bck_dp;
+  float        log_thresh;
+  float        fM, bM, fI, bI;
+  int          nk;
+  int          first_kac, first_kbc;
+  int          abs_i, ep;
+
+  log_thresh = logf(thresh);
+
+  for(k = 0; k <= M; k++) {
+    pn_min_m[k] = L + 2;
+    pn_max_m[k] = -1;
+    pn_min_i[k] = L + 2;
+    pn_max_i[k] = -1;
+    pn_min_d[k] = L + 2;
+    pn_max_d[k] = -1;
+  }
+
+  bnd_ip    = bnd->imem;
+  bnd_kp    = bnd->kmem;
+  fwd_dp    = gxfb->dp;
+  bck_dp    = gxbb->dp;
+  first_kac = bnd->kmem[0];
+  first_kbc = bnd->kmem[1];
+
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    for(i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      nk  = kbc - kac + 1;
+      abs_i = ws + i - 1;
+      ep    = abs_i - i0 + 1;
+      if(abs_i >= i0 && abs_i <= j0) {
+        for(k = kac; k <= kbc; k++) {
+          fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          if(fM + bM - fwdsc > log_thresh) {
+            if(ep < pn_min_m[k]) pn_min_m[k] = ep;
+            if(ep > pn_max_m[k]) pn_max_m[k] = ep;
+            if(k > 0) {
+              if(ep < pn_min_d[k]) pn_min_d[k] = ep;
+              if(ep > pn_max_d[k]) pn_max_d[k] = ep;
+            }
+          }
+          if(k < M) {
+            fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            if(fI + bI - fwdsc > log_thresh) {
+              if(ep < pn_min_i[k]) pn_min_i[k] = ep;
+              if(ep > pn_max_i[k]) pn_max_i[k] = ep;
+            }
+          }
+        }
+      }
+      fwd_dp += nk * p7G_NSCELLS;
+      bck_dp += nk * p7G_NSCELLS;
+    }
+  }
+
+  /* i=0 special case: begin state M_0 always at position 0;
+   * D_k for k in first band row may be active at position 0. */
+  pn_min_m[0] = pn_max_m[0] = 0;
+  for(k = first_kac; k <= first_kbc; k++) {
+    if(k > 0) {
+      if(0 < pn_min_d[k]) pn_min_d[k] = 0;
+      if(0 > pn_max_d[k]) pn_max_d[k] = 0;
+    }
+  }
+
+  /* Convert unset entries to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] > pn_max_m[k]) pn_min_m[k] = pn_max_m[k] = -1;
+    if(pn_min_i[k] > pn_max_i[k]) pn_min_i[k] = pn_max_i[k] = -1;
+    if(pn_min_d[k] > pn_max_d[k]) pn_min_d[k] = pn_max_d[k] = -1;
+  }
+  pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  return eslOK;
+}
+
+
+/* Function: p7pn_bands_to_cp9cm_bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Phase 2 of p7banded_post_to_cp9bands: convert pre-filled pn_min/max
+ *           arrays (from p7banded_post_to_pn_bands) into CP9 HMM bands and then
+ *           CM ij/d bands.
+ *
+ *           Copies pn_min/max into cp9b->pn_min/max, applies the i0..j0 coordinate
+ *           shift, handles truncation candidates, then calls cp9_HMM2ijBands,
+ *           cp9_GrowHDBands, and ij2d_bands.
+ *
+ * Args:     cm          - covariance model
+ *           errbuf      - error buffer
+ *           pn_min_m..pn_max_d - pre-filled pn arrays [0..M] (1..L envelope-relative)
+ *           cp9b        - pre-allocated CP9 bands, filled here
+ *           i0          - first absolute position of the envelope
+ *           j0          - final absolute position of the envelope
+ *           L           - envelope length (j0 - i0 + 1)
+ *           pass_idx    - pipeline pass index
+ *           debug_level - verbosity
+ *
+ * Returns:  eslOK on success, error code on failure.
+ */
+int
+p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
+                           int *pn_min_m, int *pn_max_m,
+                           int *pn_min_i, int *pn_max_i,
+                           int *pn_min_d, int *pn_max_d,
+                           CP9Bands_t *cp9b, int i0, int j0, int L,
+                           int pass_idx, int debug_level)
+{
+  int    status;
+  int    k;
+  int    M            = cp9b->hmm_M;
+  int    do_old_hmm2ij;
+  int    do_trunc;
+  CP9_t *cp9;
+
+  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+  cp9           = cm->cp9;
+
+  /* Copy pn_min/max into cp9b */
+  for(k = 0; k <= M; k++) {
+    cp9b->pn_min_m[k] = pn_min_m[k];
+    cp9b->pn_max_m[k] = pn_max_m[k];
+    cp9b->pn_min_i[k] = pn_min_i[k];
+    cp9b->pn_max_i[k] = pn_max_i[k];
+    cp9b->pn_min_d[k] = pn_min_d[k];
+    cp9b->pn_max_d[k] = pn_max_d[k];
+  }
+  cp9b->tau = cm->tau;
+
+  /* Shift HMM bands from 1..L to i0..j0 coordinate system if needed */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    for(k = 0; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Set truncation candidate valid arrays */
+  if(do_trunc) {
+    int sp = M + 1, ep = 0;
+    for(k = 1; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1 && k < sp) sp = k;
+      if(cp9b->pn_max_m[k] != -1 && k > ep) ep = k;
+    }
+    if(sp < 1)     sp = 1;
+    if(sp > M + 1) sp = M + 1;
+    if(ep < 0)     ep = 0;
+    if(ep > M)     ep = M;
+    cp9b->sp1 = cp9b->sp2 = sp;
+    cp9b->ep1 = cp9b->ep2 = ep;
+
+    if(cp9b->sp1 == M + 1) {
+      cp9b->Rmarg_imin = i0;
+      cp9b->Rmarg_imax = j0;
+    } else {
+      int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
+      if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
+      if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
+      if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
+      if(rmarg_imin == INT_MAX)    rmarg_imin = i0;
+      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
+
+      if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
+      if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
+      if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
+      if(rmarg_imax == INT_MIN)    rmarg_imax = j0 + 1;
+      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
+    }
+
+    if(cp9b->ep1 == 0) {
+      cp9b->Lmarg_jmin = i0 - 1;
+      cp9b->Lmarg_jmax = j0;
+    } else {
+      int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
+      if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
+      if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
+      if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
+      if(lmarg_jmin == INT_MAX)    lmarg_jmin = i0 - 1;
+      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+
+      if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
+      if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
+      if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
+      if(lmarg_jmax == INT_MIN)    lmarg_jmax = j0;
+      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+    }
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+  } else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
+  }
+
+  /* HMM bands -> CM ij bands */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+  } else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+  }
+
+  /* CM ij bands -> CM d bands */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+
+#if eslDEBUGLEVEL >= 1
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
+  ESL_DPRINTF1(("#DEBUG: p7pn_bands_to_cp9cm_bands bands validated.\n"));
+#endif
+  if(debug_level > 0) debug_print_ij_bands(cm);
+
+  return eslOK;
+}
+
+
 /* Function: cp9_PredictStartAndEndPositionsP7B()
  * Date    : 2026-03-20
  *

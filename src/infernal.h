@@ -2265,8 +2265,27 @@ typedef struct cm_pipeline_s {
   int           do_vitband;      /* TRUE to use Viterbi-derived banded F4/F5 (--vitband)                 */
   int           vitband_local;   /* TRUE to use local Viterbi for --vitband (default: glocal)            */
   int           nop7b_cp9b;      /* TRUE to skip p7-banded CP9 F/B, use unbanded CP9 (--nop7b_cp9b)    */
-  int           do_p7b_to_cp9b; /* TRUE to use direct p7->CP9 band conversion, bypass CP9 F/B (--p7b_to_cp9b) */
+  int           do_p7b_to_cp9b;  /* TRUE to use direct p7->CP9 band conversion, bypass CP9 F/B (--p7b_to_cp9b) */
+  int           do_p7post_cp9b;  /* TRUE to derive CP9 bands from p7 glocal F/B posteriors (--p7post_cp9b)    */
+  float         p7_fwdsc;        /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  int           p7_window_start; /* absolute start (1-indexed) of current window, for --p7post_cp9b coord map  */
+  P7_GBANDS    *p7bnd;           /* band structure kept alive across dispatch when --p7post_cp9b (gxfb->bnd ref) */
+  /* Per-envelope precomputed pn_min/max bands for --p7post_cp9b.
+   * Filled at F5 time (while gxfb/gxbb are valid) and used at CYK dispatch.
+   * Flat arrays: index e*(p7pn_M+1)+k for envelope e, node k. */
+  int      p7pn_nenv;           /* number of stored pn-band entries */
+  int      p7pn_nenv_alloc;     /* allocated capacity */
+  int      p7pn_M;              /* HMM length for stored entries (0 = not yet set) */
+  int64_t *p7pn_es;             /* [0..p7pn_nenv-1] absolute envelope start */
+  int64_t *p7pn_ee;             /* [0..p7pn_nenv-1] absolute envelope stop */
+  int     *p7pn_min_m;          /* flat [e*(M+1)+k] match min, 1..L relative */
+  int     *p7pn_max_m;          /* flat [e*(M+1)+k] match max */
+  int     *p7pn_min_i;          /* flat [e*(M+1)+k] insert min */
+  int     *p7pn_max_i;          /* flat [e*(M+1)+k] insert max */
+  int     *p7pn_min_d;          /* flat [e*(M+1)+k] delete min */
+  int     *p7pn_max_d;          /* flat [e*(M+1)+k] delete max */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
+  float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
   float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */
   int           p7len;          /* min nmer length for prune_i2k() (--p7len)        */
   int           p7end;          /* min dist from nmer end for prune_i2k() (--p7end) */
@@ -3114,7 +3133,10 @@ extern int          cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX 
 extern int          cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
 extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level);
-extern int          p7bands_to_cp9bands  (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level);
+extern int          p7bands_to_cp9bands      (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level);
+extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, float thresh, int debug_level);
+extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
+extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
