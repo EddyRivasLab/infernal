@@ -75,6 +75,10 @@ static ESL_OPTIONS options[] = {
     "target local Inside score (mu) for sub-parsetree IS", 1 },
   { "--imutol", eslARG_REAL, "2.0", NULL, "x>0", NULL, "--isubtr", NULL,
     "tolerance (bits) for sub-parsetree score match to --imu", 1 },
+  { "--iflank",   eslARG_NONE, FALSE, NULL, NULL, NULL, "--isubtr", NULL,
+    "IS mode: scan flanks only, add qc_sc directly as CM-region hit", 1 },
+  { "--iflank-W", eslARG_INT,  "0",   NULL, "n>=0", NULL, "--iflank", NULL,
+    "IS flank scan: cap window size W at <n> nt (0: use model W)", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
     "diagnostic: use weight=1 for all IS seqs", 1 },
   { "--exp", eslARG_REAL, NULL, NULL, "x>0", NULL, NULL, "--imix",
@@ -812,6 +816,8 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   float ilo, ihi;     /* parsetree score range for rejection sampling */
   int do_filter;      /* TRUE if --ilo or --ihi is set */
   int do_isubtr;              /* TRUE if --isubtr: sub-parsetree IS mode */
+  int do_iflank;              /* TRUE if --iflank: scan flanks only, add qc_sc as direct hit */
+  CM_SCAN_MX *smx_flank = NULL; /* reduced-W scan matrix for flank scans (--iflank-W) */
   float imu;                  /* minimum candidate score (--imu) for sub-parsetree IS */
   int   isubtr_best_v;        /* v* state index for current sequence (do_isubtr) */
   int   isubtr_il;            /* emitl of chosen sub-parsetree */
@@ -836,6 +842,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   ilo        = esl_opt_IsOn (go, "--ilo") ? esl_opt_GetReal (go, "--ilo") : -eslINFINITY;
   ihi        = esl_opt_IsOn (go, "--ihi") ? esl_opt_GetReal (go, "--ihi") : eslINFINITY;
   do_isubtr  = esl_opt_GetBoolean (go, "--isubtr");
+  do_iflank  = esl_opt_GetBoolean (go, "--iflank");
   imu        = esl_opt_IsOn (go, "--imu") ? (float) esl_opt_GetReal (go, "--imu") : 0.;
   n_emitted             = 0;
   n_rejected            = 0;
@@ -848,6 +855,23 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
 
   use_qdbs = (cm->search_opts & CM_SEARCH_QDB) ? TRUE : FALSE;
   cutoff = -eslINFINITY; /* collect all hits */
+
+  /* Create reduced-W scan matrix for flank scans if --iflank-W is set.
+   * FastIInsideScan uses integer matrices (ialpha/ialpha_begl), so do_int=TRUE.
+   * We temporarily reduce cm->W to W_cap, create the smx, then restore cm->W. */
+  if (do_iflank) {
+    int iflank_W = esl_opt_GetInteger(go, "--iflank-W");
+    if (iflank_W > 0 && iflank_W < cm->smx->W) {
+      int saved_W = cm->W;
+      cm->W = iflank_W;
+      if ((status = cm_scan_mx_Create(cm, errbuf, FALSE, TRUE, &smx_flank)) != eslOK)
+        cm_Fail(errbuf);
+      cm->W = saved_W;
+      if (esl_opt_GetBoolean(go, "-v"))
+        printf("# --iflank-W: created reduced-W scan matrix W=%d (model W=%d, %.2f Mb)\n",
+               iflank_W, saved_W, smx_flank->size_Mb);
+    }
+  }
 
   /* get HMM for generating random seqs, if nec */
   if (esl_opt_GetBoolean (go, "--rhmm")) {
@@ -979,78 +1003,188 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
       }
     }
 
-    /* Search the sequence with CYK or Inside (follows cmcalibrate.c:process_search_workunit()
-     * pattern) */
-    th = cm_tophits_Create ();
-    if (th == NULL)
-      ESL_FAIL (eslEMEM, errbuf, "out of memory");
-
-    /* Query cell: get beginsc[v*] + Inside(x[il..ir], v*) directly from the DP.
-     * qc_v/qc_j/qc_d are set above in the do_isubtr block (or -1 if not applicable). */
+    /* Search the sequence; collect hits and IS weight.
+     * --iflank (Idea 1): scan [il..ir] to extract qc_sc, add qc_sc as direct
+     * CM-region hit, scan flanks [1..il-1] and [ir+1..L] for null hits.
+     * Default: full scan [1..L] with CYK or Inside. */
     float isubtr_qc_sc = IMPOSSIBLE;
-    if (cm->search_opts & CM_SEARCH_INSIDE) {
-      if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
-                                     dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
-                                     NULL, NULL, NULL, NULL, NULL,
-                                     (do_isubtr && do_sample) ? isubtr_best_v         : -1,
-                                     (do_isubtr && do_sample) ? (int64_t) isubtr_ir   : -1,
-                                     (do_isubtr && do_sample) ? isubtr_ir - isubtr_il + 1 : -1,
-                                     (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL))
-          != eslOK)
-        cm_Fail (errbuf);
-    } else {
-      if ((status = FastCYKScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB, dsq, 1,
-                                 L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0., NULL, NULL,
-                                 NULL, NULL))
-          != eslOK)
-        cm_Fail (errbuf);
-    }
-    /* overlaps already removed inside FastCYKScan/FastIInsideScan */
 
-    /* do_isubtr: update IS weight from query-cell Inside score if available.
-     * The initial weight (2^(-candidate_sc), set above) is the fallback.
-     * isubtr_qc_sc = beginsc[v*] + Inside(x[il..ir], v*) from the DP matrix.
-     * This marginalizes over all parsetrees generating x[il..ir] from v*,
-     * which is theoretically the correct IS weight for w(x) = P_null(x)/q(x).
-     * For short sub-trees it agrees with candidate_sc to within rounding. */
-    if (do_isubtr && do_sample && isubtr_best_v != -1) {
-      if (isubtr_qc_sc != IMPOSSIBLE) {
-        if (! esl_opt_GetBoolean (go, "--no-weight"))
-          weight = (float) pow (2.0, -isubtr_qc_sc);
-        if (esl_opt_GetBoolean (go, "-v"))
-          printf ("  INSIDE qc: v*=%d [%d..%d] inside_sc=%.3f  candidate_sc=%.3f  weight=%.6g\n",
-                  isubtr_best_v, isubtr_il, isubtr_ir,
-                  isubtr_qc_sc, isubtr_best_candidate, weight);
-        n_isubtr_hit_found++;
-      } else {
-        n_isubtr_hit_missing++;
+    if (do_iflank && do_isubtr && do_sample && isubtr_best_v != -1) {
+      /* --iflank: two-flank approach.
+       * Scan [il..ir] with FastIInsideScan to get true qc_sc = beginsc[v*] + Inside([il..ir], v*).
+       * The query cell (v*, ir, L_cm) extracts this directly from the DP matrix.
+       * Use qc_sc as CM-region hit score and to update IS weight. */
+      {
+        int L_cm = isubtr_ir - isubtr_il + 1;
+        CM_TOPHITS *th_cm = cm_tophits_Create ();
+        if (th_cm == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+        if ((status = FastIInsideScan (cm, errbuf, cm->smx, SMX_NOQDB,
+                                       dsq, (int64_t) isubtr_il, (int64_t) isubtr_ir, cutoff,
+                                       th_cm, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                       NULL, NULL, NULL, NULL, NULL,
+                                       isubtr_best_v, (int64_t) isubtr_ir, L_cm, &isubtr_qc_sc))
+            != eslOK)
+          cm_Fail (errbuf);
+        cm_tophits_Destroy (th_cm);
       }
-    }
+      if (isubtr_qc_sc == IMPOSSIBLE) /* fallback: shouldn't happen for valid subtree */
+        isubtr_qc_sc = isubtr_best_candidate;
 
-    /* accumulate dbsize: actual nt searched (unweighted for both IS and random).
-     * The hits/Mb criterion counts data points, not IS-equivalent null sequence. */
-    dbsize += (double)L;
+      /* Update IS weight from true qc_sc */
+      if (!esl_opt_GetBoolean (go, "--no-weight"))
+        weight = (float) pow (2.0, -isubtr_qc_sc);
 
-    if (th->N > 0) {
-      /* collect all hits */
+      if (esl_opt_GetBoolean (go, "-v"))
+        printf ("  INSIDE qc (iflank): v*=%d [%d..%d] qc_sc=%.3f  candidate_sc=%.3f  weight=%.6g\n",
+                isubtr_best_v, isubtr_il, isubtr_ir,
+                isubtr_qc_sc, isubtr_best_candidate, weight);
+      n_isubtr_hit_found++;
+      dbsize += (double) L;
+
+      /* Add CM-region hit using true qc_sc as the hit score. */
       if (scN == 0) {
-        ESL_ALLOC (scA, sizeof (float) * (scN + th->N));
-        if (do_sample)
-          ESL_ALLOC (wtA, sizeof (float) * (scN + th->N));
+        ESL_ALLOC  (scA, sizeof (float) * (scN + 1));
+        if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + 1));
       } else {
-        ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th->N));
-        if (do_sample)
-          ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th->N));
+        ESL_RALLOC (scA, tmp, sizeof (float) * (scN + 1));
+        if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + 1));
       }
-      for (h = 0; h < (int)th->N; h++) {
-        scA[(scN + h)] = th->unsrt[h].score;
-        if (do_sample)
-          wtA[(scN + h)] = weight;
+      scA[scN] = isubtr_qc_sc;
+      if (do_sample) wtA[scN] = weight;
+      scN++;
+
+      /* (d) Scan left flank [1..il-1] for null-background hits. */
+      if (isubtr_il > 1) {
+        CM_TOPHITS *th_flank = cm_tophits_Create ();
+        if (th_flank == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+        if (cm->search_opts & CM_SEARCH_INSIDE) {
+          CM_SCAN_MX *smx_use = (smx_flank != NULL) ? smx_flank : cm->smx;
+          if ((status = FastIInsideScan (cm, errbuf, smx_use, SMX_NOQDB,
+                                         dsq, 1, (int64_t) (isubtr_il - 1), cutoff,
+                                         th_flank, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                         NULL, NULL, NULL, NULL, NULL,
+                                         -1, -1, -1, NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+        }
+        if (th_flank->N > 0) {
+          if (scN == 0) {
+            ESL_ALLOC  (scA, sizeof (float) * (scN + th_flank->N));
+            if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + th_flank->N));
+          } else {
+            ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th_flank->N));
+            if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th_flank->N));
+          }
+          for (h = 0; h < (int) th_flank->N; h++) {
+            scA[scN + h] = th_flank->unsrt[h].score;
+            if (do_sample) wtA[scN + h] = weight;
+          }
+          scN += th_flank->N;
+        }
+        cm_tophits_Destroy (th_flank);
       }
-      scN += th->N;
+
+      /* (e) Scan right flank [ir+1..L] for null-background hits. */
+      if (isubtr_ir < L) {
+        CM_TOPHITS *th_flank = cm_tophits_Create ();
+        if (th_flank == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+        if (cm->search_opts & CM_SEARCH_INSIDE) {
+          CM_SCAN_MX *smx_use = (smx_flank != NULL) ? smx_flank : cm->smx;
+          if ((status = FastIInsideScan (cm, errbuf, smx_use, SMX_NOQDB,
+                                         dsq, (int64_t) (isubtr_ir + 1), L, cutoff,
+                                         th_flank, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                         NULL, NULL, NULL, NULL, NULL,
+                                         -1, -1, -1, NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+        }
+        if (th_flank->N > 0) {
+          if (scN == 0) {
+            ESL_ALLOC  (scA, sizeof (float) * (scN + th_flank->N));
+            if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + th_flank->N));
+          } else {
+            ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th_flank->N));
+            if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th_flank->N));
+          }
+          for (h = 0; h < (int) th_flank->N; h++) {
+            scA[scN + h] = th_flank->unsrt[h].score;
+            if (do_sample) wtA[scN + h] = weight;
+          }
+          scN += th_flank->N;
+        }
+        cm_tophits_Destroy (th_flank);
+      }
+
+    } else {
+      /* Default: full-sequence scan with CYK or Inside. */
+      th = cm_tophits_Create ();
+      if (th == NULL)
+        ESL_FAIL (eslEMEM, errbuf, "out of memory");
+
+      /* Query cell: get beginsc[v*] + Inside(x[il..ir], v*) directly from the DP.
+       * qc_v/qc_j/qc_d are set above in the do_isubtr block (or -1 if not applicable). */
+      if (cm->search_opts & CM_SEARCH_INSIDE) {
+        if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                       dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                       NULL, NULL, NULL, NULL, NULL,
+                                       (do_isubtr && do_sample) ? isubtr_best_v         : -1,
+                                       (do_isubtr && do_sample) ? (int64_t) isubtr_ir   : -1,
+                                       (do_isubtr && do_sample) ? isubtr_ir - isubtr_il + 1 : -1,
+                                       (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL))
+            != eslOK)
+          cm_Fail (errbuf);
+      } else {
+        if ((status = FastCYKScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB, dsq, 1,
+                                   L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0., NULL, NULL,
+                                   NULL, NULL))
+            != eslOK)
+          cm_Fail (errbuf);
+      }
+      /* overlaps already removed inside FastCYKScan/FastIInsideScan */
+
+      /* do_isubtr: update IS weight from query-cell Inside score if available.
+       * The initial weight (2^(-candidate_sc), set above) is the fallback.
+       * isubtr_qc_sc = beginsc[v*] + Inside(x[il..ir], v*) from the DP matrix.
+       * This marginalizes over all parsetrees generating x[il..ir] from v*,
+       * which is theoretically the correct IS weight for w(x) = P_null(x)/q(x).
+       * For short sub-trees it agrees with candidate_sc to within rounding. */
+      if (do_isubtr && do_sample && isubtr_best_v != -1) {
+        if (isubtr_qc_sc != IMPOSSIBLE) {
+          if (! esl_opt_GetBoolean (go, "--no-weight"))
+            weight = (float) pow (2.0, -isubtr_qc_sc);
+          if (esl_opt_GetBoolean (go, "-v"))
+            printf ("  INSIDE qc: v*=%d [%d..%d] inside_sc=%.3f  candidate_sc=%.3f  weight=%.6g\n",
+                    isubtr_best_v, isubtr_il, isubtr_ir,
+                    isubtr_qc_sc, isubtr_best_candidate, weight);
+          n_isubtr_hit_found++;
+        } else {
+          n_isubtr_hit_missing++;
+        }
+      }
+
+      /* accumulate dbsize: actual nt searched (unweighted for both IS and random).
+       * The hits/Mb criterion counts data points, not IS-equivalent null sequence. */
+      dbsize += (double) L;
+
+      if (th->N > 0) {
+        /* collect all hits */
+        if (scN == 0) {
+          ESL_ALLOC  (scA, sizeof (float) * (scN + th->N));
+          if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + th->N));
+        } else {
+          ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th->N));
+          if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th->N));
+        }
+        for (h = 0; h < (int) th->N; h++) {
+          scA[(scN + h)] = th->unsrt[h].score;
+          if (do_sample) wtA[(scN + h)] = weight;
+        }
+        scN += th->N;
+      }
+
+      cm_tophits_Destroy (th);
     }
 
-    cm_tophits_Destroy (th);
     free (dsq);
     if (tr != NULL) {
       FreeParsetree (tr);
@@ -1083,6 +1217,9 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
             n_isubtr_hit_missing,
             (total > 0) ? 100.0 * n_isubtr_hit_missing / (double) total : 0.);
   }
+
+  if (smx_flank != NULL) cm_scan_mx_Destroy(cm, smx_flank);
+
 
   *ret_scN = scN;
   *ret_scA = scA;
