@@ -75,9 +75,6 @@
  * 1. Default values for various parameters, and other constant definitions.
  ***********************************************************************************/
 
-#define PSI_LEN_THRESHOLD           15000.        /* EPN 11.08.24 (formerly 25000, models > this len get 
-                                                   * more tolerance in psi (state occupancy) calculation 
-                                                   * see cm_ExpectedStateOccupancy() */
 #define DEFAULT_BETA_W              1E-7
 #define DEFAULT_BETA_QDB1           1E-7
 #define DEFAULT_BETA_QDB2           1E-15

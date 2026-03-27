@@ -8,6 +8,7 @@
 #include <p7_config.h>
 #include "config.h"
 
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -4262,16 +4263,15 @@ cm_ExpectedStateOccupancy(CM_t *cm)
   char  ***tmap = NULL;  /* transition map */
   float  **t_copy = NULL;  /* copy of transition probabilities */
   double *psi = NULL;
-  double tol = 0.001;
-  /* tol is difference from 1.0 we allow for summed psi of split set states
-   * it is larger for really big models, 
-   * tolerance is (clen/PSI_LEN_THRESHOLD) * 0.001, with minimum of 0.001 
-   * so it's 0.001 unless clen > PSI_LEN_THRESHOLD (15000)
-   * (from v1.1 to v1.1.4 it was 0.001 for all models)
+  /* tol is the maximum deviation from 1.0 we allow for the summed psi
+   * of split-set states in each node. The psi recurrence multiplies
+   * double psi values by float transition probabilities (cm->t is float).
+   * Each step can shift the split-state sum by up to MAXCONNECT * FLT_EPSILON
+   * (worst case: all per-transition float rounding errors same sign).
+   * Over clen steps this accumulates linearly, giving a conservative
+   * worst-case bound of clen * MAXCONNECT * FLT_EPSILON.
    */
-  if(cm->clen > PSI_LEN_THRESHOLD) { 
-    tol = ((float) cm->clen / PSI_LEN_THRESHOLD) * 0.001;
-  }
+  double tol = ESL_MAX(0.001, (double) cm->clen * MAXCONNECT * FLT_EPSILON);
 
   /* make a copy of the CM transitions */
   ESL_ALLOC(t_copy,    cm->M * sizeof(float *));
