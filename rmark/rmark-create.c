@@ -48,6 +48,7 @@
 #include "esl_hmm.h"
 #include "esl_msa.h"
 #include "esl_msafile.h"
+#include "esl_iset.h"
 #include "esl_msacluster.h"
 #include "esl_msaweight.h"
 #include "esl_random.h"
@@ -62,7 +63,16 @@ static char usage1[]  = "[options] <basename> <msafile> <hmmfile>";
 static char usage2[]  = "[options] -S    <basename> <msafile> <seqdb>";
 static char usage3[]  = "[options] --iid <basename> <msafile>\n";
 
-#define SHUF_OPTS "--mono,--di,--markov0,--markov1"   /* toggle group, seq shuffling options          */
+#define SHUF_OPTS  "--mono,--di,--markov0,--markov1"   /* toggle group, seq shuffling options          */
+#define SPLIT_OPTS "--cobalt,--blue,--cluster"        /* toggle group, splitting algorithm options    */
+
+enum { rmCLUSTER = 0, rmCOBALT = 1, rmBLUE = 2 };
+
+/* Parameters passed to the is_linked() callback for iset/cluster algorithms */
+typedef struct {
+  double         t;    /* two seqs are linked if pairwise identity > t */
+  const ESL_MSA *msa;
+} RM_LINK_PARAMS;
 
 static ESL_OPTIONS options[] = {
   /* name       type        default env   range togs  reqs  incomp      help                                                   docgroup */
@@ -100,6 +110,12 @@ static ESL_OPTIONS options[] = {
   { "--nfile",  eslARG_OUTFILE,FALSE,NULL, NULL, NULL, NULL, NULL,           "save benchmark database *without* positives to <f>",  4 },
   { "--tfile",  eslARG_OUTFILE,FALSE,NULL, NULL, NULL, NULL, NULL,           "save orig/train/test alignments with renamed seqs to <f>",  4 },
 
+  /* Options controlling train/test splitting algorithm [Petti & Eddy, 2022] */
+  { "--cobalt",  eslARG_NONE, FALSE, NULL, NULL, SPLIT_OPTS, NULL, NULL,    "use Cobalt algorithm for train/test splitting",             5 },
+  { "--blue",    eslARG_NONE, FALSE, NULL, NULL, SPLIT_OPTS, NULL, NULL,    "use Blue algorithm for train/test splitting (default)",     5 },
+  { "--cluster", eslARG_NONE, FALSE, NULL, NULL, SPLIT_OPTS, NULL, NULL,    "use single-linkage clustering for splitting",              5 },
+  { "--bestof",  eslARG_INT,   "10", NULL, "n>0",NULL, NULL, NULL,         "with Blue/Cobalt, keep best of <n> random trials",          5 },
+
   { 0,0,0,0,0,0,0,0,0,0 },
 };
 
@@ -135,11 +151,13 @@ struct cfg_s {
 static int process_dbfile       (struct cfg_s *cfg, char *dbfile, int dbfmt);
 static int remove_fragments     (struct cfg_s *cfg, ESL_MSA *msa, ESL_MSA **ret_filteredmsa, int *ret_nfrags);
 static int separate_sets        (struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i_am_test);
+static int separate_sets_iset   (struct cfg_s *cfg, ESL_MSA *msa, int which_algo, int ntries, int **ret_i_am_train, int **ret_i_am_test);
 static int find_sets_greedily   (struct cfg_s *cfg, ESL_MSA *msa, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test);
 static int find_sets_by_sampling(struct cfg_s *cfg, ESL_MSA *msa, int nsamples, int do_maxtest, int **ret_i_am_train, int **ret_i_am_test);
 static int synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQ **posseqs, int npos);
 static int set_random_segment  (ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq, int L);
 static void read_hmmfile(char *filename, ESL_HMM **ret_hmm);
+static int is_linked(const void *v1, const void *v2, const void *p, int *ret_link);
 
 static void
 cmdline_failure(char *argv0, char *format, ...)
@@ -169,6 +187,8 @@ cmdline_help(char *argv0, ESL_GETOPTS *go)
   esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
   puts("\n other options:");
   esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+  puts("\n options controlling train/test splitting algorithm [Petti & Eddy, 2022]:");
+  esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
   exit(0);
 }
 
@@ -301,20 +321,22 @@ main(int argc, char **argv)
 
       remove_fragments(&cfg, origmsa, &msa, &nfrags);
 
-      /* Test 1: can we define train/test sets such that our thresholds 
-       *         are satisfied (most similar train/test pair < cfg->idthresh1,
-       *         and most similar test/test pair < cfg->idthresh2) and 
-       *         _all_ the msa's sequences are either:
-       *  - in the training set OR
-       *  - in the test set OR
-       *  - more than cfg->idthresh2 similar to >=1 sequences in the test set
-      */
-      if(! esl_opt_GetBoolean(go, "--skip")) { 
+      /* Determine which splitting algorithm to use */
+      if (esl_opt_GetBoolean(go, "--cluster")) {
+        /* --cluster: original single-linkage clustering algorithm */
 	separate_sets (&cfg, msa, &i_am_train, &i_am_test);
 	ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
 	ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
       }
-      else { /* --skip enabled, we skipped test 1 */
+      else if(! esl_opt_GetBoolean(go, "--skip")) {
+        /* Default: Blue; or --cobalt if specified */
+        int which_algo = esl_opt_GetBoolean(go, "--cobalt") ? rmCOBALT : rmBLUE;
+        int ntries     = esl_opt_GetInteger(go, "--bestof");
+        separate_sets_iset(&cfg, msa, which_algo, ntries, &i_am_train, &i_am_test);
+        ntrainseq = esl_vec_ISum(i_am_train, msa->nseq);
+        ntestseq  = esl_vec_ISum(i_am_test,  msa->nseq);
+      }
+      else { /* --skip enabled */
 	ntestseq = ntrainseq = 0;
       }
 
@@ -657,6 +679,168 @@ separate_sets(struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i
   *ret_i_am_test  = NULL;
   return status;
 }
+
+
+/* is_linked()
+ * Callback for esl_iset and esl_cluster routines.
+ * Two sequences are "linked" if their pairwise identity > threshold t.
+ * v1, v2 point to int sequence indices into the MSA bundled in params.
+ */
+static int
+is_linked(const void *v1, const void *v2, const void *p, int *ret_link)
+{
+  RM_LINK_PARAMS *prm = (RM_LINK_PARAMS *) p;
+  int    idx1 = *(int *) v1;
+  int    idx2 = *(int *) v2;
+  double pid;
+  int    status;
+
+  if ((status = esl_dst_XPairId(prm->msa->abc, prm->msa->ax[idx1], prm->msa->ax[idx2], &pid, NULL, NULL)) != eslOK) return status;
+  *ret_link = (pid > prm->t) ? TRUE : FALSE;
+  return eslOK;
+}
+
+
+/* separate_sets_iset()
+ *
+ * Use the Blue or Cobalt algorithm [Petti & Eddy, 2022] to split
+ * an MSA into training and test sets.
+ *
+ * Step 1: bipartite split at idthresh1 — sequences in set 1 (training)
+ *         have no link (>idthresh1 identity) to any sequence in set 2 (test).
+ *         Some sequences may be excluded (assignment=0) — this is what
+ *         makes Blue/Cobalt more powerful than single-linkage clustering.
+ *
+ * Step 2: filter the test set at idthresh2 — use the mono variant to
+ *         remove redundancy so no two test seqs are >idthresh2 identical.
+ *
+ * The algorithm is randomized, so we retry <ntries> times and keep the
+ * split that maximizes log(ntrain) + log(ntest).
+ *
+ * Returns eslOK on success, with ret_i_am_train/ret_i_am_test allocated
+ * and filled. If no valid split is found, arrays are allocated but zeroed.
+ */
+static int
+separate_sets_iset(struct cfg_s *cfg, ESL_MSA *msa, int which_algo, int ntries,
+                   int **ret_i_am_train, int **ret_i_am_test)
+{
+  RM_LINK_PARAMS prm;
+  int     *V          = NULL;   /* vertex list: V[i] = i for all seqs */
+  int     *wrk        = NULL;   /* workspace for iset algorithms */
+  int     *assignment = NULL;   /* iset output: 0=excluded, 1=set S (train), 2=set T (test) */
+  int     *S          = NULL;   /* training set indices */
+  int     *T          = NULL;   /* test set (pre-filter) indices */
+  int     *Tfilt      = NULL;   /* test set (post-filter) indices */
+  int     *i_am_train = NULL;
+  int     *i_am_test  = NULL;
+  int     *best_train = NULL;
+  int     *best_test  = NULL;
+  int      nS, nT, nTfilt;
+  double   best_score = -eslINFINITY;
+  double   score;
+  int      nV = msa->nseq;
+  int      i, trial;
+  int      status;
+
+  ESL_ALLOC(V,          sizeof(int) * nV);
+  ESL_ALLOC(wrk,        sizeof(int) * 4 * nV);
+  ESL_ALLOC(assignment, sizeof(int) * nV);
+  ESL_ALLOC(S,          sizeof(int) * nV);
+  ESL_ALLOC(T,          sizeof(int) * nV);
+  ESL_ALLOC(Tfilt,      sizeof(int) * nV);
+  ESL_ALLOC(i_am_train, sizeof(int) * nV);
+  ESL_ALLOC(i_am_test,  sizeof(int) * nV);
+  ESL_ALLOC(best_train, sizeof(int) * nV);
+  ESL_ALLOC(best_test,  sizeof(int) * nV);
+
+  for (i = 0; i < nV; i++) V[i] = i;
+
+  prm.msa = msa;
+
+  esl_vec_ISet(best_train, nV, 0);
+  esl_vec_ISet(best_test,  nV, 0);
+
+  for (trial = 0; trial < ntries; trial++)
+    {
+      /* Step 1: bipartite split at idthresh1 */
+      prm.t = cfg->idthresh1;
+      switch (which_algo) {
+      case rmCOBALT: status = esl_iset_biCobalt(cfg->r, V, nV, sizeof(int), is_linked, &prm, wrk, assignment); break;
+      case rmBLUE:   status = esl_iset_biBlue  (cfg->r, V, nV, sizeof(int), is_linked, &prm, wrk, assignment); break;
+      default:       ESL_XEXCEPTION(eslEINVAL, "bad algo in separate_sets_iset");
+      }
+      if (status != eslOK) goto ERROR;
+
+      nS = nT = 0;
+      for (i = 0; i < nV; i++) {
+        if      (assignment[i] == 1) S[nS++] = i;
+        else if (assignment[i] == 2) T[nT++] = i;
+      }
+      if (nS < cfg->min_ntrain || nT < cfg->min_ntest) continue;
+
+      /* Step 2: filter test set at idthresh2 using mono variant */
+      if (cfg->idthresh2 < 1.0) {
+        prm.t = cfg->idthresh2;
+        int *filt_wrk  = NULL;
+        int *filt_asgn = NULL;
+        ESL_ALLOC(filt_wrk,  sizeof(int) * 4 * nT);
+        ESL_ALLOC(filt_asgn, sizeof(int) * nT);
+
+        switch (which_algo) {
+        case rmCOBALT: esl_iset_monoCobalt(cfg->r, T, nT, sizeof(int), is_linked, &prm, filt_wrk, filt_asgn); break;
+        case rmBLUE:   esl_iset_monoBlue  (cfg->r, T, nT, sizeof(int), is_linked, &prm, filt_wrk, filt_asgn); break;
+        default:       free(filt_wrk); free(filt_asgn); ESL_XEXCEPTION(eslEINVAL, "bad algo");
+        }
+
+        nTfilt = 0;
+        for (i = 0; i < nT; i++)
+          if (filt_asgn[i] == 1) Tfilt[nTfilt++] = T[i];
+
+        free(filt_wrk);
+        free(filt_asgn);
+      } else {
+        esl_vec_ICopy(T, nT, Tfilt);
+        nTfilt = nT;
+      }
+      if (nTfilt < cfg->min_ntest) continue;
+
+      /* Keep best split (maximize geometric mean of set sizes) */
+      score = log((double) nS) + log((double) nTfilt);
+      if (score > best_score) {
+        best_score = score;
+        esl_vec_ISet(best_train, nV, 0);
+        esl_vec_ISet(best_test,  nV, 0);
+        for (i = 0; i < nS;     i++) best_train[S[i]]     = 1;
+        for (i = 0; i < nTfilt;  i++) best_test[Tfilt[i]]  = 1;
+      }
+    }
+
+  /* Copy best result to output */
+  esl_vec_ICopy(best_train, nV, i_am_train);
+  esl_vec_ICopy(best_test,  nV, i_am_test);
+
+  free(V); free(wrk); free(assignment); free(S); free(T); free(Tfilt);
+  free(best_train); free(best_test);
+  *ret_i_am_train = i_am_train;
+  *ret_i_am_test  = i_am_test;
+  return eslOK;
+
+ ERROR:
+  if (V)          free(V);
+  if (wrk)        free(wrk);
+  if (assignment)  free(assignment);
+  if (S)          free(S);
+  if (T)          free(T);
+  if (Tfilt)      free(Tfilt);
+  if (i_am_train) free(i_am_train);
+  if (i_am_test)  free(i_am_test);
+  if (best_train) free(best_train);
+  if (best_test)  free(best_test);
+  *ret_i_am_train = NULL;
+  *ret_i_am_test  = NULL;
+  return status;
+}
+
 
 /* Test 2. Greedy approach:
  *         Use a greedy, deterministic  algorithm to see if we 
