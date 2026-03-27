@@ -657,6 +657,7 @@ separate_sets(struct cfg_s *cfg, ESL_MSA *msa, int **ret_i_am_train, int **ret_i
       }
   }
 
+  esl_msa_Destroy(trainmsa);
   esl_msa_Destroy(test_msa);
   free(nin);
   free(assignment);
@@ -1607,7 +1608,8 @@ read_hmmfile(char *filename, ESL_HMM **ret_hmm)
   }
   *ret_hmm = hmm;
 
-  esl_fileparser_Destroy(efp);
+  esl_alphabet_Destroy(abc);
+  esl_fileparser_Close(efp);
   return;
 }
 
