@@ -1108,7 +1108,7 @@ RefCYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, in
 int
 FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist,
 		int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc, CM_TOPHITS **ret_raw_hitlist,
-		int qc_v, int64_t qc_j, int qc_d, float *ret_qc_sc)
+		int qc_v, int64_t qc_j, int qc_d, float *ret_qc_sc, float *ret_qc_sc_sumv)
 {
   int       status;
   GammaHitMx_t *gamma = NULL;   /* semi-HMM for hit resoultion */
@@ -1149,6 +1149,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 
   if (ret_raw_hitlist != NULL) *ret_raw_hitlist = NULL;
   if (ret_qc_sc       != NULL) *ret_qc_sc       = IMPOSSIBLE;
+  if (ret_qc_sc_sumv != NULL) *ret_qc_sc_sumv = IMPOSSIBLE;
 
   /* Contract check */
   if(! (cm->flags & CMH_BITS))               ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -1652,6 +1653,24 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
 	else                            qc_sc_int = alpha[cur][qc_v][qc_d];
 	if (qc_sc_int != -INFTY && cm->ibeginsc[qc_v] != -INFTY)
 	  *ret_qc_sc = Scorify(cm->ibeginsc[qc_v] + qc_sc_int);
+      }
+      /* Sum-over-v query cell: sum 2^(beginsc[v] + Inside(x, v)) over all v
+       * with valid beginsc at (qc_j, qc_d).  This is the full Inside hit score
+       * that FastIInsideScan would report, marginalizing over all root states. */
+      if (ret_qc_sc_sumv != NULL && (int64_t)j == qc_j && qc_d >= 1 && qc_d <= W) {
+	double sum = 0.;
+	int v;
+	for (v = 1; v < cm->M; v++) {
+	  if (cm->ibeginsc[v] != -INFTY) {
+	    int alpha_v;
+	    if (cm->stid[v] == BEGL_S) alpha_v = alpha_begl[j%(W+1)][v][qc_d];
+	    else                        alpha_v = alpha[cur][v][qc_d];
+	    if (alpha_v != -INFTY)
+	      sum += pow(2.0, Scorify(cm->ibeginsc[v] + alpha_v));
+	  }
+	}
+	if (sum > 0.)
+	  *ret_qc_sc_sumv = (float) log2(sum);
       }
 
       /* done with this endpoint j, if necessary, update gamma or tmp_hitlist */
@@ -4405,7 +4424,7 @@ main(int argc, char **argv)
     if (esl_opt_GetBoolean(go, "--iins")) { 
       cm->search_opts  |= CM_SEARCH_INSIDE;
       esl_stopwatch_Start(w);
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL, -1, -1, -1, NULL)) != eslOK) cm_Fail(errbuf);
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL, -1, -1, -1, NULL, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastIInsideScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");

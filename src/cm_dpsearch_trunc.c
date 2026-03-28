@@ -3851,7 +3851,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 	
       esl_stopwatch_Start(w);
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL, -1, -1, -1, NULL)) != eslOK) cm_Fail(errbuf);
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, qdbidx, dsq, 1, L, 0., NULL, FALSE, 0., NULL, NULL, NULL, &sc, NULL, -1, -1, -1, NULL, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", i, "FastIInsideScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");

@@ -4201,7 +4201,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       if(do_inside) { 
 	status = FastIInsideScan(cm, pli->errbuf, cm->smx, qdbidx, dsq, start, stop,
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, NULL, &sc, NULL,
-				 -1, -1, -1, NULL);
+				 -1, -1, -1, NULL, NULL);
       }
       else { 
 	status = FastCYKScan(cm, pli->errbuf, cm->smx, qdbidx, dsq, start, stop, 

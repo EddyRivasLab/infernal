@@ -83,6 +83,20 @@ static ESL_OPTIONS options[] = {
     "painting mode: pack sub-scanned seqs into ~10Kb chunks", 1 },
   { "--ipaint-L", eslARG_INT,  "10000", NULL, "n>0", NULL, "--ipaint", NULL,
     "target mega-sequence length per chunk for --ipaint", 1 },
+  { "--ipaint-lo", eslARG_REAL, NULL, NULL, NULL, NULL, "--ipaint", NULL,
+    "only keep seqs with qc_sc >= <x> (Inside score filter)", 1 },
+  { "--ipaint-hi", eslARG_REAL, NULL, NULL, NULL, NULL, "--ipaint", NULL,
+    "only keep seqs with qc_sc < <x> (Inside score filter)", 1 },
+  { "--ipaint-noqcsc", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
+    "discard the v*-rooted [il..ir] hit; keep other overlapping hits", 1 },
+  { "--ipaint-flankonly", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
+    "discard hits overlapping CM region [il..ir]; keep flank hits only", 1 },
+  { "--ipaint-allrand", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
+    "also randomize CM region [il..ir] (pure random mega-seq)", 1 },
+  { "--ipaint-qcsconly", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
+    "collect only v*-rooted qc_sc hits (skip mega-seq scan)", 1 },
+  { "--ipaint-sumv", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
+    "use sum-over-all-v Inside score for IS weight (not just v*)", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
     "diagnostic: use weight=1 for all IS seqs", 1 },
   { "--exp", eslARG_REAL, NULL, NULL, "x>0", NULL, NULL, "--imix",
@@ -390,6 +404,11 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
      *   target average parsetree score (binary search for alpha).
      * --exp <x>: exponentiate CM probabilities by x (legacy method).
      * The original CM is always used for searching. */
+    /* Initialize the search CM first — this configures tsc, beginsc, etc.
+     * Needed before cm_ExpectedParsetreeScore() can include transition scores. */
+    if ((status = initialize_cm (go, cfg, cm, TRUE, errbuf)) != eslOK)
+      cm_Fail (errbuf);
+
     emit_cm = NULL;
     if (esl_opt_IsOn (go, "--imix")) {
       double target_sc = esl_opt_GetReal (go, "--imix");
@@ -429,8 +448,6 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
         cm_Fail (errbuf);
     }
-    if ((status = initialize_cm (go, cfg, cm, TRUE, errbuf)) != eslOK)
-      cm_Fail (errbuf);
 
     printf ("CM %d: %s\n", cfg->ncm, cm->name);
 
@@ -900,10 +917,14 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   if (do_ipaint && do_isubtr && do_sample) {
     int   ipaint_target_L = esl_opt_GetInteger (go, "--ipaint-L");
     float imutol          = (float) esl_opt_GetReal (go, "--imutol");
+    float ipaint_lo       = esl_opt_IsOn (go, "--ipaint-lo") ? (float) esl_opt_GetReal (go, "--ipaint-lo") : -eslINFINITY;
+    float ipaint_hi       = esl_opt_IsOn (go, "--ipaint-hi") ? (float) esl_opt_GetReal (go, "--ipaint-hi") :  eslINFINITY;
+    int   do_ipaint_filter = (esl_opt_IsOn (go, "--ipaint-lo") || esl_opt_IsOn (go, "--ipaint-hi"));
     int   n_chunks        = 0;
     int   n_subscan       = 0;   /* total sub-scans performed */
     int   n_paint_kept    = 0;   /* total sequences kept across all chunks */
     int   n_paint_reject  = 0;   /* total sequences rejected (Viterbi or Inside filter) */
+    int   n_qcsc_reject   = 0;   /* rejected by qc_sc bin filter (after sub-scan) */
 
     /* Per-chunk buffers (reused each chunk) */
     int    seg_alloc = (ipaint_target_L / 50) + 16;   /* generous initial alloc */
@@ -984,13 +1005,24 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
       {
         int L_v = isubtr_ir - isubtr_il + 1;
         float qc_sc = IMPOSSIBLE;
+        float qc_sc_sumv = IMPOSSIBLE;
+        int   do_sumv = esl_opt_GetBoolean (go, "--ipaint-sumv");
+
+        /* --ipaint-allrand: randomize [il..ir] before sub-scan */
+        if (esl_opt_GetBoolean (go, "--ipaint-allrand")) {
+          int j;
+          for (j = isubtr_il; j <= isubtr_ir; j++)
+            dsq[j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+        }
+
         CM_TOPHITS *th_sub = cm_tophits_Create ();
         if (th_sub == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
         if ((status = FastIInsideScan (cm, errbuf, cm->smx, SMX_NOQDB,
                                        dsq, (int64_t) isubtr_il, (int64_t) isubtr_ir, cutoff,
                                        th_sub, cm->search_opts & CM_SEARCH_NULL3, 0.,
                                        NULL, NULL, NULL, NULL, NULL,
-                                       isubtr_best_v, (int64_t) isubtr_ir, L_v, &qc_sc))
+                                       isubtr_best_v, (int64_t) isubtr_ir, L_v, &qc_sc,
+                                       do_sumv ? &qc_sc_sumv : NULL))
             != eslOK)
           cm_Fail (errbuf);
         cm_tophits_Destroy (th_sub);
@@ -999,14 +1031,45 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         if (qc_sc == IMPOSSIBLE)
           qc_sc = isubtr_best_candidate;
 
+        /* --ipaint-sumv: use sum-over-all-v score instead of single-v* score */
+        if (do_sumv && qc_sc_sumv != IMPOSSIBLE)
+          qc_sc = qc_sc_sumv;
+
         weight = esl_opt_GetBoolean (go, "--no-weight") ? 1.0 : (float) pow (2.0, -qc_sc);
 
         if (esl_opt_GetBoolean (go, "-v"))
-          printf ("  PAINT sub-scan %5d: v*=%d [%d..%d] L_v=%d qc_sc=%.3f cand=%.3f wt=%.4g\n",
-                  i, isubtr_best_v, isubtr_il, isubtr_ir, L_v, qc_sc, isubtr_best_candidate, weight);
+          printf ("  PAINT sub-scan %5d: v*=%d [%d..%d] L_v=%d qc_sc=%.3f%s cand=%.3f wt=%.4g\n",
+                  i, isubtr_best_v, isubtr_il, isubtr_ir, L_v, qc_sc,
+                  do_sumv ? "(sumv)" : "", isubtr_best_candidate, weight);
 
-        /* Accept this sequence: store it for the mega-chunk */
-        /* (For now: accept all. Later: filter by target bin.) */
+        /* Filter by target qc_sc bin if --ipaint-lo/hi are set */
+        if (do_ipaint_filter && (qc_sc < ipaint_lo || qc_sc >= ipaint_hi)) {
+          n_qcsc_reject++;
+          free (dsq); dsq = NULL;
+          FreeParsetree (tr); tr = NULL;
+          i--;  /* retry this slot */
+          continue;
+        }
+
+        n_paint_kept++;
+
+        /* --ipaint-qcsconly: just collect the qc_sc hit directly, skip mega-seq */
+        if (esl_opt_GetBoolean (go, "--ipaint-qcsconly")) {
+          if (scN == 0) {
+            ESL_ALLOC  (scA, sizeof (float) * (scN + 1));
+            ESL_ALLOC  (wtA, sizeof (float) * (scN + 1));
+          } else {
+            ESL_RALLOC (scA, tmp, sizeof (float) * (scN + 1));
+            ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + 1));
+          }
+          scA[scN] = qc_sc;
+          wtA[scN] = weight;
+          scN++;
+          dbsize += (double) (isubtr_ir - isubtr_il + 1);
+          free (dsq); dsq = NULL;
+          FreeParsetree (tr); tr = NULL;
+          continue;
+        }
 
         /* Grow buffers if needed */
         if (n_seg >= seg_alloc) {
@@ -1028,7 +1091,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         seg_wt[n_seg]   = weight;
         n_seg++;
         mega_L += L;
-        n_paint_kept++;
+
       }
 
       FreeParsetree (tr); tr = NULL;
@@ -1053,6 +1116,11 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
             seg_dsq[k][j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
           for (j = seg_ir[k] + 1; j <= seg_L[k]; j++)
             seg_dsq[k][j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+          /* --ipaint-allrand: also randomize CM region [il..ir] → pure random mega-seq */
+          if (esl_opt_GetBoolean (go, "--ipaint-allrand")) {
+            for (j = seg_il[k]; j <= seg_ir[k]; j++)
+              seg_dsq[k][j] = esl_rnd_FChoose (cfg->r, cm->null, cm->abc->K);
+          }
           /* Copy segment to mega-dsq (dsq is 1-based; copy residues 1..L) */
           memcpy (mega_dsq + pos, seg_dsq[k] + 1, sizeof (ESL_DSQ) * seg_L[k]);
           pos += seg_L[k];
@@ -1066,7 +1134,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                        mega_dsq, 1, mega_L, cutoff, th,
                                        cm->search_opts & CM_SEARCH_NULL3, 0.,
                                        NULL, NULL, NULL, NULL, NULL,
-                                       -1, -1, -1, NULL))
+                                       -1, -1, -1, NULL, NULL))
             != eslOK)
           cm_Fail (errbuf);
 
@@ -1094,20 +1162,42 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
             }
             if (seg_idx == -1) continue;  /* hit spans segment boundary, discard */
 
-            /* Weight depends on whether hit overlaps the CM region [il..ir].
-             * CM region positions in mega-dsq coords:
+            /* Weight depends on overlap with the CM region [il..ir].
+             * CM region in mega-dsq coords:
              *   cm_start = seg_start[k] + (il - 1)
              *   cm_end   = seg_start[k] + (ir - 1)
-             * If hit overlaps CM region: IS weight = 2^(-qc_sc).
-             * If hit is entirely in random flanks: weight = 1. */
+             * Fractional IS weight: w = 2^(-qc_sc * overlap_frac / L_v*)
+             * where overlap_frac = # positions in hit that are in [il..ir],
+             * L_v* = ir - il + 1.  Gives w=1 for pure flank, w=2^(-qc_sc)
+             * for full [il..ir] overlap, smooth interpolation between. */
             {
               int cm_start = seg_start[seg_idx] + (seg_il[seg_idx] - 1);
               int cm_end   = seg_start[seg_idx] + (seg_ir[seg_idx] - 1);
+              int overlap  = 0;  /* # positions of hit overlapping CM region */
               float hit_wt;
-              if (hit_stop >= cm_start && hit_start <= cm_end)
-                hit_wt = seg_wt[seg_idx];  /* overlaps CM region: IS weight */
-              else
-                hit_wt = 1.0;              /* pure flank hit: null weight */
+
+              if (hit_stop >= cm_start && hit_start <= cm_end) {
+                int ov_start = (hit_start > cm_start) ? hit_start : cm_start;
+                int ov_end   = (hit_stop  < cm_end)   ? hit_stop  : cm_end;
+                overlap = ov_end - ov_start + 1;
+              }
+
+              /* --ipaint-noqcsc: discard the specific v*-rooted hit at [il..ir] */
+              if (esl_opt_GetBoolean (go, "--ipaint-noqcsc") &&
+                  hit_start == cm_start && hit_stop == cm_end)
+                continue;
+
+              /* --ipaint-flankonly: discard any hit overlapping CM region */
+              if (overlap > 0 && esl_opt_GetBoolean (go, "--ipaint-flankonly"))
+                continue;
+
+              if (overlap > 0) {
+                int L_v = seg_ir[seg_idx] - seg_il[seg_idx] + 1;
+                double frac = (double) overlap / (double) L_v;
+                hit_wt = (float) pow (2.0, -seg_qcsc[seg_idx] * frac);
+              } else {
+                hit_wt = 1.0;
+              }
               scA[scN] = th->unsrt[h].score;
               wtA[scN] = hit_wt;
             }
@@ -1132,8 +1222,13 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     } /* end for (i = 0; i < N; ...) */
 
     /* Report painting statistics */
-    printf ("Painting: %d emitted, %d kept, %d rejected, %d sub-scans, %d chunks\n",
-            n_emitted, n_paint_kept, n_paint_reject, n_subscan, n_chunks);
+    printf ("Painting: %d emitted, %d kept, %d viterbi-rejected, %d qcsc-rejected, %d sub-scans, %d chunks\n",
+            n_emitted, n_paint_kept, n_paint_reject, n_qcsc_reject, n_subscan, n_chunks);
+    if (do_ipaint_filter)
+      printf ("  qc_sc filter: [%.1f, %.1f)  acceptance rate: %.2f%% (%d/%d sub-scans)\n",
+              ipaint_lo, ipaint_hi,
+              n_subscan > 0 ? 100.0 * n_paint_kept / (double)(n_paint_kept + n_qcsc_reject) : 0.,
+              n_paint_kept, n_paint_kept + n_qcsc_reject);
 
     /* Free painting buffers */
     free (seg_dsq);
@@ -1286,7 +1381,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                        dsq, (int64_t) isubtr_il, (int64_t) isubtr_ir, cutoff,
                                        th_cm, cm->search_opts & CM_SEARCH_NULL3, 0.,
                                        NULL, NULL, NULL, NULL, NULL,
-                                       isubtr_best_v, (int64_t) isubtr_ir, L_cm, &isubtr_qc_sc))
+                                       isubtr_best_v, (int64_t) isubtr_ir, L_cm, &isubtr_qc_sc, NULL))
             != eslOK)
           cm_Fail (errbuf);
         cm_tophits_Destroy (th_cm);
@@ -1327,7 +1422,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                          dsq, 1, (int64_t) (isubtr_il - 1), cutoff,
                                          th_flank, cm->search_opts & CM_SEARCH_NULL3, 0.,
                                          NULL, NULL, NULL, NULL, NULL,
-                                         -1, -1, -1, NULL))
+                                         -1, -1, -1, NULL, NULL))
               != eslOK)
             cm_Fail (errbuf);
         }
@@ -1358,7 +1453,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                          dsq, (int64_t) (isubtr_ir + 1), L, cutoff,
                                          th_flank, cm->search_opts & CM_SEARCH_NULL3, 0.,
                                          NULL, NULL, NULL, NULL, NULL,
-                                         -1, -1, -1, NULL))
+                                         -1, -1, -1, NULL, NULL))
               != eslOK)
             cm_Fail (errbuf);
         }
@@ -1394,7 +1489,8 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                        (do_isubtr && do_sample) ? isubtr_best_v         : -1,
                                        (do_isubtr && do_sample) ? (int64_t) isubtr_ir   : -1,
                                        (do_isubtr && do_sample) ? isubtr_ir - isubtr_il + 1 : -1,
-                                       (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL))
+                                       (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL,
+                                       NULL))
             != eslOK)
           cm_Fail (errbuf);
       } else {
@@ -1575,12 +1671,38 @@ fit_histogram (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float tai
   /* end of if cfg->rtfitfp != NULL) */
 #endif
 
-  /* Determine tailp: use hits/Mb criterion (matching cmcalibrate) unless overridden */
+  /* Determine tailp: use hits/Mb criterion (matching cmcalibrate) unless overridden.
+   * For IS (do_impt): use WEIGHTED sum to determine where to set the tail threshold,
+   * so that the weighted tail contains ~nhits_to_fit effective hits. */
   if (tailp <= 0. && dbsize_nt > 0.) {
     int tailn = ExpModeIsLocal (exp_mode) ? esl_opt_GetInteger (go, "--ltailn")
                                           : esl_opt_GetInteger (go, "--gtailn");
     float nhits_to_fit = (float)tailn * (dbsize_nt / 1e6);
-    tailp = nhits_to_fit / (float)h->n;
+
+    if (do_impt && weights != NULL) {
+      /* Sort scores descending, walk from top accumulating weights until
+       * weighted sum >= nhits_to_fit. Set tailp = raw_count / h->n. */
+      ScoreWeight_t *sw_tmp = NULL;
+      ESL_ALLOC (sw_tmp, sizeof (ScoreWeight_t) * nscores);
+      for (i = 0; i < nscores; i++) {
+        sw_tmp[i].sc = (double)scores[i];
+        sw_tmp[i].wt = (double)weights[i];
+      }
+      qsort (sw_tmp, nscores, sizeof (ScoreWeight_t), compare_sw_asc);
+      /* walk from high scores (end of sorted array) down */
+      double wt_cum = 0.;
+      int    raw_tail_n = 0;
+      for (i = nscores - 1; i >= 0; i--) {
+        wt_cum += sw_tmp[i].wt;
+        raw_tail_n++;
+        if (wt_cum >= nhits_to_fit) break;
+      }
+      free (sw_tmp);
+      tailp = (float) raw_tail_n / (float) h->n;
+      if (tailp > 1.) tailp = 1.;
+    } else {
+      tailp = nhits_to_fit / (float)h->n;
+    }
     if (tailp > 1.)
       ESL_FAIL (
           eslERANGE, errbuf,
@@ -1814,7 +1936,7 @@ cm_ExpectedParsetreeScore (CM_t *cm, double alpha) {
   double *psi = NULL;
   double E = 0.;
   double q; /* mixed emission probability */
-  int v, k, l;
+  int v, k, l, c;
   int K = cm->abc->K;
 
   psi = cm_ExpectedStateOccupancy (cm);
@@ -1823,6 +1945,7 @@ cm_ExpectedParsetreeScore (CM_t *cm, double alpha) {
     if (psi[v] == 0.)
       continue;
 
+    /* Emission scores (alpha-dependent) */
     if (cm->sttype[v] == MP_st) {
       /* pair emitter: q_{k,l} = (1-alpha)*e[v][k*K+l] + alpha*null[k]*null[l] */
       for (k = 0; k < K; k++) {
@@ -1840,6 +1963,30 @@ cm_ExpectedParsetreeScore (CM_t *cm, double alpha) {
         if (q > 0.)
           E += psi[v] * q * log2 (q / cm->null[k]);
       }
+    }
+
+    /* Transition scores (alpha-independent).
+     * tsc[v][c] = log2(t[v][c]); always <= 0.
+     * B_st and E_st have no transitions. */
+    if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+      if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN)) {
+        /* Local begin: root uses beginsc[y] instead of tsc.
+         * cm->begin[y] is the begin transition probability to state y. */
+        int y;
+        for (y = 0; y < cm->M; y++) {
+          if (cm->begin[y] > 0.)
+            E += psi[v] * cm->begin[y] * cm->beginsc[y];
+        }
+      } else {
+        /* Normal transitions to children */
+        for (c = 0; c < cm->cnum[v]; c++) {
+          if (cm->t[v][c] > 0.)
+            E += psi[v] * cm->t[v][c] * cm->tsc[v][c];
+        }
+      }
+      /* Local end contribution */
+      if ((cm->flags & CMH_LOCAL_END) && cm->end[v] > 0.)
+        E += psi[v] * cm->end[v] * cm->endsc[v];
     }
   }
 

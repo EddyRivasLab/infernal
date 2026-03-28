@@ -2344,7 +2344,7 @@ process_search_workunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutof
 				 cm->search_opts & CM_SEARCH_NULL3,     /* do the NULL3 correction? */
 				 0., NULL, NULL,                        /* vars for redefining envelopes, which we won't do */
 				 NULL, NULL, NULL,                      /* ret_vsc, ret_sc, ret_raw_hitlist: irrelevant here */
-			 -1, -1, -1, NULL))                     /* qc_v, qc_j, qc_d, ret_qc_sc: not used here */
+			 -1, -1, -1, NULL, NULL))               /* qc_v, qc_j, qc_d, ret_qc_sc, ret_qc_sc_sumv: not used here */
        != eslOK) return status;
   }
   else { 
