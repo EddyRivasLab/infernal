@@ -107,12 +107,19 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->msc_mem,(hmm->abc->Kp*(M+1)) * sizeof(int));
   ESL_ALLOC(hmm->isc_mem,(hmm->abc->Kp*(M+1)) * sizeof(int));
 
+  /* Zero-initialize score arrays to avoid uninitialized values in
+   * degenerate-character positions that CPlan9Logoddsify may not set. */
+  memset(hmm->tsc_mem, 0, cp9_NTRANS * (M+1) * sizeof(int));
+  memset(hmm->msc_mem, 0, hmm->abc->Kp * (M+1) * sizeof(int));
+  memset(hmm->isc_mem, 0, hmm->abc->Kp * (M+1) * sizeof(int));
+
   hmm->tsc[0] = hmm->tsc_mem;
   hmm->msc[0] = hmm->msc_mem;
   hmm->isc[0] = hmm->isc_mem;
 
   /* transition scores reordered */
   ESL_ALLOC(hmm->otsc, sizeof(int)   * (M+1)  * cp9O_NTRANS);
+  memset(hmm->otsc, 0, sizeof(int) * (M+1) * cp9O_NTRANS);
 
   /* note allocation strategy for important 2D arrays -- trying
    * to keep locality as much as possible, cache efficiency etc.
@@ -140,6 +147,8 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
 
   ESL_ALLOC(hmm->bsc_mem, (M+1) * sizeof(int));
   ESL_ALLOC(hmm->esc_mem, (M+1) * sizeof(int));
+  memset(hmm->bsc_mem, 0, (M+1) * sizeof(int));
+  memset(hmm->esc_mem, 0, (M+1) * sizeof(int));
 
   ESL_ALLOC(hmm->null, (abc->K) * sizeof(float));
 
