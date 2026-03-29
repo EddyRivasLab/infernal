@@ -461,8 +461,45 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
         cm_Fail (errbuf);
     }
+    { int dbg_k; long dbg_sum = 0;
+      if (cm->cp9 != NULL && (cm->cp9->flags & CPLAN9_HASBITS)) {
+        for (dbg_k = 0; dbg_k <= cm->cp9->M; dbg_k++) {
+          dbg_sum += cm->cp9->msc[0][dbg_k] + cm->cp9->isc[0][dbg_k];
+          dbg_sum += cm->cp9->tsc[CTMM][dbg_k] + cm->cp9->tsc[CTMI][dbg_k];
+          dbg_sum += cm->cp9->bsc[dbg_k] + cm->cp9->esc[dbg_k];
+        }
+      }
+      { double t_sum = 0., e_sum = 0.; int dbg_v2;
+        for (dbg_v2 = 0; dbg_v2 < cm->M; dbg_v2++) {
+          t_sum += cm->t[dbg_v2][0];
+          e_sum += cm->e[dbg_v2][0];
+        }
+        /* Full CM dump: checksum all float arrays */
+        { double all_t = 0., all_e = 0., all_tsc = 0., all_esc = 0.;
+          for (dbg_v2 = 0; dbg_v2 < cm->M; dbg_v2++) {
+            int dbg_j;
+            for (dbg_j = 0; dbg_j < MAXCONNECT; dbg_j++) all_t += cm->t[dbg_v2][dbg_j];
+            for (dbg_j = 0; dbg_j < cm->abc->K * cm->abc->K; dbg_j++) all_e += cm->e[dbg_v2][dbg_j];
+            for (dbg_j = 0; dbg_j < MAXCONNECT; dbg_j++) all_tsc += cm->tsc[dbg_v2][dbg_j];
+            for (dbg_j = 0; dbg_j < cm->abc->K * cm->abc->K; dbg_j++) all_esc += cm->esc[dbg_v2][dbg_j];
+          }
+          printf ("BEFORE init_cm: t=%.10f e=%.10f tsc=%.10f esc=%.10f config=0x%x search=0x%x flags=0x%x\n",
+                  all_t, all_e, all_tsc, all_esc, cm->config_opts, cm->search_opts, cm->flags);
+        }
+      }
+    }
+
     if ((status = initialize_cm (go, cfg, cm, TRUE, errbuf)) != eslOK)
       cm_Fail (errbuf);
+
+    { int dbg_k; long dbg_sum = 0;
+      for (dbg_k = 0; dbg_k <= cm->cp9->M; dbg_k++) {
+        dbg_sum += cm->cp9->msc[0][dbg_k] + cm->cp9->isc[0][dbg_k];
+        dbg_sum += cm->cp9->tsc[CTMM][dbg_k] + cm->cp9->tsc[CTMI][dbg_k];
+        dbg_sum += cm->cp9->bsc[dbg_k] + cm->cp9->esc[dbg_k];
+      }
+      printf ("AFTER init cm: cp9_chksum=%ld flags=0x%x\n", dbg_sum, cm->cp9->flags);
+    }
 
     printf ("CM %d: %s\n", cfg->ncm, cm->name);
 
@@ -1524,6 +1561,17 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         double save_tau = cm->tau;
         cm->tau = esl_opt_GetReal (go, "--tau");
 
+        if (esl_opt_GetBoolean (go, "-v")) {
+          int dbg_k; long dbg_sum = 0;
+          for (dbg_k = 0; dbg_k <= cm->cp9->M; dbg_k++) {
+            dbg_sum += cm->cp9->msc[0][dbg_k] + cm->cp9->isc[0][dbg_k];
+            dbg_sum += cm->cp9->tsc[CTMM][dbg_k] + cm->cp9->tsc[CTMI][dbg_k];
+            dbg_sum += cm->cp9->bsc[dbg_k] + cm->cp9->esc[dbg_k];
+          }
+          printf ("  PRE-BAND cm: tau=%g cp9_chksum=%ld el_selfsc=%d flags=0x%x\n",
+                  cm->tau, dbg_sum, cm->cp9->el_selfsc, cm->cp9->flags);
+        }
+
         if ((status = cp9_Seq2Bands (cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
                                       dsq, 1, L, cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
             != eslOK)
@@ -1533,9 +1581,11 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         if (esl_opt_GetBoolean (go, "-v")) {
           int64_t unbanded_cells = (int64_t) cm->M * L * ESL_MIN(L, cm->W);
           cm_hb_mx_SizeNeeded (cm, errbuf, cm->cp9b, L, &hb_ncells, NULL);
-          printf ("  HB: tau=%.2g  banded_Mb=%.1f  cells=%lld/%lld (%.1f%%)\n",
-                  cm->tau, hb_Mb, (long long)hb_ncells, (long long)unbanded_cells,
+          printf ("  HB search_cm: cells=%lld/%lld (%.1f%%)\n",
+                  (long long)hb_ncells, (long long)unbanded_cells,
                   100.0 * hb_ncells / (double) unbanded_cells);
+          printf ("  === search_cm bands ===\n");
+          debug_print_ij_bands (cm);
         }
 
         if ((status = FastFInsideScanHB (cm, errbuf, cm->hb_mx, hb_mxsize,
