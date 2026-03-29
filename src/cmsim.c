@@ -1524,8 +1524,8 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         double save_tau = cm->tau;
         cm->tau = esl_opt_GetReal (go, "--tau");
 
-        if ((status = cp9_IterateSeq2Bands (cm, errbuf, dsq, 1, L, PLI_PASS_STD_ANY,
-                                             hb_mxsize, TRUE, FALSE, FALSE, TRUE, 0.05, &hb_Mb))
+        if ((status = cp9_Seq2Bands (cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
+                                      dsq, 1, L, cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
             != eslOK)
           cm_Fail (errbuf);
 
@@ -1599,10 +1599,19 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
             float hb_Mb;
             double save_tau = wt_cm->tau;
             wt_cm->tau = esl_opt_GetReal (go, "--tau");
-            if ((status = cp9_IterateSeq2Bands (wt_cm, errbuf, dsq, 1, L, PLI_PASS_STD_ANY,
-                                                 hb_mxsize, TRUE, FALSE, FALSE, TRUE, 0.05, &hb_Mb))
+            if ((status = cp9_Seq2Bands (wt_cm, errbuf, wt_cm->cp9_mx, wt_cm->cp9_bmx, wt_cm->cp9_bmx,
+                                          dsq, 1, L, wt_cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
                 != eslOK)
               cm_Fail (errbuf);
+            if (esl_opt_GetBoolean (go, "-v")) {
+              int64_t hb_ncells_wt, hb_ncells_cm;
+              cm_hb_mx_SizeNeeded (wt_cm, errbuf, wt_cm->cp9b, L, &hb_ncells_wt, NULL);
+              cm_hb_mx_SizeNeeded (cm, errbuf, cm->cp9b, L, &hb_ncells_cm, NULL);
+              printf ("  HB emit_cm: cells=%lld  search_cm: cells=%lld  (cp9b: cm=%p wt=%p  cp9_mx: cm=%p wt=%p)\n",
+                      (long long)hb_ncells_wt, (long long)hb_ncells_cm,
+                      (void*)cm->cp9b, (void*)wt_cm->cp9b,
+                      (void*)cm->cp9_mx, (void*)wt_cm->cp9_mx);
+            }
             if ((status = FastFInsideScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
                                               dsq, 1, L, cutoff, th_wt,
                                               wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
