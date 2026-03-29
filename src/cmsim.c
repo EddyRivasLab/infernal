@@ -93,10 +93,18 @@ static ESL_OPTIONS options[] = {
     "discard hits overlapping CM region [il..ir]; keep flank hits only", 1 },
   { "--ipaint-allrand", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
     "also randomize CM region [il..ir] (pure random mega-seq)", 1 },
+  { "--iinside-wt", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--isubtr",
+    "use best Inside hit score for IS weight (not parsetree Viterbi)", 1 },
   { "--ipaint-qcsconly", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
     "collect only v*-rooted qc_sc hits (skip mega-seq scan)", 1 },
   { "--ipaint-sumv", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
     "use sum-over-all-v Inside score for IS weight (not just v*)", 1 },
+  { "--ibest1", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
+    "keep only the best (highest-scoring) hit per sequence", 1 },
+  { "--ihbanded", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
+    "use HMM-banded Inside scan instead of non-banded", 1 },
+  { "--tau", eslARG_REAL, "5e-6", NULL, "0<x<0.5", NULL, "--ihbanded", NULL,
+    "set HMM band tail loss probability to <x>", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
     "diagnostic: use weight=1 for all IS seqs", 1 },
   { "--exp", eslARG_REAL, NULL, NULL, "x>0", NULL, NULL, "--imix",
@@ -404,15 +412,19 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
      *   target average parsetree score (binary search for alpha).
      * --exp <x>: exponentiate CM probabilities by x (legacy method).
      * The original CM is always used for searching. */
-    /* Initialize the search CM first — this configures tsc, beginsc, etc.
-     * Needed before cm_ExpectedParsetreeScore() can include transition scores. */
-    if ((status = initialize_cm (go, cfg, cm, TRUE, errbuf)) != eslOK)
-      cm_Fail (errbuf);
-
     emit_cm = NULL;
     if (esl_opt_IsOn (go, "--imix")) {
+      /* Need tsc/beginsc configured for cm_ExpectedParsetreeScore().
+       * Configure a temporary clone to get transition scores, then use it
+       * for the expected score calculation and free it afterward. */
+      CM_t *tmp_cm = NULL;
+      if ((status = cm_Clone (cm, errbuf, &tmp_cm)) != eslOK)
+        cm_Fail (errbuf);
+      if ((status = initialize_cm (go, cfg, tmp_cm, TRUE, errbuf)) != eslOK)
+        cm_Fail (errbuf);
+
       double target_sc = esl_opt_GetReal (go, "--imix");
-      double orig_sc = cm_ExpectedParsetreeScore (cm, 0.0);
+      double orig_sc = cm_ExpectedParsetreeScore (tmp_cm, 0.0);
       double lo = 0.0, hi = 1.0, mid, mid_sc;
       int iter;
 
@@ -426,7 +438,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
         /* Binary search for alpha that gives target expected score */
         for (iter = 0; iter < 100; iter++) {
           mid = (lo + hi) / 2.0;
-          mid_sc = cm_ExpectedParsetreeScore (cm, mid);
+          mid_sc = cm_ExpectedParsetreeScore (tmp_cm, mid);
           if (fabs (mid_sc - target_sc) < 0.01)
             break; /* close enough */
           if (mid_sc > target_sc)
@@ -441,6 +453,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
         if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
           cm_Fail (errbuf);
       }
+      FreeCM (tmp_cm);
     } else if (esl_opt_IsOn (go, "--exp")) {
       if ((status = cm_Clone (cm, errbuf, &emit_cm)) != eslOK)
         cm_Fail (errbuf);
@@ -448,6 +461,8 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
         cm_Fail (errbuf);
     }
+    if ((status = initialize_cm (go, cfg, cm, TRUE, errbuf)) != eslOK)
+      cm_Fail (errbuf);
 
     printf ("CM %d: %s\n", cfg->ncm, cm->name);
 
@@ -1191,7 +1206,9 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
               if (overlap > 0 && esl_opt_GetBoolean (go, "--ipaint-flankonly"))
                 continue;
 
-              if (overlap > 0) {
+              if (esl_opt_GetBoolean (go, "--no-weight")) {
+                hit_wt = 1.0;
+              } else if (overlap > 0) {
                 int L_v = seg_ir[seg_idx] - seg_il[seg_idx] + 1;
                 double frac = (double) overlap / (double) L_v;
                 hit_wt = (float) pow (2.0, -seg_qcsc[seg_idx] * frac);
@@ -1327,6 +1344,15 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         }
       } else {
         /* Standard IS: rejection sampling on full parsetree score, then weight. */
+
+        /* Reject sequences with -inf parsetree score (impossible transitions) */
+        if (parsetree_sc <= -eslINFINITY || !isfinite(parsetree_sc)) {
+          n_rejected++;
+          free (dsq);
+          FreeParsetree (tr);
+          i--;
+          continue;
+        }
 
         /* Rejection sampling: if parsetree score is outside [ilo, ihi], reject
          * and re-emit. Emission + scoring is fast (O(clen)); the expensive DP
@@ -1480,9 +1506,46 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
       if (th == NULL)
         ESL_FAIL (eslEMEM, errbuf, "out of memory");
 
+      /* Debug: print sequence before scan if verbose */
+      if (esl_opt_GetBoolean (go, "-v") && L <= 200) {
+        printf ("  DSQ[1..%d]: ", L);
+        int p;
+        for (p = 1; p <= L; p++) printf ("%c", cm->abc->sym[dsq[p]]);
+        printf ("\n");
+      }
+
       /* Query cell: get beginsc[v*] + Inside(x[il..ir], v*) directly from the DP.
        * qc_v/qc_j/qc_d are set above in the do_isubtr block (or -1 if not applicable). */
-      if (cm->search_opts & CM_SEARCH_INSIDE) {
+      if (esl_opt_GetBoolean (go, "--ihbanded") && (cm->search_opts & CM_SEARCH_INSIDE)) {
+        /* HMM-banded Inside scan */
+        float hb_mxsize = esl_opt_GetReal (go, "--mxsize");
+        float hb_Mb;
+        int64_t hb_ncells;
+        double save_tau = cm->tau;
+        cm->tau = esl_opt_GetReal (go, "--tau");
+
+        if ((status = cp9_IterateSeq2Bands (cm, errbuf, dsq, 1, L, PLI_PASS_STD_ANY,
+                                             hb_mxsize, TRUE, FALSE, FALSE, TRUE, 0.05, &hb_Mb))
+            != eslOK)
+          cm_Fail (errbuf);
+
+        /* Report banding statistics */
+        if (esl_opt_GetBoolean (go, "-v")) {
+          int64_t unbanded_cells = (int64_t) cm->M * L * ESL_MIN(L, cm->W);
+          cm_hb_mx_SizeNeeded (cm, errbuf, cm->cp9b, L, &hb_ncells, NULL);
+          printf ("  HB: tau=%.2g  banded_Mb=%.1f  cells=%lld/%lld (%.1f%%)\n",
+                  cm->tau, hb_Mb, (long long)hb_ncells, (long long)unbanded_cells,
+                  100.0 * hb_ncells / (double) unbanded_cells);
+        }
+
+        if ((status = FastFInsideScanHB (cm, errbuf, cm->hb_mx, hb_mxsize,
+                                          dsq, 1, L, cutoff, th,
+                                          cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                          NULL, NULL, NULL))
+            != eslOK)
+          cm_Fail (errbuf);
+        cm->tau = save_tau;
+      } else if (cm->search_opts & CM_SEARCH_INSIDE) {
         if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
                                        dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
                                        NULL, NULL, NULL, NULL, NULL,
@@ -1500,7 +1563,75 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
             != eslOK)
           cm_Fail (errbuf);
       }
-      /* overlaps already removed inside FastCYKScan/FastIInsideScan */
+      /* overlaps already removed inside FastCYKScan/FastIInsideScan/FastFInsideScanHB */
+
+      /* --iinside-wt: run Inside on emit_cm (proposal) to get the proposal's
+       * best hit score, use that for the IS weight.  This is the correct
+       * P_proposal(x) for w = P_null(x) / P_proposal(x).
+       * Also reject sequences whose best Inside score on cm (search model)
+       * is outside [ilo, ihi] if set. */
+      if (esl_opt_GetBoolean (go, "--iinside-wt") && do_sample && th->N > 0) {
+        /* Rejection based on search CM's best hit */
+        float best_inside = th->unsrt[0].score;
+        for (h = 1; h < (int) th->N; h++)
+          if (th->unsrt[h].score > best_inside)
+            best_inside = th->unsrt[h].score;
+
+        if (do_filter && (best_inside < ilo || best_inside > ihi)) {
+          n_rejected++;
+          cm_tophits_Destroy (th);
+          free (dsq); dsq = NULL;
+          if (tr != NULL) { FreeParsetree (tr); tr = NULL; }
+          i--;
+          continue;
+        }
+
+        /* Compute IS weight from emit_cm (proposal) Inside score */
+        if (! esl_opt_GetBoolean (go, "--no-weight")) {
+          CM_t *wt_cm = (emit_cm != NULL) ? emit_cm : cm;
+          CM_TOPHITS *th_wt = cm_tophits_Create ();
+          float wt_best = IMPOSSIBLE;
+          if (th_wt == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+
+          if (esl_opt_GetBoolean (go, "--ihbanded")) {
+            /* HMM-banded Inside on emit_cm for IS weight */
+            float hb_mxsize = esl_opt_GetReal (go, "--mxsize");
+            float hb_Mb;
+            double save_tau = wt_cm->tau;
+            wt_cm->tau = esl_opt_GetReal (go, "--tau");
+            if ((status = cp9_IterateSeq2Bands (wt_cm, errbuf, dsq, 1, L, PLI_PASS_STD_ANY,
+                                                 hb_mxsize, TRUE, FALSE, FALSE, TRUE, 0.05, &hb_Mb))
+                != eslOK)
+              cm_Fail (errbuf);
+            if ((status = FastFInsideScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
+                                              dsq, 1, L, cutoff, th_wt,
+                                              wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                              NULL, NULL, NULL))
+                != eslOK)
+              cm_Fail (errbuf);
+            wt_cm->tau = save_tau;
+          } else {
+            if ((status = FastIInsideScan (wt_cm, errbuf, wt_cm->smx,
+                                           use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                           dsq, 1, L, cutoff, th_wt,
+                                           wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                           NULL, NULL, NULL, NULL, NULL,
+                                           -1, -1, -1, NULL, NULL))
+                != eslOK)
+              cm_Fail (errbuf);
+          }
+          for (h = 0; h < (int) th_wt->N; h++)
+            if (th_wt->unsrt[h].score > wt_best)
+              wt_best = th_wt->unsrt[h].score;
+          cm_tophits_Destroy (th_wt);
+
+          if (wt_best != IMPOSSIBLE)
+            weight = (float) pow (2.0, -wt_best);
+          if (esl_opt_GetBoolean (go, "-v"))
+            printf ("  INSIDE wt: emit_cm_inside=%.3f  search_cm_inside=%.3f  parsetree_sc=%.3f  weight=%.6g\n",
+                    wt_best, best_inside, parsetree_sc, weight);
+        }
+      }
 
       /* do_isubtr: update IS weight from query-cell Inside score if available.
        * The initial weight (2^(-candidate_sc), set above) is the fallback.
@@ -1527,19 +1658,37 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
       dbsize += (double) L;
 
       if (th->N > 0) {
-        /* collect all hits */
-        if (scN == 0) {
-          ESL_ALLOC  (scA, sizeof (float) * (scN + th->N));
-          if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + th->N));
+        if (esl_opt_GetBoolean (go, "--ibest1")) {
+          /* --ibest1: keep only the best hit from this sequence */
+          float best_sc = th->unsrt[0].score;
+          for (h = 1; h < (int) th->N; h++)
+            if (th->unsrt[h].score > best_sc)
+              best_sc = th->unsrt[h].score;
+          if (scN == 0) {
+            ESL_ALLOC  (scA, sizeof (float) * (scN + 1));
+            if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + 1));
+          } else {
+            ESL_RALLOC (scA, tmp, sizeof (float) * (scN + 1));
+            if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + 1));
+          }
+          scA[scN] = best_sc;
+          if (do_sample) wtA[scN] = weight;
+          scN++;
         } else {
-          ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th->N));
-          if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th->N));
+          /* collect all hits */
+          if (scN == 0) {
+            ESL_ALLOC  (scA, sizeof (float) * (scN + th->N));
+            if (do_sample) ESL_ALLOC  (wtA, sizeof (float) * (scN + th->N));
+          } else {
+            ESL_RALLOC (scA, tmp, sizeof (float) * (scN + th->N));
+            if (do_sample) ESL_RALLOC (wtA, tmp, sizeof (float) * (scN + th->N));
+          }
+          for (h = 0; h < (int) th->N; h++) {
+            scA[(scN + h)] = th->unsrt[h].score;
+            if (do_sample) wtA[(scN + h)] = weight;
+          }
+          scN += th->N;
         }
-        for (h = 0; h < (int) th->N; h++) {
-          scA[(scN + h)] = th->unsrt[h].score;
-          if (do_sample) wtA[(scN + h)] = weight;
-        }
-        scN += th->N;
       }
 
       cm_tophits_Destroy (th);
