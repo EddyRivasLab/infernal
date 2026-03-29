@@ -194,6 +194,7 @@ static int impt_exp_FitComplete (double *x, double *w, int n, double *ret_mu, do
                                  double *ret_scaled_nhits);
 static double cm_ExpectedParsetreeScore (CM_t *cm, double alpha);
 static void cm_MixWithNull (CM_t *cm, double alpha);
+static int cp9_EnforceQDBBands (CM_t *cm, CP9Bands_t *cp9b, CM_SCAN_MX *smx, int qdbidx, int L, char *errbuf);
 
 int
 main (int argc, char **argv) {
@@ -1606,6 +1607,19 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
             != eslOK)
           cm_Fail (errbuf);
 
+        /* TODO: Enforce QDB bounds on HMM bands. Currently disabled because
+         * post-hoc clamping of hdmin/hdmax breaks the band memory layout
+         * used by cm_hb_mx_GrowTo. Needs deeper integration with the band
+         * allocation infrastructure (cp9_GrowHDBands). For now, use --noqdb
+         * with --ihbanded to avoid QDB/HMM band conflicts. */
+#if 0
+        if (use_qdbs) {
+          if ((status = cp9_EnforceQDBBands (cm, cm->cp9b, cm->smx,
+                                             SMX_QDB2_LOOSE, L, errbuf)) != eslOK)
+            cm_Fail (errbuf);
+        }
+#endif
+
         /* Report banding statistics */
         if (esl_opt_GetBoolean (go, "-v")) {
           int64_t unbanded_cells = (int64_t) cm->M * L * ESL_MIN(L, cm->W);
@@ -1682,6 +1696,12 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                           dsq, 1, L, wt_cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
                 != eslOK)
               cm_Fail (errbuf);
+            /* Enforce QDB bounds on emit_cm HMM bands */
+            if (use_qdbs) {
+              if ((status = cp9_EnforceQDBBands (wt_cm, wt_cm->cp9b, wt_cm->smx,
+                                                  SMX_QDB2_LOOSE, L, errbuf)) != eslOK)
+                cm_Fail (errbuf);
+            }
             if (esl_opt_GetBoolean (go, "-v")) {
               int64_t hb_ncells_wt, hb_ncells_cm;
               cm_hb_mx_SizeNeeded (wt_cm, errbuf, wt_cm->cp9b, L, &hb_ncells_wt, NULL);
@@ -2272,4 +2292,112 @@ cm_MixWithNull (CM_t *cm, double alpha) {
     }
   }
   cm->flags &= ~CMH_BITS; /* log-odds scores are now invalid */
+}
+
+/* Function: cp9_EnforceQDBBands()
+ *
+ * Purpose:  After HMM bands have been computed by cp9_Seq2Bands(),
+ *           clamp the d-bands (hdmin/hdmax) to respect QDB bounds
+ *           from the scan matrix (smx->dnAAA/dxAAA).  These are
+ *           per-position per-state d bounds, matching what
+ *           FastIInsideScan uses.
+ *
+ * Args:     cm      - the CM
+ *           cp9b    - the HMM bands to clamp
+ *           smx     - scan matrix with QDB d bounds (dnAAA/dxAAA)
+ *           qdbidx  - which QDB set: SMX_QDB1_TIGHT or SMX_QDB2_LOOSE
+ *           L       - sequence length
+ *           errbuf  - for error messages
+ *
+ * Returns:  eslOK on success
+ */
+static int
+cp9_EnforceQDBBands (CM_t *cm, CP9Bands_t *cp9b, CM_SCAN_MX *smx, int qdbidx, int L, char *errbuf) {
+  int v, jp, j;
+  int **dnAA, **dxAA;
+  int W;
+
+  if (smx == NULL) return eslOK;
+  if (qdbidx == SMX_NOQDB) return eslOK;
+
+  dnAA = smx->dnAAA[qdbidx];
+  dxAA = smx->dxAAA[qdbidx];
+  W    = smx->W;
+
+  for (v = 0; v < cm->M; v++) {
+    if (cp9b->jmin[v] > cp9b->jmax[v]) continue;
+
+    for (jp = 0; jp <= cp9b->jmax[v] - cp9b->jmin[v]; jp++) {
+      j = jp + cp9b->jmin[v];
+
+      /* Get position-specific QDB d bounds for state v at position j.
+       * dnAA/dxAA are indexed by jp_g = j - i0 + 1 (1-based position in seq).
+       * For jp_g >= W, use the W entry (steady state). */
+      int jp_g = j;  /* j is already 1-based position */
+      int qdb_dn, qdb_dx;
+      if (jp_g >= W) { qdb_dn = dnAA[W][v]; qdb_dx = dxAA[W][v]; }
+      else           { qdb_dn = dnAA[jp_g][v]; qdb_dx = dxAA[jp_g][v]; }
+
+      /* Clamp HMM band d range to QDB bounds, but only if the
+       * intersection is non-empty.  If QDB and HMM bands don't
+       * overlap in d, keep the original HMM band (conservative). */
+      {
+        int new_dn = ESL_MAX(cp9b->hdmin[v][jp], qdb_dn);
+        int new_dx = ESL_MIN(cp9b->hdmax[v][jp], qdb_dx);
+        if (new_dn <= new_dx) {
+          cp9b->hdmin[v][jp] = new_dn;
+          cp9b->hdmax[v][jp] = new_dx;
+        }
+      }
+    }
+  }
+
+  /* Recalculate hd_needed and reallocate hdmin/hdmax memory to match
+   * the clamped bands. cp9_GrowHDBands reallocates the flat arrays
+   * (hdmin_mem/hdmax_mem) and resets the 2D pointers. */
+  cp9b->hd_needed = 0;
+  for (v = 0; v < cm->M; v++) {
+    if (cp9b->jmin[v] > cp9b->jmax[v]) continue;
+    for (jp = 0; jp <= cp9b->jmax[v] - cp9b->jmin[v]; jp++)
+      cp9b->hd_needed += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+  }
+
+  /* Save clamped hdmin/hdmax values, regrow, then restore */
+  {
+    int *saved_hdmin = NULL, *saved_hdmax = NULL;
+    int total = cp9b->hd_needed;
+    int status;
+    int idx = 0;
+
+    ESL_ALLOC (saved_hdmin, sizeof(int) * ESL_MAX(total, 1));
+    ESL_ALLOC (saved_hdmax, sizeof(int) * ESL_MAX(total, 1));
+
+    for (v = 0; v < cm->M; v++) {
+      if (cp9b->jmin[v] > cp9b->jmax[v]) continue;
+      for (jp = 0; jp <= cp9b->jmax[v] - cp9b->jmin[v]; jp++) {
+        saved_hdmin[idx] = cp9b->hdmin[v][jp];
+        saved_hdmax[idx] = cp9b->hdmax[v][jp];
+        idx++;
+      }
+    }
+
+    if ((status = cp9_GrowHDBands (cp9b, errbuf)) != eslOK) { free(saved_hdmin); free(saved_hdmax); return status; }
+
+    idx = 0;
+    for (v = 0; v < cm->M; v++) {
+      if (cp9b->jmin[v] > cp9b->jmax[v]) continue;
+      for (jp = 0; jp <= cp9b->jmax[v] - cp9b->jmin[v]; jp++) {
+        cp9b->hdmin[v][jp] = saved_hdmin[idx];
+        cp9b->hdmax[v][jp] = saved_hdmax[idx];
+        idx++;
+      }
+    }
+    free (saved_hdmin);
+    free (saved_hdmax);
+  }
+
+  return eslOK;
+
+ERROR:
+  return eslEMEM;
 }
