@@ -94,6 +94,15 @@ AllocCP9Bands(int cm_M, int hmm_M)
   ESL_ALLOC(cp9bands->isum_pn_m,sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->isum_pn_i,sizeof(int) * (cp9bands->hmm_M+1));
   ESL_ALLOC(cp9bands->isum_pn_d,sizeof(int) * (cp9bands->hmm_M+1));
+  esl_vec_ISet(cp9bands->pn_min_m, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->pn_max_m, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->pn_min_i, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->pn_max_i, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->pn_min_d, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->pn_max_d, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->isum_pn_m, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->isum_pn_i, cp9bands->hmm_M+1, 0);
+  esl_vec_ISet(cp9bands->isum_pn_d, cp9bands->hmm_M+1, 0);
 
   ESL_ALLOC(cp9bands->imin,       sizeof(int)   * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->imax,       sizeof(int)   * cp9bands->cm_M);
@@ -101,6 +110,12 @@ AllocCP9Bands(int cm_M, int hmm_M)
   ESL_ALLOC(cp9bands->jmax,       sizeof(int)   * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->safe_hdmin, sizeof(int)   * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->safe_hdmax, sizeof(int)   * cp9bands->cm_M);
+  esl_vec_ISet(cp9bands->imin, cp9bands->cm_M, 0);
+  esl_vec_ISet(cp9bands->imax, cp9bands->cm_M, 0);
+  esl_vec_ISet(cp9bands->jmin, cp9bands->cm_M, 0);
+  esl_vec_ISet(cp9bands->jmax, cp9bands->cm_M, 0);
+  esl_vec_ISet(cp9bands->safe_hdmin, cp9bands->cm_M, 0);
+  esl_vec_ISet(cp9bands->safe_hdmax, cp9bands->cm_M, 0);
   ESL_ALLOC(cp9bands->hdmin,      sizeof(int *) * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmax,      sizeof(int *) * cp9bands->cm_M);
   cp9bands->hdmin_mem = NULL;
@@ -292,7 +307,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
    */
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
-  if((status = cp9_Forward(cp9, errbuf, fmx, dsq, i0, j0, 
+  if((status = cp9_Forward(cp9, errbuf, fmx, dsq, i0, j0,
 			   do_fwd_scan,      /* allow parses to start at any posn? */
 			   (! doing_search), /* are we going to use bands to align? */
 			   FALSE,            /* don't be memory efficient */

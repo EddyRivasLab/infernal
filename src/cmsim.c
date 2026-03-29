@@ -1572,6 +1572,35 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                   cm->tau, dbg_sum, cm->cp9->el_selfsc, cm->cp9->flags);
         }
 
+        if (esl_opt_GetBoolean (go, "-v")) {
+          /* Checksum of CP9 matrix state before banding */
+          long mx_sum = 0;
+          if (cm->cp9_mx->ncells_valid > 0) {
+            int dbg_c;
+            for (dbg_c = 0; dbg_c < ESL_MIN(100, (int)cm->cp9_mx->ncells_valid); dbg_c++)
+              mx_sum += cm->cp9_mx->mmx_mem[dbg_c] + cm->cp9_mx->imx_mem[dbg_c];
+          }
+          long bmx_sum = 0;
+          if (cm->cp9_bmx->ncells_valid > 0) {
+            int dbg_c2;
+            for (dbg_c2 = 0; dbg_c2 < ESL_MIN(100, (int)cm->cp9_bmx->ncells_valid); dbg_c2++)
+              bmx_sum += cm->cp9_bmx->mmx_mem[dbg_c2] + cm->cp9_bmx->imx_mem[dbg_c2];
+          }
+          /* Checksum of CM begin/end/beginsc/endsc and cp9 begin/end/bsc/esc */
+          double be_sum = 0.; long cp9be_sum = 0;
+          { int dbg_k2;
+            for (dbg_k2 = 0; dbg_k2 < cm->M; dbg_k2++) {
+              be_sum += cm->begin[dbg_k2] + cm->end[dbg_k2];
+              be_sum += cm->beginsc[dbg_k2] + cm->endsc[dbg_k2];
+            }
+            for (dbg_k2 = 0; dbg_k2 <= cm->cp9->M; dbg_k2++) {
+              cp9be_sum += cm->cp9->bsc[dbg_k2] + cm->cp9->esc[dbg_k2];
+            }
+          }
+          printf ("  PRE-SEQ2BANDS: L=%d fmx=%ld bmx=%ld cm_be=%.6f cp9_be=%ld cp9_flags=0x%x\n",
+                  L, mx_sum, bmx_sum, be_sum, cp9be_sum, cm->cp9->flags);
+        }
+
         if ((status = cp9_Seq2Bands (cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
                                       dsq, 1, L, cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
             != eslOK)
