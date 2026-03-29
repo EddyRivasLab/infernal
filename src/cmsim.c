@@ -1696,12 +1696,14 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                           dsq, 1, L, wt_cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
                 != eslOK)
               cm_Fail (errbuf);
-            /* Enforce QDB bounds on emit_cm HMM bands */
+            /* TODO: Enforce QDB bounds on emit_cm HMM bands (disabled, see #if 0 above) */
+#if 0
             if (use_qdbs) {
               if ((status = cp9_EnforceQDBBands (wt_cm, wt_cm->cp9b, wt_cm->smx,
                                                   SMX_QDB2_LOOSE, L, errbuf)) != eslOK)
                 cm_Fail (errbuf);
             }
+#endif
             if (esl_opt_GetBoolean (go, "-v")) {
               int64_t hb_ncells_wt, hb_ncells_cm;
               cm_hb_mx_SizeNeeded (wt_cm, errbuf, wt_cm->cp9b, L, &hb_ncells_wt, NULL);
