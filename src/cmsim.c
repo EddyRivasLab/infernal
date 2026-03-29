@@ -103,6 +103,8 @@ static ESL_OPTIONS options[] = {
     "keep only the best (highest-scoring) hit per sequence", 1 },
   { "--ihbanded", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
     "use HMM-banded Inside scan instead of non-banded", 1 },
+  { "--ifloat", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--ihbanded",
+    "use float (not integer) unbanded Inside scan", 1 },
   { "--tau", eslARG_REAL, "5e-6", NULL, "0<x<0.5", NULL, "--ihbanded", NULL,
     "set HMM band tail loss probability to <x>", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
@@ -1639,16 +1641,25 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
           cm_Fail (errbuf);
         cm->tau = save_tau;
       } else if (cm->search_opts & CM_SEARCH_INSIDE) {
-        if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
-                                       dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
-                                       NULL, NULL, NULL, NULL, NULL,
-                                       (do_isubtr && do_sample) ? isubtr_best_v         : -1,
-                                       (do_isubtr && do_sample) ? (int64_t) isubtr_ir   : -1,
-                                       (do_isubtr && do_sample) ? isubtr_ir - isubtr_il + 1 : -1,
-                                       (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL,
-                                       NULL))
-            != eslOK)
-          cm_Fail (errbuf);
+        if (esl_opt_GetBoolean (go, "--ifloat")) {
+          /* Float unbanded Inside (same numerical method as banded) */
+          if ((status = FastFInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                         dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                         NULL, NULL, NULL, NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+        } else {
+          if ((status = FastIInsideScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                         dsq, 1, L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                         NULL, NULL, NULL, NULL, NULL,
+                                         (do_isubtr && do_sample) ? isubtr_best_v         : -1,
+                                         (do_isubtr && do_sample) ? (int64_t) isubtr_ir   : -1,
+                                         (do_isubtr && do_sample) ? isubtr_ir - isubtr_il + 1 : -1,
+                                         (do_isubtr && do_sample) ? &isubtr_qc_sc         : NULL,
+                                         NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+        }
       } else {
         if ((status = FastCYKScan (cm, errbuf, cm->smx, use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB, dsq, 1,
                                    L, cutoff, th, cm->search_opts & CM_SEARCH_NULL3, 0., NULL, NULL,
@@ -1720,6 +1731,14 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                 != eslOK)
               cm_Fail (errbuf);
             wt_cm->tau = save_tau;
+          } else if (esl_opt_GetBoolean (go, "--ifloat")) {
+            if ((status = FastFInsideScan (wt_cm, errbuf, wt_cm->smx,
+                                           use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                           dsq, 1, L, cutoff, th_wt,
+                                           wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                           NULL, NULL, NULL, NULL))
+                != eslOK)
+              cm_Fail (errbuf);
           } else {
             if ((status = FastIInsideScan (wt_cm, errbuf, wt_cm->smx,
                                            use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
