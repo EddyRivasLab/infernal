@@ -105,6 +105,8 @@ static ESL_OPTIONS options[] = {
     "use HMM-banded Inside scan instead of non-banded", 1 },
   { "--ifloat", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--ihbanded",
     "use float (not integer) unbanded Inside scan", 1 },
+  { "--emit-cmfile", eslARG_OUTFILE, NULL, NULL, NULL, NULL, NULL, NULL,
+    "save emit_cm (alpha-mixed CM) to file <f>", 1 },
   { "--tau", eslARG_REAL, "5e-6", NULL, "0<x<0.5", NULL, "--ihbanded", NULL,
     "set HMM band tail loss probability to <x>", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
@@ -453,6 +455,18 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
                 "iterations)\n",
                 target_sc, orig_sc, mid, mid_sc, iter);
         cm_MixWithNull (emit_cm, mid);
+
+        /* Save emit_cm BEFORE configure (cm_file_WriteASCII needs unconfigured CM) */
+        if (esl_opt_IsOn (go, "--emit-cmfile")) {
+          FILE *emit_fp = fopen (esl_opt_GetString (go, "--emit-cmfile"), "w");
+          if (emit_fp == NULL)
+            cm_Fail ("Failed to open emit_cm output file %s", esl_opt_GetString (go, "--emit-cmfile"));
+          if ((status = cm_file_WriteASCII (emit_fp, -1, emit_cm)) != eslOK)
+            cm_Fail ("cm_file_WriteASCII failed for emit_cm (status=%d)", status);
+          fclose (emit_fp);
+          printf ("Saved emit_cm (alpha=%.6f) to %s\n", mid, esl_opt_GetString (go, "--emit-cmfile"));
+        }
+
         if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
           cm_Fail (errbuf);
       }
@@ -464,6 +478,9 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
         cm_Fail (errbuf);
     }
+
+    /* (emit_cm saved above, before initialize_cm, if --emit-cmfile was set) */
+
     { int dbg_k; long dbg_sum = 0;
       if (cm->cp9 != NULL && (cm->cp9->flags & CPLAN9_HASBITS)) {
         for (dbg_k = 0; dbg_k <= cm->cp9->M; dbg_k++) {
