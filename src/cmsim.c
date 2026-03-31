@@ -107,6 +107,8 @@ static ESL_OPTIONS options[] = {
     "use float (not integer) unbanded Inside scan", 1 },
   { "--emit-cmfile", eslARG_OUTFILE, NULL, NULL, NULL, NULL, NULL, NULL,
     "save emit_cm (alpha-mixed CM) to file <f>", 1 },
+  { "--glocal", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--ilocal",
+    "use glocal Inside mode (not local)", 1 },
   { "--tau", eslARG_REAL, "5e-6", NULL, "0<x<0.5", NULL, "--ihbanded", NULL,
     "set HMM band tail loss probability to <x>", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
@@ -425,7 +427,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       CM_t *tmp_cm = NULL;
       if ((status = cm_Clone (cm, errbuf, &tmp_cm)) != eslOK)
         cm_Fail (errbuf);
-      if ((status = initialize_cm (go, cfg, tmp_cm, TRUE, errbuf)) != eslOK)
+      if ((status = initialize_cm (go, cfg, tmp_cm, !esl_opt_GetBoolean(go, "--glocal"), errbuf)) != eslOK)
         cm_Fail (errbuf);
 
       double target_sc = esl_opt_GetReal (go, "--imix");
@@ -467,7 +469,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
           printf ("Saved emit_cm (alpha=%.6f) to %s\n", mid, esl_opt_GetString (go, "--emit-cmfile"));
         }
 
-        if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
+        if ((status = initialize_cm (go, cfg, emit_cm, !esl_opt_GetBoolean(go, "--glocal"), errbuf)) != eslOK)
           cm_Fail (errbuf);
       }
       FreeCM (tmp_cm);
@@ -475,7 +477,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       if ((status = cm_Clone (cm, errbuf, &emit_cm)) != eslOK)
         cm_Fail (errbuf);
       cm_Exponentiate (emit_cm, esl_opt_GetReal (go, "--exp"));
-      if ((status = initialize_cm (go, cfg, emit_cm, TRUE, errbuf)) != eslOK)
+      if ((status = initialize_cm (go, cfg, emit_cm, !esl_opt_GetBoolean(go, "--glocal"), errbuf)) != eslOK)
         cm_Fail (errbuf);
     }
 
@@ -509,7 +511,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       }
     }
 
-    if ((status = initialize_cm (go, cfg, cm, TRUE, errbuf)) != eslOK)
+    if ((status = initialize_cm (go, cfg, cm, !esl_opt_GetBoolean(go, "--glocal"), errbuf)) != eslOK)
       cm_Fail (errbuf);
 
     { int dbg_k; long dbg_sum = 0;
@@ -555,8 +557,8 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       continue; /* skip IS and long random seq for this CM */
     }
 
-    /* For now, search only with local inside */
-    exp_mode = EXP_CM_LI;
+    /* Set exp_mode: local or glocal Inside */
+    exp_mode = esl_opt_GetBoolean (go, "--glocal") ? EXP_CM_GI : EXP_CM_LI;
     /* set CM_SEARCH_INSIDE flag for Inside mode (CYK is the default) */
     if (ExpModeIsInside (exp_mode)) {
       cm->search_opts |= CM_SEARCH_INSIDE;
