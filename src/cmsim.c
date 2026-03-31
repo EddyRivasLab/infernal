@@ -1759,18 +1759,32 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                 != eslOK)
               cm_Fail (errbuf);
           } else {
+            /* In glocal mode, use query cell (v=0, j=L, d=L) to get the
+             * full-sequence Inside score directly from the DP, bypassing
+             * the greedy non-overlapping hit resolution which may suppress
+             * the d=L hit in favor of shorter overlapping hits. */
+            float wt_qc_sc = IMPOSSIBLE;
             if ((status = FastIInsideScan (wt_cm, errbuf, wt_cm->smx,
                                            use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
                                            dsq, 1, L, cutoff, th_wt,
                                            wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
                                            NULL, NULL, NULL, NULL, NULL,
-                                           -1, -1, -1, NULL, NULL))
+                                           esl_opt_GetBoolean (go, "--glocal") ? 0         : -1,
+                                           esl_opt_GetBoolean (go, "--glocal") ? (int64_t)L : -1,
+                                           esl_opt_GetBoolean (go, "--glocal") ? L          : -1,
+                                           esl_opt_GetBoolean (go, "--glocal") ? &wt_qc_sc  : NULL,
+                                           NULL))
                 != eslOK)
               cm_Fail (errbuf);
+
+            if (esl_opt_GetBoolean (go, "--glocal") && wt_qc_sc != IMPOSSIBLE) {
+              wt_best = wt_qc_sc;
+            } else {
+              for (h = 0; h < (int) th_wt->N; h++)
+                if (th_wt->unsrt[h].score > wt_best)
+                  wt_best = th_wt->unsrt[h].score;
+            }
           }
-          for (h = 0; h < (int) th_wt->N; h++)
-            if (th_wt->unsrt[h].score > wt_best)
-              wt_best = th_wt->unsrt[h].score;
           cm_tophits_Destroy (th_wt);
 
           if (wt_best != IMPOSSIBLE)

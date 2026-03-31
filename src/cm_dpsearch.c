@@ -1645,14 +1645,22 @@ FastIInsideScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *ds
       }
 
       /* Query cell: extract alpha[qc_v][qc_j][qc_d] if requested.
-       * Returns beginsc[qc_v] + Inside(x[qc_j-qc_d+1..qc_j], qc_v) in bits.
+       * For qc_v > 0: returns beginsc[qc_v] + Inside(x[qc_j-qc_d+1..qc_j], qc_v) in bits.
+       * For qc_v == 0 (ROOT_S): returns alpha[0][d] directly (the full-sequence
+       *   glocal Inside score; no beginsc needed for root).
        * Must be done before jp/cur are overwritten by the next j iteration. */
-      if (ret_qc_sc != NULL && (int64_t)j == qc_j && qc_v > 0 && qc_d >= 1 && qc_d <= W) {
-	int qc_sc_int;
-	if (cm->stid[qc_v] == BEGL_S) qc_sc_int = alpha_begl[j%(W+1)][qc_v][qc_d];
-	else                            qc_sc_int = alpha[cur][qc_v][qc_d];
-	if (qc_sc_int != -INFTY && cm->ibeginsc[qc_v] != -INFTY)
-	  *ret_qc_sc = Scorify(cm->ibeginsc[qc_v] + qc_sc_int);
+      if (ret_qc_sc != NULL && (int64_t)j == qc_j && qc_d >= 1 && qc_d <= W) {
+	if (qc_v == 0) {
+	  int qc_sc_int = alpha[cur][0][qc_d];
+	  if (qc_sc_int != -INFTY)
+	    *ret_qc_sc = Scorify(qc_sc_int);
+	} else {
+	  int qc_sc_int;
+	  if (cm->stid[qc_v] == BEGL_S) qc_sc_int = alpha_begl[j%(W+1)][qc_v][qc_d];
+	  else                            qc_sc_int = alpha[cur][qc_v][qc_d];
+	  if (qc_sc_int != -INFTY && cm->ibeginsc[qc_v] != -INFTY)
+	    *ret_qc_sc = Scorify(cm->ibeginsc[qc_v] + qc_sc_int);
+	}
       }
       /* Sum-over-v query cell: sum 2^(beginsc[v] + Inside(x, v)) over all v
        * with valid beginsc at (qc_j, qc_d).  This is the full Inside hit score
