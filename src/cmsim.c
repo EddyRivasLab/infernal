@@ -109,6 +109,10 @@ static ESL_OPTIONS options[] = {
     "save emit_cm (alpha-mixed CM) to file <f>", 1 },
   { "--glocal", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--ilocal",
     "use glocal Inside mode (not local)", 1 },
+  { "--ewt-lo", eslARG_REAL, NULL, NULL, NULL, NULL, "--iinside-wt", NULL,
+    "reject if emit_cm Inside score < <x> (IS weight floor)", 1 },
+  { "--ewt-hi", eslARG_REAL, NULL, NULL, NULL, NULL, "--iinside-wt", NULL,
+    "reject if emit_cm Inside score > <x> (IS weight ceiling)", 1 },
   { "--tau", eslARG_REAL, "5e-6", NULL, "0<x<0.5", NULL, "--ihbanded", NULL,
     "set HMM band tail loss probability to <x>", 1 },
   { "--no-weight", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL,
@@ -1573,6 +1577,57 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         printf ("\n");
       }
 
+      /* --iinside-wt with --ewt-lo/--ewt-hi: run emit_cm Inside FIRST to get
+       * the IS weight score. Reject sequences outside [ewt-lo, ewt-hi] BEFORE
+       * the expensive search_cm Inside scan. This saves one full Inside scan
+       * for each rejected sequence. */
+      float iinside_wt_sc = IMPOSSIBLE;  /* emit_cm Inside score for IS weight */
+      if (esl_opt_GetBoolean (go, "--iinside-wt") && do_sample &&
+          ! esl_opt_GetBoolean (go, "--no-weight") && emit_cm != NULL) {
+        CM_t *wt_cm = emit_cm;
+        CM_TOPHITS *th_wt = cm_tophits_Create ();
+        if (th_wt == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
+
+        /* Run emit_cm Inside scan to get proposal probability */
+        float wt_qc_sc = IMPOSSIBLE;
+        if ((status = FastIInsideScan (wt_cm, errbuf, wt_cm->smx,
+                                       use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                       dsq, 1, L, cutoff, th_wt,
+                                       wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                       NULL, NULL, NULL, NULL, NULL,
+                                       esl_opt_GetBoolean (go, "--glocal") ? 0         : -1,
+                                       esl_opt_GetBoolean (go, "--glocal") ? (int64_t)L : -1,
+                                       esl_opt_GetBoolean (go, "--glocal") ? L          : -1,
+                                       esl_opt_GetBoolean (go, "--glocal") ? &wt_qc_sc  : NULL,
+                                       NULL))
+            != eslOK)
+          cm_Fail (errbuf);
+
+        /* Get emit_cm score: v=0 query cell for glocal, best hit for local */
+        if (esl_opt_GetBoolean (go, "--glocal") && wt_qc_sc != IMPOSSIBLE) {
+          iinside_wt_sc = wt_qc_sc;
+        } else {
+          for (h = 0; h < (int) th_wt->N; h++)
+            if (th_wt->unsrt[h].score > iinside_wt_sc)
+              iinside_wt_sc = th_wt->unsrt[h].score;
+        }
+        cm_tophits_Destroy (th_wt);
+
+        /* Reject based on emit_cm Inside score floor/ceiling */
+        {
+          float ewt_lo = esl_opt_IsOn (go, "--ewt-lo") ? (float) esl_opt_GetReal (go, "--ewt-lo") : -eslINFINITY;
+          float ewt_hi = esl_opt_IsOn (go, "--ewt-hi") ? (float) esl_opt_GetReal (go, "--ewt-hi") :  eslINFINITY;
+          if (iinside_wt_sc < ewt_lo || iinside_wt_sc > ewt_hi) {
+            n_rejected++;
+            free (dsq); dsq = NULL;
+            if (tr != NULL) { FreeParsetree (tr); tr = NULL; }
+            i--;
+            continue;
+          }
+        }
+        weight = (float) pow (2.0, -iinside_wt_sc);
+      }
+
       /* Query cell: get beginsc[v*] + Inside(x[il..ir], v*) directly from the DP.
        * qc_v/qc_j/qc_d are set above in the do_isubtr block (or -1 if not applicable). */
       if (esl_opt_GetBoolean (go, "--ihbanded") && (cm->search_opts & CM_SEARCH_INSIDE)) {
@@ -1688,11 +1743,10 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
       }
       /* overlaps already removed inside FastCYKScan/FastIInsideScan/FastFInsideScanHB */
 
-      /* --iinside-wt: run Inside on emit_cm (proposal) to get the proposal's
-       * best hit score, use that for the IS weight.  This is the correct
-       * P_proposal(x) for w = P_null(x) / P_proposal(x).
-       * Also reject sequences whose best Inside score on cm (search model)
-       * is outside [ilo, ihi] if set. */
+      /* --iinside-wt: IS weight from emit_cm Inside score.
+       * If --ewt-lo/--ewt-hi are set, the emit_cm scan + rejection was already
+       * done above (before the search_cm scan). Otherwise do it here.
+       * Also reject sequences whose search CM best hit is outside [ilo, ihi]. */
       if (esl_opt_GetBoolean (go, "--iinside-wt") && do_sample && th->N > 0) {
         /* Rejection based on search CM's best hit */
         float best_inside = th->unsrt[0].score;
@@ -1709,8 +1763,10 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
           continue;
         }
 
-        /* Compute IS weight from emit_cm (proposal) Inside score */
-        if (! esl_opt_GetBoolean (go, "--no-weight")) {
+        /* Compute IS weight from emit_cm (proposal) Inside score.
+         * If iinside_wt_sc was already computed (emit_cm pre-scan above),
+         * skip the emit_cm scan here — just use the precomputed weight. */
+        if (! esl_opt_GetBoolean (go, "--no-weight") && iinside_wt_sc == IMPOSSIBLE) {
           CM_t *wt_cm = (emit_cm != NULL) ? emit_cm : cm;
           CM_TOPHITS *th_wt = cm_tophits_Create ();
           float wt_best = IMPOSSIBLE;
@@ -1792,6 +1848,11 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
           if (esl_opt_GetBoolean (go, "-v"))
             printf ("  INSIDE wt: emit_cm_inside=%.3f  search_cm_inside=%.3f  parsetree_sc=%.3f  weight=%.6g\n",
                     wt_best, best_inside, parsetree_sc, weight);
+        } else if (iinside_wt_sc != IMPOSSIBLE) {
+          /* Weight was already computed in emit_cm pre-scan above */
+          if (esl_opt_GetBoolean (go, "-v"))
+            printf ("  INSIDE wt (pre): emit_cm_inside=%.3f  search_cm_inside=%.3f  parsetree_sc=%.3f  weight=%.6g\n",
+                    iinside_wt_sc, best_inside, parsetree_sc, weight);
         }
       }
 
