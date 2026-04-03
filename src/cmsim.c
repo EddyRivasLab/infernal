@@ -1588,28 +1588,52 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         CM_TOPHITS *th_wt = cm_tophits_Create ();
         if (th_wt == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
 
-        /* Run emit_cm Inside scan to get proposal probability */
+        /* Run emit_cm Inside scan to get proposal probability.
+         * Use HMM banding if --ihbanded (emit_cm seqs are CM-like → tight bands).
+         * Otherwise use unbanded FastIInsideScan with v=0 query cell for glocal. */
         float wt_qc_sc = IMPOSSIBLE;
-        if ((status = FastIInsideScan (wt_cm, errbuf, wt_cm->smx,
-                                       use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
-                                       dsq, 1, L, cutoff, th_wt,
-                                       wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
-                                       NULL, NULL, NULL, NULL, NULL,
-                                       esl_opt_GetBoolean (go, "--glocal") ? 0         : -1,
-                                       esl_opt_GetBoolean (go, "--glocal") ? (int64_t)L : -1,
-                                       esl_opt_GetBoolean (go, "--glocal") ? L          : -1,
-                                       esl_opt_GetBoolean (go, "--glocal") ? &wt_qc_sc  : NULL,
-                                       NULL))
-            != eslOK)
-          cm_Fail (errbuf);
-
-        /* Get emit_cm score: v=0 query cell for glocal, best hit for local */
-        if (esl_opt_GetBoolean (go, "--glocal") && wt_qc_sc != IMPOSSIBLE) {
-          iinside_wt_sc = wt_qc_sc;
-        } else {
+        if (esl_opt_GetBoolean (go, "--ihbanded")) {
+          float hb_mxsize = esl_opt_GetReal (go, "--mxsize");
+          float hb_Mb;
+          double save_tau = wt_cm->tau;
+          wt_cm->tau = esl_opt_GetReal (go, "--tau");
+          if ((status = cp9_Seq2Bands (wt_cm, errbuf, wt_cm->cp9_mx, wt_cm->cp9_bmx, wt_cm->cp9_bmx,
+                                        dsq, 1, L, wt_cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
+              != eslOK)
+            cm_Fail (errbuf);
+          if ((status = FastFInsideScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
+                                            dsq, 1, L, cutoff, th_wt,
+                                            wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                            NULL, NULL, NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+          wt_cm->tau = save_tau;
+          /* Use best hit from banded scan */
           for (h = 0; h < (int) th_wt->N; h++)
             if (th_wt->unsrt[h].score > iinside_wt_sc)
               iinside_wt_sc = th_wt->unsrt[h].score;
+        } else {
+          if ((status = FastIInsideScan (wt_cm, errbuf, wt_cm->smx,
+                                         use_qdbs ? SMX_QDB2_LOOSE : SMX_NOQDB,
+                                         dsq, 1, L, cutoff, th_wt,
+                                         wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                         NULL, NULL, NULL, NULL, NULL,
+                                         esl_opt_GetBoolean (go, "--glocal") ? 0         : -1,
+                                         esl_opt_GetBoolean (go, "--glocal") ? (int64_t)L : -1,
+                                         esl_opt_GetBoolean (go, "--glocal") ? L          : -1,
+                                         esl_opt_GetBoolean (go, "--glocal") ? &wt_qc_sc  : NULL,
+                                         NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+
+          /* Get emit_cm score: v=0 query cell for glocal, best hit for local */
+          if (esl_opt_GetBoolean (go, "--glocal") && wt_qc_sc != IMPOSSIBLE) {
+            iinside_wt_sc = wt_qc_sc;
+          } else {
+            for (h = 0; h < (int) th_wt->N; h++)
+              if (th_wt->unsrt[h].score > iinside_wt_sc)
+                iinside_wt_sc = th_wt->unsrt[h].score;
+          }
         }
         cm_tophits_Destroy (th_wt);
 
