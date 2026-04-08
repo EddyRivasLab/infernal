@@ -62,6 +62,10 @@ CreateCP9Matrix(int N, int M)
   ESL_ALLOC(mx->imx_mem, sizeof(int) * ((N+1)*(M+1)));
   ESL_ALLOC(mx->dmx_mem, sizeof(int) * ((N+1)*(M+1)));
   ESL_ALLOC(mx->elmx_mem,sizeof(int) * ((N+1)*(M+1)));
+  memset(mx->mmx_mem,  0, sizeof(int) * ((N+1)*(M+1)));
+  memset(mx->imx_mem,  0, sizeof(int) * ((N+1)*(M+1)));
+  memset(mx->dmx_mem,  0, sizeof(int) * ((N+1)*(M+1)));
+  memset(mx->elmx_mem, 0, sizeof(int) * ((N+1)*(M+1)));
 
   /* The indirect assignment below looks wasteful; it's actually
    * used for aligning data on 16-byte boundaries as a cache 
@@ -196,6 +200,12 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
     ESL_RALLOC(mx->elmx_mem, p, sizeof(int) * ncells_needed);
     mx->ncells_allocated = ncells_needed;
   }
+  /* Zero all DP cells to avoid uninitialized value issues in boundary
+   * conditions of cp9_Forward/Backward. */
+  memset(mx->mmx_mem,  0, sizeof(int) * ncells_needed);
+  memset(mx->imx_mem,  0, sizeof(int) * ncells_needed);
+  memset(mx->dmx_mem,  0, sizeof(int) * ncells_needed);
+  memset(mx->elmx_mem, 0, sizeof(int) * ncells_needed);
 
   if(do_grow_rows || do_reallocate) {
     /* update size */

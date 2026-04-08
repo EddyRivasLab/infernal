@@ -2285,7 +2285,13 @@ typedef struct cm_pipeline_s {
   int     *p7pn_min_d;          /* flat [e*(M+1)+k] delete min */
   int     *p7pn_max_d;          /* flat [e*(M+1)+k] delete max */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
+  int           p7band_ppad;    /* pair-position band pad, -1 if not set (--p7bppad)                    */
+  int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad (built from p7band_pad/ppad) */
+  float         p7band_miscale; /* MI scale factor for per-node pad, -1.0 if not set (--p7bmisc)             */
+  float         p7band_midiff;  /* MI diffusion scale, -1.0 if not set (--p7bmidiff)                        */
+  float         p7band_midecay; /* MI decay per singlet node for diffusion (--p7bmidecay)                   */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
+  float         p7post_tau;    /* cumulative tau for --p7post_cp9b (--p7tau), -1.0 if not set         */
   float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */
   int           p7len;          /* min nmer length for prune_i2k() (--p7len)        */
   int           p7end;          /* min dist from nmer end for prune_i2k() (--p7end) */
@@ -3136,6 +3142,7 @@ extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, C
 extern int          p7bands_to_cp9bands      (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level);
 extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, float thresh, int debug_level);
 extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
+extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
@@ -3144,7 +3151,8 @@ extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX 
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
-				 int pad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+				 int pad, int *nodepad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
@@ -3284,10 +3292,13 @@ extern void   cm_Rescale(CM_t *hmm, float scale);
 extern void   cp9_Rescale(CP9_t *hmm, float scale);
 extern double cm_MeanMatchInfo(const CM_t *cm);
 extern double cm_MeanMatchEntropy(const CM_t *cm);
+extern double cm_MatchStateRelEntropy(const CM_t *cm, int v, const float *pair_null);
+extern double cm_MatchStateRelEntropyHMM(const CM_t *cm, int v, double *opt_ret_left_KL, double *opt_ret_right_KL);
 extern double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 extern double cm_MeanMatchInfoHMM(const CM_t *cm);
 extern double cm_MeanMatchEntropyHMM(const CM_t *cm);
 extern double cm_MeanMatchRelativeEntropyHMM(const CM_t *cm);
+extern int    cm_MutualInformationPerNode(const CM_t *cm, float **ret_mi);
 extern double cp9_MeanMatchInfo(const CP9_t *cp9);
 extern double cp9_MeanMatchEntropy(const CP9_t *cp9);
 extern double cp9_MeanMatchRelativeEntropy(const CP9_t *cp9);

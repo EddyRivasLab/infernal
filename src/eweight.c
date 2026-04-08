@@ -358,21 +358,104 @@ cm_MeanMatchEntropy(const CM_t *cm)
 }
 
 
+/* Function:  cm_MatchStateRelEntropy()
+ * Incept:    EPN, Fri Apr  4 2026
+ *
+ * Purpose:   Calculate the relative entropy (KL divergence) in bits for
+ *            a single CM match state <v>. For MATP_MP states, uses the
+ *            full joint base pair emission distribution (K*K elements)
+ *            against the pair null (product of background marginals).
+ *            For MATL_ML / MATR_MR states, uses the singlet emission
+ *            distribution against the background null.
+ *
+ * Args:      cm        - the covariance model (parameterized)
+ *            v         - state index (must be MATP_MP, MATL_ML, or MATR_MR)
+ *            pair_null - pre-computed pair null model [K*K], only used for MATP_MP
+ *                        (caller may pass NULL if v is not MATP_MP)
+ *
+ * Returns:   relative entropy in bits; 0.0 if state type is not a match emitter.
+ */
+double
+cm_MatchStateRelEntropy(const CM_t *cm, int v, const float *pair_null)
+{
+  if(cm->stid[v] == MATP_MP)
+    return esl_vec_FRelEntropy(cm->e[v], pair_null, cm->abc->K * cm->abc->K);
+  else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
+    return esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
+  else
+    return 0.;
+}
+
+/* Function:  cm_MatchStateRelEntropyHMM()
+ * Incept:    EPN, Fri Apr  4 2026
+ *
+ * Purpose:   Calculate the relative entropy (KL divergence) in bits for
+ *            a single CM match state <v>, treating it like an HMM: for
+ *            MATP_MP states, marginalize the base pair emissions to left
+ *            and right singlet distributions, then sum their KL vs null.
+ *            For MATL_ML / MATR_MR states, identical to
+ *            cm_MatchStateRelEntropy().
+ *
+ * Args:      cm        - the covariance model (parameterized)
+ *            v         - state index (must be MATP_MP, MATL_ML, or MATR_MR)
+ *            opt_ret_left_KL  - optRETURN: KL of left marginal (NULL to skip)
+ *            opt_ret_right_KL - optRETURN: KL of right marginal (NULL to skip)
+ *
+ * Returns:   total relative entropy in bits (left + right for pairs);
+ *            0.0 if state type is not a match emitter.
+ */
+double
+cm_MatchStateRelEntropyHMM(const CM_t *cm, int v,
+			    double *opt_ret_left_KL, double *opt_ret_right_KL)
+{
+  int   K = cm->abc->K;
+  int   i, j;
+  float left_e[K];
+  float right_e[K];
+  double left_KL, right_KL;
+
+  if(cm->stid[v] == MATP_MP) {
+    /* left marginal */
+    esl_vec_FSet(left_e, K, 0.);
+    for(i = 0; i < K; i++)
+      for(j = i*K; j < (i+1)*K; j++)
+	left_e[i] += cm->e[v][j];
+    esl_vec_FNorm(left_e, K);
+    left_KL = esl_vec_FRelEntropy(left_e, cm->null, K);
+
+    /* right marginal */
+    esl_vec_FSet(right_e, K, 0.);
+    for(i = 0; i < K; i++)
+      for(j = i; j < K*K; j += K)
+	right_e[i] += cm->e[v][j];
+    esl_vec_FNorm(right_e, K);
+    right_KL = esl_vec_FRelEntropy(right_e, cm->null, K);
+
+    if(opt_ret_left_KL)  *opt_ret_left_KL  = left_KL;
+    if(opt_ret_right_KL) *opt_ret_right_KL = right_KL;
+    return left_KL + right_KL;
+  }
+  else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) {
+    double kl = esl_vec_FRelEntropy(cm->e[v], cm->null, K);
+    if(opt_ret_left_KL)  *opt_ret_left_KL  = kl;
+    if(opt_ret_right_KL) *opt_ret_right_KL = 0.;
+    return kl;
+  }
+  else {
+    if(opt_ret_left_KL)  *opt_ret_left_KL  = 0.;
+    if(opt_ret_right_KL) *opt_ret_right_KL = 0.;
+    return 0.;
+  }
+}
+
+
 /* Function:  cm_MeanMatchRelativeEntropy()
  * Incept:    SRE, Fri May 11 09:25:01 2007 [Janelia]
  *
  * Purpose:   Calculate the mean relative entropy per match state emission
- *            distribution, in bits:
- *            
- *            \[
- *              \frac{1}{M} \sum_{v=0}^{M-1} \sum_x p_v(x) \log_2 \frac{p_v(x)}{f(x)}
- *            \]
- *       
- *            where $p_v(x)$ is emission probability for symbol $x$
- *            from MATL\_ML, MATR\_MR, or MATP\_MP state state $v$, 
- *            and $f(x)$ is the null model's background emission 
- *            probability for $x$. For MATP\_MP states, $x$ is a 
- *            base pair.
+ *            distribution, in bits. For MATP_MP states, uses the full
+ *            joint base pair distribution. Calls cm_MatchStateRelEntropy()
+ *            per state.
  */
 double
 cm_MeanMatchRelativeEntropy(const CM_t *cm)
@@ -381,67 +464,20 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   int    v;
   double KL = 0.;
   float *pair_null;
-  int i,j;
-  float left_e[cm->abc->K];
-  float right_e[cm->abc->K];
-  /* variables only needed if we uncomment debug print statements at end of function
-   * int KL_pair_denom = 0;
-   * int KL_singlet_denom = 0;
-   * double KL_pair = 0.;
-   * double KL_pair_marg = 0.;
-   * double KL_singlet = 0.;
-   */
-  
+  int    i, j;
+
   ESL_ALLOC(pair_null, (sizeof(float) * cm->abc->K * cm->abc->K));
   for(i = 0; i < cm->abc->K; i++)
     for(j = 0; j < cm->abc->K; j++)
-      pair_null[(i * cm->abc->K) + j] = cm->null[i] * cm->null[j]; 
-  
-  for (v = 0; v < cm->M; v++) { 
-    if(cm->stid[v] == MATP_MP) {
-      KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
-      // KL_pair += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
-      // KL_pair_denom += 2;
-      /*printf("MP    (%5d) %6.3f\n", v, esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K)));*/
+      pair_null[(i * cm->abc->K) + j] = cm->null[i] * cm->null[j];
 
-      /* calculate marginals */
-      /* left half */
-      esl_vec_FSet(left_e, cm->abc->K, 0.);
-      for(i = 0; i < cm->abc->K; i++) { 
-	for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++) {
-	  left_e[i] += cm->e[v][j];
-	}
-      }
-      esl_vec_FNorm(left_e, cm->abc->K);
-      // KL_pair_marg += esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K);
-      /*printf("cm       L %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K));*/
-      /* right half */
-      esl_vec_FSet(right_e, cm->abc->K, 0.);
-      for(i = 0; i < cm->abc->K; i++) { 
-	for(j = i; j < cm->abc->K * cm->abc->K; j += cm->abc->K) { 
-	  right_e[i] += cm->e[v][j]; 
-	}
-      }
-      // KL_pair_marg += esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K);
-    }
-    else if(cm->stid[v] == MATL_ML || 
-	    cm->stid[v] == MATR_MR) { 
-      KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
-      // KL_singlet += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
-      // KL_singlet_denom += 1;
-      /*printf("ML/MR (%5d) %6.3f\n", v, esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K));*/
-    }
-  }  
+  for (v = 0; v < cm->M; v++)
+    KL += cm_MatchStateRelEntropy(cm, v, pair_null);
+
   free(pair_null);
-
-  /*printf("\n%s KL total   %8.3f  %8.3f per          cpos\n", cm->name, KL, KL / (double) cm->clen);
-    printf("%s KL pair    %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair, KL_pair / (double) KL_pair_denom);
-    printf("%s KL pair(m) %8.3f  %8.3f per   paired cpos\n", cm->name, KL_pair_marg, KL_pair_marg / (double) KL_pair_denom);
-    printf("%s KL singlet %8.3f  %8.3f per unpaired cpos\n", cm->name, KL_singlet, KL_singlet / (double) KL_singlet_denom);*/
-
   KL /= (double) cm->clen;
   return KL;
-  
+
  ERROR:
   cm_Fail("Memory allocation error.");
   return 0.; /* NOTREACHED */
@@ -539,63 +575,90 @@ cm_MeanMatchEntropyHMM(const CM_t *cm)
  * Incept:    EPN, Mon Feb 18 08:06:24 2008
  *
  * Purpose:   Calculate the mean relative entropy per match state emission
- *            distribution, in bits:
- *            
- *            \[
- *              \frac{1}{M} \sum_{v=0}^{M-1} \sum_x p_v(x) \log_2 \frac{p_v(x)}{f(x)}
- *            \]
- *       
- *            where $p_v(x)$ is emission probability for symbol $x$
- *            from MATL\_ML, MATR\_MR, or MATP\_MP state state $v$, 
- *            and $f(x)$ is the null model's background emission 
- *            probability for $x$. For MATP\_MP states, $x$ is a 
- *            base pair.
- *
- *            Differs from cm_MeanMatchRelativeEntropy() in that base pair 
- *            emissions are marginalized, in effect treating the CM like an 
- *            HMM that can only emit 1 residue at a time.
+ *            distribution, in bits, treating the CM like an HMM: MATP_MP
+ *            pair emissions are marginalized to singlets. Calls
+ *            cm_MatchStateRelEntropyHMM() per state.
  */
 double
 cm_MeanMatchRelativeEntropyHMM(const CM_t *cm)
 {
   int    v;
   double KL = 0.;
-  float left_e[cm->abc->K];
-  float right_e[cm->abc->K];
-  int i,j;
-  
-  for (v = 0; v < cm->M; v++) { 
-      if(cm->stid[v] == MATP_MP) { 
-	/* calculate marginals */
-	/* left half */
-	esl_vec_FSet(left_e, cm->abc->K, 0.);
-	for(i = 0; i < cm->abc->K; i++) { 
-	  for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++) {
-	    left_e[i] += cm->e[v][j];
-	  }
-	}
-	esl_vec_FNorm(left_e, cm->abc->K);
-	KL += esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K);
-	/*printf("cm       L %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K));*/
-	/* right half */
-	esl_vec_FSet(right_e, cm->abc->K, 0.);
-	for(i = 0; i < cm->abc->K; i++) { 
-	  for(j = i; j < cm->abc->K * cm->abc->K; j += cm->abc->K) { 
-	    right_e[i] += cm->e[v][j]; 
-	  }
-	}
-	KL += esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K);
-	/*printf("cm       R %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K));*/
-      }
-      else if(cm->stid[v] == MATL_ML || 
-	      cm->stid[v] == MATR_MR) { 
-	KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
-	/*printf("cm         %4d (%4s) v: %5d KL: %10.5f (added %10.5f)\n", cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), v, KL, esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K));*/
-      }
-  }
+
+  for (v = 0; v < cm->M; v++)
+    KL += cm_MatchStateRelEntropyHMM(cm, v, NULL, NULL);
 
   KL /= (double) cm->clen;
   return KL;
+}
+
+
+/* Function:  cm_MutualInformationPerNode()
+ * Incept:    EPN, Fri Apr  4 2026
+ *
+ * Purpose:   For each MATP node in the CM, compute the mutual information
+ *            (in bits) between the left and right base pair positions:
+ *
+ *              MI(v) = KL_pair(v) - KL_left_marginal(v) - KL_right_marginal(v)
+ *
+ *            where KL_pair is the relative entropy of the full 16-element
+ *            joint emission distribution vs pair null, and KL_left/right
+ *            are the relative entropies of the marginalized singlet
+ *            distributions vs singlet null.
+ *
+ *            MI measures how much information is in the base pair
+ *            covariation that the HMM cannot capture. High MI positions
+ *            are where p7 Viterbi is most likely to disagree with the CM
+ *            alignment, and thus where wider bands are needed.
+ *
+ *            For MATL_ML and MATR_MR states, MI is 0 (no pair partner).
+ *            Non-match states are set to 0.
+ *
+ * Args:      cm        - the covariance model (parameterized)
+ *            ret_mi    - RETURN: [0..cm->M-1] MI per state in bits
+ *                        (caller frees)
+ *
+ * Returns:   eslOK on success; ret_mi is allocated and filled.
+ */
+int
+cm_MutualInformationPerNode(const CM_t *cm, float **ret_mi)
+{
+  int    status;
+  int    v;
+  int    i, j;
+  int    K = cm->abc->K;
+  float *mi      = NULL;
+  float *pair_null = NULL;
+  double kl_pair, kl_left, kl_right;
+
+  ESL_ALLOC(mi,        sizeof(float) * cm->M);
+  ESL_ALLOC(pair_null, sizeof(float) * K * K);
+
+  for(i = 0; i < K; i++)
+    for(j = 0; j < K; j++)
+      pair_null[i*K + j] = cm->null[i] * cm->null[j];
+
+  for(v = 0; v < cm->M; v++) {
+    if(cm->stid[v] == MATP_MP) {
+      kl_pair = cm_MatchStateRelEntropy(cm, v, pair_null);
+      cm_MatchStateRelEntropyHMM(cm, v, &kl_left, &kl_right);
+      mi[v] = (float)(kl_pair - kl_left - kl_right);
+      if(mi[v] < 0.) mi[v] = 0.;  /* numerical noise */
+    }
+    else {
+      mi[v] = 0.;
+    }
+  }
+
+  free(pair_null);
+  *ret_mi = mi;
+  return eslOK;
+
+ ERROR:
+  if(mi)        free(mi);
+  if(pair_null)  free(pair_null);
+  *ret_mi = NULL;
+  return status;
 }
 
 /* Function:  cp9_MeanMatchInfo()

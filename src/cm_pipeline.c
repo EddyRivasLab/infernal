@@ -33,6 +33,7 @@ extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 
+static int  pli_build_nodepad      (CM_PIPELINE *pli, CM_t *cm);
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
             P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, float **ret_eb, P7_ALIDISPLAY ***ret_ead, int *ret_nenv);
@@ -307,7 +308,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_p7b_to_cp9b    = (esl_opt_IsOn(go, "--p7b_to_cp9b"))   ? TRUE : FALSE;
   pli->do_p7post_cp9b    = (esl_opt_IsOn(go, "--p7post_cp9b"))   ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
+  pli->p7band_ppad        = esl_opt_IsOn(go, "--p7bppad")   ? esl_opt_GetInteger(go, "--p7bppad") : -1;
+  pli->p7band_miscale     = esl_opt_IsOn(go, "--p7bmisc")    ? (float) esl_opt_GetReal(go, "--p7bmisc")    : -1.0f;
+  pli->p7band_midiff      = esl_opt_IsOn(go, "--p7bmidiff") ? (float) esl_opt_GetReal(go, "--p7bmidiff") : -1.0f;
+  pli->p7band_midecay     = (float) esl_opt_GetReal(go, "--p7bmidecay"); /* default 1.0 */
+  pli->p7_nodepad         = NULL; /* built lazily when CM is available */
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
+  pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
   pli->p7len              = esl_opt_IsOn(go, "--p7len")     ? esl_opt_GetInteger(go, "--p7len")          : 0;
   pli->p7end              = esl_opt_IsOn(go, "--p7end")     ? esl_opt_GetInteger(go, "--p7end")          : 0;
@@ -919,6 +926,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7pn_max_i) free(pli->p7pn_max_i);
   if (pli->p7pn_min_d) free(pli->p7pn_min_d);
   if (pli->p7pn_max_d) free(pli->p7pn_max_d);
+  if (pli->p7_nodepad)  free(pli->p7_nodepad);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -1549,6 +1557,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   printf("#DEBUG: do_pass_5p_and_3p_any:   %d\n", do_pass_5p_and_3p_any);
   printf("#DEBUG: do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 #endif
+
+  /* Build per-node pad array if --p7bppad, --p7bmisc, or --p7bmidiff is set and we have the CM.
+   * Rebuild every time since each family has a different CM/M. */
+  if((pli->p7band_ppad >= 0 || pli->p7band_miscale > 0. || pli->p7band_midiff > 0.) && opt_cm != NULL && *opt_cm != NULL) {
+    if((status = pli_build_nodepad(pli, *opt_cm)) != eslOK) return status;
+  }
 
   /* First loop over each pipeline pass:
    * A. Update pipeline accounting numbers
@@ -2748,6 +2762,213 @@ cm_pli_AdjustNresForOverlaps(CM_PIPELINE *pli, int64_t noverlap, int in_rc)
  *****************************************************************/
 
 
+/* Function:  pli_build_nodepad()
+ * Incept:    EPN, Fri Apr  4 2026
+ *
+ * Purpose:   Build the per-node pad array pli->p7_nodepad[0..M].
+ *
+ *            Three modes:
+ *            1. --p7bppad: binary pair/singlet. MATP nodes get p7band_ppad,
+ *               all others get p7band_pad.
+ *            2. --p7bmisc: MI-scaled. For each node k,
+ *               nodepad[k] = p7band_pad + (int)(scale * MI[k])
+ *               MI is nonzero only at MATP_MP states.
+ *            3. --p7bmidiff: MI diffusion. MI originates at MATP nodes and
+ *               diffuses outward through the CM tree, decaying by
+ *               p7band_midecay bits per singlet node. Traverses CM nodes
+ *               from leaves to root (inside-out), accumulating diffused MI,
+ *               then maps to HMM nodes.
+ *
+ *            Uses cm->cp9map to map HMM nodes to CM nodes/states.
+ */
+static int
+pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
+{
+  int    status;
+  int    k, v, nd;
+  int    M = cm->cp9map->hmm_M;
+  float *mi = NULL;
+  float *node_mi_left  = NULL;  /* diffused MI at left  position of each CM node */
+  float *node_mi_right = NULL;  /* diffused MI at right position of each CM node */
+
+  if(pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
+  ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M+1));
+
+  if(pli->p7band_midiff > 0.) {
+    /* MI diffusion mode.
+     * Pass 1: compute per-state MI (nonzero only at MATP_MP states).
+     * Pass 2: traverse CM nodes from leaves to root (nd = nodes-1 down to 0).
+     *         At each node, set node_mi_left/right from:
+     *           - the node's own MI (MATP nodes)
+     *           - inherited MI from child, decayed by p7band_midecay per singlet
+     *         Child MI flows upward: a MATP child's MI propagates to its parent,
+     *         decaying through any MATL/MATR nodes in between.
+     * Pass 3: map node_mi_left/right to HMM nodes via cp9map.
+     */
+    float scale = pli->p7band_midiff;
+    float decay = pli->p7band_midecay;
+
+    if((status = cm_MutualInformationPerNode(cm, &mi)) != eslOK) goto ERROR;
+    ESL_ALLOC(node_mi_left,  sizeof(float) * cm->nodes);
+    ESL_ALLOC(node_mi_right, sizeof(float) * cm->nodes);
+    esl_vec_FSet(node_mi_left,  cm->nodes, 0.);
+    esl_vec_FSet(node_mi_right, cm->nodes, 0.);
+
+    /* Traverse inside-out (leaves to root).
+     * For each node, we look at its child node(s) to inherit their
+     * accumulated MI. CM nodes are ordered so children have higher indices
+     * than parents, so traversing from nodes-1 down to 0 processes children
+     * before parents.
+     *
+     * We track a "running MI" that flows from child to parent along the
+     * left and right consensus position chains separately.
+     * - At END_nd: running MI = 0 (leaf)
+     * - At MATP_nd: running MI += MI of this pair (for both left and right)
+     * - At MATL_nd: left running MI decays by <decay>, right passes through
+     * - At MATR_nd: right running MI decays by <decay>, left passes through
+     * - At BIF_nd: take max of left/right child running MI values
+     * - At BEGL_nd/BEGR_nd: pass through
+     * - At ROOT_nd: pass through (will be mapped to HMM node 0)
+     *
+     * Since the CM tree can branch (BIF nodes), we need to track running MI
+     * per subtree. We use node_mi_left/right arrays: at each node, store
+     * the diffused MI that should apply to that node's consensus positions.
+     *
+     * Simple approach: for the main (non-BIF) linear chain within each
+     * subtree, propagate running_mi from high node indices to low:
+     */
+    float running_mi_left  = 0.;
+    float running_mi_right = 0.;
+
+    for(nd = cm->nodes - 1; nd >= 0; nd--) {
+      switch(cm->ndtype[nd]) {
+      case END_nd:
+	running_mi_left  = 0.;
+	running_mi_right = 0.;
+	break;
+
+      case MATP_nd:
+	{ /* Get MI from the MATP_MP state (first state of this node) */
+	  int mp_v = cm->nodemap[nd];
+	  float this_mi = (mp_v >= 0 && mp_v < cm->M) ? mi[mp_v] : 0.;
+	  running_mi_left  += this_mi;
+	  running_mi_right += this_mi;
+	  node_mi_left[nd]  = running_mi_left;
+	  node_mi_right[nd] = running_mi_right;
+	}
+	break;
+
+      case MATL_nd:
+	running_mi_left = ESL_MAX(0., running_mi_left - decay);
+	node_mi_left[nd]  = running_mi_left;
+	node_mi_right[nd] = 0.; /* MATL has no right consensus position */
+	break;
+
+      case MATR_nd:
+	running_mi_right = ESL_MAX(0., running_mi_right - decay);
+	node_mi_left[nd]  = 0.; /* MATR has no left consensus position */
+	node_mi_right[nd] = running_mi_right;
+	break;
+
+      case BIF_nd:
+	/* BIF node splits into BEGL (left subtree) and BEGR (right subtree).
+	 * The running MI from the child (which was the subtree just processed)
+	 * is already in running_mi. For BIF, just pass it through.
+	 * (In practice, BIF nodes don't have consensus positions.) */
+	node_mi_left[nd]  = running_mi_left;
+	node_mi_right[nd] = running_mi_right;
+	break;
+
+      case BEGL_nd:
+      case BEGR_nd:
+	/* Pass through — these bracket subtrees at BIF nodes */
+	node_mi_left[nd]  = running_mi_left;
+	node_mi_right[nd] = running_mi_right;
+	break;
+
+      case ROOT_nd:
+	node_mi_left[nd]  = running_mi_left;
+	node_mi_right[nd] = running_mi_right;
+	break;
+
+      default:
+	node_mi_left[nd]  = 0.;
+	node_mi_right[nd] = 0.;
+	break;
+      }
+    }
+
+    /* Map to HMM nodes. Each HMM node k maps to a CM node via pos2nd[k].
+     * For MATP nodes, the left HMM position uses node_mi_left and the
+     * right HMM position uses node_mi_right. nd2lpos[nd] and nd2rpos[nd]
+     * give the consensus positions (= HMM node indices). */
+    pli->p7_nodepad[0] = pli->p7band_pad;
+    for(k = 1; k <= M; k++) {
+      nd = cm->cp9map->pos2nd[k];
+      float k_mi = 0.;
+      if(cm->ndtype[nd] == MATP_nd) {
+	/* Is k the left or right position of this MATP? */
+	if(cm->cp9map->nd2lpos[nd] == k)
+	  k_mi = node_mi_left[nd];
+	else if(cm->cp9map->nd2rpos[nd] == k)
+	  k_mi = node_mi_right[nd];
+      }
+      else if(cm->ndtype[nd] == MATL_nd) {
+	k_mi = node_mi_left[nd];
+      }
+      else if(cm->ndtype[nd] == MATR_nd) {
+	k_mi = node_mi_right[nd];
+      }
+      pli->p7_nodepad[k] = pli->p7band_pad + (int)(scale * k_mi);
+    }
+
+    free(mi);             mi = NULL;
+    free(node_mi_left);   node_mi_left = NULL;
+    free(node_mi_right);  node_mi_right = NULL;
+  }
+  else if(pli->p7band_miscale > 0.) {
+    /* MI-scaled mode (no diffusion) */
+    if((status = cm_MutualInformationPerNode(cm, &mi)) != eslOK) goto ERROR;
+
+    pli->p7_nodepad[0] = pli->p7band_pad;
+    for(k = 1; k <= M; k++) {
+      float node_mi_val = 0.;
+      v = cm->cp9map->hns2cs[k][0][0];
+      if(v >= 0 && v < cm->M && cm->stid[v] == MATP_MP) {
+	node_mi_val = mi[v];
+      }
+      else {
+	nd = cm->cp9map->pos2nd[k];
+	if(cm->ndtype[nd] == MATP_nd) {
+	  int mp_v = cm->nodemap[nd];
+	  if(mp_v >= 0 && mp_v < cm->M) node_mi_val = mi[mp_v];
+	}
+      }
+      pli->p7_nodepad[k] = pli->p7band_pad + (int)(pli->p7band_miscale * node_mi_val);
+    }
+    free(mi); mi = NULL;
+  }
+  else {
+    /* Binary pair/singlet mode (--p7bppad) */
+    pli->p7_nodepad[0] = pli->p7band_pad;
+    for(k = 1; k <= M; k++) {
+      nd = cm->cp9map->pos2nd[k];
+      if(cm->ndtype[nd] == MATP_nd)
+	pli->p7_nodepad[k] = pli->p7band_ppad;
+      else
+	pli->p7_nodepad[k] = pli->p7band_pad;
+    }
+  }
+  return eslOK;
+
+ ERROR:
+  if(mi)             free(mi);
+  if(node_mi_left)   free(node_mi_left);
+  if(node_mi_right)  free(node_mi_right);
+  return status;
+}
+
+
 /* Function:  pli_p7_filter()
  * Synopsis:  The accelerated p7 comparison pipeline: MSV through Forward filter.
  * Incept:    EPN, Wed Nov 24 13:07:02 2010
@@ -3468,7 +3689,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  int vitband_mode = pli->vitband_local ? p7_LOCAL : p7_GLOCAL;
 	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, vitband_mode);
 	  status = p7_Seq2BandsVit(pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				   pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+				   pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
 	  if(!pli->vitband_local) p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL); /* p7_ProfileConfig5PrimeAnd3PrimeTrunc requires LOCAL */
 	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
@@ -3553,12 +3774,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    int save_mode_r = Rgm->mode;
 	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
 	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
 	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
 	    p7_ProfileConfig5PrimeTrunc(Rgm, (int)wlen);
 	  } else {
 	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
 	  }
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -3638,12 +3859,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(pli->vitband_local) {
 	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
 	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
 	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
 	    p7_ProfileConfig3PrimeTrunc(*opt_hmm, Lgm, (int)wlen);
 	  } else {
 	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
 	  }
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -3781,7 +4002,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  esl_stopwatch_Start(stg_watch);
 	  status = p7_Seq2BandsVit(pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				   pli->p7band_pad, &i2k, &kmin, &kmax, &ncells);
+				   pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
 	  esl_stopwatch_Stop(stg_watch);
 	  pli->stg_time_seq2bands += stg_watch->elapsed;
 	  if(pli->vitband_local) {
@@ -4138,15 +4359,27 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	{ int pn_e = pli->p7pn_nenv;
 	  pli->p7pn_es[pn_e] = es[nenv];
 	  pli->p7pn_ee[pn_e] = ee[nenv];
-	  p7banded_post_to_pn_bands(pli->gxfb, pli->gxbb, pli->p7_fwdsc,
-				    pli->p7bnd, pli->p7_window_start, pn_M,
-				    (int)es[nenv], (int)ee[nenv], pli->p7post_thresh, pn_envL,
-				    &pli->p7pn_min_m[pn_e*(pn_M+1)],
-				    &pli->p7pn_max_m[pn_e*(pn_M+1)],
-				    &pli->p7pn_min_i[pn_e*(pn_M+1)],
-				    &pli->p7pn_max_i[pn_e*(pn_M+1)],
-				    &pli->p7pn_min_d[pn_e*(pn_M+1)],
-				    &pli->p7pn_max_d[pn_e*(pn_M+1)]);
+	  if (pli->p7post_tau > 0.0f) {
+	    p7banded_post_to_pn_bands_tau(pli->gxfb, pli->gxbb, pli->p7_fwdsc,
+					  pli->p7bnd, pli->p7_window_start, pn_M,
+					  (int)es[nenv], (int)ee[nenv], pli->p7post_tau, pn_envL,
+					  &pli->p7pn_min_m[pn_e*(pn_M+1)],
+					  &pli->p7pn_max_m[pn_e*(pn_M+1)],
+					  &pli->p7pn_min_i[pn_e*(pn_M+1)],
+					  &pli->p7pn_max_i[pn_e*(pn_M+1)],
+					  &pli->p7pn_min_d[pn_e*(pn_M+1)],
+					  &pli->p7pn_max_d[pn_e*(pn_M+1)]);
+	  } else {
+	    p7banded_post_to_pn_bands(pli->gxfb, pli->gxbb, pli->p7_fwdsc,
+				      pli->p7bnd, pli->p7_window_start, pn_M,
+				      (int)es[nenv], (int)ee[nenv], pli->p7post_thresh, pn_envL,
+				      &pli->p7pn_min_m[pn_e*(pn_M+1)],
+				      &pli->p7pn_max_m[pn_e*(pn_M+1)],
+				      &pli->p7pn_min_i[pn_e*(pn_M+1)],
+				      &pli->p7pn_max_i[pn_e*(pn_M+1)],
+				      &pli->p7pn_min_d[pn_e*(pn_M+1)],
+				      &pli->p7pn_max_d[pn_e*(pn_M+1)]);
+	  }
 	  pli->p7pn_nenv++;
 	}
       }
@@ -5098,7 +5331,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	pli->gxf->L = envL;
 
 	status = p7_Seq2BandsVit(pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
-				 pli->p7band_pad, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+				 pli->p7band_pad, pli->p7_nodepad, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 
 	/* Restore profile mode */
 	if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);

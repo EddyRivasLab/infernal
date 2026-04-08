@@ -627,6 +627,82 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  ERROR:
   ESL_FAIL(status, errbuf, "p7_pins2bands() memory error.");
   return status; /* NEVERREACHED */
+}
+
+/* Function: p7_pins2bands_nodepad()
+ * Date:     EPN*, Sat Apr  5 2026
+ *
+ * Purpose:  Same as p7_pins2bands() but uses a per-node pad array
+ *           <nodepad> instead of a single pad value. nodepad[k] is
+ *           the pad for node k.
+ *
+ * Args:     i2k      - the input pin array, modified (pruned) in place
+ *           errbuf   - for error messages
+ *           L        - length of current sequence
+ *           M        - number of nodes in the HMM
+ *           nodepad  - [0..M] per-node pad array
+ *           ret_kmin - [0.i..L] = k, min node k for residue i
+ *           ret_kmax - [0.i..L] = k, max node k for residue i
+ *           ret_ncells - number of cells within bands, to return
+ *
+ * Return:   <eslOK> on success.
+ *
+ */
+int
+p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
+                      int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int     status;
+
+  int i;
+  int kn = 0;
+  int kx = M;
+  int *kmin, *kmax;
+
+  ESL_ALLOC(kmin, sizeof(int) * (L+1));
+  ESL_ALLOC(kmax, sizeof(int) * (L+1));
+
+  /* traverse residues left to right to get kmins */
+  for(i = 0; i <= L; i++) {
+    if(i2k[i] != -1) {
+      if(kn >= i2k[i] && kn > 1) {
+	i2k[i] = -1; /* non-monotone pin from multi-segment MSV trace; remove and continue */
+      }
+      else {
+	kn = ESL_MAX(1, i2k[i] - nodepad[i2k[i]]);
+      }
+    }
+    kmin[i] = kn;
+  }
+
+  /* traverse nodes right to left to get imaxs */
+  for(i = L; i >= 0; i--) {
+    if(i2k[i] != -1) {
+      if(kx <= i2k[i] && kx < M) { i2k[i] = -1; } /* non-monotone pin; remove and continue */
+      else                        { kx = ESL_MIN(M, i2k[i] + nodepad[i2k[i]]); }
+    }
+    kmax[i] = kx;
+  }
+
+  /* M_0 == B state, which must start the parse with i == 0 */
+  kmin[0] = 0;
+
+  /* get number of cells if wanted */
+  int ncells;
+  if(ret_ncells != NULL) {
+    ncells = 0;
+    for(i = 1; i <= L; i++) ncells += kmax[i] - kmin[i] + 1;
+    *ret_ncells = ncells;
+  }
+
+  if(ret_kmin != NULL) { *ret_kmin = kmin; } else free(kmin);
+  if(ret_kmax != NULL) { *ret_kmax = kmax; } else free(kmax);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "p7_pins2bands_nodepad() memory error.");
+  return status; /* NEVERREACHED */
+}
 
 #if 0
   /* if we want to get imin/imax instead of kmin/kmax */
@@ -675,7 +751,6 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   if(ret_imin != NULL) { *ret_imin = imin; } else free(imin);
   if(ret_imax != NULL) { *ret_imax = imax; } else free(imax);
 #endif
-}
 
 /* Function: DumpP7Bands()
  * Incept:   EPN, Thu Aug 14 08:45:54 2008
@@ -2493,6 +2568,320 @@ p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
 }
 
 
+/* Function: p7banded_post_to_pn_bands_tau
+ * Date    : EPN*, Sat Apr  5 2026
+ *
+ * Purpose:  Cumulative-tau variant of p7banded_post_to_pn_bands().
+ *           Instead of a hard posterior probability threshold, trims
+ *           per-node bands using a cumulative probability fraction
+ *           <tau>.  For each node k, the band is set so that at most
+ *           tau/2 of the total posterior mass is excluded from each
+ *           side (left and right).
+ *
+ *           Three passes over the banded F/B matrices:
+ *             Pass 1 (forward): compute total_m[k] and total_i[k]
+ *                    via log-sum-exp, and save per-row metadata
+ *                    (dp pointer offsets, kac/kbc, abs_i) for reverse.
+ *             Pass 2 (forward): left-trim — accumulate per-node
+ *                    probability from left, set pn_min when cumsum
+ *                    reaches tau/2.
+ *             Pass 3 (backward): right-trim — walk rows in reverse
+ *                    using saved pointers, set pn_max when cumsum
+ *                    from right reaches tau/2.
+ *
+ * Args:     gxfb      - p7 banded glocal Forward matrix (log-space)
+ *           gxbb      - p7 banded glocal Backward matrix (log-space)
+ *           fwdsc     - Forward score in nats
+ *           bnd       - band structure for gxfb/gxbb
+ *           ws        - absolute start of the window (1-indexed)
+ *           M         - number of HMM nodes
+ *           i0        - first absolute position of the envelope
+ *           j0        - final absolute position of the envelope
+ *           tau       - cumulative probability fraction to trim
+ *           L         - envelope length (j0 - i0 + 1)
+ *           pn_min_m  - [0..M] pre-allocated output: min match position
+ *           pn_max_m  - [0..M] pre-allocated output: max match position
+ *           pn_min_i  - [0..M] pre-allocated output: min insert position
+ *           pn_max_i  - [0..M] pre-allocated output: max insert position
+ *           pn_min_d  - [0..M] pre-allocated output: min delete position
+ *           pn_max_d  - [0..M] pre-allocated output: max delete position
+ *
+ *           Positions are stored in 1..L (envelope-relative) coordinates.
+ *           Unset nodes have pn_min[k] = pn_max[k] = -1.
+ *           Node 0 match band is always set to 0 (begin state special case).
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
+                               P7_GBANDS *bnd, int ws, int M, int i0, int j0,
+                               float tau, int L,
+                               int *pn_min_m, int *pn_max_m,
+                               int *pn_min_i, int *pn_max_i,
+                               int *pn_min_d, int *pn_max_d)
+{
+  int          status;
+  int          g, i, k;
+  int          ia, ib;
+  int          kac, kbc;
+  int         *bnd_ip;
+  int         *bnd_kp;
+  float const *fwd_dp;
+  float const *bck_dp;
+  float        fM, bM, fI, bI;
+  float        log_post, prob;
+  int          nk;
+  int          first_kac, first_kbc;
+  int          abs_i, ep;
+  float        half_tau = tau / 2.0f;
+
+  /* per-node totals (log space) */
+  float *total_m = NULL;
+  float *total_i = NULL;
+  /* per-node cumulative sums (probability space) for left and right trim */
+  float *left_cumsum_m  = NULL;
+  float *left_cumsum_i  = NULL;
+  float *right_cumsum_m = NULL;
+  float *right_cumsum_i = NULL;
+
+  /* Per-row saved data for reverse pass.
+   * We count total rows in the banded matrix first. */
+  int    nrows = 0;
+  int   *row_kac   = NULL;
+  int   *row_kbc   = NULL;
+  int   *row_ep    = NULL;
+  int   *row_abs_i = NULL;
+  int   *row_fwd_off = NULL;  /* offset into gxfb->dp for this row's first cell */
+  int   *row_bck_off = NULL;  /* offset into gxbb->dp for this row's first cell */
+
+  /* Count total rows */
+  bnd_ip = bnd->imem;
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    nrows += (ib - ia + 1);
+  }
+
+  /* Allocations */
+  ESL_ALLOC(total_m,       sizeof(float) * (M+1));
+  ESL_ALLOC(total_i,       sizeof(float) * (M+1));
+  ESL_ALLOC(left_cumsum_m, sizeof(float) * (M+1));
+  ESL_ALLOC(left_cumsum_i, sizeof(float) * (M+1));
+  ESL_ALLOC(right_cumsum_m,sizeof(float) * (M+1));
+  ESL_ALLOC(right_cumsum_i,sizeof(float) * (M+1));
+  ESL_ALLOC(row_kac,       sizeof(int) * nrows);
+  ESL_ALLOC(row_kbc,       sizeof(int) * nrows);
+  ESL_ALLOC(row_ep,        sizeof(int) * nrows);
+  ESL_ALLOC(row_abs_i,     sizeof(int) * nrows);
+  ESL_ALLOC(row_fwd_off,   sizeof(int) * nrows);
+  ESL_ALLOC(row_bck_off,   sizeof(int) * nrows);
+
+  for(k = 0; k <= M; k++) {
+    total_m[k]       = -eslINFINITY;
+    total_i[k]       = -eslINFINITY;
+    left_cumsum_m[k] = 0.0f;
+    left_cumsum_i[k] = 0.0f;
+    right_cumsum_m[k]= 0.0f;
+    right_cumsum_i[k]= 0.0f;
+  }
+
+  for(k = 0; k <= M; k++) {
+    pn_min_m[k] = L + 2;
+    pn_max_m[k] = -1;
+    pn_min_i[k] = L + 2;
+    pn_max_i[k] = -1;
+    pn_min_d[k] = L + 2;
+    pn_max_d[k] = -1;
+  }
+
+  first_kac = bnd->kmem[0];
+  first_kbc = bnd->kmem[1];
+
+  /* ---- Pass 1: compute total_m[k], total_i[k] via log-sum-exp;
+   *              save per-row metadata for reverse pass ---- */
+  bnd_ip = bnd->imem;
+  bnd_kp = bnd->kmem;
+  fwd_dp = gxfb->dp;
+  bck_dp = gxbb->dp;
+  int r = 0;
+
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    for(i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      nk  = kbc - kac + 1;
+      abs_i = ws + i - 1;
+      ep    = abs_i - i0 + 1;
+
+      /* save row metadata */
+      row_kac[r]     = kac;
+      row_kbc[r]     = kbc;
+      row_ep[r]      = ep;
+      row_abs_i[r]   = abs_i;
+      row_fwd_off[r] = (int)(fwd_dp - gxfb->dp);
+      row_bck_off[r] = (int)(bck_dp - gxbb->dp);
+
+      if(abs_i >= i0 && abs_i <= j0) {
+        for(k = kac; k <= kbc; k++) {
+          fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          log_post = fM + bM - fwdsc;
+          total_m[k] = p7_FLogsum(total_m[k], log_post);
+          if(k > 0) {
+            /* D states share the match posterior for banding purposes */
+          }
+          if(k < M) {
+            fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            log_post = fI + bI - fwdsc;
+            total_i[k] = p7_FLogsum(total_i[k], log_post);
+          }
+        }
+      }
+      fwd_dp += nk * p7G_NSCELLS;
+      bck_dp += nk * p7G_NSCELLS;
+      r++;
+    }
+  }
+
+  /* ---- Pass 2 (forward): left-trim ---- */
+  for(r = 0; r < nrows; r++) {
+    kac   = row_kac[r];
+    kbc   = row_kbc[r];
+    abs_i = row_abs_i[r];
+    ep    = row_ep[r];
+    nk    = kbc - kac + 1;
+    fwd_dp = gxfb->dp + row_fwd_off[r];
+    bck_dp = gxbb->dp + row_bck_off[r];
+
+    if(abs_i >= i0 && abs_i <= j0) {
+      for(k = kac; k <= kbc; k++) {
+        /* match */
+        fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        log_post = fM + bM - fwdsc;
+        if(total_m[k] > -eslINFINITY) {
+          prob = expf(log_post - total_m[k]);
+          left_cumsum_m[k] += prob;
+          if(left_cumsum_m[k] >= half_tau && pn_min_m[k] > L + 1) {
+            pn_min_m[k] = ep;
+          }
+          /* delete bands track match positions */
+          if(k > 0 && left_cumsum_m[k] >= half_tau && pn_min_d[k] > L + 1) {
+            pn_min_d[k] = ep;
+          }
+        }
+        /* insert */
+        if(k < M) {
+          fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          log_post = fI + bI - fwdsc;
+          if(total_i[k] > -eslINFINITY) {
+            prob = expf(log_post - total_i[k]);
+            left_cumsum_i[k] += prob;
+            if(left_cumsum_i[k] >= half_tau && pn_min_i[k] > L + 1) {
+              pn_min_i[k] = ep;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* ---- Pass 3 (backward): right-trim ---- */
+  for(r = nrows - 1; r >= 0; r--) {
+    kac   = row_kac[r];
+    kbc   = row_kbc[r];
+    abs_i = row_abs_i[r];
+    ep    = row_ep[r];
+    nk    = kbc - kac + 1;
+    fwd_dp = gxfb->dp + row_fwd_off[r];
+    bck_dp = gxbb->dp + row_bck_off[r];
+
+    if(abs_i >= i0 && abs_i <= j0) {
+      for(k = kac; k <= kbc; k++) {
+        /* match */
+        fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        log_post = fM + bM - fwdsc;
+        if(total_m[k] > -eslINFINITY) {
+          prob = expf(log_post - total_m[k]);
+          right_cumsum_m[k] += prob;
+          if(right_cumsum_m[k] >= half_tau && pn_max_m[k] == -1) {
+            pn_max_m[k] = ep;
+          }
+          if(k > 0 && right_cumsum_m[k] >= half_tau && pn_max_d[k] == -1) {
+            pn_max_d[k] = ep;
+          }
+        }
+        /* insert */
+        if(k < M) {
+          fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          log_post = fI + bI - fwdsc;
+          if(total_i[k] > -eslINFINITY) {
+            prob = expf(log_post - total_i[k]);
+            right_cumsum_i[k] += prob;
+            if(right_cumsum_i[k] >= half_tau && pn_max_i[k] == -1) {
+              pn_max_i[k] = ep;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* i=0 special case: begin state M_0 always at position 0;
+   * D_k for k in first band row may be active at position 0. */
+  pn_min_m[0] = pn_max_m[0] = 0;
+  for(k = first_kac; k <= first_kbc; k++) {
+    if(k > 0) {
+      if(0 < pn_min_d[k]) pn_min_d[k] = 0;
+      if(0 > pn_max_d[k]) pn_max_d[k] = 0;
+    }
+  }
+
+  /* Convert unset entries to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] > pn_max_m[k]) pn_min_m[k] = pn_max_m[k] = -1;
+    if(pn_min_i[k] > pn_max_i[k]) pn_min_i[k] = pn_max_i[k] = -1;
+    if(pn_min_d[k] > pn_max_d[k]) pn_min_d[k] = pn_max_d[k] = -1;
+  }
+  pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  free(total_m);
+  free(total_i);
+  free(left_cumsum_m);
+  free(left_cumsum_i);
+  free(right_cumsum_m);
+  free(right_cumsum_i);
+  free(row_kac);
+  free(row_kbc);
+  free(row_ep);
+  free(row_abs_i);
+  free(row_fwd_off);
+  free(row_bck_off);
+  return eslOK;
+
+ ERROR:
+  if(total_m)        free(total_m);
+  if(total_i)        free(total_i);
+  if(left_cumsum_m)  free(left_cumsum_m);
+  if(left_cumsum_i)  free(left_cumsum_i);
+  if(right_cumsum_m) free(right_cumsum_m);
+  if(right_cumsum_i) free(right_cumsum_i);
+  if(row_kac)        free(row_kac);
+  if(row_kbc)        free(row_kbc);
+  if(row_ep)         free(row_ep);
+  if(row_abs_i)      free(row_abs_i);
+  if(row_fwd_off)    free(row_fwd_off);
+  if(row_bck_off)    free(row_bck_off);
+  return status;
+}
+
+
 /* Function: p7pn_bands_to_cp9cm_bands
  * Date    : EPN, 2026-03-26
  *
@@ -3389,6 +3778,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  *           dsq       - digital sequence, 1..L
  *           L         - length of dsq
  *           pad       - band half-width passed to p7_pins2bands()
+ *           nodepad   - per-node pad array [0..M], or NULL to use pad
  *           ret_i2k   - RETURN: per-residue pin array (caller frees)
  *           ret_kmin  - RETURN: per-residue kmin array (caller frees)
  *           ret_kmax  - RETURN: per-residue kmax array (caller frees)
@@ -3400,7 +3790,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  */
 int
 p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
-		ESL_DSQ *dsq, int L, int pad,
+		ESL_DSQ *dsq, int L, int pad, int *nodepad,
 		int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int    status;
@@ -3456,8 +3846,14 @@ p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p
   }
 
   /* Step 4: Pins -> bands */
-  if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)
-    goto ERROR;
+  if (nodepad != NULL) {
+    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, &kmin, &kmax, &ncells)) != eslOK)
+      goto ERROR;
+  }
+  else {
+    if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)
+      goto ERROR;
+  }
 
   *ret_i2k    = i2k;
   *ret_kmin   = kmin;
@@ -3621,6 +4017,7 @@ p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_b
   for (i = 1; i <= L; i++) {
     ka = ESL_MAX(1, kmin[i]);  /* ensure ka >= 1 */
     kb = ESL_MIN(M, kmax[i]);  /* ensure kb <= M */
+    if (ka > kb) ka = kb;      /* ensure ka <= kb (can happen with non-uniform nodepad) */
     
     /* For unaligned positions with narrow bands, widen them significantly */
     if (i2k != NULL && i2k[i] == -1 && (kb - ka + 1) < 0.5 * M) {
@@ -3690,6 +4087,7 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
   xC      = -eslINFINITY;
   last_ib = 0;
 
+
   for (g = 0; g < gxb->bnd->nseg; g++)
     {
       ia = *bnd_ip++;
@@ -3721,8 +4119,10 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
 	  last_dpc = dpc;
 
 	  kac      = *bnd_kp++;         /* current row's band is cells k=kac..kbc  */
-	  kbc      = *bnd_kp++; 
+	  kbc      = *bnd_kp++;
 	  kbc2     = (kbc == gm->M ? kbc-1 : kbc); /* a "do_M" flag works too, but this way we avoid an if statement */
+
+	  /* DEBUG: check for dpc overflow before writing this row */
 
 	  /* dpp must advance by any left overhang of previous row; but no more than the entire row */
 	  dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
