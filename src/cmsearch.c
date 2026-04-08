@@ -191,12 +191,12 @@ static ESL_OPTIONS options[] = {
   /* Options for precise control of each stage of the HMM-only filter pipeline */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                         docgroup*/
   { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see ** above */ "in HMM-only mode, turn off all filters",  102 },
-  { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 1 (SSV) P value threshold to <x>", 102 },
-  { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 2 (Vit) P value threshold to <x>", 102 },
-  { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 3 (Fwd) P value threshold to <x>", 102 },
-  { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the bias composition filter",       102 },
-  { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the null2 score correction",        102 },
-  { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",       "never run HMM-only mode, not even for models with 0 basepairs",102 },
+  { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 1 (SSV) P threshold",                          102 },
+  { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 2 (Vit) P threshold",                          102 },
+  { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 3 (Fwd) P threshold",                          102 },
+  { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "HMM-only: turn off bias composition filter",                   102 },
+  { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "HMM-only: turn off null2 score correction",                    102 },
+  { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",       "never run HMM-only mode (even for models w/o basepairs)",      102 },
   /* Options for precise control of HMM envelope definition */
   /* name           type          default  env range toggles    reqs  incomp            help                                                      docgroup*/
   { "--rt1",        eslARG_REAL,  "0.25", NULL, NULL,    NULL,  NULL, "--nohmm,--max",  "set domain/envelope definition rt1 parameter as <x>",        103 },
@@ -236,6 +236,8 @@ static ESL_OPTIONS options[] = {
   { "--p7bmidecay",eslARG_REAL,  "1.0", NULL, "x>=0",  NULL,  "--p7bmidiff", NULL, "MI decay per singlet node (--p7bmidiff)",                              106 },
   { "--p7pthr",    eslARG_REAL, "1e-5", NULL, "0<x<1", NULL,  "--p7post_cp9b", "--p7tau", "set --p7post_cp9b posterior prob threshold",                    106 },
   { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  "--p7post_cp9b", "--p7pthr", "set cumulative tau for --p7post_cp9b bands",                   106 },
+  { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },
+  { "--cykbpad",   eslARG_INT,    "10",  NULL, "n>=0",  NULL,  "--cykbands", NULL, "with --cykbands, band pad",                                                                  106 },
   { "--p7sc",      eslARG_REAL,  "0.0", NULL, "x>=0",  NULL,  "--msvband", NULL, "with --msvband, min pin match score for pruning",                        106 },
   { "--p7len",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min nmer length for pruning",                            106 },
   { "--p7end",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min dist from nmer end for pruning",                     106 },
@@ -1798,7 +1800,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       puts("\nOptions for precise control of the CM filter pipeline:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nOptions controlling the HMM-only filter pipeline (run for models w/0 basepairs):");
-      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 102, 2, 100);
       puts("\nOptions for precise control of HMM envelope definition:");
       esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
       puts("\nOptions for precise control of the CYK filter stage:");

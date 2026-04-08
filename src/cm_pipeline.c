@@ -313,6 +313,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7band_midiff      = esl_opt_IsOn(go, "--p7bmidiff") ? (float) esl_opt_GetReal(go, "--p7bmidiff") : -1.0f;
   pli->p7band_midecay     = (float) esl_opt_GetReal(go, "--p7bmidecay"); /* default 1.0 */
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
+  pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
+  pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
   pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
@@ -5533,7 +5535,73 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
     cp9_ShiftCMBands(cm, hit->start, hit->stop, (cm->align_opts & CM_ALIGN_TRUNC) ? TRUE : FALSE);
 
     /* sanity check */
-    if(! (cm->align_opts & CM_ALIGN_POST)) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() using HMM bands but CM_ALIGN_POST is down"); 
+    if(! (cm->align_opts & CM_ALIGN_POST)) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() using HMM bands but CM_ALIGN_POST is down");
+
+    /* --cykbands: replace the wide CP9-derived bands with tighter
+     * CYK-parsetree-derived bands before running the OA alignment.
+     * Requires running a CYK alignment first to get the parsetree.
+     * Skipped for truncated mode (where CYK alignment uses different bands).
+     */
+    if(pli->do_cykbands && !(cm->align_opts & CM_ALIGN_TRUNC)) {
+      CM_ALNDATA *cyk_adata = NULL;
+      int saved_align_opts = cm->align_opts;
+      int hit_L            = hit->stop - hit->start + 1;
+
+      /* Configure for CYK alignment only (no posteriors, no OA) */
+      cm->align_opts &= ~CM_ALIGN_OPTACC;
+      cm->align_opts &= ~CM_ALIGN_POST;
+      cm->align_opts |= CM_ALIGN_CYK;
+
+      status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,
+                                   TRUE, /* cp9b bands are valid, don't recalc */
+                                   NULL, NULL, NULL, &cyk_adata);
+      cm->align_opts = saved_align_opts;
+
+      if(status == eslOK && cyk_adata != NULL && cyk_adata->tr != NULL) {
+        /* Derive new tight bands from the CYK parsetree */
+        int M = cm->cp9b->hmm_M;
+        int *new_pn_min_m = NULL, *new_pn_max_m = NULL;
+        int *new_pn_min_i = NULL, *new_pn_max_i = NULL;
+        int *new_pn_min_d = NULL, *new_pn_max_d = NULL;
+        int alloc_status = eslOK;
+
+        if((new_pn_min_m = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+        if((new_pn_max_m = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+        if((new_pn_min_i = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+        if((new_pn_max_i = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+        if((new_pn_min_d = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+        if((new_pn_max_d = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+
+        if(alloc_status == eslOK) {
+          status = cm_BandsFromParsetree(cm, cyk_adata->tr, hit_L, pli->cyk_bpad,
+                                         new_pn_min_m, new_pn_max_m,
+                                         new_pn_min_i, new_pn_max_i,
+                                         new_pn_min_d, new_pn_max_d);
+          if(status == eslOK) {
+            /* Replace cm->cp9b bands with new tight bands.
+             * Use envelope coords (1..hit_L) since the parsetree was in those coords. */
+            status = p7pn_bands_to_cp9cm_bands(cm, pli->errbuf,
+                                               new_pn_min_m, new_pn_max_m,
+                                               new_pn_min_i, new_pn_max_i,
+                                               new_pn_min_d, new_pn_max_d,
+                                               cm->cp9b, 1, hit_L, hit_L,
+                                               pli->cur_pass_idx, 0);
+          }
+        }
+
+        if(new_pn_min_m) free(new_pn_min_m);
+        if(new_pn_max_m) free(new_pn_max_m);
+        if(new_pn_min_i) free(new_pn_min_i);
+        if(new_pn_max_i) free(new_pn_max_i);
+        if(new_pn_min_d) free(new_pn_min_d);
+        if(new_pn_max_d) free(new_pn_max_d);
+      }
+
+      if(cyk_adata != NULL) cm_alndata_Destroy(cyk_adata, FALSE);
+
+      /* If anything failed, fall through to use the original (shifted) bands */
+      if(status != eslOK) status = eslOK;
+    }
 
     /* compute the HMM banded alignment */
     status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,

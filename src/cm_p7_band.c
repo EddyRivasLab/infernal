@@ -3023,6 +3023,220 @@ p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
 }
 
 
+/* Function: cm_BandsFromParsetree()
+ * Date    : EPN, Mon Apr  7 2026
+ *
+ * Purpose:  Derive CP9 HMM bands (pn_min_m/max_m/min_i/max_i/min_d/max_d)
+ *           from a CYK parsetree, with a fixed half-width pad. Designed
+ *           to be the CM analog of p7_pins2bands().
+ *
+ *           Walk the parsetree, recording the (i,j) positions where each
+ *           CM node's match/insert/delete states emit. Map CM states to
+ *           HMM consensus positions via cm->cp9map->cs2hn/cs2hs. Then fill
+ *           the pn_min/max arrays with [pos-pad, pos+pad] clamped to
+ *           the envelope, and do left/right sweeps to fill positions
+ *           that don't have a direct contribution from the parsetree.
+ *
+ *           Coordinates: parsetree emitl/emitr are in 1..L (subseq local)
+ *           coordinates. The output pn_min/max arrays use the same 1..L
+ *           local coordinates. Caller can shift to envelope coordinates
+ *           via p7pn_bands_to_cp9cm_bands.
+ *
+ * Args:     cm           - the covariance model (must have cp9map)
+ *           tr           - parsetree from CYK alignment
+ *           L            - length of subsequence aligned (sets the upper bound for pad clamp)
+ *           pad          - band half-width on each side of each pinned position
+ *           pn_min_m     - [0..M] OUTPUT: pre-allocated, will be filled
+ *           pn_max_m     - [0..M] OUTPUT
+ *           pn_min_i     - [0..M] OUTPUT
+ *           pn_max_i     - [0..M] OUTPUT
+ *           pn_min_d     - [0..M] OUTPUT
+ *           pn_max_d     - [0..M] OUTPUT
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
+                      int *pn_min_m, int *pn_max_m,
+                      int *pn_min_i, int *pn_max_i,
+                      int *pn_min_d, int *pn_max_d)
+{
+  int  M = cm->cp9map->hmm_M;
+  int  k, t, v, i, j;
+  int  hn1, hs1, hn2, hs2;
+  int  ka, kb;
+
+  /* Initialize all bands to "unset" sentinel values */
+  for(k = 0; k <= M; k++) {
+    pn_min_m[k] = L + 2; pn_max_m[k] = -1;
+    pn_min_i[k] = L + 2; pn_max_i[k] = -1;
+    pn_min_d[k] = L + 2; pn_max_d[k] = -1;
+  }
+
+  /* Walk the parsetree, recording per-HMM-node emit positions */
+  for(t = 0; t < tr->n; t++) {
+    v = tr->state[t];
+    i = tr->emitl[t];
+    j = tr->emitr[t];
+
+    /* Get HMM node(s) and state type(s) this CM state maps to */
+    hn1 = cm->cp9map->cs2hn[v][0];
+    hs1 = cm->cp9map->cs2hs[v][0];
+    hn2 = cm->cp9map->cs2hn[v][1];
+    hs2 = cm->cp9map->cs2hs[v][1];
+
+    /* Update bands based on CM state type and which HMM node it maps to.
+     * cp9map->cs2hs[v][n]: 0=MATCH, 1=INSERT, 2=DELETE
+     * For MATP_MP: cs2hn[v][0] is the LEFT consensus position (HMM node), maps as MATCH
+     *              cs2hn[v][1] is the RIGHT consensus position, also maps as MATCH
+     *              The left position emits residue i, the right position emits residue j.
+     * For MATP_ML: only the left HMM node, emits residue i (right is delete).
+     * For MATP_MR: only the right HMM node, emits residue j (left is delete).
+     * For MATL_ML/MATR_MR: only one HMM node, emits residue (i for ML, j for MR).
+     * For inserts: emit one residue (i for IL, j for IR).
+     * For deletes: emit nothing, but we still record the position around them.
+     */
+    if(hn1 >= 0 && hn1 <= M) {
+      if(hs1 == 0) { /* MATCH */
+        /* For MATP_MP, MATP_ML, MATL_ML: left HMM node emits residue i */
+        /* For MATR_MR: only one HMM node, but it's stored in [v][0] and emits j */
+        int pos = (cm->stid[v] == MATR_MR) ? j : i;
+        if(pos < pn_min_m[hn1]) pn_min_m[hn1] = pos;
+        if(pos > pn_max_m[hn1]) pn_max_m[hn1] = pos;
+      }
+      else if(hs1 == 1) { /* INSERT */
+        /* IL emits i, IR emits j */
+        int pos = (cm->sttype[v] == IR_st) ? j : i;
+        if(pos < pn_min_i[hn1]) pn_min_i[hn1] = pos;
+        if(pos > pn_max_i[hn1]) pn_max_i[hn1] = pos;
+      }
+      else if(hs1 == 2) { /* DELETE */
+        /* No residue emitted; record the surrounding position.
+         * Use i (the left bound) as a placeholder that gets refined by sweeps below. */
+        if(i < pn_min_d[hn1]) pn_min_d[hn1] = i;
+        if(i > pn_max_d[hn1]) pn_max_d[hn1] = i;
+      }
+    }
+    /* Second HMM node (for MATP_MP, both left and right are matches; for MATP_D, both are deletes) */
+    if(hn2 >= 0 && hn2 <= M) {
+      if(hs2 == 0) {
+        /* MATP_MP: hn2 is the right consensus position, emits residue j */
+        int pos = j;
+        if(pos < pn_min_m[hn2]) pn_min_m[hn2] = pos;
+        if(pos > pn_max_m[hn2]) pn_max_m[hn2] = pos;
+      }
+      else if(hs2 == 1) {
+        if(i < pn_min_i[hn2]) pn_min_i[hn2] = i;
+        if(i > pn_max_i[hn2]) pn_max_i[hn2] = i;
+      }
+      else if(hs2 == 2) {
+        if(j < pn_min_d[hn2]) pn_min_d[hn2] = j;
+        if(j > pn_max_d[hn2]) pn_max_d[hn2] = j;
+      }
+    }
+  }
+
+  /* Apply pad and clamp to [1..L]. After this each filled band has half-width pad. */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] != L + 2) {
+      ka = pn_min_m[k] - pad; if(ka < 1) ka = 1;
+      kb = pn_max_m[k] + pad; if(kb > L) kb = L;
+      pn_min_m[k] = ka; pn_max_m[k] = kb;
+    }
+    if(pn_min_i[k] != L + 2) {
+      ka = pn_min_i[k] - pad; if(ka < 1) ka = 1;
+      kb = pn_max_i[k] + pad; if(kb > L) kb = L;
+      pn_min_i[k] = ka; pn_max_i[k] = kb;
+    }
+    if(pn_min_d[k] != L + 2) {
+      ka = pn_min_d[k] - pad; if(ka < 0) ka = 0;
+      kb = pn_max_d[k] + pad; if(kb > L) kb = L;
+      pn_min_d[k] = ka; pn_max_d[k] = kb;
+    }
+  }
+
+  /* Sweeps: fill in unset bands by inheriting from neighbors.
+   * Left-to-right: for each k with no band, set pn_*[k] to pn_*[k-1]'s range.
+   * Right-to-left: similarly.
+   * This handles HMM nodes that have no parsetree contribution
+   * (e.g., delete-only nodes between matches). */
+  /* Match bands left sweep */
+  { int last_min = -1, last_max = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != L + 2 && pn_max_m[k] != -1) {
+        last_min = pn_min_m[k]; last_max = pn_max_m[k];
+      } else if(last_min != -1) {
+        pn_min_m[k] = last_min; pn_max_m[k] = last_max;
+      }
+    }
+  }
+  /* Match bands right sweep (catches early-k nodes that had no left neighbor) */
+  { int last_min = -1, last_max = -1;
+    for(k = M; k >= 1; k--) {
+      if(pn_min_m[k] != L + 2 && pn_max_m[k] != -1
+         && last_min == -1) {
+        last_min = pn_min_m[k]; last_max = pn_max_m[k];
+      } else if(pn_min_m[k] == L + 2 && last_min != -1) {
+        pn_min_m[k] = last_min; pn_max_m[k] = last_max;
+      }
+    }
+  }
+  /* Insert bands: similarly */
+  { int last_min = -1, last_max = -1;
+    for(k = 0; k < M; k++) {
+      if(pn_min_i[k] != L + 2 && pn_max_i[k] != -1) {
+        last_min = pn_min_i[k]; last_max = pn_max_i[k];
+      } else if(last_min != -1) {
+        pn_min_i[k] = last_min; pn_max_i[k] = last_max;
+      }
+    }
+  }
+  { int last_min = -1, last_max = -1;
+    for(k = M - 1; k >= 0; k--) {
+      if(pn_min_i[k] != L + 2 && pn_max_i[k] != -1
+         && last_min == -1) {
+        last_min = pn_min_i[k]; last_max = pn_max_i[k];
+      } else if(pn_min_i[k] == L + 2 && last_min != -1) {
+        pn_min_i[k] = last_min; pn_max_i[k] = last_max;
+      }
+    }
+  }
+  /* Delete bands: similarly */
+  { int last_min = -1, last_max = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_d[k] != L + 2 && pn_max_d[k] != -1) {
+        last_min = pn_min_d[k]; last_max = pn_max_d[k];
+      } else if(last_min != -1) {
+        pn_min_d[k] = last_min; pn_max_d[k] = last_max;
+      }
+    }
+  }
+  { int last_min = -1, last_max = -1;
+    for(k = M; k >= 1; k--) {
+      if(pn_min_d[k] != L + 2 && pn_max_d[k] != -1
+         && last_min == -1) {
+        last_min = pn_min_d[k]; last_max = pn_max_d[k];
+      } else if(pn_min_d[k] == L + 2 && last_min != -1) {
+        pn_min_d[k] = last_min; pn_max_d[k] = last_max;
+      }
+    }
+  }
+
+  /* Node 0 special case: M_0 = begin state */
+  pn_min_m[0] = 0; pn_max_m[0] = 0;
+
+  /* Convert any still-unset entries to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] > pn_max_m[k] || pn_min_m[k] == L + 2) { pn_min_m[k] = -1; pn_max_m[k] = -1; }
+    if(pn_min_i[k] > pn_max_i[k] || pn_min_i[k] == L + 2) { pn_min_i[k] = -1; pn_max_i[k] = -1; }
+    if(pn_min_d[k] > pn_max_d[k] || pn_min_d[k] == L + 2) { pn_min_d[k] = -1; pn_max_d[k] = -1; }
+  }
+  pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  return eslOK;
+}
+
+
 /* Function: cp9_PredictStartAndEndPositionsP7B()
  * Date    : 2026-03-20
  *

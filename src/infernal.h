@@ -2290,6 +2290,8 @@ typedef struct cm_pipeline_s {
   float         p7band_miscale; /* MI scale factor for per-node pad, -1.0 if not set (--p7bmisc)             */
   float         p7band_midiff;  /* MI diffusion scale, -1.0 if not set (--p7bmidiff)                        */
   float         p7band_midecay; /* MI decay per singlet node for diffusion (--p7bmidecay)                   */
+  int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
+  int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
   float         p7post_tau;    /* cumulative tau for --p7post_cp9b (--p7tau), -1.0 if not set         */
   float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */
@@ -3144,6 +3146,7 @@ extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *g
 extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
+extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
