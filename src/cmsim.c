@@ -908,6 +908,63 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       printf ("  Summary: %d exact match, %d close (<0.01), %d different (max diff=%.4f)\n\n",
               n_match, n_close, n_diff, max_diff);
 
+      /* ITERATIVE TEST: do several mutations in sequence and check that the
+       * partial DP matches full DP after each one */
+      printf ("DIAG: testing iterative partial DP (10 sequential mutations)\n");
+      ESL_DSQ *iter_dsq;
+      ESL_ALLOC (iter_dsq, sizeof (ESL_DSQ) * (test_L + 2));
+      esl_rsq_xfIID (cfg->r, cm->null, cm->abc->K, test_L, iter_dsq);
+
+      /* Initial: full Inside on starting sequence into test_mx_a */
+      float iter_sc;
+      cm_InsideAlign (cm, errbuf, iter_dsq, test_L, 512.0, test_mx_a, &iter_sc);
+      printf ("  iter 0: full Inside sc = %.4f\n", iter_sc);
+
+      for (int iter = 1; iter <= 10; iter++) {
+        /* Random mutation */
+        int mp = 1 + esl_rnd_Roll (cfg->r, test_L);
+        int mr = esl_rnd_Roll (cfg->r, cm->abc->K - 1);
+        if (mr >= iter_dsq[mp]) mr++;
+        int old_r = iter_dsq[mp];
+        iter_dsq[mp] = mr;
+
+        /* Apply partial DP to test_mx_a (the running matrix) */
+        float partial_sc;
+        cm_InsideAlign_partial (cm, errbuf, iter_dsq, test_L, test_mx_a, mp, &partial_sc);
+
+        /* Compute full DP into test_mx_b for ground truth */
+        float full_sc;
+        cm_InsideAlign (cm, errbuf, iter_dsq, test_L, 512.0, test_mx_b, &full_sc);
+
+        /* Compare scores */
+        float root_diff = fabs (full_sc - partial_sc);
+
+        /* Compare full matrix */
+        float worst_cell = 0.;
+        int n_bad = 0;
+        for (int vv = 0; vv < cm->M; vv++) {
+          for (int jj = 0; jj <= test_L; jj++) {
+            for (int dd = 0; dd <= jj; dd++) {
+              if (NOT_IMPOSSIBLE(test_mx_a->dp[vv][jj][dd]) &&
+                  NOT_IMPOSSIBLE(test_mx_b->dp[vv][jj][dd])) {
+                float cd = fabs(test_mx_a->dp[vv][jj][dd] - test_mx_b->dp[vv][jj][dd]);
+                if (cd > worst_cell) worst_cell = cd;
+                if (cd > 0.001) n_bad++;
+              }
+            }
+          }
+        }
+
+        float best_full = cm_BestLocalHitScore (cm, test_mx_b, test_L);
+        float best_partial = cm_BestLocalHitScore (cm, test_mx_a, test_L);
+
+        printf ("  iter %2d: pos=%d %c->%c  full=%.4f partial=%.4f diff=%.4f  best_full=%.4f best_partial=%.4f  worst_cell=%.4f n_bad=%d\n",
+                iter, mp, "ACGU"[old_r], "ACGU"[mr],
+                full_sc, partial_sc, root_diff,
+                best_full, best_partial, worst_cell, n_bad);
+      }
+      free (iter_dsq);
+
       cm_mx_Destroy (test_mx_a);
       cm_mx_Destroy (test_mx_b);
     }
@@ -3474,10 +3531,19 @@ cm_InsideAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
   int yoffset;
   float tsc;
   int Kp = cm->abc->Kp;
+  int status;
 
   /* Macro to check if cell (j, d) is affected by mutation at p:
    * cell's subsequence is x[j-d+1..j], affected iff j-d+1 <= p <= j */
   #define IS_AFFECTED(jj, dd) (((jj) - (dd) + 1) <= p && p <= (jj))
+
+  /* Precompute EL self-loop scores: el_scA[d] = cm->el_selfsc * d
+   * This is the score for emitting d residues via the EL (local end) loop. */
+  float *el_scA = NULL;
+  if (cm->flags & CMH_LOCAL_END) {
+    ESL_ALLOC (el_scA, sizeof (float) * (L + 1));
+    for (d = 0; d <= L; d++) el_scA[d] = cm->el_selfsc * d;
+  }
 
   /* Process states v from M-1 down to 0 (topological order) */
   for (v = cm->M - 1; v >= 0; v--) {
@@ -3496,18 +3562,16 @@ cm_InsideAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
 
     if (cm->sttype[v] == B_st) {
       /* B_st: bifurcation. alpha[v][j][d] = FLogsum_k alpha[w][j-k][d-k] + alpha[z][j][k]
-       * where w = cfirst[v], z = cnum[v]. The cell is affected iff (j-d+1 <= p <= j).
-       * For affected cells, recompute by re-summing over k.
-       * Note: child cells alpha[w][j-k][d-k] and alpha[z][j][k] may have been
-       * updated already (if they were affected) or still cached. Either way
-       * the value in the matrix is correct because we process v in topological order. */
+       * where w = cfirst[v], z = cnum[v]. */
       int w = cm->cfirst[v];
       int z = cm->cnum[v];
       for (j = 0; j <= L; j++) {
         for (d = 0; d <= j; d++) {
           if (! IS_AFFECTED(j, d)) continue;
-          /* Reset to IMPOSSIBLE before accumulating */
-          alpha[v][j][d] = IMPOSSIBLE;
+          /* Reset to initial value: EL contribution if local end, else IMPOSSIBLE.
+           * Note: B_st has sd=0, so INIT_CELL_VAL uses el_scA[d]. */
+          alpha[v][j][d] = (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v]) ?
+                           (el_scA[d] + cm->endsc[v]) : IMPOSSIBLE;
           for (k = 0; k <= d; k++) {
             alpha[v][j][d] = FLogsum (alpha[v][j][d],
                                        alpha[w][j-k][d-k] + alpha[z][j][k]);
@@ -3529,8 +3593,9 @@ cm_InsideAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
         int d_sd = d - sd;
         i = j - d + 1;
 
-        /* Reset to IMPOSSIBLE before accumulating transitions */
-        alpha[v][j][d] = IMPOSSIBLE;
+        /* Reset to initial value: EL contribution if local end, else IMPOSSIBLE */
+        alpha[v][j][d] = (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v]) ?
+                         (el_scA[d - sd] + cm->endsc[v]) : IMPOSSIBLE;
 
         /* Sum transitions from children */
         for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
@@ -3565,8 +3630,47 @@ cm_InsideAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
 
   #undef IS_AFFECTED
 
+  /* Local begin handling: in local mode, alpha[0][L][L] gets contributions
+   * from local begins to other states. cm_InsideAlign does:
+   *   bsc = FLogsum over v of (alpha[v][L][L] + cm->beginsc[v])
+   *   alpha[0][L][L] = FLogsum(alpha[0][L][L], bsc)
+   *
+   * The mutation might have changed alpha[v][L][L] for v's whose subtree
+   * subsequence (always [1..L]) contains p — which is always true since p
+   * is in [1..L]. So we need to recompute the root cell's contribution
+   * from local begins after the partial update.
+   *
+   * To do this correctly, we need to know what alpha[0][L][L] WOULD be
+   * without local begins (just the standard recurrence). We re-derive it:
+   *   stripped_root = standard_alpha[0][L][L]
+   *   bsc = FLogsum over v with valid begin of (alpha[v][L][L] + beginsc[v])
+   *   new alpha[0][L][L] = FLogsum(stripped_root, bsc)
+   *
+   * Problem: we don't know stripped_root from the matrix alone (alpha[0][L][L]
+   * already has bsc added in from previous full Inside calls, and our partial
+   * DP just recomputed it WITHOUT the bsc, since the recurrence for v=0 doesn't
+   * include local begin contributions).
+   *
+   * So our partial DP's alpha[0][L][L] IS the stripped_root (without bsc).
+   * We need to add bsc to it. */
+  if (cm->flags & CMH_LOCAL_BEGIN) {
+    float bsc = IMPOSSIBLE;
+    for (v = 1; v < cm->M; v++) {
+      if (NOT_IMPOSSIBLE(cm->beginsc[v]) && NOT_IMPOSSIBLE(alpha[v][L][L])) {
+        bsc = FLogsum (bsc, alpha[v][L][L] + cm->beginsc[v]);
+      }
+    }
+    if (NOT_IMPOSSIBLE(bsc))
+      alpha[0][L][L] = FLogsum (alpha[0][L][L], bsc);
+  }
+
+  if (el_scA != NULL) free (el_scA);
   if (ret_sc != NULL) *ret_sc = alpha[0][L][L];
   return eslOK;
+
+ERROR:
+  if (el_scA != NULL) free (el_scA);
+  ESL_FAIL (eslEMEM, errbuf, "cm_InsideAlign_partial: memory allocation error");
 }
 
 
