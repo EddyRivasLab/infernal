@@ -2301,6 +2301,7 @@ typedef struct cm_pipeline_s {
   int64_t      *cyk_envtreeA_ee;/* [0..nenv-1] F6 dispatch stop  positions for cyk_envtreeA[i]             */
   int           cyk_envtreeA_n; /* number of entries in cyk_envtreeA                                       */
   int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
+  int           cykbands_high_conf; /* TRUE: F6 dispatch should use FastCYKScanHB_shmx (saves second pass) */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
   float         p7post_tau;    /* cumulative tau for --p7post_cp9b (--p7tau), -1.0 if not set         */
   float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */

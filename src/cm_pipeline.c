@@ -37,7 +37,7 @@ static int  pli_build_nodepad      (CM_PIPELINE *pli, CM_t *cm);
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
             P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, float **ret_eb, P7_ALIDISPLAY ***ret_ead, int *ret_nenv);
-static int  pli_cyk_env_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
+static int  pli_cyk_env_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, float *p7eb, float *p7_evparam, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_seq_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **opt_cm, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
 static int  pli_final_stage        (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es, int64_t *ee, int nenv, CM_TOPHITS *hitlist, CM_t **opt_cm);
 static int  pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, CM_TOPHITS *hitlist, CM_t **opt_cm);
@@ -324,6 +324,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->cyk_envtreeA_ee    = NULL;
   pli->cyk_envtreeA_n     = 0;
   pli->use_stored_cp9b    = FALSE;
+  pli->cykbands_high_conf = FALSE;
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
   pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
@@ -1869,7 +1870,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
         printf("#DEBUG:\n#DEBUG: PIPELINE calling pli_cyk_env_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-        if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], np7envA[p], opt_cm, &es, &ee, &nenv)) != eslOK) return status;
+        if((status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], p7ebAA[p], p7_evparam, np7envA[p], opt_cm, &es, &ee, &nenv)) != eslOK) return status;
         if(pli->do_time_F4 || pli->do_time_F5) return status;
       }
       else { /* defined envelopes with HMM, but CYK filter is off: act as if all p7-defined envelopes survived CYK */
@@ -4460,7 +4461,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, int np7env, CM_t **opt_cm, 
+pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, float *p7eb, float *p7_evparam, int np7env, CM_t **opt_cm,
 		    int64_t **ret_es, int64_t **ret_ee, int *ret_nenv)
 {
   int              status;
@@ -4530,21 +4531,64 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     cm->search_opts  = pli->fcyk_cm_search_opts;
     cm->tau          = pli->fcyk_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
+
+    /* --cykbands: decide whether this envelope is high-confidence enough
+     * (based on F5 bit score / P-value) that we can skip the plain CYK pass
+     * and run FastCYKScanHB_shmx directly. The F5 bit score is in p7eb[i]
+     * (set by pli_p7_env_def), and the P-value is computed using the same
+     * exponential params used for the F5 threshold check. We treat an
+     * envelope as "guaranteed survivor" if its F5 P-value is much smaller
+     * than the F6 threshold (since F6 score typically tracks F5 score for
+     * real hits). */
+    int high_conf = FALSE;
+    if(pli->do_cykbands && p7eb != NULL && p7_evparam != NULL) {
+      float f5_pval;
+      if(pli->cur_pass_idx == PLI_PASS_STD_ANY)
+        f5_pval = esl_exp_surv(p7eb[i], p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
+      else
+        f5_pval = esl_exp_surv(p7eb[i], p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      /* Threshold: F5 P-value <= 1e-10.  Empirically derived from rmark4
+       * (analysis script binned envelopes by F5 P-value and measured F6
+       * pass-rate): bucket -10 has ~93% pass, bucket -15 has ~100%, but
+       * the cost of a wrong guess (one wasted shmx call) is small, so
+       * 1e-10 strikes the right balance. */
+      if(f5_pval <= 1e-10) high_conf = TRUE;
+    }
+
+    /* DEBUG: dump per-envelope F5 P-value + F6 score for tuning */
+    if(pli->do_cykbands && p7eb != NULL && p7_evparam != NULL && getenv("CYKBANDS_DUMP")) {
+      float f5p_dbg = (pli->cur_pass_idx == PLI_PASS_STD_ANY)
+                    ? esl_exp_surv(p7eb[i], p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA])
+                    : esl_exp_surv(p7eb[i], p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
+      fprintf(stderr, "#CYKBANDS_DUMP env=%d es=%lld ee=%lld f5sc=%.2f f5P=%.3e ",
+              i, (long long)p7es[i], (long long)p7ee[i], p7eb[i], f5p_dbg);
+    }
+    /* Tell dispatch whether to call FastCYKScanHB_shmx (yields parsetree
+     * via pli->last_dispatch_tr) instead of plain FastCYKScanHB. */
+    pli->cykbands_high_conf = high_conf;
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, p7es[i], p7ee[i], NULL, 0., cyk_env_cutoff, qdbidx, &sc,
-				    (pli->do_fcykenv) ? &cyk_envi : NULL,
-				    (pli->do_fcykenv) ? &cyk_envj : NULL);
+                                    (pli->do_fcykenv) ? &cyk_envi : NULL,
+                                    (pli->do_fcykenv) ? &cyk_envj : NULL);
+    pli->cykbands_high_conf = FALSE;
     pli->stg_time_F6_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F6_cykdp    += pli->last_dispatch_dp;
 
     if(status == eslERANGE) {
       pli->acct[pli->cur_pass_idx].n_overflow_fcyk++;
+      if(pli->last_dispatch_tr) { FreeParsetree(pli->last_dispatch_tr); pli->last_dispatch_tr = NULL; }
       continue; /* skip envelopes that would require too big of a HMM banded matrix */
     }
     else if(status != eslOK) return status;
 
     P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
 
-    if (P > pli->F6) continue;
+    if(getenv("CYKBANDS_DUMP")) {
+      fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
+    }
+    if (P > pli->F6) {
+      if(pli->last_dispatch_tr) { FreeParsetree(pli->last_dispatch_tr); pli->last_dispatch_tr = NULL; }
+      continue;
+    }
 
     i_surv[i] = TRUE;
     nenv++;
@@ -4554,23 +4598,38 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       if(! enforce_j0) { p7ee[i] = cyk_envj; }
     }
 
-    /* --cykbands: now that this envelope has survived F6, run a second
-     * shadow-fill CYK scan on the (possibly shrunken) envelope range to
-     * recover a parsetree of the best hit (best j,d cell). We use the
-     * scanner (not aligner) because the envelope may be slightly wider
-     * than the hit; the aligner would be forced to stretch the parse
-     * across non-hit residues, producing junk bands. */
+    /* --cykbands: recover the F6 CYK parsetree.
+     * - High-confidence path: dispatch already ran shmx, parsetree is in
+     *   pli->last_dispatch_tr (from the original p7es..p7ee range, before
+     *   redefinition). Just adopt it.
+     * - Borderline path: run a second FastCYKScanHB_shmx on the (possibly
+     *   redefined) envelope range to recover the parsetree. */
     if(pli->do_cykbands) {
-      Parsetree_t *new_tr = NULL;
-      float dummy_sc;
-      float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
-      int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
-                                           sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
-                                           0., NULL, NULL, &new_tr, &dummy_sc);
-      if(tr_status == eslOK && new_tr != NULL) {
-        trA_tmp[i]    = new_tr;
-        trA_tmp_es[i] = p7es[i];
-        trA_tmp_ee[i] = p7ee[i];
+      if(pli->last_dispatch_tr != NULL) {
+        /* High-conf: parsetree from the dispatch shmx pass.
+         * trA_tmp_es/ee is the ORIGINAL envelope (pre-redefinition) since
+         * that's what shmx ran on. */
+        trA_tmp[i]    = pli->last_dispatch_tr;
+        trA_tmp_es[i] = (pli->do_fcykenv && cyk_envi != -1) ? cyk_envi : p7es[i];
+        trA_tmp_ee[i] = (pli->do_fcykenv && cyk_envj != -1) ? cyk_envj : p7ee[i];
+        /* Note: shmx scan range was the wider pre-redef envelope, but the
+         * parsetree itself spans only the best (j,d) sub-range, which is
+         * exactly the post-redef range. So shifting/storing as post-redef
+         * envelope is correct. */
+        pli->last_dispatch_tr = NULL;
+      }
+      else {
+        Parsetree_t *new_tr = NULL;
+        float dummy_sc;
+        float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
+        int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
+                                             sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
+                                             0., NULL, NULL, &new_tr, &dummy_sc);
+        if(tr_status == eslOK && new_tr != NULL) {
+          trA_tmp[i]    = new_tr;
+          trA_tmp_es[i] = p7es[i];
+          trA_tmp_ee[i] = p7ee[i];
+        }
       }
     }
 
@@ -5528,6 +5587,19 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	if(do_inside) {
 	  status = FastFInsideScanHB(cm, pli->errbuf, cm->hb_mx, mxsize_limit, dsq, start, stop,
 				     cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
+	}
+	else if(pli->cykbands_high_conf) {
+	  /* High-confidence F6: skip plain CYK and run shmx directly. The
+	   * envelope is virtually guaranteed to pass F6 (based on F5 P-value),
+	   * so we save the redundant first plain CYK pass. */
+	  Parsetree_t *new_tr = NULL;
+	  status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, mxsize_limit,
+				      dsq, start, stop, cutoff, hitlist, pli->do_null3,
+				      env_cutoff, opt_envi, opt_envj, &new_tr, &sc);
+	  if(status == eslOK && new_tr != NULL) {
+	    if(pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
+	    pli->last_dispatch_tr = new_tr;
+	  }
 	}
 	else {
 	  /* F6 CYK: use plain (non-shadow) scan. With --cykbands, the shadow

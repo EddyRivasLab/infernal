@@ -13,9 +13,9 @@ perl $4/rmark-mer.pl $1.pos $2/$2.time < $SORTED > $2/$2.em$3.mer
 # .xy ROC plot skipped (never used)
 
 # get mer from rmark-rocplot
-$4/rmark-rocplot -N 10000 --mer --seed 181 $1 $SORTED > $2/$2.em$3.bmer
+$4/rmark-rocplot -N 100000 --mer --seed 181 $1 $SORTED > $2/$2.em$3.bmer
 # get numbers of false negatives and false positives at E-threshold of 0.1 from rmark-rocplot (after E-value inflation)
-$4/rmark-rocplot -N 10000 --Ethresh 0.1 --seed 181 $1 $SORTED > $2/$2.em$3.bEthresh
+$4/rmark-rocplot -N 100000 --Ethresh 0.1 --seed 181 $1 $SORTED > $2/$2.em$3.bEthresh
 
 rm -f $SORTED
 
