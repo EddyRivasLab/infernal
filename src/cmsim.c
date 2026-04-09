@@ -3794,6 +3794,68 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
       int old_res = dsq[p];
       dsq[p] = r;
 
+      /* Capture state of OLD best cell (from previous accept) BEFORE mutation.
+       * old_best_v/j/d are persistent across steps within a chain. */
+      static int old_best_v = -1, old_best_j = -1, old_best_d = -1;
+      float old_score = sc_inside;  /* score at the old best cell, pre-mutation */
+
+      /* For TopK analysis: collect the top-K cells from the OLD matrix
+       * (before mutation). We use these to check if the new best cell came from
+       * the top-K of the old matrix. */
+      #define TOPK_TRACK 50
+      int topk_v[TOPK_TRACK], topk_j[TOPK_TRACK], topk_d[TOPK_TRACK];
+      float topk_sc[TOPK_TRACK];
+      int topk_n = 0;
+      static int do_topk_analysis = -1;
+      if (do_topk_analysis == -1)
+        do_topk_analysis = use_maxv ? 1 : 0;
+      if (do_topk_analysis) {
+        /* Collect top-K cells from the current alpha matrix (before mutation) */
+        for (int vv = 0; vv < cm->M; vv++) {
+          float bsc = (vv == 0) ? 0.0f :
+            ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[vv])) ?
+            cm->beginsc[vv] : -INFINITY;
+          if (bsc < -1e30) continue;
+          for (int jj = 0; jj <= L; jj++) {
+            for (int dd = 0; dd <= jj; dd++) {
+              if (! NOT_IMPOSSIBLE(ins_mx->dp[vv][jj][dd])) continue;
+              float sc = bsc + ins_mx->dp[vv][jj][dd];
+              /* Insert into top-K if better than current min */
+              if (topk_n < TOPK_TRACK) {
+                /* Find insertion point */
+                int pos = topk_n;
+                while (pos > 0 && topk_sc[pos-1] < sc) {
+                  topk_sc[pos] = topk_sc[pos-1];
+                  topk_v[pos] = topk_v[pos-1];
+                  topk_j[pos] = topk_j[pos-1];
+                  topk_d[pos] = topk_d[pos-1];
+                  pos--;
+                }
+                topk_sc[pos] = sc;
+                topk_v[pos] = vv;
+                topk_j[pos] = jj;
+                topk_d[pos] = dd;
+                topk_n++;
+              } else if (sc > topk_sc[TOPK_TRACK-1]) {
+                /* Better than worst in topk; insert */
+                int pos = TOPK_TRACK - 1;
+                while (pos > 0 && topk_sc[pos-1] < sc) {
+                  topk_sc[pos] = topk_sc[pos-1];
+                  topk_v[pos] = topk_v[pos-1];
+                  topk_j[pos] = topk_j[pos-1];
+                  topk_d[pos] = topk_d[pos-1];
+                  pos--;
+                }
+                topk_sc[pos] = sc;
+                topk_v[pos] = vv;
+                topk_j[pos] = jj;
+                topk_d[pos] = dd;
+              }
+            }
+          }
+        }
+      }
+
       /* Recompute Inside for proposed sequence using partial DP.
        * The matrix ins_mx contains the Inside DP for the unmutated sequence.
        * cm_InsideAlign_partial updates only cells affected by mutation at p. */
@@ -3809,18 +3871,57 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
         sc_inside = new_sc;
         accepted++;
 
-        /* TRACKING: log best (v,j,d) on each accept to /tmp/mcmc_track.txt */
+        /* TRACKING: log enriched info per accept */
         if (use_maxv) {
           static FILE *track_fp = NULL;
           if (track_fp == NULL) {
             track_fp = fopen ("/tmp/mcmc_track.txt", "w");
-            if (track_fp) fprintf (track_fp, "# accepted mut_pos new_res best_v best_j best_d score\n");
+            if (track_fp) fprintf (track_fp, "# accepted mut_pos old_res new_res old_j old_d new_j new_d old_score new_score score_at_old rank_in_topk topk_vs_true topk_best_rank\n");
           }
           if (track_fp) {
-            fprintf (track_fp, "%d %d %d %d %d %d %.4f\n",
-                     accepted, p, r, new_v, new_j, new_d, new_sc);
+            /* Compute score at the OLD best cell after the mutation */
+            float score_at_old = -999.0;
+            if (old_best_v >= 0 && old_best_j >= 0 && old_best_d >= 0) {
+              float bsc = (old_best_v == 0) ? 0.0 :
+                          ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[old_best_v])) ?
+                          cm->beginsc[old_best_v] : -999.0;
+              if (bsc > -998.0)
+                score_at_old = bsc + ins_mx->dp[old_best_v][old_best_j][old_best_d];
+            }
+
+            /* Find rank of new best cell in OLD top-K. -1 if not in top-K. */
+            int rank_in_topk = -1;
+            for (int kk = 0; kk < topk_n; kk++) {
+              if (topk_v[kk] == new_v && topk_j[kk] == new_j && topk_d[kk] == new_d) {
+                rank_in_topk = kk;
+                break;
+              }
+            }
+            /* Also: would tracking top-K alone (with their new scores after mutation)
+             * find the new best? For each cell in top-K, compute its NEW score
+             * (the value is now in ins_mx after partial DP) and find the max. */
+            float topk_best = -INFINITY;
+            int topk_best_rank = -1;
+            for (int kk = 0; kk < topk_n; kk++) {
+              float bsc = (topk_v[kk] == 0) ? 0.0f :
+                ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[topk_v[kk]])) ?
+                cm->beginsc[topk_v[kk]] : -1e30f;
+              float sc = bsc + ins_mx->dp[topk_v[kk]][topk_j[kk]][topk_d[kk]];
+              if (sc > topk_best) { topk_best = sc; topk_best_rank = kk; }
+            }
+            float topk_vs_true = topk_best - new_sc;  /* difference from true best */
+
+            fprintf (track_fp, "%d %d %d %d %d %d %d %d %.4f %.4f %.4f %d %.4f %d\n",
+                     accepted, p, old_res, r,
+                     old_best_j, old_best_d, new_j, new_d,
+                     old_score, new_sc, score_at_old,
+                     rank_in_topk, topk_vs_true, topk_best_rank);
             fflush (track_fp);
           }
+          /* Update tracked old best for next step */
+          old_best_v = new_v;
+          old_best_j = new_j;
+          old_best_d = new_d;
         }
 
         /* Collect score if past burn-in */
