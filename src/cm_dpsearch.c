@@ -3742,6 +3742,529 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
   return 0.; /* never reached */
 }
 
+/* Function: FastCYKScanHB_shmx()
+ * Incept:   EPN (agent), 2026
+ *
+ * Purpose:  Same as FastCYKScanHB() but additionally fills a shadow
+ *           matrix during the DP fill and, after the scan, tracebacks
+ *           the single best-scoring (j,d,root_state) cell to produce
+ *           an optimal CYK parsetree covering that hit. The parsetree
+ *           is returned via <ret_tr> (caller frees).
+ *
+ *           All scan semantics (gamma/tmp_hitlist, envelope defn,
+ *           vsc_root return) are preserved identically to FastCYKScanHB().
+ *
+ * Args:     cm, errbuf, mx, size_limit, dsq, i0, j0, cutoff, hitlist,
+ *           do_null3, env_cutoff, ret_envi, ret_envj, ret_sc: see FastCYKScanHB().
+ *           shmx     - HMM banded shadow matrix, grown here
+ *           ret_tr   - RETURN: parsetree of single best overall hit; NULL if no valid cell found.
+ *                     Caller must free with FreeParsetree().
+ *
+ * Returns:  eslOK on success.
+ */
+int
+FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
+                   float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff,
+                   CM_TOPHITS *hitlist, int do_null3,
+                   float env_cutoff, int64_t *ret_envi, int64_t *ret_envj,
+                   Parsetree_t **ret_tr, float *ret_sc)
+{
+  int      status;
+  GammaHitMx_t *gamma = NULL;
+  int     *bestr;
+  float   *bestsc;
+  int      v,y,z;
+  int      j,d,i,k;
+  float    sc;
+  int      yoffset;
+  int     *yvalidA;
+  float   *el_scA;
+  int      sd;
+  int      sdr;
+  int      jp_v, jp_y, jp_z;
+  int      jp_y_sdr;
+  int      j_sdr;
+  int      jn, jx;
+  int      jpn, jpx;
+  int      dp_v, dp_y;
+  int      dn, dx;
+  int      dp;
+  int      dp_y_sd;
+  int      dpn, dpx;
+  int      kp_z;
+  int      kn, kx;
+  float    tsc;
+  int      yvalid_idx;
+  int      yvalid_ct;
+  float    vsc_root = IMPOSSIBLE;
+  int      W;
+  double **act;
+  int      jp;
+  int      do_env_defn;
+  int64_t  envi, envj;
+  CM_TOPHITS *tmp_hitlist = NULL;
+  int       h;
+  int64_t   c;
+
+  /* shadow/traceback bookkeeping */
+  float   best_overall_sc   = IMPOSSIBLE;
+  int     best_overall_j    = -1;
+  int     best_overall_d    = -1;
+  int     best_overall_root = -1;
+
+  /* Contract check */
+  if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB_shmx(), dsq is NULL.\n");
+  if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB_shmx(), mx is NULL.\n");
+  if (shmx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB_shmx(), shmx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB_shmx(), cm->cp9b is NULL.\n");
+
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+  float ***alpha = mx->dp;
+  char  ***yshadow = shmx->yshadow;
+  int   ***kshadow = shmx->kshadow;
+
+  /* Grow DP matrix and shadow matrix */
+  if((status = cm_hb_mx_GrowTo       (cm,   mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
+  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
+
+  W = j0-i0+1;
+  for(j = jmin[0]; j <= jmax[0]; j++) {
+    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB_shmx(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 "d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+  }
+
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
+  esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
+
+  /* initialize DP and shadow */
+  esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+  if(shmx->y_ncells_valid > 0) for(c = 0; c < shmx->y_ncells_valid; c++) shmx->yshadow_mem[c] = USED_EL;
+  if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0);
+
+  gamma       = NULL;
+  tmp_hitlist = NULL;
+  if(hitlist != NULL) {
+    if(cm->search_opts & CM_SEARCH_CMNOTGREEDY) {
+      gamma = CreateGammaHitMx(j0-i0+1, i0, cutoff);
+    }
+    else {
+      tmp_hitlist = cm_tophits_Create();
+    }
+  }
+
+  if(do_null3) {
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) {
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+    for(j = i0; j <= j0; j++) {
+      jp = j-i0+1;
+      esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+      esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+    }
+  }
+  else act = NULL;
+
+  do_env_defn = (ret_envi != NULL || ret_envj != NULL) ? TRUE : FALSE;
+  envi = j0+1;
+  envj = i0-1;
+
+  /* Main recursion */
+  for (v = cm->M-1; v >= 0; v--) {
+    float const *esc_v = cm->oesc[v];
+    float const *tsc_v = cm->tsc[v];
+    sd   = StateDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+    jn   = jmin[v];
+    jx   = jmax[v];
+
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v  = j - jmin[v];
+        for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+          dp = ESL_MAX(d-sd, 0);
+          alpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
+          /* yshadow already USED_EL from init */
+        }
+      }
+    }
+
+    if(cm->sttype[v] == E_st) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j-jmin[v];
+        ESL_DASSERT1((hdmin[v][jp_v] == 0));
+        ESL_DASSERT1((hdmax[v][jp_v] == 0));
+        alpha[v][jp_v][0] = 0.;
+      }
+    }
+    else if(cm->sttype[v] == IL_st) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        yvalid_ct = 0;
+        j_sdr = j - sdr;
+        for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+          if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          i = j - d + 1;
+          dp_v = d - hdmin[v][jp_v];
+          for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+            yoffset = yvalidA[yvalid_idx];
+            y = cm->cfirst[v] + yoffset;
+            jp_y_sdr = j - jmin[y] - sdr;
+
+            if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
+              dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+              if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v]) {
+                alpha[v][jp_v][dp_v]   = sc;
+                yshadow[v][jp_v][dp_v] = yoffset;
+              }
+            }
+          }
+          alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
+          alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+        }
+      }
+    }
+    else if(cm->sttype[v] == IR_st) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        yvalid_ct = 0;
+        j_sdr = j - sdr;
+        for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+          if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          dp_v = d - hdmin[v][jp_v];
+          for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+            yoffset = yvalidA[yvalid_idx];
+            y = cm->cfirst[v] + yoffset;
+            jp_y_sdr = j - jmin[y] - sdr;
+
+            if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
+              dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+              if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v]) {
+                alpha[v][jp_v][dp_v]   = sc;
+                yshadow[v][jp_v][dp_v] = yoffset;
+              }
+            }
+          }
+          alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+          alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+        }
+      }
+    }
+    else if(cm->sttype[v] != B_st) {
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+        yoffset = y - cm->cfirst[v];
+        tsc = tsc_v[yoffset];
+
+        jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+        jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+        jpn = jn - jmin[v];
+        jpx = jx - jmin[v];
+        jp_y_sdr = jn - jmin[y] - sdr;
+
+        for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+          dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+          dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+          dpn     = dn - hdmin[v][jp_v];
+          dpx     = dx - hdmin[v][jp_v];
+          dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+
+          for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
+            if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc) > alpha[v][jp_v][dp_v]) {
+              alpha[v][jp_v][dp_v]   = sc;
+              yshadow[v][jp_v][dp_v] = yoffset;
+            }
+          }
+        }
+      }
+      switch(cm->sttype[v]) {
+      case ML_st:
+        for (j = jmin[v]; j <= jmax[v]; j++) {
+          jp_v  = j - jmin[v];
+          i     = j - hdmin[v][jp_v] + 1;
+          for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+            alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
+        }
+        break;
+      case MR_st:
+        for (j = jmin[v]; j <= jmax[v]; j++) {
+          jp_v  = j - jmin[v];
+          for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+            alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
+        }
+        break;
+      case MP_st:
+        for (j = jmin[v]; j <= jmax[v]; j++) {
+          jp_v  = j - jmin[v];
+          i     = j - hdmin[v][jp_v] + 1;
+          for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+            alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
+        }
+      default:
+        break;
+      }
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v  = j - jmin[v];
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+      }
+    }
+    else { /* B_st */
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+      jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+      jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+      for (j = jn; j <= jx; j++) {
+        jp_v = j - jmin[v];
+        jp_y = j - jmin[y];
+        jp_z = j - jmin[z];
+        kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+        kn = ESL_MAX(kn, 0);
+        kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          dp_v = d - hdmin[v][jp_v];
+          for(k = kn; k <= kx; k++) {
+            if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+              kp_z = k-hdmin[z][jp_z];
+              dp_y = d-hdmin[y][jp_y-k];
+              if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) > alpha[v][jp_v][dp_v]) {
+                alpha[v][jp_v][dp_v]   = sc;
+                kshadow[v][jp_v][dp_v] = k;
+              }
+            }
+          }
+        }
+      }
+    }
+  } /* end of for v */
+
+  /* Deal with local begins and hit reporting. */
+  v = 0;
+  jpn = 0;
+  jpx = jmax[v] - jmin[v];
+  j   = jmin[v];
+
+  ESL_ALLOC(bestr,  sizeof(int)   * (W+1));
+  ESL_ALLOC(bestsc, sizeof(float) * (W+1));
+
+  if(gamma != NULL) {
+    for(j = i0; j < jmin[v]; j++) {
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, -1, -1,
+                                      NULL, bestr, NULL, W, act)) != eslOK) return status;
+    }
+  }
+
+  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {
+    esl_vec_ISet(bestr,  (W+1), 0);
+    esl_vec_FSet(bestsc, (W+1), IMPOSSIBLE);
+    if (cm->flags & CMH_LOCAL_BEGIN) {
+      for (y = 1; y < cm->M; y++) {
+        if(NOT_IMPOSSIBLE(cm->beginsc[y]) && (j >= jmin[y] && j <= jmax[y])) {
+          assert(cm->sttype[v] != BEGL_S);
+          jp_y = j - jmin[y];
+          dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
+          dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+          dpn  = dn - hdmin[v][jp_v];
+          dpx  = dx - hdmin[v][jp_v];
+          dp_y = dn - hdmin[y][jp_y];
+          d    = dn;
+          for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) {
+            sc = alpha[y][jp_y][dp_y] + cm->beginsc[y];
+            if(sc > alpha[0][jp_v][dp_v]) {
+              alpha[0][jp_v][dp_v] = sc;
+              bestsc[d] = sc;
+              bestr[d]  = y;
+            }
+          }
+        }
+      }
+    }
+
+    dpn = 0;
+    dpx = hdmax[v][jp_v] - hdmin[v][jp_v];
+    for(dp_v = dpn; dp_v <= dpx; dp_v++) {
+      d         = dp_v + hdmin[v][jp_v];
+      bestsc[d] = alpha[0][jp_v][dp_v];
+      vsc_root  = ESL_MAX(vsc_root, alpha[0][jp_v][dp_v]);
+      if(alpha[0][jp_v][dp_v] > best_overall_sc) {
+        best_overall_sc   = alpha[0][jp_v][dp_v];
+        best_overall_j    = j;
+        best_overall_d    = d;
+        best_overall_root = bestr[d];
+      }
+    }
+    if(do_env_defn) {
+      j = jp_v + jmin[v];
+      for(dp_v = dpn; dp_v <= dpx; dp_v++) {
+        if(alpha[0][jp_v][dp_v] >= env_cutoff) {
+          d = dp_v + hdmin[v][jp_v];
+          i = j - d + 1;
+          envi = ESL_MIN(envi, i);
+          envj = ESL_MAX(envj, j);
+        }
+      }
+    }
+
+    if(gamma != NULL) {
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+    }
+    if(tmp_hitlist != NULL) {
+      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+    }
+  }
+
+  if(gamma != NULL) {
+    for(j = jmax[v]+1; j <= j0; j++) {
+      if((status = UpdateGammaHitMx(cm, errbuf, PLI_PASS_STD_ANY, gamma, j, -1, -1,
+                                    NULL, bestr, NULL, W, act)) != eslOK) return status;
+    }
+  }
+
+  free(el_scA);
+  free(yvalidA);
+  free(bestr);
+  free(bestsc);
+  if (act != NULL) {
+    for(i = 0; i <= W; i++) free(act[i]);
+    free(act);
+  }
+
+  if(gamma != NULL) {
+    TBackGammaHitMx(gamma, hitlist, i0, j0);
+    FreeGammaHitMx(gamma);
+  }
+  if(tmp_hitlist != NULL) {
+    for(h = 0; h < tmp_hitlist->N; h++) tmp_hitlist->unsrt[h].srcL = j0;
+    cm_tophits_SortForOverlapRemoval(tmp_hitlist);
+    if((status = cm_tophits_RemoveOrMarkOverlaps(tmp_hitlist, FALSE, errbuf)) != eslOK) return status;
+    for(h = 0; h < tmp_hitlist->N; h++) {
+      if(! (tmp_hitlist->hit[h]->flags & CM_HIT_IS_REMOVED_DUPLICATE)) {
+        if((status = cm_tophits_CloneHitMostly(tmp_hitlist, h, hitlist)) != eslOK) ESL_FAIL(status, errbuf, "problem copying hit to hitlist, out of memory?");
+      }
+    }
+    cm_tophits_Destroy(tmp_hitlist);
+  }
+
+  if(ret_envi != NULL) { *ret_envi = (envi == j0+1) ? -1 : envi; }
+  if(ret_envj != NULL) { *ret_envj = (envj == i0-1) ? -1 : envj; }
+
+  /* ------------------------------------------------------------------
+   * Traceback the best-scoring cell to produce a Parsetree_t.
+   * Starts at (v=0, j=best_overall_j, d=best_overall_d). If local begin
+   * was used, best_overall_root != 0 and we insert a local-begin node
+   * before recursing into state best_overall_root.
+   * ------------------------------------------------------------------ */
+  if(ret_tr != NULL) {
+    Parsetree_t *tr = NULL;
+    if(best_overall_j >= 0 && best_overall_d >= 0 && best_overall_root >= 0 && NOT_IMPOSSIBLE(best_overall_sc)) {
+      ESL_STACK *pda = NULL;
+      int bifparent;
+      int b_local;
+
+      tr = CreateParsetree(100);
+      /* attach the root S spanning the full (i,j) of the best hit */
+      i = best_overall_j - best_overall_d + 1;
+      j = best_overall_j;
+      d = best_overall_d;
+      InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, i, j, 0);
+
+      b_local = (best_overall_root != 0) ? best_overall_root : -1;
+      if(b_local > 0) {
+        /* insert local-begin node at the entry state */
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b_local);
+        v = b_local;
+      }
+      else {
+        v = 0;
+      }
+
+      pda = esl_stack_ICreate();
+      if(pda == NULL) { FreeParsetree(tr); tr = NULL; goto TR_DONE; }
+
+      while(1) {
+        if(cm->sttype[v] == B_st) {
+          jp_v = j - jmin[v];
+          dp_v = d - hdmin[v][jp_v];
+          k = kshadow[v][jp_v][dp_v];
+
+          if((status = esl_stack_IPush(pda, j)) != eslOK)       { FreeParsetree(tr); tr = NULL; goto TR_DONE; }
+          if((status = esl_stack_IPush(pda, k)) != eslOK)       { FreeParsetree(tr); tr = NULL; goto TR_DONE; }
+          if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) { FreeParsetree(tr); tr = NULL; goto TR_DONE; }
+
+          j = j-k;
+          d = d-k;
+          i = j-d+1;
+          y = cm->cfirst[v];
+          InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+          v = y;
+        }
+        else if(cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+          if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+          esl_stack_IPop(pda, &d);
+          esl_stack_IPop(pda, &j);
+          v = tr->state[bifparent];
+          y = cm->cnum[v];
+          i = j-d+1;
+          InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+          v = y;
+        }
+        else {
+          jp_v = j - jmin[v];
+          dp_v = d - hdmin[v][jp_v];
+          yoffset = yshadow[v][jp_v][dp_v];
+          switch (cm->sttype[v]) {
+          case D_st:            break;
+          case MP_st: i++; j--; break;
+          case ML_st: i++;      break;
+          case MR_st:      j--; break;
+          case IL_st: i++;      break;
+          case IR_st:      j--; break;
+          case S_st:            break;
+          default: FreeParsetree(tr); tr = NULL; goto TR_DONE;
+          }
+          d = j-i+1;
+
+          if(yoffset == USED_EL) {
+            InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+            v = cm->M;
+          }
+          else if(yoffset == USED_LOCAL_BEGIN) {
+            /* shouldn't really happen in our encoding, but handle gracefully */
+            break;
+          }
+          else {
+            y = cm->cfirst[v] + yoffset;
+            InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+            v = y;
+          }
+        }
+      }
+    TR_DONE:
+      if(pda != NULL) esl_stack_Destroy(pda);
+    }
+    *ret_tr = tr;
+  }
+
+  if (ret_sc != NULL) *ret_sc = vsc_root;
+  ESL_DPRINTF1(("#DEBUG: FastCYKScanHB_shmx() return sc: %f\n", vsc_root));
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
+  return 0.;
+}
+
+
 /* Function: FastFInsideScanHB()
  * Incept:   EPN, Wed Nov 14 18:17:28 2007
  *

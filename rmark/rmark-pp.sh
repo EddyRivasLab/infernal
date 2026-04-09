@@ -2,22 +2,22 @@
 
 # get running time
 ls $2/*.time | perl $4/rmark-time.pl > $2/$2.time
-# get MER
-cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | perl $4/rmark-mer.pl $1.pos $2/$2.time > $2/$2.em$3.mer
-# get ROC
-cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | $4/rmark-rocplot -N 100000 --seed 181 $1 - > $2/$2.em$3.xy
-# get mer from rmark-rocplot
-cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | $4/rmark-rocplot -N 100000 --mer --seed 181 $1 - > $2/$2.em$3.bmer
-# get numbers of false negatives and false positives at E-threshold of 0.1 from rmark-rocplot (after E-value inflation)
-#ARG=`echo 0.1/$3|bc -l`
-#echo 0.1/$3|bc -l
-cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g | $4/rmark-rocplot -N 100000 --Ethresh 0.1 --seed 181 $1 - > $2/$2.em$3.bEthresh
 
-# copy files to cwd
-#cp $2/$2.em$3.mer ./
-#cp $2/$2.em$3.bmer ./
-#cp $2/$2.time ./
-#cp $2/$2.em$3.xy ./
+# Sort hit list once and reuse (was being recomputed 4x)
+SORTED=$2/$2.em$3.sorted
+cat $2/*out | perl $4/rmark-multiply-evalues.pl $3 | sort -g > $SORTED
+
+# get MER
+perl $4/rmark-mer.pl $1.pos $2/$2.time < $SORTED > $2/$2.em$3.mer
+
+# .xy ROC plot skipped (never used)
+
+# get mer from rmark-rocplot
+$4/rmark-rocplot -N 10000 --mer --seed 181 $1 $SORTED > $2/$2.em$3.bmer
+# get numbers of false negatives and false positives at E-threshold of 0.1 from rmark-rocplot (after E-value inflation)
+$4/rmark-rocplot -N 10000 --Ethresh 0.1 --seed 181 $1 $SORTED > $2/$2.em$3.bEthresh
+
+rm -f $SORTED
 
 # summarize files to stdout
 echo -n $2 | awk '{printf("%-70s  ", $0)}' > $2/$2.em$3.sum
@@ -27,10 +27,3 @@ cat $2/$2.em$3.bEthresh | awk '{printf("ETHRESH:0.1  %5s  %5s   ", $5, $9)}' >> 
 grep ummary $2/$2.em$3.mer | awk '{print $7}' >> $2/$2.em$3.sum
 cp $2/$2.em$3.sum ./
 cat $2.em$3.sum
-
-# clean up (optional)
-#rm $2/$2.em$3.mer 
-#rm $2/$2.em$3.bmer 
-#rm $2/$2.time 
-#rm $2/$2.em$3.xy 
-

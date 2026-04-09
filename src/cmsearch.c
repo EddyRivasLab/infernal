@@ -460,6 +460,15 @@ main(int argc, char **argv)
 
   esl_getopts_Destroy(go);
 
+  /* DEBUG: report HMMBandsEnforceValidParse profiling */
+  { extern long _hmmbands_call_count;
+    extern long _hmmbands_fix_unreachable_count;
+    extern long _hmmbands_fill_gap_count;
+    extern double _hmmbands_total_secs;
+    fprintf(stderr, "# HMMBandsEnforceValidParse: calls=%ld fix_unreach=%ld fill_gap=%ld total_secs=%.3f\n",
+            _hmmbands_call_count, _hmmbands_fix_unreachable_count, _hmmbands_fill_gap_count, _hmmbands_total_secs);
+  }
+
   return status;
 }
 

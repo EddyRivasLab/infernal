@@ -3222,8 +3222,39 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
     }
   }
 
-  /* Node 0 special case: M_0 = begin state */
+  /* Node 0 special case: M_0 = begin state, must be at position 0 */
   pn_min_m[0] = 0; pn_max_m[0] = 0;
+
+  /* CRITICAL: Ensure the bands include the full sequence range [1..L].
+   * The downstream cp9_HMM2ijBands -> CM bands relies on these bounds:
+   * - Some HMM node must be reachable at position 1 (start of seq)
+   * - Some HMM node must be reachable at position L (end of seq)
+   * - In particular, the LAST emitting node (typically near M) must have
+   *   its match band include L, otherwise ROOT_S's j band won't include L
+   *   and Inside DP will fail with "L is outside ROOT_S's j band".
+   *
+   * Walk left-to-right and ensure each node's band extends down to at most
+   * pos 1 if it's near the start. Walk right-to-left and ensure each node's
+   * band extends up to at least L if it's near the end. The simplest way:
+   * widen the LAST set match band to include L, and the FIRST set match
+   * band to include 1.
+   */
+  { int first_set = -1, last_set = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != L + 2 && pn_max_m[k] != -1) {
+        if(first_set == -1) first_set = k;
+        last_set = k;
+      }
+    }
+    if(first_set != -1) {
+      /* Ensure first set node can be reached at position 1 */
+      if(pn_min_m[first_set] > 1) pn_min_m[first_set] = 1;
+    }
+    if(last_set != -1) {
+      /* Ensure last set node can be reached at position L */
+      if(pn_max_m[last_set] < L) pn_max_m[last_set] = L;
+    }
+  }
 
   /* Convert any still-unset entries to -1 sentinel */
   for(k = 0; k <= M; k++) {
@@ -3234,6 +3265,181 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
   pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
 
   return eslOK;
+}
+
+
+/* Function: cm_BandsFromParsetree_perstate()
+ * Date    : 2026-04-08
+ *
+ * Purpose:  Derive per-CM-state bands (cp9b->imin/imax/jmin/jmax/hdmin/hdmax)
+ *           directly from a CYK parsetree, without going through HMM-node
+ *           pn bands. This avoids the linear HMM-node sweep contamination
+ *           that breaks for permuted CMs (where the HMM-node order doesn't
+ *           match the CM state order).
+ *
+ *           Algorithm:
+ *           1. Walk parsetree, mark visited[v]=TRUE and set imin/imax/jmin/jmax
+ *              from each occurrence of state v with absolute (i, j) coords.
+ *           2. Apply pad to visited states, clamp to [i0..j0].
+ *           3. For unvisited states, walk CM tree post-order (M-1 down to 0)
+ *              and inherit from children: parent's bounds = child's bounds
+ *              shifted by parent's StateLeftDelta/StateRightDelta.
+ *              Bifurcations: i bound from left child, j bound from right child.
+ *           4. Fill cp9b->imin/imax/jmin/jmax, then call cp9_GrowHDBands and
+ *              ij2d_bands to compute hd bands.
+ *
+ *           For non-truncated mode, sets Jvalid[]=TRUE, others FALSE.
+ *
+ * Args:     cm        - the covariance model (must have cp9b allocated)
+ *           errbuf    - error buffer
+ *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
+ *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
+ *           pad       - half-width pad to add on each side of visited bounds
+ *           cp9b      - bands to fill (caller pre-allocated)
+ *           pass_idx  - pipeline pass index (for truncation handling)
+ *           debug     - if >0, print bands
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
+                               int i0, int j0, int pad,
+                               CP9Bands_t *cp9b, int pass_idx, int debug)
+{
+  int    status;
+  int    M = cm->M;
+  int    v, t, y, z, off;
+  int    sdl, sdr;
+  int    L = j0 - i0 + 1;
+  int    do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  int   *visited = NULL;
+  int   *imin = cp9b->imin;
+  int   *imax = cp9b->imax;
+  int   *jmin = cp9b->jmin;
+  int   *jmax = cp9b->jmax;
+
+  ESL_ALLOC(visited, sizeof(int) * M);
+  esl_vec_ISet(visited, M, FALSE);
+
+  /* Initialize all bands to "unset" sentinel: imin/jmin = INT_MAX, imax/jmax = -1 */
+  for(v = 0; v < M; v++) {
+    imin[v] = INT_MAX; imax[v] = -1;
+    jmin[v] = INT_MAX; jmax[v] = -1;
+  }
+
+  /* Step 1: Walk parsetree, set per-state bounds from each visit */
+  for(t = 0; t < tr->n; t++) {
+    v = tr->state[t];
+    if(v < 0 || v >= M) continue;
+    int i = tr->emitl[t];
+    int j = tr->emitr[t];
+    visited[v] = TRUE;
+    if(i < imin[v]) imin[v] = i;
+    if(i > imax[v]) imax[v] = i;
+    if(j < jmin[v]) jmin[v] = j;
+    if(j > jmax[v]) jmax[v] = j;
+  }
+
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0] */
+  for(v = 0; v < M; v++) {
+    if(visited[v]) {
+      imin[v] -= pad; if(imin[v] < i0) imin[v] = i0;
+      imax[v] += pad; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] -= pad; if(jmin[v] < i0) jmin[v] = i0;
+      jmax[v] += pad; if(jmax[v] > j0) jmax[v] = j0;
+    }
+  }
+
+  /* Step 3: For unvisited states, inherit from PARENT (top-down: 0 -> M-1).
+   * This gives narrow bands near the MAP parse, unlike bottom-up which would
+   * union over all children and degenerate to ~unbanded for sparse parsetrees.
+   * Build parent[] map first. */
+  int *parent = NULL;
+  ESL_ALLOC(parent, sizeof(int) * M);
+  for(v = 0; v < M; v++) parent[v] = -1;
+  for(v = 0; v < M; v++) {
+    if(cm->sttype[v] == B_st) {
+      y = cm->cfirst[v]; if(y >= 0 && y < M) parent[y] = v;
+      z = cm->cnum[v];   if(z >= 0 && z < M) parent[z] = v;
+    } else if(cm->sttype[v] != E_st && cm->sttype[v] != EL_st) {
+      for(off = 0; off < cm->cnum[v]; off++) {
+        y = cm->cfirst[v] + off;
+        if(y >= 0 && y < M && parent[y] == -1) parent[y] = v;
+      }
+    }
+  }
+  for(v = 0; v < M; v++) {
+    if(visited[v]) continue;
+    int p = parent[v];
+    if(p < 0) {
+      /* No parent (e.g., root) or unreachable; fall back to full envelope */
+      imin[v] = i0; imax[v] = j0; jmin[v] = i0; jmax[v] = j0;
+      continue;
+    }
+    /* Inherit from parent, shifted by parent's emit deltas:
+     * If parent emits a left residue, child's i is parent's i + 1.
+     * If parent emits a right residue, child's j is parent's j - 1.
+     * For B parents: left child gets parent's i bounds, right child gets parent's j bounds. */
+    if(cm->sttype[p] == B_st) {
+      if(v == cm->cfirst[p]) {
+        /* Left child of B: i bounds from parent's i, j is split point (we don't know exactly, use parent's range) */
+        imin[v] = imin[p]; imax[v] = imax[p];
+        jmin[v] = imin[p]; jmax[v] = jmax[p]; /* j can be anywhere parent's i to parent's j */
+      } else {
+        /* Right child of B: j bounds from parent's j, i is split point */
+        imin[v] = imin[p]; imax[v] = jmax[p];
+        jmin[v] = jmin[p]; jmax[v] = jmax[p];
+      }
+    } else {
+      sdl = StateLeftDelta(cm->sttype[p]);
+      sdr = StateRightDelta(cm->sttype[p]);
+      imin[v] = imin[p] + sdl; if(imin[v] < i0) imin[v] = i0; if(imin[v] > j0) imin[v] = j0;
+      imax[v] = imax[p] + sdl; if(imax[v] < i0) imax[v] = i0; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] = jmin[p] - sdr; if(jmin[v] < i0) jmin[v] = i0; if(jmin[v] > j0) jmin[v] = j0;
+      jmax[v] = jmax[p] - sdr; if(jmax[v] < i0) jmax[v] = i0; if(jmax[v] > j0) jmax[v] = j0;
+    }
+  }
+  free(parent);
+
+  /* Final clamping and sanity: ensure imin<=imax, jmin<=jmax, all in [i0..j0] */
+  for(v = 0; v < M; v++) {
+    if(imin[v] == INT_MAX) { imin[v] = i0; imax[v] = j0; }
+    if(jmin[v] == INT_MAX) { jmin[v] = i0; jmax[v] = j0; }
+    if(imin[v] < i0) imin[v] = i0;
+    if(imax[v] > j0) imax[v] = j0;
+    if(jmin[v] < i0) jmin[v] = i0;
+    if(jmax[v] > j0) jmax[v] = j0;
+    if(imin[v] > imax[v]) imax[v] = imin[v];
+    if(jmin[v] > jmax[v]) jmax[v] = jmin[v];
+  }
+
+  /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode */
+  if(!do_trunc) {
+    esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
+  } else {
+    /* Truncated bands not supported by this function path */
+    esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
+  }
+
+  cp9b->tau = cm->tau;
+
+  /* Compute hdmin/hdmax */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
+             cp9b->hdmin, cp9b->hdmax, do_trunc, debug);
+
+  free(visited);
+  return eslOK;
+
+ ERROR:
+  if(visited) free(visited);
+  return status;
 }
 
 

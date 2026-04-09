@@ -2292,6 +2292,15 @@ typedef struct cm_pipeline_s {
   float         p7band_midecay; /* MI decay per singlet node for diffusion (--p7bmidecay)                   */
   int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
   int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
+  Parsetree_t  *cyk_envtree;    /* CYK parsetree from most recent F6 CYK scan (for --cykbands), or NULL    */
+  int64_t       cyk_envtree_es; /* envelope start position the parsetree corresponds to                    */
+  int64_t       cyk_envtree_ee; /* envelope end position the parsetree corresponds to                      */
+  Parsetree_t  *last_dispatch_tr; /* parsetree returned by most recent FastCYKScanHB_shmx call, or NULL    */
+  Parsetree_t **cyk_envtreeA;   /* [0..nenv-1] per-survivor F6 CYK parsetrees (for --cykbands), or NULL    */
+  int64_t      *cyk_envtreeA_es;/* [0..nenv-1] F6 dispatch start positions for cyk_envtreeA[i]             */
+  int64_t      *cyk_envtreeA_ee;/* [0..nenv-1] F6 dispatch stop  positions for cyk_envtreeA[i]             */
+  int           cyk_envtreeA_n; /* number of entries in cyk_envtreeA                                       */
+  int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
   float         p7post_tau;    /* cumulative tau for --p7post_cp9b (--p7tau), -1.0 if not set         */
   float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */
@@ -2736,6 +2745,7 @@ extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, 
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_CYKInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_sc);
 extern int   cm_CYKInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_sc);
+extern int   cm_alignT_hb         (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, float *ret_sc_or_pp);
 extern int   cm_InsideAlign       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, float *ret_sc);
 extern int   cm_InsideAlignHB     (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_HB_MX *mx, float *ret_sc);
 extern int   cm_OptAccAlign       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, CM_EMIT_MX *emit_mx,    int *ret_b, float *ret_pp);
@@ -2788,6 +2798,7 @@ extern int  RefIInsideScan   (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbid
 extern int  FastFInsideScan  (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern int  RefFInsideScan   (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, CM_HB_MX   *mx,  float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
+extern int  FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX   *mx, CM_HB_SHADOW_MX *shmx, float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, Parsetree_t **ret_tr, float *ret_sc);
 extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX   *mx,  float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
 extern int  DetermineSeqChunksize(int nproc, int L, int W);
@@ -3147,6 +3158,7 @@ extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, floa
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
+extern int          cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, CP9Bands_t *cp9b, int pass_idx, int debug);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);

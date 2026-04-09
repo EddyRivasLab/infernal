@@ -315,6 +315,15 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
   pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
+  pli->cyk_envtree        = NULL;
+  pli->cyk_envtree_es     = -1;
+  pli->cyk_envtree_ee     = -1;
+  pli->last_dispatch_tr   = NULL;
+  pli->cyk_envtreeA       = NULL;
+  pli->cyk_envtreeA_es    = NULL;
+  pli->cyk_envtreeA_ee    = NULL;
+  pli->cyk_envtreeA_n     = 0;
+  pli->use_stored_cp9b    = FALSE;
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
   pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
@@ -929,6 +938,15 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7pn_min_d) free(pli->p7pn_min_d);
   if (pli->p7pn_max_d) free(pli->p7pn_max_d);
   if (pli->p7_nodepad)  free(pli->p7_nodepad);
+  if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
+  if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
+  if (pli->cyk_envtreeA) {
+    int ii;
+    for (ii = 0; ii < pli->cyk_envtreeA_n; ii++) if (pli->cyk_envtreeA[ii]) FreeParsetree(pli->cyk_envtreeA[ii]);
+    free(pli->cyk_envtreeA);
+  }
+  if (pli->cyk_envtreeA_es) free(pli->cyk_envtreeA_es);
+  if (pli->cyk_envtreeA_ee) free(pli->cyk_envtreeA_ee);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -4480,8 +4498,19 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   enforce_i0 = cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) ? TRUE : FALSE;
   enforce_j0 = cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) ? TRUE : FALSE;
 
-  ESL_ALLOC(i_surv, sizeof(int) * np7env); 
+  ESL_ALLOC(i_surv, sizeof(int) * np7env);
   esl_vec_ISet(i_surv, np7env, FALSE);
+
+  /* --cykbands: per-envelope temporary parsetree storage; survivors copied to pli->cyk_envtreeA below */
+  Parsetree_t **trA_tmp     = NULL;
+  int64_t      *trA_tmp_es  = NULL;
+  int64_t      *trA_tmp_ee  = NULL;
+  if(pli->do_cykbands) {
+    ESL_ALLOC(trA_tmp,    sizeof(Parsetree_t *) * np7env);
+    ESL_ALLOC(trA_tmp_es, sizeof(int64_t)       * np7env);
+    ESL_ALLOC(trA_tmp_ee, sizeof(int64_t)       * np7env);
+    int ti; for(ti = 0; ti < np7env; ti++) { trA_tmp[ti] = NULL; trA_tmp_es[ti] = -1; trA_tmp_ee[ti] = -1; }
+  }
 
   /* Determine bit score cutoff for CYK envelope redefinition, any
    * residue that exists in a CYK hit that reaches this threshold will
@@ -4512,17 +4541,37 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       continue; /* skip envelopes that would require too big of a HMM banded matrix */
     }
     else if(status != eslOK) return status;
-    
+
     P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
 
     if (P > pli->F6) continue;
-    
+
     i_surv[i] = TRUE;
     nenv++;
     /* update envelope boundaries, if nec */
-    if(pli->do_fcykenv && (cyk_envi != -1 && cyk_envj != -1)) { 
+    if(pli->do_fcykenv && (cyk_envi != -1 && cyk_envj != -1)) {
       if(! enforce_i0) { p7es[i] = cyk_envi; }
       if(! enforce_j0) { p7ee[i] = cyk_envj; }
+    }
+
+    /* --cykbands: now that this envelope has survived F6, run a second
+     * shadow-fill CYK scan on the (possibly shrunken) envelope range to
+     * recover a parsetree of the best hit (best j,d cell). We use the
+     * scanner (not aligner) because the envelope may be slightly wider
+     * than the hit; the aligner would be forced to stretch the parse
+     * across non-hit residues, producing junk bands. */
+    if(pli->do_cykbands) {
+      Parsetree_t *new_tr = NULL;
+      float dummy_sc;
+      float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
+      int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
+                                           sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
+                                           0., NULL, NULL, &new_tr, &dummy_sc);
+      if(tr_status == eslOK && new_tr != NULL) {
+        trA_tmp[i]    = new_tr;
+        trA_tmp_es[i] = p7es[i];
+        trA_tmp_ee[i] = p7ee[i];
+      }
     }
 
 #if eslDEBUGLEVEL >= 2
@@ -4530,19 +4579,45 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 #endif
   }
   /* create list of surviving envelopes */
-  if(nenv > 0) { 
+  /* Reset any per-pipeline cyk_envtreeA from a previous sequence */
+  if(pli->cyk_envtreeA) {
+    int ti;
+    for(ti = 0; ti < pli->cyk_envtreeA_n; ti++) if(pli->cyk_envtreeA[ti]) FreeParsetree(pli->cyk_envtreeA[ti]);
+    free(pli->cyk_envtreeA);    pli->cyk_envtreeA    = NULL;
+    free(pli->cyk_envtreeA_es); pli->cyk_envtreeA_es = NULL;
+    free(pli->cyk_envtreeA_ee); pli->cyk_envtreeA_ee = NULL;
+    pli->cyk_envtreeA_n = 0;
+  }
+  if(nenv > 0) {
     ESL_ALLOC(es, sizeof(int64_t) * nenv);
     ESL_ALLOC(ee, sizeof(int64_t) * nenv);
+    if(pli->do_cykbands) {
+      ESL_ALLOC(pli->cyk_envtreeA,    sizeof(Parsetree_t *) * nenv);
+      ESL_ALLOC(pli->cyk_envtreeA_es, sizeof(int64_t)       * nenv);
+      ESL_ALLOC(pli->cyk_envtreeA_ee, sizeof(int64_t)       * nenv);
+      pli->cyk_envtreeA_n = nenv;
+    }
     si = 0;
-    for(i = 0; i < np7env; i++) { 
-      if(i_surv[i]) { 
+    for(i = 0; i < np7env; i++) {
+      if(i_surv[i]) {
 	es[si] = p7es[i];
 	ee[si] = p7ee[i];
 	pli->acct[pli->cur_pass_idx].n_past_cyk++;
 	pli->acct[pli->cur_pass_idx].pos_past_cyk += ee[si] - es[si] + 1;
+	if(pli->do_cykbands) {
+	  pli->cyk_envtreeA[si]    = trA_tmp ? trA_tmp[i]    : NULL;
+	  pli->cyk_envtreeA_es[si] = trA_tmp ? trA_tmp_es[i] : -1;
+	  pli->cyk_envtreeA_ee[si] = trA_tmp ? trA_tmp_ee[i] : -1;
+	  if(trA_tmp) trA_tmp[i] = NULL; /* ownership transferred */
+	}
 	si++;
       }
     }
+  }
+  /* free any unconsumed temp parsetrees (shouldn't happen, but safety) */
+  if(trA_tmp) {
+    int ti; for(ti = 0; ti < np7env; ti++) if(trA_tmp[ti]) FreeParsetree(trA_tmp[ti]);
+    free(trA_tmp); free(trA_tmp_es); free(trA_tmp_ee);
   }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
@@ -4782,7 +4857,33 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     cm->search_opts  = pli->final_cm_search_opts;
     cm->tau          = pli->final_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB2_LOOSE;
+
+    /* --cykbands: derive cp9 HMM bands directly from F6 CYK parsetree
+     * for this envelope, install into cm->cp9b, and signal dispatch to
+     * skip cp9_Seq2Bands. Also redefine the F7 envelope (es[i]..ee[i])
+     * to match the parsetree's span: this ensures bands frame == search
+     * frame, so the cm_BandsFromParsetree "widen to 1..L" step is valid. */
+    pli->use_stored_cp9b = FALSE;
+    if(pli->do_cykbands && (cm->search_opts & CM_SEARCH_HBANDED) &&
+       !cm_pli_PassAllowsTruncation(pli->cur_pass_idx) &&
+       pli->cyk_envtreeA != NULL && i < pli->cyk_envtreeA_n &&
+       pli->cyk_envtreeA[i] != NULL) {
+      Parsetree_t *tr     = pli->cyk_envtreeA[i];
+      int64_t      f6_es  = es[i];
+      int64_t      f6_ee  = ee[i];
+      /* Per-CM-state bands: derive imin/imax/jmin/jmax/hdmin/hdmax directly
+       * from the parsetree, with QDB-style child-to-parent inheritance for
+       * unvisited states. Avoids the HMM-node sweep contamination that
+       * breaks for permuted CMs. */
+      if(cm_BandsFromParsetree_perstate(cm, pli->errbuf, tr,
+                                        (int)f6_es, (int)f6_ee, pli->cyk_bpad,
+                                        cm->cp9b, pli->cur_pass_idx, 0) == eslOK) {
+        pli->use_stored_cp9b = TRUE;
+      }
+    }
+
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
+    pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F7_dp       += pli->last_dispatch_dp;
     if(status == eslERANGE) {
@@ -5261,11 +5362,22 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 
     esl_stopwatch_Start(w_cp9);
     int do_hbanded_done = FALSE; /* set TRUE once HMM bands are derived (skip other methods) */
+    /* --cykbands fast path: caller (pli_final_stage) has already preloaded
+     * cm->cp9b from a CYK parsetree captured during F6. Skip all cp9_Seq2Bands work. */
+    if(pli->use_stored_cp9b) {
+      int envL = (int)(stop - start + 1);
+      int sz_status = cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, envL, NULL, &hbmx_Mb);
+      if(sz_status == eslOK && hbmx_Mb <= mxsize_limit) {
+        do_hbanded_done = TRUE;
+        status = eslOK; /* signal success so subsequent error check doesn't trip */
+      }
+      /* On any failure, fall through to recompute bands via cp9_Seq2Bands. */
+    }
     /* --p7post_cp9b: use per-envelope pn_min/max precomputed at F5 time.
      * This fixes the architectural issue where gxfb/gxbb/p7bnd would only reflect
      * the last F5 window at dispatch time.  Fall back to vitband / cp9_IterateSeq2Bands
      * if no matching precomputed entry is found (e.g. final stage with updated boundaries). */
-    if(pli->do_p7post_cp9b && pli->p7pn_nenv > 0) {
+    if(!do_hbanded_done && pli->do_p7post_cp9b && pli->p7pn_nenv > 0) {
       int pn_x;
       for(pn_x = 0; pn_x < pli->p7pn_nenv; pn_x++)
 	if(pli->p7pn_es[pn_x] == start && pli->p7pn_ee[pn_x] == stop) break;
@@ -5418,6 +5530,9 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 				     cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
 	else {
+	  /* F6 CYK: use plain (non-shadow) scan. With --cykbands, the shadow
+	   * fill is paid only on F6 survivors via a separate call in
+	   * pli_cyk_env_filter, not on every envelope. */
 	  status = FastCYKScanHB(cm, pli->errbuf, cm->hb_mx, mxsize_limit, dsq, start, stop,
 				 cutoff, hitlist, pli->do_null3, env_cutoff, opt_envi, opt_envj, &sc);
 	}
@@ -5537,67 +5652,79 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
     /* sanity check */
     if(! (cm->align_opts & CM_ALIGN_POST)) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() using HMM bands but CM_ALIGN_POST is down");
 
-    /* --cykbands: replace the wide CP9-derived bands with tighter
-     * CYK-parsetree-derived bands before running the OA alignment.
-     * Requires running a CYK alignment first to get the parsetree.
-     * Skipped for truncated mode (where CYK alignment uses different bands).
-     */
-    if(pli->do_cykbands && !(cm->align_opts & CM_ALIGN_TRUNC)) {
-      CM_ALNDATA *cyk_adata = NULL;
-      int saved_align_opts = cm->align_opts;
-      int hit_L            = hit->stop - hit->start + 1;
+    /* --cykbands: cm->cp9b is already CYK-parsetree-derived (installed in
+     * pli_final_stage from the per-envelope F6 parsetree). The
+     * cp9_ShiftCMBands above shifted it to hit-relative coords. Nothing
+     * more to do here. Disable the legacy per-hit re-derivation block: */
+    if(0 && pli->do_cykbands && !(cm->align_opts & CM_ALIGN_TRUNC) &&
+       pli->cyk_envtree != NULL &&
+       hit->start >= pli->cyk_envtree_es && hit->stop <= pli->cyk_envtree_ee) {
+      int  hit_L     = hit->stop - hit->start + 1;
+      int  env_L     = (int)(pli->cyk_envtree_ee - pli->cyk_envtree_es + 1);
+      int  shift     = (int)(hit->start - pli->cyk_envtree_es); /* offset from env start to hit start */
+      int  M         = cm->cp9b->hmm_M;
+      int *new_pn_min_m = NULL, *new_pn_max_m = NULL;
+      int *new_pn_min_i = NULL, *new_pn_max_i = NULL;
+      int *new_pn_min_d = NULL, *new_pn_max_d = NULL;
+      int  alloc_status = eslOK;
+      int  k;
 
-      /* Configure for CYK alignment only (no posteriors, no OA) */
-      cm->align_opts &= ~CM_ALIGN_OPTACC;
-      cm->align_opts &= ~CM_ALIGN_POST;
-      cm->align_opts |= CM_ALIGN_CYK;
+      if((new_pn_min_m = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+      if((new_pn_max_m = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+      if((new_pn_min_i = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+      if((new_pn_max_i = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+      if((new_pn_min_d = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
+      if((new_pn_max_d = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
 
-      status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,
-                                   TRUE, /* cp9b bands are valid, don't recalc */
-                                   NULL, NULL, NULL, &cyk_adata);
-      cm->align_opts = saved_align_opts;
-
-      if(status == eslOK && cyk_adata != NULL && cyk_adata->tr != NULL) {
-        /* Derive new tight bands from the CYK parsetree */
-        int M = cm->cp9b->hmm_M;
-        int *new_pn_min_m = NULL, *new_pn_max_m = NULL;
-        int *new_pn_min_i = NULL, *new_pn_max_i = NULL;
-        int *new_pn_min_d = NULL, *new_pn_max_d = NULL;
-        int alloc_status = eslOK;
-
-        if((new_pn_min_m = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
-        if((new_pn_max_m = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
-        if((new_pn_min_i = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
-        if((new_pn_max_i = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
-        if((new_pn_min_d = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
-        if((new_pn_max_d = malloc(sizeof(int) * (M+1))) == NULL) alloc_status = eslEMEM;
-
-        if(alloc_status == eslOK) {
-          status = cm_BandsFromParsetree(cm, cyk_adata->tr, hit_L, pli->cyk_bpad,
-                                         new_pn_min_m, new_pn_max_m,
-                                         new_pn_min_i, new_pn_max_i,
-                                         new_pn_min_d, new_pn_max_d);
-          if(status == eslOK) {
-            /* Replace cm->cp9b bands with new tight bands.
-             * Use envelope coords (1..hit_L) since the parsetree was in those coords. */
-            status = p7pn_bands_to_cp9cm_bands(cm, pli->errbuf,
-                                               new_pn_min_m, new_pn_max_m,
-                                               new_pn_min_i, new_pn_max_i,
-                                               new_pn_min_d, new_pn_max_d,
-                                               cm->cp9b, 1, hit_L, hit_L,
-                                               pli->cur_pass_idx, 0);
+      if(alloc_status == eslOK) {
+        /* Derive bands from the stored parsetree.
+         * The parsetree is in 1..env_L envelope-relative coords. */
+        status = cm_BandsFromParsetree(cm, pli->cyk_envtree, env_L, pli->cyk_bpad,
+                                       new_pn_min_m, new_pn_max_m,
+                                       new_pn_min_i, new_pn_max_i,
+                                       new_pn_min_d, new_pn_max_d);
+        if(status == eslOK) {
+          /* Shift bands from envelope-relative coords (1..env_L) to
+           * hit-relative coords (1..hit_L) by subtracting <shift>.
+           * Clamp to [1..hit_L]; mark as unset if entirely outside. */
+          for(k = 0; k <= M; k++) {
+            int lo, hi;
+            if(new_pn_min_m[k] != -1) {
+              lo = new_pn_min_m[k] - shift; hi = new_pn_max_m[k] - shift;
+              if(hi < 1 || lo > hit_L) { new_pn_min_m[k] = -1; new_pn_max_m[k] = -1; }
+              else { if(lo < 1) lo = 1; if(hi > hit_L) hi = hit_L; new_pn_min_m[k] = lo; new_pn_max_m[k] = hi; }
+            }
+            if(new_pn_min_i[k] != -1) {
+              lo = new_pn_min_i[k] - shift; hi = new_pn_max_i[k] - shift;
+              if(hi < 1 || lo > hit_L) { new_pn_min_i[k] = -1; new_pn_max_i[k] = -1; }
+              else { if(lo < 1) lo = 1; if(hi > hit_L) hi = hit_L; new_pn_min_i[k] = lo; new_pn_max_i[k] = hi; }
+            }
+            if(new_pn_min_d[k] != -1) {
+              lo = new_pn_min_d[k] - shift; hi = new_pn_max_d[k] - shift;
+              if(hi < 0 || lo > hit_L) { new_pn_min_d[k] = -1; new_pn_max_d[k] = -1; }
+              else { if(lo < 0) lo = 0; if(hi > hit_L) hi = hit_L; new_pn_min_d[k] = lo; new_pn_max_d[k] = hi; }
+            }
           }
-        }
+          /* Re-fix node 0 special case after shift */
+          new_pn_min_m[0] = 0; new_pn_max_m[0] = 0;
+          new_pn_min_d[0] = -1; new_pn_max_d[0] = -1;
 
-        if(new_pn_min_m) free(new_pn_min_m);
-        if(new_pn_max_m) free(new_pn_max_m);
-        if(new_pn_min_i) free(new_pn_min_i);
-        if(new_pn_max_i) free(new_pn_max_i);
-        if(new_pn_min_d) free(new_pn_min_d);
-        if(new_pn_max_d) free(new_pn_max_d);
+          /* Replace cm->cp9b bands with the shifted tight bands */
+          status = p7pn_bands_to_cp9cm_bands(cm, pli->errbuf,
+                                             new_pn_min_m, new_pn_max_m,
+                                             new_pn_min_i, new_pn_max_i,
+                                             new_pn_min_d, new_pn_max_d,
+                                             cm->cp9b, 1, hit_L, hit_L,
+                                             pli->cur_pass_idx, 0);
+        }
       }
 
-      if(cyk_adata != NULL) cm_alndata_Destroy(cyk_adata, FALSE);
+      if(new_pn_min_m) free(new_pn_min_m);
+      if(new_pn_max_m) free(new_pn_max_m);
+      if(new_pn_min_i) free(new_pn_min_i);
+      if(new_pn_max_i) free(new_pn_max_i);
+      if(new_pn_min_d) free(new_pn_min_d);
+      if(new_pn_max_d) free(new_pn_max_d);
 
       /* If anything failed, fall through to use the original (shifted) bands */
       if(status != eslOK) status = eslOK;
