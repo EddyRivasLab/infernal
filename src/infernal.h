@@ -2264,8 +2264,6 @@ typedef struct cm_pipeline_s {
   int           do_msvband;      /* TRUE to use MSV-derived banded F4/F5 (--msvband)                     */
   int           do_vitband;      /* TRUE to use Viterbi-derived banded F4/F5 (--vitband)                 */
   int           vitband_local;   /* TRUE to use local Viterbi for --vitband (default: glocal)            */
-  int           nop7b_cp9b;      /* TRUE to skip p7-banded CP9 F/B, use unbanded CP9 (--nop7b_cp9b)    */
-  int           do_p7b_to_cp9b;  /* TRUE to use direct p7->CP9 band conversion, bypass CP9 F/B (--p7b_to_cp9b) */
   int           do_p7post_cp9b;  /* TRUE to derive CP9 bands from p7 glocal F/B posteriors (--p7post_cp9b)    */
   float         p7_fwdsc;        /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
   int           p7_window_start; /* absolute start (1-indexed) of current window, for --p7post_cp9b coord map  */
@@ -2285,13 +2283,9 @@ typedef struct cm_pipeline_s {
   int     *p7pn_min_d;          /* flat [e*(M+1)+k] delete min */
   int     *p7pn_max_d;          /* flat [e*(M+1)+k] delete max */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
-  int           p7band_ppad;    /* pair-position band pad, -1 if not set (--p7bppad)                    */
-  int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad (built from p7band_pad/ppad) */
+  int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad */
   char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
-  int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7nodepad-plus, default 0)   */
-  float         p7band_miscale; /* MI scale factor for per-node pad, -1.0 if not set (--p7bmisc)             */
-  float         p7band_midiff;  /* MI diffusion scale, -1.0 if not set (--p7bmidiff)                        */
-  float         p7band_midecay; /* MI decay per singlet node for diffusion (--p7bmidecay)                   */
+  int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7padplus, default 0)        */
   int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
   int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
   Parsetree_t  *cyk_envtree;    /* CYK parsetree from most recent F6 CYK scan (for --cykbands), or NULL    */

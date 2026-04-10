@@ -33,7 +33,6 @@ extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 
-static int  pli_build_nodepad      (CM_PIPELINE *pli, CM_t *cm);
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
             P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, float **ret_eb, P7_ALIDISPLAY ***ret_ead, int *ret_nenv);
@@ -304,14 +303,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_msvband         = (esl_opt_IsOn(go, "--msvband"))   ? TRUE  : FALSE;
   pli->do_vitband         = (esl_opt_IsOn(go, "--vitband"))   ? TRUE  : FALSE;
   pli->vitband_local      = (esl_opt_IsOn(go, "--vitblocal")) ? TRUE  : FALSE;
-  pli->nop7b_cp9b         = (esl_opt_IsOn(go, "--nop7b_cp9b"))   ? TRUE : FALSE;
-  pli->do_p7b_to_cp9b    = (esl_opt_IsOn(go, "--p7b_to_cp9b"))   ? TRUE : FALSE;
   pli->do_p7post_cp9b    = (esl_opt_IsOn(go, "--p7post_cp9b"))   ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
-  pli->p7band_ppad        = esl_opt_IsOn(go, "--p7bppad")   ? esl_opt_GetInteger(go, "--p7bppad") : -1;
-  pli->p7band_miscale     = esl_opt_IsOn(go, "--p7bmisc")    ? (float) esl_opt_GetReal(go, "--p7bmisc")    : -1.0f;
-  pli->p7band_midiff      = esl_opt_IsOn(go, "--p7bmidiff") ? (float) esl_opt_GetReal(go, "--p7bmidiff") : -1.0f;
-  pli->p7band_midecay     = (float) esl_opt_GetReal(go, "--p7bmidecay"); /* default 1.0 */
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
   pli->p7nodepad_file     = esl_opt_IsOn(go, "--p7nodepad-file") ? esl_opt_GetString(go, "--p7nodepad-file") : NULL;
   pli->p7nodepad_plus     = esl_opt_GetInteger(go, "--p7padplus");
@@ -1581,11 +1574,6 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   printf("#DEBUG: do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 #endif
 
-  /* Build per-node pad array if --p7bppad, --p7bmisc, or --p7bmidiff is set and we have the CM.
-   * Rebuild every time since each family has a different CM/M. */
-  if((pli->p7band_ppad >= 0 || pli->p7band_miscale > 0. || pli->p7band_midiff > 0.) && opt_cm != NULL && *opt_cm != NULL) {
-    if((status = pli_build_nodepad(pli, *opt_cm)) != eslOK) return status;
-  }
   /* --p7nodepad-file: read per-state pad vector from file written by p7bandsim. */
   if(pli->p7nodepad_file != NULL && opt_cm != NULL && *opt_cm != NULL) {
     int   M = (*opt_cm)->cp9map->hmm_M;
@@ -2807,6 +2795,12 @@ cm_pli_AdjustNresForOverlaps(CM_PIPELINE *pli, int64_t noverlap, int in_rc)
  *****************************************************************/
 
 
+/* Function:  pli_p7_filter() is below; pli_build_nodepad() was removed
+ * (it handled --p7bppad, --p7bmisc, --p7bmidiff which are superseded
+ * by --p7nodepad-file from p7bandsim).
+ */
+
+#if 0 /* pli_build_nodepad REMOVED — superseded by p7bandsim per-state pads */
 /* Function:  pli_build_nodepad()
  * Incept:    EPN, Fri Apr  4 2026
  *
@@ -3012,6 +3006,7 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
   if(node_mi_right)  free(node_mi_right);
   return status;
 }
+#endif /* pli_build_nodepad REMOVED */
 
 
 /* Function:  pli_p7_filter()
@@ -5489,7 +5484,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	/* If status != eslOK (e.g. eslERANGE): fall through to vitband / cp9_IterateSeq2Bands */
       }
     }
-    if(!do_hbanded_done && (pli->do_msvband || pli->do_vitband) && (!pli->nop7b_cp9b || pli->do_p7b_to_cp9b) && pli->p7gm != NULL && pli->p7bg != NULL) {
+    if(!do_hbanded_done && (pli->do_msvband || pli->do_vitband) && pli->p7gm != NULL && pli->p7bg != NULL) {
       /* --msvband/--vitband path: derive p7 bands for envelope, use banded CP9 F/B */
       int    envL = (int)(stop - start + 1);
       int   *p7_kmin = NULL, *p7_kmax = NULL, *p7_i2k = NULL;
@@ -5536,13 +5531,8 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
 
       if(status == eslOK && p7_ncells > 0) {
-	/* Use p7 bands to derive CM bands, via one of two methods */
-	if(pli->do_p7b_to_cp9b) {
-	  /* Direct p7->CP9 band conversion: O(L*avg_bandwidth), no CP9 F/B */
-	  status = p7bands_to_cp9bands(cm, pli->errbuf, p7_kmin, p7_kmax, envL,
-				       cm->cp9b, (int)start, (int)stop, pli->cur_pass_idx, 0);
-	} else {
-	  /* Default: p7-banded CP9 F/B */
+	/* Use p7 bands to derive CM bands via p7-banded CP9 F/B */
+	{
 	  status = cp9_Seq2BandsP7B(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
 				    dsq + start - 1, envL, cm->cp9b, p7_kmin, p7_kmax,
 				    (int)start, (int)stop, pli->cur_pass_idx, 0);
