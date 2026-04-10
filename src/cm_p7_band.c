@@ -610,11 +610,52 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   }
 
   /* M_0 == B state, which must start the parse with i == 0 */
-  kmin[0] = 0; 
+  kmin[0] = 0;
+
+  /* D-state bridge: ensure the band at each emitting position i
+   * extends far enough in k to reach the next emitting position's k
+   * via delete states. Without this, deletion runs in the trace
+   * (M_k(i) → D_{k+1} → ... → M_{k'}(i+1)) can't propagate through
+   * the banded Forward DP because the D-state columns k+1..k'-1
+   * aren't in the band at row i.
+   *
+   * Fix: for each pair of consecutive pins (i with k) and (i' with k'),
+   * if k' > kmax[i], widen kmax[i] to k' (and also kmax at any
+   * intermediate unpinned rows between i and i'). Symmetrically,
+   * if k < kmin[i'], widen kmin[i'] down to k.
+   */
+  {
+    int prev_pin_i = -1, prev_pin_k = -1;
+    for(i = 0; i <= L; i++) {
+      if(i2k[i] != -1) {
+        if(prev_pin_i >= 0) {
+          /* Bridge from previous pin to current pin */
+          int pk = prev_pin_k;
+          int ck = i2k[i];
+          if(ck > pk) {
+            /* Need D-state columns pk+1..ck at rows prev_pin_i..i-1 */
+            int j;
+            for(j = prev_pin_i; j < i; j++) {
+              if(kmax[j] < ck) kmax[j] = ESL_MIN(M, ck);
+            }
+          }
+          if(pk > ck) {
+            /* Reverse: need D-state columns ck..pk-1 at rows prev_pin_i+1..i */
+            int j;
+            for(j = prev_pin_i + 1; j <= i; j++) {
+              if(kmin[j] > ck) kmin[j] = ESL_MAX(1, ck);
+            }
+          }
+        }
+        prev_pin_i = i;
+        prev_pin_k = i2k[i];
+      }
+    }
+  }
 
   /* get number of cells if wanted */
   int ncells;
-  if(ret_ncells != NULL) { 
+  if(ret_ncells != NULL) {
     ncells = 0;
     for(i = 1; i <= L; i++) ncells += kmax[i] - kmin[i] + 1;
     *ret_ncells = ncells;
@@ -686,6 +727,34 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 
   /* M_0 == B state, which must start the parse with i == 0 */
   kmin[0] = 0;
+
+  /* D-state bridge (same as p7_pins2bands): widen bands between consecutive
+   * pins to allow delete-state transitions through the banded Forward DP. */
+  {
+    int prev_pin_i = -1, prev_pin_k = -1;
+    for(i = 0; i <= L; i++) {
+      if(i2k[i] != -1) {
+        if(prev_pin_i >= 0) {
+          int pk = prev_pin_k;
+          int ck = i2k[i];
+          if(ck > pk) {
+            int j;
+            for(j = prev_pin_i; j < i; j++) {
+              if(kmax[j] < ck) kmax[j] = ESL_MIN(M, ck);
+            }
+          }
+          if(pk > ck) {
+            int j;
+            for(j = prev_pin_i + 1; j <= i; j++) {
+              if(kmin[j] > ck) kmin[j] = ESL_MAX(1, ck);
+            }
+          }
+        }
+        prev_pin_i = i;
+        prev_pin_k = i2k[i];
+      }
+    }
+  }
 
   /* get number of cells if wanted */
   int ncells;
@@ -4256,13 +4325,20 @@ p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p
   ESL_ALLOC(i2k, sizeof(int) * (L + 1));
   esl_vec_ISet(i2k, (L + 1), -1);
 
+  int nB = 0; /* count B states = number of hits in trace */
+  int nM = 0; /* total M states */
   for (tpos = 0; tpos < p7_tr->N; tpos++) {
+    if (p7_tr->st[tpos] == p7T_B) nB++;
     if (p7_tr->st[tpos] == p7T_M) {
+      nM++;
       int i = p7_tr->i[tpos];
       int k = p7_tr->k[tpos];
       if (i >= 1 && i <= L && k >= 1 && k <= M)
 	i2k[i] = k;
     }
+  }
+  if (getenv("VITBAND_MULTIHIT_DBG")) {
+    fprintf(stderr, "#VITBAND_MULTIHIT L=%d M=%d nhit=%d nM=%d sc=%.2f\n", L, M, nB, nM, sc);
   }
 
   /* Step 4: Pins -> bands */
@@ -4439,14 +4515,7 @@ p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_b
     kb = ESL_MIN(M, kmax[i]);  /* ensure kb <= M */
     if (ka > kb) ka = kb;      /* ensure ka <= kb (can happen with non-uniform nodepad) */
     
-    /* For unaligned positions with narrow bands, widen them significantly */
-    if (i2k != NULL && i2k[i] == -1 && (kb - ka + 1) < 0.5 * M) {
-      /* Widen to at least 50% of M for unaligned positions */
-      int band_center = (ka + kb) / 2;
-      int half_width = ESL_MAX((kb - ka + 1), M / 4);  /* at least 25% on each side */
-      ka = ESL_MAX(1, band_center - half_width);
-      kb = ESL_MIN(M, band_center + half_width);
-    }
+    /* (widening for unaligned positions removed — was inflating bands) */
     
     if ((status = p7_gbands_Append(bnd, i, ka, kb)) != eslOK) goto ERROR;
   }

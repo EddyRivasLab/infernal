@@ -2287,6 +2287,8 @@ typedef struct cm_pipeline_s {
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
   int           p7band_ppad;    /* pair-position band pad, -1 if not set (--p7bppad)                    */
   int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad (built from p7band_pad/ppad) */
+  char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
+  int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7nodepad-plus, default 0)   */
   float         p7band_miscale; /* MI scale factor for per-node pad, -1.0 if not set (--p7bmisc)             */
   float         p7band_midiff;  /* MI diffusion scale, -1.0 if not set (--p7bmidiff)                        */
   float         p7band_midecay; /* MI decay per singlet node for diffusion (--p7bmidecay)                   */

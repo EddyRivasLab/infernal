@@ -68,7 +68,8 @@ PROGS = cmalign\
 	cp9-test\
 	sub_cm-test\
 	truncyk_check\
-	p7band-test
+	p7band-test\
+	p7bandsim
 
 # list of executable programs that get installed
 IPROGS = \
@@ -97,7 +98,8 @@ PROGOBJS = \
 	cp9-test.o\
 	sub_cm-test.o\
 	truncyk_check.o\
-	p7band-test.o
+	p7band-test.o\
+	p7bandsim.o
 
 HDRS =  infernal.h
 

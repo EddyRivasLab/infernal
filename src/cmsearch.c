@@ -238,6 +238,8 @@ static ESL_OPTIONS options[] = {
   { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  "--p7post_cp9b", "--p7pthr", "set cumulative tau for --p7post_cp9b bands",                   106 },
   { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },
   { "--cykbpad",   eslARG_INT,    "10",  NULL, "n>=0",  NULL,  "--cykbands", NULL, "with --cykbands, band pad",                                                                  106 },
+  { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, "--vitband", NULL, "with --vitband, read per-state p7 pads from <f>",                                            106 },
+  { "--p7padplus",  eslARG_INT,    "0", NULL, "n>=0", NULL, "--p7nodepad-file", NULL, "add <n> to every per-state pad",                                                            106 },
   { "--p7sc",      eslARG_REAL,  "0.0", NULL, "x>=0",  NULL,  "--msvband", NULL, "with --msvband, min pin match score for pruning",                        106 },
   { "--p7len",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min nmer length for pruning",                            106 },
   { "--p7end",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min dist from nmer end for pruning",                     106 },

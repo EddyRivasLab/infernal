@@ -313,6 +313,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7band_midiff      = esl_opt_IsOn(go, "--p7bmidiff") ? (float) esl_opt_GetReal(go, "--p7bmidiff") : -1.0f;
   pli->p7band_midecay     = (float) esl_opt_GetReal(go, "--p7bmidecay"); /* default 1.0 */
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
+  pli->p7nodepad_file     = esl_opt_IsOn(go, "--p7nodepad-file") ? esl_opt_GetString(go, "--p7nodepad-file") : NULL;
+  pli->p7nodepad_plus     = esl_opt_GetInteger(go, "--p7padplus");
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
   pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
   pli->cyk_envtree        = NULL;
@@ -1583,6 +1585,28 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
    * Rebuild every time since each family has a different CM/M. */
   if((pli->p7band_ppad >= 0 || pli->p7band_miscale > 0. || pli->p7band_midiff > 0.) && opt_cm != NULL && *opt_cm != NULL) {
     if((status = pli_build_nodepad(pli, *opt_cm)) != eslOK) return status;
+  }
+  /* --p7nodepad-file: read per-state pad vector from file written by p7bandsim. */
+  if(pli->p7nodepad_file != NULL && opt_cm != NULL && *opt_cm != NULL) {
+    int   M = (*opt_cm)->cp9map->hmm_M;
+    FILE *pf = fopen(pli->p7nodepad_file, "r");
+    if(pf == NULL) ESL_FAIL(eslFAIL, pli->errbuf, "could not open --p7nodepad-file %s", pli->p7nodepad_file);
+    if(pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
+    ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M + 1));
+    int k_read, pad_read;
+    int n_set = 0;
+    char linebuf[256];
+    while(fgets(linebuf, sizeof(linebuf), pf) != NULL) {
+      if(linebuf[0] == '#') continue;
+      if(sscanf(linebuf, "%d %d", &k_read, &pad_read) == 2) {
+        if(k_read >= 0 && k_read <= M) {
+          pli->p7_nodepad[k_read] = pad_read + pli->p7nodepad_plus;
+          n_set++;
+        }
+      }
+    }
+    fclose(pf);
+    if(n_set < M) ESL_FAIL(eslEFORMAT, pli->errbuf, "--p7nodepad-file %s only set %d/%d nodes", pli->p7nodepad_file, n_set, M);
   }
 
   /* First loop over each pipeline pass:
