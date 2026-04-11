@@ -1574,9 +1574,12 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   printf("#DEBUG: do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 #endif
 
-  /* --p7nodepad-file: read per-state pad vector from file written by p7bandsim. */
-  if(pli->p7nodepad_file != NULL && opt_cm != NULL && *opt_cm != NULL) {
-    int   M = (*opt_cm)->cp9map->hmm_M;
+  /* --p7nodepad-file: read per-state pad vector from file written by p7bandsim.
+   * In SCAN mode (cmscan), *opt_cm may be NULL at this point (the CM is loaded
+   * lazily by pli_scan_mode_read_cm), so use om->M as the model length source
+   * — it matches cm->cp9map->hmm_M for mlp7 filter profiles. */
+  if(pli->p7nodepad_file != NULL && om != NULL) {
+    int   M = om->M;
     FILE *pf = fopen(pli->p7nodepad_file, "r");
     if(pf == NULL) ESL_FAIL(eslFAIL, pli->errbuf, "could not open --p7nodepad-file %s", pli->p7nodepad_file);
     if(pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
@@ -5925,7 +5928,8 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
   }
 #endif
   cm_file_Position(pli->cmfp, cm_offset);
-  if((status = cm_file_Read(pli->cmfp, FALSE, &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
+  /* read_fp7=TRUE: needed for --msvband / --vitband which call p7_ProfileConfig(cm->fp7,...) in dispatch */
+  if((status = cm_file_Read(pli->cmfp, TRUE, &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
 #ifdef HMMER_THREADS
   if (pli->cmfp->syncRead) { 
     if (pthread_mutex_unlock (&pli->cmfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");

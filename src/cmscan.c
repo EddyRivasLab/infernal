@@ -241,6 +241,24 @@ static ESL_OPTIONS options[] = {
   { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", NULL, /* see ** above */ "terminate after Stage 3 Fwd and output surviving windows",       106 },
   { "--trmF5",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,    NULL, /* see ** above */ "terminate after Stage 5 env def and output surviving envelopes", 106 },
   { "--fullseqF5", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--trmF5", NULL, "skip HMM stages F1-F3, force full sequence into F5 stage",              106 },
+  { "--msvband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--vitband", "use MSV-derived bands for F4/F5 (experimental)",                       106 },
+  { "--vitband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--msvband", "use Viterbi-derived bands for F4/F5 (glocal by default)",              106 },
+  { "--vitblocal", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--vitband", NULL, "with --vitband, use local Viterbi instead of glocal",                  106 },
+  { "--p7post_cp9b",  eslARG_NONE, FALSE, NULL, NULL,    NULL,  "--vitband", NULL, "derive CP9 bands from p7 F/B posteriors",                              106 },
+  { "--p7bpad",    eslARG_INT,    "3",   NULL, "n>=0",  NULL,  NULL, NULL, "set band half-width (padding) for F4/F5",                                     106 },
+  { "--p7pthr",    eslARG_REAL, "1e-5", NULL, "0<x<1", NULL,  "--p7post_cp9b", "--p7tau", "set --p7post_cp9b posterior prob threshold",                    106 },
+  { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  "--p7post_cp9b", "--p7pthr", "set cumulative tau for --p7post_cp9b bands",                   106 },
+  { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },
+  { "--cykbpad",   eslARG_INT,    "10",  NULL, "n>=0",  NULL,  "--cykbands", NULL, "with --cykbands, band pad",                                                                  106 },
+  { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, "--vitband", NULL, "with --vitband, read per-state p7 pads from <f>",                                            106 },
+  { "--p7padplus",  eslARG_INT,    "0", NULL, "n>=0", NULL, "--p7nodepad-file", NULL, "add <n> to every per-state pad",                                                            106 },
+  { "--p7sc",      eslARG_REAL,  "0.0", NULL, "x>=0",  NULL,  "--msvband", NULL, "with --msvband, min pin match score for pruning",                        106 },
+  { "--p7len",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min nmer length for pruning",                            106 },
+  { "--p7end",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min dist from nmer end for pruning",                     106 },
+  { "--p7mprob",   eslARG_REAL,  "0.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "with --msvband, min match phi prob for pruning",                       106 },
+  { "--p7mcprob",  eslARG_REAL,  "0.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "min cumul match phi prob for pruning",                                106 },
+  { "--p7iprob",   eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max insert phi prob for pruning",                                     106 },
+  { "--p7ilprob",  eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max left-insert phi prob for pruning",                                106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },
@@ -1200,7 +1218,7 @@ pipeline_thread(void *arg)
             if(tinfo->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(tinfo->th, prv_ntophits, tinfo->qsq->start, tinfo->in_rc);
             
             if(tinfo->th->N != prv_ntophits && (! tinfo->pli->do_trm_F3)) { 
-              if(tinfo->pli->do_hmmonly_cur || tinfo->pli->do_trm_F5 || tinfo->pli->do_trm_F5) eZ = tinfo->pli->Z / (float) om->max_length;
+              if(tinfo->pli->do_hmmonly_cur || tinfo->pli->do_trm_F5) eZ = tinfo->pli->Z / (float) om->max_length;
               else                	  eZ = cm->expA[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
               cm_tophits_ComputeEvalues(tinfo->th, eZ, prv_ntophits);
             }
