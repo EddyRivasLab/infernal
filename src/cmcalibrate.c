@@ -94,6 +94,7 @@ static ESL_OPTIONS options[] = {
   { "--qqfile",     eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save Q-Q plot for score histograms to file <f>",        4 },
   { "--ffile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save lambdas for different tail fit probs to file <f>", 4 },
   { "--xfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save scores in fit tail to file <f>",                   4 },
+  { "--xseqs",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,         NULL,      NULL, "save generated random sequences to FASTA file <f>",    4 },
   /* Options for split or partition or merge modes */
   { "--split",      eslARG_NONE,       NULL, NULL,            NULL,      NULL,"--ptot,--cfile",   "--forecast",   "prepare partitioned calibration",      5 },
   { "--cfile",      eslARG_OUTFILE,    NULL, NULL,            NULL,      NULL,       "--split",   NULL,           "with --split, save file with commands for each partition to <f>", 5 },
@@ -173,6 +174,7 @@ struct cfg_s {
   FILE            *qfp;               /* optional output for exp tail QQ file */
   FILE            *ffp;               /* optional output for exp tail fit file */
   FILE            *xfp;               /* optional output for exp tail fit scores */
+  FILE            *seqsfp;            /* optional output for generated random sequences (FASTA) */
   FILE            *cfp;               /* optional output for commands in split mode */
   FILE            *pfp;               /* optional output for scores files with --part mode */
 };
@@ -277,6 +279,7 @@ main(int argc, char **argv)
   cfg.qfp          = NULL; /* remains NULL for mpi workers */
   cfg.ffp          = NULL; /* remains NULL for mpi workers */
   cfg.xfp          = NULL; /* remains NULL for mpi workers */
+  cfg.seqsfp       = NULL; /* remains NULL for mpi workers */
   cfg.cfp          = NULL; /* remains NULL for mpi workers */
   cfg.pfp          = NULL; /* remains NULL for mpi workers */
 
@@ -513,9 +516,13 @@ main(int argc, char **argv)
       fclose(cfg.ffp);
       printf("# Exponential tail fit points saved to file %s.\n", esl_opt_GetString(go, "--ffile"));
     }
-    if (cfg.xfp   != NULL) { 
+    if (cfg.xfp   != NULL) {
       fclose(cfg.xfp);
       printf("# Scores from tail fits saved to file %s.\n", esl_opt_GetString(go, "--xfile"));
+    }
+    if (cfg.seqsfp != NULL) {
+      fclose(cfg.seqsfp);
+      printf("# Generated random sequences saved to FASTA file %s.\n", esl_opt_GetString(go, "--xseqs"));
     }
 
     if (cfg.expAA    != NULL) free(cfg.expAA);
@@ -1766,6 +1773,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if ((cfg->xfp = fopen(esl_opt_GetString(go, "--xfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail scores save file %s for writing\n", esl_opt_GetString(go, "--xfile"));
   }
+  if (esl_opt_GetString(go, "--xseqs") != NULL) {
+    if ((cfg->seqsfp = fopen(esl_opt_GetString(go, "--xseqs"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open random sequences save file %s for writing\n", esl_opt_GetString(go, "--xseqs"));
+  }
 
   /* create the stopwatch */
   cfg->w = esl_stopwatch_Create();
@@ -2268,11 +2279,26 @@ generate_sequences(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
     if(esl_opt_GetBoolean(go, "--random") || esl_opt_IsUsed(go, "--gc")) { 
       if((status = get_random_dsq(cfg, errbuf, cm, cfg->L, cfg->r, &dsq)) != eslOK) goto ERROR;
     }
-    else { 
+    else {
       if((status = SampleGenomicSequenceFromHMM(cfg->r, cfg->abc, errbuf, cfg->ghmm_sA, cfg->ghmm_tAA, cfg->ghmm_eAA, cfg->ghmm_nstates, cfg->L, &dsq)) != eslOK) goto ERROR;
     }
 
-    /* Copy dsq we just created into sq_block->list+i 
+    /* If --xseqs was given, dump this sequence as FASTA before copying into
+     * sq_block. Name sequences cmcal_<partition_seed>_<i> so each is unique.
+     */
+    if (cfg->seqsfp != NULL) {
+      int j;
+      int linelen = 60;
+      fprintf(cfg->seqsfp, ">cmcal_seed%u_%d\n",
+              esl_randomness_GetSeed(cfg->r), i);
+      for (j = 1; j <= cfg->L; j++) {
+        fputc(cfg->abc->sym[dsq[j]], cfg->seqsfp);
+        if (j % linelen == 0) fputc('\n', cfg->seqsfp);
+      }
+      if ((cfg->L) % linelen != 0) fputc('\n', cfg->seqsfp);
+    }
+
+    /* Copy dsq we just created into sq_block->list+i
      * We can't use esl_sq_CreateDigitalFrom() bc sq_block->list already contains a contiguous set of ESL_SQ objects 
      */
     sq = sq_block->list + i;
