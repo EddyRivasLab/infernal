@@ -75,9 +75,6 @@
  * 1. Default values for various parameters, and other constant definitions.
  ***********************************************************************************/
 
-#define PSI_LEN_THRESHOLD           15000.        /* EPN 11.08.24 (formerly 25000, models > this len get 
-                                                   * more tolerance in psi (state occupancy) calculation 
-                                                   * see cm_ExpectedStateOccupancy() */
 #define DEFAULT_BETA_W              1E-7
 #define DEFAULT_BETA_QDB1           1E-7
 #define DEFAULT_BETA_QDB2           1E-15
@@ -2231,6 +2228,8 @@ typedef struct cm_pipeline_s {
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
   /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
   int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
+  int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
+  int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
@@ -3083,8 +3082,8 @@ extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *p
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
 
 /* from cm_p7_domaindef.c */
-extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb,
-						    P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2);
+extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
+              P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
 
 /* from cm_p7_modelconfig_trunc.c */
 extern int p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
@@ -3096,8 +3095,9 @@ extern int p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 /* from cm_p7_modelmaker.c */
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);
 extern int          cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf);
-extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, double *ret_gfmu, double *ret_gflambda);
-extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau);
+extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int seed, int ncpus, double *ret_gfmu, double *ret_gflambda);
+extern int          cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *opt_sc);
+extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, int ncpus, double *ret_tau);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 extern float        cm_p7_hmm_Sizeof(P7_HMM *hmm);

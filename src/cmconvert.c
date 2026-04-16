@@ -147,12 +147,14 @@ configure_model(CM_t *cm, char *errbuf)
   gftailp = 0.065;
 
   /* Calibrate the ML p7 hmm */
-  if((status = cm_p7_Calibrate(cm->mlp7, errbuf, 
-			       lmsvL, lvitL, lfwdL, gfwdL, /* length of sequences to search for local (lL) and glocal (gL) modes */    
+  if((status = cm_p7_Calibrate(cm->mlp7, errbuf,
+			       lmsvL, lvitL, lfwdL, gfwdL, /* length of sequences to search for local (lL) and glocal (gL) modes */
 			       lmsvN, lvitN, lfwdN, gfwdN, /* number of seqs to search for each alg */
 			       lftailp,                    /* fraction of tail mass to fit for local Fwd */
 			       gftailp,                    /* fraction of tail mass to fit for glocal Fwd */
-			       &fil_gfmu, &fil_gflambda))  
+			       42,                         /* seed: default */
+			       0,                          /* ncpus: 0 = serial */
+			       &fil_gfmu, &fil_gflambda))
      != eslOK) return status;
   if((status = cm_SetFilterHMM(cm, cm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
 

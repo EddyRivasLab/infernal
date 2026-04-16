@@ -239,6 +239,8 @@ static ESL_OPTIONS options[] = {
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
   /* name           type          default env   range toggles reqs                             incomp  help                                                         docgroup*/
   { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", NULL, /* see ** above */ "terminate after Stage 3 Fwd and output surviving windows",       106 },
+  { "--trmF5",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,    NULL, /* see ** above */ "terminate after Stage 5 env def and output surviving envelopes", 106 },
+  { "--fullseqF5", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--trmF5", NULL, "skip HMM stages F1-F3, force full sequence into F5 stage",              106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },
@@ -1198,7 +1200,7 @@ pipeline_thread(void *arg)
             if(tinfo->th->N != prv_ntophits) cm_tophits_UpdateHitPositions(tinfo->th, prv_ntophits, tinfo->qsq->start, tinfo->in_rc);
             
             if(tinfo->th->N != prv_ntophits && (! tinfo->pli->do_trm_F3)) { 
-              if(tinfo->pli->do_hmmonly_cur) eZ = tinfo->pli->Z / (float) om->max_length;
+              if(tinfo->pli->do_hmmonly_cur || tinfo->pli->do_trm_F5 || tinfo->pli->do_trm_F5) eZ = tinfo->pli->Z / (float) om->max_length;
               else                	  eZ = cm->expA[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
               cm_tophits_ComputeEvalues(tinfo->th, eZ, prv_ntophits);
             }
@@ -1921,7 +1923,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                     if(th->N != prv_ntophits) cm_tophits_UpdateHitPositions(th, prv_ntophits, qsq->start, in_rc);
                     
                     if(th->N != prv_ntophits) { 
-                      if(pli->do_hmmonly_cur) eZ = pli->Z / (float) om->max_length;
+                      if(pli->do_hmmonly_cur || pli->do_trm_F5) eZ = pli->Z / (float) om->max_length;
                       else                	  eZ = cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize;
                       cm_tophits_ComputeEvalues(th, eZ, prv_ntophits);
                     }
@@ -2483,6 +2485,24 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       puts("Failed to parse command line: Option --trmF3 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
       goto ERROR; 
     }
+    if(esl_opt_IsUsed(go, "--trmF5")) {
+      puts("Failed to parse command line: Option --trmF3 is incompatible with --trmF5");
+      goto ERROR;
+    }
+  }
+  if(esl_opt_IsUsed(go, "--trmF5")) {
+    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) {
+      puts("Failed to parse command line: Option --trmF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      goto ERROR;
+    }
+    if(esl_opt_IsUsed(go, "--hmmonly")) {
+      puts("Failed to parse command line: Option --trmF5 is incompatible with --hmmonly");
+      goto ERROR;
+    }
+    if(esl_opt_IsUsed(go, "--nohmm") || esl_opt_IsUsed(go, "--max")) {
+      puts("Failed to parse command line: Option --trmF5 requires Stage 5 envelope definition and is incompatible with --nohmm and --max");
+      goto ERROR;
+    }
   }
 
   // #define ICWHMMMAX  "--hmmF1,--hmmF2,--hmmF3,--hmmnobias" 
@@ -2643,6 +2663,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--timeF6"))     fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
 
   if (esl_opt_IsUsed(go, "--trmF3"))      fprintf(ofp, "# terminate after Stage 3 Fwd:           on\n");
+  if (esl_opt_IsUsed(go, "--trmF5"))      fprintf(ofp, "# terminate after Stage 5 env defn:      on\n");
 
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");
