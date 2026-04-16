@@ -93,8 +93,10 @@ static ESL_OPTIONS options[] = {
     "discard hits overlapping CM region [il..ir]; keep flank hits only", 1 },
   { "--ipaint-allrand", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
     "also randomize CM region [il..ir] (pure random mega-seq)", 1 },
-  { "--iinside-wt", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--isubtr",
+  { "--iinside-wt", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--isubtr,--icyk-wt",
     "use best Inside hit score for IS weight (not parsetree Viterbi)", 1 },
+  { "--icyk-wt", eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, "--isubtr,--iinside-wt",
+    "use best HB CYK hit score for IS weight (forces CYK mode)", 1 },
   { "--ipaint-qcsconly", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
     "collect only v*-rooted qc_sc hits (skip mega-seq scan)", 1 },
   { "--ipaint-sumv", eslARG_NONE, FALSE, NULL, NULL, NULL, "--ipaint", NULL,
@@ -173,6 +175,20 @@ static ESL_OPTIONS options[] = {
     "number of burn-in steps to discard per chain", 1 },
   { "--imcmc-maxv", eslARG_NONE, FALSE, NULL, NULL, NULL, "--imcmc", NULL,
     "use max_v [beginsc[v]+alpha[v][L][L]] instead of alpha[0][L][L]", 1 },
+  { "--imcmc-cyk", eslARG_NONE, FALSE, NULL, NULL, NULL, "--imcmc", NULL,
+    "use CYK (Viterbi) scoring instead of Inside for MCMC", 1 },
+  { "--imcmc-null3", eslARG_NONE, FALSE, NULL, NULL, NULL, "--imcmc", NULL,
+    "apply null3 composition correction to MCMC scores (match cmcalibrate)", 1 },
+  { "--imcmc-gc", eslARG_NONE, FALSE, NULL, NULL, NULL, "--imcmc", NULL,
+    "use marginal genomic HMM nt freqs for MH acceptance correction", 1 },
+  { "--imcmc-gcstate", eslARG_NONE, FALSE, NULL, NULL, NULL, "--imcmc", NULL,
+    "per-state genomic HMM chains (25 chains weighted by stationary pi)", 1 },
+  { "--imcmc-lmult", eslARG_INT, "1", NULL, "n>0", NULL, "--imcmc", NULL,
+    "multiply sequence length by this factor (1=clen, 2=2*clen, etc.)", 1 },
+  { "--imcmc-useW", eslARG_NONE, FALSE, NULL, NULL, NULL, "--imcmc", NULL,
+    "use W (max hit length) instead of clen as base sequence length", 1 },
+  { "--imcmc-chain-secs", eslARG_INT, "1800", NULL, "n>0", NULL, "--imcmc", NULL,
+    "wall-clock seconds per chain timeout (default 1800 = 30 min)", 1 },
 
   { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -230,6 +246,7 @@ static double cm_ExpectedParsetreeScore (CM_t *cm, double alpha);
 static void cm_MixWithNull (CM_t *cm, double alpha);
 static int cp9_EnforceQDBBands (CM_t *cm, CP9Bands_t *cp9b, CM_SCAN_MX *smx, int qdbidx, int L, char *errbuf);
 static float cm_InsideScoreAfterMutation (CM_t *cm, CM_MX *ins_mx, CM_MX *out_mx, ESL_DSQ *dsq, int L, int pos, int new_res);
+static float cm_CYKScoreAfterMutation (CM_t *cm, CM_MX *cyk_mx, CM_MX *cyk_out_mx, ESL_DSQ *dsq, int L, int pos, int new_res);
 static int cm_DesignSequence (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
                               char *errbuf, float target_sc, float tol, int max_iter, int verbose,
                               ESL_DSQ **ret_dsq, int *ret_L, float *ret_sc, int *ret_niter,
@@ -239,9 +256,30 @@ static float cm_BestLocalHitScore (CM_t *cm, CM_MX *ins_mx, int L);
 static float cm_BestLocalHitScoreVJD (CM_t *cm, CM_MX *ins_mx, int L, int *ret_v, int *ret_j, int *ret_d);
 static int cm_InsideAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
                                    CM_MX *mx, int p, float *ret_sc);
+static int cm_CYKAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
+                                CM_MX *mx, int p, float *ret_sc);
+
+/* Top-K cell tracking */
+typedef struct {
+  int   v;
+  int   j;
+  int   d;
+  float score;  /* beginsc[v] + alpha[v][j][d] */
+} cm_TopKCell_t;
+
+static int cm_FindTopKCells (CM_t *cm, CM_MX *ins_mx, int L, int K,
+                             cm_TopKCell_t *topk, int *ret_n);
+static int cm_ComputeNeededMask (CM_t *cm, int L, cm_TopKCell_t *topk, int n_topk,
+                                 char ***ret_needed, int *ret_n_needed);
+static int cm_InsideAlign_partial_topk (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
+                                        CM_MX *mx, int p, char ***needed,
+                                        cm_TopKCell_t *topk, int n_topk,
+                                        float *ret_best_sc, int *ret_best_idx);
 static int cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
                          char *errbuf, float mu, int n_chains, int n_steps, int n_burnin,
-                         int use_maxv, int verbose, float **ret_scores, int *ret_N);
+                         int use_maxv, int use_cyk, int use_null3,
+                         int use_gc, int use_gcstate, int verbose,
+                         float **ret_scores, int *ret_N);
 
 int
 main (int argc, char **argv) {
@@ -598,8 +636,12 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       continue; /* skip IS and long random seq for this CM */
     }
 
-    /* Set exp_mode: local or glocal Inside */
-    exp_mode = esl_opt_GetBoolean (go, "--glocal") ? EXP_CM_GI : EXP_CM_LI;
+    /* Set exp_mode: local or glocal, Inside or CYK */
+    if ((esl_opt_IsOn (go, "--imcmc-cyk") && esl_opt_GetBoolean (go, "--imcmc-cyk")) ||
+        esl_opt_GetBoolean (go, "--icyk-wt"))
+      exp_mode = esl_opt_GetBoolean (go, "--glocal") ? EXP_CM_GC : EXP_CM_LC;
+    else
+      exp_mode = esl_opt_GetBoolean (go, "--glocal") ? EXP_CM_GI : EXP_CM_LI;
     /* set CM_SEARCH_INSIDE flag for Inside mode (CYK is the default) */
     if (ExpModeIsInside (exp_mode)) {
       cm->search_opts |= CM_SEARCH_INSIDE;
@@ -840,7 +882,7 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
      *  5. Compute alpha_B_partial using partial DP starting from alpha_A
      *  6. Compare alpha_B_full vs alpha_B_partial — should be identical
      */
-    if (esl_opt_GetBoolean (go, "--imcmc")) {
+    if (0 && esl_opt_GetBoolean (go, "--imcmc")) {
       printf ("DIAG: testing cm_InsideAlign_partial correctness on 20 sequences\n");
       int test_L = cm->clen;
       CM_MX *test_mx_a = cm_mx_Create (cm->M);
@@ -907,6 +949,178 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       }
       printf ("  Summary: %d exact match, %d close (<0.01), %d different (max diff=%.4f)\n\n",
               n_match, n_close, n_diff, max_diff);
+
+      /* CYK partial DP correctness test, analogous to the Inside test above. */
+      printf ("DIAG: testing cm_CYKAlign_partial correctness on 20 sequences\n");
+      {
+        CM_SHADOW_MX *test_shmx = cm_shadow_mx_Create (cm);
+        int cyk_match = 0, cyk_close = 0, cyk_diff = 0;
+        float cyk_max_diff = 0.;
+
+        for (int ti = 0; ti < 20; ti++) {
+          ESL_DSQ *test_dsq;
+          ESL_ALLOC (test_dsq, sizeof (ESL_DSQ) * (test_L + 2));
+          esl_rsq_xfIID (cfg->r, cm->null, cm->abc->K, test_L, test_dsq);
+
+          /* alpha_A: full CYK on original sequence (cached in test_mx_a) */
+          float sc_a;
+          int b_dummy;
+          cm_CYKInsideAlign (cm, errbuf, test_dsq, test_L, 512.0, test_mx_a, test_shmx, &b_dummy, &sc_a);
+
+          /* Pick a random mutation */
+          int mut_p = 1 + esl_rnd_Roll (cfg->r, test_L);
+          int mut_r = esl_rnd_Roll (cfg->r, cm->abc->K - 1);
+          if (mut_r >= test_dsq[mut_p]) mut_r++;
+          int old_res = test_dsq[mut_p];
+          test_dsq[mut_p] = mut_r;
+
+          /* alpha_B_full: full CYK on mutated sequence */
+          float sc_b_full;
+          cm_CYKInsideAlign (cm, errbuf, test_dsq, test_L, 512.0, test_mx_b, test_shmx, &b_dummy, &sc_b_full);
+
+          /* alpha_B_partial: partial CYK starting from cached test_mx_a */
+          float sc_b_partial;
+          cm_CYKAlign_partial (cm, errbuf, test_dsq, test_L, test_mx_a, mut_p, &sc_b_partial);
+
+          float diff = fabs (sc_b_full - sc_b_partial);
+
+          /* Worst-case cell-by-cell diff */
+          float worst_cell_diff = 0.;
+          for (int vv = 0; vv < cm->M; vv++) {
+            for (int jj = 0; jj <= test_L; jj++) {
+              for (int dd = 0; dd <= jj; dd++) {
+                if (NOT_IMPOSSIBLE(test_mx_a->dp[vv][jj][dd]) &&
+                    NOT_IMPOSSIBLE(test_mx_b->dp[vv][jj][dd])) {
+                  float cd = fabs(test_mx_a->dp[vv][jj][dd] - test_mx_b->dp[vv][jj][dd]);
+                  if (cd > worst_cell_diff) worst_cell_diff = cd;
+                }
+              }
+            }
+          }
+
+          if (diff < 1e-4 && worst_cell_diff < 1e-3) cyk_match++;
+          else if (diff < 0.01) cyk_close++;
+          else cyk_diff++;
+          if (diff > cyk_max_diff) cyk_max_diff = diff;
+
+          printf ("  CYK test %2d: pos=%d %c->%c  root_full=%.4f root_part=%.4f  worst_cell=%.4f\n",
+                  ti, mut_p, "ACGU"[old_res], "ACGU"[mut_r],
+                  sc_b_full, sc_b_partial, worst_cell_diff);
+
+          free (test_dsq);
+        }
+        printf ("  CYK Summary: %d exact match, %d close (<0.01), %d different (max diff=%.4f)\n\n",
+                cyk_match, cyk_close, cyk_diff, cyk_max_diff);
+
+        /* CYK Outside trick test: verify cm_CYKScoreAfterMutation gives
+         * same alpha[0][L][L] as full CYK recomputation. This tests the
+         * O(M*L) trick, not the O(M*L²) partial DP. */
+        printf ("DIAG: testing cm_CYKScoreAfterMutation on 20 sequences\n");
+        CM_MX *test_out_mx = cm_mx_Create (cm->M);
+        int ot_match = 0, ot_close = 0, ot_diff = 0;
+        float ot_max_diff = 0.;
+
+        for (int ti = 0; ti < 20; ti++) {
+          ESL_DSQ *test_dsq;
+          ESL_ALLOC (test_dsq, sizeof (ESL_DSQ) * (test_L + 2));
+          esl_rsq_xfIID (cfg->r, cm->null, cm->abc->K, test_L, test_dsq);
+
+          /* Full CYK + CYK Outside on original sequence */
+          float sc_a;
+          int b_dummy;
+          cm_CYKInsideAlign (cm, errbuf, test_dsq, test_L, 512.0, test_mx_a, test_shmx, &b_dummy, &sc_a);
+          cm_CYKOutsideAlign (cm, errbuf, test_dsq, test_L, 512.0, FALSE, test_out_mx, test_mx_a, NULL);
+
+          /* Pick a random mutation */
+          int mut_p = 1 + esl_rnd_Roll (cfg->r, test_L);
+          int mut_r = esl_rnd_Roll (cfg->r, cm->abc->K - 1);
+          if (mut_r >= test_dsq[mut_p]) mut_r++;
+          int old_res = test_dsq[mut_p];
+
+          /* O(M*L) Outside trick prediction (BEFORE mutating dsq) */
+          float sc_trick = cm_CYKScoreAfterMutation (cm, test_mx_a, test_out_mx,
+                                                      test_dsq, test_L, mut_p, mut_r);
+
+          /* Now mutate and do full CYK for ground truth */
+          test_dsq[mut_p] = mut_r;
+          float sc_full;
+          cm_CYKInsideAlign (cm, errbuf, test_dsq, test_L, 512.0, test_mx_b, test_shmx, &b_dummy, &sc_full);
+
+          float diff = fabs (sc_full - sc_trick);
+          if (diff < 1e-4) ot_match++;
+          else if (diff < 0.01) ot_close++;
+          else ot_diff++;
+          if (diff > ot_max_diff) ot_max_diff = diff;
+
+          printf ("  OT test %2d: pos=%d %c->%c  full=%.4f trick=%.4f  diff=%.4f\n",
+                  ti, mut_p, "ACGU"[old_res], "ACGU"[mut_r],
+                  sc_full, sc_trick, diff);
+
+          free (test_dsq);
+        }
+        printf ("  OT Summary: %d exact, %d close (<0.01), %d different (max diff=%.4f)\n\n",
+                ot_match, ot_close, ot_diff, ot_max_diff);
+        cm_mx_Destroy (test_out_mx);
+
+        cm_shadow_mx_Destroy (test_shmx);
+      }
+
+      /* TOP-K TEST: verify cm_InsideAlign_partial_topk gives correct results
+       * Test multiple K values to see how the needed set scales. */
+      if (0) for (int K_test = 1; K_test <= 50; K_test = (K_test == 1 ? 5 : K_test == 5 ? 10 : K_test == 10 ? 20 : 50)) {
+        printf ("DIAG: testing cm_InsideAlign_partial_topk with K=%d on 5 sequences\n", K_test);
+        cm_TopKCell_t *topk_test = malloc (sizeof (cm_TopKCell_t) * K_test);
+
+        for (int ti = 0; ti < 5; ti++) {
+          ESL_DSQ *test2_dsq;
+          ESL_ALLOC (test2_dsq, sizeof (ESL_DSQ) * (test_L + 2));
+          esl_rsq_xfIID (cfg->r, cm->null, cm->abc->K, test_L, test2_dsq);
+
+          /* Initial full Inside */
+          float sc_initial;
+          cm_InsideAlign (cm, errbuf, test2_dsq, test_L, 512.0, test_mx_a, &sc_initial);
+
+          /* Find top-K cells */
+          int n_topk;
+          cm_FindTopKCells (cm, test_mx_a, test_L, K_test, topk_test, &n_topk);
+
+          /* Compute needed mask */
+          char ***needed = NULL;
+          int n_needed = 0;
+          cm_ComputeNeededMask (cm, test_L, topk_test, n_topk, &needed, &n_needed);
+
+          /* Apply random mutation */
+          int mut_p = 1 + esl_rnd_Roll (cfg->r, test_L);
+          int mut_r = esl_rnd_Roll (cfg->r, cm->abc->K - 1);
+          if (mut_r >= test2_dsq[mut_p]) mut_r++;
+          test2_dsq[mut_p] = mut_r;
+
+          /* Method 1: full Inside on mutated sequence (ground truth) */
+          float full_sc;
+          cm_InsideAlign (cm, errbuf, test2_dsq, test_L, 512.0, test_mx_b, &full_sc);
+          float full_best = cm_BestLocalHitScore (cm, test_mx_b, test_L);
+
+          /* Method 2: topk partial DP starting from test_mx_a */
+          float topk_best_sc;
+          int topk_best_idx;
+          cm_InsideAlign_partial_topk (cm, errbuf, test2_dsq, test_L, test_mx_a, mut_p,
+                                        needed, topk_test, n_topk, &topk_best_sc, &topk_best_idx);
+
+          int total_cells = (cm->M) * (test_L + 1) * (test_L + 2) / 2;
+          printf ("  test %d: full_best=%.4f topk_best=%.4f diff=%+.4f n_needed=%d/%d (%.1f%%)\n",
+                  ti, full_best, topk_best_sc, topk_best_sc - full_best,
+                  n_needed, total_cells, 100.0 * n_needed / total_cells);
+
+          /* Free needed mask */
+          for (int vv = 0; vv < cm->M; vv++) {
+            for (int jj = 0; jj <= test_L; jj++) free (needed[vv][jj]);
+            free (needed[vv]);
+          }
+          free (needed);
+          free (test2_dsq);
+        }
+        free (topk_test);
+      }
 
       /* ITERATIVE TEST: do several mutations in sequence and check that the
        * partial DP matches full DP after each one */
@@ -1054,15 +1268,22 @@ master (const ESL_GETOPTS *go, struct cfg_s *cfg) {
       float *mcmc_scores = NULL;
       int    mcmc_N = 0;
 
-      int use_maxv = esl_opt_GetBoolean (go, "--imcmc-maxv");
+      int use_maxv    = esl_opt_GetBoolean (go, "--imcmc-maxv");
+      int use_cyk     = esl_opt_GetBoolean (go, "--imcmc-cyk");
+      int use_null3   = esl_opt_GetBoolean (go, "--imcmc-null3");
+      int use_gc      = esl_opt_GetBoolean (go, "--imcmc-gc");
+      int use_gcstate = esl_opt_GetBoolean (go, "--imcmc-gcstate");
       if ((status = cm_MCMC_tail (cm, emit_cm, cfg, go, errbuf,
                                    mcmc_mu, n_chains, n_steps, n_burnin,
-                                   use_maxv, verbose,
+                                   use_maxv, use_cyk, use_null3,
+                                   use_gc, use_gcstate, verbose,
                                    &mcmc_scores, &mcmc_N)) != eslOK)
         cm_Fail (errbuf);
 
-      printf ("MCMC: collected %d scores (mu=%.3f, %d chains x %d steps, %d burnin)\n",
-              mcmc_N, mcmc_mu, n_chains, n_steps, n_burnin);
+      printf ("MCMC: collected %d scores (mu=%.3f, %d chains x %d steps, %d burnin%s%s%s)\n",
+              mcmc_N, mcmc_mu, n_chains, n_steps, n_burnin,
+              use_null3 ? ", null3" : "", use_gc ? ", gc-marginal" : "",
+              use_gcstate ? ", gc-perstate" : "");
 
       /* Fit lambda — unweighted MLE */
       if (mcmc_N >= 10) {
@@ -2075,22 +2296,23 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
         printf ("\n");
       }
 
-      /* --iinside-wt with --ewt-lo/--ewt-hi: run emit_cm Inside FIRST to get
-       * the IS weight score. Reject sequences outside [ewt-lo, ewt-hi] BEFORE
-       * the expensive search_cm Inside scan. This saves one full Inside scan
-       * for each rejected sequence. */
-      float iinside_wt_sc = IMPOSSIBLE;  /* emit_cm Inside score for IS weight */
-      if (esl_opt_GetBoolean (go, "--iinside-wt") && do_sample &&
+      /* --iinside-wt/--icyk-wt with --ewt-lo/--ewt-hi: run emit_cm scan FIRST
+       * to get the IS weight score. Reject sequences outside [ewt-lo, ewt-hi]
+       * BEFORE the expensive search_cm scan. This saves one full scan for
+       * each rejected sequence. */
+      float iinside_wt_sc = IMPOSSIBLE;  /* emit_cm Inside/CYK score for IS weight */
+      int   do_cyk_wt     = esl_opt_GetBoolean (go, "--icyk-wt");
+      if ((esl_opt_GetBoolean (go, "--iinside-wt") || do_cyk_wt) && do_sample &&
           ! esl_opt_GetBoolean (go, "--no-weight") && emit_cm != NULL) {
         CM_t *wt_cm = emit_cm;
         CM_TOPHITS *th_wt = cm_tophits_Create ();
         if (th_wt == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
 
-        /* Run emit_cm Inside scan to get proposal probability.
+        /* Run emit_cm scan to get proposal probability.
          * Use HMM banding if --ihbanded (emit_cm seqs are CM-like → tight bands).
          * Otherwise use unbanded FastIInsideScan with v=0 query cell for glocal. */
         float wt_qc_sc = IMPOSSIBLE;
-        if (esl_opt_GetBoolean (go, "--ihbanded")) {
+        if (esl_opt_GetBoolean (go, "--ihbanded") || do_cyk_wt) {
           float hb_mxsize = esl_opt_GetReal (go, "--mxsize");
           float hb_Mb;
           double save_tau = wt_cm->tau;
@@ -2099,12 +2321,23 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                                         dsq, 1, L, wt_cm->cp9b, TRUE, PLI_PASS_STD_ANY, 0))
               != eslOK)
             cm_Fail (errbuf);
+          if (do_cyk_wt) {
+            float wt_best_cyk = IMPOSSIBLE;
+            if ((status = FastCYKScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
+                                          dsq, 1, L, cutoff, th_wt,
+                                          wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                          NULL, NULL, &wt_best_cyk))
+                != eslOK)
+              cm_Fail (errbuf);
+            if (wt_best_cyk != IMPOSSIBLE) iinside_wt_sc = wt_best_cyk;
+          } else {
           if ((status = FastFInsideScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
                                             dsq, 1, L, cutoff, th_wt,
                                             wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
                                             NULL, NULL, NULL))
               != eslOK)
             cm_Fail (errbuf);
+          }
           wt_cm->tau = save_tau;
           /* Use best hit from banded scan */
           for (h = 0; h < (int) th_wt->N; h++)
@@ -2152,7 +2385,8 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
 
       /* Query cell: get beginsc[v*] + Inside(x[il..ir], v*) directly from the DP.
        * qc_v/qc_j/qc_d are set above in the do_isubtr block (or -1 if not applicable). */
-      if (esl_opt_GetBoolean (go, "--ihbanded") && (cm->search_opts & CM_SEARCH_INSIDE)) {
+      if ((esl_opt_GetBoolean (go, "--ihbanded") && (cm->search_opts & CM_SEARCH_INSIDE)) ||
+          do_cyk_wt) {
         /* HMM-banded Inside scan */
         float hb_mxsize = esl_opt_GetReal (go, "--mxsize");
         float hb_Mb;
@@ -2229,12 +2463,21 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
           debug_print_ij_bands (cm);
         }
 
-        if ((status = FastFInsideScanHB (cm, errbuf, cm->hb_mx, hb_mxsize,
-                                          dsq, 1, L, cutoff, th,
-                                          cm->search_opts & CM_SEARCH_NULL3, 0.,
-                                          NULL, NULL, NULL))
-            != eslOK)
-          cm_Fail (errbuf);
+        if (do_cyk_wt) {
+          if ((status = FastCYKScanHB (cm, errbuf, cm->hb_mx, hb_mxsize,
+                                        dsq, 1, L, cutoff, th,
+                                        cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                        NULL, NULL, NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+        } else {
+          if ((status = FastFInsideScanHB (cm, errbuf, cm->hb_mx, hb_mxsize,
+                                            dsq, 1, L, cutoff, th,
+                                            cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                            NULL, NULL, NULL))
+              != eslOK)
+            cm_Fail (errbuf);
+        }
         cm->tau = save_tau;
       } else if (cm->search_opts & CM_SEARCH_INSIDE) {
         if (esl_opt_GetBoolean (go, "--ifloat")) {
@@ -2269,7 +2512,7 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
        * If --ewt-lo/--ewt-hi are set, the emit_cm scan + rejection was already
        * done above (before the search_cm scan). Otherwise do it here.
        * Also reject sequences whose search CM best hit is outside [ilo, ihi]. */
-      if (esl_opt_GetBoolean (go, "--iinside-wt") && do_sample && th->N > 0) {
+      if ((esl_opt_GetBoolean (go, "--iinside-wt") || do_cyk_wt) && do_sample && th->N > 0) {
         /* Rejection based on search CM's best hit */
         float best_inside = th->unsrt[0].score;
         for (h = 1; h < (int) th->N; h++)
@@ -2294,8 +2537,8 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
           float wt_best = IMPOSSIBLE;
           if (th_wt == NULL) ESL_FAIL (eslEMEM, errbuf, "out of memory");
 
-          if (esl_opt_GetBoolean (go, "--ihbanded")) {
-            /* HMM-banded Inside on emit_cm for IS weight */
+          if (esl_opt_GetBoolean (go, "--ihbanded") || do_cyk_wt) {
+            /* HMM-banded Inside (or CYK) on emit_cm for IS weight */
             float hb_mxsize = esl_opt_GetReal (go, "--mxsize");
             float hb_Mb;
             double save_tau = wt_cm->tau;
@@ -2321,12 +2564,23 @@ collect_scores (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
                       (void*)cm->cp9b, (void*)wt_cm->cp9b,
                       (void*)cm->cp9_mx, (void*)wt_cm->cp9_mx);
             }
+            if (do_cyk_wt) {
+              float wt_best_cyk = IMPOSSIBLE;
+              if ((status = FastCYKScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
+                                            dsq, 1, L, cutoff, th_wt,
+                                            wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
+                                            NULL, NULL, &wt_best_cyk))
+                  != eslOK)
+                cm_Fail (errbuf);
+              if (wt_best_cyk != IMPOSSIBLE) wt_best = wt_best_cyk;
+            } else {
             if ((status = FastFInsideScanHB (wt_cm, errbuf, wt_cm->hb_mx, hb_mxsize,
                                               dsq, 1, L, cutoff, th_wt,
                                               wt_cm->search_opts & CM_SEARCH_NULL3, 0.,
                                               NULL, NULL, NULL))
                 != eslOK)
               cm_Fail (errbuf);
+            }
             wt_cm->tau = save_tau;
           } else if (esl_opt_GetBoolean (go, "--ifloat")) {
             if ((status = FastFInsideScan (wt_cm, errbuf, wt_cm->smx,
@@ -3128,6 +3382,97 @@ cm_InsideScoreAfterMutation (CM_t *cm, CM_MX *ins_mx, CM_MX *out_mx,
 }
 
 
+/* Function: cm_CYKScoreAfterMutation()
+ *
+ * Purpose:  Given CYK Inside matrix alpha and CYK Outside matrix beta
+ *           for sequence dsq of length L, compute the EXACT CYK score
+ *           that would result from changing dsq[pos] to new_res.
+ *
+ *           Uses the same identity as cm_InsideScoreAfterMutation but
+ *           with MAX instead of FLogsum:
+ *
+ *             new_sc = MAX over {(v,j,d) emitting pos}:
+ *                      alpha[v][j][d] + beta[v][j][d] + delta_esc(v,pos,new_res)
+ *
+ *           Exact because each parse tree emits position pos through
+ *           exactly one state, and CYK = max over parse trees.
+ *
+ *           Cost: O(M * L) — iterate M states × up to L d-values each.
+ *
+ *           NOTE: This gives the new alpha[0][L][L] (glocal alignment score).
+ *           For local best-hit score (max over all v,j,d), this is NOT
+ *           sufficient — use cm_CYKAlign_partial for that case.
+ *
+ * Args:     cm        - the covariance model
+ *           cyk_mx    - CYK Inside DP matrix (from cm_CYKInsideAlign)
+ *           cyk_out_mx - CYK Outside DP matrix (from cm_CYKOutsideAlign)
+ *           dsq       - digital sequence [1..L]
+ *           L         - sequence length
+ *           pos       - position to mutate (1..L)
+ *           new_res   - new residue (0=A, 1=C, 2=G, 3=U)
+ *
+ * Returns:  the exact CYK score with the mutation applied
+ */
+static float
+cm_CYKScoreAfterMutation (CM_t *cm, CM_MX *cyk_mx, CM_MX *cyk_out_mx,
+                          ESL_DSQ *dsq, int L, int pos, int new_res)
+{
+  float ***alpha = cyk_mx->dp;
+  float ***beta  = cyk_out_mx->dp;
+  float new_sc = IMPOSSIBLE;
+  int v, d, j;
+  int Kp = cm->abc->Kp;
+  int old_res = dsq[pos];
+
+  for (v = 0; v < cm->M; v++) {
+    float *esc_v = cm->oesc[v];
+    int sd = StateDelta (cm->sttype[v]);
+
+    /* LEFT-emitting states: ML, IL, or MP emitting left residue.
+     * v emits position i = j-d+1 on the left. If i = pos, then j = pos+d-1. */
+    if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || cm->sttype[v] == MP_st) {
+      for (d = sd; d <= L; d++) {
+        j = pos + d - 1;
+        if (j > L) break;
+        if (! NOT_IMPOSSIBLE(alpha[v][j][d])) continue;
+        if (! NOT_IMPOSSIBLE(beta[v][j][d]))  continue;
+
+        float delta_esc;
+        if (cm->sttype[v] == MP_st) {
+          delta_esc = esc_v[new_res * Kp + dsq[j]] - esc_v[old_res * Kp + dsq[j]];
+        } else {
+          delta_esc = esc_v[new_res] - esc_v[old_res];
+        }
+        float sc = alpha[v][j][d] + beta[v][j][d] + delta_esc;
+        if (sc > new_sc) new_sc = sc;
+      }
+    }
+
+    /* RIGHT-emitting states: MR, IR, or MP emitting right residue.
+     * v emits position j on the right. If j = pos. */
+    if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st || cm->sttype[v] == MP_st) {
+      j = pos;
+      for (d = sd; d <= j; d++) {
+        if (! NOT_IMPOSSIBLE(alpha[v][j][d])) continue;
+        if (! NOT_IMPOSSIBLE(beta[v][j][d]))  continue;
+        int i = j - d + 1;
+
+        float delta_esc;
+        if (cm->sttype[v] == MP_st) {
+          delta_esc = esc_v[dsq[i] * Kp + new_res] - esc_v[dsq[i] * Kp + old_res];
+        } else {
+          delta_esc = esc_v[new_res] - esc_v[old_res];
+        }
+        float sc = alpha[v][j][d] + beta[v][j][d] + delta_esc;
+        if (sc > new_sc) new_sc = sc;
+      }
+    }
+  }
+
+  return new_sc;
+}
+
+
 /* Function: cm_DesignSequence()
  *
  * Purpose:  Design a sequence whose glocal Inside score on CM <cm> is
@@ -3674,6 +4019,461 @@ ERROR:
 }
 
 
+/* Function: cm_CYKAlign_partial()
+ *
+ * Purpose:  Incremental CYK DP update after a single-residue mutation.
+ *           Same structure as cm_InsideAlign_partial, but uses MAX instead
+ *           of FLogsum for combining alternative parses (CYK = Viterbi).
+ *
+ *           The dependency structure of the recurrence is identical to
+ *           Inside (same topological order, same parent-child relations),
+ *           so the "skip cells whose subsequence does not contain p"
+ *           optimization transfers verbatim.
+ *
+ *           For MCMC use we don't need traceback, so no shadow matrix is
+ *           written. The mx must already contain the CYK alpha matrix for
+ *           the OLD (pre-mutation) sequence, computed by cm_CYKInsideAlign
+ *           (with a throwaway shadow matrix).
+ *
+ *           ASSUMPTIONS (subset of full CYK):
+ *             - non-banded glocal or local mode (no QDB, no HMM bands)
+ *             - dsq has been MUTATED (position p has the new residue)
+ *             - mx already contains alpha values for the OLD sequence
+ *
+ * Args:     cm     - the CM (configured for CYK)
+ *           errbuf - error buffer
+ *           dsq    - mutated digital sequence (position p has new residue)
+ *           L      - sequence length
+ *           mx     - DP matrix, contains OLD alpha; will be updated in place
+ *           p      - mutation position (1..L)
+ *           ret_sc - RETURN: new alpha[0][L][L]
+ *
+ * Returns:  eslOK on success.
+ */
+static int
+cm_CYKAlign_partial (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
+                     CM_MX *mx, int p, float *ret_sc)
+{
+  float ***alpha = mx->dp;
+  int v, j, d, i, k;
+  int yoffset;
+  float tsc;
+  int Kp = cm->abc->Kp;
+  int status;
+
+  /* Macro to check if cell (j, d) is affected by mutation at p:
+   * cell's subsequence is x[j-d+1..j], affected iff j-d+1 <= p <= j */
+  #define IS_AFFECTED(jj, dd) (((jj) - (dd) + 1) <= p && p <= (jj))
+
+  /* Precompute EL self-loop scores */
+  float *el_scA = NULL;
+  if (cm->flags & CMH_LOCAL_END) {
+    ESL_ALLOC (el_scA, sizeof (float) * (L + 1));
+    for (d = 0; d <= L; d++) el_scA[d] = cm->el_selfsc * d;
+  }
+
+  /* Process states v from M-1 down to 0 (topological order) */
+  for (v = cm->M - 1; v >= 0; v--) {
+    float const *esc_v = cm->oesc[v];
+    float const *tsc_v = cm->tsc[v];
+    int sd  = StateDelta (cm->sttype[v]);
+    int sdr = StateRightDelta (cm->sttype[v]);
+
+    if (cm->sttype[v] == E_st) {
+      /* E_st: alpha[v][j][0] = 0, all other d are IMPOSSIBLE.
+       * Not affected by any mutation. Skip entirely. */
+      continue;
+    }
+
+    if (cm->sttype[v] == B_st) {
+      /* B_st: alpha[v][j][d] = max_k (alpha[w][j-k][d-k] + alpha[z][j][k])
+       * where w = cfirst[v], z = cnum[v]. */
+      int w = cm->cfirst[v];
+      int z = cm->cnum[v];
+      for (j = 0; j <= L; j++) {
+        for (d = 0; d <= j; d++) {
+          if (! IS_AFFECTED(j, d)) continue;
+          /* Reset to initial value: EL contribution if local end, else IMPOSSIBLE.
+           * B_st has sd=0. */
+          alpha[v][j][d] = (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v]) ?
+                           (el_scA[d] + cm->endsc[v]) : IMPOSSIBLE;
+          for (k = 0; k <= d; k++) {
+            float sc = alpha[w][j-k][d-k] + alpha[z][j][k];
+            if (sc > alpha[v][j][d]) alpha[v][j][d] = sc;
+          }
+        }
+      }
+      continue;
+    }
+
+    /* Non-E, non-B state. */
+    for (j = sdr; j <= L; j++) {
+      int j_sdr = j - sdr;
+      for (d = sd; d <= j; d++) {
+        if (! IS_AFFECTED(j, d)) continue;
+        int d_sd = d - sd;
+        i = j - d + 1;
+
+        /* Reset to initial value: EL contribution if local end, else IMPOSSIBLE */
+        alpha[v][j][d] = (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v]) ?
+                         (el_scA[d - sd] + cm->endsc[v]) : IMPOSSIBLE;
+
+        /* Max over transitions from children */
+        for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+          int y = cm->cfirst[v] + yoffset;
+          tsc = tsc_v[yoffset];
+          float sc = alpha[y][j_sdr][d_sd] + tsc;
+          if (sc > alpha[v][j][d]) alpha[v][j][d] = sc;
+        }
+
+        /* Add emission score, if any */
+        switch (cm->sttype[v]) {
+          case ML_st:
+          case IL_st:
+            alpha[v][j][d] += esc_v[dsq[i]];
+            break;
+          case MR_st:
+          case IR_st:
+            alpha[v][j][d] += esc_v[dsq[j]];
+            break;
+          case MP_st:
+            alpha[v][j][d] += esc_v[dsq[i] * Kp + dsq[j]];
+            break;
+          default:
+            break; /* D, S: no emission */
+        }
+
+        /* Clamp to IMPOSSIBLE floor */
+        if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+  }
+
+  #undef IS_AFFECTED
+
+  /* Local begin handling: in CYK, the recurrence at v=0 does NOT include
+   * local begin contributions. cm_CYKInsideAlign computes those separately
+   * and overwrites alpha[0][L][L] with bsc if bsc is larger:
+   *   bsc = max_v (alpha[v][L][L] + beginsc[v])
+   *   if (bsc > alpha[0][L][L]) alpha[0][L][L] = bsc;
+   *
+   * Our partial DP just recomputed alpha[0][L][L] via the standard recurrence
+   * (without local begins), so we need to apply the same max with bsc here. */
+  if (cm->flags & CMH_LOCAL_BEGIN) {
+    float bsc = IMPOSSIBLE;
+    for (v = 1; v < cm->M; v++) {
+      if (NOT_IMPOSSIBLE(cm->beginsc[v]) && NOT_IMPOSSIBLE(alpha[v][L][L])) {
+        float sc = alpha[v][L][L] + cm->beginsc[v];
+        if (sc > bsc) bsc = sc;
+      }
+    }
+    if (bsc > alpha[0][L][L]) alpha[0][L][L] = bsc;
+  }
+
+  if (el_scA != NULL) free (el_scA);
+  if (ret_sc != NULL) *ret_sc = alpha[0][L][L];
+  return eslOK;
+
+ERROR:
+  if (el_scA != NULL) free (el_scA);
+  ESL_FAIL (eslEMEM, errbuf, "cm_CYKAlign_partial: memory allocation error");
+}
+
+
+/* Function: cm_FindTopKCells()
+ *
+ * Purpose:  Scan the alpha matrix and find the top-K cells by score
+ *           (beginsc[v] + alpha[v][j][d]).
+ *           For glocal mode (no local begins), only v=0 is considered.
+ *           For local mode, all v with valid local begins are considered.
+ *
+ *           topk[] must be pre-allocated with capacity K.
+ *           Returns the actual number found in *ret_n (could be less than K
+ *           if there are fewer valid cells).
+ *
+ *           Cells are returned sorted by score descending: topk[0] is best.
+ */
+static int
+cm_FindTopKCells (CM_t *cm, CM_MX *ins_mx, int L, int K,
+                  cm_TopKCell_t *topk, int *ret_n)
+{
+  float ***alpha = ins_mx->dp;
+  int v, j, d;
+  int n = 0;
+
+  for (v = 0; v < cm->M; v++) {
+    float bsc;
+    if (v == 0) {
+      bsc = 0.0f;
+    } else if ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[v])) {
+      bsc = cm->beginsc[v];
+    } else {
+      continue;
+    }
+    for (j = 0; j <= L; j++) {
+      for (d = 0; d <= j; d++) {
+        if (! NOT_IMPOSSIBLE(alpha[v][j][d])) continue;
+        float sc = bsc + alpha[v][j][d];
+
+        /* Insert into topk if better than worst */
+        if (n < K) {
+          /* Find insertion point (sorted descending) */
+          int pos = n;
+          while (pos > 0 && topk[pos-1].score < sc) {
+            topk[pos] = topk[pos-1];
+            pos--;
+          }
+          topk[pos].v = v;
+          topk[pos].j = j;
+          topk[pos].d = d;
+          topk[pos].score = sc;
+          n++;
+        } else if (sc > topk[K-1].score) {
+          int pos = K - 1;
+          while (pos > 0 && topk[pos-1].score < sc) {
+            topk[pos] = topk[pos-1];
+            pos--;
+          }
+          topk[pos].v = v;
+          topk[pos].j = j;
+          topk[pos].d = d;
+          topk[pos].score = sc;
+        }
+      }
+    }
+  }
+
+  *ret_n = n;
+  return eslOK;
+}
+
+
+/* Function: cm_ComputeNeededMask()
+ *
+ * Purpose:  Given a set of top-K target cells, compute a 3D mask
+ *           needed[v][j][d] that is 1 if cell (v,j,d) feeds into the
+ *           recurrence for any of the target cells (i.e., is in the
+ *           dependency cone of one of the top-K cells), 0 otherwise.
+ *
+ *           The mask is propagated by walking states v from root to
+ *           leaves (v from 0 to M-1) and for each marked cell, marking
+ *           all child cells it depends on.
+ *
+ *           Allocates the mask; caller must free with esl_free.
+ *           Returns *ret_n_needed = number of TRUE cells (for cost analysis).
+ */
+static int
+cm_ComputeNeededMask (CM_t *cm, int L, cm_TopKCell_t *topk, int n_topk,
+                      char ***ret_needed, int *ret_n_needed)
+{
+  int status;
+  int v, j, d, k;
+
+  /* Allocate the 3D mask: needed[0..M-1][0..L][0..L] */
+  char ***needed = NULL;
+  ESL_ALLOC (needed, sizeof (char **) * cm->M);
+  for (v = 0; v < cm->M; v++) {
+    ESL_ALLOC (needed[v], sizeof (char *) * (L + 1));
+    for (j = 0; j <= L; j++) {
+      ESL_ALLOC (needed[v][j], sizeof (char) * (L + 1));
+      for (d = 0; d <= L; d++) needed[v][j][d] = 0;
+    }
+  }
+
+  /* Mark the target cells */
+  for (k = 0; k < n_topk; k++) {
+    needed[topk[k].v][topk[k].j][topk[k].d] = 1;
+  }
+
+  /* Propagate: walk states from root to leaves. For each needed cell at
+   * state v, mark all child cells it depends on.
+   * In the standard Inside DP, alpha[v][j][d] depends on:
+   *   - For non-B, non-E states: alpha[child][j-sdr][d-sd] for each child
+   *   - For B states: alpha[w][j-k][d-k] AND alpha[z][j][k] for k in 0..d
+   *   - For E states: only diagonal cells (alpha[v][j][0]), no dependencies
+   */
+  for (v = 0; v < cm->M; v++) {
+    if (cm->sttype[v] == E_st) continue;
+
+    if (cm->sttype[v] == B_st) {
+      int w = cm->cfirst[v];
+      int z = cm->cnum[v];
+      for (j = 0; j <= L; j++) {
+        for (d = 0; d <= j; d++) {
+          if (! needed[v][j][d]) continue;
+          /* Mark all (w, j-k, d-k) and (z, j, k) for k in 0..d */
+          for (k = 0; k <= d; k++) {
+            needed[w][j-k][d-k] = 1;
+            needed[z][j][k] = 1;
+          }
+        }
+      }
+    } else {
+      int sd  = StateDelta (cm->sttype[v]);
+      int sdr = StateRightDelta (cm->sttype[v]);
+      for (j = 0; j <= L; j++) {
+        for (d = 0; d <= j; d++) {
+          if (! needed[v][j][d]) continue;
+          /* Mark child cells */
+          for (int yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+            int y = cm->cfirst[v] + yoffset;
+            int j_sdr = j - sdr;
+            int d_sd = d - sd;
+            if (j_sdr >= 0 && d_sd >= 0 && j_sdr <= L && d_sd <= j_sdr) {
+              needed[y][j_sdr][d_sd] = 1;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* Count needed cells */
+  int n_needed = 0;
+  for (v = 0; v < cm->M; v++)
+    for (j = 0; j <= L; j++)
+      for (d = 0; d <= j; d++)
+        if (needed[v][j][d]) n_needed++;
+
+  *ret_needed = needed;
+  if (ret_n_needed) *ret_n_needed = n_needed;
+  return eslOK;
+
+ERROR:
+  return eslEMEM;
+}
+
+
+/* Function: cm_InsideAlign_partial_topk()
+ *
+ * Purpose:  Like cm_InsideAlign_partial, but only updates cells that are
+ *           BOTH affected by the mutation AND in the needed mask (i.e.,
+ *           in the dependency cone of one of the top-K target cells).
+ *
+ *           After updating, computes the score at each top-K cell and
+ *           returns the best one. The top-K cells themselves don't change
+ *           — only their alpha values do. The caller is responsible for
+ *           periodically refreshing the top-K via a full partial DP.
+ *
+ *           NOTE: This function will give wrong results if the actual
+ *           best cell after the mutation is NOT one of the top-K cells.
+ *           Empirical analysis on RF00005 shows top-K=10 captures 95.6%
+ *           of cases; top-K=50 captures 99.1%.
+ */
+static int
+cm_InsideAlign_partial_topk (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
+                             CM_MX *mx, int p, char ***needed,
+                             cm_TopKCell_t *topk, int n_topk,
+                             float *ret_best_sc, int *ret_best_idx)
+{
+  float ***alpha = mx->dp;
+  int v, j, d, i, k;
+  int yoffset;
+  float tsc;
+  int Kp = cm->abc->Kp;
+  int status;
+
+  #define IS_AFFECTED(jj, dd) (((jj) - (dd) + 1) <= p && p <= (jj))
+
+  /* Precompute EL self-loop scores for local end initialization */
+  float *el_scA = NULL;
+  if (cm->flags & CMH_LOCAL_END) {
+    ESL_ALLOC (el_scA, sizeof (float) * (L + 1));
+    for (d = 0; d <= L; d++) el_scA[d] = cm->el_selfsc * d;
+  }
+
+  /* Process states v from M-1 down to 0 (topological order).
+   * Only update cells that are AFFECTED && NEEDED. */
+  for (v = cm->M - 1; v >= 0; v--) {
+    float const *esc_v = cm->oesc[v];
+    float const *tsc_v = cm->tsc[v];
+    int sd  = StateDelta (cm->sttype[v]);
+    int sdr = StateRightDelta (cm->sttype[v]);
+
+    if (cm->sttype[v] == E_st) continue;
+
+    if (cm->sttype[v] == B_st) {
+      int w = cm->cfirst[v];
+      int z = cm->cnum[v];
+      for (j = 0; j <= L; j++) {
+        for (d = 0; d <= j; d++) {
+          if (! IS_AFFECTED(j, d)) continue;
+          if (! needed[v][j][d]) continue;
+          alpha[v][j][d] = (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v]) ?
+                           (el_scA[d] + cm->endsc[v]) : IMPOSSIBLE;
+          for (k = 0; k <= d; k++) {
+            alpha[v][j][d] = FLogsum (alpha[v][j][d],
+                                       alpha[w][j-k][d-k] + alpha[z][j][k]);
+          }
+        }
+      }
+      continue;
+    }
+
+    /* Non-E, non-B state */
+    for (j = sdr; j <= L; j++) {
+      int j_sdr = j - sdr;
+      for (d = sd; d <= j; d++) {
+        if (! IS_AFFECTED(j, d)) continue;
+        if (! needed[v][j][d]) continue;
+        int d_sd = d - sd;
+        i = j - d + 1;
+
+        alpha[v][j][d] = (cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v]) ?
+                         (el_scA[d - sd] + cm->endsc[v]) : IMPOSSIBLE;
+
+        for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+          int y = cm->cfirst[v] + yoffset;
+          tsc = tsc_v[yoffset];
+          alpha[v][j][d] = FLogsum (alpha[v][j][d], alpha[y][j_sdr][d_sd] + tsc);
+        }
+
+        switch (cm->sttype[v]) {
+          case ML_st:
+          case IL_st:
+            alpha[v][j][d] += esc_v[dsq[i]];
+            break;
+          case MR_st:
+          case IR_st:
+            alpha[v][j][d] += esc_v[dsq[j]];
+            break;
+          case MP_st:
+            alpha[v][j][d] += esc_v[dsq[i] * Kp + dsq[j]];
+            break;
+          default:
+            break;
+        }
+
+        if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+  }
+
+  #undef IS_AFFECTED
+
+  /* Find the best score among the top-K cells (using updated alpha values) */
+  float best_sc = -INFINITY;
+  int best_idx = -1;
+  for (k = 0; k < n_topk; k++) {
+    float bsc = (topk[k].v == 0) ? 0.0f :
+      ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[topk[k].v])) ?
+      cm->beginsc[topk[k].v] : -INFINITY;
+    if (bsc < -1e30) continue;
+    float sc = bsc + alpha[topk[k].v][topk[k].j][topk[k].d];
+    if (sc > best_sc) { best_sc = sc; best_idx = k; }
+  }
+
+  if (el_scA != NULL) free (el_scA);
+  if (ret_best_sc) *ret_best_sc = best_sc;
+  if (ret_best_idx) *ret_best_idx = best_idx;
+  return eslOK;
+
+ERROR:
+  if (el_scA != NULL) free (el_scA);
+  ESL_FAIL (eslEMEM, errbuf, "cm_InsideAlign_partial_topk: memory allocation error");
+}
+
+
 /* Function: cm_MCMC_tail()
  *
  * Purpose:  MCMC sampling from the tail of the null distribution.
@@ -3712,17 +4512,55 @@ ERROR:
 static int
 cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
               char *errbuf, float mu, int n_chains, int n_steps, int n_burnin,
-              int use_maxv, int verbose, float **ret_scores, int *ret_N)
+              int use_maxv, int use_cyk, int use_null3,
+              int use_gc, int use_gcstate, int verbose,
+              float **ret_scores, int *ret_N)
 {
   int status;
   int K = cm->abc->K;
-  int total_N = n_chains * n_steps;
   float *all_scores = NULL;
   int sc_idx = 0;
 
+  /* Genomic HMM: 5-state model with varying GC content.
+   * Stationary distribution π and per-state emission probs. */
+  static const double gc_stationary[5] = { 0.1273, 0.4201, 0.2511, 0.0000, 0.2015 };
+  static const double gc_emit[5][4] = {
+    {0.370907, 0.129214, 0.130511, 0.369368},   /* state 0: 26% GC, AT-rich */
+    {0.305195, 0.194581, 0.192344, 0.307880},   /* state 1: 39% GC */
+    {0.238485, 0.261263, 0.261810, 0.238442},   /* state 2: 52% GC */
+    {0.699281, 0.001439, 0.001439, 0.297842},   /* state 3: 0.3% GC (rare) */
+    {0.169064, 0.331719, 0.330454, 0.168763},   /* state 4: 66% GC */
+  };
+
+  /* Compute marginal genomic HMM nt freqs (for --imcmc-gc) */
+  double gc_marginal[4] = {0., 0., 0., 0.};
+  for (int a = 0; a < 4; a++)
+    for (int s = 0; s < 5; s++)
+      gc_marginal[a] += gc_stationary[s] * gc_emit[s][a];
+
+  /* For --imcmc-gcstate: compute chain allocation per state.
+   * Override n_chains to 25, distribute by stationary π. */
+  int gcstate_nchains[5] = {0, 0, 0, 0, 0};
+  int actual_n_chains = n_chains;
+  if (use_gcstate) {
+    actual_n_chains = 0;
+    for (int s = 0; s < 5; s++) {
+      gcstate_nchains[s] = (int)(gc_stationary[s] * 25 + 0.5);
+      if (gc_stationary[s] > 0.001 && gcstate_nchains[s] < 1) gcstate_nchains[s] = 1;
+      actual_n_chains += gcstate_nchains[s];
+    }
+    if (verbose) {
+      printf ("  gc-perstate: %d total chains (", actual_n_chains);
+      for (int s = 0; s < 5; s++) printf ("%s%d", s?",":"", gcstate_nchains[s]);
+      printf (")\n");
+    }
+  }
+
+  int total_N = actual_n_chains * n_steps;
+
   ESL_ALLOC (all_scores, sizeof (float) * total_N);
 
-  for (int chain = 0; chain < n_chains; chain++) {
+  for (int chain = 0; chain < actual_n_chains; chain++) {
     ESL_DSQ *dsq = NULL;
     int L;
     float sc_inside;
@@ -3730,35 +4568,69 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
     double design_log_q;
     CM_MX *ins_mx = NULL;
 
-    /* Step 1: Get a starting sequence with score >= mu.
-     * For sum mode: design a sequence targeting alpha[0][L][L] ≈ mu.
-     * For max-v mode: cm_DesignSequence targets the wrong quantity, so
-     * instead generate random sequences until we find one with best
-     * local hit >= mu. */
-    L = cm->clen;
-    ins_mx = cm_mx_Create (cm->M);
+    /* Determine which genomic HMM state this chain uses (for --imcmc-gcstate) */
+    int gc_state = -1;    /* -1 = no per-state correction */
+    const double *chain_emit = NULL;  /* emission freqs for this chain's GC state */
+    if (use_gcstate) {
+      /* Map chain index to gc state based on cumulative chain counts */
+      int cum = 0;
+      for (int s = 0; s < 5; s++) {
+        cum += gcstate_nchains[s];
+        if (chain < cum) { gc_state = s; break; }
+      }
+      chain_emit = gc_emit[gc_state];
+      if (verbose) printf ("  chain %d: gc_state=%d (%.0f%% GC)\n", chain, gc_state,
+                            100.0 * (chain_emit[1] + chain_emit[2]));
+    } else if (use_gc) {
+      chain_emit = gc_marginal;  /* marginal freqs for all chains */
+    }
 
-    if (use_maxv) {
-      /* Random sampling: find a starting sequence with best hit >= mu */
+    /* Step 1: Get a starting sequence with score >= mu. */
+    int lmult = esl_opt_GetInteger (go, "--imcmc-lmult");
+    int base_L = esl_opt_GetBoolean (go, "--imcmc-useW") ? (int) cm->W : (int) cm->clen;
+    L = base_L * lmult;
+    ins_mx = cm_mx_Create (cm->M);
+    CM_SHADOW_MX *shmx = NULL;
+    if (use_cyk) shmx = cm_shadow_mx_Create (cm);
+
+    if (use_maxv || use_cyk) {
+      /* Random sampling: find a starting sequence with score >= mu.
+       * For use_maxv: check best local hit (max over all v,j,d).
+       * For use_cyk without use_maxv: check alpha[0][L][L] (glocal CYK score).
+       * cm_DesignSequence targets Inside alpha[0][L][L], which is wrong for CYK. */
       int n_tries = 0;
       ESL_ALLOC (dsq, sizeof (ESL_DSQ) * (L + 2));
       while (1) {
         if ((status = esl_rsq_xfIID (cfg->r, cm->null, cm->abc->K, L, dsq)) != eslOK)
           cm_Fail ("ERROR generating random sequence");
         n_tries++;
-        if ((status = cm_InsideAlign (cm, errbuf, dsq, L, 512.0, ins_mx, &sc_inside)) != eslOK)
-          cm_Fail (errbuf);
-        sc_inside = cm_BestLocalHitScore (cm, ins_mx, L);
+        if (use_cyk) {
+          int b_dummy;
+          if ((status = cm_CYKInsideAlign (cm, errbuf, dsq, L, 512.0, ins_mx, shmx, &b_dummy, &sc_inside)) != eslOK)
+            cm_Fail (errbuf);
+        } else {
+          if ((status = cm_InsideAlign (cm, errbuf, dsq, L, 512.0, ins_mx, &sc_inside)) != eslOK)
+            cm_Fail (errbuf);
+        }
+        if (use_maxv)
+          sc_inside = cm_BestLocalHitScore (cm, ins_mx, L);
+        /* else: sc_inside is already alpha[0][L][L] from the align call */
+        if (use_null3) {
+          float null3_sc;
+          ScoreCorrectionNull3CompUnknown (cm->abc, cm->null, dsq, 1, L,
+                                           DEFAULT_NULL3_OMEGA, &null3_sc);
+          sc_inside -= null3_sc;
+        }
         if (sc_inside >= mu) break;
         if (n_tries > 100000) {
-          ESL_FAIL (eslERANGE, errbuf, "cm_MCMC_tail: 100K random tries without finding seq with best hit >= mu=%.3f", mu);
+          ESL_FAIL (eslERANGE, errbuf, "cm_MCMC_tail: 100K random tries without finding seq with score >= mu=%.3f", mu);
         }
       }
       if (verbose)
-        printf ("MCMC chain %d: start L=%d best_hit=%.3f (random, %d tries)\n",
+        printf ("MCMC chain %d: start L=%d score=%.3f (random, %d tries)\n",
                 chain, L, sc_inside, n_tries);
     } else {
-      /* Design a starting sequence with alpha[0][L][L] ≈ mu */
+      /* Design a starting sequence with alpha[0][L][L] ≈ mu (Inside only) */
       if ((status = cm_DesignSequence (cm, emit_cm, cfg, go, errbuf,
                                         mu, 0.5, 200, FALSE,
                                         &dsq, &L, &sc_inside, &design_niter,
@@ -3774,6 +4646,19 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
         cm_Fail (errbuf);
     }
 
+    /* Outside trick: for glocal CYK without --imcmc-maxv, we can predict
+     * the new alpha[0][L][L] in O(M*L) using the CYK Outside matrix,
+     * without modifying the alpha matrix. On accept, we update alpha
+     * via partial DP and recompute the Outside matrix. On reject, we do
+     * nothing. This saves O(M*L²) per rejected proposal. */
+    int use_outside_trick = (use_cyk && !use_maxv);
+    CM_MX *out_mx = NULL;
+    if (use_outside_trick) {
+      out_mx = cm_mx_Create (cm->M);
+      cm_CYKOutsideAlign (cm, errbuf, dsq, L, 512.0, FALSE, out_mx, ins_mx, NULL);
+      if (verbose) printf ("  chain %d: CYK Outside matrix computed (Outside trick enabled)\n", chain);
+    }
+
     /* Step 2-3: Simple Metropolis MCMC.
      * Propose random single-residue mutation, accept if score stays >= mu.
      * For sum mode (alpha[0][L][L]): symmetric proposal, no MH correction needed.
@@ -3782,6 +4667,9 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
     int accepted = 0;
     int collected = 0;
     int total_proposals = 0;
+    time_t chain_start_time = time (NULL);
+    int chain_timeout_secs = esl_opt_GetInteger (go, "--imcmc-chain-secs");
+    int chain_timed_out = 0;
 
     while (collected < n_steps) {
       /* Propose: random position, random alternative residue */
@@ -3790,138 +4678,131 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
       if (r >= dsq[p]) r++;
       total_proposals++;
 
-      /* Apply mutation tentatively */
       int old_res = dsq[p];
-      dsq[p] = r;
 
-      /* Capture state of OLD best cell (from previous accept) BEFORE mutation.
-       * old_best_v/j/d are persistent across steps within a chain. */
-      static int old_best_v = -1, old_best_j = -1, old_best_d = -1;
-      float old_score = sc_inside;  /* score at the old best cell, pre-mutation */
+      float new_sc;
+      if (use_outside_trick) {
+        /* O(M*L) prediction using CYK Outside trick.
+         * dsq is NOT mutated — the trick reads old dsq and predicts new score. */
+        new_sc = cm_CYKScoreAfterMutation (cm, ins_mx, out_mx, dsq, L, p, r);
+      } else {
+        /* O(M*L²) partial DP: apply mutation tentatively and recompute */
+        dsq[p] = r;
 
-      /* For TopK analysis: collect the top-K cells from the OLD matrix
-       * (before mutation). We use these to check if the new best cell came from
-       * the top-K of the old matrix. */
-      #define TOPK_TRACK 50
-      int topk_v[TOPK_TRACK], topk_j[TOPK_TRACK], topk_d[TOPK_TRACK];
-      float topk_sc[TOPK_TRACK];
-      int topk_n = 0;
-      static int do_topk_analysis = -1;
-      if (do_topk_analysis == -1)
-        do_topk_analysis = use_maxv ? 1 : 0;
-      if (do_topk_analysis) {
-        /* Collect top-K cells from the current alpha matrix (before mutation) */
-        for (int vv = 0; vv < cm->M; vv++) {
-          float bsc = (vv == 0) ? 0.0f :
-            ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[vv])) ?
-            cm->beginsc[vv] : -INFINITY;
-          if (bsc < -1e30) continue;
-          for (int jj = 0; jj <= L; jj++) {
-            for (int dd = 0; dd <= jj; dd++) {
-              if (! NOT_IMPOSSIBLE(ins_mx->dp[vv][jj][dd])) continue;
-              float sc = bsc + ins_mx->dp[vv][jj][dd];
-              /* Insert into top-K if better than current min */
-              if (topk_n < TOPK_TRACK) {
-                /* Find insertion point */
-                int pos = topk_n;
-                while (pos > 0 && topk_sc[pos-1] < sc) {
-                  topk_sc[pos] = topk_sc[pos-1];
-                  topk_v[pos] = topk_v[pos-1];
-                  topk_j[pos] = topk_j[pos-1];
-                  topk_d[pos] = topk_d[pos-1];
-                  pos--;
+        /* TopK analysis (only when use_maxv) */
+        static int old_best_v = -1, old_best_j = -1, old_best_d = -1;
+        float old_score = sc_inside;
+        #define TOPK_TRACK 50
+        int topk_v[TOPK_TRACK], topk_j[TOPK_TRACK], topk_d[TOPK_TRACK];
+        float topk_sc[TOPK_TRACK];
+        int topk_n = 0;
+        static int do_topk_analysis = -1;
+        if (do_topk_analysis == -1)
+          do_topk_analysis = use_maxv ? 1 : 0;
+        if (do_topk_analysis) {
+          for (int vv = 0; vv < cm->M; vv++) {
+            float bsc = (vv == 0) ? 0.0f :
+              ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[vv])) ?
+              cm->beginsc[vv] : -INFINITY;
+            if (bsc < -1e30) continue;
+            for (int jj = 0; jj <= L; jj++) {
+              for (int dd = 0; dd <= jj; dd++) {
+                if (! NOT_IMPOSSIBLE(ins_mx->dp[vv][jj][dd])) continue;
+                float sc = bsc + ins_mx->dp[vv][jj][dd];
+                if (topk_n < TOPK_TRACK) {
+                  int pos = topk_n;
+                  while (pos > 0 && topk_sc[pos-1] < sc) {
+                    topk_sc[pos] = topk_sc[pos-1]; topk_v[pos] = topk_v[pos-1];
+                    topk_j[pos] = topk_j[pos-1]; topk_d[pos] = topk_d[pos-1]; pos--;
+                  }
+                  topk_sc[pos] = sc; topk_v[pos] = vv; topk_j[pos] = jj; topk_d[pos] = dd;
+                  topk_n++;
+                } else if (sc > topk_sc[TOPK_TRACK-1]) {
+                  int pos = TOPK_TRACK - 1;
+                  while (pos > 0 && topk_sc[pos-1] < sc) {
+                    topk_sc[pos] = topk_sc[pos-1]; topk_v[pos] = topk_v[pos-1];
+                    topk_j[pos] = topk_j[pos-1]; topk_d[pos] = topk_d[pos-1]; pos--;
+                  }
+                  topk_sc[pos] = sc; topk_v[pos] = vv; topk_j[pos] = jj; topk_d[pos] = dd;
                 }
-                topk_sc[pos] = sc;
-                topk_v[pos] = vv;
-                topk_j[pos] = jj;
-                topk_d[pos] = dd;
-                topk_n++;
-              } else if (sc > topk_sc[TOPK_TRACK-1]) {
-                /* Better than worst in topk; insert */
-                int pos = TOPK_TRACK - 1;
-                while (pos > 0 && topk_sc[pos-1] < sc) {
-                  topk_sc[pos] = topk_sc[pos-1];
-                  topk_v[pos] = topk_v[pos-1];
-                  topk_j[pos] = topk_j[pos-1];
-                  topk_d[pos] = topk_d[pos-1];
-                  pos--;
-                }
-                topk_sc[pos] = sc;
-                topk_v[pos] = vv;
-                topk_j[pos] = jj;
-                topk_d[pos] = dd;
               }
             }
           }
         }
-      }
 
-      /* Recompute Inside for proposed sequence using partial DP.
-       * The matrix ins_mx contains the Inside DP for the unmutated sequence.
-       * cm_InsideAlign_partial updates only cells affected by mutation at p. */
-      float new_sc;
-      if ((status = cm_InsideAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &new_sc)) != eslOK)
-        cm_Fail (errbuf);
+        if (use_cyk) {
+          if ((status = cm_CYKAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &new_sc)) != eslOK)
+            cm_Fail (errbuf);
+        } else {
+          if ((status = cm_InsideAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &new_sc)) != eslOK)
+            cm_Fail (errbuf);
+        }
+      }
       int new_v = -1, new_j = -1, new_d = -1;
       if (use_maxv)
         new_sc = cm_BestLocalHitScoreVJD (cm, ins_mx, L, &new_v, &new_j, &new_d);
 
-      if (new_sc >= mu) {
+      /* Apply null3 composition correction if requested.
+       * null3 subtracts a score based on the hit's nucleotide composition.
+       * For the best local hit at (new_v, new_j, new_d), the subsequence
+       * is dsq[new_j-new_d+1..new_j]. For alpha[0][L][L] it's dsq[1..L].
+       * We use ScoreCorrectionNull3CompUnknown which computes comp from dsq. */
+      if (use_null3) {
+        float null3_sc;
+        int hit_start, hit_end;
+        if (use_maxv && new_v >= 0) {
+          hit_start = new_j - new_d + 1;
+          hit_end   = new_j;
+        } else {
+          hit_start = 1;
+          hit_end   = L;
+        }
+        ScoreCorrectionNull3CompUnknown (cm->abc, cm->null, dsq, hit_start, hit_end,
+                                         DEFAULT_NULL3_OMEGA, &null3_sc);
+        new_sc -= null3_sc;
+      }
+
+      /* Apply MH correction for genomic HMM nt freqs (--imcmc-gc or --imcmc-gcstate).
+       * The MH ratio is P_genomic(new_res) / P_genomic(old_res).
+       * We accept with probability min(1, MH_ratio) * I(new_sc >= mu). */
+      int mh_accept = 1;
+      if ((use_gc || use_gcstate) && chain_emit != NULL) {
+        double mh_ratio = chain_emit[r] / chain_emit[old_res];
+        if (mh_ratio < 1.0) {
+          /* Accept with probability mh_ratio */
+          if (esl_random (cfg->r) > mh_ratio) mh_accept = 0;
+        }
+        /* else mh_ratio >= 1.0: always accept (MH correction favors this mutation) */
+      }
+
+      if (new_sc >= mu && mh_accept) {
         /* Accept */
+        if (use_outside_trick) {
+          /* Now actually apply the mutation and update alpha + outside matrices */
+          dsq[p] = r;
+          if ((status = cm_CYKAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &new_sc)) != eslOK)
+            cm_Fail (errbuf);
+          cm_CYKOutsideAlign (cm, errbuf, dsq, L, 512.0, FALSE, out_mx, ins_mx, NULL);
+        }
         sc_inside = new_sc;
         accepted++;
 
         /* TRACKING: log enriched info per accept */
         if (use_maxv) {
+          static int old_best_v2 = -1, old_best_j2 = -1, old_best_d2 = -1;
           static FILE *track_fp = NULL;
           if (track_fp == NULL) {
             track_fp = fopen ("/tmp/mcmc_track.txt", "w");
-            if (track_fp) fprintf (track_fp, "# accepted mut_pos old_res new_res old_j old_d new_j new_d old_score new_score score_at_old rank_in_topk topk_vs_true topk_best_rank\n");
+            if (track_fp) fprintf (track_fp, "# accepted mut_pos old_res new_res old_j old_d new_j new_d old_score new_score\n");
           }
           if (track_fp) {
-            /* Compute score at the OLD best cell after the mutation */
-            float score_at_old = -999.0;
-            if (old_best_v >= 0 && old_best_j >= 0 && old_best_d >= 0) {
-              float bsc = (old_best_v == 0) ? 0.0 :
-                          ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[old_best_v])) ?
-                          cm->beginsc[old_best_v] : -999.0;
-              if (bsc > -998.0)
-                score_at_old = bsc + ins_mx->dp[old_best_v][old_best_j][old_best_d];
-            }
-
-            /* Find rank of new best cell in OLD top-K. -1 if not in top-K. */
-            int rank_in_topk = -1;
-            for (int kk = 0; kk < topk_n; kk++) {
-              if (topk_v[kk] == new_v && topk_j[kk] == new_j && topk_d[kk] == new_d) {
-                rank_in_topk = kk;
-                break;
-              }
-            }
-            /* Also: would tracking top-K alone (with their new scores after mutation)
-             * find the new best? For each cell in top-K, compute its NEW score
-             * (the value is now in ins_mx after partial DP) and find the max. */
-            float topk_best = -INFINITY;
-            int topk_best_rank = -1;
-            for (int kk = 0; kk < topk_n; kk++) {
-              float bsc = (topk_v[kk] == 0) ? 0.0f :
-                ((cm->flags & CMH_LOCAL_BEGIN) && NOT_IMPOSSIBLE(cm->beginsc[topk_v[kk]])) ?
-                cm->beginsc[topk_v[kk]] : -1e30f;
-              float sc = bsc + ins_mx->dp[topk_v[kk]][topk_j[kk]][topk_d[kk]];
-              if (sc > topk_best) { topk_best = sc; topk_best_rank = kk; }
-            }
-            float topk_vs_true = topk_best - new_sc;  /* difference from true best */
-
-            fprintf (track_fp, "%d %d %d %d %d %d %d %d %.4f %.4f %.4f %d %.4f %d\n",
+            fprintf (track_fp, "%d %d %d %d %d %d %d %d %.4f %.4f\n",
                      accepted, p, old_res, r,
-                     old_best_j, old_best_d, new_j, new_d,
-                     old_score, new_sc, score_at_old,
-                     rank_in_topk, topk_vs_true, topk_best_rank);
+                     old_best_v2, old_best_j2, new_j, new_d,
+                     sc_inside, new_sc);
             fflush (track_fp);
           }
-          /* Update tracked old best for next step */
-          old_best_v = new_v;
-          old_best_j = new_j;
-          old_best_d = new_d;
+          old_best_v2 = new_v; old_best_j2 = new_j; old_best_d2 = new_d;
         }
 
         /* Collect score if past burn-in */
@@ -3934,20 +4815,40 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
                     100.0 * accepted / total_proposals);
         }
       } else {
-        /* Reject: revert mutation. Use partial DP to undo the change in ins_mx
-         * (revert is also a single mutation: change dsq[p] back from r to old_res) */
-        dsq[p] = old_res;
-        if ((status = cm_InsideAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &sc_inside)) != eslOK)
-          cm_Fail (errbuf);
-        if (use_maxv)
-          sc_inside = cm_BestLocalHitScore (cm, ins_mx, L);
+        /* Reject */
+        if (use_outside_trick) {
+          /* Nothing to do — dsq and matrices were not modified */
+        } else {
+          /* Revert mutation and undo partial DP change */
+          dsq[p] = old_res;
+          if (use_cyk) {
+            if ((status = cm_CYKAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &sc_inside)) != eslOK)
+              cm_Fail (errbuf);
+          } else {
+            if ((status = cm_InsideAlign_partial (cm, errbuf, dsq, L, ins_mx, p, &sc_inside)) != eslOK)
+              cm_Fail (errbuf);
+          }
+          if (use_maxv)
+            sc_inside = cm_BestLocalHitScore (cm, ins_mx, L);
+        }
       }
 
-      /* Safety valve */
+      /* Safety valve: proposal count limit */
       if (total_proposals > 100 * (n_steps + n_burnin)) {
         printf ("WARNING: chain %d: %d proposals for %d accepts, stopping early\n",
                 chain, total_proposals, accepted);
         break;
+      }
+
+      /* Safety valve: wall-clock timeout (check every 1000 proposals to avoid overhead) */
+      if (total_proposals % 1000 == 0) {
+        time_t elapsed = time (NULL) - chain_start_time;
+        if (elapsed > chain_timeout_secs) {
+          printf ("WARNING: chain %d: %ld sec wall time (limit %d), %d proposals, %d accepts, stopping\n",
+                  chain, (long) elapsed, chain_timeout_secs, total_proposals, accepted);
+          chain_timed_out = 1;
+          break;
+        }
       }
     }
 
@@ -3957,6 +4858,8 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
               100.0 * accepted / total_proposals);
 
     cm_mx_Destroy (ins_mx);
+    if (out_mx != NULL) cm_mx_Destroy (out_mx);
+    if (shmx != NULL) cm_shadow_mx_Destroy (shmx);
     free (dsq);
   }
 
