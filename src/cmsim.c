@@ -4840,8 +4840,8 @@ cm_MCMC_tail (CM_t *cm, CM_t *emit_cm, struct cfg_s *cfg, const ESL_GETOPTS *go,
         break;
       }
 
-      /* Safety valve: wall-clock timeout (check every 1000 proposals to avoid overhead) */
-      if (total_proposals % 1000 == 0) {
+      /* Safety valve: wall-clock timeout (check every proposal — time() is cheap) */
+      {
         time_t elapsed = time (NULL) - chain_start_time;
         if (elapsed > chain_timeout_secs) {
           printf ("WARNING: chain %d: %ld sec wall time (limit %d), %d proposals, %d accepts, stopping\n",
