@@ -596,56 +596,60 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
     pli->do_msvbias = pli->do_edefbias = FALSE;
     pli->F1b = pli->F5b = 1.0; /* these are irrelevant */
 
-    /* set all other thresholds to db size defaults */
+    /* set all other thresholds to db size defaults.
+     * Values tuned 2026-04 on rmark4 benchmark; see notebook
+     * 26_0316_inf_banded_p7s/AGENT_NOTES.md "filter threshold tuning".
+     * Every range is faster and more sensitive than prior (v1.1.5) defaults.
+     * Tuning assumed the vitband + p7post_cp9b + per-state-pads pipeline;
+     * running without --vitband may be sub-optimal at these thresholds.
+     */
     if(Z_Mb >= (20000. - eslSMALLX1)) { /* Z >= 20 Gb */
       pli->F1 = 0.06;
       pli->F2 = pli->F2b = 0.02;
-      pli->F3 = pli->F3b = 0.0002;
+      pli->F3 = pli->F3b = 0.0005;
       pli->F4 = pli->F4b = 0.0002;
       pli->F5 = pli->F5b = 0.0002;
-      pli->F6 = 0.0001;
+      pli->F6 = 0.001;
     }
     else if(Z_Mb >= (2000. - eslSMALLX1)) { /* 20 Gb > Z >= 2 Gb */
-      pli->F1 = 0.15;
-      pli->F2 = pli->F2b = 0.15;
-      pli->F3 = pli->F3b = 0.0002;
+      pli->F1 = 0.10;
+      pli->F2 = pli->F2b = 0.10;
+      pli->F3 = pli->F3b = 0.002;
       pli->F4 = pli->F4b = 0.0002;
       pli->F5 = pli->F5b = 0.0002;
-      pli->F6 = 0.0001;
+      pli->F6 = 0.001;
     }
     else if(Z_Mb >= (200. - eslSMALLX1)) { /* 2 Gb > Z >= 200 Mb */
-      pli->F1 = 0.15;
-      pli->F2 = pli->F2b = 0.15;
-      pli->F3 = pli->F3b = 0.0008;
+      pli->F1 = 0.10;
+      pli->F2 = pli->F2b = 0.10;
+      pli->F3 = pli->F3b = 0.01;
       pli->F4 = pli->F4b = 0.0008;
       pli->F5 = pli->F5b = 0.0008;
-      pli->F6 = 0.0001;
+      pli->F6 = 0.001;
     }
     else if(Z_Mb >= (20. - eslSMALLX1)) { /* 200 Mb  > Z >= 20 Mb */
-      pli->F1 = pli->F1b = 0.35;
-      pli->F2 = pli->F2b = 0.15;
-      pli->F3 = pli->F3b = 0.003;
+      pli->F1 = pli->F1b = 0.15;
+      pli->F2 = pli->F2b = 0.08;
+      pli->F3 = pli->F3b = 0.006;
       pli->F4 = pli->F4b = 0.003;
       pli->F5 = pli->F5b = 0.003;
-      pli->F6 = 0.0001;
+      pli->F6 = 0.001;
     }
     else if(Z_Mb >= (2. - eslSMALLX1)) { /* 20 Mb  > Z >= 2 Mb */
-      pli->F1 = 0.35;
-      pli->do_vit = pli->do_vitbias = FALSE;
-      pli->F2 = pli->F2b = 1.00; /* these are irrelevant */
-      pli->F3 = pli->F3b = 0.005;
+      pli->F1 = 0.25;
+      pli->F2 = pli->F2b = 0.25;
+      pli->F3 = pli->F3b = 0.05;
       pli->F4 = pli->F4b = 0.005;
       pli->F5 = pli->F5b = 0.005;
-      pli->F6 = 0.0001;
+      pli->F6 = 0.001;
     }
     else { /* 2 Mb  > Z */
-      pli->F1 = 0.35;
-      pli->do_vit = pli->do_vitbias = FALSE;
-      pli->F2 = pli->F2b = 1.00; /* these are irrelevant */
-      pli->F3 = pli->F3b = 0.02;
-      pli->F4 = pli->F4b = 0.02;
-      pli->F5 = pli->F5b = 0.02;
-      pli->F6 = 0.0001;
+      pli->F1 = 0.25;
+      pli->F2 = pli->F2b = 0.25;
+      pli->F3 = pli->F3b = 0.05;
+      pli->F4 = pli->F4b = 0.1;
+      pli->F5 = pli->F5b = 0.1;
+      pli->F6 = 0.001;
     }
   } /* end of 'else' entered if none of --max, --nohmm, --mid, --rfam used */
 
