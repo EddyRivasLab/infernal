@@ -19,6 +19,10 @@
 #include "esl_random.h"
 #include "esl_randomseq.h"
 #include "esl_stack.h"
+#ifdef HMMER_THREADS
+#include "esl_threads.h"
+#include "esl_workqueue.h"
+#endif
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
@@ -241,20 +245,23 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
  *           ElfN      - number of sequences to sample for local Fwd
  *           EgfN      - number of sequences to sample for glocal Fwd
  *           ElfT      - fraction of tail mass to fit for  local Fwd (usually (HMMER3 is) 0.04)
- *           EgfT      - fraction of tail mass to fit for glocal Fwd 
+ *           EgfT      - fraction of tail mass to fit for glocal Fwd
+ *           seed      - RNG seed for calibration (0=one-time arbitrary)
+ *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
- *           
+ *
  * Return:   eslOK   on success
  *
  * Throws:   eslEINCOMPAT on contract violation
  *           eslEMEM on memory error
  */
 int
-cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, 
-		int ElmL, int ElvL, int ElfL, int EgfL, 
-		int ElmN, int ElvN, int ElfN, int EgfN, 
-		double ElfT, double EgfT, 
+cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
+		int ElmL, int ElvL, int ElfL, int EgfL,
+		int ElmN, int ElvN, int ElfN, int EgfN,
+		double ElfT, double EgfT,
+		int seed, int ncpus,
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -268,7 +275,8 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   /*printf("cm_p7_Calibrate:\n\tElmL: %d\n\tElvL: %d\n\tElfL: %d\n\tEgfL: %d\n\tElmN: %d\n\tElvN: %d\n\tElfN: %d\n\tEgfN: %d\n\tElfT: %f\n\tEgfT: %f\n\n", ElmL, ElvL, ElfL, EgfL, ElmN, ElvN, ElfN, EgfN, ElfT, EgfT, do_real, do_null3, do_fitlam, do_bias);*/
 
   /* most of this code stolen from hmmer's evalues.c::p7_Calibrate() */
-  if ((r      = esl_randomness_CreateFast(42)) == NULL)                   ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG");
+  if (seed > 0) { if ((r = esl_randomness_CreateFast(seed)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG"); }
+  else          { if ((r = esl_randomness_Create(0))       == NULL) ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to create RNG"); }
   if ((bg     = p7_bg_Create(hmm->abc)) == NULL)                          ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate background");
   if ((gm     = p7_profile_Create(hmm->M, hmm->abc))  == NULL)            ESL_XFAIL(eslEMEM, errbuf, "cm_p7_Calibrate(): failed to allocate profile");
   if ((status = p7_ProfileConfig(hmm, bg, gm, ElmL, p7_LOCAL)) != eslOK)  ESL_XFAIL(status,  errbuf, "cm_p7_Calibrate(): failed to configure profile");
@@ -293,7 +301,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
 
   /* finally, determine Glocal Forward stats */
   if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
-  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, lambda, EgfT, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, lambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
   gflambda = lambda;
 
   esl_randomness_Destroy(r); 
@@ -461,16 +469,89 @@ cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *
 }
 
 
+/* Structure for passing work units through the work queue
+ * in the threaded glocal Forward calibration path.
+ * A small pool of these structs cycles between reader and workers.
+ */
+typedef struct {
+  ESL_DSQ *dsq;     /* digital sequence buffer, 1..L (owned by this struct) */
+  int      L;       /* sequence length; 0 = sentinel (stop signal) */
+  double   sc;      /* RETURN: bit score (fwd - null) / log2 */
+  int      idx;     /* sequence index in xv[] array; -1 for sentinel */
+} CM_P7_TAU_WORK;
+
+#ifdef HMMER_THREADS
+/* Per-worker data for threaded glocal Forward calibration.
+ * Each worker accumulates scores in its own local scA[] array,
+ * which the main thread merges after all workers finish.
+ * This follows the cmcalibrate pattern.
+ */
+typedef struct {
+  P7_PROFILE      *gm;
+  P7_BG           *bg;
+  ESL_WORK_QUEUE  *queue;
+  double          *scA;     /* worker-local score array, pre-allocated by main thread */
+  int              nsc;     /* number of scores stored in scA */
+} CM_P7_TAU_WINFO;
+
+/* cm_p7_tau_thread_worker()
+ * Worker function for threaded glocal Forward calibration.
+ * Each worker pulls sequences from the queue, runs
+ * cm_p7_GForwardScoreOnly(), and accumulates bit scores
+ * in its own local scA[] array.
+ */
+static void
+cm_p7_tau_thread_worker(void *arg)
+{
+  ESL_THREADS      *obj = (ESL_THREADS *) arg;
+  int               workeridx;
+  CM_P7_TAU_WINFO  *winfo;
+  CM_P7_TAU_WORK   *work = NULL;
+  void             *newwork;
+
+  esl_threads_Started(obj, &workeridx);
+  winfo = (CM_P7_TAU_WINFO *) esl_threads_GetData(obj, workeridx);
+
+  winfo->nsc = 0;
+
+  esl_workqueue_WorkerUpdate(winfo->queue, NULL, &newwork);
+  work = (CM_P7_TAU_WORK *) newwork;
+
+  while (work->L > 0)   /* sentinel: L==0 means stop */
+    {
+      float fsc, nullsc;
+
+      cm_p7_GForwardScoreOnly(work->dsq, work->L, winfo->gm, &fsc);
+      p7_bg_NullOne(winfo->bg, work->dsq, work->L, &nullsc);
+
+      winfo->scA[winfo->nsc] = (double)((fsc - nullsc) / eslCONST_LOG2);
+      winfo->nsc++;
+
+      esl_workqueue_WorkerUpdate(winfo->queue, work, &newwork);
+      work = (CM_P7_TAU_WORK *) newwork;
+    }
+  esl_workqueue_WorkerUpdate(winfo->queue, work, NULL);
+  esl_threads_Finished(obj, workeridx);
+}
+#endif /* HMMER_THREADS */
+
+
 /* Function:  cm_p7_Tau()
  * Synopsis:  Determine Forward tau by brief simulation.
  * Incept:    SRE, Thu Aug  9 15:08:39 2007 [Janelia] (p7_Tau())
  *
- * Purpose:   Identical to p7_Tau() except that it can handle 
+ * Purpose:   Identical to p7_Tau() except that it can handle
  *            either an optimized profile or a generic profile,
  *            the latter of which is used for glocal Forward.
  *            See hmmer/evalues.c::cm_p7_Tau for additional information.
- *            
+ *
+ *            When <ncpus> > 0 and <gm> is non-NULL (generic/glocal
+ *            path), the N Forward evaluations are parallelized
+ *            across <ncpus> worker threads. Sequences are
+ *            pre-generated by the main thread for reproducibility.
+ *
  * Args:      r      : source of randomness
+ *            errbuf : for error messages
  *            om     : configured profile (optimized), if non-NULL, <gm> must be NULL
  *            gm     : configured profile (generic),   if non-NULL, <om> must be NULL
  *            bg     : null model (for background residue frequencies)
@@ -478,15 +559,15 @@ cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *
  *            N      : number of sequences to generate
  *            lambda : expected slope of the exponential tail (from p7_Lambda())
  *            tailp  : tail mass from which we will extrapolate mu
+ *            ncpus  : number of CPUs for threaded glocal Fwd (0=serial)
  *            ret_tau : RETURN: estimate for the Forward tau (base of exponential tail)
  *
- * Returns:   <eslOK> on success, and <*ret_fv> is the score difference
- *            in bits.
+ * Returns:   <eslOK> on success, and <*ret_tau> is the tau estimate.
  *
- * Throws:    <eslEMEM> on allocation error, and <*ret_fv> is 0.
+ * Throws:    <eslEMEM> on allocation error, and <*ret_tau> is 0.
  */
 int
-cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, double *ret_tau)
+cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, int ncpus, double *ret_tau)
 {
   P7_OMX  *ox = NULL;
 
@@ -502,30 +583,152 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   if(om != NULL && gm != NULL) { status = eslEINVAL; goto ERROR; }
   do_generic = (gm != NULL) ? TRUE : FALSE;
 
-  if(! do_generic) {
-    ox = p7_omx_Create(om->M, 0, L);     /* DP matrix: for ForwardParser,  L rows */
-    if (ox == NULL) { status = eslEMEM; goto ERROR; }
-  }
-
   ESL_ALLOC(xv,  sizeof(double)  * N);
-  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
 
   if(do_generic) p7_ReconfigLength(gm, L);
   else           p7_oprofile_ReconfigLength(om, L);
   p7_bg_SetLength(bg, L);
 
-  for (i = 0; i < N; i++)
+#ifdef HMMER_THREADS
+  /* Threaded path for generic (glocal) Forward calibration.
+   * Pattern: main thread pre-generates all N sequences, then
+   * uses a small pool of recycling work items to feed workers.
+   */
+  if(do_generic && ncpus > 0)
     {
-      if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR;
-      if(do_generic) {
-	if ((status = cm_p7_GForwardScoreOnly(dsq, L, gm, &fsc))   != eslOK) goto ERROR;
+      ESL_THREADS      *threadObj = NULL;
+      ESL_WORK_QUEUE   *queue     = NULL;
+      CM_P7_TAU_WINFO  *winfo    = NULL;
+      CM_P7_TAU_WORK   *wpool    = NULL;     /* small recycling pool */
+      ESL_DSQ         **dsqpool   = NULL;     /* all N pre-generated sequences */
+      int               npool;                /* size of recycling pool */
+      int               next_seq;             /* next sequence to assign */
+      int               sentinels_sent;
+      int               j;
+      void             *newptr;
+      CM_P7_TAU_WORK   *work;
+
+      /* 1. Pre-generate all N sequences deterministically */
+      ESL_ALLOC(dsqpool, sizeof(ESL_DSQ *) * N);
+      for (i = 0; i < N; i++) {
+	ESL_ALLOC(dsqpool[i], sizeof(ESL_DSQ) * (L+2));
+	if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsqpool[i])) != eslOK) goto ERROR;
       }
-      else {
-	if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
+
+      /* 2. Create recycling pool of work items */
+      npool = ncpus * 2;
+      ESL_ALLOC(wpool, sizeof(CM_P7_TAU_WORK) * npool);
+      for (j = 0; j < npool; j++) {
+	wpool[j].dsq = NULL;
+	wpool[j].L   = 0;
+	wpool[j].sc  = 0.;
+	wpool[j].idx = -1;
       }
-      if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
-      sc = (fsc - nullsc) / eslCONST_LOG2;
-      xv[i] = sc;
+
+      /* 3. Set up threads and work queue */
+      threadObj = esl_threads_Create(&cm_p7_tau_thread_worker);
+      queue     = esl_workqueue_Create(npool);
+
+      ESL_ALLOC(winfo, sizeof(CM_P7_TAU_WINFO) * ncpus);
+      for (j = 0; j < ncpus; j++) {
+	winfo[j].gm    = gm;
+	winfo[j].bg    = bg;
+	winfo[j].queue = queue;
+	winfo[j].nsc   = 0;
+	ESL_ALLOC(winfo[j].scA, sizeof(double) * N);  /* pre-alloc to max possible */
+	esl_threads_AddThread(threadObj, &winfo[j]);
+      }
+
+      /* 4. Initialize queue with empty work items */
+      for (j = 0; j < npool; j++)
+	esl_workqueue_Init(queue, &wpool[j]);
+
+      /* 5. Reader loop: fill work items with pre-generated sequences
+       * and push to workers. Workers accumulate scores in their
+       * own local scA[] arrays.
+       */
+      esl_workqueue_Reset(queue);
+      esl_threads_WaitForStart(threadObj);
+
+      next_seq       = 0;
+      sentinels_sent = 0;
+
+      /* get first empty work item */
+      status = esl_workqueue_ReaderUpdate(queue, NULL, &newptr);
+      if (status != eslOK) goto ERROR;
+      work = (CM_P7_TAU_WORK *) newptr;
+
+      while (sentinels_sent < ncpus)
+	{
+	  /* fill work item with next sequence, or make it a sentinel */
+	  if (next_seq < N) {
+	    work->dsq = dsqpool[next_seq];
+	    work->L   = L;
+	    work->idx = next_seq;
+	    next_seq++;
+	  } else {
+	    work->dsq = NULL;
+	    work->L   = 0;    /* sentinel */
+	    work->idx = -1;
+	    sentinels_sent++;
+	  }
+
+	  /* send filled/sentinel item, get back a recycled one */
+	  status = esl_workqueue_ReaderUpdate(queue, work, &newptr);
+	  if (status != eslOK) goto ERROR;
+	  work = (CM_P7_TAU_WORK *) newptr;
+	}
+
+      esl_threads_WaitForFinish(threadObj);
+      esl_workqueue_Complete(queue);
+
+      /* 6. Merge per-worker scores into xv[], following cmcalibrate pattern */
+      {
+	int n = 0;
+	for (j = 0; j < ncpus; j++) {
+	  for (i = 0; i < winfo[j].nsc; i++)
+	    xv[n++] = winfo[j].scA[i];
+	}
+      }
+
+      /* 7. Cleanup thread resources */
+      for (i = 0; i < N; i++)
+	free(dsqpool[i]);
+      free(dsqpool);
+      free(wpool);
+      for (j = 0; j < ncpus; j++)
+	free(winfo[j].scA);
+      free(winfo);
+      esl_workqueue_Destroy(queue);
+      esl_threads_Destroy(threadObj);
+    }
+  else
+#endif /* HMMER_THREADS */
+    {
+      /* Serial path (original behavior) */
+      if(! do_generic) {
+	ox = p7_omx_Create(om->M, 0, L);
+	if (ox == NULL) { status = eslEMEM; goto ERROR; }
+      }
+
+      ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+
+      for (i = 0; i < N; i++)
+	{
+	  if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR;
+	  if(do_generic) {
+	    if ((status = cm_p7_GForwardScoreOnly(dsq, L, gm, &fsc))   != eslOK) goto ERROR;
+	  }
+	  else {
+	    if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
+	  }
+	  if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
+	  sc = (fsc - nullsc) / eslCONST_LOG2;
+	  xv[i] = sc;
+	}
+
+      free(dsq); dsq = NULL;
+      if (ox != NULL) { p7_omx_Destroy(ox); ox = NULL; }
     }
 
   if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
@@ -537,9 +740,6 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
 
   free(xv);
-  free(dsq);
-  if (ox != NULL) p7_omx_Destroy(ox);
-  /* gx removed: was never declared or used */
   return eslOK;
 
  ERROR:
@@ -547,7 +747,6 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   if (xv  != NULL) free(xv);
   if (dsq != NULL) free(dsq);
   if (ox  != NULL) p7_omx_Destroy(ox);
-  /* gx removed: was never declared or used */
   return status;
 }
 
