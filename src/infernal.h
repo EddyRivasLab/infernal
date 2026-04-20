@@ -2281,6 +2281,7 @@ typedef struct cm_pipeline_s {
   int     *p7pn_max_d;          /* flat [e*(M+1)+k] delete max */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
   int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad */
+  int           p7_nodepad_M;   /* M used when p7_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
   char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
   int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7padplus, default 0)        */
   int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */

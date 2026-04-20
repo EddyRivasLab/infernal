@@ -306,6 +306,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_p7post_cp9b    = (esl_opt_IsOn(go, "--p7post_cp9b"))   ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
+  pli->p7_nodepad_M       = 0;    /* 0 = pad vector not yet loaded; set to M on load, guards reload */
   pli->p7nodepad_file     = esl_opt_IsOn(go, "--p7nodepad-file") ? esl_opt_GetString(go, "--p7nodepad-file") : NULL;
   pli->p7nodepad_plus     = esl_opt_GetInteger(go, "--p7padplus");
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
@@ -1581,8 +1582,10 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   /* --p7nodepad-file: read per-state pad vector from file written by p7bandsim.
    * In SCAN mode (cmscan), *opt_cm may be NULL at this point (the CM is loaded
    * lazily by pli_scan_mode_read_cm), so use om->M as the model length source
-   * — it matches cm->cp9map->hmm_M for mlp7 filter profiles. */
-  if(pli->p7nodepad_file != NULL && om != NULL) {
+   * — it matches cm->cp9map->hmm_M for mlp7 filter profiles.
+   * Cached across cm_Pipeline() calls: reload only if M differs from the
+   * model the pad was loaded for (matters for cmscan where M varies per CM). */
+  if(pli->p7nodepad_file != NULL && om != NULL && pli->p7_nodepad_M != om->M) {
     int   M = om->M;
     FILE *pf = fopen(pli->p7nodepad_file, "r");
     if(pf == NULL) ESL_FAIL(eslFAIL, pli->errbuf, "could not open --p7nodepad-file %s", pli->p7nodepad_file);
@@ -1602,6 +1605,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     }
     fclose(pf);
     if(n_set < M) ESL_FAIL(eslEFORMAT, pli->errbuf, "--p7nodepad-file %s only set %d/%d nodes", pli->p7nodepad_file, n_set, M);
+    pli->p7_nodepad_M = M;
   }
 
   /* First loop over each pipeline pass:
