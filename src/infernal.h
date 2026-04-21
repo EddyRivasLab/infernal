@@ -3150,7 +3150,7 @@ extern int          cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX 
 extern int          cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
 extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level);
-extern int          p7bands_to_cp9bands      (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level);
+extern int          p7bands_to_cp9bands      (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, const float *pocc, int debug_level);
 extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, float thresh, int debug_level);
 extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, float *pocc);
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);

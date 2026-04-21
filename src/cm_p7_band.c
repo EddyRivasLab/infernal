@@ -2047,6 +2047,15 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
  *           CP9 F/B approach, because CP9 F/B constrained by p7 bands cannot
  *           assign non-zero posterior to positions outside those bands.
  *
+ *           NOTE: This function is CURRENTLY UNUSED (no active callers on the
+ *           defppp dispatch path as of 2026-04-21). It is inferior to the
+ *           two-phase p7banded_post_to_pn_bands + p7pn_bands_to_cp9cm_bands
+ *           approach used by defppp, because it has no access to F/B posteriors
+ *           and therefore cannot compute per-node occupancy for the cp9-style
+ *           thresh1/thresh2 sp/ep derivation (it falls back to the legacy
+ *           extent-based sp1=sp2/ep1=ep2 collapse when pocc==NULL).
+ *           Consider removing this function if no future caller materializes.
+ *
  * Args:     cm          - the covariance model
  *           errbuf      - char buffer for reporting errors
  *           kmin        - p7 bands: kmin[i] = min node k for residue i [0..L]
@@ -2056,13 +2065,22 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
  *           i0          - first position in original sequence coords
  *           j0          - final position in original sequence coords
  *           pass_idx    - pipeline pass index, determines truncation mode
+ *           pocc        - [0..M] per-node match-posterior occupancy OR NULL.
+ *                         When non-NULL, enables cp9-style thresh1/thresh2 sweep
+ *                         for sp1/sp2/ep1/ep2 (same as p7pn_bands_to_cp9cm_bands).
+ *                         When NULL, falls back to legacy extent-based collapse
+ *                         (sp1=sp2, ep1=ep2). This function cannot compute pocc
+ *                         internally (no F/B matrices available); callers must
+ *                         supply it from an upstream posterior computation or
+ *                         pass NULL to get legacy behavior.
  *           debug_level - verbosity level for debugging printf()s
  *
  * Returns:  eslOK on success
  */
 int
 p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
-		    CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level)
+		    CP9Bands_t *cp9b, int i0, int j0, int pass_idx,
+		    const float *pocc, int debug_level)
 {
   int   status;
   int   i, k;
@@ -2143,61 +2161,128 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
   }
 
   /* Set truncation candidate valid arrays.
-   * For non-truncated passes: Jvalid=TRUE, others=FALSE.
-   * For truncated passes: derive sp1/sp2/ep1/ep2 from the extent of the p7 bands,
-   *   then compute Rmarg/Lmarg bounds and call cp9_MarginalCandidatesFromStartEndPositions. */
+   * Two modes depending on whether the caller supplies per-node posterior occupancy:
+   * - pocc != NULL: cp9-style thresh1/thresh2 sweep (sp1 != sp2, ep1 != ep2 possible),
+   *   Rmarg/Lmarg from union over both. Mirrors p7pn_bands_to_cp9cm_bands.
+   * - pocc == NULL: legacy extent-based collapse (sp1=sp2, ep1=ep2). */
   if(do_trunc) {
-    /* sp1 = first node with any p7 coverage; ep1 = last such node.
-     * Set sp2=sp1, ep2=ep1 (no posterior to distinguish thresholds). */
-    int sp = M + 1, ep = 0;
-    for(i = 1; i <= L; i++) {
-      if(kmin[i] < sp) sp = kmin[i];
-      if(kmax[i] > ep) ep = kmax[i];
-    }
-    if(sp < 1)     sp = 1;
-    if(sp > M + 1) sp = M + 1;
-    if(ep < 0)     ep = 0;
-    if(ep > M)     ep = M;
-    cp9b->sp1 = cp9b->sp2 = sp;
-    cp9b->ep1 = cp9b->ep2 = ep;
+    if(pocc != NULL) {
+      cp9b->sp1 = cp9b->sp2 = -1;
+      for(k = 1; k <= M; k++) {
+        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+        if(cp9b->sp1 == -1 && pocc[k] > cp9b->thresh1) cp9b->sp1 = k;
+        if(cp9b->sp2 == -1 && pocc[k] > cp9b->thresh2) cp9b->sp2 = k;
+        if(cp9b->sp1 != -1 && cp9b->sp2 != -1) break;
+      }
+      if(cp9b->sp1 == -1) cp9b->sp1 = M + 1;
+      if(cp9b->sp2 == -1) cp9b->sp2 = M + 1;
 
-    /* Compute Rmarg_imin/imax from sp (mirrors Parts 3 of cp9_PredictStartAndEndPositionsP7B).
-     * At this point pn_min/max arrays are already in i0..j0 coords. */
-    if(cp9b->sp1 == M + 1) {
-      cp9b->Rmarg_imin = i0;
-      cp9b->Rmarg_imax = j0;
+      if(cp9b->sp1 == M + 1 && cp9b->sp2 == M + 1) {
+        cp9b->ep1 = cp9b->ep2 = 0;
+      } else {
+        cp9b->ep1 = cp9b->ep2 = -1;
+        for(k = M; k >= 1; k--) {
+          if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+          if(cp9b->ep1 == -1 && pocc[k] > cp9b->thresh1) cp9b->ep1 = k;
+          if(cp9b->ep2 == -1 && pocc[k] > cp9b->thresh2) cp9b->ep2 = k;
+          if(cp9b->ep1 != -1 && cp9b->ep2 != -1) break;
+        }
+        if(cp9b->ep1 == -1) cp9b->ep1 = 0;
+        if(cp9b->ep2 == -1) cp9b->ep2 = 0;
+      }
+
+      if(cp9b->sp1 == M + 1) {
+        cp9b->Rmarg_imin = i0; cp9b->Rmarg_imax = j0;
+      } else {
+        int rmin = INT_MAX, rmax = INT_MIN;
+        if(cp9b->sp1 != (M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp1]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp2]);
+        if(rmin == INT_MAX || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmin = i0;
+        cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmin));
+
+        if(cp9b->sp1 != (M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp1]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp2]);
+        if(rmax == INT_MIN || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmax = j0 + 1;
+        cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmax));
+      }
+
+      if(cp9b->ep1 == 0) {
+        cp9b->Lmarg_jmin = i0 - 1; cp9b->Lmarg_jmax = j0;
+      } else {
+        int lmin = INT_MAX, lmax = INT_MIN;
+        if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep1] - 1);
+        if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep2] - 1);
+        if(lmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmin = i0 - 1;
+        cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmin));
+
+        if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep1] - 1);
+        if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep2] - 1);
+        if(lmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmax = j0;
+        cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmax));
+      }
     } else {
-      int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
-      if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
-      if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
-      if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
-      if(rmarg_imin == INT_MAX) rmarg_imin = i0;
-      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
+      /* Legacy: no posterior available; extent-based collapse (sp1=sp2, ep1=ep2). */
+      int sp = M + 1, ep = 0;
+      for(i = 1; i <= L; i++) {
+        if(kmin[i] < sp) sp = kmin[i];
+        if(kmax[i] > ep) ep = kmax[i];
+      }
+      if(sp < 1)     sp = 1;
+      if(sp > M + 1) sp = M + 1;
+      if(ep < 0)     ep = 0;
+      if(ep > M)     ep = M;
+      cp9b->sp1 = cp9b->sp2 = sp;
+      cp9b->ep1 = cp9b->ep2 = ep;
 
-      if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
-      if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
-      if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
-      if(rmarg_imax == INT_MIN) rmarg_imax = j0 + 1;
-      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
-    }
+      if(cp9b->sp1 == M + 1) {
+        cp9b->Rmarg_imin = i0; cp9b->Rmarg_imax = j0;
+      } else {
+        int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
+        if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
+        if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
+        if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
+        if(rmarg_imin == INT_MAX) rmarg_imin = i0;
+        cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
 
-    /* Compute Lmarg_jmin/jmax from ep (mirrors Parts 4 of cp9_PredictStartAndEndPositionsP7B) */
-    if(cp9b->ep1 == 0) {
-      cp9b->Lmarg_jmin = i0 - 1;
-      cp9b->Lmarg_jmax = j0;
-    } else {
-      int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
-      if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
-      if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
-      if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
-      if(lmarg_jmin == INT_MAX) lmarg_jmin = i0 - 1;
-      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+        if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
+        if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
+        if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
+        if(rmarg_imax == INT_MIN) rmarg_imax = j0 + 1;
+        cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
+      }
 
-      if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
-      if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
-      if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
-      if(lmarg_jmax == INT_MIN) lmarg_jmax = j0;
-      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+      if(cp9b->ep1 == 0) {
+        cp9b->Lmarg_jmin = i0 - 1; cp9b->Lmarg_jmax = j0;
+      } else {
+        int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
+        if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
+        if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
+        if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
+        if(lmarg_jmin == INT_MAX) lmarg_jmin = i0 - 1;
+        cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+
+        if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
+        if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
+        if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
+        if(lmarg_jmax == INT_MIN) lmarg_jmax = j0;
+        cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+      }
     }
 
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
@@ -2298,6 +2383,7 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
   float        fM, bM, fI, bI;
   int          nk;
   int          first_kac, first_kbc; /* band of first row, for i=0 D_k handling */
+  float       *pocc = NULL;          /* [0..M] per-node match-posterior occupancy */
 
   /* Contract checks */
   if(cm->cp9map == NULL)
@@ -2312,6 +2398,9 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
     ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: bnd is NULL.\n");
   if(bnd->nrow == 0)
     ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: bnd has no banded rows.\n");
+
+  ESL_ALLOC(pocc, sizeof(float) * (M + 1));
+  for(k = 0; k <= M; k++) pocc[k] = 0.0f;
 
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
@@ -2363,6 +2452,7 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
 	for(k = kac; k <= kbc; k++) {
 	  fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
 	  bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+	  pocc[k] += expf(fM + bM - fwdsc);
 
 	  if(fM + bM - fwdsc > log_thresh) {
 	    if(ep < cp9b->pn_min_m[k]) cp9b->pn_min_m[k] = ep;
@@ -2421,63 +2511,81 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
     }
   }
 
-  /* Set truncation candidate valid arrays.
-   * For non-truncated passes: Jvalid=TRUE, others=FALSE.
-   * For truncated passes: derive sp/ep from the model extent covered by
-   *   the posterior, then compute Rmarg/Lmarg and call
-   *   cp9_MarginalCandidatesFromStartEndPositions. */
+  /* Set truncation candidate valid arrays using cp9-style thresh1/thresh2 sweep.
+   * pocc[k] was accumulated above (unconditionally) as Σ_i exp(fM+bM-fwdsc).
+   * Mirrors p7pn_bands_to_cp9cm_bands and hmmband.c:cp9_PredictStartAndEndPositions. */
   if(do_trunc) {
-    int sp = M + 1, ep = 0;
+    cp9b->sp1 = cp9b->sp2 = -1;
     for(k = 1; k <= M; k++) {
-      if(cp9b->pn_min_m[k] != -1 && k < sp) sp = k;
-      if(cp9b->pn_max_m[k] != -1 && k > ep) ep = k;
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+      if(cp9b->sp1 == -1 && pocc[k] > cp9b->thresh1) cp9b->sp1 = k;
+      if(cp9b->sp2 == -1 && pocc[k] > cp9b->thresh2) cp9b->sp2 = k;
+      if(cp9b->sp1 != -1 && cp9b->sp2 != -1) break;
     }
-    if(sp < 1)     sp = 1;
-    if(sp > M + 1) sp = M + 1;
-    if(ep < 0)     ep = 0;
-    if(ep > M)     ep = M;
-    cp9b->sp1 = cp9b->sp2 = sp;
-    cp9b->ep1 = cp9b->ep2 = ep;
+    if(cp9b->sp1 == -1) cp9b->sp1 = M + 1;
+    if(cp9b->sp2 == -1) cp9b->sp2 = M + 1;
 
-    /* Rmarg: from sp (mirrors p7bands_to_cp9bands) */
+    if(cp9b->sp1 == M + 1 && cp9b->sp2 == M + 1) {
+      cp9b->ep1 = cp9b->ep2 = 0;
+    } else {
+      cp9b->ep1 = cp9b->ep2 = -1;
+      for(k = M; k >= 1; k--) {
+        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+        if(cp9b->ep1 == -1 && pocc[k] > cp9b->thresh1) cp9b->ep1 = k;
+        if(cp9b->ep2 == -1 && pocc[k] > cp9b->thresh2) cp9b->ep2 = k;
+        if(cp9b->ep1 != -1 && cp9b->ep2 != -1) break;
+      }
+      if(cp9b->ep1 == -1) cp9b->ep1 = 0;
+      if(cp9b->ep2 == -1) cp9b->ep2 = 0;
+    }
+
     if(cp9b->sp1 == M + 1) {
-      cp9b->Rmarg_imin = i0;
-      cp9b->Rmarg_imax = j0;
+      cp9b->Rmarg_imin = i0; cp9b->Rmarg_imax = j0;
     } else {
-      int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
-      if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
-      if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
-      if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
-      if(rmarg_imin == INT_MAX)    rmarg_imin = i0;
-      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
+      int rmin = INT_MAX, rmax = INT_MIN;
+      if(cp9b->sp1 != (M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp1]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp2]);
+      if(rmin == INT_MAX || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmin = i0;
+      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmin));
 
-      if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
-      if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
-      if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
-      if(rmarg_imax == INT_MIN)    rmarg_imax = j0 + 1;
-      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
+      if(cp9b->sp1 != (M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp1]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp2]);
+      if(rmax == INT_MIN || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmax = j0 + 1;
+      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmax));
     }
 
-    /* Lmarg: from ep */
     if(cp9b->ep1 == 0) {
-      cp9b->Lmarg_jmin = i0 - 1;
-      cp9b->Lmarg_jmax = j0;
+      cp9b->Lmarg_jmin = i0 - 1; cp9b->Lmarg_jmax = j0;
     } else {
-      int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
-      if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
-      if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
-      if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
-      if(lmarg_jmin == INT_MAX)    lmarg_jmin = i0 - 1;
-      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+      int lmin = INT_MAX, lmax = INT_MIN;
+      if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep1] - 1);
+      if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep2] - 1);
+      if(lmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmin = i0 - 1;
+      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmin));
 
-      if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
-      if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
-      if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
-      if(lmarg_jmax == INT_MIN)    lmarg_jmax = j0;
-      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+      if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep1] - 1);
+      if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep2] - 1);
+      if(lmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmax = j0;
+      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmax));
     }
 
-    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) goto ERROR;
   } else {
     esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
     esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
@@ -2487,22 +2595,27 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
 
   /* HMM bands -> CM ij bands */
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) goto ERROR;
   } else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) goto ERROR;
   }
 
   /* CM ij bands -> CM d bands */
-  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
   ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
-  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) goto ERROR;
   ESL_DPRINTF1(("#DEBUG: p7banded_post_to_cp9bands bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm);
 
+  free(pocc);
   return eslOK;
+
+ ERROR:
+  if(pocc) free(pocc);
+  return status;
 }
 
 
@@ -3040,10 +3153,7 @@ p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
    *   --p7post_tau variant and the final-stage band-shift call at
    *   cm_pipeline.c:5807).
    *
-   * TODO: the analogous fix is needed in p7bands_to_cp9bands (cm_p7_band.c:2064)
-   *       and p7banded_post_to_cp9bands (cm_p7_band.c:2280). They use the same
-   *       sp1=sp2/ep1=ep2 collapse but aren't on the defppp dispatch path, so
-   *       they are not updated here. Revisit after this fix validates. */
+   */
   if(do_trunc) {
     if(pocc != NULL) {
       /* Part 1: sp1/sp2 by threshold sweep (cp9_PredictStartAndEndPositions analogue) */
