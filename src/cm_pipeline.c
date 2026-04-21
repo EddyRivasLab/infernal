@@ -222,6 +222,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7pn_max_i      = NULL;
   pli->p7pn_min_d      = NULL;
   pli->p7pn_max_d      = NULL;
+  pli->p7pn_pocc       = NULL;
   pli->stg_time_F1F3     = 0.0;
   pli->stg_time_gmsv     = 0.0;
   pli->stg_time_seq2bands = 0.0;
@@ -938,6 +939,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7pn_max_i) free(pli->p7pn_max_i);
   if (pli->p7pn_min_d) free(pli->p7pn_min_d);
   if (pli->p7pn_max_d) free(pli->p7pn_max_d);
+  if (pli->p7pn_pocc)  free(pli->p7pn_pocc);
   if (pli->p7_nodepad)  free(pli->p7_nodepad);
   if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
   if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
@@ -4387,6 +4389,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  free(pli->p7pn_max_i); pli->p7pn_max_i = NULL;
 	  free(pli->p7pn_min_d); pli->p7pn_min_d = NULL;
 	  free(pli->p7pn_max_d); pli->p7pn_max_d = NULL;
+	  if(pli->p7pn_pocc) { free(pli->p7pn_pocc); pli->p7pn_pocc = NULL; }
 	  pli->p7pn_nenv_alloc = 0;
 	  pli->p7pn_nenv       = 0;
 	}
@@ -4402,6 +4405,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  ESL_REALLOC(pli->p7pn_max_i, sizeof(int) * pn_new_alloc * (pn_M+1));
 	  ESL_REALLOC(pli->p7pn_min_d, sizeof(int) * pn_new_alloc * (pn_M+1));
 	  ESL_REALLOC(pli->p7pn_max_d, sizeof(int) * pn_new_alloc * (pn_M+1));
+	  ESL_REALLOC(pli->p7pn_pocc,  sizeof(float) * pn_new_alloc * (pn_M+1));
 	  pli->p7pn_nenv_alloc = pn_new_alloc;
 	}
 	{ int pn_e = pli->p7pn_nenv;
@@ -4417,6 +4421,9 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 					  &pli->p7pn_max_i[pn_e*(pn_M+1)],
 					  &pli->p7pn_min_d[pn_e*(pn_M+1)],
 					  &pli->p7pn_max_d[pn_e*(pn_M+1)]);
+	    /* Tau variant does not compute pocc; mark this env's pocc as unset
+	     * so dispatch falls back to the extent-based sp/ep collapse. */
+	    { int kp; for(kp = 0; kp <= pn_M; kp++) pli->p7pn_pocc[pn_e*(pn_M+1)+kp] = -1.0f; }
 	  } else {
 	    p7banded_post_to_pn_bands(pli->gxfb, pli->gxbb, pli->p7_fwdsc,
 				      pli->p7bnd, pli->p7_window_start, pn_M,
@@ -4426,7 +4433,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 				      &pli->p7pn_min_i[pn_e*(pn_M+1)],
 				      &pli->p7pn_max_i[pn_e*(pn_M+1)],
 				      &pli->p7pn_min_d[pn_e*(pn_M+1)],
-				      &pli->p7pn_max_d[pn_e*(pn_M+1)]);
+				      &pli->p7pn_max_d[pn_e*(pn_M+1)],
+				      &pli->p7pn_pocc [pn_e*(pn_M+1)]);
 	  }
 	  pli->p7pn_nenv++;
 	}
@@ -5477,6 +5485,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 					   &pli->p7pn_max_i[pn_x*(pn_M+1)],
 					   &pli->p7pn_min_d[pn_x*(pn_M+1)],
 					   &pli->p7pn_max_d[pn_x*(pn_M+1)],
+					   &pli->p7pn_pocc [pn_x*(pn_M+1)],
 					   cm->cp9b, (int)start, (int)stop, envL,
 					   pli->cur_pass_idx, 0);
 	if(status == eslOK) {
@@ -5803,11 +5812,15 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
           new_pn_min_m[0] = 0; new_pn_max_m[0] = 0;
           new_pn_min_d[0] = -1; new_pn_max_d[0] = -1;
 
-          /* Replace cm->cp9b bands with the shifted tight bands */
+          /* Replace cm->cp9b bands with the shifted tight bands.
+           * Pass NULL for pocc: this final-stage band-shift path constructs
+           * pn arrays locally from already-cached bands; no posterior available.
+           * The function falls back to extent-based sp1=sp2/ep1=ep2 collapse. */
           status = p7pn_bands_to_cp9cm_bands(cm, pli->errbuf,
                                              new_pn_min_m, new_pn_max_m,
                                              new_pn_min_i, new_pn_max_i,
                                              new_pn_min_d, new_pn_max_d,
+                                             NULL,
                                              cm->cp9b, 1, hit_L, hit_L,
                                              pli->cur_pass_idx, 0);
         }

@@ -2279,6 +2279,9 @@ typedef struct cm_pipeline_s {
   int     *p7pn_max_i;          /* flat [e*(M+1)+k] insert max */
   int     *p7pn_min_d;          /* flat [e*(M+1)+k] delete min */
   int     *p7pn_max_d;          /* flat [e*(M+1)+k] delete max */
+  float   *p7pn_pocc;           /* flat [e*(M+1)+k] per-node match-posterior occupancy sum.
+                                 * Used by p7pn_bands_to_cp9cm_bands to compute sp1/sp2/ep1/ep2
+                                 * via cp9b->thresh1/thresh2 comparisons (mimicking cp9 path).  */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
   int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad */
   int           p7_nodepad_M;   /* M used when p7_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
@@ -3149,9 +3152,9 @@ extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *e
 extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level);
 extern int          p7bands_to_cp9bands      (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, int debug_level);
 extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, float thresh, int debug_level);
-extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
+extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, float *pocc);
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
-extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
+extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, const float *pocc, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, CP9Bands_t *cp9b, int pass_idx, int debug);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
