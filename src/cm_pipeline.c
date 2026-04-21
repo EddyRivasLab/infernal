@@ -3734,14 +3734,11 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
 	  /* --vitband: derive Viterbi bands then run banded Forward.
-	   * Profile is temporarily configured to GLOCAL (default) or LOCAL (--vitblocal),
-	   * then restored to truncated mode.
+	   * Tgm requires local mode (not glocal): bands must cover local-entry/exit cells on both ends.
 	   */
-	  int vitband_mode = pli->vitband_local ? p7_LOCAL : p7_GLOCAL;
-	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, vitband_mode);
+	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2BandsVit(pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
 				   pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
-	  if(!pli->vitband_local) p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL); /* p7_ProfileConfig5PrimeAnd3PrimeTrunc requires LOCAL */
 	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
