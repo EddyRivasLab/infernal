@@ -1587,13 +1587,23 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   printf("#DEBUG: do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 #endif
 
-  /* --p7nodepad-file: read per-state pad vector from file written by p7bandsim.
-   * In SCAN mode (cmscan), *opt_cm may be NULL at this point (the CM is loaded
-   * lazily by pli_scan_mode_read_cm), so use om->M as the model length source
-   * — it matches cm->cp9map->hmm_M for mlp7 filter profiles.
-   * Cached across cm_Pipeline() calls: reload only if M differs from the
-   * model the pad was loaded for (matters for cmscan where M varies per CM). */
-  if(pli->p7nodepad_file != NULL && om != NULL && pli->p7_nodepad_M != om->M) {
+  /* p7 per-HMM-node band pads: prefer CM-embedded pads (new v1/b CM files, computed
+   * by cmbuild). Fall back to --p7nodepad-file sidecar (developer override) if the
+   * CM doesn't have embedded pads. In SCAN mode (cmscan), *opt_cm may be NULL at
+   * this point (the CM is loaded lazily by pli_scan_mode_read_cm), so use om->M as
+   * the model length source. Cached across cm_Pipeline() calls: reload only if M
+   * differs from the model the pad was loaded for. */
+  if (om != NULL && *opt_cm != NULL && ((*opt_cm)->flags & CMH_P7NODEPAD) && pli->p7_nodepad_M != om->M) {
+    int M = om->M;
+    int k;
+    if (pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
+    ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M + 1));
+    memcpy(pli->p7_nodepad, (*opt_cm)->p7_nodepad, sizeof(int) * (M + 1));
+    /* apply --p7padplus at load time to our own copy; CM's array stays unmodified */
+    for (k = 0; k <= M; k++) pli->p7_nodepad[k] += pli->p7nodepad_plus;
+    pli->p7_nodepad_M = M;
+  }
+  else if (pli->p7nodepad_file != NULL && om != NULL && pli->p7_nodepad_M != om->M) {
     int   M = om->M;
     FILE *pf = fopen(pli->p7nodepad_file, "r");
     if(pf == NULL) ESL_FAIL(eslFAIL, pli->errbuf, "could not open --p7nodepad-file %s", pli->p7nodepad_file);
