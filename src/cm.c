@@ -152,8 +152,10 @@ CreateCMShell(void)
   cm->cp9_bmx      = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
-  cm->mlp7         = NULL;          
-  cm->fp7          = NULL;          
+  cm->mlp7         = NULL;
+  cm->fp7          = NULL;
+  cm->p7_nodepad   = NULL;
+  cm->p7_nodepad_M = 0;
 
   for (z = 0; z < CM_p7_NEVPARAM; z++) cm->fp7_evparam[z]  = CM_p7_EVPARAM_UNSET;
 
@@ -480,10 +482,11 @@ FreeCM(CM_t *cm)
     if(cm->fp7 == cm->mlp7) cm->fp7 = NULL;
     cm->mlp7 = NULL; 
   }
-  if(cm->fp7  != NULL) { 
-    p7_hmm_Destroy(cm->fp7);  
-    cm->fp7  = NULL; 
+  if(cm->fp7  != NULL) {
+    p7_hmm_Destroy(cm->fp7);
+    cm->fp7  = NULL;
   }
+  if(cm->p7_nodepad != NULL) { free(cm->p7_nodepad); cm->p7_nodepad = NULL; }
   if(cm->emap   != NULL) FreeEmitMap(cm->emap);
   if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
   if(cm->trp    != NULL) cm_tr_penalties_Destroy(cm->trp);
@@ -3171,11 +3174,17 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->mlp7 != NULL) { 
     if((new->mlp7 = p7_hmm_Clone(cm->mlp7)) == NULL) { status = eslEMEM; goto ERROR; }
   }
-  if(cm->fp7  != NULL) { 
+  if(cm->fp7  != NULL) {
     if((new->fp7  = p7_hmm_Clone(cm->fp7))  == NULL) { status = eslEMEM; goto ERROR; }
     esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
   }
-  
+  if(cm->p7_nodepad != NULL) {
+    ESL_ALLOC(new->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
+    memcpy(new->p7_nodepad, cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
+    new->p7_nodepad_M = cm->p7_nodepad_M;
+  }
+
+
   /* CM HMM banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
   if(cm->hb_mx     != NULL) new->hb_mx     = cm_hb_mx_Create(new->M);
   if(cm->hb_omx    != NULL) new->hb_omx    = cm_hb_mx_Create(new->M);

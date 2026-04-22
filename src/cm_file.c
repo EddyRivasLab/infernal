@@ -45,6 +45,7 @@ static unsigned int v01magic = 0xe3edb0b1; /* v0.1 binary: "cm01" + 0x80808080 *
 #endif
 
 static uint32_t  v1a_magic  = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
+static uint32_t  v1b_magic  = 0xe3edb0b3; /* v1.2 binary: "cm03" + 0x80808080 (adds optional P7NODEPAD) */
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -224,6 +225,7 @@ cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
   if ((status = esl_fileparser_GetToken(cmfp->efp, &tok, &toklen))    != eslOK)  goto ERROR;
 
   if      (             strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+  else if (             strcmp("INFERNAL1/b", tok) == 0) { cmfp->format = CM_FILE_1b; cmfp->parser = read_asc_1p1_cm; }
   else if (allow_1p0 && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
 
   if (cmfp->parser == NULL) { status = eslEFORMAT; goto ERROR; }
@@ -459,13 +461,14 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   /* 7. Check for binary file format. A pressed db is automatically binary: verify. */
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
   if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
-  else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/a. Previous binary formats are not supported.", cmfp->fname);
+  else if (magic.n == v1b_magic) { cmfp->format = CM_FILE_1b; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
+  else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/b. Previous binary formats are not supported.", cmfp->fname);
 
   /* 8. Checks for ASCII file format */
   if (cmfp->parser == NULL)
     {
       /* Does the magic appear to be binary, yet we didn't recognize it? */
-      if (magic.n & 0x80000000) ESL_XFAIL(eslEFORMAT, errbuf, "Format tag appears binary, but unrecognized\nCurrent Infernal format is INFERNAL1/a. Previous binary formats are not supported.");
+      if (magic.n & 0x80000000) ESL_XFAIL(eslEFORMAT, errbuf, "Format tag appears binary, but unrecognized\nCurrent Infernal format is INFERNAL1/b. Previous binary formats are not supported.");
 
       if ((cmfp->efp = esl_fileparser_Create(cmfp->f))                     == NULL)  ESL_XFAIL(eslEMEM, errbuf, "internal error in esl_fileparser_Create()");
       if ((status = esl_fileparser_SetCommentChar(cmfp->efp, '#'))        != eslOK)  ESL_XFAIL(status,  errbuf, "internal error in esl_fileparser_SetCommentChar()");
@@ -473,6 +476,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
       if ((status = esl_fileparser_GetToken(cmfp->efp, &tok, &toklen))    != eslOK)  ESL_XFAIL(status,  errbuf, "internal error in esl_fileparser_GetToken()");
 
       if      (                 strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+      else if (                 strcmp("INFERNAL1/b", tok) == 0) { cmfp->format = CM_FILE_1b; cmfp->parser = read_asc_1p1_cm; }
       else if ((  allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
       else if ((! allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': use cmconvert to reformat Infernal v1.0 to v1.0.2 CM files to current format", tok); }
       else                                                       { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': unrecognized or not supported.", tok); }
@@ -605,9 +609,10 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
 
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
 
-  if (format == -1) format = CM_FILE_1a;
+  if (format == -1) format = CM_FILE_1b;
 
-  if   (format == CM_FILE_1a) fprintf(fp, "INFERNAL1/a [%s | %s]\n", INFERNAL_VERSION, INFERNAL_DATE);
+  if      (format == CM_FILE_1a) fprintf(fp, "INFERNAL1/a [%s | %s]\n", INFERNAL_VERSION, INFERNAL_DATE);
+  else if (format == CM_FILE_1b) fprintf(fp, "INFERNAL1/b [%s | %s]\n", INFERNAL_VERSION, INFERNAL_DATE);
   else ESL_EXCEPTION(eslEINVAL, "invalid CM file format code");
   
   fprintf(fp, "NAME     %s\n", cm->name);
@@ -621,6 +626,7 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   fprintf(fp, "RF       %s\n", (cm->flags & CMH_RF)   ? "yes" : "no");
   fprintf(fp, "CONS     %s\n", (cm->flags & CMH_CONS) ? "yes" : "no");
   fprintf(fp, "MAP      %s\n", (cm->flags & CMH_MAP)  ? "yes" : "no");
+  if (format >= CM_FILE_1b) fprintf(fp, "P7NODEPAD %s\n", (cm->flags & CMH_P7NODEPAD) ? "yes" : "no");
   if (cm->ctime   != NULL) fprintf  (fp, "DATE     %s\n", cm->ctime);
   if (cm->comlog  != NULL) multiline(fp, "COM     ",     cm->comlog);
   fprintf(fp, "PBEGIN   %g\n", cm->pbegin);
@@ -703,14 +709,26 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
       else if(cm->ndtype[nd] == MATR_nd) fprintf(fp, " %c %c", '-', cm->consensus[cm->emap->rpos[nd]]);
       else 	                         fprintf(fp, " %c %c", '-', '-');
       /* RF (optional) */
-      if(cm->flags & CMH_RF) { 
-	if     (cm->ndtype[nd] == MATP_nd) fprintf(fp, " %c %c", cm->rf[cm->emap->lpos[nd]], cm->rf[cm->emap->rpos[nd]]); 
+      if(cm->flags & CMH_RF) {
+	if     (cm->ndtype[nd] == MATP_nd) fprintf(fp, " %c %c", cm->rf[cm->emap->lpos[nd]], cm->rf[cm->emap->rpos[nd]]);
 	else if(cm->ndtype[nd] == MATL_nd) fprintf(fp, " %c %c", cm->rf[cm->emap->lpos[nd]], '-');
 	else if(cm->ndtype[nd] == MATR_nd) fprintf(fp, " %c %c", '-', cm->rf[cm->emap->rpos[nd]]);
 	else 	                           fprintf(fp, " %c %c", '-', '-');
       }
       else { /* no RF annotation */
 	fprintf(fp, " %c %c", '-', '-');
+      }
+      /* P7NODEPAD (optional, v1/b and later) */
+      if(format >= CM_FILE_1b) {
+	if(cm->flags & CMH_P7NODEPAD) {
+	  if     (cm->ndtype[nd] == MATP_nd) fprintf(fp, " %4d %4d", cm->p7_nodepad[cm->emap->lpos[nd]], cm->p7_nodepad[cm->emap->rpos[nd]]);
+	  else if(cm->ndtype[nd] == MATL_nd) fprintf(fp, " %4d %4s", cm->p7_nodepad[cm->emap->lpos[nd]], "-");
+	  else if(cm->ndtype[nd] == MATR_nd) fprintf(fp, " %4s %4d", "-", cm->p7_nodepad[cm->emap->rpos[nd]]);
+	  else                               fprintf(fp, " %4s %4s", "-", "-");
+	}
+	else {
+	  fprintf(fp, " %4s %4s", "-", "-");
+	}
       }
       fputs("\n", fp);
     }    
@@ -791,10 +809,11 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
 
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
 
-  if (format == -1) format = CM_FILE_1a;
+  if (format == -1) format = CM_FILE_1b;
 
   /* ye olde magic number */
   if      (format == CM_FILE_1a) { if (fwrite((char *) &(v1a_magic), sizeof(uint32_t), 1, fp) != 1) return eslFAIL; }
+  else if (format == CM_FILE_1b) { if (fwrite((char *) &(v1b_magic), sizeof(uint32_t), 1, fp) != 1) return eslFAIL; }
   else ESL_EXCEPTION(eslEINVAL, "invalid CM file format code");
 
   /* info necessary for sizes of things
@@ -884,8 +903,15 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
     }
   }
 
+  /* p7 per-HMM-node band pads (v1/b and later, flag-gated) */
+  if (format >= CM_FILE_1b && (cm->flags & CMH_P7NODEPAD)) {
+    if (fwrite((char *) &(cm->p7_nodepad_M), sizeof(int), 1, fp) != 1) return eslFAIL;
+    if (fwrite((char *)   cm->p7_nodepad,    sizeof(int), cm->p7_nodepad_M + 1, fp) != (size_t)(cm->p7_nodepad_M + 1)) return eslFAIL;
+  }
+
   /* finally, write the filter p7 HMM */
-  fp7_offset = 0; 
+  fp7_offset = 0;
+
   /* fp7_offset remains 0 if we don't write a fp7, caller will know that no 
    * fp7 was written if (! (cm->flags & CMH_FP7)) || cm->fp7 == NULL 
    */
@@ -1573,6 +1599,8 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   char *tmp_cons_right = NULL;
   int  *tmp_map_left   = NULL;
   int  *tmp_map_right  = NULL;
+  int  *tmp_pad_left   = NULL;
+  int  *tmp_pad_right  = NULL;
 
   cmfp->errbuf[0] = '\0';
 
@@ -1660,11 +1688,17 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	else if (strcasecmp(tok1, "no")  != 0)                                           ESL_XFAIL(eslEFORMAT,  cmfp->errbuf, "CONS header line must say yes/no, not %s", tok1);
       } 
 
-      else if (strcmp(tag, "MAP") == 0) {	
+      else if (strcmp(tag, "MAP") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No yes/no found for MAP line");
 	if      (strcasecmp(tok1, "yes") == 0) cm->flags |= CMH_MAP;
 	else if (strcasecmp(tok1, "no")  != 0)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "MAP header line must say yes/no, not %s", tok1);
-      } 
+      }
+
+      else if (strcmp(tag, "P7NODEPAD") == 0) {
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No yes/no found for P7NODEPAD line");
+	if      (strcasecmp(tok1, "yes") == 0) cm->flags |= CMH_P7NODEPAD;
+	else if (strcasecmp(tok1, "no")  != 0)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "P7NODEPAD header line must say yes/no, not %s", tok1);
+      }
 
       else if (strcmp(tag, "DATE") == 0) {
 	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No date found on DATE line");
@@ -1853,6 +1887,13 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   tmp_cons_left[cm->nodes]  = '\0';
   tmp_cons_right[cm->nodes] = '\0';
 
+  if (cm->flags & CMH_P7NODEPAD) {
+    ESL_ALLOC(tmp_pad_left,  sizeof(int) * cm->nodes);
+    ESL_ALLOC(tmp_pad_right, sizeof(int) * cm->nodes);
+    esl_vec_ISet(tmp_pad_left,  cm->nodes, -1);
+    esl_vec_ISet(tmp_pad_right, cm->nodes, -1);
+  }
+
   nd = -1;
   cm->clen = 0;
 
@@ -1954,9 +1995,40 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	  else { /* either (! (cm->flags & CMH_RF)) or ndtype is not MATP, MATL nor MATR */
 	    if (*tok1 != '-')                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid 1st RF character on node line: should be '-', not %s", tok1);
 	    if (*tok2 != '-')                                                            ESL_XFAIL(status,     cmfp->errbuf, "Invalid 2nd RF character on node line: should be '-', not %s", tok2);
-	    tmp_rf_left[nd]  = *tok1; 
-	    tmp_rf_right[nd] = *tok2; 
+	    tmp_rf_left[nd]  = *tok1;
+	    tmp_rf_right[nd] = *tok2;
 	  }
+
+	  /* P7NODEPAD (optional: CMH_P7NODEPAD? yes, else skip) */
+	  if (cm->flags & CMH_P7NODEPAD) {
+	    if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK) ESL_XFAIL(status,    cmfp->errbuf, "Too few fields on node line: expected %d, got %d", 12, 10);
+	    if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL)) != eslOK) ESL_XFAIL(status,    cmfp->errbuf, "Too few fields on node line: expected %d, got %d", 12, 11);
+	    if      (cm->ndtype[nd] == MATP_nd) {
+	      if (!is_integer(tok1))                                                       ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st P7NODEPAD value on MATP node line: should be integer, not %s", tok1);
+	      if (!is_integer(tok2))                                                       ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd P7NODEPAD value on MATP node line: should be integer, not %s", tok2);
+	      tmp_pad_left[nd]  = atoi(tok1);
+	      tmp_pad_right[nd] = atoi(tok2);
+	    }
+	    else if (cm->ndtype[nd] == MATL_nd) {
+	      if (!is_integer(tok1))                                                       ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st P7NODEPAD value on MATL node line: should be integer, not %s", tok1);
+	      if (*tok2 != '-')                                                            ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd P7NODEPAD value on MATL node line: should be '-', not %s", tok2);
+	      tmp_pad_left[nd]  = atoi(tok1);
+	      tmp_pad_right[nd] = -1;
+	    }
+	    else if (cm->ndtype[nd] == MATR_nd) {
+	      if (*tok1 != '-')                                                            ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st P7NODEPAD value on MATR node line: should be '-', not %s", tok1);
+	      if (!is_integer(tok2))                                                       ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd P7NODEPAD value on MATR node line: should be integer, not %s", tok2);
+	      tmp_pad_left[nd]  = -1;
+	      tmp_pad_right[nd] = atoi(tok2);
+	    }
+	    else {
+	      if (*tok1 != '-')                                                            ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st P7NODEPAD value on node line: should be '-', not %s", tok1);
+	      if (*tok2 != '-')                                                            ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd P7NODEPAD value on node line: should be '-', not %s", tok2);
+	      tmp_pad_left[nd]  = -1;
+	      tmp_pad_right[nd] = -1;
+	    }
+	  }
+
 	  if ((status = esl_fileparser_NextLine(cmfp->efp))                    != eslOK) ESL_XFAIL(status,     cmfp->errbuf, "Premature end of data in main model: no state %d line", v);
 	  if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK) ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on state line: expected at least %d, got %d", 8, 0);
 	} /* done with node line */
@@ -2087,11 +2159,20 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     }
     cm->consensus[cm->clen+1] = '\0';
   }
-  if (cm->flags & CMH_MAP) { 
+  if (cm->flags & CMH_MAP) {
     cm->map[0] = 0;
-    for(nd = 0; nd < cm->nodes; nd++) { 
+    for(nd = 0; nd < cm->nodes; nd++) {
       if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) cm->map[cm->emap->lpos[nd]] = tmp_map_left[nd];
       if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) cm->map[cm->emap->rpos[nd]] = tmp_map_right[nd];
+    }
+  }
+  if (cm->flags & CMH_P7NODEPAD) {
+    ESL_ALLOC(cm->p7_nodepad, sizeof(int) * (cm->clen + 1));
+    cm->p7_nodepad_M = cm->clen;
+    cm->p7_nodepad[0] = 0;  /* unused at search time; zero-init for hygiene */
+    for (nd = 0; nd < cm->nodes; nd++) {
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) cm->p7_nodepad[cm->emap->lpos[nd]] = tmp_pad_left[nd];
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) cm->p7_nodepad[cm->emap->rpos[nd]] = tmp_pad_right[nd];
     }
   }
 
@@ -2104,6 +2185,9 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   free(tmp_cons_right);
   free(tmp_map_left);
   free(tmp_map_right);
+  /* these are allocated only when CMH_P7NODEPAD was set */
+  if (tmp_pad_left  != NULL) free(tmp_pad_left);
+  if (tmp_pad_right != NULL) free(tmp_pad_right);
 
   if (*ret_abc == NULL) *ret_abc = abc;
   if ( opt_cm != NULL)  *opt_cm = cm; else FreeCM(cm);
@@ -2269,22 +2353,30 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     }
   }
 
+  /* p7 per-HMM-node band pads (v1/b and later, flag-gated) */
+  if (cmfp->format >= CM_FILE_1b && (cm->flags & CMH_P7NODEPAD)) {
+    if (! fread((char *) &(cm->p7_nodepad_M), sizeof(int), 1, cmfp->f))                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read p7_nodepad_M");
+    ESL_ALLOC(cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
+    if (fread((char *) cm->p7_nodepad, sizeof(int), cm->p7_nodepad_M + 1, cmfp->f) != (size_t)(cm->p7_nodepad_M + 1))
+                                                                                              ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read p7_nodepad array");
+  }
+
   /* Finally, read the filter HMM for this CM, unless we're explicitly asked not to. */
-  if(read_fp7) { 
-    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+  if(read_fp7) {
+    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) {
       if((fp7_offset = ftello(cmfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
     }
-    else { 
+    else {
       fp7_offset = -1; /* this is irrelevant if stdin or gzip mode, cm_p7_hmmfile_Read will ignore it */
     }
     if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
     if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
-    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
+    if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) {
       /* now position the CM file to the end of the HMM we just read */
       if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
     }
-  } 
-    
+  }
+
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   if ( opt_cm != NULL)  *opt_cm  = cm;  else FreeCM(cm);
   return eslOK;
