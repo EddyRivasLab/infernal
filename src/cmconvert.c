@@ -39,7 +39,7 @@ static ESL_OPTIONS options[] = {
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
   { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad deficit distribution",        2 },
   { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "RNG seed for p7 pad simulation (0=arbitrary)",    2 },
-  { "--p7pad-cpu",  eslARG_INT,      "0",  NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of CPUs for p7 pad simulation (0=all available)", 2 },
+  { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of CPUs for p7 pad simulation (0=serial)",        2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -128,11 +128,10 @@ main(int argc, char **argv)
         {
           if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
           {
-            int pad_ncpu = esl_opt_GetInteger(go, "--p7pad-cpu");
 #ifdef HMMER_THREADS
-            if (pad_ncpu == 0) pad_ncpu = esl_threads_GetCPUCount();
+            int pad_ncpu = ESL_MIN(esl_opt_GetInteger(go, "--p7pad-cpu"), esl_threads_GetCPUCount());
 #else
-            pad_ncpu = 1;
+            int pad_ncpu = 0;
 #endif
             if (pad_ncpu > esl_opt_GetInteger(go, "--p7pad-N")) pad_ncpu = esl_opt_GetInteger(go, "--p7pad-N");
             ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));

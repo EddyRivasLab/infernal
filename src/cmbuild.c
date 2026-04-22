@@ -139,7 +139,7 @@ static ESL_OPTIONS options[] = {
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of parsetree samples for p7 pad simulation",            107 },
   { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad per-node deficit distribution",             107 },
   { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "set RNG seed for p7 pad simulation (0=arbitrary)",              107 },
-  { "--p7pad-cpu",  eslARG_INT,      "0",  NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of parallel CPUs for p7 pad simulation (0=all avail)",  107 },
+  { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of parallel CPUs for p7 pad simulation (0=serial)",    107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -1307,11 +1307,10 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
        fflush(cfg->ofp);
      }
 
-     int pad_ncpu = esl_opt_GetInteger(go, "--p7pad-cpu");
 #ifdef HMMER_THREADS
-     if (pad_ncpu == 0) pad_ncpu = esl_threads_GetCPUCount();
+     int pad_ncpu = ESL_MIN(esl_opt_GetInteger(go, "--p7pad-cpu"), esl_threads_GetCPUCount());
 #else
-     pad_ncpu = 1;
+     int pad_ncpu = 0;
 #endif
      if (pad_ncpu > esl_opt_GetInteger(go, "--p7pad-N")) pad_ncpu = esl_opt_GetInteger(go, "--p7pad-N");
      ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
