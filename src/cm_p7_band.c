@@ -9,6 +9,8 @@
 #include "config.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <float.h>
 #include <limits.h>
@@ -18,6 +20,10 @@
 #include "esl_random.h"
 #include "esl_sq.h"
 #include "esl_sse.h"
+#ifdef HMMER_THREADS
+#include "esl_threads.h"
+#include "esl_workqueue.h"
+#endif
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
@@ -5724,6 +5730,200 @@ static int cm_nodepad_cmpint(const void *a, const void *b) {
   return (x<y)?-1:(x>y);
 }
 
+/* Structure for work units passed through the work queue
+ * in the threaded cm_ComputeP7NodePad() path.
+ * A small recycling pool of these structs cycles between reader and workers.
+ */
+typedef struct {
+  int idx;   /* sample index to process; -1 = sentinel (stop signal) */
+} CM_NODEPAD_WORK;
+
+#ifdef HMMER_THREADS
+/* Per-worker info for threaded cm_ComputeP7NodePad().
+ * Each worker maintains its own per-node deficit arrays and p7 objects.
+ * The main thread merges the deficit arrays after all workers finish.
+ */
+typedef struct {
+  CM_t           *cm;         /* shared CM (read-only) */
+  ESL_RANDOMNESS *r;          /* per-worker RNG (owned by this struct) */
+  ESL_WORK_QUEUE *queue;      /* shared work queue */
+  P7_BG          *bg;         /* per-worker p7 background model */
+  P7_PROFILE     *gm;         /* per-worker p7 profile */
+  P7_GMX         *gx;         /* per-worker p7 DP matrix */
+  P7_TRACE       *p7tr;       /* per-worker p7 trace */
+  int           **deficits;   /* deficits[k][0..def_n[k]-1]: per-node deficit values */
+  int            *def_n;      /* def_n[k]: number of deficits recorded at node k */
+  int            *def_alloc;  /* def_alloc[k]: allocated size of deficits[k] */
+  int             M;          /* number of HMM nodes (copy for convenience) */
+  int             status;     /* eslOK or error code set by worker */
+  char            errbuf[eslERRBUFSIZE]; /* error message if status != eslOK */
+} CM_NODEPAD_WINFO;
+
+/* cm_nodepad_thread_worker()
+ * Worker function for threaded cm_ComputeP7NodePad().
+ * Each worker pulls sample indices from the work queue, runs the
+ * full EmitParsetree + embed + Viterbi + deficit-record loop for
+ * each sample, accumulates results in its own per-node deficit arrays,
+ * and stops on the sentinel (idx == -1).
+ */
+static void
+cm_nodepad_thread_worker(void *arg)
+{
+  ESL_THREADS      *obj = (ESL_THREADS *) arg;
+  int               workeridx;
+  CM_NODEPAD_WINFO *winfo;
+  CM_NODEPAD_WORK  *work = NULL;
+  void             *newwork;
+  CM_t             *cm;
+  ESL_RANDOMNESS   *r;
+  int               M;
+  int               flank = 500;
+  int               status;
+  int               seen[10000];  /* per-worker local array; avoids static thread-safety issue */
+
+  esl_threads_Started(obj, &workeridx);
+  winfo = (CM_NODEPAD_WINFO *) esl_threads_GetData(obj, workeridx);
+
+  cm = winfo->cm;
+  r  = winfo->r;
+  M  = winfo->M;
+
+  winfo->status = eslOK;
+
+  esl_workqueue_WorkerUpdate(winfo->queue, NULL, &newwork);
+  work = (CM_NODEPAD_WORK *) newwork;
+
+  while (work->idx >= 0)   /* sentinel: idx == -1 means stop */
+    {
+      Parsetree_t *cm_tr = NULL;
+      ESL_SQ      *esq   = NULL;
+      int          L;
+      char         name[32];
+      ESL_DSQ     *emb   = NULL;
+      int         *i2k   = NULL;
+      int         *kmin  = NULL;
+      int         *kmax  = NULL;
+      int          ncells = 0;
+      int          L_emb;
+      int          p, t;
+      int          distinct_k, emit_pins, kk;
+
+      snprintf(name, sizeof(name), "sim%d", work->idx);
+      if ((status = EmitParsetree(cm, winfo->errbuf, r, name, TRUE, &cm_tr, &esq, &L)) != eslOK) {
+        winfo->status = status;
+        goto worker_done;
+      }
+
+      L_emb = 2 * flank + L;
+      ESL_ALLOC(emb, sizeof(ESL_DSQ) * (L_emb + 2));
+      emb[0] = emb[L_emb + 1] = eslDSQ_SENTINEL;
+      for (p = 1;             p <= flank;     p++) emb[p] = esl_rnd_FChoose(r, winfo->bg->f, winfo->gm->abc->K);
+      for (p = 1;             p <= L;         p++) emb[flank + p] = esq->dsq[p];
+      for (p = flank + L + 1; p <= L_emb;     p++) emb[p] = esl_rnd_FChoose(r, winfo->bg->f, winfo->gm->abc->K);
+
+      p7_ProfileConfig(cm->fp7, winfo->bg, winfo->gm, L_emb, p7_GLOCAL);
+      p7_gmx_GrowTo(winfo->gx, M, L_emb);
+
+      if (p7_Seq2BandsVit(winfo->errbuf, winfo->gm, winfo->gx, winfo->bg, winfo->p7tr,
+                          emb, L_emb, /*pad=*/0, /*nodepad=*/NULL,
+                          &i2k, &kmin, &kmax, &ncells) != eslOK) {
+        if (i2k)  free(i2k);
+        if (kmin) free(kmin);
+        if (kmax) free(kmax);
+        free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        goto next_item;
+      }
+
+      /* Reject Viterbi traces that don't find the embedded emit (degenerate alignments). */
+      distinct_k = 0;
+      for (kk = 0; kk <= M && kk < 10000; kk++) seen[kk] = 0;
+      for (p = 1; p <= L_emb; p++) {
+        if (i2k[p] >= 1 && i2k[p] <= M && i2k[p] < 10000 && !seen[i2k[p]]) { seen[i2k[p]] = 1; distinct_k++; }
+      }
+      if (distinct_k < M / 2) {
+        free(i2k); free(kmin); free(kmax); free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        goto next_item;
+      }
+      emit_pins = 0;
+      for (p = flank + 1; p <= flank + L; p++) {
+        if (i2k[p] >= 1 && i2k[p] <= M) emit_pins++;
+      }
+      if (emit_pins < L / 4 || ncells == 0) {
+        free(i2k); free(kmin); free(kmax); free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        goto next_item;
+      }
+
+      /* Walk parsetree; record per-node deficits into worker-local arrays. */
+      for (t = 0; t < cm_tr->n; t++) {
+        int v    = cm_tr->state[t];
+        int ipos = cm_tr->emitl[t];
+        int jpos = cm_tr->emitr[t];
+        int hn1  = cm->cp9map->cs2hn[v][0];
+        int hn2  = cm->cp9map->cs2hn[v][1];
+        int hs1  = cm->cp9map->cs2hs[v][0];
+        int hs2  = cm->cp9map->cs2hs[v][1];
+
+        #define CMNP_W_RECORD(true_k, pos_local) do {                                    \
+          int _pos = (pos_local) + flank;                                                \
+          if ((true_k) >= 1 && (true_k) <= M && _pos >= 1 && _pos <= L_emb) {           \
+            int _def;                                                                    \
+            if (kmin[_pos] == -1 || kmax[_pos] == -1)          _def = M;                \
+            else if ((true_k) >= kmin[_pos] && (true_k) <= kmax[_pos]) _def = 0;        \
+            else if ((true_k) < kmin[_pos])                    _def = kmin[_pos] - (true_k); \
+            else                                               _def = (true_k) - kmax[_pos]; \
+            if (winfo->def_n[(true_k)] >= winfo->def_alloc[(true_k)]) {                 \
+              int _newsz = winfo->def_alloc[(true_k)] ? winfo->def_alloc[(true_k)] * 2 : 16; \
+              int *_tmp = realloc(winfo->deficits[(true_k)], sizeof(int) * _newsz);     \
+              if (_tmp == NULL) { winfo->status = eslEMEM; goto worker_done; }          \
+              winfo->deficits[(true_k)] = _tmp;                                         \
+              winfo->def_alloc[(true_k)] = _newsz;                                      \
+            }                                                                           \
+            winfo->deficits[(true_k)][winfo->def_n[(true_k)]++] = _def;                \
+          }                                                                             \
+        } while(0)
+
+        if (hn1 >= 0) {
+          int pos1;
+          if      (hs1 == 0) { pos1 = (cm->stid[v] == MATR_MR) ? jpos : ipos; CMNP_W_RECORD(hn1, pos1); }
+          else if (hs1 == 1) { pos1 = (cm->sttype[v] == IR_st)  ? jpos : ipos; CMNP_W_RECORD(hn1, pos1); }
+        }
+        if (hn2 >= 0) {
+          if      (hs2 == 0) CMNP_W_RECORD(hn2, jpos);
+          else if (hs2 == 1) CMNP_W_RECORD(hn2, jpos);
+        }
+        #undef CMNP_W_RECORD
+      }
+
+      free(i2k); free(kmin); free(kmax); free(emb);
+      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+
+    next_item:
+      esl_workqueue_WorkerUpdate(winfo->queue, work, &newwork);
+      work = (CM_NODEPAD_WORK *) newwork;
+      continue;
+
+    ERROR:
+      /* allocation failure inside the loop */
+      if (emb)   free(emb);
+      if (i2k)   free(i2k);
+      if (kmin)  free(kmin);
+      if (kmax)  free(kmax);
+      if (cm_tr) FreeParsetree(cm_tr);
+      if (esq)   esl_sq_Destroy(esq);
+      winfo->status = eslEMEM;
+      goto worker_done;
+    }
+
+ worker_done:
+  esl_workqueue_WorkerUpdate(winfo->queue, work, NULL);
+  esl_threads_Finished(obj, workeridx);
+  return;
+}
+#endif /* HMMER_THREADS */
+
 /* Function: cm_ComputeP7NodePad()
  * Synopsis: Compute per-HMM-node p7 band pads by Monte Carlo simulation.
  *
@@ -5744,12 +5944,19 @@ static int cm_nodepad_cmpint(const void *a, const void *b) {
  *           Uses GLOCAL p7 profile (matches p7bandsim default). Expensive:
  *           ~nsamples * O(M*L) Viterbi DPs.
  *
+ *           When <ncpu> > 1 and HMMER_THREADS is defined, the Monte Carlo
+ *           simulation is parallelized across <ncpu> worker threads using
+ *           the esl_threads/esl_workqueue pattern. Each worker thread runs
+ *           its own independent RNG (seeded from the master <r>) so results
+ *           differ from the serial path but are statistically equivalent.
+ *           When <ncpu> <= 1 the serial code path is used unchanged.
+ *
  * Returns:  <eslOK> on success.
  *           <eslEINVAL> if cm->fp7 or cm->cp9map is NULL (with errbuf message).
  *           <eslEMEM> on allocation failure.
  */
 int
-cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, char *errbuf)
+cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf)
 {
   int         status;
   P7_HMM     *hmm   = NULL;
@@ -5762,7 +5969,7 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
   int        *def_alloc = NULL;
   int        *pad_out   = NULL;
   int         M;
-  int         s, k, t;
+  int         k;
   const int   flank = 500;  /* p7bandsim default; flanks emitted residue each side */
 
   if (cm->fp7    == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7NodePad: CM has no fp7 filter HMM");
@@ -5770,130 +5977,303 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
 
   hmm = cm->fp7;
   M   = hmm->M;
-  bg  = p7_bg_Create(hmm->abc);
-  gm  = p7_profile_Create(hmm->M, hmm->abc);
-  p7_ProfileConfig(hmm, bg, gm, 400, p7_GLOCAL);  /* length reconfigured per-sample below */
-  gx   = p7_gmx_Create(hmm->M, 400);
-  p7tr = p7_trace_Create();
 
-  ESL_ALLOC(deficits,  sizeof(int *) * (M + 1));
-  ESL_ALLOC(def_n,     sizeof(int)   * (M + 1));
-  ESL_ALLOC(def_alloc, sizeof(int)   * (M + 1));
-  for (k = 0; k <= M; k++) { deficits[k] = NULL; def_n[k] = 0; def_alloc[k] = 0; }
+#ifdef HMMER_THREADS
+  if (ncpu > 1)
+    {
+      /* Threaded path: distribute nsamples across ncpu worker threads.
+       * Pattern mirrors cm_p7_Tau() in cm_p7_modelmaker.c.
+       * Each worker runs its own RNG (seeded from master r), accumulates
+       * per-node deficit arrays locally, and the main thread merges them.
+       */
+      ESL_THREADS       *threadObj = NULL;
+      ESL_WORK_QUEUE    *queue     = NULL;
+      CM_NODEPAD_WINFO  *winfo     = NULL;
+      CM_NODEPAD_WORK   *wpool     = NULL;   /* recycling pool of work items */
+      int                npool;
+      int                next_s;             /* next sample index to dispatch */
+      int                sentinels_sent;
+      int                j;
+      void              *newptr;
+      CM_NODEPAD_WORK   *work;
 
-  for (s = 0; s < nsamples; s++) {
-    Parsetree_t *cm_tr = NULL;
-    ESL_SQ      *esq   = NULL;
-    int          L;
-    char         name[32];
-    ESL_DSQ     *emb   = NULL;
-    int         *i2k   = NULL;
-    int         *kmin  = NULL;
-    int         *kmax  = NULL;
-    int          ncells = 0;
-    int          L_emb;
-    int          p;
-    int          distinct_k, emit_pins, kk;
-    static int   seen[10000];  /* per-thread safe? NOT thread-safe; fine for now, parallelism is a separate TODO */
-
-    snprintf(name, sizeof(name), "sim%d", s);
-    if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &cm_tr, &esq, &L)) != eslOK) goto ERROR;
-
-    L_emb = 2 * flank + L;
-    ESL_ALLOC(emb, sizeof(ESL_DSQ) * (L_emb + 2));
-    emb[0] = emb[L_emb + 1] = eslDSQ_SENTINEL;
-    for (p = 1;              p <= flank;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
-    for (p = 1;              p <= L;           p++) emb[flank + p] = esq->dsq[p];
-    for (p = flank + L + 1;  p <= L_emb;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
-
-    p7_ProfileConfig(hmm, bg, gm, L_emb, p7_GLOCAL);
-    p7_gmx_GrowTo(gx, M, L_emb);
-
-    if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL,
-                        &i2k, &kmin, &kmax, &ncells) != eslOK) {
-      if (i2k)  free(i2k);
-      if (kmin) free(kmin);
-      if (kmax) free(kmax);
-      free(emb);
-      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
-      continue;
-    }
-
-    /* Reject Viterbi traces that don't find the embedded emit (degenerate alignments). */
-    distinct_k = 0;
-    for (kk = 0; kk <= M && kk < 10000; kk++) seen[kk] = 0;
-    for (p = 1; p <= L_emb; p++) {
-      if (i2k[p] >= 1 && i2k[p] <= M && i2k[p] < 10000 && !seen[i2k[p]]) { seen[i2k[p]] = 1; distinct_k++; }
-    }
-    if (distinct_k < M / 2) {
-      free(i2k); free(kmin); free(kmax); free(emb);
-      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
-      continue;
-    }
-    emit_pins = 0;
-    for (p = flank + 1; p <= flank + L; p++) {
-      if (i2k[p] >= 1 && i2k[p] <= M) emit_pins++;
-    }
-    if (emit_pins < L / 4 || ncells == 0) {
-      free(i2k); free(kmin); free(kmax); free(emb);
-      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
-      continue;
-    }
-
-    /* Walk parsetree; record per-node deficits. */
-    for (t = 0; t < cm_tr->n; t++) {
-      int v    = cm_tr->state[t];
-      int ipos = cm_tr->emitl[t];
-      int jpos = cm_tr->emitr[t];
-      int hn1  = cm->cp9map->cs2hn[v][0];
-      int hn2  = cm->cp9map->cs2hn[v][1];
-      int hs1  = cm->cp9map->cs2hs[v][0];
-      int hs2  = cm->cp9map->cs2hs[v][1];
-
-      #define CMNP_RECORD(true_k, pos_local) do {                                     \
-        int pos = (pos_local) + flank;                                                \
-        if ((true_k) >= 1 && (true_k) <= M && pos >= 1 && pos <= L_emb) {             \
-          int def;                                                                    \
-          if (kmin[pos] == -1 || kmax[pos] == -1)         def = M;                    \
-          else if ((true_k) >= kmin[pos] && (true_k) <= kmax[pos]) def = 0;           \
-          else if ((true_k) < kmin[pos])                  def = kmin[pos] - (true_k); \
-          else                                            def = (true_k) - kmax[pos]; \
-          if (def_n[(true_k)] >= def_alloc[(true_k)]) {                               \
-            int newsz = def_alloc[(true_k)] ? def_alloc[(true_k)] * 2 : 16;           \
-            int *tmp = realloc(deficits[(true_k)], sizeof(int) * newsz);              \
-            if (tmp == NULL) { status = eslEMEM; goto ERROR; }                        \
-            deficits[(true_k)] = tmp;                                                 \
-            def_alloc[(true_k)] = newsz;                                              \
-          }                                                                           \
-          deficits[(true_k)][def_n[(true_k)]++] = def;                                \
-        }                                                                             \
-      } while(0)
-
-      if (hn1 >= 0) {
-        int pos1;
-        if      (hs1 == 0) { pos1 = (cm->stid[v] == MATR_MR) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
-        else if (hs1 == 1) { pos1 = (cm->sttype[v] == IR_st) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+      /* 1. Create per-worker data (RNG seeded by rolling master r). */
+      ESL_ALLOC(winfo, sizeof(CM_NODEPAD_WINFO) * ncpu);
+      for (j = 0; j < ncpu; j++) {
+        uint32_t seed = (uint32_t) esl_rnd_Roll(r, 1000000000) + 1;  /* never 0 */
+        winfo[j].cm      = cm;
+        winfo[j].r       = esl_randomness_Create(seed);
+        winfo[j].queue   = NULL;   /* filled below */
+        winfo[j].bg      = p7_bg_Create(hmm->abc);
+        winfo[j].gm      = p7_profile_Create(hmm->M, hmm->abc);
+        p7_ProfileConfig(hmm, winfo[j].bg, winfo[j].gm, 400, p7_GLOCAL);
+        winfo[j].gx      = p7_gmx_Create(hmm->M, 400);
+        winfo[j].p7tr    = p7_trace_Create();
+        winfo[j].M       = M;
+        winfo[j].status  = eslOK;
+        winfo[j].errbuf[0] = '\0';
+        ESL_ALLOC(winfo[j].deficits,  sizeof(int *) * (M + 1));
+        ESL_ALLOC(winfo[j].def_n,     sizeof(int)   * (M + 1));
+        ESL_ALLOC(winfo[j].def_alloc, sizeof(int)   * (M + 1));
+        for (k = 0; k <= M; k++) { winfo[j].deficits[k] = NULL; winfo[j].def_n[k] = 0; winfo[j].def_alloc[k] = 0; }
+        if (winfo[j].r == NULL || winfo[j].bg == NULL || winfo[j].gm == NULL ||
+            winfo[j].gx == NULL || winfo[j].p7tr == NULL) { status = eslEMEM; goto THREADED_ERROR; }
       }
-      if (hn2 >= 0) {
-        if      (hs2 == 0) CMNP_RECORD(hn2, jpos);
-        else if (hs2 == 1) CMNP_RECORD(hn2, jpos);
+
+      /* 2. Create recycling pool of work items. */
+      npool = ncpu * 2;
+      ESL_ALLOC(wpool, sizeof(CM_NODEPAD_WORK) * npool);
+      for (j = 0; j < npool; j++) wpool[j].idx = -1;
+
+      /* 3. Set up threads and work queue. */
+      threadObj = esl_threads_Create(&cm_nodepad_thread_worker);
+      queue     = esl_workqueue_Create(npool);
+      for (j = 0; j < ncpu; j++) {
+        winfo[j].queue = queue;
+        esl_threads_AddThread(threadObj, &winfo[j]);
       }
-      #undef CMNP_RECORD
+
+      /* 4. Initialize queue with empty (recycled) work items. */
+      for (j = 0; j < npool; j++)
+        esl_workqueue_Init(queue, &wpool[j]);
+
+      /* 5. Reader loop: dispatch sample indices to workers; sentinels to stop them. */
+      esl_workqueue_Reset(queue);
+      esl_threads_WaitForStart(threadObj);
+
+      next_s         = 0;
+      sentinels_sent = 0;
+
+      status = esl_workqueue_ReaderUpdate(queue, NULL, &newptr);
+      if (status != eslOK) goto THREADED_ERROR;
+      work = (CM_NODEPAD_WORK *) newptr;
+
+      while (sentinels_sent < ncpu)
+        {
+          if (next_s < nsamples) {
+            work->idx = next_s++;
+          } else {
+            work->idx = -1;   /* sentinel */
+            sentinels_sent++;
+          }
+          status = esl_workqueue_ReaderUpdate(queue, work, &newptr);
+          if (status != eslOK) goto THREADED_ERROR;
+          work = (CM_NODEPAD_WORK *) newptr;
+        }
+
+      esl_threads_WaitForFinish(threadObj);
+      esl_workqueue_Complete(queue);
+
+      /* 6. Check for errors from workers. */
+      for (j = 0; j < ncpu; j++) {
+        if (winfo[j].status != eslOK) {
+          ESL_XFAIL(winfo[j].status, errbuf, "%s", winfo[j].errbuf);
+        }
+      }
+
+      /* 7. Merge per-worker deficit arrays into combined arrays. */
+      ESL_ALLOC(deficits,  sizeof(int *) * (M + 1));
+      ESL_ALLOC(def_n,     sizeof(int)   * (M + 1));
+      ESL_ALLOC(def_alloc, sizeof(int)   * (M + 1));
+      for (k = 0; k <= M; k++) { deficits[k] = NULL; def_n[k] = 0; def_alloc[k] = 0; }
+
+      for (j = 0; j < ncpu; j++) {
+        for (k = 1; k <= M; k++) {
+          int n = winfo[j].def_n[k];
+          if (n == 0) continue;
+          if (def_n[k] + n > def_alloc[k]) {
+            int newsz = def_alloc[k] + n;
+            int *tmp = realloc(deficits[k], sizeof(int) * newsz);
+            if (tmp == NULL) { status = eslEMEM; goto THREADED_ERROR; }
+            deficits[k]  = tmp;
+            def_alloc[k] = newsz;
+          }
+          memcpy(deficits[k] + def_n[k], winfo[j].deficits[k], sizeof(int) * n);
+          def_n[k] += n;
+        }
+      }
+
+      /* 8. Clean up thread resources. */
+      for (j = 0; j < ncpu; j++) {
+        esl_randomness_Destroy(winfo[j].r);
+        p7_bg_Destroy(winfo[j].bg);
+        p7_profile_Destroy(winfo[j].gm);
+        p7_gmx_Destroy(winfo[j].gx);
+        p7_trace_Destroy(winfo[j].p7tr);
+        if (winfo[j].deficits != NULL) {
+          int kk;
+          for (kk = 0; kk <= M; kk++) if (winfo[j].deficits[kk] != NULL) free(winfo[j].deficits[kk]);
+          free(winfo[j].deficits);
+        }
+        if (winfo[j].def_n)     free(winfo[j].def_n);
+        if (winfo[j].def_alloc) free(winfo[j].def_alloc);
+      }
+      free(winfo);   winfo = NULL;
+      free(wpool);   wpool = NULL;
+      esl_workqueue_Destroy(queue);
+      esl_threads_Destroy(threadObj);
+
+      goto AGGREGATE;
+
+    THREADED_ERROR:
+      /* Clean up thread resources on error. */
+      if (winfo != NULL) {
+        for (j = 0; j < ncpu; j++) {
+          if (winfo[j].r       != NULL) esl_randomness_Destroy(winfo[j].r);
+          if (winfo[j].bg      != NULL) p7_bg_Destroy(winfo[j].bg);
+          if (winfo[j].gm      != NULL) p7_profile_Destroy(winfo[j].gm);
+          if (winfo[j].gx      != NULL) p7_gmx_Destroy(winfo[j].gx);
+          if (winfo[j].p7tr    != NULL) p7_trace_Destroy(winfo[j].p7tr);
+          if (winfo[j].deficits != NULL) {
+            int kk;
+            for (kk = 0; kk <= M; kk++) if (winfo[j].deficits[kk] != NULL) free(winfo[j].deficits[kk]);
+            free(winfo[j].deficits);
+          }
+          if (winfo[j].def_n)     free(winfo[j].def_n);
+          if (winfo[j].def_alloc) free(winfo[j].def_alloc);
+        }
+        free(winfo);
+      }
+      if (wpool     != NULL) free(wpool);
+      if (queue     != NULL) esl_workqueue_Destroy(queue);
+      if (threadObj != NULL) esl_threads_Destroy(threadObj);
+      goto ERROR;
     }
+  else
+#endif /* HMMER_THREADS */
+    {
+      /* Serial path (ncpu <= 1): original behavior, unchanged. */
+      int s, t;
 
-    free(i2k); free(kmin); free(kmax); free(emb);
-    FreeParsetree(cm_tr); esl_sq_Destroy(esq);
-  }
+      bg   = p7_bg_Create(hmm->abc);
+      gm   = p7_profile_Create(hmm->M, hmm->abc);
+      p7_ProfileConfig(hmm, bg, gm, 400, p7_GLOCAL);  /* length reconfigured per-sample below */
+      gx   = p7_gmx_Create(hmm->M, 400);
+      p7tr = p7_trace_Create();
 
+      ESL_ALLOC(deficits,  sizeof(int *) * (M + 1));
+      ESL_ALLOC(def_n,     sizeof(int)   * (M + 1));
+      ESL_ALLOC(def_alloc, sizeof(int)   * (M + 1));
+      for (k = 0; k <= M; k++) { deficits[k] = NULL; def_n[k] = 0; def_alloc[k] = 0; }
+
+      for (s = 0; s < nsamples; s++) {
+        Parsetree_t *cm_tr = NULL;
+        ESL_SQ      *esq   = NULL;
+        int          L;
+        char         name[32];
+        ESL_DSQ     *emb   = NULL;
+        int         *i2k   = NULL;
+        int         *kmin  = NULL;
+        int         *kmax  = NULL;
+        int          ncells = 0;
+        int          L_emb;
+        int          p;
+        int          distinct_k, emit_pins, kk;
+        int          seen[10000];  /* local array; safe for serial path */
+
+        snprintf(name, sizeof(name), "sim%d", s);
+        if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &cm_tr, &esq, &L)) != eslOK) goto ERROR;
+
+        L_emb = 2 * flank + L;
+        ESL_ALLOC(emb, sizeof(ESL_DSQ) * (L_emb + 2));
+        emb[0] = emb[L_emb + 1] = eslDSQ_SENTINEL;
+        for (p = 1;              p <= flank;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
+        for (p = 1;              p <= L;           p++) emb[flank + p] = esq->dsq[p];
+        for (p = flank + L + 1;  p <= L_emb;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
+
+        p7_ProfileConfig(hmm, bg, gm, L_emb, p7_GLOCAL);
+        p7_gmx_GrowTo(gx, M, L_emb);
+
+        if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL,
+                            &i2k, &kmin, &kmax, &ncells) != eslOK) {
+          if (i2k)  free(i2k);
+          if (kmin) free(kmin);
+          if (kmax) free(kmax);
+          free(emb);
+          FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+          continue;
+        }
+
+        /* Reject Viterbi traces that don't find the embedded emit (degenerate alignments). */
+        distinct_k = 0;
+        for (kk = 0; kk <= M && kk < 10000; kk++) seen[kk] = 0;
+        for (p = 1; p <= L_emb; p++) {
+          if (i2k[p] >= 1 && i2k[p] <= M && i2k[p] < 10000 && !seen[i2k[p]]) { seen[i2k[p]] = 1; distinct_k++; }
+        }
+        if (distinct_k < M / 2) {
+          free(i2k); free(kmin); free(kmax); free(emb);
+          FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+          continue;
+        }
+        emit_pins = 0;
+        for (p = flank + 1; p <= flank + L; p++) {
+          if (i2k[p] >= 1 && i2k[p] <= M) emit_pins++;
+        }
+        if (emit_pins < L / 4 || ncells == 0) {
+          free(i2k); free(kmin); free(kmax); free(emb);
+          FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+          continue;
+        }
+
+        /* Walk parsetree; record per-node deficits. */
+        for (t = 0; t < cm_tr->n; t++) {
+          int v    = cm_tr->state[t];
+          int ipos = cm_tr->emitl[t];
+          int jpos = cm_tr->emitr[t];
+          int hn1  = cm->cp9map->cs2hn[v][0];
+          int hn2  = cm->cp9map->cs2hn[v][1];
+          int hs1  = cm->cp9map->cs2hs[v][0];
+          int hs2  = cm->cp9map->cs2hs[v][1];
+
+          #define CMNP_RECORD(true_k, pos_local) do {                                     \
+            int pos = (pos_local) + flank;                                                \
+            if ((true_k) >= 1 && (true_k) <= M && pos >= 1 && pos <= L_emb) {             \
+              int def;                                                                    \
+              if (kmin[pos] == -1 || kmax[pos] == -1)         def = M;                    \
+              else if ((true_k) >= kmin[pos] && (true_k) <= kmax[pos]) def = 0;           \
+              else if ((true_k) < kmin[pos])                  def = kmin[pos] - (true_k); \
+              else                                            def = (true_k) - kmax[pos]; \
+              if (def_n[(true_k)] >= def_alloc[(true_k)]) {                               \
+                int newsz = def_alloc[(true_k)] ? def_alloc[(true_k)] * 2 : 16;           \
+                int *tmp = realloc(deficits[(true_k)], sizeof(int) * newsz);              \
+                if (tmp == NULL) { status = eslEMEM; goto ERROR; }                        \
+                deficits[(true_k)] = tmp;                                                 \
+                def_alloc[(true_k)] = newsz;                                              \
+              }                                                                           \
+              deficits[(true_k)][def_n[(true_k)]++] = def;                                \
+            }                                                                             \
+          } while(0)
+
+          if (hn1 >= 0) {
+            int pos1;
+            if      (hs1 == 0) { pos1 = (cm->stid[v] == MATR_MR) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+            else if (hs1 == 1) { pos1 = (cm->sttype[v] == IR_st) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+          }
+          if (hn2 >= 0) {
+            if      (hs2 == 0) CMNP_RECORD(hn2, jpos);
+            else if (hs2 == 1) CMNP_RECORD(hn2, jpos);
+          }
+          #undef CMNP_RECORD
+        }
+
+        free(i2k); free(kmin); free(kmax); free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      }
+    } /* end serial path */
+
+ AGGREGATE:
   /* Aggregate: per-node quantile of deficits. */
-  ESL_ALLOC(pad_out, sizeof(int) * (M + 1));
-  pad_out[0] = 0;
-  for (k = 1; k <= M; k++) {
-    if (def_n[k] == 0) { pad_out[k] = 0; continue; }
-    qsort(deficits[k], def_n[k], sizeof(int), cm_nodepad_cmpint);
-    int idx = (int)(quantile * (def_n[k] - 1) + 0.5);
-    if (idx >= def_n[k]) idx = def_n[k] - 1;
-    pad_out[k] = deficits[k][idx];
+  {
+    int idx_q;
+    ESL_ALLOC(pad_out, sizeof(int) * (M + 1));
+    pad_out[0] = 0;
+    for (k = 1; k <= M; k++) {
+      if (def_n[k] == 0) { pad_out[k] = 0; continue; }
+      qsort(deficits[k], def_n[k], sizeof(int), cm_nodepad_cmpint);
+      idx_q = (int)(quantile * (def_n[k] - 1) + 0.5);
+      if (idx_q >= def_n[k]) idx_q = def_n[k] - 1;
+      pad_out[k] = deficits[k][idx_q];
+    }
   }
 
   /* Publish to CM. Replace any existing pad array. */

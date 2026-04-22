@@ -135,10 +135,11 @@ static ESL_OPTIONS options[] = {
   { "--ElL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Elcmult", "length of seqs to search for local stats is <n>",             107 },
   { "--EgL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Egcmult", "length of seqs to search for glocal stats is <n>",            107 },
   { "--Eseed",   eslARG_INT,     "42", NULL, "n>=0",  NULL,  NULL, NULL,        "set RNG seed for p7 calibration to <n> (0=arbitrary)",         107 },
-  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL, NULL,    "skip p7 per-node band pad computation (CM file will not embed pads)", 107 },
+  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL, NULL,    "skip p7 per-node band pad computation",                               107 },
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of parsetree samples for p7 pad simulation",            107 },
   { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad per-node deficit distribution",             107 },
-  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "set RNG seed for p7 pad simulation to <n> (0=arbitrary)",       107 },
+  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "set RNG seed for p7 pad simulation (0=arbitrary)",              107 },
+  { "--p7pad-cpu",  eslARG_INT,      "0",  NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of parallel CPUs for p7 pad simulation (0=all avail)",  107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -1306,12 +1307,20 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
        fflush(cfg->ofp);
      }
 
+     int pad_ncpu = esl_opt_GetInteger(go, "--p7pad-cpu");
+#ifdef HMMER_THREADS
+     if (pad_ncpu == 0) pad_ncpu = esl_threads_GetCPUCount();
+#else
+     pad_ncpu = 1;
+#endif
+     if (pad_ncpu > esl_opt_GetInteger(go, "--p7pad-N")) pad_ncpu = esl_opt_GetInteger(go, "--p7pad-N");
      ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
      if (pad_r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to allocate RNG for p7 pad computation");
      status = cm_ComputeP7NodePad(cm,
 				  pad_r,
 				  esl_opt_GetInteger(go, "--p7pad-N"),
 				  esl_opt_GetReal(go,    "--p7pad-q"),
+				  pad_ncpu,
 				  errbuf);
      esl_randomness_Destroy(pad_r);
      if (status != eslOK) return status;

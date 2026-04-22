@@ -14,6 +14,9 @@
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
 #include "esl_random.h"
+#ifdef HMMER_THREADS
+#include "esl_threads.h"
+#endif
 
 #include "hmmer.h"
 
@@ -36,6 +39,7 @@ static ESL_OPTIONS options[] = {
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
   { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad deficit distribution",        2 },
   { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "RNG seed for p7 pad simulation (0=arbitrary)",    2 },
+  { "--p7pad-cpu",  eslARG_INT,      "0",  NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of CPUs for p7 pad simulation (0=all available)", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -123,12 +127,22 @@ main(int argc, char **argv)
           ! esl_opt_GetBoolean(go, "--fhmm"))
         {
           if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
-          ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
-          if ((status = cm_ComputeP7NodePad(cm, pad_r,
-                                            esl_opt_GetInteger(go, "--p7pad-N"),
-                                            esl_opt_GetReal   (go, "--p7pad-q"),
-                                            errbuf)) != eslOK) cm_Fail(errbuf);
-          esl_randomness_Destroy(pad_r);
+          {
+            int pad_ncpu = esl_opt_GetInteger(go, "--p7pad-cpu");
+#ifdef HMMER_THREADS
+            if (pad_ncpu == 0) pad_ncpu = esl_threads_GetCPUCount();
+#else
+            pad_ncpu = 1;
+#endif
+            if (pad_ncpu > esl_opt_GetInteger(go, "--p7pad-N")) pad_ncpu = esl_opt_GetInteger(go, "--p7pad-N");
+            ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
+            if ((status = cm_ComputeP7NodePad(cm, pad_r,
+                                              esl_opt_GetInteger(go, "--p7pad-N"),
+                                              esl_opt_GetReal   (go, "--p7pad-q"),
+                                              pad_ncpu,
+                                              errbuf)) != eslOK) cm_Fail(errbuf);
+            esl_randomness_Destroy(pad_r);
+          }
         }
 
       /* append command line info to the appropriate comlog */
