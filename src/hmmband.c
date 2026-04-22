@@ -240,94 +240,141 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
 int
 cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level)
 {
-  int   status;
-  int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
-  float sc;
-  int do_old_hmm2ij;
-  int do_trunc;       /* are we allowing truncated alignments (either L or R)? */
-  int do_fwd_scan;    /* run Forward  in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
-  int do_bck_scan;    /* run Backward in scanning mode? (see long comment on this below by assignment of do_fwd_scan) */
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (cm->cp9, cm->Lcp9, cm->Rcp9, or cm->Tcp9) we'll use for deriving bands */
+  int    status;
+  CP9_t *cp9 = NULL;
+  int    do_fwd_scan, do_bck_scan;
+
+  if((status = cp9_Seq2FBMatrices(cm, errbuf, fmx, bmx, dsq, i0, j0, doing_search, pass_idx,
+				  &cp9, &do_fwd_scan, &do_bck_scan)) != eslOK) return status;
+  if((status = cp9_FBMatrices2Bands(cm, errbuf, cp9, fmx, bmx, pmx, dsq, cp9b, i0, j0,
+				    doing_search, pass_idx, do_fwd_scan, do_bck_scan, debug_level)) != eslOK) return status;
+  return eslOK;
+}
+
+/* Function: cp9_Seq2FBMatrices()
+ * Date:     EPN, 2026-04-22
+ *
+ * Purpose:  Phase 1 of the cp9 band derivation pipeline (formerly first
+ *           half of cp9_Seq2Bands). Resolves the cp9 profile + scan flags
+ *           from pass_idx and runs cp9_Forward + cp9_Backward to fill
+ *           fmx and bmx. Does NOT touch cm->tau / cp9b->thresh1,2 — so
+ *           cp9_IterateSeq2Bands can cache the output of this call across
+ *           tau/thresh ratchet iterations.
+ *
+ * Args:     cm              - the covariance model
+ *           errbuf          - for error messages
+ *           fmx             - CP9 dp matrix for Forward  (filled here)
+ *           bmx             - CP9 dp matrix for Backward (filled here)
+ *           dsq             - digitized target subsequence
+ *           i0, j0          - subsequence bounds (1..L typical)
+ *           doing_search    - TRUE if bands are for a search, not an alignment
+ *           pass_idx        - pipeline pass index
+ *           ret_cp9         - RETURN: ptr to cp9 profile used (cm->cp9, Lcp9, Rcp9, or Tcp9)
+ *           ret_do_fwd_scan - RETURN: was Forward  run in scan mode?
+ *           ret_do_bck_scan - RETURN: was Backward run in scan mode?
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cp9_Seq2FBMatrices(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, ESL_DSQ *dsq,
+		   int i0, int j0, int doing_search, int pass_idx,
+		   CP9_t **ret_cp9, int *ret_do_fwd_scan, int *ret_do_bck_scan)
+{
+  int    status;
+  float  sc;
+  int    do_trunc;
+  int    do_fwd_scan, do_bck_scan;
+  CP9_t *cp9 = NULL;
 
   /* Contract checks */
-  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
-  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, dsq is NULL.");
-  if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, i0: %d > j0: %d\n", i0, j0);
-  if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
-  
-  use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
-  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2FBMatrices, but cm->cp9map is NULL.\n");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2FBMatrices, dsq is NULL.");
+  if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2FBMatrices, i0: %d > j0: %d\n", i0, j0);
+  if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2FBMatrices, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
 
-  /* Determine which cp9 HMM to use and whether or not we're doing 
-   * truncated alignment, based on value of pass_idx.
-   */
-  switch(pass_idx) { 
+  /* Determine which cp9 HMM to use based on pass_idx */
+  switch(pass_idx) {
   case PLI_PASS_5P_ONLY_FORCE:   do_trunc = TRUE;  cp9 = cm->Rcp9; break;
   case PLI_PASS_3P_ONLY_FORCE:   do_trunc = TRUE;  cp9 = cm->Lcp9; break;
   case PLI_PASS_5P_AND_3P_FORCE: do_trunc = TRUE;  cp9 = cm->Tcp9; break;
   case PLI_PASS_5P_AND_3P_ANY:   do_trunc = TRUE;  cp9 = cm->Tcp9; break;
   default:                       do_trunc = FALSE; cp9 = cm->cp9;  break;
   }
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, relevant cp9 is NULL.\n");
+  (void) do_trunc; /* used only by caller via pass_idx; suppress unused-var warning */
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2FBMatrices, relevant cp9 is NULL.\n");
 
-  /* Determine if we should do Forward and Backward in scan mode.
-   * When in scan mode, Forward will allow parses to start at any
-   * position, else they must start at i0 (first res).
-   * When in scan mode, Backward will allow parses to end at any
-   * position, else they must end at j0 (final res).
-   *
-   * We should only scan in Forward if i0 does not need to be in any
-   * eventual CM parsetree we derive using these bands. This is only
-   * true if we'll use these bands for a CM search
-   * (doing_search==TRUE) and that search won't be a special truncated
-   * search where i0 must be in any valid parsetree. We will be doing
-   * a truncated search enforcing i0 inclusion if pass_idx is either
-   * PLI_PASS_5P_AND_3P or PLI_PASS_5P_ONLY.
-   *
-   * Likewise, we should only scan in Backward if j0 does not need to
-   * be in any eventual CM parsetree we derive using these bands.
-   * This is only true if we'll use these bands for a CM search
-   * (doing_search==TRUE) and that search won't be a special truncated
-   * search where j0 must be in any valid parsetree. We will be doing
-   * a truncated search enforcing j0 inclusion if pass_idx is either
-   * PLI_PASS_5P_AND_3P or PLI_PASS_3P_ONLY.
-   */
-  if((! doing_search) || (cm->search_opts & CM_SEARCH_HMMALNBANDS)) { 
+  /* Scan-mode decision: see original comment in cp9_Seq2Bands (preserved). */
+  if((! doing_search) || (cm->search_opts & CM_SEARCH_HMMALNBANDS)) {
     do_fwd_scan = do_bck_scan = FALSE;
   }
-  else { 
+  else {
     do_fwd_scan = cm_pli_PassEnforcesFirstRes(pass_idx) ? FALSE : TRUE;
     do_bck_scan = cm_pli_PassEnforcesFinalRes(pass_idx) ? FALSE : TRUE;
   }
 
-  /* Step 1: Get HMM Forward/Backward DP matrices.
-   * Step 2: F/B -> HMM bands.
-   * Step 3: Calculate candidate states for truncated alignments
-   * Step 4: HMM bands -> CM bands.
-   */
-
-  /* Step 1: Get HMM Forward/Backward DP matrices. */
+  /* Run Forward and Backward */
   if((status = cp9_Forward(cp9, errbuf, fmx, dsq, i0, j0,
-			   do_fwd_scan,      /* allow parses to start at any posn? */
-			   (! doing_search), /* are we going to use bands to align? */
-			   FALSE,            /* don't be memory efficient */
-			   NULL, NULL,
-			   &sc)) != eslOK) return status;
-
+			   do_fwd_scan, (! doing_search), FALSE, NULL, NULL, &sc)) != eslOK) return status;
   if((status = cp9_Backward(cp9, errbuf, bmx, dsq, i0, j0,
-			    do_bck_scan,       /* allow parses to end at any posn? */
-			    (! doing_search),  /* are we going to use posteriors to align? */
-			    FALSE,             /* don't be memory efficient */
-			    NULL, NULL,
-			    &sc)) != eslOK) return status;
+			    do_bck_scan, (! doing_search), FALSE, NULL, NULL, &sc)) != eslOK) return status;
 
-  if(cm->align_opts & CM_ALIGN_CHECKFB) { 
+  if(cm->align_opts & CM_ALIGN_CHECKFB) {
     if((status = cp9_CheckFB(fmx, bmx, cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
-  /* Step 2: F/B -> HMM bands. */
-  if(use_sums){
+  *ret_cp9         = cp9;
+  *ret_do_fwd_scan = do_fwd_scan;
+  *ret_do_bck_scan = do_bck_scan;
+  return eslOK;
+}
+
+/* Function: cp9_FBMatrices2Bands()
+ * Date:     EPN, 2026-04-22
+ *
+ * Purpose:  Phase 2 of the cp9 band derivation pipeline (formerly second
+ *           half of cp9_Seq2Bands). Given filled fmx/bmx and the scan-mode
+ *           flags from cp9_Seq2FBMatrices, derives HMM bands using cm->tau
+ *           (via cp9_FB2HMMBands), truncation candidate arrays using
+ *           cp9b->thresh1,2 (via cp9_PredictStartAndEndPositions), and CM
+ *           ij/d bands.
+ *
+ *           This phase IS tau/thresh-dependent; cp9_IterateSeq2Bands calls
+ *           it repeatedly to tighten bands without re-running F/B. pmx must
+ *           be distinct from bmx if the caller intends to reuse bmx after
+ *           this call (FB2HMMBands writes posteriors into pmx, clobbering
+ *           bmx when they alias).
+ *
+ * Args:     cm           - the covariance model
+ *           errbuf       - for error messages
+ *           cp9          - cp9 profile (returned by cp9_Seq2FBMatrices)
+ *           fmx, bmx     - filled by cp9_Seq2FBMatrices; read-only here
+ *           pmx          - CP9 dp matrix to fill with posteriors; can alias bmx
+ *                          only if caller never needs bmx again
+ *           dsq          - digitized target subsequence
+ *           cp9b         - pre-allocated, filled here
+ *           i0, j0       - subsequence bounds
+ *           doing_search - TRUE if bands are for a search
+ *           pass_idx     - pipeline pass index
+ *           do_fwd_scan  - returned by cp9_Seq2FBMatrices
+ *           do_bck_scan  - returned by cp9_Seq2FBMatrices
+ *           debug_level  - verbosity
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx,
+		     ESL_DSQ *dsq, CP9Bands_t *cp9b, int i0, int j0,
+		     int doing_search, int pass_idx,
+		     int do_fwd_scan, int do_bck_scan, int debug_level)
+{
+  int status;
+  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
+  int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
+  /* Step: F/B -> HMM bands (tau-dependent via 1-cm->tau). */
+  if(use_sums) {
     if((status = cp9_FB2HMMBandsWithSums(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
 					 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
@@ -337,41 +384,34 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
-  /* Step 3: (only if truncated alignments are possible)
-   * Calculate occupancy and candidate states for marginal alignments 
-   */
-  if(do_trunc) { 
+  /* Step: Marginal-alignment candidate states (thresh1/thresh2-dependent, only for truncation passes). */
+  if(do_trunc) {
     cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
-    /* xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG */
   }
-  else { 
-    /* reset all Jvalid values to TRUE */
+  else {
     esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
-    /* and all {L,R,T}valid values to FALSE */
     esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
     esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
     esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
 
-  /* Step 4: HMM bands -> CM bands. */
-  if(do_old_hmm2ij) { 
+  /* Step: HMM bands -> CM bands. */
+  if(do_old_hmm2ij) {
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
   else {
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
   }
-  
-  /* Use the CM bands on i and j to get bands on d, specific to j. */
-  /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
-  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
+
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
-  if(debug_level > 0) debug_print_ij_bands(cm); 
+  if(debug_level > 0) debug_print_ij_bands(cm);
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
 
   return eslOK;
@@ -423,27 +463,41 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 int
 cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb)
 {
-  int   status;
-  int   do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  int     status;
+  int     do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
   /* sizes of matrices, note enforce hbmx_Mb < size_limit, not tot_Mb < size_limit */
-  float cp9mx_Mb = 0.; /* approximate size in Mb required for CP9 matrices */
-  float hbmx_Mb;       /* approximate size in Mb required for HMM banded matrix */
-  float tot_Mb;        /* cp9mx_Mb + hbmx_Mb */
-  int   tau_at_limit     = FALSE;
-  int   thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
-  int   thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
+  float   cp9mx_Mb = 0.; /* approximate size in Mb required for CP9 matrices */
+  float   hbmx_Mb = 0.;  /* approximate size in Mb required for HMM banded matrix */
+  float   tot_Mb;        /* cp9mx_Mb + hbmx_Mb */
+  int     tau_at_limit     = FALSE;
+  int     thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
+  int     thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
+  CP9_t  *cp9 = NULL;
+  int     do_fwd_scan, do_bck_scan;
+  CP9_MX *pmx = NULL;    /* local pmx distinct from cm->cp9_bmx so FB2HMMBands does not clobber bmx across iterations */
 
-  while(1) { 
-    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
-    if(doing_search) { 
+  /* Run Forward+Backward once (tau-independent). Cache fmx/bmx across ratchet iterations below. */
+  if((status = cp9_Seq2FBMatrices(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, dsq, i0, j0, doing_search, pass_idx,
+				  &cp9, &do_fwd_scan, &do_bck_scan)) != eslOK) goto ERROR;
+
+  /* Allocate a separate pmx for posterior output. Must NOT alias bmx because
+   * cp9_FB2HMMBands writes posteriors into pmx, which would clobber bmx on
+   * the second iteration. Row count is grown internally by FB2HMMBands. */
+  if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
+    ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2Bands: OOM allocating local pmx");
+
+  while(1) {
+    if((status = cp9_FBMatrices2Bands(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b, i0, j0,
+				      doing_search, pass_idx, do_fwd_scan, do_bck_scan, 0)) != eslOK) goto ERROR;
+    if(doing_search) {
       if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
       else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
     }
-    else { 
+    else {
       if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
       else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
-      if(status != eslOK && status != eslERANGE) return status;
-    }      
+      if(status != eslOK && status != eslERANGE) goto ERROR;
+    }
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
     /* check if we can stop iterating, 4 ways we can
      * case 1: matrix is now smaller than our limit.
@@ -451,36 +505,31 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
      * case 3: do_trunc == FALSE && tau has reached its limit
      * case 4: do_trunc == TRUE  && tau, thresh1 and thresh have all reached their limits
      */
-    if(hbmx_Mb <  size_limit) { 
-      break; /* our matrix will be small enough, break out of while(1) */
-    }
-    if(! do_iterate) { 
-      break; /* do_iterate is FALSE */
-    }
-    if(tau_at_limit && thresh1_at_limit && thresh2_at_limit) { /* if do_trunc is FALSE, thresh{1,2}_at_limit were init'ed as TRUE */
-      break; /* tau, thresh1 and thresh2 have all reached their limits, break out of while (1) */
-    }
-    if(! tau_at_limit) { 
+    if(hbmx_Mb <  size_limit)                                 break;
+    if(! do_iterate)                                          break;
+    if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+    if(! tau_at_limit) {
       cm->tau *= TAU_MULTIPLIER;
       if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; }
     }
-    if(! thresh1_at_limit) { 
-      cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; 
+    if(! thresh1_at_limit) {
+      cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1;
       if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; }
     }
-    if(! thresh2_at_limit) { 
-      cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; 
+    if(! thresh2_at_limit) {
+      cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2;
       if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; }
     }
   }
 
+  FreeCP9Matrix(pmx);
+
   if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-
-  if(hbmx_Mb > size_limit) return eslERANGE; 
-
+  if(hbmx_Mb > size_limit) return eslERANGE;
   return eslOK;
 
  ERROR:
+  if(pmx) FreeCP9Matrix(pmx);
   if(ret_Mb != NULL) *ret_Mb = 0.;
   return status;
 }
