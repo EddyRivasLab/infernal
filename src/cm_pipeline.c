@@ -301,10 +301,16 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F3          = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
-  pli->do_msvband         = (esl_opt_IsOn(go, "--msvband"))   ? TRUE  : FALSE;
-  pli->do_vitband         = (esl_opt_IsOn(go, "--vitband"))   ? TRUE  : FALSE;
-  pli->vitband_local      = (esl_opt_IsOn(go, "--vitblocal")) ? TRUE  : FALSE;
-  pli->do_p7post_cp9b    = (esl_opt_IsOn(go, "--p7post_cp9b"))   ? TRUE : FALSE;
+  /* --vitband is default-on in v1.2. --msvband or --novitband disables it.
+   * --p7post_cp9b is default-on; --nop7post_cp9b disables it and it also
+   * requires --vitband at runtime (no point doing p7-posterior CP9 bands if
+   * vitband isn't producing p7 F/B matrices in the first place). */
+  pli->do_msvband         = esl_opt_GetBoolean(go, "--msvband")  ? TRUE : FALSE;
+  pli->do_vitband         = (! pli->do_msvband &&
+			     ! esl_opt_GetBoolean(go, "--novitband"))      ? TRUE : FALSE;
+  pli->vitband_local      = esl_opt_GetBoolean(go, "--vitblocal") ? TRUE : FALSE;
+  pli->do_p7post_cp9b     = (pli->do_vitband &&
+			     ! esl_opt_GetBoolean(go, "--nop7post_cp9b")) ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
   pli->p7_nodepad_M       = 0;    /* 0 = pad vector not yet loaded; set to M on load, guards reload */
