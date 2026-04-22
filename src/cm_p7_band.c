@@ -15,6 +15,8 @@
 #include <assert.h>
 
 #include "easel.h"
+#include "esl_random.h"
+#include "esl_sq.h"
 #include "esl_sse.h"
 #include "esl_vectorops.h"
 
@@ -5712,4 +5714,205 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 #undef GXB_I
 #undef GXB_D
 #undef GXB_XMX
+}
+
+/* Function: cm_nodepad_cmpint()
+ * Helper for qsort in cm_ComputeP7NodePad().
+ */
+static int cm_nodepad_cmpint(const void *a, const void *b) {
+  int x = *(const int *)a, y = *(const int *)b;
+  return (x<y)?-1:(x>y);
+}
+
+/* Function: cm_ComputeP7NodePad()
+ * Synopsis: Compute per-HMM-node p7 band pads by Monte Carlo simulation.
+ *
+ * Purpose:  Empirically derive per-node band-pad widths for the p7 HMM in <cm>.
+ *           Emits <nsamples> parsetrees from the CM, embeds each in random
+ *           flanking residues (500 nt each side), runs Viterbi banding with
+ *           pad=0, and for every emitting CM state records the band deficit
+ *           at the true HMM node. The <quantile> of per-node deficit
+ *           distributions becomes the stored pad. Algorithm matches
+ *           p7bandsim.c (the standalone CLI equivalent).
+ *
+ *           On success, populates cm->p7_nodepad[0..fp7->M], sets
+ *           cm->p7_nodepad_M = fp7->M, and raises CMH_P7NODEPAD.
+ *
+ *           Caller must ensure cm_Configure() has been called and that
+ *           cm->fp7 and cm->cp9map are valid.
+ *
+ *           Uses GLOCAL p7 profile (matches p7bandsim default). Expensive:
+ *           ~nsamples * O(M*L) Viterbi DPs.
+ *
+ * Returns:  <eslOK> on success.
+ *           <eslEINVAL> if cm->fp7 or cm->cp9map is NULL (with errbuf message).
+ *           <eslEMEM> on allocation failure.
+ */
+int
+cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, char *errbuf)
+{
+  int         status;
+  P7_HMM     *hmm   = NULL;
+  P7_BG      *bg    = NULL;
+  P7_PROFILE *gm    = NULL;
+  P7_GMX     *gx    = NULL;
+  P7_TRACE   *p7tr  = NULL;
+  int       **deficits  = NULL;
+  int        *def_n     = NULL;
+  int        *def_alloc = NULL;
+  int        *pad_out   = NULL;
+  int         M;
+  int         s, k, t;
+  const int   flank = 500;  /* p7bandsim default; flanks emitted residue each side */
+
+  if (cm->fp7    == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7NodePad: CM has no fp7 filter HMM");
+  if (cm->cp9map == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7NodePad: CM has no cp9map (was cm_Configure called?)");
+
+  hmm = cm->fp7;
+  M   = hmm->M;
+  bg  = p7_bg_Create(hmm->abc);
+  gm  = p7_profile_Create(hmm->M, hmm->abc);
+  p7_ProfileConfig(hmm, bg, gm, 400, p7_GLOCAL);  /* length reconfigured per-sample below */
+  gx   = p7_gmx_Create(hmm->M, 400);
+  p7tr = p7_trace_Create();
+
+  ESL_ALLOC(deficits,  sizeof(int *) * (M + 1));
+  ESL_ALLOC(def_n,     sizeof(int)   * (M + 1));
+  ESL_ALLOC(def_alloc, sizeof(int)   * (M + 1));
+  for (k = 0; k <= M; k++) { deficits[k] = NULL; def_n[k] = 0; def_alloc[k] = 0; }
+
+  for (s = 0; s < nsamples; s++) {
+    Parsetree_t *cm_tr = NULL;
+    ESL_SQ      *esq   = NULL;
+    int          L;
+    char         name[32];
+    ESL_DSQ     *emb   = NULL;
+    int         *i2k   = NULL;
+    int         *kmin  = NULL;
+    int         *kmax  = NULL;
+    int          ncells = 0;
+    int          L_emb;
+    int          p;
+    int          distinct_k, emit_pins, kk;
+    static int   seen[10000];  /* per-thread safe? NOT thread-safe; fine for now, parallelism is a separate TODO */
+
+    snprintf(name, sizeof(name), "sim%d", s);
+    if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &cm_tr, &esq, &L)) != eslOK) goto ERROR;
+
+    L_emb = 2 * flank + L;
+    ESL_ALLOC(emb, sizeof(ESL_DSQ) * (L_emb + 2));
+    emb[0] = emb[L_emb + 1] = eslDSQ_SENTINEL;
+    for (p = 1;              p <= flank;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
+    for (p = 1;              p <= L;           p++) emb[flank + p] = esq->dsq[p];
+    for (p = flank + L + 1;  p <= L_emb;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
+
+    p7_ProfileConfig(hmm, bg, gm, L_emb, p7_GLOCAL);
+    p7_gmx_GrowTo(gx, M, L_emb);
+
+    if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL,
+                        &i2k, &kmin, &kmax, &ncells) != eslOK) {
+      if (i2k)  free(i2k);
+      if (kmin) free(kmin);
+      if (kmax) free(kmax);
+      free(emb);
+      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      continue;
+    }
+
+    /* Reject Viterbi traces that don't find the embedded emit (degenerate alignments). */
+    distinct_k = 0;
+    for (kk = 0; kk <= M && kk < 10000; kk++) seen[kk] = 0;
+    for (p = 1; p <= L_emb; p++) {
+      if (i2k[p] >= 1 && i2k[p] <= M && i2k[p] < 10000 && !seen[i2k[p]]) { seen[i2k[p]] = 1; distinct_k++; }
+    }
+    if (distinct_k < M / 2) {
+      free(i2k); free(kmin); free(kmax); free(emb);
+      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      continue;
+    }
+    emit_pins = 0;
+    for (p = flank + 1; p <= flank + L; p++) {
+      if (i2k[p] >= 1 && i2k[p] <= M) emit_pins++;
+    }
+    if (emit_pins < L / 4 || ncells == 0) {
+      free(i2k); free(kmin); free(kmax); free(emb);
+      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      continue;
+    }
+
+    /* Walk parsetree; record per-node deficits. */
+    for (t = 0; t < cm_tr->n; t++) {
+      int v    = cm_tr->state[t];
+      int ipos = cm_tr->emitl[t];
+      int jpos = cm_tr->emitr[t];
+      int hn1  = cm->cp9map->cs2hn[v][0];
+      int hn2  = cm->cp9map->cs2hn[v][1];
+      int hs1  = cm->cp9map->cs2hs[v][0];
+      int hs2  = cm->cp9map->cs2hs[v][1];
+
+      #define CMNP_RECORD(true_k, pos_local) do {                                     \
+        int pos = (pos_local) + flank;                                                \
+        if ((true_k) >= 1 && (true_k) <= M && pos >= 1 && pos <= L_emb) {             \
+          int def;                                                                    \
+          if (kmin[pos] == -1 || kmax[pos] == -1)         def = M;                    \
+          else if ((true_k) >= kmin[pos] && (true_k) <= kmax[pos]) def = 0;           \
+          else if ((true_k) < kmin[pos])                  def = kmin[pos] - (true_k); \
+          else                                            def = (true_k) - kmax[pos]; \
+          if (def_n[(true_k)] >= def_alloc[(true_k)]) {                               \
+            int newsz = def_alloc[(true_k)] ? def_alloc[(true_k)] * 2 : 16;           \
+            int *tmp = realloc(deficits[(true_k)], sizeof(int) * newsz);              \
+            if (tmp == NULL) { status = eslEMEM; goto ERROR; }                        \
+            deficits[(true_k)] = tmp;                                                 \
+            def_alloc[(true_k)] = newsz;                                              \
+          }                                                                           \
+          deficits[(true_k)][def_n[(true_k)]++] = def;                                \
+        }                                                                             \
+      } while(0)
+
+      if (hn1 >= 0) {
+        int pos1;
+        if      (hs1 == 0) { pos1 = (cm->stid[v] == MATR_MR) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+        else if (hs1 == 1) { pos1 = (cm->sttype[v] == IR_st) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+      }
+      if (hn2 >= 0) {
+        if      (hs2 == 0) CMNP_RECORD(hn2, jpos);
+        else if (hs2 == 1) CMNP_RECORD(hn2, jpos);
+      }
+      #undef CMNP_RECORD
+    }
+
+    free(i2k); free(kmin); free(kmax); free(emb);
+    FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+  }
+
+  /* Aggregate: per-node quantile of deficits. */
+  ESL_ALLOC(pad_out, sizeof(int) * (M + 1));
+  pad_out[0] = 0;
+  for (k = 1; k <= M; k++) {
+    if (def_n[k] == 0) { pad_out[k] = 0; continue; }
+    qsort(deficits[k], def_n[k], sizeof(int), cm_nodepad_cmpint);
+    int idx = (int)(quantile * (def_n[k] - 1) + 0.5);
+    if (idx >= def_n[k]) idx = def_n[k] - 1;
+    pad_out[k] = deficits[k][idx];
+  }
+
+  /* Publish to CM. Replace any existing pad array. */
+  if (cm->p7_nodepad != NULL) free(cm->p7_nodepad);
+  cm->p7_nodepad   = pad_out;
+  cm->p7_nodepad_M = M;
+  cm->flags       |= CMH_P7NODEPAD;
+  pad_out = NULL;  /* ownership transferred */
+
+  status = eslOK;
+
+ ERROR:
+  if (pad_out != NULL)  free(pad_out);
+  if (deficits != NULL) { for (k = 0; k <= M; k++) if (deficits[k] != NULL) free(deficits[k]); free(deficits); }
+  if (def_n    != NULL) free(def_n);
+  if (def_alloc != NULL) free(def_alloc);
+  if (p7tr != NULL) p7_trace_Destroy(p7tr);
+  if (gx   != NULL) p7_gmx_Destroy(gx);
+  if (gm   != NULL) p7_profile_Destroy(gm);
+  if (bg   != NULL) p7_bg_Destroy(bg);
+  return status;
 }
