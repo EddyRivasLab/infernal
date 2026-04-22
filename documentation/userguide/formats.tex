@@ -9,7 +9,7 @@ CM save file. An abridged version is shown here, where (\ldots) mark
 deletions made for clarity and space:
 
 \begin{tinysreoutput}
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/b [1.2 | January 2026]
 NAME     Cobalamin
 ACC      RF00174
 DESC     Cobalamin riboswitch
@@ -21,6 +21,7 @@ ALPH     RNA
 RF       no
 CONS     yes
 MAP      yes
+P7NODEPAD yes
 DATE     Wed Jun 13 05:40:07 2012
 COM      [1] ./cmbuild Cobalamin.cm ../tutorial/Cobalamin.sto
 COM      [2] ./cmcalibrate Cobalamin.cm
@@ -45,21 +46,21 @@ ECMGC    0.33713   -30.56949   -21.45119     1600000        8652  0.046232
 ECMLI    0.68481    -7.98572     0.30786     1600000      351369  0.003415
 ECMGI    0.38286   -21.23885   -13.16656     1600000        8796  0.045475
 CM
-                                             [ ROOT    0 ]      -      - - - - -
-     S     0    -1 0     1     4     0     1   460   771  -8.175  -8.382  -0.025  -6.528                 
-    IL     1     1 2     1     4    86   133   462   774  -1.686  -2.369  -1.117  -4.855                  0.000  0.000  0.000  0.000 
-    IR     2     2 3     2     3    86   133   462   774  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
-                                             [ MATL    1 ]      1      - u - - -
-    ML     3     2 3     5     3    86   132   461   772  -9.129  -0.009  -7.783                          0.192 -0.324 -0.320  0.331 
-     D     4     2 3     5     3    80   128   458   769  -6.226  -1.577  -0.618                         
-    IL     5     5 3     5     3    85   132   461   773  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
+                                             [ ROOT    0 ]      -      - - - - -    -    -
+     S     0    -1 0     1     4     0     1   460   771  -8.175  -8.382  -0.025  -6.528
+    IL     1     1 2     1     4    86   133   462   774  -1.686  -2.369  -1.117  -4.855                  0.000  0.000  0.000  0.000
+    IR     2     2 3     2     3    86   133   462   774  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000
+                                             [ MATL    1 ]      1      - u - - -    5    -
+    ML     3     2 3     5     3    86   132   461   772  -9.129  -0.009  -7.783                          0.192 -0.324 -0.320  0.331
+     D     4     2 3     5     3    80   128   458   769  -6.226  -1.577  -0.618
+    IL     5     5 3     5     3    85   132   461   773  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000
 (...)
-                                             [ MATL   98 ]    151      - C - - -
-    ML   588   587 3   590     2     1     1     1     1       *   0.000                                 -3.022  1.825 -3.061 -2.226 
-     D   589   587 3   590     2     0     0     0     0       *   0.000                                 
-    IL   590   590 3   590     2     1     1    13    28  -1.823  -0.479                                  0.000  0.000  0.000  0.000 
-                                             [ END    99 ]      -      - - - - -
-     E   591   590 3    -1     0     0     0     0     0                                                 
+                                             [ MATL   98 ]    151      - C - - -    4    -
+    ML   588   587 3   590     2     1     1     1     1       *   0.000                                 -3.022  1.825 -3.061 -2.226
+     D   589   587 3   590     2     0     0     0     0       *   0.000
+    IL   590   590 3   590     2     1     1    13    28  -1.823  -0.479                                  0.000  0.000  0.000  0.000
+                                             [ END    99 ]      -      - - - - -    -    -
+     E   591   590 3    -1     0     0     0     0     0
 //
 HMMER3/f [i1.1 | June 2012]
 NAME  Cobalamin
@@ -219,6 +220,19 @@ annotates each match state with the index of the alignment column from
 which it came. It can be used for quickly mapping any subsequent
 CM alignment back to the original multiple alignment, via the model.
 \textbf{Optional}; assumed to be no if not present.
+
+\item [\emprog{P7NODEPAD <s>}] Per-HMM-node band-pad annotation flag;
+\prog{<s>} is either \prog{no} or \prog{yes} (case insensitive). Only
+present in \prog{INFERNAL1/b} format. If \prog{yes}, the per-node pad
+fields on each node line (see below) are valid and contain the
+empirically-derived band-pad widths used by the p7 HMM Viterbi banding
+pipeline in \prog{cmsearch} / \prog{cmscan}. These pads are computed
+by \prog{cmbuild} via Monte Carlo simulation and stored in the CM
+file so they do not need to be recomputed at search time. If
+\prog{no}, the per-node pad fields are ignored and the pipeline falls
+back to either a default uniform pad or a sidecar pad file supplied via
+\prog{--p7nodepad-file}. \textbf{Optional}; assumed to be no if not
+present.
 
 \item [\emprog{DATE <s>}] Date the model was constructed; \prog{<s>}
 is a free text date string.  This field is only used for logging
@@ -406,7 +420,8 @@ state lines, one each for each state within the node.
 \begin{sreitems}{\textbf{State line}}
 
 \item [\textbf{Node line}] Each node line begins with 45 spaces, and
-  includes ten fields. 
+  includes ten fields (twelve fields if \prog{P7NODEPAD yes} is set in
+  the header — the two additional fields appear at the end of the line).
 
   The first field is always a \prog{[} character.
 
@@ -445,7 +460,7 @@ state lines, one each for each state within the node.
   any other type, or if the \prog{CONS} was \prog{no} in the header,
   then both fields will be '-'.
 
-  The final two fields are the \prog{RF} annotation for this node.
+  The next two fields are the \prog{RF} annotation for this node.
   this node. If \prog{RF} was \prog{yes} in the header and the node is
   a MATP (match pair) node, then these fields will both be characters,
   the reference annotation character for the left and right halves of
@@ -457,6 +472,19 @@ state lines, one each for each state within the node.
   field will be the reference annotation character for this state. If
   the node is any other type, or if the \prog{CONS} was \prog{no} in
   the header, then both fields will be '-'.
+
+  If \prog{P7NODEPAD yes} is set in the header (\prog{INFERNAL1/b}
+  format), the final two fields are the per-HMM-node p7 band pad values
+  for this node. If the node is a MATP (match pair) node, both fields
+  will be non-negative integers: the pad widths for the left and right
+  HMM consensus positions, respectively. If the node is a MATL (match
+  left) node, the first field will be the pad width and the second
+  field will be '-'. If the node is a MATR (match right) node, the
+  first field will be '-' and the second field will be the pad width.
+  If the node is any other type (ROOT, BIF, BEGL, BEGR, END), both
+  fields will be '-'. If \prog{P7NODEPAD} is \prog{no} or absent, these
+  two fields are omitted entirely from the node line (ten fields
+  total).
 
   Each node line is followed by 1 to 6 state
   lines depending on the node type. ROOT, MATL, and MATR node lines
