@@ -5547,8 +5547,11 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
 	else                       p7_ReconfigLength(gm_local, envL);
       } else {
-	/* --vitband: configure for Viterbi band derivation (GLOCAL or LOCAL per --vitblocal) */
-	int vitband_mode = pli->vitband_local ? p7_LOCAL : p7_GLOCAL;
+	/* --vitband: configure for Viterbi band derivation (GLOCAL or LOCAL per --vitblocal).
+	 * Tgm pass always uses LOCAL regardless of --vitblocal: glocal bands exclude local-entry/exit
+	 * cells that truncated hits depend on. */
+	int vitband_mode = (pli->cur_pass_idx == PLI_PASS_5P_AND_3P_FORCE) ? p7_LOCAL
+	                 : pli->vitband_local                               ? p7_LOCAL : p7_GLOCAL;
 	p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, vitband_mode);
 
 	p7_gmx_GrowTo(pli->gxf, gm_local->M, envL);
