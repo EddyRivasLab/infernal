@@ -1619,6 +1619,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tag, NULL)) != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "unexpected absence of tokens on data line");
 
       if      (cmfp->format == CM_FILE_1a) { if (strcmp(tag, "INFERNAL1/a") != 0)    ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Didn't find INFERNAL1/a tag: bad format or not an INFERNAL save file?"); }
+      else if (cmfp->format == CM_FILE_1b) { if (strcmp(tag, "INFERNAL1/b") != 0)   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Didn't find INFERNAL1/b tag: bad format or not an INFERNAL save file?"); }
       else                                                                           ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "No such CM file format code: this shouldn't happen");
     }
 
