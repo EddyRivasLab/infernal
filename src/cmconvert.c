@@ -1,5 +1,5 @@
 /* cmconvert: converting covariance model files to Infernal-1.1 CM format.
- * 
+ *
  * EPN, Fri Jul  1 05:11:15 2011
  * SRE, Thu Oct 16 08:57:43 2008 [janelia] (hmmconvert.c)
  */
@@ -13,6 +13,7 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
+#include "esl_random.h"
 
 #include "hmmer.h"
 
@@ -23,13 +24,18 @@
 static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help on version and usage",                             0 },
-  { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
-  { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             0 },
-  { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
-  { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        0 },
-  /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },*/
+  { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               1 },
+  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              1 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   1 },
+  { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             1 },
+  { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            1 },
+  { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        1 },
+  /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     1 },*/
+  /* options for controlling p7 per-node band pad computation */
+  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,              NULL, "skip p7 per-node band pad computation",          2 },
+  { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
+  { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad deficit distribution",        2 },
+  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "RNG seed for p7 pad simulation (0=arbitrary)",    2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -37,12 +43,12 @@ static char banner[] = "convert CM file to a different Infernal format";
 
 static int  configure_model(CM_t *cm, char *errbuf);
 
-int 
+int
 main(int argc, char **argv)
 {
-  ESL_GETOPTS   *go      = cm_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_GETOPTS   *go      = NULL;
   ESL_ALPHABET  *abc     = NULL;
-  char          *cmfile  = esl_opt_GetArg(go, 1);
+  char          *cmfile  = NULL;
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = NULL;
@@ -51,7 +57,35 @@ main(int argc, char **argv)
   int            status;
   char           errbuf[eslERRBUFSIZE];
 
-  /* In the future, when we have another 1.1+ format besides '1/a' put this back in: 
+  go = esl_getopts_Create(options);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK ||
+      esl_opt_VerifyConfig(go)               != eslOK)
+    {
+      printf("Failed to parse command line: %s\n", go->errbuf);
+      esl_usage(stdout, argv[0], usage);
+      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      exit(1);
+    }
+  if (esl_opt_GetBoolean(go, "-h"))
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nOptions:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
+      puts("\nOptions for p7 per-node band pad computation:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_ArgNumber(go) != 1)
+    {
+      puts("Incorrect number of command line arguments.");
+      esl_usage(stdout, argv[0], usage);
+      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      exit(1);
+    }
+  cmfile = esl_opt_GetArg(go, 1);
+
+  /* In the future, when we have another 1.1+ format besides '1/a' put this back in:
    * if (outfmt != NULL) {
    * if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
    * else    cm_Fail("No such 1.x output format code %s.\n", outfmt);
@@ -61,17 +95,17 @@ main(int argc, char **argv)
   status = cm_file_Open(cmfile, NULL, TRUE, &cmfp, errbuf); /* TRUE says: allow CM file to be in v1.0 --> v1.0.2 format */
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
-  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",                       status, cmfile, errbuf);  
+  else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",                       status, cmfile, errbuf);
 
   /* open output file for writing, if nec */
   if ( esl_opt_IsOn(go, "-o") ) {
     if ((ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) ESL_FAIL(eslFAIL, errbuf, "Failed to open output file %s", esl_opt_GetString(go, "-o"));
-  } 
+  }
   else ofp = stdout;
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
-      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm")) { 
+      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
 	 * (cm->dmin, cm->dmax), cm->W, cm->consensus. These are
 	 * calculated during model configuration. If --mlhmm, we
@@ -79,15 +113,32 @@ main(int argc, char **argv)
 	 * in configure_model().
 	 */
 	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
-      }	
-      /* append command line info to the appropriate comlog */
-      if (esl_opt_GetBoolean(go, "--mlhmm")) { 
-	if((status = p7_hmm_AppendComlog (cm->mlp7, go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log"); 
       }
-      else if (esl_opt_GetBoolean(go, "--fhmm")) { 
+
+      /* Compute p7 per-node band pads and embed in CM, unless --no-p7pad or output
+       * format doesn't support them (-1, --mlhmm, --fhmm). */
+      if (! esl_opt_GetBoolean(go, "--no-p7pad")  &&
+          ! esl_opt_GetBoolean(go, "-1")           &&
+          ! esl_opt_GetBoolean(go, "--mlhmm")      &&
+          ! esl_opt_GetBoolean(go, "--fhmm"))
+        {
+          if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
+          ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
+          if ((status = cm_ComputeP7NodePad(cm, pad_r,
+                                            esl_opt_GetInteger(go, "--p7pad-N"),
+                                            esl_opt_GetReal   (go, "--p7pad-q"),
+                                            errbuf)) != eslOK) cm_Fail(errbuf);
+          esl_randomness_Destroy(pad_r);
+        }
+
+      /* append command line info to the appropriate comlog */
+      if (esl_opt_GetBoolean(go, "--mlhmm")) {
+	if((status = p7_hmm_AppendComlog (cm->mlp7, go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
+      }
+      else if (esl_opt_GetBoolean(go, "--fhmm")) {
 	if((status = p7_hmm_AppendComlog (cm->fp7,  go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
       }
-      else { 
+      else {
 	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
       }
 
@@ -105,7 +156,7 @@ main(int argc, char **argv)
 
   cm_file_Close(cmfp);
 
-  if(esl_opt_IsOn(go, "-o")) fclose(ofp); 
+  if(esl_opt_IsOn(go, "-o")) fclose(ofp);
   esl_alphabet_Destroy(abc);
   esl_getopts_Destroy(go);
   return 0;
@@ -113,22 +164,22 @@ main(int argc, char **argv)
 
 
 /* configure_model()
- * Configure the model. This determines QDBs and W, which 
+ * Configure the model. This determines QDBs and W, which
  * the new file format includes, but v1.0-->v1.0.2 did not,
- * thus we have to calculate them for models read from 
- * v1.0-->v1.0.2 cm files. 
+ * thus we have to calculate them for models read from
+ * v1.0-->v1.0.2 cm files.
  */
 static int
 configure_model(CM_t *cm, char *errbuf)
 {
-  int status; 
+  int status;
   int lmsvL, lvitL, lfwdL, gfwdL;
   int lmsvN, lvitN, lfwdN, gfwdN;
   float lftailp, gftailp;
   double fil_gfmu, fil_gflambda;
 
   /* Configure the model, we must calculate QDBs so we can write them to the CM file */
-  cm->config_opts |= CM_CONFIG_QDB;   
+  cm->config_opts |= CM_CONFIG_QDB;
   if ((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
   if ((status = cm_SetConsensus(cm, cm->cmcons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
 
@@ -160,4 +211,3 @@ configure_model(CM_t *cm, char *errbuf)
 
   return eslOK;
 }
-
