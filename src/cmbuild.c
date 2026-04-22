@@ -135,6 +135,10 @@ static ESL_OPTIONS options[] = {
   { "--ElL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Elcmult", "length of seqs to search for local stats is <n>",             107 },
   { "--EgL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Egcmult", "length of seqs to search for glocal stats is <n>",            107 },
   { "--Eseed",   eslARG_INT,     "42", NULL, "n>=0",  NULL,  NULL, NULL,        "set RNG seed for p7 calibration to <n> (0=arbitrary)",         107 },
+  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL, NULL,    "skip p7 per-node band pad computation (CM file will not embed pads)", 107 },
+  { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of parsetree samples for p7 pad simulation",            107 },
+  { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad per-node deficit distribution",             107 },
+  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "set RNG seed for p7 pad simulation to <n> (0=arbitrary)",       107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -1269,10 +1273,10 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
  static int
  print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
  {
-   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "rel entropy");
-   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "-----------");
-   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "idx",    "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",    "HMM",   "description");
-   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %s\n", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----", "-----------");
+   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s %6s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "rel entropy", "");
+   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %11s %6s\n",       "",       "",                     "",         "",         "",       "",      "",    "",      "-----------", "");
+   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %6s %s\n", "idx",    "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",    "HMM",   "avgpad", "description");
+   fprintf(cfg->ofp, "# %-6s %-20s %8s %8s %6s %5s %4s %4s %5s %5s %6s %s\n", "------", "--------------------", "--------", "--------", "------", "-----", "----", "----", "-----", "-----", "------", "-----------");
 
    return eslOK;
  }
@@ -1290,20 +1294,81 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
    if ((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
 
+   /* Compute per-HMM-node p7 band pads and embed in CM file, unless --no-p7pad. */
+   float avgpad = -1.0;
+   int   max_pad = 0;
+   if (! esl_opt_GetBoolean(go, "--no-p7pad")) {
+     ESL_STOPWATCH *w_pad = NULL;
+     if (cfg->be_verbose) {
+       w_pad = esl_stopwatch_Create();
+       esl_stopwatch_Start(w_pad);
+       fprintf(cfg->ofp, "%-40s ... ", "Computing p7 per-node band pads");
+       fflush(cfg->ofp);
+     }
+
+     ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
+     if (pad_r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to allocate RNG for p7 pad computation");
+     status = cm_ComputeP7NodePad(cm,
+				  pad_r,
+				  esl_opt_GetInteger(go, "--p7pad-N"),
+				  esl_opt_GetReal(go,    "--p7pad-q"),
+				  errbuf);
+     esl_randomness_Destroy(pad_r);
+     if (status != eslOK) return status;
+
+     /* Summary stats for output line and verbose output. */
+     {
+       int    k;
+       int    sum = 0;
+       for (k = 1; k <= cm->p7_nodepad_M; k++) {
+	 sum += cm->p7_nodepad[k];
+	 if (cm->p7_nodepad[k] > max_pad) max_pad = cm->p7_nodepad[k];
+       }
+       avgpad = (cm->p7_nodepad_M > 0) ? (float) sum / (float) cm->p7_nodepad_M : 0.0;
+     }
+
+     if (cfg->be_verbose) {
+       fprintf(cfg->ofp, "done.  ");
+       esl_stopwatch_Stop(w_pad);
+       esl_stopwatch_Display(cfg->ofp, w_pad, "CPU time: ");
+       fprintf(cfg->ofp, "%-40s %5.1f\n", "  avg p7 pad width", avgpad);
+       fprintf(cfg->ofp, "%-40s %5d\n",   "  max p7 pad width", max_pad);
+     }
+     if (w_pad != NULL) esl_stopwatch_Destroy(w_pad);
+   }
+
    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
-   fprintf(cfg->ofp, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %s\n",
-	   cmidx,
-	   cm->name, 
-	   msa->nseq,
-	   cm->eff_nseq,
-	   msa->alen,
-	   cm->clen, 
-	   CMCountStatetype(cm, MP_st), 
-	   CMCountStatetype(cm, B_st), 
-	   cm_MeanMatchRelativeEntropy(cm),
-	   cp9_MeanMatchRelativeEntropy(cm->cp9), 
-	   (msa->desc) ? msa->desc : "");
+   if (avgpad >= 0.0) {
+     fprintf(cfg->ofp, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %6.1f %s\n",
+	     cmidx,
+	     cm->name,
+	     msa->nseq,
+	     cm->eff_nseq,
+	     msa->alen,
+	     cm->clen,
+	     CMCountStatetype(cm, MP_st),
+	     CMCountStatetype(cm, B_st),
+	     cm_MeanMatchRelativeEntropy(cm),
+	     cp9_MeanMatchRelativeEntropy(cm->cp9),
+	     avgpad,
+	     (msa->desc) ? msa->desc : "");
+   }
+   else {
+     fprintf(cfg->ofp, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %6s %s\n",
+	     cmidx,
+	     cm->name,
+	     msa->nseq,
+	     cm->eff_nseq,
+	     msa->alen,
+	     cm->clen,
+	     CMCountStatetype(cm, MP_st),
+	     CMCountStatetype(cm, B_st),
+	     cm_MeanMatchRelativeEntropy(cm),
+	     cp9_MeanMatchRelativeEntropy(cm->cp9),
+	     "-",
+	     (msa->desc) ? msa->desc : "");
+   }
 
 
    /* dump optional info to files: */
