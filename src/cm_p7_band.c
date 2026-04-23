@@ -5733,9 +5733,22 @@ static int cm_nodepad_cmpint(const void *a, const void *b) {
 /* Structure for work units passed through the work queue
  * in the threaded cm_ComputeP7NodePad() path.
  * A small recycling pool of these structs cycles between reader and workers.
+ *
+ * The master thread performs all RNG-consuming steps (EmitParsetree and
+ * flanking-residue generation) in sample order, then hands the emitted
+ * parsetree + sequence + flanked digitized sequence to a worker via this
+ * struct. The worker does pure Viterbi DP and deficit recording, then
+ * frees the cm_tr/esq/emb allocations (ownership transfers on pickup).
+ * This makes results deterministic regardless of thread scheduling, and
+ * bit-for-bit identical to the serial path.
  */
 typedef struct {
-  int idx;   /* sample index to process; -1 = sentinel (stop signal) */
+  int           idx;    /* sample index to process; -1 = sentinel (stop signal) */
+  Parsetree_t  *cm_tr;  /* emitted CM parsetree (filled by master; freed by worker) */
+  ESL_SQ       *esq;    /* emitted sequence     (filled by master; freed by worker) */
+  ESL_DSQ      *emb;    /* flanked digitized sequence (filled by master; freed by worker) */
+  int           L;      /* emitted sequence length */
+  int           L_emb;  /* total length of emb = 2*flank + L */
 } CM_NODEPAD_WORK;
 
 #ifdef HMMER_THREADS
@@ -5745,7 +5758,6 @@ typedef struct {
  */
 typedef struct {
   CM_t           *cm;         /* shared CM (read-only) */
-  ESL_RANDOMNESS *r;          /* per-worker RNG (owned by this struct) */
   ESL_WORK_QUEUE *queue;      /* shared work queue */
   P7_BG          *bg;         /* per-worker p7 background model */
   P7_PROFILE     *gm;         /* per-worker p7 profile */
@@ -5761,10 +5773,16 @@ typedef struct {
 
 /* cm_nodepad_thread_worker()
  * Worker function for threaded cm_ComputeP7NodePad().
- * Each worker pulls sample indices from the work queue, runs the
- * full EmitParsetree + embed + Viterbi + deficit-record loop for
- * each sample, accumulates results in its own per-node deficit arrays,
- * and stops on the sentinel (idx == -1).
+ * Each worker pulls work items from the work queue. Each item contains
+ * an emitted CM parsetree, emitted sequence, and flanked digitized
+ * sequence already prepared by the master thread (the only caller of
+ * the RNG). The worker runs Viterbi banding, records deficits into its
+ * own per-node arrays, then frees cm_tr/esq/emb (ownership transferred
+ * on pickup). Stops on sentinel (idx == -1).
+ *
+ * This design guarantees bit-for-bit determinism across thread counts
+ * and scheduling: all RNG consumption happens on the master thread in
+ * strict sample order, identical to the serial path.
  */
 static void
 cm_nodepad_thread_worker(void *arg)
@@ -5775,17 +5793,14 @@ cm_nodepad_thread_worker(void *arg)
   CM_NODEPAD_WORK  *work = NULL;
   void             *newwork;
   CM_t             *cm;
-  ESL_RANDOMNESS   *r;
   int               M;
-  int               flank = 500;
-  int               status;
+  const int         flank = 500;
   int               seen[10000];  /* per-worker local array; avoids static thread-safety issue */
 
   esl_threads_Started(obj, &workeridx);
   winfo = (CM_NODEPAD_WINFO *) esl_threads_GetData(obj, workeridx);
 
   cm = winfo->cm;
-  r  = winfo->r;
   M  = winfo->M;
 
   winfo->status = eslOK;
@@ -5795,31 +5810,17 @@ cm_nodepad_thread_worker(void *arg)
 
   while (work->idx >= 0)   /* sentinel: idx == -1 means stop */
     {
-      Parsetree_t *cm_tr = NULL;
-      ESL_SQ      *esq   = NULL;
-      int          L;
-      char         name[32];
-      ESL_DSQ     *emb   = NULL;
+      Parsetree_t *cm_tr = work->cm_tr;
+      ESL_SQ      *esq   = work->esq;
+      ESL_DSQ     *emb   = work->emb;
+      int          L     = work->L;
+      int          L_emb = work->L_emb;
       int         *i2k   = NULL;
       int         *kmin  = NULL;
       int         *kmax  = NULL;
       int          ncells = 0;
-      int          L_emb;
       int          p, t;
       int          distinct_k, emit_pins, kk;
-
-      snprintf(name, sizeof(name), "sim%d", work->idx);
-      if ((status = EmitParsetree(cm, winfo->errbuf, r, name, TRUE, &cm_tr, &esq, &L)) != eslOK) {
-        winfo->status = status;
-        goto worker_done;
-      }
-
-      L_emb = 2 * flank + L;
-      ESL_ALLOC(emb, sizeof(ESL_DSQ) * (L_emb + 2));
-      emb[0] = emb[L_emb + 1] = eslDSQ_SENTINEL;
-      for (p = 1;             p <= flank;     p++) emb[p] = esl_rnd_FChoose(r, winfo->bg->f, winfo->gm->abc->K);
-      for (p = 1;             p <= L;         p++) emb[flank + p] = esq->dsq[p];
-      for (p = flank + L + 1; p <= L_emb;     p++) emb[p] = esl_rnd_FChoose(r, winfo->bg->f, winfo->gm->abc->K);
 
       p7_ProfileConfig(cm->fp7, winfo->bg, winfo->gm, L_emb, p7_GLOCAL);
       p7_gmx_GrowTo(winfo->gx, M, L_emb);
@@ -5832,6 +5833,7 @@ cm_nodepad_thread_worker(void *arg)
         if (kmax) free(kmax);
         free(emb);
         FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
         goto next_item;
       }
 
@@ -5844,6 +5846,7 @@ cm_nodepad_thread_worker(void *arg)
       if (distinct_k < M / 2) {
         free(i2k); free(kmin); free(kmax); free(emb);
         FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
         goto next_item;
       }
       emit_pins = 0;
@@ -5853,6 +5856,7 @@ cm_nodepad_thread_worker(void *arg)
       if (emit_pins < L / 4 || ncells == 0) {
         free(i2k); free(kmin); free(kmax); free(emb);
         FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
         goto next_item;
       }
 
@@ -5877,7 +5881,12 @@ cm_nodepad_thread_worker(void *arg)
             if (winfo->def_n[(true_k)] >= winfo->def_alloc[(true_k)]) {                 \
               int _newsz = winfo->def_alloc[(true_k)] ? winfo->def_alloc[(true_k)] * 2 : 16; \
               int *_tmp = realloc(winfo->deficits[(true_k)], sizeof(int) * _newsz);     \
-              if (_tmp == NULL) { winfo->status = eslEMEM; goto worker_done; }          \
+              if (_tmp == NULL) {                                                        \
+                free(i2k); free(kmin); free(kmax); free(emb);                            \
+                FreeParsetree(cm_tr); esl_sq_Destroy(esq);                               \
+                work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;                 \
+                winfo->status = eslEMEM; goto worker_done;                               \
+              }                                                                          \
               winfo->deficits[(true_k)] = _tmp;                                         \
               winfo->def_alloc[(true_k)] = _newsz;                                      \
             }                                                                           \
@@ -5899,22 +5908,12 @@ cm_nodepad_thread_worker(void *arg)
 
       free(i2k); free(kmin); free(kmax); free(emb);
       FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
 
     next_item:
       esl_workqueue_WorkerUpdate(winfo->queue, work, &newwork);
       work = (CM_NODEPAD_WORK *) newwork;
       continue;
-
-    ERROR:
-      /* allocation failure inside the loop */
-      if (emb)   free(emb);
-      if (i2k)   free(i2k);
-      if (kmin)  free(kmin);
-      if (kmax)  free(kmax);
-      if (cm_tr) FreeParsetree(cm_tr);
-      if (esq)   esl_sq_Destroy(esq);
-      winfo->status = eslEMEM;
-      goto worker_done;
     }
 
  worker_done:
@@ -5986,10 +5985,11 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
        * Each worker runs its own RNG (seeded from master r), accumulates
        * per-node deficit arrays locally, and the main thread merges them.
        */
-      ESL_THREADS       *threadObj = NULL;
-      ESL_WORK_QUEUE    *queue     = NULL;
-      CM_NODEPAD_WINFO  *winfo     = NULL;
-      CM_NODEPAD_WORK   *wpool     = NULL;   /* recycling pool of work items */
+      ESL_THREADS       *threadObj  = NULL;
+      ESL_WORK_QUEUE    *queue      = NULL;
+      CM_NODEPAD_WINFO  *winfo      = NULL;
+      CM_NODEPAD_WORK   *wpool      = NULL;   /* recycling pool of work items */
+      P7_BG             *master_bg  = NULL;   /* master's bg for FChoose flank emission */
       int                npool;
       int                next_s;             /* next sample index to dispatch */
       int                sentinels_sent;
@@ -5997,12 +5997,10 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
       void              *newptr;
       CM_NODEPAD_WORK   *work;
 
-      /* 1. Create per-worker data (RNG seeded by rolling master r). */
+      /* 1. Create per-worker data. Workers consume RNG-free, so no per-worker RNG. */
       ESL_ALLOC(winfo, sizeof(CM_NODEPAD_WINFO) * ncpu);
       for (j = 0; j < ncpu; j++) {
-        uint32_t seed = (uint32_t) esl_rnd_Roll(r, 1000000000) + 1;  /* never 0 */
         winfo[j].cm      = cm;
-        winfo[j].r       = esl_randomness_Create(seed);
         winfo[j].queue   = NULL;   /* filled below */
         winfo[j].bg      = p7_bg_Create(hmm->abc);
         winfo[j].gm      = p7_profile_Create(hmm->M, hmm->abc);
@@ -6016,14 +6014,25 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
         ESL_ALLOC(winfo[j].def_n,     sizeof(int)   * (M + 1));
         ESL_ALLOC(winfo[j].def_alloc, sizeof(int)   * (M + 1));
         for (k = 0; k <= M; k++) { winfo[j].deficits[k] = NULL; winfo[j].def_n[k] = 0; winfo[j].def_alloc[k] = 0; }
-        if (winfo[j].r == NULL || winfo[j].bg == NULL || winfo[j].gm == NULL ||
+        if (winfo[j].bg == NULL || winfo[j].gm == NULL ||
             winfo[j].gx == NULL || winfo[j].p7tr == NULL) { status = eslEMEM; goto THREADED_ERROR; }
       }
+
+      /* Master's own bg for FChoose flank emission — keeps RNG use on one thread. */
+      master_bg = p7_bg_Create(hmm->abc);
+      if (master_bg == NULL) { status = eslEMEM; goto THREADED_ERROR; }
 
       /* 2. Create recycling pool of work items. */
       npool = ncpu * 2;
       ESL_ALLOC(wpool, sizeof(CM_NODEPAD_WORK) * npool);
-      for (j = 0; j < npool; j++) wpool[j].idx = -1;
+      for (j = 0; j < npool; j++) {
+        wpool[j].idx   = -1;
+        wpool[j].cm_tr = NULL;
+        wpool[j].esq   = NULL;
+        wpool[j].emb   = NULL;
+        wpool[j].L     = 0;
+        wpool[j].L_emb = 0;
+      }
 
       /* 3. Set up threads and work queue. */
       threadObj = esl_threads_Create(&cm_nodepad_thread_worker);
@@ -6037,7 +6046,10 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
       for (j = 0; j < npool; j++)
         esl_workqueue_Init(queue, &wpool[j]);
 
-      /* 5. Reader loop: dispatch sample indices to workers; sentinels to stop them. */
+      /* 5. Reader loop: master emits parsetree+flanks in sample order (the only
+       *    RNG consumer), then hands each fully-built work unit to a worker.
+       *    Sentinels (idx=-1) shut down workers when we run out of samples.
+       */
       esl_workqueue_Reset(queue);
       esl_threads_WaitForStart(threadObj);
 
@@ -6051,9 +6063,39 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
       while (sentinels_sent < ncpu)
         {
           if (next_s < nsamples) {
-            work->idx = next_s++;
+            Parsetree_t *cm_tr_local = NULL;
+            ESL_SQ      *esq_local   = NULL;
+            ESL_DSQ     *emb_local   = NULL;
+            int          L_local;
+            int          L_emb_local;
+            char         name[32];
+            int          p;
+
+            snprintf(name, sizeof(name), "sim%d", next_s);
+            if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &cm_tr_local, &esq_local, &L_local)) != eslOK)
+              goto THREADED_ERROR;
+            L_emb_local = 2 * flank + L_local;
+            emb_local = malloc(sizeof(ESL_DSQ) * (L_emb_local + 2));
+            if (emb_local == NULL) {
+              FreeParsetree(cm_tr_local); esl_sq_Destroy(esq_local);
+              status = eslEMEM; goto THREADED_ERROR;
+            }
+            emb_local[0] = emb_local[L_emb_local + 1] = eslDSQ_SENTINEL;
+            for (p = 1;                    p <= flank;         p++) emb_local[p] = esl_rnd_FChoose(r, master_bg->f, hmm->abc->K);
+            for (p = 1;                    p <= L_local;       p++) emb_local[flank + p] = esq_local->dsq[p];
+            for (p = flank + L_local + 1;  p <= L_emb_local;   p++) emb_local[p] = esl_rnd_FChoose(r, master_bg->f, hmm->abc->K);
+
+            work->idx   = next_s++;
+            work->cm_tr = cm_tr_local;
+            work->esq   = esq_local;
+            work->emb   = emb_local;
+            work->L     = L_local;
+            work->L_emb = L_emb_local;
           } else {
-            work->idx = -1;   /* sentinel */
+            work->idx   = -1;   /* sentinel */
+            work->cm_tr = NULL;
+            work->esq   = NULL;
+            work->emb   = NULL;
             sentinels_sent++;
           }
           status = esl_workqueue_ReaderUpdate(queue, work, &newptr);
@@ -6095,7 +6137,6 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
 
       /* 8. Clean up thread resources. */
       for (j = 0; j < ncpu; j++) {
-        esl_randomness_Destroy(winfo[j].r);
         p7_bg_Destroy(winfo[j].bg);
         p7_profile_Destroy(winfo[j].gm);
         p7_gmx_Destroy(winfo[j].gx);
@@ -6110,16 +6151,25 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
       }
       free(winfo);   winfo = NULL;
       free(wpool);   wpool = NULL;
+      if (master_bg) p7_bg_Destroy(master_bg);
       esl_workqueue_Destroy(queue);
       esl_threads_Destroy(threadObj);
 
       goto AGGREGATE;
 
     THREADED_ERROR:
-      /* Clean up thread resources on error. */
+      /* Clean up thread resources on error. Also free any emissions in
+       * work items that workers haven't consumed yet (owned by master on error).
+       */
+      if (wpool != NULL) {
+        for (j = 0; j < npool; j++) {
+          if (wpool[j].cm_tr != NULL) FreeParsetree(wpool[j].cm_tr);
+          if (wpool[j].esq   != NULL) esl_sq_Destroy(wpool[j].esq);
+          if (wpool[j].emb   != NULL) free(wpool[j].emb);
+        }
+      }
       if (winfo != NULL) {
         for (j = 0; j < ncpu; j++) {
-          if (winfo[j].r       != NULL) esl_randomness_Destroy(winfo[j].r);
           if (winfo[j].bg      != NULL) p7_bg_Destroy(winfo[j].bg);
           if (winfo[j].gm      != NULL) p7_profile_Destroy(winfo[j].gm);
           if (winfo[j].gx      != NULL) p7_gmx_Destroy(winfo[j].gx);
@@ -6135,6 +6185,7 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
         free(winfo);
       }
       if (wpool     != NULL) free(wpool);
+      if (master_bg != NULL) p7_bg_Destroy(master_bg);
       if (queue     != NULL) esl_workqueue_Destroy(queue);
       if (threadObj != NULL) esl_threads_Destroy(threadObj);
       goto ERROR;
