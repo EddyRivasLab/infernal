@@ -62,7 +62,8 @@
 1 exercise  itest/scan-overlaps     !testsuite/itest9-overlaps.pl!           @@ !! %OUTFILES%
 1 exercise  itest/build-frags       !testsuite/itest10-build-frags.pl!       @@ !! %OUTFILES%
 1 exercise  itest/search-frags      !testsuite/itest11-search-frags.pl!      @@ !! %OUTFILES%
-1 exercise  itest/brute             @src/itest_brute@  
+1 exercise  itest/p7nodepad         !testsuite/itest12-p7nodepad.pl!         @@ !! %OUTFILES%
+1 exercise  itest/brute             @src/itest_brute@
 
 ################################################################
 # Fixed bug tests
@@ -112,6 +113,14 @@
 1  exercise    build/zbp/O    @src/cmbuild@ -F -O %ZBP.STK% %ZBP.CM% !testsuite/snR75.sto!
 1  exercise    build/4/O      @src/cmbuild@ -F -O %4.STK% %4.CM% !testsuite/4.sto!
 
+# p7 pad options smoke tests (cmbuild)
+1  prep       build/t.pad.default     @src/cmbuild@ --wnone --p7pad-N 50               -F %T.PAD.CM%        !testsuite/tRNA.sto!
+1  prep       build/t.pad.nopad       @src/cmbuild@ --wnone --no-p7pad                 -F %T.NOPAD.CM%      !testsuite/tRNA.sto!
+1  prep       build/t.pad.q95         @src/cmbuild@ --wnone --p7pad-N 50 --p7pad-q 0.95 -F %T.Q95.CM%       !testsuite/tRNA.sto!
+1  prep       build/t.pad.seed17      @src/cmbuild@ --wnone --p7pad-N 50 --p7pad-seed 17 -F %T.S17.CM%      !testsuite/tRNA.sto!
+1  prep       build/t.pad.serial      @src/cmbuild@ --wnone --p7pad-N 50 --p7pad-cpu 0 -F %T.SERIAL.CM%     !testsuite/tRNA.sto!
+1  prep       build/t.pad.cpu1        @src/cmbuild@ --wnone --p7pad-N 50 --p7pad-cpu 1 -F %T.CPU1.CM%       !testsuite/tRNA.sto!
+
 # cmsearch exercises (CM must be calibrated)
 1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
 1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
@@ -138,8 +147,12 @@
 1  exercise    search/tf1     @src/cmsearch@ --tblout %TMP3.TBLOUT% --fmt 1 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  fail        search/tf2     @src/cmsearch@ --tblout %TMP4.TBLOUT% --fmt 2 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/tf3     @src/cmsearch@ --tblout %TMP5.TBLOUT% --fmt 3 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+# Note: cmsearch smoke for --p7padplus against %T.PAD.CM% is placed
+# after calibrate/t.v1b (below), because T.PAD.CM is uncalibrated out
+# of the build/t.pad.default prep and cmsearch refuses to run without
+# E-value parameters.
 
-# cmstat exercises 
+# cmstat exercises
 1  exercise    stat/help/1    @src/cmstat@ -h
 1  exercise    stat/t         @src/cmstat@   %TRNA.CM% 
 1  exercise    stat/v         @src/cmstat@   %VAULT.CM% 
@@ -203,7 +216,13 @@
 1  exercise  convert/s        @src/cmconvert@ !testsuite/Plant_SRP.1p0.cm! > %CONVERTED.SRP.CM%
 1  exercise  convert/4        @src/cmconvert@ !testsuite/4.1p0.cm! > %CONVERTED.4.CM%
 
-1  exercise  convert-emit/t   @src/cmemit@    %CONVERTED.TRNA.CM% 
+# p7 pad options smoke tests (cmconvert)
+1  exercise  convert/t.pad.default   @src/cmconvert@ --p7pad-N 50 !testsuite/tRNA.1p0.cm! > %T.CONV.PAD.CM%
+1  exercise  convert/t.pad.nopad     @src/cmconvert@ --no-p7pad   !testsuite/tRNA.1p0.cm! > %T.CONV.NOPAD.CM%
+1  exercise  convert/t.pad.seed17    @src/cmconvert@ --p7pad-N 50 --p7pad-seed 17 !testsuite/tRNA.1p0.cm! > %T.CONV.S17.CM%
+1  exercise  convert/t.pad.serial    @src/cmconvert@ --p7pad-N 50 --p7pad-cpu 0  !testsuite/tRNA.1p0.cm! > %T.CONV.SERIAL.CM%
+
+1  exercise  convert-emit/t   @src/cmemit@    %CONVERTED.TRNA.CM%
 1  exercise  convert-emit/v   @src/cmemit@    %CONVERTED.VAULT.CM% 
 1  exercise  convert-emit/s   @src/cmemit@    %CONVERTED.SRP.CM% 
 1  exercise  convert-emit/4   @src/cmemit@    %CONVERTED.4.CM% 
@@ -261,6 +280,17 @@
 1  exercise  calibrate/tFC      @src/cmcalibrate@ --forecast %TRNA.CM%
 1  prep      build/se           @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
 1  exercise  calibrate/se       @src/cmcalibrate@ -L 0.1 %SE.CM%
+# Regression test for commit c09285c8: cm_file.c pass-2 rewind dispatch
+# was missing the CM_FILE_1b case, causing cmcalibrate to fail when
+# rereading its own v1b output on the second pass. %T.PAD.CM% is
+# produced by the build/t.pad.default prep above.
+2  exercise  calibrate/t.v1b    @src/cmcalibrate@ -L 0.01 --seed 42 %T.PAD.CM%
+# cmsearch smoke for --p7padplus against a v1b CM that carries embedded
+# P7NODEPAD pads (exercises the embedded-pads loader path in
+# cm_pipeline.c and the +plus add-to-every-pad adjustment). Runs at
+# level 2 and is placed after calibrate/t.v1b so T.PAD.CM carries
+# E-value parameters (cmcalibrate edits the CM in place).
+2  exercise  search/t.padplus   @src/cmsearch@ --p7padplus 20 %T.PAD.CM% !testsuite/1k-tRNA.fa!
 1  prep      build2/se          @src/cmbuild@ -F %SE2.CM% !testsuite/se.sto!
 1  exercise  calib/split/se     @src/cmcalibrate@ --proot se.tmp --split --ptot 10 --cfile %SE.CFILE% -L 0.1 %SE2.CM%
 1  exercise  calib/part1/se     @src/cmcalibrate@ --part 1  --ptot 10 --pfile se.tmp.1  -L 0.1 %SE2.CM%
