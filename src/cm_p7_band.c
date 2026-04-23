@@ -2755,6 +2755,22 @@ p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
     }
   }
 
+  /* I_0 and I_M (5'/3' flanking CP9 inserts) have no p7 counterparts
+   * (p7 uses N and C states), so the posterior sweep never populates
+   * their bands. Derive tight bounds from the adjacent match bands:
+   * I_0 emits before M_1, I_M emits after M_M. Without this,
+   * cp9_HMM2ijBands pins ROOT_IL/IR to envelope edges and the CM
+   * pays mis-match penalty for flanking residues.
+   */
+  if (pn_max_m[1] >= 1) {
+    pn_min_i[0] = 1;
+    pn_max_i[0] = pn_max_m[1] - 1;
+  }
+  if (pn_min_m[M] >= 1 && pn_min_m[M] <= L) {
+    pn_min_i[M] = pn_min_m[M] + 1;
+    pn_max_i[M] = L;
+  }
+
   /* Convert unset entries to -1 sentinel */
   for(k = 0; k <= M; k++) {
     if(pn_min_m[k] > pn_max_m[k]) pn_min_m[k] = pn_max_m[k] = -1;
@@ -3040,6 +3056,17 @@ p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
       if(0 < pn_min_d[k]) pn_min_d[k] = 0;
       if(0 > pn_max_d[k]) pn_max_d[k] = 0;
     }
+  }
+
+  /* I_0 and I_M (5'/3' flanking CP9 inserts) have no p7 counterparts;
+   * see p7banded_post_to_pn_bands() for full explanation. */
+  if (pn_max_m[1] >= 1) {
+    pn_min_i[0] = 1;
+    pn_max_i[0] = pn_max_m[1] - 1;
+  }
+  if (pn_min_m[M] >= 1 && pn_min_m[M] <= L) {
+    pn_min_i[M] = pn_min_m[M] + 1;
+    pn_max_i[M] = L;
   }
 
   /* Convert unset entries to -1 sentinel */
