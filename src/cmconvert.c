@@ -127,6 +127,14 @@ main(int argc, char **argv)
           ! esl_opt_GetBoolean(go, "--fhmm"))
         {
           if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
+          /* cm_ComputeP7NodePad needs cm->cp9map. For inputs that skipped
+           * configure_model() (v1/a, v1/b), cp9map is NULL — build just
+           * the map cheaply rather than running full cm_Configure.
+           */
+          if (cm->cp9map == NULL) {
+            cm->cp9map = AllocCP9Map(cm);
+            CP9_map_cm2hmm(cm, cm->cp9map, 0);
+          }
           {
 #ifdef HMMER_THREADS
             int pad_ncpu = ESL_MIN(esl_opt_GetInteger(go, "--p7pad-cpu"), esl_threads_GetCPUCount());
