@@ -77,7 +77,7 @@ m4_include([easel/m4/esl_pic_flags.m4])
 # 2. AC_INIT
 ################################################################
 
-AC_INIT([Infernal],[1.1.5],[eric.nawrocki@nih.gov],[infernal])
+AC_INIT([Infernal],[1.2dev],[eric.nawrocki@nih.gov],[infernal])
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 esl_cflags_env_set=no
@@ -108,8 +108,8 @@ fi
 #
 ################################################################
 
-INFERNAL_DATE="Sep 2023"
-INFERNAL_COPYRIGHT="Copyright (C) 2023 Howard Hughes Medical Institute."
+INFERNAL_DATE="Apr 2026"
+INFERNAL_COPYRIGHT="Copyright (C) 2026 Howard Hughes Medical Institute."
 INFERNAL_LICENSE="Freely distributed under the BSD open source license."
 INFERNAL_VERSION=$PACKAGE_VERSION
 INFERNAL_URL="http://eddylab.org/infernal/"
