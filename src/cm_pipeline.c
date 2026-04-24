@@ -311,6 +311,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->vitband_local      = esl_opt_GetBoolean(go, "--vitblocal") ? TRUE : FALSE;
   pli->do_p7post_cp9b     = (pli->do_vitband &&
 			     ! esl_opt_GetBoolean(go, "--nop7post_cp9b")) ? TRUE : FALSE;
+  pli->do_pnmono          = esl_opt_GetBoolean(go, "--pnmono")        ? TRUE : FALSE;
+  pli->do_pnmono_print    = esl_opt_GetBoolean(go, "--pnmono-print")  ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
   pli->p7_nodepad         = NULL; /* built lazily when CM is available */
   pli->p7_nodepad_M       = 0;    /* 0 = pad vector not yet loaded; set to M on load, guards reload */
@@ -4436,7 +4438,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 					  &pli->p7pn_min_i[pn_e*(pn_M+1)],
 					  &pli->p7pn_max_i[pn_e*(pn_M+1)],
 					  &pli->p7pn_min_d[pn_e*(pn_M+1)],
-					  &pli->p7pn_max_d[pn_e*(pn_M+1)]);
+					  &pli->p7pn_max_d[pn_e*(pn_M+1)],
+					  pli->do_pnmono, pli->do_pnmono_print);
 	    /* Tau variant does not compute pocc; mark this env's pocc as unset
 	     * so dispatch falls back to the extent-based sp/ep collapse. */
 	    { int kp; for(kp = 0; kp <= pn_M; kp++) pli->p7pn_pocc[pn_e*(pn_M+1)+kp] = -1.0f; }
@@ -4450,7 +4453,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 				      &pli->p7pn_max_i[pn_e*(pn_M+1)],
 				      &pli->p7pn_min_d[pn_e*(pn_M+1)],
 				      &pli->p7pn_max_d[pn_e*(pn_M+1)],
-				      &pli->p7pn_pocc [pn_e*(pn_M+1)]);
+				      &pli->p7pn_pocc [pn_e*(pn_M+1)],
+				      pli->do_pnmono, pli->do_pnmono_print);
 	  }
 	  pli->p7pn_nenv++;
 	}
@@ -5571,7 +5575,8 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	{
 	  status = cp9_Seq2BandsP7B(cm, pli->errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx,
 				    dsq + start - 1, envL, cm->cp9b, p7_kmin, p7_kmax,
-				    (int)start, (int)stop, pli->cur_pass_idx, 0);
+				    (int)start, (int)stop, pli->cur_pass_idx, 0,
+				    pli->do_pnmono, pli->do_pnmono_print);
 	}
 	if(status == eslOK) {
 	  /* Check resulting CM banded matrix size */

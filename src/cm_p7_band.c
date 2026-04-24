@@ -32,6 +32,67 @@
 
 #include "infernal.h"
 
+/* Function:  pn_match_bands_enforce_monotone()
+ * Incept:    EPN, 2026-04-24
+ *
+ * Purpose:   Enforce a monotone reachability sweep on the match-state
+ *            HMM bands pn_min_m[k] and pn_max_m[k], k=1..M.
+ *
+ *            After: pn_min_m[k] <= min(pn_min_m[1..k])
+ *                   pn_max_m[k] >= max(pn_max_m[k..M])
+ *
+ *            Rationale: when pn_min/max_m come from p7-banded F/B
+ *            posteriors, cells outside the p7 Viterbi diagonal band
+ *            have zero mass, so pn_min_m[k] at downstream nodes can
+ *            exclude envelope positions that are reachable via valid
+ *            HMM paths whose match/delete layout differs from the p7
+ *            Viterbi trace. The sweep relaxes only the match bands and
+ *            only where a predecessor/successor bound was strictly
+ *            tighter. Unset entries (pn_min_m[k]==-1) are skipped.
+ *
+ *            If <do_print> is TRUE, emits one line to stderr:
+ *              pnmono[<ctx>] M=.. L=.. sum_width_before=.. sum_width_after=.. delta=..
+ *
+ * Returns:   (void). pn_min_m/pn_max_m are updated in place.
+ */
+void
+pn_match_bands_enforce_monotone(int *pn_min_m, int *pn_max_m, int M, int L,
+                                int do_print, const char *ctx)
+{
+  int k;
+  long sum_before = 0, sum_after = 0;
+
+  if(do_print) {
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != -1) sum_before += (pn_max_m[k] - pn_min_m[k] + 1);
+    }
+  }
+
+  {
+    int running_min = L + 2;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != -1 && pn_min_m[k] < running_min) running_min = pn_min_m[k];
+      if(pn_min_m[k] != -1 && running_min < pn_min_m[k])  pn_min_m[k] = running_min;
+    }
+  }
+  {
+    int running_max = -1;
+    for(k = M; k >= 1; k--) {
+      if(pn_max_m[k] > running_max) running_max = pn_max_m[k];
+      if(pn_max_m[k] != -1 && running_max > pn_max_m[k]) pn_max_m[k] = running_max;
+    }
+  }
+
+  if(do_print) {
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != -1) sum_after += (pn_max_m[k] - pn_min_m[k] + 1);
+    }
+    fprintf(stderr, "pnmono[%s] M=%d L=%d sum_width_before=%ld sum_width_after=%ld delta=%ld\n",
+            ctx ? ctx : "?", M, L, sum_before, sum_after, sum_after - sum_before);
+  }
+}
+
+
 /* Function:  p7_gmx_Match2DMatrix()
  * Synopsis:  Copy the dp match cells of a generic matrix 
  *            to a ESL_DMATRIX, for visualization with esl_dmx_Visualize()
@@ -1909,7 +1970,7 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
  *
  */
 int
-cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level)
+cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print)
 {
   int   status;
   int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
@@ -1962,7 +2023,8 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     }
     else {
       if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
-				      (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
+				      (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level,
+				      do_pnmono, do_pnmono_print)) != eslOK) return status;
       cp9b->tau = cm->tau;
     }
     esl_stopwatch_Stop(w_s2);
@@ -2674,7 +2736,8 @@ p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
                            int *pn_min_m, int *pn_max_m,
                            int *pn_min_i, int *pn_max_i,
                            int *pn_min_d, int *pn_max_d,
-                           float *pocc)
+                           float *pocc,
+                           int do_pnmono, int do_pnmono_print)
 {
   int          g, i, k;
   int          ia, ib;
@@ -2779,6 +2842,8 @@ p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
   }
   pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
 
+  if(do_pnmono) pn_match_bands_enforce_monotone(pn_min_m, pn_max_m, M, L, do_pnmono_print, "post_thresh");
+
   return eslOK;
 }
 
@@ -2833,7 +2898,8 @@ p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
                                float tau, int L,
                                int *pn_min_m, int *pn_max_m,
                                int *pn_min_i, int *pn_max_i,
-                               int *pn_min_d, int *pn_max_d)
+                               int *pn_min_d, int *pn_max_d,
+                               int do_pnmono, int do_pnmono_print)
 {
   int          status;
   int          g, i, k;
@@ -3076,6 +3142,8 @@ p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
     if(pn_min_d[k] > pn_max_d[k]) pn_min_d[k] = pn_max_d[k] = -1;
   }
   pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  if(do_pnmono) pn_match_bands_enforce_monotone(pn_min_m, pn_max_m, M, L, do_pnmono_print, "post_tau");
 
   free(total_m);
   free(total_i);
@@ -4116,8 +4184,9 @@ cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9
  * Returns: eslOK on success;
  */
 int
-cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-		   int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level)
+cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b,
+		   int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level,
+		   int do_pnmono, int do_pnmono_print)
 {
   int status;
   int k;                                  /* counter over nodes of the model */
@@ -4342,6 +4411,8 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
   
   cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
   cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
+
+  if(do_pnmono) pn_match_bands_enforce_monotone(cp9b->pn_min_m, cp9b->pn_max_m, M, L, do_pnmono_print, "fb2hmm_p7b");
 
   /* Always print HMM bands for P7B path debugging */
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, (1.-p_thresh), 1);
