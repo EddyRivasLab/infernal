@@ -230,6 +230,7 @@ static ESL_OPTIONS options[] = {
   { "--pnmono",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "monotone reachability sweep on pn_min/max_m bands",          106 },
   { "--pnmono-print", eslARG_NONE, FALSE, NULL, NULL,   NULL, "--pnmono", NULL, "with --pnmono: print before/after band widths to stderr",                106 },
   { "--p7bpad",    eslARG_INT,    "3",   NULL, "n>=0",  NULL,  NULL, NULL, "set band half-width (padding) for F4/F5",                                     106 },
+  { "--p7vitend",  eslARG_INT,    "0",   NULL, "n>=0",  NULL,  NULL, NULL, "with --vitband, drop first/last <n> Vit pins",                                106 },
   { "--p7pthr",    eslARG_REAL, "1e-5", NULL, "0<x<1", NULL,  NULL, "--p7tau,--nop7post_cp9b", "with --p7post_cp9b: posterior prob threshold",                                    106 },
   { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  NULL, "--p7pthr,--nop7post_cp9b", "with --p7post_cp9b: cumulative tau for bands",                                    106 },
   { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },

@@ -138,7 +138,7 @@ main(int argc, char **argv)
     p7_ProfileConfig(hmm, bg, gm, L_emb, do_local ? p7_LOCAL : p7_GLOCAL);
     p7_gmx_GrowTo(gx, M, L_emb);
     int *i2k = NULL, *kmin = NULL, *kmax = NULL, ncells = 0;
-    if(p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0,
+    if(p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0, /*vitend=*/0,
                        &i2k, &kmin, &kmax, &ncells) != eslOK) {
       free(i2k); free(kmin); free(kmax); free(emb);
       FreeParsetree(cm_tr); esl_sq_Destroy(esq);

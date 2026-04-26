@@ -4639,6 +4639,10 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  *                       i2k across the 2*hopback+1-pin trace-order window.
  *                       Only applied when nodepad path is used (pin set is
  *                       monotone). 0 = off.
+ *           vitend    - if >0, drop the first <vitend> and last <vitend>
+ *                       Vit pins (M-state entries in i2k) before pins->bands.
+ *                       Targets Mode-1 boundary truncation by widening the
+ *                       band at the prefix/suffix to [0,M].
  *           ret_i2k   - RETURN: per-residue pin array (caller frees)
  *           ret_kmin  - RETURN: per-residue kmin array (caller frees)
  *           ret_kmax  - RETURN: per-residue kmax array (caller frees)
@@ -4650,7 +4654,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  */
 int
 p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
-		ESL_DSQ *dsq, int L, int pad, int *nodepad, int hopback,
+		ESL_DSQ *dsq, int L, int pad, int *nodepad, int hopback, int vitend,
 		int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int    status;
@@ -4710,6 +4714,37 @@ p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p
   }
   if (getenv("VITBAND_MULTIHIT_DBG")) {
     fprintf(stderr, "#VITBAND_MULTIHIT L=%d M=%d nhit=%d nM=%d sc=%.2f\n", L, M, nB, nM, sc);
+  }
+
+  /* Step 3b: Optional vitend pruning. Drop the first <vitend> and last
+   * <vitend> populated entries of i2k (walking forward, then backward,
+   * over non--1 entries), setting them to -1. This widens the band at
+   * the prefix/suffix to [0,M] (no pin -> no per-pin width contribution
+   * and the bridge pass between consecutive pins doesn't reach those
+   * edge rows). Targets Mode-1 boundary truncation: with end pins
+   * removed, F5 backward can integrate posterior mass into the prefix
+   * and suffix that would otherwise be locked to nodepad[k_first/last].
+   * Skip if nM <= 2*vitend (would clear all pins; falls back to unbanded
+   * via empty pin set, behaviour matches no-pin case).
+   */
+  if (vitend > 0 && nM > 0) {
+    int dropped, i;
+    /* Forward pass: drop first <vitend> non--1 entries. */
+    dropped = 0;
+    for (i = 1; i <= L && dropped < vitend; i++) {
+      if (i2k[i] != -1) {
+	i2k[i] = -1;
+	dropped++;
+      }
+    }
+    /* Backward pass: drop last <vitend> non--1 entries. */
+    dropped = 0;
+    for (i = L; i >= 1 && dropped < vitend; i--) {
+      if (i2k[i] != -1) {
+	i2k[i] = -1;
+	dropped++;
+      }
+    }
   }
 
   /* Step 4: Pins -> bands */
@@ -5971,7 +6006,7 @@ cm_nodepad_thread_worker(void *arg)
       p7_gmx_GrowTo(winfo->gx, M, L_emb);
 
       if (p7_Seq2BandsVit(winfo->errbuf, winfo->gm, winfo->gx, winfo->bg, winfo->p7tr,
-                          emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0,
+                          emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0, /*vitend=*/0,
                           &i2k, &kmin, &kmax, &ncells) != eslOK) {
         if (i2k)  free(i2k);
         if (kmin) free(kmin);
@@ -6380,7 +6415,7 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
         p7_ProfileConfig(hmm, bg, gm, L_emb, p7_GLOCAL);
         p7_gmx_GrowTo(gx, M, L_emb);
 
-        if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0,
+        if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0, /*vitend=*/0,
                             &i2k, &kmin, &kmax, &ncells) != eslOK) {
           if (i2k)  free(i2k);
           if (kmin) free(kmin);

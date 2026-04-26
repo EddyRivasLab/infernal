@@ -2299,6 +2299,7 @@ typedef struct cm_pipeline_s {
   char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
   int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7padplus, default 0)        */
   int           p7vit_hopback;  /* hop-back radius (in pinned-position trace order) for D1 dilation (--p7vit-hopback, default 0 = off) */
+  int           p7vitend;       /* drop first/last <n> Vit pins from i2k before pins->bands (--p7vitend, default 0) */
   int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
   int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
   Parsetree_t  *cyk_envtree;    /* CYK parsetree from most recent F6 CYK scan (for --cykbands), or NULL    */
@@ -3177,7 +3178,7 @@ extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX 
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
-				 int pad, int *nodepad, int hopback, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
