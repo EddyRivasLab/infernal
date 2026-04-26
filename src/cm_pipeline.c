@@ -318,6 +318,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7_nodepad_M       = 0;    /* 0 = pad vector not yet loaded; set to M on load, guards reload */
   pli->p7nodepad_file     = esl_opt_IsOn(go, "--p7nodepad-file") ? esl_opt_GetString(go, "--p7nodepad-file") : NULL;
   pli->p7nodepad_plus     = esl_opt_GetInteger(go, "--p7padplus");
+  pli->p7vit_hopback      = esl_opt_GetInteger(go, "--p7vit-hopback");
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
   pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
   pli->cyk_envtree        = NULL;
@@ -3758,7 +3759,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	   */
 	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2BandsVit(pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				   pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
+				   pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &i2k, &kmin, &kmax, &ncells);
 	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -3842,12 +3843,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    int save_mode_r = Rgm->mode;
 	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
 	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &i2k, &kmin, &kmax, &ncells);
 	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
 	    p7_ProfileConfig5PrimeTrunc(Rgm, (int)wlen);
 	  } else {
 	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &i2k, &kmin, &kmax, &ncells);
 	  }
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -3927,12 +3928,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(pli->vitband_local) {
 	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
 	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &i2k, &kmin, &kmax, &ncells);
 	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
 	    p7_ProfileConfig3PrimeTrunc(*opt_hmm, Lgm, (int)wlen);
 	  } else {
 	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &i2k, &kmin, &kmax, &ncells);
 	  }
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -4070,7 +4071,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  esl_stopwatch_Start(stg_watch);
 	  status = p7_Seq2BandsVit(pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				   pli->p7band_pad, pli->p7_nodepad, &i2k, &kmin, &kmax, &ncells);
+				   pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &i2k, &kmin, &kmax, &ncells);
 	  esl_stopwatch_Stop(stg_watch);
 	  pli->stg_time_seq2bands += stg_watch->elapsed;
 	  if(pli->vitband_local) {
@@ -5563,7 +5564,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	pli->gxf->L = envL;
 
 	status = p7_Seq2BandsVit(pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
-				 pli->p7band_pad, pli->p7_nodepad, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+				 pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 
 	/* Restore profile mode */
 	if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
