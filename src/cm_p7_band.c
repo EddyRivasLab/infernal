@@ -38,8 +38,8 @@
  * Purpose:   Enforce a monotone reachability sweep on the match-state
  *            HMM bands pn_min_m[k] and pn_max_m[k], k=1..M.
  *
- *            After: pn_min_m[k] <= min(pn_min_m[1..k])
- *                   pn_max_m[k] >= max(pn_max_m[k..M])
+ *            After: pn_min_m[k] <= min(pn_min_m[k..M])
+ *                   pn_max_m[k] >= max(pn_max_m[1..k])
  *
  *            Rationale: when pn_min/max_m come from p7-banded F/B
  *            posteriors, cells outside the p7 Viterbi diagonal band
@@ -68,16 +68,23 @@ pn_match_bands_enforce_monotone(int *pn_min_m, int *pn_max_m, int M, int L,
     }
   }
 
+  /* Reachability: M_k must precede M_{k+1}. So:
+   *   pn_min_m[k] <= pn_min_m[k'] for all k' > k  (earliest-start non-decreasing in k)
+   *   pn_max_m[k] <= pn_max_m[k'] for all k' > k  (latest-start also non-decreasing)
+   * If p7-banded posteriors leave a downstream node pn_min_m[k']=p0 but an
+   * upstream node pn_min_m[k]=p1 with p1 > p0, that violates reachability.
+   * Relax: sweep right-to-left, widen pn_min_m[k] down to min(pn_min_m[k..M]).
+   * Symmetrically: sweep left-to-right, widen pn_max_m[k] up to max(pn_max_m[1..k]). */
   {
     int running_min = L + 2;
-    for(k = 1; k <= M; k++) {
+    for(k = M; k >= 1; k--) {
       if(pn_min_m[k] != -1 && pn_min_m[k] < running_min) running_min = pn_min_m[k];
       if(pn_min_m[k] != -1 && running_min < pn_min_m[k])  pn_min_m[k] = running_min;
     }
   }
   {
     int running_max = -1;
-    for(k = M; k >= 1; k--) {
+    for(k = 1; k <= M; k++) {
       if(pn_max_m[k] > running_max) running_max = pn_max_m[k];
       if(pn_max_m[k] != -1 && running_max > pn_max_m[k]) pn_max_m[k] = running_max;
     }
