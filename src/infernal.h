@@ -2370,6 +2370,15 @@ typedef struct cm_pipeline_s {
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F4b;		        /* bias-corrected gloc Forward filter threshold */
   double  F5b;		        /* bias-corrected env def filter threshold  */
+  /* original (pipeline-default) F1/F2/F3 thresholds, saved before any
+   * per-CM override (CMH_FILTER_PVAL_CUTOFFS). Used in cm_pli_NewModel()
+   * to restore defaults between CMs when per-CM override applies, and as
+   * a floor (loosest allowed) so per-CM cutoffs never loosen the pipeline.
+   */
+  double  F1_orig;
+  double  F2_orig;
+  double  F3_orig;
+  double  F3b_orig;
   /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */

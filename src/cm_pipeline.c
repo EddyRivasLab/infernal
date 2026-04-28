@@ -739,6 +739,14 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* Finished setting filter stage on/off parameters and thresholds */
   /********************************************************************************/
 
+  /* Save the original F1/F2/F3 thresholds so cm_pli_NewModel() can apply
+   * per-CM overrides (CMH_FILTER_PVAL_CUTOFFS) without loosing the originals.
+   */
+  pli->F1_orig  = pli->F1;
+  pli->F2_orig  = pli->F2;
+  pli->F3_orig  = pli->F3;
+  pli->F3b_orig = pli->F3b;
+
   /********************************************************************************/
   /* Configure options for the CM stages */
   pli->do_null2   = esl_opt_GetBoolean(go, "--null2")   ? TRUE  : FALSE;
@@ -1221,8 +1229,28 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     }
 
     /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
-    if (pli->use_bit_cutoffs) { 
+    if (pli->use_bit_cutoffs) {
       if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
+    }
+
+    /* If the CM has per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS,
+     * computed at cmbuild time), substitute them for the pipeline defaults.
+     * Use min() so a per-CM cutoff can only tighten, never loosen, the
+     * threshold relative to whatever the pipeline strategy/--FZ/--F1/-F2/-F3
+     * dictated. Skip in --max and --nohmm modes (filters disabled there).
+     */
+    if (cm != NULL && (cm->flags & CMH_FILTER_PVAL_CUTOFFS) &&
+        (! pli->do_max) && (! pli->do_nohmm)) {
+      pli->F1  = ESL_MIN(pli->F1_orig,  (double) cm->F1_pcutoff);
+      pli->F2  = ESL_MIN(pli->F2_orig,  (double) cm->F2_pcutoff);
+      pli->F3  = ESL_MIN(pli->F3_orig,  (double) cm->F3_pcutoff);
+      pli->F3b = ESL_MIN(pli->F3b_orig, (double) cm->F3_pcutoff);
+    }
+    else {
+      pli->F1  = pli->F1_orig;
+      pli->F2  = pli->F2_orig;
+      pli->F3  = pli->F3_orig;
+      pli->F3b = pli->F3b_orig;
     }
   }
   return eslOK;
