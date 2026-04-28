@@ -758,6 +758,11 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  *           L        - length of current sequence
  *           M        - number of nodes in the HMM
  *           nodepad  - [0..M] per-node pad array
+ *           hopback  - if >0, dilate band per residue with min/max of i2k
+ *                      across the 2*hopback+1-pin window (D1 strategy).
+ *                      Vit pins are monotone in (i,k); the dilation is
+ *                      computed in O(L) with a sliding window over the
+ *                      pinned positions in trace order. 0 = off (no-op).
  *           ret_kmin - [0.i..L] = k, min node k for residue i
  *           ret_kmax - [0.i..L] = k, max node k for residue i
  *           ret_ncells - number of cells within bands, to return
@@ -767,6 +772,7 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  */
 int
 p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
+                      int hopback,
                       int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int     status;
@@ -830,6 +836,36 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
         prev_pin_k = i2k[i];
       }
     }
+  }
+
+  /* D1 hop-back dilation pass.
+   * For each pinned residue i, take min/max of i2k across the 2*hopback+1
+   * window of pinned positions centred on i (clipped at trace ends), and
+   * widen kmin[i]/kmax[i] to that range. Vit pins are monotone in (i,k),
+   * so the window-min is i2k of the (hopback)th preceding pinned position,
+   * and the window-max is i2k of the (hopback)th following pinned position.
+   * O(L) total. hopback==0 is a no-op.
+   */
+  if (hopback > 0) {
+    int *pin_pos = NULL;   /* [0..npin-1] residue index of each pinned position, in trace order */
+    int  npin = 0;
+    int  p;
+    ESL_ALLOC(pin_pos, sizeof(int) * (L+2));
+    for (i = 0; i <= L; i++) {
+      if (i2k[i] != -1) { pin_pos[npin++] = i; }
+    }
+    for (p = 0; p < npin; p++) {
+      int lo = p - hopback; if (lo < 0)       lo = 0;
+      int hi = p + hopback; if (hi > npin-1)  hi = npin - 1;
+      int kw_min = i2k[pin_pos[lo]];
+      int kw_max = i2k[pin_pos[hi]];
+      int ii = pin_pos[p];
+      int new_kmin = ESL_MAX(1, kw_min);
+      int new_kmax = ESL_MIN(M, kw_max);
+      if (kmin[ii] > new_kmin) kmin[ii] = new_kmin;
+      if (kmax[ii] < new_kmax) kmax[ii] = new_kmax;
+    }
+    free(pin_pos);
   }
 
   /* get number of cells if wanted */
@@ -4599,6 +4635,10 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  *           L         - length of dsq
  *           pad       - band half-width passed to p7_pins2bands()
  *           nodepad   - per-node pad array [0..M], or NULL to use pad
+ *           hopback   - if >0, dilate band per pinned residue by min/max of
+ *                       i2k across the 2*hopback+1-pin trace-order window.
+ *                       Only applied when nodepad path is used (pin set is
+ *                       monotone). 0 = off.
  *           ret_i2k   - RETURN: per-residue pin array (caller frees)
  *           ret_kmin  - RETURN: per-residue kmin array (caller frees)
  *           ret_kmax  - RETURN: per-residue kmax array (caller frees)
@@ -4610,7 +4650,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  */
 int
 p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
-		ESL_DSQ *dsq, int L, int pad, int *nodepad,
+		ESL_DSQ *dsq, int L, int pad, int *nodepad, int hopback,
 		int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int    status;
@@ -4674,7 +4714,7 @@ p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p
 
   /* Step 4: Pins -> bands */
   if (nodepad != NULL) {
-    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, &kmin, &kmax, &ncells)) != eslOK)
+    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
   }
   else {
@@ -5931,7 +5971,7 @@ cm_nodepad_thread_worker(void *arg)
       p7_gmx_GrowTo(winfo->gx, M, L_emb);
 
       if (p7_Seq2BandsVit(winfo->errbuf, winfo->gm, winfo->gx, winfo->bg, winfo->p7tr,
-                          emb, L_emb, /*pad=*/0, /*nodepad=*/NULL,
+                          emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0,
                           &i2k, &kmin, &kmax, &ncells) != eslOK) {
         if (i2k)  free(i2k);
         if (kmin) free(kmin);
@@ -6340,7 +6380,7 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
         p7_ProfileConfig(hmm, bg, gm, L_emb, p7_GLOCAL);
         p7_gmx_GrowTo(gx, M, L_emb);
 
-        if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL,
+        if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0,
                             &i2k, &kmin, &kmax, &ncells) != eslOK) {
           if (i2k)  free(i2k);
           if (kmin) free(kmin);
