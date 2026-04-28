@@ -145,26 +145,32 @@ cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf)
       if ((status = p7_omx_GrowTo(oxf, om->M, 0, L)) != eslOK)
         ESL_XFAIL(status, errbuf, "p7_omx_GrowTo failed at emission %d", i);
 
-      /* F1: MSV */
-      if ((status = p7_MSVFilter(sq->dsq, L, om, oxf, &mfsc)) != eslOK)
-        ESL_XFAIL(status, errbuf, "p7_MSVFilter failed at emission %d", i);
-      F1ps[i] = esl_gumbel_surv((mfsc - nullsc) / eslCONST_LOG2,
-                                cm->fp7_evparam[CM_p7_LMMU],
-                                cm->fp7_evparam[CM_p7_LMLAMBDA]);
+      /* F1: MSV. eslERANGE means score overflowed — P-value essentially 0. */
+      status = p7_MSVFilter(sq->dsq, L, om, oxf, &mfsc);
+      if (status == eslERANGE)      F1ps[i] = 0.0;
+      else if (status != eslOK)     ESL_XFAIL(status, errbuf, "p7_MSVFilter failed at emission %d (status %d)", i, status);
+      else                          F1ps[i] = esl_gumbel_surv((mfsc - nullsc) / eslCONST_LOG2,
+                                                              cm->fp7_evparam[CM_p7_LMMU],
+                                                              cm->fp7_evparam[CM_p7_LMLAMBDA]);
 
-      /* F2: Viterbi */
-      if ((status = p7_ViterbiFilter(sq->dsq, L, om, oxf, &vfsc)) != eslOK)
-        ESL_XFAIL(status, errbuf, "p7_ViterbiFilter failed at emission %d", i);
-      F2ps[i] = esl_gumbel_surv((vfsc - nullsc) / eslCONST_LOG2,
-                                cm->fp7_evparam[CM_p7_LVMU],
-                                cm->fp7_evparam[CM_p7_LVLAMBDA]);
+      /* F2: Viterbi. eslERANGE handled the same way. */
+      status = p7_ViterbiFilter(sq->dsq, L, om, oxf, &vfsc);
+      if (status == eslERANGE)      F2ps[i] = 0.0;
+      else if (status != eslOK)     ESL_XFAIL(status, errbuf, "p7_ViterbiFilter failed at emission %d (status %d)", i, status);
+      else                          F2ps[i] = esl_gumbel_surv((vfsc - nullsc) / eslCONST_LOG2,
+                                                              cm->fp7_evparam[CM_p7_LVMU],
+                                                              cm->fp7_evparam[CM_p7_LVLAMBDA]);
 
-      /* F3: local Forward (parser) */
-      if ((status = p7_ForwardParser(sq->dsq, L, om, oxf, &fwdsc)) != eslOK)
-        ESL_XFAIL(status, errbuf, "p7_ForwardParser failed at emission %d", i);
-      F3ps[i] = esl_exp_surv((fwdsc - nullsc) / eslCONST_LOG2,
-                             cm->fp7_evparam[CM_p7_LFTAU],
-                             cm->fp7_evparam[CM_p7_LFLAMBDA]);
+      /* F3: local Forward (parser). Forward uses double-precision, so no
+       * range overflow expected, but be defensive.
+       */
+      status = p7_ForwardParser(sq->dsq, L, om, oxf, &fwdsc);
+      if (status == eslERANGE)      F3ps[i] = 0.0;
+      else if (status != eslOK)     ESL_XFAIL(status, errbuf, "p7_ForwardParser failed at emission %d (status %d)", i, status);
+      else                          F3ps[i] = esl_exp_surv((fwdsc - nullsc) / eslCONST_LOG2,
+                                                           cm->fp7_evparam[CM_p7_LFTAU],
+                                                           cm->fp7_evparam[CM_p7_LFLAMBDA]);
+      status = eslOK;
 
       FreeParsetree(tr); tr = NULL;
       esl_sq_Destroy(sq); sq = NULL;

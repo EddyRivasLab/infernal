@@ -140,6 +140,9 @@ static ESL_OPTIONS options[] = {
   { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad per-node deficit distribution",             107 },
   { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "set RNG seed for p7 pad simulation (0=arbitrary)",              107 },
   { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of parallel CPUs for p7 pad simulation (0=serial)",    107 },
+  { "--no-fil-pcut",  eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,         NULL,         "skip per-CM F1/F2/F3 P-value cutoff calibration",            107 },
+  { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
+  { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -1343,6 +1346,35 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
        fprintf(cfg->ofp, "%-40s %5d\n",   "  max p7 pad width", max_pad);
      }
      if (w_pad != NULL) esl_stopwatch_Destroy(w_pad);
+   }
+
+   /* Calibrate per-CM F1/F2/F3 P-value cutoffs and embed in CM file,
+    * unless --no-fil-pcut. Runs after p7nodepad so cm->fp7 + evparam are set.
+    */
+   if (! esl_opt_GetBoolean(go, "--no-fil-pcut")) {
+     ESL_STOPWATCH *w_pcut = NULL;
+     if (cfg->be_verbose) {
+       w_pcut = esl_stopwatch_Create();
+       esl_stopwatch_Start(w_pcut);
+       fprintf(cfg->ofp, "%-40s ... ", "Calibrating F1/F2/F3 P-value cutoffs");
+       fflush(cfg->ofp);
+     }
+     ESL_RANDOMNESS *pcut_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--fil-pcut-seed"));
+     if (pcut_r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to allocate RNG for F1/F2/F3 cutoff calibration");
+     status = cm_CalibrateFilterPvalCutoffs(cm, pcut_r,
+                                            esl_opt_GetInteger(go, "--fil-pcut-N"),
+                                            errbuf);
+     esl_randomness_Destroy(pcut_r);
+     if (status != eslOK) return status;
+
+     if (cfg->be_verbose) {
+       fprintf(cfg->ofp, "done.  ");
+       esl_stopwatch_Stop(w_pcut);
+       esl_stopwatch_Display(cfg->ofp, w_pcut, "CPU time: ");
+       fprintf(cfg->ofp, "%-40s %.4g %.4g %.4g\n", "  F1/F2/F3 P-value cutoffs",
+               cm->F1_pcutoff, cm->F2_pcutoff, cm->F3_pcutoff);
+     }
+     if (w_pcut != NULL) esl_stopwatch_Destroy(w_pcut);
    }
 
    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
