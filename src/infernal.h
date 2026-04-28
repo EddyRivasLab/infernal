@@ -1923,6 +1923,15 @@ typedef struct cm_s {
   int          *p7_nodepad;   /* [0..p7_nodepad_M] per-node pad array; NULL if not set */
   int           p7_nodepad_M; /* length of p7_nodepad (= fp7->M); 0 if not set */
 
+  /* per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS). Computed by
+   * cm_CalibrateFilterPvalCutoffs() at cmbuild time from N CM-emitted sequences.
+   * The pipeline (cm_pli_NewModel) substitutes these for pli->F1/F2/F3 when the
+   * flag is set, allowing a CM-specific tightening of the HMM filter stages.
+   * Floor = global default (loosest), ceiling = default/10 (tightest). */
+  float         F1_pcutoff;   /* per-CM F1 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F2_pcutoff;   /* per-CM F2 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F3_pcutoff;   /* per-CM F3 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
 
@@ -1959,6 +1968,7 @@ typedef struct cm_s {
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
+#define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
