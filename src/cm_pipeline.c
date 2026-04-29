@@ -322,6 +322,10 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7vitend           = esl_opt_GetInteger(go, "--p7vitend");
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
   pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
+  pli->cyk_bpad_dir       = esl_opt_IsOn(go, "--cykpadfile")  ? esl_opt_GetString(go, "--cykpadfile") : NULL;
+  pli->cyk_bpad_perstate  = NULL;
+  pli->cyk_bpad_perstate_M = 0;
+  pli->cyk_bpad_perstate_cmname = NULL;
   pli->cyk_envtree        = NULL;
   pli->cyk_envtree_es     = -1;
   pli->cyk_envtree_ee     = -1;
@@ -951,6 +955,8 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7pn_max_d) free(pli->p7pn_max_d);
   if (pli->p7pn_pocc)  free(pli->p7pn_pocc);
   if (pli->p7_nodepad)  free(pli->p7_nodepad);
+  if (pli->cyk_bpad_perstate) free(pli->cyk_bpad_perstate);
+  if (pli->cyk_bpad_perstate_cmname) free(pli->cyk_bpad_perstate_cmname);
   if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
   if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
   if (pli->cyk_envtreeA) {
@@ -1628,6 +1634,59 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     fclose(pf);
     if(n_set < M) ESL_FAIL(eslEFORMAT, pli->errbuf, "--p7nodepad-file %s only set %d/%d nodes", pli->p7nodepad_file, n_set, M);
     pli->p7_nodepad_M = M;
+  }
+
+  /* --cykpadfile: load per-state CYK pad array for this CM (lazy, per-CM).
+   * Reload if cm->M differs or cm->name differs. If file missing, fall back
+   * to scalar pli->cyk_bpad with stderr warning.
+   */
+  if (pli->cyk_bpad_dir != NULL && opt_cm != NULL && *opt_cm != NULL) {
+    CM_t *cm_local = *opt_cm;
+    int   need_reload = (pli->cyk_bpad_perstate == NULL) ||
+                        (pli->cyk_bpad_perstate_M != cm_local->M) ||
+                        (pli->cyk_bpad_perstate_cmname == NULL) ||
+                        (cm_local->name != NULL && strcmp(pli->cyk_bpad_perstate_cmname, cm_local->name) != 0);
+    if (need_reload) {
+      char fpath[1024];
+      const char *cmname = (cm_local->name != NULL) ? cm_local->name : "UNKNOWN";
+      snprintf(fpath, sizeof(fpath), "%s/%s.cykpads.tsv", pli->cyk_bpad_dir, cmname);
+      FILE *pf = fopen(fpath, "r");
+      if (pli->cyk_bpad_perstate != NULL) { free(pli->cyk_bpad_perstate); pli->cyk_bpad_perstate = NULL; }
+      if (pli->cyk_bpad_perstate_cmname != NULL) { free(pli->cyk_bpad_perstate_cmname); pli->cyk_bpad_perstate_cmname = NULL; }
+      pli->cyk_bpad_perstate_M = 0;
+      if (pf == NULL) {
+        fprintf(stderr, "WARNING: --cykpadfile: %s not found, falling back to --cykbpad %d for CM %s\n",
+                fpath, pli->cyk_bpad, cmname);
+      } else {
+        int   M_cm = cm_local->M;
+        int  *parr = NULL;
+        ESL_ALLOC(parr, sizeof(int) * M_cm);
+        int   v;
+        for (v = 0; v < M_cm; v++) parr[v] = -1; /* sentinel: unset, fall back to scalar */
+        char  linebuf[256];
+        int   n_set = 0;
+        while (fgets(linebuf, sizeof(linebuf), pf) != NULL) {
+          if (linebuf[0] == '#') continue;
+          int v_read, pad_read;
+          if (sscanf(linebuf, "%d %d", &v_read, &pad_read) == 2) {
+            if (v_read >= 0 && v_read < M_cm) {
+              parr[v_read] = pad_read;
+              n_set++;
+            }
+          }
+        }
+        fclose(pf);
+        pli->cyk_bpad_perstate = parr;
+        pli->cyk_bpad_perstate_M = M_cm;
+        if (cm_local->name != NULL) {
+          pli->cyk_bpad_perstate_cmname = strdup(cm_local->name);
+        }
+        if (n_set < M_cm) {
+          fprintf(stderr, "NOTE: --cykpadfile %s set %d/%d states for CM %s; unset states use --cykbpad %d\n",
+                  fpath, n_set, M_cm, cmname, pli->cyk_bpad);
+        }
+      }
+    }
   }
 
   /* First loop over each pipeline pass:
@@ -4991,8 +5050,9 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
        * from the parsetree, with QDB-style child-to-parent inheritance for
        * unvisited states. Avoids the HMM-node sweep contamination that
        * breaks for permuted CMs. */
+      const int *psp = (pli->cyk_bpad_perstate != NULL && pli->cyk_bpad_perstate_M == cm->M) ? pli->cyk_bpad_perstate : NULL;
       if(cm_BandsFromParsetree_perstate(cm, pli->errbuf, tr,
-                                        (int)f6_es, (int)f6_ee, pli->cyk_bpad,
+                                        (int)f6_es, (int)f6_ee, pli->cyk_bpad, psp,
                                         cm->cp9b, pli->cur_pass_idx, 0) == eslOK) {
         pli->use_stored_cp9b = TRUE;
       }
