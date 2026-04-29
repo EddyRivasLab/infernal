@@ -3728,6 +3728,7 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
+ *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
  *           cp9b      - bands to fill (caller pre-allocated)
  *           pass_idx  - pipeline pass index (for truncation handling)
  *           debug     - if >0, print bands
@@ -3736,7 +3737,7 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  */
 int
 cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
-                               int i0, int j0, int pad,
+                               int i0, int j0, int pad, const int *per_state_pad,
                                CP9Bands_t *cp9b, int pass_idx, int debug)
 {
   int    status;
@@ -3773,13 +3774,16 @@ cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(j > jmax[v]) jmax[v] = j;
   }
 
-  /* Step 2: Apply pad to visited states, clamp to [i0..j0] */
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0].
+   * If per_state_pad != NULL and per_state_pad[v] >= 0, use it instead of scalar pad. */
   for(v = 0; v < M; v++) {
     if(visited[v]) {
-      imin[v] -= pad; if(imin[v] < i0) imin[v] = i0;
-      imax[v] += pad; if(imax[v] > j0) imax[v] = j0;
-      jmin[v] -= pad; if(jmin[v] < i0) jmin[v] = i0;
-      jmax[v] += pad; if(jmax[v] > j0) jmax[v] = j0;
+      int p = pad;
+      if(per_state_pad != NULL && per_state_pad[v] >= 0) p = per_state_pad[v];
+      imin[v] -= p; if(imin[v] < i0) imin[v] = i0;
+      imax[v] += p; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;
+      jmax[v] += p; if(jmax[v] > j0) jmax[v] = j0;
     }
   }
 
