@@ -11,7 +11,8 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h> 
+#include <string.h>
+#include <limits.h>  /* INT_MAX, LLONG_MAX, LLONG_MIN: --debug-f6-envs band-edge accumulators */
 
 #include "easel.h"
 #include "esl_exponential.h"
@@ -352,7 +353,14 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
       fprintf(pli_debug_f6_envs_fp,
               "query_cm\ttarget_seq\tenv_start\tenv_end\tf6_hit_start\tf6_hit_end\t"
               "f6_hit_cstart\tf6_hit_cend\tf6_score_bits\tf6_pvalue\tclen\t"
-              "env_len\tf6_hit_len\tdist_to_env_5p\tdist_to_env_3p\tsubtree_span\n");
+              "env_len\tf6_hit_len\tdist_to_env_5p\tdist_to_env_3p\tsubtree_span\t"
+              "n_states_in_parsetree\tn_states_at_imin\tn_states_at_imax\t"
+              "n_states_at_jmin\tn_states_at_jmax\tn_states_at_any_edge\t"
+              "frac_states_at_edge\tmin_d_imin\tmin_d_imax\tmin_d_jmin\tmin_d_jmax\t"
+              "nedge_5p_block\tnedge_3p_block\tparsetree_i_lo\tparsetree_i_hi\t"
+              "n_at_edge_MP\tn_at_edge_ML\tn_at_edge_MR\tn_at_edge_IL\tn_at_edge_IR\t"
+              "n_realclip_iwall_w3\tn_realclip_jwall_w3\t"
+              "iband_sum_at_iedge\tjband_sum_at_jedge\n");
       fflush(pli_debug_f6_envs_fp);
       pli_debug_f6_envs_header_written = 1;
     }
@@ -4611,6 +4619,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG:\n#DEBUG: SURVIVOR Envelope %5d [%10ld..%10ld] being passed to EnvCYKFilter   pass: %" PRId64 "\n", i, p7es[i], p7ee[i], pli->cur_pass_idx);
 #endif
+    /* --debug-f6-envs: capture F5 envelope before any F6 redefinition. */
+    int64_t dbg_orig_es = p7es[i];
+    int64_t dbg_orig_ee = p7ee[i];
     cm->search_opts  = pli->fcyk_cm_search_opts;
     cm->tau          = pli->fcyk_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
@@ -4735,21 +4746,32 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     if (pli_debug_f6_envs_fp != NULL) {
       Parsetree_t *dbg_tr = NULL;
       int   dbg_owns_tr = FALSE;
+      int   dbg_tr_status = -999;
       if (pli->do_cykbands && trA_tmp != NULL && trA_tmp[i] != NULL) {
         dbg_tr = trA_tmp[i]; /* borrow, do not free */
+        dbg_tr_status = -1; /* sentinel: borrowed */
       }
       else {
-        /* No parsetree yet — run shmx once for the dump. */
+        /* No parsetree yet — run shmx once for the dump. cm->cp9b and cm->hb_mx were
+         * configured by pli_dispatch_cm_search above using the ORIGINAL F5 envelope
+         * (dbg_orig_es..dbg_orig_ee), not the post-redef p7es[i]/p7ee[i]. So we must
+         * call shmx on the same range or it returns eslEINCONCEIVABLE (band mismatch). */
         Parsetree_t *new_tr = NULL;
         float dummy_sc;
         float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
-        int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
-                                             sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
+        dbg_tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
+                                             sq->dsq, dbg_orig_es, dbg_orig_ee, 0., NULL, pli->do_null3,
                                              0., NULL, NULL, &new_tr, &dummy_sc);
-        if (tr_status == eslOK && new_tr != NULL) {
+        if (dbg_tr_status == eslOK && new_tr != NULL) {
           dbg_tr = new_tr;
           dbg_owns_tr = TRUE;
         }
+      }
+      if (getenv("DEBUG_F6_ENVS_TRACE")) {
+        fprintf(stderr, "#TRACE i=%d cm=%s seq=%s pass=%lld es=%lld ee=%lld sc=%.2f P=%.3e shmx_status=%d dbg_tr=%p\n",
+                i, cm->name?cm->name:"-", sq->name?sq->name:"-",
+                (long long)pli->cur_pass_idx, (long long)p7es[i], (long long)p7ee[i],
+                sc, P, dbg_tr_status, (void*)dbg_tr);
       }
       if (dbg_tr != NULL) {
         int cfrom_span, cto_span, cfrom_emit, cto_emit, first_emit, final_emit;
@@ -4762,9 +4784,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
           hit_cstart = cfrom_emit;
           hit_cend   = cto_emit;
         }
-        int64_t env_start = p7es[i];   /* redefined-envelope = F6 hit boundary */
-        int64_t env_end   = p7ee[i];
-        int64_t hit_start = p7es[i];   /* identical to env_start by construction */
+        int64_t env_start = dbg_orig_es;  /* F5 envelope before any F6 redef */
+        int64_t env_end   = dbg_orig_ee;
+        int64_t hit_start = p7es[i];      /* F6 CYK hit boundary (cyk_envi/j) */
         int64_t hit_end   = p7ee[i];
         int64_t env_len   = env_end - env_start + 1;
         int64_t hit_len   = hit_end - hit_start + 1;
@@ -4773,8 +4795,109 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
         double  span      = (cm->clen > 0 && hit_cstart >= 0 && hit_cend >= 0)
                           ? ((double)(hit_cend - hit_cstart + 1) / (double)cm->clen)
                           : 0.0;
+
+        /* Band-edge proximity: walk parsetree, count states at imin/imax/jmin/jmax walls.
+         * cm->cp9b->imin/imax/jmin/jmax are populated by cp9_Seq2BandsP7B at F6 entry,
+         * still valid here since we just used them to derive dbg_tr. Skip end states (E,
+         * which have emitl=emitr=-1) and EL exits (state idx == cm->M, no band entry). */
+        int n_pt = 0, n_imin = 0, n_imax = 0, n_jmin = 0, n_jmax = 0, n_any = 0;
+        int min_dimin = INT_MAX, min_dimax = INT_MAX;
+        int min_djmin = INT_MAX, min_djmax = INT_MAX;
+        int n5 = 0, n3 = 0;
+        int64_t pt_i_lo = LLONG_MAX, pt_i_hi = LLONG_MIN;
+        int    edge_idx[ dbg_tr->n ]; /* parsetree-pos -> 1 if any-edge, 0 else; for 5p/3p block counts */
+        int    pt_eligible_n = 0;     /* count of eligible (banded) states for ordering */
+        int    eligible_idx[ dbg_tr->n ];
+        /* Per-state-type and pad-aware breakdown of edge events. The "real-clip" counts
+         * filter out trivial wall-touches in narrow bands: a state whose i-band width
+         * (ihi-ilo+1) is <3 has so little room that touching the wall is not informative
+         * about clipping. Same for j. iband_sum_at_iedge / jband_sum_at_jedge let
+         * downstream code compute mean band-widths at edge events for any threshold. */
+        int n_edge_MP = 0, n_edge_ML = 0, n_edge_MR = 0, n_edge_IL = 0, n_edge_IR = 0;
+        int n_realclip_iwall = 0, n_realclip_jwall = 0;
+        long long iband_sum_at_iedge = 0, jband_sum_at_jedge = 0;
+        for (int ti = 0; ti < dbg_tr->n; ti++) {
+          int v = dbg_tr->state[ti];
+          int il = dbg_tr->emitl[ti];
+          int jr = dbg_tr->emitr[ti];
+          if (v == cm->M)        continue;            /* EL local exit */
+          if (cm->sttype[v] == E_st) continue;        /* end state */
+          if (il < 0 || jr < 0)  continue;            /* defensive */
+          if (cm->cp9b == NULL || cm->cp9b->imin == NULL) continue;
+          int ilo = cm->cp9b->imin[v];
+          int ihi = cm->cp9b->imax[v];
+          int jlo = cm->cp9b->jmin[v];
+          int jhi = cm->cp9b->jmax[v];
+          /* Track non-tautological i-range: use match-state subtree bounds. */
+          if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) {
+            if ((int64_t)il < pt_i_lo) pt_i_lo = il;
+            if ((int64_t)jr > pt_i_hi) pt_i_hi = jr;
+          }
+          /* Skip if the state has no valid band (e.g., unused in this parse path).
+           * A state in the parsetree should always have valid bands, but guard anyway. */
+          if (ilo > ihi || jlo > jhi) continue;
+          int d_imin = il - ilo;
+          int d_imax = ihi - il;
+          int d_jmin = jr - jlo;
+          int d_jmax = jhi - jr;
+          if (d_imin < min_dimin) min_dimin = d_imin;
+          if (d_imax < min_dimax) min_dimax = d_imax;
+          if (d_jmin < min_djmin) min_djmin = d_jmin;
+          if (d_jmax < min_djmax) min_djmax = d_jmax;
+          int at_iwall = (d_imin == 0 || d_imax == 0);
+          int at_jwall = (d_jmin == 0 || d_jmax == 0);
+          int at_any = at_iwall || at_jwall;
+          if (d_imin == 0) n_imin++;
+          if (d_imax == 0) n_imax++;
+          if (d_jmin == 0) n_jmin++;
+          if (d_jmax == 0) n_jmax++;
+          if (at_any) {
+            n_any++;
+            switch (cm->sttype[v]) {
+              case MP_st: n_edge_MP++; break;
+              case ML_st: n_edge_ML++; break;
+              case MR_st: n_edge_MR++; break;
+              case IL_st: n_edge_IL++; break;
+              case IR_st: n_edge_IR++; break;
+              default: break;
+            }
+          }
+          int iband_w = ihi - ilo + 1;
+          int jband_w = jhi - jlo + 1;
+          if (at_iwall) {
+            iband_sum_at_iedge += iband_w;
+            if (iband_w >= 3) n_realclip_iwall++;
+          }
+          if (at_jwall) {
+            jband_sum_at_jedge += jband_w;
+            if (jband_w >= 3) n_realclip_jwall++;
+          }
+          edge_idx[pt_eligible_n] = at_any;
+          eligible_idx[pt_eligible_n] = ti;
+          pt_eligible_n++;
+          n_pt++;
+        }
+        /* nedge_5p_block / nedge_3p_block: in eligible-state parsetree order, count any-edge in
+         * first/last 10 positions. Order is parsetree-traversal order (root → leaves, left-first),
+         * which generally corresponds to 5'→3' for the standard CM topology. */
+        int blk = (pt_eligible_n < 10) ? pt_eligible_n : 10;
+        for (int k = 0; k < blk; k++) {
+          if (edge_idx[k]) n5++;
+          if (edge_idx[pt_eligible_n - 1 - k]) n3++;
+        }
+        double frac_edge = (n_pt > 0) ? ((double)n_any / (double)n_pt) : 0.0;
+        if (min_dimin == INT_MAX) min_dimin = -1;
+        if (min_dimax == INT_MAX) min_dimax = -1;
+        if (min_djmin == INT_MAX) min_djmin = -1;
+        if (min_djmax == INT_MAX) min_djmax = -1;
+        if (pt_i_lo == LLONG_MAX) pt_i_lo = -1;
+        if (pt_i_hi == LLONG_MIN) pt_i_hi = -1;
+        (void)eligible_idx; /* reserved for future per-state direction analysis */
+
         fprintf(pli_debug_f6_envs_fp,
-                "%s\t%s\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\n",
+                "%s\t%s\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\t"
+                "%d\t%d\t%d\t%d\t%d\t%d\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\t"
+                "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\n",
                 cm->name ? cm->name : "-",
                 sq->name ? sq->name : "-",
                 (long long)env_start, (long long)env_end,
@@ -4784,7 +4907,15 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
                 cm->clen,
                 (long long)env_len, (long long)hit_len,
                 (long long)d5p, (long long)d3p,
-                span);
+                span,
+                n_pt, n_imin, n_imax, n_jmin, n_jmax, n_any,
+                frac_edge, min_dimin, min_dimax, min_djmin, min_djmax,
+                n5, n3,
+                (long long)pt_i_lo, (long long)pt_i_hi,
+                n_edge_MP, n_edge_ML, n_edge_MR, n_edge_IL, n_edge_IR,
+                n_realclip_iwall, n_realclip_jwall,
+                iband_sum_at_iedge, jband_sum_at_jedge);
+        fflush(pli_debug_f6_envs_fp);
       }
       if (dbg_owns_tr && dbg_tr != NULL) FreeParsetree(dbg_tr);
     }
