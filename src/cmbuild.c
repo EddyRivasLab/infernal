@@ -143,6 +143,7 @@ static ESL_OPTIONS options[] = {
   { "--no-fil-pcut",  eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,         NULL,         "skip per-CM F1/F2/F3 P-value cutoff calibration",            107 },
   { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
   { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
+  { "--fil-pcut-mode",eslARG_STRING, "scale", NULL, NULL,   NULL,  NULL, "--no-fil-pcut", "F1/F2/F3 ceiling mode: scale|f3only|fixed10|fixed30",         107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -1361,8 +1362,25 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      }
      ESL_RANDOMNESS *pcut_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--fil-pcut-seed"));
      if (pcut_r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to allocate RNG for F1/F2/F3 cutoff calibration");
+     /* Decode --fil-pcut-mode into per-stage ceiling modes:
+      *   scale   = CLEN-scaled all three (default)
+      *   f3only  = F1/F2 fixed at 30×, F3 CLEN-scaled
+      *   fixed10 = legacy uniform 10× all three
+      *   fixed30 = uniform 30× all three
+      */
+     int pcut_ceil_F12 = CM_FILTER_CEIL_CLEN_SCALE;
+     int pcut_ceil_F3  = CM_FILTER_CEIL_CLEN_SCALE;
+     {
+       const char *pcm = esl_opt_GetString(go, "--fil-pcut-mode");
+       if      (strcmp(pcm, "scale")   == 0) { pcut_ceil_F12 = CM_FILTER_CEIL_CLEN_SCALE; pcut_ceil_F3 = CM_FILTER_CEIL_CLEN_SCALE; }
+       else if (strcmp(pcm, "f3only")  == 0) { pcut_ceil_F12 = CM_FILTER_CEIL_FIXED30;    pcut_ceil_F3 = CM_FILTER_CEIL_CLEN_SCALE; }
+       else if (strcmp(pcm, "fixed10") == 0) { pcut_ceil_F12 = CM_FILTER_CEIL_FIXED10;    pcut_ceil_F3 = CM_FILTER_CEIL_FIXED10;    }
+       else if (strcmp(pcm, "fixed30") == 0) { pcut_ceil_F12 = CM_FILTER_CEIL_FIXED30;    pcut_ceil_F3 = CM_FILTER_CEIL_FIXED30;    }
+       else { esl_randomness_Destroy(pcut_r); ESL_FAIL(eslEINVAL, errbuf, "unknown --fil-pcut-mode '%s' (valid: scale|f3only|fixed10|fixed30)", pcm); }
+     }
      status = cm_CalibrateFilterPvalCutoffs(cm, pcut_r,
                                             esl_opt_GetInteger(go, "--fil-pcut-N"),
+                                            pcut_ceil_F12, pcut_ceil_F3,
                                             errbuf);
      esl_randomness_Destroy(pcut_r);
      if (status != eslOK) return status;
