@@ -245,6 +245,11 @@ static ESL_OPTIONS options[] = {
   { "--p7mcprob",  eslARG_REAL,  "0.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "min cumul match phi prob for pruning",                                106 },
   { "--p7iprob",   eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max insert phi prob for pruning",                                     106 },
   { "--p7ilprob",  eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max left-insert phi prob for pruning",                                106 },
+  /* per-CM F1/F2/F3 cutoff caps (CMH_FILTER_PVAL_CUTOFFS pcut). Search-time
+   * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap). */
+  { "--pcut-F1cap", eslARG_REAL, "30.0", NULL, "x>=1.0", NULL, NULL, NULL, "with pcut: max F1 tightening factor",                                            106 },
+  { "--pcut-F2cap", eslARG_REAL, "30.0", NULL, "x>=1.0", NULL, NULL, NULL, "with pcut: max F2 tightening factor",                                            106 },
+  { "--pcut-F3cap", eslARG_REAL, "30.0", NULL, "x>=1.0", NULL, NULL, NULL, "with pcut: max F3 tightening factor",                                            106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },

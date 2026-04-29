@@ -746,6 +746,10 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->F2_orig  = pli->F2;
   pli->F3_orig  = pli->F3;
   pli->F3b_orig = pli->F3b;
+  /* Per-stage caps on per-CM tightening factor. */
+  pli->pcut_F1_cap = esl_opt_IsUsed(go, "--pcut-F1cap") ? esl_opt_GetReal(go, "--pcut-F1cap") : 30.0;
+  pli->pcut_F2_cap = esl_opt_IsUsed(go, "--pcut-F2cap") ? esl_opt_GetReal(go, "--pcut-F2cap") : 30.0;
+  pli->pcut_F3_cap = esl_opt_IsUsed(go, "--pcut-F3cap") ? esl_opt_GetReal(go, "--pcut-F3cap") : 30.0;
 
   /********************************************************************************/
   /* Configure options for the CM stages */
@@ -1250,10 +1254,16 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     if (cm != NULL && (cm->flags & CMH_FILTER_PVAL_CUTOFFS) &&
         (! pli->do_max) && (! pli->do_nohmm)) {
       double f       = cm_filter_ceiling_factor_clen(cm->clen);
-      double F1_ceil = pli->F1_orig  / f;
-      double F2_ceil = pli->F2_orig  / f;
-      double F3_ceil = pli->F3_orig  / f;
-      double F3b_ceil = pli->F3b_orig / f;
+      /* Stage-specific caps: never tighten more than pcut_F*_cap, even if
+       * the logistic curve would (e.g., F1 cap=5 keeps F1 ceiling at
+       * pli_orig/5 even when factor(clen)=30 for big CMs). */
+      double f_F1    = ESL_MIN(f, pli->pcut_F1_cap);
+      double f_F2    = ESL_MIN(f, pli->pcut_F2_cap);
+      double f_F3    = ESL_MIN(f, pli->pcut_F3_cap);
+      double F1_ceil = pli->F1_orig  / f_F1;
+      double F2_ceil = pli->F2_orig  / f_F2;
+      double F3_ceil = pli->F3_orig  / f_F3;
+      double F3b_ceil = pli->F3b_orig / f_F3;
       double F1_use  = ESL_MIN(pli->F1_orig,  ESL_MAX(F1_ceil,  (double) cm->F1_pcutoff));
       double F2_use  = ESL_MIN(pli->F2_orig,  ESL_MAX(F2_ceil,  (double) cm->F2_pcutoff));
       double F3_use  = ESL_MIN(pli->F3_orig,  ESL_MAX(F3_ceil,  (double) cm->F3_pcutoff));

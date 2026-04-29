@@ -2379,6 +2379,14 @@ typedef struct cm_pipeline_s {
   double  F2_orig;
   double  F3_orig;
   double  F3b_orig;
+  /* Per-stage cap on the per-CM tightening factor (CMH_FILTER_PVAL_CUTOFFS).
+   * effective_factor(stage) = min(cm_filter_ceiling_factor_clen(cm->clen), F*_cap)
+   * where logistic factor() asymptotes at 30. Each cap can be lowered to
+   * preserve recall at the cost of speed. Defaults: 30/30/30 (no extra cap).
+   */
+  double  pcut_F1_cap;
+  double  pcut_F2_cap;
+  double  pcut_F3_cap;
   /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
