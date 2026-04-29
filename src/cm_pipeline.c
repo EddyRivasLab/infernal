@@ -5689,6 +5689,30 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     }
     else if(status == eslOK) {
       /* bands imply a matrix or size mxsize_limit or smaller with tau == cm->tau <= pli->maxtau */
+      /* F7BANDSIZE_DUMP: emit one TSV-ish line per HMM-banded dispatch with the
+       * derived CM_HB_MX size (cells + Mb), labeled by which band-derivation
+       * path produced cm->cp9b. Gated on env var to keep stderr clean by default.
+       */
+      if(getenv("F7BANDSIZE_DUMP") != NULL) {
+        int64_t f7_ncells = 0;
+        float   f7_mb     = 0.;
+        const char *f7_src = pli->use_stored_cp9b   ? "cykbands"
+                            : pli->do_p7post_cp9b   ? "p7post"
+                            : pli->do_msvband       ? "msvband"
+                            : pli->do_vitband       ? "vitband"
+                            : "defppp";
+        if(cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, (int)(stop - start + 1),
+                               &f7_ncells, &f7_mb) == eslOK) {
+          fprintf(stderr, "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\n",
+                  cm->name,
+                  start, stop,
+                  (int)(stop - start + 1),
+                  f7_ncells,
+                  f7_mb,
+                  do_inside ? 1 : 0,
+                  f7_src);
+        }
+      }
       esl_stopwatch_Start(w_dp);
       if(do_trunc) { /* HMM banded, truncated */
 	if(do_inside) {
