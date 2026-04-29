@@ -58,6 +58,12 @@ static int   pli_get_pass_of_best_envelope(float **bAA, int *nA);
 static int   pli_check_full_length_envelopes(int64_t **esAA, int64_t **eeAA, int *nA, int64_t L);
 static int   pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass_idx, int best_env_idx, int64_t start_offset, float min_fract, int *ret_val, char *errbuf);
 
+/* --debug-f6-envs <f>: per-process FILE* for one-row-per-F6-envelope TSV dump.
+ * NULL means flag not set; nothing is written and F6 codepath is unchanged. */
+static FILE *pli_debug_f6_envs_fp     = NULL;
+static char *pli_debug_f6_envs_path   = NULL;
+static int   pli_debug_f6_envs_header_written = 0;
+
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
  *****************************************************************/
@@ -332,6 +338,26 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->cyk_envtreeA_n     = 0;
   pli->use_stored_cp9b    = FALSE;
   pli->cykbands_high_conf = FALSE;
+
+  /* --debug-f6-envs <f>: open output TSV (process-global, not per-pipeline-instance).
+   * Only acted on once even if cm_pipeline_Create is called multiple times. */
+  if (esl_opt_IsOn(go, "--debug-f6-envs") && pli_debug_f6_envs_fp == NULL) {
+    pli_debug_f6_envs_path = esl_opt_GetString(go, "--debug-f6-envs");
+    if (pli_debug_f6_envs_path != NULL) {
+      pli_debug_f6_envs_fp = fopen(pli_debug_f6_envs_path, "w");
+      if (pli_debug_f6_envs_fp == NULL) {
+        fprintf(stderr, "ERROR: --debug-f6-envs: cannot open %s for writing\n", pli_debug_f6_envs_path);
+        goto ERROR;
+      }
+      fprintf(pli_debug_f6_envs_fp,
+              "query_cm\ttarget_seq\tenv_start\tenv_end\tf6_hit_start\tf6_hit_end\t"
+              "f6_hit_cstart\tf6_hit_cend\tf6_score_bits\tf6_pvalue\tclen\t"
+              "env_len\tf6_hit_len\tdist_to_env_5p\tdist_to_env_3p\tsubtree_span\n");
+      fflush(pli_debug_f6_envs_fp);
+      pli_debug_f6_envs_header_written = 1;
+    }
+  }
+
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
   pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
@@ -4688,6 +4714,79 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
           trA_tmp_ee[i] = p7ee[i];
         }
       }
+    }
+
+    /* --debug-f6-envs: dump per-envelope TSV row for offline post-CM rule mining.
+     * Independent of --cykbands. If we already have a parsetree (from --cykbands
+     * borderline path or last_dispatch_tr), use it; otherwise run a one-time
+     * FastCYKScanHB_shmx for cstart/cend. Adds ~50% CPU per F6 envelope when
+     * --cykbands is off, but doesn't change F6 pass/fail logic.
+     *
+     * F6 hit start/end on target: use redefined p7es[i]/p7ee[i] (the cyk_envi/j
+     * boundary set above when do_fcykenv is on). For pure-clipping analysis
+     * the meaningful gap is between the F5 envelope and this redefined boundary,
+     * but since we've already overwritten p7es/p7ee with cyk_envi/j (when set),
+     * the original F5 envelope is lost. Workaround: defppp default has
+     * --nocykenv off, so do_fcykenv is TRUE; we record the redefined boundary
+     * (which equals the F6 CYK hit) and use it for both env_start/end and
+     * f6_hit_start/end. The ORIGINAL F5 envelope is recoverable later via the
+     * F5 trace dump if ever needed; for this study, hit-vs-redefined-envelope
+     * is sufficient because f6_hit always equals the redefined envelope. */
+    if (pli_debug_f6_envs_fp != NULL) {
+      Parsetree_t *dbg_tr = NULL;
+      int   dbg_owns_tr = FALSE;
+      if (pli->do_cykbands && trA_tmp != NULL && trA_tmp[i] != NULL) {
+        dbg_tr = trA_tmp[i]; /* borrow, do not free */
+      }
+      else {
+        /* No parsetree yet — run shmx once for the dump. */
+        Parsetree_t *new_tr = NULL;
+        float dummy_sc;
+        float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
+        int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
+                                             sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
+                                             0., NULL, NULL, &new_tr, &dummy_sc);
+        if (tr_status == eslOK && new_tr != NULL) {
+          dbg_tr = new_tr;
+          dbg_owns_tr = TRUE;
+        }
+      }
+      if (dbg_tr != NULL) {
+        int cfrom_span, cto_span, cfrom_emit, cto_emit, first_emit, final_emit;
+        int hit_cstart = -1, hit_cend = -1;
+        char tmpbuf[1024]; tmpbuf[0] = '\0';
+        if (ParsetreeToCMBounds(cm, dbg_tr, FALSE, FALSE, tmpbuf,
+                                &cfrom_span, &cto_span,
+                                &cfrom_emit, &cto_emit,
+                                &first_emit, &final_emit) == eslOK) {
+          hit_cstart = cfrom_emit;
+          hit_cend   = cto_emit;
+        }
+        int64_t env_start = p7es[i];   /* redefined-envelope = F6 hit boundary */
+        int64_t env_end   = p7ee[i];
+        int64_t hit_start = p7es[i];   /* identical to env_start by construction */
+        int64_t hit_end   = p7ee[i];
+        int64_t env_len   = env_end - env_start + 1;
+        int64_t hit_len   = hit_end - hit_start + 1;
+        int64_t d5p       = hit_start - env_start; if (d5p < 0) d5p = 0;
+        int64_t d3p       = env_end - hit_end;     if (d3p < 0) d3p = 0;
+        double  span      = (cm->clen > 0 && hit_cstart >= 0 && hit_cend >= 0)
+                          ? ((double)(hit_cend - hit_cstart + 1) / (double)cm->clen)
+                          : 0.0;
+        fprintf(pli_debug_f6_envs_fp,
+                "%s\t%s\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\n",
+                cm->name ? cm->name : "-",
+                sq->name ? sq->name : "-",
+                (long long)env_start, (long long)env_end,
+                (long long)hit_start, (long long)hit_end,
+                hit_cstart, hit_cend,
+                sc, P,
+                cm->clen,
+                (long long)env_len, (long long)hit_len,
+                (long long)d5p, (long long)d3p,
+                span);
+      }
+      if (dbg_owns_tr && dbg_tr != NULL) FreeParsetree(dbg_tr);
     }
 
 #if eslDEBUGLEVEL >= 2
