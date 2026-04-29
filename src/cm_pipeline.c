@@ -1234,17 +1234,39 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     }
 
     /* If the CM has per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS,
-     * computed at cmbuild time), substitute them for the pipeline defaults.
-     * Use min() so a per-CM cutoff can only tighten, never loosen, the
-     * threshold relative to whatever the pipeline strategy/--FZ/--F1/-F2/-F3
-     * dictated. Skip in --max and --nohmm modes (filters disabled there).
+     * computed at cmbuild time as raw 99%-quantile of CM emissions), apply
+     * floor/ceiling/monotonicity HERE — calibration stored only the raw
+     * quantile so policy can scale with the Z-tier-aware pli->F*_orig.
+     *
+     * Floor   = pli->F*_orig  (never looser than the pipeline default; if
+     *                          raw quantile is looser, use the default)
+     * Ceiling = pli->F*_orig / factor(clen)
+     *           where factor() is the logistic CLEN-scaled curve (max 30×;
+     *           see cm_filter_ceiling_factor_clen() in cm_filtercutoff.c).
+     * Monotonicity F1>=F2>=F3 re-enforced after both clamps.
+     *
+     * Skip in --max and --nohmm modes (filters disabled there).
      */
     if (cm != NULL && (cm->flags & CMH_FILTER_PVAL_CUTOFFS) &&
         (! pli->do_max) && (! pli->do_nohmm)) {
-      pli->F1  = ESL_MIN(pli->F1_orig,  (double) cm->F1_pcutoff);
-      pli->F2  = ESL_MIN(pli->F2_orig,  (double) cm->F2_pcutoff);
-      pli->F3  = ESL_MIN(pli->F3_orig,  (double) cm->F3_pcutoff);
-      pli->F3b = ESL_MIN(pli->F3b_orig, (double) cm->F3_pcutoff);
+      double f       = cm_filter_ceiling_factor_clen(cm->clen);
+      double F1_ceil = pli->F1_orig  / f;
+      double F2_ceil = pli->F2_orig  / f;
+      double F3_ceil = pli->F3_orig  / f;
+      double F3b_ceil = pli->F3b_orig / f;
+      double F1_use  = ESL_MIN(pli->F1_orig,  ESL_MAX(F1_ceil,  (double) cm->F1_pcutoff));
+      double F2_use  = ESL_MIN(pli->F2_orig,  ESL_MAX(F2_ceil,  (double) cm->F2_pcutoff));
+      double F3_use  = ESL_MIN(pli->F3_orig,  ESL_MAX(F3_ceil,  (double) cm->F3_pcutoff));
+      double F3b_use = ESL_MIN(pli->F3b_orig, ESL_MAX(F3b_ceil, (double) cm->F3_pcutoff));
+      /* Monotonicity F1 >= F2 >= F3, re-enforced after clamping. F3b
+       * mirrors F3 throughout cm_pipeline; pin to F2 if violation. */
+      if (F2_use  > F1_use) F2_use  = F1_use;
+      if (F3_use  > F2_use) F3_use  = F2_use;
+      if (F3b_use > F2_use) F3b_use = F2_use;
+      pli->F1  = F1_use;
+      pli->F2  = F2_use;
+      pli->F3  = F3_use;
+      pli->F3b = F3b_use;
     }
     else {
       pli->F1  = pli->F1_orig;

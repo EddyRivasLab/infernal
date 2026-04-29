@@ -3202,12 +3202,8 @@ extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, 
 extern int          cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
 /* from cm_filtercutoff.c */
-#define CM_FILTER_CEIL_FIXED10    0
-#define CM_FILTER_CEIL_FIXED30    1
-#define CM_FILTER_CEIL_CLEN_SCALE 2
-extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N,
-                                                  int ceil_mode_F12, int ceil_mode_F3,
-                                                  char *errbuf);
+extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf);
+extern double       cm_filter_ceiling_factor_clen(int clen);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);

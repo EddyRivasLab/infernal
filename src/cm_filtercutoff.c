@@ -33,65 +33,24 @@
 
 #include "infernal.h"
 
-/* "Reference defaults" used to compute the per-CM ceiling factor.
- * These are the 20-Gb-tier pipeline defaults (the tightest tier; F1/F2/F3
- * defaults vary by Z in cm_pipeline.c lines 619-665). The cm_pli_NewModel
- * override path uses min(pli->F{1,2,3}_orig, cm->F{1,2,3}_pcutoff), so
- * the relevant clamp is the relationship between cm->F*_pcutoff and the
- * pipeline default at each Z tier.
- */
-#define CM_FILTER_PVAL_F1_DEFAULT   0.06
-#define CM_FILTER_PVAL_F2_DEFAULT   0.02
-#define CM_FILTER_PVAL_F3_DEFAULT   0.0002
-
-/* Floor (loosest allowed cutoff) = the LOOSEST Z-tier pipeline default
- * (the smallest-Z tier in cm_pipeline.c, "Z < 2 Mb"). At smaller Z, F1/F2/F3
- * defaults loosen to 0.25/0.25/0.05. Storing a cutoff looser than this is
- * pointless — search-time min(pli->F1_orig, cm->F1_pcutoff) would never
- * pick it because pli->F1_orig is at most 0.25. Using these values as the
- * floor ensures floor-CMs effectively fall through to whatever pipeline
- * default applies at search time, regardless of --FZ. (Stage-2-C pcm-v1
- * showed the trap when floor was set to the 20Gb-tier defaults.)
- */
-#define CM_FILTER_PVAL_F1_FLOOR     0.25
-#define CM_FILTER_PVAL_F2_FLOOR     0.25
-#define CM_FILTER_PVAL_F3_FLOOR     0.05
-
 #define CM_FILTER_PVAL_RETENTION    0.99   /* 99% of CM-emitted seqs survive */
 
-/* Ceiling-factor curves. The "ceiling" is the tightest cutoff we allow at
- * a given stage; cutoff = max(reference_default / factor, raw_quantile).
- *
- * Three curves selectable per stage (modes #defined in infernal.h):
- *   - CM_FILTER_CEIL_FIXED10:    factor = 10  (legacy uniform 10× tightening)
- *   - CM_FILTER_CEIL_FIXED30:    factor = 30  (uniform 30× tightening)
- *   - CM_FILTER_CEIL_CLEN_SCALE: factor = logistic in log10(clen), 1× at
- *                                small clen, 2× at clen=100, 5× at clen=200,
- *                                ~30× at clen=3000
- */
-
-/* Logistic CLEN-scaled ceiling factor.
- * factor(clen) = 1 + 29 / (1 + exp(-5 * (log10(clen) - 2.666)))
+/* Logistic CLEN-scaled ceiling factor (used at SEARCH TIME by
+ * cm_pli_NewModel(), not at calibration time). factor(clen) =
+ *   1 + 29 / (1 + exp(-5 * (log10(clen) - 2.666)))
  * Passes through 50→1.2, 100→2, 200→5, 463→15, 3000→29.5; asymptotes at 30.
+ *
+ * This stays here (rather than cm_pipeline.c) so the curve definition
+ * and the cmbuild-time emission code are in the same translation unit
+ * if/when calibration ever wants to know it.
  */
-static double
+double
 cm_filter_ceiling_factor_clen(int clen)
 {
   double lc = log10((double) clen);
   double f  = 1.0 + 29.0 / (1.0 + exp(-5.0 * (lc - 2.666)));
   if (f < 1.0) f = 1.0;
   return f;
-}
-
-static double
-cm_filter_ceiling_factor(int mode, int clen)
-{
-  switch (mode) {
-    case CM_FILTER_CEIL_FIXED10:    return 10.0;
-    case CM_FILTER_CEIL_FIXED30:    return 30.0;
-    case CM_FILTER_CEIL_CLEN_SCALE: return cm_filter_ceiling_factor_clen(clen);
-    default:                        return 10.0;
-  }
 }
 
 static int
@@ -110,22 +69,26 @@ cmp_double_asc(const void *a, const void *b)
  * Purpose:  Emit <N> sequences from <cm>, run the local-mode F1 (MSV),
  *           F2 (Viterbi), and F3 (local Forward) HMM filter stages on each,
  *           then pick the M-th-rank P-value at each stage (M = ceil(0.99*N))
- *           as the per-CM cutoff. Apply floor (= loosest Z-tier default)
- *           and ceiling (= reference default / factor, per <ceil_mode_F12>
- *           and <ceil_mode_F3>) clamps, then enforce F1 >= F2 >= F3
- *           monotonicity. Store the resulting triple on the CM struct
- *           (cm->F{1,2,3}_pcutoff) and raise CMH_FILTER_PVAL_CUTOFFS.
+ *           as the per-CM cutoff. Store the **raw** quantile in
+ *           cm->F{1,2,3}_pcutoff and raise CMH_FILTER_PVAL_CUTOFFS.
+ *
+ *           Floor (= pli->F*_orig) and ceiling (= pli->F*_orig / factor(clen))
+ *           are NOT applied here — they're applied at SEARCH TIME in
+ *           cm_pli_NewModel() where pli->F*_orig is known (depends on the
+ *           Z-tier the user chose with --FZ). Storing the raw quantile keeps
+ *           the CM file invariant under future search-time policy tweaks
+ *           (different ceiling factor curves, different Z tiers, etc.).
+ *           Likewise F1≥F2≥F3 monotonicity is re-enforced at search time
+ *           after clamping; raw quantiles can violate monotonicity.
  *
  *           Caller must ensure <cm> has a valid cm->fp7 (CMH_FP7) with
  *           local-mode evparam fields (CM_p7_LMMU/LMLAMBDA/LVMU/LVLAMBDA/
  *           LFTAU/LFLAMBDA) set.
  *
- * Args:     cm            - CM with fp7 attached
- *           r             - random number generator (drives EmitParsetree)
- *           N             - number of sequences to emit (e.g. 1000)
- *           ceil_mode_F12 - CM_FILTER_CEIL_FIXED10/FIXED30/CLEN_SCALE for F1/F2
- *           ceil_mode_F3  - same for F3
- *           errbuf        - for error messages
+ * Args:     cm     - CM with fp7 attached
+ *           r      - random number generator (drives EmitParsetree)
+ *           N      - number of sequences to emit (e.g. 1000)
+ *           errbuf - for error messages
  *
  * Returns:  <eslOK> on success.
  *           <eslEINVAL> if cm->fp7 is missing (with errbuf message).
@@ -133,7 +96,6 @@ cmp_double_asc(const void *a, const void *b)
  */
 int
 cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N,
-                              int ceil_mode_F12, int ceil_mode_F3,
                               char *errbuf)
 {
   int           status;
@@ -235,37 +197,13 @@ cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N,
   if (M_idx < 0)  M_idx = 0;
   if (M_idx >= N) M_idx = N - 1;
 
+  /* Store the RAW M-th-rank P-value at each stage. Floor, ceiling, and
+   * F1>=F2>=F3 monotonicity are applied at SEARCH TIME (cm_pli_NewModel)
+   * using pli->F*_orig (Z-tier-dependent) so policy tracks --FZ.
+   */
   F1cut = F1ps[M_idx];
   F2cut = F2ps[M_idx];
   F3cut = F3ps[M_idx];
-
-  /* Floor: never looser than the loosest-Z-tier default (so the cutoff
-   * is meaningful at any --FZ; otherwise floor-CMs unintentionally
-   * tighten at small Z, see Stage-2-C pcm-v1 trap).
-   */
-  if (F1cut > CM_FILTER_PVAL_F1_FLOOR) F1cut = CM_FILTER_PVAL_F1_FLOOR;
-  if (F2cut > CM_FILTER_PVAL_F2_FLOOR) F2cut = CM_FILTER_PVAL_F2_FLOOR;
-  if (F3cut > CM_FILTER_PVAL_F3_FLOOR) F3cut = CM_FILTER_PVAL_F3_FLOOR;
-
-  /* Ceiling: never tighter than reference_default / ceiling_factor.
-   * Factor curve depends on per-stage mode (fixed-10/fixed-30/clen-scaled).
-   */
-  {
-    double factF12 = cm_filter_ceiling_factor(ceil_mode_F12, cm->clen);
-    double factF3  = cm_filter_ceiling_factor(ceil_mode_F3,  cm->clen);
-    double F1ceil  = CM_FILTER_PVAL_F1_DEFAULT / factF12;
-    double F2ceil  = CM_FILTER_PVAL_F2_DEFAULT / factF12;
-    double F3ceil  = CM_FILTER_PVAL_F3_DEFAULT / factF3;
-    if (F1cut < F1ceil) F1cut = F1ceil;
-    if (F2cut < F2ceil) F2cut = F2ceil;
-    if (F3cut < F3ceil) F3cut = F3ceil;
-  }
-
-  /* Monotonicity: F1 >= F2 >= F3. After clamping, ranges can overlap
-   * (e.g. F1_ceiling=0.006 < F2_floor=0.02), so re-enforce.
-   */
-  if (F2cut > F1cut) F2cut = F1cut;
-  if (F3cut > F2cut) F3cut = F2cut;
 
   cm->F1_pcutoff = (float) F1cut;
   cm->F2_pcutoff = (float) F2cut;

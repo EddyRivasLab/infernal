@@ -1723,9 +1723,11 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	  cm->F1_pcutoff = atof(tok1);
 	  cm->F2_pcutoff = atof(tok2);
 	  cm->F3_pcutoff = atof(tok3);
-	  if (cm->F1_pcutoff <= 0.0f || cm->F1_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F1 P-value cutoff on F1F2F3CUT line: %s", tok1);
-	  if (cm->F2_pcutoff <= 0.0f || cm->F2_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F2 P-value cutoff on F1F2F3CUT line: %s", tok2);
-	  if (cm->F3_pcutoff <= 0.0f || cm->F3_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F3 P-value cutoff on F1F2F3CUT line: %s", tok3);
+	  /* Raw 99%-quantile P-values; 0 is valid (= filter score overflowed
+	   * eslERANGE on a perfect emission, treated as P=0). */
+	  if (cm->F1_pcutoff < 0.0f || cm->F1_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F1 P-value cutoff on F1F2F3CUT line: %s", tok1);
+	  if (cm->F2_pcutoff < 0.0f || cm->F2_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F2 P-value cutoff on F1F2F3CUT line: %s", tok2);
+	  if (cm->F3_pcutoff < 0.0f || cm->F3_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F3 P-value cutoff on F1F2F3CUT line: %s", tok3);
 	  cm->flags |= CMH_FILTER_PVAL_CUTOFFS;
 	}
       }
