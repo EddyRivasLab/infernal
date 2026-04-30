@@ -3729,6 +3729,9 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
  *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
+ *           strict_unvisited - if TRUE, set Jvalid[v]=FALSE for unvisited states (--cykbands-strict).
+ *                              This makes the F7 HB DP skip those states entirely, dramatically
+ *                              reducing matrix cell count at the risk of parse failure or score loss.
  *           cp9b      - bands to fill (caller pre-allocated)
  *           pass_idx  - pipeline pass index (for truncation handling)
  *           debug     - if >0, print bands
@@ -3738,6 +3741,7 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
 int
 cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
                                int i0, int j0, int pad, const int *per_state_pad,
+                               int strict_unvisited,
                                CP9Bands_t *cp9b, int pass_idx, int debug)
 {
   int    status;
@@ -3850,9 +3854,18 @@ cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(jmin[v] > jmax[v]) jmax[v] = jmin[v];
   }
 
-  /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode */
+  /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode.
+   * In strict_unvisited mode, only visited states get Jvalid=TRUE; the F7 HB DP
+   * gates on Jvalid[v] before computing alpha cells, so unvisited states are
+   * skipped entirely. The EL state (M) is always kept valid (filler for end-locals).
+   */
   if(!do_trunc) {
-    esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    if(strict_unvisited) {
+      for(v = 0; v < M; v++) cp9b->Jvalid[v] = visited[v];
+      cp9b->Jvalid[M] = TRUE; /* EL state */
+    } else {
+      esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    }
     esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
     esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
     esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);

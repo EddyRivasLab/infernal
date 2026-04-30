@@ -321,6 +321,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7vit_hopback      = esl_opt_GetInteger(go, "--p7vit-hopback");
   pli->p7vitend           = esl_opt_GetInteger(go, "--p7vitend");
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
+  pli->do_cykbands_strict = (esl_opt_IsOn(go, "--cykbands-strict")) ? TRUE : FALSE;
   pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
   pli->cyk_bpad_dir       = esl_opt_IsOn(go, "--cykpadfile")  ? esl_opt_GetString(go, "--cykpadfile") : NULL;
   pli->cyk_bpad_perstate  = NULL;
@@ -5053,6 +5054,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       const int *psp = (pli->cyk_bpad_perstate != NULL && pli->cyk_bpad_perstate_M == cm->M) ? pli->cyk_bpad_perstate : NULL;
       if(cm_BandsFromParsetree_perstate(cm, pli->errbuf, tr,
                                         (int)f6_es, (int)f6_ee, pli->cyk_bpad, psp,
+                                        pli->do_cykbands_strict,
                                         cm->cp9b, pli->cur_pass_idx, 0) == eslOK) {
         pli->use_stored_cp9b = TRUE;
       }
