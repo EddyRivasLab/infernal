@@ -120,6 +120,7 @@ CreateCMShell(void)
   cm->beta_W       = DEFAULT_BETA_W;     /* will be set when beta_W is read from cmfile */
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->maxtau       = DEFAULT_MAXTAU;     /* 0.1  the default max tau during HMM band tightening */
+  cm->p7bpad       = 10;                 /* default p7 band pad for p7_Seq2BandsVit */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          

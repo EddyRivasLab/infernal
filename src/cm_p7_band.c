@@ -2016,11 +2016,8 @@ int
 cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print)
 {
   int   status;
-  int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
-  int do_old_hmm2ij;
-  int do_trunc;       /* are we allowing truncated alignments? */
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM, always cm->cp9 (banded CP9 F/B uses standard cp9 regardless of truncation mode) */
+  CP9_t *cp9 = NULL;
 
   /* Contract checks */
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but cm->cp9map is NULL.\n");
@@ -2028,27 +2025,11 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
-  
-  use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
-  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
-  do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
 
-  /* Always use cm->cp9 for banded CP9 F/B, regardless of truncation mode.
-   * The P7-derived bands constrain which nodes are active at each position;
-   * the emission structure is the same across cp9/Lcp9/Rcp9/Tcp9 variants.
-   * For truncated passes, we set Jvalid/Lvalid/Rvalid/Tvalid conservatively
-   * (all TRUE) since we can't run cp9_PredictStartAndEndPositions on the
-   * banded posterior matrix.
-   */
   cp9 = cm->cp9;
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cm->cp9 is NULL.\n");
 
-  /* Step 1: Get HMM Forward/Backward DP matrices.
-   * Step 2: F/B       -> HMM bands.
-   * Step 3: HMM bands -> CM bands.
-   */
-
-  /* Step 1: Get HMM Forward/Backward DP matrices. */
+  /* Phase 1: P7-banded CP9 Forward + Backward (tau-independent) */
   if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, NULL)) != eslOK) return status;
 
@@ -2057,28 +2038,63 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     printf("Forward/Backward matrices checked.\n");
   }
 
+  /* Phase 2: F/B -> HMM bands -> CM bands (tau-dependent) */
+  if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, fmx, bmx, pmx, dsq, cp9b, kmin, kmax,
+				       L, i0, j0, pass_idx, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
+  return eslOK;
+}
+
+
+/* Function: cp9_FBMatrices2BandsP7B()
+ * Date:     EPN, 2026-04-30
+ *
+ * Purpose:  Phase 2 of p7-banded CP9 band derivation. Given filled P7-banded
+ *           CP9 Forward (fmx) and Backward (bmx) matrices, derive HMM bands
+ *           using cm->tau, then convert to CM bands. This is the tau-dependent
+ *           half that can be iterated by cp9_IterateSeq2BandsP7B().
+ *
+ * Args:     cm          - the CM
+ *           errbuf      - for error messages
+ *           cp9         - the CP9 HMM (always cm->cp9 for P7B path)
+ *           fmx         - filled P7-banded CP9 Forward matrix (read-only)
+ *           bmx         - filled P7-banded CP9 Backward matrix (read-only)
+ *           pmx         - CP9 matrix for posteriors (filled here; must NOT alias bmx if iterating)
+ *           dsq         - digitized sequence (1..L)
+ *           cp9b        - CP9 bands structure (filled here)
+ *           kmin, kmax  - P7-derived per-residue node bands
+ *           L           - sequence length
+ *           i0, j0      - subsequence bounds in original coords
+ *           pass_idx    - pipeline pass index
+ *           debug_level - verbosity
+ *           do_pnmono, do_pnmono_print - pnmono flags
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx,
+			ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax,
+			int L, int i0, int j0, int pass_idx, int debug_level,
+			int do_pnmono, int do_pnmono_print)
+{
+  int status;
+  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
   /* Step 2: F/B -> HMM bands. */
-  { ESL_STOPWATCH *w_s2 = esl_stopwatch_Create();
-    esl_stopwatch_Start(w_s2);
-    if(use_sums){
-      printf("USE SUMS!\n");
-      exit(1);
-    }
-    else {
-      if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
-				      (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level,
-				      do_pnmono, do_pnmono_print)) != eslOK) return status;
-      cp9b->tau = cm->tau;
-    }
-    esl_stopwatch_Stop(w_s2);
-    fprintf(stderr, "#     cp9_Seq2BandsP7B Step2 FB2HMMBands: %.4f ms\n", w_s2->elapsed * 1000.0);
-    esl_stopwatch_Destroy(w_s2);
+  if(use_sums) {
+    printf("USE SUMS!\n");
+    exit(1);
+  }
+  else {
+    if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
+				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level,
+				    do_pnmono, do_pnmono_print)) != eslOK) return status;
+    cp9b->tau = cm->tau;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 
-  /* Step 2b: Shift HMM bands from 1..L to i0..j0 coordinate system.
-   * CP9 F/B operated in 1..L space, so pn_min/pn_max are in that range.
-   * cp9_HMM2ijBands expects them in i0..j0 space. */
+  /* Step 2b: Shift HMM bands from 1..L to i0..j0 coordinate system. */
   if(i0 != 1) {
     int offset = i0 - 1;
     int k;
@@ -2089,12 +2105,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     }
   }
 
-  /* Step 2c: Set truncation candidate valid arrays.
-   * Must be after Step 2b because Parts 3-4 of PredictStartAndEndPositions
-   * use pn_min/pn_max which need to be in i0..j0 coordinates.
-   * The posterior matrix (used in Parts 1-2) remains in 1..L coordinates,
-   * which is fine since those parts use band-relative indexing via kmin/kmax.
-   */
+  /* Step 2c: Set truncation candidate valid arrays. */
   if(do_trunc) {
     cp9_PredictStartAndEndPositionsP7B(pmx, cp9b, kmin, kmax, i0, j0);
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
@@ -2106,44 +2117,130 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
 
-  /* Step 3: HMM bands  ->  CM bands. */
-  { ESL_STOPWATCH *w_s3 = esl_stopwatch_Create();
-    esl_stopwatch_Start(w_s3);
-    if(do_old_hmm2ij) {
-      if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
-    }
-    else {
-      if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
-    /* For debugging, uncomment this block:
-       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, FALSE, debug_level)) != eslOK) { 
-       ESL_SQ *tmp;
-       tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
-       esl_sq_Textize(tmp);
-       printf("HEY! cm: %s\n", cm->name);
-       printf(">irrelevant\n%s\n", tmp->seq);
-       esl_sq_Destroy(tmp);
-       return status; 
-    }
-    */
-    }
-    /* Use the CM bands on i and j to get bands on d, specific to j. */
-    /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
-    if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) { esl_stopwatch_Destroy(w_s3); return status; }
-    ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
-    esl_stopwatch_Stop(w_s3);
-    fprintf(stderr, "#     cp9_Seq2BandsP7B Step3 HMM2ijBands: %.4f ms\n", w_s3->elapsed * 1000.0);
-    esl_stopwatch_Destroy(w_s3);
+  /* Step 3: HMM bands -> CM bands. */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
   }
+  else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+  }
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
-  if(debug_level > 0) debug_print_ij_bands(cm); 
-
+  if(debug_level > 0) debug_print_ij_bands(cm);
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
 
   return eslOK;
+}
+
+
+/* Function: cp9_IterateSeq2BandsP7B()
+ * Date:     EPN, 2026-04-30
+ *
+ * Purpose:  Like cp9_IterateSeq2Bands(), but uses P7-banded CP9 Forward/Backward.
+ *           Runs P7-banded CP9 F/B once (tau-independent), then iteratively
+ *           tightens tau/thresh until the resulting CM DP matrix fits within
+ *           <size_limit> Mb, or tau reaches <maxtau>.
+ *
+ * Args:     cm          - the CM
+ *           errbuf      - for error messages
+ *           dsq         - digitized sequence (1..L)
+ *           L           - sequence length
+ *           kmin, kmax  - P7-derived per-residue node bands (1..L indexed)
+ *           i0, j0      - subsequence bounds in original coords
+ *           pass_idx    - pipeline pass index
+ *           size_limit  - max allowed CM DP matrix size in Mb
+ *           doing_search - TRUE if bands for search, FALSE for alignment
+ *           do_sample   - TRUE if we'll sample a parsetree
+ *           do_post     - TRUE if we'll do posterior alignment
+ *           maxtau      - max allowed cm->tau value
+ *           do_pnmono, do_pnmono_print - pnmono flags
+ *           ret_Mb      - RETURN: matrix Mb for final bands (can be NULL)
+ *
+ * Returns:  eslOK on success.
+ *           eslERANGE if matrix still exceeds size_limit at maxtau.
+ */
+int
+cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, int *kmax,
+			int i0, int j0, int pass_idx, float size_limit,
+			int doing_search, int do_sample, int do_post,
+			double maxtau, int do_pnmono, int do_pnmono_print, float *ret_Mb)
+{
+  int     status;
+  int     do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  float   cp9mx_Mb = 0.;
+  float   hbmx_Mb  = 0.;
+  float   tot_Mb;
+  int     tau_at_limit     = FALSE;
+  int     thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
+  int     thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
+  CP9_t  *cp9 = NULL;
+  CP9_MX *pmx = NULL;
+  float   sc;
+
+  /* Contract checks */
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->cp9map is NULL.");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, dsq is NULL.");
+  if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->tau (%f) > 0.5.", cm->tau);
+
+  cp9 = cm->cp9;
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->cp9 is NULL.");
+
+  /* Phase 1: P7-banded CP9 Forward + Backward — run once, cache across iterations. */
+  if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, cm->cp9_mx, dsq, L, kmin, kmax, &sc)) != eslOK) goto ERROR;
+  if((status = cp9_BackwardP7B(cp9, errbuf, cm->cp9_bmx, dsq, L, kmin, kmax, NULL)) != eslOK) goto ERROR;
+
+  /* Allocate a separate pmx so FB2HMMBandsP7B doesn't clobber bmx across iterations. */
+  if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
+    ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating local pmx");
+
+  /* Phase 2: iterate tau/thresh until matrix fits. */
+  while(1) {
+    if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b,
+					 kmin, kmax, L, i0, j0, pass_idx, 0, do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
+    /* Compute required matrix size */
+    if(doing_search) {
+      if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+      else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+    }
+    else {
+      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      if(status != eslOK && status != eslERANGE) goto ERROR;
+    }
+
+    /* Check stopping conditions */
+    if(hbmx_Mb < size_limit)                                  break;
+    if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+
+    /* Tighten */
+    if(! tau_at_limit) {
+      cm->tau *= TAU_MULTIPLIER;
+      if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; }
+    }
+    if(! thresh1_at_limit) {
+      cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1;
+      if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; }
+    }
+    if(! thresh2_at_limit) {
+      cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2;
+      if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; }
+    }
+  }
+
+  FreeCP9Matrix(pmx);
+  if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+  if(hbmx_Mb > size_limit) return eslERANGE;
+  return eslOK;
+
+ ERROR:
+  if(pmx) FreeCP9Matrix(pmx);
+  if(ret_Mb != NULL) *ret_Mb = 0.;
+  return status;
 }
 
 

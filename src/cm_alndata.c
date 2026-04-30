@@ -315,6 +315,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE  : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
+  int do_p7band    = (cm->align_opts & CM_ALIGN_P7BANDED)  ? TRUE  : FALSE;
   int doing_search = FALSE;
 
 #if eslDEBUGLEVEL >= 1
@@ -405,7 +406,105 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     }
     else { /* use HMM bands */
       if(! cp9b_valid) { 
-	if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
+	if(do_p7band && cm->fp7 != NULL) {
+	  /* p7-derived bands: Viterbi trace -> kmin/kmax -> banded CP9 F/B -> CM bands */
+	  P7_PROFILE *gm_p7b  = NULL;
+	  P7_GMX     *gx_p7b  = NULL;
+	  P7_BG      *bg_p7b  = NULL;
+	  P7_TRACE   *tr_p7b  = NULL;
+	  int        *p7_kmin  = NULL;
+	  int        *p7_kmax  = NULL;
+	  int        *p7_i2k   = NULL;
+	  int         p7_ncells = 0;
+
+	  /* Create P7 objects */
+	  bg_p7b = p7_bg_Create(cm->abc);
+	  gm_p7b = p7_profile_Create(cm->fp7->M, cm->abc);
+	  /* Configure profile for band derivation:
+	   * - Standard (non-truncated) alignment: GLOCAL (must align full model)
+	   * - Truncated alignment: T-profile (LOCAL + forced full-sequence parse).
+	   *   The T-profile allows entry/exit at any model node but forces the parse
+	   *   to include the first and last residue (N->N and C->C set to -inf).
+	   */
+	  if(do_trunc) {
+	    p7_ProfileConfig(cm->fp7, bg_p7b, gm_p7b, sq->L, p7_LOCAL);
+	    p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm_p7b, sq->L);
+	  } else {
+	    p7_ProfileConfig(cm->fp7, bg_p7b, gm_p7b, sq->L, p7_GLOCAL);
+	  }
+	  gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+	  tr_p7b = p7_trace_Create();
+
+	  /* Build local nodepad copy with p7bpad (p7padplus) added */
+	  int *local_nodepad = NULL;
+	  if(cm->flags & CMH_P7NODEPAD) {
+	    int k;
+	    ESL_ALLOC(local_nodepad, sizeof(int) * (cm->fp7->M + 1));
+	    for(k = 0; k <= cm->fp7->M; k++) local_nodepad[k] = cm->p7_nodepad[k] + cm->p7bpad;
+	  }
+
+	  /* Derive p7 bands via Viterbi */
+	  status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+				   sq->dsq, sq->L, cm->p7bpad,
+				   local_nodepad,
+				   0, 0, /* hopback=0, vitend=0 */
+				   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+
+	  /* Debug: report Viterbi band stats */
+	  if(status == eslOK && p7_ncells > 0) {
+	    int dbg_npin = 0, dbg_minpin = sq->L+1, dbg_maxpin = 0;
+	    int dbg_i;
+	    for(dbg_i = 1; dbg_i <= sq->L; dbg_i++) {
+	      if(p7_i2k[dbg_i] != -1) {
+		dbg_npin++;
+		if(dbg_i < dbg_minpin) dbg_minpin = dbg_i;
+		if(dbg_i > dbg_maxpin) dbg_maxpin = dbg_i;
+	      }
+	    }
+	    float dbg_avgbw = (float)p7_ncells / (float)sq->L;
+	    fprintf(stderr, "#P7BAND %s L=%d M=%d npins=%d pin_range=[%d,%d] ncells=%d avg_bw=%.1f\n",
+		    sq->name, (int)sq->L, cm->fp7->M, dbg_npin, dbg_minpin, dbg_maxpin, p7_ncells, dbg_avgbw);
+	  }
+	  else {
+	    fprintf(stderr, "#P7BAND %s L=%d M=%d FAILED (status=%d ncells=%d)\n",
+		    sq->name, (int)sq->L, cm->fp7->M, status, p7_ncells);
+	  }
+
+	  if(status == eslOK && p7_ncells > 0) {
+	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
+	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
+					     1, sq->L, pass_idx, mxsize,
+					     doing_search, do_sample, do_post,
+					     cm->maxtau, 0, 0, NULL);
+	  }
+	  else {
+	    /* Viterbi found no path or error; fall back to standard cp9 bands */
+	    status = eslERANGE;
+	  }
+
+	  /* Free p7 objects */
+	  if(local_nodepad) free(local_nodepad);
+	  if(p7_i2k)  free(p7_i2k);
+	  if(p7_kmin) free(p7_kmin);
+	  if(p7_kmax) free(p7_kmax);
+	  p7_trace_Destroy(tr_p7b);
+	  p7_gmx_Destroy(gx_p7b);
+	  p7_profile_Destroy(gm_p7b);
+	  p7_bg_Destroy(bg_p7b);
+
+	  if(status != eslOK) {
+	    /* P7B bands too wide even at maxtau; fall back to standard cp9 band derivation */
+	    if(do_xtau) {
+	      if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1,
+						cm->maxtau, NULL)) != eslOK) goto ERROR;
+	    }
+	    else {
+	      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq,
+					 1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	    }
+	  }
+	}
+	else if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
 	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
 					    cm->maxtau, NULL)) != eslOK) goto ERROR;
 	}
