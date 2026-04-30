@@ -5705,14 +5705,31 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
                             : "defppp";
         if(cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, (int)(stop - start + 1),
                                &f7_ncells, &f7_mb) == eslOK) {
-          fprintf(stderr, "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\n",
+          /* Active cells: sum cells only for Jvalid states. With --cykbands-strict
+           * this is much smaller than f7_ncells, since allocation is per-state but
+           * the DP only computes for Jvalid=TRUE states. */
+          int64_t f7_active = 0;
+          int     v_, jp_;
+          int     n_jvalid = 0;
+          for(v_ = 0; v_ < cm->cp9b->cm_M; v_++) {
+            if(cm->cp9b->Jvalid[v_]) {
+              n_jvalid++;
+              for(jp_ = 0; jp_ <= (cm->cp9b->jmax[v_] - cm->cp9b->jmin[v_]); jp_++) {
+                f7_active += cm->cp9b->hdmax[v_][jp_] - cm->cp9b->hdmin[v_][jp_] + 1;
+              }
+            }
+          }
+          fprintf(stderr, "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\t%" PRId64 "\t%d\t%d\n",
                   cm->name,
                   start, stop,
                   (int)(stop - start + 1),
                   f7_ncells,
                   f7_mb,
                   do_inside ? 1 : 0,
-                  f7_src);
+                  f7_src,
+                  f7_active,
+                  n_jvalid,
+                  cm->cp9b->cm_M);
         }
       }
       esl_stopwatch_Start(w_dp);
