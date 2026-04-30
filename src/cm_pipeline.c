@@ -4784,10 +4784,18 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
           hit_cstart = cfrom_emit;
           hit_cend   = cto_emit;
         }
-        int64_t env_start = dbg_orig_es;  /* F5 envelope before any F6 redef */
-        int64_t env_end   = dbg_orig_ee;
-        int64_t hit_start = p7es[i];      /* F6 CYK hit boundary (cyk_envi/j) */
-        int64_t hit_end   = p7ee[i];
+        /* Translate window-relative coords to absolute sequence coords by adding
+         * sq->start - 1. cmsearch processes long sequences as overlapping windows
+         * via esl_sqio_ReadWindow; sq->start is the absolute start of the current
+         * window in the original sequence (1 for the first window, ~maxW-C for
+         * subsequent ones). cm_tophits_UpdateHitPositions does the same translation
+         * for reported hits in cmsearch.c -- without this, our env_start/end are
+         * window-relative and don't match .tblout coords or rmark.pos truths. */
+        int64_t coord_off = sq->start - 1;
+        int64_t env_start = dbg_orig_es + coord_off;  /* F5 envelope before any F6 redef */
+        int64_t env_end   = dbg_orig_ee + coord_off;
+        int64_t hit_start = p7es[i] + coord_off;      /* F6 CYK hit boundary (cyk_envi/j) */
+        int64_t hit_end   = p7ee[i] + coord_off;
         int64_t env_len   = env_end - env_start + 1;
         int64_t hit_len   = hit_end - hit_start + 1;
         int64_t d5p       = hit_start - env_start; if (d5p < 0) d5p = 0;
@@ -4891,7 +4899,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
         if (min_djmin == INT_MAX) min_djmin = -1;
         if (min_djmax == INT_MAX) min_djmax = -1;
         if (pt_i_lo == LLONG_MAX) pt_i_lo = -1;
+        else                       pt_i_lo += coord_off;  /* window-rel -> absolute */
         if (pt_i_hi == LLONG_MIN) pt_i_hi = -1;
+        else                       pt_i_hi += coord_off;
         (void)eligible_idx; /* reserved for future per-state direction analysis */
 
         fprintf(pli_debug_f6_envs_fp,
