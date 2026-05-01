@@ -4630,6 +4630,20 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     int ti; for(ti = 0; ti < np7env; ti++) { trA_tmp[ti] = NULL; trA_tmp_es[ti] = -1; trA_tmp_ee[ti] = -1; }
   }
 
+  /* F6SHADOW instrumentation: gated on env var F6SHADOW_DUMP=1.
+   * Per F6 survivor, dump cykbands-specific shadow-fill cost.
+   *   path=hc:   FastCYKScanHB_shmx replaced FastCYKScanHB in dispatch
+   *              (no separate plain-CYK call; we report DP time as the
+   *              shmx call wall, this is an over-estimate of overhead vs
+   *              defppp by the amount that shmx exceeds plain CYK).
+   *   path=bord: extra FastCYKScanHB_shmx after plain CYK; we time JUST
+   *              that extra call. Pure cykbands overhead.
+   *   path=miss: F6 survivor but no parsetree captured (overflow etc).
+   */
+  int f6shadow_dump = (getenv("F6SHADOW_DUMP") != NULL);
+  ESL_STOPWATCH *w_f6shadow = NULL;
+  if(f6shadow_dump && pli->do_cykbands) w_f6shadow = esl_stopwatch_Create();
+
   /* Determine bit score cutoff for CYK envelope redefinition, any
    * residue that exists in a CYK hit that reaches this threshold will
    * be included in the redefined envelope, any that doesn't will not
@@ -4734,18 +4748,41 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
          * exactly the post-redef range. So shifting/storing as post-redef
          * envelope is correct. */
         pli->last_dispatch_tr = NULL;
+        if(f6shadow_dump) {
+          /* hc path: dispatch DP wall replaced plain CYK with shmx.
+           * The full DP time is reported; pure overhead = shmx_DP - plain_CYK_DP
+           * (we don't have plain CYK time on same env to subtract). */
+          fprintf(stderr, "F6SHADOW\t%s\t%lld\t%lld\t%d\thc\t%.0f\n",
+                  cm->name,
+                  (long long)p7es[i], (long long)p7ee[i],
+                  (int)(p7ee[i] - p7es[i] + 1),
+                  pli->last_dispatch_dp * 1.0e6);
+        }
       }
       else {
         Parsetree_t *new_tr = NULL;
         float dummy_sc;
         float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
+        if(w_f6shadow) esl_stopwatch_Start(w_f6shadow);
         int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
                                              sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
                                              0., NULL, NULL, &new_tr, &dummy_sc);
+        if(w_f6shadow) esl_stopwatch_Stop(w_f6shadow);
         if(tr_status == eslOK && new_tr != NULL) {
           trA_tmp[i]    = new_tr;
           trA_tmp_es[i] = p7es[i];
           trA_tmp_ee[i] = p7ee[i];
+        }
+        if(f6shadow_dump) {
+          /* bord path: pure cykbands overhead — this shmx call would not
+           * exist without --cykbands. */
+          double bord_us = w_f6shadow ? (w_f6shadow->elapsed * 1.0e6) : 0.0;
+          fprintf(stderr, "F6SHADOW\t%s\t%lld\t%lld\t%d\t%s\t%.0f\n",
+                  cm->name,
+                  (long long)p7es[i], (long long)p7ee[i],
+                  (int)(p7ee[i] - p7es[i] + 1),
+                  (tr_status == eslOK && new_tr != NULL) ? "bord" : "miss",
+                  bord_us);
         }
       }
     }
@@ -4797,17 +4834,19 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
+  if(w_f6shadow != NULL) esl_stopwatch_Destroy(w_f6shadow);
   *ret_es   = es;
   *ret_ee   = ee;
   *ret_nenv = nenv;
 
   return eslOK;
 
- ERROR: 
+ ERROR:
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
   if(es     != NULL) free(es);
   if(ee     != NULL) free(ee);
+  if(w_f6shadow != NULL) esl_stopwatch_Destroy(w_f6shadow);
   *ret_es   = NULL;
   *ret_ee   = NULL;
   *ret_nenv = 0;
