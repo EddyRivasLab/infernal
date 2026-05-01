@@ -763,7 +763,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   /* Allocate trace array */
   ESL_ALLOC(tr, sizeof(P7_TRACE *) * nseq);
   for (idx = 0; idx < nseq; idx++)
-    tr[idx] = p7_trace_CreateWithPP();
+    tr[idx] = do_hmmvit ? p7_trace_Create() : p7_trace_CreateWithPP();
 
   /* ---- Compute traces for each sequence ---- */
   for (idx = 0; idx < nseq; idx++) {
