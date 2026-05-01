@@ -2382,8 +2382,12 @@ typedef struct cm_pipeline_s {
   /* Per-stage cap on the per-CM tightening factor (CMH_FILTER_PVAL_CUTOFFS).
    * effective_factor(stage) = min(cm_filter_ceiling_factor_clen(cm->clen), F*_cap)
    * where logistic factor() asymptotes at 30. Each cap can be lowered to
-   * preserve recall at the cost of speed. Defaults: 30/30/30 (no extra cap).
+   * preserve recall at the cost of speed.
+   *
+   * The whole pcut path is opt-in via use_fil_pcut. Defaults when enabled:
+   * 10/10/10 (recommended cap from rmark4 sweep; strict improvement over 30×).
    */
+  int     use_fil_pcut;
   double  pcut_F1_cap;
   double  pcut_F2_cap;
   double  pcut_F3_cap;

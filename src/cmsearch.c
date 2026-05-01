@@ -246,10 +246,14 @@ static ESL_OPTIONS options[] = {
   { "--p7iprob",   eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max insert phi prob for pruning",                                     106 },
   { "--p7ilprob",  eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max left-insert phi prob for pruning",                                106 },
   /* per-CM F1/F2/F3 cutoff caps (CMH_FILTER_PVAL_CUTOFFS pcut). Search-time
-   * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap). */
-  { "--pcut-F1cap", eslARG_REAL, "30.0", NULL, "x>=1.0", NULL, NULL, NULL, "with pcut: max F1 tightening factor",                                            106 },
-  { "--pcut-F2cap", eslARG_REAL, "30.0", NULL, "x>=1.0", NULL, NULL, NULL, "with pcut: max F2 tightening factor",                                            106 },
-  { "--pcut-F3cap", eslARG_REAL, "30.0", NULL, "x>=1.0", NULL, NULL, NULL, "with pcut: max F3 tightening factor",                                            106 },
+   * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap).
+   * Whole feature is opt-in via --use-fil-pcut; without that flag, F1F2F3CUT in
+   * the CM file is ignored. With --use-fil-pcut, default cap is 10 per stage
+   * (validated as the strict-improvement Pareto point on rmark4). */
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "enable per-CM F1/F2/F3 P-value override (reads F1F2F3CUT from CM file)", 106 },
+  { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
+  { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
+  { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },

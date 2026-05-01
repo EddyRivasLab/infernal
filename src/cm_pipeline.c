@@ -746,10 +746,15 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->F2_orig  = pli->F2;
   pli->F3_orig  = pli->F3;
   pli->F3b_orig = pli->F3b;
-  /* Per-stage caps on per-CM tightening factor. */
-  pli->pcut_F1_cap = esl_opt_IsUsed(go, "--pcut-F1cap") ? esl_opt_GetReal(go, "--pcut-F1cap") : 30.0;
-  pli->pcut_F2_cap = esl_opt_IsUsed(go, "--pcut-F2cap") ? esl_opt_GetReal(go, "--pcut-F2cap") : 30.0;
-  pli->pcut_F3_cap = esl_opt_IsUsed(go, "--pcut-F3cap") ? esl_opt_GetReal(go, "--pcut-F3cap") : 30.0;
+  /* Per-CM filter pcut: opt-in via --use-fil-pcut. Without that flag,
+   * F1F2F3CUT in the CM file is ignored regardless of the cap settings.
+   * With it, default cap is 10× per stage (recommended from rmark4 sweep).
+   */
+  pli->use_fil_pcut = (esl_opt_IsUsed(go, "--use-fil-pcut") &&
+                       esl_opt_GetBoolean(go, "--use-fil-pcut")) ? TRUE : FALSE;
+  pli->pcut_F1_cap = esl_opt_IsUsed(go, "--pcut-F1cap") ? esl_opt_GetReal(go, "--pcut-F1cap") : 10.0;
+  pli->pcut_F2_cap = esl_opt_IsUsed(go, "--pcut-F2cap") ? esl_opt_GetReal(go, "--pcut-F2cap") : 10.0;
+  pli->pcut_F3_cap = esl_opt_IsUsed(go, "--pcut-F3cap") ? esl_opt_GetReal(go, "--pcut-F3cap") : 10.0;
 
   /********************************************************************************/
   /* Configure options for the CM stages */
@@ -1252,7 +1257,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
      * Skip in --max and --nohmm modes (filters disabled there).
      */
     if (cm != NULL && (cm->flags & CMH_FILTER_PVAL_CUTOFFS) &&
-        (! pli->do_max) && (! pli->do_nohmm)) {
+        pli->use_fil_pcut && (! pli->do_max) && (! pli->do_nohmm)) {
       double f       = cm_filter_ceiling_factor_clen(cm->clen);
       /* Stage-specific caps: never tighten more than pcut_F*_cap, even if
        * the logistic curve would (e.g., F1 cap=5 keeps F1 ceiling at
