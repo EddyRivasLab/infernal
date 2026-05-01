@@ -4664,8 +4664,13 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
    *   path=miss: F6 survivor but no parsetree captured (overflow etc).
    */
   int f6shadow_dump = (getenv("F6SHADOW_DUMP") != NULL);
+  /* Lever 1: F6CYKTIMING_DUMP=1 dumps plain-vs-shmx timing pairs on the
+   * borderline path. plain_us = pli->last_dispatch_dp (FastCYKScanHB),
+   * shmx_us = w_f6shadow elapsed (FastCYKScanHB_shmx).
+   * Activates the same w_f6shadow stopwatch as F6SHADOW_DUMP. */
+  int f6cyktiming_dump = (getenv("F6CYKTIMING_DUMP") != NULL);
   ESL_STOPWATCH *w_f6shadow = NULL;
-  if(f6shadow_dump && pli->do_cykbands) w_f6shadow = esl_stopwatch_Create();
+  if((f6shadow_dump || f6cyktiming_dump) && pli->do_cykbands) w_f6shadow = esl_stopwatch_Create();
 
   /* Determine bit score cutoff for CYK envelope redefinition, any
    * residue that exists in a CYK hit that reaches this threshold will
@@ -4810,6 +4815,20 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
                   (int)(p7ee[i] - p7es[i] + 1),
                   (tr_status == eslOK && new_tr != NULL) ? "bord" : "miss",
                   bord_us);
+        }
+        if(f6cyktiming_dump && tr_status == eslOK && new_tr != NULL) {
+          /* Lever 1 timing: pli->last_dispatch_dp is the plain CYK call
+           * (FastCYKScanHB) wall from pli_dispatch_cm_search above.
+           * w_f6shadow timed the extra FastCYKScanHB_shmx call.
+           * Both calls operated on the same envelope range. */
+          double plain_us = pli->last_dispatch_dp * 1.0e6;
+          double shmx_us  = w_f6shadow ? (w_f6shadow->elapsed * 1.0e6) : 0.0;
+          double ratio    = (plain_us > 0.0) ? (shmx_us / plain_us) : 0.0;
+          fprintf(stderr, "F6CYKTIMING\t%s\t%lld\t%lld\t%d\t%.0f\t%.0f\t%.3f\n",
+                  cm->name,
+                  (long long)p7es[i], (long long)p7ee[i],
+                  (int)(p7ee[i] - p7es[i] + 1),
+                  plain_us, shmx_us, ratio);
         }
       }
     }
