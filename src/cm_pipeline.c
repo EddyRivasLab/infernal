@@ -5691,45 +5691,36 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     }
     else if(status == eslOK) {
       /* bands imply a matrix or size mxsize_limit or smaller with tau == cm->tau <= pli->maxtau */
-      /* F7BANDSIZE_DUMP: emit one TSV-ish line per HMM-banded dispatch with the
-       * derived CM_HB_MX size (cells + Mb), labeled by which band-derivation
-       * path produced cm->cp9b. Gated on env var to keep stderr clean by default.
-       */
-      if(getenv("F7BANDSIZE_DUMP") != NULL) {
-        int64_t f7_ncells = 0;
-        float   f7_mb     = 0.;
-        const char *f7_src = pli->use_stored_cp9b   ? "cykbands"
-                            : pli->do_p7post_cp9b   ? "p7post"
-                            : pli->do_msvband       ? "msvband"
-                            : pli->do_vitband       ? "vitband"
-                            : "defppp";
+      /* F7BANDSIZE_DUMP: collect bandsize metadata before DP, then emit line
+       * AFTER DP completes so we can include f7_dp_us alongside band_derive_us. */
+      int     f7d_dump = (getenv("F7BANDSIZE_DUMP") != NULL) ? 1 : 0;
+      int64_t f7d_ncells = 0;
+      float   f7d_mb     = 0.;
+      int64_t f7d_active = 0;
+      int     f7d_njvalid = 0;
+      int     f7d_M       = 0;
+      const char *f7d_src = "defppp";
+      if(f7d_dump) {
+        f7d_src = pli->use_stored_cp9b   ? "cykbands"
+                : pli->do_p7post_cp9b    ? "p7post"
+                : pli->do_msvband        ? "msvband"
+                : pli->do_vitband        ? "vitband"
+                : "defppp";
         if(cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, (int)(stop - start + 1),
-                               &f7_ncells, &f7_mb) == eslOK) {
-          /* Active cells: sum cells only for Jvalid states. With --cykbands-strict
-           * this is much smaller than f7_ncells, since allocation is per-state but
-           * the DP only computes for Jvalid=TRUE states. */
-          int64_t f7_active = 0;
-          int     v_, jp_;
-          int     n_jvalid = 0;
+                               &f7d_ncells, &f7d_mb) == eslOK) {
+          int v_, jp_;
           for(v_ = 0; v_ < cm->cp9b->cm_M; v_++) {
             if(cm->cp9b->Jvalid[v_]) {
-              n_jvalid++;
+              f7d_njvalid++;
               for(jp_ = 0; jp_ <= (cm->cp9b->jmax[v_] - cm->cp9b->jmin[v_]); jp_++) {
-                f7_active += cm->cp9b->hdmax[v_][jp_] - cm->cp9b->hdmin[v_][jp_] + 1;
+                f7d_active += cm->cp9b->hdmax[v_][jp_] - cm->cp9b->hdmin[v_][jp_] + 1;
               }
             }
           }
-          fprintf(stderr, "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\t%" PRId64 "\t%d\t%d\n",
-                  cm->name,
-                  start, stop,
-                  (int)(stop - start + 1),
-                  f7_ncells,
-                  f7_mb,
-                  do_inside ? 1 : 0,
-                  f7_src,
-                  f7_active,
-                  n_jvalid,
-                  cm->cp9b->cm_M);
+          f7d_M = cm->cp9b->cm_M;
+        }
+        else {
+          f7d_dump = 0; /* SizeNeeded failed; skip dump */
         }
       }
       esl_stopwatch_Start(w_dp);
@@ -5771,6 +5762,36 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
       esl_stopwatch_Stop(w_dp);
       pli->last_dispatch_dp = w_dp->elapsed;
+      if(f7d_dump) {
+        /* Schema:
+         *   F7BANDSIZE  cm  env_start  env_end  env_len  total_cells  mb
+         *               do_inside  band_source  active_cells  n_jvalid  M
+         *               band_derive_us  f7_dp_us
+         * Notes:
+         *   band_derive_us  = wall-time of the cp9-bands path (use_stored_cp9b
+         *                     short-circuit, p7post, vit/msv, or defppp
+         *                     cp9_IterateSeq2Bands), measured by w_cp9.
+         *   f7_dp_us        = wall-time of the F7 DP call (FastCYKScanHB /
+         *                     FastFInsideScanHB / TrCYKScanHB / FTrInsideScanHB
+         *                     / FastCYKScanHB_shmx). Includes the matrix
+         *                     GrowTo done inside the DP function — alloc is
+         *                     not separable without modifying those call sites.
+         */
+        fprintf(stderr,
+                "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\t%" PRId64 "\t%d\t%d\t%.0f\t%.0f\n",
+                cm->name,
+                start, stop,
+                (int)(stop - start + 1),
+                f7d_ncells,
+                f7d_mb,
+                do_inside ? 1 : 0,
+                f7d_src,
+                f7d_active,
+                f7d_njvalid,
+                f7d_M,
+                pli->last_dispatch_cp9bands * 1.0e6,
+                pli->last_dispatch_dp       * 1.0e6);
+      }
     }
     esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
   }
