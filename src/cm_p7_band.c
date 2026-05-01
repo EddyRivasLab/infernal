@@ -4031,8 +4031,31 @@ cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int
     pocc_arr[k] = pocc;
     if(pocc > pocc_max) pocc_max = pocc;
   }
-  if(do_renorm && pocc_max > 0.0) renorm = 1.0 / pocc_max;
-  else                            renorm = 1.0;
+  /* Pick calibration constant C. In glocal mode, choose median pocc across the
+   * central 50% of reachable nodes (option (a) from brief, robust to terminus
+   * outliers). In local mode, leave at 1.0 (do_renorm=FALSE). pocc decays
+   * monotonically with k due to per-cell precision drift accumulating along the
+   * F/B traversal direction; a multiplicative C centered on the bulk of nodes
+   * pulls the median up to ~1.0 so thresh2=0.98 becomes reachable across the
+   * full model. */
+  if(do_renorm) {
+    int n_reach = 0;
+    for(k = 1; k <= cp9b->hmm_M; k++) if(pocc_arr[k] >= 0.0) n_reach++;
+    if(n_reach > 0) {
+      float *psorted = malloc(sizeof(float) * n_reach);
+      int j = 0;
+      for(k = 1; k <= cp9b->hmm_M; k++) if(pocc_arr[k] >= 0.0) psorted[j++] = pocc_arr[k];
+      /* simple insertion sort suffices for n up to ~10K (one-shot, infrequent) */
+      esl_vec_FSortIncreasing(psorted, n_reach);
+      int q25 = n_reach / 4;
+      int q75 = (3 * n_reach) / 4;
+      float median = (q75 > q25) ? psorted[(q25 + q75) / 2] : psorted[n_reach / 2];
+      free(psorted);
+      renorm = (median > 0.0) ? (1.0 / median) : 1.0;
+    }
+    else renorm = 1.0;
+  }
+  else renorm = 1.0;
 
   /* Part 1: Find sp1/sp2 — first nodes (left to right) with significant occupancy */
   k = 1;

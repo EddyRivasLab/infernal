@@ -4862,8 +4862,26 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0, i
     pocc_arr[k] = pocc;
     if(pocc > pocc_max) pocc_max = pocc;
   }
-  if(do_renorm && pocc_max > 0.0) renorm = 1.0 / pocc_max;
-  else                            renorm = 1.0;
+  /* Pick calibration constant C: in glocal, median pocc across central 50%
+   * of reachable nodes (option (a), robust to terminus outliers). In local
+   * mode (do_renorm=FALSE), leave C=1. */
+  if(do_renorm) {
+    int n_reach = 0;
+    for(k = 1; k <= cp9b->hmm_M; k++) if(pocc_arr[k] >= 0.0) n_reach++;
+    if(n_reach > 0) {
+      float *psorted = malloc(sizeof(float) * n_reach);
+      int j = 0;
+      for(k = 1; k <= cp9b->hmm_M; k++) if(pocc_arr[k] >= 0.0) psorted[j++] = pocc_arr[k];
+      esl_vec_FSortIncreasing(psorted, n_reach);
+      int q25 = n_reach / 4;
+      int q75 = (3 * n_reach) / 4;
+      float median = (q75 > q25) ? psorted[(q25 + q75) / 2] : psorted[n_reach / 2];
+      free(psorted);
+      renorm = (median > 0.0) ? (1.0 / median) : 1.0;
+    }
+    else renorm = 1.0;
+  }
+  else renorm = 1.0;
 
   /* Calculate minimum start positions: */
   k = 1;
