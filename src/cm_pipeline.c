@@ -1184,6 +1184,29 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     pli->cmW  = cm_W;
     pli->clen = cm_clen;
 
+    /* Lever 3: auto-disable cykbands for small CMs where the path's
+     * overhead exceeds its benefit. CYKBANDS_MIN_CLEN env var only
+     * DOWN-gates an already-on cykbands setting per-CM; never up-gates.
+     * Default behavior (env unset) is unchanged.
+     *
+     * To survive heterogeneous CM files, we cache the user's original
+     * --cykbands setting in a function-static the first time we see it,
+     * then re-apply per-call.  (Single-pipeline-per-process is the norm
+     * for cmsearch; this is an experimental hook.)  */
+    {
+      const char *min_clen_env = getenv("CYKBANDS_MIN_CLEN");
+      if(min_clen_env) {
+        static int cb_user_cached = -1;
+        if(cb_user_cached == -1) cb_user_cached = pli->do_cykbands;
+        int cb_min_clen = atoi(min_clen_env);
+        if(cb_user_cached && cm_clen < cb_min_clen) {
+          pli->do_cykbands = FALSE;
+        } else {
+          pli->do_cykbands = cb_user_cached;
+        }
+      }
+    }
+
     /* determine pli->maxW, this will be one more than the number of
      * residues that must overlap between adjacent windows on a single
      * sequence, this is MAX of cm->W and pli->cmult * cm->clen.
