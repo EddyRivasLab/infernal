@@ -1996,6 +1996,9 @@ typedef struct cm_s {
 #define CM_ALIGN_INSIDE        (1<<20) /* use Inside algorithm                     */
 #define CM_ALIGN_TRUNC         (1<<21) /* use truncated alignment algorithms       */
 #define CM_ALIGN_XTAU          (1<<22) /* multiply tau until banded mx size < limit*/ 
+#define CM_ALIGN_P7HMM         (1<<23) /* use p7 HMM only to align (no CM)         */
+#define CM_ALIGN_P7HMMVIT      (1<<24) /* w/P7HMM: Viterbi traces (no OA)          */
+#define CM_ALIGN_P7HMMNOBAND   (1<<25) /* w/P7HMM: unbanded OA (no Vit banding)    */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
