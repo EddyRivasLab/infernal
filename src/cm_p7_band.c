@@ -2107,7 +2107,11 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
 
   /* Step 2c: Set truncation candidate valid arrays. */
   if(do_trunc) {
-    cp9_PredictStartAndEndPositionsP7B(pmx, cp9b, kmin, kmax, i0, j0);
+    /* Renormalize per-node pocc only in glocal mode: in glocal, every reachable node
+     * should be at occupancy 1.0; any deficit is per-cell precision drift. In local
+     * mode real occupancy can drop below 1.0 at termini, so don't rescale. */
+    int do_renorm = (cm->flags & CMH_LOCAL_BEGIN) ? FALSE : TRUE;
+    cp9_PredictStartAndEndPositionsP7B(pmx, cp9b, kmin, kmax, i0, j0, do_renorm);
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
@@ -3996,30 +4000,49 @@ cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
  * Returns:  void. cp9b->sp1/sp2/ep1/ep2 and Rmarg/Lmarg bounds are set.
  */
 void
-cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0)
+cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int do_renorm)
 {
   int i;
   int k;
   int L = j0-i0+1;
-  int   iocc;
   float pocc;
+  float *pocc_arr;
+  float pocc_max;
+  float renorm;
+
+  /* Pre-pass: compute per-node pocc[k] in float space (avoid ILogsum precision floor),
+   * and find max across reachable nodes. In glocal mode the most-occupied node should
+   * be at probability 1.0; if it is < 1.0, attribute the loss to per-cell posterior
+   * precision drift and rescale uniformly so pocc'[max] = 1.0. */
+  pocc_arr = malloc(sizeof(float) * (cp9b->hmm_M + 1));
+  if(pocc_arr == NULL) cm_Fail("cp9_PredictStartAndEndPositionsP7B(): malloc failed for pocc_arr");
+  for(k = 0; k <= cp9b->hmm_M; k++) pocc_arr[k] = -1.0;
+  pocc_max = 0.0;
+  for(k = 1; k <= cp9b->hmm_M; k++) {
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+    pocc = 0.0;
+    for(i = 0; i <= L; i++) {
+      if(k >= kmin[i] && k <= kmax[i]) {
+	int kp = k - kmin[i];
+	pocc += Score2Prob(pmx->mmx[i][kp], 1.);
+	pocc += Score2Prob(pmx->dmx[i][kp], 1.);
+      }
+    }
+    pocc_arr[k] = pocc;
+    if(pocc > pocc_max) pocc_max = pocc;
+  }
+  if(do_renorm && pocc_max > 0.0) renorm = 1.0 / pocc_max;
+  else                            renorm = 1.0;
 
   /* Part 1: Find sp1/sp2 — first nodes (left to right) with significant occupancy */
   k = 1;
   cp9b->sp1 = cp9b->sp2 = -1;
   while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) {
-    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+    if(pocc_arr[k] < 0.0) {
       k++;
     }
     else {
-      iocc = -INFTY;
-      for(i = 0; i <= L; i++) {
-	if(k >= kmin[i] && k <= kmax[i]) {
-	  int kp = k - kmin[i];
-	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][kp], pmx->dmx[i][kp]));
-	}
-      }
-      pocc = Score2Prob(iocc, 1.);
+      pocc = pocc_arr[k] * renorm;
       if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
       if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
       k++;
@@ -4040,18 +4063,11 @@ cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int
     cp9b->ep1 = cp9b->ep2 = -1;
     k = cp9b->hmm_M;
     while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) {
-      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+      if(pocc_arr[k] < 0.0) {
 	k--;
       }
       else {
-	iocc = -INFTY;
-	for(i = 0; i <= L; i++) {
-	  if(k >= kmin[i] && k <= kmax[i]) {
-	    int kp = k - kmin[i];
-	    iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][kp], pmx->dmx[i][kp]));
-	  }
-	}
-	pocc = Score2Prob(iocc, 1.);
+	pocc = pocc_arr[k] * renorm;
 	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
 	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
 	k--;
@@ -4062,6 +4078,7 @@ cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int
       if(cp9b->ep2 == -1) { cp9b->ep2 = 0; }
     }
   }
+  free(pocc_arr);
 
   /* Parts 3-4: Derive Rmarg_imin/imax from sp1/sp2, Lmarg_jmin/jmax from ep1/ep2.
    * These only use pn_min/pn_max arrays (not the posterior matrix), so they are
