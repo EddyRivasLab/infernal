@@ -4682,8 +4682,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
        * (analysis script binned envelopes by F5 P-value and measured F6
        * pass-rate): bucket -10 has ~93% pass, bucket -15 has ~100%, but
        * the cost of a wrong guess (one wasted shmx call) is small, so
-       * 1e-10 strikes the right balance. */
-      if(f5_pval <= 1e-10) high_conf = TRUE;
+       * 1e-10 strikes the right balance. Env-overridable via
+       * CYKBANDS_F5_THRESH for sweep experiments (Lever 2). */
+      double cb_f5_thresh = 1e-10;
+      const char *cb_f5_thresh_env = getenv("CYKBANDS_F5_THRESH");
+      if(cb_f5_thresh_env) cb_f5_thresh = strtod(cb_f5_thresh_env, NULL);
+      if(f5_pval <= cb_f5_thresh) high_conf = TRUE;
     }
 
     /* DEBUG: dump per-envelope F5 P-value + F6 score for tuning */
