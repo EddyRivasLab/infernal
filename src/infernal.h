@@ -1923,6 +1923,15 @@ typedef struct cm_s {
   int          *p7_nodepad;   /* [0..p7_nodepad_M] per-node pad array; NULL if not set */
   int           p7_nodepad_M; /* length of p7_nodepad (= fp7->M); 0 if not set */
 
+  /* per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS). Computed by
+   * cm_CalibrateFilterPvalCutoffs() at cmbuild time from N CM-emitted sequences.
+   * The pipeline (cm_pli_NewModel) substitutes these for pli->F1/F2/F3 when the
+   * flag is set, allowing a CM-specific tightening of the HMM filter stages.
+   * Floor = global default (loosest), ceiling = default/10 (tightest). */
+  float         F1_pcutoff;   /* per-CM F1 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F2_pcutoff;   /* per-CM F2 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F3_pcutoff;   /* per-CM F3 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
 
@@ -1959,6 +1968,7 @@ typedef struct cm_s {
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
+#define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -2360,6 +2370,27 @@ typedef struct cm_pipeline_s {
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F4b;		        /* bias-corrected gloc Forward filter threshold */
   double  F5b;		        /* bias-corrected env def filter threshold  */
+  /* original (pipeline-default) F1/F2/F3 thresholds, saved before any
+   * per-CM override (CMH_FILTER_PVAL_CUTOFFS). Used in cm_pli_NewModel()
+   * to restore defaults between CMs when per-CM override applies, and as
+   * a floor (loosest allowed) so per-CM cutoffs never loosen the pipeline.
+   */
+  double  F1_orig;
+  double  F2_orig;
+  double  F3_orig;
+  double  F3b_orig;
+  /* Per-stage cap on the per-CM tightening factor (CMH_FILTER_PVAL_CUTOFFS).
+   * effective_factor(stage) = min(cm_filter_ceiling_factor_clen(cm->clen), F*_cap)
+   * where logistic factor() asymptotes at 30. Each cap can be lowered to
+   * preserve recall at the cost of speed.
+   *
+   * The whole pcut path is opt-in via use_fil_pcut. Defaults when enabled:
+   * 10/10/10 (recommended cap from rmark4 sweep; strict improvement over 30×).
+   */
+  int     use_fil_pcut;
+  double  pcut_F1_cap;
+  double  pcut_F2_cap;
+  double  pcut_F3_cap;
   /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
@@ -3181,6 +3212,10 @@ extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7
 				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
+
+/* from cm_filtercutoff.c */
+extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf);
+extern double       cm_filter_ceiling_factor_clen(int clen);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);

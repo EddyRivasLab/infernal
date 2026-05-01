@@ -739,6 +739,23 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* Finished setting filter stage on/off parameters and thresholds */
   /********************************************************************************/
 
+  /* Save the original F1/F2/F3 thresholds so cm_pli_NewModel() can apply
+   * per-CM overrides (CMH_FILTER_PVAL_CUTOFFS) without loosing the originals.
+   */
+  pli->F1_orig  = pli->F1;
+  pli->F2_orig  = pli->F2;
+  pli->F3_orig  = pli->F3;
+  pli->F3b_orig = pli->F3b;
+  /* Per-CM filter pcut: opt-in via --use-fil-pcut. Without that flag,
+   * F1F2F3CUT in the CM file is ignored regardless of the cap settings.
+   * With it, default cap is 10× per stage (recommended from rmark4 sweep).
+   */
+  pli->use_fil_pcut = (esl_opt_IsUsed(go, "--use-fil-pcut") &&
+                       esl_opt_GetBoolean(go, "--use-fil-pcut")) ? TRUE : FALSE;
+  pli->pcut_F1_cap = esl_opt_IsUsed(go, "--pcut-F1cap") ? esl_opt_GetReal(go, "--pcut-F1cap") : 10.0;
+  pli->pcut_F2_cap = esl_opt_IsUsed(go, "--pcut-F2cap") ? esl_opt_GetReal(go, "--pcut-F2cap") : 10.0;
+  pli->pcut_F3_cap = esl_opt_IsUsed(go, "--pcut-F3cap") ? esl_opt_GetReal(go, "--pcut-F3cap") : 10.0;
+
   /********************************************************************************/
   /* Configure options for the CM stages */
   pli->do_null2   = esl_opt_GetBoolean(go, "--null2")   ? TRUE  : FALSE;
@@ -1221,8 +1238,56 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     }
 
     /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
-    if (pli->use_bit_cutoffs) { 
+    if (pli->use_bit_cutoffs) {
       if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
+    }
+
+    /* If the CM has per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS,
+     * computed at cmbuild time as raw 99%-quantile of CM emissions), apply
+     * floor/ceiling/monotonicity HERE — calibration stored only the raw
+     * quantile so policy can scale with the Z-tier-aware pli->F*_orig.
+     *
+     * Floor   = pli->F*_orig  (never looser than the pipeline default; if
+     *                          raw quantile is looser, use the default)
+     * Ceiling = pli->F*_orig / factor(clen)
+     *           where factor() is the logistic CLEN-scaled curve (max 30×;
+     *           see cm_filter_ceiling_factor_clen() in cm_filtercutoff.c).
+     * Monotonicity F1>=F2>=F3 re-enforced after both clamps.
+     *
+     * Skip in --max and --nohmm modes (filters disabled there).
+     */
+    if (cm != NULL && (cm->flags & CMH_FILTER_PVAL_CUTOFFS) &&
+        pli->use_fil_pcut && (! pli->do_max) && (! pli->do_nohmm)) {
+      double f       = cm_filter_ceiling_factor_clen(cm->clen);
+      /* Stage-specific caps: never tighten more than pcut_F*_cap, even if
+       * the logistic curve would (e.g., F1 cap=5 keeps F1 ceiling at
+       * pli_orig/5 even when factor(clen)=30 for big CMs). */
+      double f_F1    = ESL_MIN(f, pli->pcut_F1_cap);
+      double f_F2    = ESL_MIN(f, pli->pcut_F2_cap);
+      double f_F3    = ESL_MIN(f, pli->pcut_F3_cap);
+      double F1_ceil = pli->F1_orig  / f_F1;
+      double F2_ceil = pli->F2_orig  / f_F2;
+      double F3_ceil = pli->F3_orig  / f_F3;
+      double F3b_ceil = pli->F3b_orig / f_F3;
+      double F1_use  = ESL_MIN(pli->F1_orig,  ESL_MAX(F1_ceil,  (double) cm->F1_pcutoff));
+      double F2_use  = ESL_MIN(pli->F2_orig,  ESL_MAX(F2_ceil,  (double) cm->F2_pcutoff));
+      double F3_use  = ESL_MIN(pli->F3_orig,  ESL_MAX(F3_ceil,  (double) cm->F3_pcutoff));
+      double F3b_use = ESL_MIN(pli->F3b_orig, ESL_MAX(F3b_ceil, (double) cm->F3_pcutoff));
+      /* Monotonicity F1 >= F2 >= F3, re-enforced after clamping. F3b
+       * mirrors F3 throughout cm_pipeline; pin to F2 if violation. */
+      if (F2_use  > F1_use) F2_use  = F1_use;
+      if (F3_use  > F2_use) F3_use  = F2_use;
+      if (F3b_use > F2_use) F3b_use = F2_use;
+      pli->F1  = F1_use;
+      pli->F2  = F2_use;
+      pli->F3  = F3_use;
+      pli->F3b = F3b_use;
+    }
+    else {
+      pli->F1  = pli->F1_orig;
+      pli->F2  = pli->F2_orig;
+      pli->F3  = pli->F3_orig;
+      pli->F3b = pli->F3b_orig;
     }
   }
   return eslOK;

@@ -156,6 +156,9 @@ CreateCMShell(void)
   cm->fp7          = NULL;
   cm->p7_nodepad   = NULL;
   cm->p7_nodepad_M = 0;
+  cm->F1_pcutoff   = 0.0f;
+  cm->F2_pcutoff   = 0.0f;
+  cm->F3_pcutoff   = 0.0f;
 
   for (z = 0; z < CM_p7_NEVPARAM; z++) cm->fp7_evparam[z]  = CM_p7_EVPARAM_UNSET;
 
@@ -3182,6 +3185,11 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     ESL_ALLOC(new->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
     memcpy(new->p7_nodepad, cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
     new->p7_nodepad_M = cm->p7_nodepad_M;
+  }
+  if(cm->flags & CMH_FILTER_PVAL_CUTOFFS) {
+    new->F1_pcutoff = cm->F1_pcutoff;
+    new->F2_pcutoff = cm->F2_pcutoff;
+    new->F3_pcutoff = cm->F3_pcutoff;
   }
 
 
