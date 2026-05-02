@@ -3877,6 +3877,22 @@ cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
     esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
   }
 
+  /* strict-alloc: shrink Jvalid=FALSE states' i,j bands to a single
+   * sentinel cell so the matrix allocator doesn't reserve memory for
+   * cells the DP will never compute. ij2d_bands below recomputes
+   * hdmin/hdmax from the shrunk imin/imax, so the d-band collapses too.
+   * The DP's existing Jvalid gating prevents the sentinel cells from
+   * being read for actual scores.
+   */
+  if(!do_trunc && strict_unvisited) {
+    for(v = 0; v < M; v++) {
+      if(!cp9b->Jvalid[v]) {
+        cp9b->imin[v] = cp9b->imax[v] = i0;
+        cp9b->jmin[v] = cp9b->jmax[v] = i0;
+      }
+    }
+  }
+
   cp9b->tau = cm->tau;
 
   /* Compute hdmin/hdmax */
