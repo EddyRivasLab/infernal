@@ -3190,6 +3190,9 @@ extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *e
 extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
 extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
+extern int          cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_PosteriorP7BF(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, int *kmin, int *kmax);
 extern int          cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
