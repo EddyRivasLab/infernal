@@ -386,11 +386,7 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
 
   /* Step: Marginal-alignment candidate states (thresh1/thresh2-dependent, only for truncation passes). */
   if(do_trunc) {
-    /* Renormalize per-node pocc only in glocal mode: in glocal, every reachable
-     * node should be at occupancy 1.0; any deficit is per-cell precision drift.
-     * In local mode, real occupancy can drop below 1.0 at termini, so don't rescale. */
-    int do_renorm = (cm->flags & CMH_LOCAL_BEGIN) ? FALSE : TRUE;
-    cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0, do_renorm);
+    cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
@@ -4884,109 +4880,75 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
  * xref: ELN2 notebook, p.146-147; ~nawrockie/notebook/11_0816_inf_banded_trcyk/00LOG 
  */
 void
-cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0, int do_renorm)
+cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 {
   int i;
   int k;                                  /* counter over nodes of the model */
   int L = j0-i0+1;                        /* length of sequence */
+  int   iocc;       /* occupancy probability, scaled int form */
   float pocc;       /* occupancy probability, probability form */
-  float *pocc_arr;  /* per-node pocc (float-space sum, NULL-terminated by caller) */
-  float pocc_max;   /* max pocc across reachable nodes; calibration constant C */
-  float renorm;     /* 1.0 / pocc_max (or 1.0 if not renormalizing) */
-
-  /* Pre-pass: compute per-node pocc[k] in float space (avoid ILogsum precision floor),
-   * and find max across reachable nodes. In glocal mode, the most-occupied node should
-   * be at probability 1.0; if it is < 1.0, we attribute the loss to per-cell posterior
-   * precision drift and rescale uniformly so pocc'[max] = 1.0. */
-  pocc_arr = malloc(sizeof(float) * (cp9b->hmm_M + 1));
-  if(pocc_arr == NULL) cm_Fail("cp9_PredictStartAndEndPositions(): malloc failed for pocc_arr");
-  for(k = 0; k <= cp9b->hmm_M; k++) pocc_arr[k] = -1.0;
-  pocc_max = 0.0;
-  for(k = 1; k <= cp9b->hmm_M; k++) {
-    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
-    pocc = 0.0;
-    for(i = 0; i <= L; i++) {
-      pocc += Score2Prob(pmx->mmx[i][k], 1.);
-      pocc += Score2Prob(pmx->dmx[i][k], 1.);
-    }
-    pocc_arr[k] = pocc;
-    if(pocc > pocc_max) pocc_max = pocc;
-  }
-  /* Pick calibration constant C: in glocal, median pocc across central 50%
-   * of reachable nodes (option (a), robust to terminus outliers). In local
-   * mode (do_renorm=FALSE), leave C=1. */
-  if(do_renorm) {
-    int n_reach = 0;
-    for(k = 1; k <= cp9b->hmm_M; k++) if(pocc_arr[k] >= 0.0) n_reach++;
-    if(n_reach > 0) {
-      float *psorted = malloc(sizeof(float) * n_reach);
-      int j = 0;
-      for(k = 1; k <= cp9b->hmm_M; k++) if(pocc_arr[k] >= 0.0) psorted[j++] = pocc_arr[k];
-      esl_vec_FSortIncreasing(psorted, n_reach);
-      int q25 = n_reach / 4;
-      int q75 = (3 * n_reach) / 4;
-      float median = (q75 > q25) ? psorted[(q25 + q75) / 2] : psorted[n_reach / 2];
-      free(psorted);
-      renorm = (median > 0.0) ? (1.0 / median) : 1.0;
-    }
-    else renorm = 1.0;
-  }
-  else renorm = 1.0;
 
   /* Calculate minimum start positions: */
   k = 1;
   cp9b->sp1 = cp9b->sp2 = -1;
-  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) {
-    if(pocc_arr[k] < 0.0) {
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) { 
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
       /*printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);*/
       k++;
-      /* M, I, D states in node k are unreachable (no posterior cells had more than
+      /* M, I, D states in node k are unreachable (no posterior cells had more than 
        * cm->tau probability mass), k won't be our sp1 or sp2 */
     }
-    else {
-      pocc = pocc_arr[k] * renorm;
+    else { 
+      iocc = -INFTY;
+      for(i = 0; i <= L; i++) {
+	iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+      }
+      pocc = Score2Prob(iocc, 1.);
       /*printf("k: %4d pocc: %.4f\n", k, pocc);*/
       if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
       if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
       k++;
     }
   }
-  if(k == cp9b->hmm_M+1) {
+  if(k == cp9b->hmm_M+1) { 
     if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh1, set as out-of-bounds value M+1 */
     if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; } /* no node k has occupancy > thresh2,  set as out-of-bounds value M+1 */
   }
-
+  
   /* Calculate maximum end positions: */
-  if((cp9b->sp1 == cp9b->hmm_M+1) &&
-     (cp9b->sp2 == cp9b->hmm_M+1)) {
+  if((cp9b->sp1 == cp9b->hmm_M+1) && 
+     (cp9b->sp2 == cp9b->hmm_M+1)) { 
     /* we already know that there's no nodes that satisfy either thresh1 or thresh2, we can save time here */
     cp9b->ep1 = 0;
     cp9b->ep2 = 0;
   }
-  else {
+  else { 
     cp9b->ep1 = cp9b->ep2 = -1;
     k = cp9b->hmm_M;
-    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) {
-      if(pocc_arr[k] < 0.0) {
+    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) { 
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) { 
 	/*printf("k: %4d pocc IRRELEVANT (k unreachable, skipping)\n", k);*/
 	k--;
-	/* M, I, D states in node k are unreachable (no posterior cells had more than
+	/* M, I, D states in node k are unreachable (no posterior cells had more than 
 	 * cm->tau probability mass), k won't be our ep1 or ep2 */
       }
-      else {
-	pocc = pocc_arr[k] * renorm;
+      else { 
+	iocc = -INFTY;
+	for(i = 0; i <= L; i++) {
+	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+	}
+	pocc = Score2Prob(iocc, 1.);
 	/*printf("k: %4d pocc: %.4f\n", k, pocc);*/
 	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
 	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
 	k--;
       }
     }
-    if(k == 0) {
+    if(k == 0) { 
       if(cp9b->ep1 == -1) { cp9b->ep1 = 0; } /* no node k has occupancy > thresh1, set as out-of-bounds value 0 */
       if(cp9b->ep2 == -1) { cp9b->ep2 = 0; } /* no node k has occupancy > thresh2, set as out-of-bounds value 0 */
     }
   }
-  free(pocc_arr);
 
   /* determine cp9b->{R,L}marg_{i,j}{min,max}, the i and j bands that will be used to allow for marginal left (Lmarg_j{min,max}
    * and marginal right (Rmarg_i{min,max} alignment. */

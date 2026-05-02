@@ -3401,8 +3401,8 @@ extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
 extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int do_trunc);
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
-extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0, int do_renorm);
-extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int do_renorm);
+extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
+extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
 extern void         ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
 			       int **hdmin, int **hdmax, int do_trunc, int debug_level);
