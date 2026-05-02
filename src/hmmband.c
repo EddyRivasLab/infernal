@@ -1248,6 +1248,56 @@ cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx
     }*/
 }
 
+
+/* Function: cp9_PosteriorF()
+ *
+ * Float-precision mirror of cp9_Posterior(). Reads CP9_FMX Forward and
+ * Backward matrices, writes float log-prob posteriors into pmx (CP9_FMX).
+ * Combines: post[i][k] = fmx[i][k] + bmx[i][k] - emit_score[i][k] - sc.
+ */
+void
+cp9_PosteriorF(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *mx, int did_fwd_scan)
+{
+  if(dsq == NULL) cm_Fail("in cp9_PosteriorF(), dsq is NULL.");
+
+  int   i;
+  int   k;
+  float sc;
+  int   L;
+  int   ip;
+
+  L  = j0-i0+1;
+
+  if(did_fwd_scan) {
+    sc = -eslINFINITY;
+    for (ip = 0; ip <= L; ip++) {
+      sc = p7_FLogsum(sc, bmx->mmx[ip][0]);
+    }
+  }
+  else sc = bmx->mmx[0][0];
+
+  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc;
+  mx->imx[0][0] = -eslINFINITY;
+  mx->dmx[0][0] = -eslINFINITY;
+  for (k = 1; k <= hmm->M; k++) {
+    mx->mmx[0][k] = -eslINFINITY;
+    mx->imx[0][k] = -eslINFINITY;
+    mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
+  }
+
+  for (ip = 1; ip <= L; ip++) {
+    i = i0+ip-1;
+    mx->mmx[ip][0] = -eslINFINITY;
+    mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - Scorify(hmm->isc[dsq[i]][0]) - sc;
+    mx->dmx[ip][0] = -eslINFINITY;
+    for (k = 1; k <= hmm->M; k++) {
+      mx->mmx[ip][k] = ESL_MAX(fmx->mmx[ip][k] + bmx->mmx[ip][k] - Scorify(hmm->msc[dsq[i]][k]) - sc, -eslINFINITY);
+      mx->imx[ip][k] = ESL_MAX(fmx->imx[ip][k] + bmx->imx[ip][k] - Scorify(hmm->isc[dsq[i]][k]) - sc, -eslINFINITY);
+      mx->dmx[ip][k] = ESL_MAX(fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc, -eslINFINITY);
+    }
+  }
+}
+
 /*****************************************************************************
  * EPN 03.23.06
  * Function: cp9_IFillPostSums()

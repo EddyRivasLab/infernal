@@ -3263,7 +3263,12 @@ extern int cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i
 		       int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc);
 extern int cp9_ViterbiBackward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			       int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc);
-extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+extern int cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+		    int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc);
+extern int cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+		     int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc);
+extern void cp9_PosteriorF(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *mx, int did_fwd_scan);
+extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
 		       int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
