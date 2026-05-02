@@ -739,6 +739,37 @@ typedef struct cp9_mx_s {
 } CP9_MX;
 
 
+/* CP9_FMX: float-precision mirror of CP9_MX, used by the float-DP CP9
+ * F/B/Posterior path that drives truncated cmalign --p7band band derivation.
+ * The integer-log CP9 F/B accumulates ~3% per-cell precision drift on long
+ * sequences (~1.3% deficit per node-occupancy in glocal mode) that makes the
+ * pocc-based sp/ep predictor unreliable. The float path uses p7_FLogsum for
+ * log-space accumulation, which has ~0.0001 log per call error and is
+ * sufficient for L=10K accumulation. This struct is the exact analogue of
+ * CP9_MX with int*->float* throughout.
+ */
+typedef struct cp9_fmx_s {
+  float **mmx;                  /* match scores  [0.1..N][0..M] */
+  float **imx;                  /* insert scores [0.1..N][0..M] */
+  float **dmx;                  /* delete scores [0.1..N][0..M] */
+  float **elmx;                 /* end local scores [0.1..N][0..M] */
+  float  *erow;                 /* score for E state [0.1..N] */
+  /* Hidden ptrs where the real memory is kept */
+  float *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
+
+  int    M;             /* number of nodes in HMM this mx corresponds to, never changes */
+  int    rows;          /* generally L or 2, # of DP rows in seq dimension */
+  float  size_Mb;       /* current size of matrix in Megabytes */
+
+  /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
+  int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
+  int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
+  int  ncells_allocated; /* number of cells allocated in matrix */
+  int  ncells_valid;     /* number of cells currently valid in the matrix */
+
+} CP9_FMX;
+
+
 /*************************************************************************************
  * 12. CP9Bands_t:  sequence and CM specific HMM bands.
  *************************************************************************************/
@@ -3260,6 +3291,13 @@ extern void    FreeCP9Matrix  (CP9_MX *mx);
 extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
 extern void    InitializeCP9Matrix(CP9_MX *mx);
 extern int     SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax);
+
+/* CP9_FMX (float-precision) matrix functions, from cp9_mx.c */
+extern CP9_FMX *CreateCP9FMatrix(int N, int M);
+extern void     FreeCP9FMatrix  (CP9_FMX *mx);
+extern int      GrowCP9FMatrix  (CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, float ***mmx, float ***imx, float ***dmx, float ***elmx, float **erow);
+extern void     InitializeCP9FMatrix(CP9_FMX *mx);
+extern int      SizeNeededCP9FMatrix(int N, int M, int *kmin, int *kmax);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
