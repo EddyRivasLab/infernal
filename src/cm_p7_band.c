@@ -5499,6 +5499,44 @@ cp9_PredictStartAndEndPositionsP7BF(CP9_FMX *pmx, CP9Bands_t *cp9b, int *kmin, i
   }
   free(pocc_arr);
 
+  /* DIAGNOSTIC (temp, removed in next commit): per-seq summary of the float pocc
+   * sweep. Prints L, M, sp1/sp2/ep1/ep2 and the min pocc over the interior
+   * reachable nodes [sp1+5..ep1-5]. Used to validate the float path before
+   * removing Fix A. */
+  {
+    int   M = cp9b->hmm_M;
+    float pocc_min_interior = 1e9;
+    int   k_min_interior = -1;
+    int   ilo = cp9b->sp1 + 5;
+    int   ihi = cp9b->ep1 - 5;
+    /* recompute pocc_arr (we freed it above) — cheap relative to F/B */
+    pocc_arr = malloc(sizeof(float) * (M + 1));
+    for(k = 0; k <= M; k++) pocc_arr[k] = -1.0;
+    for(k = 1; k <= M; k++) {
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+      pocc = 0.0;
+      for(i = 0; i <= L; i++) {
+	if(k >= kmin[i] && k <= kmax[i]) {
+	  int kp = k - kmin[i];
+	  pocc += expf(pmx->mmx[i][kp]);
+	  pocc += expf(pmx->dmx[i][kp]);
+	}
+      }
+      pocc_arr[k] = pocc;
+    }
+    for(k = ilo; k <= ihi; k++) {
+      if(k >= 1 && k <= M && pocc_arr[k] >= 0.0 && pocc_arr[k] < pocc_min_interior) {
+	pocc_min_interior = pocc_arr[k];
+	k_min_interior = k;
+      }
+    }
+    fprintf(stderr,
+	    "#CP9FLOAT_PREDICT L=%d M=%d sp1=%d sp2=%d ep1=%d ep2=%d  min_pocc_interior=%.4f at k=%d (interior [%d,%d])\n",
+	    L, M, cp9b->sp1, cp9b->sp2, cp9b->ep1, cp9b->ep2,
+	    pocc_min_interior, k_min_interior, ilo, ihi);
+    free(pocc_arr);
+  }
+
   /* Parts 3-4: Rmarg/Lmarg derivation — identical to int variant. */
 
   /* Rmarg_imin */
