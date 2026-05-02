@@ -2754,8 +2754,13 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     if((pmx_f = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating pmx_f");
 
     /* Phase 1: float P7-banded F/B (tau-independent), run once. */
-    if((status = cp9_ForwardP7BF (cp9, errbuf, fmx_f, dsq, L, kmin, kmax, &sc))   != eslOK) goto ERROR;
-    if((status = cp9_BackwardP7BF(cp9, errbuf, bmx_f, dsq, L, kmin, kmax, NULL))  != eslOK) goto ERROR;
+    {
+      float bsc;
+      if((status = cp9_ForwardP7BF (cp9, errbuf, fmx_f, dsq, L, kmin, kmax, &sc))   != eslOK) goto ERROR;
+      if((status = cp9_BackwardP7BF(cp9, errbuf, bmx_f, dsq, L, kmin, kmax, &bsc))  != eslOK) goto ERROR;
+      fprintf(stderr, "#CP9FLOAT_FB L=%d M=%d Fsc=%.4f Bsc=%.4f diff=%.6f\n",
+	      L, cp9->M, sc, bsc, sc - bsc);
+    }
 
     /* Phase 2: iterate tau/thresh until matrix fits. */
     while(1) {
