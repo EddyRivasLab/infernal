@@ -351,7 +351,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
         goto ERROR;
       }
       fprintf(pli_debug_f6_envs_fp,
-              "query_cm\ttarget_seq\tenv_start\tenv_end\tf6_hit_start\tf6_hit_end\t"
+              "query_cm\ttarget_seq\tstrand\tenv_start\tenv_end\tf6_hit_start\tf6_hit_end\t"
               "f6_hit_cstart\tf6_hit_cend\tf6_score_bits\tf6_pvalue\tclen\t"
               "env_len\tf6_hit_len\tdist_to_env_5p\tdist_to_env_3p\tsubtree_span\t"
               "n_states_in_parsetree\tn_states_at_imin\tn_states_at_imax\t"
@@ -4784,18 +4784,42 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
           hit_cstart = cfrom_emit;
           hit_cend   = cto_emit;
         }
-        /* Translate window-relative coords to absolute sequence coords by adding
-         * sq->start - 1. cmsearch processes long sequences as overlapping windows
-         * via esl_sqio_ReadWindow; sq->start is the absolute start of the current
-         * window in the original sequence (1 for the first window, ~maxW-C for
-         * subsequent ones). cm_tophits_UpdateHitPositions does the same translation
-         * for reported hits in cmsearch.c -- without this, our env_start/end are
-         * window-relative and don't match .tblout coords or rmark.pos truths. */
-        int64_t coord_off = sq->start - 1;
-        int64_t env_start = dbg_orig_es + coord_off;  /* F5 envelope before any F6 redef */
-        int64_t env_end   = dbg_orig_ee + coord_off;
-        int64_t hit_start = p7es[i] + coord_off;      /* F6 CYK hit boundary (cyk_envi/j) */
-        int64_t hit_end   = p7ee[i] + coord_off;
+        /* Translate window-relative coords to forward-genomic absolute coords.
+         * cmsearch processes long sequences as overlapping windows via
+         * esl_sqio_ReadWindow. For the reverse-strand pass, cmsearch calls
+         * esl_sq_ReverseComplement(dbsq) before cm_Pipeline(), which swaps
+         * sq->start and sq->end. After the swap, sq->start > sq->end and
+         * sq->start holds the larger (3'-end in forward-genomic) coordinate.
+         * cm_tophits_UpdateHitPositions (cm_tophits.c) is the canonical
+         * coord-translation function; we mirror its arithmetic here:
+         *   forward: abs_pos = window_rel + (sq->start - 1)
+         *   revcomp: abs_pos = sq->start - window_rel + 1
+         * For reverse-strand we then swap so env_start <= env_end (genomic
+         * min/max) to simplify downstream overlap arithmetic; the strand
+         * column records the actual orientation. */
+        int     in_rc     = (sq->start > sq->end);
+        char    strand    = in_rc ? '-' : '+';
+        int64_t env_start, env_end, hit_start, hit_end;
+        if (!in_rc) {
+          int64_t coord_off = sq->start - 1;
+          env_start = dbg_orig_es + coord_off;
+          env_end   = dbg_orig_ee + coord_off;
+          hit_start = p7es[i]     + coord_off;
+          hit_end   = p7ee[i]     + coord_off;
+        } else {
+          /* sq->start is the larger genomic coord; window positions are 1..n. */
+          int64_t rc_anchor = sq->start;
+          /* raw RC-to-fwd: pos -> rc_anchor - pos + 1; smaller window pos = larger fwd coord */
+          int64_t abs_es = rc_anchor - dbg_orig_es + 1;
+          int64_t abs_ee = rc_anchor - dbg_orig_ee + 1;
+          int64_t abs_hs = rc_anchor - p7es[i]     + 1;
+          int64_t abs_he = rc_anchor - p7ee[i]     + 1;
+          /* reorder so start <= end (genomic min/max) */
+          env_start = (abs_es < abs_ee) ? abs_es : abs_ee;
+          env_end   = (abs_es < abs_ee) ? abs_ee : abs_es;
+          hit_start = (abs_hs < abs_he) ? abs_hs : abs_he;
+          hit_end   = (abs_hs < abs_he) ? abs_he : abs_hs;
+        }
         int64_t env_len   = env_end - env_start + 1;
         int64_t hit_len   = hit_end - hit_start + 1;
         int64_t d5p       = hit_start - env_start; if (d5p < 0) d5p = 0;
@@ -4898,18 +4922,25 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
         if (min_dimax == INT_MAX) min_dimax = -1;
         if (min_djmin == INT_MAX) min_djmin = -1;
         if (min_djmax == INT_MAX) min_djmax = -1;
-        if (pt_i_lo == LLONG_MAX) pt_i_lo = -1;
-        else                       pt_i_lo += coord_off;  /* window-rel -> absolute */
-        if (pt_i_hi == LLONG_MIN) pt_i_hi = -1;
-        else                       pt_i_hi += coord_off;
+        if (pt_i_lo == LLONG_MAX) { pt_i_lo = -1; }
+        else if (!in_rc)           { pt_i_lo += (sq->start - 1); }
+        else                       { int64_t tmp = sq->start - pt_i_lo + 1; pt_i_lo = tmp; }
+        if (pt_i_hi == LLONG_MIN) { pt_i_hi = -1; }
+        else if (!in_rc)           { pt_i_hi += (sq->start - 1); }
+        else                       { int64_t tmp = sq->start - pt_i_hi + 1; pt_i_hi = tmp; }
+        /* for RC, pt_i_lo/hi are now forward-genomic but may be swapped; reorder */
+        if (in_rc && pt_i_lo != -1 && pt_i_hi != -1 && pt_i_lo > pt_i_hi) {
+          int64_t _t = pt_i_lo; pt_i_lo = pt_i_hi; pt_i_hi = _t;
+        }
         (void)eligible_idx; /* reserved for future per-state direction analysis */
 
         fprintf(pli_debug_f6_envs_fp,
-                "%s\t%s\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\t"
+                "%s\t%s\t%c\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\t"
                 "%d\t%d\t%d\t%d\t%d\t%d\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\t"
                 "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\n",
                 cm->name ? cm->name : "-",
                 sq->name ? sq->name : "-",
+                strand,
                 (long long)env_start, (long long)env_end,
                 (long long)hit_start, (long long)hit_end,
                 hit_cstart, hit_cend,
