@@ -612,15 +612,142 @@ load_models(void)
  * Public API
  */
 
+/* bucket_of()
+ * Map consensus length to bucket index, matching Python bucket_of().
+ */
+static int
+bucket_of(int clen)
+{
+  if (clen <=  100) return BUCKET_TINY;
+  if (clen <=  300) return BUCKET_SMALL;
+  if (clen <   700) return BUCKET_MEDLARGE;
+  if (clen <  1500) return BUCKET_LARGE;
+  return BUCKET_HUGE;
+}
+
+
+/* ridge_predict()
+ * Compute the ridge regression prediction for one target.
+ * Returns the predicted value, or 0.0 if ridge is empty (nfeat == 0).
+ *
+ * Formula: pred = intercept + sum_i coef[i] * (feats[idx_i] - mean[i]) / std[i]
+ */
+static double
+ridge_predict(const FastCalRidge *r, const double *feats_full)
+{
+  double sum = r->intercept;
+  int    i;
+  for (i = 0; i < r->nfeat; i++)
+    {
+      int    idx  = cm_FastCalibrate_FeatureIndex(r->fnames[i]);
+      double z;
+      if (idx < 0) continue;  /* unknown feature name — skip */
+      z    = (feats_full[idx] - r->mean[i]) / r->std[i];
+      sum += z * r->coef[i];
+    }
+  return sum;
+}
+
+
 /* cm_FastCalibrate()
- * Phase 1 stub: returns eslFAIL with no side effects.
- * Real implementation in Phase 4.
+ * Predict ECM parameters (λ, μ_extrap, μ_orig) for all 4 ECM modes and
+ * populate cm->expA[0..EXP_NMODES-1] in place.
+ *
+ * Models are lazy-loaded from compiled-in JSON on first call.
+ * Returns eslOK on success, eslFAIL if features can't be extracted or a
+ * required ridge is empty (nfeat == 0).
  */
 int
 cm_FastCalibrate(CM_t *cm)
 {
-  (void)cm;  /* suppress unused-parameter warning */
-  return eslFAIL;
+  double        feats[FAST_CAL_NFEAT];
+  int           bucket;
+  int           is_noss;
+  int           mode, nd, i;
+  int           status;
+
+  /* Lazy model load */
+  if (!g_models.loaded)
+    {
+      if ((status = load_models()) != eslOK) return eslFAIL;
+    }
+
+  /* Extract all 27 features */
+  if ((status = cm_FastCalibrate_ExtractFeatures(cm, feats)) != eslOK)
+    return eslFAIL;
+
+  /* Detect NOSS: no MATP nodes means no base pairs */
+  is_noss = 1;
+  for (nd = 0; nd < cm->nodes; nd++)
+    if (cm->ndtype[nd] == MATP_nd) { is_noss = 0; break; }
+
+  /* Pick bucket, with NOSS huge/large fallback to medlarge */
+  bucket = bucket_of(cm->clen);
+  if (is_noss && bucket >= BUCKET_LARGE)
+    bucket = BUCKET_MEDLARGE;
+
+  /* Allocate cm->expA if needed */
+  if (cm->expA == NULL)
+    {
+      ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
+      for (i = 0; i < EXP_NMODES; i++) cm->expA[i] = NULL;
+    }
+  for (i = 0; i < EXP_NMODES; i++)
+    if (cm->expA[i] == NULL)
+      {
+        cm->expA[i] = CreateExpInfo();
+        if (cm->expA[i] == NULL) goto ERROR;
+      }
+
+  /* Predict for each ECM mode.
+   * Infernal mode indices: EXP_CM_GC=0, EXP_CM_GI=1, EXP_CM_LC=2, EXP_CM_LI=3.
+   * Our internal MODE_ECMLC/GC/LI/GI indices map to those via the enum.
+   * We iterate over all 4 modes by Infernal's mode indices.
+   *
+   * Mode name order in models: ECMLC=0, ECMLI=1, ECMGC=2, ECMGI=3 (from JSON parse).
+   * Infernal's: EXP_CM_GC=0, EXP_CM_GI=1, EXP_CM_LC=2, EXP_CM_LI=3.
+   * Map: Infernal EXP_CM_LC → MODE_ECMLC, EXP_CM_LI → MODE_ECMLI, etc.
+   */
+  static const int inf_to_model_mode[EXP_NMODES] = {
+    MODE_ECMGC,  /* EXP_CM_GC = 0 */
+    MODE_ECMGI,  /* EXP_CM_GI = 1 */
+    MODE_ECMLC,  /* EXP_CM_LC = 2 */
+    MODE_ECMLI,  /* EXP_CM_LI = 3 */
+  };
+
+  for (i = 0; i < EXP_NMODES; i++)
+    {
+      mode = inf_to_model_mode[i];
+
+      FastCalRidge *r_lam, *r_mue, *r_muo;
+      if (is_noss) {
+        r_lam = &g_models.noss_lambda   [bucket][mode];
+        r_mue = &g_models.noss_mu_extrap[bucket][mode];
+        r_muo = &g_models.noss_mu_orig  [bucket][mode];
+      } else {
+        r_lam = &g_models.str_lambda   [bucket][mode];
+        r_mue = &g_models.str_mu_extrap[bucket][mode];
+        r_muo = &g_models.str_mu_orig  [bucket][mode];
+      }
+
+      if (r_lam->nfeat == 0) return eslFAIL;  /* no ridge for this slot */
+
+      double lam = ridge_predict(r_lam, feats);
+      double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
+      double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
+
+      /* Conventional calibration metadata */
+      SetExpInfo(cm->expA[i], lam, mu_o, 1.6e6, 250, 0.01);
+      /* Override mu_extrap with the directly-predicted value
+       * (SetExpInfo would recompute it from mu_orig/lambda/tailp). */
+      if (r_mue->nfeat > 0)
+        cm->expA[i]->mu_extrap = mu_e;
+    }
+
+  return eslOK;
+
+ ERROR:
+  return eslEMEM;
 }
 
 

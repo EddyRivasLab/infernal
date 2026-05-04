@@ -71,7 +71,8 @@ PROGS = cmalign\
 	p7band-test\
 	p7bandsim\
 	test_phase2_features\
-	test_phase3_features
+	test_phase3_features\
+	test_phase4_predict
 
 # list of executable programs that get installed
 IPROGS = \
@@ -103,7 +104,8 @@ PROGOBJS = \
 	p7band-test.o\
 	p7bandsim.o\
 	test_phase2_features.o\
-	test_phase3_features.o
+	test_phase3_features.o\
+	test_phase4_predict.o
 
 HDRS =  infernal.h
 
