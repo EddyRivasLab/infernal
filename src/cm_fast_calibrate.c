@@ -744,6 +744,7 @@ cm_FastCalibrate(CM_t *cm)
         cm->expA[i]->mu_extrap = mu_e;
     }
 
+  cm->flags |= CMH_EXPTAIL_STATS;
   return eslOK;
 
  ERROR:

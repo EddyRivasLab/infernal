@@ -33,6 +33,7 @@
 #include "hmmer.h"
 
 #include "infernal.h"
+#include "cm_fast_calibrate.h"
 
 #ifdef HMMER_THREADS
 #define CPUOPTS     NULL
@@ -1380,6 +1381,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      if (w_pcut != NULL) esl_stopwatch_Destroy(w_pcut);
    }
 
+   if ((status = cm_FastCalibrate(cm)) != eslOK) ESL_FAIL(status, errbuf, "cm_FastCalibrate failed");
    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
    if (avgpad >= 0.0) {
