@@ -2,7 +2,8 @@
  * Fast CM calibration via ridge regression on compiled-in JSON models.
  *
  * Phase 1: JSON parsing, model loading, and print_models() debug helper.
- * Phase 2: feature extraction (cm_FastCalibrate_ExtractFeatures).
+ * Phase 2: feature extraction (cm_FastCalibrate_ExtractFeatures), 20 features.
+ * Phase 3: topo_fraglen_v2 (noend basic) + C1_OLD legacy, 7 more features.
  * cm_FastCalibrate() is a stub returning eslFAIL (real prediction: Phase 4).
  *
  * JSON layout (two schemas):
@@ -651,28 +652,36 @@ cm_FastCalibrateCleanup(void)
 
 /* Feature name table — indexed by FAST_CAL_FEAT_* enum.
  * Must stay in sync with the enum in cm_fast_calibrate.h.
+ * 27 entries total (Phase 2: 0..19, Phase 3: 20..26).
  */
 static const char *fast_cal_feature_names[] = {
-    "clen",
-    "mean_L_noss",
-    "var_L_noss",
-    "KL_noss_to_unif",
-    "p_full_length",
-    "n_matp",
-    "pct_matp",
-    "bp_density",
-    "mean_matp_relent",
-    "max_matp_relent",
-    "sum_matp_relent",
-    "mean_ml_relent",
-    "mean_node_mean_g",
-    "mean_node_var_g",
-    "ES_full_g",
-    "VarS_full_g",
-    "mean_ES_g",
-    "var_ES_g",
-    "mean_VarS_g",
-    "cov_L_ES_g",
+    "clen",                  /* 0  */
+    "mean_L_noss",           /* 1  */
+    "var_L_noss",            /* 2  */
+    "KL_noss_to_unif",       /* 3  */
+    "p_full_length",         /* 4  */
+    "n_matp",                /* 5  */
+    "pct_matp",              /* 6  */
+    "bp_density",            /* 7  */
+    "mean_matp_relent",      /* 8  */
+    "max_matp_relent",       /* 9  */
+    "sum_matp_relent",       /* 10 */
+    "mean_ml_relent",        /* 11 */
+    "mean_node_mean_g",      /* 12 */
+    "mean_node_var_g",       /* 13 */
+    "ES_full_g",             /* 14 */
+    "VarS_full_g",           /* 15 */
+    "mean_ES_g",             /* 16 */
+    "var_ES_g",              /* 17 */
+    "mean_VarS_g",           /* 18 */
+    "cov_L_ES_g",            /* 19 */
+    "noend_mean_L",          /* 20 */
+    "noend_var_L",           /* 21 */
+    "noend_KL_to_unif",      /* 22 */
+    "noend_p_full_length",   /* 23 */
+    "mean_L_str",            /* 24 */
+    "var_L_str",             /* 25 */
+    "KL_str_to_unif",        /* 26 */
     NULL
 };
 
@@ -682,7 +691,7 @@ static const char *fast_cal_feature_names[] = {
 const char *
 cm_FastCalibrate_FeatureName(int idx)
 {
-  if (idx < 0 || idx >= FAST_CAL_NFEAT_PHASE2) return NULL;
+  if (idx < 0 || idx >= FAST_CAL_NFEAT) return NULL;
   return fast_cal_feature_names[idx];
 }
 
@@ -694,7 +703,7 @@ cm_FastCalibrate_FeatureIndex(const char *name)
 {
   int i;
   if (name == NULL) return -1;
-  for (i = 0; i < FAST_CAL_NFEAT_PHASE2; i++)
+  for (i = 0; i < FAST_CAL_NFEAT; i++)
     if (strcmp(fast_cal_feature_names[i], name) == 0) return i;
   return -1;
 }
@@ -1144,8 +1153,572 @@ extract_c2_score_genomic(CM_t *cm, double *feats)
 }
 
 
+/* =========================================================================
+ * Phase 3 Feature Extraction — topo_fraglen_v2 and C1_OLD legacy
+ */
+
+/* build_node_subtree_spans()
+ *
+ * O(n) two-pass tree traversal ported from Python's _build_node_subtree_spans().
+ *
+ * use_consensus_rank=1: replace lpos/rpos alignment-col values with their
+ *   rank in the sorted-unique set (consensus positions 1..clen).
+ *   Required for topo_fraglen_v2 so noss CMs (MATL alignment-cols > clen)
+ *   are not filtered out by the r > N guard.
+ * use_consensus_rank=0: use raw alignment-col values (C1_OLD legacy).
+ *
+ * On entry:
+ *   subtree_l[], subtree_r[] — caller-allocated int arrays, size cm->nodes.
+ *   parent[]                — caller-allocated int array, size cm->nodes.
+ *
+ * On return, subtree_l[i] / subtree_r[i] are the left/right bounds of the
+ * subtree rooted at node i (None → -1 in C).
+ *
+ * Returns eslOK on success, eslEMEM on allocation failure.
+ */
+static int
+build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
+                         int *subtree_l, int *subtree_r, int *parent)
+{
+  int   n_nodes = cm->nodes;
+  int   i, nd;
+  int  *stk     = NULL;      /* stack of node indices */
+  int   stk_top = -1;
+  int   status;
+
+  /* ---- consensus_rank_map (only when use_consensus_rank=1) -------------- */
+  /* unique_col[k] = k-th unique alignment column from MATP/MATL/MATR nodes */
+  int  *rank_lookup = NULL;  /* rank_lookup[acol] = consensus rank (1-based) */
+  int   rank_ncols  = 0;     /* length of rank_lookup array                  */
+  int  *unique_col  = NULL;
+  int   n_unique    = 0;
+
+  if (use_consensus_rank)
+    {
+      /* Step 1: collect unique alignment-col values from MATP/MATL/MATR.
+       *
+       * CMEmitMap lpos/rpos semantics:
+       *   MATP: lpos = consensus pos of left emission; rpos = right emission.
+       *   MATL: lpos = consensus pos of emission; rpos = non-inclusive bound (skip).
+       *   MATR: rpos = consensus pos of emission; lpos = non-inclusive bound (skip).
+       * So "has valid lpos" iff ndtype is MATP or MATL.
+       *    "has valid rpos" iff ndtype is MATP or MATR.
+       *
+       * cm->map[k] converts consensus pos k to alignment column.
+       */
+      int n_alloc_u = n_nodes * 2 + 2;
+      ESL_ALLOC(unique_col, sizeof(int) * n_alloc_u);
+
+      for (nd = 0; nd < n_nodes; nd++)
+        {
+          int has_lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd);
+          int has_rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
+          if (!has_lpos && !has_rpos) continue;
+
+          if (has_lpos)
+            {
+              int lp   = cm->emap->lpos[nd];
+              int acol = (lp >= 1 && lp <= cm->clen) ? cm->map[lp] : 0;
+              if (acol > 0)
+                {
+                  int dup = 0, j2;
+                  for (j2 = 0; j2 < n_unique; j2++)
+                    if (unique_col[j2] == acol) { dup = 1; break; }
+                  if (!dup)
+                    {
+                      if (n_unique >= n_alloc_u) {
+                        n_alloc_u *= 2;
+                        ESL_REALLOC(unique_col, sizeof(int) * n_alloc_u);
+                      }
+                      unique_col[n_unique++] = acol;
+                    }
+                }
+            }
+          if (has_rpos)
+            {
+              int rp   = cm->emap->rpos[nd];
+              int acol = (rp >= 1 && rp <= cm->clen) ? cm->map[rp] : 0;
+              if (acol > 0)
+                {
+                  int dup = 0, j2;
+                  for (j2 = 0; j2 < n_unique; j2++)
+                    if (unique_col[j2] == acol) { dup = 1; break; }
+                  if (!dup)
+                    {
+                      if (n_unique >= n_alloc_u) {
+                        n_alloc_u *= 2;
+                        ESL_REALLOC(unique_col, sizeof(int) * n_alloc_u);
+                      }
+                      unique_col[n_unique++] = acol;
+                    }
+                }
+            }
+        }
+
+      /* Step 2: sort unique_col ascending (insertion sort; n_unique <= clen) */
+      {
+        int j2, k2, tmp2;
+        for (j2 = 1; j2 < n_unique; j2++)
+          {
+            tmp2 = unique_col[j2];
+            for (k2 = j2 - 1; k2 >= 0 && unique_col[k2] > tmp2; k2--)
+              unique_col[k2 + 1] = unique_col[k2];
+            unique_col[k2 + 1] = tmp2;
+          }
+      }
+
+      /* Step 3: build direct lookup array: alignment_col → rank (1-indexed).
+       * max alignment column = unique_col[n_unique-1].
+       */
+      rank_ncols = (n_unique > 0) ? unique_col[n_unique - 1] + 1 : 1;
+      ESL_ALLOC(rank_lookup, sizeof(int) * rank_ncols);
+      for (i = 0; i < rank_ncols; i++) rank_lookup[i] = -1;  /* -1 = not ranked */
+      for (i = 0; i < n_unique; i++)
+        rank_lookup[unique_col[i]] = i + 1;   /* 1-indexed rank */
+    }
+
+  /* ---- allocate stack and DFS order array -------------------------------- */
+  ESL_ALLOC(stk, sizeof(int) * (n_nodes + 1));
+
+  /* Build DFS pre-order: sort nodes by cm->nodemap[nd] (first state index).
+   * Infernal node labels are NOT in DFS file-order for nested BIFs: BEGL
+   * subtrees get lower labels but appear AFTER BEGR subtrees in the file.
+   * The parent-stack algorithm requires DFS pre-order to assign correct parents.
+   */
+  {
+    int *dfs_order = NULL;
+    int  j2, tmp2;
+    ESL_ALLOC(dfs_order, sizeof(int) * n_nodes);
+    for (i = 0; i < n_nodes; i++) dfs_order[i] = i;
+    /* Insertion sort by cm->nodemap[nd] (n_nodes ≤ a few thousand) */
+    for (i = 1; i < n_nodes; i++) {
+      tmp2 = dfs_order[i];
+      for (j2 = i - 1; j2 >= 0 && cm->nodemap[dfs_order[j2]] > cm->nodemap[tmp2]; j2--)
+        dfs_order[j2 + 1] = dfs_order[j2];
+      dfs_order[j2 + 1] = tmp2;
+    }
+
+    /* ======== Pass 1: DFS pre-order walk — build parent[] and init spans == */
+    for (i = 0; i < n_nodes; i++) parent[i] = -1;
+
+    for (i = 0; i < n_nodes; i++)
+      {
+        nd = dfs_order[i];   /* node label in DFS pre-order */
+
+        /* record parent from top of stack */
+        if (stk_top >= 0)
+          parent[nd] = stk[stk_top];
+
+        /* initialize own subtree span from this node's lpos/rpos */
+        int l, r;
+        {
+          int has_lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd);
+          int has_rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
+
+          if (use_consensus_rank)
+            {
+              int acol_l = 0, acol_r = 0;
+              if (has_lpos) {
+                int lp = cm->emap->lpos[nd];
+                acol_l = (lp >= 1 && lp <= cm->clen) ? cm->map[lp] : 0;
+              }
+              if (has_rpos) {
+                int rp = cm->emap->rpos[nd];
+                acol_r = (rp >= 1 && rp <= cm->clen) ? cm->map[rp] : 0;
+              }
+              l = (acol_l > 0 && acol_l < rank_ncols && rank_lookup[acol_l] >= 0) ? rank_lookup[acol_l] : -1;
+              r = (acol_r > 0 && acol_r < rank_ncols && rank_lookup[acol_r] >= 0) ? rank_lookup[acol_r] : -1;
+            }
+          else
+            {
+              /* C1_OLD: use raw alignment-column values */
+              int acol_l = 0, acol_r = 0;
+              if (has_lpos) {
+                int lp = cm->emap->lpos[nd];
+                acol_l = (lp >= 1 && lp <= cm->clen) ? cm->map[lp] : 0;
+              }
+              if (has_rpos) {
+                int rp = cm->emap->rpos[nd];
+                acol_r = (rp >= 1 && rp <= cm->clen) ? cm->map[rp] : 0;
+              }
+              l = (acol_l > 0) ? acol_l : -1;
+              r = (acol_r > 0) ? acol_r : -1;
+            }
+        }
+
+        /* _build_node_subtree_spans (v2) normalizes single-sided nodes so MATL/MATR
+         * are included as candidates (l=r=their one position).
+         * topo_fraglen_features (C1_OLD) does NOT apply this normalization.
+         */
+        if (use_consensus_rank) {
+          if (l == -1 && r != -1) l = r;
+          if (r == -1 && l != -1) r = l;
+        }
+
+        subtree_l[nd] = l;
+        subtree_r[nd] = r;
+
+        /* stack management: push nd (node label) so parent[] gets node labels */
+        switch (cm->ndtype[nd])
+          {
+          case ROOT_nd:
+          case MATL_nd:
+          case MATR_nd:
+          case MATP_nd:
+          case BIF_nd:
+          case BEGL_nd:
+          case BEGR_nd:
+            stk[++stk_top] = nd;
+            break;
+          case END_nd:
+            /* pop back to most recent BEGL/BEGR (or ROOT) */
+            while (stk_top >= 0 &&
+                   cm->ndtype[stk[stk_top]] != BEGL_nd &&
+                   cm->ndtype[stk[stk_top]] != BEGR_nd &&
+                   cm->ndtype[stk[stk_top]] != ROOT_nd)
+              stk_top--;
+            /* if top is BEGL or BEGR, pop it too */
+            if (stk_top >= 0 &&
+                (cm->ndtype[stk[stk_top]] == BEGL_nd ||
+                 cm->ndtype[stk[stk_top]] == BEGR_nd))
+              stk_top--;
+            break;
+          default:
+            break;
+          }
+      }
+    free(dfs_order);
+  }
+
+  /* ======== Pass 2: post-order (reverse) — propagate spans up to parent === */
+  for (i = n_nodes - 1; i >= 0; i--)
+    {
+      int p = parent[i];
+      if (p < 0) continue;
+      int li = subtree_l[i];
+      int ri = subtree_r[i];
+      if (li != -1 && (subtree_l[p] == -1 || li < subtree_l[p]))
+        subtree_l[p] = li;
+      if (ri != -1 && (subtree_r[p] == -1 || ri > subtree_r[p]))
+        subtree_r[p] = ri;
+    }
+
+  free(stk);
+  if (rank_lookup) free(rank_lookup);
+  if (unique_col)  free(unique_col);
+  return eslOK;
+
+ ERROR:
+  if (stk)         free(stk);
+  if (rank_lookup) free(rank_lookup);
+  if (unique_col)  free(unique_col);
+  return eslEMEM;
+}
+
+
+/* summarize_distribution()
+ *
+ * Given a discrete distribution p_L[] (1-indexed, length N, already normalized),
+ * compute the 4 summary features.
+ *
+ * KL uses natural log (matching Python's math.log).
+ * p_full_length = p_L[N] (mass at L = N, passed as p_L_N directly since the
+ *   caller has already restricted the array to p_L[1..N] with p_L[0] unused).
+ */
+static void
+summarize_distribution(double *p_L, int N,
+                       double *ret_mean_L, double *ret_var_L,
+                       double *ret_KL,    double *ret_p_full)
+{
+  int    L;
+  double mean_L = 0.0, var_L = 0.0, kl = 0.0;
+  double denom_u = 2.0 / ((double)N * (double)(N + 1));
+
+  for (L = 1; L <= N; L++) mean_L += (double)L * p_L[L];
+  for (L = 1; L <= N; L++) var_L  += ((double)L - mean_L) * ((double)L - mean_L) * p_L[L];
+  for (L = 1; L <= N; L++) {
+    if (p_L[L] > 0.0) {
+      double p_u = (double)(N - L + 1) * denom_u;
+      if (p_u > 0.0)
+        kl += p_L[L] * log(p_L[L] / p_u);
+    }
+  }
+
+  *ret_mean_L = mean_L;
+  *ret_var_L  = var_L;
+  *ret_KL     = kl;
+  *ret_p_full = p_L[N];
+}
+
+
+/* extract_topo_noend_basic()
+ *
+ * Port of Python topo_fraglen_v2(parsed, include_end=False, rich=False, prefix="noend_").
+ * Computes 4 features: noend_mean_L, noend_var_L, noend_KL_to_unif, noend_p_full_length.
+ *
+ * Uses build_node_subtree_spans(use_consensus_rank=1) so that NOSS CMs
+ * (whose MATL alignment-columns can exceed clen) get properly ranked.
+ *
+ * Degenerate case (n_begin == 0 or N <= 1): sets all 4 features to NaN.
+ */
+static int
+extract_topo_noend_basic(CM_t *cm, double *feats)
+{
+  int     N      = cm->clen;
+  double  pbegin = (double) cm->pbegin;
+  int    *subtree_l = NULL;
+  int    *subtree_r = NULL;
+  int    *parent    = NULL;
+  double *p_L       = NULL;
+  int     status;
+  int     nd, L;
+  double  mass;
+
+  if (N <= 1) {
+    feats[FAST_CAL_FEAT_noend_mean_L]        = 0.0 / 0.0;   /* NaN */
+    feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
+    return eslOK;
+  }
+
+  ESL_ALLOC(subtree_l, sizeof(int) * cm->nodes);
+  ESL_ALLOC(subtree_r, sizeof(int) * cm->nodes);
+  ESL_ALLOC(parent,    sizeof(int) * cm->nodes);
+  ESL_ALLOC(p_L,       sizeof(double) * (N + 2));
+
+  status = build_node_subtree_spans(cm, /*use_consensus_rank=*/1,
+                                    subtree_l, subtree_r, parent);
+  if (status != eslOK) goto ERROR;
+
+  /* Collect valid local-begin candidates: MATP/MATR/MATL/BIF nodes
+   * with both subtree_l and subtree_r defined and within [1..N].
+   * (Matches Python: VALID_BEGIN_NODE_TYPES = MATP, MATR, MATL, BIF)
+   */
+  typedef struct { int l; int r; } cand_t;
+  cand_t *cands   = NULL;
+  int     n_cands = 0;
+  int     c_alloc = cm->nodes;
+  ESL_ALLOC(cands, sizeof(cand_t) * c_alloc);
+
+  for (nd = 0; nd < cm->nodes; nd++)
+    {
+      if (cm->ndtype[nd] != MATP_nd &&
+          cm->ndtype[nd] != MATR_nd &&
+          cm->ndtype[nd] != MATL_nd &&
+          cm->ndtype[nd] != BIF_nd) continue;
+      int sl = subtree_l[nd];
+      int sr = subtree_r[nd];
+      if (sl == -1 || sr == -1) continue;
+      if (sl < 1 || sr > N || sl > sr) continue;
+      cands[n_cands].l = sl;
+      cands[n_cands].r = sr;
+      n_cands++;
+    }
+
+  if (n_cands == 0) {
+    /* Degenerate CM: all 4 features = NaN */
+    feats[FAST_CAL_FEAT_noend_mean_L]        = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
+    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    return eslOK;
+  }
+
+  /* Build P(L) for include_end=False:
+   *   p_L[N] += (1 - pbegin)            (full-length mass)
+   *   for each (l, r) in cands: p_L[r - l + 1] += pbegin / n_cands
+   */
+  for (L = 0; L <= N + 1; L++) p_L[L] = 0.0;
+  p_L[N] += (1.0 - pbegin);
+  {
+    double x = pbegin / (double) n_cands;
+    int ci;
+    for (ci = 0; ci < n_cands; ci++)
+      {
+        L = cands[ci].r - cands[ci].l + 1;
+        if (L >= 1 && L <= N)
+          p_L[L] += x;
+      }
+  }
+
+  /* Restrict to [1..N] and normalize */
+  mass = 0.0;
+  for (L = 1; L <= N; L++) mass += p_L[L];
+
+  if (mass <= 0.0) {
+    feats[FAST_CAL_FEAT_noend_mean_L]        = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
+    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    return eslOK;
+  }
+  for (L = 1; L <= N; L++) p_L[L] /= mass;
+
+  /* Summarize */
+  {
+    double mean_L, var_L, kl, p_full;
+    summarize_distribution(p_L, N, &mean_L, &var_L, &kl, &p_full);
+    feats[FAST_CAL_FEAT_noend_mean_L]        = mean_L;
+    feats[FAST_CAL_FEAT_noend_var_L]         = var_L;
+    feats[FAST_CAL_FEAT_noend_KL_to_unif]    = kl;
+    feats[FAST_CAL_FEAT_noend_p_full_length] = p_full;
+  }
+
+  free(cands);
+  free(subtree_l);
+  free(subtree_r);
+  free(parent);
+  free(p_L);
+  return eslOK;
+
+ ERROR:
+  if (cands)     free(cands);
+  if (subtree_l) free(subtree_l);
+  if (subtree_r) free(subtree_r);
+  if (parent)    free(parent);
+  if (p_L)       free(p_L);
+  return eslEMEM;
+}
+
+
+/* extract_c1_old()
+ *
+ * Port of Python topo_fraglen_features(parsed) — the C1_OLD legacy feature set.
+ * Differs from extract_topo_noend_basic() in three ways:
+ *   1. Uses build_node_subtree_spans(use_consensus_rank=0): raw alignment-col values.
+ *   2. Valid begins: all non-(ROOT/END) nodes with both l and r defined and
+ *      1 <= l, r <= N, l <= r.  (NOT the strict MATP/MATR/MATL/BIF filter.)
+ *   3. Fallback: if no valid begins, falls back to noss-fraglen
+ *      (reusing extract_noss_fraglen).
+ *
+ * Produces: mean_L_str, var_L_str, KL_str_to_unif (no p_full_length).
+ * KL uses natural log.
+ */
+static int
+extract_c1_old(CM_t *cm, double *feats)
+{
+  int     N      = cm->clen;
+  double  pbegin = (double) cm->pbegin;
+  int    *subtree_l = NULL;
+  int    *subtree_r = NULL;
+  int    *parent    = NULL;
+  double *p_L       = NULL;
+  int     nd, L, status;
+  double  mass;
+
+  if (N <= 1) {
+    /* Python returns NaN for N<=1 (clen <= 1).
+     * We mirror topo_fraglen_features's behavior:
+     * it checks N <= 1 and returns NaN dict. */
+    feats[FAST_CAL_FEAT_mean_L_str]    = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_var_L_str]     = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_KL_str_to_unif] = 0.0 / 0.0;
+    return eslOK;
+  }
+
+  ESL_ALLOC(subtree_l, sizeof(int) * cm->nodes);
+  ESL_ALLOC(subtree_r, sizeof(int) * cm->nodes);
+  ESL_ALLOC(parent,    sizeof(int) * cm->nodes);
+  ESL_ALLOC(p_L,       sizeof(double) * (N + 2));
+
+  status = build_node_subtree_spans(cm, /*use_consensus_rank=*/0,
+                                    subtree_l, subtree_r, parent);
+  if (status != eslOK) goto ERROR;
+
+  /* Collect candidates: all non-(ROOT/END) nodes with both l,r defined
+   * and satisfying 1 <= l <= r <= N.
+   * Python: "nodes other than ROOT/END with both lpos and rpos in their
+   *  subtree span. We collect (l, r) pairs."
+   * Filter: "if l < 1 or r > N or l > r: continue"
+   */
+  typedef struct { int l; int r; } cand2_t;
+  cand2_t *cands   = NULL;
+  int      n_cands = 0;
+  int      c_alloc = cm->nodes;
+  ESL_ALLOC(cands, sizeof(cand2_t) * c_alloc);
+
+  for (nd = 0; nd < cm->nodes; nd++)
+    {
+      if (cm->ndtype[nd] == ROOT_nd || cm->ndtype[nd] == END_nd) continue;
+      int sl = subtree_l[nd];
+      int sr = subtree_r[nd];
+      if (sl == -1 || sr == -1) continue;
+      if (sl < 1 || sr > N || sl > sr) continue;
+      cands[n_cands].l = sl;
+      cands[n_cands].r = sr;
+      n_cands++;
+    }
+
+  if (n_cands == 0) {
+    /* Fallback to noss-style fraglen */
+    double tmp_feats[FAST_CAL_NFEAT_PHASE2];
+    int    fstatus;
+    fstatus = extract_noss_fraglen(cm, tmp_feats);
+    feats[FAST_CAL_FEAT_mean_L_str]    = tmp_feats[FAST_CAL_FEAT_mean_L_noss];
+    feats[FAST_CAL_FEAT_var_L_str]     = tmp_feats[FAST_CAL_FEAT_var_L_noss];
+    feats[FAST_CAL_FEAT_KL_str_to_unif] = tmp_feats[FAST_CAL_FEAT_KL_noss_to_unif];
+    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    return fstatus;
+  }
+
+  /* Build P(L): same as v2 (include_end=False) */
+  for (L = 0; L <= N + 1; L++) p_L[L] = 0.0;
+  p_L[N] += (1.0 - pbegin);
+  {
+    double x = pbegin / (double) n_cands;
+    int ci;
+    for (ci = 0; ci < n_cands; ci++)
+      {
+        L = cands[ci].r - cands[ci].l + 1;
+        if (L >= 1 && L <= N)
+          p_L[L] += x;
+      }
+  }
+
+  /* Restrict and normalize */
+  mass = 0.0;
+  for (L = 1; L <= N; L++) mass += p_L[L];
+
+  if (mass <= 0.0) {
+    feats[FAST_CAL_FEAT_mean_L_str]    = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_var_L_str]     = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_KL_str_to_unif] = 0.0 / 0.0;
+    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    return eslOK;
+  }
+  for (L = 1; L <= N; L++) p_L[L] /= mass;
+
+  /* Summarize (C1_OLD only has 3 outputs — no p_full_length) */
+  {
+    double mean_L, var_L, kl, p_full;
+    summarize_distribution(p_L, N, &mean_L, &var_L, &kl, &p_full);
+    feats[FAST_CAL_FEAT_mean_L_str]     = mean_L;
+    feats[FAST_CAL_FEAT_var_L_str]      = var_L;
+    feats[FAST_CAL_FEAT_KL_str_to_unif] = kl;
+  }
+
+  free(cands);
+  free(subtree_l);
+  free(subtree_r);
+  free(parent);
+  free(p_L);
+  return eslOK;
+
+ ERROR:
+  if (cands)     free(cands);
+  if (subtree_l) free(subtree_l);
+  if (subtree_r) free(subtree_r);
+  if (parent)    free(parent);
+  if (p_L)       free(p_L);
+  return eslEMEM;
+}
+
+
 /* cm_FastCalibrate_ExtractFeatures()
- * Fill feats[0..FAST_CAL_NFEAT_PHASE2-1] from cm.
+ * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all 27 features).
  * Returns eslOK on success, eslFAIL/eslEMEM on error.
  */
 int
@@ -1157,6 +1730,8 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   if ((status = extract_noss_fraglen(cm, feats))      != eslOK) return status;
   if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
   if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
+  if ((status = extract_topo_noend_basic(cm, feats))  != eslOK) return status;
+  if ((status = extract_c1_old(cm, feats))            != eslOK) return status;
 
   return eslOK;
 }
