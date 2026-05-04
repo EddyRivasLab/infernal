@@ -2,6 +2,7 @@
  * Fast CM calibration via ridge regression on compiled-in JSON models.
  *
  * Phase 1: JSON parsing, model loading, and print_models() debug helper.
+ * Phase 2: feature extraction (cm_FastCalibrate_ExtractFeatures).
  * cm_FastCalibrate() is a stub returning eslFAIL (real prediction: Phase 4).
  *
  * JSON layout (two schemas):
@@ -32,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_buffer.h"
@@ -640,6 +642,523 @@ cm_FastCalibrateCleanup(void)
         ridge_free(&g_models.noss_mu_orig  [b][m]);
       }
   g_models.loaded = 0;
+}
+
+
+/* =========================================================================
+ * Phase 2 Feature Extraction
+ */
+
+/* Feature name table — indexed by FAST_CAL_FEAT_* enum.
+ * Must stay in sync with the enum in cm_fast_calibrate.h.
+ */
+static const char *fast_cal_feature_names[] = {
+    "clen",
+    "mean_L_noss",
+    "var_L_noss",
+    "KL_noss_to_unif",
+    "p_full_length",
+    "n_matp",
+    "pct_matp",
+    "bp_density",
+    "mean_matp_relent",
+    "max_matp_relent",
+    "sum_matp_relent",
+    "mean_ml_relent",
+    "mean_node_mean_g",
+    "mean_node_var_g",
+    "ES_full_g",
+    "VarS_full_g",
+    "mean_ES_g",
+    "var_ES_g",
+    "mean_VarS_g",
+    "cov_L_ES_g",
+    NULL
+};
+
+/* cm_FastCalibrate_FeatureName()
+ * Return the name string for feature index idx, or NULL if out of range.
+ */
+const char *
+cm_FastCalibrate_FeatureName(int idx)
+{
+  if (idx < 0 || idx >= FAST_CAL_NFEAT_PHASE2) return NULL;
+  return fast_cal_feature_names[idx];
+}
+
+/* cm_FastCalibrate_FeatureIndex()
+ * Return the index for a feature name, or -1 if not found.
+ */
+int
+cm_FastCalibrate_FeatureIndex(const char *name)
+{
+  int i;
+  if (name == NULL) return -1;
+  for (i = 0; i < FAST_CAL_NFEAT_PHASE2; i++)
+    if (strcmp(fast_cal_feature_names[i], name) == 0) return i;
+  return -1;
+}
+
+
+/* extract_clen()
+ * Trivially store clen as a feature.
+ */
+static int
+extract_clen(CM_t *cm, double *feats)
+{
+  feats[FAST_CAL_FEAT_clen] = (double) cm->clen;
+  return eslOK;
+}
+
+
+/* extract_noss_fraglen()
+ * Port of Python fraglen_features(clen, pbegin, pend) from fast_cmcalibrate.py.
+ *
+ * Computes: mean_L_noss, var_L_noss, KL_noss_to_unif, p_full_length.
+ *
+ * The fragment length distribution model:
+ *   - entry probs: p_entry[1] = 1 - pbegin (full-length, no local begin)
+ *                  p_entry[i] = pbegin / (N-1) for i in [2, N]
+ *   - exit rate:   r = pend / (N-1)
+ *   - p_L[L] = sum over all entry points i: p_entry[i] * reach_to_length_L
+ *     where reach *= (1 - r) at each step, exit_here = reach * (r if j<N else 1)
+ *   - p_full_length = p_entry[1] * (1 - r)^(N-1)
+ */
+static int
+extract_noss_fraglen(CM_t *cm, double *feats)
+{
+  int    N       = cm->clen;
+  double pbegin  = (double) cm->pbegin;
+  double pend    = (double) cm->pend;
+  double r, total_P, mean_L, var_L, kl, p_full;
+  double *p_entry = NULL;
+  double *p_L     = NULL;
+  int     i, j, L;
+  double  reach, exit_here;
+  int     status;
+
+  if (N <= 1) {
+    feats[FAST_CAL_FEAT_mean_L_noss]      = 0.0;
+    feats[FAST_CAL_FEAT_var_L_noss]       = 0.0;
+    feats[FAST_CAL_FEAT_KL_noss_to_unif]  = 0.0;
+    feats[FAST_CAL_FEAT_p_full_length]    = 0.0;
+    return eslOK;
+  }
+
+  r = pend / (double)(N - 1);
+
+  ESL_ALLOC(p_entry, sizeof(double) * (N + 1));
+  ESL_ALLOC(p_L,     sizeof(double) * (N + 1));
+
+  /* Entry probabilities */
+  p_entry[0] = 0.0;
+  p_entry[1] = 1.0 - pbegin;
+  for (i = 2; i <= N; i++)
+    p_entry[i] = pbegin / (double)(N - 1);
+
+  /* Fragment length probabilities */
+  for (L = 0; L <= N; L++) p_L[L] = 0.0;
+
+  for (i = 1; i <= N; i++) {
+    if (p_entry[i] == 0.0) continue;
+    reach = 1.0;
+    for (j = i; j <= N; j++) {
+      exit_here = reach * ((j < N) ? r : 1.0);
+      L = j - i + 1;
+      p_L[L] += p_entry[i] * exit_here;
+      reach *= (1.0 - r);
+    }
+  }
+
+  /* Normalize (should already sum to 1.0 but be safe) */
+  total_P = 0.0;
+  for (L = 1; L <= N; L++) total_P += p_L[L];
+  if (total_P > 0.0)
+    for (L = 1; L <= N; L++) p_L[L] /= total_P;
+
+  /* mean_L */
+  mean_L = 0.0;
+  for (L = 1; L <= N; L++) mean_L += (double)L * p_L[L];
+
+  /* var_L */
+  var_L = 0.0;
+  for (L = 1; L <= N; L++) var_L += ((double)L - mean_L) * ((double)L - mean_L) * p_L[L];
+
+  /* KL(p_L || uniform) in nats. Python uses math.log (natural log). */
+  /* Uniform: P_u(L) = (N - L + 1) * 2 / (N * (N + 1)) */
+  kl = 0.0;
+  for (L = 1; L <= N; L++) {
+    if (p_L[L] > 0.0) {
+      double p_u = 2.0 * (double)(N - L + 1) / ((double)N * (double)(N + 1));
+      if (p_u > 0.0)
+        kl += p_L[L] * log(p_L[L] / p_u);
+    }
+  }
+
+  /* p_full_length: mass at L = N. Python computes:
+   *   p_entry[1] * (1 - r)^(N-1)
+   * which is the probability of entering at position 1 and reaching the end.
+   */
+  p_full = p_entry[1] * pow(1.0 - r, (double)(N - 1));
+
+  feats[FAST_CAL_FEAT_mean_L_noss]      = mean_L;
+  feats[FAST_CAL_FEAT_var_L_noss]       = var_L;
+  feats[FAST_CAL_FEAT_KL_noss_to_unif]  = kl;
+  feats[FAST_CAL_FEAT_p_full_length]    = p_full;
+
+  free(p_entry);
+  free(p_L);
+  return eslOK;
+
+ ERROR:
+  if (p_entry) free(p_entry);
+  if (p_L)     free(p_L);
+  return eslEMEM;
+}
+
+
+/* extract_str_struct()
+ * Port of Python struct_features(mp_log, ml_log, clen) from fast_cmcalibrate.py.
+ *
+ * Walks cm->ndtype[] to count MATP nodes and find MP_st / ML_st / MR_st
+ * emission states. Converts cm->e[v] (probability form) to log-odds via
+ * cm->null[]. Computes relative entropy moments.
+ *
+ * For each MATP node: find MP_st state (first state: v = cm->nodemap[nd]).
+ *   Verify with cm->stid[v] == MATP_MP.
+ *   16-vector: p_ab = e[v][ab]; lo_ab = log2(p_ab / (null[a] * null[b]))
+ *   (a = ab/4, b = ab%4)
+ *   Normalized emission weight: w_ab = (2^lo_ab) / 16, then normalize sum.
+ *   rel_ent_v = sum_ab (w_ab / sum_w) * lo_ab
+ *
+ * For each MATL/MATR node: find ML_st / MR_st state.
+ *   4-vector: p_a = e[v][a]; lo_a = log2(p_a / null[a])
+ *   Normalized: w_a = (2^lo_a) * 0.25, then normalize.
+ *   rel_ent_v = sum_a (w_a / sum_w) * lo_a
+ */
+static int
+extract_str_struct(CM_t *cm, double *feats)
+{
+  int    nd, v;
+  int    n_matp  = 0;
+  double sum_mp_re = 0.0;
+  double max_mp_re = -1e300;
+  double sum_ml_re = 0.0;
+  int    n_ml    = 0;
+
+  for (nd = 0; nd < cm->nodes; nd++)
+    {
+      if (cm->ndtype[nd] == MATP_nd)
+        {
+          /* MP_st is the first state in a MATP node */
+          v = cm->nodemap[nd];
+          /* Safety check: should be MATP_MP */
+          /* stid is char; MATP_MP = 6 */
+          if (cm->stid[v] != MATP_MP) {
+            /* skip if not what we expect (shouldn't happen) */
+            continue;
+          }
+          /* 16-tuple log-odds */
+          double lo[16];
+          int ab;
+          for (ab = 0; ab < 16; ab++) {
+            int a = ab / 4, b = ab % 4;
+            double p_ab = (double) cm->e[v][ab];
+            double null_ab = (double)(cm->null[a] * cm->null[b]);
+            /* Avoid log(0): guard with a tiny floor */
+            if (p_ab <= 0.0 || null_ab <= 0.0)
+              lo[ab] = -40.0;  /* effectively -inf in bits */
+            else
+              lo[ab] = log2(p_ab / null_ab);
+          }
+          /* Compute normalized weights w[ab] = 2^lo[ab] / 16 */
+          double w[16];
+          double sum_w = 0.0;
+          for (ab = 0; ab < 16; ab++) {
+            w[ab] = pow(2.0, lo[ab]) / 16.0;
+            sum_w += w[ab];
+          }
+          /* Relative entropy */
+          double re_v = 0.0;
+          if (sum_w > 0.0) {
+            for (ab = 0; ab < 16; ab++)
+              re_v += (w[ab] / sum_w) * lo[ab];
+          }
+          n_matp++;
+          sum_mp_re += re_v;
+          if (re_v > max_mp_re) max_mp_re = re_v;
+        }
+      else if (cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd)
+        {
+          /* ML_st (MATL_ML=12) or MR_st (MATR_MR=15) is the first state */
+          v = cm->nodemap[nd];
+          /* The first state of a MATL node is ML_st, for MATR it's MR_st */
+          /* 4-tuple log-odds */
+          double lo[4];
+          int a;
+          for (a = 0; a < 4; a++) {
+            double p_a    = (double) cm->e[v][a];
+            double null_a = (double) cm->null[a];
+            if (p_a <= 0.0 || null_a <= 0.0)
+              lo[a] = -40.0;
+            else
+              lo[a] = log2(p_a / null_a);
+          }
+          /* Normalized weights: w[a] = 2^lo[a] * 0.25 */
+          double w[4];
+          double sum_w = 0.0;
+          for (a = 0; a < 4; a++) {
+            w[a] = pow(2.0, lo[a]) * 0.25;
+            sum_w += w[a];
+          }
+          /* Relative entropy */
+          double re_v = 0.0;
+          if (sum_w > 0.0) {
+            for (a = 0; a < 4; a++)
+              re_v += (w[a] / sum_w) * lo[a];
+          }
+          sum_ml_re += re_v;
+          n_ml++;
+        }
+    }
+
+  /* Aggregate STR features */
+  double pct_matp = (cm->clen > 0) ? (double)n_matp / (double)cm->clen : 0.0;
+  double mean_mp  = (n_matp > 0) ? sum_mp_re / (double)n_matp : 0.0;
+  double max_mp   = (n_matp > 0) ? max_mp_re : 0.0;
+  double sum_mp   = sum_mp_re;
+  double mean_ml  = (n_ml > 0) ? sum_ml_re / (double)n_ml : 0.0;
+
+  feats[FAST_CAL_FEAT_n_matp]           = (double) n_matp;
+  feats[FAST_CAL_FEAT_pct_matp]         = pct_matp;
+  feats[FAST_CAL_FEAT_bp_density]       = pct_matp;   /* legacy alias */
+  feats[FAST_CAL_FEAT_mean_matp_relent] = mean_mp;
+  feats[FAST_CAL_FEAT_max_matp_relent]  = max_mp;
+  feats[FAST_CAL_FEAT_sum_matp_relent]  = sum_mp;
+  feats[FAST_CAL_FEAT_mean_ml_relent]   = mean_ml;
+
+  return eslOK;
+}
+
+
+/* exact_score_aggregates()
+ * Port of Python _exact_score_aggregates(means, vars_, N, pbegin, pend).
+ *
+ * Computes 8 aggregate statistics from per-position score mean/variance arrays.
+ * Uses the same entry/exit model as fraglen_features.
+ */
+static void
+exact_score_aggregates(double *means, double *vars_, int N,
+                       double pbegin, double pend,
+                       double *ret_mean_node_mean, double *ret_mean_node_var,
+                       double *ret_ES_full,        double *ret_VarS_full,
+                       double *ret_mean_ES,        double *ret_var_ES,
+                       double *ret_mean_VarS,      double *ret_cov_L_ES)
+{
+  /* Cumulative sums: cs_m[k] = sum means[0..k-1], cs_v[k] = sum vars_[0..k-1] */
+  double *cs_m  = NULL;
+  double *cs_v  = NULL;
+  double *p_entry = NULL;
+  int i, j;
+  double r;
+  double total_P, E_ES, E_ES2, E_VarS, E_L, E_L_ES;
+  double mean_ES, var_ES, mean_VarS, mean_L_w, cov_L_ES;
+
+  cs_m    = (double *) malloc((N + 1) * sizeof(double));
+  cs_v    = (double *) malloc((N + 1) * sizeof(double));
+  p_entry = (double *) malloc((N + 1) * sizeof(double));
+
+  if (!cs_m || !cs_v || !p_entry) goto ERROR;
+
+  cs_m[0] = 0.0; cs_v[0] = 0.0;
+  for (i = 0; i < N; i++) {
+    cs_m[i + 1] = cs_m[i] + means[i];
+    cs_v[i + 1] = cs_v[i] + vars_[i];
+  }
+
+  p_entry[0] = 0.0;
+  p_entry[1] = 1.0 - pbegin;
+  for (i = 2; i <= N; i++)
+    p_entry[i] = pbegin / (double)(N > 1 ? (N - 1) : 1);
+
+  r = pend / (double)(N > 1 ? (N - 1) : 1);
+
+  total_P = 0.0;
+  E_ES = E_ES2 = E_VarS = E_L = E_L_ES = 0.0;
+
+  for (i = 1; i <= N; i++) {
+    double p_e = p_entry[i];
+    if (p_e == 0.0) continue;
+    double reach = 1.0;
+    for (j = i; j <= N; j++) {
+      double w = p_e * reach * ((j < N) ? r : 1.0);
+      /* Fragment [i-1, j-1] in 0-based positions: sum of means[i-1..j-1]
+       * cs_m is 1-indexed prefix sums: cs_m[j] - cs_m[i-1]
+       */
+      double E_S_frag   = cs_m[j] - cs_m[i - 1];
+      double Var_S_frag = cs_v[j] - cs_v[i - 1];
+      double L          = (double)(j - i + 1);
+      total_P += w;
+      E_ES    += w * E_S_frag;
+      E_ES2   += w * E_S_frag * E_S_frag;
+      E_VarS  += w * Var_S_frag;
+      E_L     += w * L;
+      E_L_ES  += w * L * E_S_frag;
+      reach *= (1.0 - r);
+    }
+  }
+
+  if (total_P > 0.0) {
+    mean_ES    = E_ES / total_P;
+    var_ES     = E_ES2 / total_P - mean_ES * mean_ES;
+    mean_VarS  = E_VarS / total_P;
+    mean_L_w   = E_L / total_P;
+    cov_L_ES   = E_L_ES / total_P - mean_L_w * mean_ES;
+  } else {
+    mean_ES = var_ES = mean_VarS = mean_L_w = cov_L_ES = 0.0;
+  }
+
+  /* Simple aggregates */
+  {
+    double sum_m = 0.0, sum_v = 0.0;
+    for (i = 0; i < N; i++) { sum_m += means[i]; sum_v += vars_[i]; }
+    *ret_mean_node_mean = (N > 0) ? sum_m / (double)N : 0.0;
+    *ret_mean_node_var  = (N > 0) ? sum_v / (double)N : 0.0;
+  }
+  *ret_ES_full      = cs_m[N];
+  *ret_VarS_full    = cs_v[N];
+  *ret_mean_ES      = mean_ES;
+  *ret_var_ES       = var_ES;
+  *ret_mean_VarS    = mean_VarS;
+  *ret_cov_L_ES     = cov_L_ES;
+
+  free(cs_m); free(cs_v); free(p_entry);
+  return;
+
+ ERROR:
+  if (cs_m)    free(cs_m);
+  if (cs_v)    free(cs_v);
+  if (p_entry) free(p_entry);
+  /* Return zeros on allocation failure */
+  *ret_mean_node_mean = *ret_mean_node_var = *ret_ES_full = *ret_VarS_full = 0.0;
+  *ret_mean_ES = *ret_var_ES = *ret_mean_VarS = *ret_cov_L_ES = 0.0;
+}
+
+
+/* extract_c2_score_genomic()
+ * Port of score_features_under_null(ml_log, GENOMIC_NULL, pbegin, pend, N) +
+ * _exact_score_aggregates() from candidate_features.py / fast_cmcalibrate.py.
+ *
+ * Walks all ML_st and MR_st states (using cm->stid[v]).
+ * For each such state, converts cm->e[v] (probability form, 4-vector)
+ * to log-odds via cm->null[], then computes per-state score mean and variance
+ * under the genomic null (0.269, 0.231, 0.230, 0.270).
+ *
+ * NOTE: Python's score_features_under_null uses N=len(ml) for STR CMs
+ * (i.e., number of ML/MR emissions only), not clen. The _exact_score_aggregates
+ * function uses N as the number of positions = number of ML/MR states.
+ */
+static int
+extract_c2_score_genomic(CM_t *cm, double *feats)
+{
+  /* Genomic null: A=0.269, C=0.231, G=0.230, U=0.270 */
+  static const double GENOMIC_NULL[4] = {0.269, 0.231, 0.230, 0.270};
+
+  double pbegin = (double) cm->pbegin;
+  double pend   = (double) cm->pend;
+  int    v;
+  int    n_ml   = 0;
+  double *means = NULL;
+  double *vars_ = NULL;
+  int    n_alloc = cm->clen + 1;  /* upper bound */
+  int    status;
+
+  ESL_ALLOC(means, sizeof(double) * n_alloc);
+  ESL_ALLOC(vars_,  sizeof(double) * n_alloc);
+
+  /* Walk all states; collect ML_st and MR_st emit probabilities */
+  for (v = 0; v < cm->M; v++) {
+    if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) {
+      /* 4-tuple log-odds under cm->null */
+      double lo[4];
+      int a;
+      for (a = 0; a < 4; a++) {
+        double p_a    = (double) cm->e[v][a];
+        double null_a = (double) cm->null[a];
+        if (p_a <= 0.0 || null_a <= 0.0)
+          lo[a] = -40.0;
+        else
+          lo[a] = log2(p_a / null_a);
+      }
+      /* per-state mean and variance under genomic null */
+      double m = 0.0, m2 = 0.0;
+      for (a = 0; a < 4; a++) {
+        m  += GENOMIC_NULL[a] * lo[a];
+        m2 += GENOMIC_NULL[a] * lo[a] * lo[a];
+      }
+          if (n_ml >= n_alloc) {
+        /* shouldn't happen since n_alloc = clen+1, but be safe */
+        n_alloc *= 2;
+        ESL_REALLOC(means, sizeof(double) * n_alloc);
+        ESL_REALLOC(vars_,  sizeof(double) * n_alloc);
+      }
+      means[n_ml] = m;
+      vars_[n_ml] = m2 - m * m;
+      n_ml++;
+    }
+  }
+
+  if (n_ml == 0) {
+    /* No ML/MR states — return zeros */
+    feats[FAST_CAL_FEAT_mean_node_mean_g] = 0.0;
+    feats[FAST_CAL_FEAT_mean_node_var_g]  = 0.0;
+    feats[FAST_CAL_FEAT_ES_full_g]        = 0.0;
+    feats[FAST_CAL_FEAT_VarS_full_g]      = 0.0;
+    feats[FAST_CAL_FEAT_mean_ES_g]        = 0.0;
+    feats[FAST_CAL_FEAT_var_ES_g]         = 0.0;
+    feats[FAST_CAL_FEAT_mean_VarS_g]      = 0.0;
+    feats[FAST_CAL_FEAT_cov_L_ES_g]       = 0.0;
+  } else {
+    double mn_mean, mn_var, es_full, vars_full, m_es, v_es, m_vars, c_l_es;
+    exact_score_aggregates(means, vars_, n_ml, pbegin, pend,
+                           &mn_mean, &mn_var, &es_full, &vars_full,
+                           &m_es, &v_es, &m_vars, &c_l_es);
+    feats[FAST_CAL_FEAT_mean_node_mean_g] = mn_mean;
+    feats[FAST_CAL_FEAT_mean_node_var_g]  = mn_var;
+    feats[FAST_CAL_FEAT_ES_full_g]        = es_full;
+    feats[FAST_CAL_FEAT_VarS_full_g]      = vars_full;
+    feats[FAST_CAL_FEAT_mean_ES_g]        = m_es;
+    feats[FAST_CAL_FEAT_var_ES_g]         = v_es;
+    feats[FAST_CAL_FEAT_mean_VarS_g]      = m_vars;
+    feats[FAST_CAL_FEAT_cov_L_ES_g]       = c_l_es;
+  }
+
+  free(means);
+  free(vars_);
+  return eslOK;
+
+ ERROR:
+  if (means) free(means);
+  if (vars_)  free(vars_);
+  return eslEMEM;
+}
+
+
+/* cm_FastCalibrate_ExtractFeatures()
+ * Fill feats[0..FAST_CAL_NFEAT_PHASE2-1] from cm.
+ * Returns eslOK on success, eslFAIL/eslEMEM on error.
+ */
+int
+cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
+{
+  int status;
+
+  if ((status = extract_clen(cm, feats))              != eslOK) return status;
+  if ((status = extract_noss_fraglen(cm, feats))      != eslOK) return status;
+  if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
+  if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
+
+  return eslOK;
 }
 
 
