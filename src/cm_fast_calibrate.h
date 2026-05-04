@@ -6,6 +6,7 @@
  * lands in Phase 4.
  *
  * Phase 2: feature extraction (cm_FastCalibrate_ExtractFeatures and friends).
+ * Phase 3: topo_fraglen_v2 (noend basic) and C1_OLD legacy features.
  *
  * See CPORT_SPEC.md for the full specification.
  */
@@ -36,19 +37,17 @@ extern void cm_FastCalibrateCleanup(void);
  */
 extern int  cm_FastCalibrate_PrintModels(FILE *fp);
 
-/* Phase 2 feature extraction.
- * fills feats[] with all features computable without topo_fraglen_v2.
- * Caller passes a buffer >= FAST_CAL_NFEAT_PHASE2 doubles; on return, feats[]
- * contains values indexed by the FAST_CAL_FEAT_* enum.
+/* cm_FastCalibrate_ExtractFeatures()
+ * Fills feats[0..FAST_CAL_NFEAT-1] from cm (all 27 features, Phases 2+3).
+ * Caller passes a buffer >= FAST_CAL_NFEAT doubles.
  *
- * Returns eslOK on success, eslFAIL if features can't be computed
- * (e.g., CM has clen <= 1).
+ * Returns eslOK on success, eslFAIL/eslEMEM on error.
  */
 extern int cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats);
 
-/* Feature index enumeration. Phase 2 covers indices 0..19 (clen + 4
- * noss-fraglen + 7 STR + 8 C2). Phase 3 will extend to indices 20..26
- * (topo-noend-basic + C1_OLD).
+/* Feature index enumeration.
+ * Phase 2: indices 0..19 (clen + 4 noss-fraglen + 7 STR + 8 C2).
+ * Phase 3: indices 20..26 (topo-noend-basic + C1_OLD legacy).
  */
 enum {
     FAST_CAL_FEAT_clen = 0,
@@ -70,8 +69,21 @@ enum {
     FAST_CAL_FEAT_mean_ES_g,
     FAST_CAL_FEAT_var_ES_g,
     FAST_CAL_FEAT_mean_VarS_g,
-    FAST_CAL_FEAT_cov_L_ES_g,
-    FAST_CAL_NFEAT_PHASE2  /* sentinel = 20 */
+    FAST_CAL_FEAT_cov_L_ES_g,            /* index 19 */
+
+    /* Phase 3 — topo_fraglen_v2 (noend basic) */
+    FAST_CAL_FEAT_noend_mean_L,          /* 20 */
+    FAST_CAL_FEAT_noend_var_L,
+    FAST_CAL_FEAT_noend_KL_to_unif,
+    FAST_CAL_FEAT_noend_p_full_length,   /* 23 */
+
+    /* Phase 3 — C1_OLD legacy */
+    FAST_CAL_FEAT_mean_L_str,            /* 24 */
+    FAST_CAL_FEAT_var_L_str,
+    FAST_CAL_FEAT_KL_str_to_unif,        /* 26 */
+
+    FAST_CAL_NFEAT = 27,                 /* sentinel; total feature count */
+    FAST_CAL_NFEAT_PHASE2 = 20          /* Phase 2 backward-compat alias */
 };
 
 /* Feature name lookup — used by ridge dispatch to map JSON feature
