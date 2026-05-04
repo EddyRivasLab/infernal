@@ -103,7 +103,18 @@ PROGOBJS = \
 
 HDRS =  infernal.h
 
+# Fast-calibrate model JSON files (symlinked from notebook analysis directory)
+FASTCAL_DATA_DIR = $(srcdir)/cm_fast_calibrate_data
+MODEL_JSONS = \
+	$(FASTCAL_DATA_DIR)/production_models_v41.json \
+	$(FASTCAL_DATA_DIR)/production_mu_models_v41.json \
+	$(FASTCAL_DATA_DIR)/production_models_v42_largehuge.json \
+	$(FASTCAL_DATA_DIR)/production_mu_models_v42_largehuge.json \
+	$(FASTCAL_DATA_DIR)/production_models_v42_noss.json \
+	$(FASTCAL_DATA_DIR)/production_mu_models_v42_noss.json
+
 OBJS  = cm.o\
+	cm_fast_calibrate.o\
 	cm_alidisplay.o\
 	cm_alndata.o\
 	cm_dpalign.o\
@@ -200,6 +211,14 @@ libinfernal-src.stamp: ${OBJS}
 
 .FORCE:
 
+# Rule to generate the embedded JSON header from the 6 production model files.
+# The JSON files are referenced via symlinks in src/cm_fast_calibrate_data/
+# (which points into the notebook analysis directory; NOT committed to this repo).
+cm_fast_calibrate_models.h: ${MODEL_JSONS} $(srcdir)/embed_fastcal_models.sh
+	${QUIET_GEN}$(SHELL) $(srcdir)/embed_fastcal_models.sh $@
+
+cm_fast_calibrate.o: cm_fast_calibrate_models.h
+
 ${OBJS}:     ${HDRS} config.h
 ${PROGOBJS}: ${HDRS} config.h
 
@@ -259,6 +278,7 @@ ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
 endif
 	-rm -f *.o *~ Makefile.bak core ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS} TAGS gmon.out
+	-rm -f cm_fast_calibrate_models.h
 	-rm -f libinfernal.a libinfernal-src.stamp
 	-rm -f *.gcno
 	-rm -f cscope.out
