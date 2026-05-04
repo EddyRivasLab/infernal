@@ -70,7 +70,8 @@ PROGS = cmalign\
 	truncyk_check\
 	p7band-test\
 	p7bandsim\
-	test_phase2_features
+	test_phase2_features\
+	test_phase3_features
 
 # list of executable programs that get installed
 IPROGS = \
@@ -101,7 +102,8 @@ PROGOBJS = \
 	truncyk_check.o\
 	p7band-test.o\
 	p7bandsim.o\
-	test_phase2_features.o
+	test_phase2_features.o\
+	test_phase3_features.o
 
 HDRS =  infernal.h
 
