@@ -1310,8 +1310,9 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
 {
   int   n_nodes = cm->nodes;
   int   i, nd;
-  int  *stk     = NULL;      /* stack of node indices */
-  int   stk_top = -1;
+  int  *stk       = NULL;      /* stack of node indices */
+  int   stk_top   = -1;
+  int  *dfs_order = NULL;      /* node labels in DFS pre-order, needed for Pass 2 */
   int   status;
 
   /* ---- consensus_rank_map (only when use_consensus_rank=1) -------------- */
@@ -1406,17 +1407,17 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
     }
 
   /* ---- allocate stack and DFS order array -------------------------------- */
-  ESL_ALLOC(stk, sizeof(int) * (n_nodes + 1));
+  ESL_ALLOC(stk,       sizeof(int) * (n_nodes + 1));
+  ESL_ALLOC(dfs_order, sizeof(int) * n_nodes);
 
   /* Build DFS pre-order: sort nodes by cm->nodemap[nd] (first state index).
    * Infernal node labels are NOT in DFS file-order for nested BIFs: BEGL
    * subtrees get lower labels but appear AFTER BEGR subtrees in the file.
    * The parent-stack algorithm requires DFS pre-order to assign correct parents.
+   * dfs_order is also needed in Pass 2 (reverse DFS = correct post-order).
    */
   {
-    int *dfs_order = NULL;
     int  j2, tmp2;
-    ESL_ALLOC(dfs_order, sizeof(int) * n_nodes);
     for (i = 0; i < n_nodes; i++) dfs_order[i] = i;
     /* Insertion sort by cm->nodemap[nd] (n_nodes ≤ a few thousand) */
     for (i = 1; i < n_nodes; i++) {
@@ -1515,16 +1516,22 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
             break;
           }
       }
-    free(dfs_order);
-  }
+  }  /* end Pass 1 block */
 
-  /* ======== Pass 2: post-order (reverse) — propagate spans up to parent === */
+  /* ======== Pass 2: reverse DFS order — propagate spans up to parent =======
+   *
+   * Must iterate in REVERSE DFS pre-order (= post-order), NOT reverse label
+   * order. BEGL nodes have low labels but appear late in DFS; iterating in
+   * reverse label order would process their ancestors before them, losing the
+   * span contribution.
+   */
   for (i = n_nodes - 1; i >= 0; i--)
     {
-      int p = parent[i];
+      int nd2 = dfs_order[i];
+      int p   = parent[nd2];
       if (p < 0) continue;
-      int li = subtree_l[i];
-      int ri = subtree_r[i];
+      int li = subtree_l[nd2];
+      int ri = subtree_r[nd2];
       if (li != -1 && (subtree_l[p] == -1 || li < subtree_l[p]))
         subtree_l[p] = li;
       if (ri != -1 && (subtree_r[p] == -1 || ri > subtree_r[p]))
@@ -1532,12 +1539,14 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
     }
 
   free(stk);
+  free(dfs_order);
   if (rank_lookup) free(rank_lookup);
   if (unique_col)  free(unique_col);
   return eslOK;
 
  ERROR:
   if (stk)         free(stk);
+  if (dfs_order)   free(dfs_order);
   if (rank_lookup) free(rank_lookup);
   if (unique_col)  free(unique_col);
   return eslEMEM;
