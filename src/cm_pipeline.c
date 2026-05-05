@@ -361,7 +361,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
               "nedge_5p_block\tnedge_3p_block\tparsetree_i_lo\tparsetree_i_hi\t"
               "n_at_edge_MP\tn_at_edge_ML\tn_at_edge_MR\tn_at_edge_IL\tn_at_edge_IR\t"
               "n_realclip_iwall_w3\tn_realclip_jwall_w3\t"
-              "iband_sum_at_iedge\tjband_sum_at_jedge\n");
+              "iband_sum_at_iedge\tjband_sum_at_jedge\t"
+              "gfwd_banded_nats\tgfwd_unbanded_nats\n");
       fflush(pli_debug_f6_envs_fp);
       pli_debug_f6_envs_header_written = 1;
     }
@@ -4947,7 +4948,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
         fprintf(pli_debug_f6_envs_fp,
                 "%s\t%s\t%c\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\t"
                 "%d\t%d\t%d\t%d\t%d\t%d\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\t"
-                "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\n",
+                "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\t"
+                "%.6f\t%.6f\n",
                 cm->name ? cm->name : "-",
                 sq->name ? sq->name : "-",
                 strand,
@@ -4965,7 +4967,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
                 (long long)pt_i_lo, (long long)pt_i_hi,
                 n_edge_MP, n_edge_ML, n_edge_MR, n_edge_IL, n_edge_IR,
                 n_realclip_iwall, n_realclip_jwall,
-                iband_sum_at_iedge, jband_sum_at_jedge);
+                iband_sum_at_iedge, jband_sum_at_jedge,
+                (double)pli->p7_fwdsc, (double)pli->p7_fwdsc_unbanded);
         fflush(pli_debug_f6_envs_fp);
       }
       if (dbg_owns_tr && dbg_tr != NULL) FreeParsetree(dbg_tr);
