@@ -649,6 +649,68 @@ ridge_predict(const FastCalRidge *r, const double *feats_full)
 }
 
 
+/* === K = nrandhits/dbsize predictor coefficients =====
+ * Derived from analysis/nrandhits_rfam_all.tsv (4110 calibrated CMs:
+ * 4010 str from cms-rfam-all/str/*.cm + 100 noss from
+ * calibrations-v115-rfam100/seed1/*_noss.cm).
+ *
+ * Local modes (ECMLC, ECMLI): K is roughly constant per (type, bucket);
+ * use the per-(type, bucket) median K. Spearman(K, W) ~ 0.25–0.29; small
+ * IQR (~factor 1.6) means a constant per bucket gives rmse log(K) ≈ 0.31.
+ *
+ * Glocal modes (ECMGC, ECMGI): K ≈ exp(a)·clen^b is a clean power law.
+ * Spearman(K, clen) ≈ -0.92 to -0.95 (clen is a slightly better
+ * predictor than W). Per-mode rmse log(K) ≈ 0.28–0.41 (str), 0.27–0.37
+ * (noss, n=100).
+ *
+ * Without this fix, fastcal hardcoded nrandhits=250 → K = 1.5625e-4 →
+ * E-values 200×–1500× too small per mode (matching the rmark4h benchmark
+ * agent's report of 10^5–10^6 E-value deflation).
+ * ===================================================== */
+
+/* Local mode bucket medians: K_local[is_noss][mode_idx][bucket]
+ * mode_idx: 0=ECMLC, 1=ECMLI */
+static const double K_local[2][2][N_BUCKETS] = {
+  /* str  (is_noss=0) */ {
+    /* ECMLC */ { 0.209016, 0.261362, 0.261597, 0.202173, 0.181150 },
+    /* ECMLI */ { 0.151888, 0.187144, 0.240653, 0.191042, 0.167103 },
+  },
+  /* noss (is_noss=1) */ {
+    /* ECMLC */ { 0.400137, 0.392141, 0.446856, 0.480049, 0.439189 },
+    /* ECMLI */ { 0.235226, 0.210951, 0.346891, 0.425224, 0.394883 },
+  },
+};
+
+/* Glocal clen power-law: K = exp(a) * clen^b, indexed by [is_noss][mode_idx]
+ * mode_idx: 0=ECMGC, 1=ECMGI */
+static const double K_glocal_a[2][2] = {
+  { +6.034227, +4.527040 },  /* str : ECMGC, ECMGI */
+  { +3.626408, +2.802066 },  /* noss: ECMGC, ECMGI */
+};
+static const double K_glocal_b[2][2] = {
+  { -2.073364, -1.796042 },  /* str : ECMGC, ECMGI */
+  { -1.613740, -1.477064 },  /* noss: ECMGC, ECMGI */
+};
+
+/* predict_K: predict the cur_eff_dbsize / Z_search density factor K =
+ * nrandhits/dbsize for a given (mode, type, bucket, clen). nrandhits is
+ * then K * dbsize_calib at write time; cmsearch rescales to Z_search by
+ * (Z_search / dbsize_calib) * nrandhits.
+ *
+ * 'mode' is one of MODE_ECMLC, MODE_ECMLI, MODE_ECMGC, MODE_ECMGI.
+ * Returns K in (0, 1].
+ */
+static double
+predict_K(int mode, int is_noss, int bucket, int clen)
+{
+  if (mode == MODE_ECMLC) return K_local[is_noss][0][bucket];
+  if (mode == MODE_ECMLI) return K_local[is_noss][1][bucket];
+  if (mode == MODE_ECMGC) return exp(K_glocal_a[is_noss][0]) * pow((double)clen, K_glocal_b[is_noss][0]);
+  if (mode == MODE_ECMGI) return exp(K_glocal_a[is_noss][1]) * pow((double)clen, K_glocal_b[is_noss][1]);
+  return 1.5625e-4;  /* should be unreachable */
+}
+
+
 /* cm_FastCalibrate()
  * Predict ECM parameters (λ, μ_extrap, μ_orig) for all 4 ECM modes and
  * populate cm->expA[0..EXP_NMODES-1] in place.
@@ -736,8 +798,19 @@ cm_FastCalibrate(CM_t *cm)
       double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
       double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
 
+      /* Predict K = nrandhits/dbsize using the K predictor.
+       * In cmsearch, cur_eff_dbsize = (Z_search/dbsize) * nrandhits, so
+       * K controls the absolute E-value scale. Hardcoding nrandhits=250
+       * (K = 1.5625e-4) is wrong — cmcalibrate's K is mode-dependent and
+       * CM-dependent (~0.17–0.38 for local; ~exp(a)·clen^b for glocal),
+       * giving E-values 200×–1500× too small without this correction.
+       */
+      double K_pred = predict_K(mode, is_noss, bucket, cm->clen);
+      int    nrh    = (int) round(K_pred * 1.6e6);
+      if (nrh < 1) nrh = 1;
+
       /* Conventional calibration metadata */
-      SetExpInfo(cm->expA[i], lam, mu_o, 1.6e6, 250, 0.01);
+      SetExpInfo(cm->expA[i], lam, mu_o, 1.6e6, nrh, 0.01);
       /* Override mu_extrap with the directly-predicted value
        * (SetExpInfo would recompute it from mu_orig/lambda/tailp). */
       if (r_mue->nfeat > 0)
