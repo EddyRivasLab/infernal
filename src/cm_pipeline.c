@@ -216,7 +216,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->band_kmax = NULL;
   pli->band_L    = 0;
   pli->p7bnd     = NULL;
-  pli->p7_fwdsc        = 0.0f;
+  pli->p7_fwdsc          = 0.0f;
+  pli->p7_fwdsc_unbanded = 0.0f;
   pli->p7_window_start = 0;
   pli->p7pn_nenv       = 0;
   pli->p7pn_nenv_alloc = 0;
@@ -4143,6 +4144,15 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    /* Save fwdsc and window start for --p7post_cp9b band derivation in dispatch */
 	    pli->p7_fwdsc        = fwdsc;
 	    pli->p7_window_start = (int)ws[i];
+	    /* --debug-f6-envs instrumentation: also compute unbanded glocal Forward so we can
+	     * measure the delta (posterior mass leaking outside the vit-band). Gated on the
+	     * debug-f6-envs file pointer so canonical performance is unchanged. */
+	    if (pli_debug_f6_envs_fp != NULL) {
+	      float dbg_unbanded_fwdsc;
+	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
+	      pli->p7_fwdsc_unbanded = dbg_unbanded_fwdsc;
+	    }
 	  }
 	} else {
 	  esl_stopwatch_Start(stg_watch);

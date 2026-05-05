@@ -2273,7 +2273,8 @@ typedef struct cm_pipeline_s {
   int           do_p7post_cp9b;  /* TRUE to derive CP9 bands from p7 glocal F/B posteriors (--p7post_cp9b)    */
   int           do_pnmono;       /* TRUE to apply monotone reachability sweep on pn_min/max_m bands (--pnmono) */
   int           do_pnmono_print; /* TRUE to print before/after band widths for each pn-monosweep call        */
-  float         p7_fwdsc;        /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc;          /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc_unbanded; /* unbanded glocal Forward score (nats), computed alongside banded when --debug-f6-envs is on */
   int           p7_window_start; /* absolute start (1-indexed) of current window, for --p7post_cp9b coord map  */
   P7_GBANDS    *p7bnd;           /* band structure kept alive across dispatch when --p7post_cp9b (gxfb->bnd ref) */
   /* Per-envelope precomputed pn_min/max bands for --p7post_cp9b.
