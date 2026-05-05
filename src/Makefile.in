@@ -75,10 +75,11 @@ PROGS = cmalign\
 	test_phase4_predict
 
 # list of executable programs that get installed
+# cmcalibrate intentionally omitted: cmbuild now calls cm_FastCalibrate()
+# directly, so cmcalibrate is no longer needed in the standard pipeline.
 IPROGS = \
 	cmalign\
 	cmbuild\
-	cmcalibrate\
 	cmconvert\
 	cmemit\
 	cmfetch\
