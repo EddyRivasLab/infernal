@@ -170,6 +170,9 @@ UTESTS =\
 ITESTS =\
 	itest_brute
 
+REGTESTS =\
+	cm_fast_calibrate_regression
+
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 
 #EXAMPLES =
@@ -200,10 +203,11 @@ ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} tests
 endif
 
-check: ${PROGS} ${UTESTS} ${ITESTS} .FORCE
+check: ${PROGS} ${UTESTS} ${ITESTS} ${REGTESTS} .FORCE
 ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} check
 endif
+	./cm_fast_calibrate_regression $(top_srcdir)/testsuite/cm_fast_calibrate
 
 libinfernal.a: libinfernal-src.stamp .FORCE
 ifdef IMPLDIR
@@ -236,6 +240,9 @@ ${PROGS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libea
 	${QUIET_CC}${CC} ${CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS} ${NEON_CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${DEFS} ${CPPFLAGS} ${MYINCDIRS} -o $@ -c $<
 
 ${ITESTS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a ${HDRS} config.h
+	${QUIET_GEN}${CC} ${CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS} ${NEON_CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${LIBS}
+
+${REGTESTS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a ${HDRS} config.h
 	${QUIET_GEN}${CC} ${CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS} ${NEON_CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${LIBS}
 
 ${UTESTS}: libinfernal.a  ${HDRS} config.h
@@ -284,7 +291,7 @@ clean:
 ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
 endif
-	-rm -f *.o *~ Makefile.bak core ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS} TAGS gmon.out
+	-rm -f *.o *~ Makefile.bak core ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS} ${REGTESTS} TAGS gmon.out
 	-rm -f cm_fast_calibrate_models.h
 	-rm -f libinfernal.a libinfernal-src.stamp
 	-rm -f *.gcno
