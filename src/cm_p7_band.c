@@ -2532,8 +2532,14 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
 
-  cp9 = cm->cp9;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cm->cp9 is NULL.\n");
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cp9 is NULL (pass_idx %d).\n", pass_idx);
 
   /* Phase 1: P7-banded CP9 Forward + Backward (tau-independent) */
   if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
@@ -2573,8 +2579,14 @@ cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *p
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down.\n");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, cm->tau (%f) > 0.5.", cm->tau);
 
-  cp9 = cm->cp9;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, cm->cp9 is NULL.\n");
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, cp9 is NULL (pass_idx %d).\n", pass_idx);
 
   if((status = cp9_ForwardP7BF (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc))   != eslOK) return status;
   if((status = cp9_BackwardP7BF(cp9, errbuf, bmx, dsq, L, kmin, kmax, NULL))  != eslOK) return status;
@@ -2595,7 +2607,7 @@ cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *p
  *
  * Args:     cm          - the CM
  *           errbuf      - for error messages
- *           cp9         - the CP9 HMM (always cm->cp9 for P7B path)
+ *           cp9         - the CP9 HMM (cm->cp9, Lcp9, Rcp9, or Tcp9 depending on pass_idx)
  *           fmx         - filled P7-banded CP9 Forward matrix (read-only)
  *           bmx         - filled P7-banded CP9 Backward matrix (read-only)
  *           pmx         - CP9 matrix for posteriors (filled here; must NOT alias bmx if iterating)
@@ -2737,8 +2749,14 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, dsq is NULL.");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->tau (%f) > 0.5.", cm->tau);
 
-  cp9 = cm->cp9;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->cp9 is NULL.");
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cp9 is NULL (pass_idx %d).", pass_idx);
 
   if(do_trunc) {
     /* Float path: use float-DP CP9 F/B/Posterior to avoid the ~3% per-cell
@@ -2896,9 +2914,15 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
 
-  cp9 = cm->cp9;
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
   if(cp9 == NULL)
-    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cm->cp9 is NULL.\n");
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cp9 is NULL (pass_idx %d).\n", pass_idx);
 
   /* Initialize all bands to "unset" sentinel values:
    * pn_min_* = L+2  (larger than any valid position, signals "not yet seen from left")
@@ -3201,9 +3225,15 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
 
-  cp9 = cm->cp9;
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
   if(cp9 == NULL)
-    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cm->cp9 is NULL.\n");
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cp9 is NULL (pass_idx %d).\n", pass_idx);
 
   log_thresh = logf(thresh);
 
@@ -3948,7 +3978,13 @@ p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
 
   do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
-  cp9           = cm->cp9;
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
 
   /* Copy pn_min/max into cp9b */
   for(k = 0; k <= M; k++) {
