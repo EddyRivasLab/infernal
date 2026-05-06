@@ -227,6 +227,7 @@ static ESL_OPTIONS options[] = {
   { "--novitband", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "disable default vitband (F4/F5 unbanded)",                                   106 },
   { "--vitblocal", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--novitband,--msvband", "with --vitband, use local Viterbi instead of glocal",                  106 },
   { "--nop7post_cp9b", eslARG_NONE, FALSE, NULL, NULL,   NULL,  NULL, NULL, "disable default p7post_cp9b (CP9 bands from p7 post)",                                     106 },
+  { "--p7deltrigger", eslARG_NONE, FALSE, NULL, NULL,   NULL,  NULL, NULL, "re-run F7 Inside without CP9 bands when gFwd delta > 0.5 nats and F6 P < 1e-8",             106 },
   { "--pnmono",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "monotone reachability sweep on pn_min/max_m bands",          106 },
   { "--pnmono-print", eslARG_NONE, FALSE, NULL, NULL,   NULL, "--pnmono", NULL, "with --pnmono: print before/after band widths to stderr",                106 },
   { "--p7bpad",    eslARG_INT,    "3",   NULL, "n>=0",  NULL,  NULL, NULL, "set band half-width (padding) for F4/F5",                                     106 },

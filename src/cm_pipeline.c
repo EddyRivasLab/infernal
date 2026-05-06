@@ -219,6 +219,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7_fwdsc          = 0.0f;
   pli->p7_fwdsc_unbanded = 0.0f;
   pli->p7_window_start = 0;
+  pli->do_p7deltrigger = FALSE;
+  pli->f6_pvalA        = NULL;
+  pli->f6_pvalA_n      = 0;
   pli->p7pn_nenv       = 0;
   pli->p7pn_nenv_alloc = 0;
   pli->p7pn_M          = 0;
@@ -319,6 +322,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->vitband_local      = esl_opt_GetBoolean(go, "--vitblocal") ? TRUE : FALSE;
   pli->do_p7post_cp9b     = (pli->do_vitband &&
 			     ! esl_opt_GetBoolean(go, "--nop7post_cp9b")) ? TRUE : FALSE;
+  pli->do_p7deltrigger    = esl_opt_IsOn(go, "--p7deltrigger")    ? TRUE : FALSE;
   pli->do_pnmono          = esl_opt_GetBoolean(go, "--pnmono")        ? TRUE : FALSE;
   pli->do_pnmono_print    = esl_opt_GetBoolean(go, "--pnmono-print")  ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
@@ -996,6 +1000,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   }
   if (pli->cyk_envtreeA_es) free(pli->cyk_envtreeA_es);
   if (pli->cyk_envtreeA_ee) free(pli->cyk_envtreeA_ee);
+  if (pli->f6_pvalA)        free(pli->f6_pvalA);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -4145,10 +4150,9 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    /* Save fwdsc and window start for --p7post_cp9b band derivation in dispatch */
 	    pli->p7_fwdsc        = fwdsc;
 	    pli->p7_window_start = (int)ws[i];
-	    /* --debug-f6-envs instrumentation: also compute unbanded glocal Forward so we can
-	     * measure the delta (posterior mass leaking outside the vit-band). Gated on the
-	     * debug-f6-envs file pointer so canonical performance is unchanged. */
-	    if (pli_debug_f6_envs_fp != NULL) {
+	    /* --debug-f6-envs / --p7deltrigger: compute unbanded glocal Forward to measure
+	     * delta (posterior mass leaking outside the vit-band). */
+	    if (pli_debug_f6_envs_fp != NULL || pli->do_p7deltrigger) {
 	      float dbg_unbanded_fwdsc;
 	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
 	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);

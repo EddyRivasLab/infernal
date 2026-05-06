@@ -2311,6 +2311,9 @@ typedef struct cm_pipeline_s {
   int64_t      *cyk_envtreeA_es;/* [0..nenv-1] F6 dispatch start positions for cyk_envtreeA[i]             */
   int64_t      *cyk_envtreeA_ee;/* [0..nenv-1] F6 dispatch stop  positions for cyk_envtreeA[i]             */
   int           cyk_envtreeA_n; /* number of entries in cyk_envtreeA                                       */
+  int           do_p7deltrigger;/* TRUE: compute gfwd_unbanded; trigger F7 re-run without CP9 bands (--p7deltrigger) */
+  float        *f6_pvalA;       /* [0..nenv-1] F6 CYK p-value per surviving envelope, for delta trigger    */
+  int           f6_pvalA_n;     /* number of entries in f6_pvalA                                           */
   int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
   int           cykbands_high_conf; /* TRUE: F6 dispatch should use FastCYKScanHB_shmx (saves second pass) */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
