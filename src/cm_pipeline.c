@@ -4586,6 +4586,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   int64_t         *ee = NULL;              /* [0..si..nenv-1] end   posn of surviving envelope si */
   int              enforce_i0;             /* TRUE if first nt must be included in eventual parsetree */
   int              enforce_j0;             /* TRUE if final nt must be included in eventual parsetree */
+  float           *f6pval_tmp = NULL;      /* [0..i..np7env-1] per-input-envelope F6 P-value, for --p7deltrigger */
 
   if (sq->n == 0)  return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (np7env == 0) return eslOK;    /* if there's no envelopes to search in, return */
@@ -4607,6 +4608,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 
   ESL_ALLOC(i_surv, sizeof(int) * np7env);
   esl_vec_ISet(i_surv, np7env, FALSE);
+
+  /* --p7deltrigger: per-input-envelope F6 P-value storage; survivors compacted to pli->f6_pvalA below */
+  if(pli->do_p7deltrigger) {
+    ESL_ALLOC(f6pval_tmp, sizeof(float) * np7env);
+    esl_vec_FSet(f6pval_tmp, np7env, 1.0f);
+  }
 
   /* --cykbands: per-envelope temporary parsetree storage; survivors copied to pli->cyk_envtreeA below */
   Parsetree_t **trA_tmp     = NULL;
@@ -4690,6 +4697,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     else if(status != eslOK) return status;
 
     P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
+    if(f6pval_tmp) f6pval_tmp[i] = (float)P;
 
     if(getenv("CYKBANDS_DUMP")) {
       fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
@@ -4992,6 +5000,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     free(pli->cyk_envtreeA_ee); pli->cyk_envtreeA_ee = NULL;
     pli->cyk_envtreeA_n = 0;
   }
+  /* Reset any per-pipeline f6_pvalA from a previous sequence */
+  if(pli->f6_pvalA) { free(pli->f6_pvalA); pli->f6_pvalA = NULL; pli->f6_pvalA_n = 0; }
   if(nenv > 0) {
     ESL_ALLOC(es, sizeof(int64_t) * nenv);
     ESL_ALLOC(ee, sizeof(int64_t) * nenv);
@@ -5000,6 +5010,10 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       ESL_ALLOC(pli->cyk_envtreeA_es, sizeof(int64_t)       * nenv);
       ESL_ALLOC(pli->cyk_envtreeA_ee, sizeof(int64_t)       * nenv);
       pli->cyk_envtreeA_n = nenv;
+    }
+    if(pli->do_p7deltrigger) {
+      ESL_ALLOC(pli->f6_pvalA, sizeof(float) * nenv);
+      pli->f6_pvalA_n = (int)nenv;
     }
     si = 0;
     for(i = 0; i < np7env; i++) {
@@ -5014,6 +5028,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 	  pli->cyk_envtreeA_ee[si] = trA_tmp ? trA_tmp_ee[i] : -1;
 	  if(trA_tmp) trA_tmp[i] = NULL; /* ownership transferred */
 	}
+	if(pli->f6_pvalA) pli->f6_pvalA[si] = f6pval_tmp ? f6pval_tmp[i] : 1.0f;
 	si++;
       }
     }
@@ -5023,6 +5038,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     int ti; for(ti = 0; ti < np7env; ti++) if(trA_tmp[ti]) FreeParsetree(trA_tmp[ti]);
     free(trA_tmp); free(trA_tmp_es); free(trA_tmp_ee);
   }
+  if(f6pval_tmp) { free(f6pval_tmp); f6pval_tmp = NULL; }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
   *ret_es   = es;
@@ -5286,7 +5302,20 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       }
     }
 
+    /* --p7deltrigger: if delta (unbanded minus banded gFwd) > 0.5 nats AND F6 p-value < 1e-8,
+     * re-run F7 Inside without CP9 bands to recover cognates whose posterior mass leaks outside
+     * the vit-band. Delta is window-level (conservative: all envelopes from a high-delta window
+     * are triggerable). */
+    float delta_nats    = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+    int   do_trigger    = (pli->do_p7deltrigger &&
+                           delta_nats > 0.5f &&
+                           pli->f6_pvalA != NULL && i < pli->f6_pvalA_n &&
+                           pli->f6_pvalA[i] < 1e-8f);
+    int saved_p7post_cp9b = pli->do_p7post_cp9b;
+    if(do_trigger) pli->do_p7post_cp9b = FALSE;
+
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
+    pli->do_p7post_cp9b = saved_p7post_cp9b;
     pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F7_dp       += pli->last_dispatch_dp;
