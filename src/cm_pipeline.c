@@ -219,9 +219,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7_fwdsc          = 0.0f;
   pli->p7_fwdsc_unbanded = 0.0f;
   pli->p7_window_start = 0;
-  pli->do_p7deltrigger = FALSE;
-  pli->f6_pvalA        = NULL;
-  pli->f6_pvalA_n      = 0;
+  pli->do_p7deltrigger    = FALSE;
+  pli->f6_pvalA           = NULL;
+  pli->f6_pvalA_n         = 0;
+  pli->f6_deltaA          = NULL;
+  pli->f6_deltaA_n        = 0;
+  pli->p7env_delta_pre    = NULL;
   pli->p7pn_nenv       = 0;
   pli->p7pn_nenv_alloc = 0;
   pli->p7pn_M          = 0;
@@ -1001,6 +1004,8 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->cyk_envtreeA_es) free(pli->cyk_envtreeA_es);
   if (pli->cyk_envtreeA_ee) free(pli->cyk_envtreeA_ee);
   if (pli->f6_pvalA)        free(pli->f6_pvalA);
+  if (pli->f6_deltaA)       free(pli->f6_deltaA);
+  if (pli->p7env_delta_pre) free(pli->p7env_delta_pre);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -3630,10 +3635,14 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); // avoid 0 malloc
-  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); 
+  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc));
   ESL_ALLOC(eb, sizeof(float)   * ESL_MAX(1, nenv_alloc));
   ESL_ALLOC(ead, sizeof(P7_ALIDISPLAY *) * ESL_MAX(1, nenv_alloc));
   for(i = 0; i < nenv_alloc; i++) ead[i] = NULL;
+  if(pli->do_p7deltrigger) {
+    if(pli->p7env_delta_pre) { free(pli->p7env_delta_pre); pli->p7env_delta_pre = NULL; }
+    ESL_ALLOC(pli->p7env_delta_pre, sizeof(float) * ESL_MAX(1, nenv_alloc));
+  }
   nenv = 0;
   seq = esl_sq_CreateDigital(sq->abc);
 
@@ -4428,12 +4437,13 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       if(pli->do_time_F5) { continue; }
 
       /* if we get here, the envelope has survived, add it to the growing list */
-      if((nenv+1) == nenv_alloc) { 
+      if((nenv+1) == nenv_alloc) {
 	      nenv_alloc *= 2;
 	      ESL_RALLOC(es, p, sizeof(int64_t) * nenv_alloc);
 	      ESL_RALLOC(ee, p, sizeof(int64_t) * nenv_alloc);
         ESL_RALLOC(eb, p, sizeof(float)   * nenv_alloc);
         ESL_RALLOC(ead, p, sizeof(P7_ALIDISPLAY *) * nenv_alloc);
+        if(pli->do_p7deltrigger) ESL_RALLOC(pli->p7env_delta_pre, p, sizeof(float) * nenv_alloc);
       }
       /* Define envelope to search with CM */
       es[nenv] = pli->ddef->dcl[d].ienv + ws[i] - 1;
@@ -4441,6 +4451,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       eb[nenv] = env_sc_for_pvalue;
       ead[nenv] = pli->ddef->dcl[d].ad;
       pli->ddef->dcl[d].ad = NULL;
+      /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
+      if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
        * At CYK dispatch time, all windows have been processed and pli->gxfb/gxbb/p7bnd
        * would only reflect the last window; storing per-envelope here fixes that. */
@@ -4586,7 +4598,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   int64_t         *ee = NULL;              /* [0..si..nenv-1] end   posn of surviving envelope si */
   int              enforce_i0;             /* TRUE if first nt must be included in eventual parsetree */
   int              enforce_j0;             /* TRUE if final nt must be included in eventual parsetree */
-  float           *f6pval_tmp = NULL;      /* [0..i..np7env-1] per-input-envelope F6 P-value, for --p7deltrigger */
+  float           *f6pval_tmp  = NULL;     /* [0..i..np7env-1] per-input-envelope F6 P-value, for --p7deltrigger */
+  float           *f6delta_tmp = NULL;     /* [0..i..np7env-1] per-input-envelope gFwd delta, for --p7deltrigger */
 
   if (sq->n == 0)  return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (np7env == 0) return eslOK;    /* if there's no envelopes to search in, return */
@@ -4609,10 +4622,13 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   ESL_ALLOC(i_surv, sizeof(int) * np7env);
   esl_vec_ISet(i_surv, np7env, FALSE);
 
-  /* --p7deltrigger: per-input-envelope F6 P-value storage; survivors compacted to pli->f6_pvalA below */
+  /* --p7deltrigger: per-input-envelope F6 P-value/delta storage; survivors compacted to pli->f6_pvalA/f6_deltaA below */
   if(pli->do_p7deltrigger) {
     ESL_ALLOC(f6pval_tmp, sizeof(float) * np7env);
     esl_vec_FSet(f6pval_tmp, np7env, 1.0f);
+    ESL_ALLOC(f6delta_tmp, sizeof(float) * np7env);
+    if(pli->p7env_delta_pre != NULL) esl_vec_FCopy(pli->p7env_delta_pre, np7env, f6delta_tmp);
+    else                              esl_vec_FSet(f6delta_tmp, np7env, 0.0f);
   }
 
   /* --cykbands: per-envelope temporary parsetree storage; survivors copied to pli->cyk_envtreeA below */
@@ -5000,8 +5016,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     free(pli->cyk_envtreeA_ee); pli->cyk_envtreeA_ee = NULL;
     pli->cyk_envtreeA_n = 0;
   }
-  /* Reset any per-pipeline f6_pvalA from a previous sequence */
-  if(pli->f6_pvalA) { free(pli->f6_pvalA); pli->f6_pvalA = NULL; pli->f6_pvalA_n = 0; }
+  /* Reset any per-pipeline f6_pvalA/f6_deltaA from a previous sequence */
+  if(pli->f6_pvalA)  { free(pli->f6_pvalA);  pli->f6_pvalA  = NULL; pli->f6_pvalA_n  = 0; }
+  if(pli->f6_deltaA) { free(pli->f6_deltaA); pli->f6_deltaA = NULL; pli->f6_deltaA_n = 0; }
   if(nenv > 0) {
     ESL_ALLOC(es, sizeof(int64_t) * nenv);
     ESL_ALLOC(ee, sizeof(int64_t) * nenv);
@@ -5012,8 +5029,10 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       pli->cyk_envtreeA_n = nenv;
     }
     if(pli->do_p7deltrigger) {
-      ESL_ALLOC(pli->f6_pvalA, sizeof(float) * nenv);
-      pli->f6_pvalA_n = (int)nenv;
+      ESL_ALLOC(pli->f6_pvalA,  sizeof(float) * nenv);
+      pli->f6_pvalA_n  = (int)nenv;
+      ESL_ALLOC(pli->f6_deltaA, sizeof(float) * nenv);
+      pli->f6_deltaA_n = (int)nenv;
     }
     si = 0;
     for(i = 0; i < np7env; i++) {
@@ -5028,7 +5047,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 	  pli->cyk_envtreeA_ee[si] = trA_tmp ? trA_tmp_ee[i] : -1;
 	  if(trA_tmp) trA_tmp[i] = NULL; /* ownership transferred */
 	}
-	if(pli->f6_pvalA) pli->f6_pvalA[si] = f6pval_tmp ? f6pval_tmp[i] : 1.0f;
+	if(pli->f6_pvalA)  pli->f6_pvalA[si]  = f6pval_tmp  ? f6pval_tmp[i]  : 1.0f;
+	if(pli->f6_deltaA) pli->f6_deltaA[si] = f6delta_tmp ? f6delta_tmp[i] : 0.0f;
 	si++;
       }
     }
@@ -5038,7 +5058,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     int ti; for(ti = 0; ti < np7env; ti++) if(trA_tmp[ti]) FreeParsetree(trA_tmp[ti]);
     free(trA_tmp); free(trA_tmp_es); free(trA_tmp_ee);
   }
-  if(f6pval_tmp) { free(f6pval_tmp); f6pval_tmp = NULL; }
+  if(f6pval_tmp)  { free(f6pval_tmp);  f6pval_tmp  = NULL; }
+  if(f6delta_tmp) { free(f6delta_tmp); f6delta_tmp = NULL; }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
   *ret_es   = es;
@@ -5304,9 +5325,9 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
 
     /* --p7deltrigger: if delta (unbanded minus banded gFwd) > 0.5 nats AND F6 p-value < 1e-8,
      * re-run F7 Inside without CP9 bands to recover cognates whose posterior mass leaks outside
-     * the vit-band. Delta is window-level (conservative: all envelopes from a high-delta window
-     * are triggerable). */
-    float delta_nats    = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+     * the vit-band. Delta is stored per-envelope in f6_deltaA (filled at F5 time, compacted
+     * at F6 time) to avoid using stale window-level values here. */
+    float delta_nats    = (pli->f6_deltaA != NULL && i < pli->f6_deltaA_n) ? pli->f6_deltaA[i] : 0.0f;
     int   do_trigger    = (pli->do_p7deltrigger &&
                            delta_nats > 0.5f &&
                            pli->f6_pvalA != NULL && i < pli->f6_pvalA_n &&
