@@ -1997,7 +1997,46 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG\n#DEBUG: PIPELINE back from FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
 #endif
-    
+
+    /* Stage 7: window-level F6+F7 re-run with --novitband --nop7post_cp9b for triggered windows.
+     * Trigger: window-level gFwd delta (unbanded minus banded) > 0.5 nats AND at least one
+     * surviving F6 envelope has f6_pval < 1e-8.
+     * Re-run F6+F7 with do_vitband=FALSE, do_p7post_cp9b=FALSE (cp9_IterateSeq2Bands bands)
+     * and append the resulting hits to the same hitlist.  The hitlist's overlap dedup in cmsearch
+     * provides "take-best-of-two" automatically: if the re-run finds a better-scoring hit at the
+     * same position, it will displace the original; if the original was fine, it survives. */
+    if(pli->do_p7deltrigger && pli->do_edef && pli->do_fcyk && np7envA != NULL && np7envA[p] > 0) {
+      float window_delta = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+      int   any_low_pval = FALSE;
+      int   k;
+      for(k = 0; k < pli->f6_pvalA_n; k++) {
+        if(pli->f6_pvalA[k] < 1e-8f) { any_low_pval = TRUE; break; }
+      }
+      if(window_delta > 0.5f && any_low_pval) {
+        int64_t *es_rerun = NULL;
+        int64_t *ee_rerun = NULL;
+        int      nenv_rerun = 0;
+        /* Save flags */
+        int saved_do_p7post_cp9b = pli->do_p7post_cp9b;
+        int saved_do_vitband     = pli->do_vitband;
+        /* Switch to unbanded / cp9_IterateSeq2Bands path (same as --novitband --nop7post_cp9b) */
+        pli->do_p7post_cp9b = FALSE;
+        pli->do_vitband     = FALSE;
+        /* F6 re-run: same p7 envelopes, different CP9 bands */
+        status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], p7ebAA[p], p7_evparam, np7envA[p], opt_cm, &es_rerun, &ee_rerun, &nenv_rerun);
+        if(status == eslOK && nenv_rerun > 0) {
+          /* F7 re-run: append hits to same hitlist; overlap dedup in cmsearch picks best per position */
+          status = pli_final_stage(pli, cm_offset, sq2search, es_rerun, ee_rerun, nenv_rerun, hitlist, opt_cm);
+        }
+        /* Restore flags */
+        pli->do_p7post_cp9b = saved_do_p7post_cp9b;
+        pli->do_vitband     = saved_do_vitband;
+        if(es_rerun != NULL) { free(es_rerun); es_rerun = NULL; }
+        if(ee_rerun != NULL) { free(ee_rerun); ee_rerun = NULL; }
+        if(status != eslOK) return status;
+      }
+    }
+
     /* if we're researching a 3' terminus, adjust the start/stop
      * positions so they are relative to the actual 5' start 
      */
