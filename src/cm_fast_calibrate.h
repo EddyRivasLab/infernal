@@ -34,6 +34,7 @@ extern int  cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char 
 
 /* Globals controlling cm_LocalMu() — set by cmbuild option parsing.
  * Defaults: N=200, seed=42, wcap=1 (on), on=1.
+ * cmbuild flags: --localmu-N, --localmu-seed, --localmu-nowcap, --no-localmu
  */
 extern int g_localmu_N;
 extern int g_localmu_seed;
