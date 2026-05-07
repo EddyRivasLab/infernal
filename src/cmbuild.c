@@ -144,6 +144,11 @@ static ESL_OPTIONS options[] = {
   { "--no-fil-pcut",  eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,         NULL,         "skip per-CM F1/F2/F3 P-value cutoff calibration",            107 },
   { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
   { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
+  /* LocalMu mini-simulation options */
+  { "--localmu-N",    eslARG_INT,    "200",  NULL, "n>0",   NULL,  NULL, "--no-localmu",  "number of seqs for local-mu mini-simulation",               107 },
+  { "--localmu-seed", eslARG_INT,     "42",  NULL, "n>=0",  NULL,  NULL, "--no-localmu",  "RNG seed for local-mu mini-simulation (0=arbitrary)",       107 },
+  { "--no-localmu-wcap", eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL, "--no-localmu",  "disable W-cap in local-mu mini-simulation",                 107 },
+  { "--no-localmu",   eslARG_NONE,   FALSE,  NULL, NULL,    NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",   107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -496,6 +501,19 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
 
    if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+
+   /* Wire cm_LocalMu() configuration globals from command-line options.
+    * These must be set before cm_FastCalibrate() is called.
+    */
+   if (esl_opt_GetBoolean(go, "--no-localmu")) {
+     g_localmu_on   = 0;
+   } else {
+     g_localmu_on   = 1;
+     g_localmu_N    = esl_opt_GetInteger(go, "--localmu-N");
+     g_localmu_seed = esl_opt_GetInteger(go, "--localmu-seed");
+     g_localmu_wcap = esl_opt_GetBoolean(go, "--no-localmu-wcap") ? 0 : 1;
+   }
+
    output_header(cfg->ofp, go, cfg->cmfile, cfg->alifile);
 
    cfg->nali = 0;

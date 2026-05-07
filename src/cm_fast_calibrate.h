@@ -24,6 +24,22 @@
  */
 extern int  cm_FastCalibrate(CM_t *cm);
 
+/* cm_LocalMu()
+ *   Fixed-lambda mini-simulation for local mu_extrap estimation.
+ *   Overwrites cm->expA[EXP_CM_LC/LI]->mu_extrap and ->mu_orig.
+ *   Glocal modes (EXP_CM_GC/GI) are unchanged.
+ *   Called internally by cm_FastCalibrate() when g_localmu_on == 1.
+ */
+extern int  cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf);
+
+/* Globals controlling cm_LocalMu() — set by cmbuild option parsing.
+ * Defaults: N=200, seed=42, wcap=1 (on), on=1.
+ */
+extern int g_localmu_N;
+extern int g_localmu_seed;
+extern int g_localmu_wcap;
+extern int g_localmu_on;
+
 /* cm_FastCalibrateCleanup()
  *   Free model memory. Idempotent.
  */

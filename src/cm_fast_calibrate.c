@@ -39,6 +39,7 @@
 #include "easel.h"
 #include "esl_buffer.h"
 #include "esl_json.h"
+#include "esl_vectorops.h"
 
 #include "infernal.h"
 #include "cm_fast_calibrate.h"
@@ -92,6 +93,15 @@ typedef struct {
 } FastCalModelSet;
 
 static FastCalModelSet g_models;   /* zero-initialised by C spec */
+
+/* cm_LocalMu() configuration globals — set by cmbuild option parsing
+ * before cm_FastCalibrate() is called.
+ * Defaults: N=200, seed=42, use_wcap=1, enabled=1.
+ */
+int g_localmu_N     = 200;   /* number of random seqs for mini-sim */
+int g_localmu_seed  = 42;    /* RNG seed */
+int g_localmu_wcap  = 1;     /* apply W-cap rule (1=on, 0=off) */
+int g_localmu_on    = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
 
 
 /* =========================================================================
@@ -818,6 +828,24 @@ cm_FastCalibrate(CM_t *cm)
     }
 
   cm->flags |= CMH_EXPTAIL_STATS;
+
+  /* Refine local-mode mu via mini-simulation (cm_LocalMu).
+   * Overrides regression mu_extrap/mu_orig for ECMLC and ECMLI.
+   * Controlled by g_localmu_* globals set from cmbuild options.
+   */
+  if (g_localmu_on) {
+    char   localmu_errbuf[eslERRBUFSIZE];
+    ESL_RANDOMNESS *localmu_rng = esl_randomness_Create(g_localmu_seed);
+    if (localmu_rng == NULL) { status = eslEMEM; goto ERROR; }
+    status = cm_LocalMu(cm, localmu_rng, g_localmu_N, g_localmu_wcap, localmu_errbuf);
+    esl_randomness_Destroy(localmu_rng);
+    if (status != eslOK) {
+      /* Surface the error */
+      fprintf(stderr, "cm_LocalMu() failed: %s\n", localmu_errbuf);
+      return eslFAIL;
+    }
+  }
+
   return eslOK;
 
  ERROR:
@@ -844,6 +872,318 @@ cm_FastCalibrateCleanup(void)
         ridge_free(&g_models.noss_mu_orig  [b][m]);
       }
   g_models.loaded = 0;
+}
+
+
+/* =========================================================================
+ * cm_LocalMu(): fixed-lambda mini-sim for local mu_extrap estimation.
+ *
+ * Background (from study of cmcalibrate.c):
+ *   a. Random sequence generation: SampleGenomicSequenceFromHMM() with a
+ *      5-state GC-content HMM (CreateGenomicHMM), mimicking genomic composition.
+ *   b. QDB setup: cm->config_opts |= CM_CONFIG_QDB, beta1=beta2=1e-7, then
+ *      cm_Configure(cm, errbuf, -1) which calls CalculateQueryDependentBands.
+ *      Note: cmcalibrate default is 1e-15; we use 1e-7 per brief spec.
+ *   c. Local CYK: FastCYKScan(cm, smx, SMX_QDB2_LOOSE, ...) with NULL3 on.
+ *      Local Inside: FastIInsideScan(cm, smx, SMX_QDB2_LOOSE, ...) with NULL3 on.
+ *      The CM_SEARCH_INSIDE flag toggles CYK vs Inside in cmcalibrate's
+ *      process_search_workunit(); we handle CYK and Inside separately here.
+ *   d. NULL3 correction IS applied (CM_SEARCH_NULL3 is set by default in
+ *      cmcalibrate for calibration). We enable it here as well.
+ *   e. We score one sequence at a time (L=2*W_eff) and record the best-hit
+ *      score per sequence. If no hit is found, use -1e9 as sentinel.
+ *      (cmcalibrate searches 10 Kb chunks; our mini-sim uses 2*W_eff chunks
+ *      as validated in 25_1218: mean ratio 1.00 at L=2W for local modes.)
+ */
+
+/* cm_LocalMu()
+ * Fixed-lambda mini-simulation for local mu_extrap estimation.
+ * Generates N random genomic-HMM sequences of length 2*W_eff (where
+ * W_eff = capped W if use_wcap, else cm->W). Scores each with local
+ * CYK + local Inside + QDBs at beta=1e-7. Computes mu_extrap and
+ * mu_orig from fixed-lambda MLE on the best-hit-per-seq scores.
+ * Overwrites cm->expA[EXP_CM_LC]->mu_extrap, ->mu_orig
+ *            cm->expA[EXP_CM_LI]->mu_extrap, ->mu_orig
+ * Glocal mode ExpInfo and lambda are unchanged.
+ */
+int
+cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
+{
+  int     status;
+  int     i;
+  CM_t   *lcm      = NULL;   /* cloned CM, configured for local mode */
+
+  /* HMM parameters for genomic sequence generation */
+  double  *ghmm_sA  = NULL;
+  double **ghmm_tAA = NULL;
+  double **ghmm_eAA = NULL;
+  int      ghmm_nstates = 0;
+
+  ESL_DSQ    *dsq      = NULL;
+  CM_TOPHITS *th       = NULL;
+  float  *cyk_scores   = NULL;
+  float  *ins_scores   = NULL;
+  float  *neg_ls       = NULL;   /* scratch: -lambda * score[i] for log-sum */
+  int     W_eff;
+  int     L;
+
+  /* Step 1: Compute W_eff and L */
+  if (use_wcap) {
+    if      (cm->W > 3000)    W_eff = ESL_MIN(cm->W, 300);
+    else if (cm->clen > 1000) W_eff = ESL_MIN(cm->W, ESL_MAX(200, cm->W / 10));
+    else                      W_eff = ESL_MIN(cm->W, ESL_MIN(400, ESL_MAX(200, cm->W / 4)));
+  } else {
+    W_eff = cm->W;
+  }
+  L = 2 * W_eff;
+  if (L < cm->clen) L = cm->clen;   /* safety floor for tiny CMs */
+
+  /* Step 2: Clone the CM and prepare the clone for fresh local-mode configuration.
+   *
+   * Background: by the time cm_LocalMu() is called from cm_FastCalibrate(),
+   * the original CM has been fully configured in global mode by cmbuild's
+   * configure_model() → cm_Configure(). This means CM_IS_CONFIGURED, CMH_BITS,
+   * CMH_CP9, CMH_MLP7, CMH_LOCAL_BEGIN/END flags are set, and cp9/smx/hb_mx
+   * etc. are non-NULL. cm_Configure() calls cm_nonconfigured_Verify() which
+   * rejects any configured CM. So we must strip all configuration state from
+   * the clone to make it look like a freshly-built unconfigured CM.
+   */
+  if ((status = cm_Clone(cm, errbuf, &lcm)) != eslOK) goto ERROR;
+
+  /* Strip all configuration state from clone: free matrices, CP9, scan mx. */
+  /* HMM-banded matrices */
+  if (lcm->hb_mx    != NULL) { cm_hb_mx_Destroy(lcm->hb_mx);                 lcm->hb_mx    = NULL; }
+  if (lcm->hb_omx   != NULL) { cm_hb_mx_Destroy(lcm->hb_omx);                lcm->hb_omx   = NULL; }
+  if (lcm->hb_emx   != NULL) { cm_hb_emit_mx_Destroy(lcm->hb_emx);           lcm->hb_emx   = NULL; }
+  if (lcm->hb_shmx  != NULL) { cm_hb_shadow_mx_Destroy(lcm->hb_shmx);        lcm->hb_shmx  = NULL; }
+  /* Truncated HMM-banded matrices */
+  if (lcm->trhb_mx  != NULL) { cm_tr_hb_mx_Destroy(lcm->trhb_mx);            lcm->trhb_mx  = NULL; }
+  if (lcm->trhb_omx != NULL) { cm_tr_hb_mx_Destroy(lcm->trhb_omx);           lcm->trhb_omx = NULL; }
+  if (lcm->trhb_emx != NULL) { cm_tr_hb_emit_mx_Destroy(lcm->trhb_emx);      lcm->trhb_emx = NULL; }
+  if (lcm->trhb_shmx!= NULL) { cm_tr_hb_shadow_mx_Destroy(lcm->trhb_shmx);   lcm->trhb_shmx= NULL; }
+  /* Non-banded CM matrices */
+  if (lcm->nb_mx    != NULL) { cm_mx_Destroy(lcm->nb_mx);                     lcm->nb_mx    = NULL; }
+  if (lcm->nb_omx   != NULL) { cm_mx_Destroy(lcm->nb_omx);                    lcm->nb_omx   = NULL; }
+  if (lcm->nb_emx   != NULL) { cm_emit_mx_Destroy(lcm->nb_emx);               lcm->nb_emx   = NULL; }
+  if (lcm->nb_shmx  != NULL) { cm_shadow_mx_Destroy(lcm->nb_shmx);            lcm->nb_shmx  = NULL; }
+  /* Truncated non-banded matrices */
+  if (lcm->trnb_mx  != NULL) { cm_tr_mx_Destroy(lcm->trnb_mx);                lcm->trnb_mx  = NULL; }
+  if (lcm->trnb_omx != NULL) { cm_tr_mx_Destroy(lcm->trnb_omx);               lcm->trnb_omx = NULL; }
+  if (lcm->trnb_emx != NULL) { cm_tr_emit_mx_Destroy(lcm->trnb_emx);          lcm->trnb_emx = NULL; }
+  if (lcm->trnb_shmx!= NULL) { cm_tr_shadow_mx_Destroy(lcm->trnb_shmx);       lcm->trnb_shmx= NULL; }
+  /* Scan matrices */
+  if (lcm->smx      != NULL) { cm_scan_mx_Destroy(lcm, lcm->smx);             lcm->smx      = NULL; }
+  if (lcm->trsmx    != NULL) { cm_tr_scan_mx_Destroy(lcm, lcm->trsmx);        lcm->trsmx    = NULL; }
+  /* CP9 HMMs and related */
+  if (lcm->cp9      != NULL) { FreeCPlan9(lcm->cp9);                           lcm->cp9      = NULL; }
+  if (lcm->Lcp9     != NULL) { FreeCPlan9(lcm->Lcp9);                          lcm->Lcp9     = NULL; }
+  if (lcm->Rcp9     != NULL) { FreeCPlan9(lcm->Rcp9);                          lcm->Rcp9     = NULL; }
+  if (lcm->Tcp9     != NULL) { FreeCPlan9(lcm->Tcp9);                          lcm->Tcp9     = NULL; }
+  if (lcm->cp9map   != NULL) { FreeCP9Map(lcm->cp9map);                        lcm->cp9map   = NULL; }
+  if (lcm->cp9b     != NULL) { FreeCP9Bands(lcm->cp9b);                        lcm->cp9b     = NULL; }
+  if (lcm->cp9_mx   != NULL) { FreeCP9Matrix(lcm->cp9_mx);                     lcm->cp9_mx   = NULL; }
+  if (lcm->cp9_bmx  != NULL) { FreeCP9Matrix(lcm->cp9_bmx);                    lcm->cp9_bmx  = NULL; }
+  /* p7 HMMs */
+  if (lcm->mlp7     != NULL) { p7_hmm_Destroy(lcm->mlp7);                      lcm->mlp7     = NULL; }
+  /* Truncation penalties and consensus */
+  if (lcm->trp      != NULL) { cm_tr_penalties_Destroy(lcm->trp);              lcm->trp      = NULL; }
+  if (lcm->cmcons   != NULL) { FreeCMConsensus(lcm->cmcons);                   lcm->cmcons   = NULL; }
+
+  /* Reset flags: clear all that cm_nonconfigured_Verify() checks for absence.
+   * Keep CMH_HASBITS only if needed; we're re-running CMLogoddsify in
+   * cm_Configure(), so we drop it and let configure recompute. */
+  lcm->flags &= ~(CMH_BITS | CMH_MLP7 | CMH_LOCAL_BEGIN | CMH_LOCAL_END |
+                  CMH_CP9  | CMH_CP9_TRUNC | CM_EMIT_NO_LOCAL_BEGINS |
+                  CM_EMIT_NO_LOCAL_ENDS | CM_IS_CONFIGURED);
+  /* Clear config/search opts from original configuration; we'll set fresh ones */
+  lcm->config_opts = 0;
+  lcm->search_opts = 0;
+
+  /* Reset qdbinfo: set beta to 1e-7 (our desired QDB beta) and mark as
+   * INIT so cm_Configure() will recalculate bands at beta=1e-7.
+   * The dmin/dmax arrays in the clone will be recomputed by cm_Configure().
+   */
+  if (lcm->qdbinfo != NULL) {
+    lcm->qdbinfo->beta1 = 1e-7;
+    lcm->qdbinfo->beta2 = 1e-7;
+    lcm->qdbinfo->setby = CM_QDBINFO_SETBY_INIT;
+    /* Reset dmin/dmax to initial values (0 and clen*2) */
+    esl_vec_ISet(lcm->qdbinfo->dmin1, lcm->M, 0);
+    esl_vec_ISet(lcm->qdbinfo->dmax1, lcm->M, lcm->clen * 2);
+    esl_vec_ISet(lcm->qdbinfo->dmin2, lcm->M, 0);
+    esl_vec_ISet(lcm->qdbinfo->dmax2, lcm->M, lcm->clen * 2);
+  }
+
+  /* Restore W and W_setby to initial (INIT) so cm_Configure will recompute W
+   * from QDB bands (or use W_eff if we pass it as W_from_cmdline).
+   */
+  lcm->W_setby = CM_W_SETBY_INIT;
+
+  /* Also restore the original (global-mode) transition probabilities, since
+   * the original CM was configured with local begins/ends which modify the
+   * t[] arrays. We need clean global probs for cm_Configure() to start from.
+   *
+   * Actually: cmbuild configures in GLOBAL mode (no CM_CONFIG_LOCAL), so
+   * CMH_LOCAL_BEGIN/END should already be cleared and t[] should be global.
+   * Just assert this is the case (if these flags are set, we'd need to
+   * de-localize first, which is not implemented here).
+   */
+  if (cm->flags & CMH_LOCAL_BEGIN) {
+    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_LocalMu(): original CM has local begins set; can't unconfigure clone");
+  }
+
+  /* Set up local configuration flags on the clone */
+  lcm->config_opts |= CM_CONFIG_LOCAL;
+  lcm->config_opts |= CM_CONFIG_HMMLOCAL;
+  lcm->config_opts |= CM_CONFIG_HMMEL;
+  lcm->config_opts |= CM_CONFIG_QDB;
+  lcm->config_opts |= CM_CONFIG_SCANMX;
+  lcm->search_opts |= CM_SEARCH_QDB;
+  lcm->search_opts |= CM_SEARCH_NULL3;
+  lcm->search_opts |= CM_SEARCH_NOALIGN;
+
+  /* Set QDB beta to 1e-7 on clone */
+  lcm->qdbinfo->beta1 = 1e-7;
+  lcm->qdbinfo->beta2 = 1e-7;
+
+  /* Configure the clone (builds CP9, QDBs, scan matrix, etc.).
+   * Pass W_eff as W_from_cmdline in both cases:
+   *   use_wcap=1: W_eff is the capped value
+   *   use_wcap=0: W_eff = cm->W (pass original W to prevent QDB beta from redefining W)
+   * This ensures the scan matrix is sized correctly for our sequence length L.
+   */
+  if ((status = cm_Configure(lcm, errbuf, W_eff)) != eslOK) goto ERROR;
+
+  /* Verify scan matrix was created */
+  if (lcm->smx == NULL) {
+    ESL_FAIL(eslEINVAL, errbuf, "cm_LocalMu(): clone CM scan matrix is NULL after cm_Configure");
+  }
+
+  /* Step 3: Create genomic HMM and score arrays */
+  if ((status = CreateGenomicHMM(cm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
+
+  ESL_ALLOC(cyk_scores, sizeof(float) * N);
+  ESL_ALLOC(ins_scores, sizeof(float) * N);
+  ESL_ALLOC(neg_ls,     sizeof(float) * N);
+
+  /* Step 4: Generate and score N sequences */
+  for (i = 0; i < N; i++) {
+    /* Generate random genomic sequence of length L */
+    if ((status = SampleGenomicSequenceFromHMM(rng, cm->abc, errbuf,
+                                               ghmm_sA, ghmm_tAA, ghmm_eAA,
+                                               ghmm_nstates, L, &dsq)) != eslOK) goto ERROR;
+
+    /* Local CYK scan */
+    lcm->search_opts &= ~CM_SEARCH_INSIDE;
+    th = cm_tophits_Create();
+    if (th == NULL) { status = eslEMEM; goto ERROR; }
+    if ((status = FastCYKScan(lcm, errbuf, lcm->smx,
+                              SMX_QDB2_LOOSE,
+                              dsq, 1, L,
+                              -eslINFINITY,  /* cutoff: keep all hits */
+                              th,
+                              (lcm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE,
+                              0., NULL, NULL, NULL, NULL)) != eslOK) goto ERROR;
+    cyk_scores[i] = (th->N > 0) ? th->unsrt[0].score : -1e9f;
+    /* tophits may have multiple hits; take max (first hit is best since sorted) */
+    if (th->N > 1) {
+      int h;
+      for (h = 1; h < th->N; h++)
+        if (th->unsrt[h].score > cyk_scores[i]) cyk_scores[i] = th->unsrt[h].score;
+    }
+    cm_tophits_Destroy(th); th = NULL;
+
+    /* Local Inside scan */
+    lcm->search_opts |= CM_SEARCH_INSIDE;
+    th = cm_tophits_Create();
+    if (th == NULL) { status = eslEMEM; goto ERROR; }
+    if ((status = FastIInsideScan(lcm, errbuf, lcm->smx,
+                                  SMX_QDB2_LOOSE,
+                                  dsq, 1, L,
+                                  -eslINFINITY,  /* cutoff: keep all hits */
+                                  th,
+                                  (lcm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE,
+                                  0., NULL, NULL, NULL, NULL)) != eslOK) goto ERROR;
+    ins_scores[i] = (th->N > 0) ? th->unsrt[0].score : -1e9f;
+    if (th->N > 1) {
+      int h;
+      for (h = 1; h < th->N; h++)
+        if (th->unsrt[h].score > ins_scores[i]) ins_scores[i] = th->unsrt[h].score;
+    }
+    cm_tophits_Destroy(th); th = NULL;
+
+    free(dsq); dsq = NULL;
+  }
+
+  /* Step 5: Fixed-lambda MLE for mu_extrap and mu_orig.
+   * Fixed-lambda estimator (numerically stable log-sum-exp):
+   *   neg_ls[i]  = -lambda * scores[i]
+   *   log_mean   = esl_vec_FLogSum(neg_ls, N) - log(N)
+   *   mu_extrap  = -log_mean / lambda
+   *   mu_orig    = mu_extrap + log(100) / lambda   (tailp=0.01: log(1/0.01)=log(100))
+   */
+  /* CYK -> EXP_CM_LC */
+  {
+    float  lambda = (float) cm->expA[EXP_CM_LC]->lambda;
+    float  log_mean;
+    double mu_extrap, mu_orig;
+    for (i = 0; i < N; i++) neg_ls[i] = -lambda * cyk_scores[i];
+    log_mean  = esl_vec_FLogSum(neg_ls, N) - (float) log((double) N);
+    mu_extrap = (double) (-log_mean / lambda);
+    mu_orig   = mu_extrap + log(100.0) / (double) lambda;
+    cm->expA[EXP_CM_LC]->mu_extrap = mu_extrap;
+    cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
+  }
+  /* Inside -> EXP_CM_LI */
+  {
+    float  lambda = (float) cm->expA[EXP_CM_LI]->lambda;
+    float  log_mean;
+    double mu_extrap, mu_orig;
+    for (i = 0; i < N; i++) neg_ls[i] = -lambda * ins_scores[i];
+    log_mean  = esl_vec_FLogSum(neg_ls, N) - (float) log((double) N);
+    mu_extrap = (double) (-log_mean / lambda);
+    mu_orig   = mu_extrap + log(100.0) / (double) lambda;
+    cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
+    cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
+  }
+
+  /* Step 6 & 7: Free temporary memory */
+  FreeCM(lcm);
+  if (ghmm_sA  != NULL) free(ghmm_sA);
+  if (ghmm_tAA != NULL) {
+    int s;
+    for (s = 0; s < ghmm_nstates; s++) if (ghmm_tAA[s] != NULL) free(ghmm_tAA[s]);
+    free(ghmm_tAA);
+  }
+  if (ghmm_eAA != NULL) {
+    int s;
+    for (s = 0; s < ghmm_nstates; s++) if (ghmm_eAA[s] != NULL) free(ghmm_eAA[s]);
+    free(ghmm_eAA);
+  }
+  free(cyk_scores);
+  free(ins_scores);
+  free(neg_ls);
+  return eslOK;
+
+ ERROR:
+  if (lcm != NULL)      FreeCM(lcm);
+  if (ghmm_sA != NULL)  free(ghmm_sA);
+  if (ghmm_tAA != NULL) {
+    int s;
+    for (s = 0; s < ghmm_nstates; s++) if (ghmm_tAA[s] != NULL) free(ghmm_tAA[s]);
+    free(ghmm_tAA);
+  }
+  if (ghmm_eAA != NULL) {
+    int s;
+    for (s = 0; s < ghmm_nstates; s++) if (ghmm_eAA[s] != NULL) free(ghmm_eAA[s]);
+    free(ghmm_eAA);
+  }
+  if (dsq != NULL)         free(dsq);
+  if (th  != NULL)         cm_tophits_Destroy(th);
+  if (cyk_scores != NULL)  free(cyk_scores);
+  if (ins_scores != NULL)  free(ins_scores);
+  if (neg_ls != NULL)      free(neg_ls);
+  return status;
 }
 
 
