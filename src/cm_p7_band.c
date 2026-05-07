@@ -1918,7 +1918,10 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, mx is NULL.\n");
   if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, mx->M != cp9->M.\n");
   if(kmin == NULL || kmax == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, kmin/kmax NULL.\n");
-  if(cp9->flags & CPLAN9_EL)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, cp9 EL flag up.\n");
+  /* EL states are not computed here (elmx stays -eslINFINITY throughout).
+   * This is safe: cp9O_ME (local exit from sw_config) is unaffected by
+   * cp9_EL_local_ends_config, so truncated HMMs (Lcp9/Rcp9/Tcp9) give
+   * correct local-end posteriors for band derivation even without EL. */
 
   M = cp9->M;
   int const *tsc = cp9->otsc;
