@@ -1918,10 +1918,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, mx is NULL.\n");
   if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, mx->M != cp9->M.\n");
   if(kmin == NULL || kmax == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, kmin/kmax NULL.\n");
-  /* EL states are not computed here (elmx stays -eslINFINITY throughout).
-   * This is safe: cp9O_ME (local exit from sw_config) is unaffected by
-   * cp9_EL_local_ends_config, so truncated HMMs (Lcp9/Rcp9/Tcp9) give
-   * correct local-end posteriors for band derivation even without EL. */
+  /* EL states handled below via CPLAN9_EL guard, mirroring cp9_ForwardP7B_OLD_WITH_EL. */
 
   M = cp9->M;
   int const *tsc = cp9->otsc;
@@ -1980,6 +1977,9 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
       for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = -eslINFINITY;
       for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -eslINFINITY;
 
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) elmx[i][kpcur] = -eslINFINITY;
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -eslINFINITY;
+
       kpcur = kn - kmin[i];
       kpprv = kn - kmin[i-1];
       for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
@@ -1995,12 +1995,34 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	    sc = p7_FLogsum(sc, mmx[i-1][0] + Scorify(CP9TSC(cp9O_BM,k)));
 	}
 
+	if (cp9->flags & CPLAN9_EL) {
+	  int c_el, kpprv_el;
+	  for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
+	    if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
+	      kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
+	      sc = p7_FLogsum(sc, elmx[i-1][kpprv_el]);
+	    }
+	  }
+	}
+
 	if(sc != -eslINFINITY) {
 	  mmx[i][kpcur] = sc + Scorify(msc_i[k]);
 	  endsc = p7_FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
 	}
 	else {
 	  mmx[i][kpcur] = -eslINFINITY;
+	}
+
+	{
+	  float el_sc = -eslINFINITY;
+	  if ((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+	    el_sc = mmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
+	    if (INBAND(i-1, k)) {                                  /* EL self-loop */
+	      int kpprv_el = k - kmin[i-1];
+	      el_sc = p7_FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
+	    }
+	  }
+	  elmx[i][kpcur] = el_sc;
 	}
       }
 
@@ -2040,6 +2062,16 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
       }
 
       erow[i] = endsc;
+
+      if (cp9->flags & CPLAN9_EL) {
+	int c_el;
+	for (c_el = 0; c_el < cp9->el_from_ct[M+1]; c_el++) {
+	  if (INBAND(i, cp9->el_from_idx[M+1][c_el])) {
+	    int kpel = cp9->el_from_idx[M+1][c_el] - kmin[i];
+	    erow[i] = p7_FLogsum(erow[i], elmx[i][kpel]);
+	  }
+	}
+      }
   }
 
   *ret_sc = erow[L];
