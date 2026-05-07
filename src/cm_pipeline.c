@@ -5324,19 +5324,22 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     }
 
     /* --p7deltrigger: if delta (unbanded minus banded gFwd) > 0.5 nats AND F6 p-value < 1e-8,
-     * re-run F7 Inside without CP9 bands to recover cognates whose posterior mass leaks outside
-     * the vit-band. Delta is stored per-envelope in f6_deltaA (filled at F5 time, compacted
-     * at F6 time) to avoid using stale window-level values here. */
+     * re-run F7 Inside via cp9_IterateSeq2Bands (no p7-derived CP9 bands at all) to recover
+     * cognates whose posterior mass leaks outside the vit-band. Must disable both do_p7post_cp9b
+     * AND do_vitband: disabling only do_p7post_cp9b falls back to vitband (same Vit trace,
+     * same wrong-region bands). The offline bedge4 sweep used --novitband --nop7post_cp9b. */
     float delta_nats    = (pli->f6_deltaA != NULL && i < pli->f6_deltaA_n) ? pli->f6_deltaA[i] : 0.0f;
     int   do_trigger    = (pli->do_p7deltrigger &&
                            delta_nats > 0.5f &&
                            pli->f6_pvalA != NULL && i < pli->f6_pvalA_n &&
                            pli->f6_pvalA[i] < 1e-8f);
     int saved_p7post_cp9b = pli->do_p7post_cp9b;
-    if(do_trigger) pli->do_p7post_cp9b = FALSE;
+    int saved_do_vitband  = pli->do_vitband;
+    if(do_trigger) { pli->do_p7post_cp9b = FALSE; pli->do_vitband = FALSE; }
 
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
     pli->do_p7post_cp9b = saved_p7post_cp9b;
+    pli->do_vitband     = saved_do_vitband;
     pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F7_dp       += pli->last_dispatch_dp;
