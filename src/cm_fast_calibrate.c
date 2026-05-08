@@ -883,9 +883,9 @@ cm_FastCalibrateCleanup(void)
  * Background (from study of cmcalibrate.c):
  *   a. Random sequence generation: SampleGenomicSequenceFromHMM() with a
  *      5-state GC-content HMM (CreateGenomicHMM), mimicking genomic composition.
- *   b. QDB setup: cm->config_opts |= CM_CONFIG_QDB, beta1=beta2=1e-7, then
+ *   b. QDB setup: cm->config_opts |= CM_CONFIG_QDB, beta1=beta2=1e-15, then
  *      cm_Configure(cm, errbuf, -1) which calls CalculateQueryDependentBands.
- *      Note: cmcalibrate default is 1e-15; we use 1e-7 per brief spec.
+ *      Must use 1e-15 (cmcalibrate default); looser beta inflates scores by ~7 bits.
  *   c. Local CYK: FastCYKScan(cm, smx, SMX_QDB2_LOOSE, ...) with NULL3 on.
  *      Local Inside: FastIInsideScan(cm, smx, SMX_QDB2_LOOSE, ...) with NULL3 on.
  *      The CM_SEARCH_INSIDE flag toggles CYK vs Inside in cmcalibrate's
@@ -902,7 +902,7 @@ cm_FastCalibrateCleanup(void)
  * Fixed-lambda mini-simulation for local mu_extrap estimation.
  * Generates N random genomic-HMM sequences of length 2*W_eff (where
  * W_eff = capped W if use_wcap, else cm->W). Scores each with local
- * CYK + local Inside + QDBs at beta=1e-7. Computes mu_extrap and
+ * CYK + local Inside + QDBs at beta=1e-15. Computes mu_extrap and
  * mu_orig from fixed-lambda MLE on the best-hit-per-seq scores.
  * Overwrites cm->expA[EXP_CM_LC]->mu_extrap, ->mu_orig
  *            cm->expA[EXP_CM_LI]->mu_extrap, ->mu_orig
@@ -1001,13 +1001,13 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
   lcm->config_opts = 0;
   lcm->search_opts = 0;
 
-  /* Reset qdbinfo: set beta to 1e-7 (our desired QDB beta) and mark as
-   * INIT so cm_Configure() will recalculate bands at beta=1e-7.
+  /* Reset qdbinfo: set beta to 1e-15 (same as cmcalibrate default) and mark
+   * as INIT so cm_Configure() will recalculate bands at beta=1e-15.
    * The dmin/dmax arrays in the clone will be recomputed by cm_Configure().
    */
   if (lcm->qdbinfo != NULL) {
-    lcm->qdbinfo->beta1 = 1e-7;
-    lcm->qdbinfo->beta2 = 1e-7;
+    lcm->qdbinfo->beta1 = 1e-15;
+    lcm->qdbinfo->beta2 = 1e-15;
     lcm->qdbinfo->setby = CM_QDBINFO_SETBY_INIT;
     /* Reset dmin/dmax to initial values (0 and clen*2) */
     esl_vec_ISet(lcm->qdbinfo->dmin1, lcm->M, 0);
@@ -1044,9 +1044,9 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
   lcm->search_opts |= CM_SEARCH_NULL3;
   lcm->search_opts |= CM_SEARCH_NOALIGN;
 
-  /* Set QDB beta to 1e-7 on clone */
-  lcm->qdbinfo->beta1 = 1e-7;
-  lcm->qdbinfo->beta2 = 1e-7;
+  /* Set QDB beta to 1e-15 on clone (matches cmcalibrate default) */
+  lcm->qdbinfo->beta1 = 1e-15;
+  lcm->qdbinfo->beta2 = 1e-15;
 
   /* Configure the clone (builds CP9, QDBs, scan matrix, etc.).
    * Pass W_eff as W_from_cmdline in both cases:
