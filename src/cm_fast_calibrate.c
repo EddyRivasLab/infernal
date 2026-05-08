@@ -104,6 +104,7 @@ int    g_localmu_wcap           = 1;     /* apply W-cap rule (1=on, 0=off) */
 int    g_localmu_on             = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
 double g_localmu_lambda_lc      = -1.0;  /* if >0, override regression lambda for EXP_CM_LC */
 double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda for EXP_CM_LI */
+int    g_localmu_L              = -1;    /* if >0, override per-seq L (default 2*W_eff) */
 
 
 /* =========================================================================
@@ -939,6 +940,7 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
   }
   L = 2 * W_eff;
   if (L < cm->clen) L = cm->clen;   /* safety floor for tiny CMs */
+  if (g_localmu_L > 0) L = g_localmu_L;   /* user override (e.g., 10000 to mimic cmcalibrate) */
 
   /* Step 2: Clone the CM and prepare the clone for fresh local-mode configuration.
    *

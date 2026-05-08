@@ -150,6 +150,7 @@ static ESL_OPTIONS options[] = {
   { "--localmu-nowcap",   eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "disable W-cap in local-mu mini-simulation",                          107 },
   { "--localmu-lc-lambda",eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL, "--no-localmu",  "override regression lambda for EXP_CM_LC (diagnostic experiment 2)", 107 },
   { "--localmu-li-lambda",eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL, "--no-localmu",  "override regression lambda for EXP_CM_LI (diagnostic experiment 2)", 107 },
+  { "--localmu-L",        eslARG_INT,     NULL,  NULL, "n>0",     NULL,  NULL, "--no-localmu",  "override per-seq length L (default 2*W_eff; e.g. 10000 for cmcal-like)", 107 },
   { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",            107 },
 
   /* Refining the input alignment */
@@ -518,6 +519,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
                            ? esl_opt_GetReal(go, "--localmu-lc-lambda") : -1.0;
      g_localmu_lambda_li = esl_opt_IsUsed(go, "--localmu-li-lambda")
                            ? esl_opt_GetReal(go, "--localmu-li-lambda") : -1.0;
+     g_localmu_L = esl_opt_IsUsed(go, "--localmu-L")
+                   ? esl_opt_GetInteger(go, "--localmu-L") : -1;
    }
 
    output_header(cfg->ofp, go, cfg->cmfile, cfg->alifile);
