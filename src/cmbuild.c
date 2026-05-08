@@ -145,10 +145,12 @@ static ESL_OPTIONS options[] = {
   { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
   { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
   /* LocalMu mini-simulation options */
-  { "--localmu-N",    eslARG_INT,    "200",  NULL, "n>0",   NULL,  NULL, "--no-localmu",  "number of seqs for local-mu mini-simulation",               107 },
-  { "--localmu-seed", eslARG_INT,     "42",  NULL, "n>=0",  NULL,  NULL, "--no-localmu",  "RNG seed for local-mu mini-simulation (0=arbitrary)",       107 },
-  { "--localmu-nowcap", eslARG_NONE, FALSE, NULL, NULL,    NULL,  NULL, "--no-localmu",  "disable W-cap in local-mu mini-simulation",                 107 },
-  { "--no-localmu",   eslARG_NONE,   FALSE,  NULL, NULL,    NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",   107 },
+  { "--localmu-N",        eslARG_INT,    "200",  NULL, "n>0",     NULL,  NULL, "--no-localmu",  "number of seqs for local-mu mini-simulation",                        107 },
+  { "--localmu-seed",     eslARG_INT,     "42",  NULL, "n>=0",    NULL,  NULL, "--no-localmu",  "RNG seed for local-mu mini-simulation (0=arbitrary)",                107 },
+  { "--localmu-nowcap",   eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "disable W-cap in local-mu mini-simulation",                          107 },
+  { "--localmu-lc-lambda",eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL, "--no-localmu",  "override regression lambda for EXP_CM_LC (diagnostic experiment 2)", 107 },
+  { "--localmu-li-lambda",eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL, "--no-localmu",  "override regression lambda for EXP_CM_LI (diagnostic experiment 2)", 107 },
+  { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",            107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -512,6 +514,10 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      g_localmu_N    = esl_opt_GetInteger(go, "--localmu-N");
      g_localmu_seed = esl_opt_GetInteger(go, "--localmu-seed");
      g_localmu_wcap = esl_opt_GetBoolean(go, "--localmu-nowcap") ? 0 : 1;
+     g_localmu_lambda_lc = esl_opt_IsUsed(go, "--localmu-lc-lambda")
+                           ? esl_opt_GetReal(go, "--localmu-lc-lambda") : -1.0;
+     g_localmu_lambda_li = esl_opt_IsUsed(go, "--localmu-li-lambda")
+                           ? esl_opt_GetReal(go, "--localmu-li-lambda") : -1.0;
    }
 
    output_header(cfg->ofp, go, cfg->cmfile, cfg->alifile);

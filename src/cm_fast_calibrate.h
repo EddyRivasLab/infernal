@@ -36,10 +36,12 @@ extern int  cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char 
  * Defaults: N=200, seed=42, wcap=1 (on), on=1.
  * cmbuild flags: --localmu-N, --localmu-seed, --localmu-nowcap, --no-localmu
  */
-extern int g_localmu_N;
-extern int g_localmu_seed;
-extern int g_localmu_wcap;
-extern int g_localmu_on;
+extern int    g_localmu_N;
+extern int    g_localmu_seed;
+extern int    g_localmu_wcap;
+extern int    g_localmu_on;
+extern double g_localmu_lambda_lc;   /* if >0, override regression lambda for EXP_CM_LC */
+extern double g_localmu_lambda_li;   /* if >0, override regression lambda for EXP_CM_LI */
 
 /* cm_FastCalibrateCleanup()
  *   Free model memory. Idempotent.

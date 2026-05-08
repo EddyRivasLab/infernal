@@ -98,10 +98,12 @@ static FastCalModelSet g_models;   /* zero-initialised by C spec */
  * before cm_FastCalibrate() is called.
  * Defaults: N=200, seed=42, use_wcap=1, enabled=1.
  */
-int g_localmu_N     = 200;   /* number of random seqs for mini-sim */
-int g_localmu_seed  = 42;    /* RNG seed */
-int g_localmu_wcap  = 1;     /* apply W-cap rule (1=on, 0=off) */
-int g_localmu_on    = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
+int    g_localmu_N              = 200;   /* number of random seqs for mini-sim */
+int    g_localmu_seed           = 42;    /* RNG seed */
+int    g_localmu_wcap           = 1;     /* apply W-cap rule (1=on, 0=off) */
+int    g_localmu_on             = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
+double g_localmu_lambda_lc      = -1.0;  /* if >0, override regression lambda for EXP_CM_LC */
+double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda for EXP_CM_LI */
 
 
 /* =========================================================================
@@ -1115,36 +1117,57 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     free(dsq); dsq = NULL;
   }
 
-  /* Step 5: Fixed-lambda MLE for mu_extrap and mu_orig.
-   * Fixed-lambda estimator (numerically stable log-sum-exp):
-   *   neg_ls[i]  = -lambda * scores[i]
-   *   log_mean   = esl_vec_FLogSum(neg_ls, N) - log(N)
-   *   mu_extrap  = -log_mean / lambda
-   *   mu_orig    = mu_extrap + log(100) / lambda   (tailp=0.01: log(1/0.01)=log(100))
+  /* Step 5: Tail-only fixed-lambda MLE for mu_extrap and mu_orig.
+   *
+   * Mirror cmcalibrate's approach: use only the top-tail scores, not all N.
+   * Using all N scores biases mu_extrap ~7 bits too positive because the
+   * fixed-lambda log-sum-exp average is dominated by bulk (low-score) samples.
+   *
+   * Algorithm (mirrors esl_exp_FitComplete on the tail):
+   *   K          = max(1, round(tailp * N))   with tailp = 0.01
+   *   Sort scores descending; use only the top K scores.
+   *   MLE for location of exponential with FIXED lambda on upper tail:
+   *     mu_orig   = scores[K-1]               <- min of top-K (the tail threshold)
+   *     mu_extrap = mu_orig - log(1/tailp)/lambda = mu_orig - log(100)/lambda
+   *
+   * Rationale: for an exponential distribution with known lambda, the maximum
+   * likelihood estimate of the location parameter mu is the sample minimum
+   * (any value below the minimum has zero probability).  On the top-K scores,
+   * the sample minimum is scores[K-1].  This mirrors what cmcalibrate's
+   * esl_exp_FitComplete() computes on the tail scores, except we fix lambda
+   * rather than re-estimating it.
    */
-  /* CYK -> EXP_CM_LC */
   {
-    float  lambda = (float) cm->expA[EXP_CM_LC]->lambda;
-    float  log_mean;
-    double mu_extrap, mu_orig;
-    for (i = 0; i < N; i++) neg_ls[i] = -lambda * cyk_scores[i];
-    log_mean  = esl_vec_FLogSum(neg_ls, N) - (float) log((double) N);
-    mu_extrap = (double) (-log_mean / lambda);
-    mu_orig   = mu_extrap + log(100.0) / (double) lambda;
-    cm->expA[EXP_CM_LC]->mu_extrap = mu_extrap;
-    cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
-  }
-  /* Inside -> EXP_CM_LI */
-  {
-    float  lambda = (float) cm->expA[EXP_CM_LI]->lambda;
-    float  log_mean;
-    double mu_extrap, mu_orig;
-    for (i = 0; i < N; i++) neg_ls[i] = -lambda * ins_scores[i];
-    log_mean  = esl_vec_FLogSum(neg_ls, N) - (float) log((double) N);
-    mu_extrap = (double) (-log_mean / lambda);
-    mu_orig   = mu_extrap + log(100.0) / (double) lambda;
-    cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
-    cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
+    /* K = number of top-tail scores to use */
+    int    K = (int) (0.01 * (double) N + 0.5);
+    if (K < 1) K = 1;
+
+    /* CYK -> EXP_CM_LC */
+    {
+      /* Use override lambda if set (experiment 2: test with cmcal's stored lambda) */
+      float  lambda = (g_localmu_lambda_lc > 0.0) ? (float) g_localmu_lambda_lc
+                                                   : (float) cm->expA[EXP_CM_LC]->lambda;
+      double mu_orig, mu_extrap;
+      esl_vec_FSortDecreasing(cyk_scores, N);   /* sort descending in-place */
+      mu_orig   = (double) cyk_scores[K-1];     /* min of top-K = tail threshold */
+      mu_extrap = mu_orig - log(100.0) / (double) lambda;
+      cm->expA[EXP_CM_LC]->lambda    = (double) lambda;   /* update stored lambda if overridden */
+      cm->expA[EXP_CM_LC]->mu_extrap = mu_extrap;
+      cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
+    }
+    /* Inside -> EXP_CM_LI */
+    {
+      /* Use override lambda if set (experiment 2: test with cmcal's stored lambda) */
+      float  lambda = (g_localmu_lambda_li > 0.0) ? (float) g_localmu_lambda_li
+                                                   : (float) cm->expA[EXP_CM_LI]->lambda;
+      double mu_orig, mu_extrap;
+      esl_vec_FSortDecreasing(ins_scores, N);   /* sort descending in-place */
+      mu_orig   = (double) ins_scores[K-1];     /* min of top-K = tail threshold */
+      mu_extrap = mu_orig - log(100.0) / (double) lambda;
+      cm->expA[EXP_CM_LI]->lambda    = (double) lambda;   /* update stored lambda if overridden */
+      cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
+      cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
+    }
   }
 
   /* Step 6 & 7: Free temporary memory */
