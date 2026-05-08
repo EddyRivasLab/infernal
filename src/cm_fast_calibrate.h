@@ -43,6 +43,7 @@ extern int    g_localmu_on;
 extern double g_localmu_lambda_lc;   /* if >0, override regression lambda for EXP_CM_LC */
 extern double g_localmu_lambda_li;   /* if >0, override regression lambda for EXP_CM_LI */
 extern int    g_localmu_L;           /* if >0, override per-seq L (default 2*W_eff) */
+extern double g_localmu_beta;        /* QDB beta for cm_LocalMu's clone */
 
 /* cm_FastCalibrateCleanup()
  *   Free model memory. Idempotent.

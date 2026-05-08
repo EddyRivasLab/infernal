@@ -105,6 +105,7 @@ int    g_localmu_on             = 1;     /* 1=run cm_LocalMu, 0=skip (--no-local
 double g_localmu_lambda_lc      = -1.0;  /* if >0, override regression lambda for EXP_CM_LC */
 double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda for EXP_CM_LI */
 int    g_localmu_L              = -1;    /* if >0, override per-seq L (default 2*W_eff) */
+double g_localmu_beta           = 1e-15; /* QDB beta for cm_LocalMu's clone (cmcal default) */
 
 
 /* =========================================================================
@@ -1010,8 +1011,8 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
    * The dmin/dmax arrays in the clone will be recomputed by cm_Configure().
    */
   if (lcm->qdbinfo != NULL) {
-    lcm->qdbinfo->beta1 = 1e-15;
-    lcm->qdbinfo->beta2 = 1e-15;
+    lcm->qdbinfo->beta1 = g_localmu_beta;
+    lcm->qdbinfo->beta2 = g_localmu_beta;
     lcm->qdbinfo->setby = CM_QDBINFO_SETBY_INIT;
     /* Reset dmin/dmax to initial values (0 and clen*2) */
     esl_vec_ISet(lcm->qdbinfo->dmin1, lcm->M, 0);
@@ -1049,8 +1050,8 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
   lcm->search_opts |= CM_SEARCH_NOALIGN;
 
   /* Set QDB beta to 1e-15 on clone (matches cmcalibrate default) */
-  lcm->qdbinfo->beta1 = 1e-15;
-  lcm->qdbinfo->beta2 = 1e-15;
+  lcm->qdbinfo->beta1 = g_localmu_beta;
+  lcm->qdbinfo->beta2 = g_localmu_beta;
 
   /* Configure the clone (builds CP9, QDBs, scan matrix, etc.).
    * Pass W_eff as W_from_cmdline in both cases:
