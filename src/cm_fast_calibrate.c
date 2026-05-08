@@ -924,9 +924,11 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
 
   ESL_DSQ    *dsq      = NULL;
   CM_TOPHITS *th       = NULL;
-  float  *cyk_scores   = NULL;
-  float  *ins_scores   = NULL;
+  float  *cyk_scores   = NULL;   /* growable array of ALL CYK hit scores across N scans */
+  float  *ins_scores   = NULL;   /* growable array of ALL Inside hit scores across N scans */
   float  *neg_ls       = NULL;   /* scratch: -lambda * score[i] for log-sum */
+  int     n_cyk = 0, alloc_cyk = 0;
+  int     n_ins = 0, alloc_ins = 0;
   int     W_eff;
   int     L;
 
@@ -1063,16 +1065,24 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     ESL_FAIL(eslEINVAL, errbuf, "cm_LocalMu(): clone CM scan matrix is NULL after cm_Configure");
   }
 
-  /* Step 3: Create genomic HMM and score arrays */
+  /* Step 3: Create genomic HMM and score arrays.
+   *
+   * cyk_scores / ins_scores are growable arrays that collect EVERY hit score
+   * from EVERY scan (not just the per-sequence-best). This matches what
+   * cmcalibrate does: pool all hits across the entire calibration database
+   * and fit the EVD tail on the pooled distribution.
+   */
   if ((status = CreateGenomicHMM(cm->abc, errbuf, &ghmm_sA, &ghmm_tAA, &ghmm_eAA, &ghmm_nstates)) != eslOK) goto ERROR;
 
-  ESL_ALLOC(cyk_scores, sizeof(float) * N);
-  ESL_ALLOC(ins_scores, sizeof(float) * N);
-  ESL_ALLOC(neg_ls,     sizeof(float) * N);
+  alloc_cyk = N * 64;   /* initial guess; grows on demand */
+  alloc_ins = N * 64;
+  ESL_ALLOC(cyk_scores, sizeof(float) * alloc_cyk);
+  ESL_ALLOC(ins_scores, sizeof(float) * alloc_ins);
 
-  /* Step 4: Generate and score N sequences */
+  /* Step 4: Generate and score N sequences; collect ALL hit scores */
   for (i = 0; i < N; i++) {
-    /* Generate random genomic sequence of length L */
+    int h;
+
     if ((status = SampleGenomicSequenceFromHMM(rng, cm->abc, errbuf,
                                                ghmm_sA, ghmm_tAA, ghmm_eAA,
                                                ghmm_nstates, L, &dsq)) != eslOK) goto ERROR;
@@ -1084,17 +1094,15 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     if ((status = FastCYKScan(lcm, errbuf, lcm->smx,
                               SMX_QDB2_LOOSE,
                               dsq, 1, L,
-                              -eslINFINITY,  /* cutoff: keep all hits */
+                              -eslINFINITY,
                               th,
                               (lcm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE,
                               0., NULL, NULL, NULL, NULL)) != eslOK) goto ERROR;
-    cyk_scores[i] = (th->N > 0) ? th->unsrt[0].score : -1e9f;
-    /* tophits may have multiple hits; take max (first hit is best since sorted) */
-    if (th->N > 1) {
-      int h;
-      for (h = 1; h < th->N; h++)
-        if (th->unsrt[h].score > cyk_scores[i]) cyk_scores[i] = th->unsrt[h].score;
+    if (n_cyk + th->N > alloc_cyk) {
+      while (n_cyk + th->N > alloc_cyk) alloc_cyk *= 2;
+      ESL_REALLOC(cyk_scores, sizeof(float) * alloc_cyk);
     }
+    for (h = 0; h < th->N; h++) cyk_scores[n_cyk++] = th->unsrt[h].score;
     cm_tophits_Destroy(th); th = NULL;
 
     /* Local Inside scan */
@@ -1104,69 +1112,57 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     if ((status = FastIInsideScan(lcm, errbuf, lcm->smx,
                                   SMX_QDB2_LOOSE,
                                   dsq, 1, L,
-                                  -eslINFINITY,  /* cutoff: keep all hits */
+                                  -eslINFINITY,
                                   th,
                                   (lcm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE,
                                   0., NULL, NULL, NULL, NULL)) != eslOK) goto ERROR;
-    ins_scores[i] = (th->N > 0) ? th->unsrt[0].score : -1e9f;
-    if (th->N > 1) {
-      int h;
-      for (h = 1; h < th->N; h++)
-        if (th->unsrt[h].score > ins_scores[i]) ins_scores[i] = th->unsrt[h].score;
+    if (n_ins + th->N > alloc_ins) {
+      while (n_ins + th->N > alloc_ins) alloc_ins *= 2;
+      ESL_REALLOC(ins_scores, sizeof(float) * alloc_ins);
     }
+    for (h = 0; h < th->N; h++) ins_scores[n_ins++] = th->unsrt[h].score;
     cm_tophits_Destroy(th); th = NULL;
 
     free(dsq); dsq = NULL;
   }
 
-  /* Step 5: Tail-only fixed-lambda MLE for mu_extrap and mu_orig.
+  /* Step 5: Tail-only fixed-lambda MLE on the pooled hit-score distribution.
    *
-   * Mirror cmcalibrate's approach: use only the top-tail scores, not all N.
-   * Using all N scores biases mu_extrap ~7 bits too positive because the
-   * fixed-lambda log-sum-exp average is dominated by bulk (low-score) samples.
+   * cyk_scores / ins_scores hold ALL hits across all N scans (not per-seq max).
+   * This matches cmcalibrate, which fits the EVD tail on every hit found in
+   * the entire calibration database, not on per-chunk maxima.
    *
-   * Algorithm (mirrors esl_exp_FitComplete on the tail):
-   *   K          = max(1, round(tailp * N))   with tailp = 0.01
-   *   Sort scores descending; use only the top K scores.
-   *   MLE for location of exponential with FIXED lambda on upper tail:
-   *     mu_orig   = scores[K-1]               <- min of top-K (the tail threshold)
-   *     mu_extrap = mu_orig - log(1/tailp)/lambda = mu_orig - log(100)/lambda
-   *
-   * Rationale: for an exponential distribution with known lambda, the maximum
-   * likelihood estimate of the location parameter mu is the sample minimum
-   * (any value below the minimum has zero probability).  On the top-K scores,
-   * the sample minimum is scores[K-1].  This mirrors what cmcalibrate's
-   * esl_exp_FitComplete() computes on the tail scores, except we fix lambda
-   * rather than re-estimating it.
+   * Algorithm:
+   *   K          = max(1, round(tailp * n_total))   with tailp = 0.01
+   *   Sort scores descending; mu_orig = scores[K-1] (min of top-K).
+   *   mu_extrap = mu_orig - log(1/tailp)/lambda = mu_orig - log(100)/lambda
    */
   {
-    /* K = number of top-tail scores to use */
-    int    K = (int) (0.01 * (double) N + 0.5);
-    if (K < 1) K = 1;
-
     /* CYK -> EXP_CM_LC */
-    {
-      /* Use override lambda if set (experiment 2: test with cmcal's stored lambda) */
+    if (n_cyk > 0) {
+      int    K = (int) (0.01 * (double) n_cyk + 0.5);
       float  lambda = (g_localmu_lambda_lc > 0.0) ? (float) g_localmu_lambda_lc
                                                    : (float) cm->expA[EXP_CM_LC]->lambda;
       double mu_orig, mu_extrap;
-      esl_vec_FSortDecreasing(cyk_scores, N);   /* sort descending in-place */
-      mu_orig   = (double) cyk_scores[K-1];     /* min of top-K = tail threshold */
+      if (K < 1) K = 1;
+      esl_vec_FSortDecreasing(cyk_scores, n_cyk);
+      mu_orig   = (double) cyk_scores[K-1];
       mu_extrap = mu_orig - log(100.0) / (double) lambda;
-      cm->expA[EXP_CM_LC]->lambda    = (double) lambda;   /* update stored lambda if overridden */
+      cm->expA[EXP_CM_LC]->lambda    = (double) lambda;
       cm->expA[EXP_CM_LC]->mu_extrap = mu_extrap;
       cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
     }
     /* Inside -> EXP_CM_LI */
-    {
-      /* Use override lambda if set (experiment 2: test with cmcal's stored lambda) */
+    if (n_ins > 0) {
+      int    K = (int) (0.01 * (double) n_ins + 0.5);
       float  lambda = (g_localmu_lambda_li > 0.0) ? (float) g_localmu_lambda_li
                                                    : (float) cm->expA[EXP_CM_LI]->lambda;
       double mu_orig, mu_extrap;
-      esl_vec_FSortDecreasing(ins_scores, N);   /* sort descending in-place */
-      mu_orig   = (double) ins_scores[K-1];     /* min of top-K = tail threshold */
+      if (K < 1) K = 1;
+      esl_vec_FSortDecreasing(ins_scores, n_ins);
+      mu_orig   = (double) ins_scores[K-1];
       mu_extrap = mu_orig - log(100.0) / (double) lambda;
-      cm->expA[EXP_CM_LI]->lambda    = (double) lambda;   /* update stored lambda if overridden */
+      cm->expA[EXP_CM_LI]->lambda    = (double) lambda;
       cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
       cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
     }
