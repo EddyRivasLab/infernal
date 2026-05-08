@@ -106,6 +106,7 @@ double g_localmu_lambda_lc      = -1.0;  /* if >0, override regression lambda fo
 double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda for EXP_CM_LI */
 int    g_localmu_L              = -1;    /* if >0, override per-seq L (default 2*W_eff) */
 double g_localmu_beta           = 1e-15; /* QDB beta for cm_LocalMu's clone (cmcal default) */
+char  *g_localmu_score_dump     = NULL;  /* if non-NULL, dump all hit scores to this TSV */
 
 
 /* =========================================================================
@@ -1125,6 +1126,19 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     cm_tophits_Destroy(th); th = NULL;
 
     free(dsq); dsq = NULL;
+  }
+
+  /* Optional: dump pooled hit scores to a TSV (mode\tscore) for offline tailp/MLE analysis */
+  if (g_localmu_score_dump != NULL) {
+    FILE *dfp = fopen(g_localmu_score_dump, "w");
+    if (dfp == NULL) {
+      ESL_FAIL(eslEINVAL, errbuf, "cm_LocalMu(): cannot open --localmu-score-dump file '%s'",
+               g_localmu_score_dump);
+    }
+    fprintf(dfp, "mode\tscore\n");
+    { int k; for (k = 0; k < n_cyk; k++) fprintf(dfp, "ECMLC\t%.5f\n", cyk_scores[k]); }
+    { int k; for (k = 0; k < n_ins; k++) fprintf(dfp, "ECMLI\t%.5f\n", ins_scores[k]); }
+    fclose(dfp);
   }
 
   /* Step 5: Tail-only fixed-lambda MLE on the pooled hit-score distribution.
