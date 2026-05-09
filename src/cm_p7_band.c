@@ -8013,17 +8013,17 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
         float xC_i  = pb_X(gxb, rm, i, p7G_C);
         float xC_p  = (i > 0 ? pb_X(gxb, rm, i-1, p7G_C) : -eslINFINITY);
         float xE_i  = pb_X(gxb, rm, i, p7G_E);
-        if (xC_i == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible C reached at i=%d", i);
+        if (xC_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         if      (esl_FCompare_old(xC_i, xC_p + gm->xsc[p7P_C][p7P_LOOP], tol) == eslOK) scur = p7T_C;
         else if (esl_FCompare_old(xC_i, xE_i + gm->xsc[p7P_E][p7P_MOVE], tol) == eslOK) scur = p7T_E;
-        else ESL_XEXCEPTION(eslFAIL, "C at i=%d couldn't be traced", i);
+        else do { status = eslFAIL; goto ERROR; } while(0);
       }
       break;
 
     case p7T_E:
       {
         float xE_i = pb_X(gxb, rm, i, p7G_E);
-        if (xE_i == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible E reached at i=%d", i);
+        if (xE_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         if (p7_profile_IsLocal(gm))
           {
             scur = p7T_M;
@@ -8035,7 +8035,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
               float Dk = pb_D(gxb, rm, i, k);
               if (esl_FCompare_old(xE_i, Dk + esc, tol) == eslOK) { scur = p7T_D; break; }
             }
-            if (k < kac) ESL_XEXCEPTION(eslFAIL, "E at i=%d couldn't be traced (local)", i);
+            if (k < kac) { status = eslFAIL; goto ERROR; }
           }
         else
           {
@@ -8043,7 +8043,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
             float DM = pb_D(gxb, rm, i, M);
             if      (esl_FCompare_old(xE_i, MM, tol) == eslOK) { scur = p7T_M; k = M; }
             else if (esl_FCompare_old(xE_i, DM, tol) == eslOK) { scur = p7T_D; k = M; }
-            else ESL_XEXCEPTION(eslFAIL, "E at i=%d couldn't be traced (glocal)", i);
+            else { status = eslFAIL; goto ERROR; }
           }
       }
       break;
@@ -8051,7 +8051,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
     case p7T_M:
       {
         float Mik = pb_M(gxb, rm, i, k);
-        if (Mik == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible M reached at k=%d,i=%d", k, i);
+        if (Mik == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         float xB_p = (i > 0 ? pb_X(gxb, rm, i-1, p7G_B) : -eslINFINITY);
         float Mp   = (i > 0 ? pb_M(gxb, rm, i-1, k-1) : -eslINFINITY);
         float Ip   = (i > 0 ? pb_I(gxb, rm, i-1, k-1) : -eslINFINITY);
@@ -8061,7 +8061,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
         else if (esl_FCompare_old(Mik, Mp   + TSC(p7P_MM, k-1) + msck, tol) == eslOK) scur = p7T_M;
         else if (esl_FCompare_old(Mik, Ip   + TSC(p7P_IM, k-1) + msck, tol) == eslOK) scur = p7T_I;
         else if (esl_FCompare_old(Mik, Dp   + TSC(p7P_DM, k-1) + msck, tol) == eslOK) scur = p7T_D;
-        else ESL_XEXCEPTION(eslFAIL, "M at k=%d,i=%d couldn't be traced", k, i);
+        else do { status = eslFAIL; goto ERROR; } while(0);
         k--; i--;
       }
       break;
@@ -8069,12 +8069,12 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
     case p7T_D:
       {
         float Dik = pb_D(gxb, rm, i, k);
-        if (Dik == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible D reached at k=%d,i=%d", k, i);
+        if (Dik == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         float Mp = pb_M(gxb, rm, i, k-1);
         float Dp = pb_D(gxb, rm, i, k-1);
         if      (esl_FCompare_old(Dik, Mp + TSC(p7P_MD, k-1), tol) == eslOK) scur = p7T_M;
         else if (esl_FCompare_old(Dik, Dp + TSC(p7P_DD, k-1), tol) == eslOK) scur = p7T_D;
-        else ESL_XEXCEPTION(eslFAIL, "D at k=%d,i=%d couldn't be traced", k, i);
+        else do { status = eslFAIL; goto ERROR; } while(0);
         k--;
       }
       break;
@@ -8082,13 +8082,13 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
     case p7T_I:
       {
         float Iik = pb_I(gxb, rm, i, k);
-        if (Iik == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible I reached at k=%d,i=%d", k, i);
+        if (Iik == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         float Mp = (i > 0 ? pb_M(gxb, rm, i-1, k) : -eslINFINITY);
         float Ip = (i > 0 ? pb_I(gxb, rm, i-1, k) : -eslINFINITY);
         float isck = (rsc != NULL ? ISC(k) : 0);
         if      (esl_FCompare_old(Iik, Mp + TSC(p7P_MI, k) + isck, tol) == eslOK) scur = p7T_M;
         else if (esl_FCompare_old(Iik, Ip + TSC(p7P_II, k) + isck, tol) == eslOK) scur = p7T_I;
-        else ESL_XEXCEPTION(eslFAIL, "I at k=%d,i=%d couldn't be traced", k, i);
+        else do { status = eslFAIL; goto ERROR; } while(0);
         i--;
       }
       break;
@@ -8096,7 +8096,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
     case p7T_N:
       {
         float xN_i = pb_X(gxb, rm, i, p7G_N);
-        if (xN_i == -eslINFINITY && i > 0) ESL_XEXCEPTION(eslFAIL, "impossible N reached at i=%d", i);
+        if (xN_i == -eslINFINITY && i > 0) do { status = eslFAIL; goto ERROR; } while(0);
         scur = ((i == 0) ? p7T_S : p7T_N);
       }
       break;
@@ -8104,28 +8104,28 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
     case p7T_B:
       {
         float xB_i = pb_X(gxb, rm, i, p7G_B);
-        if (xB_i == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible B reached at i=%d", i);
+        if (xB_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         float xN_i = pb_X(gxb, rm, i, p7G_N);
         float xJ_i = pb_X(gxb, rm, i, p7G_J);
         if      (esl_FCompare_old(xB_i, xN_i + gm->xsc[p7P_N][p7P_MOVE], tol) == eslOK) scur = p7T_N;
         else if (esl_FCompare_old(xB_i, xJ_i + gm->xsc[p7P_J][p7P_MOVE], tol) == eslOK) scur = p7T_J;
-        else ESL_XEXCEPTION(eslFAIL, "B at i=%d couldn't be traced", i);
+        else do { status = eslFAIL; goto ERROR; } while(0);
       }
       break;
 
     case p7T_J:
       {
         float xJ_i = pb_X(gxb, rm, i, p7G_J);
-        if (xJ_i == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible J reached at i=%d", i);
+        if (xJ_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
         float xJ_p = (i > 0 ? pb_X(gxb, rm, i-1, p7G_J) : -eslINFINITY);
         float xE_i = pb_X(gxb, rm, i, p7G_E);
         if      (esl_FCompare_old(xJ_i, xJ_p + gm->xsc[p7P_J][p7P_LOOP], tol) == eslOK) scur = p7T_J;
         else if (esl_FCompare_old(xJ_i, xE_i + gm->xsc[p7P_E][p7P_LOOP], tol) == eslOK) scur = p7T_E;
-        else ESL_XEXCEPTION(eslFAIL, "J at i=%d couldn't be traced", i);
+        else do { status = eslFAIL; goto ERROR; } while(0);
       }
       break;
 
-    default: ESL_XEXCEPTION(eslFAIL, "bogus state in traceback");
+    default: do { status = eslFAIL; goto ERROR; } while(0);
     }
 
     if ((status = p7_trace_Append(tr, scur, k, i)) != eslOK) goto ERROR;
