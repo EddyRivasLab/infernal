@@ -447,9 +447,14 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * or full unbanded p7_GViterbi (default). Pinbridge wrapper falls back to
 	   * full p7_Seq2BandsVit if the banded trace fails inside the prefilter band
 	   * (signaled by ncells=0). Pinbridge is correct for both truncated and
-	   * non-truncated alignment: with the same binary on both sides, p7pb produces
-	   * identical mean_acc to p7b on rmark4h (100% truncated). */
-	  if (cm->p7_use_pinbridge) {
+	   * non-truncated alignment.
+	   *
+	   * M-threshold gate: pinbridge has per-sequence overhead (build OPROFILE,
+	   * SSE scan setup, LSIS allocation, banded traceback) that on small models
+	   * exceeds the cost of full p7_GViterbi at O(LM). For M < 200 the full
+	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
+	   * without the tiny-M tail regressions. */
+	  if (cm->p7_use_pinbridge && cm->fp7 != NULL && cm->fp7->M >= 200) {
 	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
 					       sq->dsq, sq->L, cm->p7bpad,
 					       local_nodepad,
