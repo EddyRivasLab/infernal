@@ -447,8 +447,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * or full unbanded p7_GViterbi (default). Pinbridge wrapper falls back to ncells=0
 	   * if the banded trace fails inside the prefilter band, which the existing
 	   * fallback path below catches (status=eslOK, p7_ncells=0 -> eslERANGE branch).
-	   * If the fallback fires, retry with the full Viterbi path. */
-	  if (cm->p7_use_pinbridge) {
+	   * If the fallback fires, retry with the full Viterbi path.
+	   *
+	   * Pinbridge is gated on !do_trunc: for truncated alignments the SW-on-diagonal
+	   * scan can anchor on the wrong diagonal (the test sequence is missing 5'/3'
+	   * residues, so pin diagonals don't reflect the true model entry/exit), the
+	   * banded Viterbi finds a suboptimal trace inside the wrong band, and the
+	   * fallback never triggers because ncells > 0. Falling back to full unbanded
+	   * Viterbi for trunc preserves correctness; on rmark4h (100% trunc) this
+	   * disables pinbridge for every sequence. */
+	  if (cm->p7_use_pinbridge && !do_trunc) {
 	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
 					       sq->dsq, sq->L, cm->p7bpad,
 					       local_nodepad,
