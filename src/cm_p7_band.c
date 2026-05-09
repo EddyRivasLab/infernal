@@ -7879,6 +7879,7 @@ typedef struct {
   char *in_band;   /* [0..L] 1 if row i is in some segment */
   int   ia0;       /* first ia (for prefix accounting) */
   int   ib_last;   /* last ib */
+  float x0[p7G_NXCELLS]; /* row-0 specials (initial state, before any residue) */
 } PB_RowMap;
 
 static void pb_rowmap_destroy(PB_RowMap *rm)
@@ -7910,6 +7911,7 @@ static int pb_build_row_offsets(P7_GMXB *gxb, int L, PB_RowMap **ret_rm)
   ESL_ALLOC(rm->x_off,   sizeof(long) * (L+2));
   ESL_ALLOC(rm->in_band, sizeof(char) * (L+2));
   for (i = 0; i <= L+1; i++) { rm->kac[i] = 0; rm->kbc[i] = 0; rm->dp_off[i] = -1; rm->x_off[i] = -1; rm->in_band[i] = 0; }
+  for (i = 0; i < p7G_NXCELLS; i++) rm->x0[i] = -eslINFINITY;
 
   rm->ia0 = (gxb->bnd->nseg > 0 ? gxb->bnd->imem[0] : L+1);
   rm->ib_last = 0;
@@ -7951,11 +7953,13 @@ static inline float pb_D(P7_GMXB *gxb, PB_RowMap *rm, int i, int k) {
   if (!rm->in_band[i] || k < rm->kac[i] || k > rm->kbc[i]) return -eslINFINITY;
   return gxb->dp[rm->dp_off[i] + (k - rm->kac[i]) * p7G_NSCELLS + p7G_D];
 }
-/* Specials: stored only on rows in band. For rows outside band, recompute by
- * inter-segment accumulation (only xN/xJ/xC propagate; xE/xB are local). */
+/* Specials: stored only on rows in band (1..L). Row 0 specials (initial
+ * state, before any residue) are stashed on PB_RowMap by the caller and
+ * returned here when i==0. Inter-segment rows outside any band return -inf. */
 static inline float pb_X(P7_GMXB *gxb, PB_RowMap *rm, int i, int which) {
+  if (i == 0) return rm->x0[which];
   if (rm->in_band[i]) return gxb->xmx[rm->x_off[i] + which];
-  return -eslINFINITY;  /* caller must handle the inter-segment case */
+  return -eslINFINITY;
 }
 
 
@@ -7986,6 +7990,16 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
   float        esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
 
   if ((status = pb_build_row_offsets(gxb, L, &rm)) != eslOK) goto ERROR;
+
+  /* Row 0 specials: initial conditions before any residue. p7_GBandedViterbi
+   * does not store row 0 in xmx; reconstruct from gm parameters using the
+   * same recurrence the Viterbi uses at start-of-segment when last_ib=0. */
+  rm->x0[p7G_E] = -eslINFINITY;
+  rm->x0[p7G_N] = 0.0f;
+  rm->x0[p7G_J] = -eslINFINITY;
+  rm->x0[p7G_B] = ESL_MAX( rm->x0[p7G_N] + gm->xsc[p7P_N][p7P_MOVE],
+                           rm->x0[p7G_J] + gm->xsc[p7P_J][p7P_MOVE]);
+  rm->x0[p7G_C] = -eslINFINITY;
 
   if ((status = p7_trace_Append(tr, p7T_T, 0, 0)) != eslOK) goto ERROR;
   if ((status = p7_trace_Append(tr, p7T_C, 0, L)) != eslOK) goto ERROR;
@@ -8435,7 +8449,9 @@ p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
 int
 p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
                       P7_GBANDS *bnd, P7_TRACE *tr,
-                      const ESL_DSQ *dsq, int L, int pad, float *ret_sc)
+                      const ESL_DSQ *dsq, int L, int pad, float *ret_sc,
+                      double *ret_sw_ms, double *ret_lsis_ms,
+                      double *ret_band_ms, double *ret_bvit_ms, double *ret_btrace_ms)
 {
   int       status;
   int       M         = gm->M;
@@ -8447,26 +8463,66 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   int      *kmax      = NULL;
   float     vit_sc    = -eslINFINITY;
   int       T         = pb_adaptive_T(M);
+  struct timespec ta, tb;
+  double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
 
   /* Step 1: SW scan -> raw pins */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_sw_scan_collect_pins(dsq, L, om, T, &raw_pins, &npins)) != eslOK) goto ERROR;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
   /* Step 2: LSIS pin selection */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_lsis_select(raw_pins, npins, M, &sel_pins, &nsel)) != eslOK) goto ERROR;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* Step 3: Build per-row kmin/kmax band */
+  /* Step 3+4: build kmin/kmax + convert to GBANDS + (allocate or grow) gxb */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_build_band(sel_pins, nsel, L, M, pad, &kmin, &kmax)) != eslOK) goto ERROR;
-
-  /* Step 4: kmin/kmax -> P7_GBANDS, reinit gxb to that band */
+  /* Always widen boundary rows: a local profile can enter/exit at any k;
+   * a glocal profile must enter at M_1 and exit at M_M, but the existing
+   * preamble/coda already cover those, and widening costs only a handful
+   * of cells on i=0,1,L. Trace can fail without this widening when the
+   * pinbridge band misses the k values the optimal trace needs at i=1 / i=L. */
+  /* Always widen boundary rows i=0,1,L to [1,M]. Even glocal profiles need
+   * room at the boundaries: row L's M_M depends on row L-1's k=M-1, which
+   * pinbridge's coda may not reach. Cost: a few extra cells per sequence;
+   * the interior bandwidth (which dominates the total) is unaffected. */
+  { int bi;
+    for (bi = 0; bi <= 1 && bi <= L; bi++) { kmin[bi] = 1; kmax[bi] = M; }
+    if (L >= 1) { kmin[L] = 1; kmax[L] = M; }
+    if (L >= 2) { kmin[L-1] = 1; kmax[L-1] = M; }  /* k=M-1 reachable for M_M */
+  }
   if ((status = p7_GBands_FromKminKmax(kmin, kmax, L, M, bnd)) != eslOK) goto ERROR;
-  if ((status = p7_gmxb_Reinit(gxb, bnd)) != eslOK) goto ERROR;
+  /* Caller may pass gxb with NULL dp (deferred allocation; p7_gmxb_Create
+   * disallows zero-cell bnd, so the wrapper allocates the struct shell and
+   * we fill dp/xmx here once bnd has cells). */
+  if (gxb->dp == NULL) {
+    if ((gxb->dp  = malloc(sizeof(float) * bnd->ncell * p7G_NSCELLS)) == NULL) { status = eslEMEM; goto ERROR; }
+    if ((gxb->xmx = malloc(sizeof(float) * bnd->nrow  * p7G_NXCELLS)) == NULL) { status = eslEMEM; goto ERROR; }
+    gxb->dalloc = bnd->ncell;
+    gxb->xalloc = bnd->nrow;
+    gxb->bnd    = bnd;
+  } else {
+    if ((status = p7_gmxb_Reinit(gxb, bnd)) != eslOK) goto ERROR;
+  }
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  band_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
   /* Step 5: Banded p7 Viterbi inside the prefilter band */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = p7_GBandedViterbi(dsq, L, gm, gxb, &vit_sc)) != eslOK) goto ERROR;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  bvit_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
   /* Step 6: Banded traceback */
   p7_trace_Reuse(tr);
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   status = p7_GBandedTrace(dsq, L, gm, gxb, tr);
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  btrace_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
   if (status != eslOK) {
     /* Trace failed inside band; signal caller to fall back. */
     if (raw_pins) free(raw_pins);
@@ -8474,10 +8530,20 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
     if (kmin)     free(kmin);
     if (kmax)     free(kmax);
     if (ret_sc) *ret_sc = vit_sc;
+    if (ret_sw_ms)     *ret_sw_ms     = sw_ms;
+    if (ret_lsis_ms)   *ret_lsis_ms   = lsis_ms;
+    if (ret_band_ms)   *ret_band_ms   = band_ms;
+    if (ret_bvit_ms)   *ret_bvit_ms   = bvit_ms;
+    if (ret_btrace_ms) *ret_btrace_ms = btrace_ms;
     return eslFAIL;
   }
 
   if (ret_sc) *ret_sc = vit_sc;
+  if (ret_sw_ms)     *ret_sw_ms     = sw_ms;
+  if (ret_lsis_ms)   *ret_lsis_ms   = lsis_ms;
+  if (ret_band_ms)   *ret_band_ms   = band_ms;
+  if (ret_bvit_ms)   *ret_bvit_ms   = bvit_ms;
+  if (ret_btrace_ms) *ret_btrace_ms = btrace_ms;
 
   if (raw_pins) free(raw_pins);
   if (sel_pins) free(sel_pins);
@@ -8524,10 +8590,15 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   P7_GMXB     *gxb      = NULL;
   P7_GBANDS   *bnd      = NULL;
   int          pb_pad   = (cm->p7_pinbridge_pad > 0) ? cm->p7_pinbridge_pad : 20;
+  struct timespec ta, tb;
+  double       om_ms = 0;
+  double       sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
+  double       pins2bands_ms = 0;
 
   if (cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsPinBridgeWrap: cm->fp7 is NULL");
 
   /* Build LOCAL p7 profile + OPROFILE for SSE rbv scan. */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   gm_local = p7_profile_Create(M, cm->fp7->abc);
   if (gm_local == NULL) ESL_FAIL(eslEMEM, errbuf, "p7_profile_Create failed");
   if ((status = p7_ProfileConfig(cm->fp7, bg, gm_local, L, p7_LOCAL)) != eslOK)
@@ -8543,14 +8614,16 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
    * the prefilter band is known). */
   bnd = p7_gbands_Create();
   if (bnd == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_gbands_Create failed");
-  gxb = p7_gmxb_Create(bnd);
-  if (gxb == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_gmxb_Create failed");
+  /* Allocate gxb shell only (NULL dp/xmx); p7_Seq2BandsPinBridge fills it
+   * once bnd has cells. p7_gmxb_Create disallows zero-cell bnd. */
+  if ((gxb = malloc(sizeof(P7_GMXB))) == NULL) ESL_XFAIL(eslEMEM, errbuf, "malloc P7_GMXB shell failed");
+  gxb->dp = NULL; gxb->xmx = NULL; gxb->bnd = NULL; gxb->dalloc = 0; gxb->xalloc = 0;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  om_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* Step 1+2: SW-pinbridge prefilter + banded p7 Viterbi + banded trace.
-   * Returns eslFAIL if traceback fails inside the band; in that case fall
-   * back to full unbanded p7_GViterbi via p7_Seq2BandsVit (caller's
-   * responsibility — we report eslOK with ncells=0). */
-  status = p7_Seq2BandsPinBridge(gm, om, gxb, bnd, p7_tr, dsq, L, pb_pad, &sc);
+  /* Step 1+2: SW-pinbridge prefilter + banded p7 Viterbi + banded trace. */
+  status = p7_Seq2BandsPinBridge(gm, om, gxb, bnd, p7_tr, dsq, L, pb_pad, &sc,
+                                 &sw_ms, &lsis_ms, &band_ms, &bvit_ms, &btrace_ms);
   if (status != eslOK) {
     /* signal caller to fall back */
     *ret_i2k    = NULL;
@@ -8591,6 +8664,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   }
 
   /* Step 4: pins -> bands (identical to p7_Seq2BandsVit) */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
   if (nodepad != NULL) {
     if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
@@ -8598,6 +8672,13 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
     if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
   }
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  pins2bands_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Emit per-stage timing for offline aggregation by CLEN bucket. */
+  fprintf(stderr, "#P7PB_STAGE M=%d L=%d om_build=%.4f sw_scan=%.4f lsis=%.4f band_build=%.4f banded_vit=%.4f banded_trace=%.4f pins2bands=%.4f\n",
+          M, L, om_ms/1000.0, sw_ms/1000.0, lsis_ms/1000.0, band_ms/1000.0, bvit_ms/1000.0, btrace_ms/1000.0, pins2bands_ms/1000.0);
+  fflush(stderr);
 
   *ret_i2k    = i2k;
   *ret_kmin   = kmin;

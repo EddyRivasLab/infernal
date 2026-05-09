@@ -454,7 +454,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * exceeds the cost of full p7_GViterbi at O(LM). For M < 200 the full
 	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
 	   * without the tiny-M tail regressions. */
-	  if (cm->p7_use_pinbridge && cm->fp7 != NULL && cm->fp7->M >= 200) {
+	  if (cm->p7_use_pinbridge) {
 	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
 					       sq->dsq, sq->L, cm->p7bpad,
 					       local_nodepad,
@@ -499,10 +499,15 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
 	  if(status == eslOK && p7_ncells > 0) {
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
+	    struct timespec _ta_cp9, _tb_cp9;
+	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
 					     cm->maxtau, 0, 0, NULL);
+	    clock_gettime(CLOCK_MONOTONIC, &_tb_cp9);
+	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
+	    fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
 	  }
 	  else {
 	    /* Viterbi found no path or error; fall back to standard cp9 bands */
@@ -548,19 +553,25 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
       
       if(w != NULL) esl_stopwatch_Start(w);
-      if(do_trunc) { 
-	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      struct timespec _ta_cm, _tb_cm;
+      clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
+      if(do_trunc) {
+	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
-				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
+      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
 				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
       }
-      else { 
-	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      else {
+	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx, 
+	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
 				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
       }
+      clock_gettime(CLOCK_MONOTONIC, &_tb_cm);
+      double _cm_s = (_tb_cm.tv_sec - _ta_cm.tv_sec) + (_tb_cm.tv_nsec - _ta_cm.tv_nsec)/1e9;
+      fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f\n",
+              (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s);
     }
   }
 

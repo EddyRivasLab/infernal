@@ -3096,6 +3096,9 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->iel_selfsc  = cm->iel_selfsc;
   new->tau         = cm->tau;
   new->maxtau      = cm->maxtau;
+  new->p7bpad           = cm->p7bpad;
+  new->p7_use_pinbridge = cm->p7_use_pinbridge;
+  new->p7_pinbridge_pad = cm->p7_pinbridge_pad;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;
