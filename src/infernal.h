@@ -1876,6 +1876,8 @@ typedef struct cm_s {
   double  tau;          /* tail loss probability for HMM target dependent banding             */
   double  maxtau;       /* maximum allowed tau value for HMM band tightening                  */
   int     p7bpad;       /* p7 band pad for p7_Seq2BandsVit (CM_ALIGN_P7BANDED); default 10    */
+  int     p7_use_pinbridge; /* if TRUE, replace full p7_GViterbi with SW-pinbridge prefilter + banded p7 GViterbi (--p7pinbridge) */
+  int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -3220,6 +3222,16 @@ extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX 
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* SW-pinbridge prefilter + banded p7 Viterbi: drop-in replacement for p7_Seq2BandsVit
+ * when cm->p7_use_pinbridge is TRUE. Same signature except no gx (allocates banded
+ * matrix internally) and no bg/bg arg (uses bg passed in). Other declarations
+ * (p7_GBandedViterbi, p7_GBandedTrace, p7_GBands_FromKminKmax, p7_Seq2BandsPinBridge)
+ * require p7_gmxb.h/p7_gbands.h types and are declared locally where used.  */
+extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
+                                              P7_BG *bg, P7_TRACE *p7_tr,
+                                              ESL_DSQ *dsq, int L, int pad, int *nodepad,
+                                              int hopback, int vitend,
+                                              int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 

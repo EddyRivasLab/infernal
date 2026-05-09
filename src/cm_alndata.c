@@ -443,12 +443,33 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    for(k = 0; k <= cm->fp7->M; k++) local_nodepad[k] = cm->p7_nodepad[k] + cm->p7bpad;
 	  }
 
-	  /* Derive p7 bands via Viterbi */
-	  status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-				   sq->dsq, sq->L, cm->p7bpad,
-				   local_nodepad,
-				   0, 0, /* hopback=0, vitend=0 */
-				   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	  /* Derive p7 bands: either SW-pinbridge prefilter + banded Viterbi (--p7pinbridge)
+	   * or full unbanded p7_GViterbi (default). Pinbridge wrapper falls back to ncells=0
+	   * if the banded trace fails inside the prefilter band, which the existing
+	   * fallback path below catches (status=eslOK, p7_ncells=0 -> eslERANGE branch).
+	   * If the fallback fires, retry with the full Viterbi path. */
+	  if (cm->p7_use_pinbridge) {
+	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
+					       sq->dsq, sq->L, cm->p7bpad,
+					       local_nodepad,
+					       0, 0, /* hopback=0, vitend=0 */
+					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    /* If pinbridge couldn't produce a trace (rare; band missed the trace
+	     * entirely), fall back to full unbanded Viterbi for this sequence. */
+	    if (status == eslOK && p7_ncells == 0) {
+	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+				       sq->dsq, sq->L, cm->p7bpad,
+				       local_nodepad,
+				       0, 0,
+				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    }
+	  } else {
+	    status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+				     sq->dsq, sq->L, cm->p7bpad,
+				     local_nodepad,
+				     0, 0, /* hopback=0, vitend=0 */
+				     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	  }
 
 	  /* Debug: report Viterbi band stats */
 	  if(status == eslOK && p7_ncells > 0) {
