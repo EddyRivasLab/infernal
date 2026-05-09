@@ -38,6 +38,7 @@
 
 #include "easel.h"
 #include "esl_buffer.h"
+#include "esl_gumbel.h"
 #include "esl_json.h"
 #include "esl_vectorops.h"
 
@@ -1150,45 +1151,86 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     fclose(dfp);
   }
 
-  /* Step 5: Tail-only fixed-lambda MLE on the pooled hit-score distribution.
+  /* Step 5: Joint (mu, lambda) MLE on the pooled hit-score distribution
+   * via esl_gumbel_FitComplete (2-parameter Gumbel maximum-likelihood).
    *
    * cyk_scores / ins_scores hold ALL hits across all N scans (not per-seq max).
-   * This matches cmcalibrate, which fits the EVD tail on every hit found in
-   * the entire calibration database, not on per-chunk maxima.
+   * v10 hybrid-CM analysis (briefs/SUBAGENT_TASK_cm_localmu_v10_REPORT.md)
+   * showed lambda regression error is the dominant residual ~75% of the
+   * relevance-zone E-value bias after the v5+ mu fix; fitting lambda from
+   * the same all-hits pool that gives mu closes most of that gap.
    *
-   * Algorithm:
-   *   K          = max(1, round(tailp * n_total))   with tailp = 0.01
-   *   Sort scores descending; mu_orig = scores[K-1] (min of top-K).
-   *   mu_extrap = mu_orig - log(1/tailp)/lambda = mu_orig - log(100)/lambda
+   * Falls back to legacy fixed-lambda + tail-quantile mu if FitComplete
+   * fails or n_total < MIN_FIT_N (joint MLE unreliable on small samples).
+   * Legacy path: K=round(tailp*n_total); mu_orig=scores[K-1];
+   * mu_extrap = mu_orig - log(1/tailp)/lambda.
    */
   {
+    const int MIN_FIT_N = 50;
+    int       k;
+    double   *score_d  = NULL;
+    double    mu_fit, lambda_fit;
+    int       fit_status;
+
     /* CYK -> EXP_CM_LC */
     if (n_cyk > 0) {
-      int    K = (int) (0.01 * (double) n_cyk + 0.5);
-      float  lambda = (g_localmu_lambda_lc > 0.0) ? (float) g_localmu_lambda_lc
-                                                   : (float) cm->expA[EXP_CM_LC]->lambda;
-      double mu_orig, mu_extrap;
-      if (K < 1) K = 1;
-      esl_vec_FSortDecreasing(cyk_scores, n_cyk);
-      mu_orig   = (double) cyk_scores[K-1];
-      mu_extrap = mu_orig - log(100.0) / (double) lambda;
-      cm->expA[EXP_CM_LC]->lambda    = (double) lambda;
-      cm->expA[EXP_CM_LC]->mu_extrap = mu_extrap;
-      cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
+      fit_status = eslFAIL;
+      if (n_cyk >= MIN_FIT_N) {
+        score_d = (double *) malloc(sizeof(double) * n_cyk);
+        if (score_d != NULL) {
+          for (k = 0; k < n_cyk; k++) score_d[k] = (double) cyk_scores[k];
+          fit_status = esl_gumbel_FitComplete(score_d, n_cyk, &mu_fit, &lambda_fit);
+          free(score_d); score_d = NULL;
+        }
+      }
+      if (fit_status == eslOK && lambda_fit > 0.0) {
+        cm->expA[EXP_CM_LC]->lambda    = lambda_fit;
+        cm->expA[EXP_CM_LC]->mu_extrap = mu_fit;
+        cm->expA[EXP_CM_LC]->mu_orig   = mu_fit + log(100.0) / lambda_fit;
+      } else {
+        /* Legacy fixed-lambda fallback */
+        int    K = (int) (0.01 * (double) n_cyk + 0.5);
+        float  lambda = (g_localmu_lambda_lc > 0.0) ? (float) g_localmu_lambda_lc
+                                                     : (float) cm->expA[EXP_CM_LC]->lambda;
+        double mu_orig, mu_extrap;
+        if (K < 1) K = 1;
+        esl_vec_FSortDecreasing(cyk_scores, n_cyk);
+        mu_orig   = (double) cyk_scores[K-1];
+        mu_extrap = mu_orig - log(100.0) / (double) lambda;
+        cm->expA[EXP_CM_LC]->lambda    = (double) lambda;
+        cm->expA[EXP_CM_LC]->mu_extrap = mu_extrap;
+        cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
+      }
     }
     /* Inside -> EXP_CM_LI */
     if (n_ins > 0) {
-      int    K = (int) (0.01 * (double) n_ins + 0.5);
-      float  lambda = (g_localmu_lambda_li > 0.0) ? (float) g_localmu_lambda_li
-                                                   : (float) cm->expA[EXP_CM_LI]->lambda;
-      double mu_orig, mu_extrap;
-      if (K < 1) K = 1;
-      esl_vec_FSortDecreasing(ins_scores, n_ins);
-      mu_orig   = (double) ins_scores[K-1];
-      mu_extrap = mu_orig - log(100.0) / (double) lambda;
-      cm->expA[EXP_CM_LI]->lambda    = (double) lambda;
-      cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
-      cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
+      fit_status = eslFAIL;
+      if (n_ins >= MIN_FIT_N) {
+        score_d = (double *) malloc(sizeof(double) * n_ins);
+        if (score_d != NULL) {
+          for (k = 0; k < n_ins; k++) score_d[k] = (double) ins_scores[k];
+          fit_status = esl_gumbel_FitComplete(score_d, n_ins, &mu_fit, &lambda_fit);
+          free(score_d); score_d = NULL;
+        }
+      }
+      if (fit_status == eslOK && lambda_fit > 0.0) {
+        cm->expA[EXP_CM_LI]->lambda    = lambda_fit;
+        cm->expA[EXP_CM_LI]->mu_extrap = mu_fit;
+        cm->expA[EXP_CM_LI]->mu_orig   = mu_fit + log(100.0) / lambda_fit;
+      } else {
+        /* Legacy fixed-lambda fallback */
+        int    K = (int) (0.01 * (double) n_ins + 0.5);
+        float  lambda = (g_localmu_lambda_li > 0.0) ? (float) g_localmu_lambda_li
+                                                     : (float) cm->expA[EXP_CM_LI]->lambda;
+        double mu_orig, mu_extrap;
+        if (K < 1) K = 1;
+        esl_vec_FSortDecreasing(ins_scores, n_ins);
+        mu_orig   = (double) ins_scores[K-1];
+        mu_extrap = mu_orig - log(100.0) / (double) lambda;
+        cm->expA[EXP_CM_LI]->lambda    = (double) lambda;
+        cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
+        cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
+      }
     }
   }
 
