@@ -1179,6 +1179,7 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
 
     /* CYK -> EXP_CM_LC */
     if (n_cyk > 0) {
+      double lam_reg = cm->expA[EXP_CM_LC]->lambda;  /* regression lambda */
       fit_status = eslFAIL;
       Kfit  = (int) (tailp * (double) n_cyk + 0.5);
       if (Kfit < 1) Kfit = 1;
@@ -1194,10 +1195,17 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
           free(score_d); score_d = NULL;
         }
       }
-      if (fit_status == eslOK && lambda_fit > 0.0) {
-        cm->expA[EXP_CM_LC]->lambda    = lambda_fit;
-        cm->expA[EXP_CM_LC]->mu_extrap = mu_fit;
-        cm->expA[EXP_CM_LC]->mu_orig   = mu_fit + log(1.0 / tailp) / lambda_fit;
+      if (fit_status == eslOK && lambda_fit > 0.0 && lam_reg > 0.0) {
+        /* v13: regularize lambda toward regression via geometric mean.
+         * v11/v12 raw fits gave wildly variable lambda (max |Δλ|/λ = 23-86%).
+         * Geomean(regression, fit) yields max |Δλ|/λ ≤ 20% across the panel
+         * while preserving median accuracy. Empirical mu_orig from the tail
+         * quantile is robust; mu_extrap derived from geomean lambda. */
+        double lambda_v13 = sqrt(lam_reg * lambda_fit);
+        double mu_orig    = (double) cyk_scores[Kfit - 1];  /* empirical tailp quantile */
+        cm->expA[EXP_CM_LC]->lambda    = lambda_v13;
+        cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
+        cm->expA[EXP_CM_LC]->mu_extrap = mu_orig - log(1.0 / tailp) / lambda_v13;
       } else {
         /* Legacy fixed-lambda fallback */
         int    K = (int) (tailp * (double) n_cyk + 0.5);
@@ -1215,6 +1223,7 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     }
     /* Inside -> EXP_CM_LI */
     if (n_ins > 0) {
+      double lam_reg = cm->expA[EXP_CM_LI]->lambda;
       fit_status = eslFAIL;
       Kfit = (int) (tailp * (double) n_ins + 0.5);
       if (Kfit < 1) Kfit = 1;
@@ -1230,10 +1239,12 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
           free(score_d); score_d = NULL;
         }
       }
-      if (fit_status == eslOK && lambda_fit > 0.0) {
-        cm->expA[EXP_CM_LI]->lambda    = lambda_fit;
-        cm->expA[EXP_CM_LI]->mu_extrap = mu_fit;
-        cm->expA[EXP_CM_LI]->mu_orig   = mu_fit + log(1.0 / tailp) / lambda_fit;
+      if (fit_status == eslOK && lambda_fit > 0.0 && lam_reg > 0.0) {
+        double lambda_v13 = sqrt(lam_reg * lambda_fit);
+        double mu_orig    = (double) ins_scores[Kfit - 1];
+        cm->expA[EXP_CM_LI]->lambda    = lambda_v13;
+        cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
+        cm->expA[EXP_CM_LI]->mu_extrap = mu_orig - log(1.0 / tailp) / lambda_v13;
       } else {
         /* Legacy fixed-lambda fallback */
         int    K = (int) (tailp * (double) n_ins + 0.5);
