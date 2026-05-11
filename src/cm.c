@@ -123,6 +123,8 @@ CreateCMShell(void)
   cm->p7bpad       = 10;                 /* default p7 band pad for p7_Seq2BandsVit */
   cm->p7_use_pinbridge = FALSE;          /* default: full p7_GViterbi (set TRUE by --p7pinbridge) */
   cm->p7_pinbridge_pad = 20;             /* SW-pinbridge prefilter band pad; brief recommends 20 */
+  cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
+  cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3099,6 +3101,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7bpad           = cm->p7bpad;
   new->p7_use_pinbridge = cm->p7_use_pinbridge;
   new->p7_pinbridge_pad = cm->p7_pinbridge_pad;
+  new->p7_use_cykbands  = cm->p7_use_cykbands;
+  new->p7_cykbands_pad  = cm->p7_cykbands_pad;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

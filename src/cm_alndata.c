@@ -551,7 +551,68 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	thresh2 = cm->cp9b->thresh2;
 	/* note: we don't set these three if cp9b_valid is TRUE */
       }
-      
+
+      /* CYK pre-pass: run CYK on CP9 bands, derive tighter per-state bands before Inside/Outside */
+      if(cm->p7_use_cykbands) {
+	struct timespec _ta_cyk, _tb_cyk;
+	clock_gettime(CLOCK_MONOTONIC, &_ta_cyk);
+
+	/* measure original band area (total d-band cells across all states) */
+	double _orig_cells = 0.;
+	{
+	  CP9Bands_t *_cp9b = cm->cp9b;
+	  int _v, _jp;
+	  for(_v = 0; _v < cm->M; _v++)
+	    for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
+	      if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
+		_orig_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+	}
+
+	Parsetree_t *_cyk_tr = NULL;
+	float        _cyk_sc  = 0.;
+	int          _cyk_ok  = FALSE;
+
+	if(do_trunc) {
+	  char _cyk_mode = TRMODE_UNKNOWN;
+	  float _cyk_avgpp = 0.;
+	  if(cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize,
+			  TRMODE_UNKNOWN, pass_idx, FALSE/*do_optacc*/, FALSE/*do_sample*/,
+			  cm->trhb_mx, cm->trhb_shmx, NULL/*post_mx*/, NULL/*emit_mx*/,
+			  NULL/*r*/, NULL/*ret_ppstr*/,
+			  &_cyk_tr, &_cyk_mode, &_cyk_avgpp, &_cyk_sc) == eslOK && _cyk_tr != NULL) {
+	    _cyk_ok = TRUE;
+	  }
+	} else {
+	  if(cm_alignT_hb(cm, errbuf, sq->dsq, sq->L, mxsize, FALSE/*do_optacc*/,
+			  cm->hb_mx, cm->hb_shmx, NULL/*emit_mx*/,
+			  &_cyk_tr, &_cyk_sc) == eslOK && _cyk_tr != NULL) {
+	    _cyk_ok = TRUE;
+	  }
+	}
+
+	double _tight_cells = _orig_cells;
+	if(_cyk_ok) {
+	  if(cm_BandsFromParsetree_perstate(cm, errbuf, _cyk_tr,
+					    1, sq->L, cm->p7_cykbands_pad,
+					    cm->cp9b, pass_idx, 0) == eslOK) {
+	    _tight_cells = 0.;
+	    CP9Bands_t *_cp9b = cm->cp9b;
+	    int _v, _jp;
+	    for(_v = 0; _v < cm->M; _v++)
+	      for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
+		if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
+		  _tight_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+	  }
+	  FreeParsetree(_cyk_tr);
+	}
+
+	clock_gettime(CLOCK_MONOTONIC, &_tb_cyk);
+	double _cyk_s   = (_tb_cyk.tv_sec  - _ta_cyk.tv_sec)  + (_tb_cyk.tv_nsec  - _ta_cyk.tv_nsec) /1e9;
+	double _b_ratio = (_orig_cells > 0.) ? _tight_cells / _orig_cells : 1.0;
+	fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f\n",
+		(cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cyk_s, _b_ratio);
+      }
+
       if(w != NULL) esl_stopwatch_Start(w);
       struct timespec _ta_cm, _tb_cm;
       clock_gettime(CLOCK_MONOTONIC, &_ta_cm);

@@ -1878,6 +1878,8 @@ typedef struct cm_s {
   int     p7bpad;       /* p7 band pad for p7_Seq2BandsVit (CM_ALIGN_P7BANDED); default 10    */
   int     p7_use_pinbridge; /* if TRUE, replace full p7_GViterbi with SW-pinbridge prefilter + banded p7 GViterbi (--p7pinbridge) */
   int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
+  int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
+  int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
