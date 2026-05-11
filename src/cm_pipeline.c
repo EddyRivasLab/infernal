@@ -11,7 +11,8 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h> 
+#include <string.h>
+#include <limits.h>  /* INT_MAX, LLONG_MAX, LLONG_MIN: --debug-f6-envs band-edge accumulators */
 
 #include "easel.h"
 #include "esl_exponential.h"
@@ -57,6 +58,12 @@ static int   pli_check_one_or_zero_envelopes(int *nA);
 static int   pli_get_pass_of_best_envelope(float **bAA, int *nA);
 static int   pli_check_full_length_envelopes(int64_t **esAA, int64_t **eeAA, int *nA, int64_t L);
 static int   pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass_idx, int best_env_idx, int64_t start_offset, float min_fract, int *ret_val, char *errbuf);
+
+/* --debug-f6-envs <f>: per-process FILE* for one-row-per-F6-envelope TSV dump.
+ * NULL means flag not set; nothing is written and F6 codepath is unchanged. */
+static FILE *pli_debug_f6_envs_fp     = NULL;
+static char *pli_debug_f6_envs_path   = NULL;
+static int   pli_debug_f6_envs_header_written = 0;
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -209,8 +216,15 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->band_kmax = NULL;
   pli->band_L    = 0;
   pli->p7bnd     = NULL;
-  pli->p7_fwdsc        = 0.0f;
+  pli->p7_fwdsc          = 0.0f;
+  pli->p7_fwdsc_unbanded = 0.0f;
   pli->p7_window_start = 0;
+  pli->do_p7deltrigger    = FALSE;
+  pli->f6_pvalA           = NULL;
+  pli->f6_pvalA_n         = 0;
+  pli->f6_deltaA          = NULL;
+  pli->f6_deltaA_n        = 0;
+  pli->p7env_delta_pre    = NULL;
   pli->p7pn_nenv       = 0;
   pli->p7pn_nenv_alloc = 0;
   pli->p7pn_M          = 0;
@@ -311,6 +325,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->vitband_local      = esl_opt_GetBoolean(go, "--vitblocal") ? TRUE : FALSE;
   pli->do_p7post_cp9b     = (pli->do_vitband &&
 			     ! esl_opt_GetBoolean(go, "--nop7post_cp9b")) ? TRUE : FALSE;
+  pli->do_p7deltrigger    = esl_opt_IsOn(go, "--p7deltrigger")    ? TRUE : FALSE;
   pli->do_pnmono          = esl_opt_GetBoolean(go, "--pnmono")        ? TRUE : FALSE;
   pli->do_pnmono_print    = esl_opt_GetBoolean(go, "--pnmono-print")  ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
@@ -332,6 +347,34 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->cyk_envtreeA_n     = 0;
   pli->use_stored_cp9b    = FALSE;
   pli->cykbands_high_conf = FALSE;
+
+  /* --debug-f6-envs <f>: open output TSV (process-global, not per-pipeline-instance).
+   * Only acted on once even if cm_pipeline_Create is called multiple times. */
+  if (esl_opt_IsOn(go, "--debug-f6-envs") && pli_debug_f6_envs_fp == NULL) {
+    pli_debug_f6_envs_path = esl_opt_GetString(go, "--debug-f6-envs");
+    if (pli_debug_f6_envs_path != NULL) {
+      pli_debug_f6_envs_fp = fopen(pli_debug_f6_envs_path, "w");
+      if (pli_debug_f6_envs_fp == NULL) {
+        fprintf(stderr, "ERROR: --debug-f6-envs: cannot open %s for writing\n", pli_debug_f6_envs_path);
+        goto ERROR;
+      }
+      fprintf(pli_debug_f6_envs_fp,
+              "query_cm\ttarget_seq\tstrand\tenv_start\tenv_end\tf6_hit_start\tf6_hit_end\t"
+              "f6_hit_cstart\tf6_hit_cend\tf6_score_bits\tf6_pvalue\tclen\t"
+              "env_len\tf6_hit_len\tdist_to_env_5p\tdist_to_env_3p\tsubtree_span\t"
+              "n_states_in_parsetree\tn_states_at_imin\tn_states_at_imax\t"
+              "n_states_at_jmin\tn_states_at_jmax\tn_states_at_any_edge\t"
+              "frac_states_at_edge\tmin_d_imin\tmin_d_imax\tmin_d_jmin\tmin_d_jmax\t"
+              "nedge_5p_block\tnedge_3p_block\tparsetree_i_lo\tparsetree_i_hi\t"
+              "n_at_edge_MP\tn_at_edge_ML\tn_at_edge_MR\tn_at_edge_IL\tn_at_edge_IR\t"
+              "n_realclip_iwall_w3\tn_realclip_jwall_w3\t"
+              "iband_sum_at_iedge\tjband_sum_at_jedge\t"
+              "gfwd_banded_nats\tgfwd_unbanded_nats\n");
+      fflush(pli_debug_f6_envs_fp);
+      pli_debug_f6_envs_header_written = 1;
+    }
+  }
+
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
   pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
@@ -977,6 +1020,9 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   }
   if (pli->cyk_envtreeA_es) free(pli->cyk_envtreeA_es);
   if (pli->cyk_envtreeA_ee) free(pli->cyk_envtreeA_ee);
+  if (pli->f6_pvalA)        free(pli->f6_pvalA);
+  if (pli->f6_deltaA)       free(pli->f6_deltaA);
+  if (pli->p7env_delta_pre) free(pli->p7env_delta_pre);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -2016,7 +2062,46 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG\n#DEBUG: PIPELINE back from FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
 #endif
-    
+
+    /* Stage 7: window-level F6+F7 re-run with --novitband --nop7post_cp9b for triggered windows.
+     * Trigger: window-level gFwd delta (unbanded minus banded) > 0.5 nats AND at least one
+     * surviving F6 envelope has f6_pval < 1e-8.
+     * Re-run F6+F7 with do_vitband=FALSE, do_p7post_cp9b=FALSE (cp9_IterateSeq2Bands bands)
+     * and append the resulting hits to the same hitlist.  The hitlist's overlap dedup in cmsearch
+     * provides "take-best-of-two" automatically: if the re-run finds a better-scoring hit at the
+     * same position, it will displace the original; if the original was fine, it survives. */
+    if(pli->do_p7deltrigger && pli->do_edef && pli->do_fcyk && np7envA != NULL && np7envA[p] > 0) {
+      float window_delta = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+      int   any_low_pval = FALSE;
+      int   k;
+      for(k = 0; k < pli->f6_pvalA_n; k++) {
+        if(pli->f6_pvalA[k] < 1e-8f) { any_low_pval = TRUE; break; }
+      }
+      if(window_delta > 0.5f && any_low_pval) {
+        int64_t *es_rerun = NULL;
+        int64_t *ee_rerun = NULL;
+        int      nenv_rerun = 0;
+        /* Save flags */
+        int saved_do_p7post_cp9b = pli->do_p7post_cp9b;
+        int saved_do_vitband     = pli->do_vitband;
+        /* Switch to unbanded / cp9_IterateSeq2Bands path (same as --novitband --nop7post_cp9b) */
+        pli->do_p7post_cp9b = FALSE;
+        pli->do_vitband     = FALSE;
+        /* F6 re-run: same p7 envelopes, different CP9 bands */
+        status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], p7ebAA[p], p7_evparam, np7envA[p], opt_cm, &es_rerun, &ee_rerun, &nenv_rerun);
+        if(status == eslOK && nenv_rerun > 0) {
+          /* F7 re-run: append hits to same hitlist; overlap dedup in cmsearch picks best per position */
+          status = pli_final_stage(pli, cm_offset, sq2search, es_rerun, ee_rerun, nenv_rerun, hitlist, opt_cm);
+        }
+        /* Restore flags */
+        pli->do_p7post_cp9b = saved_do_p7post_cp9b;
+        pli->do_vitband     = saved_do_vitband;
+        if(es_rerun != NULL) { free(es_rerun); es_rerun = NULL; }
+        if(ee_rerun != NULL) { free(ee_rerun); ee_rerun = NULL; }
+        if(status != eslOK) return status;
+      }
+    }
+
     /* if we're researching a 3' terminus, adjust the start/stop
      * positions so they are relative to the actual 5' start 
      */
@@ -3654,10 +3739,14 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); // avoid 0 malloc
-  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); 
+  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc));
   ESL_ALLOC(eb, sizeof(float)   * ESL_MAX(1, nenv_alloc));
   ESL_ALLOC(ead, sizeof(P7_ALIDISPLAY *) * ESL_MAX(1, nenv_alloc));
   for(i = 0; i < nenv_alloc; i++) ead[i] = NULL;
+  if(pli->do_p7deltrigger) {
+    if(pli->p7env_delta_pre) { free(pli->p7env_delta_pre); pli->p7env_delta_pre = NULL; }
+    ESL_ALLOC(pli->p7env_delta_pre, sizeof(float) * ESL_MAX(1, nenv_alloc));
+  }
   nenv = 0;
   seq = esl_sq_CreateDigital(sq->abc);
 
@@ -4174,6 +4263,14 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    /* Save fwdsc and window start for --p7post_cp9b band derivation in dispatch */
 	    pli->p7_fwdsc        = fwdsc;
 	    pli->p7_window_start = (int)ws[i];
+	    /* --debug-f6-envs / --p7deltrigger: compute unbanded glocal Forward to measure
+	     * delta (posterior mass leaking outside the vit-band). */
+	    if (pli_debug_f6_envs_fp != NULL || pli->do_p7deltrigger) {
+	      float dbg_unbanded_fwdsc;
+	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
+	      pli->p7_fwdsc_unbanded = dbg_unbanded_fwdsc;
+	    }
 	  }
 	} else {
 	  esl_stopwatch_Start(stg_watch);
@@ -4444,12 +4541,13 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       if(pli->do_time_F5) { continue; }
 
       /* if we get here, the envelope has survived, add it to the growing list */
-      if((nenv+1) == nenv_alloc) { 
+      if((nenv+1) == nenv_alloc) {
 	      nenv_alloc *= 2;
 	      ESL_RALLOC(es, p, sizeof(int64_t) * nenv_alloc);
 	      ESL_RALLOC(ee, p, sizeof(int64_t) * nenv_alloc);
         ESL_RALLOC(eb, p, sizeof(float)   * nenv_alloc);
         ESL_RALLOC(ead, p, sizeof(P7_ALIDISPLAY *) * nenv_alloc);
+        if(pli->do_p7deltrigger) ESL_RALLOC(pli->p7env_delta_pre, p, sizeof(float) * nenv_alloc);
       }
       /* Define envelope to search with CM */
       es[nenv] = pli->ddef->dcl[d].ienv + ws[i] - 1;
@@ -4457,6 +4555,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       eb[nenv] = env_sc_for_pvalue;
       ead[nenv] = pli->ddef->dcl[d].ad;
       pli->ddef->dcl[d].ad = NULL;
+      /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
+      if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
        * At CYK dispatch time, all windows have been processed and pli->gxfb/gxbb/p7bnd
        * would only reflect the last window; storing per-envelope here fixes that. */
@@ -4602,6 +4702,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   int64_t         *ee = NULL;              /* [0..si..nenv-1] end   posn of surviving envelope si */
   int              enforce_i0;             /* TRUE if first nt must be included in eventual parsetree */
   int              enforce_j0;             /* TRUE if final nt must be included in eventual parsetree */
+  float           *f6pval_tmp  = NULL;     /* [0..i..np7env-1] per-input-envelope F6 P-value, for --p7deltrigger */
+  float           *f6delta_tmp = NULL;     /* [0..i..np7env-1] per-input-envelope gFwd delta, for --p7deltrigger */
 
   if (sq->n == 0)  return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (np7env == 0) return eslOK;    /* if there's no envelopes to search in, return */
@@ -4623,6 +4725,15 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 
   ESL_ALLOC(i_surv, sizeof(int) * np7env);
   esl_vec_ISet(i_surv, np7env, FALSE);
+
+  /* --p7deltrigger: per-input-envelope F6 P-value/delta storage; survivors compacted to pli->f6_pvalA/f6_deltaA below */
+  if(pli->do_p7deltrigger) {
+    ESL_ALLOC(f6pval_tmp, sizeof(float) * np7env);
+    esl_vec_FSet(f6pval_tmp, np7env, 1.0f);
+    ESL_ALLOC(f6delta_tmp, sizeof(float) * np7env);
+    if(pli->p7env_delta_pre != NULL) esl_vec_FCopy(pli->p7env_delta_pre, np7env, f6delta_tmp);
+    else                              esl_vec_FSet(f6delta_tmp, np7env, 0.0f);
+  }
 
   /* --cykbands: per-envelope temporary parsetree storage; survivors copied to pli->cyk_envtreeA below */
   Parsetree_t **trA_tmp     = NULL;
@@ -4650,6 +4761,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG:\n#DEBUG: SURVIVOR Envelope %5d [%10ld..%10ld] being passed to EnvCYKFilter   pass: %" PRId64 "\n", i, p7es[i], p7ee[i], pli->cur_pass_idx);
 #endif
+    /* --debug-f6-envs: capture F5 envelope before any F6 redefinition. */
+    int64_t dbg_orig_es = p7es[i];
+    int64_t dbg_orig_ee = p7ee[i];
     cm->search_opts  = pli->fcyk_cm_search_opts;
     cm->tau          = pli->fcyk_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
@@ -4703,6 +4817,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     else if(status != eslOK) return status;
 
     P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
+    if(f6pval_tmp) f6pval_tmp[i] = (float)P;
 
     if(getenv("CYKBANDS_DUMP")) {
       fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
@@ -4755,6 +4870,242 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       }
     }
 
+    /* --debug-f6-envs: dump per-envelope TSV row for offline post-CM rule mining.
+     * Independent of --cykbands. If we already have a parsetree (from --cykbands
+     * borderline path or last_dispatch_tr), use it; otherwise run a one-time
+     * FastCYKScanHB_shmx for cstart/cend. Adds ~50% CPU per F6 envelope when
+     * --cykbands is off, but doesn't change F6 pass/fail logic.
+     *
+     * F6 hit start/end on target: use redefined p7es[i]/p7ee[i] (the cyk_envi/j
+     * boundary set above when do_fcykenv is on). For pure-clipping analysis
+     * the meaningful gap is between the F5 envelope and this redefined boundary,
+     * but since we've already overwritten p7es/p7ee with cyk_envi/j (when set),
+     * the original F5 envelope is lost. Workaround: defppp default has
+     * --nocykenv off, so do_fcykenv is TRUE; we record the redefined boundary
+     * (which equals the F6 CYK hit) and use it for both env_start/end and
+     * f6_hit_start/end. The ORIGINAL F5 envelope is recoverable later via the
+     * F5 trace dump if ever needed; for this study, hit-vs-redefined-envelope
+     * is sufficient because f6_hit always equals the redefined envelope. */
+    if (pli_debug_f6_envs_fp != NULL) {
+      Parsetree_t *dbg_tr = NULL;
+      int   dbg_owns_tr = FALSE;
+      int   dbg_tr_status = -999;
+      if (pli->do_cykbands && trA_tmp != NULL && trA_tmp[i] != NULL) {
+        dbg_tr = trA_tmp[i]; /* borrow, do not free */
+        dbg_tr_status = -1; /* sentinel: borrowed */
+      }
+      else {
+        /* No parsetree yet — run shmx once for the dump. cm->cp9b and cm->hb_mx were
+         * configured by pli_dispatch_cm_search above using the ORIGINAL F5 envelope
+         * (dbg_orig_es..dbg_orig_ee), not the post-redef p7es[i]/p7ee[i]. So we must
+         * call shmx on the same range or it returns eslEINCONCEIVABLE (band mismatch). */
+        Parsetree_t *new_tr = NULL;
+        float dummy_sc;
+        float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
+        dbg_tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
+                                             sq->dsq, dbg_orig_es, dbg_orig_ee, 0., NULL, pli->do_null3,
+                                             0., NULL, NULL, &new_tr, &dummy_sc);
+        if (dbg_tr_status == eslOK && new_tr != NULL) {
+          dbg_tr = new_tr;
+          dbg_owns_tr = TRUE;
+        }
+      }
+      if (getenv("DEBUG_F6_ENVS_TRACE")) {
+        fprintf(stderr, "#TRACE i=%d cm=%s seq=%s pass=%lld es=%lld ee=%lld sc=%.2f P=%.3e shmx_status=%d dbg_tr=%p\n",
+                i, cm->name?cm->name:"-", sq->name?sq->name:"-",
+                (long long)pli->cur_pass_idx, (long long)p7es[i], (long long)p7ee[i],
+                sc, P, dbg_tr_status, (void*)dbg_tr);
+      }
+      if (dbg_tr != NULL) {
+        int cfrom_span, cto_span, cfrom_emit, cto_emit, first_emit, final_emit;
+        int hit_cstart = -1, hit_cend = -1;
+        char tmpbuf[1024]; tmpbuf[0] = '\0';
+        if (ParsetreeToCMBounds(cm, dbg_tr, FALSE, FALSE, tmpbuf,
+                                &cfrom_span, &cto_span,
+                                &cfrom_emit, &cto_emit,
+                                &first_emit, &final_emit) == eslOK) {
+          hit_cstart = cfrom_emit;
+          hit_cend   = cto_emit;
+        }
+        /* Translate window-relative coords to forward-genomic absolute coords.
+         * cmsearch processes long sequences as overlapping windows via
+         * esl_sqio_ReadWindow. For the reverse-strand pass, cmsearch calls
+         * esl_sq_ReverseComplement(dbsq) before cm_Pipeline(), which swaps
+         * sq->start and sq->end. After the swap, sq->start > sq->end and
+         * sq->start holds the larger (3'-end in forward-genomic) coordinate.
+         * cm_tophits_UpdateHitPositions (cm_tophits.c) is the canonical
+         * coord-translation function; we mirror its arithmetic here:
+         *   forward: abs_pos = window_rel + (sq->start - 1)
+         *   revcomp: abs_pos = sq->start - window_rel + 1
+         * For reverse-strand we then swap so env_start <= env_end (genomic
+         * min/max) to simplify downstream overlap arithmetic; the strand
+         * column records the actual orientation. */
+        int     in_rc     = (sq->start > sq->end);
+        char    strand    = in_rc ? '-' : '+';
+        int64_t env_start, env_end, hit_start, hit_end;
+        if (!in_rc) {
+          int64_t coord_off = sq->start - 1;
+          env_start = dbg_orig_es + coord_off;
+          env_end   = dbg_orig_ee + coord_off;
+          hit_start = p7es[i]     + coord_off;
+          hit_end   = p7ee[i]     + coord_off;
+        } else {
+          /* sq->start is the larger genomic coord; window positions are 1..n. */
+          int64_t rc_anchor = sq->start;
+          /* raw RC-to-fwd: pos -> rc_anchor - pos + 1; smaller window pos = larger fwd coord */
+          int64_t abs_es = rc_anchor - dbg_orig_es + 1;
+          int64_t abs_ee = rc_anchor - dbg_orig_ee + 1;
+          int64_t abs_hs = rc_anchor - p7es[i]     + 1;
+          int64_t abs_he = rc_anchor - p7ee[i]     + 1;
+          /* reorder so start <= end (genomic min/max) */
+          env_start = (abs_es < abs_ee) ? abs_es : abs_ee;
+          env_end   = (abs_es < abs_ee) ? abs_ee : abs_es;
+          hit_start = (abs_hs < abs_he) ? abs_hs : abs_he;
+          hit_end   = (abs_hs < abs_he) ? abs_he : abs_hs;
+        }
+        int64_t env_len   = env_end - env_start + 1;
+        int64_t hit_len   = hit_end - hit_start + 1;
+        int64_t d5p       = hit_start - env_start; if (d5p < 0) d5p = 0;
+        int64_t d3p       = env_end - hit_end;     if (d3p < 0) d3p = 0;
+        double  span      = (cm->clen > 0 && hit_cstart >= 0 && hit_cend >= 0)
+                          ? ((double)(hit_cend - hit_cstart + 1) / (double)cm->clen)
+                          : 0.0;
+
+        /* Band-edge proximity: walk parsetree, count states at imin/imax/jmin/jmax walls.
+         * cm->cp9b->imin/imax/jmin/jmax are populated by cp9_Seq2BandsP7B at F6 entry,
+         * still valid here since we just used them to derive dbg_tr. Skip end states (E,
+         * which have emitl=emitr=-1) and EL exits (state idx == cm->M, no band entry). */
+        int n_pt = 0, n_imin = 0, n_imax = 0, n_jmin = 0, n_jmax = 0, n_any = 0;
+        int min_dimin = INT_MAX, min_dimax = INT_MAX;
+        int min_djmin = INT_MAX, min_djmax = INT_MAX;
+        int n5 = 0, n3 = 0;
+        int64_t pt_i_lo = LLONG_MAX, pt_i_hi = LLONG_MIN;
+        int    edge_idx[ dbg_tr->n ]; /* parsetree-pos -> 1 if any-edge, 0 else; for 5p/3p block counts */
+        int    pt_eligible_n = 0;     /* count of eligible (banded) states for ordering */
+        int    eligible_idx[ dbg_tr->n ];
+        /* Per-state-type and pad-aware breakdown of edge events. The "real-clip" counts
+         * filter out trivial wall-touches in narrow bands: a state whose i-band width
+         * (ihi-ilo+1) is <3 has so little room that touching the wall is not informative
+         * about clipping. Same for j. iband_sum_at_iedge / jband_sum_at_jedge let
+         * downstream code compute mean band-widths at edge events for any threshold. */
+        int n_edge_MP = 0, n_edge_ML = 0, n_edge_MR = 0, n_edge_IL = 0, n_edge_IR = 0;
+        int n_realclip_iwall = 0, n_realclip_jwall = 0;
+        long long iband_sum_at_iedge = 0, jband_sum_at_jedge = 0;
+        for (int ti = 0; ti < dbg_tr->n; ti++) {
+          int v = dbg_tr->state[ti];
+          int il = dbg_tr->emitl[ti];
+          int jr = dbg_tr->emitr[ti];
+          if (v == cm->M)        continue;            /* EL local exit */
+          if (cm->sttype[v] == E_st) continue;        /* end state */
+          if (il < 0 || jr < 0)  continue;            /* defensive */
+          if (cm->cp9b == NULL || cm->cp9b->imin == NULL) continue;
+          int ilo = cm->cp9b->imin[v];
+          int ihi = cm->cp9b->imax[v];
+          int jlo = cm->cp9b->jmin[v];
+          int jhi = cm->cp9b->jmax[v];
+          /* Track non-tautological i-range: use match-state subtree bounds. */
+          if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) {
+            if ((int64_t)il < pt_i_lo) pt_i_lo = il;
+            if ((int64_t)jr > pt_i_hi) pt_i_hi = jr;
+          }
+          /* Skip if the state has no valid band (e.g., unused in this parse path).
+           * A state in the parsetree should always have valid bands, but guard anyway. */
+          if (ilo > ihi || jlo > jhi) continue;
+          int d_imin = il - ilo;
+          int d_imax = ihi - il;
+          int d_jmin = jr - jlo;
+          int d_jmax = jhi - jr;
+          if (d_imin < min_dimin) min_dimin = d_imin;
+          if (d_imax < min_dimax) min_dimax = d_imax;
+          if (d_jmin < min_djmin) min_djmin = d_jmin;
+          if (d_jmax < min_djmax) min_djmax = d_jmax;
+          int at_iwall = (d_imin == 0 || d_imax == 0);
+          int at_jwall = (d_jmin == 0 || d_jmax == 0);
+          int at_any = at_iwall || at_jwall;
+          if (d_imin == 0) n_imin++;
+          if (d_imax == 0) n_imax++;
+          if (d_jmin == 0) n_jmin++;
+          if (d_jmax == 0) n_jmax++;
+          if (at_any) {
+            n_any++;
+            switch (cm->sttype[v]) {
+              case MP_st: n_edge_MP++; break;
+              case ML_st: n_edge_ML++; break;
+              case MR_st: n_edge_MR++; break;
+              case IL_st: n_edge_IL++; break;
+              case IR_st: n_edge_IR++; break;
+              default: break;
+            }
+          }
+          int iband_w = ihi - ilo + 1;
+          int jband_w = jhi - jlo + 1;
+          if (at_iwall) {
+            iband_sum_at_iedge += iband_w;
+            if (iband_w >= 3) n_realclip_iwall++;
+          }
+          if (at_jwall) {
+            jband_sum_at_jedge += jband_w;
+            if (jband_w >= 3) n_realclip_jwall++;
+          }
+          edge_idx[pt_eligible_n] = at_any;
+          eligible_idx[pt_eligible_n] = ti;
+          pt_eligible_n++;
+          n_pt++;
+        }
+        /* nedge_5p_block / nedge_3p_block: in eligible-state parsetree order, count any-edge in
+         * first/last 10 positions. Order is parsetree-traversal order (root → leaves, left-first),
+         * which generally corresponds to 5'→3' for the standard CM topology. */
+        int blk = (pt_eligible_n < 10) ? pt_eligible_n : 10;
+        for (int k = 0; k < blk; k++) {
+          if (edge_idx[k]) n5++;
+          if (edge_idx[pt_eligible_n - 1 - k]) n3++;
+        }
+        double frac_edge = (n_pt > 0) ? ((double)n_any / (double)n_pt) : 0.0;
+        if (min_dimin == INT_MAX) min_dimin = -1;
+        if (min_dimax == INT_MAX) min_dimax = -1;
+        if (min_djmin == INT_MAX) min_djmin = -1;
+        if (min_djmax == INT_MAX) min_djmax = -1;
+        if (pt_i_lo == LLONG_MAX) { pt_i_lo = -1; }
+        else if (!in_rc)           { pt_i_lo += (sq->start - 1); }
+        else                       { int64_t tmp = sq->start - pt_i_lo + 1; pt_i_lo = tmp; }
+        if (pt_i_hi == LLONG_MIN) { pt_i_hi = -1; }
+        else if (!in_rc)           { pt_i_hi += (sq->start - 1); }
+        else                       { int64_t tmp = sq->start - pt_i_hi + 1; pt_i_hi = tmp; }
+        /* for RC, pt_i_lo/hi are now forward-genomic but may be swapped; reorder */
+        if (in_rc && pt_i_lo != -1 && pt_i_hi != -1 && pt_i_lo > pt_i_hi) {
+          int64_t _t = pt_i_lo; pt_i_lo = pt_i_hi; pt_i_hi = _t;
+        }
+        (void)eligible_idx; /* reserved for future per-state direction analysis */
+
+        fprintf(pli_debug_f6_envs_fp,
+                "%s\t%s\t%c\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%.4f\t%.6e\t%d\t%lld\t%lld\t%lld\t%lld\t%.4f\t"
+                "%d\t%d\t%d\t%d\t%d\t%d\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\t"
+                "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%lld\t"
+                "%.6f\t%.6f\n",
+                cm->name ? cm->name : "-",
+                sq->name ? sq->name : "-",
+                strand,
+                (long long)env_start, (long long)env_end,
+                (long long)hit_start, (long long)hit_end,
+                hit_cstart, hit_cend,
+                sc, P,
+                cm->clen,
+                (long long)env_len, (long long)hit_len,
+                (long long)d5p, (long long)d3p,
+                span,
+                n_pt, n_imin, n_imax, n_jmin, n_jmax, n_any,
+                frac_edge, min_dimin, min_dimax, min_djmin, min_djmax,
+                n5, n3,
+                (long long)pt_i_lo, (long long)pt_i_hi,
+                n_edge_MP, n_edge_ML, n_edge_MR, n_edge_IL, n_edge_IR,
+                n_realclip_iwall, n_realclip_jwall,
+                iband_sum_at_iedge, jband_sum_at_jedge,
+                (double)pli->p7_fwdsc, (double)pli->p7_fwdsc_unbanded);
+        fflush(pli_debug_f6_envs_fp);
+      }
+      if (dbg_owns_tr && dbg_tr != NULL) FreeParsetree(dbg_tr);
+    }
+
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG: SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived EnvCYKFilter       %6.2f bits  P %g\n", p7es[i], p7ee[i], sc, P);
 #endif
@@ -4769,6 +5120,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     free(pli->cyk_envtreeA_ee); pli->cyk_envtreeA_ee = NULL;
     pli->cyk_envtreeA_n = 0;
   }
+  /* Reset any per-pipeline f6_pvalA/f6_deltaA from a previous sequence */
+  if(pli->f6_pvalA)  { free(pli->f6_pvalA);  pli->f6_pvalA  = NULL; pli->f6_pvalA_n  = 0; }
+  if(pli->f6_deltaA) { free(pli->f6_deltaA); pli->f6_deltaA = NULL; pli->f6_deltaA_n = 0; }
   if(nenv > 0) {
     ESL_ALLOC(es, sizeof(int64_t) * nenv);
     ESL_ALLOC(ee, sizeof(int64_t) * nenv);
@@ -4777,6 +5131,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       ESL_ALLOC(pli->cyk_envtreeA_es, sizeof(int64_t)       * nenv);
       ESL_ALLOC(pli->cyk_envtreeA_ee, sizeof(int64_t)       * nenv);
       pli->cyk_envtreeA_n = nenv;
+    }
+    if(pli->do_p7deltrigger) {
+      ESL_ALLOC(pli->f6_pvalA,  sizeof(float) * nenv);
+      pli->f6_pvalA_n  = (int)nenv;
+      ESL_ALLOC(pli->f6_deltaA, sizeof(float) * nenv);
+      pli->f6_deltaA_n = (int)nenv;
     }
     si = 0;
     for(i = 0; i < np7env; i++) {
@@ -4791,6 +5151,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 	  pli->cyk_envtreeA_ee[si] = trA_tmp ? trA_tmp_ee[i] : -1;
 	  if(trA_tmp) trA_tmp[i] = NULL; /* ownership transferred */
 	}
+	if(pli->f6_pvalA)  pli->f6_pvalA[si]  = f6pval_tmp  ? f6pval_tmp[i]  : 1.0f;
+	if(pli->f6_deltaA) pli->f6_deltaA[si] = f6delta_tmp ? f6delta_tmp[i] : 0.0f;
 	si++;
       }
     }
@@ -4800,6 +5162,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     int ti; for(ti = 0; ti < np7env; ti++) if(trA_tmp[ti]) FreeParsetree(trA_tmp[ti]);
     free(trA_tmp); free(trA_tmp_es); free(trA_tmp_ee);
   }
+  if(f6pval_tmp)  { free(f6pval_tmp);  f6pval_tmp  = NULL; }
+  if(f6delta_tmp) { free(f6delta_tmp); f6delta_tmp = NULL; }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
   *ret_es   = es;
@@ -5063,6 +5427,9 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       }
     }
 
+    /* Stage 6's per-envelope F7-only re-run trigger was removed (Stage 7).
+     * The --p7deltrigger flag is still active; the escalation now happens
+     * at window-level (F6+F7 re-run) in cm_Pipeline() after pli_final_stage(). */
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
     pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;

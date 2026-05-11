@@ -2283,7 +2283,8 @@ typedef struct cm_pipeline_s {
   int           do_p7post_cp9b;  /* TRUE to derive CP9 bands from p7 glocal F/B posteriors (--p7post_cp9b)    */
   int           do_pnmono;       /* TRUE to apply monotone reachability sweep on pn_min/max_m bands (--pnmono) */
   int           do_pnmono_print; /* TRUE to print before/after band widths for each pn-monosweep call        */
-  float         p7_fwdsc;        /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc;          /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc_unbanded; /* unbanded glocal Forward score (nats), computed alongside banded when --debug-f6-envs is on */
   int           p7_window_start; /* absolute start (1-indexed) of current window, for --p7post_cp9b coord map  */
   P7_GBANDS    *p7bnd;           /* band structure kept alive across dispatch when --p7post_cp9b (gxfb->bnd ref) */
   /* Per-envelope precomputed pn_min/max bands for --p7post_cp9b.
@@ -2320,6 +2321,12 @@ typedef struct cm_pipeline_s {
   int64_t      *cyk_envtreeA_es;/* [0..nenv-1] F6 dispatch start positions for cyk_envtreeA[i]             */
   int64_t      *cyk_envtreeA_ee;/* [0..nenv-1] F6 dispatch stop  positions for cyk_envtreeA[i]             */
   int           cyk_envtreeA_n; /* number of entries in cyk_envtreeA                                       */
+  int           do_p7deltrigger;/* TRUE: compute gfwd_unbanded; trigger F7 re-run without CP9 bands (--p7deltrigger) */
+  float        *f6_pvalA;       /* [0..nenv-1] F6 CYK p-value per surviving envelope, for delta trigger    */
+  int           f6_pvalA_n;     /* number of entries in f6_pvalA                                           */
+  float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
+  int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
+  float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
   int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
   int           cykbands_high_conf; /* TRUE: F6 dispatch should use FastCYKScanHB_shmx (saves second pass) */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
