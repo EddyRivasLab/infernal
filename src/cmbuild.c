@@ -153,6 +153,7 @@ static ESL_OPTIONS options[] = {
   { "--localmu-L",        eslARG_INT,     NULL,  NULL, "n>0",     NULL,  NULL, "--no-localmu",  "override per-seq length L (default 2*W_eff; e.g. 10000 for cmcal-like)", 107 },
   { "--localmu-beta",     eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL, "--no-localmu",  "QDB beta for local-mu mini-sim (default 1e-15, cmcal default)",        107 },
   { "--localmu-score-dump",eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "dump all CYK/Inside hit scores to <f> (TSV: mode\\tscore)",            107 },
+  { "--localmu-K-from-sim",eslARG_NONE,  FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "v14: replace regression nrandhits with sim-derived K for ECMLC/ECMLI",   107 },
   { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",            107 },
 
   /* Refining the input alignment */
@@ -527,6 +528,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
         g_localmu_beta = esl_opt_GetReal(go, "--localmu-beta");
      if (esl_opt_IsUsed(go, "--localmu-score-dump"))
         g_localmu_score_dump = esl_opt_GetString(go, "--localmu-score-dump");
+     g_localmu_K_from_sim = esl_opt_GetBoolean(go, "--localmu-K-from-sim") ? 1 : 0;
    }
 
    output_header(cfg->ofp, go, cfg->cmfile, cfg->alifile);

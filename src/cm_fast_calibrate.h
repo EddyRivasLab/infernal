@@ -45,6 +45,7 @@ extern double g_localmu_lambda_li;   /* if >0, override regression lambda for EX
 extern int    g_localmu_L;           /* if >0, override per-seq L (default 2*W_eff) */
 extern double g_localmu_beta;        /* QDB beta for cm_LocalMu's clone */
 extern char  *g_localmu_score_dump;  /* if non-NULL, dump all hit scores to this TSV */
+extern int    g_localmu_K_from_sim;  /* if 1, replace nrandhits with sim-derived K (v14 expt A) */
 
 /* cm_FastCalibrateCleanup()
  *   Free model memory. Idempotent.

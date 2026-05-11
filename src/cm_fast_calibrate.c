@@ -108,6 +108,7 @@ double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda fo
 int    g_localmu_L              = -1;    /* if >0, override per-seq L (default 2*W_eff) */
 double g_localmu_beta           = -1.0;  /* if <0, auto by clen: clen<200 -> 1e-15, else -> 1e-3 */
 char  *g_localmu_score_dump     = NULL;  /* if non-NULL, dump all hit scores to this TSV */
+int    g_localmu_K_from_sim     = 0;     /* if 1, replace nrandhits with sim-derived K for ECMLC/ECMLI (v14 expt A) */
 
 
 /* =========================================================================
@@ -1259,6 +1260,36 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
         cm->expA[EXP_CM_LI]->mu_extrap = mu_extrap;
         cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
       }
+    }
+  }
+
+  /* Step 5b (v14 expt A): Optionally override nrandhits for ECMLC/ECMLI with
+   * the empirical density measured in the mini-simulation. The K predictor
+   * uses bucket-median regressions; this replaces it with per-CM
+   * n_total / (N * L) * dbsize_calib for local modes. Glocal unchanged.
+   *
+   * Hit-rate density K = n_total / (N * L). Stored nrandhits = K * dbsize.
+   * dbsize_calib stays at the cmcalibrate convention (1.6e6).
+   * For backwards compatibility, gated behind --localmu-K-from-sim.
+   */
+  if (g_localmu_K_from_sim) {
+    double sim_dbsize = (double) N * (double) L;
+    double dbsize_calib = 1.6e6;  /* keep cmcalibrate convention for stored dbsize */
+    if (n_cyk > 0 && sim_dbsize > 0.0) {
+      double K_sim = (double) n_cyk / sim_dbsize;        /* hits per residue */
+      int    nrh_sim = (int) (K_sim * dbsize_calib + 0.5);
+      if (nrh_sim < 1) nrh_sim = 1;
+      cm->expA[EXP_CM_LC]->nrandhits      = nrh_sim;
+      cm->expA[EXP_CM_LC]->dbsize         = dbsize_calib;
+      cm->expA[EXP_CM_LC]->cur_eff_dbsize = (double) nrh_sim;
+    }
+    if (n_ins > 0 && sim_dbsize > 0.0) {
+      double K_sim = (double) n_ins / sim_dbsize;
+      int    nrh_sim = (int) (K_sim * dbsize_calib + 0.5);
+      if (nrh_sim < 1) nrh_sim = 1;
+      cm->expA[EXP_CM_LI]->nrandhits      = nrh_sim;
+      cm->expA[EXP_CM_LI]->dbsize         = dbsize_calib;
+      cm->expA[EXP_CM_LI]->cur_eff_dbsize = (double) nrh_sim;
     }
   }
 
