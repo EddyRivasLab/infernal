@@ -1880,6 +1880,7 @@ typedef struct cm_s {
   int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
+  int     p7_cykbands_perstate; /* if TRUE, use per-state pad computed from HMM bands (--cykbands-perstate) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -3220,6 +3221,7 @@ extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, 
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, const float *pocc, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
 extern int          cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, const int *per_state_pad, CP9Bands_t *cp9b, int pass_idx, int debug);
+extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);

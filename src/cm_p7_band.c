@@ -4459,6 +4459,71 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
 }
 
 
+/* Function: cm_CYKPerstatePadCompute()
+ * Date    : 2026-05-11
+ *
+ * Compute per-state CYK pad from current sequence's CP9 HMM band widths,
+ * using a calibrated linear model pad = a[stt]*mean_hmm_cells + b[stt].
+ *
+ * Calibration: fit on 26_0316 stage1.5d posterior-mass-mining compare.tsv
+ * (5 CMs, 6285 states with n_used>=10 ground-truth IO p99-pad samples).
+ *
+ * Returns malloc'd int[cm->M]; caller frees. Returns NULL on alloc failure.
+ * additive_pad is added to each per-state pad (allows --cykpad N to act
+ * as a floor when --cykbands-perstate is on).
+ */
+int *
+cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
+{
+  int  M = cm->M;
+  int *pad_arr = malloc(sizeof(int) * M);
+  if (pad_arr == NULL) return NULL;
+
+  /* Calibration coefficients indexed by sttype constant:
+   * D_st=0, MP_st=1, ML_st=2, MR_st=3, IL_st=4, IR_st=5, S_st=6, E_st=7, B_st=8, EL_st=9
+   * E and EL have no calibration data (singletons / non-emitting); use conservative defaults.
+   */
+  static const double cal_a[10] = {
+    0.0044,  /* D */   0.0140,  /* MP */  0.0225,  /* ML */  0.0088,  /* MR */
+    0.0224,  /* IL */  0.0124,  /* IR */  0.0238,  /* S */
+    0.0000,  /* E (no data) */
+    0.0182,  /* B */
+    0.0000   /* EL (no data) */
+  };
+  static const double cal_b[10] = {
+    6.7158,  /* D */   0.8575,  /* MP */  0.9253,  /* ML */  2.3591,  /* MR */
+    3.3514,  /* IL */  4.6203,  /* IR */ -0.1362,  /* S */
+    5.0000,  /* E */
+    0.9841,  /* B */
+    5.0000   /* EL */
+  };
+
+  int v;
+  for (v = 0; v < M; v++) {
+    int stt = cm->sttype[v];
+    if (stt < 0 || stt >= 10) { pad_arr[v] = additive_pad; continue; }
+
+    int cells = 1;
+    if (cm->cp9map != NULL && cp9b != NULL) {
+      int k = cm->cp9map->cs2hn[v][0];
+      if (k >= 0 && k <= cp9b->hmm_M) {
+        int iw = cp9b->imax[k] - cp9b->imin[k] + 1;
+        int jw = cp9b->jmax[k] - cp9b->jmin[k] + 1;
+        if (iw < 1) iw = 1;
+        if (jw < 1) jw = 1;
+        cells = iw * jw;
+      }
+    }
+
+    double predicted = cal_a[stt] * (double)cells + cal_b[stt];
+    int p = (int)ceil(predicted);
+    if (p < 0) p = 0;
+    pad_arr[v] = p + additive_pad;
+  }
+  return pad_arr;
+}
+
+
 /* Function: cm_BandsFromParsetree_perstate()
  * Date    : 2026-04-08
  *
