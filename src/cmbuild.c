@@ -145,7 +145,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
   { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
   /* LocalMu mini-simulation options */
-  { "--localmu-N",        eslARG_INT,    "200",  NULL, "n>0",     NULL,  NULL, "--no-localmu",  "number of seqs for local-mu mini-simulation",                        107 },
+  { "--localmu-N",        eslARG_INT,     NULL,  NULL, "n>0",     NULL,  NULL, "--no-localmu",  "number of seqs for local-mu mini-sim (default auto by clen)",        107 },
   { "--localmu-seed",     eslARG_INT,     "42",  NULL, "n>=0",    NULL,  NULL, "--no-localmu",  "RNG seed for local-mu mini-simulation (0=arbitrary)",                107 },
   { "--localmu-nowcap",   eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "disable W-cap in local-mu mini-simulation",                          107 },
   { "--localmu-lc-lambda",eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL, "--no-localmu",  "override regression lambda for EXP_CM_LC (diagnostic experiment 2)", 107 },
@@ -515,7 +515,8 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      g_localmu_on   = 0;
    } else {
      g_localmu_on   = 1;
-     g_localmu_N    = esl_opt_GetInteger(go, "--localmu-N");
+     if (esl_opt_IsUsed(go, "--localmu-N"))
+        g_localmu_N = esl_opt_GetInteger(go, "--localmu-N");
      g_localmu_seed = esl_opt_GetInteger(go, "--localmu-seed");
      g_localmu_wcap = esl_opt_GetBoolean(go, "--localmu-nowcap") ? 0 : 1;
      g_localmu_lambda_lc = esl_opt_IsUsed(go, "--localmu-lc-lambda")

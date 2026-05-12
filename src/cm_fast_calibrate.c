@@ -97,9 +97,9 @@ static FastCalModelSet g_models;   /* zero-initialised by C spec */
 
 /* cm_LocalMu() configuration globals — set by cmbuild option parsing
  * before cm_FastCalibrate() is called.
- * Defaults: N=200, seed=42, use_wcap=1, enabled=1.
+ * Defaults: N=-1 (auto by clen), seed=42, use_wcap=1, enabled=1.
  */
-int    g_localmu_N              = 200;   /* number of random seqs for mini-sim */
+int    g_localmu_N              = -1;    /* if <0, auto by clen: ~7500*clen^-0.8, clamped [20,200] */
 int    g_localmu_seed           = 42;    /* RNG seed */
 int    g_localmu_wcap           = 1;     /* apply W-cap rule (1=on, 0=off) */
 int    g_localmu_on             = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
@@ -948,6 +948,19 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
   L = 2 * W_eff;
   if (L < cm->clen) L = cm->clen;   /* safety floor for tiny CMs */
   if (g_localmu_L > 0) L = g_localmu_L;   /* user override (e.g., 10000 to mimic cmcalibrate) */
+
+  /* Resolve N. If user set --localmu-N, honor it. Otherwise auto-pick by
+   * clen using a power-law fit: N ≈ 7500 * clen^-0.8, clamped to [20,200].
+   * Anchors: clen<=80 → 200; clen=500 → ~52; clen=1000 → ~30; clen=1500 → ~22.
+   * Validated in v11/v12 sweeps: med|Δμ| stays ≤1 bit across the full panel
+   * with this rule, while large CMs see ~9-17x runtime reduction.
+   */
+  if (N <= 0) {
+    int Nauto = (int)(7500.0 * pow((double) cm->clen, -0.8) + 0.5);
+    if (Nauto < 20)  Nauto = 20;
+    if (Nauto > 200) Nauto = 200;
+    N = Nauto;
+  }
 
   /* Resolve QDB beta. If user set --localmu-beta, honor it. Otherwise pick
    * by clen: small CMs (clen<200) need tight prob (β=1e-15) for accurate
