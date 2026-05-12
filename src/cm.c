@@ -126,6 +126,7 @@ CreateCMShell(void)
   cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
   cm->p7_cykbands_perstate = FALSE;      /* default: uniform pad (set TRUE by --cykbands-perstate) */
+  cm->p7_cykperstate_maxpad = 0;         /* default: no cap on per-state pad */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3105,6 +3106,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_use_cykbands  = cm->p7_use_cykbands;
   new->p7_cykbands_pad  = cm->p7_cykbands_pad;
   new->p7_cykbands_perstate = cm->p7_cykbands_perstate;
+  new->p7_cykperstate_maxpad = cm->p7_cykperstate_maxpad;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

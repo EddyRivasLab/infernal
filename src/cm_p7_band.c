@@ -4498,6 +4498,8 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
     5.0000   /* EL */
   };
 
+  int maxpad = cm->p7_cykperstate_maxpad;
+  int n_capped = 0;
   int v;
   for (v = 0; v < M; v++) {
     int stt = cm->sttype[v];
@@ -4518,8 +4520,34 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
     double predicted = cal_a[stt] * (double)cells + cal_b[stt];
     int p = (int)ceil(predicted);
     if (p < 0) p = 0;
-    pad_arr[v] = p + additive_pad;
+    p += additive_pad;
+    if (maxpad > 0 && p > maxpad) { p = maxpad; n_capped++; }
+    pad_arr[v] = p;
   }
+
+  /* Distribution diagnostic so the sweep can tell "cap was active" from "no-op". */
+  {
+    int *sorted = malloc(sizeof(int) * M);
+    if (sorted != NULL) {
+      int i;
+      for (i = 0; i < M; i++) sorted[i] = pad_arr[i];
+      /* simple insertion sort -- M is small enough not to matter for diagnostic */
+      for (i = 1; i < M; i++) {
+        int key = sorted[i]; int j = i - 1;
+        while (j >= 0 && sorted[j] > key) { sorted[j+1] = sorted[j]; j--; }
+        sorted[j+1] = key;
+      }
+      int min_pad    = sorted[0];
+      int max_pad    = sorted[M-1];
+      int median_pad = sorted[M/2];
+      int p90_pad    = sorted[(int)((M-1)*0.90)];
+      int p99_pad    = sorted[(int)((M-1)*0.99)];
+      fprintf(stderr, "#P7PB_PERSTATE M=%d min=%d median=%d p90=%d p99=%d max=%d capped=%d\n",
+              M, min_pad, median_pad, p90_pad, p99_pad, max_pad, n_capped);
+      free(sorted);
+    }
+  }
+
   return pad_arr;
 }
 

@@ -1881,6 +1881,7 @@ typedef struct cm_s {
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
   int     p7_cykbands_perstate; /* if TRUE, use per-state pad computed from HMM bands (--cykbands-perstate) */
+  int     p7_cykperstate_maxpad; /* if >0, cap per-state CYK pad at this value (--cykbands-perstate-maxpad) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
