@@ -1882,6 +1882,7 @@ typedef struct cm_s {
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
   int     p7_cykbands_perstate; /* if TRUE, use per-state pad computed from HMM bands (--cykbands-perstate) */
   int     p7_cykperstate_maxpad; /* if >0, cap per-state CYK pad at this value (--cykbands-perstate-maxpad) */
+  char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */

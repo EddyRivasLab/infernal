@@ -111,6 +111,7 @@ static ESL_OPTIONS options[] = {
   { "--cykpad",       eslARG_INT,         "5", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree-derived band tightening [default 5]",  3 },
   { "--cykbands-perstate", eslARG_NONE,  FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "use per-state CYK pad from calibrated HMM-band-width model", 3 },
   { "--cykperstate-maxpad",  eslARG_INT,  "0", NULL,        "n>=0",      NULL, "--cykbands-perstate",            NULL, "cap per-state CYK pad at <n> (0 = no cap; default 0)",      3 },
+  { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      3 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
@@ -1677,6 +1678,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->p7_cykbands_perstate = TRUE;
       cm->p7_cykperstate_maxpad = esl_opt_GetInteger(go, "--cykperstate-maxpad");
     }
+  }
+  if(esl_opt_IsUsed(go, "--dump-bands")) {
+    cm->p7_dump_bands_file = (char *) esl_opt_GetString(go, "--dump-bands");
   }
 
   if((esl_opt_IsUsed(go, "--flanktoins")) && (esl_opt_IsUsed(go, "--flankselfins"))) { 

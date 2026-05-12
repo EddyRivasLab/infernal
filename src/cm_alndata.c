@@ -546,10 +546,24 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	}
 	if(w != NULL) esl_stopwatch_Stop(w);
 	secs_bands = (w == NULL) ? 0. : w->elapsed;
-	tau     = cm->tau; 
+	tau     = cm->tau;
 	thresh1 = cm->cp9b->thresh1;
 	thresh2 = cm->cp9b->thresh2;
 	/* note: we don't set these three if cp9b_valid is TRUE */
+      }
+
+      /* DIAGNOSTIC: always print CP9 banded matrix cell count (whether
+       * cykbands is on or off) so we can compare CP9-only vs cykbands runs. */
+      {
+        double _cp9_cells = 0.;
+        CP9Bands_t *_cp9b = cm->cp9b;
+        int _v, _jp;
+        for(_v = 0; _v < cm->M; _v++)
+          for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
+            if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
+              _cp9_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+        fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_band_cells=%.0f\n",
+                (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cp9_cells);
       }
 
       /* CYK pre-pass: run CYK on CP9 bands, derive tighter per-state bands before Inside/Outside */
@@ -617,8 +631,29 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	clock_gettime(CLOCK_MONOTONIC, &_tb_cyk);
 	double _cyk_s   = (_tb_cyk.tv_sec  - _ta_cyk.tv_sec)  + (_tb_cyk.tv_nsec  - _ta_cyk.tv_nsec) /1e9;
 	double _b_ratio = (_orig_cells > 0.) ? _tight_cells / _orig_cells : 1.0;
-	fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f\n",
-		(cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cyk_s, _b_ratio);
+	fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
+		(cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cyk_s, _b_ratio, _orig_cells, _tight_cells);
+      }
+
+      /* --dump-bands: write per-(v,j) band TSV before cm_AlignHB/cm_TrAlignHB */
+      if(cm->p7_dump_bands_file != NULL && cm->cp9b != NULL) {
+        FILE *_dbfp = fopen(cm->p7_dump_bands_file, "w");
+        if(_dbfp != NULL) {
+          CP9Bands_t *_dbands = cm->cp9b;
+          int _dv, _dj, _djp;
+          fprintf(_dbfp, "v\tstate_type\tj\thdmin\thdmax\tdwidth\n");
+          for(_dv = 0; _dv < cm->M; _dv++) {
+            for(_djp = 0; _djp <= _dbands->jmax[_dv] - _dbands->jmin[_dv]; _djp++) {
+              _dj = _dbands->jmin[_dv] + _djp;
+              int _dmin = _dbands->hdmin[_dv][_djp];
+              int _dmax = _dbands->hdmax[_dv][_djp];
+              int _dwidth = (_dmax >= _dmin) ? (_dmax - _dmin + 1) : 0;
+              fprintf(_dbfp, "%d\t%s\t%d\t%d\t%d\t%d\n",
+                      _dv, Statetype(cm->sttype[_dv]), _dj, _dmin, _dmax, _dwidth);
+            }
+          }
+          fclose(_dbfp);
+        }
       }
 
       if(w != NULL) esl_stopwatch_Start(w);
