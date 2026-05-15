@@ -4341,11 +4341,17 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
 
+  /* allocate and initialize d_max_written for the sparse EL self-transition */
+  if (cm->flags & CMH_LOCAL_END) {
+    ESL_ALLOC(d_max_written, sizeof(int) * (L+1));
+    esl_vec_ISet(d_max_written, L+1, -1);
+  }
+
   /* ensure a full alignment to ROOT_S (v==0) is allowed by the bands */
   if (jmin[0] > L || jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
   jp_0 = L - jmin[0];
-  if (hdmin[0][jp_0] > L || hdmax[0][jp_0] < L) 
+  if (hdmin[0][jp_0] > L || hdmax[0][jp_0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hdmin[0][jp_0], hdmax[0][jp_0]);
   Lp_0 = L - hdmin[0][jp_0];
   /* set the offset banded cell corresponding to beta[0][L][L] to 0., all parses must end there */
@@ -4353,7 +4359,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. */
   if (cm->flags & CMH_LOCAL_BEGIN) {
-    for (v = 1; v < cm->M; v++) { 
+    for (v = 1; v < cm->M; v++) {
       if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
 	if((L >= jmin[v]) && (L <= jmax[v])) {
 	  jp_v = L - jmin[v];
@@ -4673,18 +4679,27 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  }
 	  break;
 	}
+	/* update d_max_written for the sparse self-transition */
+	if (dx > d_max_written[j]) d_max_written[j] = dx;
       }
     }
   } /* end loop over decks v. */
 
-  /* Deal with last step needed for local alignment 
+  /* Deal with last step needed for local alignment
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   * Sparse optimization: only sweep j values where d_max_written[j] >= 0
+   * (some per-state v wrote a non-IMPOSSIBLE value). Skip empty j's entirely.
+   * Start the d-sweep at d_max_written[j]-1 instead of j-1 (cells at
+   * d > d_max_written[j] are IMPOSSIBLE and propagate nothing).
    */
   if (cm->flags & CMH_LOCAL_END) {
-    for (j = L; j > 0; j--) { /* careful w/ boundary here */
-      for (d = j-1; d >= 0; d--) /* careful w/ boundary here */
+    for (j = L; j > 0; j--) {
+      if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
+      for (d = d_max_written[j] - 1; d >= 0; d--)
 	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
     }
+    free(d_max_written);
+    d_max_written = NULL;
   }
 
   if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
@@ -4767,9 +4782,13 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   if (ret_sc != NULL) *ret_sc = sc;
   return eslOK;
-}  
 
-/* Function: cm_Posterior() 
+ ERROR:
+  if (d_max_written) free(d_max_written);
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+/* Function: cm_Posterior()
  * Date:     EPN, Mon Nov 19 09:02:12 2007
  * Note:     based on Ian Holmes' P7EmitterPosterior() from HMMER's 2.x postprob.c
  *           Renamed from CMPosterior() [EPN, Wed Sep 14 06:15:22 2011].
