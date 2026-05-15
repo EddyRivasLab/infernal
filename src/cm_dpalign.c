@@ -4321,13 +4321,14 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      dn, dx;             /* current minimum/maximum d allowed */
   int      jp_0;               /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
+  int     *d_max_written = NULL; /* [0..L]: max d written to beta[cm->M][j][d] by per-state v loop; -1 if no write */
 
   /* the DP matrices */
   float ***beta  = mx->dp;     /* pointer to the Oustide DP mx */
   float ***alpha = ins_mx->dp; /* pointer to the Inside DP mx (already calc'ed and passed in) */
 
   /* ptrs to cp9b info, for convenience */
-  int     *jmin  = cm->cp9b->jmin;  
+  int     *jmin  = cm->cp9b->jmin;
   int     *jmax  = cm->cp9b->jmax;
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
