@@ -760,24 +760,47 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
 
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L); */
 
+  /* Sub-stage timing instrumentation.
+   * Outputs "#CM_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr.
+   */
+  struct timespec _ta_sub, _tb_sub;
+#define CM_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_sub)
+#define CM_ALIGN_SUBSTAGE_END(tag) do { \
+    clock_gettime(CLOCK_MONOTONIC, &_tb_sub); \
+    double _ss = (_tb_sub.tv_sec - _ta_sub.tv_sec) + (_tb_sub.tv_nsec - _ta_sub.tv_nsec)/1e9; \
+    fprintf(stderr, "#CM_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
+            (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
+    fflush(stderr); \
+  } while(0)
+
   /* if do_post:   fill Inside, Outside, Posterior matrices, in that order.
    * if do_sample: fill Inside and sample from it.
    */
-  if(do_post || do_sample) { 
+  if(do_post || do_sample) {
+    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_InsideAlignHB (cm, errbuf, dsq, L, size_limit, mx, &ins_sc)) != eslOK) return status;
-    if(do_sample) { 
-      if((status = cm_StochasticParsetreeHB(cm, errbuf, dsq, L, mx, r, &tr, &sc)) != eslOK) return status; 
+    CM_ALIGN_SUBSTAGE_END("inside");
+    if(do_sample) {
+      CM_ALIGN_SUBSTAGE_START();
+      if((status = cm_StochasticParsetreeHB(cm, errbuf, dsq, L, mx, r, &tr, &sc)) != eslOK) return status;
+      CM_ALIGN_SUBSTAGE_END("sample_trace");
     }
     if(do_post) { /* Inside was called above, now do Outside, then Posterior */
+      CM_ALIGN_SUBSTAGE_START();
       if((status = cm_OutsideAlignHB(cm, errbuf, dsq, L, size_limit, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! (cm->flags & CMH_LOCAL_END))), post_mx, mx, NULL)) != eslOK) return status;
+      CM_ALIGN_SUBSTAGE_END("outside");
       /* Note: we can only check the posteriors in cm_OutsideAlignHB() if local begin/ends are off */
-      if((status = cm_PosteriorHB       (cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
-      if((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, post_mx, emit_mx, (cm->align_opts & CM_ALIGN_CHECKINOUT))) != eslOK) return status;   
+      CM_ALIGN_SUBSTAGE_START();
+      if((status = cm_PosteriorHB       (cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;
+      if((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, post_mx, emit_mx, (cm->align_opts & CM_ALIGN_CHECKINOUT))) != eslOK) return status;
+      CM_ALIGN_SUBSTAGE_END("posterior");
     }
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
+    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_alignT_hb(cm, errbuf, dsq, L, size_limit, do_optacc, mx, shmx, emit_mx, &tr, (do_optacc) ? NULL : &sc)) != eslOK) return status;
+    CM_ALIGN_SUBSTAGE_END("traceback");
   }
 
   if(have_ppstr || do_optacc) {
@@ -4694,6 +4717,19 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
    * d > d_max_written[j] are IMPOSSIBLE and propagate nothing).
    */
   if (cm->flags & CMH_LOCAL_END) {
+    if (getenv("EL_DMAX_DIAG")) {
+      int n_written_j = 0, d_max_total = 0, d_max_max = 0;
+      for (j = 0; j <= L; j++) {
+        if (d_max_written[j] >= 0) {
+          n_written_j++;
+          d_max_total += d_max_written[j];
+          if (d_max_written[j] > d_max_max) d_max_max = d_max_written[j];
+        }
+      }
+      fprintf(stderr, "#EL_DMAX M=%d L=%d n_written_j=%d avg_dmax=%.1f max_dmax=%d\n",
+              cm->M, L, n_written_j, n_written_j>0 ? (double)d_max_total/n_written_j : 0.0, d_max_max);
+      fflush(stderr);
+    }
     for (j = L; j > 0; j--) {
       if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
       for (d = d_max_written[j] - 1; d >= 0; d--)
