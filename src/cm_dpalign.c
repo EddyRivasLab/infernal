@@ -1176,17 +1176,10 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0);
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
-   * Note: we could optimize by skipping this step and using el_scA[d] to
-   * initialize ELs for each state in the first step of the main recursion
-   * below. We fill in the EL deck here for completeness and so that
-   * a check of this alpha matrix with a CYKOutside matrix will pass.
+  /* EL deck optimization: we skip filling alpha[cm->M] here because
+   * alpha[cm->M][j][d] == el_scA[d] always and we substitute el_scA[d]
+   * directly at the read sites in the main recursion below.
    */
-  if(cm->flags & CMH_LOCAL_END) { 
-    for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) alpha[cm->M][j][d] = el_scA[d];
-    }
-  }
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) {
@@ -1210,12 +1203,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	  dp_v = sd - hdmin[v][jp_v];
 	}
 	for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	  if(d >= sd) { 
-	    alpha[v][jp_v][dp_v] = alpha[cm->M][j][d-sd] + cm->endsc[v];
-	    /* If we optimize by skipping the filling of the 
-	     * EL deck the above line would become: 
-	     * 'alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];' 
-	     */
+	  if(d >= sd) {
+	    alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
 	  }
 	}
       }
