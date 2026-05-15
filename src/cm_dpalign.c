@@ -1832,17 +1832,10 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
-   * Note: we could optimize by skipping this step and using el_scA[d] to
-   * initialize ELs for each state in the first step of the main recursion
-   * below. We fill in the EL deck here for completeness and so that
-   * a check of this alpha matrix with a CYKOutside matrix will pass.
+  /* EL deck optimization: skip filling alpha[cm->M]. The main recursion
+   * uses el_scA[d-sd] directly at read sites (see ~line 1873). The
+   * PosteriorHB function uses el_scA[d] directly instead of alpha[cm->M][j][d].
    */
-  if(cm->flags & CMH_LOCAL_END) { 
-    for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) alpha[cm->M][j][d] = el_scA[d];
-    }
-  }
 
   /* Main recursion  */
   for (v = cm->M-1; v >= 0; v--) {
