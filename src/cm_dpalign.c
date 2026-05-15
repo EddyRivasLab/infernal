@@ -4933,17 +4933,26 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
     if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
   }
 
-  /* If local ends are on, start with the EL state (cm->M), otherwise
-   * M deck is not valid. Note: there are no bands on the EL state 
+  /* If local ends are on, fill the EL state (cm->M) posterior deck.
+   * EL optimization: (a) alpha[cm->M][j][d] == el_scA[d] always, so use
+   * el_scA[d] directly instead of reading the Inside EL deck.
+   * (b) After the Outside EL self-transition, non-IMPOSSIBLE cells form
+   * a contiguous strip beta[cm->M][j][0..d_max_written[j]]; break at the
+   * first IMPOSSIBLE cell to skip the wasted iterations.
    */
-  if (cm->flags & CMH_LOCAL_END) { 
-    for(j = 0; j <= L; j++) {
-      for (d = 0; d <= j; d++) { 
-	post[cm->M][j][d] = alpha[cm->M][j][d] + beta[cm->M][j][d] - sc;
+  if (cm->flags & CMH_LOCAL_END) {
+    float *el_scA_post;
+    ESL_ALLOC(el_scA_post, sizeof(float) * (L+1));
+    for (d = 0; d <= L; d++) el_scA_post[d] = cm->el_selfsc * d;
+    for (j = 0; j <= L; j++) {
+      for (d = 0; d <= j; d++) {
+	if (! NOT_IMPOSSIBLE(beta[cm->M][j][d])) break; /* contiguous strip: IMPOSSIBLE means done for this j */
+	post[cm->M][j][d] = el_scA_post[d] + beta[cm->M][j][d] - sc;
       }
     }
+    free(el_scA_post);
   }
-  
+
   for (v = (cm->M-1); v >= 0; v--) {
     for (j = jmin[v]; j <= jmax[v]; j++) {
       ESL_DASSERT1((j >= 0 && j <= L));
@@ -4952,10 +4961,13 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
 	dp_v = d - hdmin[v][jp_v];
 	post[v][jp_v][dp_v] = alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v] - sc;
 	/*printf("v: %3d | jp_v: %3d | dp_v: %3d | alpha: %5.2f | beta: %5.2f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
-      }  
+      }
     }
   }
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Function: cm_EmitterPosterior()
