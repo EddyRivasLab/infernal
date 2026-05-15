@@ -4681,7 +4681,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  break;
 	}
 	/* update d_max_written for the sparse self-transition */
-	if (dx > d_max_written[j]) d_max_written[j] = dx;
+	if (dx >= dn && dx > d_max_written[j]) d_max_written[j] = dx;
       }
     }
   } /* end loop over decks v. */
@@ -4935,11 +4935,9 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
   }
 
   /* If local ends are on, fill the EL state (cm->M) posterior deck.
-   * EL optimization: (a) alpha[cm->M][j][d] == el_scA[d] always, so use
-   * el_scA[d] directly instead of reading the Inside EL deck.
-   * (b) After the Outside EL self-transition, non-IMPOSSIBLE cells form
-   * a contiguous strip beta[cm->M][j][0..d_max_written[j]]; break at the
-   * first IMPOSSIBLE cell to skip the wasted iterations.
+   * EL optimization: alpha[cm->M][j][d] == el_scA[d] always, so use
+   * el_scA[d] directly instead of reading the Inside EL deck
+   * (which was not filled, per Changes 1+2).
    */
   if (cm->flags & CMH_LOCAL_END) {
     float *el_scA_post;
@@ -4947,7 +4945,6 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
     for (d = 0; d <= L; d++) el_scA_post[d] = cm->el_selfsc * d;
     for (j = 0; j <= L; j++) {
       for (d = 0; d <= j; d++) {
-	if (! NOT_IMPOSSIBLE(beta[cm->M][j][d])) break; /* contiguous strip: IMPOSSIBLE means done for this j */
 	post[cm->M][j][d] = el_scA_post[d] + beta[cm->M][j][d] - sc;
       }
     }
