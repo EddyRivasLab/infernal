@@ -4344,7 +4344,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      dn, dx;             /* current minimum/maximum d allowed */
   int      jp_0;               /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
-  int     *d_max_written = NULL; /* [0..L]: max d written to beta[cm->M][j][d] by per-state v loop; -1 if no write */
+  int     *d_max_written   = NULL; /* [0..L]: max d of write RANGE written to beta[cm->M][j][d]; -1 if no write */
+  int     *d_max_nonimpos  = NULL; /* [0..L]: max d where written value is actually non-IMPOSSIBLE; -1 if none */
 
   /* the DP matrices */
   float ***beta  = mx->dp;     /* pointer to the Oustide DP mx */
@@ -4365,10 +4366,12 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
 
-  /* allocate and initialize d_max_written for the sparse EL self-transition */
+  /* allocate and initialize d_max_written/d_max_nonimpos for the sparse EL self-transition */
   if (cm->flags & CMH_LOCAL_END) {
-    ESL_ALLOC(d_max_written, sizeof(int) * (L+1));
-    esl_vec_ISet(d_max_written, L+1, -1);
+    ESL_ALLOC(d_max_written,  sizeof(int) * (L+1));
+    ESL_ALLOC(d_max_nonimpos, sizeof(int) * (L+1));
+    esl_vec_ISet(d_max_written,  L+1, -1);
+    esl_vec_ISet(d_max_nonimpos, L+1, -1);
   }
 
   /* ensure a full alignment to ROOT_S (v==0) is allowed by the bands */
@@ -4705,38 +4708,90 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	}
 	/* update d_max_written for the sparse self-transition */
 	if (dx >= dn && dx > d_max_written[j]) d_max_written[j] = dx;
+	/* update d_max_nonimpos: highest d with actual non-IMPOSSIBLE write for this j */
+	if (dx >= dn) {
+	  int d_tmp;
+	  int d_lo = (dn >= 0) ? dn : 0;
+	  for (d_tmp = dx; d_tmp >= d_lo; d_tmp--) {
+	    if (NOT_IMPOSSIBLE(beta[cm->M][j][d_tmp])) {
+	      if (d_tmp > d_max_nonimpos[j]) d_max_nonimpos[j] = d_tmp;
+	      break;
+	    }
+	  }
+	}
       }
     }
   } /* end loop over decks v. */
 
   /* Deal with last step needed for local alignment
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
-   * Sparse optimization: only sweep j values where d_max_written[j] >= 0
-   * (some per-state v wrote a non-IMPOSSIBLE value). Skip empty j's entirely.
-   * Start the d-sweep at d_max_written[j]-1 instead of j-1 (cells at
-   * d > d_max_written[j] are IMPOSSIBLE and propagate nothing).
+   * Sparse optimization: skip j values where d_max_nonimpos[j] < 0 (no non-IMPOSSIBLE
+   * EL writes at j; all self-transitions would be IMPOSSIBLE → no-op). For j values
+   * with non-IMPOSSIBLE writes, start the d-sweep at d_max_nonimpos[j]-1 instead of
+   * j-1: cells at d > d_max_nonimpos[j] are IMPOSSIBLE and propagate nothing.
    */
   if (cm->flags & CMH_LOCAL_END) {
     if (getenv("EL_DMAX_DIAG")) {
       int n_written_j = 0, d_max_total = 0, d_max_max = 0;
+      int n_nonimpos_j = 0, d_ni_total = 0, d_ni_max = 0;
       for (j = 0; j <= L; j++) {
         if (d_max_written[j] >= 0) {
           n_written_j++;
           d_max_total += d_max_written[j];
           if (d_max_written[j] > d_max_max) d_max_max = d_max_written[j];
         }
+        if (d_max_nonimpos[j] >= 0) {
+          n_nonimpos_j++;
+          d_ni_total += d_max_nonimpos[j];
+          if (d_max_nonimpos[j] > d_ni_max) d_ni_max = d_max_nonimpos[j];
+        }
       }
-      fprintf(stderr, "#EL_DMAX M=%d L=%d n_written_j=%d avg_dmax=%.1f max_dmax=%d\n",
+      fprintf(stderr, "#EL_DMAX    M=%d L=%d n_written_j=%d avg_dmax_written=%.1f max_dmax_written=%d\n",
               cm->M, L, n_written_j, n_written_j>0 ? (double)d_max_total/n_written_j : 0.0, d_max_max);
+      fprintf(stderr, "#EL_NONIMPOS M=%d L=%d n_nonimpos_j=%d avg_dmax_nonimpos=%.1f max_dmax_nonimpos=%d\n",
+              cm->M, L, n_nonimpos_j, n_nonimpos_j>0 ? (double)d_ni_total/n_nonimpos_j : 0.0, d_ni_max);
       fflush(stderr);
     }
-    for (j = L; j > 0; j--) {
-      if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
-      for (d = d_max_written[j] - 1; d >= 0; d--)
-	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+    /* DEBUG: verify d_max_nonimpos is correct before using it */
+    if (getenv("EL_DMAX_VERIFY")) {
+      for (j = 0; j <= L; j++) {
+        int true_dmax = -1;
+        for (d = j; d >= 0; d--) {
+          if (NOT_IMPOSSIBLE(beta[cm->M][j][d])) { true_dmax = d; break; }
+        }
+        if (true_dmax != d_max_nonimpos[j]) {
+          fprintf(stderr, "BUG: j=%d d_max_nonimpos=%d true_dmax=%d\n",
+                  j, d_max_nonimpos[j], true_dmax);
+          fflush(stderr);
+        }
+      }
+    }
+    /* run the REFERENCE sweep (d_max_written) and save beta copy for comparison */
+    if (getenv("EL_SWEEP_COMPARE")) {
+      /* reference sweep */
+      for (j = L; j > 0; j--) {
+        if (d_max_written[j] < 0) continue;
+        for (d = d_max_written[j] - 1; d >= 0; d--)
+          beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+      }
+    } else {
+      for (j = L; j > 0; j--) {
+        if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
+        if (d_max_nonimpos[j] < 0) {
+          /* all writes were IMPOSSIBLE; self-transition has no effect; skip */
+          continue;
+        }
+        /* sweep from d_max_nonimpos[j]-1 downward: the step at d_max_nonimpos[j] is always a
+         * no-op (beta[j][d_max_nonimpos[j]+1] is IMPOSSIBLE), so skip it and start one below.
+         * This also avoids a potential out-of-bounds access when d_max_nonimpos[j] == j. */
+        for (d = d_max_nonimpos[j] - 1; d >= 0; d--)
+          beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+      }
     }
     free(d_max_written);
     d_max_written = NULL;
+    free(d_max_nonimpos);
+    d_max_nonimpos = NULL;
   }
 
   if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
@@ -4821,7 +4876,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   return eslOK;
 
  ERROR:
-  if (d_max_written) free(d_max_written);
+  if (d_max_written)  free(d_max_written);
+  if (d_max_nonimpos) free(d_max_nonimpos);
   ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
