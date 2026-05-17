@@ -1134,6 +1134,7 @@ typedef struct cm_hb_mx_s {
   float ***dp;          /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
 
+  int omit_el_deck;     /* if TRUE, do not allocate alpha[cm->M] EL deck (Inside use only) */
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
 			 * matrix, which defines j, d, bands for each
 			 * state, only a reference, so don't free
