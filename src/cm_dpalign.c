@@ -5036,7 +5036,9 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
     ESL_ALLOC(el_scA_post, sizeof(float) * (L+1));
     for (d = 0; d <= L; d++) el_scA_post[d] = cm->el_selfsc * d;
     for (j = 0; j <= L; j++) {
+      if (!NOT_IMPOSSIBLE(beta[cm->M][j][0])) continue; /* j-skip: all beta IMPOSSIBLE, post stays IMPOSSIBLE */
       for (d = 0; d <= j; d++) {
+	if (!NOT_IMPOSSIBLE(beta[cm->M][j][d])) break; /* contiguous strip: IMPOSSIBLE means done for this j */
 	post[cm->M][j][d] = el_scA_post[d] + beta[cm->M][j][d] - sc;
       }
     }
