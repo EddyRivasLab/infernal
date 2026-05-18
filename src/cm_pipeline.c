@@ -4553,6 +4553,11 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   cm = *opt_cm;
   save_tau = cm->tau;
 
+  /* F6 CYK scan uses el_scA[d] directly; alpha[cm->M] EL deck is never read.
+   * Skip EL deck allocation for all F6 (and subsequent F7) dispatch calls.
+   * pli_final_stage() restores the flag before per-hit OptAcc alignment. */
+  cm->hb_mx->omit_el_deck = 1;
+
   enforce_i0 = cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) ? TRUE : FALSE;
   enforce_j0 = cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) ? TRUE : FALSE;
 
@@ -4974,6 +4979,10 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     cm->tau          = pli->final_tau;
     qdbidx           = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB2_LOOSE;
 
+    /* F7 Inside scan also uses el_scA[d]; keep EL deck omitted for this envelope's F7 call.
+     * (Previous envelope's alignment may have restored the flag to 0.) */
+    cm->hb_mx->omit_el_deck = 1;
+
     /* --cykbands: derive cp9 HMM bands directly from F6 CYK parsetree
      * for this envelope, install into cm->cp9b, and signal dispatch to
      * skip cp9_Seq2Bands. Also redefine the F7 envelope (es[i]..ee[i])
@@ -5025,8 +5034,13 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       scan_cp9b = NULL;
     }
   
+    /* Restore EL deck allocation before per-hit OptAcc alignment:
+     * cm_OptAccAlignHB unconditionally reads alpha[cm->M], so cm_hb_mx_GrowTo
+     * must allocate the EL deck for alignment even though F6/F7 didn't need it. */
+    cm->hb_mx->omit_el_deck = 0;
+
     /* add info to each hit DP scanning functions didn't have access to, and align the hits if nec */
-    for (h = nhit; h < hitlist->N; h++) { 
+    for (h = nhit; h < hitlist->N; h++) {
       hit = &(hitlist->unsrt[h]);
       hit->cm_idx   = pli->cur_cm_idx;
       hit->clan_idx = pli->cur_clan_idx;
