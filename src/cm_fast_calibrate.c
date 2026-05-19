@@ -72,23 +72,40 @@
  * Data structures
  */
 
+/* y_transform: post-prediction back-transform applied to ridge output.
+ *   FCRY_IDENTITY: pred = raw
+ *   FCRY_EXP:      pred = exp(raw)         (v4.x glocal K and v5.5 "log"-trained
+ *                                           targets both use this)
+ * v5.5 JSONs carry the string "log" (meaning "y was log-transformed during
+ * training") which the parser maps to FCRY_EXP.
+ */
+typedef enum {
+  FCRY_IDENTITY = 0,
+  FCRY_EXP      = 1,
+} FastCalYTransform;
+
 typedef struct {
-  int      nfeat;      /* number of features; 0 = slot unused                */
+  int      nfeat;      /* number of features; 0 = slot unused (UNLESS y_transform set + intercept-only ridge) */
   char   **fnames;     /* feature name strings [nfeat], NULL-terminated list  */
   double  *mean;       /* feature_mean[nfeat]                                  */
   double  *std;        /* feature_std[nfeat]                                   */
   double  *coef;       /* coef_z[nfeat]                                        */
-  double   intercept;  /* target_mean                                          */
+  double   intercept;  /* target_mean / intercept                              */
   double   loo_mse;    /* informational only                                   */
+  FastCalYTransform y_transform; /* post-prediction transform                  */
+  int      defined;    /* 1 if a ridge was parsed into this slot (intercept-only
+                        * ridges have nfeat==0 but defined==1)                  */
 } FastCalRidge;
 
 typedef struct {
   FastCalRidge str_lambda    [N_BUCKETS][N_MODES];
   FastCalRidge str_mu_extrap [N_BUCKETS][N_MODES];
   FastCalRidge str_mu_orig   [N_BUCKETS][N_MODES];
+  FastCalRidge str_K         [N_BUCKETS][N_MODES];   /* K-ridge (STR  / is_noss=0) */
   FastCalRidge noss_lambda   [N_BUCKETS][N_MODES];
   FastCalRidge noss_mu_extrap[N_BUCKETS][N_MODES];
   FastCalRidge noss_mu_orig  [N_BUCKETS][N_MODES];
+  FastCalRidge noss_K        [N_BUCKETS][N_MODES];   /* K-ridge (NOSS / is_noss=1) */
   char         models_version[65];   /* SHA-256 hex of concatenated JSONs + NUL */
   int          loaded;
 } FastCalModelSet;
@@ -117,7 +134,7 @@ int    g_localmu_K_from_sim     = 0;     /* if 1, replace nrandhits with sim-der
 static void
 ridge_free(FastCalRidge *r)
 {
-  if (r == NULL || r->nfeat == 0) return;
+  if (r == NULL || !r->defined) return;
   if (r->fnames) {
     int i;
     for (i = 0; i < r->nfeat; i++) free(r->fnames[i]);
@@ -127,7 +144,8 @@ ridge_free(FastCalRidge *r)
   if (r->mean) { free(r->mean); r->mean = NULL; }
   if (r->std)  { free(r->std);  r->std  = NULL; }
   if (r->coef) { free(r->coef); r->coef = NULL; }
-  r->nfeat = 0;
+  r->nfeat   = 0;
+  r->defined = 0;
 }
 
 
@@ -248,12 +266,50 @@ parse_string_array(ESL_JSON *pi, ESL_BUFFER *bf, int arr_idx, char ***ret_fnames
 
 
 /* =========================================================================
+ * parse_y_transform_field()
+ *   Read an optional "y_transform" field from an OBJECT.
+ *   Recognized values:
+ *     "identity"        -> FCRY_IDENTITY
+ *     "exp"             -> FCRY_EXP    (apply exp() to ridge output)
+ *     "log"             -> FCRY_EXP    (v5.5 convention: "y was log-transformed
+ *                                       during training, so back-transform with exp")
+ *   If the field is missing, default to FCRY_IDENTITY (v4.x behaviour).
+ */
+static FastCalYTransform
+parse_y_transform_field(ESL_JSON *pi, ESL_BUFFER *bf, int obj_idx)
+{
+  int val_idx = json_find_key(pi, bf, obj_idx, "y_transform");
+  if (val_idx < 0) return FCRY_IDENTITY;
+  if (pi->tok[val_idx].type != eslJSON_STRING) return FCRY_IDENTITY;
+
+  esl_pos_t n = esl_json_GetLen(pi, val_idx, bf);
+  char     *p = esl_json_GetMem(pi, val_idx, bf);
+
+  if (n == 8 && memcmp(p, "identity", 8) == 0) return FCRY_IDENTITY;
+  if (n == 3 && memcmp(p, "exp", 3) == 0)       return FCRY_EXP;
+  if (n == 3 && memcmp(p, "log", 3) == 0)       return FCRY_EXP;
+  return FCRY_IDENTITY;  /* unknown — default identity */
+}
+
+
+/* =========================================================================
  * parse_ridge_from_obj()
- *   Populate <r> from a JSON OBJECT node at <obj_idx> that contains keys:
- *     feature_mean, feature_std, coef_z, target_mean, loo_mse, [alpha, n_train]
- *   The features list is passed in separately as <fnames> / <nfeat>
- *   (v4.1: features are in the top-level schema; v4.2: features is inline).
- *   Returns eslOK on success.
+ *   Populate <r> from a JSON OBJECT node at <obj_idx>.
+ *
+ *   Schema-aware: accepts BOTH naming conventions
+ *     v4.x:  "feature_mean" / "feature_std" / "coef_z"   / "target_mean"
+ *     v5.5:  "feature_means"/ "feature_stds"/ "coefs"    / "intercept"
+ *   The parser first looks up the v4.x name; if absent, falls back to v5.5.
+ *
+ *   Also reads optional "y_transform" (default identity).
+ *
+ *   nfeat semantics: pass nfeat=0 to read whatever length the JSON
+ *   arrays declare (used for v4.x where features are passed separately
+ *   from a top-level schema, and for v5.5 where the inline "feature_names"
+ *   array determines nfeat). Pass nfeat>0 to enforce a length.
+ *
+ *   The 0-feature case (intercept-only ridge, used by v4.x→ridge local-K
+ *   placeholders) is supported: feature_means/stds/coefs may be empty arrays.
  */
 static int
 parse_ridge_from_obj(ESL_JSON *pi, ESL_BUFFER *bf, int obj_idx,
@@ -265,46 +321,64 @@ parse_ridge_from_obj(ESL_JSON *pi, ESL_BUFFER *bf, int obj_idx,
   double *arr = NULL;
   int     i;
 
-  /* feature_mean */
+  r->defined = 1;
+
+  /* feature_mean (v4.x) or feature_means (v5.5) */
   val_idx = json_find_key(pi, bf, obj_idx, "feature_mean");
+  if (val_idx < 0) val_idx = json_find_key(pi, bf, obj_idx, "feature_means");
   if (val_idx < 0) return eslFAIL;
   n = parse_double_array(pi, bf, val_idx, &arr);
-  if (n == 0 || arr == NULL) return eslFAIL;
+  /* 0-feature ridge (intercept only) — JSON array is empty.
+   * parse_double_array returns 0 and arr==NULL in that case, which is OK. */
+  if (n > 0 && arr == NULL) return eslFAIL;
   if (nfeat > 0 && n != nfeat) { free(arr); return eslFAIL; }
   if (nfeat == 0) nfeat = n;
   r->mean  = arr;
   r->nfeat = nfeat;
 
-  /* feature_std */
+  /* feature_std (v4.x) or feature_stds (v5.5) */
   val_idx = json_find_key(pi, bf, obj_idx, "feature_std");
+  if (val_idx < 0) val_idx = json_find_key(pi, bf, obj_idx, "feature_stds");
   if (val_idx < 0) return eslFAIL;
   n = parse_double_array(pi, bf, val_idx, &arr);
-  if (n != nfeat || arr == NULL) { free(arr); return eslFAIL; }
+  if (nfeat > 0 && n != nfeat) { if (arr) free(arr); return eslFAIL; }
   r->std = arr;
 
-  /* coef_z */
+  /* coef_z (v4.x) or coefs (v5.5) */
   val_idx = json_find_key(pi, bf, obj_idx, "coef_z");
+  if (val_idx < 0) val_idx = json_find_key(pi, bf, obj_idx, "coefs");
   if (val_idx < 0) return eslFAIL;
   n = parse_double_array(pi, bf, val_idx, &arr);
-  if (n != nfeat || arr == NULL) { free(arr); return eslFAIL; }
+  if (nfeat > 0 && n != nfeat) { if (arr) free(arr); return eslFAIL; }
   r->coef = arr;
 
-  /* target_mean (intercept) */
+  /* intercept: v4.x calls it "target_mean", v5.5 calls it "intercept" */
   val_idx = json_find_key(pi, bf, obj_idx, "target_mean");
+  if (val_idx < 0) val_idx = json_find_key(pi, bf, obj_idx, "intercept");
   if (val_idx < 0) return eslFAIL;
   r->intercept = json_tok_to_double(pi, val_idx, bf);
 
-  /* loo_mse */
+  /* loo_mse — optional in v5.5 / v4.x→ridge placeholders */
   val_idx = json_find_key(pi, bf, obj_idx, "loo_mse");
-  if (val_idx < 0) return eslFAIL;
-  r->loo_mse = json_tok_to_double(pi, val_idx, bf);
+  r->loo_mse = (val_idx >= 0) ? json_tok_to_double(pi, val_idx, bf) : 0.0;
 
-  /* Populate fnames (copy from schema-level list or inline list) */
-  ESL_ALLOC(r->fnames, sizeof(char *) * nfeat);
-  for (i = 0; i < nfeat; i++)
+  /* y_transform (optional, default identity) */
+  r->y_transform = parse_y_transform_field(pi, bf, obj_idx);
+
+  /* Populate fnames (copy from schema-level list or inline list).
+   * For 0-feature ridges (intercept only), skip. */
+  if (nfeat > 0)
     {
-      r->fnames[i] = strdup(fnames[i]);
-      if (r->fnames[i] == NULL) return eslEMEM;
+      ESL_ALLOC(r->fnames, sizeof(char *) * nfeat);
+      for (i = 0; i < nfeat; i++)
+        {
+          r->fnames[i] = strdup(fnames[i]);
+          if (r->fnames[i] == NULL) return eslEMEM;
+        }
+    }
+  else
+    {
+      r->fnames = NULL;
     }
 
   return eslOK;
@@ -508,6 +582,143 @@ parse_v42(ESL_JSON *pi, ESL_BUFFER *bf,
 
 
 /* =========================================================================
+ * parse_K_ridge_inline()
+ *   Parse a single K-ridge object that has an inline "feature_names" array
+ *   (v4.x→ridge convention; the array may be empty for intercept-only ridges).
+ *   Used by parse_v4x_K_ridge_target.
+ */
+static int
+parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *r)
+{
+  int  status;
+  int  feat_arr = json_find_key(pi, bf, ridge_obj, "feature_names");
+  char **fnames = NULL;
+  int  nfeat    = 0;
+  int  i;
+
+  if (feat_arr >= 0)
+    nfeat = parse_string_array(pi, bf, feat_arr, &fnames);
+  /* nfeat may be 0 with fnames==NULL — intercept-only ridge */
+
+  status = parse_ridge_from_obj(pi, bf, ridge_obj, fnames, nfeat, r);
+
+  if (fnames) {
+    for (i = 0; i < nfeat; i++) free(fnames[i]);
+    free(fnames);
+  }
+  return status;
+}
+
+
+/* =========================================================================
+ * parse_v4x_K_ridge()
+ *   Parse a v4.x→ridge K JSON (schema v4x_K_ridge_v1) into the K-ridge slots.
+ *
+ *   Schema:
+ *     { "schema": "v4x_K_ridge_v1",
+ *       "K_glocal_clen": { "<bucket>": { "ECMGC": <ridge>, "ECMGI": <ridge> } },
+ *       "K_local":       { "<bucket>": { "ECMLC": <ridge>, "ECMLI": <ridge> } } }
+ *
+ *   Populates dest[BUCKET][MODE] for whichever modes appear.
+ *   Both top-level groups (K_glocal_clen, K_local) populate the same dest array
+ *   — the mode index distinguishes glocal vs local.
+ */
+static int
+parse_v4x_K_ridge(ESL_JSON *pi, ESL_BUFFER *bf, FastCalRidge dest[][N_MODES])
+{
+  static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
+  static const struct { const char *name; int idx; } bucket_map[] = {
+    {"tiny",     BUCKET_TINY     },
+    {"small",    BUCKET_SMALL    },
+    {"medlarge", BUCKET_MEDLARGE },
+    {"large",    BUCKET_LARGE    },
+    {"huge",     BUCKET_HUGE     },
+    {NULL, 0}
+  };
+  static const char *group_keys[] = {"K_glocal_clen", "K_local", NULL};
+  int gi;
+  int status;
+  int root_idx = 0;
+
+  for (gi = 0; group_keys[gi] != NULL; gi++)
+    {
+      int group_obj = json_find_key(pi, bf, root_idx, group_keys[gi]);
+      if (group_obj < 0) continue;
+      if (pi->tok[group_obj].type != eslJSON_OBJECT) return eslFAIL;
+
+      int bi;
+      for (bi = 0; bucket_map[bi].name != NULL; bi++)
+        {
+          int bk     = bucket_map[bi].idx;
+          int bk_obj = json_find_key(pi, bf, group_obj, bucket_map[bi].name);
+          if (bk_obj < 0) continue;
+
+          int m;
+          for (m = 0; m < N_MODES; m++)
+            {
+              int ridge_obj = json_find_key(pi, bf, bk_obj, mode_names[m]);
+              if (ridge_obj < 0) continue;
+              if (dest[bk][m].defined) continue;   /* don't overwrite */
+
+              status = parse_K_ridge_inline(pi, bf, ridge_obj, &dest[bk][m]);
+              if (status != eslOK) return status;
+            }
+        }
+    }
+  return eslOK;
+}
+
+
+/* =========================================================================
+ * parse_v55_flat()
+ *   Parse a v5.5 "flat" JSON (top-level keys are "<MODE>_<target>") for a
+ *   single bucket into the appropriate ridge slots.
+ *
+ *   Schema (one file per bucket):
+ *     { "ECMLC_lambda": <ridge>, "ECMLC_mu_extrap": <ridge>,
+ *       "ECMLI_lambda": <ridge>, ..., "ECMGI_mu_extrap": <ridge> }
+ *
+ *   Or for K models:
+ *     { "ECMLC_K": <ridge>, "ECMLI_K": <ridge>,
+ *       "ECMGC_K": <ridge>, "ECMGI_K": <ridge> }
+ *
+ *   Caller specifies which target ("lambda", "mu_extrap", "mu_orig", "K") and
+ *   which bucket the file represents.
+ *
+ *   IMPORTANT: this function is INFRASTRUCTURE for forward compatibility.
+ *   v5.5 ridges use 55+ features but the C feature extractor knows only the
+ *   subset described in fast_cal_feature_names[]. ridge_predict() will
+ *   silently skip unknown features, which (per analysis 2026-05-19) drops
+ *   50-67% of the v5.5 coefficient mass and produces wrong predictions.
+ *   This is documented in summary 14; the parser is here so JSON-only swaps
+ *   work once the C feature extractor is widened to match v5.5.
+ */
+static int
+parse_v55_flat(ESL_JSON *pi, ESL_BUFFER *bf,
+               const char *target_suffix,   /* "lambda" | "mu_extrap" | "mu_orig" | "K" */
+               int bucket,
+               FastCalRidge dest[][N_MODES])
+{
+  static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
+  int root_idx = 0;
+  int m;
+
+  for (m = 0; m < N_MODES; m++)
+    {
+      char key[64];
+      snprintf(key, sizeof(key), "%s_%s", mode_names[m], target_suffix);
+      int ridge_obj = json_find_key(pi, bf, root_idx, key);
+      if (ridge_obj < 0) continue;
+      if (dest[bucket][m].defined) continue;
+
+      int status = parse_K_ridge_inline(pi, bf, ridge_obj, &dest[bucket][m]);
+      if (status != eslOK) return status;
+    }
+  return eslOK;
+}
+
+
+/* =========================================================================
  * load_models()
  *   Parse all 6 embedded JSONs into g_models on first call.
  *   Idempotent (returns eslOK immediately if already loaded).
@@ -617,6 +828,41 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
+  /* 7. v4.x→ridge K (STR, all 5 buckets × 4 modes).
+   * Glocal modes: log_clen power-law ridge with y_transform=exp.
+   * Local  modes: 0-feature intercept-only ridge (constant per bucket).
+   */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v4x_K_ridge_str_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v4x_K_ridge_str_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v4x_K_ridge(pi, bf, g_models.str_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* 8. v4.x→ridge K (NOSS, all 5 buckets × 4 modes). */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v4x_K_ridge_noss_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v4x_K_ridge_noss_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v4x_K_ridge(pi, bf, g_models.noss_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
   /* Record the embedded version hash */
   strncpy(g_models.models_version, fast_cal_models_version, 64);
   g_models.models_version[64] = '\0';
@@ -645,9 +891,12 @@ bucket_of(int clen)
 
 /* ridge_predict()
  * Compute the ridge regression prediction for one target.
- * Returns the predicted value, or 0.0 if ridge is empty (nfeat == 0).
  *
- * Formula: pred = intercept + sum_i coef[i] * (feats[idx_i] - mean[i]) / std[i]
+ * Formula: raw  = intercept + sum_i coef[i] * (feats[idx_i] - mean[i]) / std[i]
+ *          pred = identity(raw) or exp(raw), depending on r->y_transform.
+ *
+ * For empty (undefined) ridges, returns 0.0. For intercept-only ridges
+ * (nfeat==0 but defined==1), returns y_transform(intercept).
  */
 static double
 ridge_predict(const FastCalRidge *r, const double *feats_full)
@@ -662,69 +911,50 @@ ridge_predict(const FastCalRidge *r, const double *feats_full)
       z    = (feats_full[idx] - r->mean[i]) / r->std[i];
       sum += z * r->coef[i];
     }
-  return sum;
+  switch (r->y_transform)
+    {
+    case FCRY_EXP:      return exp(sum);
+    case FCRY_IDENTITY: /* fallthrough */
+    default:            return sum;
+    }
 }
 
 
-/* === K = nrandhits/dbsize predictor coefficients =====
- * Derived from analysis/nrandhits_rfam_all.tsv (4110 calibrated CMs:
- * 4010 str from cms-rfam-all/str/*.cm + 100 noss from
- * calibrations-v115-rfam100/seed1/*_noss.cm).
+/* === K = nrandhits/dbsize predictor =====
+ * K is now loaded as a ridge model (one per bucket × mode × is_noss), not
+ * a hardcoded constant table. This unifies the C code path: λ, μ_extrap,
+ * μ_orig, AND K all flow through ridge_predict(). Future bucket updates
+ * are JSON swaps with no C changes.
  *
- * Local modes (ECMLC, ECMLI): K is roughly constant per (type, bucket);
- * use the per-(type, bucket) median K. Spearman(K, W) ~ 0.25–0.29; small
- * IQR (~factor 1.6) means a constant per bucket gives rmse log(K) ≈ 0.31.
+ * The current K models are v4.x→ridge placeholders converted from the
+ * historical hardcoded constants (see scratch/cm_localmu_v55integration/
+ * build_v4x_K_ridges.py):
+ *   - Glocal modes (ECMGC, ECMGI): K = exp(a) * clen^b
+ *     encoded as 1-feature ridge with feature=log_clen, coef=b, intercept=a,
+ *     y_transform=exp.
+ *   - Local modes (ECMLC, ECMLI): K = constant per bucket
+ *     encoded as 0-feature ridge with intercept=K, y_transform=identity.
  *
- * Glocal modes (ECMGC, ECMGI): K ≈ exp(a)·clen^b is a clean power law.
- * Spearman(K, clen) ≈ -0.92 to -0.95 (clen is a slightly better
- * predictor than W). Per-mode rmse log(K) ≈ 0.28–0.41 (str), 0.27–0.37
- * (noss, n=100).
- *
- * Without this fix, fastcal hardcoded nrandhits=250 → K = 1.5625e-4 →
- * E-values 200×–1500× too small per mode (matching the rmark4h benchmark
- * agent's report of 10^5–10^6 E-value deflation).
+ * Source of v4.x constants: analysis/nrandhits_rfam_all.tsv (4110 calibrated
+ * CMs). Per-mode rmse log(K) ≈ 0.28–0.41. Future v5.5+K K-ridges can replace
+ * these placeholders via JSON swap once the C feature extractor supports the
+ * full v5.5 feature set.
  * ===================================================== */
 
-/* Local mode bucket medians: K_local[is_noss][mode_idx][bucket]
- * mode_idx: 0=ECMLC, 1=ECMLI */
-static const double K_local[2][2][N_BUCKETS] = {
-  /* str  (is_noss=0) */ {
-    /* ECMLC */ { 0.209016, 0.261362, 0.261597, 0.202173, 0.181150 },
-    /* ECMLI */ { 0.151888, 0.187144, 0.240653, 0.191042, 0.167103 },
-  },
-  /* noss (is_noss=1) */ {
-    /* ECMLC */ { 0.400137, 0.392141, 0.446856, 0.480049, 0.439189 },
-    /* ECMLI */ { 0.235226, 0.210951, 0.346891, 0.425224, 0.394883 },
-  },
-};
-
-/* Glocal clen power-law: K = exp(a) * clen^b, indexed by [is_noss][mode_idx]
- * mode_idx: 0=ECMGC, 1=ECMGI */
-static const double K_glocal_a[2][2] = {
-  { +6.034227, +4.527040 },  /* str : ECMGC, ECMGI */
-  { +3.626408, +2.802066 },  /* noss: ECMGC, ECMGI */
-};
-static const double K_glocal_b[2][2] = {
-  { -2.073364, -1.796042 },  /* str : ECMGC, ECMGI */
-  { -1.613740, -1.477064 },  /* noss: ECMGC, ECMGI */
-};
-
 /* predict_K: predict the cur_eff_dbsize / Z_search density factor K =
- * nrandhits/dbsize for a given (mode, type, bucket, clen). nrandhits is
- * then K * dbsize_calib at write time; cmsearch rescales to Z_search by
- * (Z_search / dbsize_calib) * nrandhits.
+ * nrandhits/dbsize for a given (mode, is_noss, bucket, clen, feats).
  *
+ * Looks up the appropriate K ridge slot and calls ridge_predict().
  * 'mode' is one of MODE_ECMLC, MODE_ECMLI, MODE_ECMGC, MODE_ECMGI.
- * Returns K in (0, 1].
+ * Returns K in (0, 1] for a properly-defined ridge.
  */
 static double
-predict_K(int mode, int is_noss, int bucket, int clen)
+predict_K(int mode, int is_noss, int bucket, const double *feats)
 {
-  if (mode == MODE_ECMLC) return K_local[is_noss][0][bucket];
-  if (mode == MODE_ECMLI) return K_local[is_noss][1][bucket];
-  if (mode == MODE_ECMGC) return exp(K_glocal_a[is_noss][0]) * pow((double)clen, K_glocal_b[is_noss][0]);
-  if (mode == MODE_ECMGI) return exp(K_glocal_a[is_noss][1]) * pow((double)clen, K_glocal_b[is_noss][1]);
-  return 1.5625e-4;  /* should be unreachable */
+  const FastCalRidge *r = is_noss ? &g_models.noss_K[bucket][mode]
+                                  : &g_models.str_K [bucket][mode];
+  if (!r->defined) return 1.5625e-4;   /* fallback (250/1.6e6); should not happen */
+  return ridge_predict(r, feats);
 }
 
 
@@ -815,14 +1045,14 @@ cm_FastCalibrate(CM_t *cm)
       double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
       double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
 
-      /* Predict K = nrandhits/dbsize using the K predictor.
+      /* Predict K = nrandhits/dbsize via the K ridge.
        * In cmsearch, cur_eff_dbsize = (Z_search/dbsize) * nrandhits, so
-       * K controls the absolute E-value scale. Hardcoding nrandhits=250
-       * (K = 1.5625e-4) is wrong — cmcalibrate's K is mode-dependent and
-       * CM-dependent (~0.17–0.38 for local; ~exp(a)·clen^b for glocal),
-       * giving E-values 200×–1500× too small without this correction.
+       * K controls the absolute E-value scale. The K ridge is loaded as
+       * one of the embedded JSONs (v4.x→ridge placeholder; future v5.5+K
+       * swap is JSON-only). Local-mode K ridges are intercept-only;
+       * glocal-mode K ridges are clen power laws (feature=log_clen).
        */
-      double K_pred = predict_K(mode, is_noss, bucket, cm->clen);
+      double K_pred = predict_K(mode, is_noss, bucket, feats);
       int    nrh    = (int) round(K_pred * 1.6e6);
       if (nrh < 1) nrh = 1;
 
@@ -874,9 +1104,11 @@ cm_FastCalibrateCleanup(void)
         ridge_free(&g_models.str_lambda    [b][m]);
         ridge_free(&g_models.str_mu_extrap [b][m]);
         ridge_free(&g_models.str_mu_orig   [b][m]);
+        ridge_free(&g_models.str_K         [b][m]);
         ridge_free(&g_models.noss_lambda   [b][m]);
         ridge_free(&g_models.noss_mu_extrap[b][m]);
         ridge_free(&g_models.noss_mu_orig  [b][m]);
+        ridge_free(&g_models.noss_K        [b][m]);
       }
   g_models.loaded = 0;
 }
@@ -1382,6 +1614,7 @@ static const char *fast_cal_feature_names[] = {
     "mean_L_str",            /* 24 */
     "var_L_str",             /* 25 */
     "KL_str_to_unif",        /* 26 */
+    "log_clen",              /* 27 — derived feature for K-ridge clen power law */
     NULL
 };
 
@@ -1410,12 +1643,15 @@ cm_FastCalibrate_FeatureIndex(const char *name)
 
 
 /* extract_clen()
- * Trivially store clen as a feature.
+ * Trivially store clen as a feature, plus derived log_clen.
  */
 static int
 extract_clen(CM_t *cm, double *feats)
 {
-  feats[FAST_CAL_FEAT_clen] = (double) cm->clen;
+  feats[FAST_CAL_FEAT_clen]     = (double) cm->clen;
+  /* log_clen is a derived feature used by the v4.x-converted K-ridge
+   * (clen power law for glocal modes). Guard against clen==0.            */
+  feats[FAST_CAL_FEAT_log_clen] = (cm->clen > 0) ? log((double) cm->clen) : 0.0;
   return eslOK;
 }
 
@@ -2456,13 +2692,13 @@ cm_FastCalibrate_PrintModels(FILE *fp)
 {
   static const char *bucket_names[N_BUCKETS] = {"tiny","small","medlarge","large","huge"};
   static const char *mode_names  [N_MODES]   = {"ECMLC","ECMLI","ECMGC","ECMGI"};
-  static const char *target_labels[6] = {
-    "STR_lambda", "STR_mu_extrap", "STR_mu_orig",
-    "NOSS_lambda","NOSS_mu_extrap","NOSS_mu_orig"
+  static const char *target_labels[8] = {
+    "STR_lambda", "STR_mu_extrap", "STR_mu_orig", "STR_K",
+    "NOSS_lambda","NOSS_mu_extrap","NOSS_mu_orig","NOSS_K"
   };
-  FastCalRidge (*tables[6])[N_MODES] = {
-    g_models.str_lambda,    g_models.str_mu_extrap, g_models.str_mu_orig,
-    g_models.noss_lambda,   g_models.noss_mu_extrap,g_models.noss_mu_orig
+  FastCalRidge (*tables[8])[N_MODES] = {
+    g_models.str_lambda,    g_models.str_mu_extrap, g_models.str_mu_orig, g_models.str_K,
+    g_models.noss_lambda,   g_models.noss_mu_extrap,g_models.noss_mu_orig,g_models.noss_K
   };
 
   int status;
@@ -2473,17 +2709,19 @@ cm_FastCalibrate_PrintModels(FILE *fp)
   fprintf(fp, "# cm_fast_calibrate models dump\n");
   fprintf(fp, "# models_version: %s\n", g_models.models_version);
 
-  for (t = 0; t < 6; t++)
+  for (t = 0; t < 8; t++)
     for (b = 0; b < N_BUCKETS; b++)
       for (m = 0; m < N_MODES; m++)
         {
           FastCalRidge *r = &tables[t][b][m];
-          if (r->nfeat == 0) continue;  /* empty slot */
+          if (!r->defined) continue;  /* empty slot */
 
           fprintf(fp, "\n[%s][%s][%s]\n", target_labels[t], bucket_names[b], mode_names[m]);
-          fprintf(fp, "  nfeat:      %d\n", r->nfeat);
-          fprintf(fp, "  intercept:  %.10f\n", r->intercept);
-          fprintf(fp, "  loo_mse:    %.10f\n", r->loo_mse);
+          fprintf(fp, "  nfeat:        %d\n", r->nfeat);
+          fprintf(fp, "  intercept:    %.10f\n", r->intercept);
+          fprintf(fp, "  loo_mse:      %.10f\n", r->loo_mse);
+          fprintf(fp, "  y_transform:  %s\n",
+                  r->y_transform == FCRY_EXP ? "exp" : "identity");
           for (i = 0; i < r->nfeat; i++)
             fprintf(fp, "  feat[%2d]  %-30s  mean=%.10f  std=%.10f  coef=%.10f\n",
                     i, r->fnames[i], r->mean[i], r->std[i], r->coef[i]);

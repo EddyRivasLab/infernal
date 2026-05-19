@@ -18,6 +18,8 @@ JSONS=(
   "${JSON_DIR}/production_mu_models_v42_largehuge.json"
   "${JSON_DIR}/production_models_v42_noss.json"
   "${JSON_DIR}/production_mu_models_v42_noss.json"
+  "${JSON_DIR}/v4x_K_ridge_str.json"
+  "${JSON_DIR}/v4x_K_ridge_noss.json"
 )
 
 # Verify all JSONs are accessible

@@ -105,7 +105,15 @@ enum {
     FAST_CAL_FEAT_var_L_str,
     FAST_CAL_FEAT_KL_str_to_unif,        /* 26 */
 
-    FAST_CAL_NFEAT = 27,                 /* sentinel; total feature count */
+    /* Phase 4 — K-ridge derived feature.
+     * log_clen is a simple derived value (log of clen) used as the sole
+     * feature in the v4.x-converted K-ridge JSONs (clen power law for
+     * glocal modes). Added as a distinct slot so ridge_predict() can
+     * look it up by name like any other feature.
+     */
+    FAST_CAL_FEAT_log_clen,              /* 27 */
+
+    FAST_CAL_NFEAT = 28,                 /* sentinel; total feature count */
     FAST_CAL_NFEAT_PHASE2 = 20          /* Phase 2 backward-compat alias */
 };
 
