@@ -16,6 +16,10 @@
 #include <limits.h>
 #include <assert.h>
 
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#include <smmintrin.h>
+
 #include "easel.h"
 #include "esl_random.h"
 #include "esl_sq.h"
@@ -4455,6 +4459,99 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
 }
 
 
+/* Function: cm_CYKPerstatePadCompute()
+ * Date    : 2026-05-11
+ *
+ * Compute per-state CYK pad from current sequence's CP9 HMM band widths,
+ * using a calibrated linear model pad = a[stt]*mean_hmm_cells + b[stt].
+ *
+ * Calibration: fit on 26_0316 stage1.5d posterior-mass-mining compare.tsv
+ * (5 CMs, 6285 states with n_used>=10 ground-truth IO p99-pad samples).
+ *
+ * Returns malloc'd int[cm->M]; caller frees. Returns NULL on alloc failure.
+ * additive_pad is added to each per-state pad (allows --cykpad N to act
+ * as a floor when --cykbands-perstate is on).
+ */
+int *
+cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
+{
+  int  M = cm->M;
+  int *pad_arr = malloc(sizeof(int) * M);
+  if (pad_arr == NULL) return NULL;
+
+  /* Calibration coefficients indexed by sttype constant:
+   * D_st=0, MP_st=1, ML_st=2, MR_st=3, IL_st=4, IR_st=5, S_st=6, E_st=7, B_st=8, EL_st=9
+   * E and EL have no calibration data (singletons / non-emitting); use conservative defaults.
+   */
+  static const double cal_a[10] = {
+    0.0044,  /* D */   0.0140,  /* MP */  0.0225,  /* ML */  0.0088,  /* MR */
+    0.0224,  /* IL */  0.0124,  /* IR */  0.0238,  /* S */
+    0.0000,  /* E (no data) */
+    0.0182,  /* B */
+    0.0000   /* EL (no data) */
+  };
+  static const double cal_b[10] = {
+    6.7158,  /* D */   0.8575,  /* MP */  0.9253,  /* ML */  2.3591,  /* MR */
+    3.3514,  /* IL */  4.6203,  /* IR */ -0.1362,  /* S */
+    5.0000,  /* E */
+    0.9841,  /* B */
+    5.0000   /* EL */
+  };
+
+  int maxpad = cm->p7_cykperstate_maxpad;
+  int n_capped = 0;
+  int v;
+  for (v = 0; v < M; v++) {
+    int stt = cm->sttype[v];
+    if (stt < 0 || stt >= 10) { pad_arr[v] = additive_pad; continue; }
+
+    int cells = 1;
+    if (cm->cp9map != NULL && cp9b != NULL) {
+      int k = cm->cp9map->cs2hn[v][0];
+      if (k >= 0 && k <= cp9b->hmm_M) {
+        int iw = cp9b->imax[k] - cp9b->imin[k] + 1;
+        int jw = cp9b->jmax[k] - cp9b->jmin[k] + 1;
+        if (iw < 1) iw = 1;
+        if (jw < 1) jw = 1;
+        cells = iw * jw;
+      }
+    }
+
+    double predicted = cal_a[stt] * (double)cells + cal_b[stt];
+    int p = (int)ceil(predicted);
+    if (p < 0) p = 0;
+    p += additive_pad;
+    if (maxpad > 0 && p > maxpad) { p = maxpad; n_capped++; }
+    pad_arr[v] = p;
+  }
+
+  /* Distribution diagnostic so the sweep can tell "cap was active" from "no-op". */
+  {
+    int *sorted = malloc(sizeof(int) * M);
+    if (sorted != NULL) {
+      int i;
+      for (i = 0; i < M; i++) sorted[i] = pad_arr[i];
+      /* simple insertion sort -- M is small enough not to matter for diagnostic */
+      for (i = 1; i < M; i++) {
+        int key = sorted[i]; int j = i - 1;
+        while (j >= 0 && sorted[j] > key) { sorted[j+1] = sorted[j]; j--; }
+        sorted[j+1] = key;
+      }
+      int min_pad    = sorted[0];
+      int max_pad    = sorted[M-1];
+      int median_pad = sorted[M/2];
+      int p90_pad    = sorted[(int)((M-1)*0.90)];
+      int p99_pad    = sorted[(int)((M-1)*0.99)];
+      fprintf(stderr, "#P7PB_PERSTATE M=%d min=%d median=%d p90=%d p99=%d max=%d capped=%d\n",
+              M, min_pad, median_pad, p90_pad, p99_pad, max_pad, n_capped);
+      free(sorted);
+    }
+  }
+
+  return pad_arr;
+}
+
+
 /* Function: cm_BandsFromParsetree_perstate()
  * Date    : 2026-04-08
  *
@@ -4482,6 +4579,7 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
+ *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
  *           cp9b      - bands to fill (caller pre-allocated)
  *           pass_idx  - pipeline pass index (for truncation handling)
  *           debug     - if >0, print bands
@@ -4490,7 +4588,7 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  */
 int
 cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
-                               int i0, int j0, int pad,
+                               int i0, int j0, int pad, const int *per_state_pad,
                                CP9Bands_t *cp9b, int pass_idx, int debug)
 {
   int    status;
@@ -4527,13 +4625,16 @@ cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(j > jmax[v]) jmax[v] = j;
   }
 
-  /* Step 2: Apply pad to visited states, clamp to [i0..j0] */
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0].
+   * If per_state_pad != NULL and per_state_pad[v] >= 0, use it instead of scalar pad. */
   for(v = 0; v < M; v++) {
     if(visited[v]) {
-      imin[v] -= pad; if(imin[v] < i0) imin[v] = i0;
-      imax[v] += pad; if(imax[v] > j0) imax[v] = j0;
-      jmin[v] -= pad; if(jmin[v] < i0) jmin[v] = i0;
-      jmax[v] += pad; if(jmax[v] > j0) jmax[v] = j0;
+      int p = pad;
+      if(per_state_pad != NULL && per_state_pad[v] >= 0) p = per_state_pad[v];
+      imin[v] -= p; if(imin[v] < i0) imin[v] = i0;
+      imax[v] += p; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;
+      jmax[v] += p; if(jmax[v] > j0) jmax[v] = j0;
     }
   }
 
@@ -7710,5 +7811,990 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
   if (gx   != NULL) p7_gmx_Destroy(gx);
   if (gm   != NULL) p7_profile_Destroy(gm);
   if (bg   != NULL) p7_bg_Destroy(bg);
+  return status;
+}
+
+
+/*****************************************************************
+ * Pin+Bridge banding (v5: SW-on-diagonal scan + LSIS pin selection)
+ *
+ * Replaces full unbanded p7_GViterbi in the --p7band path with:
+ *   1. SW-on-diagonal SSE scan -> raw pins
+ *   2. Longest Score-weighted Increasing Subsequence (LSIS) pin selection
+ *   3. Pin diagonal segments + bridge rectangles + pad widening -> band
+ *   4. Banded p7 GViterbi inside that prefilter band -> trace
+ *   5. Trace -> M-state pins -> existing p7_pins2bands_nodepad (unchanged)
+ *
+ * See scratch_pinbridge/REPORT_v5.md for prototype validation.
+ *****************************************************************/
+
+/* Pin: a (k,i) anchor with priority r (SW score in v5). */
+typedef struct {
+  int     k;
+  int     i;
+  uint8_t r;
+} PB_Pin;
+
+static inline int pb_adaptive_T(int M)
+{
+  if (M < 200) return 20;
+  if (M < 500) return 30;
+  return 40;
+}
+
+/* Function: p7_GBandedViterbi()
+ *
+ * Purpose:  Banded p7 Viterbi DP. Structurally identical to
+ *           my_p7_GForwardBanded() above; the only difference is
+ *           operator: p7_FLogsum() (probability-space sum) is
+ *           replaced with ESL_MAX() (max-of-paths).
+ *
+ *           See my_p7_GForwardBanded() for band structure and
+ *           overhang/segment-boundary arithmetic. NaN guards for
+ *           truncated profiles, dpp pointer-stride fix, E->J via
+ *           p7P_LOOP, and local mode support are preserved.
+ *
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of sequence
+ *           gm     - profile (LOCAL or GLOCAL)
+ *           gxb    - banded DP matrix (gxb->bnd carries the band)
+ *           opt_sc - optRETURN: Viterbi score in nats
+ *
+ * Returns:  <eslOK> on success.
+ */
+int
+p7_GBandedViterbi(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+{
+  int         *bnd_ip = gxb->bnd->imem;
+  int         *bnd_kp = gxb->bnd->kmem;
+  float       *dpc    = gxb->dp;
+  float       *xpc    = gxb->xmx;
+  float const *tsc    = gm->tsc;
+  float const *rsc;
+  float       *dpp;
+  float       *last_dpc;
+  int          ia, ib;
+  int          last_ib;
+  int          kac, kbc;
+  int          kap, kbp;
+  int          kbc2;
+  float        xE, xN, xJ, xB, xC;
+  float        mvp, ivp, dvp;
+  float        dc;
+  float        sc;
+  int          g, i, k;
+  float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+
+  xN      = 0.0f;
+  xJ      = -eslINFINITY;
+  xC      = -eslINFINITY;
+  last_ib = 0;
+
+  for (g = 0; g < gxb->bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      kap = kbp = gm->M+1;
+      dpp = dpc;
+
+      xE  = -eslINFINITY;
+      { int gap = ia - last_ib - 1;
+        if (gap > 0) { xN = xN + gap * gm->xsc[p7P_N][p7P_LOOP];
+                       xJ = xJ + gap * gm->xsc[p7P_J][p7P_LOOP];
+                       xC = xC + gap * gm->xsc[p7P_C][p7P_LOOP]; } }
+      xB  = ESL_MAX( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+
+      for (i = ia; i <= ib; i++)
+        {
+          rsc      = gm->rsc[dsq[i]];
+          dc       = -eslINFINITY;
+          xE       = -eslINFINITY;
+          last_dpc = dpc;
+
+          kac      = *bnd_kp++;
+          kbc      = *bnd_kp++;
+          kbc2     = (kbc == gm->M ? kbc-1 : kbc);
+
+          dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
+
+          if (kac > kap && kac-1 <= kbp) { mvp = *dpp++;       ivp = *dpp++;       dvp = *dpp++;       }
+          else                           { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+          for (k = kac; k <= kbc2; k++)
+            {
+              *dpc++ = sc = MSC(k) + ESL_MAX( ESL_MAX(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+                                              ESL_MAX(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+
+              if (k >= kap && k <= kbp) {  mvp = *dpp++;       ivp = *dpp++;        dvp = *dpp++;       }
+              else                      {  mvp = -eslINFINITY; ivp = -eslINFINITY;  dvp = -eslINFINITY; }
+
+              *dpc++ = ISC(k) + ESL_MAX( mvp + TSC(p7P_MI, k), ivp + TSC(p7P_II, k));
+
+              xE     = ESL_MAX( ESL_MAX(sc + esc, dc + esc), xE);
+
+              *dpc++ = dc;
+              dc     = ESL_MAX( sc + TSC(p7P_MD, k), dc + TSC(p7P_DD, k));
+            }
+
+          if (kbc2 < kbc) /* k==M unrolled */
+            {
+              *dpc++ = sc = MSC(k) + ESL_MAX( ESL_MAX(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+                                              ESL_MAX(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+              *dpc++ = -eslINFINITY;
+              *dpc++ = dc;
+              xE     = ESL_MAX( ESL_MAX(sc, dc), xE);
+            }
+
+          *xpc++ = xE;
+          *xpc++ = xN = xN + gm->xsc[p7P_N][p7P_LOOP];
+          *xpc++ = xJ = ESL_MAX( xJ + gm->xsc[p7P_J][p7P_LOOP],  xE + gm->xsc[p7P_E][p7P_LOOP]);
+          *xpc++ = xB = ESL_MAX( xJ + gm->xsc[p7P_J][p7P_MOVE],  xN + gm->xsc[p7P_N][p7P_MOVE]);
+          *xpc++ = xC = ESL_MAX( xE + gm->xsc[p7P_E][p7P_MOVE],  xC + gm->xsc[p7P_C][p7P_LOOP]);
+
+          dpp = last_dpc;
+          kap = kac;
+          kbp = kbc;
+        }
+      last_ib = ib;
+    }
+
+  if (opt_sc != NULL) { int tail = L - last_ib;
+    *opt_sc = (tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE]; }
+  return eslOK;
+}
+
+
+/* Per-row offset table for accessing a filled P7_GMXB.
+ * Populated by pb_build_row_offsets(); consumed by p7_GBandedTrace().
+ */
+typedef struct {
+  int *kac;        /* [0..L] band kac for row i (row i in band: nonzero entry) */
+  int *kbc;        /* [0..L] band kbc for row i */
+  long *dp_off;    /* [0..L] offset into gxb->dp  for row i (in floats) */
+  long *x_off;     /* [0..L] offset into gxb->xmx for row i (in floats) */
+  char *in_band;   /* [0..L] 1 if row i is in some segment */
+  int   ia0;       /* first ia (for prefix accounting) */
+  int   ib_last;   /* last ib */
+  float x0[p7G_NXCELLS]; /* row-0 specials (initial state, before any residue) */
+} PB_RowMap;
+
+static void pb_rowmap_destroy(PB_RowMap *rm)
+{
+  if (!rm) return;
+  if (rm->kac) free(rm->kac);
+  if (rm->kbc) free(rm->kbc);
+  if (rm->dp_off) free(rm->dp_off);
+  if (rm->x_off)  free(rm->x_off);
+  if (rm->in_band) free(rm->in_band);
+  free(rm);
+}
+
+static int pb_build_row_offsets(P7_GMXB *gxb, int L, PB_RowMap **ret_rm)
+{
+  PB_RowMap *rm = NULL;
+  int g, i;
+  int *bnd_ip = gxb->bnd->imem;
+  int *bnd_kp = gxb->bnd->kmem;
+  long dp_off = 0, x_off = 0;
+  int  ia, ib, kac, kbc;
+  int  status;
+
+  ESL_ALLOC(rm, sizeof(PB_RowMap));
+  rm->kac = NULL; rm->kbc = NULL; rm->dp_off = NULL; rm->x_off = NULL; rm->in_band = NULL;
+  ESL_ALLOC(rm->kac,     sizeof(int)  * (L+2));
+  ESL_ALLOC(rm->kbc,     sizeof(int)  * (L+2));
+  ESL_ALLOC(rm->dp_off,  sizeof(long) * (L+2));
+  ESL_ALLOC(rm->x_off,   sizeof(long) * (L+2));
+  ESL_ALLOC(rm->in_band, sizeof(char) * (L+2));
+  for (i = 0; i <= L+1; i++) { rm->kac[i] = 0; rm->kbc[i] = 0; rm->dp_off[i] = -1; rm->x_off[i] = -1; rm->in_band[i] = 0; }
+  for (i = 0; i < p7G_NXCELLS; i++) rm->x0[i] = -eslINFINITY;
+
+  rm->ia0 = (gxb->bnd->nseg > 0 ? gxb->bnd->imem[0] : L+1);
+  rm->ib_last = 0;
+
+  for (g = 0; g < gxb->bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    rm->ib_last = ib;
+    for (i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      rm->kac[i]    = kac;
+      rm->kbc[i]    = kbc;
+      rm->dp_off[i] = dp_off;
+      rm->x_off[i]  = x_off;
+      rm->in_band[i]= 1;
+      dp_off += (long)(kbc - kac + 1) * p7G_NSCELLS;
+      x_off  += p7G_NXCELLS;
+    }
+  }
+  *ret_rm = rm;
+  return eslOK;
+
+ ERROR:
+  pb_rowmap_destroy(rm);
+  return eslEMEM;
+}
+
+/* Inline accessors. M(i,k), I(i,k), D(i,k) return -eslINFINITY when out of band. */
+static inline float pb_M(P7_GMXB *gxb, PB_RowMap *rm, int i, int k) {
+  if (!rm->in_band[i] || k < rm->kac[i] || k > rm->kbc[i]) return -eslINFINITY;
+  return gxb->dp[rm->dp_off[i] + (k - rm->kac[i]) * p7G_NSCELLS + p7G_M];
+}
+static inline float pb_I(P7_GMXB *gxb, PB_RowMap *rm, int i, int k) {
+  if (!rm->in_band[i] || k < rm->kac[i] || k > rm->kbc[i]) return -eslINFINITY;
+  return gxb->dp[rm->dp_off[i] + (k - rm->kac[i]) * p7G_NSCELLS + p7G_I];
+}
+static inline float pb_D(P7_GMXB *gxb, PB_RowMap *rm, int i, int k) {
+  if (!rm->in_band[i] || k < rm->kac[i] || k > rm->kbc[i]) return -eslINFINITY;
+  return gxb->dp[rm->dp_off[i] + (k - rm->kac[i]) * p7G_NSCELLS + p7G_D];
+}
+/* Specials: stored only on rows in band (1..L). Row 0 specials (initial
+ * state, before any residue) are stashed on PB_RowMap by the caller and
+ * returned here when i==0. Inter-segment rows outside any band return -inf. */
+static inline float pb_X(P7_GMXB *gxb, PB_RowMap *rm, int i, int which) {
+  if (i == 0) return rm->x0[which];
+  if (rm->in_band[i]) return gxb->xmx[rm->x_off[i] + which];
+  return -eslINFINITY;
+}
+
+
+/* Function: p7_GBandedTrace()
+ *
+ * Purpose:  Reconstruction-style traceback over a banded Viterbi matrix
+ *           filled by p7_GBandedViterbi(). Mirrors p7_GTrace() with band
+ *           guards on the per-row k-search.
+ *
+ *           Profile mode: GLOCAL or LOCAL. esc handling matches
+ *           my_p7_GForwardBanded()/p7_GBandedViterbi().
+ *
+ *           For our integration, the band is a single segment spanning
+ *           rows 1..L (no holes) — same shape produced by pinbridge —
+ *           so inter-segment N/J/C accumulation does not arise.
+ */
+int
+p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P7_TRACE *tr)
+{
+  int          i   = L;
+  int          k   = 0;
+  int          M   = gm->M;
+  int          status;
+  float        tol = 1e-5;
+  float const *tsc = gm->tsc;
+  int          sprv, scur;
+  PB_RowMap   *rm = NULL;
+  float        esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+
+  if ((status = pb_build_row_offsets(gxb, L, &rm)) != eslOK) goto ERROR;
+
+  /* Row 0 specials: initial conditions before any residue. p7_GBandedViterbi
+   * does not store row 0 in xmx; reconstruct from gm parameters using the
+   * same recurrence the Viterbi uses at start-of-segment when last_ib=0. */
+  rm->x0[p7G_E] = -eslINFINITY;
+  rm->x0[p7G_N] = 0.0f;
+  rm->x0[p7G_J] = -eslINFINITY;
+  rm->x0[p7G_B] = ESL_MAX( rm->x0[p7G_N] + gm->xsc[p7P_N][p7P_MOVE],
+                           rm->x0[p7G_J] + gm->xsc[p7P_J][p7P_MOVE]);
+  rm->x0[p7G_C] = -eslINFINITY;
+
+  if ((status = p7_trace_Append(tr, p7T_T, 0, 0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_Append(tr, p7T_C, 0, L)) != eslOK) goto ERROR;
+  sprv = p7T_C;
+  while (sprv != p7T_S) {
+    float const *rsc = (i>0 ? gm->rsc[dsq[i]] : NULL);
+
+    switch (sprv) {
+    case p7T_C:
+      {
+        float xC_i  = pb_X(gxb, rm, i, p7G_C);
+        float xC_p  = (i > 0 ? pb_X(gxb, rm, i-1, p7G_C) : -eslINFINITY);
+        float xE_i  = pb_X(gxb, rm, i, p7G_E);
+        if (xC_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        if      (esl_FCompare_old(xC_i, xC_p + gm->xsc[p7P_C][p7P_LOOP], tol) == eslOK) scur = p7T_C;
+        else if (esl_FCompare_old(xC_i, xE_i + gm->xsc[p7P_E][p7P_MOVE], tol) == eslOK) scur = p7T_E;
+        else do { status = eslFAIL; goto ERROR; } while(0);
+      }
+      break;
+
+    case p7T_E:
+      {
+        float xE_i = pb_X(gxb, rm, i, p7G_E);
+        if (xE_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        if (p7_profile_IsLocal(gm))
+          {
+            scur = p7T_M;
+            int kac = rm->in_band[i] ? rm->kac[i] : 1;
+            int kbc = rm->in_band[i] ? rm->kbc[i] : 0;
+            for (k = kbc; k >= kac; k--) {
+              float Mk = pb_M(gxb, rm, i, k);
+              if (esl_FCompare_old(xE_i, Mk + esc, tol) == eslOK) break;
+              float Dk = pb_D(gxb, rm, i, k);
+              if (esl_FCompare_old(xE_i, Dk + esc, tol) == eslOK) { scur = p7T_D; break; }
+            }
+            if (k < kac) { status = eslFAIL; goto ERROR; }
+          }
+        else
+          {
+            float MM = pb_M(gxb, rm, i, M);
+            float DM = pb_D(gxb, rm, i, M);
+            if      (esl_FCompare_old(xE_i, MM, tol) == eslOK) { scur = p7T_M; k = M; }
+            else if (esl_FCompare_old(xE_i, DM, tol) == eslOK) { scur = p7T_D; k = M; }
+            else { status = eslFAIL; goto ERROR; }
+          }
+      }
+      break;
+
+    case p7T_M:
+      {
+        float Mik = pb_M(gxb, rm, i, k);
+        if (Mik == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        float xB_p = (i > 0 ? pb_X(gxb, rm, i-1, p7G_B) : -eslINFINITY);
+        float Mp   = (i > 0 ? pb_M(gxb, rm, i-1, k-1) : -eslINFINITY);
+        float Ip   = (i > 0 ? pb_I(gxb, rm, i-1, k-1) : -eslINFINITY);
+        float Dp   = (i > 0 ? pb_D(gxb, rm, i-1, k-1) : -eslINFINITY);
+        float msck = (rsc != NULL ? MSC(k) : 0);  /* MSC macro indexes rsc[] */
+        if      (esl_FCompare_old(Mik, xB_p + TSC(p7P_BM, k-1) + msck, tol) == eslOK) scur = p7T_B;
+        else if (esl_FCompare_old(Mik, Mp   + TSC(p7P_MM, k-1) + msck, tol) == eslOK) scur = p7T_M;
+        else if (esl_FCompare_old(Mik, Ip   + TSC(p7P_IM, k-1) + msck, tol) == eslOK) scur = p7T_I;
+        else if (esl_FCompare_old(Mik, Dp   + TSC(p7P_DM, k-1) + msck, tol) == eslOK) scur = p7T_D;
+        else do { status = eslFAIL; goto ERROR; } while(0);
+        k--; i--;
+      }
+      break;
+
+    case p7T_D:
+      {
+        float Dik = pb_D(gxb, rm, i, k);
+        if (Dik == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        float Mp = pb_M(gxb, rm, i, k-1);
+        float Dp = pb_D(gxb, rm, i, k-1);
+        if      (esl_FCompare_old(Dik, Mp + TSC(p7P_MD, k-1), tol) == eslOK) scur = p7T_M;
+        else if (esl_FCompare_old(Dik, Dp + TSC(p7P_DD, k-1), tol) == eslOK) scur = p7T_D;
+        else do { status = eslFAIL; goto ERROR; } while(0);
+        k--;
+      }
+      break;
+
+    case p7T_I:
+      {
+        float Iik = pb_I(gxb, rm, i, k);
+        if (Iik == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        float Mp = (i > 0 ? pb_M(gxb, rm, i-1, k) : -eslINFINITY);
+        float Ip = (i > 0 ? pb_I(gxb, rm, i-1, k) : -eslINFINITY);
+        float isck = (rsc != NULL ? ISC(k) : 0);
+        if      (esl_FCompare_old(Iik, Mp + TSC(p7P_MI, k) + isck, tol) == eslOK) scur = p7T_M;
+        else if (esl_FCompare_old(Iik, Ip + TSC(p7P_II, k) + isck, tol) == eslOK) scur = p7T_I;
+        else do { status = eslFAIL; goto ERROR; } while(0);
+        i--;
+      }
+      break;
+
+    case p7T_N:
+      {
+        float xN_i = pb_X(gxb, rm, i, p7G_N);
+        if (xN_i == -eslINFINITY && i > 0) do { status = eslFAIL; goto ERROR; } while(0);
+        scur = ((i == 0) ? p7T_S : p7T_N);
+      }
+      break;
+
+    case p7T_B:
+      {
+        float xB_i = pb_X(gxb, rm, i, p7G_B);
+        if (xB_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        float xN_i = pb_X(gxb, rm, i, p7G_N);
+        float xJ_i = pb_X(gxb, rm, i, p7G_J);
+        if      (esl_FCompare_old(xB_i, xN_i + gm->xsc[p7P_N][p7P_MOVE], tol) == eslOK) scur = p7T_N;
+        else if (esl_FCompare_old(xB_i, xJ_i + gm->xsc[p7P_J][p7P_MOVE], tol) == eslOK) scur = p7T_J;
+        else do { status = eslFAIL; goto ERROR; } while(0);
+      }
+      break;
+
+    case p7T_J:
+      {
+        float xJ_i = pb_X(gxb, rm, i, p7G_J);
+        if (xJ_i == -eslINFINITY) do { status = eslFAIL; goto ERROR; } while(0);
+        float xJ_p = (i > 0 ? pb_X(gxb, rm, i-1, p7G_J) : -eslINFINITY);
+        float xE_i = pb_X(gxb, rm, i, p7G_E);
+        if      (esl_FCompare_old(xJ_i, xJ_p + gm->xsc[p7P_J][p7P_LOOP], tol) == eslOK) scur = p7T_J;
+        else if (esl_FCompare_old(xJ_i, xE_i + gm->xsc[p7P_E][p7P_LOOP], tol) == eslOK) scur = p7T_E;
+        else do { status = eslFAIL; goto ERROR; } while(0);
+      }
+      break;
+
+    default: do { status = eslFAIL; goto ERROR; } while(0);
+    }
+
+    if ((status = p7_trace_Append(tr, scur, k, i)) != eslOK) goto ERROR;
+    if ( (scur == p7T_N || scur == p7T_J || scur == p7T_C) && scur == sprv) i--;
+    sprv = scur;
+  }
+
+  tr->M = gm->M;
+  tr->L = L;
+  pb_rowmap_destroy(rm);
+  return p7_trace_Reverse(tr);
+
+ ERROR:
+  pb_rowmap_destroy(rm);
+  return status;
+}
+
+
+/*****************************************************************
+ * SW-on-diagonal pin scan + LSIS selection + band construction
+ * (ports of scratch_pinbridge/pinbridge_proto.c v5)
+ *****************************************************************/
+
+__attribute__((target("sse4.1")))
+static int
+pb_sw_scan_collect_pins(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int T,
+                        PB_Pin **ret_pins, int *ret_npins)
+{
+  int M = om->M;
+  int Q = p7O_NQB(M);
+  int i, q, z;
+
+  int max_pins = (M + L) * 4;
+  PB_Pin *pins = (PB_Pin *) malloc(max_pins * sizeof(PB_Pin));
+  if (!pins) return eslEMEM;
+  int npins = 0;
+
+  __m128i *prev = NULL;
+  __m128i *curr = NULL;
+  if (posix_memalign((void **)&prev, 16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&curr, 16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+
+  for (q = 0; q < Q; q++) { prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128(); }
+
+  __m128i biasv = _mm_set1_epi8((int8_t) om->bias_b);
+  __m128i zero  = _mm_setzero_si128();
+
+  for (i = 1; i <= L; i++) {
+    __m128i const *rsc = om->rbv[dsq[i]];
+    __m128i mpv = _mm_slli_si128(prev[Q - 1], 1);
+
+    for (q = 0; q < Q; q++) {
+      __m128i sc     = _mm_sub_epi8(rsc[q], biasv);
+      __m128i cand   = _mm_adds_epi8(mpv, sc);
+      __m128i newval = _mm_max_epi8(zero, cand);
+      mpv      = prev[q];
+      curr[q]  = newval;
+    }
+
+    /* Collect end-of-segment pins at row (i-1) */
+    {
+      union { __m128i v; uint8_t b[16]; } u_prev, u_curr;
+      for (q = 0; q < Q; q++) {
+        u_prev.v = prev[q];
+        u_curr.v = curr[q];
+        for (z = 0; z < 16; z++) {
+          int k = (q + 1) + z * Q;
+          if (k > M) break;
+          if ((int8_t)u_prev.b[z] >= (int8_t)T && u_curr.b[z] == 0) {
+            if (npins >= max_pins) {
+              max_pins *= 2;
+              PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+              if (!tmp) { free(pins); free(prev); free(curr); return eslEMEM; }
+              pins = tmp;
+            }
+            pins[npins].k = k;
+            pins[npins].i = i - 1;
+            pins[npins].r = u_prev.b[z];
+            npins++;
+          }
+        }
+      }
+    }
+
+    __m128i *tmp = prev; prev = curr; curr = tmp;
+    for (q = 0; q < Q; q++) curr[q] = _mm_setzero_si128();
+  }
+
+  /* Last-row pins */
+  {
+    union { __m128i v; uint8_t b[16]; } u_prev;
+    for (q = 0; q < Q; q++) {
+      u_prev.v = prev[q];
+      for (z = 0; z < 16; z++) {
+        int k = (q + 1) + z * Q;
+        if (k > M) break;
+        if ((int8_t)u_prev.b[z] >= (int8_t)T) {
+          if (npins >= max_pins) {
+            max_pins *= 2;
+            PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+            if (!tmp2) { free(pins); free(prev); free(curr); return eslEMEM; }
+            pins = tmp2;
+          }
+          pins[npins].k = k;
+          pins[npins].i = L;
+          pins[npins].r = u_prev.b[z];
+          npins++;
+        }
+      }
+    }
+  }
+
+  free(prev);
+  free(curr);
+
+  *ret_pins  = pins;
+  *ret_npins = npins;
+  return eslOK;
+}
+
+/* LSIS over (i,k,r): longest score-weighted increasing subsequence.
+ * Sort by (i asc, k desc) so same-i pins never chain.
+ * Fenwick prefix-max over k stores (max_dp, achiever_idx). */
+static int pb_pin_cmp_lsis(const void *a, const void *b)
+{
+  const PB_Pin *pa = (const PB_Pin *)a;
+  const PB_Pin *pb = (const PB_Pin *)b;
+  if (pa->i != pb->i) return pa->i - pb->i;
+  return pb->k - pa->k;
+}
+
+static int
+pb_lsis_select(PB_Pin *pins_in, int npins_in, int M,
+               PB_Pin **ret_sel, int *ret_n_sel)
+{
+  *ret_sel = NULL;
+  *ret_n_sel = 0;
+  if (npins_in == 0) return eslOK;
+
+  PB_Pin *pins = (PB_Pin *) malloc(npins_in * sizeof(PB_Pin));
+  if (!pins) return eslEMEM;
+  memcpy(pins, pins_in, npins_in * sizeof(PB_Pin));
+  qsort(pins, npins_in, sizeof(PB_Pin), pb_pin_cmp_lsis);
+
+  int *dp     = (int *) malloc(npins_in * sizeof(int));
+  int *parent = (int *) malloc(npins_in * sizeof(int));
+  if (!dp || !parent) { free(pins); free(dp); free(parent); return eslEMEM; }
+
+  int  fen_size = M + 1;
+  int *fen_val  = (int *) calloc(fen_size + 1, sizeof(int));
+  int *fen_idx  = (int *) malloc((fen_size + 1) * sizeof(int));
+  if (!fen_val || !fen_idx) { free(pins); free(dp); free(parent); free(fen_val); free(fen_idx); return eslEMEM; }
+  for (int x = 0; x <= fen_size; x++) fen_idx[x] = -1;
+
+  int best_dp = -1, best_idx = -1;
+  for (int p = 0; p < npins_in; p++) {
+    int kp = pins[p].k;
+    int sp = (int) pins[p].r;
+    int q_val = 0, q_idx = -1;
+    for (int x = kp - 1; x > 0; x -= x & -x) {
+      if (fen_val[x] > q_val) { q_val = fen_val[x]; q_idx = fen_idx[x]; }
+    }
+    dp[p]     = q_val + sp;
+    parent[p] = q_idx;
+    for (int x = kp; x <= fen_size; x += x & -x) {
+      if (dp[p] > fen_val[x]) { fen_val[x] = dp[p]; fen_idx[x] = p; }
+    }
+    if (dp[p] > best_dp) { best_dp = dp[p]; best_idx = p; }
+  }
+
+  int *chain_idx = (int *) malloc(npins_in * sizeof(int));
+  if (!chain_idx) { free(pins); free(dp); free(parent); free(fen_val); free(fen_idx); return eslEMEM; }
+  int chain_len = 0;
+  for (int cur = best_idx; cur >= 0; cur = parent[cur]) chain_idx[chain_len++] = cur;
+
+  PB_Pin *sel = (PB_Pin *) malloc(chain_len * sizeof(PB_Pin));
+  if (!sel) { free(pins); free(dp); free(parent); free(fen_val); free(fen_idx); free(chain_idx); return eslEMEM; }
+  for (int j = 0; j < chain_len; j++) sel[j] = pins[chain_idx[chain_len - 1 - j]];
+
+  free(pins); free(dp); free(parent); free(fen_val); free(fen_idx); free(chain_idx);
+
+  *ret_sel = sel;
+  *ret_n_sel = chain_len;
+  return eslOK;
+}
+
+
+/* Build per-row kmin/kmax from selected pins: pin diagonal segments + bridge
+ * rectangles + ±pad. Mirrors prototype's build_band_pinbridge() steps 4a-4e. */
+static int
+pb_build_band(PB_Pin *kpins, int nfinal, int L, int M, int pad,
+              int **ret_kmin, int **ret_kmax)
+{
+  int *kmin = NULL, *kmax = NULL;
+  int  i;
+  int  status;
+
+  ESL_ALLOC(kmin, sizeof(int) * (L + 2));
+  ESL_ALLOC(kmax, sizeof(int) * (L + 2));
+  for (i = 0; i <= L+1; i++) { kmin[i] = M + 1; kmax[i] = 0; }
+
+  if (nfinal == 0) {
+    for (i = 0; i <= L; i++) { kmin[i] = 1; kmax[i] = M; }
+    *ret_kmin = kmin; *ret_kmax = kmax;
+    return eslOK;
+  }
+
+  /* Preamble: i in [0..first_pin_diag_start - 1] -> [1, kpins[0].k] */
+  {
+    int first_diag_start = kpins[0].i - (int)kpins[0].r + 1;
+    if (first_diag_start < 1) first_diag_start = 1;
+    for (i = 0; i < first_diag_start; i++) {
+      if (1            < kmin[i]) kmin[i] = 1;
+      if (kpins[0].k   > kmax[i]) kmax[i] = kpins[0].k;
+    }
+  }
+
+  /* Pin diagonal segments with ±pad */
+  for (int p = 0; p < nfinal; p++) {
+    int k_p = kpins[p].k;
+    int i_p = kpins[p].i;
+    int r   = (int)kpins[p].r;
+    int j_start = i_p - r + 1; if (j_start < 1) j_start = 1;
+    for (int j = j_start; j <= i_p; j++) {
+      int k_diag = k_p - (i_p - j);
+      int k_lo = k_diag - pad; if (k_lo < 1) k_lo = 1; if (k_lo > M) k_lo = M;
+      int k_hi = k_diag + pad; if (k_hi > M) k_hi = M; if (k_hi < 1) k_hi = 1;
+      if (k_lo < kmin[j]) kmin[j] = k_lo;
+      if (k_hi > kmax[j]) kmax[j] = k_hi;
+    }
+  }
+
+  /* Bridge rectangles between consecutive pins */
+  for (int p = 0; p + 1 < nfinal; p++) {
+    int k1 = kpins[p].k,     i1 = kpins[p].i;
+    int k2 = kpins[p+1].k,   i2 = kpins[p+1].i;
+    if (i2 <= i1 + 1) continue;
+    int klo = (k1 < k2) ? k1 : k2;
+    int khi = (k1 > k2) ? k1 : k2;
+    for (int j = i1 + 1; j <= i2 - 1; j++) {
+      if (klo < kmin[j]) kmin[j] = klo;
+      if (khi > kmax[j]) kmax[j] = khi;
+    }
+  }
+
+  /* Coda */
+  {
+    int last_k = kpins[nfinal-1].k;
+    int last_i = kpins[nfinal-1].i;
+    for (i = last_i + 1; i <= L; i++) {
+      if (last_k < kmin[i]) kmin[i] = last_k;
+      if (M      > kmax[i]) kmax[i] = M;
+    }
+  }
+
+  /* Safety: any uncovered row -> [1, M] */
+  for (i = 0; i <= L; i++) {
+    if (kmin[i] > kmax[i]) { kmin[i] = 1; kmax[i] = M; }
+  }
+
+  *ret_kmin = kmin;
+  *ret_kmax = kmax;
+  return eslOK;
+
+ ERROR:
+  if (kmin) free(kmin);
+  if (kmax) free(kmax);
+  return eslEMEM;
+}
+
+
+/* p7_GBands_FromKminKmax():
+ * Convert per-row kmin[1..L]/kmax[1..L] arrays into a single-segment
+ * P7_GBANDS (no holes; rows 1..L are all in band).
+ * The bnd struct is reused (caller may pass a freshly-Created or Reuse'd one).
+ */
+int
+p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
+{
+  int i;
+  int status;
+
+  bnd->L = L;
+  bnd->M = M;
+  if ((status = p7_gbands_Reuse(bnd)) != eslOK) return status;
+
+  /* Append rows 1..L as a single segment: p7_gbands_Append handles
+   * segment opening/closing automatically when consecutive i's are
+   * appended. */
+  for (i = 1; i <= L; i++) {
+    int ka = kmin[i], kb = kmax[i];
+    if (ka < 1)   ka = 1;
+    if (kb > M)   kb = M;
+    if (ka > kb)  { ka = 1; kb = M; }   /* safety */
+    if ((status = p7_gbands_Append(bnd, i, ka, kb)) != eslOK) return status;
+  }
+  return eslOK;
+}
+
+
+/* p7_Seq2BandsPinBridge():
+ * Drop-in replacement for Steps 1-2 of p7_Seq2BandsVit():
+ * SW-pinbridge prefilter + banded p7 Viterbi + banded trace.
+ * Steps 3-4 (i2k extraction + p7_pins2bands_nodepad) are identical
+ * and live in the caller (cm_alndata.c), unchanged.
+ *
+ * Args:
+ *   gm        - profile (configured GLOCAL or LOCAL by caller)
+ *   om        - optimized profile (for SSE rbv match scores, LOCAL config)
+ *   gxb       - banded Viterbi DP matrix scratch (will be Reinit'd to bnd)
+ *   bnd       - GBANDS scratch (will be reused)
+ *   tr        - p7 trace (will be Reuse'd; filled with banded-Vit traceback)
+ *   dsq       - digital sequence, 1..L
+ *   L         - sequence length
+ *   pad       - diagonal pad for pinbridge bands (default 20 from caller)
+ *   ret_sc    - optRETURN: banded Viterbi score
+ *
+ * Returns: eslOK on success; tr filled. eslFAIL if no valid trace
+ *          (caller falls back to unbanded path).
+ */
+int
+p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
+                      P7_GBANDS *bnd, P7_TRACE *tr,
+                      const ESL_DSQ *dsq, int L, int pad, float *ret_sc,
+                      double *ret_sw_ms, double *ret_lsis_ms,
+                      double *ret_band_ms, double *ret_bvit_ms, double *ret_btrace_ms)
+{
+  int       status;
+  int       M         = gm->M;
+  PB_Pin   *raw_pins  = NULL;
+  int       npins     = 0;
+  PB_Pin   *sel_pins  = NULL;
+  int       nsel      = 0;
+  int      *kmin      = NULL;
+  int      *kmax      = NULL;
+  float     vit_sc    = -eslINFINITY;
+  int       T         = pb_adaptive_T(M);
+  struct timespec ta, tb;
+  double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
+
+  /* Step 1: SW scan -> raw pins */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  if ((status = pb_sw_scan_collect_pins(dsq, L, om, T, &raw_pins, &npins)) != eslOK) goto ERROR;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Step 2: LSIS pin selection */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  if ((status = pb_lsis_select(raw_pins, npins, M, &sel_pins, &nsel)) != eslOK) goto ERROR;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Step 3+4: build kmin/kmax + convert to GBANDS + (allocate or grow) gxb */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  if ((status = pb_build_band(sel_pins, nsel, L, M, pad, &kmin, &kmax)) != eslOK) goto ERROR;
+  /* Always widen boundary rows: a local profile can enter/exit at any k;
+   * a glocal profile must enter at M_1 and exit at M_M, but the existing
+   * preamble/coda already cover those, and widening costs only a handful
+   * of cells on i=0,1,L. Trace can fail without this widening when the
+   * pinbridge band misses the k values the optimal trace needs at i=1 / i=L. */
+  /* Always widen boundary rows i=0,1,L to [1,M]. Even glocal profiles need
+   * room at the boundaries: row L's M_M depends on row L-1's k=M-1, which
+   * pinbridge's coda may not reach. Cost: a few extra cells per sequence;
+   * the interior bandwidth (which dominates the total) is unaffected. */
+  { int bi;
+    for (bi = 0; bi <= 1 && bi <= L; bi++) { kmin[bi] = 1; kmax[bi] = M; }
+    if (L >= 1) { kmin[L] = 1; kmax[L] = M; }
+    if (L >= 2) { kmin[L-1] = 1; kmax[L-1] = M; }  /* k=M-1 reachable for M_M */
+  }
+  if ((status = p7_GBands_FromKminKmax(kmin, kmax, L, M, bnd)) != eslOK) goto ERROR;
+  /* Caller may pass gxb with NULL dp (deferred allocation; p7_gmxb_Create
+   * disallows zero-cell bnd, so the wrapper allocates the struct shell and
+   * we fill dp/xmx here once bnd has cells). */
+  if (gxb->dp == NULL) {
+    if ((gxb->dp  = malloc(sizeof(float) * bnd->ncell * p7G_NSCELLS)) == NULL) { status = eslEMEM; goto ERROR; }
+    if ((gxb->xmx = malloc(sizeof(float) * bnd->nrow  * p7G_NXCELLS)) == NULL) { status = eslEMEM; goto ERROR; }
+    gxb->dalloc = bnd->ncell;
+    gxb->xalloc = bnd->nrow;
+    gxb->bnd    = bnd;
+  } else {
+    if ((status = p7_gmxb_Reinit(gxb, bnd)) != eslOK) goto ERROR;
+  }
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  band_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Step 5: Banded p7 Viterbi inside the prefilter band */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  if ((status = p7_GBandedViterbi(dsq, L, gm, gxb, &vit_sc)) != eslOK) goto ERROR;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  bvit_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Step 6: Banded traceback */
+  p7_trace_Reuse(tr);
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  status = p7_GBandedTrace(dsq, L, gm, gxb, tr);
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  btrace_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+  if (status != eslOK) {
+    /* Trace failed inside band; signal caller to fall back. */
+    if (raw_pins) free(raw_pins);
+    if (sel_pins) free(sel_pins);
+    if (kmin)     free(kmin);
+    if (kmax)     free(kmax);
+    if (ret_sc) *ret_sc = vit_sc;
+    if (ret_sw_ms)     *ret_sw_ms     = sw_ms;
+    if (ret_lsis_ms)   *ret_lsis_ms   = lsis_ms;
+    if (ret_band_ms)   *ret_band_ms   = band_ms;
+    if (ret_bvit_ms)   *ret_bvit_ms   = bvit_ms;
+    if (ret_btrace_ms) *ret_btrace_ms = btrace_ms;
+    return eslFAIL;
+  }
+
+  if (ret_sc) *ret_sc = vit_sc;
+  if (ret_sw_ms)     *ret_sw_ms     = sw_ms;
+  if (ret_lsis_ms)   *ret_lsis_ms   = lsis_ms;
+  if (ret_band_ms)   *ret_band_ms   = band_ms;
+  if (ret_bvit_ms)   *ret_bvit_ms   = bvit_ms;
+  if (ret_btrace_ms) *ret_btrace_ms = btrace_ms;
+
+  if (raw_pins) free(raw_pins);
+  if (sel_pins) free(sel_pins);
+  if (kmin)     free(kmin);
+  if (kmax)     free(kmax);
+  return eslOK;
+
+ ERROR:
+  if (raw_pins) free(raw_pins);
+  if (sel_pins) free(sel_pins);
+  if (kmin)     free(kmin);
+  if (kmax)     free(kmax);
+  return status;
+}
+
+
+/* p7_Seq2BandsPinBridgeWrap():
+ * Mirrors p7_Seq2BandsVit() signature exactly; only the band-derivation
+ * step is swapped (SW-pinbridge prefilter + banded p7 Viterbi instead of
+ * full unbanded p7_GViterbi). i2k extraction + p7_pins2bands_nodepad are
+ * the same as p7_Seq2BandsVit.
+ *
+ * Builds a LOCAL profile + OPROFILE on demand from cm->fp7 for the SSE
+ * scan (rbv requires LOCAL config). The Viterbi runs against gm in the
+ * caller's configured mode (GLOCAL or truncated LOCAL).
+ */
+int
+p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
+                          P7_BG *bg, P7_TRACE *p7_tr,
+                          ESL_DSQ *dsq, int L, int pad, int *nodepad,
+                          int hopback, int vitend,
+                          int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int          status;
+  float        sc;
+  int         *i2k    = NULL;
+  int         *kmin   = NULL;
+  int         *kmax   = NULL;
+  int          ncells = 0;
+  int          M      = gm->M;
+  int          tpos;
+  P7_PROFILE  *gm_local = NULL;
+  P7_OPROFILE *om       = NULL;
+  P7_GMXB     *gxb      = NULL;
+  P7_GBANDS   *bnd      = NULL;
+  int          pb_pad   = (cm->p7_pinbridge_pad > 0) ? cm->p7_pinbridge_pad : 20;
+  struct timespec ta, tb;
+  double       om_ms = 0;
+  double       sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
+  double       pins2bands_ms = 0;
+
+  if (cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsPinBridgeWrap: cm->fp7 is NULL");
+
+  /* Build LOCAL p7 profile + OPROFILE for SSE rbv scan. */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  gm_local = p7_profile_Create(M, cm->fp7->abc);
+  if (gm_local == NULL) ESL_FAIL(eslEMEM, errbuf, "p7_profile_Create failed");
+  if ((status = p7_ProfileConfig(cm->fp7, bg, gm_local, L, p7_LOCAL)) != eslOK)
+    ESL_XFAIL(status, errbuf, "p7_ProfileConfig (LOCAL) failed");
+  om = p7_oprofile_Create(M, cm->fp7->abc);
+  if (om == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_oprofile_Create failed");
+  if ((status = p7_oprofile_Convert(gm_local, om)) != eslOK)
+    ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
+  if ((status = p7_oprofile_ReconfigLength(om, L)) != eslOK)
+    ESL_XFAIL(status, errbuf, "p7_oprofile_ReconfigLength failed");
+
+  /* Allocate banded matrix scratch (Reinit'd inside p7_Seq2BandsPinBridge once
+   * the prefilter band is known). */
+  bnd = p7_gbands_Create();
+  if (bnd == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_gbands_Create failed");
+  /* Allocate gxb shell only (NULL dp/xmx); p7_Seq2BandsPinBridge fills it
+   * once bnd has cells. p7_gmxb_Create disallows zero-cell bnd. */
+  if ((gxb = malloc(sizeof(P7_GMXB))) == NULL) ESL_XFAIL(eslEMEM, errbuf, "malloc P7_GMXB shell failed");
+  gxb->dp = NULL; gxb->xmx = NULL; gxb->bnd = NULL; gxb->dalloc = 0; gxb->xalloc = 0;
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  om_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Step 1+2: SW-pinbridge prefilter + banded p7 Viterbi + banded trace. */
+  status = p7_Seq2BandsPinBridge(gm, om, gxb, bnd, p7_tr, dsq, L, pb_pad, &sc,
+                                 &sw_ms, &lsis_ms, &band_ms, &bvit_ms, &btrace_ms);
+  if (status != eslOK) {
+    /* signal caller to fall back */
+    *ret_i2k    = NULL;
+    *ret_kmin   = NULL;
+    *ret_kmax   = NULL;
+    *ret_ncells = 0;
+    p7_gmxb_Destroy(gxb);
+    p7_gbands_Destroy(bnd);
+    p7_oprofile_Destroy(om);
+    p7_profile_Destroy(gm_local);
+    return eslOK;
+  }
+
+  /* Step 3: i2k from M-state trace pins (identical to p7_Seq2BandsVit). */
+  ESL_ALLOC(i2k, sizeof(int) * (L + 1));
+  esl_vec_ISet(i2k, (L + 1), -1);
+
+  for (tpos = 0; tpos < p7_tr->N; tpos++) {
+    if (p7_tr->st[tpos] == p7T_M) {
+      int it = p7_tr->i[tpos];
+      int kt = p7_tr->k[tpos];
+      if (it >= 1 && it <= L && kt >= 1 && kt <= M)
+        i2k[it] = kt;
+    }
+  }
+
+  /* Step 3b: vitend pruning (mirror p7_Seq2BandsVit) */
+  if (vitend > 0) {
+    int dropped, ii;
+    dropped = 0;
+    for (ii = 1; ii <= L && dropped < vitend; ii++) {
+      if (i2k[ii] != -1) { i2k[ii] = -1; dropped++; }
+    }
+    dropped = 0;
+    for (ii = L; ii >= 1 && dropped < vitend; ii--) {
+      if (i2k[ii] != -1) { i2k[ii] = -1; dropped++; }
+    }
+  }
+
+  /* Step 4: pins -> bands (identical to p7_Seq2BandsVit) */
+  clock_gettime(CLOCK_MONOTONIC, &ta);
+  if (nodepad != NULL) {
+    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, &kmin, &kmax, &ncells)) != eslOK)
+      goto ERROR;
+  } else {
+    if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)
+      goto ERROR;
+  }
+  clock_gettime(CLOCK_MONOTONIC, &tb);
+  pins2bands_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Emit per-stage timing for offline aggregation by CLEN bucket. */
+  fprintf(stderr, "#P7PB_STAGE M=%d L=%d om_build=%.4f sw_scan=%.4f lsis=%.4f band_build=%.4f banded_vit=%.4f banded_trace=%.4f pins2bands=%.4f\n",
+          M, L, om_ms/1000.0, sw_ms/1000.0, lsis_ms/1000.0, band_ms/1000.0, bvit_ms/1000.0, btrace_ms/1000.0, pins2bands_ms/1000.0);
+  fflush(stderr);
+
+  *ret_i2k    = i2k;
+  *ret_kmin   = kmin;
+  *ret_kmax   = kmax;
+  *ret_ncells = ncells;
+
+  p7_gmxb_Destroy(gxb);
+  p7_gbands_Destroy(bnd);
+  p7_oprofile_Destroy(om);
+  p7_profile_Destroy(gm_local);
+  return eslOK;
+
+ ERROR:
+  if (i2k)  free(i2k);
+  if (kmin) free(kmin);
+  if (kmax) free(kmax);
+  if (gxb)      p7_gmxb_Destroy(gxb);
+  if (bnd)      p7_gbands_Destroy(bnd);
+  if (om)       p7_oprofile_Destroy(om);
+  if (gm_local) p7_profile_Destroy(gm_local);
   return status;
 }

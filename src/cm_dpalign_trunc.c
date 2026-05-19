@@ -114,6 +114,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <time.h>
 
 #include "easel.h"
 #include "esl_sqio.h"
@@ -1166,32 +1167,60 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   if(do_optacc && post_mx == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
   if(do_sample && r       == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrAlignHB(), do_sample but r is NULL.");
 
+  /* Temporary sub-stage timing instrumentation for efficiency review.
+   * Outputs "#CM_TR_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr.
+   */
+  struct timespec _ta_trsub, _tb_trsub;
+#define CM_TR_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_trsub)
+#define CM_TR_ALIGN_SUBSTAGE_END(tag) do { \
+    clock_gettime(CLOCK_MONOTONIC, &_tb_trsub); \
+    double _ss = (_tb_trsub.tv_sec - _ta_trsub.tv_sec) + (_tb_trsub.tv_nsec - _ta_trsub.tv_nsec)/1e9; \
+    fprintf(stderr, "#CM_TR_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
+            (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
+    fflush(stderr); \
+  } while(0)
+
   /* if do_post, fill Inside, Outside, Posterior matrices, in that order */
   /* if do_sample (and !do_post) fill Inside and sample from it */
-  if(do_post || do_sample) { 
+  if(do_post || do_sample) {
+    CM_TR_ALIGN_SUBSTAGE_START();
     if((status = cm_TrInsideAlignHB (cm, errbuf, dsq, L, size_limit, preset_mode, pass_idx, mx, &mode, &ins_sc)) != eslOK) return status;
     /* mode will equal preset_mode unless preset_mode is TRMODE_UNKNOWN, in which case it will be mode that gives max inside score  */
-    if(do_sample) { 
-      if((status = cm_TrStochasticParsetreeHB(cm, errbuf, dsq, L, preset_mode, pass_idx, mx, r, &tr, &mode, &sc)) != eslOK) return status; 
+    CM_TR_ALIGN_SUBSTAGE_END("inside");
+    if(do_sample) {
+      CM_TR_ALIGN_SUBSTAGE_START();
+      if((status = cm_TrStochasticParsetreeHB(cm, errbuf, dsq, L, preset_mode, pass_idx, mx, r, &tr, &mode, &sc)) != eslOK) return status;
       /* mode may be changed if preset_mode is TRMODE_UNKNOWN, else it will equal preset mode */
+      CM_TR_ALIGN_SUBSTAGE_END("sample_trace");
     }
     if(do_post) { /* Inside was called above, now do Outside, then Posterior, then EmitterPosterior */
+      CM_TR_ALIGN_SUBSTAGE_START();
       if((status = cm_TrOutsideAlignHB    (cm, errbuf, dsq, L, size_limit, mode, pass_idx, (cm->align_opts & CM_ALIGN_CHECKINOUT), post_mx, mx)) != eslOK) return status;
-      if((status = cm_TrPosteriorHB       (cm, errbuf,      L, size_limit, mode, mx, post_mx, post_mx)) != eslOK) return status;   
-      if((status = cm_TrEmitterPosteriorHB(cm, errbuf,      L, size_limit, mode, (cm->align_opts & CM_ALIGN_CHECKINOUT), post_mx, emit_mx)) != eslOK) return status;   
+      CM_TR_ALIGN_SUBSTAGE_END("outside");
+      CM_TR_ALIGN_SUBSTAGE_START();
+      if((status = cm_TrPosteriorHB       (cm, errbuf,      L, size_limit, mode, mx, post_mx, post_mx)) != eslOK) return status;
+      if((status = cm_TrEmitterPosteriorHB(cm, errbuf,      L, size_limit, mode, (cm->align_opts & CM_ALIGN_CHECKINOUT), post_mx, emit_mx)) != eslOK) return status;
+      CM_TR_ALIGN_SUBSTAGE_END("posterior");
     }
   }
-  else { 
+  else {
     mode = preset_mode; /* this allows us to pass <mode> (not <preset_mode>) into cm_tr_alignT() below for all cases */
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
+    CM_TR_ALIGN_SUBSTAGE_START();
     if((status = cm_tr_alignT_hb(cm, errbuf, dsq, L, size_limit, mode, pass_idx, do_optacc, mx, shmx, emit_mx, &tr, &mode, (do_optacc) ? NULL : &sc)) != eslOK) return status;
+    CM_TR_ALIGN_SUBSTAGE_END("traceback");
   }
 
   if(have_ppstr || do_optacc) {
+    CM_TR_ALIGN_SUBSTAGE_START();
     if((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
+    CM_TR_ALIGN_SUBSTAGE_END("postcode");
   }
+
+#undef CM_TR_ALIGN_SUBSTAGE_START
+#undef CM_TR_ALIGN_SUBSTAGE_END
 
 #if eslDEBUGLEVEL >= 2
   /* Uncomment to dump emitmap and parsetree */

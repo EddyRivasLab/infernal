@@ -105,6 +105,13 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
   { "--p7band",      eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "use p7 Viterbi-derived bands for faster alignment",          3 },
   { "--p7padplus",    eslARG_INT,         "7", NULL,      "n>=0",       NULL,   "--p7band",                    NULL, "add <n> to every per-node p7 band pad [default 7]",          3 },
+  { "--p7pinbridge", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "use SW-pinbridge prefilter + banded p7 Viterbi (with --p7band)", 3 },
+  { "--p7pbpad",      eslARG_INT,        "20", NULL,      "n>=0",       NULL, "--p7pinbridge",                 NULL, "diagonal pad for SW-pinbridge prefilter band [default 20]",  3 },
+  { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
+  { "--cykpad",       eslARG_INT,         "5", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree-derived band tightening [default 5]",  3 },
+  { "--cykbands-perstate", eslARG_NONE,  FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "use per-state CYK pad from calibrated HMM-band-width model", 3 },
+  { "--cykperstate-maxpad",  eslARG_INT,  "0", NULL,        "n>=0",      NULL, "--cykbands-perstate",            NULL, "cap per-state CYK pad at <n> (0 = no cap; default 0)",      3 },
+  { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      3 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
@@ -1660,6 +1667,21 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   cm->tau    = esl_opt_GetReal(go, "--tau");
   cm->maxtau = esl_opt_GetReal(go, "--maxtau");
   if(esl_opt_GetBoolean(go, "--p7band")) cm->p7bpad = esl_opt_GetInteger(go, "--p7padplus");
+  if(esl_opt_GetBoolean(go, "--p7pinbridge")) {
+    cm->p7_use_pinbridge = TRUE;
+    cm->p7_pinbridge_pad = esl_opt_GetInteger(go, "--p7pbpad");
+  }
+  if(esl_opt_GetBoolean(go, "--cykbands")) {
+    cm->p7_use_cykbands = TRUE;
+    cm->p7_cykbands_pad = esl_opt_GetInteger(go, "--cykpad");
+    if(esl_opt_GetBoolean(go, "--cykbands-perstate")) {
+      cm->p7_cykbands_perstate = TRUE;
+      cm->p7_cykperstate_maxpad = esl_opt_GetInteger(go, "--cykperstate-maxpad");
+    }
+  }
+  if(esl_opt_IsUsed(go, "--dump-bands")) {
+    cm->p7_dump_bands_file = (char *) esl_opt_GetString(go, "--dump-bands");
+  }
 
   if((esl_opt_IsUsed(go, "--flanktoins")) && (esl_opt_IsUsed(go, "--flankselfins"))) { 
     configure_root_inserts(cm, esl_opt_GetReal(go, "--flanktoins"), esl_opt_GetReal(go, "--flankselfins"));

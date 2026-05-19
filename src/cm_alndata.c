@@ -443,12 +443,39 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    for(k = 0; k <= cm->fp7->M; k++) local_nodepad[k] = cm->p7_nodepad[k] + cm->p7bpad;
 	  }
 
-	  /* Derive p7 bands via Viterbi */
-	  status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-				   sq->dsq, sq->L, cm->p7bpad,
-				   local_nodepad,
-				   0, 0, /* hopback=0, vitend=0 */
-				   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	  /* Derive p7 bands: either SW-pinbridge prefilter + banded Viterbi (--p7pinbridge)
+	   * or full unbanded p7_GViterbi (default). Pinbridge wrapper falls back to
+	   * full p7_Seq2BandsVit if the banded trace fails inside the prefilter band
+	   * (signaled by ncells=0). Pinbridge is correct for both truncated and
+	   * non-truncated alignment.
+	   *
+	   * M-threshold gate: pinbridge has per-sequence overhead (build OPROFILE,
+	   * SSE scan setup, LSIS allocation, banded traceback) that on small models
+	   * exceeds the cost of full p7_GViterbi at O(LM). For M < 200 the full
+	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
+	   * without the tiny-M tail regressions. */
+	  if (cm->p7_use_pinbridge) {
+	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
+					       sq->dsq, sq->L, cm->p7bpad,
+					       local_nodepad,
+					       0, 0, /* hopback=0, vitend=0 */
+					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    /* If pinbridge couldn't produce a trace (rare; band missed the trace
+	     * entirely), fall back to full unbanded Viterbi for this sequence. */
+	    if (status == eslOK && p7_ncells == 0) {
+	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+				       sq->dsq, sq->L, cm->p7bpad,
+				       local_nodepad,
+				       0, 0,
+				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    }
+	  } else {
+	    status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+				     sq->dsq, sq->L, cm->p7bpad,
+				     local_nodepad,
+				     0, 0, /* hopback=0, vitend=0 */
+				     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	  }
 
 	  /* Debug: report Viterbi band stats */
 	  if(status == eslOK && p7_ncells > 0) {
@@ -472,10 +499,15 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
 	  if(status == eslOK && p7_ncells > 0) {
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
+	    struct timespec _ta_cp9, _tb_cp9;
+	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
 					     cm->maxtau, 0, 0, NULL);
+	    clock_gettime(CLOCK_MONOTONIC, &_tb_cp9);
+	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
+	    fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
 	  }
 	  else {
 	    /* Viterbi found no path or error; fall back to standard cp9 bands */
@@ -514,26 +546,136 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	}
 	if(w != NULL) esl_stopwatch_Stop(w);
 	secs_bands = (w == NULL) ? 0. : w->elapsed;
-	tau     = cm->tau; 
+	tau     = cm->tau;
 	thresh1 = cm->cp9b->thresh1;
 	thresh2 = cm->cp9b->thresh2;
 	/* note: we don't set these three if cp9b_valid is TRUE */
       }
-      
+
+      /* DIAGNOSTIC: always print CP9 banded matrix cell count (whether
+       * cykbands is on or off) so we can compare CP9-only vs cykbands runs. */
+      {
+        double _cp9_cells = 0.;
+        CP9Bands_t *_cp9b = cm->cp9b;
+        int _v, _jp;
+        for(_v = 0; _v < cm->M; _v++)
+          for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
+            if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
+              _cp9_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+        fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_band_cells=%.0f\n",
+                (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cp9_cells);
+      }
+
+      /* CYK pre-pass: run CYK on CP9 bands, derive tighter per-state bands before Inside/Outside */
+      if(cm->p7_use_cykbands) {
+	struct timespec _ta_cyk, _tb_cyk;
+	clock_gettime(CLOCK_MONOTONIC, &_ta_cyk);
+
+	/* measure original band area (total d-band cells across all states) */
+	double _orig_cells = 0.;
+	{
+	  CP9Bands_t *_cp9b = cm->cp9b;
+	  int _v, _jp;
+	  for(_v = 0; _v < cm->M; _v++)
+	    for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
+	      if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
+		_orig_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+	}
+
+	Parsetree_t *_cyk_tr = NULL;
+	float        _cyk_sc  = 0.;
+	int          _cyk_ok  = FALSE;
+
+	if(do_trunc) {
+	  char _cyk_mode = TRMODE_UNKNOWN;
+	  float _cyk_avgpp = 0.;
+	  if(cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize,
+			  TRMODE_UNKNOWN, pass_idx, FALSE/*do_optacc*/, FALSE/*do_sample*/,
+			  cm->trhb_mx, cm->trhb_shmx, NULL/*post_mx*/, NULL/*emit_mx*/,
+			  NULL/*r*/, NULL/*ret_ppstr*/,
+			  &_cyk_tr, &_cyk_mode, &_cyk_avgpp, &_cyk_sc) == eslOK && _cyk_tr != NULL) {
+	    _cyk_ok = TRUE;
+	  }
+	} else {
+	  if(cm_alignT_hb(cm, errbuf, sq->dsq, sq->L, mxsize, FALSE/*do_optacc*/,
+			  cm->hb_mx, cm->hb_shmx, NULL/*emit_mx*/,
+			  &_cyk_tr, &_cyk_sc) == eslOK && _cyk_tr != NULL) {
+	    _cyk_ok = TRUE;
+	  }
+	}
+
+	double _tight_cells = _orig_cells;
+	if(_cyk_ok) {
+	  /* Compute per-state pad array if --cykbands-perstate is on */
+	  int *_perstate_pad = NULL;
+	  if (cm->p7_cykbands_perstate) {
+	    _perstate_pad = cm_CYKPerstatePadCompute(cm, cm->cp9b, cm->p7_cykbands_pad);
+	  }
+	  if(cm_BandsFromParsetree_perstate(cm, errbuf, _cyk_tr,
+					    1, sq->L,
+					    (_perstate_pad != NULL) ? 0 : cm->p7_cykbands_pad,
+					    _perstate_pad,
+					    cm->cp9b, pass_idx, 0) == eslOK) {
+	    _tight_cells = 0.;
+	    CP9Bands_t *_cp9b = cm->cp9b;
+	    int _v, _jp;
+	    for(_v = 0; _v < cm->M; _v++)
+	      for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
+		if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
+		  _tight_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+	  }
+	  if (_perstate_pad != NULL) { free(_perstate_pad); _perstate_pad = NULL; }
+	  FreeParsetree(_cyk_tr);
+	}
+
+	clock_gettime(CLOCK_MONOTONIC, &_tb_cyk);
+	double _cyk_s   = (_tb_cyk.tv_sec  - _ta_cyk.tv_sec)  + (_tb_cyk.tv_nsec  - _ta_cyk.tv_nsec) /1e9;
+	double _b_ratio = (_orig_cells > 0.) ? _tight_cells / _orig_cells : 1.0;
+	fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
+		(cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cyk_s, _b_ratio, _orig_cells, _tight_cells);
+      }
+
+      /* --dump-bands: write per-(v,j) band TSV before cm_AlignHB/cm_TrAlignHB */
+      if(cm->p7_dump_bands_file != NULL && cm->cp9b != NULL) {
+        FILE *_dbfp = fopen(cm->p7_dump_bands_file, "w");
+        if(_dbfp != NULL) {
+          CP9Bands_t *_dbands = cm->cp9b;
+          int _dv, _dj, _djp;
+          fprintf(_dbfp, "v\tstate_type\tj\thdmin\thdmax\tdwidth\n");
+          for(_dv = 0; _dv < cm->M; _dv++) {
+            for(_djp = 0; _djp <= _dbands->jmax[_dv] - _dbands->jmin[_dv]; _djp++) {
+              _dj = _dbands->jmin[_dv] + _djp;
+              int _dmin = _dbands->hdmin[_dv][_djp];
+              int _dmax = _dbands->hdmax[_dv][_djp];
+              int _dwidth = (_dmax >= _dmin) ? (_dmax - _dmin + 1) : 0;
+              fprintf(_dbfp, "%d\t%s\t%d\t%d\t%d\t%d\n",
+                      _dv, Statetype(cm->sttype[_dv]), _dj, _dmin, _dmax, _dwidth);
+            }
+          }
+          fclose(_dbfp);
+        }
+      }
+
       if(w != NULL) esl_stopwatch_Start(w);
-      if(do_trunc) { 
-	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      struct timespec _ta_cm, _tb_cm;
+      clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
+      if(do_trunc) {
+	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
-				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
+      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
 				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
       }
-      else { 
-	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      else {
+	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx, 
+	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
 				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
       }
+      clock_gettime(CLOCK_MONOTONIC, &_tb_cm);
+      double _cm_s = (_tb_cm.tv_sec - _ta_cm.tv_sec) + (_tb_cm.tv_nsec - _ta_cm.tv_nsec)/1e9;
+      fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f\n",
+              (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s);
     }
   }
 

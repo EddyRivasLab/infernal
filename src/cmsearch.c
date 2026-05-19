@@ -235,6 +235,7 @@ static ESL_OPTIONS options[] = {
   { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  NULL, "--p7pthr,--nop7post_cp9b", "with --p7post_cp9b: cumulative tau for bands",                                    106 },
   { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },
   { "--cykbpad",   eslARG_INT,    "10",  NULL, "n>=0",  NULL,  "--cykbands", NULL, "with --cykbands, band pad",                                                                  106 },
+  { "--cykpadfile", eslARG_STRING, NULL, NULL, NULL,    NULL,  "--cykbands", NULL, "with --cykbands, dir of <CMname>.cykpads.tsv per-state pad TSVs",                              106 },
   { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, NULL, "--novitband,--msvband", "read per-consensus position p7 pads from <f>",                 106 },
   { "--p7padplus",  eslARG_INT,    "7", NULL, "n>=0", NULL, NULL, NULL, "add <n> to every per-state pad",                                                            106 },
   { "--p7vit-hopback", eslARG_INT, "0", NULL, "n>=0", NULL, NULL, "--msvband", "with --vitband, dilate per-pin band by trace-hop-back of <n> pins (D1)",          106 },
