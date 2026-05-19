@@ -108,7 +108,7 @@ static ESL_OPTIONS options[] = {
   { "--p7pinbridge", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "use SW-pinbridge prefilter + banded p7 Viterbi (with --p7band)", 3 },
   { "--p7pbpad",      eslARG_INT,        "20", NULL,      "n>=0",       NULL, "--p7pinbridge",                 NULL, "diagonal pad for SW-pinbridge prefilter band [default 20]",  3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
-  { "--cykpad",       eslARG_INT,         "5", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree-derived band tightening [default 5]",  3 },
+  { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree-derived band tightening [default 2]",  3 },
   { "--cykbands-perstate", eslARG_NONE,  FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "use per-state CYK pad from calibrated HMM-band-width model", 3 },
   { "--cykperstate-maxpad",  eslARG_INT,  "0", NULL,        "n>=0",      NULL, "--cykbands-perstate",            NULL, "cap per-state CYK pad at <n> (0 = no cap; default 0)",      3 },
   { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      3 },
