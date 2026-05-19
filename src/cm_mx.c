@@ -70,6 +70,7 @@ static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errb
 static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
 static int cm_tr_scan_mx_freefloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
 static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_hb_mx_SizeNeeded_ex    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int64_t *ret_ncells, float *ret_Mb);
 
 /*****************************************************************
  *   1. CM_MX data structure functions,
@@ -884,6 +885,7 @@ cm_hb_mx_Create(int M)
   mx->dp     = NULL;
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
+  mx->omit_el_deck = 0;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
    *          remember deck M is special, as it has no bands, we allocate
@@ -963,7 +965,8 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   float   Mb_needed;   /* required size of matrix, given the bands */
   float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
   int     have_el;
-  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  int     include_el = (! mx->omit_el_deck);
+  have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -971,7 +974,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
+  if((status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, include_el, &ncells, &Mb_needed)) != eslOK) return status;
   /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
   ESL_DPRINTF2(("#DEBUG: HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
@@ -1142,29 +1145,30 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
  * Returns:   <eslOK> on success
  *
  */
-int
-cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+static int
+cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el,
+                       int64_t *ret_ncells, float *ret_Mb)
 {
   int     v, jp;
   int64_t ncells;
   int     jbw;
   int     have_el;
   float   Mb_needed;
-  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
 
   /* contract check */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   ncells = 0;
-  Mb_needed = (float) 
-    (sizeof(CM_HB_MX) + 
+  Mb_needed = (float)
+    (sizeof(CM_HB_MX) +
      ((cp9b->cm_M+1) * sizeof(float **)) + /* mx->dp[] ptrs */
      ((cp9b->cm_M+1) * sizeof(int)));      /* mx->nrowsA */
 
-  for(v = 0; v < cp9b->cm_M; v++) { 
-    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+  for(v = 0; v < cp9b->cm_M; v++) {
+    jbw = cp9b->jmax[v] - cp9b->jmin[v];
     Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->dp[v][] ptrs */
-    for(jp = 0; jp <= jbw; jp++) 
+    for(jp = 0; jp <= jbw; jp++)
       ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
   }
   if(have_el) ncells += (int64_t) ( (int64_t) (L+2) * (int64_t) (L+1) * 0.5); /* space for EL deck */
@@ -1176,6 +1180,12 @@ cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *re
   if(ret_Mb     != NULL) *ret_Mb     = Mb_needed;
 
   return eslOK;
+}
+
+int
+cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+{
+  return cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, ret_ncells, ret_Mb);
 }
 
 /*****************************************************************

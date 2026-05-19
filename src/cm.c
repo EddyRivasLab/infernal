@@ -3202,7 +3202,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
 
   /* CM HMM banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
-  if(cm->hb_mx     != NULL) new->hb_mx     = cm_hb_mx_Create(new->M);
+  if(cm->hb_mx     != NULL) { new->hb_mx     = cm_hb_mx_Create(new->M); new->hb_mx->omit_el_deck = cm->hb_mx->omit_el_deck; }
   if(cm->hb_omx    != NULL) new->hb_omx    = cm_hb_mx_Create(new->M);
   if(cm->hb_emx    != NULL) new->hb_emx    = cm_hb_emit_mx_Create(new);
   if(cm->hb_shmx   != NULL) new->hb_shmx   = cm_hb_shadow_mx_Create(new);
