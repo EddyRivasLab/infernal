@@ -113,7 +113,62 @@ enum {
      */
     FAST_CAL_FEAT_log_clen,              /* 27 */
 
-    FAST_CAL_NFEAT = 28,                 /* sentinel; total feature count */
+    /* Phase 5 — v5.5 feature set widening.
+     * Family A: bulk IC features (8 features)
+     */
+    FAST_CAL_FEAT_ic_mean,              /* 28 */
+    FAST_CAL_FEAT_ic_var,               /* 29 */
+    FAST_CAL_FEAT_ic_p10,               /* 30 */
+    FAST_CAL_FEAT_ic_p50,               /* 31 */
+    FAST_CAL_FEAT_ic_p90,               /* 32 */
+    FAST_CAL_FEAT_ic_skew,              /* 33 */
+    FAST_CAL_FEAT_ic_mean_singlet,      /* 34 */
+    FAST_CAL_FEAT_ic_mean_pair,         /* 35 */
+
+    /* Family E: state-type ratio features (2 features) */
+    FAST_CAL_FEAT_n_pair_frac,          /* 36 */
+    FAST_CAL_FEAT_n_singlet_frac,       /* 37 */
+
+    /* Family B: spatial IC features (5 features) */
+    FAST_CAL_FEAT_ic_spatial_entropy,      /* 38 */
+    FAST_CAL_FEAT_ic_runs_above_median,    /* 39 */
+    FAST_CAL_FEAT_ic_autocorr_lag1,        /* 40 */
+    FAST_CAL_FEAT_ic_autocorr_lag5,        /* 41 */
+    FAST_CAL_FEAT_max_consecutive_low_ic,  /* 42 */
+
+    /* Family C: fragment-score-weighted features (5 features) */
+    FAST_CAL_FEAT_frag_score_mean,         /* 43 */
+    FAST_CAL_FEAT_frag_score_var,          /* 44 */
+    FAST_CAL_FEAT_frag_score_per_pos_mean, /* 45 */
+    FAST_CAL_FEAT_frag_score_p90,          /* 46 */
+    FAST_CAL_FEAT_cov_S_L,                 /* 47 */
+
+    /* Family D: withend_rich topology features (11 features) */
+    FAST_CAL_FEAT_withend_rich_mean_L,        /* 48 */
+    FAST_CAL_FEAT_withend_rich_var_L,         /* 49 */
+    FAST_CAL_FEAT_withend_rich_KL_to_unif,    /* 50 */
+    FAST_CAL_FEAT_withend_rich_p_full_length, /* 51 */
+    FAST_CAL_FEAT_withend_rich_skew_L,        /* 52 */
+    FAST_CAL_FEAT_withend_rich_kurt_L,        /* 53 */
+    FAST_CAL_FEAT_withend_rich_P10_L,         /* 54 */
+    FAST_CAL_FEAT_withend_rich_P25_L,         /* 55 */
+    FAST_CAL_FEAT_withend_rich_P50_L,         /* 56 */
+    FAST_CAL_FEAT_withend_rich_P75_L,         /* 57 */
+    FAST_CAL_FEAT_withend_rich_P90_L,         /* 58 */
+
+    /* Group D: composition-aware features (10 features; tiny bucket only in v5.5) */
+    FAST_CAL_FEAT_ic_real_mean,             /* 59 */
+    FAST_CAL_FEAT_ic_real_var,              /* 60 */
+    FAST_CAL_FEAT_ic_real_p10,             /* 61 */
+    FAST_CAL_FEAT_ic_real_p50,             /* 62 */
+    FAST_CAL_FEAT_ic_real_p90,             /* 63 */
+    FAST_CAL_FEAT_ic_real_skew,            /* 64 */
+    FAST_CAL_FEAT_KL_cm_uniform,           /* 65 */
+    FAST_CAL_FEAT_KL_cm_genomic,           /* 66 */
+    FAST_CAL_FEAT_expected_null3_lw,       /* 67 */
+    FAST_CAL_FEAT_expected_null3_frag_var, /* 68 */
+
+    FAST_CAL_NFEAT = 69,                 /* sentinel; total feature count */
     FAST_CAL_NFEAT_PHASE2 = 20          /* Phase 2 backward-compat alias */
 };
 

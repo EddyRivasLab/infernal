@@ -1584,37 +1584,84 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
 
 /* Feature name table — indexed by FAST_CAL_FEAT_* enum.
  * Must stay in sync with the enum in cm_fast_calibrate.h.
- * 27 entries total (Phase 2: 0..19, Phase 3: 20..26).
+ * 69 entries (Phase 2: 0..19, Phase 3: 20..26, Phase 4: 27, Phase 5: 28..68).
  */
 static const char *fast_cal_feature_names[] = {
-    "clen",                  /* 0  */
-    "mean_L_noss",           /* 1  */
-    "var_L_noss",            /* 2  */
-    "KL_noss_to_unif",       /* 3  */
-    "p_full_length",         /* 4  */
-    "n_matp",                /* 5  */
-    "pct_matp",              /* 6  */
-    "bp_density",            /* 7  */
-    "mean_matp_relent",      /* 8  */
-    "max_matp_relent",       /* 9  */
-    "sum_matp_relent",       /* 10 */
-    "mean_ml_relent",        /* 11 */
-    "mean_node_mean_g",      /* 12 */
-    "mean_node_var_g",       /* 13 */
-    "ES_full_g",             /* 14 */
-    "VarS_full_g",           /* 15 */
-    "mean_ES_g",             /* 16 */
-    "var_ES_g",              /* 17 */
-    "mean_VarS_g",           /* 18 */
-    "cov_L_ES_g",            /* 19 */
-    "noend_mean_L",          /* 20 */
-    "noend_var_L",           /* 21 */
-    "noend_KL_to_unif",      /* 22 */
-    "noend_p_full_length",   /* 23 */
-    "mean_L_str",            /* 24 */
-    "var_L_str",             /* 25 */
-    "KL_str_to_unif",        /* 26 */
-    "log_clen",              /* 27 — derived feature for K-ridge clen power law */
+    "clen",                          /* 0  */
+    "mean_L_noss",                   /* 1  */
+    "var_L_noss",                    /* 2  */
+    "KL_noss_to_unif",               /* 3  */
+    "p_full_length",                 /* 4  */
+    "n_matp",                        /* 5  */
+    "pct_matp",                      /* 6  */
+    "bp_density",                    /* 7  */
+    "mean_matp_relent",              /* 8  */
+    "max_matp_relent",               /* 9  */
+    "sum_matp_relent",               /* 10 */
+    "mean_ml_relent",                /* 11 */
+    "mean_node_mean_g",              /* 12 */
+    "mean_node_var_g",               /* 13 */
+    "ES_full_g",                     /* 14 */
+    "VarS_full_g",                   /* 15 */
+    "mean_ES_g",                     /* 16 */
+    "var_ES_g",                      /* 17 */
+    "mean_VarS_g",                   /* 18 */
+    "cov_L_ES_g",                    /* 19 */
+    "noend_mean_L",                  /* 20 */
+    "noend_var_L",                   /* 21 */
+    "noend_KL_to_unif",              /* 22 */
+    "noend_p_full_length",           /* 23 */
+    "mean_L_str",                    /* 24 */
+    "var_L_str",                     /* 25 */
+    "KL_str_to_unif",                /* 26 */
+    "log_clen",                      /* 27 */
+    /* Phase 5 — Family A: bulk IC (28..35) */
+    "ic_mean",                       /* 28 */
+    "ic_var",                        /* 29 */
+    "ic_p10",                        /* 30 */
+    "ic_p50",                        /* 31 */
+    "ic_p90",                        /* 32 */
+    "ic_skew",                       /* 33 */
+    "ic_mean_singlet",               /* 34 */
+    "ic_mean_pair",                  /* 35 */
+    /* Family E: state-type ratios (36..37) */
+    "n_pair_frac",                   /* 36 */
+    "n_singlet_frac",                /* 37 */
+    /* Family B: spatial IC (38..42) */
+    "ic_spatial_entropy",            /* 38 */
+    "ic_runs_above_median",          /* 39 */
+    "ic_autocorr_lag1",              /* 40 */
+    "ic_autocorr_lag5",              /* 41 */
+    "max_consecutive_low_ic",        /* 42 */
+    /* Family C: fragment-score-weighted (43..47) */
+    "frag_score_mean",               /* 43 */
+    "frag_score_var",                /* 44 */
+    "frag_score_per_pos_mean",       /* 45 */
+    "frag_score_p90",                /* 46 */
+    "cov_S_L",                       /* 47 */
+    /* Family D: withend_rich topology (48..58) */
+    "withend_rich_mean_L",           /* 48 */
+    "withend_rich_var_L",            /* 49 */
+    "withend_rich_KL_to_unif",       /* 50 */
+    "withend_rich_p_full_length",    /* 51 */
+    "withend_rich_skew_L",           /* 52 */
+    "withend_rich_kurt_L",           /* 53 */
+    "withend_rich_P10_L",            /* 54 */
+    "withend_rich_P25_L",            /* 55 */
+    "withend_rich_P50_L",            /* 56 */
+    "withend_rich_P75_L",            /* 57 */
+    "withend_rich_P90_L",            /* 58 */
+    /* Group D: composition-aware (59..68) */
+    "ic_real_mean",                  /* 59 */
+    "ic_real_var",                   /* 60 */
+    "ic_real_p10",                   /* 61 */
+    "ic_real_p50",                   /* 62 */
+    "ic_real_p90",                   /* 63 */
+    "ic_real_skew",                  /* 64 */
+    "KL_cm_uniform",                 /* 65 */
+    "KL_cm_genomic",                 /* 66 */
+    "expected_null3_lw",             /* 67 */
+    "expected_null3_frag_var",       /* 68 */
     NULL
 };
 
@@ -1814,7 +1861,7 @@ extract_str_struct(CM_t *cm, double *feats)
             if (p_ab <= 0.0 || null_ab <= 0.0)
               lo[ab] = -40.0;  /* effectively -inf in bits */
             else
-              lo[ab] = log2(p_ab / null_ab);
+              lo[ab] = round(log2(p_ab / null_ab) * 1000.0) / 1000.0;
           }
           /* Compute normalized weights w[ab] = 2^lo[ab] / 16 */
           double w[16];
@@ -1847,7 +1894,7 @@ extract_str_struct(CM_t *cm, double *feats)
             if (p_a <= 0.0 || null_a <= 0.0)
               lo[a] = -40.0;
             else
-              lo[a] = log2(p_a / null_a);
+              lo[a] = round(log2(p_a / null_a) * 1000.0) / 1000.0;
           }
           /* Normalized weights: w[a] = 2^lo[a] * 0.25 */
           double w[4];
@@ -2033,7 +2080,7 @@ extract_c2_score_genomic(CM_t *cm, double *feats)
         if (p_a <= 0.0 || null_a <= 0.0)
           lo[a] = -40.0;
         else
-          lo[a] = log2(p_a / null_a);
+          lo[a] = round(log2(p_a / null_a) * 1000.0) / 1000.0;
       }
       /* per-state mean and variance under genomic null */
       double m = 0.0, m2 = 0.0;
@@ -2662,8 +2709,996 @@ extract_c1_old(CM_t *cm, double *feats)
 }
 
 
+/* =========================================================================
+ * Phase 5 Feature Extraction — v5.5 feature set (Families A-E, Group D)
+ */
+
+/* build_dfs_order()
+ * Fills dfs_order[0..n_nodes-1] with node labels in DFS pre-order
+ * (sorted by cm->nodemap[nd], which is the first state index).
+ * Caller allocates the array.
+ */
+static void
+build_dfs_order(CM_t *cm, int *dfs_order)
+{
+  int i, j, tmp;
+  int n = cm->nodes;
+  for (i = 0; i < n; i++) dfs_order[i] = i;
+  for (i = 1; i < n; i++) {
+    tmp = dfs_order[i];
+    for (j = i - 1; j >= 0 && cm->nodemap[dfs_order[j]] > cm->nodemap[tmp]; j--)
+      dfs_order[j + 1] = dfs_order[j];
+    dfs_order[j + 1] = tmp;
+  }
+}
+
+
+/* np_median()
+ * Median of a sorted array matching NumPy np.median behavior:
+ * odd n  → middle element; even n → average of two middle elements.
+ */
+static double
+np_median(const double *sorted, int n)
+{
+  if (n <= 0) return 0.0 / 0.0;
+  if (n % 2 == 1) return sorted[(n - 1) / 2];
+  return (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0;
+}
+
+/* np_percentile_linear()
+ * Percentile p (0..100) via linear interpolation, matching NumPy
+ * np.percentile default method='linear'.
+ */
+static double
+np_percentile_linear(const double *sorted, int n, double p)
+{
+  if (n <= 0) return 0.0 / 0.0;
+  if (n == 1) return sorted[0];
+  double idx = (p / 100.0) * (double)(n - 1);
+  int i0 = (int) idx;
+  double f = idx - (double) i0;
+  if (i0 + 1 >= n) return sorted[n - 1];
+  return sorted[i0] * (1.0 - f) + sorted[i0 + 1] * f;
+}
+
+
+/* extract_bulk_ic_and_spatial()
+ *
+ * Port of Python bulk_ic_features() + spatial_ic_features() from
+ * candidate_features.py, computed together to avoid re-walking the CM.
+ *
+ * Fills Families A (28..35), E (36..37), B (38..42).
+ *
+ * IC convention (matching Python _singlet_ic / _pair_ic with uniform null):
+ *   singlet IC = sum_a p(a) * log2(p(a) / 0.25)    where p(a) = cm->e[v][a]
+ *   pair IC    = sum_{a,b} p(a,b) * log2(p(a,b) / 0.0625)
+ *
+ * all_ics = [singlet ICs in DFS order] ++ [pair ICs in DFS order]
+ * (NOT sequence order — matches Python which concatenates ml_log then mp_log.)
+ */
+static int
+extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
+{
+  int    nd, v, a, ab, i;
+  int    n_sing = 0, n_pair = 0, n_all;
+  int    status;
+  double *sing_ic  = NULL;
+  double *pair_ic  = NULL;
+  double *all_ic   = NULL;
+  int    *dfs_order = NULL;
+  int    n_alloc   = cm->nodes + 1;
+
+  ESL_ALLOC(sing_ic,  sizeof(double) * n_alloc);
+  ESL_ALLOC(pair_ic,  sizeof(double) * n_alloc);
+  ESL_ALLOC(dfs_order, sizeof(int)   * cm->nodes);
+  build_dfs_order(cm, dfs_order);
+
+  /* Collect ICs in DFS pre-order matching Python's file-reading order.
+   * IC computed from quantized log-odds (3 dp) to match Python _singlet_ic/_pair_ic. */
+  for (i = 0; i < cm->nodes; i++) {
+    nd = dfs_order[i];
+    v  = cm->nodemap[nd];
+    if (cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd) {
+      double ic = 0.0;
+      for (a = 0; a < 4; a++) {
+        double p_norm = (double) cm->e[v][a];
+        if (p_norm > 0.0) {
+          double lo_q = round(log2(p_norm / 0.25) * 1000.0) / 1000.0;
+          ic += exp2(lo_q) * 0.25 * lo_q;
+        }
+      }
+      sing_ic[n_sing++] = ic;
+    } else if (cm->ndtype[nd] == MATP_nd) {
+      if (cm->stid[v] != MATP_MP) continue;
+      double ic = 0.0;
+      for (ab = 0; ab < 16; ab++) {
+        double p_norm = (double) cm->e[v][ab];
+        if (p_norm > 0.0) {
+          double lo_q = round(log2(p_norm / 0.0625) * 1000.0) / 1000.0;
+          ic += exp2(lo_q) * 0.0625 * lo_q;
+        }
+      }
+      pair_ic[n_pair++] = ic;
+    }
+  }
+
+  n_all = n_sing + n_pair;
+  if (n_all == 0) {
+    double nan = 0.0 / 0.0;
+    for (i = FAST_CAL_FEAT_ic_mean; i <= FAST_CAL_FEAT_max_consecutive_low_ic; i++)
+      feats[i] = nan;
+    free(sing_ic); free(pair_ic);
+    return eslOK;
+  }
+
+  ESL_ALLOC(all_ic, sizeof(double) * n_all);
+  memcpy(all_ic,          sing_ic, n_sing * sizeof(double));
+  memcpy(all_ic + n_sing, pair_ic, n_pair * sizeof(double));
+
+  /* --- Family A: bulk IC statistics --- */
+  {
+    double mean = 0.0, var = 0.0, skew = 0.0, sd;
+    for (i = 0; i < n_all; i++) mean += all_ic[i];
+    mean /= (double) n_all;
+    for (i = 0; i < n_all; i++) {
+      double d = all_ic[i] - mean;
+      var  += d * d;
+      skew += d * d * d;
+    }
+    var  /= (double) n_all;
+    skew /= (double) n_all;
+    sd    = sqrt(var > 1e-30 ? var : 1e-30);
+    skew  = (sd > 1e-15) ? skew / (sd * sd * sd) : 0.0;
+
+    /* p10, p50, p90 via sorted copy */
+    double *sorted = NULL;
+    ESL_ALLOC(sorted, sizeof(double) * n_all);
+    memcpy(sorted, all_ic, n_all * sizeof(double));
+    {
+      int j; double tmp;
+      for (i = 1; i < n_all; i++) {
+        tmp = sorted[i];
+        for (j = i-1; j >= 0 && sorted[j] > tmp; j--) sorted[j+1] = sorted[j];
+        sorted[j+1] = tmp;
+      }
+    }
+    {
+      int idx10 = (int)(0.10 * n_all); if (idx10 >= n_all) idx10 = n_all-1;
+      int idx50 = (int)(0.50 * n_all); if (idx50 >= n_all) idx50 = n_all-1;
+      int idx90 = (int)(0.90 * n_all); if (idx90 >= n_all) idx90 = n_all-1;
+      double mean_sing = 0.0, mean_pair_v = 0.0;
+      int j;
+      for (j = 0; j < n_sing; j++) mean_sing += sing_ic[j];
+      for (j = 0; j < n_pair; j++) mean_pair_v += pair_ic[j];
+
+      feats[FAST_CAL_FEAT_ic_mean]         = mean;
+      feats[FAST_CAL_FEAT_ic_var]          = var;
+      feats[FAST_CAL_FEAT_ic_p10]          = sorted[idx10];
+      feats[FAST_CAL_FEAT_ic_p50]          = sorted[idx50];
+      feats[FAST_CAL_FEAT_ic_p90]          = sorted[idx90];
+      feats[FAST_CAL_FEAT_ic_skew]         = skew;
+      feats[FAST_CAL_FEAT_ic_mean_singlet] = (n_sing > 0) ? mean_sing / (double) n_sing : 0.0/0.0;
+      feats[FAST_CAL_FEAT_ic_mean_pair]    = (n_pair > 0) ? mean_pair_v / (double) n_pair : 0.0;
+    }
+    free(sorted);
+  }
+
+  /* --- Family E: state-type ratios --- */
+  feats[FAST_CAL_FEAT_n_pair_frac]     = (double) n_pair / (double) n_all;
+  feats[FAST_CAL_FEAT_n_singlet_frac]  = (double) n_sing / (double) n_all;
+
+  /* --- Family B: spatial IC features --- */
+  if (n_all < 4) {
+    double nan = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_ic_spatial_entropy]     = nan;
+    feats[FAST_CAL_FEAT_ic_runs_above_median]   = nan;
+    feats[FAST_CAL_FEAT_ic_autocorr_lag1]       = nan;
+    feats[FAST_CAL_FEAT_ic_autocorr_lag5]       = nan;
+    feats[FAST_CAL_FEAT_max_consecutive_low_ic] = nan;
+  } else {
+    /* Compute median and p25 via sorted copy */
+    double *sorted2 = NULL;
+    ESL_ALLOC(sorted2, sizeof(double) * n_all);
+    memcpy(sorted2, all_ic, n_all * sizeof(double));
+    {
+      int j; double tmp;
+      for (i = 1; i < n_all; i++) {
+        tmp = sorted2[i];
+        for (j = i-1; j >= 0 && sorted2[j] > tmp; j--) sorted2[j+1] = sorted2[j];
+        sorted2[j+1] = tmp;
+      }
+    }
+    double median_ic = np_median(sorted2, n_all);
+    double p25_ic    = np_percentile_linear(sorted2, n_all, 25.0);
+    free(sorted2);
+
+    /* ic_spatial_entropy: Shannon entropy of normalized IC profile */
+    double ic_sum = 0.0;
+    for (i = 0; i < n_all; i++) if (all_ic[i] > 0.0) ic_sum += all_ic[i];
+    double ent = 0.0;
+    if (ic_sum > 0.0) {
+      for (i = 0; i < n_all; i++) {
+        double p = (all_ic[i] > 1e-15) ? all_ic[i] / ic_sum : 1e-15;
+        if (p > 0.0) ent -= p * log2(p);
+      }
+    }
+    feats[FAST_CAL_FEAT_ic_spatial_entropy] = ent;
+
+    /* ic_runs_above_median */
+    int runs = 0, in_run = 0;
+    for (i = 0; i < n_all; i++) {
+      if (all_ic[i] > median_ic) { if (!in_run) { runs++; in_run = 1; } }
+      else in_run = 0;
+    }
+    feats[FAST_CAL_FEAT_ic_runs_above_median] = (double) runs;
+
+    /* autocorrelation at lag k: Pearson r between all_ic[0..n-k-1] and all_ic[k..n-1] */
+    {
+      int lags[2] = {1, 5};
+      int li;
+      for (li = 0; li < 2; li++) {
+        int lag = lags[li];
+        int feat = (lag == 1) ? FAST_CAL_FEAT_ic_autocorr_lag1 : FAST_CAL_FEAT_ic_autocorr_lag5;
+        if (n_all <= lag) { feats[feat] = 0.0 / 0.0; continue; }
+        int m = n_all - lag;
+        double mx = 0.0, my = 0.0, sx = 0.0, sy = 0.0, num = 0.0;
+        for (i = 0; i < m; i++) { mx += all_ic[i]; my += all_ic[i + lag]; }
+        mx /= m; my /= m;
+        for (i = 0; i < m; i++) {
+          double dx = all_ic[i] - mx, dy = all_ic[i+lag] - my;
+          sx  += dx * dx;
+          sy  += dy * dy;
+          num += dx * dy;
+        }
+        sx = sqrt(sx / m); sy = sqrt(sy / m);
+        double denom = sx * sy;
+        feats[feat] = (denom > 1e-15) ? (num / m) / denom : 0.0;
+      }
+    }
+
+    /* max_consecutive_low_ic: longest run with IC < p25 */
+    int max_low = 0, cur_low = 0;
+    for (i = 0; i < n_all; i++) {
+      if (all_ic[i] < p25_ic) { cur_low++; if (cur_low > max_low) max_low = cur_low; }
+      else cur_low = 0;
+    }
+    feats[FAST_CAL_FEAT_max_consecutive_low_ic] = (double) max_low;
+  }
+
+  free(sing_ic);
+  free(pair_ic);
+  free(all_ic);
+  free(dfs_order);
+  return eslOK;
+
+ ERROR:
+  if (sing_ic)   free(sing_ic);
+  if (pair_ic)   free(pair_ic);
+  if (all_ic)    free(all_ic);
+  if (dfs_order) free(dfs_order);
+  return eslEMEM;
+}
+
+
+/* count_valid_ends_in_subtree()
+ * For begin node nd_v with subtree [l_v, r_v], count and collect all
+ * valid-end nodes j whose subtree [l_j, r_j] is contained within [l_v, r_v].
+ * Valid end nodes: MATP/MATL/MATR/BEGL/BEGR with has_end_neighbor[j]=1.
+ *
+ * ret_ends: caller-allocated array of capacity cm->nodes for storing (l,r) pairs.
+ * Returns count K_v; fills ret_ends[0..K_v-1].
+ */
+typedef struct { int l; int r; } fcend_t;
+typedef struct { int nd; int l; int r; } fcbeg_t;
+
+static int
+count_valid_ends_in_subtree(int nd_v, int l_v, int r_v,
+                            CM_t *cm, int *subtree_l, int *subtree_r,
+                            int *has_end_neighbor,
+                            fcend_t *ret_ends)
+{
+  int nd_j, K_v = 0;
+  for (nd_j = 0; nd_j < cm->nodes; nd_j++) {
+    if (nd_j == nd_v) continue;
+    if (cm->ndtype[nd_j] != MATP_nd && cm->ndtype[nd_j] != MATL_nd &&
+        cm->ndtype[nd_j] != MATR_nd && cm->ndtype[nd_j] != BEGL_nd &&
+        cm->ndtype[nd_j] != BEGR_nd) continue;
+    if (!has_end_neighbor[nd_j]) continue;
+    int lj = subtree_l[nd_j], rj = subtree_r[nd_j];
+    if (lj < 0 || rj < 0) continue;
+    if (lj >= l_v && rj <= r_v) {
+      ret_ends[K_v].l = lj;
+      ret_ends[K_v].r = rj;
+      K_v++;
+    }
+  }
+  return K_v;
+}
+
+
+/* extract_withend_rich()
+ *
+ * Port of Python topo_fraglen_v2(include_end=True, rich=True, prefix="withend_rich_").
+ * Fills Family D features (48..58): withend_rich_mean_L, withend_rich_var_L,
+ * withend_rich_KL_to_unif, withend_rich_p_full_length, plus skew, kurt,
+ * P10/P25/P50/P75/P90.
+ *
+ * Extends the noend_basic path with:
+ *   1. has_end_neighbor[] built from DFS order (next node is not END)
+ *   2. x*y probability formula distributing pend mass over (begin, end) pairs
+ *   3. Rich distribution statistics (skewness, kurtosis, quantiles)
+ */
+static int
+extract_withend_rich(CM_t *cm, double *feats)
+{
+  int     N      = cm->clen;
+  double  pbegin = (double) cm->pbegin;
+  double  pend   = (double) cm->pend;
+  int    *subtree_l       = NULL;
+  int    *subtree_r       = NULL;
+  int    *parent          = NULL;
+  int    *dfs_order       = NULL;
+  int    *has_end_neighbor = NULL;
+  double *p_L             = NULL;
+  fcend_t *ends_buf       = NULL;  /* reusable buffer for count_valid_ends */
+  fcbeg_t *begins         = NULL;
+  int     n_end_global    = 0;
+  int     n_begin         = 0;
+  int     status;
+
+  /* NaN default for degenerate cases */
+  {
+    double nan = 0.0 / 0.0;
+    feats[FAST_CAL_FEAT_withend_rich_mean_L]        = nan;
+    feats[FAST_CAL_FEAT_withend_rich_var_L]         = nan;
+    feats[FAST_CAL_FEAT_withend_rich_KL_to_unif]    = nan;
+    feats[FAST_CAL_FEAT_withend_rich_p_full_length] = nan;
+    feats[FAST_CAL_FEAT_withend_rich_skew_L]        = nan;
+    feats[FAST_CAL_FEAT_withend_rich_kurt_L]        = nan;
+    feats[FAST_CAL_FEAT_withend_rich_P10_L]         = nan;
+    feats[FAST_CAL_FEAT_withend_rich_P25_L]         = nan;
+    feats[FAST_CAL_FEAT_withend_rich_P50_L]         = nan;
+    feats[FAST_CAL_FEAT_withend_rich_P75_L]         = nan;
+    feats[FAST_CAL_FEAT_withend_rich_P90_L]         = nan;
+  }
+  if (N <= 1) return eslOK;
+
+  ESL_ALLOC(subtree_l,        sizeof(int)     * cm->nodes);
+  ESL_ALLOC(subtree_r,        sizeof(int)     * cm->nodes);
+  ESL_ALLOC(parent,           sizeof(int)     * cm->nodes);
+  ESL_ALLOC(dfs_order,        sizeof(int)     * cm->nodes);
+  ESL_ALLOC(has_end_neighbor, sizeof(int)     * cm->nodes);
+  ESL_ALLOC(p_L,              sizeof(double)  * (N + 2));
+  ESL_ALLOC(ends_buf,         sizeof(fcend_t) * cm->nodes);
+  ESL_ALLOC(begins,           sizeof(fcbeg_t) * cm->nodes);
+
+  /* Build subtree spans (use_consensus_rank=1 to handle noss CMs) */
+  status = build_node_subtree_spans(cm, 1, subtree_l, subtree_r, parent);
+  if (status != eslOK) goto ERROR;
+
+  /* Build DFS order and has_end_neighbor */
+  build_dfs_order(cm, dfs_order);
+  memset(has_end_neighbor, 0, sizeof(int) * cm->nodes);
+  {
+    int i, nd;
+    for (i = 0; i < cm->nodes; i++) {
+      nd = dfs_order[i];
+      if (cm->ndtype[nd] != MATP_nd && cm->ndtype[nd] != MATL_nd &&
+          cm->ndtype[nd] != MATR_nd && cm->ndtype[nd] != BEGL_nd &&
+          cm->ndtype[nd] != BEGR_nd) continue;
+      int next = (i + 1 < cm->nodes) ? dfs_order[i + 1] : -1;
+      has_end_neighbor[nd] = (next < 0 || cm->ndtype[next] != END_nd) ? 1 : 0;
+    }
+    for (nd = 0; nd < cm->nodes; nd++)
+      if (has_end_neighbor[nd]) n_end_global++;
+  }
+
+  /* Collect valid local-begin candidates */
+  {
+    int nd;
+    for (nd = 0; nd < cm->nodes; nd++) {
+      if (cm->ndtype[nd] != MATP_nd && cm->ndtype[nd] != MATL_nd &&
+          cm->ndtype[nd] != MATR_nd && cm->ndtype[nd] != BIF_nd) continue;
+      int sl = subtree_l[nd], sr = subtree_r[nd];
+      if (sl < 0 || sr < 0 || sl < 1 || sr > N || sl > sr) continue;
+      begins[n_begin].nd = nd;
+      begins[n_begin].l  = sl;
+      begins[n_begin].r  = sr;
+      n_begin++;
+    }
+  }
+
+  if (n_begin == 0) goto DONE;   /* all NaN from defaults above */
+
+  /* Build P(L) via x*y formula */
+  {
+    int L, bi, ei;
+    double x = pbegin / (double) n_begin;
+    double y = (n_end_global > 0) ? pend / (double) n_end_global : 0.0;
+
+    for (L = 0; L <= N + 1; L++) p_L[L] = 0.0;
+    p_L[N] += (1.0 - pbegin);   /* full-length mass */
+
+    for (bi = 0; bi < n_begin; bi++) {
+      int nd_v = begins[bi].nd, l_v = begins[bi].l, r_v = begins[bi].r;
+      int d_v  = r_v - l_v + 1;
+      int K_v  = count_valid_ends_in_subtree(nd_v, l_v, r_v,
+                                             cm, subtree_l, subtree_r,
+                                             has_end_neighbor, ends_buf);
+      double no_end_p = 1.0 - (double) K_v * y;
+      if (no_end_p < 0.0) no_end_p = 0.0;
+      if (d_v >= 1 && d_v <= N)
+        p_L[d_v] += x * no_end_p;
+
+      for (ei = 0; ei < K_v; ei++) {
+        int d_u    = ends_buf[ei].r - ends_buf[ei].l + 1;
+        int d_frag = d_v - d_u;
+        if (d_frag >= 1 && d_frag <= N)
+          p_L[d_frag] += x * y;
+      }
+    }
+  }
+
+  /* Normalize */
+  {
+    double mass = 0.0;
+    int L;
+    for (L = 1; L <= N; L++) mass += p_L[L];
+    if (mass <= 0.0) goto DONE;
+    for (L = 1; L <= N; L++) p_L[L] /= mass;
+  }
+
+  /* Compute summary statistics: mean, var, KL, p_full */
+  {
+    double mean_L, var_L, kl, p_full;
+    summarize_distribution(p_L, N, &mean_L, &var_L, &kl, &p_full);
+    feats[FAST_CAL_FEAT_withend_rich_mean_L]        = mean_L;
+    feats[FAST_CAL_FEAT_withend_rich_var_L]         = var_L;
+    feats[FAST_CAL_FEAT_withend_rich_KL_to_unif]    = kl;
+    feats[FAST_CAL_FEAT_withend_rich_p_full_length] = p_full;
+
+    /* Rich: skew, kurt */
+    double sd = sqrt(var_L > 1e-30 ? var_L : 1e-30);
+    double skew = 0.0, kurt = 0.0;
+    int L;
+    for (L = 1; L <= N; L++) {
+      double d = (double) L - mean_L;
+      skew += p_L[L] * d * d * d;
+      kurt += p_L[L] * d * d * d * d;
+    }
+    skew = (sd > 1e-15) ? skew / (sd * sd * sd) : 0.0;
+    kurt = (sd > 1e-15) ? kurt / (sd * sd * sd * sd) - 3.0 : 0.0;
+    feats[FAST_CAL_FEAT_withend_rich_skew_L] = skew;
+    feats[FAST_CAL_FEAT_withend_rich_kurt_L] = kurt;
+
+    /* Rich: quantiles via cumulative sum scan */
+    {
+      double cum = 0.0;
+      int P10_done=0, P25_done=0, P50_done=0, P75_done=0, P90_done=0;
+      double P10=(double)N, P25=(double)N, P50=(double)N, P75=(double)N, P90=(double)N;
+      for (L = 1; L <= N; L++) {
+        cum += p_L[L];
+        if (!P10_done && cum >= 0.10) { P10 = (double) L; P10_done = 1; }
+        if (!P25_done && cum >= 0.25) { P25 = (double) L; P25_done = 1; }
+        if (!P50_done && cum >= 0.50) { P50 = (double) L; P50_done = 1; }
+        if (!P75_done && cum >= 0.75) { P75 = (double) L; P75_done = 1; }
+        if (!P90_done && cum >= 0.90) { P90 = (double) L; P90_done = 1; }
+      }
+      feats[FAST_CAL_FEAT_withend_rich_P10_L] = P10;
+      feats[FAST_CAL_FEAT_withend_rich_P25_L] = P25;
+      feats[FAST_CAL_FEAT_withend_rich_P50_L] = P50;
+      feats[FAST_CAL_FEAT_withend_rich_P75_L] = P75;
+      feats[FAST_CAL_FEAT_withend_rich_P90_L] = P90;
+    }
+  }
+
+ DONE:
+  if (subtree_l)        free(subtree_l);
+  if (subtree_r)        free(subtree_r);
+  if (parent)           free(parent);
+  if (dfs_order)        free(dfs_order);
+  if (has_end_neighbor) free(has_end_neighbor);
+  if (p_L)              free(p_L);
+  if (ends_buf)         free(ends_buf);
+  if (begins)           free(begins);
+  return eslOK;
+
+ ERROR:
+  if (subtree_l)        free(subtree_l);
+  if (subtree_r)        free(subtree_r);
+  if (parent)           free(parent);
+  if (dfs_order)        free(dfs_order);
+  if (has_end_neighbor) free(has_end_neighbor);
+  if (p_L)              free(p_L);
+  if (ends_buf)         free(ends_buf);
+  if (begins)           free(begins);
+  return eslEMEM;
+}
+
+
+/* extract_frag_score()
+ *
+ * Port of Python group_c_features() from candidate_features.py.
+ * Fills Family C features (43..47): frag_score_mean, frag_score_var,
+ * frag_score_per_pos_mean, frag_score_p90, cov_S_L.
+ *
+ * Algorithm:
+ *   1. Build per-column IC array ic_col[1..N] (MATL/MATR get singlet IC,
+ *      MATP splits pair IC equally between left and right columns).
+ *   2. Use withend formula to enumerate (begin, end) fragments.
+ *   3. For each fragment [l_v, r_v] minus the end span [l_u, r_u],
+ *      the score is sum of ic_col over the covered columns.
+ *   4. Aggregate: score mean, var, per_pos_mean, p90, cov(S,L).
+ */
+static int
+extract_frag_score(CM_t *cm, double *feats)
+{
+  int     N      = cm->clen;
+  double  pbegin = (double) cm->pbegin;
+  double  pend   = (double) cm->pend;
+  int    *subtree_l       = NULL;
+  int    *subtree_r       = NULL;
+  int    *parent          = NULL;
+  int    *dfs_order       = NULL;
+  int    *has_end_neighbor = NULL;
+  double *ic_col          = NULL;
+  double *cum_ic          = NULL;
+  fcend_t *ends_buf       = NULL;
+  fcbeg_t *begins         = NULL;
+  int      n_end_global   = 0;
+  int      n_begin        = 0;
+  /* records: (P, S, L) triples */
+  double *rec_P = NULL, *rec_S = NULL, *rec_L = NULL;
+  int     n_rec = 0, rec_alloc;
+  /* rank lookup for ic_col building */
+  int    *rank_lookup     = NULL;
+  int     rank_ncols      = 0;
+  int    *unique_col      = NULL;
+  int     n_unique        = 0;
+  int     nd, v, a, ab, i, status;
+  double  nan = 0.0 / 0.0;
+
+  /* NaN defaults */
+  feats[FAST_CAL_FEAT_frag_score_mean]         = nan;
+  feats[FAST_CAL_FEAT_frag_score_var]          = nan;
+  feats[FAST_CAL_FEAT_frag_score_per_pos_mean] = nan;
+  feats[FAST_CAL_FEAT_frag_score_p90]          = nan;
+  feats[FAST_CAL_FEAT_cov_S_L]                 = nan;
+
+  if (N <= 1) return eslOK;
+
+  ESL_ALLOC(subtree_l,        sizeof(int)    * cm->nodes);
+  ESL_ALLOC(subtree_r,        sizeof(int)    * cm->nodes);
+  ESL_ALLOC(parent,           sizeof(int)    * cm->nodes);
+  ESL_ALLOC(dfs_order,        sizeof(int)    * cm->nodes);
+  ESL_ALLOC(has_end_neighbor, sizeof(int)    * cm->nodes);
+  ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
+  ESL_ALLOC(cum_ic,           sizeof(double) * (N + 2));
+  ESL_ALLOC(ends_buf,         sizeof(fcend_t) * cm->nodes);
+  rec_alloc = cm->nodes * 4 + 16;
+  ESL_ALLOC(rec_P, sizeof(double) * rec_alloc);
+  ESL_ALLOC(rec_S, sizeof(double) * rec_alloc);
+  ESL_ALLOC(rec_L, sizeof(double) * rec_alloc);
+
+  /* Build subtree spans */
+  status = build_node_subtree_spans(cm, 1, subtree_l, subtree_r, parent);
+  if (status != eslOK) goto ERROR;
+
+  /* Build rank_lookup (same as in build_node_subtree_spans for consensus_rank=1) */
+  {
+    int n_alloc_u = cm->nodes * 2 + 2;
+    ESL_ALLOC(unique_col, sizeof(int) * n_alloc_u);
+    for (nd = 0; nd < cm->nodes; nd++) {
+      int has_lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd);
+      int has_rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
+      if (!has_lpos && !has_rpos) continue;
+      if (has_lpos) {
+        int lp = cm->emap->lpos[nd];
+        int acol = (lp >= 1 && lp <= N) ? cm->map[lp] : 0;
+        if (acol > 0) {
+          int dup = 0, j;
+          for (j = 0; j < n_unique; j++) if (unique_col[j] == acol) { dup=1; break; }
+          if (!dup) {
+            if (n_unique >= n_alloc_u) { n_alloc_u *= 2; ESL_REALLOC(unique_col, sizeof(int)*n_alloc_u); }
+            unique_col[n_unique++] = acol;
+          }
+        }
+      }
+      if (has_rpos) {
+        int rp = cm->emap->rpos[nd];
+        int acol = (rp >= 1 && rp <= N) ? cm->map[rp] : 0;
+        if (acol > 0) {
+          int dup = 0, j;
+          for (j = 0; j < n_unique; j++) if (unique_col[j] == acol) { dup=1; break; }
+          if (!dup) {
+            if (n_unique >= n_alloc_u) { n_alloc_u *= 2; ESL_REALLOC(unique_col, sizeof(int)*n_alloc_u); }
+            unique_col[n_unique++] = acol;
+          }
+        }
+      }
+    }
+    /* Sort unique_col ascending */
+    { int j, tmp;
+      for (i = 1; i < n_unique; i++) { tmp=unique_col[i]; for(j=i-1; j>=0&&unique_col[j]>tmp; j--) unique_col[j+1]=unique_col[j]; unique_col[j+1]=tmp; }
+    }
+    /* Build rank_lookup */
+    rank_ncols = (n_unique > 0) ? unique_col[n_unique-1] + 1 : 1;
+    ESL_ALLOC(rank_lookup, sizeof(int) * rank_ncols);
+    for (i = 0; i < rank_ncols; i++) rank_lookup[i] = -1;
+    for (i = 0; i < n_unique; i++) rank_lookup[unique_col[i]] = i + 1;
+    free(unique_col); unique_col = NULL;
+  }
+
+#define RANK(acol) ((acol) > 0 && (acol) < rank_ncols ? rank_lookup[(acol)] : -1)
+
+  /* Build ic_col[1..N]: per consensus-column IC.
+   * Uses quantized log-odds (3 dp) to match Python _singlet_ic/_pair_ic. */
+  for (i = 0; i <= N + 1; i++) ic_col[i] = 0.0;
+  for (nd = 0; nd < cm->nodes; nd++) {
+    v = cm->nodemap[nd];
+    if (cm->ndtype[nd] == MATL_nd) {
+      double ic = 0.0;
+      for (a = 0; a < 4; a++) {
+        double p_norm = (double)cm->e[v][a];
+        if (p_norm > 0.0) { double lo_q = round(log2(p_norm/0.25)*1000.0)/1000.0; ic += exp2(lo_q)*0.25*lo_q; }
+      }
+      int lp = cm->emap->lpos[nd];
+      int acol = (lp >= 1 && lp <= N) ? cm->map[lp] : 0;
+      int c = RANK(acol);
+      if (c >= 1 && c <= N) ic_col[c] = ic;
+    } else if (cm->ndtype[nd] == MATR_nd) {
+      double ic = 0.0;
+      for (a = 0; a < 4; a++) {
+        double p_norm = (double)cm->e[v][a];
+        if (p_norm > 0.0) { double lo_q = round(log2(p_norm/0.25)*1000.0)/1000.0; ic += exp2(lo_q)*0.25*lo_q; }
+      }
+      int rp = cm->emap->rpos[nd];
+      int acol = (rp >= 1 && rp <= N) ? cm->map[rp] : 0;
+      int c = RANK(acol);
+      if (c >= 1 && c <= N) ic_col[c] = ic;
+    } else if (cm->ndtype[nd] == MATP_nd) {
+      if (cm->stid[v] != MATP_MP) continue;
+      double ic_p = 0.0;
+      for (ab = 0; ab < 16; ab++) {
+        double p_norm = (double)cm->e[v][ab];
+        if (p_norm > 0.0) { double lo_q = round(log2(p_norm/0.0625)*1000.0)/1000.0; ic_p += exp2(lo_q)*0.0625*lo_q; }
+      }
+      double half = ic_p / 2.0;
+      int lp = cm->emap->lpos[nd]; int rp = cm->emap->rpos[nd];
+      int acol_l = (lp>=1&&lp<=N)?cm->map[lp]:0;
+      int acol_r = (rp>=1&&rp<=N)?cm->map[rp]:0;
+      int cl = RANK(acol_l), cr = RANK(acol_r);
+      if (cl >= 1 && cl <= N) ic_col[cl] = half;
+      if (cr >= 1 && cr <= N) ic_col[cr] = half;
+    }
+  }
+#undef RANK
+  free(rank_lookup); rank_lookup = NULL;
+
+  /* Build cumulative IC: cum_ic[k] = sum ic_col[1..k] */
+  cum_ic[0] = 0.0;
+  for (i = 1; i <= N; i++) cum_ic[i] = cum_ic[i-1] + ic_col[i];
+
+  /* range_ic(l, r) = sum of ic_col[l..r] */
+#define RANGE_IC(l, r) (((l)<1?(l)=1:0), ((r)>N?(r)=N:0), ((r)<(l)?0.0:(cum_ic[(r)]-cum_ic[(l)-1])))
+
+  /* Build DFS order and has_end_neighbor */
+  build_dfs_order(cm, dfs_order);
+  memset(has_end_neighbor, 0, sizeof(int) * cm->nodes);
+  {
+    int nd2;
+    for (i = 0; i < cm->nodes; i++) {
+      nd2 = dfs_order[i];
+      if (cm->ndtype[nd2]!=MATP_nd&&cm->ndtype[nd2]!=MATL_nd&&
+          cm->ndtype[nd2]!=MATR_nd&&cm->ndtype[nd2]!=BEGL_nd&&
+          cm->ndtype[nd2]!=BEGR_nd) continue;
+      int next = (i+1<cm->nodes) ? dfs_order[i+1] : -1;
+      has_end_neighbor[nd2] = (next<0||cm->ndtype[next]!=END_nd) ? 1 : 0;
+    }
+    for (nd = 0; nd < cm->nodes; nd++) if (has_end_neighbor[nd]) n_end_global++;
+  }
+
+  /* Collect valid begins */
+  ESL_ALLOC(begins, sizeof(fcbeg_t) * cm->nodes);
+  for (nd = 0; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd]!=MATP_nd&&cm->ndtype[nd]!=MATL_nd&&
+        cm->ndtype[nd]!=MATR_nd&&cm->ndtype[nd]!=BIF_nd) continue;
+    int sl=subtree_l[nd], sr=subtree_r[nd];
+    if (sl<0||sr<0||sl<1||sr>N||sl>sr) continue;
+    begins[n_begin].nd=nd; begins[n_begin].l=sl; begins[n_begin].r=sr;
+    n_begin++;
+  }
+
+  if (n_begin == 0) goto DONE;
+
+  /* Enumerate (P, S, L) records */
+  {
+    double x = pbegin / (double) n_begin;
+    double y = (n_end_global > 0) ? pend / (double) n_end_global : 0.0;
+    int bi, ei;
+
+    for (bi = 0; bi < n_begin; bi++) {
+      int nd_v=begins[bi].nd, l_v=begins[bi].l, r_v=begins[bi].r;
+      int d_v = r_v - l_v + 1;
+      int K_v = count_valid_ends_in_subtree(nd_v, l_v, r_v,
+                                            cm, subtree_l, subtree_r,
+                                            has_end_neighbor, ends_buf);
+      double no_end_p = 1.0 - (double)K_v * y;
+      if (no_end_p < 0.0) no_end_p = 0.0;
+
+      /* Full-subtree fragment (no end truncation) */
+      if (d_v >= 1 && d_v <= N) {
+        double S_full = cum_ic[r_v] - cum_ic[l_v - 1];
+        if (n_rec >= rec_alloc) {
+          rec_alloc *= 2;
+          ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
+          ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
+          ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+        }
+        rec_P[n_rec] = x * no_end_p;
+        rec_S[n_rec] = S_full;
+        rec_L[n_rec] = (double) d_v;
+        n_rec++;
+      }
+
+      /* Truncated fragments via each end */
+      for (ei = 0; ei < K_v; ei++) {
+        int l_u=ends_buf[ei].l, r_u=ends_buf[ei].r;
+        int d_frag = d_v - (r_u - l_u + 1);
+        if (d_frag < 1 || d_frag > N) continue;
+        /* Score = IC over [l_v, r_v] minus [l_u, r_u]
+         * = range(l_v, l_u-1) + range(r_u+1, r_v) */
+        double S_left  = (l_u > l_v) ? (cum_ic[l_u-1] - cum_ic[l_v-1]) : 0.0;
+        double S_right = (r_u < r_v) ? (cum_ic[r_v]   - cum_ic[r_u])   : 0.0;
+        if (n_rec >= rec_alloc) {
+          rec_alloc *= 2;
+          ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
+          ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
+          ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+        }
+        rec_P[n_rec] = x * y;
+        rec_S[n_rec] = S_left + S_right;
+        rec_L[n_rec] = (double) d_frag;
+        n_rec++;
+      }
+    }
+
+    /* Full-length non-local-begin mass */
+    {
+      double S_all = cum_ic[N];
+      if (n_rec >= rec_alloc) {
+        rec_alloc *= 2;
+        ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
+        ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
+        ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+      }
+      rec_P[n_rec] = 1.0 - pbegin;
+      rec_S[n_rec] = S_all;
+      rec_L[n_rec] = (double) N;
+      n_rec++;
+    }
+  }
+#undef RANGE_IC
+
+  if (n_rec == 0) goto DONE;
+
+  /* Normalize P */
+  {
+    double mass = 0.0;
+    for (i = 0; i < n_rec; i++) mass += rec_P[i];
+    if (mass <= 0.0) goto DONE;
+    for (i = 0; i < n_rec; i++) rec_P[i] /= mass;
+  }
+
+  /* Compute aggregate statistics */
+  {
+    double S_mean = 0.0, S_var = 0.0, L_mean = 0.0, per_pos = 0.0, cov_SL = 0.0;
+    for (i = 0; i < n_rec; i++) {
+      S_mean  += rec_P[i] * rec_S[i];
+      L_mean  += rec_P[i] * rec_L[i];
+      per_pos += rec_P[i] * rec_S[i] / (rec_L[i] > 1.0 ? rec_L[i] : 1.0);
+    }
+    for (i = 0; i < n_rec; i++) {
+      double ds = rec_S[i] - S_mean;
+      double dl = rec_L[i] - L_mean;
+      S_var  += rec_P[i] * ds * ds;
+      cov_SL += rec_P[i] * ds * dl;
+    }
+    feats[FAST_CAL_FEAT_frag_score_mean]         = S_mean;
+    feats[FAST_CAL_FEAT_frag_score_var]          = S_var;
+    feats[FAST_CAL_FEAT_frag_score_per_pos_mean] = per_pos;
+    feats[FAST_CAL_FEAT_cov_S_L]                 = cov_SL;
+
+    /* P90 of S: sort records by S, find weighted 90th percentile */
+    {
+      /* Simple insertion sort of (S, P) pairs */
+      double *sS = NULL; double *sP = NULL;
+      ESL_ALLOC(sS, sizeof(double)*n_rec); ESL_ALLOC(sP, sizeof(double)*n_rec);
+      memcpy(sS, rec_S, n_rec*sizeof(double));
+      memcpy(sP, rec_P, n_rec*sizeof(double));
+      { int j; double tmp_s, tmp_p;
+        for (i=1; i<n_rec; i++) {
+          tmp_s=sS[i]; tmp_p=sP[i];
+          for (j=i-1; j>=0&&sS[j]>tmp_s; j--) { sS[j+1]=sS[j]; sP[j+1]=sP[j]; }
+          sS[j+1]=tmp_s; sP[j+1]=tmp_p;
+        }
+      }
+      double cum_p = 0.0; double p90 = sS[n_rec-1];
+      for (i = 0; i < n_rec; i++) {
+        cum_p += sP[i];
+        if (cum_p >= 0.90) { p90 = sS[i]; break; }
+      }
+      feats[FAST_CAL_FEAT_frag_score_p90] = p90;
+      free(sS); free(sP);
+    }
+  }
+
+ DONE:
+  if (subtree_l)        free(subtree_l);
+  if (subtree_r)        free(subtree_r);
+  if (parent)           free(parent);
+  if (dfs_order)        free(dfs_order);
+  if (has_end_neighbor) free(has_end_neighbor);
+  if (ic_col)           free(ic_col);
+  if (cum_ic)           free(cum_ic);
+  if (ends_buf)         free(ends_buf);
+  if (rec_P)            free(rec_P);
+  if (rec_S)            free(rec_S);
+  if (rec_L)            free(rec_L);
+  if (rank_lookup)      free(rank_lookup);
+  if (unique_col)       free(unique_col);
+  if (begins)           free(begins);
+  return eslOK;
+
+ ERROR:
+  if (subtree_l)        free(subtree_l);
+  if (subtree_r)        free(subtree_r);
+  if (parent)           free(parent);
+  if (dfs_order)        free(dfs_order);
+  if (has_end_neighbor) free(has_end_neighbor);
+  if (ic_col)           free(ic_col);
+  if (cum_ic)           free(cum_ic);
+  if (ends_buf)         free(ends_buf);
+  if (rec_P)            free(rec_P);
+  if (rec_S)            free(rec_S);
+  if (rec_L)            free(rec_L);
+  if (rank_lookup)      free(rank_lookup);
+  if (unique_col)       free(unique_col);
+  if (begins)           free(begins);
+  return eslEMEM;
+}
+
+
+/* extract_composition()
+ *
+ * Port of Python ic_realistic_features() + composition_kl_features() +
+ * expected_null3_features() from candidate_features.py.
+ *
+ * Fills Group D features (59..68): ic_real_*, KL_cm_uniform, KL_cm_genomic,
+ * expected_null3_lw, expected_null3_frag_var.
+ *
+ * ic_real_*: IC of singlet states under HMMER3 null (0.281, 0.219, 0.220, 0.280).
+ * KL_cm_uniform: KL(p_cm || uniform) where p_cm = average MATL/MATR emission.
+ * KL_cm_genomic: KL(p_cm || genomic_null) with A=0.269,C=0.231,G=0.230,U=0.270.
+ * expected_null3_lw, frag_var: derived from KL_cm_genomic and noend fraglen.
+ *
+ * Must be called AFTER extract_topo_noend_basic so noend_mean_L/var_L are filled.
+ */
+static int
+extract_composition(CM_t *cm, double *feats)
+{
+  static const double HMMER3_NULL[4]  = {0.281, 0.219, 0.220, 0.280};
+  static const double GENOMIC_NULL[4] = {0.269, 0.231, 0.230, 0.270};
+  int    nd, v, a, i;
+  int    n_sing = 0;
+  int    status;
+  double *ics   = NULL;   /* singlet IC under HMMER3 null */
+  double p_cm[4] = {0.0, 0.0, 0.0, 0.0};
+  int    n_alloc = cm->nodes + 1;
+  double nan = 0.0 / 0.0;
+
+  /* NaN defaults for all Group D features */
+  for (i = FAST_CAL_FEAT_ic_real_mean; i <= FAST_CAL_FEAT_expected_null3_frag_var; i++)
+    feats[i] = nan;
+
+  ESL_ALLOC(ics, sizeof(double) * n_alloc);
+
+  /* Walk MATL/MATR nodes to collect singlet IC under HMMER3 null + aggregate p_cm.
+   * Recover un-normalized probability via quantized lo (3 dp, uniform null=0.25)
+   * to match Python ic_realistic_features() and compute_p_cm(). */
+  for (nd = 0; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd] != MATL_nd && cm->ndtype[nd] != MATR_nd) continue;
+    v = cm->nodemap[nd];
+    double ic = 0.0;
+    for (a = 0; a < 4; a++) {
+      double p_norm = (double) cm->e[v][a];
+      if (p_norm > 0.0) {
+        double lo_q = round(log2(p_norm / 0.25) * 1000.0) / 1000.0;
+        double p_q  = exp2(lo_q) * 0.25;           /* un-normalized prob */
+        if (HMMER3_NULL[a] > 0.0)
+          ic += p_q * log2(p_q / HMMER3_NULL[a]);
+        p_cm[a] += p_q;
+      }
+    }
+    ics[n_sing++] = ic;
+  }
+
+  if (n_sing == 0) {
+    free(ics);
+    return eslOK;  /* leave NaN */
+  }
+
+  /* ic_real_* statistics (over singlet ICs under HMMER3 null) */
+  {
+    double mean = 0.0, var = 0.0, skew = 0.0, sd;
+    for (i = 0; i < n_sing; i++) mean += ics[i];
+    mean /= (double) n_sing;
+    for (i = 0; i < n_sing; i++) {
+      double d = ics[i] - mean;
+      var += d * d; skew += d * d * d;
+    }
+    var /= (double) n_sing;
+    skew /= (double) n_sing;
+    sd = sqrt(var > 1e-30 ? var : 1e-30);
+    skew = (sd > 1e-15) ? skew / (sd * sd * sd) : 0.0;
+
+    /* Sorted for percentiles */
+    double *sorted = NULL;
+    ESL_ALLOC(sorted, sizeof(double) * n_sing);
+    memcpy(sorted, ics, n_sing * sizeof(double));
+    { int j; double tmp;
+      for (i=1; i<n_sing; i++) {
+        tmp=sorted[i];
+        for(j=i-1; j>=0&&sorted[j]>tmp; j--) sorted[j+1]=sorted[j];
+        sorted[j+1]=tmp;
+      }
+    }
+    feats[FAST_CAL_FEAT_ic_real_mean] = mean;
+    feats[FAST_CAL_FEAT_ic_real_var]  = var;
+    feats[FAST_CAL_FEAT_ic_real_p10]  = sorted[(int)(0.10*n_sing)<n_sing?(int)(0.10*n_sing):n_sing-1];
+    feats[FAST_CAL_FEAT_ic_real_p50]  = sorted[(int)(0.50*n_sing)<n_sing?(int)(0.50*n_sing):n_sing-1];
+    feats[FAST_CAL_FEAT_ic_real_p90]  = sorted[(int)(0.90*n_sing)<n_sing?(int)(0.90*n_sing):n_sing-1];
+    feats[FAST_CAL_FEAT_ic_real_skew] = skew;
+    free(sorted);
+  }
+
+  /* KL divergences of aggregate emission distribution */
+  {
+    double tot = p_cm[0] + p_cm[1] + p_cm[2] + p_cm[3];
+    if (tot > 0.0) {
+      for (a = 0; a < 4; a++) p_cm[a] /= tot;
+      double kl_u = 0.0, kl_g = 0.0;
+      for (a = 0; a < 4; a++) {
+        if (p_cm[a] > 0.0) {
+          kl_u += p_cm[a] * log(p_cm[a] / 0.25);
+          kl_g += p_cm[a] * log(p_cm[a] / GENOMIC_NULL[a]);
+        }
+      }
+      feats[FAST_CAL_FEAT_KL_cm_uniform] = kl_u;
+      feats[FAST_CAL_FEAT_KL_cm_genomic] = kl_g;
+
+      /* expected_null3 features: use noend_mean_L and noend_var_L */
+      double kl_g_val = kl_g;
+      double mean_frag = feats[FAST_CAL_FEAT_noend_mean_L];
+      double var_frag  = feats[FAST_CAL_FEAT_noend_var_L];
+      if (isfinite(kl_g_val) && isfinite(mean_frag))
+        feats[FAST_CAL_FEAT_expected_null3_lw]       = mean_frag * kl_g_val;
+      if (isfinite(kl_g_val) && isfinite(var_frag))
+        feats[FAST_CAL_FEAT_expected_null3_frag_var] = var_frag  * kl_g_val * kl_g_val;
+    }
+  }
+
+  free(ics);
+  return eslOK;
+
+ ERROR:
+  if (ics) free(ics);
+  return eslEMEM;
+}
+
+
 /* cm_FastCalibrate_ExtractFeatures()
- * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all 27 features).
+ * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all 69 features).
  * Returns eslOK on success, eslFAIL/eslEMEM on error.
  */
 int
@@ -2677,6 +3712,29 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
   if ((status = extract_topo_noend_basic(cm, feats))  != eslOK) return status;
   if ((status = extract_c1_old(cm, feats))            != eslOK) return status;
+  /* Phase 5: v5.5 feature widening */
+  if ((status = extract_bulk_ic_and_spatial(cm, feats)) != eslOK) return status;
+  if ((status = extract_withend_rich(cm, feats))        != eslOK) return status;
+  if ((status = extract_frag_score(cm, feats))          != eslOK) return status;
+  if ((status = extract_composition(cm, feats))         != eslOK) return status;
+
+  /* Debug: dump feature vector if FASTCAL_FEAT_DUMP env var is set.
+   * Format: one line per CM, tab-separated feature values prefixed by CM name.
+   * File is opened in append mode so multiple CMs accumulate in one run. */
+  {
+    const char *dump_path = getenv("FASTCAL_FEAT_DUMP");
+    if (dump_path != NULL) {
+      FILE *dfp = fopen(dump_path, "a");
+      if (dfp != NULL) {
+        int k;
+        fprintf(dfp, "CM\t%s", cm->name ? cm->name : "unknown");
+        for (k = 0; k < FAST_CAL_NFEAT; k++)
+          fprintf(dfp, "\t%s\t%.10g", fast_cal_feature_names[k], feats[k]);
+        fprintf(dfp, "\n");
+        fclose(dfp);
+      }
+    }
+  }
 
   return eslOK;
 }
