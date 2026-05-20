@@ -113,6 +113,10 @@ HDRS =  infernal.h
 # Fast-calibrate model JSON files (symlinked from notebook analysis directory)
 FASTCAL_DATA_DIR = $(srcdir)/cm_fast_calibrate_data
 MODEL_JSONS = \
+	$(FASTCAL_DATA_DIR)/v55_tiny_models.json \
+	$(FASTCAL_DATA_DIR)/v55_K_tiny_models.json \
+	$(FASTCAL_DATA_DIR)/v55_small_models.json \
+	$(FASTCAL_DATA_DIR)/v55_K_small_models.json \
 	$(FASTCAL_DATA_DIR)/production_models_v41.json \
 	$(FASTCAL_DATA_DIR)/production_mu_models_v41.json \
 	$(FASTCAL_DATA_DIR)/production_models_v42_largehuge.json \

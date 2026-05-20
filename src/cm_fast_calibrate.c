@@ -730,6 +730,75 @@ load_models(void)
 
   if (g_models.loaded) return eslOK;
 
+  /* v5.5 tiny bucket: lambda + mu_extrap (STR only).
+   * Loaded BEFORE v4.1 so parse_v41() skips tiny/small (nfeat > 0 check). */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_tiny_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_tiny_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    BUCKET_TINY, g_models.str_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", BUCKET_TINY, g_models.str_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 tiny K (STR). Loaded before v4.x K; parse_v4x_K_ridge skips defined slots. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_K_tiny_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_K_tiny_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v55_flat(pi, bf, "K", BUCKET_TINY, g_models.str_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 small bucket: lambda + mu_extrap (STR). */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_small_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_small_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    BUCKET_SMALL, g_models.str_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", BUCKET_SMALL, g_models.str_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 small K (STR). */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_K_small_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_K_small_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v55_flat(pi, bf, "K", BUCKET_SMALL, g_models.str_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
   /* 1. v4.1 STR lambda (tiny/small/medlarge) */
   {
     ESL_BUFFER *bf = NULL;
