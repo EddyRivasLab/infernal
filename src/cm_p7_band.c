@@ -4459,7 +4459,44 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
 }
 
 
-/* Function: cm_CYKPerstatePadCompute()
+/* === ARCHIVED 2026-05-19: NOT HOOKED UP ===
+ *
+ * This function computes a per-state CYK pad array from CP9 HMM band
+ * widths using a calibrated linear model:
+ *   pad[v] = a[stt(v)] * mean_hmm_cells(v) + b[stt(v)]
+ *
+ * The cal_a[10] / cal_b[10] coefficients below were fit on
+ * 26_0316 stage1.5d posterior-mass-mining compare.tsv (5 CMs, 6285
+ * states with n_used >= 10 GT IO p99-pad samples). Recovering these
+ * coefficients required real benchmarking work -- preserved here so
+ * a future revival doesn't have to re-derive them.
+ *
+ * Empirical result (2026-05-12, benchmark-runs/cykperstate_walltime/):
+ * perstate5 is 10.3x slower than uniform pad5 (sequence-weighted
+ * aggregate). The long-tail per-state pads (LSU p99=90, max=160)
+ * produce cell-count blowup that exceeds the cell savings from
+ * tighter mean bands. Floor+cap variants (`f5_cap10`) still 1.39x
+ * slower than pad5. p95 refit also failed (project memory
+ * `project_cykperstate_p95_failed`).
+ *
+ * Decision (2026-05-19): kept in source as reference but not hooked
+ * up. The `--cykbands-perstate`, `--cykperstate-maxpad`, `--cykpadfile`
+ * CLI surface was removed along with the `cm->p7_cykbands_perstate`
+ * and `cm->p7_cykperstate_maxpad` struct fields.
+ *
+ * To revive:
+ *   1. Re-add a CLI flag (e.g., `--cykbands-perstate`) and a CM field
+ *      to toggle this path.
+ *   2. Call `cm_CYKPerstatePadCompute(cm, cp9b, additive_pad, maxpad)`
+ *      in the cykbands caller in cm_alndata.c.
+ *   3. Restore the per_state_pad parameter to the cykbands worker
+ *      function (it was stripped on 2026-05-19 -- the conditional was
+ *      a single line at step 2; see git history before the strip
+ *      commit).
+ *
+ * === end ARCHIVED ===
+ *
+ * Function: cm_CYKPerstatePadCompute()
  * Date    : 2026-05-11
  *
  * Compute per-state CYK pad from current sequence's CP9 HMM band widths,
@@ -4470,10 +4507,11 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  *
  * Returns malloc'd int[cm->M]; caller frees. Returns NULL on alloc failure.
  * additive_pad is added to each per-state pad (allows --cykpad N to act
- * as a floor when --cykbands-perstate is on).
+ * as a floor when --cykbands-perstate is on). maxpad caps each per-state
+ * pad at this value (0 = no cap).
  */
 int *
-cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
+cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpad)
 {
   int  M = cm->M;
   int *pad_arr = malloc(sizeof(int) * M);
@@ -4498,7 +4536,6 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
     5.0000   /* EL */
   };
 
-  int maxpad = cm->p7_cykperstate_maxpad;
   int n_capped = 0;
   int v;
   for (v = 0; v < M; v++) {
@@ -4552,7 +4589,7 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
 }
 
 
-/* Function: cm_BandsFromParsetree_perstate()
+/* Function: cm_BandsFromCYKParsetree()
  * Date    : 2026-04-08
  *
  * Purpose:  Derive per-CM-state bands (cp9b->imin/imax/jmin/jmax/hdmin/hdmax)
@@ -4579,7 +4616,6 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
  *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
- *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
  *           cp9b      - bands to fill (caller pre-allocated)
  *           pass_idx  - pipeline pass index (for truncation handling)
  *           debug     - if >0, print bands
@@ -4587,9 +4623,9 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad)
  * Returns:  eslOK on success.
  */
 int
-cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
-                               int i0, int j0, int pad, const int *per_state_pad,
-                               CP9Bands_t *cp9b, int pass_idx, int debug)
+cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
+                         int i0, int j0, int pad,
+                         CP9Bands_t *cp9b, int pass_idx, int debug)
 {
   int    status;
   int    M = cm->M;
@@ -4625,12 +4661,10 @@ cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(j > jmax[v]) jmax[v] = j;
   }
 
-  /* Step 2: Apply pad to visited states, clamp to [i0..j0].
-   * If per_state_pad != NULL and per_state_pad[v] >= 0, use it instead of scalar pad. */
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0]. */
   for(v = 0; v < M; v++) {
     if(visited[v]) {
       int p = pad;
-      if(per_state_pad != NULL && per_state_pad[v] >= 0) p = per_state_pad[v];
       imin[v] -= p; if(imin[v] < i0) imin[v] = i0;
       imax[v] += p; if(imax[v] > j0) imax[v] = j0;
       jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;

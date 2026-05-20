@@ -606,16 +606,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
 	double _tight_cells = _orig_cells;
 	if(_cyk_ok) {
-	  /* Compute per-state pad array if --cykbands-perstate is on */
-	  int *_perstate_pad = NULL;
-	  if (cm->p7_cykbands_perstate) {
-	    _perstate_pad = cm_CYKPerstatePadCompute(cm, cm->cp9b, cm->p7_cykbands_pad);
-	  }
-	  if(cm_BandsFromParsetree_perstate(cm, errbuf, _cyk_tr,
-					    1, sq->L,
-					    (_perstate_pad != NULL) ? 0 : cm->p7_cykbands_pad,
-					    _perstate_pad,
-					    cm->cp9b, pass_idx, 0) == eslOK) {
+	  /* Per-state pad was archived 2026-05-19 (see cm_CYKPerstatePadCompute
+	   * doc comment for failure analysis). Production uses uniform pad. */
+	  if(cm_BandsFromCYKParsetree(cm, errbuf, _cyk_tr,
+				      1, sq->L, cm->p7_cykbands_pad,
+				      cm->cp9b, pass_idx, 0) == eslOK) {
 	    _tight_cells = 0.;
 	    CP9Bands_t *_cp9b = cm->cp9b;
 	    int _v, _jp;
@@ -624,7 +619,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
 		  _tight_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
 	  }
-	  if (_perstate_pad != NULL) { free(_perstate_pad); _perstate_pad = NULL; }
 	  FreeParsetree(_cyk_tr);
 	}
 
