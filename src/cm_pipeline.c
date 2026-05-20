@@ -1602,7 +1602,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     int k;
     if (pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
     ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M + 1));
-    memcpy(pli->p7_nodepad, (*opt_cm)->p7_nodepad, sizeof(int) * (M + 1));
+    memcpy(pli->p7_nodepad, (*opt_cm)->p7_cm_nodepad, sizeof(int) * (M + 1));
     /* apply --p7padplus at load time to our own copy; CM's array stays unmodified */
     for (k = 0; k <= M; k++) pli->p7_nodepad[k] += pli->p7nodepad_plus;
     pli->p7_nodepad_M = M;

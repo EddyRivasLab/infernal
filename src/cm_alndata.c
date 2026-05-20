@@ -440,7 +440,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  if(cm->flags & CMH_P7NODEPAD) {
 	    int k;
 	    ESL_ALLOC(local_nodepad, sizeof(int) * (cm->fp7->M + 1));
-	    for(k = 0; k <= cm->fp7->M; k++) local_nodepad[k] = cm->p7_nodepad[k] + cm->p7bpad;
+	    for(k = 0; k <= cm->fp7->M; k++) local_nodepad[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
 	  }
 
 	  /* Derive p7 bands: either SW-pinbridge prefilter + banded Viterbi (--p7pinbridge)

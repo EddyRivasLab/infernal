@@ -7223,7 +7223,7 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 }
 
 /* Function: cm_nodepad_cmpint()
- * Helper for qsort in cm_ComputeP7NodePad().
+ * Helper for qsort in cm_ComputeP7CMNodePad().
  */
 static int cm_nodepad_cmpint(const void *a, const void *b) {
   int x = *(const int *)a, y = *(const int *)b;
@@ -7231,7 +7231,7 @@ static int cm_nodepad_cmpint(const void *a, const void *b) {
 }
 
 /* Structure for work units passed through the work queue
- * in the threaded cm_ComputeP7NodePad() path.
+ * in the threaded cm_ComputeP7CMNodePad() path.
  * A small recycling pool of these structs cycles between reader and workers.
  *
  * The master thread performs all RNG-consuming steps (EmitParsetree and
@@ -7252,7 +7252,7 @@ typedef struct {
 } CM_NODEPAD_WORK;
 
 #ifdef HMMER_THREADS
-/* Per-worker info for threaded cm_ComputeP7NodePad().
+/* Per-worker info for threaded cm_ComputeP7CMNodePad().
  * Each worker maintains its own per-node deficit arrays and p7 objects.
  * The main thread merges the deficit arrays after all workers finish.
  */
@@ -7272,7 +7272,7 @@ typedef struct {
 } CM_NODEPAD_WINFO;
 
 /* cm_nodepad_thread_worker()
- * Worker function for threaded cm_ComputeP7NodePad().
+ * Worker function for threaded cm_ComputeP7CMNodePad().
  * Each worker pulls work items from the work queue. Each item contains
  * an emitted CM parsetree, emitted sequence, and flanked digitized
  * sequence already prepared by the master thread (the only caller of
@@ -7423,7 +7423,7 @@ cm_nodepad_thread_worker(void *arg)
 }
 #endif /* HMMER_THREADS */
 
-/* Function: cm_ComputeP7NodePad()
+/* Function: cm_ComputeP7CMNodePad()
  * Synopsis: Compute per-HMM-node p7 band pads by Monte Carlo simulation.
  *
  * Purpose:  Empirically derive per-node band-pad widths for the p7 HMM in <cm>.
@@ -7434,8 +7434,8 @@ cm_nodepad_thread_worker(void *arg)
  *           distributions becomes the stored pad. Algorithm matches
  *           p7bandsim.c (the standalone CLI equivalent).
  *
- *           On success, populates cm->p7_nodepad[0..fp7->M], sets
- *           cm->p7_nodepad_M = fp7->M, and raises CMH_P7NODEPAD.
+ *           On success, populates cm->p7_cm_nodepad[0..fp7->M], sets
+ *           cm->p7_cm_nodepad_M = fp7->M, and raises CMH_P7NODEPAD.
  *
  *           Caller must ensure cm_Configure() has been called and that
  *           cm->fp7 and cm->cp9map are valid.
@@ -7455,7 +7455,7 @@ cm_nodepad_thread_worker(void *arg)
  *           <eslEMEM> on allocation failure.
  */
 int
-cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf)
+cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf)
 {
   int         status;
   P7_HMM     *hmm   = NULL;
@@ -7471,8 +7471,8 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
   int         k;
   const int   flank = 500;  /* p7bandsim default; flanks emitted residue each side */
 
-  if (cm->fp7    == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7NodePad: CM has no fp7 filter HMM");
-  if (cm->cp9map == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7NodePad: CM has no cp9map (was cm_Configure called?)");
+  if (cm->fp7    == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7CMNodePad: CM has no fp7 filter HMM");
+  if (cm->cp9map == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7CMNodePad: CM has no cp9map (was cm_Configure called?)");
 
   hmm = cm->fp7;
   M   = hmm->M;
@@ -7828,9 +7828,9 @@ cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, 
   }
 
   /* Publish to CM. Replace any existing pad array. */
-  if (cm->p7_nodepad != NULL) free(cm->p7_nodepad);
-  cm->p7_nodepad   = pad_out;
-  cm->p7_nodepad_M = M;
+  if (cm->p7_cm_nodepad != NULL) free(cm->p7_cm_nodepad);
+  cm->p7_cm_nodepad   = pad_out;
+  cm->p7_cm_nodepad_M = M;
   cm->flags       |= CMH_P7NODEPAD;
   pad_out = NULL;  /* ownership transferred */
 

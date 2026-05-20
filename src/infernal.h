@@ -1954,12 +1954,15 @@ typedef struct cm_s {
   P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
 
-  /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7NodePad()
-   * at cmbuild time from the CM and stored in the CM file. Used by the F4/F5
-   * Viterbi banding pipeline in cm_pipeline.c. Indexed by HMM consensus position
-   * [0..fp7->M]; index 0 is a 1-based-indexing artifact (never read at search). */
-  int          *p7_nodepad;   /* [0..p7_nodepad_M] per-node pad array; NULL if not set */
-  int           p7_nodepad_M; /* length of p7_nodepad (= fp7->M); 0 if not set */
+  /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7CMNodePad()
+   * at cmbuild time from the CM and stored in the CM file. Indexed by HMM
+   * consensus position [0..fp7->M]; index 0 is a 1-based-indexing artifact
+   * (never read at search). Read by p7_pins2bands_nodepad (cm_p7_band.c) to
+   * widen the kmin/kmax envelope fed to CP9 F/B -- drives CM alignment
+   * accuracy. Distinct from CM_PIPELINE's p7_pinbridge_nodepad, which widens
+   * the SW-pinbridge prefilter band that constrains p7 Viterbi trace-finding. */
+  int          *p7_cm_nodepad;   /* [0..p7_cm_nodepad_M] per-node pad array; NULL if not set */
+  int           p7_cm_nodepad_M; /* length of p7_cm_nodepad (= fp7->M); 0 if not set */
 
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
@@ -1996,7 +1999,7 @@ typedef struct cm_s {
 #define CM_EMIT_NO_LOCAL_BEGINS (1<<21) /* emitted parsetrees will never have local begins */
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
-#define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
+#define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_cm_nodepad) are valid */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -3238,7 +3241,7 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               int hopback, int vitend,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
+extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);

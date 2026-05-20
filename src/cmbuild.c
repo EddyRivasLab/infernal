@@ -1315,7 +1315,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      if (pad_ncpu > esl_opt_GetInteger(go, "--p7pad-N")) pad_ncpu = esl_opt_GetInteger(go, "--p7pad-N");
      ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
      if (pad_r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to allocate RNG for p7 pad computation");
-     status = cm_ComputeP7NodePad(cm,
+     status = cm_ComputeP7CMNodePad(cm,
 				  pad_r,
 				  esl_opt_GetInteger(go, "--p7pad-N"),
 				  esl_opt_GetReal(go,    "--p7pad-q"),
@@ -1328,11 +1328,11 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      {
        int    k;
        int    sum = 0;
-       for (k = 1; k <= cm->p7_nodepad_M; k++) {
-	 sum += cm->p7_nodepad[k];
-	 if (cm->p7_nodepad[k] > max_pad) max_pad = cm->p7_nodepad[k];
+       for (k = 1; k <= cm->p7_cm_nodepad_M; k++) {
+	 sum += cm->p7_cm_nodepad[k];
+	 if (cm->p7_cm_nodepad[k] > max_pad) max_pad = cm->p7_cm_nodepad[k];
        }
-       avgpad = (cm->p7_nodepad_M > 0) ? (float) sum / (float) cm->p7_nodepad_M : 0.0;
+       avgpad = (cm->p7_cm_nodepad_M > 0) ? (float) sum / (float) cm->p7_cm_nodepad_M : 0.0;
      }
 
      if (cfg->be_verbose) {

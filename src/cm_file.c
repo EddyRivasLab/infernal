@@ -721,9 +721,9 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
       /* P7NODEPAD (optional, v1/b and later) */
       if(format >= CM_FILE_1b) {
 	if(cm->flags & CMH_P7NODEPAD) {
-	  if     (cm->ndtype[nd] == MATP_nd) fprintf(fp, " %4d %4d", cm->p7_nodepad[cm->emap->lpos[nd]], cm->p7_nodepad[cm->emap->rpos[nd]]);
-	  else if(cm->ndtype[nd] == MATL_nd) fprintf(fp, " %4d %4s", cm->p7_nodepad[cm->emap->lpos[nd]], "-");
-	  else if(cm->ndtype[nd] == MATR_nd) fprintf(fp, " %4s %4d", "-", cm->p7_nodepad[cm->emap->rpos[nd]]);
+	  if     (cm->ndtype[nd] == MATP_nd) fprintf(fp, " %4d %4d", cm->p7_cm_nodepad[cm->emap->lpos[nd]], cm->p7_cm_nodepad[cm->emap->rpos[nd]]);
+	  else if(cm->ndtype[nd] == MATL_nd) fprintf(fp, " %4d %4s", cm->p7_cm_nodepad[cm->emap->lpos[nd]], "-");
+	  else if(cm->ndtype[nd] == MATR_nd) fprintf(fp, " %4s %4d", "-", cm->p7_cm_nodepad[cm->emap->rpos[nd]]);
 	  else                               fprintf(fp, " %4s %4s", "-", "-");
 	}
 	else {
@@ -905,8 +905,8 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
 
   /* p7 per-HMM-node band pads (v1/b and later, flag-gated) */
   if (format >= CM_FILE_1b && (cm->flags & CMH_P7NODEPAD)) {
-    if (fwrite((char *) &(cm->p7_nodepad_M), sizeof(int), 1, fp) != 1) return eslFAIL;
-    if (fwrite((char *)   cm->p7_nodepad,    sizeof(int), cm->p7_nodepad_M + 1, fp) != (size_t)(cm->p7_nodepad_M + 1)) return eslFAIL;
+    if (fwrite((char *) &(cm->p7_cm_nodepad_M), sizeof(int), 1, fp) != 1) return eslFAIL;
+    if (fwrite((char *)   cm->p7_cm_nodepad,    sizeof(int), cm->p7_cm_nodepad_M + 1, fp) != (size_t)(cm->p7_cm_nodepad_M + 1)) return eslFAIL;
   }
 
   /* finally, write the filter p7 HMM */
@@ -2168,12 +2168,12 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     }
   }
   if (cm->flags & CMH_P7NODEPAD) {
-    ESL_ALLOC(cm->p7_nodepad, sizeof(int) * (cm->clen + 1));
-    cm->p7_nodepad_M = cm->clen;
-    cm->p7_nodepad[0] = 0;  /* unused at search time; zero-init for hygiene */
+    ESL_ALLOC(cm->p7_cm_nodepad, sizeof(int) * (cm->clen + 1));
+    cm->p7_cm_nodepad_M = cm->clen;
+    cm->p7_cm_nodepad[0] = 0;  /* unused at search time; zero-init for hygiene */
     for (nd = 0; nd < cm->nodes; nd++) {
-      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) cm->p7_nodepad[cm->emap->lpos[nd]] = tmp_pad_left[nd];
-      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) cm->p7_nodepad[cm->emap->rpos[nd]] = tmp_pad_right[nd];
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd) cm->p7_cm_nodepad[cm->emap->lpos[nd]] = tmp_pad_left[nd];
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd) cm->p7_cm_nodepad[cm->emap->rpos[nd]] = tmp_pad_right[nd];
     }
   }
 
@@ -2357,9 +2357,9 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   /* p7 per-HMM-node band pads (v1/b and later, flag-gated) */
   if (cmfp->format >= CM_FILE_1b && (cm->flags & CMH_P7NODEPAD)) {
-    if (! fread((char *) &(cm->p7_nodepad_M), sizeof(int), 1, cmfp->f))                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read p7_nodepad_M");
-    ESL_ALLOC(cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    if (fread((char *) cm->p7_nodepad, sizeof(int), cm->p7_nodepad_M + 1, cmfp->f) != (size_t)(cm->p7_nodepad_M + 1))
+    if (! fread((char *) &(cm->p7_cm_nodepad_M), sizeof(int), 1, cmfp->f))                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read p7_nodepad_M");
+    ESL_ALLOC(cm->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    if (fread((char *) cm->p7_cm_nodepad, sizeof(int), cm->p7_cm_nodepad_M + 1, cmfp->f) != (size_t)(cm->p7_cm_nodepad_M + 1))
                                                                                               ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read p7_nodepad array");
   }
 

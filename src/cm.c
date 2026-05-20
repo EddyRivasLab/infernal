@@ -160,8 +160,8 @@ CreateCMShell(void)
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;
   cm->fp7          = NULL;
-  cm->p7_nodepad   = NULL;
-  cm->p7_nodepad_M = 0;
+  cm->p7_cm_nodepad   = NULL;
+  cm->p7_cm_nodepad_M = 0;
 
   for (z = 0; z < CM_p7_NEVPARAM; z++) cm->fp7_evparam[z]  = CM_p7_EVPARAM_UNSET;
 
@@ -492,7 +492,7 @@ FreeCM(CM_t *cm)
     p7_hmm_Destroy(cm->fp7);
     cm->fp7  = NULL;
   }
-  if(cm->p7_nodepad != NULL) { free(cm->p7_nodepad); cm->p7_nodepad = NULL; }
+  if(cm->p7_cm_nodepad != NULL) { free(cm->p7_cm_nodepad); cm->p7_cm_nodepad = NULL; }
   if(cm->emap   != NULL) FreeEmitMap(cm->emap);
   if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
   if(cm->trp    != NULL) cm_tr_penalties_Destroy(cm->trp);
@@ -3190,10 +3190,10 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     if((new->fp7  = p7_hmm_Clone(cm->fp7))  == NULL) { status = eslEMEM; goto ERROR; }
     esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
   }
-  if(cm->p7_nodepad != NULL) {
-    ESL_ALLOC(new->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    memcpy(new->p7_nodepad, cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    new->p7_nodepad_M = cm->p7_nodepad_M;
+  if(cm->p7_cm_nodepad != NULL) {
+    ESL_ALLOC(new->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    memcpy(new->p7_cm_nodepad, cm->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    new->p7_cm_nodepad_M = cm->p7_cm_nodepad_M;
   }
 
 
