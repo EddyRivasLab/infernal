@@ -405,7 +405,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
     }
     else { /* use HMM bands */
-      if(! cp9b_valid) { 
+      if(! cp9b_valid) {
+	/* TODO #9 mitigation: --p7band produces too-narrow k-envelopes for small-M
+	 * models (M < ~200), causing accuracy regression on rmark4e (Lacto-usp, atoC,
+	 * snoZ152, ar45, SNORA47). Fall back to unbanded CP9 F/B for small CMs; the
+	 * absolute wall savings from --p7band on tiny CMs is negligible. See brief 059. */
+#define P7BAND_MIN_M 200
+	if(do_p7band && cm->fp7 != NULL && cm->fp7->M < P7BAND_MIN_M) {
+	  fprintf(stderr, "#P7BAND_SKIP M=%d reason=small_M_acc_gap (threshold=%d)\n",
+		  cm->fp7->M, P7BAND_MIN_M);
+	  do_p7band = FALSE;
+	}
 	if(do_p7band && cm->fp7 != NULL) {
 	  /* p7-derived bands: Viterbi trace -> kmin/kmax -> banded CP9 F/B -> CM bands */
 	  P7_PROFILE *gm_p7b  = NULL;
