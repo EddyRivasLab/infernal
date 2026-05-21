@@ -1959,8 +1959,9 @@ typedef struct cm_s {
    * consensus position [0..fp7->M]; index 0 is a 1-based-indexing artifact
    * (never read at search). Read by p7_pins2bands_nodepad (cm_p7_band.c) to
    * widen the kmin/kmax envelope fed to CP9 F/B -- drives CM alignment
-   * accuracy. Distinct from CM_PIPELINE's p7_pinbridge_nodepad, which widens
-   * the SW-pinbridge prefilter band that constrains p7 Viterbi trace-finding. */
+   * accuracy. The CM_PIPELINE has a mirror field of the same name
+   * (pli->p7_cm_nodepad) that holds the per-pipeline-call working copy
+   * (loaded from this CM field, or from --p7nodepad-file). */
   int          *p7_cm_nodepad;   /* [0..p7_cm_nodepad_M] per-node pad array; NULL if not set */
   int           p7_cm_nodepad_M; /* length of p7_cm_nodepad (= fp7->M); 0 if not set */
 
@@ -2335,8 +2336,8 @@ typedef struct cm_pipeline_s {
                                  * Used by p7pn_bands_to_cp9cm_bands to compute sp1/sp2/ep1/ep2
                                  * via cp9b->thresh1/thresh2 comparisons (mimicking cp9 path).  */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
-  int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad */
-  int           p7_nodepad_M;   /* M used when p7_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
+  int          *p7_cm_nodepad;  /* [0..M] per-node pad array (mirror of cm->p7_cm_nodepad or loaded from --p7nodepad-file); NULL if uniform pad */
+  int           p7_cm_nodepad_M;/* M used when p7_cm_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
   char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
   int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7padplus, default 0)        */
   int           p7vit_hopback;  /* hop-back radius (in pinned-position trace order) for D1 dilation (--p7vit-hopback, default 0 = off) */

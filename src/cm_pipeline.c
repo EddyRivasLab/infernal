@@ -314,8 +314,8 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_pnmono          = esl_opt_GetBoolean(go, "--pnmono")        ? TRUE : FALSE;
   pli->do_pnmono_print    = esl_opt_GetBoolean(go, "--pnmono-print")  ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
-  pli->p7_nodepad         = NULL; /* built lazily when CM is available */
-  pli->p7_nodepad_M       = 0;    /* 0 = pad vector not yet loaded; set to M on load, guards reload */
+  pli->p7_cm_nodepad         = NULL; /* built lazily when CM is available */
+  pli->p7_cm_nodepad_M       = 0;    /* 0 = pad vector not yet loaded; set to M on load, guards reload */
   pli->p7nodepad_file     = esl_opt_IsOn(go, "--p7nodepad-file") ? esl_opt_GetString(go, "--p7nodepad-file") : NULL;
   pli->p7nodepad_plus     = esl_opt_GetInteger(go, "--p7padplus");
   pli->p7vit_hopback      = esl_opt_GetInteger(go, "--p7vit-hopback");
@@ -950,7 +950,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7pn_min_d) free(pli->p7pn_min_d);
   if (pli->p7pn_max_d) free(pli->p7pn_max_d);
   if (pli->p7pn_pocc)  free(pli->p7pn_pocc);
-  if (pli->p7_nodepad)  free(pli->p7_nodepad);
+  if (pli->p7_cm_nodepad)  free(pli->p7_cm_nodepad);
   if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
   if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
   if (pli->cyk_envtreeA) {
@@ -1597,22 +1597,22 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
    * this point (the CM is loaded lazily by pli_scan_mode_read_cm), so use om->M as
    * the model length source. Cached across cm_Pipeline() calls: reload only if M
    * differs from the model the pad was loaded for. */
-  if (om != NULL && *opt_cm != NULL && ((*opt_cm)->flags & CMH_P7NODEPAD) && pli->p7_nodepad_M != om->M) {
+  if (om != NULL && *opt_cm != NULL && ((*opt_cm)->flags & CMH_P7NODEPAD) && pli->p7_cm_nodepad_M != om->M) {
     int M = om->M;
     int k;
-    if (pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
-    ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M + 1));
-    memcpy(pli->p7_nodepad, (*opt_cm)->p7_cm_nodepad, sizeof(int) * (M + 1));
+    if (pli->p7_cm_nodepad != NULL) { free(pli->p7_cm_nodepad); pli->p7_cm_nodepad = NULL; }
+    ESL_ALLOC(pli->p7_cm_nodepad, sizeof(int) * (M + 1));
+    memcpy(pli->p7_cm_nodepad, (*opt_cm)->p7_cm_nodepad, sizeof(int) * (M + 1));
     /* apply --p7padplus at load time to our own copy; CM's array stays unmodified */
-    for (k = 0; k <= M; k++) pli->p7_nodepad[k] += pli->p7nodepad_plus;
-    pli->p7_nodepad_M = M;
+    for (k = 0; k <= M; k++) pli->p7_cm_nodepad[k] += pli->p7nodepad_plus;
+    pli->p7_cm_nodepad_M = M;
   }
-  else if (pli->p7nodepad_file != NULL && om != NULL && pli->p7_nodepad_M != om->M) {
+  else if (pli->p7nodepad_file != NULL && om != NULL && pli->p7_cm_nodepad_M != om->M) {
     int   M = om->M;
     FILE *pf = fopen(pli->p7nodepad_file, "r");
     if(pf == NULL) ESL_FAIL(eslFAIL, pli->errbuf, "could not open --p7nodepad-file %s", pli->p7nodepad_file);
-    if(pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
-    ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M + 1));
+    if(pli->p7_cm_nodepad != NULL) { free(pli->p7_cm_nodepad); pli->p7_cm_nodepad = NULL; }
+    ESL_ALLOC(pli->p7_cm_nodepad, sizeof(int) * (M + 1));
     int k_read, pad_read;
     int n_set = 0;
     char linebuf[256];
@@ -1620,14 +1620,14 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
       if(linebuf[0] == '#') continue;
       if(sscanf(linebuf, "%d %d", &k_read, &pad_read) == 2) {
         if(k_read >= 0 && k_read <= M) {
-          pli->p7_nodepad[k_read] = pad_read + pli->p7nodepad_plus;
+          pli->p7_cm_nodepad[k_read] = pad_read + pli->p7nodepad_plus;
           n_set++;
         }
       }
     }
     fclose(pf);
     if(n_set < M) ESL_FAIL(eslEFORMAT, pli->errbuf, "--p7nodepad-file %s only set %d/%d nodes", pli->p7nodepad_file, n_set, M);
-    pli->p7_nodepad_M = M;
+    pli->p7_cm_nodepad_M = M;
   }
 
   /* First loop over each pipeline pass:
@@ -2837,7 +2837,7 @@ cm_pli_AdjustNresForOverlaps(CM_PIPELINE *pli, int64_t noverlap, int in_rc)
 /* Function:  pli_build_nodepad()
  * Incept:    EPN, Fri Apr  4 2026
  *
- * Purpose:   Build the per-node pad array pli->p7_nodepad[0..M].
+ * Purpose:   Build the per-node pad array pli->p7_cm_nodepad[0..M].
  *
  *            Three modes:
  *            1. --p7bppad: binary pair/singlet. MATP nodes get p7band_ppad,
@@ -2863,8 +2863,8 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
   float *node_mi_left  = NULL;  /* diffused MI at left  position of each CM node */
   float *node_mi_right = NULL;  /* diffused MI at right position of each CM node */
 
-  if(pli->p7_nodepad != NULL) { free(pli->p7_nodepad); pli->p7_nodepad = NULL; }
-  ESL_ALLOC(pli->p7_nodepad, sizeof(int) * (M+1));
+  if(pli->p7_cm_nodepad != NULL) { free(pli->p7_cm_nodepad); pli->p7_cm_nodepad = NULL; }
+  ESL_ALLOC(pli->p7_cm_nodepad, sizeof(int) * (M+1));
 
   if(pli->p7band_midiff > 0.) {
     /* MI diffusion mode.
@@ -2974,7 +2974,7 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
      * For MATP nodes, the left HMM position uses node_mi_left and the
      * right HMM position uses node_mi_right. nd2lpos[nd] and nd2rpos[nd]
      * give the consensus positions (= HMM node indices). */
-    pli->p7_nodepad[0] = pli->p7band_pad;
+    pli->p7_cm_nodepad[0] = pli->p7band_pad;
     for(k = 1; k <= M; k++) {
       nd = cm->cp9map->pos2nd[k];
       float k_mi = 0.;
@@ -2991,7 +2991,7 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
       else if(cm->ndtype[nd] == MATR_nd) {
 	k_mi = node_mi_right[nd];
       }
-      pli->p7_nodepad[k] = pli->p7band_pad + (int)(scale * k_mi);
+      pli->p7_cm_nodepad[k] = pli->p7band_pad + (int)(scale * k_mi);
     }
 
     free(mi);             mi = NULL;
@@ -3002,7 +3002,7 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
     /* MI-scaled mode (no diffusion) */
     if((status = cm_MutualInformationPerNode(cm, &mi)) != eslOK) goto ERROR;
 
-    pli->p7_nodepad[0] = pli->p7band_pad;
+    pli->p7_cm_nodepad[0] = pli->p7band_pad;
     for(k = 1; k <= M; k++) {
       float node_mi_val = 0.;
       v = cm->cp9map->hns2cs[k][0][0];
@@ -3016,19 +3016,19 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
 	  if(mp_v >= 0 && mp_v < cm->M) node_mi_val = mi[mp_v];
 	}
       }
-      pli->p7_nodepad[k] = pli->p7band_pad + (int)(pli->p7band_miscale * node_mi_val);
+      pli->p7_cm_nodepad[k] = pli->p7band_pad + (int)(pli->p7band_miscale * node_mi_val);
     }
     free(mi); mi = NULL;
   }
   else {
     /* Binary pair/singlet mode (--p7bppad) */
-    pli->p7_nodepad[0] = pli->p7band_pad;
+    pli->p7_cm_nodepad[0] = pli->p7band_pad;
     for(k = 1; k <= M; k++) {
       nd = cm->cp9map->pos2nd[k];
       if(cm->ndtype[nd] == MATP_nd)
-	pli->p7_nodepad[k] = pli->p7band_ppad;
+	pli->p7_cm_nodepad[k] = pli->p7band_ppad;
       else
-	pli->p7_nodepad[k] = pli->p7band_pad;
+	pli->p7_cm_nodepad[k] = pli->p7band_pad;
     }
   }
   return eslOK;
@@ -3760,7 +3760,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	   */
 	  p7_ProfileConfig(*opt_hmm, bg, Tgm, (int)wlen, p7_LOCAL);
 	  status = p7_Seq2BandsVit(pli->errbuf, Tgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				   pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
+				   pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
 	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(Tgm, (int)wlen);  /* restore truncated mode */
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -3844,12 +3844,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    int save_mode_r = Rgm->mode;
 	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_LOCAL);
 	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
 	    p7_ProfileConfig(*opt_hmm, bg, Rgm, (int)wlen, p7_GLOCAL);
 	    p7_ProfileConfig5PrimeTrunc(Rgm, (int)wlen);
 	  } else {
 	    status = p7_Seq2BandsVit(pli->errbuf, Rgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
 	  }
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -3929,12 +3929,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(pli->vitband_local) {
 	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_LOCAL);
 	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
 	    p7_ProfileConfig(*opt_hmm, bg, Lgm, (int)wlen, p7_GLOCAL);
 	    p7_ProfileConfig3PrimeTrunc(*opt_hmm, Lgm, (int)wlen);
 	  } else {
 	    status = p7_Seq2BandsVit(pli->errbuf, Lgm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				     pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
+				     pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
 	  }
 	  if(status != eslOK) ESL_FAIL(status, pli->errbuf, "p7_Seq2BandsVit() failed");
 	  if(ncells == 0) {
@@ -4072,7 +4072,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	  esl_stopwatch_Start(stg_watch);
 	  status = p7_Seq2BandsVit(pli->errbuf, gm, pli->gxf, bg, pli->p7tr, seq->dsq, (int)wlen,
-				   pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
+				   pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &i2k, &kmin, &kmax, &ncells);
 	  esl_stopwatch_Stop(stg_watch);
 	  pli->stg_time_seq2bands += stg_watch->elapsed;
 	  if(pli->vitband_local) {
@@ -5579,7 +5579,7 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	pli->gxf->L = envL;
 
 	status = p7_Seq2BandsVit(pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
-				 pli->p7band_pad, pli->p7_nodepad, pli->p7vit_hopback, pli->p7vitend, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+				 pli->p7band_pad, pli->p7_cm_nodepad, pli->p7vit_hopback, pli->p7vitend, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 
 	/* Restore profile mode */
 	if(save_mode == p7_GLOCAL) p7_ProfileConfig(cm->fp7, pli->p7bg, gm_local, envL, p7_GLOCAL);
