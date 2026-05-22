@@ -109,6 +109,7 @@ static ESL_OPTIONS options[] = {
   { "--p7pbpad",      eslARG_INT,        "20", NULL,      "n>=0",       NULL, "--p7pinbridge",                 NULL, "diagonal pad for SW-pinbridge prefilter band [default 20]",  3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree-derived band tightening [default 2]",  3 },
+  { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
   { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      3 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   /* options controlling optional output */
@@ -1672,6 +1673,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
     cm->p7_cykbands_pad = esl_opt_GetInteger(go, "--cykpad");
+    cm->p7_cykskip_unvisited = esl_opt_GetBoolean(go, "--cykskip-unvisited");
   }
   if(esl_opt_IsUsed(go, "--dump-bands")) {
     cm->p7_dump_bands_file = (char *) esl_opt_GetString(go, "--dump-bands");

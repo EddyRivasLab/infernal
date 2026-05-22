@@ -4634,6 +4634,7 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
   int    L = j0 - i0 + 1;
   int    do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
   int   *visited = NULL;
+  int   *skipped = NULL; /* Fix D (--cykskip-unvisited): parallel mark for unvisited states */
   int   *imin = cp9b->imin;
   int   *imax = cp9b->imax;
   int   *jmin = cp9b->jmin;
@@ -4669,6 +4670,27 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
       imax[v] += p; if(imax[v] > j0) imax[v] = j0;
       jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;
       jmax[v] += p; if(jmax[v] > j0) jmax[v] = j0;
+    }
+  }
+
+  /* Fix D (--cykskip-unvisited): mark unvisited states as SKIPPED.
+   * Set bands to an empty range (jmin=1, jmax=0; imin=1, imax=0) so the
+   * DP j-loop iterates over zero cells. Also mark visited[v]=TRUE so
+   * Step 3 (the post-order inheritance walk below) leaves these states alone.
+   * Final clamping is also gated to preserve the empty range.
+   *
+   * Aggressive optimization that commits to CYK MAP parsetree's subtree
+   * choices: any truth alignment that visits states the CYK parse missed
+   * cannot be recovered. Use with care; gated behind opt-in CLI flag. */
+  if(cm->p7_cykskip_unvisited) {
+    ESL_ALLOC(skipped, sizeof(int) * M);
+    esl_vec_ISet(skipped, M, FALSE);
+    for(v = 0; v < M; v++) {
+      if(visited[v]) continue;
+      imin[v] = 1; imax[v] = 0;
+      jmin[v] = 1; jmax[v] = 0;
+      skipped[v] = TRUE;
+      visited[v] = TRUE; /* prevent Step 3 from inheriting */
     }
   }
 
@@ -4723,8 +4745,10 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
   }
   free(parent);
 
-  /* Final clamping and sanity: ensure imin<=imax, jmin<=jmax, all in [i0..j0] */
+  /* Final clamping and sanity: ensure imin<=imax, jmin<=jmax, all in [i0..j0].
+   * Fix D: preserve empty bands for skipped[v] states. */
   for(v = 0; v < M; v++) {
+    if(skipped != NULL && skipped[v]) continue;
     if(imin[v] == INT_MAX) { imin[v] = i0; imax[v] = j0; }
     if(jmin[v] == INT_MAX) { jmin[v] = i0; jmax[v] = j0; }
     if(imin[v] < i0) imin[v] = i0;
@@ -4734,6 +4758,7 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(imin[v] > imax[v]) imax[v] = imin[v];
     if(jmin[v] > jmax[v]) jmax[v] = jmin[v];
   }
+  if(skipped != NULL) { free(skipped); skipped = NULL; }
 
   /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode */
   if(!do_trunc) {
@@ -4761,6 +4786,7 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
 
  ERROR:
   if(visited) free(visited);
+  if(skipped) free(skipped);
   return status;
 }
 

@@ -125,6 +125,7 @@ CreateCMShell(void)
   cm->p7_pinbridge_pad = 20;             /* SW-pinbridge prefilter band pad; brief recommends 20 */
   cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
+  cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
@@ -3104,6 +3105,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_pinbridge_pad = cm->p7_pinbridge_pad;
   new->p7_use_cykbands  = cm->p7_use_cykbands;
   new->p7_cykbands_pad  = cm->p7_cykbands_pad;
+  new->p7_cykskip_unvisited = cm->p7_cykskip_unvisited;
   new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;

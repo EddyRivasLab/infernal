@@ -1881,6 +1881,8 @@ typedef struct cm_s {
   int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
+  int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 068);
+                                 * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
 
   int         config_opts;/* model configuration options                                        */
