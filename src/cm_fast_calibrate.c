@@ -116,13 +116,13 @@ static FastCalModelSet g_models;   /* zero-initialised by C spec */
  * before cm_FastCalibrate() is called.
  * Defaults: N=-1 (auto by clen), seed=42, use_wcap=1, enabled=1.
  */
-int    g_localmu_N              = -1;    /* if <0, auto by clen: ~7500*clen^-0.8, clamped [20,200] */
+int    g_localmu_N              = 60;    /* brief 20: ship default N=60 (brief 05/06 operating point) */
 int    g_localmu_seed           = 42;    /* RNG seed */
 int    g_localmu_wcap           = 1;     /* apply W-cap rule (1=on, 0=off) */
 int    g_localmu_on             = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
 double g_localmu_lambda_lc      = -1.0;  /* if >0, override regression lambda for EXP_CM_LC */
 double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda for EXP_CM_LI */
-int    g_localmu_L              = -1;    /* if >0, override per-seq L (default 2*W_eff) */
+int    g_localmu_L              = 5000;  /* brief 20: ship default L=5000 (brief 05/06 operating point) */
 double g_localmu_beta           = -1.0;  /* if <0, auto by clen: clen<200 -> 1e-15, else -> 1e-3 */
 char  *g_localmu_score_dump     = NULL;  /* if non-NULL, dump all hit scores to this TSV */
 int    g_localmu_K_from_sim     = 0;     /* if 1, replace nrandhits with sim-derived K for ECMLC/ECMLI (v14 expt A) */
@@ -1483,20 +1483,32 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
    * Falls back to legacy fixed-lambda + tail-quantile mu if K < MIN_FIT_K
    * or FitCensored fails.
    */
+  /* Brief 20 / brief 05-06 ship recipe: ltailn-style fit
+   * (top 750*L_Mb hits, raw FitCensored λ, no geomean regularization).
+   * Replaces v13 geomean(lam_reg, lambda_fit) which contaminated mini-sim
+   * output with regression bias (retirement surprise #5).
+   * Reference: infernal-localmu-ltailn commit e2a36b4a.
+   */
   {
     const int MIN_FIT_K = 5;     /* need at least this many tail hits */
-    const double tailp  = 0.01;
+    const double tailp  = 0.01;  /* kept for legacy fallback only */
+    const double n_per_Mb = 750.0;
+    double    L_total_Mb = (double) N * (double) L / 1.0e6;
+    int       Kfit_ltailn = (int) (n_per_Mb * L_total_Mb + 0.5);
     int       k;
     double   *score_d  = NULL;
     double    mu_fit, lambda_fit, phi;
     int       fit_status;
     int       Kfit, Zcens;
 
+    if (Kfit_ltailn < 1) Kfit_ltailn = 1;
+
     /* CYK -> EXP_CM_LC */
     if (n_cyk > 0) {
-      double lam_reg = cm->expA[EXP_CM_LC]->lambda;  /* regression lambda */
+      double lam_reg = cm->expA[EXP_CM_LC]->lambda;  /* regression lambda (legacy fallback only) */
       fit_status = eslFAIL;
-      Kfit  = (int) (tailp * (double) n_cyk + 0.5);
+      Kfit  = Kfit_ltailn;
+      if (Kfit > n_cyk) Kfit = n_cyk - 1;  /* leave at least 1 censored */
       if (Kfit < 1) Kfit = 1;
       if (Kfit >= MIN_FIT_K && Kfit < n_cyk) {
         esl_vec_FSortDecreasing(cyk_scores, n_cyk);
@@ -1510,17 +1522,14 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
           free(score_d); score_d = NULL;
         }
       }
-      if (fit_status == eslOK && lambda_fit > 0.0 && lam_reg > 0.0) {
-        /* v13: regularize lambda toward regression via geometric mean.
-         * v11/v12 raw fits gave wildly variable lambda (max |Δλ|/λ = 23-86%).
-         * Geomean(regression, fit) yields max |Δλ|/λ ≤ 20% across the panel
-         * while preserving median accuracy. Empirical mu_orig from the tail
-         * quantile is robust; mu_extrap derived from geomean lambda. */
-        double lambda_v13 = sqrt(lam_reg * lambda_fit);
-        double mu_orig    = (double) cyk_scores[Kfit - 1];  /* empirical tailp quantile */
-        cm->expA[EXP_CM_LC]->lambda    = lambda_v13;
+      if (fit_status == eslOK && lambda_fit > 0.0) {
+        /* Brief 20: raw FitCensored λ (no geomean); mu_extrap uses n_total/Kfit
+         * ratio (ltailn-style extrapolation). */
+        double mu_orig    = (double) cyk_scores[Kfit - 1];  /* empirical Kfit-th quantile */
+        (void) lam_reg;  /* unused: kept only for legacy-fallback path below */
+        cm->expA[EXP_CM_LC]->lambda    = lambda_fit;
         cm->expA[EXP_CM_LC]->mu_orig   = mu_orig;
-        cm->expA[EXP_CM_LC]->mu_extrap = mu_orig - log(1.0 / tailp) / lambda_v13;
+        cm->expA[EXP_CM_LC]->mu_extrap = mu_orig - log( (double) n_cyk / (double) Kfit ) / lambda_fit;
       } else {
         /* Legacy fixed-lambda fallback */
         int    K = (int) (tailp * (double) n_cyk + 0.5);
@@ -1540,7 +1549,8 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
     if (n_ins > 0) {
       double lam_reg = cm->expA[EXP_CM_LI]->lambda;
       fit_status = eslFAIL;
-      Kfit = (int) (tailp * (double) n_ins + 0.5);
+      Kfit = Kfit_ltailn;
+      if (Kfit > n_ins) Kfit = n_ins - 1;
       if (Kfit < 1) Kfit = 1;
       if (Kfit >= MIN_FIT_K && Kfit < n_ins) {
         esl_vec_FSortDecreasing(ins_scores, n_ins);
@@ -1554,12 +1564,13 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
           free(score_d); score_d = NULL;
         }
       }
-      if (fit_status == eslOK && lambda_fit > 0.0 && lam_reg > 0.0) {
-        double lambda_v13 = sqrt(lam_reg * lambda_fit);
+      if (fit_status == eslOK && lambda_fit > 0.0) {
+        /* Brief 20: raw FitCensored λ, ltailn-style mu_extrap */
         double mu_orig    = (double) ins_scores[Kfit - 1];
-        cm->expA[EXP_CM_LI]->lambda    = lambda_v13;
+        (void) lam_reg;  /* unused: kept only for legacy-fallback path below */
+        cm->expA[EXP_CM_LI]->lambda    = lambda_fit;
         cm->expA[EXP_CM_LI]->mu_orig   = mu_orig;
-        cm->expA[EXP_CM_LI]->mu_extrap = mu_orig - log(1.0 / tailp) / lambda_v13;
+        cm->expA[EXP_CM_LI]->mu_extrap = mu_orig - log( (double) n_ins / (double) Kfit ) / lambda_fit;
       } else {
         /* Legacy fixed-lambda fallback */
         int    K = (int) (tailp * (double) n_ins + 0.5);
