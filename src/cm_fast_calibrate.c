@@ -799,6 +799,108 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
+  /* v5.5 medlarge bucket: lambda + mu_extrap (STR). brief 22. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_medlarge_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_medlarge_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    BUCKET_MEDLARGE, g_models.str_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", BUCKET_MEDLARGE, g_models.str_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 medlarge K (STR). brief 22. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_K_medlarge_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_K_medlarge_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v55_flat(pi, bf, "K", BUCKET_MEDLARGE, g_models.str_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 large bucket: lambda + mu_extrap (STR). brief 22. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_large_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_large_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    BUCKET_LARGE, g_models.str_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", BUCKET_LARGE, g_models.str_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 large K (STR). brief 22. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_K_large_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_K_large_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v55_flat(pi, bf, "K", BUCKET_LARGE, g_models.str_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 huge bucket: lambda + mu_extrap (STR). brief 22. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_huge_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_huge_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    BUCKET_HUGE, g_models.str_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", BUCKET_HUGE, g_models.str_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
+  /* v5.5 huge K (STR). brief 22. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_K_huge_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_K_huge_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status = parse_v55_flat(pi, bf, "K", BUCKET_HUGE, g_models.str_K);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
   /* 1. v4.1 STR lambda (tiny/small/medlarge) */
   {
     ESL_BUFFER *bf = NULL;
