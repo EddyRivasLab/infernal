@@ -72,6 +72,15 @@ typedef struct {
 				  * and bands obscure all possible alignments (very rare) to
 				  * failover into HMM banded standard alignment.
 				  */
+  /* HMM-only alignment fields (--hmm mode, used by hmm_pipeline_thread) */
+  P7_PROFILE       *gm;           /* thread-local p7 profile (NULL if not --hmm) */
+  P7_HMM           *hmm;          /* ptr to p7 HMM, shared read-only (NULL if not --hmm) */
+  P7_GMX           *gx;           /* Viterbi DP matrix (NULL if not --hmm or unbanded-only) */
+  P7_GMX           *gxf;          /* Forward matrix (NULL unless --hmm --hmmnoband) */
+  P7_GMX           *gxb;          /* Backward matrix (NULL unless --hmm --hmmnoband) */
+  P7_TRACE        **hmm_tr;       /* shared trace array; worker writes tr[seqidx] (NULL if not --hmm) */
+  int               do_hmmvit;    /* TRUE for --hmm --hmmvit */
+  int               do_hmmnoband; /* TRUE for --hmm --hmmnoband */
 } WORKER_INFO;
 
 #define ACCOPTS      "--hbanded,--nonbanded,--p7band"         /* Exclusive choice for acceleration or not */
@@ -96,6 +105,9 @@ static ESL_OPTIONS options[] = {
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
   { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g",        NULL, "build sub CM for columns b/t HMM predicted start/end points",     2 },
+  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--sub,--small", "use the p7 HMM only to align (no CM alignment)",                  2 },
+  { "--hmmvit",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm", "--hmmnoband", "w/--hmm, use Viterbi traces (faster, less accurate)",               2 },
+  { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use Viterbi bands for OA alignment",              2 },
   /* options affecting speed and memory */
   { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands",               3 },
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
@@ -179,10 +191,13 @@ static char banner[] = "align sequences to a CM";
 
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMNESS *r);
+static void hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
 
 #ifdef HMMER_THREADS
 static int  thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block);
 static void pipeline_thread(void *arg);
+static int  hmm_thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ **sqarr, int nseq);
+static void hmm_pipeline_thread(void *arg);
 #endif /*HMMER_THREADS*/
 
 #if HAVE_MPI 
@@ -475,6 +490,35 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* initialization */
   nali = nseq_cur = nseq_aligned = 0;
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+
+  /* --hmm mode: HMM-only alignment, bypass normal CM alignment pipeline */
+  if(esl_opt_GetBoolean(go, "--hmm")) {
+    hmm_alignment(go, cfg, cm);
+    /* clean up and return; hmm_alignment handles all output */
+    for(k = 0; k < infocnt; ++k) { 
+      if(info[k].w     != NULL) esl_stopwatch_Destroy(info[k].w);
+      if(info[k].w_tot != NULL) esl_stopwatch_Destroy(info[k].w_tot);
+    }
+    free(info);
+#ifdef HMMER_THREADS
+    if (ncpus > 0) {
+      esl_workqueue_Reset(queue); 
+      if(init_sqA != NULL) { 
+        for (k = 0; k < ncpus * 2; k++) { 
+          if(init_sqA[k] != NULL) esl_sq_Destroy(init_sqA[k]);
+        }
+        free(init_sqA);
+        init_sqA = NULL;
+      }
+      esl_workqueue_Destroy(queue);
+      esl_threads_Destroy(threadObj);
+    }
+    if(init_sqA != NULL) free(init_sqA);
+#endif
+    FreeCM(cm);
+    return;
+  }
+
   for (k = 0; k < infocnt; ++k) {
     if((status = cm_Clone(cm, errbuf, &(info[k].cm))) != eslOK) cm_Fail(errbuf);
   }
@@ -649,6 +693,328 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   
   ERROR:
   cm_Fail("Memory allocation error.");
+  return;
+}
+
+/* hmm_alignment()
+ * 
+ * HMM-only alignment mode (--hmm). Bypasses the CM alignment pipeline
+ * entirely. Uses the CM's embedded p7 HMM to align sequences, producing
+ * Stockholm output via p7_tracealign_Seqs().
+ *
+ * Three sub-modes:
+ *   --hmm --hmmvit:    Viterbi traces (fastest, least accurate)
+ *   --hmm --hmmnoband: Full (unbanded) optimal accuracy alignment
+ *   --hmm (default):   Viterbi-banded optimal accuracy alignment
+ */
+static void
+hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
+{
+  int           status;
+  P7_HMM       *hmm     = NULL;   /* the p7 HMM from the CM */
+  P7_BG        *bg      = NULL;   /* null model */
+  P7_PROFILE   *gm      = NULL;   /* generic profile */
+  P7_GMX       *gx      = NULL;   /* generic DP matrix (Viterbi) */
+  P7_GMX       *gxf     = NULL;   /* Forward matrix (unbanded OA) */
+  P7_GMX       *gxb     = NULL;   /* Backward matrix (unbanded OA) */
+  ESL_SQ      **sqarr   = NULL;   /* array of sequences */
+  P7_TRACE    **tr      = NULL;   /* array of traces */
+  ESL_MSA      *msa     = NULL;   /* output alignment */
+  int           nseq    = 0;      /* number of sequences */
+  int           nalloc  = 0;      /* allocated size of sqarr/tr */
+  int           idx;
+  int           p7mode;           /* p7 profile mode */
+  float         sc, fwdsc, oasc;
+  char          errbuf[eslERRBUFSIZE];
+
+  int do_hmmvit    = (cm->align_opts & CM_ALIGN_P7HMMVIT)    ? TRUE : FALSE;
+  int do_hmmnoband = (cm->align_opts & CM_ALIGN_P7HMMNOBAND) ? TRUE : FALSE;
+  int do_bandedoa  = (! do_hmmvit && ! do_hmmnoband)         ? TRUE : FALSE;
+
+  /* banded functions declared in cm_p7_band.c */
+  extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+  extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+  extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+
+  /* Verify the CM has a valid p7 HMM */
+  if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
+  hmm = cm->mlp7;
+
+  /* Set up null model and profile mode (shared across serial/threaded paths) */
+  bg = p7_bg_Create(hmm->abc);
+  p7mode = esl_opt_GetBoolean(go, "-g") ? p7_UNIGLOCAL : p7_UNILOCAL;
+
+  /* Read all sequences into an array */
+  nalloc = 256;
+  ESL_ALLOC(sqarr, sizeof(ESL_SQ *) * nalloc);
+  nseq = 0;
+  while (1) {
+    ESL_SQ *sq = esl_sq_CreateDigital(cfg->abc);
+    status = esl_sqio_Read(cfg->sqfp, sq);
+    if (status == eslEOF) { esl_sq_Destroy(sq); break; }
+    if (status != eslOK)  cm_Fail("Error reading sequence file %s: %s", cfg->sqfile, esl_sqfile_GetErrorBuf(cfg->sqfp));
+    if (nseq >= nalloc) {
+      nalloc *= 2;
+      ESL_REALLOC(sqarr, sizeof(ESL_SQ *) * nalloc);
+    }
+    sqarr[nseq++] = sq;
+  }
+  if (nseq == 0) cm_Fail("No sequences found in %s", cfg->sqfile);
+
+  /* Allocate trace array */
+  ESL_ALLOC(tr, sizeof(P7_TRACE *) * nseq);
+  for (idx = 0; idx < nseq; idx++)
+    tr[idx] = do_hmmvit ? p7_trace_Create() : p7_trace_CreateWithPP();
+
+  /* ---- Compute traces for each sequence (threaded or serial) ---- */
+  {
+    int ncpus = 0;
+#ifdef HMMER_THREADS
+    ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
+#endif
+
+    if (ncpus > 0) {
+#ifdef HMMER_THREADS
+      /* Threaded path: one sequence per worker, following cmalign's thread_loop pattern */
+      ESL_THREADS    *threadObj = NULL;
+      ESL_WORK_QUEUE *queue     = NULL;
+      WORKER_INFO    *winfo     = NULL;
+      ESL_SQ        **init_sqA  = NULL;
+      int             k;
+
+      threadObj = esl_threads_Create(&hmm_pipeline_thread);
+      queue     = esl_workqueue_Create(ncpus * 2);
+
+      ESL_ALLOC(winfo,    sizeof(WORKER_INFO) * ncpus);
+      ESL_ALLOC(init_sqA, sizeof(ESL_SQ *)    * ncpus * 2);
+
+      /* Initialize work queue with token sequences */
+      for (k = 0; k < ncpus * 2; k++) {
+	init_sqA[k] = esl_sq_CreateDigital(cfg->abc);
+	esl_workqueue_Init(queue, init_sqA[k]);
+      }
+
+      /* Initialize per-thread WORKER_INFO with HMM-specific fields */
+      for (k = 0; k < ncpus; k++) {
+	winfo[k].queue       = queue;
+	winfo[k].gm          = p7_profile_Create(hmm->M, hmm->abc);
+	p7_ProfileConfig(hmm, bg, winfo[k].gm, 400, p7mode);
+	winfo[k].hmm         = hmm;
+	winfo[k].gx          = (do_hmmvit || do_bandedoa) ? p7_gmx_Create(hmm->M, 400) : NULL;
+	winfo[k].gxf         = do_hmmnoband ? p7_gmx_Create(hmm->M, 400) : NULL;
+	winfo[k].gxb         = do_hmmnoband ? p7_gmx_Create(hmm->M, 400) : NULL;
+	winfo[k].hmm_tr      = tr;  /* shared trace array; worker writes to tr[seqidx] */
+	winfo[k].do_hmmvit   = do_hmmvit;
+	winfo[k].do_hmmnoband = do_hmmnoband;
+	/* CM-specific fields unused in --hmm mode */
+	winfo[k].cm          = NULL;
+	winfo[k].dataA       = NULL;
+	winfo[k].n           = 0;
+	winfo[k].mxsize      = 0;
+	winfo[k].pass_idx    = 0;
+	winfo[k].w           = NULL;
+	winfo[k].w_tot       = NULL;
+	winfo[k].do_failover = FALSE;
+
+	esl_threads_AddThread(threadObj, &winfo[k]);
+      }
+
+      /* Distribute sequences to workers (one seq per work unit) */
+      hmm_thread_loop(&winfo[0], threadObj, queue, sqarr, nseq);
+
+      /* Clean up threaded resources */
+      esl_workqueue_Reset(queue);
+      for (k = 0; k < ncpus * 2; k++) esl_sq_Destroy(init_sqA[k]);
+      free(init_sqA);
+      esl_workqueue_Destroy(queue);
+      esl_threads_Destroy(threadObj);
+      for (k = 0; k < ncpus; k++) {
+	p7_profile_Destroy(winfo[k].gm);
+	if (winfo[k].gx)  p7_gmx_Destroy(winfo[k].gx);
+	if (winfo[k].gxf) p7_gmx_Destroy(winfo[k].gxf);
+	if (winfo[k].gxb) p7_gmx_Destroy(winfo[k].gxb);
+      }
+      free(winfo);
+#endif /* HMMER_THREADS */
+    }
+    else {
+      /* Serial path: single profile and matrices */
+      gm = p7_profile_Create(hmm->M, hmm->abc);
+      p7_ProfileConfig(hmm, bg, gm, 400, p7mode);
+
+      if (do_hmmvit || do_bandedoa) gx  = p7_gmx_Create(hmm->M, 400);
+      if (do_hmmnoband)           { gxf = p7_gmx_Create(hmm->M, 400); gxb = p7_gmx_Create(hmm->M, 400); }
+
+      for (idx = 0; idx < nseq; idx++) {
+	ESL_SQ *sq = sqarr[idx];
+
+	p7_ReconfigLength(gm, sq->n);
+
+	if (do_hmmvit) {
+	  /* --- Mode 1: Viterbi trace --- */
+	  p7_gmx_GrowTo(gx, hmm->M, sq->n);
+	  p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
+	  p7_trace_Reuse(tr[idx]);
+	  if ((status = p7_GTrace(sq->dsq, sq->n, gm, gx, tr[idx])) != eslOK)
+	    cm_Fail("p7_GTrace() failed for sequence %s", sq->name);
+	}
+	else if (do_hmmnoband) {
+	  /* --- Mode 2: Unbanded optimal accuracy --- */
+	  p7_gmx_GrowTo(gxf, hmm->M, sq->n);
+	  p7_gmx_GrowTo(gxb, hmm->M, sq->n);
+
+	  p7_GForward (sq->dsq, sq->n, gm, gxf, &fwdsc);
+	  p7_GBackward(sq->dsq, sq->n, gm, gxb, NULL);
+	  p7_GDecoding(gm, gxf, gxb, gxb);
+	  p7_GOptimalAccuracy(gm, gxb, gxf, &oasc);
+	  p7_trace_Reuse(tr[idx]);
+	  p7_GOATrace(gm, gxb, gxf, tr[idx]);
+	}
+	else {
+	  /* --- Mode 3 (default): Viterbi-banded optimal accuracy --- */
+	  int     *i2k   = NULL;
+	  int     *kmin  = NULL;
+	  int     *kmax  = NULL;
+	  int      ncells = 0;
+	  int      pad   = 30;
+	  P7_GBANDS *bnd = NULL;
+	  P7_GMXB *bxf   = NULL;
+	  P7_GMXB *bxb   = NULL;
+	  P7_TRACE *vtr  = p7_trace_Create();
+
+	  p7_gmx_GrowTo(gx, hmm->M, sq->n);
+	  p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
+	  p7_trace_Reuse(vtr);
+	  status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
+
+	  if (status != eslOK || vtr->N == 0) {
+	    P7_GMX *fallback_gxf = p7_gmx_Create(hmm->M, sq->n);
+	    P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
+	    p7_GForward (sq->dsq, sq->n, gm, fallback_gxf, &fwdsc);
+	    p7_GBackward(sq->dsq, sq->n, gm, fallback_gxb, NULL);
+	    p7_GDecoding(gm, fallback_gxf, fallback_gxb, fallback_gxb);
+	    p7_GOptimalAccuracy(gm, fallback_gxb, fallback_gxf, &oasc);
+	    p7_trace_Reuse(tr[idx]);
+	    p7_GOATrace(gm, fallback_gxb, fallback_gxf, tr[idx]);
+	    p7_gmx_Destroy(fallback_gxf);
+	    p7_gmx_Destroy(fallback_gxb);
+	    p7_trace_Destroy(vtr);
+	    continue;
+	  }
+
+	  {
+	    int tpos;
+	    ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+	    esl_vec_ISet(i2k, (sq->n + 1), -1);
+	    for (tpos = 0; tpos < vtr->N; tpos++) {
+	      if (vtr->st[tpos] == p7T_M) {
+		int i = vtr->i[tpos];
+		int k = vtr->k[tpos];
+		if (i >= 1 && i <= sq->n && k >= 1 && k <= hmm->M)
+		  i2k[i] = k;
+	      }
+	    }
+	  }
+
+	  if ((status = p7_pins2bands(i2k, errbuf, sq->n, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+	    cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
+	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+
+	  bxf = p7_gmxb_Create(bnd);
+	  bxb = p7_gmxb_Create(bnd);
+
+	  if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, gm, bxf, &fwdsc)) != eslOK)
+	    cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
+	  if ((status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bxb, NULL)) != eslOK)
+	    cm_Fail("p7_GBackwardBanded() failed for sequence %s", sq->name);
+	  if ((status = p7_GDecodingBanded(gm, bxf, bxb, bxb, fwdsc)) != eslOK)
+	    cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
+	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
+	    cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
+
+	  p7_trace_Reuse(tr[idx]);
+	  if ((status = p7_GOATraceBanded(gm, bxb, bxf, tr[idx])) != eslOK)
+	    cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+
+	  free(i2k);
+	  free(kmin);
+	  free(kmax);
+	  p7_trace_Destroy(vtr);
+	  p7_gbands_Destroy(bnd);
+	  p7_gmxb_Destroy(bxf);
+	  p7_gmxb_Destroy(bxb);
+	}
+      } /* end serial for loop */
+
+      if (gx  != NULL) p7_gmx_Destroy(gx);  gx  = NULL;
+      if (gxf != NULL) p7_gmx_Destroy(gxf); gxf = NULL;
+      if (gxb != NULL) p7_gmx_Destroy(gxb); gxb = NULL;
+      p7_profile_Destroy(gm); gm = NULL;
+    } /* end serial/threaded branch */
+  }
+
+  /* ---- Convert traces to MSA ---- */
+  if ((status = p7_tracealign_Seqs(sqarr, tr, nseq, hmm->M, p7_ALL_CONSENSUS_COLS, hmm, &msa)) != eslOK)
+    cm_Fail("p7_tracealign_Seqs() failed");
+
+  /* Add SS_cons from CM to the MSA if available.
+   * The p7 RF annotation marks consensus columns (M states), which
+   * correspond 1:1 to CM consensus positions. We map CM SS_cons
+   * onto the MSA's consensus columns.
+   */
+  if (cm->cmcons != NULL && cm->cmcons->cstr != NULL && msa->rf != NULL) {
+    int cpos, apos;
+    ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen + 1));
+    cpos = 0;
+    for (apos = 0; apos < msa->alen; apos++) {
+      if (msa->rf[apos] != '.' && msa->rf[apos] != '~') {
+        /* consensus column */
+        msa->ss_cons[apos] = (cpos < cm->clen) ? cm->cmcons->cstr[cpos] : '.';
+        cpos++;
+      } else {
+        msa->ss_cons[apos] = '.';
+      }
+    }
+    msa->ss_cons[msa->alen] = '\0';
+  }
+
+  /* Convert to DNA if --dnaout */
+  if (esl_opt_GetBoolean(go, "--dnaout") && cfg->abc_out->type == eslDNA) {
+    int i2, apos;
+    for (i2 = 0; i2 < msa->nseq; i2++) {
+      for (apos = 0; apos < msa->alen; apos++) {
+        if (msa->aseq[i2][apos] == 'U') msa->aseq[i2][apos] = 'T';
+        if (msa->aseq[i2][apos] == 'u') msa->aseq[i2][apos] = 't';
+      }
+    }
+  }
+
+  /* Write the MSA */
+  status = esl_msafile_Write(cfg->ofp, msa, cfg->outfmt);
+  if (status != eslOK) cm_Fail("Failed to write alignment");
+
+  /* Clean up */
+  esl_msa_Destroy(msa);
+  for (idx = 0; idx < nseq; idx++) {
+    p7_trace_Destroy(tr[idx]);
+    esl_sq_Destroy(sqarr[idx]);
+  }
+  free(tr);
+  free(sqarr);
+  if (gx  != NULL) p7_gmx_Destroy(gx);
+  if (gxf != NULL) p7_gmx_Destroy(gxf);
+  if (gxb != NULL) p7_gmx_Destroy(gxb);
+  if (gm  != NULL) p7_profile_Destroy(gm);
+  p7_bg_Destroy(bg);
+
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error in hmm_alignment()");
   return;
 }
 
@@ -887,9 +1253,309 @@ pipeline_thread(void *arg)
   cm_Fail("out of memory");
   return;  /* NEVERREACHED */
 }
+
+/* hmm_thread_loop()
+ * 
+ * Distribute sequences from sqarr[] to worker threads via work queue,
+ * one sequence per work unit. Follows thread_loop() pattern but works
+ * with a pre-read ESL_SQ** array instead of ESL_SQ_BLOCK.
+ * Sequence index is passed via the sq->W overload.
+ */
+static int
+hmm_thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ **sqarr, int nseq)
+{
+  int      status = eslOK;
+  int      i, k;
+  ESL_SQ  *sq;
+  void    *new_sq;
+  ESL_SQ  *empty_sq;
+  int      nworkers = esl_threads_GetWorkerCount(obj);
+
+  esl_workqueue_Reset(queue);
+  esl_threads_WaitForStart(obj);
+
+  status = esl_workqueue_ReaderUpdate(queue, NULL, &new_sq);
+  if (status != eslOK) cm_Fail("Work queue reader failed");
+
+  /* main loop: send each sequence to a worker */
+  for (i = 0; i < nseq; i++) {
+    sq    = sqarr[i];
+    sq->W = i;  /* overload W with sequence index */
+    status = esl_workqueue_ReaderUpdate(queue, sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue reader failed");
+  }
+
+  /* send empty sq to all workers signaling them to stop */
+  empty_sq = esl_sq_Create();
+  for (k = 0; k < nworkers; k++) {
+    status = esl_workqueue_ReaderUpdate(queue, empty_sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue reader failed");
+  }
+
+  status = esl_workqueue_ReaderUpdate(queue, empty_sq, NULL);
+
+  /* wait for all threads to complete */
+  esl_threads_WaitForFinish(obj);
+  esl_workqueue_Complete(queue);
+  esl_sq_Destroy(empty_sq);
+
+  return status;
+}
+
+/* hmm_pipeline_thread()
+ *
+ * Worker thread for --hmm alignment. Receives sequences from work queue,
+ * computes p7 traces (Viterbi, unbanded OA, or Viterbi-banded OA),
+ * and writes them directly into the shared tr[] array at tr[seqidx].
+ * Follows pipeline_thread() pattern.
+ */
+static void 
+hmm_pipeline_thread(void *arg)
+{
+  int           status;
+  int           workeridx;
+  WORKER_INFO  *info;
+  ESL_THREADS  *obj;
+  ESL_SQ       *sq = NULL;
+  void         *new_sq = NULL;
+  float         sc, fwdsc, oasc;
+  char          errbuf[eslERRBUFSIZE];
+
+  /* banded functions declared in cm_p7_band.c */
+  extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+  extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+  extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+
+#ifdef HAVE_FLUSH_ZERO_MODE
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+#endif
+  obj = (ESL_THREADS *) arg;
+  esl_threads_Started(obj, &workeridx);
+  info = (WORKER_INFO *) esl_threads_GetData(obj, workeridx);
+
+  status = esl_workqueue_WorkerUpdate(info->queue, NULL, &new_sq);
+  if (status != eslOK) cm_Fail("Work queue worker failed");
+
+  /* loop until all sequences have been processed */
+  sq = (ESL_SQ *) new_sq;
+  while (sq->L != -1) {
+    int idx = sq->W;  /* sequence index, overloaded by hmm_thread_loop */
+
+    /* Reconfigure profile for this sequence length */
+    p7_ReconfigLength(info->gm, sq->n);
+
+    if (info->do_hmmvit) {
+      /* --- Viterbi trace --- */
+      p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
+      p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
+      p7_trace_Reuse(info->hmm_tr[idx]);
+      if ((status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, info->hmm_tr[idx])) != eslOK)
+	cm_Fail("p7_GTrace() failed for sequence %s", sq->name);
+    }
+    else if (info->do_hmmnoband) {
+      /* --- Unbanded optimal accuracy --- */
+      p7_gmx_GrowTo(info->gxf, info->hmm->M, sq->n);
+      p7_gmx_GrowTo(info->gxb, info->hmm->M, sq->n);
+
+      p7_GForward (sq->dsq, sq->n, info->gm, info->gxf, &fwdsc);
+      p7_GBackward(sq->dsq, sq->n, info->gm, info->gxb, NULL);
+      p7_GDecoding(info->gm, info->gxf, info->gxb, info->gxb);
+      p7_GOptimalAccuracy(info->gm, info->gxb, info->gxf, &oasc);
+      p7_trace_Reuse(info->hmm_tr[idx]);
+      p7_GOATrace(info->gm, info->gxb, info->gxf, info->hmm_tr[idx]);
+    }
+    else {
+      /* --- Viterbi-banded optimal accuracy --- */
+      int     *i2k   = NULL;
+      int     *kmin  = NULL;
+      int     *kmax  = NULL;
+      int      ncells = 0;
+      int      pad   = 30;
+      P7_GBANDS *bnd = NULL;
+      P7_GMXB *bxf   = NULL;
+      P7_GMXB *bxb   = NULL;
+      P7_TRACE *vtr  = p7_trace_Create();
+
+      p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
+      p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
+      p7_trace_Reuse(vtr);
+      status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
+
+      if (status != eslOK || vtr->N == 0) {
+	/* Viterbi failed; fall back to unbanded OA */
+	P7_GMX *fallback_gxf = p7_gmx_Create(info->hmm->M, sq->n);
+	P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
+	p7_GForward (sq->dsq, sq->n, info->gm, fallback_gxf, &fwdsc);
+	p7_GBackward(sq->dsq, sq->n, info->gm, fallback_gxb, NULL);
+	p7_GDecoding(info->gm, fallback_gxf, fallback_gxb, fallback_gxb);
+	p7_GOptimalAccuracy(info->gm, fallback_gxb, fallback_gxf, &oasc);
+	p7_trace_Reuse(info->hmm_tr[idx]);
+	p7_GOATrace(info->gm, fallback_gxb, fallback_gxf, info->hmm_tr[idx]);
+	p7_gmx_Destroy(fallback_gxf);
+	p7_gmx_Destroy(fallback_gxb);
+	p7_trace_Destroy(vtr);
+	goto HMM_NEXT_SQ;
+      }
+
+      {
+	int tpos;
+	ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+	esl_vec_ISet(i2k, (sq->n + 1), -1);
+	for (tpos = 0; tpos < vtr->N; tpos++) {
+	  if (vtr->st[tpos] == p7T_M) {
+	    int i = vtr->i[tpos];
+	    int k = vtr->k[tpos];
+	    if (i >= 1 && i <= sq->n && k >= 1 && k <= info->hmm->M)
+	      i2k[i] = k;
+	  }
+	}
+      }
+
+      if ((status = p7_pins2bands(i2k, errbuf, sq->n, info->hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+	cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+      if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
+	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+
+      bxf = p7_gmxb_Create(bnd);
+      bxb = p7_gmxb_Create(bnd);
+
+      if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, info->gm, bxf, &fwdsc)) != eslOK)
+	cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
+      if ((status = p7_GBackwardBanded(sq->dsq, sq->n, info->gm, bxb, NULL)) != eslOK)
+	cm_Fail("p7_GBackwardBanded() failed for sequence %s", sq->name);
+      if ((status = p7_GDecodingBanded(info->gm, bxf, bxb, bxb, fwdsc)) != eslOK)
+	cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
+      if ((status = p7_GOptimalAccuracyBanded(info->gm, bxb, bxf, &oasc)) != eslOK)
+	cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
+
+      p7_trace_Reuse(info->hmm_tr[idx]);
+      if ((status = p7_GOATraceBanded(info->gm, bxb, bxf, info->hmm_tr[idx])) != eslOK)
+	cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+
+      free(i2k);
+      free(kmin);
+      free(kmax);
+      p7_trace_Destroy(vtr);
+      p7_gbands_Destroy(bnd);
+      p7_gmxb_Destroy(bxf);
+      p7_gmxb_Destroy(bxb);
+    }
+
+  HMM_NEXT_SQ:
+    status = esl_workqueue_WorkerUpdate(info->queue, sq, &new_sq);
+    if (status != eslOK) cm_Fail("Work queue worker failed");
+    sq = (ESL_SQ *) new_sq;
+  }
+
+  status = esl_workqueue_WorkerUpdate(info->queue, sq, NULL);
+  if (status != eslOK) cm_Fail("Work queue worker failed");
+
+  esl_threads_Finished(obj, workeridx);
+  return;
+
+ ERROR:
+  cm_Fail("out of memory");
+  return;  /* NEVERREACHED */
+}
 #endif   /* HMMER_THREADS */
 
 #if HAVE_MPI
+
+/* P7_TRACE MPI serialization for --hmm mode.
+ * Pack/unpack a P7_TRACE + sequence index into an MPI buffer.
+ * Only the fields needed by p7_tracealign_Seqs() are transmitted:
+ * N, st[], k[], i[], pp[] (if present), L, M.
+ */
+static int
+hmm_trace_MPIPackSize(P7_TRACE *tr, MPI_Comm comm, int *ret_n)
+{
+  int n = 0, sz;
+  MPI_Pack_size(1,     MPI_LONG_LONG_INT, comm, &sz); n += sz; /* idx     */
+  MPI_Pack_size(1,     MPI_INT,           comm, &sz); n += sz; /* N       */
+  MPI_Pack_size(1,     MPI_INT,           comm, &sz); n += sz; /* has_pp  */
+  MPI_Pack_size(1,     MPI_INT,           comm, &sz); n += sz; /* L       */
+  MPI_Pack_size(1,     MPI_INT,           comm, &sz); n += sz; /* M       */
+  MPI_Pack_size(tr->N, MPI_CHAR,          comm, &sz); n += sz; /* st[]    */
+  MPI_Pack_size(tr->N, MPI_INT,           comm, &sz); n += sz; /* k[]     */
+  MPI_Pack_size(tr->N, MPI_INT,           comm, &sz); n += sz; /* i[]     */
+  if (tr->pp != NULL) {
+    MPI_Pack_size(tr->N, MPI_FLOAT,       comm, &sz); n += sz; /* pp[]    */
+  }
+  *ret_n = n;
+  return eslOK;
+}
+
+static int
+hmm_trace_MPIPack(P7_TRACE *tr, int64_t idx, char *buf, int n, int *pos, MPI_Comm comm)
+{
+  int has_pp = (tr->pp != NULL) ? 1 : 0;
+  MPI_Pack(&idx,     1,     MPI_LONG_LONG_INT, buf, n, pos, comm);
+  MPI_Pack(&(tr->N), 1,     MPI_INT,           buf, n, pos, comm);
+  MPI_Pack(&has_pp,  1,     MPI_INT,           buf, n, pos, comm);
+  MPI_Pack(&(tr->L), 1,     MPI_INT,           buf, n, pos, comm);
+  MPI_Pack(&(tr->M), 1,     MPI_INT,           buf, n, pos, comm);
+  MPI_Pack(tr->st,   tr->N, MPI_CHAR,          buf, n, pos, comm);
+  MPI_Pack(tr->k,    tr->N, MPI_INT,           buf, n, pos, comm);
+  MPI_Pack(tr->i,    tr->N, MPI_INT,           buf, n, pos, comm);
+  if (has_pp) MPI_Pack(tr->pp, tr->N, MPI_FLOAT, buf, n, pos, comm);
+  return eslOK;
+}
+
+static int
+hmm_trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, P7_TRACE **ret_tr, int64_t *ret_idx)
+{
+  int        status;
+  int64_t    idx;
+  int        N, has_pp, L, M;
+  P7_TRACE  *tr = NULL;
+
+  MPI_Unpack(buf, n, pos, &idx,    1, MPI_LONG_LONG_INT, comm);
+  MPI_Unpack(buf, n, pos, &N,      1, MPI_INT,           comm);
+  MPI_Unpack(buf, n, pos, &has_pp, 1, MPI_INT,           comm);
+  MPI_Unpack(buf, n, pos, &L,      1, MPI_INT,           comm);
+  MPI_Unpack(buf, n, pos, &M,      1, MPI_INT,           comm);
+
+  tr = has_pp ? p7_trace_CreateWithPP() : p7_trace_Create();
+  if (tr == NULL) return eslEMEM;
+  if ((status = p7_trace_GrowTo(tr, N)) != eslOK) { p7_trace_Destroy(tr); return status; }
+  tr->N = N;
+  tr->L = L;
+  tr->M = M;
+
+  MPI_Unpack(buf, n, pos, tr->st, N, MPI_CHAR,  comm);
+  MPI_Unpack(buf, n, pos, tr->k,  N, MPI_INT,   comm);
+  MPI_Unpack(buf, n, pos, tr->i,  N, MPI_INT,   comm);
+  if (has_pp) MPI_Unpack(buf, n, pos, tr->pp, N, MPI_FLOAT, comm);
+
+  *ret_tr  = tr;
+  *ret_idx = idx;
+  return eslOK;
+}
+
+static int
+hmm_trace_MPISend(P7_TRACE *tr, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
+{
+  int   n = 0;
+  int   pos;
+
+  hmm_trace_MPIPackSize(tr, comm, &n);
+  if (n > *nalloc) {
+    void *tmp;
+    ESL_RALLOC(*buf, tmp, sizeof(char) * n);
+    *nalloc = n;
+  }
+  pos = 0;
+  hmm_trace_MPIPack(tr, idx, *buf, n, &pos, comm);
+  MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm);
+  return eslOK;
+
+ ERROR:
+  return eslEMEM;
+}
+
 /* mpi_master()
  * The MPI version of cmalign.
  * Follows standard pattern for a master/worker load-balanced MPI program 
@@ -980,6 +1646,135 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* initialization */
   nali = nseq_cur = nseq_aligned = 0;
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
+
+  /* --hmm mode: HMM-only alignment via MPI.
+   * Master reads all sequences, distributes dsqs to workers,
+   * workers compute p7 traces and send them back, master
+   * collects all traces and calls p7_tracealign_Seqs().
+   */
+  if(esl_opt_GetBoolean(go, "--hmm")) {
+    ESL_SQ      **sqarr  = NULL;
+    P7_TRACE    **tr     = NULL;
+    int           nseq   = 0;
+    int           nalloc = 256;
+    int           idx2;
+    int           do_hmmvit = (cm->align_opts & CM_ALIGN_P7HMMVIT) ? TRUE : FALSE;
+
+    /* Read all sequences */
+    ESL_ALLOC(sqarr, sizeof(ESL_SQ *) * nalloc);
+    while (1) {
+      ESL_SQ *sq_tmp = esl_sq_CreateDigital(cfg->abc);
+      status = esl_sqio_Read(cfg->sqfp, sq_tmp);
+      if (status == eslEOF) { esl_sq_Destroy(sq_tmp); break; }
+      if (status != eslOK)  mpi_failure("Error reading sequence file");
+      if (nseq >= nalloc) { nalloc *= 2; ESL_REALLOC(sqarr, sizeof(ESL_SQ *) * nalloc); }
+      sqarr[nseq++] = sq_tmp;
+    }
+    if (nseq == 0) mpi_failure("No sequences found");
+
+    /* Allocate trace array */
+    ESL_ALLOC(tr, sizeof(P7_TRACE *) * nseq);
+    for (idx2 = 0; idx2 < nseq; idx2++) tr[idx2] = NULL;
+
+    /* Distribute sequences to workers and collect traces */
+    have_work = TRUE;
+    nworking  = 0;
+    si        = 0;
+    while(have_work || nworking > 0) {
+      if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0)
+	mpi_failure("MPI error receiving message");
+      if (MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size) != 0)
+	mpi_failure("MPI get count failed");
+      if (mpibuf == NULL || buf_size > mpibuf_size) {
+	ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
+	mpibuf_size = buf_size;
+      }
+      wi = mpistatus.MPI_SOURCE;
+      MPI_Recv(mpibuf, buf_size, MPI_PACKED, wi, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
+
+      if (mpistatus.MPI_TAG == INFERNAL_ALNDATA_TAG) {
+	/* Receive trace from worker */
+	int64_t recv_idx;
+	P7_TRACE *recv_tr = NULL;
+	pos = 0;
+	status = hmm_trace_MPIUnpack(mpibuf, buf_size, &pos, MPI_COMM_WORLD, &recv_tr, &recv_idx);
+	if (status != eslOK) mpi_failure("problem unpacking trace from worker %d", wi);
+	tr[recv_idx] = recv_tr;
+	nworking--;
+      }
+      else if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG) {
+	mpi_failure("MPI client %d raised error:\n%s\n", wi, mpibuf);
+      }
+      else if (mpistatus.MPI_TAG != INFERNAL_INITIALREADY_TAG) {
+	mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, wi);
+      }
+
+      if (have_work) {
+	sq = sqarr[si];
+	status = cm_dsq_MPISend(sq->dsq, sq->L, (int64_t)si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+	if (status != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+	nworking++;
+	si++;
+	if (si == nseq) have_work = FALSE;
+      }
+    }
+
+    /* Tell workers we're done: send NULL dsq for end-of-block, then again for end-of-file */
+    for (wi = 1; wi < cfg->nproc; wi++)
+      cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+    for (wi = 1; wi < cfg->nproc; wi++)
+      cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+
+    /* Build MSA from traces (reuses hmm_alignment's post-processing logic) */
+    {
+      P7_HMM  *hmm_mpi = cm->mlp7;
+      ESL_MSA *msa = NULL;
+
+      if ((status = p7_tracealign_Seqs(sqarr, tr, nseq, hmm_mpi->M, p7_ALL_CONSENSUS_COLS, hmm_mpi, &msa)) != eslOK)
+	mpi_failure("p7_tracealign_Seqs() failed");
+
+      /* Add SS_cons */
+      if (cm->cmcons != NULL && cm->cmcons->cstr != NULL && msa->rf != NULL) {
+	int cpos, apos;
+	ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen + 1));
+	cpos = 0;
+	for (apos = 0; apos < msa->alen; apos++) {
+	  if (msa->rf[apos] != '.' && msa->rf[apos] != '~') {
+	    msa->ss_cons[apos] = (cpos < cm->clen) ? cm->cmcons->cstr[cpos] : '.';
+	    cpos++;
+	  } else {
+	    msa->ss_cons[apos] = '.';
+	  }
+	}
+	msa->ss_cons[msa->alen] = '\0';
+      }
+
+      /* --dnaout */
+      if (esl_opt_GetBoolean(go, "--dnaout") && cfg->abc_out->type == eslDNA) {
+	int i3, apos;
+	for (i3 = 0; i3 < msa->nseq; i3++)
+	  for (apos = 0; apos < msa->alen; apos++) {
+	    if (msa->aseq[i3][apos] == 'U') msa->aseq[i3][apos] = 'T';
+	    if (msa->aseq[i3][apos] == 'u') msa->aseq[i3][apos] = 't';
+	  }
+      }
+
+      esl_msafile_Write(cfg->ofp, msa, cfg->outfmt);
+      esl_msa_Destroy(msa);
+    }
+
+    /* Clean up */
+    for (idx2 = 0; idx2 < nseq; idx2++) {
+      if (tr[idx2] != NULL) p7_trace_Destroy(tr[idx2]);
+      esl_sq_Destroy(sqarr[idx2]);
+    }
+    free(tr);
+    free(sqarr);
+    if (mpibuf != NULL) free(mpibuf);
+    FreeCM(cm);
+    return eslOK;
+  }
+
   reached_eof = FALSE;
 
   /* include the mapali, if nec */
@@ -1223,6 +2018,148 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
+
+  /* --hmm mode: HMM-only alignment worker.
+   * Receives dsqs from master, computes p7 traces, sends them back.
+   */
+  if(esl_opt_GetBoolean(go, "--hmm")) {
+    P7_HMM     *hmm_w   = cm->mlp7;
+    P7_BG      *bg_w    = p7_bg_Create(hmm_w->abc);
+    P7_PROFILE *gm_w    = p7_profile_Create(hmm_w->M, hmm_w->abc);
+    P7_GMX     *gx_w    = NULL;
+    P7_GMX     *gxf_w   = NULL;
+    P7_GMX     *gxb_w   = NULL;
+    int         p7mode_w = esl_opt_GetBoolean(go, "-g") ? p7_UNIGLOCAL : p7_UNILOCAL;
+    int         do_hmmvit_w    = (cm->align_opts & CM_ALIGN_P7HMMVIT)    ? TRUE : FALSE;
+    int         do_hmmnoband_w = (cm->align_opts & CM_ALIGN_P7HMMNOBAND) ? TRUE : FALSE;
+    int         do_bandedoa_w  = (! do_hmmvit_w && ! do_hmmnoband_w);
+    float       sc_w, fwdsc_w, oasc_w;
+
+    /* banded functions declared in cm_p7_band.c */
+    extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+    extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+    extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+    extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+    extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+    extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+
+    p7_ProfileConfig(hmm_w, bg_w, gm_w, 400, p7mode_w);
+    if (do_hmmvit_w || do_bandedoa_w) gx_w  = p7_gmx_Create(hmm_w->M, 400);
+    if (do_hmmnoband_w)             { gxf_w = p7_gmx_Create(hmm_w->M, 400); gxb_w = p7_gmx_Create(hmm_w->M, 400); }
+
+    /* Signal ready, then enter recv/compute/send loop */
+    status = eslOK;
+    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
+
+    status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+    if (status == eslEOD) dsq = NULL; /* termination signal */
+
+    while (dsq != NULL) {
+      P7_TRACE *wtr = do_hmmvit_w ? p7_trace_Create() : p7_trace_CreateWithPP();
+
+      p7_ReconfigLength(gm_w, L);
+
+      if (do_hmmvit_w) {
+	p7_gmx_GrowTo(gx_w, hmm_w->M, L);
+	p7_GViterbi(dsq, L, gm_w, gx_w, &sc_w);
+	p7_GTrace(dsq, L, gm_w, gx_w, wtr);
+      }
+      else if (do_hmmnoband_w) {
+	p7_gmx_GrowTo(gxf_w, hmm_w->M, L);
+	p7_gmx_GrowTo(gxb_w, hmm_w->M, L);
+	p7_GForward (dsq, L, gm_w, gxf_w, &fwdsc_w);
+	p7_GBackward(dsq, L, gm_w, gxb_w, NULL);
+	p7_GDecoding(gm_w, gxf_w, gxb_w, gxb_w);
+	p7_GOptimalAccuracy(gm_w, gxb_w, gxf_w, &oasc_w);
+	p7_GOATrace(gm_w, gxb_w, gxf_w, wtr);
+      }
+      else {
+	/* Viterbi-banded OA */
+	int     *i2k_w  = NULL;
+	int     *kmin_w = NULL;
+	int     *kmax_w = NULL;
+	int      ncells_w = 0;
+	int      pad_w  = 30;
+	P7_GBANDS *bnd_w = NULL;
+	P7_GMXB *bxf_w  = NULL;
+	P7_GMXB *bxb_w  = NULL;
+	P7_TRACE *vtr_w = p7_trace_Create();
+	int       tpos_w;
+
+	p7_gmx_GrowTo(gx_w, hmm_w->M, L);
+	p7_GViterbi(dsq, L, gm_w, gx_w, &sc_w);
+	p7_GTrace(dsq, L, gm_w, gx_w, vtr_w);
+
+	if (vtr_w->N == 0) {
+	  /* fallback to unbanded */
+	  P7_GMX *fb_gxf = p7_gmx_Create(hmm_w->M, L);
+	  P7_GMX *fb_gxb = p7_gmx_Create(hmm_w->M, L);
+	  p7_GForward (dsq, L, gm_w, fb_gxf, &fwdsc_w);
+	  p7_GBackward(dsq, L, gm_w, fb_gxb, NULL);
+	  p7_GDecoding(gm_w, fb_gxf, fb_gxb, fb_gxb);
+	  p7_GOptimalAccuracy(gm_w, fb_gxb, fb_gxf, &oasc_w);
+	  p7_GOATrace(gm_w, fb_gxb, fb_gxf, wtr);
+	  p7_gmx_Destroy(fb_gxf);
+	  p7_gmx_Destroy(fb_gxb);
+	  p7_trace_Destroy(vtr_w);
+	  goto HMM_MPI_SEND;
+	}
+
+	ESL_ALLOC(i2k_w, sizeof(int) * (L + 1));
+	esl_vec_ISet(i2k_w, (L + 1), -1);
+	for (tpos_w = 0; tpos_w < vtr_w->N; tpos_w++) {
+	  if (vtr_w->st[tpos_w] == p7T_M) {
+	    int ii = vtr_w->i[tpos_w];
+	    int kk = vtr_w->k[tpos_w];
+	    if (ii >= 1 && ii <= L && kk >= 1 && kk <= hmm_w->M)
+	      i2k_w[ii] = kk;
+	  }
+	}
+
+	p7_pins2bands(i2k_w, errbuf, L, hmm_w->M, pad_w, &kmin_w, &kmax_w, &ncells_w);
+	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
+	bxf_w = p7_gmxb_Create(bnd_w);
+	bxb_w = p7_gmxb_Create(bnd_w);
+
+	my_p7_GForwardBanded(dsq, L, gm_w, bxf_w, &fwdsc_w);
+	p7_GBackwardBanded(dsq, L, gm_w, bxb_w, NULL);
+	p7_GDecodingBanded(gm_w, bxf_w, bxb_w, bxb_w, fwdsc_w);
+	p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
+	p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
+
+	free(i2k_w);
+	free(kmin_w);
+	free(kmax_w);
+	p7_trace_Destroy(vtr_w);
+	p7_gbands_Destroy(bnd_w);
+	p7_gmxb_Destroy(bxf_w);
+	p7_gmxb_Destroy(bxb_w);
+      }
+
+    HMM_MPI_SEND:
+      /* Send trace back to master */
+      hmm_trace_MPISend(wtr, idx, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+      p7_trace_Destroy(wtr);
+      free(dsq);
+
+      /* Receive next dsq */
+      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+      if (status == eslEOD) dsq = NULL;
+    }
+
+    /* Receive end-of-file signal (second NULL dsq) */
+    status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+
+    /* Clean up */
+    if (gx_w  != NULL) p7_gmx_Destroy(gx_w);
+    if (gxf_w != NULL) p7_gmx_Destroy(gxf_w);
+    if (gxb_w != NULL) p7_gmx_Destroy(gxb_w);
+    p7_profile_Destroy(gm_w);
+    p7_bg_Destroy(bg_w);
+    FreeCM(cm);
+    if (mpibuf != NULL) free(mpibuf);
+    return eslOK;
+  }
 
   /* initialize our worker info */
   info.cm          = cm;
@@ -1517,6 +2454,9 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   }
   if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
   if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
+  if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)\n"); }
+  if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi\n"); }
+  if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)\n"); }
 
   if (esl_opt_IsUsed(go, "--mxsize"))    {  fprintf(ofp, "# maximum total DP matrix size set to:         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize")); }
   if (esl_opt_IsUsed(go, "--hbanded"))   {  fprintf(ofp, "# using HMM bands for acceleration:            yes\n"); }
@@ -1648,6 +2588,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc */
   if(  esl_opt_GetBoolean(go, "--small"))       cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
+  if(  esl_opt_GetBoolean(go, "--hmm"))         cm->align_opts |= CM_ALIGN_P7HMM;
+  if(  esl_opt_GetBoolean(go, "--hmmvit"))       cm->align_opts |= CM_ALIGN_P7HMMVIT;
+  if(  esl_opt_GetBoolean(go, "--hmmnoband"))    cm->align_opts |= CM_ALIGN_P7HMMNOBAND;
   if((! esl_opt_GetBoolean(go, "--fixedtau")) &&
      (  esl_opt_GetBoolean(go, "--hbanded"))) { 
     cm->align_opts |= CM_ALIGN_XTAU;
