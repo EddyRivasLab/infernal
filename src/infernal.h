@@ -3410,7 +3410,14 @@ extern int   ILogsumNI(int s1, int s2);
 extern int   ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db);
 extern void  FLogsumInit(void);
 extern float LogSum2(float p1, float p2);
-extern float FLogsum(float p1, float p2);
+extern float flogsum_lookup[LOGSUM_TBL];
+static inline float
+FLogsum(float s1, float s2)
+{
+  const float max = ESL_MAX(s1, s2);
+  const float min = ESL_MIN(s1, s2);
+  return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
+}
 
 /* from mpisupport.c */
 #if HAVE_MPI
