@@ -47,6 +47,14 @@ extern double g_localmu_beta;        /* QDB beta for cm_LocalMu's clone */
 extern char  *g_localmu_score_dump;  /* if non-NULL, dump all hit scores to this TSV */
 extern int    g_localmu_K_from_sim;  /* if 1, replace nrandhits with sim-derived K (v14 expt A) */
 
+/* Brief 23 small-CM lambda controls.
+ * cmbuild flags: --smallcm-lambda, --smallcm-clenmax, --localmu-smallonly, --localmu-fitlambda
+ */
+extern double g_smallcm_lambda;      /* if >0, override local-mode ridge lambda for clen < g_smallcm_clen_max */
+extern int    g_smallcm_clen_max;    /* clen threshold for small-CM lambda override + --localmu-smallonly */
+extern int    g_localmu_smallonly;   /* if 1, run cm_LocalMu only for clen < g_smallcm_clen_max */
+extern int    g_localmu_fitlambda;   /* if 1, refit lambda in cm_LocalMu (default); 0 = hold ridge lambda */
+
 /* cm_FastCalibrateCleanup()
  *   Free model memory. Idempotent.
  */

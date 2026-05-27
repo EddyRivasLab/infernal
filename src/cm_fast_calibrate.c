@@ -127,6 +127,16 @@ double g_localmu_beta           = -1.0;  /* if <0, auto by clen: clen<200 -> 1e-
 char  *g_localmu_score_dump     = NULL;  /* if non-NULL, dump all hit scores to this TSV */
 int    g_localmu_K_from_sim     = 0;     /* if 1, replace nrandhits with sim-derived K for ECMLC/ECMLI (v14 expt A) */
 
+/* Brief 23 small-CM lambda controls.
+ * The lambda ridge was trained on clen 40-100 (min training clen 40) and
+ * extrapolates badly below that floor, predicting physically-impossible
+ * local-mode lambda (e.g. clen 26 -> 5.46) -> over-optimistic decoy E-values.
+ */
+double g_smallcm_lambda         = -1.0;  /* if >0, override local-mode ridge lambda with this constant for clen < g_smallcm_clen_max (arms C62/Cln2) */
+int    g_smallcm_clen_max       = 60;    /* clen threshold for small-CM lambda override and --localmu-smallonly routing */
+int    g_localmu_smallonly      = 0;     /* if 1, run cm_LocalMu only for CMs with clen < g_smallcm_clen_max (ridge for clen >= threshold) (arm A) */
+int    g_localmu_fitlambda      = 1;     /* if 1, refit lambda jointly with mu in cm_LocalMu Step 5 (current ship default); if 0, hold ridge lambda (legacy fixed-lambda) */
+
 
 /* =========================================================================
  * Internal helper: free a single ridge
@@ -1213,6 +1223,16 @@ cm_FastCalibrate(CM_t *cm)
       if (r_lam->nfeat == 0) return eslFAIL;  /* no ridge for this slot */
 
       double lam = ridge_predict(r_lam, feats);
+
+      /* Small-CM lambda override (brief 23): the lambda ridge extrapolates
+       * badly below its clen-40 training floor. lambda is near-universal
+       * (~0.62 in cmcal ECMLI for clen<=60), so for local modes at
+       * clen < g_smallcm_clen_max replace the predicted lambda with a
+       * constant (arms C62=0.62, Cln2=0.6931). Glocal modes untouched. */
+      if (g_smallcm_lambda > 0.0 && cm->clen < g_smallcm_clen_max &&
+          (mode == MODE_ECMLC || mode == MODE_ECMLI))
+          lam = g_smallcm_lambda;
+
       double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
       double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
 
@@ -1241,7 +1261,11 @@ cm_FastCalibrate(CM_t *cm)
    * Overrides regression mu_extrap/mu_orig for ECMLC and ECMLI.
    * Controlled by g_localmu_* globals set from cmbuild options.
    */
-  if (g_localmu_on) {
+  /* Arm A (brief 23): --localmu-smallonly restricts the mini-sim to small
+   * CMs (clen < g_smallcm_clen_max). For clen >= threshold we keep the
+   * ridge lambda/mu (matches the v5.5+K ridge-only ship for big CMs);
+   * for small CMs cm_LocalMu refits both lambda and mu via FitCensored. */
+  if (g_localmu_on && !(g_localmu_smallonly && cm->clen >= g_smallcm_clen_max)) {
     char   localmu_errbuf[eslERRBUFSIZE];
     ESL_RANDOMNESS *localmu_rng = esl_randomness_Create(g_localmu_seed);
     if (localmu_rng == NULL) { status = eslEMEM; goto ERROR; }
@@ -1624,9 +1648,10 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
           free(score_d); score_d = NULL;
         }
       }
-      if (fit_status == eslOK && lambda_fit > 0.0) {
+      if (fit_status == eslOK && lambda_fit > 0.0 && g_localmu_fitlambda) {
         /* Brief 20: raw FitCensored λ (no geomean); mu_extrap uses n_total/Kfit
-         * ratio (ltailn-style extrapolation). */
+         * ratio (ltailn-style extrapolation). Brief 23: gated behind
+         * g_localmu_fitlambda (default 1 = ship recipe; 0 = hold ridge λ). */
         double mu_orig    = (double) cyk_scores[Kfit - 1];  /* empirical Kfit-th quantile */
         (void) lam_reg;  /* unused: kept only for legacy-fallback path below */
         cm->expA[EXP_CM_LC]->lambda    = lambda_fit;
@@ -1666,8 +1691,9 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
           free(score_d); score_d = NULL;
         }
       }
-      if (fit_status == eslOK && lambda_fit > 0.0) {
-        /* Brief 20: raw FitCensored λ, ltailn-style mu_extrap */
+      if (fit_status == eslOK && lambda_fit > 0.0 && g_localmu_fitlambda) {
+        /* Brief 20: raw FitCensored λ, ltailn-style mu_extrap.
+         * Brief 23: gated behind g_localmu_fitlambda. */
         double mu_orig    = (double) ins_scores[Kfit - 1];
         (void) lam_reg;  /* unused: kept only for legacy-fallback path below */
         cm->expA[EXP_CM_LI]->lambda    = lambda_fit;

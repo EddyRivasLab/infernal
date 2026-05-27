@@ -155,6 +155,10 @@ static ESL_OPTIONS options[] = {
   { "--localmu-score-dump",eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "dump all CYK/Inside hit scores to <f> (TSV: mode\\tscore)",            107 },
   { "--localmu-K-from-sim",eslARG_NONE,  FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "v14: replace regression nrandhits with sim-derived K for ECMLC/ECMLI",   107 },
   { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",            107 },
+  { "--smallcm-lambda",   eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL,         NULL,    "brief23: override local-mode ridge lambda with <x> for clen<clenmax", 107 },
+  { "--smallcm-clenmax",  eslARG_INT,     "60",  NULL, "n>0",     NULL,  NULL,         NULL,    "brief23: clen threshold for small-CM lambda override / --localmu-smallonly", 107 },
+  { "--localmu-smallonly",eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "brief23: run local-mu mini-sim only for clen<clenmax (ridge for big CMs)", 107 },
+  { "--localmu-fitlambda",eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "brief23: refit lambda jointly with mu in local-mu mini-sim (ship default)", 107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
@@ -511,10 +515,20 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    /* Wire cm_LocalMu() configuration globals from command-line options.
     * These must be set before cm_FastCalibrate() is called.
     */
+   /* Brief 23 small-CM lambda controls. --smallcm-lambda/--smallcm-clenmax
+    * act on the ridge path so they apply regardless of --no-localmu. */
+   if (esl_opt_IsUsed(go, "--smallcm-lambda"))
+     g_smallcm_lambda = esl_opt_GetReal(go, "--smallcm-lambda");
+   g_smallcm_clen_max = esl_opt_GetInteger(go, "--smallcm-clenmax");
+
    if (esl_opt_GetBoolean(go, "--no-localmu")) {
      g_localmu_on   = 0;
    } else {
      g_localmu_on   = 1;
+     g_localmu_smallonly = esl_opt_GetBoolean(go, "--localmu-smallonly") ? 1 : 0;
+     /* --localmu-fitlambda is the ship default (g_localmu_fitlambda=1);
+      * the flag is accepted to make arm-A intent explicit. */
+     if (esl_opt_GetBoolean(go, "--localmu-fitlambda")) g_localmu_fitlambda = 1;
      if (esl_opt_IsUsed(go, "--localmu-N"))
         g_localmu_N = esl_opt_GetInteger(go, "--localmu-N");
      g_localmu_seed = esl_opt_GetInteger(go, "--localmu-seed");
