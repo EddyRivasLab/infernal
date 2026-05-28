@@ -9340,18 +9340,22 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
     }
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
       if(cm->cp9b->Jvalid[v]) {
-	for(j = jmin[v]; j <= jmax[v]; j++) { 
+	for(j = jmin[v]; j <= jmax[v]; j++) {
 	  jp_v = j - jmin[v];
-	  for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+	  /* Peel first d: assign directly (avoids FLogsum(IMPOSSIBLE, x) == x) */
+	  emit_mx->Jr_pp[v][jp_v] = post->Jdp[v][jp_v][0];
+	  for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
 	    dp_v = d-hdmin[v][jp_v];
 	    emit_mx->Jr_pp[v][jp_v] = FLogsum(emit_mx->Jr_pp[v][jp_v], post->Jdp[v][jp_v][dp_v]);
 	  }
 	}
       }
-      if(cm->cp9b->Rvalid[v] && fill_R) { 
-	for(j = jmin[v]; j <= jmax[v]; j++) { 
+      if(cm->cp9b->Rvalid[v] && fill_R) {
+	for(j = jmin[v]; j <= jmax[v]; j++) {
 	  jp_v = j - jmin[v];
-	  for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+	  /* Peel first d: assign directly (avoids FLogsum(IMPOSSIBLE, x) == x) */
+	  emit_mx->Rr_pp[v][jp_v] = post->Rdp[v][jp_v][0];
+	  for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
 	    dp_v = d-hdmin[v][jp_v];
 	    emit_mx->Rr_pp[v][jp_v] = FLogsum(emit_mx->Rr_pp[v][jp_v], post->Rdp[v][jp_v][dp_v]);
 	  }
