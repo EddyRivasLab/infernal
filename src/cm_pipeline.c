@@ -4212,34 +4212,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    p7_GForward(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
-	    fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
-		    " p7_Seq2Bands: FALLBACK(status=%d,ncells=%d) unbanded_fwdsc=%.3f\n",
-		    i, sq->name, ws[i], we[i], wlen, gm->M, status, ncells, fwdsc);
 	  } else {
-	    /* debug: summarize band range before using them */
-	    { int dbg_i, dbg_kmin_min=gm->M, dbg_kmax_max=0, dbg_npinned=0;
-	      int dbg_i_first_pin=-1, dbg_i_last_pin=-1, dbg_k_first_pin=-1, dbg_k_last_pin=-1;
-	      for(dbg_i=1; dbg_i<=(int)wlen; dbg_i++) {
-		if(kmin[dbg_i] >= 0) { dbg_kmin_min = ESL_MIN(dbg_kmin_min, kmin[dbg_i]); dbg_kmax_max = ESL_MAX(dbg_kmax_max, kmax[dbg_i]); dbg_npinned++; }
-	      }
-	      /* find first/last pinned sequence positions from i2k (not yet freed here) */
-	      for(dbg_i=1; dbg_i<=(int)wlen; dbg_i++) {
-		if(i2k[dbg_i] != -1) { if(dbg_i_first_pin == -1) { dbg_i_first_pin = dbg_i; dbg_k_first_pin = i2k[dbg_i]; } dbg_i_last_pin = dbg_i; dbg_k_last_pin = i2k[dbg_i]; }
-	      }
-	      fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
-		      " p7_Seq2Bands: OK ncells=%d kmin_min=%d kmax_max=%d npinned=%d"
-		      " first_pin=i%d:k%d last_pin=i%d:k%d\n",
-		      i, sq->name, ws[i], we[i], wlen, gm->M, ncells, dbg_kmin_min, dbg_kmax_max, dbg_npinned,
-		      dbg_i_first_pin, dbg_k_first_pin, dbg_i_last_pin, dbg_k_last_pin);
-	      /* print kmin/kmax at 5 evenly-spaced positions across the window */
-	      { int dbg_npt = 5, dbg_pt;
-		for(dbg_pt = 0; dbg_pt < dbg_npt; dbg_pt++) {
-		  dbg_i = 1 + (int)((wlen-1) * dbg_pt / (dbg_npt-1));
-		  fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s bands_at i=%5d: kmin=%3d kmax=%3d\n",
-			  i, sq->name, dbg_i, kmin[dbg_i], kmax[dbg_i]);
-		}
-	      }
-	    }
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, gm->M, &bnd)) != eslOK)
 	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
@@ -4257,15 +4230,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
-	    /* debug: also run unbanded for comparison */
-	    { float dbg_unbanded_fwdsc;
-	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
-	      fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
-		      " banded_fwdsc=%.3f unbanded_fwdsc=%.3f delta=%.3f\n",
-		      i, sq->name, ws[i], we[i], wlen, gm->M,
-		      fwdsc, dbg_unbanded_fwdsc, dbg_unbanded_fwdsc - fwdsc);
-	    }
 	  }
 	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
 	  /* --vitband: derive Viterbi bands then run banded Forward.
@@ -4331,10 +4295,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-		" sc=%.3f P=%.3g F4=%.3g %s\n",
-		i, sq->name, ws[i], we[i], sc_for_pvalue, P, pli->F4,
-		(P > pli->F4) ? "KILLED_F4" : "passes_F4");
       }
 
 #if eslDEBUGLEVEL >= 2
@@ -4369,12 +4329,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	else if(use_gm) { /* normal case */
 	  sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
 	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	}
-	if(pli->do_msvband) {
-	  fprintf(stderr, "#MSVBAND_DBG: F4b win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-		  " sc=%.3f P=%.3g F4b=%.3g %s\n",
-		  i, sq->name, ws[i], we[i], sc_for_pvalue, P, pli->F4b,
-		  (P > pli->F4b) ? "KILLED_F4b" : "passes_F4b");
 	}
 	if(P > pli->F4b) continue;
 #if eslDEBUGLEVEL >= 2
@@ -4499,14 +4453,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     pli->stg_time_F5 += stg_watch->elapsed;
 
     if (status != eslOK) ESL_FAIL(status, pli->errbuf, "envelope definition workflow failure"); /* eslERANGE can happen */
-    if(pli->do_msvband) {
-      fprintf(stderr, "#MSVBAND_DBG: F5 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-	      " nregions=%d nenvelopes=%d ndom=%d %s\n",
-	      i, sq->name, ws[i], we[i],
-	      pli->ddef->nregions, pli->ddef->nenvelopes, pli->ddef->ndom,
-	      (pli->ddef->nregions == 0) ? "KILLED_F5(nregions=0)" :
-	      (pli->ddef->nenvelopes == 0) ? "KILLED_F5(nenvelopes=0)" : "has_envelopes");
-    }
     if (pli->ddef->nregions   == 0)  continue; /* score passed threshold but there's no discrete domains here       */
     if (pli->ddef->nenvelopes == 0)  continue; /* rarer: region was found, stochastic clustered, no envelopes found */
 
@@ -4544,15 +4490,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       /***************************************************/
       
       /* check if we can skip this envelope based on its P-value */
-      if(pli->do_msvband) {
-	fprintf(stderr, "#MSVBAND_DBG: F5 env  %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-		" env_abs=[%6"PRId64"..%6"PRId64"] sc=%.3f P=%.3g F5=%.3g %s\n",
-		d, sq->name, ws[i], we[i],
-		pli->ddef->dcl[d].ienv + ws[i] - 1,
-		pli->ddef->dcl[d].jenv + ws[i] - 1,
-		env_sc_for_pvalue, P, pli->F5,
-		(P > pli->F5) ? "KILLED_F5" : "passes_F5");
-      }
       if(P > pli->F5) {
 	if(pli->ddef->dcl[d].ad) p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
 	continue;
