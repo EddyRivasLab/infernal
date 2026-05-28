@@ -5237,20 +5237,22 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
       }
     }
     if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
-      for(j = jmin[v]; j <= jmax[v]; j++) { 
+      for(j = jmin[v]; j <= jmax[v]; j++) {
 	jp_v = j - jmin[v];
-	for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+	/* Peel first d: assign directly (avoids FLogsum(IMPOSSIBLE, x) == x) */
+	emit_mx->r_pp[v][jp_v] = post->dp[v][jp_v][0];
+	for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
 	  dp_v = d-hdmin[v][jp_v];
 	  emit_mx->r_pp[v][jp_v] = FLogsum(emit_mx->r_pp[v][jp_v], post->dp[v][jp_v][dp_v]);
 	}
       }
     }
   }
-  /* factor in contribution of local ends, the EL state may have emitted this residue. 
-   * Note, the M deck is non-banded 
+  /* factor in contribution of local ends, the EL state may have emitted this residue.
+   * Note, the M deck is non-banded
    */
   if (cm->flags & CMH_LOCAL_END) {
-    for (j = 1; j <= L; j++) { 
+    for (j = 1; j <= L; j++) {
       i = j;
       for (d = 1; d <= j; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
 	emit_mx->l_pp[cm->M][i] = FLogsum(emit_mx->l_pp[cm->M][i], post->dp[cm->M][j][d]);
