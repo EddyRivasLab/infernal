@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include <float.h>
 #include <limits.h>
+#include <inttypes.h>	/* DBG-006: PRId64/PRIu64 */
 
 #include "easel.h"		/* general seq analysis library   */
 #include "esl_alphabet.h"
@@ -852,6 +853,22 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	ESL_SQ *sq = sqarr[idx];
 
 	p7_ReconfigLength(gm, sq->n);
+
+	/* DBG-006: instrument HMM full-matrix allocation size before GrowTo */
+	{
+	  uint64_t dbg_ncells = (uint64_t)(hmm->M + 1) * (uint64_t)(sq->n + 1);
+	  uint64_t dbg_bytes  = (uint64_t) sizeof(float) * dbg_ncells * (uint64_t) p7G_NSCELLS;
+	  int dbg_nmat = do_hmmnoband ? 2 : 1;
+	  fprintf(stderr, "DBG-006: seq=%s mode=%s M=%d L=%" PRId64 " ncells=%" PRIu64
+		  " size_request_per_matrix=%" PRIu64 " bytes (%.2f GB) nmatrices=%d total=%.2f GB int32_print=%d\n",
+		  sq->name,
+		  do_hmmvit ? "hmmvit(1mat)" : (do_hmmnoband ? "hmmnoband(2mat)" : "bandedoa(1mat+banded)"),
+		  hmm->M, (int64_t) sq->n, dbg_ncells, dbg_bytes,
+		  (double) dbg_bytes / (1024.0*1024.0*1024.0), dbg_nmat,
+		  (double) dbg_bytes * dbg_nmat / (1024.0*1024.0*1024.0),
+		  (int) dbg_bytes);
+	  fflush(stderr);
+	}
 
 	if (do_hmmvit) {
 	  /* --- Mode 1: Viterbi trace --- */
