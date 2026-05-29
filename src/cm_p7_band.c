@@ -8857,6 +8857,7 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
   ESL_ALLOC(dp,     npins_in * sizeof(int));
   ESL_ALLOC(parent, npins_in * sizeof(int));
 
+  long n_gapcost = 0;   /* # of gap costs evaluated (PB_DEBUG_LSIS) */
   int best_dp = INT_MIN, best_idx = -1;
   for (int p = 0; p < npins_in; p++) {
     dp[p]     = (int) pins[p].r;   /* chain starting fresh at this pin */
@@ -8864,6 +8865,7 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
     for (int q = 0; q < p; q++) {
       /* forward edge requires strictly increasing i and k */
       if (pins[q].i >= pins[p].i || pins[q].k >= pins[p].k) continue;
+      n_gapcost++;
       int gap;
       if (use_vit_gaps)
         gap = pb_gap_cost_miniviterbi(pins[q].i, pins[q].k,
@@ -8885,6 +8887,10 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
 
   ESL_ALLOC(sel, chain_len * sizeof(PB_Pin));
   for (int j = 0; j < chain_len; j++) sel[j] = pins[chain_idx[chain_len - 1 - j]];
+
+  if (getenv("PB_DEBUG_LSIS") != NULL)
+    fprintf(stderr, "#PB_LSIS_COST npins=%d n_gapcost=%ld vit_gaps=%d\n",
+            npins_in, n_gapcost, use_vit_gaps);
 
   free(pins); free(dp); free(parent); free(chain_idx);
   *ret_sel = sel;
