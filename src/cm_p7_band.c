@@ -7888,11 +7888,13 @@ cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile
  * See scratch_pinbridge/REPORT_v5.md for prototype validation.
  *****************************************************************/
 
-/* Pin: a (k,i) anchor with priority r (SW score in v5). */
+/* Pin: a (k,i) anchor with priority r (SW score in v5).
+ * r widened to int16_t 2026-05-29 (brief-079 S7 pinbridge prototype)
+ * to support 16-bit SSE SW scan without saturation at L<200. */
 typedef struct {
   int     k;
   int     i;
-  uint8_t r;
+  int16_t r;
 } PB_Pin;
 
 static inline int pb_adaptive_T(int M)
@@ -8360,7 +8362,7 @@ pb_sw_scan_collect_pins(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int T,
             }
             pins[npins].k = k;
             pins[npins].i = i - 1;
-            pins[npins].r = u_prev.b[z];
+            pins[npins].r = (int16_t)(int8_t)u_prev.b[z];
             npins++;
           }
         }
@@ -8380,6 +8382,112 @@ pb_sw_scan_collect_pins(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int T,
         int k = (q + 1) + z * Q;
         if (k > M) break;
         if ((int8_t)u_prev.b[z] >= (int8_t)T) {
+          if (npins >= max_pins) {
+            max_pins *= 2;
+            PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+            if (!tmp2) { free(pins); free(prev); free(curr); return eslEMEM; }
+            pins = tmp2;
+          }
+          pins[npins].k = k;
+          pins[npins].i = L;
+          pins[npins].r = (int16_t)(int8_t)u_prev.b[z];
+          npins++;
+        }
+      }
+    }
+  }
+
+  free(prev);
+  free(curr);
+
+  *ret_pins  = pins;
+  *ret_npins = npins;
+  return eslOK;
+}
+
+/*****************************************************************
+ * 16-bit SSE SW scan (prototype 2026-05-29, brief 079 S7 follow-up)
+ *
+ * The 8-bit version above saturates at +127 for L<200 on conserved
+ * targets like RF00010, destroying LSIS's chain-discrimination
+ * ability. This 16-bit variant uses the same striped SSE pattern
+ * with epi16 ops + om->rwv (HMMER ViterbiFilter's emission table).
+ * 8 lanes per register instead of 16 → ~2x wall, but >100x value
+ * range, so saturation is not an issue at M <= ~10K typical scale.
+ * Threshold T_w scaled to 16-bit emission units.
+ *****************************************************************/
+__attribute__((target("sse4.1")))
+static int
+pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int T_w,
+                          PB_Pin **ret_pins, int *ret_npins)
+{
+  int M = om->M;
+  int Q = p7O_NQW(M);    /* 8 lanes (16-bit words) per 128-bit register */
+  int i, q, z;
+
+  int max_pins = (M + L) * 4;
+  PB_Pin *pins = (PB_Pin *) malloc(max_pins * sizeof(PB_Pin));
+  if (!pins) return eslEMEM;
+  int npins = 0;
+
+  __m128i *prev = NULL;
+  __m128i *curr = NULL;
+  if (posix_memalign((void **)&prev, 16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&curr, 16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+
+  for (q = 0; q < Q; q++) { prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128(); }
+
+  __m128i zero = _mm_setzero_si128();
+
+  for (i = 1; i <= L; i++) {
+    __m128i const *rsc = om->rwv[dsq[i]];                /* 16-bit emission scores */
+    __m128i mpv = _mm_slli_si128(prev[Q - 1], 2);        /* shift left 2 bytes = 1 word */
+
+    for (q = 0; q < Q; q++) {
+      __m128i cand   = _mm_adds_epi16(mpv, rsc[q]);      /* SW extend (signed saturating) */
+      __m128i newval = _mm_max_epi16(zero, cand);        /* SW floor at 0 */
+      mpv     = prev[q];
+      curr[q] = newval;
+    }
+
+    /* Collect end-of-segment pins at row (i-1) */
+    {
+      union { __m128i v; int16_t b[8]; } u_prev, u_curr;
+      for (q = 0; q < Q; q++) {
+        u_prev.v = prev[q];
+        u_curr.v = curr[q];
+        for (z = 0; z < 8; z++) {
+          int k = (q + 1) + z * Q;
+          if (k > M) break;
+          if (u_prev.b[z] >= (int16_t)T_w && u_curr.b[z] == 0) {
+            if (npins >= max_pins) {
+              max_pins *= 2;
+              PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+              if (!tmp) { free(pins); free(prev); free(curr); return eslEMEM; }
+              pins = tmp;
+            }
+            pins[npins].k = k;
+            pins[npins].i = i - 1;
+            pins[npins].r = u_prev.b[z];
+            npins++;
+          }
+        }
+      }
+    }
+
+    __m128i *tmp = prev; prev = curr; curr = tmp;
+    for (q = 0; q < Q; q++) curr[q] = _mm_setzero_si128();
+  }
+
+  /* Last-row pins */
+  {
+    union { __m128i v; int16_t b[8]; } u_prev;
+    for (q = 0; q < Q; q++) {
+      u_prev.v = prev[q];
+      for (z = 0; z < 8; z++) {
+        int k = (q + 1) + z * Q;
+        if (k > M) break;
+        if (u_prev.b[z] >= (int16_t)T_w) {
           if (npins >= max_pins) {
             max_pins *= 2;
             PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
@@ -8620,12 +8728,15 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   int      *kmax      = NULL;
   float     vit_sc    = -eslINFINITY;
   int       T         = pb_adaptive_T(M);
+  /* 16-bit threshold: scale 8-bit T by (scale_w/scale_b) ~ 167.
+   * Computed from om's actual scales for safety. */
+  int       T_w       = (int)( (float)T * (om->scale_w / om->scale_b) );
   struct timespec ta, tb;
   double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
 
-  /* Step 1: SW scan -> raw pins */
+  /* Step 1: SW scan -> raw pins (16-bit SSE prototype, brief 079 S7 follow-up) */
   clock_gettime(CLOCK_MONOTONIC, &ta);
-  if ((status = pb_sw_scan_collect_pins(dsq, L, om, T, &raw_pins, &npins)) != eslOK) goto ERROR;
+  if ((status = pb_sw_scan_collect_pins_w(dsq, L, om, T_w, &raw_pins, &npins)) != eslOK) goto ERROR;
   clock_gettime(CLOCK_MONOTONIC, &tb);
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
@@ -8634,6 +8745,21 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   if ((status = pb_lsis_select(raw_pins, npins, M, &sel_pins, &nsel)) != eslOK) goto ERROR;
   clock_gettime(CLOCK_MONOTONIC, &tb);
   lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+  /* Optional: dump LSIS-selected chain when PB_DEBUG_LSIS is set in env.
+   * Used for gap-aware LSIS validation (brief 089). */
+  if (getenv("PB_DEBUG_LSIS") != NULL) {
+    int _dbg_p;
+    long long _dbg_sum = 0;
+    for (_dbg_p = 0; _dbg_p < nsel; _dbg_p++) _dbg_sum += sel_pins[_dbg_p].r;
+    fprintf(stderr, "#PB_LSIS_OUT nsel=%d raw=%d sum_r=%lld first_k=%d last_k=%d\n",
+            nsel, npins, _dbg_sum,
+            nsel > 0 ? sel_pins[0].k : -1,
+            nsel > 0 ? sel_pins[nsel-1].k : -1);
+    for (_dbg_p = 0; _dbg_p < nsel; _dbg_p++) {
+      fprintf(stderr, "#PB_LSIS_PIN p=%d i=%d k=%d r=%d\n",
+              _dbg_p, sel_pins[_dbg_p].i, sel_pins[_dbg_p].k, (int)sel_pins[_dbg_p].r);
+    }
+  }
 
   /* Step 3+4: build kmin/kmax + convert to GBANDS + (allocate or grow) gxb */
   clock_gettime(CLOCK_MONOTONIC, &ta);
