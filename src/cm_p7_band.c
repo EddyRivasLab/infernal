@@ -8544,7 +8544,8 @@ typedef struct {
   int   *S_DD;      /* S_DD[k] = sum_{j=1..k} cost(D_j->D_{j+1}), PB units, k=0..M */
   int   *md_at;     /* md_at[k] = cost(M_k->D_{k+1}), PB units                     */
   int   *dm_at;     /* dm_at[k] = cost(D_k->M_{k+1}), PB units                     */
-  int   *iloop_at;  /* iloop_at[k] = cost(MI_k + II_k + IM_k), PB units            */
+  int   *ii_at;     /* ii_at[k]   = cost(I_k->I_k) loop, PB units                  */
+  int   *ient_at;   /* ient_at[k] = cost(M_k->I_k + I_k->M_{k+1}) enter+exit, PB    */
   float  scale_natsToPB;  /* nats -> pinbridge units (= om->scale_w)               */
 } PB_GapData;
 
@@ -8566,8 +8567,9 @@ pb_gap_data_free(PB_GapData *gd)
   if (gd->S_DD)     free(gd->S_DD);
   if (gd->md_at)    free(gd->md_at);
   if (gd->dm_at)    free(gd->dm_at);
-  if (gd->iloop_at) free(gd->iloop_at);
-  gd->S_MM = gd->S_DD = gd->md_at = gd->dm_at = gd->iloop_at = NULL;
+  if (gd->ii_at)    free(gd->ii_at);
+  if (gd->ient_at)  free(gd->ient_at);
+  gd->S_MM = gd->S_DD = gd->md_at = gd->dm_at = gd->ii_at = gd->ient_at = NULL;
 }
 
 /* Precompute per-profile gap-cost tables. O(M). Call pb_gap_data_free()
@@ -8581,17 +8583,18 @@ pb_precompute_gap_data(const P7_PROFILE *gm, const P7_OPROFILE *om, PB_GapData *
   int status;
 
   gd->M    = M;
-  gd->S_MM = gd->S_DD = gd->md_at = gd->dm_at = gd->iloop_at = NULL;
+  gd->S_MM = gd->S_DD = gd->md_at = gd->dm_at = gd->ii_at = gd->ient_at = NULL;
   gd->scale_natsToPB = om->scale_w;
 
-  ESL_ALLOC(gd->S_MM,     sizeof(int) * (M + 1));
-  ESL_ALLOC(gd->S_DD,     sizeof(int) * (M + 1));
-  ESL_ALLOC(gd->md_at,    sizeof(int) * (M + 1));
-  ESL_ALLOC(gd->dm_at,    sizeof(int) * (M + 1));
-  ESL_ALLOC(gd->iloop_at, sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->S_MM,    sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->S_DD,    sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->md_at,   sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->dm_at,   sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->ii_at,   sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->ient_at, sizeof(int) * (M + 1));
 
   gd->S_MM[0] = gd->S_DD[0] = 0;
-  gd->md_at[0] = gd->dm_at[0] = gd->iloop_at[0] = 0;
+  gd->md_at[0] = gd->dm_at[0] = gd->ii_at[0] = gd->ient_at[0] = 0;
 
   /* Transitions are defined for k = 1..M-1 (tsc hand-indexed [1..M-1]).
    * Position M has no outgoing core transition -> zero cost there. */
@@ -8602,11 +8605,11 @@ pb_precompute_gap_data(const P7_PROFILE *gm, const P7_OPROFILE *om, PB_GapData *
       dd_pb         = pb_nat_to_units(-p7P_TSC(gm, k, p7P_DD), gd->scale_natsToPB);
       gd->md_at[k]  = pb_nat_to_units(-p7P_TSC(gm, k, p7P_MD), gd->scale_natsToPB);
       gd->dm_at[k]  = pb_nat_to_units(-p7P_TSC(gm, k, p7P_DM), gd->scale_natsToPB);
-      gd->iloop_at[k] = pb_nat_to_units(-(p7P_TSC(gm, k, p7P_MI) +
-                                          p7P_TSC(gm, k, p7P_II) +
-                                          p7P_TSC(gm, k, p7P_IM)), gd->scale_natsToPB);
+      gd->ii_at[k]  = pb_nat_to_units(-p7P_TSC(gm, k, p7P_II), gd->scale_natsToPB);
+      gd->ient_at[k]= pb_nat_to_units(-(p7P_TSC(gm, k, p7P_MI) +
+                                        p7P_TSC(gm, k, p7P_IM)), gd->scale_natsToPB);
     } else {
-      gd->md_at[k] = gd->dm_at[k] = gd->iloop_at[k] = 0;
+      gd->md_at[k] = gd->dm_at[k] = gd->ii_at[k] = gd->ient_at[k] = 0;
     }
     gd->S_MM[k] = gd->S_MM[k-1] + mm_pb;
     gd->S_DD[k] = gd->S_DD[k-1] + dd_pb;
@@ -8638,27 +8641,32 @@ pb_gap_cost_closed_form(int i_p, int k_p, int i_q, int k_q, const PB_GapData *gd
     return mm_cost;
   }
   else if (dk > di) {
-    /* net deletions d = dk - di: avg DD over span * d + MD/DM boundary */
+    /* net deletions d = dk - di: enter MD once + (d-1) DD loops + exit DM once */
     int  d    = dk - di;
     int  span = dk - 1; if (span < 1) span = 1;
     long dd_sum = (long) gd->S_DD[k_q - 1] - (long) gd->S_DD[k_p - 1];
     int  avg_dd = (int)(dd_sum / span);
     long cost = (long) mm_cost
-              + (long) d * (long) avg_dd
+              + (long)(d - 1) * (long) avg_dd
               + (long) gd->md_at[k_p]
               + (long) gd->dm_at[k_q - 1];
     if (cost > (long) INT_MAX) cost = INT_MAX;
     return (int) cost;
   }
   else {
-    /* net insertions n = di - dk: n residues at cheapest I-loop in span */
+    /* net insertions n = di - dk: enter MI once + (n-1) II loops + exit IM once,
+     * at the cheapest insert state in the span. Charging the MI/IM boundary per
+     * inserted residue (as a naive n*(MI+II+IM) would) over-penalizes long
+     * insertions by ~(n-1)*(MI+IM) and wrongly truncates legitimate chains. */
     int n = di - dk;
-    int best_iloop = INT_MAX;
-    int kk;
-    for (kk = k_p; kk <= k_q && kk <= gd->M; kk++)
-      if (gd->iloop_at[kk] < best_iloop) best_iloop = gd->iloop_at[kk];
-    if (best_iloop == INT_MAX) best_iloop = 0;
-    long cost = (long) mm_cost + (long) n * (long) best_iloop;
+    int best_ii = INT_MAX, best_ient = INT_MAX, kk;
+    for (kk = k_p; kk <= k_q && kk <= gd->M; kk++) {
+      if (gd->ii_at[kk]   < best_ii)   best_ii   = gd->ii_at[kk];
+      if (gd->ient_at[kk] < best_ient) best_ient = gd->ient_at[kk];
+    }
+    if (best_ii   == INT_MAX) best_ii   = 0;
+    if (best_ient == INT_MAX) best_ient = 0;
+    long cost = (long) mm_cost + (long) best_ient + (long)(n - 1) * (long) best_ii;
     if (cost > (long) INT_MAX) cost = INT_MAX;
     return (int) cost;
   }
