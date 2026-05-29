@@ -8664,6 +8664,97 @@ pb_gap_cost_closed_form(int i_p, int k_p, int i_q, int k_q, const PB_GapData *gd
   }
 }
 
+/* Mini-Viterbi gap cost (Option 3, brief 089, flag-gated). Exact banded
+ * p7 Viterbi over the rectangle [i_p,k_p]..[i_q,k_q]: the best-scoring
+ * M/I/D path from pin p's match to pin q's match, scoring intermediate
+ * transitions (gm->tsc) and emissions (gm->rsc, gm->isc) in nats, then
+ * scaled to pinbridge units. O((di+1)*(dk+1)) cells per call. Returns
+ * the positive cost, or INT_MAX on an invalid gap / no path / alloc fail.
+ *
+ * Relative indices: row a in [0..di] = absolute residue i_p+a; col b in
+ * [0..dk] = absolute model position k_p+b. (0,0) is seeded at M_{k_p}
+ * (pin p, residue i_p already emitted); the path must consume residues
+ * i_p+1..i_q and terminate in a match at M_{k_q} (pin q). */
+static int
+pb_gap_cost_miniviterbi(int i_p, int k_p, int i_q, int k_q,
+                        const P7_PROFILE *gm, const ESL_DSQ *dsq,
+                        float scale_natsToPB)
+{
+  int di = i_q - i_p;
+  int dk = k_q - k_p;
+  int M  = gm->M;
+  if (di <= 0 || dk <= 0) return INT_MAX;
+
+  int nrow = di + 1;
+  int ncol = dk + 1;
+  float *Mx = (float *) malloc(sizeof(float) * nrow * ncol);
+  float *Ix = (float *) malloc(sizeof(float) * nrow * ncol);
+  float *Dx = (float *) malloc(sizeof(float) * nrow * ncol);
+  if (!Mx || !Ix || !Dx) { free(Mx); free(Ix); free(Dx); return INT_MAX; }
+
+  #define PBMX(a,b) Mx[(a)*ncol + (b)]
+  #define PBIX(a,b) Ix[(a)*ncol + (b)]
+  #define PBDX(a,b) Dx[(a)*ncol + (b)]
+  const float NEG = -eslINFINITY;
+
+  for (int a = 0; a < nrow; a++)
+    for (int b = 0; b < ncol; b++) { PBMX(a,b) = PBIX(a,b) = PBDX(a,b) = NEG; }
+  PBMX(0,0) = 0.0f;   /* sitting at pin p's match */
+
+  for (int a = 0; a < nrow; a++) {
+    int i_abs = i_p + a;
+    for (int b = 0; b < ncol; b++) {
+      int k_abs = k_p + b;
+      if (a == 0 && b == 0) continue;
+
+      /* M[a][b]: enter match k_abs emitting residue i_abs, from (a-1,b-1) */
+      if (a >= 1 && b >= 1) {
+        int   kprev = k_abs - 1;   /* in [k_p, k_q-1] subset of [1,M-1] */
+        float best = NEG, v;
+        v = PBMX(a-1,b-1) + p7P_TSC(gm, kprev, p7P_MM); if (v > best) best = v;
+        v = PBIX(a-1,b-1) + p7P_TSC(gm, kprev, p7P_IM); if (v > best) best = v;
+        v = PBDX(a-1,b-1) + p7P_TSC(gm, kprev, p7P_DM); if (v > best) best = v;
+        if (best > NEG) PBMX(a,b) = best + p7P_MSC(gm, k_abs, dsq[i_abs]);
+      }
+
+      /* I[a][b]: insert at k_abs emitting residue i_abs, from (a-1,b).
+       * Insert states exist only for k = 1..M-1. */
+      if (a >= 1 && k_abs <= M - 1) {
+        float best = NEG, v;
+        v = PBMX(a-1,b) + p7P_TSC(gm, k_abs, p7P_MI); if (v > best) best = v;
+        v = PBIX(a-1,b) + p7P_TSC(gm, k_abs, p7P_II); if (v > best) best = v;
+        if (best > NEG) PBIX(a,b) = best + p7P_ISC(gm, k_abs, dsq[i_abs]);
+      }
+
+      /* D[a][b]: delete k_abs, no emission, from (a,b-1) */
+      if (b >= 1) {
+        int   kprev = k_abs - 1;
+        float best = NEG, v;
+        v = PBMX(a,b-1) + p7P_TSC(gm, kprev, p7P_MD); if (v > best) best = v;
+        v = PBDX(a,b-1) + p7P_TSC(gm, kprev, p7P_DD); if (v > best) best = v;
+        if (best > NEG) PBDX(a,b) = best;
+      }
+    }
+  }
+
+  float endsc = PBMX(nrow-1, ncol-1);   /* must end in match at pin q */
+  int cost;
+  if (endsc <= NEG) {
+    cost = INT_MAX;
+  } else {
+    float c = -endsc * scale_natsToPB;  /* nat path score (<=0) -> positive PB cost */
+    if (c < 0.0f) c = 0.0f;
+    if (c > (float) INT_MAX) c = (float) INT_MAX;
+    cost = (int) roundf(c);
+  }
+
+  #undef PBMX
+  #undef PBIX
+  #undef PBDX
+  free(Mx); free(Ix); free(Dx);
+  return cost;
+}
+
 /* LSIS over (i,k,r): longest score-weighted increasing subsequence.
  * Sort by (i asc, k desc) so same-i pins never chain.
  * Fenwick prefix-max over k stores (max_dp, achiever_idx). */
@@ -8737,10 +8828,15 @@ pb_lsis_select_legacy(PB_Pin *pins_in, int npins_in, int M,
  * objective is sum(pin r) - sum(gap cost) rather than sum(pin r) alone.
  * This stops LSIS from splicing pins across incompatible diagonals over
  * an implausible D-state run. Pins are sorted (i asc, k desc) as in the
- * legacy path; a chain edge q->p requires strictly increasing i and k. */
+ * legacy path; a chain edge q->p requires strictly increasing i and k.
+ *
+ * When use_vit_gaps != 0 (Option 3, --p7pinbridge-vitgaps), each edge's
+ * gap cost is the exact mini-Viterbi over the gap rectangle instead of
+ * the closed-form estimate; gm/dsq are then required (NULL otherwise). */
 static int
 pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
                          const PB_GapData *gd,
+                         int use_vit_gaps, const P7_PROFILE *gm, const ESL_DSQ *dsq,
                          PB_Pin **ret_sel, int *ret_n_sel)
 {
   int  status;
@@ -8768,8 +8864,14 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
     for (int q = 0; q < p; q++) {
       /* forward edge requires strictly increasing i and k */
       if (pins[q].i >= pins[p].i || pins[q].k >= pins[p].k) continue;
-      int gap = pb_gap_cost_closed_form(pins[q].i, pins[q].k,
-                                        pins[p].i, pins[p].k, gd);
+      int gap;
+      if (use_vit_gaps)
+        gap = pb_gap_cost_miniviterbi(pins[q].i, pins[q].k,
+                                      pins[p].i, pins[p].k,
+                                      gm, dsq, gd->scale_natsToPB);
+      else
+        gap = pb_gap_cost_closed_form(pins[q].i, pins[q].k,
+                                      pins[p].i, pins[p].k, gd);
       if (gap == INT_MAX) continue;
       int cand = dp[q] + (int) pins[p].r - gap;
       if (cand > dp[p]) { dp[p] = cand; parent[p] = q; }
@@ -8935,7 +9037,7 @@ p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
 int
 p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
                       P7_GBANDS *bnd, P7_TRACE *tr,
-                      const ESL_DSQ *dsq, int L, int pad, float *ret_sc,
+                      const ESL_DSQ *dsq, int L, int pad, int use_vit_gaps, float *ret_sc,
                       double *ret_sw_ms, double *ret_lsis_ms,
                       double *ret_band_ms, double *ret_bvit_ms, double *ret_btrace_ms)
 {
@@ -8968,7 +9070,9 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_precompute_gap_data(gm, om, &gd)) != eslOK) goto ERROR;
   gd_ok = 1;
-  if ((status = pb_lsis_select_gap_aware(raw_pins, npins, M, &gd, &sel_pins, &nsel)) != eslOK) goto ERROR;
+  if ((status = pb_lsis_select_gap_aware(raw_pins, npins, M, &gd,
+                                         use_vit_gaps, gm, dsq,
+                                         &sel_pins, &nsel)) != eslOK) goto ERROR;
   clock_gettime(CLOCK_MONOTONIC, &tb);
   lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
   /* Optional: dump LSIS-selected chain when PB_DEBUG_LSIS is set in env.
@@ -9133,8 +9237,10 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   clock_gettime(CLOCK_MONOTONIC, &tb);
   om_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* Step 1+2: SW-pinbridge prefilter + banded p7 Viterbi + banded trace. */
-  status = p7_Seq2BandsPinBridge(gm, om, gxb, bnd, p7_tr, dsq, L, pb_pad, &sc,
+  /* Step 1+2: SW-pinbridge prefilter + banded p7 Viterbi + banded trace.
+   * cm->p7_pinbridge_vit_gaps selects mini-Viterbi gap costs (Option 3). */
+  status = p7_Seq2BandsPinBridge(gm, om, gxb, bnd, p7_tr, dsq, L, pb_pad,
+                                 cm->p7_pinbridge_vit_gaps, &sc,
                                  &sw_ms, &lsis_ms, &band_ms, &bvit_ms, &btrace_ms);
   if (status != eslOK) {
     /* signal caller to fall back */
