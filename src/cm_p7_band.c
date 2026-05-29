@@ -8511,6 +8511,159 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
   return eslOK;
 }
 
+/*****************************************************************
+ * Gap-aware LSIS gap costs (brief 089, 2026-05-29)
+ *
+ * Plain score-sum LSIS chains pins to maximize the sum of SW pin
+ * scores, ignoring the indel cost implied by the jump between two
+ * consecutive pins. On fragmented RF00010 targets this lets LSIS
+ * splice together pins from incompatible diagonals across a long
+ * D-state run that Viterbi then scores as implausible (the remaining
+ * 3 catastrophic failures after the 16-bit scan port).
+ *
+ * PB_GapData precomputes per-position transition penalties from the
+ * generic profile gm->tsc (nats, <=0) converted to pinbridge 16-bit
+ * units, so a closed-form gap cost between any two pins is O(1).
+ *
+ * Unit note: pin scores r come from om->rwv = wordify(sc) =
+ * roundf(om->scale_w * sc) where sc is a nat-valued log-odds score
+ * (p7P_MSC). The correct nats->pinbridge factor is therefore
+ * om->scale_w itself (scale_w = 500/log2 already folds in the
+ * nats->bits conversion). [Brief 089 suggested scale_w/log2; that
+ * double-counts the log2 and was corrected here, verified against
+ * hmmer impl_sse/p7_oprofile.c wordify().]
+ *
+ * Per-position transition costs are clamped to PB_GAP_UNIT_CAP so an
+ * impossible (-inf) transition cannot overflow the int prefix sums.
+ *****************************************************************/
+#define PB_GAP_UNIT_CAP 60000   /* max PB units for one transition penalty */
+
+typedef struct {
+  int    M;
+  int   *S_MM;      /* S_MM[k] = sum_{j=1..k} cost(M_j->M_{j+1}), PB units, k=0..M */
+  int   *S_DD;      /* S_DD[k] = sum_{j=1..k} cost(D_j->D_{j+1}), PB units, k=0..M */
+  int   *md_at;     /* md_at[k] = cost(M_k->D_{k+1}), PB units                     */
+  int   *dm_at;     /* dm_at[k] = cost(D_k->M_{k+1}), PB units                     */
+  int   *iloop_at;  /* iloop_at[k] = cost(MI_k + II_k + IM_k), PB units            */
+  float  scale_natsToPB;  /* nats -> pinbridge units (= om->scale_w)               */
+} PB_GapData;
+
+static inline int
+pb_nat_to_units(float natcost, float scale)
+{
+  float v;
+  if (natcost < 0.0f) natcost = 0.0f;   /* numerical guard; cost is -(log prob) >= 0 */
+  v = natcost * scale;
+  if (v > (float) PB_GAP_UNIT_CAP) v = (float) PB_GAP_UNIT_CAP;
+  return (int) roundf(v);
+}
+
+static void
+pb_gap_data_free(PB_GapData *gd)
+{
+  if (gd == NULL) return;
+  if (gd->S_MM)     free(gd->S_MM);
+  if (gd->S_DD)     free(gd->S_DD);
+  if (gd->md_at)    free(gd->md_at);
+  if (gd->dm_at)    free(gd->dm_at);
+  if (gd->iloop_at) free(gd->iloop_at);
+  gd->S_MM = gd->S_DD = gd->md_at = gd->dm_at = gd->iloop_at = NULL;
+}
+
+/* Precompute per-profile gap-cost tables. O(M). Call pb_gap_data_free()
+ * to release. gm supplies transition log-probs (nats); om supplies the
+ * scale to pinbridge 16-bit units. */
+static int
+pb_precompute_gap_data(const P7_PROFILE *gm, const P7_OPROFILE *om, PB_GapData *gd)
+{
+  int M = gm->M;
+  int k;
+  int status;
+
+  gd->M    = M;
+  gd->S_MM = gd->S_DD = gd->md_at = gd->dm_at = gd->iloop_at = NULL;
+  gd->scale_natsToPB = om->scale_w;
+
+  ESL_ALLOC(gd->S_MM,     sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->S_DD,     sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->md_at,    sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->dm_at,    sizeof(int) * (M + 1));
+  ESL_ALLOC(gd->iloop_at, sizeof(int) * (M + 1));
+
+  gd->S_MM[0] = gd->S_DD[0] = 0;
+  gd->md_at[0] = gd->dm_at[0] = gd->iloop_at[0] = 0;
+
+  /* Transitions are defined for k = 1..M-1 (tsc hand-indexed [1..M-1]).
+   * Position M has no outgoing core transition -> zero cost there. */
+  for (k = 1; k <= M; k++) {
+    int mm_pb = 0, dd_pb = 0;
+    if (k <= M - 1) {
+      mm_pb         = pb_nat_to_units(-p7P_TSC(gm, k, p7P_MM), gd->scale_natsToPB);
+      dd_pb         = pb_nat_to_units(-p7P_TSC(gm, k, p7P_DD), gd->scale_natsToPB);
+      gd->md_at[k]  = pb_nat_to_units(-p7P_TSC(gm, k, p7P_MD), gd->scale_natsToPB);
+      gd->dm_at[k]  = pb_nat_to_units(-p7P_TSC(gm, k, p7P_DM), gd->scale_natsToPB);
+      gd->iloop_at[k] = pb_nat_to_units(-(p7P_TSC(gm, k, p7P_MI) +
+                                          p7P_TSC(gm, k, p7P_II) +
+                                          p7P_TSC(gm, k, p7P_IM)), gd->scale_natsToPB);
+    } else {
+      gd->md_at[k] = gd->dm_at[k] = gd->iloop_at[k] = 0;
+    }
+    gd->S_MM[k] = gd->S_MM[k-1] + mm_pb;
+    gd->S_DD[k] = gd->S_DD[k-1] + dd_pb;
+  }
+  return eslOK;
+
+ ERROR:
+  pb_gap_data_free(gd);
+  return status;
+}
+
+/* Closed-form gap cost (Option 2): O(1) approximate indel penalty for
+ * the jump from pin (i_p,k_p) to pin (i_q,k_q), in pinbridge units.
+ * Returns INT_MAX if the gap is not strictly forward in both i and k. */
+static int
+pb_gap_cost_closed_form(int i_p, int k_p, int i_q, int k_q, const PB_GapData *gd)
+{
+  int di = i_q - i_p;
+  int dk = k_q - k_p;
+  int mm_cost;
+
+  if (di <= 0 || dk <= 0) return INT_MAX;   /* LSIS should not propose these */
+
+  /* baseline: match-to-match transitions spanned, k_p .. k_q-1 (small) */
+  mm_cost = gd->S_MM[k_q - 1] - gd->S_MM[k_p - 1];
+
+  if (dk == di) {
+    /* pure diagonal: di matches, MM transitions only */
+    return mm_cost;
+  }
+  else if (dk > di) {
+    /* net deletions d = dk - di: avg DD over span * d + MD/DM boundary */
+    int  d    = dk - di;
+    int  span = dk - 1; if (span < 1) span = 1;
+    long dd_sum = (long) gd->S_DD[k_q - 1] - (long) gd->S_DD[k_p - 1];
+    int  avg_dd = (int)(dd_sum / span);
+    long cost = (long) mm_cost
+              + (long) d * (long) avg_dd
+              + (long) gd->md_at[k_p]
+              + (long) gd->dm_at[k_q - 1];
+    if (cost > (long) INT_MAX) cost = INT_MAX;
+    return (int) cost;
+  }
+  else {
+    /* net insertions n = di - dk: n residues at cheapest I-loop in span */
+    int n = di - dk;
+    int best_iloop = INT_MAX;
+    int kk;
+    for (kk = k_p; kk <= k_q && kk <= gd->M; kk++)
+      if (gd->iloop_at[kk] < best_iloop) best_iloop = gd->iloop_at[kk];
+    if (best_iloop == INT_MAX) best_iloop = 0;
+    long cost = (long) mm_cost + (long) n * (long) best_iloop;
+    if (cost > (long) INT_MAX) cost = INT_MAX;
+    return (int) cost;
+  }
+}
+
 /* LSIS over (i,k,r): longest score-weighted increasing subsequence.
  * Sort by (i asc, k desc) so same-i pins never chain.
  * Fenwick prefix-max over k stores (max_dp, achiever_idx). */
