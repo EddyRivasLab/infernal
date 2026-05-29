@@ -8675,8 +8675,10 @@ static int pb_pin_cmp_lsis(const void *a, const void *b)
   return pb->k - pa->k;
 }
 
+/* Legacy gap-blind LSIS (Fenwick prefix-max). Retained for comparison
+ * and as a fallback; superseded by pb_lsis_select_gap_aware (brief 089). */
 static int
-pb_lsis_select(PB_Pin *pins_in, int npins_in, int M,
+pb_lsis_select_legacy(PB_Pin *pins_in, int npins_in, int M,
                PB_Pin **ret_sel, int *ret_n_sel)
 {
   *ret_sel = NULL;
@@ -8728,6 +8730,72 @@ pb_lsis_select(PB_Pin *pins_in, int npins_in, int M,
   *ret_sel = sel;
   *ret_n_sel = chain_len;
   return eslOK;
+}
+
+/* Gap-aware LSIS (brief 089, Option 2). O(N^2) DP that prices the indel
+ * cost of each pin->pin jump via pb_gap_cost_closed_form(), so the
+ * objective is sum(pin r) - sum(gap cost) rather than sum(pin r) alone.
+ * This stops LSIS from splicing pins across incompatible diagonals over
+ * an implausible D-state run. Pins are sorted (i asc, k desc) as in the
+ * legacy path; a chain edge q->p requires strictly increasing i and k. */
+static int
+pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
+                         const PB_GapData *gd,
+                         PB_Pin **ret_sel, int *ret_n_sel)
+{
+  int  status;
+  int *dp        = NULL;
+  int *parent    = NULL;
+  int *chain_idx = NULL;
+  PB_Pin *pins   = NULL;
+  PB_Pin *sel    = NULL;
+
+  *ret_sel = NULL;
+  *ret_n_sel = 0;
+  if (npins_in == 0) return eslOK;
+
+  ESL_ALLOC(pins,   npins_in * sizeof(PB_Pin));
+  memcpy(pins, pins_in, npins_in * sizeof(PB_Pin));
+  qsort(pins, npins_in, sizeof(PB_Pin), pb_pin_cmp_lsis);
+
+  ESL_ALLOC(dp,     npins_in * sizeof(int));
+  ESL_ALLOC(parent, npins_in * sizeof(int));
+
+  int best_dp = INT_MIN, best_idx = -1;
+  for (int p = 0; p < npins_in; p++) {
+    dp[p]     = (int) pins[p].r;   /* chain starting fresh at this pin */
+    parent[p] = -1;
+    for (int q = 0; q < p; q++) {
+      /* forward edge requires strictly increasing i and k */
+      if (pins[q].i >= pins[p].i || pins[q].k >= pins[p].k) continue;
+      int gap = pb_gap_cost_closed_form(pins[q].i, pins[q].k,
+                                        pins[p].i, pins[p].k, gd);
+      if (gap == INT_MAX) continue;
+      int cand = dp[q] + (int) pins[p].r - gap;
+      if (cand > dp[p]) { dp[p] = cand; parent[p] = q; }
+    }
+    if (dp[p] > best_dp) { best_dp = dp[p]; best_idx = p; }
+  }
+
+  ESL_ALLOC(chain_idx, npins_in * sizeof(int));
+  int chain_len = 0;
+  for (int cur = best_idx; cur >= 0; cur = parent[cur]) chain_idx[chain_len++] = cur;
+
+  ESL_ALLOC(sel, chain_len * sizeof(PB_Pin));
+  for (int j = 0; j < chain_len; j++) sel[j] = pins[chain_idx[chain_len - 1 - j]];
+
+  free(pins); free(dp); free(parent); free(chain_idx);
+  *ret_sel = sel;
+  *ret_n_sel = chain_len;
+  return eslOK;
+
+ ERROR:
+  if (pins)      free(pins);
+  if (dp)        free(dp);
+  if (parent)    free(parent);
+  if (chain_idx) free(chain_idx);
+  if (sel)       free(sel);
+  return status;
 }
 
 
@@ -8884,6 +8952,8 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   /* 16-bit threshold: scale 8-bit T by (scale_w/scale_b) ~ 167.
    * Computed from om's actual scales for safety. */
   int       T_w       = (int)( (float)T * (om->scale_w / om->scale_b) );
+  PB_GapData gd;
+  int       gd_ok     = 0;
   struct timespec ta, tb;
   double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
 
@@ -8893,9 +8963,12 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   clock_gettime(CLOCK_MONOTONIC, &tb);
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* Step 2: LSIS pin selection */
+  /* Step 2: gap-aware LSIS pin selection (brief 089, Option 2).
+   * Precompute model-aware gap-cost tables once, then run the O(N^2) DP. */
   clock_gettime(CLOCK_MONOTONIC, &ta);
-  if ((status = pb_lsis_select(raw_pins, npins, M, &sel_pins, &nsel)) != eslOK) goto ERROR;
+  if ((status = pb_precompute_gap_data(gm, om, &gd)) != eslOK) goto ERROR;
+  gd_ok = 1;
+  if ((status = pb_lsis_select_gap_aware(raw_pins, npins, M, &gd, &sel_pins, &nsel)) != eslOK) goto ERROR;
   clock_gettime(CLOCK_MONOTONIC, &tb);
   lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
   /* Optional: dump LSIS-selected chain when PB_DEBUG_LSIS is set in env.
@@ -8965,6 +9038,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
     if (sel_pins) free(sel_pins);
     if (kmin)     free(kmin);
     if (kmax)     free(kmax);
+    if (gd_ok)    pb_gap_data_free(&gd);
     if (ret_sc) *ret_sc = vit_sc;
     if (ret_sw_ms)     *ret_sw_ms     = sw_ms;
     if (ret_lsis_ms)   *ret_lsis_ms   = lsis_ms;
@@ -8985,6 +9059,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   if (sel_pins) free(sel_pins);
   if (kmin)     free(kmin);
   if (kmax)     free(kmax);
+  if (gd_ok)    pb_gap_data_free(&gd);
   return eslOK;
 
  ERROR:
@@ -8992,6 +9067,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   if (sel_pins) free(sel_pins);
   if (kmin)     free(kmin);
   if (kmax)     free(kmax);
+  if (gd_ok)    pb_gap_data_free(&gd);
   return status;
 }
 
