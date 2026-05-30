@@ -9190,21 +9190,55 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
 }
 
 
+/* cm_p7_om_holder_Init() / cm_p7_om_holder_Reset():
+ * Lifecycle helpers for the reusable LOCAL p7 profile + OPROFILE used by
+ * the --p7pinbridge SW scan (brief 090). Init zeroes the holder; the
+ * profile/OPROFILE are built lazily on the first pinbridge sequence inside
+ * p7_Seq2BandsPinBridgeWrap(). Reset frees the built objects (no-op if never
+ * built). One holder per worker thread; never share across threads.
+ */
+void
+cm_p7_om_holder_Init(CM_P7_OM_HOLDER *h)
+{
+  if (h == NULL) return;
+  h->gm_local = NULL;
+  h->om       = NULL;
+  h->M        = 0;
+  h->built    = FALSE;
+}
+
+void
+cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h)
+{
+  if (h == NULL) return;
+  if (h->om       != NULL) p7_oprofile_Destroy(h->om);
+  if (h->gm_local != NULL) p7_profile_Destroy(h->gm_local);
+  h->gm_local = NULL;
+  h->om       = NULL;
+  h->M        = 0;
+  h->built    = FALSE;
+}
+
 /* p7_Seq2BandsPinBridgeWrap():
  * Mirrors p7_Seq2BandsVit() signature exactly; only the band-derivation
  * step is swapped (SW-pinbridge prefilter + banded p7 Viterbi instead of
  * full unbanded p7_GViterbi). i2k extraction + p7_pins2bands_nodepad are
  * the same as p7_Seq2BandsVit.
  *
- * Builds a LOCAL profile + OPROFILE on demand from cm->fp7 for the SSE
- * scan (rbv requires LOCAL config). The Viterbi runs against gm in the
- * caller's configured mode (GLOCAL or truncated LOCAL).
+ * The SSE scan needs a LOCAL config of cm->fp7 (rbv requires LOCAL). That
+ * LOCAL profile/OPROFILE depends only on the model, not the residues, so
+ * when <om_holder> is non-NULL it is built once (lazily, on the first
+ * sequence) and reused across the whole block/thread, with only a per-seq
+ * p7_oprofile_ReconfigLength(). When <om_holder> is NULL the profile is
+ * built and freed per call (single-sequence callers). The Viterbi runs
+ * against gm in the caller's configured mode (GLOCAL or truncated LOCAL).
  */
 int
 p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
                           P7_BG *bg, P7_TRACE *p7_tr,
                           ESL_DSQ *dsq, int L, int pad, int *nodepad,
                           int hopback, int vitend,
+                          CM_P7_OM_HOLDER *om_holder,
                           int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int          status;
@@ -9217,6 +9251,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   int          tpos;
   P7_PROFILE  *gm_local = NULL;
   P7_OPROFILE *om       = NULL;
+  int          own_om   = FALSE; /* TRUE if we built gm_local/om locally (no holder) */
   P7_GMXB     *gxb      = NULL;
   P7_GBANDS   *bnd      = NULL;
   int          pb_pad   = (cm->p7_pinbridge_pad > 0) ? cm->p7_pinbridge_pad : 20;
@@ -9227,18 +9262,51 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
   if (cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsPinBridgeWrap: cm->fp7 is NULL");
 
-  /* Build LOCAL p7 profile + OPROFILE for SSE rbv scan. */
+  /* Acquire the LOCAL p7 profile + OPROFILE for the SSE rbv scan.
+   *
+   * The LOCAL config of cm->fp7 depends only on the model, not the residues,
+   * so when a holder is provided we build it once (lazily) and reuse it
+   * across the block/thread, paying only a per-sequence ReconfigLength().
+   * Without a holder (single-sequence callers) we build-and-free per call,
+   * exactly as before. Either way the per-sequence om is byte-identical:
+   * p7_oprofile_Convert produces L-independent core scores and
+   * p7_oprofile_ReconfigLength(om, L) recomputes all L-dependent specials. */
   clock_gettime(CLOCK_MONOTONIC, &ta);
-  gm_local = p7_profile_Create(M, cm->fp7->abc);
-  if (gm_local == NULL) ESL_FAIL(eslEMEM, errbuf, "p7_profile_Create failed");
-  if ((status = p7_ProfileConfig(cm->fp7, bg, gm_local, L, p7_LOCAL)) != eslOK)
-    ESL_XFAIL(status, errbuf, "p7_ProfileConfig (LOCAL) failed");
-  om = p7_oprofile_Create(M, cm->fp7->abc);
-  if (om == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_oprofile_Create failed");
-  if ((status = p7_oprofile_Convert(gm_local, om)) != eslOK)
-    ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
-  if ((status = p7_oprofile_ReconfigLength(om, L)) != eslOK)
-    ESL_XFAIL(status, errbuf, "p7_oprofile_ReconfigLength failed");
+  if (om_holder != NULL) {
+    if (! om_holder->built) {
+      om_holder->gm_local = p7_profile_Create(M, cm->fp7->abc);
+      if (om_holder->gm_local == NULL) ESL_FAIL(eslEMEM, errbuf, "p7_profile_Create failed");
+      if ((status = p7_ProfileConfig(cm->fp7, bg, om_holder->gm_local, L, p7_LOCAL)) != eslOK)
+        ESL_XFAIL(status, errbuf, "p7_ProfileConfig (LOCAL) failed");
+      om_holder->om = p7_oprofile_Create(M, cm->fp7->abc);
+      if (om_holder->om == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_oprofile_Create failed");
+      if ((status = p7_oprofile_Convert(om_holder->gm_local, om_holder->om)) != eslOK)
+        ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
+      om_holder->M     = M;
+      om_holder->built = TRUE;
+    }
+    gm_local = om_holder->gm_local;
+    om       = om_holder->om;
+    own_om   = FALSE;
+    /* Per-sequence length reconfig on the reused OPROFILE (the only L-dependent
+     * step). gm_local is only the Convert source and is unused downstream, so
+     * it needs no per-seq reconfig. */
+    if ((status = p7_oprofile_ReconfigLength(om, L)) != eslOK)
+      ESL_XFAIL(status, errbuf, "p7_oprofile_ReconfigLength failed");
+  } else {
+    /* No holder: build LOCAL p7 profile + OPROFILE for this call only. */
+    gm_local = p7_profile_Create(M, cm->fp7->abc);
+    if (gm_local == NULL) ESL_FAIL(eslEMEM, errbuf, "p7_profile_Create failed");
+    if ((status = p7_ProfileConfig(cm->fp7, bg, gm_local, L, p7_LOCAL)) != eslOK)
+      ESL_XFAIL(status, errbuf, "p7_ProfileConfig (LOCAL) failed");
+    om = p7_oprofile_Create(M, cm->fp7->abc);
+    if (om == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_oprofile_Create failed");
+    if ((status = p7_oprofile_Convert(gm_local, om)) != eslOK)
+      ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
+    if ((status = p7_oprofile_ReconfigLength(om, L)) != eslOK)
+      ESL_XFAIL(status, errbuf, "p7_oprofile_ReconfigLength failed");
+    own_om = TRUE;
+  }
 
   /* Allocate banded matrix scratch (Reinit'd inside p7_Seq2BandsPinBridge once
    * the prefilter band is known). */
@@ -9264,8 +9332,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
     *ret_ncells = 0;
     p7_gmxb_Destroy(gxb);
     p7_gbands_Destroy(bnd);
-    p7_oprofile_Destroy(om);
-    p7_profile_Destroy(gm_local);
+    if (own_om) { p7_oprofile_Destroy(om); p7_profile_Destroy(gm_local); }
     return eslOK;
   }
 
@@ -9319,8 +9386,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
   p7_gmxb_Destroy(gxb);
   p7_gbands_Destroy(bnd);
-  p7_oprofile_Destroy(om);
-  p7_profile_Destroy(gm_local);
+  if (own_om) { p7_oprofile_Destroy(om); p7_profile_Destroy(gm_local); }
   return eslOK;
 
  ERROR:
@@ -9329,7 +9395,12 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   if (kmax) free(kmax);
   if (gxb)      p7_gmxb_Destroy(gxb);
   if (bnd)      p7_gbands_Destroy(bnd);
-  if (om)       p7_oprofile_Destroy(om);
-  if (gm_local) p7_profile_Destroy(gm_local);
+  /* Only free the LOCAL profile/OPROFILE if we own them; a holder's objects
+   * are owned (and freed) by the caller via cm_p7_om_holder_Reset(), which
+   * also cleans up a holder left partially built by a failure above. */
+  if (own_om) {
+    if (om)       p7_oprofile_Destroy(om);
+    if (gm_local) p7_profile_Destroy(gm_local);
+  }
   return status;
 }

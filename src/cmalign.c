@@ -671,16 +671,18 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
   int status;
   int i;  /* counter over sequences */
   ESL_SQ  *sqp = NULL; /* ptr to a ESL_SQ, only used if there's an error */
+  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE (brief 090) */
 
   /* allocate dataA */
   info->n = sq_block->count;
   ESL_ALLOC(info->dataA, sizeof(CM_ALNDATA *) * info->n);
   for(i = 0; i < info->n; i++) info->dataA[i] = NULL;
 
-  for(i = 0; i < info->n; i++) { 
-    status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize, 
+  cm_p7_om_holder_Init(&om_holder);
+  for(i = 0; i < info->n; i++) {
+    status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize,
 				 TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
-				 info->w, info->w_tot, r, &(info->dataA[i]));
+				 info->w, info->w_tot, r, &om_holder, &(info->dataA[i]));
     /* If alignment failed: potentially retry alignment in HMM banded
      * std (non-truncated) mode. We will only possibly do this if our
      * initial try was HMM banded truncated alignment (if not,
@@ -689,17 +691,18 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
     if(status == eslEAMBIGUOUS && info->do_failover == TRUE) { 
       assert(info->cm->align_opts & CM_ALIGN_TRUNC);
       info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
-      status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize, 
+      status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize,
 				   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				   info->w, info->w_tot, r, &(info->dataA[i]));
+				   info->w, info->w_tot, r, &om_holder, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
-    if(status != eslOK) { 
+    if(status != eslOK) {
       sqp = (sq_block->list + i);
       fprintf(stderr, "Problem during alignment of sequence %s\n", sqp->name);
       cm_Fail(errbuf);
     }
   }
+  cm_p7_om_holder_Reset(&om_holder);
   return eslOK;
   
  ERROR: 
@@ -798,6 +801,7 @@ pipeline_thread(void *arg)
   char          errbuf[eslERRBUFSIZE];
   int           nalloc    = 0;
   int           allocsize = 1000;
+  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE, per worker thread (brief 090) */
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
    * values in the floating point calculations, set the processor flag
@@ -830,16 +834,17 @@ pipeline_thread(void *arg)
   /* loop until all sequences have been processed */
   sq = (ESL_SQ *) new_sq;
   i = 0;
-  while (sq->L != -1) { 
+  cm_p7_om_holder_Init(&om_holder);
+  while (sq->L != -1) {
     /* reallocate info->dataA if necessary */
     if(info->n == nalloc) { 
       ESL_REALLOC(info->dataA, sizeof(CM_ALNDATA *) * (nalloc + allocsize));
       for(j = nalloc; j < info->n + allocsize; j++) info->dataA[j] = NULL;
       nalloc += allocsize;
     }
-    status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize, 
+    status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize,
 				 TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
-				 info->w, info->w_tot, NULL, &(info->dataA[i]));
+				 info->w, info->w_tot, NULL, &om_holder, &(info->dataA[i]));
     /* sq->W has been overloaded (its original value is irrelevant in this context).
      * It is now the sequence index, defined in thread_loop() 
      */
@@ -854,7 +859,7 @@ pipeline_thread(void *arg)
       info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
       status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize,
 				   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				   info->w, info->w_tot, NULL, &(info->dataA[i]));
+				   info->w, info->w_tot, NULL, &om_holder, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
     if(status != eslOK) { 
@@ -873,6 +878,7 @@ pipeline_thread(void *arg)
     printf("internal update %d sq->L: %" PRId64 "\n", workeridx, sq->L);
 #endif
   }
+  cm_p7_om_holder_Reset(&om_holder);
 
   status = esl_workqueue_WorkerUpdate(info->queue, sq, NULL);
   if (status != eslOK) cm_Fail("Work queue worker failed");
@@ -1213,6 +1219,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int             mpibuf_size = 0;        /* size of the mpibuf                    */
   int             blocks_remain_in_file;  /* set to FALSE to break outer loop over blocks */
   int             seqs_remain_in_block;   /* set to FALSE to break inner loop over seqs  */
+  CM_P7_OM_HOLDER om_holder;              /* reusable --p7pinbridge LOCAL profile/OPROFILE, per MPI worker (brief 090) */
 
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
   if(esl_opt_GetBoolean(go, "--sample")) mpi_failure("--sample does not work with in MPI mode (b/c results would not be exactly reproducible)");
@@ -1242,8 +1249,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
    * we'll exit the inner loop over sequences, and if we immediately
    * receive another NULL dsq we'll exit the outer loop over blocks.
    */
-  blocks_remain_in_file = TRUE; 
-  while(blocks_remain_in_file) { 
+  cm_p7_om_holder_Init(&om_holder);
+  blocks_remain_in_file = TRUE;
+  while(blocks_remain_in_file) {
     /* inform the master that we're ready for our first seq of the block */
     status = eslOK;
     MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
@@ -1280,7 +1288,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       
       /* align the sequence */
       status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
-				   info.w, info.w_tot, NULL, &data);
+				   info.w, info.w_tot, NULL, &om_holder, &data);
       
       /* If alignment failed: potentially retry alignment in HMM banded
        * std (non-truncated) mode. We will only possibly do this if our
@@ -1292,7 +1300,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	info.cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
 	status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize,
 				     TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				     info.w, info.w_tot, NULL, &data);
+				     info.w, info.w_tot, NULL, &om_holder, &data);
 	info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
       }
       if(status != eslOK) { 
@@ -1321,6 +1329,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       
     } /* end of 'while(seqs_remain_in_block)' */
   } /* end of 'while(blocks_remain_in_file)' */
+  cm_p7_om_holder_Reset(&om_holder);
 
   if(info.cm    != NULL) FreeCM(info.cm);
   if(info.dataA != NULL) free(info.dataA);

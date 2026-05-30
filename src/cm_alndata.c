@@ -207,6 +207,10 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   int           pass_idx;        /* pass_idx passed to DispatchSqAlignment() */
   char          mode;            /* mode passed to DispatchSqAlignment() */
   int           cp9b_valid;      /* passed to DispatchSqAlignment() */
+  CM_P7_OM_HOLDER om_holder;     /* reusable LOCAL p7 profile/OPROFILE for the
+				  * --p7pinbridge SW scan, built once and reused
+				  * across this block (brief 090). Safe because
+				  * this call owns the whole block. */
 
   ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, sq_block->count)); // avoid 0 malloc
   for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
@@ -221,10 +225,12 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   cp9b_valid = FALSE;
 
   /* main loop: for each sequence, call DispatchSqAlignment() to do the work */
-  for(j = 0; j < sq_block->count; j++) { 
+  cm_p7_om_holder_Init(&om_holder);
+  for(j = 0; j < sq_block->count; j++) {
     sqp = sq_block->list + j;
-    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &(dataA[j]))) != eslOK) goto ERROR;
+    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &om_holder, &(dataA[j]))) != eslOK) { cm_p7_om_holder_Reset(&om_holder); goto ERROR; }
   }
+  cm_p7_om_holder_Reset(&om_holder);
   *ret_dataA = dataA;
 
   return eslOK;
@@ -275,6 +281,11 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           w          - stopwatch for timing individual stages, can be NULL
  *           w_tot      - stopwatch for timing total time per seq, can be NULL
  *           r          - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
+ *           om_holder  - reusable LOCAL p7 profile/OPROFILE holder for the
+ *                        --p7pinbridge SW scan (brief 090); built once per
+ *                        worker/block and reused across sequences. Can be NULL
+ *                        (then the pinbridge wrapper builds/frees its own per
+ *                        call). MUST be per-thread (not shared across threads).
  *           ret_data   - RETURN: newly created CM_ALNDATA object
  *
  * Returns:  eslOK on success;
@@ -283,8 +294,9 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           <ret_data> is alloc'ed and filled.
  */
 int
-DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx, 
-		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data)
+DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
+		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+		    CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data)
 {
   int           status;            /* easel status */
   CM_ALNDATA   *data         = NULL; /* CM_ALNDATA we'll create and fill */
@@ -469,6 +481,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 					       sq->dsq, sq->L, cm->p7bpad,
 					       local_nodepad,
 					       0, 0, /* hopback=0, vitend=0 */
+					       om_holder,
 					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    /* If pinbridge couldn't produce a trace (rare; band missed the trace
 	     * entirely), fall back to full unbanded Viterbi for this sequence. */

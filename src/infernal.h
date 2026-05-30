@@ -2787,12 +2787,34 @@ extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *a
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 
+/* CM_P7_OM_HOLDER: reusable LOCAL p7 profile + optimized profile for the
+ * --p7pinbridge SW prefilter scan (brief 090). The LOCAL config of cm->fp7
+ * depends only on the model (not the residues), so it can be built once per
+ * worker thread / per block and reused across all sequences, with only a
+ * per-sequence p7_oprofile_ReconfigLength(). This eliminates the per-sequence
+ * "om_build" cost (~40% of pinbridge band derivation at M=360).
+ *
+ * MUST NOT be shared across threads: p7_oprofile_ReconfigLength() mutates om,
+ * so each worker thread needs its own holder. Pass NULL to
+ * p7_Seq2BandsPinBridgeWrap() to get per-call build-and-free behavior (the
+ * single-sequence search/scan callers do this). */
+typedef struct cm_p7_om_holder_s {
+  P7_PROFILE  *gm_local;  /* LOCAL config of cm->fp7 (Convert source only)    */
+  P7_OPROFILE *om;        /* optimized LOCAL profile used by the SW scan      */
+  int          M;         /* model size the holder was built for (sanity)     */
+  int          built;     /* TRUE once gm_local/om are populated              */
+} CM_P7_OM_HOLDER;
+
+extern void  cm_p7_om_holder_Init (CM_P7_OM_HOLDER *h);
+extern void  cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h);
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
-				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
+				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+				      CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
@@ -3243,6 +3265,7 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               P7_BG *bg, P7_TRACE *p7_tr,
                                               ESL_DSQ *dsq, int L, int pad, int *nodepad,
                                               int hopback, int vitend,
+                                              CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
