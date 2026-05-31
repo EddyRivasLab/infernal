@@ -8538,6 +8538,15 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
  *****************************************************************/
 #define PB_GAP_UNIT_CAP 60000   /* max PB units for one transition penalty */
 
+/* Brief 091: cap the number of pins handed to the O(N^2) gap-aware LSIS.
+ * Pins above the cap are pruned in score-descending order before LSIS.
+ * 250 was selected from a K-sweep on LSU full (M=3400) + RF00010-frags +
+ * SSU full / frags200: identical accuracy on RF00010-frags and on the 6
+ * rmark4e families, with the LSU-full LSIS-stage cost dropping ~64x and
+ * the total CYK bit-score actually IMPROVING by ~+70 on one LSU seq.
+ * PB_TOPK env var overrides (set 0 to disable pruning entirely). */
+#define PB_DEFAULT_TOPK 250
+
 typedef struct {
   int    M;
   int   *S_MM;      /* S_MM[k] = sum_{j=1..k} cost(M_j->M_{j+1}), PB units, k=0..M */
@@ -9104,12 +9113,12 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
   /* Step 1.5 (brief 091, Attack 1): Top-K pruning to cap LSIS input size.
-   * PB_TOPK env var sets the cap (0 / unset / negative = off). Cost folded
-   * into the LSIS timer below (it precedes the pure DP). */
+   * Default K = PB_DEFAULT_TOPK; PB_TOPK env var overrides (0 = off).
+   * Cost folded into the LSIS timer below (it precedes the pure DP). */
   int       npins_lsis_in = npins;
   {
     const char *s = getenv("PB_TOPK");
-    int K = (s != NULL) ? atoi(s) : 0;
+    int K = (s != NULL) ? atoi(s) : PB_DEFAULT_TOPK;
     if (K > 0) (void) pb_prune_pins_topk(raw_pins, npins, K, &npins_lsis_in);
   }
 
