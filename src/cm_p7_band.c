@@ -9081,14 +9081,22 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
 
   /* Step 2: gap-aware LSIS pin selection (brief 089, Option 2).
    * Precompute model-aware gap-cost tables once, then run the O(N^2) DP. */
+  int       npins_lsis_in = npins;  /* will differ if pruning is inserted before LSIS */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_precompute_gap_data(gm, om, &gd)) != eslOK) goto ERROR;
   gd_ok = 1;
-  if ((status = pb_lsis_select_gap_aware(raw_pins, npins, M, &gd,
+  if ((status = pb_lsis_select_gap_aware(raw_pins, npins_lsis_in, M, &gd,
                                          use_vit_gaps, gm, dsq,
                                          &sel_pins, &nsel)) != eslOK) goto ERROR;
   clock_gettime(CLOCK_MONOTONIC, &tb);
   lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Per-seq pin-count diagnostic (brief 091).
+   * npins_raw = pins from SW scan; npins_lsis_in = pins handed to LSIS (after
+   * any pruning); nsel = chain length selected by LSIS. */
+  fprintf(stderr, "#PB_NPINS M=%d L=%d npins_raw=%d npins_lsis_in=%d nsel=%d\n",
+          M, L, npins, npins_lsis_in, nsel);
+  fflush(stderr);
   /* Optional: dump LSIS-selected chain when PB_DEBUG_LSIS is set in env.
    * Used for gap-aware LSIS validation (brief 089). */
   if (getenv("PB_DEBUG_LSIS") != NULL) {
