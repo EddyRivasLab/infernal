@@ -8774,6 +8774,30 @@ static int pb_pin_cmp_lsis(const void *a, const void *b)
   return pb->k - pa->k;
 }
 
+/* Sort pins by score r descending. Used by Top-K pruning. */
+static int pb_pin_cmp_r_desc(const void *a, const void *b)
+{
+  const PB_Pin *pa = (const PB_Pin *)a;
+  const PB_Pin *pb = (const PB_Pin *)b;
+  if (pa->r != pb->r) return (int)pb->r - (int)pa->r;
+  /* Tie-break by (i, k) for deterministic ordering. */
+  if (pa->i != pb->i) return pa->i - pb->i;
+  return pa->k - pb->k;
+}
+
+/* Attack 1 from brief 091: cap pin count at K by keeping top-K by score r.
+ * In-place: reorders <pins> and returns the new count via <ret_n_out>.
+ * If K <= 0 or npins <= K, no-op.
+ * O(N log N) (qsort); negligible vs. the O(N^2) LSIS it feeds. */
+static int
+pb_prune_pins_topk(PB_Pin *pins, int npins, int K, int *ret_n_out)
+{
+  if (K <= 0 || npins <= K) { *ret_n_out = npins; return eslOK; }
+  qsort(pins, npins, sizeof(PB_Pin), pb_pin_cmp_r_desc);
+  *ret_n_out = K;
+  return eslOK;
+}
+
 /* Legacy gap-blind LSIS (Fenwick prefix-max). Retained for comparison
  * and as a fallback; superseded by pb_lsis_select_gap_aware (brief 089). */
 static int
@@ -9079,9 +9103,18 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   clock_gettime(CLOCK_MONOTONIC, &tb);
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
+  /* Step 1.5 (brief 091, Attack 1): Top-K pruning to cap LSIS input size.
+   * PB_TOPK env var sets the cap (0 / unset / negative = off). Cost folded
+   * into the LSIS timer below (it precedes the pure DP). */
+  int       npins_lsis_in = npins;
+  {
+    const char *s = getenv("PB_TOPK");
+    int K = (s != NULL) ? atoi(s) : 0;
+    if (K > 0) (void) pb_prune_pins_topk(raw_pins, npins, K, &npins_lsis_in);
+  }
+
   /* Step 2: gap-aware LSIS pin selection (brief 089, Option 2).
    * Precompute model-aware gap-cost tables once, then run the O(N^2) DP. */
-  int       npins_lsis_in = npins;  /* will differ if pruning is inserted before LSIS */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_precompute_gap_data(gm, om, &gd)) != eslOK) goto ERROR;
   gd_ok = 1;
