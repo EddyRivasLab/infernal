@@ -2787,6 +2787,16 @@ extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *a
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 
+/* CM_PB_OM32: Infernal-side 32-bit striped emission table for the
+ * --p7pinbridge SW prefilter scan (brief 094). Parallels HMMER's 16-bit
+ * P7_OPROFILE->rwv but with int32 lanes so the SW DP accumulation does not
+ * saturate on highly-conserved / self-alignment-scale inputs (where the
+ * 16-bit kernel pins everything at +32767, destroying score-based pin
+ * ranking). Opaque here (contains __m128i); full definition + Create/Build/
+ * Destroy live in cm_p7_band.c. We only READ from HMMER's P7_PROFILE to build
+ * it; HMMER itself is never modified. */
+typedef struct cm_pb_om32_s CM_PB_OM32;
+
 /* CM_P7_OM_HOLDER: reusable LOCAL p7 profile + optimized profile for the
  * --p7pinbridge SW prefilter scan (brief 090). The LOCAL config of cm->fp7
  * depends only on the model (not the residues), so it can be built once per
@@ -2801,8 +2811,9 @@ extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_A
 typedef struct cm_p7_om_holder_s {
   P7_PROFILE  *gm_local;  /* LOCAL config of cm->fp7 (Convert source only)    */
   P7_OPROFILE *om;        /* optimized LOCAL profile used by the SW scan      */
+  CM_PB_OM32  *om32;      /* 32-bit emission table for the 32-bit SW scan (brief 094) */
   int          M;         /* model size the holder was built for (sanity)     */
-  int          built;     /* TRUE once gm_local/om are populated              */
+  int          built;     /* TRUE once gm_local/om/om32 are populated         */
 } CM_P7_OM_HOLDER;
 
 extern void  cm_p7_om_holder_Init (CM_P7_OM_HOLDER *h);

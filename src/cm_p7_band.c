@@ -7890,11 +7890,15 @@ cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile
 
 /* Pin: a (k,i) anchor with priority r (SW score in v5).
  * r widened to int16_t 2026-05-29 (brief-079 S7 pinbridge prototype)
- * to support 16-bit SSE SW scan without saturation at L<200. */
+ * to support 16-bit SSE SW scan without saturation at L<200.
+ * r widened again to int32_t 2026-06-01 (brief 094) for the 32-bit SSE SW
+ * scan: self-alignment-scale path scores exceed the int16 range (~1e7 at
+ * dengue scale), which is exactly the saturation the 32-bit kernel removes.
+ * Existing consumers cast r to int already, so the widening is transparent. */
 typedef struct {
   int     k;
   int     i;
-  int16_t r;
+  int32_t r;
 } PB_Pin;
 
 static inline int pb_adaptive_T(int M)
@@ -8304,6 +8308,128 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
 
 
 /*****************************************************************
+ * Brief 094 component knobs: env-gated defaults.
+ *
+ * Each of the three brief-094 mechanisms is gated behind an env var so it
+ * can be A/B'd independently against the brief-091 baseline. The env var (if
+ * set) overrides the compile-time default; with the env unset the default
+ * applies. The defaults below are flipped ON in the final brief-094 commit;
+ * setting PB_USE_32BIT_SW=0 / PB_LSIS_WINDOW=0 / PB_K_ADAPTIVE=0 reaches the
+ * legacy brief-091 behavior at runtime.
+ *****************************************************************/
+#define PB_DEFAULT_USE_32BIT_SW 0    /* 1 = 32-bit SSE SW; 0 = legacy 16-bit  */
+#define PB_DEFAULT_LSIS_WINDOW  0    /* >0 = limited-window LSIS (model-pos window); 0 = full O(N^2) */
+#define PB_DEFAULT_K_ADAPTIVE   0    /* 1 = K = max(PB_DEFAULT_TOPK, L/(2*pad)); 0 = fixed PB_DEFAULT_TOPK */
+
+/* Read an integer env var, falling back to <defval> when unset. */
+static int
+pb_env_int(const char *name, int defval)
+{
+  const char *s = getenv(name);
+  return (s != NULL) ? atoi(s) : defval;
+}
+
+/*****************************************************************
+ * CM_PB_OM32: Infernal-side 32-bit striped emission table (brief 094).
+ *
+ * Mirrors the allocation/striping layout of HMMER's P7_OPROFILE->rwv
+ * (impl_sse/p7_oprofile.c) but with int32 lanes (p7O_NQF = 4 lanes/vector)
+ * instead of int16 (p7O_NQW = 8 lanes/vector). Built by READING the float
+ * match-emission scores from P7_PROFILE->rsc (p7P_MSC) with the *same*
+ * scale HMMER's wordify() uses (scale_w = 500/log2), so at small M (no DP
+ * saturation) the 32-bit kernel produces pin scores byte-identical to the
+ * 16-bit kernel. The only difference is at large M / self-alignment scale,
+ * where the 16-bit accumulation saturates at +32767 and the 32-bit one does
+ * not. HMMER is never modified; we only read P7_PROFILE.
+ *****************************************************************/
+struct cm_pb_om32_s {
+  int       M;        /* model length                                        */
+  int       Q;        /* p7O_NQF(M) = ceil(M/4), # of 4-lane int32 vectors    */
+  int       Kp;       /* alphabet size (abc->Kp); riv has Kp rows            */
+  float     scale_i;  /* nats -> 32-bit units (= HMMER scale_w = 500/log2)    */
+  __m128i **riv;      /* [Kp][Q] striped 32-bit match-emission scores         */
+  __m128i  *riv_mem;  /* backing allocation for riv                           */
+};
+
+/* Padding lanes (model position k > M) get a large-negative emission so the
+ * SW recurrence max(0, mpv+sc) floors them to 0 and they never spawn a pin.
+ * -1e9 dominates any reachable accumulation (< ~3e8 even at L=150K). */
+#define PB_OM32_NEGINF (-1000000000)
+
+static void
+cm_pb_om32_Destroy(CM_PB_OM32 *om32)
+{
+  if (om32 == NULL) return;
+  if (om32->riv_mem != NULL) free(om32->riv_mem);
+  if (om32->riv     != NULL) free(om32->riv);
+  free(om32);
+}
+
+static int
+cm_pb_om32_Create(int M, const ESL_ALPHABET *abc, CM_PB_OM32 **ret_om32)
+{
+  CM_PB_OM32 *om32 = NULL;
+  int         Q    = p7O_NQF(M);
+  int         Kp   = abc->Kp;
+  int         x;
+  int         status;
+
+  ESL_ALLOC(om32, sizeof(CM_PB_OM32));
+  om32->M = M; om32->Q = Q; om32->Kp = Kp; om32->scale_i = 0.0f;
+  om32->riv = NULL; om32->riv_mem = NULL;
+
+  /* +15 slack so riv[0] can be bumped to a 16-byte boundary (mirrors HMMER). */
+  ESL_ALLOC(om32->riv_mem, sizeof(__m128i) * Q * Kp + 15);
+  ESL_ALLOC(om32->riv,     sizeof(__m128i *) * Kp);
+  om32->riv[0] = (__m128i *) (((unsigned long int) om32->riv_mem + 15) & (~0xful));
+  for (x = 1; x < Kp; x++) om32->riv[x] = om32->riv[0] + (x * Q);
+
+  *ret_om32 = om32;
+  return eslOK;
+
+ ERROR:
+  cm_pb_om32_Destroy(om32);
+  *ret_om32 = NULL;
+  return status;
+}
+
+/* Fill om32->riv from the LOCAL profile <gm>'s float match-emission scores.
+ * Lane (q,z) holds model position k = (q+1) + z*Q (the same striping the SW
+ * kernel and HMMER's rwv use). scale_i is set to HMMER's wordify scale so
+ * the integer scores match the 16-bit table for k<=M positions. */
+static int
+cm_pb_om32_Build(const P7_PROFILE *gm, CM_PB_OM32 *om32)
+{
+  int M  = om32->M;
+  int Q  = om32->Q;
+  int Kp = om32->Kp;
+  int x, q, z;
+  union { __m128i v; int32_t i[4]; } tmp;
+
+  om32->scale_i = 500.0 / eslCONST_LOG2;   /* == P7_OPROFILE scale_w */
+
+  for (x = 0; x < Kp; x++) {
+    for (q = 0; q < Q; q++) {
+      for (z = 0; z < 4; z++) {
+        int k = (q + 1) + z * Q;
+        if (k <= M) {
+          float sc = roundf(om32->scale_i * p7P_MSC(gm, k, x));
+          /* defensive int32 clamp; emissions never approach this */
+          if      (sc >=  2147483520.0f) tmp.i[z] =  2147483520;
+          else if (sc <= -2147483520.0f) tmp.i[z] = -2147483520;
+          else                           tmp.i[z] = (int32_t) sc;
+        } else {
+          tmp.i[z] = PB_OM32_NEGINF;
+        }
+      }
+      om32->riv[x][q] = tmp.v;
+    }
+  }
+  return eslOK;
+}
+
+
+/*****************************************************************
  * SW-on-diagonal pin scan + LSIS selection + band construction
  * (ports of scratch_pinbridge/pinbridge_proto.c v5)
  *****************************************************************/
@@ -8488,6 +8614,122 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
         int k = (q + 1) + z * Q;
         if (k > M) break;
         if (u_prev.b[z] >= (int16_t)T_w) {
+          if (npins >= max_pins) {
+            max_pins *= 2;
+            PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+            if (!tmp2) { free(pins); free(prev); free(curr); return eslEMEM; }
+            pins = tmp2;
+          }
+          pins[npins].k = k;
+          pins[npins].i = L;
+          pins[npins].r = u_prev.b[z];
+          npins++;
+        }
+      }
+    }
+  }
+
+  free(prev);
+  free(curr);
+
+  *ret_pins  = pins;
+  *ret_npins = npins;
+  return eslOK;
+}
+
+/*****************************************************************
+ * 32-bit SSE SW scan (brief 094, 2026-06-01)
+ *
+ * The 16-bit version above saturates the SW *accumulation* at +32767 on
+ * highly-conserved / self-alignment-scale targets (e.g. dengue self-align,
+ * L=M=10735: all raw pins pegged at 32767). With every pin tied at the max,
+ * score-based Top-K pruning degenerates to tie-break order and concentrates
+ * pins in a tiny seq-position window, which the band coda then widens into a
+ * near-full L*M matrix. This 32-bit variant uses int32 lanes (4 per register
+ * via p7O_NQF) and a *non-saturating* _mm_add_epi32, so accumulated path
+ * scores keep their true magnitude and Top-K ranking stays meaningful.
+ *
+ * Mirrors pb_sw_scan_collect_pins_w exactly except:
+ *   - om->rwv (int16, 8 lanes)        -> om32->riv (int32, 4 lanes)
+ *   - _mm_slli_si128(..., 2)          -> _mm_slli_si128(..., 4)   (1 int32 lane)
+ *   - _mm_adds_epi16 (saturating)     -> _mm_add_epi32  (NON-saturating: the fix)
+ *   - _mm_max_epi16                   -> _mm_max_epi32  (SSE4.1)
+ *   - 8-lane union                    -> 4-lane union
+ * At small M (no accumulation reaches 32767) it produces pins byte-identical
+ * to the 16-bit kernel, since riv carries the same wordify-scaled scores.
+ *****************************************************************/
+__attribute__((target("sse4.1")))
+static int
+pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, int T_i32,
+                            PB_Pin **ret_pins, int *ret_npins)
+{
+  int M = om32->M;
+  int Q = om32->Q;    /* 4 lanes (32-bit ints) per 128-bit register */
+  int i, q, z;
+
+  int max_pins = (M + L) * 4;
+  PB_Pin *pins = (PB_Pin *) malloc(max_pins * sizeof(PB_Pin));
+  if (!pins) return eslEMEM;
+  int npins = 0;
+
+  __m128i *prev = NULL;
+  __m128i *curr = NULL;
+  if (posix_memalign((void **)&prev, 16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&curr, 16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+
+  for (q = 0; q < Q; q++) { prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128(); }
+
+  __m128i zero = _mm_setzero_si128();
+
+  for (i = 1; i <= L; i++) {
+    __m128i const *rsc = om32->riv[dsq[i]];               /* 32-bit emission scores */
+    __m128i mpv = _mm_slli_si128(prev[Q - 1], 4);         /* shift left 4 bytes = 1 int32 lane */
+
+    for (q = 0; q < Q; q++) {
+      __m128i cand   = _mm_add_epi32(mpv, rsc[q]);         /* SW extend (NON-saturating) */
+      __m128i newval = _mm_max_epi32(zero, cand);          /* SW floor at 0 (SSE4.1) */
+      mpv     = prev[q];
+      curr[q] = newval;
+    }
+
+    /* Collect end-of-segment pins at row (i-1) */
+    {
+      union { __m128i v; int32_t b[4]; } u_prev, u_curr;
+      for (q = 0; q < Q; q++) {
+        u_prev.v = prev[q];
+        u_curr.v = curr[q];
+        for (z = 0; z < 4; z++) {
+          int k = (q + 1) + z * Q;
+          if (k > M) break;
+          if (u_prev.b[z] >= T_i32 && u_curr.b[z] == 0) {
+            if (npins >= max_pins) {
+              max_pins *= 2;
+              PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+              if (!tmp) { free(pins); free(prev); free(curr); return eslEMEM; }
+              pins = tmp;
+            }
+            pins[npins].k = k;
+            pins[npins].i = i - 1;
+            pins[npins].r = u_prev.b[z];
+            npins++;
+          }
+        }
+      }
+    }
+
+    __m128i *tmp = prev; prev = curr; curr = tmp;
+    for (q = 0; q < Q; q++) curr[q] = _mm_setzero_si128();
+  }
+
+  /* Last-row pins */
+  {
+    union { __m128i v; int32_t b[4]; } u_prev;
+    for (q = 0; q < Q; q++) {
+      u_prev.v = prev[q];
+      for (z = 0; z < 4; z++) {
+        int k = (q + 1) + z * Q;
+        if (k > M) break;
+        if (u_prev.b[z] >= T_i32) {
           if (npins >= max_pins) {
             max_pins *= 2;
             PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
@@ -8783,6 +9025,18 @@ static int pb_pin_cmp_lsis(const void *a, const void *b)
   return pb->k - pa->k;
 }
 
+/* (k asc, i asc) order for the limited-window LSIS (brief 094). A valid chain
+ * edge q->p requires k_q < k_p, so with k ascending every predecessor is
+ * processed before p, and predecessors within a model-position window of p
+ * form a contiguous block ending just before p -- enabling an early break. */
+static int pb_pin_cmp_lsis_kasc(const void *a, const void *b)
+{
+  const PB_Pin *pa = (const PB_Pin *)a;
+  const PB_Pin *pb = (const PB_Pin *)b;
+  if (pa->k != pb->k) return pa->k - pb->k;
+  return pa->i - pb->i;
+}
+
 /* Sort pins by score r descending. Used by Top-K pruning. */
 static int pb_pin_cmp_r_desc(const void *a, const void *b)
 {
@@ -8873,11 +9127,19 @@ pb_lsis_select_legacy(PB_Pin *pins_in, int npins_in, int M,
  *
  * When use_vit_gaps != 0 (Option 3, --p7pinbridge-vitgaps), each edge's
  * gap cost is the exact mini-Viterbi over the gap rectangle instead of
- * the closed-form estimate; gm/dsq are then required (NULL otherwise). */
+ * the closed-form estimate; gm/dsq are then required (NULL otherwise).
+ *
+ * Brief 094: when lsis_window > 0 the DP only considers predecessors within
+ * <lsis_window> model positions of each pin, turning the O(N^2) inner loop
+ * into O(N * window). This requires the (k asc, i asc) ordering so the
+ * window is a contiguous, early-breakable block. When lsis_window <= 0 the
+ * original (i asc, k desc) sort and full ascending scan are used verbatim,
+ * so the result is byte-identical to the brief-091 path (gate-off A/B). */
 static int
 pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
                          const PB_GapData *gd,
                          int use_vit_gaps, const P7_PROFILE *gm, const ESL_DSQ *dsq,
+                         int lsis_window,
                          PB_Pin **ret_sel, int *ret_n_sel)
 {
   int  status;
@@ -8893,33 +9155,62 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
 
   ESL_ALLOC(pins,   npins_in * sizeof(PB_Pin));
   memcpy(pins, pins_in, npins_in * sizeof(PB_Pin));
-  qsort(pins, npins_in, sizeof(PB_Pin), pb_pin_cmp_lsis);
+  qsort(pins, npins_in, sizeof(PB_Pin),
+        (lsis_window > 0) ? pb_pin_cmp_lsis_kasc : pb_pin_cmp_lsis);
 
   ESL_ALLOC(dp,     npins_in * sizeof(int));
   ESL_ALLOC(parent, npins_in * sizeof(int));
 
   long n_gapcost = 0;   /* # of gap costs evaluated (PB_DEBUG_LSIS) */
   int best_dp = INT_MIN, best_idx = -1;
-  for (int p = 0; p < npins_in; p++) {
-    dp[p]     = (int) pins[p].r;   /* chain starting fresh at this pin */
-    parent[p] = -1;
-    for (int q = 0; q < p; q++) {
-      /* forward edge requires strictly increasing i and k */
-      if (pins[q].i >= pins[p].i || pins[q].k >= pins[p].k) continue;
-      n_gapcost++;
-      int gap;
-      if (use_vit_gaps)
-        gap = pb_gap_cost_miniviterbi(pins[q].i, pins[q].k,
-                                      pins[p].i, pins[p].k,
-                                      gm, dsq, gd->scale_natsToPB);
-      else
-        gap = pb_gap_cost_closed_form(pins[q].i, pins[q].k,
-                                      pins[p].i, pins[p].k, gd);
-      if (gap == INT_MAX) continue;
-      int cand = dp[q] + (int) pins[p].r - gap;
-      if (cand > dp[p]) { dp[p] = cand; parent[p] = q; }
+  if (lsis_window <= 0) {
+    /* Legacy full O(N^2) DP (brief 091), ascending q -> byte-identical. */
+    for (int p = 0; p < npins_in; p++) {
+      dp[p]     = (int) pins[p].r;   /* chain starting fresh at this pin */
+      parent[p] = -1;
+      for (int q = 0; q < p; q++) {
+        /* forward edge requires strictly increasing i and k */
+        if (pins[q].i >= pins[p].i || pins[q].k >= pins[p].k) continue;
+        n_gapcost++;
+        int gap;
+        if (use_vit_gaps)
+          gap = pb_gap_cost_miniviterbi(pins[q].i, pins[q].k,
+                                        pins[p].i, pins[p].k,
+                                        gm, dsq, gd->scale_natsToPB);
+        else
+          gap = pb_gap_cost_closed_form(pins[q].i, pins[q].k,
+                                        pins[p].i, pins[p].k, gd);
+        if (gap == INT_MAX) continue;
+        int cand = dp[q] + (int) pins[p].r - gap;
+        if (cand > dp[p]) { dp[p] = cand; parent[p] = q; }
+      }
+      if (dp[p] > best_dp) { best_dp = dp[p]; best_idx = p; }
     }
-    if (dp[p] > best_dp) { best_dp = dp[p]; best_idx = p; }
+  } else {
+    /* Limited-window DP (brief 094): (k asc, i asc) sort; scan predecessors
+     * backward and break once the model-position gap exceeds the window. */
+    for (int p = 0; p < npins_in; p++) {
+      dp[p]     = (int) pins[p].r;
+      parent[p] = -1;
+      for (int q = p - 1; q >= 0; q--) {
+        if ((pins[p].k - pins[q].k) > lsis_window) break;   /* k is monotone-ascending */
+        /* forward edge requires strictly increasing i and k */
+        if (pins[q].i >= pins[p].i || pins[q].k >= pins[p].k) continue;
+        n_gapcost++;
+        int gap;
+        if (use_vit_gaps)
+          gap = pb_gap_cost_miniviterbi(pins[q].i, pins[q].k,
+                                        pins[p].i, pins[p].k,
+                                        gm, dsq, gd->scale_natsToPB);
+        else
+          gap = pb_gap_cost_closed_form(pins[q].i, pins[q].k,
+                                        pins[p].i, pins[p].k, gd);
+        if (gap == INT_MAX) continue;
+        int cand = dp[q] + (int) pins[p].r - gap;
+        if (cand > dp[p]) { dp[p] = cand; parent[p] = q; }
+      }
+      if (dp[p] > best_dp) { best_dp = dp[p]; best_idx = p; }
+    }
   }
 
   ESL_ALLOC(chain_idx, npins_in * sizeof(int));
@@ -9070,6 +9361,8 @@ p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
  * Args:
  *   gm        - profile (configured GLOCAL or LOCAL by caller)
  *   om        - optimized profile (for SSE rbv match scores, LOCAL config)
+ *   om32      - 32-bit emission table for the 32-bit SW scan (brief 094);
+ *               may be NULL (then the 16-bit scan is always used)
  *   gxb       - banded Viterbi DP matrix scratch (will be Reinit'd to bnd)
  *   bnd       - GBANDS scratch (will be reused)
  *   tr        - p7 trace (will be Reuse'd; filled with banded-Vit traceback)
@@ -9082,7 +9375,7 @@ p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
  *          (caller falls back to unbanded path).
  */
 int
-p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
+p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P7_GMXB *gxb,
                       P7_GBANDS *bnd, P7_TRACE *tr,
                       const ESL_DSQ *dsq, int L, int pad, int use_vit_gaps, float *ret_sc,
                       double *ret_sw_ms, double *ret_lsis_ms,
@@ -9106,29 +9399,51 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxb,
   struct timespec ta, tb;
   double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
 
-  /* Step 1: SW scan -> raw pins (16-bit SSE prototype, brief 079 S7 follow-up) */
+  /* Brief 094 component gates (env var overrides compile-time default). */
+  int       use_32bit   = pb_env_int("PB_USE_32BIT_SW", PB_DEFAULT_USE_32BIT_SW) && (om32 != NULL);
+  int       lsis_window = pb_env_int("PB_LSIS_WINDOW",  PB_DEFAULT_LSIS_WINDOW);
+  int       k_adaptive  = pb_env_int("PB_K_ADAPTIVE",   PB_DEFAULT_K_ADAPTIVE);
+  /* 32-bit threshold: same semantics as T_w, rescaled by scale_i/scale_w.
+   * scale_i == scale_w by construction, so T_i32 == T_w. */
+  int       T_i32       = (om32 != NULL) ? (int)( (float)T_w * (om32->scale_i / om->scale_w) ) : T_w;
+
+  /* Step 1: SW scan -> raw pins. 32-bit (brief 094) eliminates the 16-bit
+   * accumulation saturation on conserved/self-align inputs; the legacy
+   * 16-bit SSE scan (brief 079 S7) is kept as the gate-off fallback. */
   clock_gettime(CLOCK_MONOTONIC, &ta);
-  if ((status = pb_sw_scan_collect_pins_w(dsq, L, om, T_w, &raw_pins, &npins)) != eslOK) goto ERROR;
+  if (use_32bit) {
+    if ((status = pb_sw_scan_collect_pins_i32(dsq, L, om32, T_i32, &raw_pins, &npins)) != eslOK) goto ERROR;
+  } else {
+    if ((status = pb_sw_scan_collect_pins_w(dsq, L, om, T_w, &raw_pins, &npins)) != eslOK) goto ERROR;
+  }
   clock_gettime(CLOCK_MONOTONIC, &tb);
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
   /* Step 1.5 (brief 091, Attack 1): Top-K pruning to cap LSIS input size.
    * Default K = PB_DEFAULT_TOPK; PB_TOPK env var overrides (0 = off).
+   * Brief 094: when PB_K_ADAPTIVE is on, K floors at PB_DEFAULT_TOPK and
+   * scales as L/(2*pad) (the band floor reached when K >= L/(2*pad)), so
+   * large inputs get enough pins to span the full sequence rather than
+   * concentrating in a tie-break window. PB_TOPK still overrides everything.
    * Cost folded into the LSIS timer below (it precedes the pure DP). */
   int       npins_lsis_in = npins;
   {
     const char *s = getenv("PB_TOPK");
-    int K = (s != NULL) ? atoi(s) : PB_DEFAULT_TOPK;
+    int K;
+    if (s != NULL)              K = atoi(s);                                   /* explicit override */
+    else if (k_adaptive && pad > 0) K = ESL_MAX(PB_DEFAULT_TOPK, L / (2 * pad));
+    else                        K = PB_DEFAULT_TOPK;
     if (K > 0) (void) pb_prune_pins_topk(raw_pins, npins, K, &npins_lsis_in);
   }
 
   /* Step 2: gap-aware LSIS pin selection (brief 089, Option 2).
-   * Precompute model-aware gap-cost tables once, then run the O(N^2) DP. */
+   * Precompute model-aware gap-cost tables once, then run the DP (full
+   * O(N^2), or O(N*window) when lsis_window > 0, brief 094). */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_precompute_gap_data(gm, om, &gd)) != eslOK) goto ERROR;
   gd_ok = 1;
   if ((status = pb_lsis_select_gap_aware(raw_pins, npins_lsis_in, M, &gd,
-                                         use_vit_gaps, gm, dsq,
+                                         use_vit_gaps, gm, dsq, lsis_window,
                                          &sel_pins, &nsel)) != eslOK) goto ERROR;
   clock_gettime(CLOCK_MONOTONIC, &tb);
   lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
@@ -9253,6 +9568,7 @@ cm_p7_om_holder_Init(CM_P7_OM_HOLDER *h)
   if (h == NULL) return;
   h->gm_local = NULL;
   h->om       = NULL;
+  h->om32     = NULL;
   h->M        = 0;
   h->built    = FALSE;
 }
@@ -9261,10 +9577,12 @@ void
 cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h)
 {
   if (h == NULL) return;
+  if (h->om32     != NULL) cm_pb_om32_Destroy(h->om32);
   if (h->om       != NULL) p7_oprofile_Destroy(h->om);
   if (h->gm_local != NULL) p7_profile_Destroy(h->gm_local);
   h->gm_local = NULL;
   h->om       = NULL;
+  h->om32     = NULL;
   h->M        = 0;
   h->built    = FALSE;
 }
@@ -9301,7 +9619,8 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   int          tpos;
   P7_PROFILE  *gm_local = NULL;
   P7_OPROFILE *om       = NULL;
-  int          own_om   = FALSE; /* TRUE if we built gm_local/om locally (no holder) */
+  CM_PB_OM32  *om32     = NULL;   /* 32-bit emission table for the 32-bit SW scan (brief 094) */
+  int          own_om   = FALSE; /* TRUE if we built gm_local/om/om32 locally (no holder) */
   P7_GMXB     *gxb      = NULL;
   P7_GBANDS   *bnd      = NULL;
   int          pb_pad   = (cm->p7_pinbridge_pad > 0) ? cm->p7_pinbridge_pad : 20;
@@ -9332,11 +9651,19 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
       if (om_holder->om == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_oprofile_Create failed");
       if ((status = p7_oprofile_Convert(om_holder->gm_local, om_holder->om)) != eslOK)
         ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
+      /* 32-bit emission table (brief 094): L-independent (emission scores
+       * only), so built once and reused across the block with no per-seq
+       * reconfig. Built from the same LOCAL profile as om. */
+      if ((status = cm_pb_om32_Create(M, cm->fp7->abc, &om_holder->om32)) != eslOK)
+        ESL_XFAIL(status, errbuf, "cm_pb_om32_Create failed");
+      if ((status = cm_pb_om32_Build(om_holder->gm_local, om_holder->om32)) != eslOK)
+        ESL_XFAIL(status, errbuf, "cm_pb_om32_Build failed");
       om_holder->M     = M;
       om_holder->built = TRUE;
     }
     gm_local = om_holder->gm_local;
     om       = om_holder->om;
+    om32     = om_holder->om32;
     own_om   = FALSE;
     /* Per-sequence length reconfig on the reused OPROFILE (the only L-dependent
      * step). gm_local is only the Convert source and is unused downstream, so
@@ -9355,6 +9682,11 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
       ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
     if ((status = p7_oprofile_ReconfigLength(om, L)) != eslOK)
       ESL_XFAIL(status, errbuf, "p7_oprofile_ReconfigLength failed");
+    /* 32-bit emission table (brief 094); freed with om/gm_local below. */
+    if ((status = cm_pb_om32_Create(M, cm->fp7->abc, &om32)) != eslOK)
+      ESL_XFAIL(status, errbuf, "cm_pb_om32_Create failed");
+    if ((status = cm_pb_om32_Build(gm_local, om32)) != eslOK)
+      ESL_XFAIL(status, errbuf, "cm_pb_om32_Build failed");
     own_om = TRUE;
   }
 
@@ -9371,7 +9703,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
   /* Step 1+2: SW-pinbridge prefilter + banded p7 Viterbi + banded trace.
    * cm->p7_pinbridge_vit_gaps selects mini-Viterbi gap costs (Option 3). */
-  status = p7_Seq2BandsPinBridge(gm, om, gxb, bnd, p7_tr, dsq, L, pb_pad,
+  status = p7_Seq2BandsPinBridge(gm, om, om32, gxb, bnd, p7_tr, dsq, L, pb_pad,
                                  cm->p7_pinbridge_vit_gaps, &sc,
                                  &sw_ms, &lsis_ms, &band_ms, &bvit_ms, &btrace_ms);
   if (status != eslOK) {
@@ -9382,7 +9714,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
     *ret_ncells = 0;
     p7_gmxb_Destroy(gxb);
     p7_gbands_Destroy(bnd);
-    if (own_om) { p7_oprofile_Destroy(om); p7_profile_Destroy(gm_local); }
+    if (own_om) { cm_pb_om32_Destroy(om32); p7_oprofile_Destroy(om); p7_profile_Destroy(gm_local); }
     return eslOK;
   }
 
@@ -9436,7 +9768,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
   p7_gmxb_Destroy(gxb);
   p7_gbands_Destroy(bnd);
-  if (own_om) { p7_oprofile_Destroy(om); p7_profile_Destroy(gm_local); }
+  if (own_om) { cm_pb_om32_Destroy(om32); p7_oprofile_Destroy(om); p7_profile_Destroy(gm_local); }
   return eslOK;
 
  ERROR:
@@ -9445,10 +9777,11 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   if (kmax) free(kmax);
   if (gxb)      p7_gmxb_Destroy(gxb);
   if (bnd)      p7_gbands_Destroy(bnd);
-  /* Only free the LOCAL profile/OPROFILE if we own them; a holder's objects
-   * are owned (and freed) by the caller via cm_p7_om_holder_Reset(), which
-   * also cleans up a holder left partially built by a failure above. */
+  /* Only free the LOCAL profile/OPROFILE/om32 if we own them; a holder's
+   * objects are owned (and freed) by the caller via cm_p7_om_holder_Reset(),
+   * which also cleans up a holder left partially built by a failure above. */
   if (own_om) {
+    if (om32)     cm_pb_om32_Destroy(om32);
     if (om)       p7_oprofile_Destroy(om);
     if (gm_local) p7_profile_Destroy(gm_local);
   }
