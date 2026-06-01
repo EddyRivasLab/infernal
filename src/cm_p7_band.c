@@ -8317,9 +8317,9 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
  * setting PB_USE_32BIT_SW=0 / PB_LSIS_WINDOW=0 / PB_K_ADAPTIVE=0 reaches the
  * legacy brief-091 behavior at runtime.
  *****************************************************************/
-#define PB_DEFAULT_USE_32BIT_SW 0    /* 1 = 32-bit SSE SW; 0 = legacy 16-bit  */
-#define PB_DEFAULT_LSIS_WINDOW  0    /* >0 = limited-window LSIS (model-pos window); 0 = full O(N^2) */
-#define PB_DEFAULT_K_ADAPTIVE   0    /* 1 = K = max(PB_DEFAULT_TOPK, L/(2*pad)); 0 = fixed PB_DEFAULT_TOPK */
+#define PB_DEFAULT_USE_32BIT_SW 1    /* 1 = 32-bit SSE SW; 0 = legacy 16-bit  */
+#define PB_DEFAULT_LSIS_WINDOW  200  /* >0 = limited-window LSIS (model-pos window); 0 = full O(N^2) */
+#define PB_DEFAULT_K_ADAPTIVE   1    /* 1 = K = max(PB_DEFAULT_TOPK, L/(2*pad)); 0 = fixed PB_DEFAULT_TOPK */
 
 /* Read an integer env var, falling back to <defval> when unset. */
 static int
@@ -9502,6 +9502,11 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   }
   clock_gettime(CLOCK_MONOTONIC, &tb);
   band_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* Band-size diagnostic (brief 094 validation; env-gated, uncommitted). */
+  if (getenv("PB_BANDVIT_INPUT") != NULL)
+    fprintf(stderr, "#PB_BANDVIT_INPUT L=%d M=%d bnd_nrow=%d bnd_ncell=%lld bnd_nseg=%d\n",
+            L, M, bnd->nrow, (long long)bnd->ncell, bnd->nseg);
 
   /* Step 5: Banded p7 Viterbi inside the prefilter band */
   clock_gettime(CLOCK_MONOTONIC, &ta);
