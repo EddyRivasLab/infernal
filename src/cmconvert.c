@@ -22,7 +22,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help on version and usage",                             0 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help and exit",                                         0 },
+  { "--version", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show version info and exit",                                       0 },
   { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               0 },
   { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              0 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   0 },
@@ -40,7 +41,7 @@ static int  configure_model(CM_t *cm, char *errbuf);
 int 
 main(int argc, char **argv)
 {
-  ESL_GETOPTS   *go      = cm_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_GETOPTS   *go      = cm_CreateDefaultApp("cmconvert", options, 1, argc, argv, banner, usage);
   ESL_ALPHABET  *abc     = NULL;
   char          *cmfile  = esl_opt_GetArg(go, 1);
   CM_FILE       *cmfp    = NULL;

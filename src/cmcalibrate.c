@@ -77,7 +77,8 @@ typedef struct {
 
 static ESL_OPTIONS options[] = {
   /* name                  type    default   env             range    toggles         reqs      incomp  help  docgroup*/
-  { "-h",           eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show brief help on version and usage",         1 },
+  { "-h",           eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show brief help and exit",                     1 },
+  { "--version",    eslARG_NONE,     FALSE,  NULL,            NULL,      NULL,         NULL,      NULL, "show version info and exit",                   1 },
   { "-L",           eslARG_REAL,     "1.6",  NULL, "0.01<=x<=160.",      NULL,         NULL,      NULL, "set random seq length to search in Mb to <x>", 1 },
   /* Options for predicting running time and memory requirements */
   { "--forecast",   eslARG_NONE,      NULL,  NULL,            NULL,      NULL,         NULL,      NULL, "don't do calibration, predict running time and exit",             2 },
@@ -1627,42 +1628,48 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 {
   ESL_GETOPTS *go = NULL;
 
-  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
-  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
- 
-  /* help format: */
-  if (esl_opt_GetBoolean(go, "-h")) { 
-    cm_banner(stdout, argv[0], banner);
-    esl_usage(stdout, argv[0], usage);
-    puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-    puts("\nOptions for predicting running time and memory requirements:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
-    puts("\nOptions controlling exponential tail fits:");
-    esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
-    puts("\nOptional output files:");
-    esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-    puts("\nOptions controlling split, partition and merge modes:");
-    esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-    puts("\nOther options:");
-    esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-    exit(0);
-  }    
+  if ((go = esl_getopts_Create(options))     == NULL)     esl_fatal("Internal failure creating options object");
+  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { esl_fprintf(stderr, "Failed to process environment: %s\n", go->errbuf);  goto ERROR; } // ERROR block here puts additional useful
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; } // user-directed cmdline usage stuff to stderr
+  if (esl_opt_VerifyConfig(go)               != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; }
 
-  if (esl_opt_ArgNumber(go)                  != 1)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
-  if ((*ret_cmfile = esl_opt_GetArg(go, 1))  == NULL)  { puts("Failed to get <cmfile> argument on command line"); goto ERROR; }
-  
+  // "brief" help format:
+  if (esl_opt_GetBoolean(go, "-h"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
+
+      cm_banner(stdout, "cmcalibrate", banner);  // use progname not argv[0]: versioning, not invocation
+      esl_usage(stdout, argv[0], usage);         // whereas this is invocation
+
+      esl_printf("\nBasic options:\n");                                               esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
+      esl_printf("\nOptions for predicting running time and memory requirements:\n"); esl_opt_DisplayHelp(stdout, go, 2, 2, 100);
+      esl_printf("\nOptions controlling exponential tail fits:\n");                   esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
+      esl_printf("\nOptional output files:\n");                                       esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
+      esl_printf("\nOptions controlling split, partition and merge modes:\n");        esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
+      esl_printf("\nOther options:\n");                                               esl_opt_DisplayHelp(stdout, go, 6, 2, 100);
+      exit(0);
+    }
+
+  // versioning info
+  if (esl_opt_GetBoolean(go, "--version"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+      esl_printf("%s %s\n", "cmcalibrate", INFERNAL_VERSION);  // use progname here: versioning, not invocation
+      exit(0);
+    }
+
+  if (esl_opt_ArgNumber(go)                  != 1)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");      goto ERROR; }
+  if ((*ret_cmfile = esl_opt_GetArg(go, 1))  == NULL)  { esl_fprintf(stderr, "Failed to get <cmfile> argument on command line.\n"); goto ERROR; }
+
   *ret_go = go;
   return;
-  
- ERROR:  /* all errors handled here are user errors, so be polite.  */
-  esl_usage(stdout, argv[0], usage);
-  puts("\nwhere basic options are:");
-  esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-  printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
-  exit(1);  
+
+ ERROR:  // all errors handled here are user errors, so be polite.
+  esl_usage(stderr, argv[0], usage);   // use argv[0] because this is about invocation, not version
+  esl_fprintf(stderr, "\nwhere basic options are:\n");
+  esl_opt_DisplayHelp(stderr, go, 1, 2, 100);      // 1= group; 2 = indentation; 100=textwidth
+  esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
+  exit(1);
 }
 
 static int

@@ -3646,8 +3646,9 @@ multiline(FILE *fp, const char *pfx, char *s)
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                  docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",  0 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "include time of CM configuration", 0 }, 
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",                  0 },
+  { "--version", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",                0 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "include time of CM configuration",          0 }, 
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "verbose: print model info as they're read", 0 }, 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -3657,7 +3658,7 @@ static char banner[] = "benchmark driver for CM input";
 int 
 main(int argc, char **argv)
 {
-  ESL_GETOPTS   *go       = cm_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_GETOPTS   *go       = cm_CreateDefaultApp("cm_file_benchmark", options, 1, argc, argv, banner, usage);
   ESL_STOPWATCH *w        = esl_stopwatch_Create();
   ESL_STOPWATCH *w2       = esl_stopwatch_Create();
   ESL_ALPHABET  *abc      = NULL;

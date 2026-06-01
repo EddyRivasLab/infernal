@@ -40,7 +40,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name          type         default      env  range     toggles      reqs        incomp    help  docgroup*/
-  { "-h",          eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,          NULL, "show brief help on version and usage",                            0 },
+  { "-h",          eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,          NULL, "show brief help and exit",                                        0 },
+  { "--version",   eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,          NULL, "show version info and exit",                                      0 },
   { "-E",          eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       OUTOPTS, "print bit scores that correspond to E-value threshold of <x>",    0 },
   { "-P",          eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       OUTOPTS, "print bit scores that correspond to E-value threshold of <x>",    0 },
   { "-T",          eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,       OUTOPTS, "print E-values that correspond to bit score threshold of <x>",    0 },
@@ -79,35 +80,41 @@ main(int argc, char **argv)
   /* Process the command line options.
    */
   go = esl_getopts_Create(options);
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK || 
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK ||
       esl_opt_VerifyConfig(go)               != eslOK)
     {
-      printf("Failed to parse command line: %s\n", go->errbuf);
-      esl_usage(stdout, argv[0], usage);
-      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      esl_fprintf(stderr, "Failed to parse command line: %s\n", go->errbuf);
+      esl_usage(stderr, argv[0], usage);
+      esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+  if (esl_opt_GetBoolean(go, "-h") == TRUE)
     {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nOptions:");
-      esl_opt_DisplayHelp(stdout, go, 0, 2, 80); /* 0=docgroup, 2 = indentation; 80=textwidth*/
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
+      cm_banner(stdout, "cmstat", banner);  // use progname not argv[0]: versioning, not invocation
+      esl_usage(stdout, argv[0], usage);    // whereas this is invocation
+      esl_printf("\nOptions:\n");
+      esl_opt_DisplayHelp(stdout, go, 0, 2, 100); /* 0=docgroup, 2 = indentation; 100=textwidth*/
       exit(0);
     }
-  if (esl_opt_ArgNumber(go) != 1) 
+  if (esl_opt_GetBoolean(go, "--version") == TRUE)
     {
-      puts("Incorrect number of command line arguments.");
-      esl_usage(stdout, argv[0], usage);
-      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+      esl_printf("%s %s\n", "cmstat", INFERNAL_VERSION);  // use progname here: versioning, not invocation
+      exit(0);
+    }
+  if (esl_opt_ArgNumber(go) != 1)
+    {
+      esl_fprintf(stderr, "Incorrect number of command line arguments.\n");
+      esl_usage(stderr, argv[0], usage);
+      esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-
-  if ((cmfile = esl_opt_GetArg(go, 1)) == NULL) 
+  if ((cmfile = esl_opt_GetArg(go, 1)) == NULL)
     {
-      puts("Failed to read <cmfile> argument from command line.");
-      esl_usage(stdout, argv[0], usage);
-      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      esl_fprintf(stderr, "Failed to read <cmfile> argument from command line.\n");
+      esl_usage(stderr, argv[0], usage);
+      esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
 

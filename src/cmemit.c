@@ -31,7 +31,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name          type            default       env   range   toggles       reqs  incomp       help                                     docgroup*/
-  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "show brief help on version and usage",                                 1 },
+  { "-h",          eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "show brief help and exit",                                             1 },
+  { "--version",   eslARG_NONE,    FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "show version info and exit",                                           1 },
   { "-o",          eslARG_OUTFILE, FALSE,        NULL, NULL,   NULL,         NULL, NULL,        "send sequence output to file <f>, not stdout",                         1 },
   { "-N",          eslARG_INT,      "10",        NULL, "n>0",  NULL,         NULL, NULL,        "generate <n> sequences",                                               1 },
   { "-u",          eslARG_NONE, "default",       NULL, NULL,   OUTOPTS,      NULL, NULL,        "write generated sequences as unaligned FASTA",                         1 },
@@ -109,31 +110,38 @@ main(int argc, char **argv)
   /* Process command line options.
    */
   go = esl_getopts_Create(options);
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK || 
-      esl_opt_VerifyConfig(go)               != eslOK) { 
-    printf("Failed to parse command line: %s\n", go->errbuf);
-    esl_usage(stdout, argv[0], usage);
-    printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK ||
+      esl_opt_VerifyConfig(go)               != eslOK) {
+    esl_fprintf(stderr, "Failed to parse command line: %s\n", go->errbuf);
+    esl_usage(stderr, argv[0], usage);
+    esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
     exit(1);
   }
-  if (esl_opt_GetBoolean(go, "-h")) { 
-    cm_banner(stdout, argv[0], banner);
-    esl_usage(stdout, argv[0], usage);
-    puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-    puts("\nOptions for truncating sequences:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-    puts("\nOther options:");
-    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-    puts("\nAlignment output formats (-a) include: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
-    exit(0);
-  }
+  if (esl_opt_GetBoolean(go, "-h"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
+
+      cm_banner(stdout, "cmemit", banner);  // use progname not argv[0]: versioning, not invocation
+      esl_usage(stdout, argv[0], usage);    // whereas this is invocation
+
+      esl_printf("\nBasic options:\n");                       esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1=docgroup, 2 = indentation; 100=textwidth*/
+      esl_printf("\nOptions for truncating sequences:\n");    esl_opt_DisplayHelp(stdout, go, 2, 2, 100);
+      esl_printf("\nOther options:\n");                       esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
+      esl_printf("\nAlignment output formats (-a) include: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "--version"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+      esl_printf("%s %s\n", "cmemit", INFERNAL_VERSION);  // use progname here: versioning, not invocation
+      exit(0);
+    }
   if (esl_opt_ArgNumber(go) != 1) {
-    puts("Incorrect number of command line arguments.");
-    esl_usage(stdout, argv[0], usage);
-    puts("\n  where basic options are:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
-    printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
+    esl_fprintf(stderr, "Incorrect number of command line arguments.\n");
+    esl_usage(stderr, argv[0], usage);
+    esl_fprintf(stderr, "\n  where basic options are:\n");
+    esl_opt_DisplayHelp(stderr, go, 1, 2, 100);
+    esl_fprintf(stderr, "\nTo see more help on other available options, do %s -h\n\n", argv[0]);
     exit(1);
   }
   /* Initialize what we can in the config structure (without knowing the alphabet yet).

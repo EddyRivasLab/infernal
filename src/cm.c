@@ -3413,39 +3413,80 @@ DumpCMFlags(FILE *fp, CM_t *cm)
 /* Function:  cm_CreateDefaultApp()
  * Synopsis:  Initialize a small/simple/standard INFERNAL application
  * Incept:    EPN, Fri Jul  1 05:18:21 2011
- *            SRE, Thu Oct 28 15:03:21 2010 [Janelia] (p7_CreateDefaultApp())
  *
- * Purpose:   Identical to <esl_getopts_CreateDefaultApp()>, but 
- *            specialized for INFERNAL. See documentation in 
- *            <easel/esl_getopts.c>.
+ * Purpose:   For an Infernal program named <progname> that expects
+ *            <nargs> additional command line arguments and accepts the
+ *            options described in the ESL_OPTIONS array <options>,
+ *            parse the command line <argc>, <argv>.
  *
- * Args:      options - array of <ESL_OPTIONS> structures for getopts
- *            nargs   - number of cmd line arguments expected (excl. of cmdname)
- *            argc    - <argc> from main()
- *            argv    - <argv> from main()
- *            banner  - optional one-line description of program (or NULL)
- *            usage   - optional one-line usage hint (or NULL)
+ *            The <options> structure must include "-h" and
+ *            "--version" options. These are handled immediately to
+ *            show help or version information, then exit with normal
+ *            (0) status. When used, they must be the only option
+ *            used, and with no other args (e.g. "cmsearch -h",
+ *            "cmsearch --version"); <nargs> is not relevant. With
+ *            "-h", the brief help is formatted using the optional
+ *            <banner> and <usage> lines, followed by a table of
+ *            one-line summaries of each option in <ESL_OPTIONS>.
+ *            With "--version", we print a single line of version
+ *            information, "<progname> <version>".
+ *
+ *            Otherwise, verify the correct number of <nargs>, and
+ *            return an allocated <ESL_GETOPTS> structure containing
+ *            information about the parsed command line.
+ *
+ *            The "-h" and "--version" help strings in <ESL_OPTIONS>
+ *            should include a statement of "and exit":
+ *
+ *            `-h`        : "show brief help and exit" 
+ *            `--version` : "show version info and exit" 
+ *
+ *            Examples for <progname>, <nargs>, <banner>, <usage>:
+ *
+ *            progname: "compare_rna"
+ *            banner:   "compare RNA structures"
+ *            usage:    "[options] <rnafile1> <rnafile2>"
+ *            nargs:    2
+ *
+ *            If the program takes a variable number of commandline
+ *            args, pass -1 for <nargs>, and the check for correct
+ *            arg number will be skipped.
+ *
+ *            <argc> and <argv> are exactly the commandline args
+ *            received from main(), so <argv[0]> is the pathname of the
+ *            executable. Typically the filename part of this is
+ *            <progname>, but not necessarily, if a program was renamed
+ *            or symlinked. When formatting help on how to invoke the
+ *            program, we use <argv[0]>; when formatting version info,
+ *            we use <progname>.
+ *
+ * Args:      progname - program name to show in output (e.g. "cmsearch")
+ *            options  - array of <ESL_OPTIONS> structures for getopts
+ *            nargs    - number of cmd line arguments expected (excl. of cmdname); -1 if variable
+ *            argc     - <argc> from main()
+ *            argv     - <argv> from main()
+ *            banner   - optional one-line description of program (or NULL)
+ *            usage    - optional one-line usage hint (or NULL)
  *
  * Returns:   ptr to new <ESL_GETOPTS> object.
  * 
- *            On command line errors, this routine prints an error
- *            message to <stderr> then calls <exit(1)> to halt
- *            execution with abnormal (1) status.
- *            
- *            If the standard <-h> option is seen, the routine prints
- *            the help page (using the data in the <options> structure),
- *            then calls <exit(0)> to exit with normal (0) status.
+ *            On command line errors, prints an error message to
+ *            <stderr> and exit with abnormal (1) status.
  *            
  * Xref:      J7/3
  * 
- * Note:      The only difference between this and esl_getopts_CreateDefaultApp()
- *            is to call cm_banner() instead of esl_banner(), to get INFERNAL
- *            versioning info into the header. There ought to be a better way
- *            (perhaps using PACKAGE_* define's instead of INFERNAL_* vs. EASEL_*
- *            define's in esl_banner(), thus removing the need for cm_banner).
+ * Note:      Each package (Easel, HMMER, Infernal...) has its own
+ *            specialized implementation of a _CreateDefaultApp():
+ *            esl_getopts_CreateDefaultApp(), p7_CreateDefaultApp(),
+ *            etc. This allows one package to include one or more
+ *            others, while maintaining separate version/release
+ *            information for each one. This pattern assumes that when
+ *            we make an Infernal release, we also version specific
+ *            releases of HMMER and Easel that are included in the
+ *            Infernal release.
  */
 ESL_GETOPTS *
-cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage)
+cm_CreateDefaultApp(char *progname, ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage)
 {
   ESL_GETOPTS *go = NULL;
 
@@ -3453,26 +3494,39 @@ cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK ||
       esl_opt_VerifyConfig(go)               != eslOK) 
     {
-      printf("Failed to parse command line: %s\n", go->errbuf);
-      if (usage != NULL) esl_usage(stdout, argv[0], usage);
-      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      esl_fprintf(stderr, "Failed to parse command line: %s\n", go->errbuf);
+      if (usage) esl_usage(stderr, argv[0], usage);     // use argv[0] here: usage is about invocation, not version
+      esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
     {
-      if (banner != NULL) cm_banner(stdout, argv[0], banner);
-      if (usage  != NULL) esl_usage (stdout, argv[0], usage);
-      puts("\nOptions:");
-      esl_opt_DisplayHelp(stdout, go, 0, 2, 80);
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
+
+      if (banner) cm_banner(stdout, progname, banner);
+      if (usage)  esl_usage (stdout, argv[0], usage);
+      esl_printf("\nOptions:\n");
+      esl_opt_DisplayHelp(stdout, go, 0, 2, 100);
       exit(0);
     }
-  if (esl_opt_ArgNumber(go) != nargs) 
+
+  if (esl_opt_GetBoolean(go, "--version"))
     {
-      puts("Incorrect number of command line arguments.");
-      esl_usage(stdout, argv[0], usage);
-      printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+
+      esl_printf("%s %s\n", progname, INFERNAL_VERSION);  // use progname here: versioning, not invocation
+      exit(0);
+    }
+
+  if (nargs != -1 && esl_opt_ArgNumber(go) != nargs) 
+    {
+      esl_fprintf(stderr, "Incorrect number of command line arguments.\n");
+      if (usage) esl_usage(stderr, argv[0], usage);
+      esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+
   return go;
 }
 
