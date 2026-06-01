@@ -487,7 +487,10 @@ cm_AlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sampl
   if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) {
+    int recommended_mxsize = (int)(ceil(totmb / 1024.0) * 1024.0);
+    ESL_FAIL(eslERANGE, errbuf, "non-banded alignment mxes need %.2f Mb > %.2f Mb limit. Use --mxsize %d, --maxtau or --tau.", totmb, (float) size_limit, recommended_mxsize);
+  }
 
   return eslOK;
 }
@@ -580,7 +583,10 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   printf("#DEBUG: \t limit:   %.2f\n", size_limit);
 #endif
 
-  if(cmtotmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded std DP mxes need %.1f>%.1f Mb limit (HMM mxes need an extra %.1f Mb).\nUse --mxsize, --maxtau or --tau.", cmtotmb, (float) size_limit, cp9mxmb);
+  if(cmtotmb > size_limit) {
+    int recommended_mxsize = (int)(ceil(cmtotmb / 1024.0) * 1024.0);
+    ESL_FAIL(eslERANGE, errbuf, "HMM-banded DP mxes need %.1f>%.1f Mb limit (HMM mxes need extra %.1f Mb). Use --mxsize %d.", cmtotmb, (float) size_limit, cp9mxmb, recommended_mxsize);
+  }
 
   return eslOK;
 }

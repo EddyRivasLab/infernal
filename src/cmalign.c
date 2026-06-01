@@ -14,7 +14,7 @@
 #include <ctype.h>
 #include <float.h>
 #include <limits.h>
-#include <inttypes.h>	/* DBG-006: PRId64/PRIu64 */
+#include <inttypes.h>
 
 #include "easel.h"		/* general seq analysis library   */
 #include "esl_alphabet.h"
@@ -814,7 +814,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].cm          = NULL;
 	winfo[k].dataA       = NULL;
 	winfo[k].n           = 0;
-	winfo[k].mxsize      = 0;
+	winfo[k].mxsize      = esl_opt_GetReal(go, "--mxsize");
 	winfo[k].pass_idx    = 0;
 	winfo[k].w           = NULL;
 	winfo[k].w_tot       = NULL;
@@ -854,20 +854,17 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
 	p7_ReconfigLength(gm, sq->n);
 
-	/* DBG-006: instrument HMM full-matrix allocation size before GrowTo */
+	/* preflight: check HMM matrix size vs --mxsize before GrowTo */
 	{
-	  uint64_t dbg_ncells = (uint64_t)(hmm->M + 1) * (uint64_t)(sq->n + 1);
-	  uint64_t dbg_bytes  = (uint64_t) sizeof(float) * dbg_ncells * (uint64_t) p7G_NSCELLS;
-	  int dbg_nmat = do_hmmnoband ? 2 : 1;
-	  fprintf(stderr, "DBG-006: seq=%s mode=%s M=%d L=%" PRId64 " ncells=%" PRIu64
-		  " size_request_per_matrix=%" PRIu64 " bytes (%.2f GB) nmatrices=%d total=%.2f GB int32_print=%d\n",
-		  sq->name,
-		  do_hmmvit ? "hmmvit(1mat)" : (do_hmmnoband ? "hmmnoband(2mat)" : "bandedoa(1mat+banded)"),
-		  hmm->M, (int64_t) sq->n, dbg_ncells, dbg_bytes,
-		  (double) dbg_bytes / (1024.0*1024.0*1024.0), dbg_nmat,
-		  (double) dbg_bytes * dbg_nmat / (1024.0*1024.0*1024.0),
-		  (int) dbg_bytes);
-	  fflush(stderr);
+	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
+	  int    nmat         = do_hmmnoband ? 2 : 1;
+	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+	  double mxsize_limit = esl_opt_GetReal(go, "--mxsize");
+	  if (needed_mb > mxsize_limit) {
+	    int recommended_mxsize = (int)(ceil(needed_mb / 1024.0) * 1024.0);
+	    cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
+		    needed_mb, mxsize_limit, recommended_mxsize);
+	  }
 	}
 
 	if (do_hmmvit) {
@@ -1363,6 +1360,18 @@ hmm_pipeline_thread(void *arg)
 
     /* Reconfigure profile for this sequence length */
     p7_ReconfigLength(info->gm, sq->n);
+
+    /* preflight: check HMM matrix size vs --mxsize before GrowTo */
+    {
+      double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
+      int    nmat         = info->do_hmmnoband ? 2 : 1;
+      double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+      if (needed_mb > (double) info->mxsize) {
+	int recommended_mxsize = (int)(ceil(needed_mb / 1024.0) * 1024.0);
+	cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
+		needed_mb, (double) info->mxsize, recommended_mxsize);
+      }
+    }
 
     if (info->do_hmmvit) {
       /* --- Viterbi trace --- */
@@ -2075,6 +2084,19 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       P7_TRACE *wtr = do_hmmvit_w ? p7_trace_Create() : p7_trace_CreateWithPP();
 
       p7_ReconfigLength(gm_w, L);
+
+      /* preflight: check HMM matrix size vs --mxsize before GrowTo */
+      {
+	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
+	int    nmat         = do_hmmnoband_w ? 2 : 1;
+	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+	double mxsize_limit = esl_opt_GetReal(go, "--mxsize");
+	if (needed_mb > mxsize_limit) {
+	  int recommended_mxsize = (int)(ceil(needed_mb / 1024.0) * 1024.0);
+	  mpi_failure("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
+		      needed_mb, mxsize_limit, recommended_mxsize);
+	}
+      }
 
       if (do_hmmvit_w) {
 	p7_gmx_GrowTo(gx_w, hmm_w->M, L);
