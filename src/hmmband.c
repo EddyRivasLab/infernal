@@ -1421,8 +1421,8 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
     /* printf("hd needed v: %4d bw: %4d total: %" PRId64 "\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
-  /* diagnostic for very large band index arrays (brief 097): values > 2^31 used to silently overflow int32 here */
-  if(cp9b->hd_needed > 100000000LL) fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.2f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
+  /* diagnostic for band index array size (brief 097/098): always print for band expansion measurement */
+  fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.4f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
   if(cp9b->hd_alloced < cp9b->hd_needed) {
     void *tmp;
     if(cp9b->hdmin_mem == NULL) ESL_ALLOC(cp9b->hdmin_mem, sizeof(int) * cp9b->hd_needed);
