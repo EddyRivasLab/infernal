@@ -8321,12 +8321,42 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
 #define PB_DEFAULT_LSIS_WINDOW  200  /* >0 = limited-window LSIS (model-pos window); 0 = full O(N^2) */
 #define PB_DEFAULT_K_ADAPTIVE   1    /* 1 = K = max(PB_DEFAULT_TOPK, L/(2*pad)); 0 = fixed PB_DEFAULT_TOPK */
 
+/* Model-size gate for the brief-094 mechanisms (2026-06-01 validation).
+ *
+ * The 32-bit SW eliminates a band-size BLOWUP that only occurs when the
+ * 16-bit SW accumulation saturates AND the model is large enough for the
+ * resulting over-wide band to be expensive (dengue M=10735: 99M -> 0.48M
+ * cells, 208x; HSV M=152222: enables pinbridge where 16-bit's saturated
+ * band fails outright). At small M (rmark4e/4h, M <= ~2900) there is no
+ * blowup to fix, and the 32-bit kernel instead (a) costs ~2x in the SW scan
+ * (4 int32 lanes vs 8 int16) and (b) perturbs pin selection toward slightly
+ * WIDER bands (rmark4e summed CM matrix 4.1 -> 5.0 GB, LSU 847 -> 1804 MB),
+ * with a small accuracy cost (rmark4e 0.99242 -> 0.99124, rmark4h 0.97887 ->
+ * 0.97688). So the mechanisms are gated ON only for M >= PB_M32_MIN, which
+ * keeps the small-M path byte-identical to brief 091 while capturing the
+ * large-M win. An explicitly-set env var overrides the gate at any M (for
+ * A/B and power users). The 2900..10735 crossover is uncalibrated; 8000 is a
+ * conservative default that cleanly separates Rfam-scale from viral-genome
+ * scale (the VADR target). */
+#define PB_M32_MIN_DEFAULT 8000
+
 /* Read an integer env var, falling back to <defval> when unset. */
 static int
 pb_env_int(const char *name, int defval)
 {
   const char *s = getenv(name);
   return (s != NULL) ? atoi(s) : defval;
+}
+
+/* Resolve a brief-094 mechanism gate: an explicitly-set env var wins at any
+ * M; otherwise the compile-time default applies only when m_ok (M-gate). For
+ * the non-boolean window knob this returns <compiled_default> (e.g. 200) or 0. */
+static int
+pb_gate(const char *name, int compiled_default, int m_ok)
+{
+  const char *s = getenv(name);
+  if (s != NULL) return atoi(s);
+  return m_ok ? compiled_default : 0;
 }
 
 /*****************************************************************
@@ -9399,10 +9429,13 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   struct timespec ta, tb;
   double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
 
-  /* Brief 094 component gates (env var overrides compile-time default). */
-  int       use_32bit   = pb_env_int("PB_USE_32BIT_SW", PB_DEFAULT_USE_32BIT_SW) && (om32 != NULL);
-  int       lsis_window = pb_env_int("PB_LSIS_WINDOW",  PB_DEFAULT_LSIS_WINDOW);
-  int       k_adaptive  = pb_env_int("PB_K_ADAPTIVE",   PB_DEFAULT_K_ADAPTIVE);
+  /* Brief 094 component gates: ON by default only for M >= PB_M32_MIN (the
+   * regime where 16-bit saturation blows up the band); an explicitly-set env
+   * var overrides the M-gate at any M. */
+  int       large_m     = (M >= pb_env_int("PB_M32_MIN", PB_M32_MIN_DEFAULT));
+  int       use_32bit   = pb_gate("PB_USE_32BIT_SW", PB_DEFAULT_USE_32BIT_SW, large_m) && (om32 != NULL);
+  int       lsis_window = pb_gate("PB_LSIS_WINDOW",  PB_DEFAULT_LSIS_WINDOW,  large_m);
+  int       k_adaptive  = pb_gate("PB_K_ADAPTIVE",   PB_DEFAULT_K_ADAPTIVE,   large_m);
   /* 32-bit threshold: same semantics as T_w, rescaled by scale_i/scale_w.
    * scale_i == scale_w by construction, so T_i32 == T_w. */
   int       T_i32       = (om32 != NULL) ? (int)( (float)T_w * (om32->scale_i / om->scale_w) ) : T_w;
