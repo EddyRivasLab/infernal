@@ -8562,6 +8562,28 @@ pb_sw_scan_collect_pins(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int T,
 }
 
 /*****************************************************************
+ * Runtime pin-emission mode selector (brief 101, 2026-06-02)
+ *
+ * PB_PIN_EMIT_MODE=trail (default): emit at trailing edge (i-1, k)
+ *   when segment resets — production behavior from pinbridge-32bit.
+ * PB_PIN_EMIT_MODE=peak: emit at peak position (i_peak, k) with
+ *   score = peak_value, including an end-of-scan flush for sticky
+ *   segments that never reset.
+ *****************************************************************/
+enum { PIN_MODE_TRAIL = 0, PIN_MODE_PEAK = 1 };
+
+static int pb_get_emit_mode(void)
+{
+  static int cached = -1;
+  if (cached < 0) {
+    const char *s = getenv("PB_PIN_EMIT_MODE");
+    if (s && strcmp(s, "peak") == 0) cached = PIN_MODE_PEAK;
+    else                             cached = PIN_MODE_TRAIL;
+  }
+  return cached;
+}
+
+/*****************************************************************
  * 16-bit SSE SW scan (prototype 2026-05-29, brief 079 S7 follow-up)
  *
  * The 8-bit version above saturates at +127 for L<200 on conserved
@@ -8580,6 +8602,8 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
   int M = om->M;
   int Q = p7O_NQW(M);    /* 8 lanes (16-bit words) per 128-bit register */
   int i, q, z;
+  int pin_mode = pb_get_emit_mode();
+  if (pin_mode == PIN_MODE_PEAK && L > 65000) pin_mode = PIN_MODE_TRAIL; /* 16-bit i position guard */
 
   int max_pins = (M + L) * 4;
   PB_Pin *pins = (PB_Pin *) malloc(max_pins * sizeof(PB_Pin));
@@ -8627,8 +8651,8 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
       peak_i[q] = _mm_andnot_si128(is_reset, peak_i[q]);
     }
 
-    /* Collect end-of-segment pins at row (i-1) */
-    {
+    /* Collect end-of-segment pins */
+    if (pin_mode == PIN_MODE_TRAIL) {
       union { __m128i v; int16_t b[8]; } u_prev, u_curr;
       for (q = 0; q < Q; q++) {
         u_prev.v = prev[q];
@@ -8650,14 +8674,37 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
           }
         }
       }
+    } else { /* PIN_MODE_PEAK */
+      union { __m128i v; int16_t b[8]; } u_pk, u_pki, u_curr;
+      for (q = 0; q < Q; q++) {
+        u_pk.v  = peak_prev[q];
+        u_pki.v = peak_i_prev[q];
+        u_curr.v = curr[q];
+        for (z = 0; z < 8; z++) {
+          int k = (q + 1) + z * Q;
+          if (k > M) break;
+          if (u_pk.b[z] >= (int16_t)T_w && u_curr.b[z] == 0) {
+            if (npins >= max_pins) {
+              max_pins *= 2;
+              PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+              if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
+              pins = tmp;
+            }
+            pins[npins].k = k;
+            pins[npins].i = (uint16_t)u_pki.b[z];
+            pins[npins].r = u_pk.b[z];
+            npins++;
+          }
+        }
+      }
     }
 
     __m128i *tmp = prev; prev = curr; curr = tmp;
     for (q = 0; q < Q; q++) curr[q] = _mm_setzero_si128();
   }
 
-  /* Last-row pins */
-  {
+  /* Last-row pins (trail mode only; peak mode uses end-of-scan flush below) */
+  if (pin_mode == PIN_MODE_TRAIL) {
     union { __m128i v; int16_t b[8]; } u_prev;
     for (q = 0; q < Q; q++) {
       u_prev.v = prev[q];
@@ -8716,6 +8763,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
   int M = om32->M;
   int Q = om32->Q;    /* 4 lanes (32-bit ints) per 128-bit register */
   int i, q, z;
+  int pin_mode = pb_get_emit_mode();
 
   int max_pins = (M + L) * 4;
   PB_Pin *pins = (PB_Pin *) malloc(max_pins * sizeof(PB_Pin));
@@ -8763,8 +8811,8 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
       peak_i[q] = _mm_andnot_si128(is_reset, peak_i[q]);
     }
 
-    /* Collect end-of-segment pins at row (i-1) */
-    {
+    /* Collect end-of-segment pins */
+    if (pin_mode == PIN_MODE_TRAIL) {
       union { __m128i v; int32_t b[4]; } u_prev, u_curr;
       for (q = 0; q < Q; q++) {
         u_prev.v = prev[q];
@@ -8786,14 +8834,37 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
           }
         }
       }
+    } else { /* PIN_MODE_PEAK */
+      union { __m128i v; int32_t b[4]; } u_pk, u_pki, u_curr;
+      for (q = 0; q < Q; q++) {
+        u_pk.v   = peak_prev[q];
+        u_pki.v  = peak_i_prev[q];
+        u_curr.v = curr[q];
+        for (z = 0; z < 4; z++) {
+          int k = (q + 1) + z * Q;
+          if (k > M) break;
+          if (u_pk.b[z] >= T_i32 && u_curr.b[z] == 0) {
+            if (npins >= max_pins) {
+              max_pins *= 2;
+              PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+              if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
+              pins = tmp;
+            }
+            pins[npins].k = k;
+            pins[npins].i = u_pki.b[z];
+            pins[npins].r = u_pk.b[z];
+            npins++;
+          }
+        }
+      }
     }
 
     __m128i *tmp = prev; prev = curr; curr = tmp;
     for (q = 0; q < Q; q++) curr[q] = _mm_setzero_si128();
   }
 
-  /* Last-row pins */
-  {
+  /* Last-row pins (trail mode only; peak mode uses end-of-scan flush below) */
+  if (pin_mode == PIN_MODE_TRAIL) {
     union { __m128i v; int32_t b[4]; } u_prev;
     for (q = 0; q < Q; q++) {
       u_prev.v = prev[q];
