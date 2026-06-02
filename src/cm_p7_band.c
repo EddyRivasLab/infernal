@@ -8586,12 +8586,21 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
   if (!pins) return eslEMEM;
   int npins = 0;
 
-  __m128i *prev = NULL;
-  __m128i *curr = NULL;
-  if (posix_memalign((void **)&prev, 16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
-  if (posix_memalign((void **)&curr, 16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+  __m128i *prev = NULL, *curr = NULL;
+  __m128i *peak = NULL, *peak_i = NULL, *peak_prev = NULL, *peak_i_prev = NULL;
 
-  for (q = 0; q < Q; q++) { prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128(); }
+  if (posix_memalign((void **)&prev,       16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&curr,       16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak,       16, Q * sizeof(__m128i)) != 0) { free(curr); free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak_i,     16, Q * sizeof(__m128i)) != 0) { free(peak); free(curr); free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak_prev,  16, Q * sizeof(__m128i)) != 0) { free(peak_i); free(peak); free(curr); free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak_i_prev,16, Q * sizeof(__m128i)) != 0) { free(peak_prev); free(peak_i); free(peak); free(curr); free(prev); free(pins); return eslEMEM; }
+
+  for (q = 0; q < Q; q++) {
+    prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128();
+    peak[q] = _mm_setzero_si128(); peak_i[q] = _mm_setzero_si128();
+    peak_prev[q] = _mm_setzero_si128(); peak_i_prev[q] = _mm_setzero_si128();
+  }
 
   __m128i zero = _mm_setzero_si128();
 
@@ -8604,6 +8613,18 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
       __m128i newval = _mm_max_epi16(zero, cand);        /* SW floor at 0 */
       mpv     = prev[q];
       curr[q] = newval;
+    }
+
+    /* Peak tracking: snapshot previous peak, update with curr, reset on segment end */
+    for (q = 0; q < Q; q++) {
+      peak_prev[q]   = peak[q];
+      peak_i_prev[q] = peak_i[q];
+      __m128i is_new_peak = _mm_cmpgt_epi16(curr[q], peak[q]);
+      peak[q]   = _mm_max_epi16(peak[q], curr[q]);
+      peak_i[q] = _mm_blendv_epi8(peak_i[q], _mm_set1_epi16((int16_t)i), is_new_peak);
+      __m128i is_reset = _mm_cmpeq_epi16(curr[q], zero);
+      peak[q]   = _mm_andnot_si128(is_reset, peak[q]);
+      peak_i[q] = _mm_andnot_si128(is_reset, peak_i[q]);
     }
 
     /* Collect end-of-segment pins at row (i-1) */
@@ -8619,7 +8640,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
             if (npins >= max_pins) {
               max_pins *= 2;
               PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
-              if (!tmp) { free(pins); free(prev); free(curr); return eslEMEM; }
+              if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
               pins = tmp;
             }
             pins[npins].k = k;
@@ -8647,7 +8668,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
           if (npins >= max_pins) {
             max_pins *= 2;
             PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
-            if (!tmp2) { free(pins); free(prev); free(curr); return eslEMEM; }
+            if (!tmp2) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
             pins = tmp2;
           }
           pins[npins].k = k;
@@ -8659,8 +8680,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
     }
   }
 
-  free(prev);
-  free(curr);
+  free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev);
 
   *ret_pins  = pins;
   *ret_npins = npins;
@@ -8702,12 +8722,21 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
   if (!pins) return eslEMEM;
   int npins = 0;
 
-  __m128i *prev = NULL;
-  __m128i *curr = NULL;
-  if (posix_memalign((void **)&prev, 16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
-  if (posix_memalign((void **)&curr, 16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+  __m128i *prev = NULL, *curr = NULL;
+  __m128i *peak = NULL, *peak_i = NULL, *peak_prev = NULL, *peak_i_prev = NULL;
 
-  for (q = 0; q < Q; q++) { prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128(); }
+  if (posix_memalign((void **)&prev,       16, Q * sizeof(__m128i)) != 0) { free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&curr,       16, Q * sizeof(__m128i)) != 0) { free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak,       16, Q * sizeof(__m128i)) != 0) { free(curr); free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak_i,     16, Q * sizeof(__m128i)) != 0) { free(peak); free(curr); free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak_prev,  16, Q * sizeof(__m128i)) != 0) { free(peak_i); free(peak); free(curr); free(prev); free(pins); return eslEMEM; }
+  if (posix_memalign((void **)&peak_i_prev,16, Q * sizeof(__m128i)) != 0) { free(peak_prev); free(peak_i); free(peak); free(curr); free(prev); free(pins); return eslEMEM; }
+
+  for (q = 0; q < Q; q++) {
+    prev[q] = _mm_setzero_si128(); curr[q] = _mm_setzero_si128();
+    peak[q] = _mm_setzero_si128(); peak_i[q] = _mm_setzero_si128();
+    peak_prev[q] = _mm_setzero_si128(); peak_i_prev[q] = _mm_setzero_si128();
+  }
 
   __m128i zero = _mm_setzero_si128();
 
@@ -8720,6 +8749,18 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
       __m128i newval = _mm_max_epi32(zero, cand);          /* SW floor at 0 (SSE4.1) */
       mpv     = prev[q];
       curr[q] = newval;
+    }
+
+    /* Peak tracking: snapshot previous peak, update with curr, reset on segment end */
+    for (q = 0; q < Q; q++) {
+      peak_prev[q]   = peak[q];
+      peak_i_prev[q] = peak_i[q];
+      __m128i is_new_peak = _mm_cmpgt_epi32(curr[q], peak[q]);
+      peak[q]   = _mm_max_epi32(peak[q], curr[q]);
+      peak_i[q] = _mm_blendv_epi8(peak_i[q], _mm_set1_epi32((int32_t)i), is_new_peak);
+      __m128i is_reset = _mm_cmpeq_epi32(curr[q], zero);
+      peak[q]   = _mm_andnot_si128(is_reset, peak[q]);
+      peak_i[q] = _mm_andnot_si128(is_reset, peak_i[q]);
     }
 
     /* Collect end-of-segment pins at row (i-1) */
@@ -8735,7 +8776,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
             if (npins >= max_pins) {
               max_pins *= 2;
               PB_Pin *tmp = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
-              if (!tmp) { free(pins); free(prev); free(curr); return eslEMEM; }
+              if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
               pins = tmp;
             }
             pins[npins].k = k;
@@ -8763,7 +8804,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
           if (npins >= max_pins) {
             max_pins *= 2;
             PB_Pin *tmp2 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
-            if (!tmp2) { free(pins); free(prev); free(curr); return eslEMEM; }
+            if (!tmp2) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
             pins = tmp2;
           }
           pins[npins].k = k;
@@ -8775,8 +8816,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
     }
   }
 
-  free(prev);
-  free(curr);
+  free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev);
 
   *ret_pins  = pins;
   *ret_npins = npins;
