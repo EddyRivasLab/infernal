@@ -7899,6 +7899,7 @@ typedef struct {
   int     k;
   int     i;
   int32_t r;
+  int32_t r_peak; /* peak SW value over the segment (diagnostic; for PB_DUMP_PINS) */
 } PB_Pin;
 
 static inline int pb_adaptive_T(int M)
@@ -8653,10 +8654,11 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
 
     /* Collect end-of-segment pins */
     if (pin_mode == PIN_MODE_TRAIL) {
-      union { __m128i v; int16_t b[8]; } u_prev, u_curr;
+      union { __m128i v; int16_t b[8]; } u_prev, u_curr, u_pk;
       for (q = 0; q < Q; q++) {
         u_prev.v = prev[q];
         u_curr.v = curr[q];
+        u_pk.v   = peak_prev[q];
         for (z = 0; z < 8; z++) {
           int k = (q + 1) + z * Q;
           if (k > M) break;
@@ -8667,9 +8669,10 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
               if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
               pins = tmp;
             }
-            pins[npins].k = k;
-            pins[npins].i = i - 1;
-            pins[npins].r = u_prev.b[z];
+            pins[npins].k      = k;
+            pins[npins].i      = i - 1;
+            pins[npins].r      = u_prev.b[z];
+            pins[npins].r_peak = u_pk.b[z];
             npins++;
           }
         }
@@ -8690,9 +8693,10 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
               if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
               pins = tmp;
             }
-            pins[npins].k = k;
-            pins[npins].i = (uint16_t)u_pki.b[z];
-            pins[npins].r = u_pk.b[z];
+            pins[npins].k      = k;
+            pins[npins].i      = (uint16_t)u_pki.b[z];
+            pins[npins].r      = u_pk.b[z];
+            pins[npins].r_peak = u_pk.b[z];
             npins++;
           }
         }
@@ -8705,9 +8709,10 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
 
   /* Last-row pins (trail mode only; peak mode uses end-of-scan flush below) */
   if (pin_mode == PIN_MODE_TRAIL) {
-    union { __m128i v; int16_t b[8]; } u_prev;
+    union { __m128i v; int16_t b[8]; } u_prev, u_pk;
     for (q = 0; q < Q; q++) {
       u_prev.v = prev[q];
+      u_pk.v   = peak[q];
       for (z = 0; z < 8; z++) {
         int k = (q + 1) + z * Q;
         if (k > M) break;
@@ -8718,9 +8723,10 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
             if (!tmp2) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
             pins = tmp2;
           }
-          pins[npins].k = k;
-          pins[npins].i = L;
-          pins[npins].r = u_prev.b[z];
+          pins[npins].k      = k;
+          pins[npins].i      = L;
+          pins[npins].r      = u_prev.b[z];
+          pins[npins].r_peak = u_pk.b[z];
           npins++;
         }
       }
@@ -8744,9 +8750,10 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
             if (!tmp3) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
             pins = tmp3;
           }
-          pins[npins].k = k;
-          pins[npins].i = (uint16_t)u_pki.b[z];
-          pins[npins].r = u_pk.b[z];
+          pins[npins].k      = k;
+          pins[npins].i      = (uint16_t)u_pki.b[z];
+          pins[npins].r      = u_pk.b[z];
+          pins[npins].r_peak = u_pk.b[z];
           npins++;
         }
       }
@@ -8839,10 +8846,11 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
 
     /* Collect end-of-segment pins */
     if (pin_mode == PIN_MODE_TRAIL) {
-      union { __m128i v; int32_t b[4]; } u_prev, u_curr;
+      union { __m128i v; int32_t b[4]; } u_prev, u_curr, u_pk;
       for (q = 0; q < Q; q++) {
         u_prev.v = prev[q];
         u_curr.v = curr[q];
+        u_pk.v   = peak_prev[q];
         for (z = 0; z < 4; z++) {
           int k = (q + 1) + z * Q;
           if (k > M) break;
@@ -8853,9 +8861,10 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
               if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
               pins = tmp;
             }
-            pins[npins].k = k;
-            pins[npins].i = i - 1;
-            pins[npins].r = u_prev.b[z];
+            pins[npins].k      = k;
+            pins[npins].i      = i - 1;
+            pins[npins].r      = u_prev.b[z];
+            pins[npins].r_peak = u_pk.b[z];
             npins++;
           }
         }
@@ -8876,9 +8885,10 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
               if (!tmp) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
               pins = tmp;
             }
-            pins[npins].k = k;
-            pins[npins].i = u_pki.b[z];
-            pins[npins].r = u_pk.b[z];
+            pins[npins].k      = k;
+            pins[npins].i      = u_pki.b[z];
+            pins[npins].r      = u_pk.b[z];
+            pins[npins].r_peak = u_pk.b[z];
             npins++;
           }
         }
@@ -8891,9 +8901,10 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
 
   /* Last-row pins (trail mode only; peak mode uses end-of-scan flush below) */
   if (pin_mode == PIN_MODE_TRAIL) {
-    union { __m128i v; int32_t b[4]; } u_prev;
+    union { __m128i v; int32_t b[4]; } u_prev, u_pk;
     for (q = 0; q < Q; q++) {
       u_prev.v = prev[q];
+      u_pk.v   = peak[q];
       for (z = 0; z < 4; z++) {
         int k = (q + 1) + z * Q;
         if (k > M) break;
@@ -8904,9 +8915,10 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
             if (!tmp2) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
             pins = tmp2;
           }
-          pins[npins].k = k;
-          pins[npins].i = L;
-          pins[npins].r = u_prev.b[z];
+          pins[npins].k      = k;
+          pins[npins].i      = L;
+          pins[npins].r      = u_prev.b[z];
+          pins[npins].r_peak = u_pk.b[z];
           npins++;
         }
       }
@@ -8930,9 +8942,10 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
             if (!tmp3) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
             pins = tmp3;
           }
-          pins[npins].k = k;
-          pins[npins].i = u_pki.b[z];
-          pins[npins].r = u_pk.b[z];
+          pins[npins].k      = k;
+          pins[npins].i      = u_pki.b[z];
+          pins[npins].r      = u_pk.b[z];
+          pins[npins].r_peak = u_pk.b[z];
           npins++;
         }
       }
@@ -9614,6 +9627,26 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   }
   clock_gettime(CLOCK_MONOTONIC, &tb);
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
+
+  /* PB_DUMP_PINS diagnostic (brief 099/101): append one TSV line per raw pin */
+  {
+    const char *dump_path = getenv("PB_DUMP_PINS");
+    if (dump_path != NULL) {
+      FILE *fp = fopen(dump_path, "a");
+      if (fp != NULL) {
+        const char *tag    = getenv("PB_DUMP_TAG");
+        const char *kernel = use_32bit ? "i32" : "w16";
+        int _p;
+        if (tag == NULL) tag = "-";
+        for (_p = 0; _p < npins; _p++)
+          fprintf(fp, "%s\t%s\tM=%d\tL=%d\tk=%d\ti=%d\tr=%d\tr_peak=%d\n",
+                  tag, kernel, M, L,
+                  raw_pins[_p].k, raw_pins[_p].i,
+                  (int)raw_pins[_p].r, (int)raw_pins[_p].r_peak);
+        fclose(fp);
+      }
+    }
+  }
 
   /* Step 1.5 (brief 091, Attack 1): Top-K pruning to cap LSIS input size.
    * Default K = PB_DEFAULT_TOPK; PB_TOPK env var overrides (0 = off).
