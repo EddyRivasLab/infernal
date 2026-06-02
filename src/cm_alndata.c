@@ -454,7 +454,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  } else {
 	    p7_ProfileConfig(cm->fp7, bg_p7b, gm_p7b, sq->L, p7_GLOCAL);
 	  }
-	  gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+	  /* gx_p7b (full O(M*L) p7 matrix) is allocated lazily only where the
+	   * unbanded p7_Seq2BandsVit path actually needs it (brief 094). The
+	   * --p7pinbridge success path never touches it, so we avoid the eager
+	   * full-matrix alloc that (a) defeats pinbridge's large-M memory win and
+	   * (b) overflows int32 in p7_gmx_Create at M=L ~ 1.5e5 (e.g. HSV). */
 	  tr_p7b = p7_trace_Create();
 
 	  /* Build local nodepad copy with p7bpad (p7padplus) added */
@@ -486,6 +490,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* If pinbridge couldn't produce a trace (rare; band missed the trace
 	     * entirely), fall back to full unbanded Viterbi for this sequence. */
 	    if (status == eslOK && p7_ncells == 0) {
+	      if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
 	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
 				       sq->dsq, sq->L, cm->p7bpad,
 				       local_nodepad,
@@ -493,6 +498,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
 	  } else {
+	    if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
 	    status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
 				     sq->dsq, sq->L, cm->p7bpad,
 				     local_nodepad,
