@@ -809,8 +809,8 @@ typedef struct cp9bands_s {
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* info on size of bands */
-  int hd_needed;              /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed */
-  int hd_alloced;             /* number of hd arrays currently alloc'ed */
+  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: can exceed 2^31 for very large M*L, e.g. HSV M=152K L=150K) */
+  int64_t hd_alloced;         /* number of hd arrays currently alloc'ed */
 
   double   tau;               /* tau used to calculate current bands */
 
