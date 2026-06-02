@@ -8727,6 +8727,32 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
     }
   }
 
+  /* End-of-scan flush (peak mode): emit for sticky segments still active at i=L */
+  if (pin_mode == PIN_MODE_PEAK) {
+    union { __m128i v; int16_t b[8]; } u_pk, u_pki, u_prev;
+    for (q = 0; q < Q; q++) {
+      u_pk.v   = peak[q];
+      u_pki.v  = peak_i[q];
+      u_prev.v = prev[q];    /* SW values at row L (after final swap) */
+      for (z = 0; z < 8; z++) {
+        int k = (q + 1) + z * Q;
+        if (k > M) break;
+        if (u_pk.b[z] >= (int16_t)T_w && u_prev.b[z] > 0) {
+          if (npins >= max_pins) {
+            max_pins *= 2;
+            PB_Pin *tmp3 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+            if (!tmp3) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
+            pins = tmp3;
+          }
+          pins[npins].k = k;
+          pins[npins].i = (uint16_t)u_pki.b[z];
+          pins[npins].r = u_pk.b[z];
+          npins++;
+        }
+      }
+    }
+  }
+
   free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev);
 
   *ret_pins  = pins;
@@ -8881,6 +8907,32 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
           pins[npins].k = k;
           pins[npins].i = L;
           pins[npins].r = u_prev.b[z];
+          npins++;
+        }
+      }
+    }
+  }
+
+  /* End-of-scan flush (peak mode): emit for sticky segments still active at i=L */
+  if (pin_mode == PIN_MODE_PEAK) {
+    union { __m128i v; int32_t b[4]; } u_pk, u_pki, u_prev;
+    for (q = 0; q < Q; q++) {
+      u_pk.v   = peak[q];
+      u_pki.v  = peak_i[q];
+      u_prev.v = prev[q];    /* SW values at row L (after final swap) */
+      for (z = 0; z < 4; z++) {
+        int k = (q + 1) + z * Q;
+        if (k > M) break;
+        if (u_pk.b[z] >= T_i32 && u_prev.b[z] > 0) {
+          if (npins >= max_pins) {
+            max_pins *= 2;
+            PB_Pin *tmp3 = (PB_Pin *) realloc(pins, max_pins * sizeof(PB_Pin));
+            if (!tmp3) { free(pins); free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev); return eslEMEM; }
+            pins = tmp3;
+          }
+          pins[npins].k = k;
+          pins[npins].i = u_pki.b[z];
+          pins[npins].r = u_pk.b[z];
           npins++;
         }
       }
