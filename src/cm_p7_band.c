@@ -8584,6 +8584,17 @@ static int pb_get_emit_mode(void)
   return cached;
 }
 
+/* Brief 102: gate end-of-scan flush separately to isolate from peak-on-reset. */
+static int pb_get_flush_enabled(void)
+{
+  static int cached = -1;
+  if (cached < 0) {
+    const char *s = getenv("PB_PIN_FLUSH");
+    cached = (s && strcmp(s, "1") == 0) ? 1 : 0;
+  }
+  return cached;
+}
+
 /*****************************************************************
  * 16-bit SSE SW scan (prototype 2026-05-29, brief 079 S7 follow-up)
  *
@@ -8734,7 +8745,8 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
   }
 
   /* End-of-scan flush (peak mode): emit for sticky segments still active at i=L */
-  if (pin_mode == PIN_MODE_PEAK) {
+  /* Brief 102: flush is gated separately via PB_PIN_FLUSH to isolate from peak-on-reset. */
+  if (pin_mode == PIN_MODE_PEAK && pb_get_flush_enabled()) {
     union { __m128i v; int16_t b[8]; } u_pk, u_pki, u_prev;
     for (q = 0; q < Q; q++) {
       u_pk.v   = peak[q];
@@ -8926,7 +8938,8 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
   }
 
   /* End-of-scan flush (peak mode): emit for sticky segments still active at i=L */
-  if (pin_mode == PIN_MODE_PEAK) {
+  /* Brief 102: flush is gated separately via PB_PIN_FLUSH to isolate from peak-on-reset. */
+  if (pin_mode == PIN_MODE_PEAK && pb_get_flush_enabled()) {
     union { __m128i v; int32_t b[4]; } u_pk, u_pki, u_prev;
     for (q = 0; q < Q; q++) {
       u_pk.v   = peak[q];
