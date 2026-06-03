@@ -8640,6 +8640,24 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
 
   __m128i zero = _mm_setzero_si128();
 
+  /* Brief 104 diagnostic: dump the full SW accumulator matrix curr[i][k].
+   * PB_DUMP_SW_MX=<path> writes one TSV line per (i,k) cell: i  k  curr.
+   * Dumped after the DP update for row i, before pin emission.
+   * Use --cpu 1 so concurrent threads don't interleave lines.
+   * DIAGNOSTIC-ONLY: no effect on pin emission. */
+  FILE *sw_dump_fp = NULL;
+  {
+    const char *sw_dump_path = getenv("PB_DUMP_SW_MX");
+    if (sw_dump_path != NULL) {
+      sw_dump_fp = fopen(sw_dump_path, "w");
+      if (sw_dump_fp != NULL) {
+        fprintf(sw_dump_fp, "# SW accumulator matrix dump (brief 104), kernel=w16\n");
+        fprintf(sw_dump_fp, "# M=%d L=%d Q=%d T_w=%d\n", M, L, Q, T_w);
+        fprintf(sw_dump_fp, "#i\tk\tcurr\n");
+      }
+    }
+  }
+
   for (i = 1; i <= L; i++) {
     __m128i const *rsc = om->rwv[dsq[i]];                /* 16-bit emission scores */
     __m128i mpv = _mm_slli_si128(prev[Q - 1], 2);        /* shift left 2 bytes = 1 word */
@@ -8649,6 +8667,20 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
       __m128i newval = _mm_max_epi16(zero, cand);        /* SW floor at 0 */
       mpv     = prev[q];
       curr[q] = newval;
+    }
+
+    /* Brief 104 diagnostic: dump row i of the SW accumulator (curr[]),
+     * unstriped to per-k order. */
+    if (sw_dump_fp != NULL) {
+      union { __m128i v; int16_t b[8]; } u_dump;
+      for (q = 0; q < Q; q++) {
+        u_dump.v = curr[q];
+        for (z = 0; z < 8; z++) {
+          int k = (q + 1) + z * Q;
+          if (k > M) break;
+          fprintf(sw_dump_fp, "%d\t%d\t%d\n", i, k, (int)u_dump.b[z]);
+        }
+      }
     }
 
     /* Peak tracking: snapshot previous peak, update with curr, reset on segment end */
@@ -8773,6 +8805,8 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
   }
 
   free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev);
+
+  if (sw_dump_fp != NULL) fclose(sw_dump_fp);   /* brief 104 SW matrix dump */
 
   *ret_pins  = pins;
   *ret_npins = npins;
@@ -9696,6 +9730,24 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   fprintf(stderr, "#PB_NPINS M=%d L=%d npins_raw=%d npins_lsis_in=%d nsel=%d\n",
           M, L, npins, npins_lsis_in, nsel);
   fflush(stderr);
+  /* Brief 104 diagnostic: dump LSIS-selected pins to file.
+   * PB_DUMP_LSIS_PINS=<path> writes TSV with header pin_order, i, k, r.
+   * DIAGNOSTIC-ONLY: no effect on band building. */
+  {
+    const char *lsis_dump_path = getenv("PB_DUMP_LSIS_PINS");
+    if (lsis_dump_path != NULL) {
+      FILE *lsis_fp = fopen(lsis_dump_path, "w");
+      if (lsis_fp != NULL) {
+        int _lp;
+        fprintf(lsis_fp, "pin_order\ti\tk\tr\n");
+        for (_lp = 0; _lp < nsel; _lp++)
+          fprintf(lsis_fp, "%d\t%d\t%d\t%d\n",
+                  _lp, sel_pins[_lp].i, sel_pins[_lp].k, (int)sel_pins[_lp].r);
+        fclose(lsis_fp);
+      }
+    }
+  }
+
   /* Optional: dump LSIS-selected chain when PB_DEBUG_LSIS is set in env.
    * Used for gap-aware LSIS validation (brief 089). */
   if (getenv("PB_DEBUG_LSIS") != NULL) {
