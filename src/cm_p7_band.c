@@ -10003,6 +10003,24 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   clock_gettime(CLOCK_MONOTONIC, &tb);
   pins2bands_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
+  /* PB_DUMP_BAND diagnostic (brief 103): dump final kmin/kmax band to file.
+   * Env var PB_DUMP_BAND = path to output TSV. Columns: i, kmin[i], kmax[i].
+   * This is the band returned to the caller (used for CP9 F/B posterior).
+   * Appends to the file (so multiple sequences accumulate; use PB_DUMP_TAG
+   * in the caller to separate runs, or point to per-seq files). */
+  { const char *_pb_band_path = getenv("PB_DUMP_BAND");
+    if (_pb_band_path != NULL) {
+      FILE *_pb_band_fp = fopen(_pb_band_path, "w");
+      if (_pb_band_fp != NULL) {
+        int _pb_bi;
+        fprintf(_pb_band_fp, "# M=%d L=%d\n", M, L);
+        for (_pb_bi = 1; _pb_bi <= L; _pb_bi++)
+          fprintf(_pb_band_fp, "%d\t%d\t%d\n", _pb_bi, kmin[_pb_bi], kmax[_pb_bi]);
+        fclose(_pb_band_fp);
+      }
+    }
+  }
+
   /* Emit per-stage timing for offline aggregation by CLEN bucket. */
   fprintf(stderr, "#P7PB_STAGE M=%d L=%d om_build=%.4f sw_scan=%.4f lsis=%.4f band_build=%.4f banded_vit=%.4f banded_trace=%.4f pins2bands=%.4f\n",
           M, L, om_ms/1000.0, sw_ms/1000.0, lsis_ms/1000.0, band_ms/1000.0, bvit_ms/1000.0, btrace_ms/1000.0, pins2bands_ms/1000.0);
