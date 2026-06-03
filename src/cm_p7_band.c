@@ -9965,6 +9965,36 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
     return eslOK;
   }
 
+  /* PB_DUMP_P7VIT_TRACE diagnostic (brief 103): dump the banded p7 Viterbi
+   * trace (from p7_Seq2BandsPinBridge's banded traceback) to a TSV file.
+   * Columns: tpos  state  i  k  residue_i (y/-) */
+  { const char *_vit_path = getenv("PB_DUMP_P7VIT_TRACE");
+    if (_vit_path != NULL) {
+      FILE *_vfp = fopen(_vit_path, "w");
+      if (_vfp != NULL) {
+        int _t;
+        fprintf(_vfp, "# p7 Viterbi trace dump (brief 103 / port of brief 100)\n");
+        fprintf(_vfp, "# M=%d L=%d N=%d\n", M, L, p7_tr->N);
+        fprintf(_vfp, "#tpos\tstate\ti\tk\tresidue_i\n");
+        for (_t = 0; _t < p7_tr->N; _t++) {
+          char _stc = '?';
+          switch (p7_tr->st[_t]) {
+            case p7T_M: _stc = 'M'; break; case p7T_D: _stc = 'D'; break;
+            case p7T_I: _stc = 'I'; break; case p7T_S: _stc = 'S'; break;
+            case p7T_N: _stc = 'N'; break; case p7T_B: _stc = 'B'; break;
+            case p7T_E: _stc = 'E'; break; case p7T_C: _stc = 'C'; break;
+            case p7T_T: _stc = 'T'; break; case p7T_J: _stc = 'J'; break;
+            default: _stc = '?'; break;
+          }
+          fprintf(_vfp, "%d\t%c\t%d\t%d\t%s\n",
+                  _t, _stc, p7_tr->i[_t], p7_tr->k[_t],
+                  (p7_tr->i[_t] > 0) ? "y" : "-");
+        }
+        fclose(_vfp);
+      }
+    }
+  }
+
   /* Step 3: i2k from M-state trace pins (identical to p7_Seq2BandsVit). */
   ESL_ALLOC(i2k, sizeof(int) * (L + 1));
   esl_vec_ISet(i2k, (L + 1), -1);
