@@ -9605,6 +9605,65 @@ p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
 }
 
 
+/* pb_load_pins_from_tsv(): Load a pin set from a TSV file (brief 106 PB_LOAD_PINS hook).
+ * Format: whitespace-separated "i k r" per line; lines starting with '#' are skipped;
+ * lines that don't parse as three integers (e.g. headers) are skipped silently.
+ * Validates 1 <= i <= L and 1 <= k <= M; aborts with eslFAIL on out-of-bound pins.
+ * Caller is responsible for free()ing *ret_pins on eslOK return.
+ */
+static int
+pb_load_pins_from_tsv(const char *path, int M, int L, PB_Pin **ret_pins, int *ret_npins)
+{
+  FILE   *fp     = NULL;
+  PB_Pin *pins   = NULL;
+  int     nalloc = 256;
+  int     npins  = 0;
+  char    line[512];
+
+  *ret_pins  = NULL;
+  *ret_npins = 0;
+
+  if ((fp = fopen(path, "r")) == NULL) {
+    fprintf(stderr, "PB_LOAD_PINS: cannot open '%s'\n", path);
+    return eslFAIL;
+  }
+  if ((pins = (PB_Pin *) malloc(nalloc * sizeof(PB_Pin))) == NULL) {
+    fclose(fp); return eslEMEM;
+  }
+
+  while (fgets(line, sizeof(line), fp) != NULL) {
+    int i, k, r;
+    if (line[0] == '#') continue;
+    if (sscanf(line, "%d %d %d", &i, &k, &r) != 3) continue;
+    if (i < 1 || i > L) {
+      fprintf(stderr, "PB_LOAD_PINS: pin i=%d out of bounds [1,%d]\n", i, L);
+      fclose(fp); free(pins); return eslFAIL;
+    }
+    if (k < 1 || k > M) {
+      fprintf(stderr, "PB_LOAD_PINS: pin k=%d out of bounds [1,%d]\n", k, M);
+      fclose(fp); free(pins); return eslFAIL;
+    }
+    if (npins == nalloc) {
+      PB_Pin *tmp;
+      nalloc *= 2;
+      if ((tmp = (PB_Pin *) realloc(pins, nalloc * sizeof(PB_Pin))) == NULL) {
+        fclose(fp); free(pins); return eslEMEM;
+      }
+      pins = tmp;
+    }
+    pins[npins].i      = i;
+    pins[npins].k      = k;
+    pins[npins].r      = (int32_t) r;
+    pins[npins].r_peak = (int32_t) r;
+    npins++;
+  }
+  fclose(fp);
+  *ret_pins  = pins;
+  *ret_npins = npins;
+  return eslOK;
+}
+
+
 /* p7_Seq2BandsPinBridge():
  * Drop-in replacement for Steps 1-2 of p7_Seq2BandsVit():
  * SW-pinbridge prefilter + banded p7 Viterbi + banded trace.
@@ -9692,6 +9751,18 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
                   (int)raw_pins[_p].r, (int)raw_pins[_p].r_peak);
         fclose(fp);
       }
+    }
+  }
+
+  /* PB_LOAD_PINS hook (brief 106): replace SW kernel output with an offline-generated
+   * pin set (TSV with "i k r" columns) so all downstream steps (LSIS, band-build,
+   * CP9 F/B, CM DP) are identical across trail/peak/greedy variants. */
+  {
+    const char *load_path = getenv("PB_LOAD_PINS");
+    if (load_path != NULL) {
+      if (raw_pins) { free(raw_pins); raw_pins = NULL; }
+      npins = 0;
+      if ((status = pb_load_pins_from_tsv(load_path, M, L, &raw_pins, &npins)) != eslOK) goto ERROR;
     }
   }
 
