@@ -10018,6 +10018,8 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
       ESL_ALLOC(kmin, sizeof(int) * (L + 1));
       ESL_ALLOC(kmax, sizeof(int) * (L + 1));
       for (ii = 0; ii <= L; ii++) { i2k[ii] = -1; kmin[ii] = 1; kmax[ii] = M; }
+      /* B state at i=0: cp9_FB2HMMBandsP7BF asserts kmin[0]==0. */
+      kmin[0] = 0; kmax[0] = 0;
       while (fgets(line, sizeof(line), fp) != NULL) {
         int li, lkmin, lkmax;
         if (line[0] == '#') continue;
