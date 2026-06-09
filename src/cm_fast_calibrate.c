@@ -1870,6 +1870,8 @@ static const char *fast_cal_feature_names[] = {
     "KL_cm_genomic",                 /* 66 */
     "expected_null3_lw",             /* 67 */
     "expected_null3_frag_var",       /* 68 */
+    /* Brief 46: NOSS hybrid predictor (effective sequence number) */
+    "effn",                          /* 69 */
     NULL
 };
 
@@ -1907,6 +1909,21 @@ extract_clen(CM_t *cm, double *feats)
   /* log_clen is a derived feature used by the v4.x-converted K-ridge
    * (clen power law for glocal modes). Guard against clen==0.            */
   feats[FAST_CAL_FEAT_log_clen] = (cm->clen > 0) ? log((double) cm->clen) : 0.0;
+  return eslOK;
+}
+
+
+/* extract_effn()
+ * Store the effective sequence number (cm->eff_nseq) as a feature.
+ * Brief 46: required by the NOSS hybrid predictor (base.mu_orig.ECMGC,
+ * base.K.ECMGI, largehuge_override.K.{ECMGC,ECMGI}). Matches Python
+ * candidate_features.py extraction of the EFFN header line: read as float
+ * and used as a double feature.
+ */
+static int
+extract_effn(CM_t *cm, double *feats)
+{
+  feats[FAST_CAL_FEAT_effn] = (double) cm->eff_nseq;
   return eslOK;
 }
 
@@ -3915,6 +3932,7 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   int status;
 
   if ((status = extract_clen(cm, feats))              != eslOK) return status;
+  if ((status = extract_effn(cm, feats))              != eslOK) return status;
   if ((status = extract_noss_fraglen(cm, feats))      != eslOK) return status;
   if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
   if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;

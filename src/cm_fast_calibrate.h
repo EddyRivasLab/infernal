@@ -176,7 +176,13 @@ enum {
     FAST_CAL_FEAT_expected_null3_lw,       /* 67 */
     FAST_CAL_FEAT_expected_null3_frag_var, /* 68 */
 
-    FAST_CAL_NFEAT = 69,                 /* sentinel; total feature count */
+    /* Brief 46: NOSS hybrid predictor needs effective-sequence-number.
+     * Used by base.mu_orig.ECMGC, base.K.ECMGI, and BOTH
+     * largehuge_override.K cells. Appended to keep all existing indices
+     * stable. Sourced from cm->eff_nseq (float32 EFFN header value). */
+    FAST_CAL_FEAT_effn,                    /* 69 */
+
+    FAST_CAL_NFEAT = 70,                 /* sentinel; total feature count */
     FAST_CAL_NFEAT_PHASE2 = 20          /* Phase 2 backward-compat alias */
 };
 
