@@ -1,12 +1,16 @@
 #!/bin/bash
 # embed_fastcal_models.sh
-# Embed the 18 production JSON model files into a C header as unsigned char arrays.
+# Embed the production JSON model files into a C header as unsigned char arrays.
 # Usage: embed_fastcal_models.sh <outfile>
 # The JSON paths are absolute and reference the notebook analysis directory.
 # Do NOT commit copies of the JSONs into the Infernal repo.
 # v5.5: added v55_tiny_models.json, v55_K_tiny_models.json,
 #        v55_small_models.json, v55_K_small_models.json.
 # brief 22: added v55_{medlarge,large,huge}_models.json and matching K JSONs.
+# brief 46: added v55_noss_hybrid_production.json (replaces NOSS half of
+#           production_models_v42_noss + production_mu_models_v42_noss +
+#           v4x_K_ridge_noss in the load path; those 3 JSONs removed from
+#           the embed array — they are archived on disk only).
 
 set -e
 
@@ -29,10 +33,8 @@ JSONS=(
   "${JSON_DIR}/production_mu_models_v41.json"
   "${JSON_DIR}/production_models_v42_largehuge.json"
   "${JSON_DIR}/production_mu_models_v42_largehuge.json"
-  "${JSON_DIR}/production_models_v42_noss.json"
-  "${JSON_DIR}/production_mu_models_v42_noss.json"
   "${JSON_DIR}/v4x_K_ridge_str.json"
-  "${JSON_DIR}/v4x_K_ridge_noss.json"
+  "${JSON_DIR}/v55_noss_hybrid_production.json"
 )
 
 # Verify all JSONs are accessible

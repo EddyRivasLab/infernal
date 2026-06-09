@@ -680,6 +680,293 @@ parse_v4x_K_ridge(ESL_JSON *pi, ESL_BUFFER *bf, FastCalRidge dest[][N_MODES])
 
 
 /* =========================================================================
+ * parse_noss_hybrid_cell()
+ *   Parse a single (target, mode) cell from the NOSS hybrid JSON
+ *   (analysis/v55_noss_hybrid_production.json, schema "noss_hybrid_v1")
+ *   and write the ridge(s) into the destination row dest[N_BUCKETS] for
+ *   that mode.
+ *
+ *   Two cell layouts are handled (both required by brief 46):
+ *
+ *   (a) Flat ridge (form "S2"/"S3"/"S5"/"largehuge_bucket_ridge"):
+ *       {
+ *         "form": "S5",
+ *         "schema": ["f1", "f2", "f3", "f4", "f5"],
+ *         "feature_mean": [...], "feature_std": [...], "coef_z": [...],
+ *         "target_mean": <float>,
+ *         "y_transform": "log"  (optional)
+ *       }
+ *     Action: parse one FastCalRidge; replicate into all clen-bucket
+ *     slots passed in <fill_buckets> (e.g., tiny/small/medlarge/large/huge,
+ *     or just large/huge for an override cell).
+ *
+ *   (b) Bucketed ridge (form "B_v42"; used by base.mu_extrap.ECMLI and
+ *       base.K.ECMLI only):
+ *       {
+ *         "form": "B_v42",
+ *         "schema": ["f1", ..., "f13"],
+ *         "y_transform": "log" (optional, cell-level),
+ *         "buckets": {
+ *           "tiny":     {feature_mean, feature_std, coef_z, target_mean, ...},
+ *           "small":    {feature_mean, feature_std, coef_z, target_mean, ...},
+ *           "medlarge": {feature_mean, feature_std, coef_z, target_mean, ...}
+ *         }
+ *       }
+ *     Action: parse one FastCalRidge per JSON bucket; fill the matching
+ *     C bucket slot. For C bucket slots that have no JSON bucket (large,
+ *     huge), replicate the medlarge ridge per the selection_rule note
+ *     ("for clen>700 use the medlarge bucket"). The cell-level
+ *     y_transform is applied to every per-bucket ridge.
+ *
+ *   <fill_buckets> is an array of BUCKET_* indices to populate (the
+ *   caller decides whether to fill all 5 slots — base cells — or only
+ *   the override slots LARGE/HUGE). For B_v42 cells, the per-bucket
+ *   buckets in JSON are matched explicitly; <fill_buckets> is the
+ *   override set if non-NULL (otherwise tiny/small/medlarge are taken
+ *   from JSON, large/huge from medlarge replication).
+ */
+static int
+parse_noss_hybrid_cell(ESL_JSON *pi, ESL_BUFFER *bf, int cell_obj, int mode,
+                       FastCalRidge dest[][N_MODES],
+                       const int *fill_buckets, int n_fill_buckets)
+{
+  int status;
+  int form_idx, schema_idx;
+  char  form[32];
+
+  if (cell_obj < 0) return eslOK;
+  if (pi->tok[cell_obj].type != eslJSON_OBJECT) return eslFAIL;
+
+  /* Schema: must be an array of feature-name strings. */
+  schema_idx = json_find_key(pi, bf, cell_obj, "schema");
+  if (schema_idx < 0) return eslFAIL;
+  if (pi->tok[schema_idx].type != eslJSON_ARRAY) return eslFAIL;
+  char **fnames = NULL;
+  int    nfeat  = parse_string_array(pi, bf, schema_idx, &fnames);
+  if (nfeat == 0) return eslFAIL;
+
+  /* Cell-level y_transform (applies to flat AND every per-bucket ridge
+   * in the B_v42 case — see e.g. base.K.ECMLI). */
+  FastCalYTransform cell_yt = parse_y_transform_field(pi, bf, cell_obj);
+
+  /* Read "form" to detect B_v42. Other forms (S2/S3/S5/largehuge_bucket_ridge)
+   * all use the flat layout. */
+  form_idx = json_find_key(pi, bf, cell_obj, "form");
+  form[0] = '\0';
+  if (form_idx >= 0 && pi->tok[form_idx].type == eslJSON_STRING) {
+    esl_pos_t n = esl_json_GetLen(pi, form_idx, bf);
+    char     *p = esl_json_GetMem(pi, form_idx, bf);
+    if (n < (esl_pos_t)sizeof(form)) { memcpy(form, p, n); form[n] = '\0'; }
+  }
+
+  if (strcmp(form, "B_v42") == 0)
+    {
+      /* Bucketed cell. Parse each named JSON bucket into the matching
+       * C bucket slot. Then replicate the medlarge ridge into large/huge
+       * slots (selection_rule note: clen>700 uses medlarge). */
+      static const struct { const char *name; int idx; } bk_map[] = {
+        {"tiny",     BUCKET_TINY     },
+        {"small",    BUCKET_SMALL    },
+        {"medlarge", BUCKET_MEDLARGE },
+        {NULL, 0}
+      };
+      int buckets_idx = json_find_key(pi, bf, cell_obj, "buckets");
+      if (buckets_idx < 0) { status = eslFAIL; goto CLEANUP; }
+      if (pi->tok[buckets_idx].type != eslJSON_OBJECT) { status = eslFAIL; goto CLEANUP; }
+
+      int medlarge_filled = 0;
+      int bi;
+      for (bi = 0; bk_map[bi].name != NULL; bi++)
+        {
+          int b = bk_map[bi].idx;
+          int bk_obj = json_find_key(pi, bf, buckets_idx, bk_map[bi].name);
+          if (bk_obj < 0) continue;
+          if (dest[b][mode].defined) continue;   /* don't overwrite */
+          status = parse_ridge_from_obj(pi, bf, bk_obj, fnames, nfeat, &dest[b][mode]);
+          if (status != eslOK) goto CLEANUP;
+          /* Cell-level y_transform overrides per-bucket default. */
+          dest[b][mode].y_transform = cell_yt;
+          if (b == BUCKET_MEDLARGE) medlarge_filled = 1;
+        }
+
+      /* Replicate medlarge into large/huge (clen>700 selection rule for B_v42). */
+      if (medlarge_filled)
+        {
+          int targets[2] = { BUCKET_LARGE, BUCKET_HUGE };
+          int ti;
+          int ml_obj = json_find_key(pi, bf, buckets_idx, "medlarge");
+          for (ti = 0; ti < 2; ti++)
+            {
+              int b = targets[ti];
+              if (dest[b][mode].defined) continue;
+              status = parse_ridge_from_obj(pi, bf, ml_obj, fnames, nfeat, &dest[b][mode]);
+              if (status != eslOK) goto CLEANUP;
+              dest[b][mode].y_transform = cell_yt;
+            }
+        }
+    }
+  else
+    {
+      /* Flat ridge. Parse once and replicate into the requested bucket slots. */
+      FastCalRidge tmp;
+      memset(&tmp, 0, sizeof(tmp));
+      status = parse_ridge_from_obj(pi, bf, cell_obj, fnames, nfeat, &tmp);
+      if (status != eslOK) { ridge_free(&tmp); goto CLEANUP; }
+      tmp.y_transform = cell_yt;
+
+      int fi;
+      for (fi = 0; fi < n_fill_buckets; fi++)
+        {
+          int b = fill_buckets[fi];
+          if (dest[b][mode].defined) continue;
+          /* Deep-copy tmp into dest[b][mode]. */
+          dest[b][mode].nfeat      = tmp.nfeat;
+          dest[b][mode].intercept  = tmp.intercept;
+          dest[b][mode].loo_mse    = tmp.loo_mse;
+          dest[b][mode].y_transform= tmp.y_transform;
+          dest[b][mode].defined    = 1;
+          if (tmp.nfeat > 0) {
+            int i;
+            dest[b][mode].fnames = malloc(sizeof(char *) * tmp.nfeat);
+            dest[b][mode].mean   = malloc(sizeof(double) * tmp.nfeat);
+            dest[b][mode].std    = malloc(sizeof(double) * tmp.nfeat);
+            dest[b][mode].coef   = malloc(sizeof(double) * tmp.nfeat);
+            if (dest[b][mode].fnames == NULL || dest[b][mode].mean == NULL ||
+                dest[b][mode].std == NULL    || dest[b][mode].coef == NULL) {
+              ridge_free(&tmp);
+              status = eslEMEM;
+              goto CLEANUP;
+            }
+            for (i = 0; i < tmp.nfeat; i++) {
+              dest[b][mode].fnames[i] = strdup(tmp.fnames[i]);
+              if (dest[b][mode].fnames[i] == NULL) {
+                ridge_free(&tmp);
+                status = eslEMEM;
+                goto CLEANUP;
+              }
+              dest[b][mode].mean[i] = tmp.mean[i];
+              dest[b][mode].std[i]  = tmp.std[i];
+              dest[b][mode].coef[i] = tmp.coef[i];
+            }
+          } else {
+            dest[b][mode].fnames = NULL;
+            dest[b][mode].mean   = NULL;
+            dest[b][mode].std    = NULL;
+            dest[b][mode].coef   = NULL;
+          }
+        }
+      ridge_free(&tmp);
+    }
+
+  status = eslOK;
+
+ CLEANUP:
+  if (fnames) { int i; for (i = 0; i < nfeat; i++) free(fnames[i]); free(fnames); }
+  return status;
+}
+
+
+/* =========================================================================
+ * parse_noss_hybrid_target()
+ *   For a given top-level group (e.g., "base" or "largehuge_override") and
+ *   target name (e.g., "lambda"), iterate over modes and dispatch to
+ *   parse_noss_hybrid_cell. <fill_buckets>/<n_fill_buckets> control which
+ *   bucket slots a flat cell is replicated into. For B_v42 cells, the
+ *   buckets come from the JSON, regardless of <fill_buckets>.
+ */
+static int
+parse_noss_hybrid_target(ESL_JSON *pi, ESL_BUFFER *bf, int group_obj,
+                         const char *target_key,
+                         FastCalRidge dest[][N_MODES],
+                         const int *fill_buckets, int n_fill_buckets)
+{
+  static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
+  int target_obj;
+  int m, status;
+
+  target_obj = json_find_key(pi, bf, group_obj, target_key);
+  if (target_obj < 0) return eslOK;  /* absent (e.g., mu in override) — fine */
+  if (pi->tok[target_obj].type != eslJSON_OBJECT) return eslFAIL;
+
+  for (m = 0; m < N_MODES; m++)
+    {
+      int cell_obj = json_find_key(pi, bf, target_obj, mode_names[m]);
+      if (cell_obj < 0) continue;
+      status = parse_noss_hybrid_cell(pi, bf, cell_obj, m, dest,
+                                      fill_buckets, n_fill_buckets);
+      if (status != eslOK) return status;
+    }
+  return eslOK;
+}
+
+
+/* =========================================================================
+ * parse_noss_hybrid()
+ *   Top-level entry for the NOSS hybrid JSON. Parses base.* into ALL 5
+ *   bucket slots (replication for flat cells, per-bucket fill + medlarge
+ *   spread for B_v42) and largehuge_override.{lambda,K}[ECMGC,ECMGI] into
+ *   the large/huge slots (which overwrites the base replication for those
+ *   specific (target, mode, bucket) cells).
+ *
+ *   Selection at predict time happens by bucket: bucket_of(clen) returns
+ *   LARGE for clen 700-1499 and HUGE for clen>=1500, so the override only
+ *   engages when clen>=override_clen_threshold AND target/mode match.
+ *   For brief 46 the threshold is 1500 (HUGE-only), so we store the
+ *   override in the HUGE slot only and keep the base value in LARGE.
+ */
+static int
+parse_noss_hybrid(ESL_JSON *pi, ESL_BUFFER *bf)
+{
+  int status;
+  int root_idx = 0;
+
+  /* base.{lambda,mu_extrap,mu_orig,K} → all 5 bucket slots. */
+  static const int all_buckets[N_BUCKETS] = {
+    BUCKET_TINY, BUCKET_SMALL, BUCKET_MEDLARGE, BUCKET_LARGE, BUCKET_HUGE
+  };
+  int base_obj = json_find_key(pi, bf, root_idx, "base");
+  if (base_obj < 0) return eslFAIL;
+
+  status = parse_noss_hybrid_target(pi, bf, base_obj, "lambda",
+                                    g_models.noss_lambda, all_buckets, N_BUCKETS);
+  if (status != eslOK) return status;
+  status = parse_noss_hybrid_target(pi, bf, base_obj, "mu_extrap",
+                                    g_models.noss_mu_extrap, all_buckets, N_BUCKETS);
+  if (status != eslOK) return status;
+  status = parse_noss_hybrid_target(pi, bf, base_obj, "mu_orig",
+                                    g_models.noss_mu_orig, all_buckets, N_BUCKETS);
+  if (status != eslOK) return status;
+  status = parse_noss_hybrid_target(pi, bf, base_obj, "K",
+                                    g_models.noss_K, all_buckets, N_BUCKETS);
+  if (status != eslOK) return status;
+
+  /* largehuge_override.{lambda,K}[ECMGC,ECMGI] → HUGE slot only
+   * (selection_rule.override_clen_threshold == 1500 == BUCKET_HUGE floor).
+   * Free the base ridges in those slots first so parse_noss_hybrid_cell's
+   * "if (dest[b][mode].defined) continue" guard doesn't preserve the base.
+   */
+  static const int huge_only[1] = { BUCKET_HUGE };
+  int ov_obj = json_find_key(pi, bf, root_idx, "largehuge_override");
+  if (ov_obj < 0) return eslFAIL;
+
+  /* Free HUGE slots we are about to overwrite (ECMGC/ECMGI of lambda+K). */
+  ridge_free(&g_models.noss_lambda[BUCKET_HUGE][MODE_ECMGC]);
+  ridge_free(&g_models.noss_lambda[BUCKET_HUGE][MODE_ECMGI]);
+  ridge_free(&g_models.noss_K     [BUCKET_HUGE][MODE_ECMGC]);
+  ridge_free(&g_models.noss_K     [BUCKET_HUGE][MODE_ECMGI]);
+
+  status = parse_noss_hybrid_target(pi, bf, ov_obj, "lambda",
+                                    g_models.noss_lambda, huge_only, 1);
+  if (status != eslOK) return status;
+  status = parse_noss_hybrid_target(pi, bf, ov_obj, "K",
+                                    g_models.noss_K, huge_only, 1);
+  if (status != eslOK) return status;
+
+  return eslOK;
+}
+
+
+/* =========================================================================
  * parse_v55_flat()
  *   Parse a v5.5 "flat" JSON (top-level keys are "<MODE>_<target>") for a
  *   single bucket into the appropriate ridge slots.
@@ -977,33 +1264,21 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* 5. v4.2 NOSS lambda (tiny/small/medlarge) */
+  /* 5+6. NOSS hybrid (brief 46): replaces v4.2 NOSS lambda+mu and v4.x NOSS K.
+   * One self-describing JSON (analysis/v55_noss_hybrid_production.json,
+   * schema "noss_hybrid_v1") loads lambda, mu_extrap, mu_orig, and K for
+   * all 4 modes × all 5 buckets in one pass, including the largehuge
+   * glocal-{lambda,K} override (clen>=1500 ECMGC/ECMGI). */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
     if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_production_models_v42_noss_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_production_models_v42_noss_json_len,
+           (const char *)__cm_fast_calibrate_data_v55_noss_hybrid_production_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_noss_hybrid_production_json_len,
            &bf)) != eslOK) return status;
     if ((status = esl_json_Parse(bf, &pi)) != eslOK)
       { esl_buffer_Close(bf); return status; }
-    status = parse_v42(pi, bf, g_models.noss_lambda, NULL, NULL);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
-
-  /* 6. v4.2 NOSS mu (tiny/small/medlarge) */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_production_mu_models_v42_noss_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_production_mu_models_v42_noss_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v42(pi, bf, NULL, g_models.noss_mu_extrap, g_models.noss_mu_orig);
+    status = parse_noss_hybrid(pi, bf);
     esl_json_Destroy(pi);
     esl_buffer_Close(bf);
     if (status != eslOK) return status;
@@ -1028,21 +1303,8 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* 8. v4.x→ridge K (NOSS, all 5 buckets × 4 modes). */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_v4x_K_ridge_noss_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_v4x_K_ridge_noss_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v4x_K_ridge(pi, bf, g_models.noss_K);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
+  /* 8. v4.x→ridge K (NOSS) — REMOVED (brief 46). NOSS K is now loaded
+   * from the hybrid JSON in step 5+6 above. */
 
   /* Record the embedded version hash */
   strncpy(g_models.models_version, fast_cal_models_version, 64);
