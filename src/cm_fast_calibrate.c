@@ -119,7 +119,7 @@ static FastCalModelSet g_models;   /* zero-initialised by C spec */
 int    g_localmu_N              = 60;    /* brief 20: ship default N=60 (brief 05/06 operating point) */
 int    g_localmu_seed           = 42;    /* RNG seed */
 int    g_localmu_wcap           = 1;     /* apply W-cap rule (1=on, 0=off) */
-int    g_localmu_on             = 1;     /* 1=run cm_LocalMu, 0=skip (--no-localmu) */
+int    g_localmu_on             = 0;     /* brief 41 ship default: cm_LocalMu mini-sim OFF (ridge-only ship). Set to 1 (--localmu) to re-enable the mini-sim for A/B or experiments. */
 double g_localmu_lambda_lc      = -1.0;  /* if >0, override regression lambda for EXP_CM_LC */
 double g_localmu_lambda_li      = -1.0;  /* if >0, override regression lambda for EXP_CM_LI */
 int    g_localmu_L              = 5000;  /* brief 20: ship default L=5000 (brief 05/06 operating point) */
