@@ -10001,6 +10001,47 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
   if (cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsPinBridgeWrap: cm->fp7 is NULL");
 
+  /* PB_LOAD_BAND hook (brief 117): replace the entire SW+LSIS+pb_build_band
+   * pin-extraction pipeline with an offline-generated per-row band loaded
+   * from a TSV file. Format: "i kmin kmax" per line, lines starting with
+   * '#' are skipped. Rows i=1..L must be present; missing rows default to
+   * [1, M]. i2k is returned as all -1 (downstream consumers use kmin/kmax
+   * only; p7_kbands2gbands ignores i2k). */
+  {
+    const char *band_path = getenv("PB_LOAD_BAND");
+    if (band_path != NULL) {
+      FILE *fp = fopen(band_path, "r");
+      char  line[512];
+      int   ii;
+      if (fp == NULL) ESL_FAIL(eslFAIL, errbuf, "PB_LOAD_BAND: cannot open '%s'", band_path);
+      ESL_ALLOC(i2k,  sizeof(int) * (L + 1));
+      ESL_ALLOC(kmin, sizeof(int) * (L + 1));
+      ESL_ALLOC(kmax, sizeof(int) * (L + 1));
+      for (ii = 0; ii <= L; ii++) { i2k[ii] = -1; kmin[ii] = 1; kmax[ii] = M; }
+      while (fgets(line, sizeof(line), fp) != NULL) {
+        int li, lkmin, lkmax;
+        if (line[0] == '#') continue;
+        if (sscanf(line, "%d %d %d", &li, &lkmin, &lkmax) != 3) continue;
+        if (li < 0 || li > L) continue;
+        if (lkmin < 1) lkmin = 1;
+        if (lkmax > M) lkmax = M;
+        if (lkmin > lkmax) lkmin = lkmax;
+        kmin[li] = lkmin;
+        kmax[li] = lkmax;
+      }
+      fclose(fp);
+      ncells = 0;
+      for (ii = 1; ii <= L; ii++) ncells += kmax[ii] - kmin[ii] + 1;
+      fprintf(stderr, "#P7BAND PB_LOAD_BAND M=%d L=%d ncells=%d avg_bw=%.1f\n",
+              M, L, ncells, (float)ncells / (float)L);
+      *ret_i2k    = i2k;
+      *ret_kmin   = kmin;
+      *ret_kmax   = kmax;
+      *ret_ncells = ncells;
+      return eslOK;
+    }
+  }
+
   /* Acquire the LOCAL p7 profile + OPROFILE for the SSE rbv scan.
    *
    * The LOCAL config of cm->fp7 depends only on the model, not the residues,
