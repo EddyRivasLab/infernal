@@ -664,8 +664,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       struct timespec _ta_cm, _tb_cm;
       clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
       if(do_trunc) {
-	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
-					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
+	status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
+	fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
+		status, mb_tot, (float) mxsize, do_post, errbuf);
+	if(status != eslOK) goto ERROR;
       	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
 				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
 				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
