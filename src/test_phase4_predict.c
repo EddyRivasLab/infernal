@@ -67,11 +67,14 @@ main(int argc, char **argv)
 
       int i;
       for (i = 0; i < EXP_NMODES; i++)
-        printf("%-6s  %.10f  %.10f  %.10f\n",
+        printf("%-6s  %.10f  %.10f  %.10f  %.10g\n",
                mode_names[i],
                cm->expA[i]->lambda,
                cm->expA[i]->mu_extrap,
-               cm->expA[i]->mu_orig);
+               cm->expA[i]->mu_orig,
+               cm->expA[i]->dbsize > 0
+                 ? (double) cm->expA[i]->nrandhits / (double) cm->expA[i]->dbsize
+                 : 0.0);
 
       FreeCM(cm);
       cm = NULL;

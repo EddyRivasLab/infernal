@@ -1433,10 +1433,17 @@ cm_FastCalibrate(CM_t *cm)
   for (nd = 0; nd < cm->nodes; nd++)
     if (cm->ndtype[nd] == MATP_nd) { is_noss = 0; break; }
 
-  /* Pick bucket, with NOSS huge/large fallback to medlarge */
+  /* Pick bucket. Brief 46: NOSS hybrid populates ALL 5 bucket slots
+   * (including HUGE, which holds the largehuge override for glocal
+   * lambda/K). Old behaviour clamped is_noss + bucket>=LARGE down to
+   * MEDLARGE because the v4.2 NOSS models only had tiny/small/medlarge.
+   * That clamp is replaced for NOSS by simply trusting bucket_of(clen):
+   *   clen 700..1499  -> LARGE  (base ridge replicated)
+   *   clen >= 1500    -> HUGE   (override for ECMGC/ECMGI lambda+K,
+   *                              base ridge for everything else)
+   * STR path is unchanged (no clamp ever applied for STR).
+   */
   bucket = bucket_of(cm->clen);
-  if (is_noss && bucket >= BUCKET_LARGE)
-    bucket = BUCKET_MEDLARGE;
 
   /* Allocate cm->expA if needed */
   if (cm->expA == NULL)
@@ -1494,6 +1501,20 @@ cm_FastCalibrate(CM_t *cm)
       if (g_smallcm_lambda > 0.0 && cm->clen < g_smallcm_clen_max &&
           (mode == MODE_ECMLC || mode == MODE_ECMLI))
           lam = g_smallcm_lambda;
+
+      /* Brief 46 NOSS glocal-lambda positive floor:
+       * After predicting glocal lambda (ECMGC/ECMGI, any clen, base or
+       * override), clamp to >= 0.005. The base ridge can extrapolate
+       * negative lambda on some huge CMs (pre-hybrid v4.2 failure mode);
+       * the override mitigates this for clen>=1500 but a final positive
+       * floor is the belt-and-suspenders guarantee documented in the
+       * hybrid JSON's selection_rule.glocal_lambda_floor.
+       *
+       * STR is untouched (the v5.5 STR lambda ridges don't have this
+       * failure mode and brief 41 didn't add a STR floor).
+       */
+      if (is_noss && (mode == MODE_ECMGC || mode == MODE_ECMGI) && lam < 0.005)
+        lam = 0.005;
 
       double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
       double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
