@@ -155,7 +155,7 @@ static ESL_OPTIONS options[] = {
   { "--localmu-score-dump",eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "dump all CYK/Inside hit scores to <f> (TSV: mode\\tscore)",            107 },
   { "--localmu-K-from-sim",eslARG_NONE,  FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "v14: replace regression nrandhits with sim-derived K for ECMLC/ECMLI",   107 },
   { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "skip local-mu mini-simulation (use regression mu as-is)",            107 },
-  { "--smallcm-lambda",   eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL,  NULL,         NULL,    "brief23: override local-mode ridge lambda with <x> for clen<clenmax", 107 },
+  { "--smallcm-lambda",   eslARG_REAL,    NULL,  NULL, NULL,      NULL,  NULL,         NULL,    "brief41: override local-mode constant lambda (default 0.62) for clen<clenmax; pass <=0 (e.g. -1) to disable the override and use the ridge lambda", 107 },
   { "--smallcm-clenmax",  eslARG_INT,     "60",  NULL, "n>0",     NULL,  NULL,         NULL,    "brief23: clen threshold for small-CM lambda override / --localmu-smallonly", 107 },
   { "--localmu-smallonly",eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "brief23: run local-mu mini-sim only for clen<clenmax (ridge for big CMs)", 107 },
   { "--localmu-fitlambda",eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL, "--no-localmu",  "brief23: refit lambda jointly with mu in local-mu mini-sim (ship default)", 107 },

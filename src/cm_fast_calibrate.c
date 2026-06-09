@@ -132,7 +132,7 @@ int    g_localmu_K_from_sim     = 0;     /* if 1, replace nrandhits with sim-der
  * extrapolates badly below that floor, predicting physically-impossible
  * local-mode lambda (e.g. clen 26 -> 5.46) -> over-optimistic decoy E-values.
  */
-double g_smallcm_lambda         = -1.0;  /* if >0, override local-mode ridge lambda with this constant for clen < g_smallcm_clen_max (arms C62/Cln2) */
+double g_smallcm_lambda         = 0.62;  /* brief 41 ship default: constant local-mode lambda for clen < g_smallcm_clen_max (C62 baked on). Set <=0 (e.g. --smallcm-lambda -1) to disable and restore the pure ridge lambda. */
 int    g_smallcm_clen_max       = 60;    /* clen threshold for small-CM lambda override and --localmu-smallonly routing */
 int    g_localmu_smallonly      = 0;     /* if 1, run cm_LocalMu only for CMs with clen < g_smallcm_clen_max (ridge for clen >= threshold) (arm A) */
 int    g_localmu_fitlambda      = 1;     /* if 1, refit lambda jointly with mu in cm_LocalMu Step 5 (current ship default); if 0, hold ridge lambda (legacy fixed-lambda) */
