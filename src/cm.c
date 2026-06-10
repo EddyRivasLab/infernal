@@ -128,6 +128,8 @@ CreateCMShell(void)
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
   cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
+  cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 120) */
+  cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3109,6 +3111,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_cykbands_pad  = cm->p7_cykbands_pad;
   new->p7_cykskip_unvisited = cm->p7_cykskip_unvisited;
   new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
+  new->p7_use_ibv       = cm->p7_use_ibv;
+  new->p7_ibv_delta     = cm->p7_ibv_delta;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

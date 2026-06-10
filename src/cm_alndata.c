@@ -329,6 +329,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int do_p7band    = (cm->align_opts & CM_ALIGN_P7BANDED)  ? TRUE  : FALSE;
   int doing_search = FALSE;
+  /* Brief 120: IBV HMM-divergence fallback. Set when cm_TrAlignHB / cm_AlignHB
+   * fails on IBV-derived bands and we've already rebuilt with vitband for
+   * this sequence; prevents infinite retry.
+   */
+  int ibv_fallback_used = FALSE;
 
 #if eslDEBUGLEVEL >= 1
   printf("#DEBUG: in DispatchSqAlignment() %s\n", sq->name);
@@ -480,7 +485,18 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * exceeds the cost of full p7_GViterbi at O(LM). For M < 200 the full
 	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
 	   * without the tiny-M tail regressions. */
-	  if (cm->p7_use_pinbridge) {
+	  if (cm->p7_use_ibv) {
+	    /* F+B direct-band band derivation (brief 120). Does NOT take gm/gx
+	     * because it extracts transitions directly from cm->fp7. We still
+	     * built gm/gx above for the vitband fallback path.
+	     */
+	    status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,
+				     cm->p7_ibv_delta,
+				     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    /* No internal ncells==0 fallback here: IBV always produces a band.
+	     * Empty rows default to [1, M] inside the kernel.
+	     */
+	  } else if (cm->p7_use_pinbridge) {
 	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
 					       sq->dsq, sq->L, cm->p7bpad,
 					       local_nodepad,
@@ -682,23 +698,89 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       if(w != NULL) esl_stopwatch_Start(w);
       struct timespec _ta_cm, _tb_cm;
       clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
+    CM_ALIGN_HB_RETRY:
       if(do_trunc) {
 	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
-					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+      	status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
 				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
-				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc);
       }
       else {
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
-					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
-				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
+					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+	status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
+				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc);
       }
+    CM_ALIGN_HB_CHECK_FB:
+      /* Brief 120 IBV HMM-divergence fallback: cm_TrInsideAlignHB returns
+       * eslEAMBIGUOUS "no valid parsetree found" on the 3/14 brief-117 seqs
+       * where HMM-Viterbi disagrees with the CM's preferred parse (brief 117
+       * §5). Re-derive bands using the unbanded p7_Seq2BandsVit path (PAD=20
+       * around the p7-Viterbi trace) and retry the CM alignment once.
+       */
+      if (status != eslOK && cm->p7_use_ibv && !ibv_fallback_used) {
+	fprintf(stderr, "#P7IBV_FALLBACK %s L=%d M=%d status=%d errbuf='%s'\n",
+		sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : 0), status, errbuf);
+	ibv_fallback_used = TRUE;
+	errbuf[0] = '\0';
+	status    = eslOK;
+
+	/* Self-contained vitband redo: build temporary p7 profile/gx/bg/trace,
+	 * call p7_Seq2BandsVit, push through cp9_IterateSeq2BandsP7B, free.
+	 */
+	{
+	  P7_PROFILE *fb_gm = p7_profile_Create(cm->fp7->M, cm->abc);
+	  P7_BG      *fb_bg = p7_bg_Create(cm->abc);
+	  P7_GMX     *fb_gx = p7_gmx_Create(cm->fp7->M, sq->L);
+	  P7_TRACE   *fb_tr = p7_trace_Create();
+	  int        *fb_i2k = NULL, *fb_kmin = NULL, *fb_kmax = NULL;
+	  int         fb_ncells = 0;
+	  int        *fb_nodepad = NULL;
+	  int         fbk;
+
+	  if (do_trunc) {
+	    p7_ProfileConfig(cm->fp7, fb_bg, fb_gm, sq->L, p7_LOCAL);
+	    p7_ProfileConfig5PrimeAnd3PrimeTrunc(fb_gm, sq->L);
+	  } else {
+	    p7_ProfileConfig(cm->fp7, fb_bg, fb_gm, sq->L, p7_GLOCAL);
+	  }
+	  if (cm->flags & CMH_P7NODEPAD) {
+	    fb_nodepad = (int *) malloc(sizeof(int) * (cm->fp7->M + 1));
+	    if (fb_nodepad) {
+	      for (fbk = 0; fbk <= cm->fp7->M; fbk++)
+		fb_nodepad[fbk] = cm->p7_cm_nodepad[fbk] + cm->p7bpad;
+	    }
+	  }
+	  status = p7_Seq2BandsVit(errbuf, fb_gm, fb_gx, fb_bg, fb_tr,
+				   sq->dsq, sq->L, cm->p7bpad, fb_nodepad,
+				   0, 0,
+				   &fb_i2k, &fb_kmin, &fb_kmax, &fb_ncells);
+	  if (status == eslOK && fb_ncells > 0) {
+	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L,
+					     fb_kmin, fb_kmax,
+					     1, sq->L, pass_idx, mxsize,
+					     doing_search, do_sample, do_post,
+					     cm->maxtau, 0, 0, NULL);
+	  }
+	  if (fb_i2k) free(fb_i2k);
+	  if (fb_kmin) free(fb_kmin);
+	  if (fb_kmax) free(fb_kmax);
+	  if (fb_nodepad) free(fb_nodepad);
+	  p7_trace_Destroy(fb_tr);
+	  p7_gmx_Destroy(fb_gx);
+	  p7_profile_Destroy(fb_gm);
+	  p7_bg_Destroy(fb_bg);
+	}
+	if (status != eslOK) goto ERROR;
+	goto CM_ALIGN_HB_RETRY;
+      }
+      if (status != eslOK) goto ERROR;
       clock_gettime(CLOCK_MONOTONIC, &_tb_cm);
       double _cm_s = (_tb_cm.tv_sec - _ta_cm.tv_sec) + (_tb_cm.tv_nsec - _ta_cm.tv_nsec)/1e9;
-      fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f\n",
-              (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s);
+      fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f%s\n",
+              (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s,
+              ibv_fallback_used ? " ibv_fallback=1" : "");
     }
   }
 
