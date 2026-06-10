@@ -1,27 +1,37 @@
 /* p7_ibv.c -- F+B direct-band band derivation for cmalign --p7ibv
  *
- * Brief 121 layout: float (not double) cells, state-major padded-k
- * pools sized to a 16-float (64-byte) stride. Preserves brief 120's
- * algorithm exactly; only the score type and per-row stride change.
+ * Brief 121 C2: SSE M+I vectorized along k, scalar D-fill (in-row dep).
+ *   - State-major padded-k pools from C1 unchanged.
+ *   - Forward: per row i>=1, scalar prefix k=0..3 for M/I/D; SSE bulk
+ *     for M and I from k=4 while k+3<=M; scalar tail for M and I;
+ *     scalar left-to-right D-fill for k=4..M (k=0..3 already done in
+ *     prefix). Row i=0 (no residue) stays scalar (deletion cascade only).
+ *   - Backward: per row i<L, scalar right-to-left D-fill k=M..0; SSE
+ *     bulk for M and I from k=0 while k+3<=M; scalar tail for M and I.
+ *     Row i=L stays scalar (seed at (L,M) + deletion cascade on the
+ *     terminal row).
+ *   - Through-score scan stays scalar (cheap, 1 pass per row); C3 will
+ *     integrate it into the backward sweep when streaming B.
  *
- *   - F_M[i][k], F_I[i][k], F_D[i][k] : (L+1) rows x k_stride floats
- *   - B_M[i][k], B_I[i][k], B_D[i][k] : same
- *   - k_stride = ((M+1 + 15) & ~15)   (16-float = 64-byte = 1 cache line)
- *   - Pools allocated 64-byte aligned via posix_memalign.
- *   - Padded tail cells (k in [M+1, k_stride-1]) initialized to -INF, so
- *     future SSE max-reductions (C2) won't pick them up.
+ * D-state in-row dep: D[i,k] depends on D[i,k-1] (forward) or
+ * D[i,k+1] (backward) on the SAME row. NOT SIMD-able with _mm_max_ps
+ * along k. Per brief 120 §8.3 and brief 121 §4.2, accept scalar D-fill;
+ * D is a small fraction of per-row work.
+ *
+ * Padded tails of every row (k > M) MUST stay -INF, so future row's
+ * SSE loads of k+1..k+3 at the right edge pick up -INF instead of stale
+ * data. SSE writes are kept inside [0, M].
  *
  * ULP analysis (float, INTSCALE=1000 milli-bits):
  *   Cumulative path scores in practice are O(1e5) milli-bits for
- *   biologically meaningful matches; the brief-120 comment estimated
- *   ~3e5 in magnitude. Float ULP at magnitude 3e5 is 3e5 / 2^23 ~= 0.04
+ *   biologically meaningful matches; brief 120 estimated ~3e5 in
+ *   magnitude. Float ULP at magnitude 3e5 is 3e5 / 2^23 ~= 0.04
  *   milli-bit. EPS = 1 milli-bit is 25x above that, so the
  *   "==optimal" through-score equality test absorbs the rounding cleanly.
  *
  *   Worst case (very long M+L with cumulative magnitude approaching 1e7):
  *   float ULP rises to ~0.6 milli-bit. EPS still 1.5x above; tight but
- *   safe. We assert optimal < 1e7 milli-bits as a sanity check; LSU
- *   M=3400 L=2771 gives ~1e5-3e5, well below the assert.
+ *   safe. We assert optimal < 1e7 milli-bits as a sanity check.
  *
  * Algorithm (per brief 116-117), unchanged from brief 120:
  *   F_M[i,k] = emit(k, seq[i]) + max(F_M[i-1,k-1]+T_MM[k-1],
@@ -29,21 +39,6 @@
  *                                    F_D[i-1,k-1]+T_DM[k-1])
  *   F_I[i,k] = max(F_M[i-1,k]+T_MI[k], F_I[i-1,k]+T_II[k])
  *   F_D[i,k] = max(F_M[i,k-1]+T_MD[k-1], F_D[i,k-1]+T_DD[k-1])
- *
- * Forward seeds (glocal forced-start at (0,0)):  F_M[0,0]=0, else -INF.
- * Backward seeds (glocal forced-end at (L,M)):   B_M[L,M]=B_I[L,M]=B_D[L,M]=0, else -INF.
- *
- * Band emission:
- *   optimal       = max{F_M[L,M], F_I[L,M], F_D[L,M]}
- *   through[i,k]  = max{F_M[i,k]+B_M[i,k], F_I[i,k]+B_I[i,k], F_D[i,k]+B_D[i,k]}
- *   for each row i in 1..L: admit cells where through[i,k] >= optimal - max(delta, EPS),
- *                            kmin[i] = min admitted k, kmax[i] = max admitted k.
- *
- * Boundary widening: rows i in {1, L-1, L} forced to [1, M] for truncated-alignment
- * entry/exit flexibility (mirrors the Python prototype's boundary_widen).
- *
- * B-state convention: kmin[0]=0, kmax[0]=0 (required by cp9_FB2HMMBandsP7BF,
- * see brief 117 §1; the post-trace CP9 pipeline asserts kmin[0]==0).
  */
 
 #include <esl_config.h>
@@ -56,6 +51,9 @@
 #include <math.h>
 #include <assert.h>
 
+#include <xmmintrin.h>
+#include <emmintrin.h>
+
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_vectorops.h"
@@ -64,16 +62,14 @@
 
 #include "infernal.h"
 
-#define P7IBV_INTSCALE     1000.0f
-#define P7IBV_NEG_INF      (-1.0e18f)
-#define P7IBV_HALF_NEG_INF (-5.0e17f)
-#define P7IBV_EPS          1.0f
-#define P7IBV_K_ALIGN      16              /* k-stride alignment in floats (= 64 bytes) */
+#define P7IBV_INTSCALE        1000.0f
+#define P7IBV_NEG_INF         (-1.0e18f)
+#define P7IBV_HALF_NEG_INF    (-5.0e17f)
+#define P7IBV_EPS             1.0f
+#define P7IBV_K_ALIGN         16              /* k-stride alignment in floats (= 64 bytes) */
 #define P7IBV_OPTIMAL_SANITY  1.0e7f
 
-/* Aligned float-buffer allocator. Returns eslOK and sets *ret_p, or eslEMEM.
- * 64-byte alignment = 1 cache line = 4 SSE registers.
- */
+/* Aligned float-buffer allocator. 64-byte alignment = 1 cache line = 4 SSE registers. */
 static int
 ibv_alloc_floats(size_t n, float **ret_p)
 {
@@ -105,32 +101,19 @@ p7ibv_emit_milli(const P7_HMM *hmm, int k, int x)
   return (float)(P7IBV_INTSCALE * (log((double) pm / (double) pi) / M_LN2));
 }
 
+/* 4-way SSE max. */
+static inline __m128
+p7ibv_mm_max3(__m128 a, __m128 b, __m128 c)
+{
+  return _mm_max_ps(_mm_max_ps(a, b), c);
+}
+
 
 /* Function: p7_Seq2BandsIBV()
  *
- * Synopsis: Derive p7 bands from full F+B + Delta threshold (direct-band-output).
+ * Synopsis: Derive p7 bands from full F+B + Delta threshold.
  *
- * Purpose:  Given a CM <cm> (whose embedded filter HMM cm->fp7 supplies the
- *           p7 transition/emission scores) and a digitized sequence <dsq>
- *           of length <L>, build full (L+1)x(M+1) Forward and Backward
- *           score matrices, then for each row i in [1, L] emit
- *           kmin[i]/kmax[i] = min/max k such that through(i,k) >= optimal - Delta.
- *
- *           Boundary rows 1, L-1, L are widened to [1, M] for truncated-
- *           alignment entry/exit. kmin[0]/kmax[0] are set to 0 (B-state
- *           convention required by cp9_FB2HMMBandsP7BF; see brief 117 §1).
- *
- *           i2k is returned as all -1 (the downstream consumer
- *           p7_kbands2gbands ignores it; cm_alndata.c's #P7BAND diagnostic
- *           counts pins as i2k[i] != -1, so all-(-1) reports npins=0,
- *           which is correct: IBV emits a band, not pins).
- *
- *           Memory cost (brief 121 C1): 6 * (L+1) * k_stride * 4 bytes
- *           (state-major padded-k float pools). For LSU M=3400 L=2771,
- *           k_stride=3408 -> ~226 MB. Brief 121 C3 will halve B to a
- *           rolling 2-row buffer (-> ~113 MB total).
- *
- * Args:     cm           - CM with cm->fp7 (filter HMM) set
+ * Args:     cm           - CM with cm->fp7 set
  *           errbuf       - for error messages
  *           dsq          - digital sequence, 1..L
  *           L            - length of dsq
@@ -140,9 +123,7 @@ p7ibv_emit_milli(const P7_HMM *hmm, int k, int x)
  *           ret_kmax     - RETURN: per-residue kmax array, length L+1 (caller frees)
  *           ret_ncells   - RETURN: total banded cells sum_{i=1..L} (kmax[i]-kmin[i]+1)
  *
- * Returns:  eslOK on success.
- *           eslEMEM on allocation failure.
- *           eslEINVAL if cm->fp7 is NULL.
+ * Returns:  eslOK on success; eslEMEM/eslEINVAL on error.
  */
 int
 p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
@@ -152,12 +133,14 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   P7_HMM   *hmm = NULL;
   int       M;
   int       i, k;
-  int       x;
+  int       K;
   float    *MM_t = NULL, *MI_t = NULL, *MD_t = NULL;
   float    *IM_t = NULL, *II_t = NULL;
   float    *DM_t = NULL, *DD_t = NULL;
   float    *FM_pool = NULL, *FI_pool = NULL, *FD_pool = NULL;
   float    *BM_pool = NULL, *BI_pool = NULL, *BD_pool = NULL;
+  float    *emit_pool = NULL;
+  float   **emit_table = NULL;          /* [K+1][k_stride], last row all-zeros (ambig) */
   int      *i2k = NULL, *kmin = NULL, *kmax = NULL;
   float     optimal, thr;
   float     floor_milli;
@@ -169,15 +152,10 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV: cm->fp7 is NULL");
   hmm = cm->fp7;
   M = hmm->M;
+  K = hmm->abc->K;
   if (L < 1 || M < 1)
     ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV: bad L=%d or M=%d", L, M);
 
-  /* State-major padded-k layout. k_stride padded up to multiple of
-   * P7IBV_K_ALIGN floats so each row's start is 64-byte aligned and
-   * the row's SSE-padded tail (k in [M+1, k_stride-1]) is a full set
-   * of 4-float SSE registers that can be filled with -INF and ignored
-   * by future SSE max-reductions.
-   */
   k_stride   = ((size_t)(M + 1) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
   pool_cells = (size_t)(L + 1) * k_stride;
 
@@ -197,14 +175,26 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     DM_t[k] = p7ibv_lod_milli(hmm->t[k][p7H_DM]);
     DD_t[k] = p7ibv_lod_milli(hmm->t[k][p7H_DD]);
   }
-  /* Pad transition tails to -INF so SSE loads off the end can't pick up
-   * a "good" transition that wraps the row boundary.
-   */
   for (k = M + 1; k < (int) k_stride; k++) {
     MM_t[k] = MI_t[k] = MD_t[k] = P7IBV_NEG_INF;
     IM_t[k] = II_t[k] = P7IBV_NEG_INF;
     DM_t[k] = DD_t[k] = P7IBV_NEG_INF;
   }
+
+  /* Precompute emit log-odds per (residue, k). Last row (index K) is
+   * all-zeros for ambiguous/unknown residues. Pads beyond M+1 to -INF
+   * so SSE loads in the M-output at k=M-3..M (which look at emit[k+1])
+   * fold harmlessly into the boundary -INF.
+   */
+  if ((status = ibv_alloc_floats((size_t)(K + 1) * k_stride, &emit_pool)) != eslOK) goto ERROR;
+  ESL_ALLOC(emit_table, sizeof(float *) * (K + 1));
+  for (int xt = 0; xt <= K; xt++) emit_table[xt] = emit_pool + (size_t) xt * k_stride;
+  for (int xt = 0; xt < K; xt++) {
+    float *row = emit_table[xt];
+    for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
+    for (k = M + 1; k < (int) k_stride; k++) row[k] = P7IBV_NEG_INF;
+  }
+  for (k = 0; k < (int) k_stride; k++) emit_table[K][k] = 0.0f;
 
   if ((status = ibv_alloc_floats(pool_cells, &FM_pool)) != eslOK) goto ERROR;
   if ((status = ibv_alloc_floats(pool_cells, &FI_pool)) != eslOK) goto ERROR;
@@ -224,99 +214,229 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 #define B_I(i)  (BI_pool + (size_t)(i) * k_stride)
 #define B_D(i)  (BD_pool + (size_t)(i) * k_stride)
 
-  /* Forward recurrence. Glocal seed: F_M[0,0] = 0; rest -INF. */
+  /* ---------- Forward ---------- */
   F_M(0)[0] = 0.0f;
-  for (i = 0; i <= L; i++) {
-    x = (i >= 1) ? (int) dsq[i] : -1;
-    float *fm_i   = F_M(i);
-    float *fi_i   = F_I(i);
-    float *fd_i   = F_D(i);
-    float *fm_im1 = (i >= 1) ? F_M(i - 1) : NULL;
-    float *fi_im1 = (i >= 1) ? F_I(i - 1) : NULL;
-    float *fd_im1 = (i >= 1) ? F_D(i - 1) : NULL;
-    for (k = 0; k <= M; k++) {
-      if (i == 0 && k == 0) continue;
+  /* Row i=0: no residue. F_M[0,0]=0 set; F_M[0,k>=1] = -INF; F_I[0,*] = -INF;
+   * F_D[0, k>=1] = max(F_M[0, k-1] + MD_t[k-1], F_D[0, k-1] + DD_t[k-1])
+   * (deletion cascade through the model). Scalar fill; only this row needs it.
+   */
+  {
+    float *fm0 = F_M(0);
+    float *fd0 = F_D(0);
+    for (k = 1; k <= M; k++) {
+      float a = fm0[k - 1] + MD_t[k - 1];
+      float b = fd0[k - 1] + DD_t[k - 1];
+      fd0[k] = (a > b) ? a : b;
+    }
+  }
 
-      float cM = P7IBV_NEG_INF;
-      float cI = P7IBV_NEG_INF;
-      float cD = P7IBV_NEG_INF;
+  for (i = 1; i <= L; i++) {
+    int   x      = (int) dsq[i];
+    int   xt     = (x >= 0 && x < K) ? x : K;
+    float *emit_row = emit_table[xt];
+    float *fm_i     = F_M(i);
+    float *fi_i     = F_I(i);
+    float *fd_i     = F_D(i);
+    float *fm_im1   = F_M(i - 1);
+    float *fi_im1   = F_I(i - 1);
+    float *fd_im1   = F_D(i - 1);
 
-      if (i >= 1) {
+    /* Scalar prefix: k=0..3 (handles k=0 boundary, supplies fm_i[3] etc. for
+     * the SSE block's k=4 load of fm_im1[3] -- not needed but D-fill at k=4
+     * needs fd_i[3] which is set here).
+     */
+    int kpref_end = (M < 3) ? M : 3;
+    for (k = 0; k <= kpref_end; k++) {
+      float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF, cD = P7IBV_NEG_INF;
+      /* I: i>=1 always holds in this loop. */
+      {
         float a = fm_im1[k] + MI_t[k];
         float b = fi_im1[k] + II_t[k];
         cI = (a > b) ? a : b;
       }
-
       if (k >= 1) {
-        float a = fm_i[k - 1] + MD_t[k - 1];
-        float b = fd_i[k - 1] + DD_t[k - 1];
-        cD = (a > b) ? a : b;
-      }
-
-      if (i >= 1 && k >= 1) {
-        float e = p7ibv_emit_milli(hmm, k, x);
+        /* M */
         float a = fm_im1[k - 1] + MM_t[k - 1];
         float b = fi_im1[k - 1] + IM_t[k - 1];
         float c = fd_im1[k - 1] + DM_t[k - 1];
         float m = (a > b) ? a : b;
         if (c > m) m = c;
-        cM = m + e;
+        cM = m + emit_row[k];
+        /* D (in-row) */
+        float a2 = fm_i[k - 1] + MD_t[k - 1];
+        float b2 = fd_i[k - 1] + DD_t[k - 1];
+        cD = (a2 > b2) ? a2 : b2;
       }
-
       fm_i[k] = cM;
       fi_i[k] = cI;
       fd_i[k] = cD;
     }
-  }
 
-  /* Backward recurrence. Glocal seed at (L, M): B_M=B_I=B_D=0; rest -INF. */
-  for (i = L; i >= 0; i--) {
-    int x_next = (i + 1 <= L) ? (int) dsq[i + 1] : -1;
-    float *bm_i   = B_M(i);
-    float *bi_i   = B_I(i);
-    float *bd_i   = B_D(i);
-    float *bm_ip1 = (i + 1 <= L) ? B_M(i + 1) : NULL;
-    float *bi_ip1 = (i + 1 <= L) ? B_I(i + 1) : NULL;
-    for (k = M; k >= 0; k--) {
-      float term = (i == L && k == M) ? 0.0f : P7IBV_NEG_INF;
-      float cM = term;
-      float cI = term;
-      float cD = term;
+    /* SSE bulk for M and I: k=4..k_sse_end-1 in chunks of 4 where k+3 <= M. */
+    int k_sse = (M < 3) ? 4 : 4;
+    int k_sse_end = k_sse;
+    while (k_sse_end + 3 <= M) k_sse_end += 4;
+    for (k = k_sse; k < k_sse_end; k += 4) {
+      /* M_out: max(F_M[i-1,k-1..k+2]+MM[k-1..k+2], +IM, +DM) + emit[k..k+3] */
+      __m128 m_prev = _mm_loadu_ps(&fm_im1[k - 1]);
+      __m128 i_prev = _mm_loadu_ps(&fi_im1[k - 1]);
+      __m128 d_prev = _mm_loadu_ps(&fd_im1[k - 1]);
+      __m128 t_mm   = _mm_loadu_ps(&MM_t[k - 1]);
+      __m128 t_im   = _mm_loadu_ps(&IM_t[k - 1]);
+      __m128 t_dm   = _mm_loadu_ps(&DM_t[k - 1]);
+      __m128 a      = _mm_add_ps(m_prev, t_mm);
+      __m128 b      = _mm_add_ps(i_prev, t_im);
+      __m128 c      = _mm_add_ps(d_prev, t_dm);
+      __m128 mx     = p7ibv_mm_max3(a, b, c);
+      __m128 e_vec  = _mm_loadu_ps(&emit_row[k]);
+      _mm_storeu_ps(&fm_i[k], _mm_add_ps(mx, e_vec));
 
-      if (i + 1 <= L && k + 1 <= M) {
-        float e = p7ibv_emit_milli(hmm, k + 1, x_next);
-        float bv = bm_ip1[k + 1] + e;
-        float a = MM_t[k] + bv;
-        float b = IM_t[k] + bv;
-        float c = DM_t[k] + bv;
-        if (a > cM) cM = a;
-        if (b > cI) cI = b;
-        if (c > cD) cD = c;
+      /* I_out: max(F_M[i-1,k..k+3]+MI[k..k+3], F_I[i-1,k..k+3]+II[k..k+3]) */
+      __m128 fm_k = _mm_loadu_ps(&fm_im1[k]);
+      __m128 fi_k = _mm_loadu_ps(&fi_im1[k]);
+      __m128 t_mi = _mm_loadu_ps(&MI_t[k]);
+      __m128 t_ii = _mm_loadu_ps(&II_t[k]);
+      __m128 a2   = _mm_add_ps(fm_k, t_mi);
+      __m128 b2   = _mm_add_ps(fi_k, t_ii);
+      _mm_storeu_ps(&fi_i[k], _mm_max_ps(a2, b2));
+    }
+
+    /* Scalar tail for M and I from k=k_sse_end to k=M. */
+    for (k = k_sse_end; k <= M; k++) {
+      float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+      {
+        float a = fm_im1[k] + MI_t[k];
+        float b = fi_im1[k] + II_t[k];
+        cI = (a > b) ? a : b;
       }
-
-      if (i + 1 <= L) {
-        float bv = bi_ip1[k];
-        float a = MI_t[k] + bv;
-        float b = II_t[k] + bv;
-        if (a > cM) cM = a;
-        if (b > cI) cI = b;
+      if (k >= 1) {
+        float a = fm_im1[k - 1] + MM_t[k - 1];
+        float b = fi_im1[k - 1] + IM_t[k - 1];
+        float c = fd_im1[k - 1] + DM_t[k - 1];
+        float m = (a > b) ? a : b;
+        if (c > m) m = c;
+        cM = m + emit_row[k];
       }
+      fm_i[k] = cM;
+      fi_i[k] = cI;
+    }
 
-      if (k + 1 <= M) {
-        float bv = bd_i[k + 1];
-        float a = MD_t[k] + bv;
-        float b = DD_t[k] + bv;
-        if (a > cM) cM = a;
-        if (b > cD) cD = b;
-      }
-
-      bm_i[k] = cM;
-      bi_i[k] = cI;
-      bd_i[k] = cD;
+    /* D scalar fill, left-to-right, k=4..M (k=0..3 done in prefix). */
+    for (k = (kpref_end + 1 > M) ? (M + 1) : (kpref_end + 1); k <= M; k++) {
+      float a = fm_i[k - 1] + MD_t[k - 1];
+      float b = fd_i[k - 1] + DD_t[k - 1];
+      fd_i[k] = (a > b) ? a : b;
     }
   }
 
-  /* optimal = max{F_M[L,M], F_I[L,M], F_D[L,M]}. */
+  /* ---------- Backward ---------- */
+  /* Row i=L (terminal): seed (L,M)=0, plus in-row D-deletion cascade for
+   * B_D[L, k<M] = DD_t[k]+B_D[L,k+1] (starting from B_D[L,M]=0). And in-row
+   * to B_M via MD: B_M[L, k<M] from MD_t[k]+B_D[L,k+1]. B_I[L,*]=-INF for k<M.
+   * Scalar; one row only.
+   */
+  {
+    float *bm_L = B_M(L);
+    float *bi_L = B_I(L);
+    float *bd_L = B_D(L);
+    bm_L[M] = 0.0f;
+    bi_L[M] = 0.0f;
+    bd_L[M] = 0.0f;
+    for (k = M - 1; k >= 0; k--) {
+      float bv = bd_L[k + 1];
+      float a = MD_t[k] + bv;
+      float b = DD_t[k] + bv;
+      bm_L[k] = a;
+      bd_L[k] = b;
+      bi_L[k] = P7IBV_NEG_INF;
+    }
+  }
+
+  for (i = L - 1; i >= 0; i--) {
+    int   x_next  = (int) dsq[i + 1];   /* i+1<=L always here */
+    int   xt      = (x_next >= 0 && x_next < K) ? x_next : K;
+    float *emit_row_next = emit_table[xt];
+    float *bm_i   = B_M(i);
+    float *bi_i   = B_I(i);
+    float *bd_i   = B_D(i);
+    float *bm_ip1 = B_M(i + 1);
+    float *bi_ip1 = B_I(i + 1);
+
+    /* D scalar fill, right-to-left, k=M..0.
+     * cD = max(DM_t[k] + bm_ip1[k+1] + emit_row_next[k+1],   [if k+1<=M]
+     *          DD_t[k] + bd_i[k+1])                          [if k+1<=M]
+     * else -INF.
+     */
+    bd_i[M] = P7IBV_NEG_INF;  /* k=M has neither contribution */
+    for (k = M - 1; k >= 0; k--) {
+      float bv_m = bm_ip1[k + 1] + emit_row_next[k + 1];
+      float bv_d = bd_i[k + 1];
+      float a = DM_t[k] + bv_m;
+      float b = DD_t[k] + bv_d;
+      bd_i[k] = (a > b) ? a : b;
+    }
+
+    /* SSE bulk M+I: k=0..k_sse_end-1 in chunks of 4 where k+3 <= M.
+     * For each k-block, we need:
+     *   bv_M_vec = bm_ip1[k+1..k+4] + emit_row_next[k+1..k+4]
+     *   bv_I_vec = bi_ip1[k..k+3]
+     *   bv_D_vec = bd_i[k+1..k+4]   (just filled by D scalar pass)
+     */
+    int k_sse_end = 0;
+    while (k_sse_end + 3 <= M) k_sse_end += 4;
+    for (k = 0; k < k_sse_end; k += 4) {
+      __m128 bm_n     = _mm_loadu_ps(&bm_ip1[k + 1]);
+      __m128 e_n      = _mm_loadu_ps(&emit_row_next[k + 1]);
+      __m128 bv_M     = _mm_add_ps(bm_n, e_n);
+      __m128 bv_I     = _mm_loadu_ps(&bi_ip1[k]);
+      __m128 bv_D     = _mm_loadu_ps(&bd_i[k + 1]);
+
+      __m128 t_mm     = _mm_loadu_ps(&MM_t[k]);
+      __m128 t_mi     = _mm_loadu_ps(&MI_t[k]);
+      __m128 t_md     = _mm_loadu_ps(&MD_t[k]);
+      __m128 a_M      = _mm_add_ps(t_mm, bv_M);
+      __m128 b_M      = _mm_add_ps(t_mi, bv_I);
+      __m128 c_M      = _mm_add_ps(t_md, bv_D);
+      __m128 cM_out   = p7ibv_mm_max3(a_M, b_M, c_M);
+      _mm_storeu_ps(&bm_i[k], cM_out);
+
+      __m128 t_im     = _mm_loadu_ps(&IM_t[k]);
+      __m128 t_ii     = _mm_loadu_ps(&II_t[k]);
+      __m128 a_I      = _mm_add_ps(t_im, bv_M);
+      __m128 b_I      = _mm_add_ps(t_ii, bv_I);
+      __m128 cI_out   = _mm_max_ps(a_I, b_I);
+      _mm_storeu_ps(&bi_i[k], cI_out);
+    }
+
+    /* Scalar tail for M and I from k=k_sse_end..M. */
+    for (k = k_sse_end; k <= M; k++) {
+      float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+      if (k + 1 <= M) {
+        float bv_m = bm_ip1[k + 1] + emit_row_next[k + 1];
+        float a = MM_t[k] + bv_m;
+        float b = IM_t[k] + bv_m;
+        if (a > cM) cM = a;
+        if (b > cI) cI = b;
+      }
+      /* I-block always contributes (i+1<=L, k always in range for bi_ip1[k]) */
+      {
+        float bv_i = bi_ip1[k];
+        float a = MI_t[k] + bv_i;
+        float b = II_t[k] + bv_i;
+        if (a > cM) cM = a;
+        if (b > cI) cI = b;
+      }
+      if (k + 1 <= M) {
+        float bv_d = bd_i[k + 1];
+        float a = MD_t[k] + bv_d;
+        if (a > cM) cM = a;
+      }
+      bm_i[k] = cM;
+      bi_i[k] = cI;
+    }
+  }
+
+  /* ---------- optimal score + threshold ---------- */
   {
     float *fm_L = F_M(L);
     float *fi_L = F_I(L);
@@ -341,6 +461,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   ESL_ALLOC(kmax, sizeof(int) * (L + 1));
   esl_vec_ISet(i2k, L + 1, -1);
 
+  /* ---------- per-row band emission ---------- */
   for (i = 1; i <= L; i++) {
     int   row_kmin = -1, row_kmax = -1;
     float *fm = F_M(i), *fi = F_I(i), *fd = F_D(i);
@@ -403,6 +524,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   free(IM_t); free(II_t); free(DM_t); free(DD_t);
   free(FM_pool); free(FI_pool); free(FD_pool);
   free(BM_pool); free(BI_pool); free(BD_pool);
+  free(emit_pool); free(emit_table);
 
   *ret_i2k    = i2k;
   *ret_kmin   = kmin;
@@ -416,6 +538,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   if (DM_t) free(DM_t); if (DD_t) free(DD_t);
   if (FM_pool) free(FM_pool); if (FI_pool) free(FI_pool); if (FD_pool) free(FD_pool);
   if (BM_pool) free(BM_pool); if (BI_pool) free(BI_pool); if (BD_pool) free(BD_pool);
+  if (emit_pool) free(emit_pool); if (emit_table) free(emit_table);
   if (i2k)  free(i2k);
   if (kmin) free(kmin);
   if (kmax) free(kmax);
