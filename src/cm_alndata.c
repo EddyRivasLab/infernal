@@ -485,7 +485,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * exceeds the cost of full p7_GViterbi at O(LM). For M < 200 the full
 	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
 	   * without the tiny-M tail regressions. */
+	  struct timespec _ta_p7b, _tb_p7b;
+	  const char *_p7b_kind = NULL;
+	  clock_gettime(CLOCK_MONOTONIC, &_ta_p7b);
 	  if (cm->p7_use_ibv) {
+	    _p7b_kind = "p7ibv";
 	    /* F+B direct-band band derivation (brief 120). Does NOT take gm/gx
 	     * because it extracts transitions directly from cm->fp7. We still
 	     * built gm/gx above for the vitband fallback path.
@@ -497,6 +501,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * Empty rows default to [1, M] inside the kernel.
 	     */
 	  } else if (cm->p7_use_pinbridge) {
+	    _p7b_kind = "pinbridge";
 	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
 					       sq->dsq, sq->L, cm->p7bpad,
 					       local_nodepad,
@@ -514,12 +519,20 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
 	  } else {
+	    _p7b_kind = "vitband";
 	    if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
 	    status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
 				     sq->dsq, sq->L, cm->p7bpad,
 				     local_nodepad,
 				     0, 0, /* hopback=0, vitend=0 */
 				     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	  }
+	  clock_gettime(CLOCK_MONOTONIC, &_tb_p7b);
+	  {
+	    double _p7b_s = (_tb_p7b.tv_sec - _ta_p7b.tv_sec) +
+	                    (_tb_p7b.tv_nsec - _ta_p7b.tv_nsec) / 1e9;
+	    fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f\n",
+	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s);
 	  }
 
 	  /* Debug: report Viterbi band stats */
