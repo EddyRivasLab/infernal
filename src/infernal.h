@@ -1887,6 +1887,8 @@ typedef struct cm_s {
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
+  int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
+  int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -3282,6 +3284,9 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+                                    int delta_milli, int base_slab,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
