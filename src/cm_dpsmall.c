@@ -4489,6 +4489,32 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
     if (bsc > best_sc) { best_sc = bsc; best_v = -2; best_j = j0; best_d = W; }
   }
 
+#ifdef HBDNC_DEBUG
+  if (! NOT_IMPOSSIBLE(best_sc)) {
+    fprintf(stderr, "## WEDGE_HB no split: r=%d z=%d i0=%d j0=%d W=%d  splitset w=%d y=%d\n",
+	    r, z, i0, j0, W, w, y);
+    { int vv; for (vv=w; vv<=y; vv++) {
+        int na=0, nb=0, jj, dd; int ajlo=99999,ajhi=-1,bjlo=99999,bjhi=-1; int both=0;
+        for (jj=ESL_MAX(i0-1,jmin[vv]); jj<=ESL_MIN(j0,jmax[vv]); jj++) {
+          int jpv=jj-jmin[vv], jpp=jj-(i0-1);
+          for (dd=hdmin[vv][jpv]; dd<=hdmax[vv][jpv] && dd<=jpp; dd++) {
+            int va=NOT_IMPOSSIBLE(alpha[vv][jj][dd]), vb=NOT_IMPOSSIBLE(beta[vv][jj][dd]);
+            if(va){na++; if(jj<ajlo)ajlo=jj; if(jj>ajhi)ajhi=jj;}
+            if(vb){nb++; if(jj<bjlo)bjlo=jj; if(jj>bjhi)bjhi=jj;}
+            if(va&&vb)both++;
+          } }
+        fprintf(stderr, "##   v=%d type=%d jband[%d..%d]: alpha-valid=%d(j%d..%d) beta-valid=%d(j%d..%d) both=%d\n",
+                vv, cm->sttype[vv], jmin[vv], jmax[vv], na,ajlo,ajhi, nb,bjlo,bjhi, both);
+        { int jj2=j0, jpv=jj2-jmin[vv], jpp=jj2-(i0-1); int adlo=99999,adhi=-1,bdlo=99999,bdhi=-1;
+          for (dd=hdmin[vv][jpv]; dd<=hdmax[vv][jpv] && dd<=jpp; dd++) {
+            if(NOT_IMPOSSIBLE(alpha[vv][jj2][dd])){if(dd<adlo)adlo=dd;if(dd>adhi)adhi=dd;}
+            if(NOT_IMPOSSIBLE(beta[vv][jj2][dd])){if(dd<bdlo)bdlo=dd;if(dd>bdhi)bdhi=dd;} }
+          fprintf(stderr, "##      @j=j0=%d band-d[%d..%d](cap jp=%d): alpha-d[%d..%d] beta-d[%d..%d]\n",
+                  jj2, hdmin[vv][jpv], hdmax[vv][jpv], jpp, adlo,adhi, bdlo,bdhi); } } }
+    cm_Fail("wedge_splitter_hb: band-infeasible subproblem (see stderr dump)");
+  }
+#endif
+
   free_vjd_matrix(alpha, cm->M, i0, j0);
   free_vjd_matrix(beta,  cm->M, i0, j0);
 
@@ -4915,13 +4941,16 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W))
 	beta[v][j0][W] = cm->beginsc[v];
 
-      /* main recursion: only v's in-band (j,d) cells */
+      /* main recursion: only v's in-band (j,d) cells.
+       * j and d are iterated in DECREASING order: insert (IL/IR) self-transitions
+       * make beta[v][j][d] depend on beta[v][j+1][d+1] (IR) or beta[v][j][d+1] (IL),
+       * so the larger-(j,d) cells must be computed first (mirrors outside_qdb). */
       jn = ESL_MAX(i0-1, jmin[v]);
       jx = ESL_MIN(j0,   jmax[v]);
-      for (j = jn; j <= jx; j++) {
+      for (j = jx; j >= jn; j--) {
 	jp   = j - (i0-1);
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	for (d = ESL_MIN(hdmax[v][jp_v], jp); d >= hdmin[v][jp_v]; d--)
 	  {
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
