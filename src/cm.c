@@ -130,6 +130,8 @@ CreateCMShell(void)
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
   cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 120) */
   cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
+  cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 124) */
+  cm->p7_ibv_base_slab = 256;            /* default D&C base-case slab size (brief 124 phase 5 sweep) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3113,6 +3115,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
   new->p7_use_ibv       = cm->p7_use_ibv;
   new->p7_ibv_delta     = cm->p7_ibv_delta;
+  new->p7_ibv_mem       = cm->p7_ibv_mem;
+  new->p7_ibv_base_slab = cm->p7_ibv_base_slab;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

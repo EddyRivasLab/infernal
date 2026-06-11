@@ -493,10 +493,21 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* F+B direct-band band derivation (brief 120). Does NOT take gm/gx
 	     * because it extracts transitions directly from cm->fp7. We still
 	     * built gm/gx above for the vitband fallback path.
+	     *
+	     * brief 124: with --p7ibv-mem, dispatch to the divide-and-conquer
+	     * O(M*logL) band deriver, byte-identical to the flat path but with
+	     * dramatically lower peak memory at large M/L.
 	     */
-	    status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,
-				     cm->p7_ibv_delta,
-				     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    if (cm->p7_ibv_mem) {
+	      _p7b_kind = "p7ibv-dnc";
+	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
+					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
+					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    } else {
+	      status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,
+				       cm->p7_ibv_delta,
+				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    }
 	    /* No internal ncells==0 fallback here: IBV always produces a band.
 	     * Empty rows default to [1, M] inside the kernel.
 	     */
