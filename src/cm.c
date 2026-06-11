@@ -131,7 +131,7 @@ CreateCMShell(void)
   cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 120) */
   cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
   cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 124) */
-  cm->p7_ibv_base_slab = 256;            /* default D&C base-case slab size (brief 124 phase 5 sweep) */
+  cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 124) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          

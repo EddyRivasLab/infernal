@@ -46,6 +46,17 @@
 #define P7IBV_K_ALIGN         16
 #define P7IBV_OPTIMAL_SANITY  1.0e7f
 
+/* D&C adaptive base_slab: when the caller passes base_slab <= 0, pick the
+ * largest slab whose base-case F+B storage (= 2*(slab+1)*3*k_stride floats)
+ * fits within P7IBV_SLAB_CAP_BYTES, clamped to [MIN, MAX].  This keeps the
+ * base-case slab memory bounded across scales: large at LSU/dengue (fast,
+ * shallow recursion) but ~64 at HSV/MPXV (memory-safe; preserves the <1 GB
+ * genome-scale headline).  Larger base_slab = fewer recursion levels = less
+ * recomputed band wall, at the cost of linear-in-M base-case slab memory. */
+#define P7IBV_SLAB_CAP_BYTES  (256.0)   /* MB */
+#define P7IBV_SLAB_MIN        32
+#define P7IBV_SLAB_MAX        1024
+
 static int
 ibv_alloc_floats(size_t n, float **ret_p)
 {
@@ -796,9 +807,19 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   K   = hmm->abc->K;
   if (L < 1 || M < 1)
     ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_dnc: bad L=%d or M=%d", L, M);
-  if (base_slab < 1) base_slab = 1;
 
   ks = ((size_t)(M + 1) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
+
+  /* Adaptive base_slab when caller passes <= 0: cap base-case slab memory. */
+  if (base_slab <= 0) {
+    double cap_bytes = P7IBV_SLAB_CAP_BYTES * 1024.0 * 1024.0;
+    double per_row   = 2.0 * 3.0 * (double) ks * 4.0;   /* F+B slab, one row */
+    long   adaptive  = (long)(cap_bytes / per_row) - 1;
+    if (adaptive < P7IBV_SLAB_MIN) adaptive = P7IBV_SLAB_MIN;
+    if (adaptive > P7IBV_SLAB_MAX) adaptive = P7IBV_SLAB_MAX;
+    base_slab = (int) adaptive;
+  }
+  if (base_slab < 1) base_slab = 1;
 
   max_depth = 2;
   { int tmp = L; while (tmp > 0) { tmp >>= 1; max_depth++; } }

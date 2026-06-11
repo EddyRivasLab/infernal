@@ -111,7 +111,7 @@ static ESL_OPTIONS options[] = {
   { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",  "--p7pinbridge", "use F+B direct-band derivation",                             3 },
   { "--p7ibv-delta",  eslARG_INT,      "3000", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "IBV Delta milli-bits",                                       3 },
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver (brief 124)",                 3 },
-  { "--p7ibv-base-slab", eslARG_INT,    "256", NULL,      "n>=1",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size [default 256]",                      3 },
+  { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree-derived band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
