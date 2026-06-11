@@ -1079,7 +1079,7 @@ cm_CYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
  *
  *           Note on history of this function: It was previously
  *           fast_cyk_align_hb() (up to Infernal 1.0.2), which was
- *           based on inside_b_me() which was based on inside().
+ *           based on inside_qdb_me() which was based on inside().
  *
  * Args:     cm        - the model
  *           errbuf    - char buffer for reporting errors

@@ -98,7 +98,8 @@ static int   cyk_extra_decks(CM_t *cm);
  */
 
 /*******************************************************************************
- * EPN: Banded functions are named *_b() 
+ * EPN: QDB-banded D&C engines are named *_qdb() (renamed from *_b() 2026).
+ * HMM-banded D&C engines (to be added) will be named *_hb().
  * Functions that I don't think need a banded version are indicated with a U
  * before their names.
  * 
@@ -112,13 +113,13 @@ static int   cyk_extra_decks(CM_t *cm);
  *     these are always the last two variables passed into a function.
  *
  * There are two classes of changes that were made to the original functions
- * to make (what I think are) functioning banded versions (*_b()).  
+ * to make (what I think are) functioning banded versions (*_qdb()).
  *
  * Class 1 : vjd deck changes - using dmin and dmax as bands
  * Class 2 : vji deck changes - using imin and imax (derived from dmin and dmax)
  *
- * Class 2 changes occur only within v problems, only functions : v_splitter_b(),
- * vinside_b(), and voutside_b().
+ * Class 2 changes occur only within v problems, only functions : v_splitter_qdb(),
+ * vinside_qdb(), and voutside_qdb().
  * 
  * The class 1 changes are more straightforward relative to the class 2 changes.
  * This is completely due to the fact that the vjd coordinate system directly
@@ -171,19 +172,19 @@ static int   cyk_extra_decks(CM_t *cm);
  * 
  *******************************************************************************/
 
-/* The banded dividers and conquerors.
+/* The QDB-banded dividers and conquerors.
  */
-static float generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+static float generic_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 				int r, int vend, int i0, int j0, int *dmin, int *dmax);
-static float wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+static float wedge_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			      int r, int z, int i0, int j0, int *dmin, int *dmax);
-static void  v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+static void  v_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			  int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			  int *dmin, int *dmax);
 
 /* The banded alignment engines. 
  */
-static float inside_b(CM_t *cm, ESL_DSQ *dsq, int L,
+static float inside_qdb(CM_t *cm, ESL_DSQ *dsq, int L,
 		      int r, int z, int i0, int j0, 
 		      int do_full,
 		      float ***alpha, float ****ret_alpha, 
@@ -191,18 +192,18 @@ static float inside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 		      void ****ret_shadow, 
 		      int allow_begin, int *ret_b, float *ret_bsc,
 		      int *dmin, int *dmax);
-static void  outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+static void  outside_qdb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		       int do_full, float ***beta, float ****ret_beta,
 		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		       int *dmin, int *dmax);
-static float vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
+static float vinside_qdb(CM_t *cm, ESL_DSQ *dsq, int L,
 		       int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		       int do_full, float ***a, float ****ret_a,
 		       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 		       char ****ret_shadow,
 		       int allow_begin, int *ret_b, float *ret_bsc,
 		       int *dmin, int *dmax);
-static void  voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
+static void  voutside_qdb(CM_t *cm, ESL_DSQ *dsq, int L,
 			int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			int do_full, float ***beta, float ****ret_beta,
 			struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -236,17 +237,17 @@ static void  voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
  * All changes from the original (non-memory efficient) banded code have been
  * marked with comments beginning 'CYK Full ME Bands Used'.
  *  
- * There are only two functions that need seperate _b_me() versions, because
+ * There are only two functions that need seperate _qdb_me() versions, because
  * the non D&C alignment algorithm only involves three functions, CYKInside(),
  * inside(), and insideT(), and the CYKInside() is really only a wrapper, 
  * for which the memory efficient implementation has no effect, so all we
- * need is inside_b_me() and insideT_b_me().
+ * need is inside_qdb_me() and insideT_qdb_me().
  * 
  *******************************************************************************/
 
 /* The alignment engines. 
  */
-static float inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L,
+static float inside_qdb_me(CM_t *cm, ESL_DSQ *dsq, int L,
 			 int r, int z, int i0, int j0, 
 			 int do_full,
 			 float ***alpha, float ****ret_alpha, 
@@ -259,7 +260,7 @@ static float inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L,
  * this function was needed, but there's some crazy offset issues. [EPN]
  */
 
-static float insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+static float insideT_qdb_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			  int r, int z, int i0, int j0, int allow_begin,
 			  int *dmin, int *dmax);
 
@@ -338,12 +339,12 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
     }
 
   /* Start the divide and conquer recursion: call the generic_splitter()
-   * or generic_splitter_b() on the whole DP cube.
+   * or generic_splitter_qdb() on the whole DP cube.
    */
   if(dmin == NULL && dmax == NULL)
     sc += generic_splitter(cm, dsq, L, tr, r, z, i0, j0);
   else
-    sc += generic_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
+    sc += generic_splitter_qdb(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
     
   /* Free memory and return
    */
@@ -418,7 +419,7 @@ CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    * memory efficient QDB alignment version.
    */
   else
-    sc += insideT_b_me(cm, dsq, L, tr, r, z, i0, j0, (r==0),
+    sc += insideT_qdb_me(cm, dsq, L, tr, r, z, i0, j0, (r==0),
       dmin, dmax);
   /* To call the non-memory efficient version, uncomment
    * the following line: */
@@ -474,7 +475,7 @@ CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, 
 		  NULL, NULL, NULL, NULL, NULL,
 		  (r==0), NULL, NULL);
   else
-    sc +=  inside_b(cm, dsq, L, r, z, i0, j0, FALSE, 
+    sc +=  inside_qdb(cm, dsq, L, r, z, i0, j0, FALSE, 
 		    NULL, NULL, NULL, NULL, NULL,
 		    (r==0), NULL, NULL, dmin, dmax);
 
@@ -2832,7 +2833,7 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     }
   else
     {
-      sc = inside_b(cm, dsq, L, r, z, i0, j0, 
+      sc = inside_qdb(cm, dsq, L, r, z, i0, j0, 
 		    BE_EFFICIENT,/* memory-saving mode */
 		    NULL, NULL,	 /* manage your own matrix, I don't want it */
 		    NULL, NULL,	 /* manage your own deckpool, I don't want it */
@@ -2974,7 +2975,7 @@ vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     }
   else
     {
-      sc = vinside_b(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
+      sc = vinside_qdb(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 		     BE_EFFICIENT,	/* memory-saving mode */
 		     NULL, NULL,	/* manage your own matrix, I don't want it */
 		     NULL, NULL,	/* manage your own deckpool, I don't want it */
@@ -3690,7 +3691,7 @@ CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
  * The banded dividers and conquerors. 
  *################################################################*/  
 
-/* Function: generic_splitter_b()
+/* Function: generic_splitter_qdb()
  *           EPN 05.19.05
  * *based on generic_splitter(), only difference is bands are used : 
  * Date:     SRE, Sat May 12 15:08:38 2001 [CSHL]
@@ -3725,7 +3726,7 @@ CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
  * Returns:  score of the optimal parse of dsq(i0..j0) with cm^r_z 
  */
 static float
-generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+generic_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		 int r, int z, int i0, int j0, int *dmin, int *dmax)
 {
   float ***alpha;
@@ -3769,7 +3770,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
     if (cm->sttype[z] != E_st) cm_Fail("inconceivable.");
-    sc = wedge_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
+    sc = wedge_splitter_qdb(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
     return sc;
   }
 
@@ -3785,15 +3786,15 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * We also get b1: best choice for 0->b local begin. b1_sc is the score if we do this.
    * Analogous for b2, b2_sc on the other side.
    */
-  inside_b(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
+  inside_qdb(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, &pool, NULL, 
 	   (r==0), &b1, &b1_sc, dmin, dmax);
-  inside_b(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
+  inside_qdb(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
 	   (r==0), &b2, &b2_sc, dmin, dmax);
 
   /* Calculate beta[v] deck (stick it in alpha). Let the pool get free'd.
    * (If we're doing local alignment, deck M is the beta[EL] deck.)
    */
-  outside_b(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL, dmin, dmax);
+  outside_qdb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL, dmin, dmax);
 
   /* Find the optimal split at the B.
    */
@@ -3861,7 +3862,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
   if (best_k == -1) {	
-    v_splitter_b(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
+    v_splitter_qdb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
     return best_sc;
   } 
 
@@ -3872,13 +3873,13 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (best_k == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1);
     z = CMSubtreeFindEnd(cm, b1);
-    generic_splitter_b(cm, dsq, L, tr, b1, z, i0, j0, dmin, dmax);
+    generic_splitter_qdb(cm, dsq, L, tr, b1, z, i0, j0, dmin, dmax);
     return best_sc;
   }
   if (best_k == -3) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2);
     z = CMSubtreeFindEnd(cm, b2);
-    generic_splitter_b(cm, dsq, L, tr, b2, z, i0, j0, dmin, dmax);
+    generic_splitter_qdb(cm, dsq, L, tr, b2, z, i0, j0, dmin, dmax);
     return best_sc;
   }
 
@@ -3904,18 +3905,18 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		yend, UniqueStatetype(cm->stid[yend]),
 		best_j-best_k+1, best_j));
 
-  v_splitter_b(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, dmin, dmax);
+  v_splitter_qdb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, dmin, dmax);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
-  generic_splitter_b(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k, dmin, dmax);
+  generic_splitter_qdb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k, dmin, dmax);
   InsertTraceNode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y);
-  generic_splitter_b(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j, dmin, dmax);
+  generic_splitter_qdb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j, dmin, dmax);
 
   return best_sc;
 }
 
-/* Function: wedge_splitter_b()
+/* Function: wedge_splitter_qdb()
  *           EPN 05.19.05
  * *based on wedge_splitter(), only difference is bands are used : 
  * Date:     SRE, Sun May 13 08:44:15 2001 [CSHL genome mtg]
@@ -3952,7 +3953,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * Returns:  The score of the best parse in bits.
  */
 static float 
-wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
+wedge_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
 		 int *dmin, int *dmax)
 {
   float ***alpha;
@@ -4005,10 +4006,10 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
    *    is the score for using it.
    *    beta[cm->M] will contain the EL deck, if needed for local ends.
    */
-  inside_b(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, 
+  inside_qdb(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT, 
 	   NULL, &alpha, NULL, &pool, NULL, 
 	   (r==0), &b, &bsc, dmin, dmax);
-  outside_b(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL,
+  outside_qdb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL,
   dmin, dmax);
 
   /* 4. Find the optimal split at the split set: best_v, best_d, best_j
@@ -4070,7 +4071,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
    * initialize the whole thing to IMPOSSIBLE anyway.
    */  
   if (best_v == -1) {
-    v_splitter_b(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
+    v_splitter_qdb(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, dmin, dmax);    
     return best_sc;
   }
 
@@ -4081,7 +4082,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
    */
   if (best_v == -2) {
     InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    wedge_splitter_b(cm, dsq, L, tr, b, z, i0, j0, dmin, dmax);
+    wedge_splitter_qdb(cm, dsq, L, tr, b, z, i0, j0, dmin, dmax);
     return best_sc; 
   }
 
@@ -4103,9 +4104,9 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
 		z, UniqueStatetype(cm->stid[z]),
 		best_j-best_d+1, best_j));
 
-  v_splitter_b(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE,
+  v_splitter_qdb(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE,
 	       dmin, dmax);
-  wedge_splitter_b(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j, dmin, dmax);
+  wedge_splitter_qdb(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j, dmin, dmax);
   return best_sc;
 }
 
@@ -4141,7 +4142,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
  * Returns:  (void)
  */
 static void
-v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+v_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	   int r, int z, int i0, int i1, int j1, int j0, 
 	   int useEL, int *dmin, int *dmax)
 {
@@ -4193,10 +4194,10 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    in alpha and beta even though we're in small memory mode.
    *    beta[cm->M] is the EL deck, needed for local ends.
    */
-  vinside_b (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+  vinside_qdb (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	     NULL, &alpha, NULL, &pool, NULL, (r==0), &b, &bsc,
 	     dmin, dmax);
-  voutside_b(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
+  voutside_qdb(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT, 
 	     NULL, &beta,  pool, NULL, dmin, dmax);
 
   /* 4. Find the optimal split: v, ip, jp. 
@@ -4273,7 +4274,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * The TRUE flag sets useEL; we propagate allow_begin. 
    */
   if (best_v == -1) {
-    v_splitter_b(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, dmin, dmax);    
+    v_splitter_qdb(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, dmin, dmax);    
     if(imin != NULL) free(imin);
     if(imax != NULL) free(imax);
     return;
@@ -4288,7 +4289,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (best_v == -2) {
     if (b != z) 
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
-    v_splitter_b(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, dmin, dmax);    
+    v_splitter_qdb(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, dmin, dmax);    
     return;
   }
 
@@ -4308,9 +4309,9 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		z, UniqueStatetype(cm->stid[z]),
 		best_i, i1, j1, best_j));
 
-  v_splitter_b(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE,
+  v_splitter_qdb(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE,
 	       dmin, dmax);
-  v_splitter_b(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL,
+  v_splitter_qdb(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL,
 	       dmin, dmax);
   
   free(imax);
@@ -4321,14 +4322,14 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
 /*****************************************************************
  * The alignment engines, using bands:
- *     inside_b   - given generic or wedge problem G^r_z to i0..j0, return score and matrix
- *     outside_b  - given unbifurcated G^r_z to i0..j0, return matrix
+ *     inside_qdb   - given generic or wedge problem G^r_z to i0..j0, return score and matrix
+ *     outside_qdb  - given unbifurcated G^r_z to i0..j0, return matrix
  *     
- *     vinside_b  - given V problem G^r_z to i0..i1//j1..j0, return score and matrix
- *     voutside_b - given unbifurcated G^r_z to i0..i1//j1..j0, return matrix
+ *     vinside_qdb  - given V problem G^r_z to i0..i1//j1..j0, return score and matrix
+ *     voutside_qdb - given unbifurcated G^r_z to i0..i1//j1..j0, return matrix
  ******************************************************************/
 
-/* Function: inside_b()
+/* Function: inside_qdb()
  *           EPN 05.19.05
  * *based on inside(), only difference is bands are used : 
  * Date:     SRE, Mon Aug  7 13:15:37 2000 [St. Louis]
@@ -4368,7 +4369,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+inside_qdb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	 float ***alpha, float ****ret_alpha, 
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	 void ****ret_shadow, 
@@ -4710,7 +4711,7 @@ inside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int
 }
 
 
-/* Function: outside_b()
+/* Function: outside_qdb()
  *           EPN 05.19.05
  * *based on outside(), only difference is bands are used : 
  *
@@ -4743,7 +4744,7 @@ inside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int
  *           dmax      - maximum d bound for each state v; [0..v..M-1]
  */
 static void
-outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+outside_qdb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  int do_full, float ***beta, float ****ret_beta,
 	  struct deckpool_s *dpool, struct deckpool_s **ret_dpool, int *dmin, int *dmax)
 {
@@ -5090,7 +5091,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 }
 
 
-/* Function: vinside_b()
+/* Function: vinside_qdb()
  *           EPN 05.19.05
  * *based on vinside(), only difference is bands are used : 
  * 
@@ -5146,7 +5147,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  * Returns:  score.
  */
 static float
-vinside_b(CM_t *cm, ESL_DSQ *dsq, int L, 
+vinside_qdb(CM_t *cm, ESL_DSQ *dsq, int L, 
 	int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	int do_full, float ***a, float ****ret_a,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -5171,7 +5172,7 @@ vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 				 * band that corresponds to state v, is imax[v-r] */ 
 
   /*debugging block*/
-  /*printf("***in vinside_b()****\n");
+  /*printf("***in vinside_qdb()****\n");
   printf("\tr  : %d\n", r);
   printf("\tz  : %d\n", z);
   printf("\ti0 : %d\n", i0);
@@ -5324,7 +5325,7 @@ vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
       /*
       if((dmin[v] > (j0-i0+1)) || (dmax[v] < (j1-i1+1)))
 	{
-	  printf("ERROR vinside_b() whole deck is outside bands\n");
+	  printf("ERROR vinside_qdb() whole deck is outside bands\n");
 	  printf("v : %d\n", v);
 	  printf("dmin[v] : %d\n", dmin[v]);
 	  printf("dmax[v] : %d\n", dmax[v]);
@@ -5589,7 +5590,7 @@ vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 }
 
 
-/* Function: voutside_b()
+/* Function: voutside_qdb()
  *           EPN 05.19.05
  * *based on voutside(), only difference is bands are used : 
  *
@@ -5639,7 +5640,7 @@ vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
  * 
  */
 static void
-voutside_b(CM_t *cm, ESL_DSQ *dsq, int L, 
+voutside_qdb(CM_t *cm, ESL_DSQ *dsq, int L, 
 	   int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	   int do_full, float ***beta, float ****ret_beta,
 	   struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
@@ -5695,7 +5696,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
   /*
   if((dmin[r] > (j0-i0)) || (dmax[r] < (j1-i1)))
     {
-      printf("ERROR voutside_b()\n");
+      printf("ERROR voutside_qdb()\n");
       printf("v : %d\n", r);
       printf("dmin[v] : %d\n", dmin[r]);
       printf("dmax[v] : %d\n", dmax[r]);
@@ -5804,7 +5805,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
          deck is outside the bands) because this will make the
          for(ip*) loops always evaluate to false because imin[v-r] will
          be 0 and imax[v-r] will be < 0.*/
-      /* This situation is recapitulated in v_splitter_b() */
+      /* This situation is recapitulated in v_splitter_qdb() */
 
       /* unnecssary 05.22
 	 05.20 code : if(dmin[v] > i1) imin[v-r] = imax[v-r]+1;  */
@@ -6400,7 +6401,7 @@ debug_print_alpha(float ***alpha, CM_t *cm, int L)
 
 
 /* EPN Memory efficient banded functions */
-/* Function: inside_b_me()
+/* Function: inside_qdb_me()
  *
  * Based on inside(), only difference is bands are used : 
  * further the bands are used in a memory-efficient way
@@ -6496,7 +6497,7 @@ debug_print_alpha(float ***alpha, CM_t *cm, int L)
  * Returns: Score of the optimal alignment.  
  */
 static float 
-inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+inside_qdb_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 	    float ***alpha, float ****ret_alpha, 
 	    void ****ret_shadow, 
 	    int allow_begin, int *ret_b, float *ret_bsc,
@@ -6977,7 +6978,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
   return 0.; /* never reached */
 }
 
-/* Function: insideT_b_me()
+/* Function: insideT_qdb_me()
  *           EPN 05.24.05
  * *based on insideT(), only difference is memory efficient bands are used : 
  *
@@ -6988,7 +6989,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
  *           traceback, which already has state r at tr->n-1.
  */
 static float
-insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+insideT_qdb_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	     int r, int z, int i0, int j0, 
 	     int allow_begin, int *dmin, int *dmax)
 {
@@ -7005,7 +7006,7 @@ insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int       dp;                 /* dp: d' d offset in current state v's band; dp = d - dmin[v] */
   int       kp;                 /* dp: k' k offset in current state v's band; kp = k - dmin[v] */
 
-  sc = inside_b_me(cm, dsq, L, r, z, i0, j0, 
+  sc = inside_qdb_me(cm, dsq, L, r, z, i0, j0, 
 		   BE_EFFICIENT,	/* memory-saving mode */
 		   NULL, NULL,	        /* manage your own matrix, I don't want it */
 		   &shadow,		/* return a shadow matrix to me. */
