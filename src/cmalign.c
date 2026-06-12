@@ -82,6 +82,9 @@ typedef struct {
   P7_TRACE        **hmm_tr;       /* shared trace array; worker writes tr[seqidx] (NULL if not --hmm) */
   int               do_hmmvit;    /* TRUE for --hmm --hmmvit */
   int               do_hmmnoband; /* TRUE for --hmm --hmmnoband */
+  int               do_p7ibv;     /* TRUE for --hmm --p7ibv (banded OA via IBV deriver) */
+  int               ibv_delta;    /* IBV Delta milli-bits (--p7ibv-delta) */
+  int               ibv_base_slab;/* IBV D&C base-case slab; 0=auto (--p7ibv-base-slab) */
 } WORKER_INFO;
 
 #define ACCOPTS      "--hbanded,--nonbanded,--p7band"         /* Exclusive choice for acceleration or not */
@@ -121,7 +124,7 @@ static ESL_OPTIONS options[] = {
   { "--p7pinbridge", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "use SW-pinbridge prefilter + banded p7 Viterbi (with --p7band)", 3 },
   { "--p7pbpad",      eslARG_INT,        "20", NULL,      "n>=0",       NULL, "--p7pinbridge",                 NULL, "diagonal pad for SW-pinbridge prefilter band [default 20]",  3 },
   { "--p7pinbridge-vitgaps", eslARG_NONE, FALSE, NULL,     NULL,       NULL, "--p7pinbridge",                 NULL, "use exact mini-Viterbi gap costs in gap-aware LSIS (Option 3)", 3 },
-  { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",  "--p7pinbridge", "use F+B direct-band derivation",                             3 },
+  { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,  "--p7pinbridge", "use F+B direct-band derivation (w/--p7band or --hmm)",        3 },
   { "--p7ibv-delta",  eslARG_INT,      "3000", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "IBV Delta milli-bits",                                       3 },
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver (brief 124)",                 3 },
   { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
@@ -736,6 +739,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   int do_hmmvit    = (cm->align_opts & CM_ALIGN_P7HMMVIT)    ? TRUE : FALSE;
   int do_hmmnoband = (cm->align_opts & CM_ALIGN_P7HMMNOBAND) ? TRUE : FALSE;
   int do_bandedoa  = (! do_hmmvit && ! do_hmmnoband)         ? TRUE : FALSE;
+  /* --p7ibv (w/--hmm): derive banded-OA bands via the D&C IBV deriver instead
+   * of a full p7_GViterbi + trace, skipping the O(M*L) P7_GMX allocation.
+   * CLI validation guarantees --p7ibv only reaches here in banded-OA mode.
+   */
+  int do_p7ibv     = (cm->p7_use_ibv && do_bandedoa)         ? TRUE : FALSE;
 
   /* banded functions declared in cm_p7_band.c */
   extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
@@ -809,14 +817,18 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].gm          = p7_profile_Create(hmm->M, hmm->abc);
 	p7_ProfileConfig(hmm, bg, winfo[k].gm, 400, p7mode);
 	winfo[k].hmm         = hmm;
-	winfo[k].gx          = (do_hmmvit || do_bandedoa) ? p7_gmx_Create(hmm->M, 400) : NULL;
+	/* Under --p7ibv the banded-OA path needs no full Viterbi P7_GMX. */
+	winfo[k].gx          = (do_hmmvit || (do_bandedoa && ! do_p7ibv)) ? p7_gmx_Create(hmm->M, 400) : NULL;
 	winfo[k].gxf         = do_hmmnoband ? p7_gmx_Create(hmm->M, 400) : NULL;
 	winfo[k].gxb         = do_hmmnoband ? p7_gmx_Create(hmm->M, 400) : NULL;
 	winfo[k].hmm_tr      = tr;  /* shared trace array; worker writes to tr[seqidx] */
 	winfo[k].do_hmmvit   = do_hmmvit;
 	winfo[k].do_hmmnoband = do_hmmnoband;
-	/* CM-specific fields unused in --hmm mode */
-	winfo[k].cm          = NULL;
+	winfo[k].do_p7ibv    = do_p7ibv;
+	winfo[k].ibv_delta   = esl_opt_GetInteger(go, "--p7ibv-delta");
+	winfo[k].ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");
+	/* CM only needed by the IBV deriver (for cm->fp7); else unused in --hmm mode */
+	winfo[k].cm          = do_p7ibv ? cm : NULL;
 	winfo[k].dataA       = NULL;
 	winfo[k].n           = 0;
 	winfo[k].mxsize      = esl_opt_GetReal(go, "--mxsize");
@@ -851,7 +863,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
       gm = p7_profile_Create(hmm->M, hmm->abc);
       p7_ProfileConfig(hmm, bg, gm, 400, p7mode);
 
-      if (do_hmmvit || do_bandedoa) gx  = p7_gmx_Create(hmm->M, 400);
+      if (do_hmmvit || (do_bandedoa && ! do_p7ibv)) gx  = p7_gmx_Create(hmm->M, 400);
       if (do_hmmnoband)           { gxf = p7_gmx_Create(hmm->M, 400); gxb = p7_gmx_Create(hmm->M, 400); }
 
       for (idx = 0; idx < nseq; idx++) {
@@ -902,44 +914,57 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  P7_GBANDS *bnd = NULL;
 	  P7_GMXB *bxf   = NULL;
 	  P7_GMXB *bxb   = NULL;
-	  P7_TRACE *vtr  = p7_trace_Create();
+	  P7_TRACE *vtr  = NULL;
 
-	  p7_gmx_GrowTo(gx, hmm->M, sq->n);
-	  p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
-	  p7_trace_Reuse(vtr);
-	  status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
-
-	  if (status != eslOK || vtr->N == 0) {
-	    P7_GMX *fallback_gxf = p7_gmx_Create(hmm->M, sq->n);
-	    P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
-	    p7_GForward (sq->dsq, sq->n, gm, fallback_gxf, &fwdsc);
-	    p7_GBackward(sq->dsq, sq->n, gm, fallback_gxb, NULL);
-	    p7_GDecoding(gm, fallback_gxf, fallback_gxb, fallback_gxb);
-	    p7_GOptimalAccuracy(gm, fallback_gxb, fallback_gxf, &oasc);
-	    p7_trace_Reuse(tr[idx]);
-	    p7_GOATrace(gm, fallback_gxb, fallback_gxf, tr[idx]);
-	    p7_gmx_Destroy(fallback_gxf);
-	    p7_gmx_Destroy(fallback_gxb);
-	    p7_trace_Destroy(vtr);
-	    continue;
+	  if (do_p7ibv) {
+	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
+	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
+	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
+	    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->n,
+					      esl_opt_GetInteger(go, "--p7ibv-delta"),
+					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
+					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
+	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
+	  else {
+	    vtr = p7_trace_Create();
+	    p7_gmx_GrowTo(gx, hmm->M, sq->n);
+	    p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
+	    p7_trace_Reuse(vtr);
+	    status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
 
-	  {
-	    int tpos;
-	    ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
-	    esl_vec_ISet(i2k, (sq->n + 1), -1);
-	    for (tpos = 0; tpos < vtr->N; tpos++) {
-	      if (vtr->st[tpos] == p7T_M) {
-		int i = vtr->i[tpos];
-		int k = vtr->k[tpos];
-		if (i >= 1 && i <= sq->n && k >= 1 && k <= hmm->M)
-		  i2k[i] = k;
+	    if (status != eslOK || vtr->N == 0) {
+	      P7_GMX *fallback_gxf = p7_gmx_Create(hmm->M, sq->n);
+	      P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
+	      p7_GForward (sq->dsq, sq->n, gm, fallback_gxf, &fwdsc);
+	      p7_GBackward(sq->dsq, sq->n, gm, fallback_gxb, NULL);
+	      p7_GDecoding(gm, fallback_gxf, fallback_gxb, fallback_gxb);
+	      p7_GOptimalAccuracy(gm, fallback_gxb, fallback_gxf, &oasc);
+	      p7_trace_Reuse(tr[idx]);
+	      p7_GOATrace(gm, fallback_gxb, fallback_gxf, tr[idx]);
+	      p7_gmx_Destroy(fallback_gxf);
+	      p7_gmx_Destroy(fallback_gxb);
+	      p7_trace_Destroy(vtr);
+	      continue;
+	    }
+
+	    {
+	      int tpos;
+	      ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+	      esl_vec_ISet(i2k, (sq->n + 1), -1);
+	      for (tpos = 0; tpos < vtr->N; tpos++) {
+		if (vtr->st[tpos] == p7T_M) {
+		  int i = vtr->i[tpos];
+		  int k = vtr->k[tpos];
+		  if (i >= 1 && i <= sq->n && k >= 1 && k <= hmm->M)
+		    i2k[i] = k;
+		}
 	      }
 	    }
-	  }
 
-	  if ((status = p7_pins2bands(i2k, errbuf, sq->n, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
-	    cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	    if ((status = p7_pins2bands(i2k, errbuf, sq->n, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+	      cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	  }
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
@@ -962,7 +987,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  free(i2k);
 	  free(kmin);
 	  free(kmax);
-	  p7_trace_Destroy(vtr);
+	  if (vtr) p7_trace_Destroy(vtr);
 	  p7_gbands_Destroy(bnd);
 	  p7_gmxb_Destroy(bxf);
 	  p7_gmxb_Destroy(bxb);
@@ -1414,45 +1439,57 @@ hmm_pipeline_thread(void *arg)
       P7_GBANDS *bnd = NULL;
       P7_GMXB *bxf   = NULL;
       P7_GMXB *bxb   = NULL;
-      P7_TRACE *vtr  = p7_trace_Create();
+      P7_TRACE *vtr  = NULL;
 
-      p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
-      p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
-      p7_trace_Reuse(vtr);
-      status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
-
-      if (status != eslOK || vtr->N == 0) {
-	/* Viterbi failed; fall back to unbanded OA */
-	P7_GMX *fallback_gxf = p7_gmx_Create(info->hmm->M, sq->n);
-	P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
-	p7_GForward (sq->dsq, sq->n, info->gm, fallback_gxf, &fwdsc);
-	p7_GBackward(sq->dsq, sq->n, info->gm, fallback_gxb, NULL);
-	p7_GDecoding(info->gm, fallback_gxf, fallback_gxb, fallback_gxb);
-	p7_GOptimalAccuracy(info->gm, fallback_gxb, fallback_gxf, &oasc);
-	p7_trace_Reuse(info->hmm_tr[idx]);
-	p7_GOATrace(info->gm, fallback_gxb, fallback_gxf, info->hmm_tr[idx]);
-	p7_gmx_Destroy(fallback_gxf);
-	p7_gmx_Destroy(fallback_gxb);
-	p7_trace_Destroy(vtr);
-	goto HMM_NEXT_SQ;
+      if (info->do_p7ibv) {
+	/* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
+	if (info->cm == NULL || info->cm->fp7 == NULL || info->cm->fp7->M != info->hmm->M)
+	  cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
+	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
+					  info->ibv_delta, info->ibv_base_slab,
+					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
+	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }
+      else {
+	vtr = p7_trace_Create();
+	p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
+	p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
+	p7_trace_Reuse(vtr);
+	status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
 
-      {
-	int tpos;
-	ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
-	esl_vec_ISet(i2k, (sq->n + 1), -1);
-	for (tpos = 0; tpos < vtr->N; tpos++) {
-	  if (vtr->st[tpos] == p7T_M) {
-	    int i = vtr->i[tpos];
-	    int k = vtr->k[tpos];
-	    if (i >= 1 && i <= sq->n && k >= 1 && k <= info->hmm->M)
-	      i2k[i] = k;
+	if (status != eslOK || vtr->N == 0) {
+	  /* Viterbi failed; fall back to unbanded OA */
+	  P7_GMX *fallback_gxf = p7_gmx_Create(info->hmm->M, sq->n);
+	  P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
+	  p7_GForward (sq->dsq, sq->n, info->gm, fallback_gxf, &fwdsc);
+	  p7_GBackward(sq->dsq, sq->n, info->gm, fallback_gxb, NULL);
+	  p7_GDecoding(info->gm, fallback_gxf, fallback_gxb, fallback_gxb);
+	  p7_GOptimalAccuracy(info->gm, fallback_gxb, fallback_gxf, &oasc);
+	  p7_trace_Reuse(info->hmm_tr[idx]);
+	  p7_GOATrace(info->gm, fallback_gxb, fallback_gxf, info->hmm_tr[idx]);
+	  p7_gmx_Destroy(fallback_gxf);
+	  p7_gmx_Destroy(fallback_gxb);
+	  p7_trace_Destroy(vtr);
+	  goto HMM_NEXT_SQ;
+	}
+
+	{
+	  int tpos;
+	  ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+	  esl_vec_ISet(i2k, (sq->n + 1), -1);
+	  for (tpos = 0; tpos < vtr->N; tpos++) {
+	    if (vtr->st[tpos] == p7T_M) {
+	      int i = vtr->i[tpos];
+	      int k = vtr->k[tpos];
+	      if (i >= 1 && i <= sq->n && k >= 1 && k <= info->hmm->M)
+		i2k[i] = k;
+	    }
 	  }
 	}
-      }
 
-      if ((status = p7_pins2bands(i2k, errbuf, sq->n, info->hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
-	cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	if ((status = p7_pins2bands(i2k, errbuf, sq->n, info->hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+	  cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+      }
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
@@ -1475,7 +1512,7 @@ hmm_pipeline_thread(void *arg)
       free(i2k);
       free(kmin);
       free(kmax);
-      p7_trace_Destroy(vtr);
+      if (vtr) p7_trace_Destroy(vtr);
       p7_gbands_Destroy(bnd);
       p7_gmxb_Destroy(bxf);
       p7_gmxb_Destroy(bxb);
@@ -2458,10 +2495,31 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    * truncated because errbuf runs out of space. As a workaround we
    * laboriously check for all incompatible options of that type here.
    */
-  if(esl_opt_IsUsed(go, "--small")) { 
-    if((! esl_opt_IsUsed(go, "--cyk")) || (! esl_opt_IsUsed(go, "--noprob")) || (! esl_opt_IsUsed(go, "--nonbanded")) || (! esl_opt_IsUsed(go, "--notrunc"))) { 
-      puts("Failed to parse command line: Option --small requires --cyk, --noprob, --nonbanded, --notrunc"); 
-      goto ERROR; 
+  if(esl_opt_IsUsed(go, "--small")) {
+    if((! esl_opt_IsUsed(go, "--cyk")) || (! esl_opt_IsUsed(go, "--noprob")) || (! esl_opt_IsUsed(go, "--nonbanded")) || (! esl_opt_IsUsed(go, "--notrunc"))) {
+      puts("Failed to parse command line: Option --small requires --cyk, --noprob, --nonbanded, --notrunc");
+      goto ERROR;
+    }
+  }
+
+  /* --p7ibv only derives bands; it needs an anchor mode to use them:
+   * --p7band (CM-side banded alignment) or --hmm (HMM-only banded OA).
+   */
+  if(esl_opt_GetBoolean(go, "--p7ibv") && (! esl_opt_GetBoolean(go, "--p7band")) && (! esl_opt_GetBoolean(go, "--hmm"))) {
+    puts("\nERROR: --p7ibv requires --p7band or --hmm\n");
+    goto ERROR;
+  }
+  /* --hmm --p7ibv is the banded-OA HMM sub-mode; reject the other --hmm
+   * sub-modes (Viterbi-trace and unbanded full OA) in combination with it.
+   */
+  if(esl_opt_GetBoolean(go, "--hmm") && esl_opt_GetBoolean(go, "--p7ibv")) {
+    if(esl_opt_GetBoolean(go, "--hmmvit")) {
+      puts("\nERROR: --hmmvit incompatible with --p7ibv (pins-to-trace not implemented yet)\n");
+      goto ERROR;
+    }
+    if(esl_opt_GetBoolean(go, "--hmmnoband")) {
+      puts("\nERROR: --hmmnoband incompatible with --p7ibv (--hmmnoband means no bands)\n");
+      goto ERROR;
     }
   }
 
