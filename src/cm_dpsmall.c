@@ -253,6 +253,21 @@ static void  outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int 
 			CP9Bands_t *cp9b);
 static float insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b);
+/* Stage 1a.2 (brief 009): banded V-problem (class-2 vji) engines. */
+static void  v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+			   int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			   CP9Bands_t *cp9b);
+static float vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+			int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			int do_full, float ***a, float ****ret_a,
+			char ****ret_shadow,
+			int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
+static void  voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+			 int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			 int do_full, float ***beta, float ****ret_beta, CP9Bands_t *cp9b);
+static float vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+			 int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			 int allow_begin, CP9Bands_t *cp9b);
 
 /* High-water-mark instrumentation for the D&C-HB live-deck working set.
  * Defined just below; incremented on alloc_vjd_deck()/pop and decremented on
@@ -4458,6 +4473,163 @@ free_banded_hb_vjd_matrix(float ***a, CM_t *cm, int i0, int j0, CP9Bands_t *cp9b
   free(a);
 }
 
+/*****************************************************************
+ * Banded-cell vji deck allocation for the HMM-banded D&C (brief 009, Stage 1a.2).
+ *
+ * V problems are solved in the vji coordinate system: the Platonic deck for state
+ * v over a one-hole subseq [i0..i1]//[j1..j0] is a[jp][ip], jp=j-j1 in [0..j0-j1],
+ * ip=i-i0 in [0..i1-i0], with d = j-i+1 (the full subsequence length subtended by
+ * v, INCLUDING the hole -- exactly what hdmin/hdmax band). A Stage 1a.2 deck
+ * stores ONLY the in-band cells: row jp (j=jp+j1) is present iff j is in v's
+ * j-band [jmin[v]..jmax[v]], and within that row only i in [ilo..ihi], where the
+ * d-band [hdmin..hdmax] at jpb=j-jmin[v] maps to i = j-d+1, i.e.
+ *   ilo = max(i0, j - hdmax[v][jpb] + 1),  ihi = min(i1, j - hdmin[v][jpb] + 1).
+ * Cell access is a[jp][i - ilo(jp)] via vji_inband(). Row indexing stays platonic
+ * (outer dim j0-j1+1, out-of-band rows NULL) so the existing NULL-safe vji shadow
+ * free routines apply; only the i dimension is offset, mirroring the vjd Stage 1b.
+ *
+ * THE HAZARD (brief 003): the QDB vji path crashed with a negative malloc when a
+ * collapsed band left v_splitter_qdb with degenerate corners. Here, with tight
+ * per-(v,j) CP9 bands, empty rows are NORMAL, so the allocator NEVER allocs a
+ * non-positive row (w<=0 -> NULL row), and the outer dim is clamped >= 1. The
+ * degenerate-recursion hazard itself is designed out in v_splitter_hb (the
+ * explicit empty-band path), not here. Banded decks are NOT pooled (per-(v,j)
+ * shapes); engines alloc fresh + free immediately. CYKDeckTrack counts the banded
+ * bytes via cyk_dnc_vji_bytes (the same counter the full vji decks used).
+ *****************************************************************/
+
+/* Storage offset of cell (v, platonic j, platonic i) in a banded-HB vji deck for
+ * a V-problem [i0..i1]//[j1..j0], or "not present" (return 0). vji analogue of
+ * hb_inband(): row jp=j-j1 (caller indexes a[jp]); the i dimension is offset by
+ * the per-row in-band minimum ilo. */
+static int
+vji_inband(CP9Bands_t *cp9b, int v, int j, int i, int i0, int i1, int j1, int j0, int *ret_ip)
+{
+  int jpb, d, ilo;
+  if (j < j1 || j > j0)                         return 0; /* outside V-problem j-range */
+  if (j < cp9b->jmin[v] || j > cp9b->jmax[v])   return 0; /* outside v's j-band        */
+  if (i < i0 || i > i1)                         return 0; /* outside V-problem i-range */
+  jpb = j - cp9b->jmin[v];
+  d   = j - i + 1;
+  if (d < cp9b->hdmin[v][jpb] || d > cp9b->hdmax[v][jpb]) return 0; /* outside d-band  */
+  ilo = j - cp9b->hdmax[v][jpb] + 1;            /* smallest in-band i (before clamp)   */
+  if (ilo < i0) ilo = i0;
+  *ret_ip = i - ilo;
+  return 1;
+}
+
+/* data bytes (per-row float arrays) of a banded-HB vji deck for state v; matches
+ * what alloc/free add/subtract from cyk_dnc_vji_bytes. */
+static double
+banded_hb_vji_deck_bytes(int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b)
+{
+  int    j, jpb, ilo, ihi, w;
+  double tot = 0.;
+  for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
+    jpb = j - cp9b->jmin[v];
+    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    w   = ihi - ilo + 1;
+    if (w > 0) tot += (double) sizeof(float) * (double) w;
+  }
+  return tot;
+}
+
+static float **
+alloc_banded_hb_vji_deck(int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b)
+{
+  int     status;
+  float **a;
+  int     jp, j, jpb, ilo, ihi, w;
+  int     njp = j0 - j1 + 1;
+  if (njp < 1) njp = 1;                         /* defensive: never alloc < 1 row ptr  */
+  ESL_ALLOC(a, sizeof(float *) * njp);
+  for (jp = 0; jp < njp; jp++) a[jp] = NULL;
+  for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
+    jp  = j - j1;
+    jpb = j - cp9b->jmin[v];
+    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    w   = ihi - ilo + 1;
+    if (w > 0) ESL_ALLOC(a[jp], sizeof(float) * w);  /* w>0 guaranteed by guard        */
+    else       a[jp] = NULL;
+  }
+  if (cyk_dnc_track) {
+    cyk_dnc_vji_bytes += banded_hb_vji_deck_bytes(i0, i1, j1, j0, v, cp9b);
+    cyk_dnc_note();
+  }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+
+static void
+free_banded_hb_vji_deck(float **a, int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b)
+{
+  int jp;
+  if (a == NULL) return;
+  if (cyk_dnc_track) cyk_dnc_vji_bytes -= banded_hb_vji_deck_bytes(i0, i1, j1, j0, v, cp9b);
+  for (jp = 0; jp <= j0-j1; jp++) if (a[jp] != NULL) free(a[jp]);
+  free(a);
+}
+
+static char **
+alloc_banded_hb_vji_shadow_deck(int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b)
+{
+  int    status;
+  char **a;
+  int    jp, j, jpb, ilo, ihi, w;
+  int    njp = j0 - j1 + 1;
+  if (njp < 1) njp = 1;
+  ESL_ALLOC(a, sizeof(char *) * njp);
+  for (jp = 0; jp < njp; jp++) a[jp] = NULL;
+  for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
+    jp  = j - j1;
+    jpb = j - cp9b->jmin[v];
+    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    w   = ihi - ilo + 1;
+    if (w > 0) ESL_ALLOC(a[jp], sizeof(char) * w);
+    else       a[jp] = NULL;
+  }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+
+/* Set every in-band cell of a banded-HB vji deck for state v to IMPOSSIBLE. */
+static void
+banded_hb_vji_init_impossible(float **a, int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b)
+{
+  int j, jp, jpb, ilo, ihi, i;
+  for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
+    jp  = j - j1;
+    jpb = j - cp9b->jmin[v];
+    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    for (i = ilo; i <= ihi; i++) a[jp][i - ilo] = IMPOSSIBLE;
+  }
+}
+
+/* free a banded-HB vji score matrix (alpha/beta): each deck v is banded, EXCEPT
+ * the EL deck M (full vji, unbanded -- "no band on EL"). NULL decks skipped. The
+ * banded vji shadow matrix is freed by the existing free_vji_shadow_matrix()
+ * (NULL-safe; out-of-band rows are NULL). */
+static void
+free_banded_hb_vji_matrix(float ***a, CM_t *cm, int i0, int i1, int j1, int j0, CP9Bands_t *cp9b)
+{
+  int v;
+  for (v = 0; v <= cm->M; v++) {
+    if (a[v] == NULL) continue;
+    if (v == cm->M) free_vji_deck(a[v], j1, j0);              /* EL deck: full vji */
+    else            free_banded_hb_vji_deck(a[v], i0, i1, j1, j0, v, cp9b);
+    a[v] = NULL;
+  }
+  free(a);
+}
+
 /* Function: generic_splitter_hb()
  *           EPN 2026 [brief 007]
  *
@@ -4573,9 +4745,9 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
 
-  /* EL case: V problem above us; solve EXACTLY (class-2 scope). */
+  /* EL case: V problem above us; solve with banded v_splitter_hb (Stage 1a.2). */
   if (best_k == -1) {
-    v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE);
+    v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE, cp9b);
     return best_sc;
   }
   if (best_k == -2) {
@@ -4591,8 +4763,8 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     return best_sc;
   }
 
-  /* Usual case: V problem (exact) + two banded generic problems. */
-  v_splitter(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE);
+  /* Usual case: banded V problem (Stage 1a.2) + two banded generic problems. */
+  v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE, cp9b);
   tv = tr->n-1;
 
   InsertTraceNode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w);
@@ -4722,7 +4894,7 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
   free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
 
   if (best_v == -1) {
-    v_splitter(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE);
+    v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, cp9b);
     return best_sc;
   }
   if (best_v == -2) {
@@ -4731,8 +4903,8 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
     return best_sc;
   }
 
-  /* Usual case: V problem (exact) + banded wedge problem. */
-  v_splitter(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE);
+  /* Usual case: banded V problem (Stage 1a.2) + banded wedge problem. */
+  v_splitter_hb(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE, cp9b);
   wedge_splitter_hb(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j, cp9b);
   return best_sc;
 }
@@ -5424,6 +5596,696 @@ insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  ERROR:
   cm_Fail("Memory allocation error.");
   return 0.; /* NEVERREACHED */
+}
+
+/*################################################################
+ * Stage 1a.2 (brief 009): banded V-problem (class-2 vji) engines.
+ *
+ * These are the banded analogues of the EXACT vinside()/voutside()/vinsideT()/
+ * v_splitter(), NOT ports of the hazardous QDB vinside_qdb()/.../v_splitter_qdb().
+ * They mirror the exact engines' structure and tie-breaking line-for-line (so the
+ * non-clip optimum is byte-identical to Stage 1b, which used the exact engines),
+ * but (a) store/iterate ONLY the in-band cells of each vji deck (offset-indexed
+ * via vji_inband()), and (b) design out the QDB negative-malloc crash: the deck
+ * allocator never makes a non-positive row, and v_splitter_hb has an EXPLICIT
+ * empty-band path that terminates cleanly instead of recursing on degenerate
+ * corners. The bands are the SAME per-(v,j) CP9 bands cm_CYKInsideAlignHB() uses,
+ * so the whole D&C now explores exactly the oracle's banded space -- the basis
+ * for byte-exactness vs the oracle on CLIP cases (the Stage 1a.2 gate).
+ *################################################################*/
+
+/* Function: vinside_hb()  [brief 009] -- banded analogue of vinside(). */
+static float
+vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+	   int r, int z, int i0, int i1, int j1, int j0, int useEL,
+	   int do_full, float ***a, float ****ret_a,
+	   char ****ret_shadow,
+	   int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b)
+{
+  int      status;
+  char  ***shadow = NULL;
+  int      v, i, j;
+  int      w1, w2;
+  int      jp, op, op_y;
+  int     *touch;
+  int      y, yoffset;
+  float    sc, val;
+  int      b;
+  float    bsc;
+  int      jpb, ilo, ihi;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1; /* for the full EL deck's free */
+
+  if (a == NULL) {
+    ESL_ALLOC(a, sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) a[v] = NULL;
+  }
+
+  /* the whole split set w1<=v<=w2 (z's node) is allocated + IMPOSSIBLE-init */
+  w1 = cm->nodemap[cm->ndidx[z]];
+  w2 = cm->cfirst[w1]-1;
+  for (v = w1; v <= w2; v++) {
+    a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
+    banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
+  }
+
+  if (ret_shadow != NULL) {
+    ESL_ALLOC(shadow, sizeof(char **) * cm->M);
+    for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+  }
+
+  /* Boundary condition: seed the one non-IMPOSSIBLE cell at z. Global: connect z
+   * at (j1,i1). Local (useEL): connect z to EL (unroll one recursion step). Every
+   * write is guarded -- an out-of-band seed means the V-problem is unreachable. */
+  if (! useEL) {
+    if (vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) a[z][0][op] = 0.;
+  } else {
+    if (ret_shadow != NULL) shadow[z] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,z,cp9b);
+    switch (cm->sttype[z]) {
+    case D_st:
+    case S_st:
+      if (vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) {
+	a[z][0][op] = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (ret_shadow != NULL) shadow[z][0][op] = USED_EL;
+      }
+      break;
+    case MP_st:
+      if (i0 == i1 || j1 == j0) break;
+      if (vji_inband(cp9b, z, j1+1, i1-1, i0,i1,j1,j0, &op)) {
+	val = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (dsq[i1-1] < cm->abc->K && dsq[j1+1] < cm->abc->K)
+	  val += cm->esc[z][(int) (dsq[i1-1]*cm->abc->K+dsq[j1+1])];
+	else
+	  val += DegeneratePairScore(cm->abc, cm->esc[z], dsq[i1-1], dsq[j1+1]);
+	if (val < IMPOSSIBLE) val = IMPOSSIBLE;
+	a[z][1][op] = val;
+	if (ret_shadow != NULL) shadow[z][1][op] = USED_EL;
+      }
+      break;
+    case ML_st:
+    case IL_st:
+      if (i0 == i1) break;
+      if (vji_inband(cp9b, z, j1, i1-1, i0,i1,j1,j0, &op)) {
+	val = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (dsq[i1-1] < cm->abc->K)
+	  val += cm->esc[z][(int) dsq[i1-1]];
+	else
+	  val += esl_abc_FAvgScore(cm->abc, dsq[i1-1], cm->esc[z]);
+	if (val < IMPOSSIBLE) val = IMPOSSIBLE;
+	a[z][0][op] = val;
+	if (ret_shadow != NULL) shadow[z][0][op] = USED_EL;
+      }
+      break;
+    case MR_st:
+    case IR_st:
+      if (j1 == j0) break;
+      if (vji_inband(cp9b, z, j1+1, i1, i0,i1,j1,j0, &op)) {
+	val = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (dsq[j1+1] < cm->abc->K)
+	  val += cm->esc[z][(int) dsq[j1+1]];
+	else
+	  val += esl_abc_FAvgScore(cm->abc, dsq[j1+1], cm->esc[z]);
+	if (val < IMPOSSIBLE) val = IMPOSSIBLE;
+	a[z][1][op] = val;
+	if (ret_shadow != NULL) shadow[z][1][op] = USED_EL;
+      }
+      break;
+    }
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
+  for (v = 0;    v < r;      v++) touch[v] = 0;
+  for (v = r;    v <= w2;    v++) touch[v] = cm->pnum[v]; /* to bottom of split set */
+  for (v = w2+1; v < cm->M;  v++) touch[v] = 0;
+
+  /* Special case: begin transition straight into z on empty subsequences. */
+  if (allow_begin && j0-j1 == 0 && i1-i0 == 0) {
+    if (vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) {
+      b   = z;
+      bsc = a[z][0][op] + cm->beginsc[z];
+      if (z == 0) {
+	a[0][0][op] = bsc;
+	if (ret_shadow != NULL) shadow[0][0][op] = USED_LOCAL_BEGIN;
+      }
+    }
+  }
+
+  /* Main recursion: v = w1-1 downto r. Only in-band cells of each deck. */
+  for (v = w1-1; v >= r; v--)
+    {
+      a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
+      banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
+      if (ret_shadow != NULL)
+	shadow[v] = alloc_banded_hb_vji_shadow_deck(i0, i1, j1, j0, v, cp9b);
+
+      if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
+	cm_Fail("you told me you wouldn't ever do that again.");
+
+      for (j = ESL_MAX(j1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
+	jp  = j - j1;
+	jpb = j - jmin[v];
+	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	/* i DECREASING (matches exact vinside): IL self-transitions read child
+	 * (j,i+1), so the larger-i cell must be computed first. */
+	for (i = ihi; i >= ilo; i--)
+	  {
+	    int d = j - i + 1;
+	    op = i - ilo;
+	    y  = cm->cfirst[v];
+
+	    if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) {
+	      /* child y at (j,i) */
+	      if (vji_inband(cp9b, y, j, i, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j, i, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	    else if (cm->sttype[v] == MP_st) {
+	      /* child y at (j-1,i+1) */
+	      if (vji_inband(cp9b, y, j-1, i+1, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp-1][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j-1, i+1, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp-1][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		a[v][jp][op] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
+	      else
+		a[v][jp][op] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	    else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+	      /* child y at (j,i+1) */
+	      if (vji_inband(cp9b, y, j, i+1, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j, i+1, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (dsq[i] < cm->abc->K)
+		a[v][jp][op] += cm->esc[v][dsq[i]];
+	      else
+		a[v][jp][op] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	    else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+	      /* child y at (j-1,i) */
+	      if (vji_inband(cp9b, y, j-1, i, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp-1][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j-1, i, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp-1][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (dsq[j] < cm->abc->K)
+		a[v][jp][op] += cm->esc[v][dsq[j]];
+	      else
+		a[v][jp][op] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	  } /* end loop over i */
+      } /* end loop over j; finished deck v */
+
+      /* local begin bookkeeping (cell (j0,i0)) */
+      if (allow_begin && vji_inband(cp9b, v, j0, i0, i0,i1,j1,j0, &op) &&
+	  a[v][j0-j1][op] + cm->beginsc[v] > bsc) {
+	b   = v;
+	bsc = a[v][j0-j1][op] + cm->beginsc[v];
+      }
+      if (allow_begin && v == 0 && vji_inband(cp9b, 0, j0, i0, i0,i1,j1,j0, &op) &&
+	  bsc > a[0][j0-j1][op]) {
+	a[0][j0-j1][op] = bsc;
+	if (ret_shadow != NULL) shadow[v][j0-j1][op] = USED_LOCAL_BEGIN;
+      }
+
+      /* reuse memory: free children whose touch count hits 0 (banded: no pool). */
+      if (! do_full) {
+	for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++) {
+	  touch[y]--;
+	  if (touch[y] == 0) { free_banded_hb_vji_deck(a[y], i0,i1,j1,j0, y, cp9b); a[y] = NULL; }
+	}
+      }
+    } /* end loop over v */
+
+  { int dpr; sc = vji_inband(cp9b, r, j0, i0, i0,i1,j1,j0, &dpr) ? a[r][j0-j1][dpr] : IMPOSSIBLE; }
+  if (ret_b   != NULL) *ret_b   = b;
+  if (ret_bsc != NULL) *ret_bsc = bsc;
+
+  if (ret_a == NULL) {
+    for (v = r; v <= w2; v++)
+      if (a[v] != NULL) { free_banded_hb_vji_deck(a[v], i0,i1,j1,j0, v, cp9b); a[v] = NULL; }
+    free(a);
+  } else *ret_a = a;
+
+  free(touch);
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
+/* Function: voutside_hb()  [brief 009] -- banded analogue of voutside(). */
+static void
+voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+	    int r, int z, int i0, int i1, int j1, int j0, int useEL,
+	    int do_full, float ***beta, float ****ret_beta, CP9Bands_t *cp9b)
+{
+  int      status;
+  int      v, y;
+  int      i, j;
+  int      jp, ip, op, op_y;
+  float    sc;
+  int     *touch;
+  float    escore;
+  int      voffset;
+  int      jpb, ilo, ihi;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1; /* for the full EL deck's free */
+
+  if (beta == NULL) {
+    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) beta[v] = NULL;
+  }
+
+  /* root deck */
+  beta[r] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, r, cp9b);
+  banded_hb_vji_init_impossible(beta[r], i0, i1, j1, j0, r, cp9b);
+  if (vji_inband(cp9b, r, j0, i0, i0,i1,j1,j0, &op)) beta[r][j0-j1][op] = 0;
+
+  /* EL deck: FULL/unbanded ("no band on EL"). */
+  if (useEL && cm->flags & CMH_LOCAL_END) {
+    beta[cm->M] = alloc_vji_deck(i0, i1, j1, j0);
+    for (jp = 0; jp <= j0-j1; jp++)
+      for (ip = 0; ip <= i1-i0; ip++)
+	beta[cm->M][jp][ip] = IMPOSSIBLE;
+  }
+  if (useEL && NOT_IMPOSSIBLE(cm->endsc[r])) {
+    switch (cm->sttype[r]) {
+    case MP_st:
+      if (i0 == i1 || j1 == j0) break;
+      if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
+	escore = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
+      else
+	escore = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
+      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + (cm->el_selfsc * ((j0-1)-(i0+1)+1)) + escore;
+      break;
+    case ML_st:
+    case IL_st:
+      if (i0 == i1) break;
+      if (dsq[i0] < cm->abc->K) escore = cm->esc[r][(int) dsq[i0]];
+      else                      escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[r]);
+      beta[cm->M][j0-j1][1] = cm->endsc[r] + (cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
+      break;
+    case MR_st:
+    case IR_st:
+      if (j0 == j1) break;
+      if (dsq[j0] < cm->abc->K) escore = cm->esc[r][(int) dsq[j0]];
+      else                      escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[r]);
+      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + (cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
+      break;
+    case S_st:
+    case D_st:
+      beta[cm->M][j0-j1][0] = cm->endsc[r] + (cm->el_selfsc * ((j0)-(i0)+1));
+      break;
+    default:  cm_Fail("bogus parent state %d\n", cm->sttype[r]);
+    }
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
+  for (v = 0;   v < r;     v++) touch[v] = 0;
+  for (v = z+1; v < cm->M; v++) touch[v] = 0;
+  for (v = r;   v <= z;    v++) {
+    if (cm->sttype[v] == B_st) touch[v] = 2;
+    else                       touch[v] = cm->cnum[v];
+  }
+
+  /* Main loop down through the decks. */
+  for (v = r+1; v <= z; v++)
+    {
+      beta[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
+      banded_hb_vji_init_impossible(beta[v], i0, i1, j1, j0, v, cp9b);
+
+      /* local begin into v at (j0,i0) */
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN)) {
+	if (vji_inband(cp9b, v, j0, i0, i0,i1,j1,j0, &op) && cm->beginsc[v] > beta[v][j0-j1][op])
+	  beta[v][j0-j1][op] = cm->beginsc[v];
+      }
+
+      /* main recursion: in-band cells, j DECREASING, i INCREASING (insert
+       * self-transitions: beta[v][j][i] depends on beta[v][j][i-1] (IL) /
+       * beta[v][j+1][i] (IR), so larger-(j),smaller-(i) cells must precede). */
+      for (j = ESL_MIN(j0, jmax[v]); j >= ESL_MAX(j1, jmin[v]); j--) {
+	jp  = j - j1;
+	jpb = j - jmin[v];
+	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	for (i = ilo; i <= ihi; i++) {
+	  op = i - ilo;
+	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	    if (y < r) continue;
+	    voffset = v - cm->cfirst[y];
+	    switch (cm->sttype[y]) {
+	    case MP_st:
+	      if (j == j0 || i == i0) continue;
+	      if (! vji_inband(cp9b, y, j+1, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+	      else
+		escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+	      if ((sc = beta[y][jp+1][op_y] + cm->tsc[y][voffset] + escore) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    case ML_st:
+	    case IL_st:
+	      if (i == i0) continue;
+	      if (! vji_inband(cp9b, y, j, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K) escore = cm->esc[y][(int) dsq[i-1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
+	      if ((sc = beta[y][jp][op_y] + cm->tsc[y][voffset] + escore) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if (j == j0) continue;
+	      if (! vji_inband(cp9b, y, j+1, i, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[j+1] < cm->abc->K) escore = cm->esc[y][(int) dsq[j+1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
+	      if ((sc = beta[y][jp+1][op_y] + cm->tsc[y][voffset] + escore) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    case S_st:
+	    case E_st:
+	    case D_st:
+	      if (! vji_inband(cp9b, y, j, i, i0,i1,j1,j0, &op_y)) continue;
+	      if ((sc = beta[y][jp][op_y] + cm->tsc[y][voffset]) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
+	    }
+	  } /* end loop over parents */
+	  if (beta[v][jp][op] < IMPOSSIBLE) beta[v][jp][op] = IMPOSSIBLE;
+	} /* end loop over i */
+      } /* end loop over j */
+
+      /* v->EL local-end transitions (EL deck M is full/unbanded; read beta[v]
+       * banded via vji_inband, write beta[M] at the full [jp][ip] index). */
+      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
+	for (jp = j0-j1; jp >= 0; jp--) {
+	  j = jp + j1;
+	  for (ip = 0; ip <= i1-i0; ip++) {
+	    i = ip + i0;
+	    switch (cm->sttype[v]) {
+	    case MP_st:
+	      if (j == j0 || i == i0) continue;
+	      if (! vji_inband(cp9b, v, j+1, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+	      else
+		escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
+	      if ((sc = beta[v][jp+1][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    case ML_st:
+	    case IL_st:
+	      if (i == i0) continue;
+	      if (! vji_inband(cp9b, v, j, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K) escore = cm->esc[v][(int) dsq[i-1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
+	      if ((sc = beta[v][jp][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if (j == j0) continue;
+	      if (! vji_inband(cp9b, v, j+1, i, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[j+1] < cm->abc->K) escore = cm->esc[v][(int) dsq[j+1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
+	      if ((sc = beta[v][jp+1][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    case S_st:
+	    case D_st:
+	    case E_st:
+	      if (! vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op_y)) continue;
+	      if ((sc = beta[v][jp][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1))) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    default:  cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	    }
+	  }
+	}
+      }
+
+      /* reuse memory: push parents no longer needed (banded: free outright). */
+      if (! do_full) {
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  touch[y]--;
+	  if (touch[y] == 0) { free_banded_hb_vji_deck(beta[y], i0,i1,j1,j0, y, cp9b); beta[y] = NULL; }
+	}
+      }
+    } /* end loop over decks v */
+
+  if (ret_beta == NULL) {
+    for (v = r; v <= z; v++)
+      if (beta[v] != NULL) { free_banded_hb_vji_deck(beta[v], i0,i1,j1,j0, v, cp9b); beta[v] = NULL; }
+    if (useEL && cm->flags & CMH_LOCAL_END) { free_vji_deck(beta[cm->M], j1, j0); beta[cm->M] = NULL; }
+    free(beta);
+  } else *ret_beta = beta;
+
+  free(touch);
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+}
+
+/* Function: vinsideT_hb()  [brief 009] -- banded analogue of vinsideT(). */
+static float
+vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+	    int r, int z, int i0, int i1, int j1, int j0, int useEL,
+	    int allow_begin, CP9Bands_t *cp9b)
+{
+  char ***shadow;
+  float   sc;
+  int     v, y;
+  int     j, i;
+  int     op;
+  int     yoffset;
+  int     b;
+  float   bsc;
+
+  if (r == z) {
+    InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r);
+    return 0.;
+  }
+
+  sc = vinside_hb(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
+		  BE_EFFICIENT, NULL, NULL, &shadow,
+		  allow_begin, &b, &bsc, cp9b);
+
+  v = r;
+  j = j0;
+  i = i0;
+  while (1) {
+    /* Defensive (brief 003 hazard): if the on-path cell fell out of band (empty/
+     * collapsed V-problem), terminate cleanly by attaching z -- never crash. */
+    if (! vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op)) {
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, z);
+      break;
+    }
+    yoffset = shadow[v][j-j1][op];
+
+    switch (cm->sttype[v]) {
+    case D_st:            break;
+    case MP_st: i++; j--; break;
+    case ML_st: i++;      break;
+    case MR_st:      j--; break;
+    case IL_st: i++;      break;
+    case IR_st:      j--; break;
+    case S_st:            break;
+    default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+    }
+
+    if (yoffset == USED_EL) {
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+      break;
+    }
+    else if (yoffset == USED_LOCAL_BEGIN) {
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+      v = b;
+      if (! useEL && v == z) break;
+    }
+    else {
+      y = cm->cfirst[v] + yoffset;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+      if (! useEL && v == z) break;
+    }
+  }
+
+  free_vji_shadow_matrix(shadow, cm->M, j1, j0);
+  return sc;
+}
+
+/* Function: v_splitter_hb()  [brief 009] -- banded analogue of v_splitter(). */
+static void
+v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+	      int r, int z, int i0, int i1, int j1, int j0, int useEL, CP9Bands_t *cp9b)
+{
+  float ***alpha, ***beta;
+  float    sc;
+  int      v, w, y;
+  int      i, j, jp, ip, op;
+  int      best_v, best_i, best_j;
+  float    best_sc;
+  int      midnode;
+  int      b;
+  float    bsc;
+
+  /* 1. Boundary condition or small enough -> banded vinsideT_hb. */
+  if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z ||
+      vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT) {
+    vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), cp9b);
+    return;
+  }
+
+  /* 2. Find the split set, w..y. */
+  midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r]) / 2);
+  w = cm->nodemap[midnode];
+  y = cm->cfirst[w]-1;
+
+  /* 3. Banded vinside up to w, banded voutside down to y. */
+  vinside_hb (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT,
+	      NULL, &alpha, NULL, (r==0), &b, &bsc, cp9b);
+  voutside_hb(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT,
+	      NULL, &beta, cp9b);
+
+  /* 4. Find the optimal split: v, i, j -- over in-band cells only. The loop
+   * NESTING (v, then ip, then jp) and strict '>' MUST match the exact v_splitter:
+   * with ties broken by first-to-reach-the-max, a different nesting would pick a
+   * different equal-scoring split and diverge from the cm_CYKInsideAlignHB
+   * parsetree (seen on LSU, where V-problems are big enough to actually split). */
+  best_sc = IMPOSSIBLE;
+  best_v  = -99;
+  for (v = w; v <= y; v++)
+    for (ip = 0; ip <= i1-i0; ip++) {
+      i = ip + i0;
+      for (jp = 0; jp <= j0-j1; jp++) {
+	j = jp + j1;
+	if (vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op) &&
+	    (sc = alpha[v][jp][op] + beta[v][jp][op]) > best_sc) {
+	  best_sc = sc;
+	  best_v  = v;
+	  best_i  = i;
+	  best_j  = j;
+	}
+      }
+    }
+
+  /* Local ends: maybe better off in EL (full deck, no band). */
+  if (useEL && (cm->flags & CMH_LOCAL_END)) {
+    for (ip = 0; ip <= i1-i0; ip++)
+      for (jp = 0; jp <= j0-j1; jp++)
+	if ((sc = beta[cm->M][jp][ip]) > best_sc) {
+	  best_sc = sc;
+	  best_v  = -1;
+	  best_i  = ip + i0;
+	  best_j  = jp + j1;
+	}
+  }
+
+  /* Local begins: maybe better off in root. */
+  if (r == 0 && (cm->flags & CMH_LOCAL_BEGIN)) {
+    if (bsc > best_sc) {
+      best_sc = bsc;
+      best_v  = -2;
+      best_i  = i0;
+      best_j  = j0;
+    }
+  }
+
+  free_banded_hb_vji_matrix(alpha, cm, i0, i1, j1, j0, cp9b);
+  free_banded_hb_vji_matrix(beta,  cm, i0, i1, j1, j0, cp9b);
+
+  /* EXPLICIT empty-band path (THE brief-003 hazard, designed out): if no in-band
+   * split point beat IMPOSSIBLE, this V-problem is unreachable under the bands.
+   * Do NOT recurse with degenerate best_i/best_j (that is the QDB negative-malloc
+   * crash). Terminate cleanly via the banded base case (which defensively
+   * attaches z). */
+  if (best_v == -99 || ! NOT_IMPOSSIBLE(best_sc)) {
+    vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), cp9b);
+    return;
+  }
+
+  if (best_v == -1) {
+    v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE, cp9b);
+    return;
+  }
+  if (best_v == -2) {
+    if (b != z)
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b);
+    v_splitter_hb(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL, cp9b);
+    return;
+  }
+
+  /* The optimal split into two V problems:
+   *    V:  r..v,      i0..best_i, best_j..j0
+   *    V:  best_v..z, best_i..i1, j1..best_j
+   */
+  v_splitter_hb(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE, cp9b);
+  v_splitter_hb(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL, cp9b);
+  return;
 }
 
 /* Function: vsplitter_b()
