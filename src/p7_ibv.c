@@ -46,6 +46,19 @@
 #define P7IBV_K_ALIGN         16
 #define P7IBV_OPTIMAL_SANITY  1.0e7f
 
+/* Float-precision guard on the optimal score.  The band threshold test
+ * (through >= optimal - margin, margin = max(delta, EPS)) stays reliable
+ * while the float ULP at the score magnitude is << margin.  ULP(through)
+ * ~= 2*|optimal|*2^-23, so the test is safe while
+ *   |optimal| <= margin * 2^23 / (2 * SAFETY).
+ * With SAFETY=8 the bound is margin * 2^19.  At the default delta=3000 that
+ * is ~1.6e9 milli-bits, which admits genome-scale models (HSV optimal is
+ * O(1e7-1e8)).  The old fixed 1e7 guard (tuned to ULP < EPS=1) was far too
+ * conservative -- it tripped on HSV/MPXV even though the real band margin is
+ * delta, not EPS.  Floor the guard at OPTIMAL_SANITY so tiny deltas still
+ * permit reasonable scores. */
+#define P7IBV_ULP_SAFETY_SHIFT 19   /* margin << 2^19 ULPs */
+
 /* D&C adaptive base_slab: when the caller passes base_slab <= 0, pick the
  * largest slab whose base-case F+B storage (= 2*(slab+1)*3*k_stride floats)
  * fits within P7IBV_SLAB_CAP_BYTES, clamped to [MIN, MAX].  This keeps the
@@ -469,13 +482,17 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     if (fd_L[M] > optimal) optimal = fd_L[M];
   }
   assert(optimal == optimal);
-  if (fabsf(optimal) > P7IBV_OPTIMAL_SANITY)
-    ESL_FAIL(eslEINVAL, errbuf,
-             "p7_Seq2BandsIBV: |optimal|=%g milli-bits exceeds %g (float ULP > EPS); "
-             "consider double-precision fallback",
-             (double) optimal, (double) P7IBV_OPTIMAL_SANITY);
   floor_milli = (float) delta_milli;
   if (floor_milli < P7IBV_EPS) floor_milli = P7IBV_EPS;
+  {
+    float guard = floor_milli * (float)(1u << P7IBV_ULP_SAFETY_SHIFT);
+    if (guard < P7IBV_OPTIMAL_SANITY) guard = P7IBV_OPTIMAL_SANITY;
+    if (fabsf(optimal) > guard)
+      ESL_FAIL(eslEINVAL, errbuf,
+               "p7_Seq2BandsIBV: |optimal|=%g milli-bits exceeds guard %g "
+               "(float ULP approaches delta=%d margin; need double precision)",
+               (double) optimal, (double) guard, delta_milli);
+  }
   thr = optimal - floor_milli;
 
   ESL_ALLOC(i2k,  sizeof(int) * (L + 1));
@@ -905,12 +922,17 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     if (rD[M] > optimal) optimal = rD[M];
   }
   assert(optimal == optimal);
-  if (fabsf(optimal) > P7IBV_OPTIMAL_SANITY)
-    ESL_FAIL(eslEINVAL, errbuf,
-             "p7_Seq2BandsIBV_dnc: |optimal|=%g exceeds %g (float ULP > EPS)",
-             (double) optimal, (double) P7IBV_OPTIMAL_SANITY);
   floor_milli = (float) delta_milli;
   if (floor_milli < P7IBV_EPS) floor_milli = P7IBV_EPS;
+  {
+    float guard = floor_milli * (float)(1u << P7IBV_ULP_SAFETY_SHIFT);
+    if (guard < P7IBV_OPTIMAL_SANITY) guard = P7IBV_OPTIMAL_SANITY;
+    if (fabsf(optimal) > guard)
+      ESL_FAIL(eslEINVAL, errbuf,
+               "p7_Seq2BandsIBV_dnc: |optimal|=%g milli-bits exceeds guard %g "
+               "(float ULP approaches delta=%d margin; need double precision)",
+               (double) optimal, (double) guard, delta_milli);
+  }
   thr = optimal - floor_milli;
   /* Reset roll_F for D&C streaming reuse. */
   for (size_t c = 0; c < 6 * ks; c++) ctx.roll_F[c] = P7IBV_NEG_INF;
