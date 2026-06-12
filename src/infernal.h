@@ -1879,11 +1879,16 @@ typedef struct cm_s {
   int     p7bpad;       /* p7 band pad for p7_Seq2BandsVit (CM_ALIGN_P7BANDED); default 10    */
   int     p7_use_pinbridge; /* if TRUE, replace full p7_GViterbi with SW-pinbridge prefilter + banded p7 GViterbi (--p7pinbridge) */
   int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
+  int     p7_pinbridge_vit_gaps; /* if TRUE, use exact mini-Viterbi gap costs in gap-aware LSIS (--p7pinbridge-vitgaps); default FALSE (closed-form) */
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
   int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 068);
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
+  int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 120) */
+  int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
+  int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
+  int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -2789,12 +2794,45 @@ extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *a
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 
+/* CM_PB_OM32: Infernal-side 32-bit striped emission table for the
+ * --p7pinbridge SW prefilter scan (brief 094). Parallels HMMER's 16-bit
+ * P7_OPROFILE->rwv but with int32 lanes so the SW DP accumulation does not
+ * saturate on highly-conserved / self-alignment-scale inputs (where the
+ * 16-bit kernel pins everything at +32767, destroying score-based pin
+ * ranking). Opaque here (contains __m128i); full definition + Create/Build/
+ * Destroy live in cm_p7_band.c. We only READ from HMMER's P7_PROFILE to build
+ * it; HMMER itself is never modified. */
+typedef struct cm_pb_om32_s CM_PB_OM32;
+
+/* CM_P7_OM_HOLDER: reusable LOCAL p7 profile + optimized profile for the
+ * --p7pinbridge SW prefilter scan (brief 090). The LOCAL config of cm->fp7
+ * depends only on the model (not the residues), so it can be built once per
+ * worker thread / per block and reused across all sequences, with only a
+ * per-sequence p7_oprofile_ReconfigLength(). This eliminates the per-sequence
+ * "om_build" cost (~40% of pinbridge band derivation at M=360).
+ *
+ * MUST NOT be shared across threads: p7_oprofile_ReconfigLength() mutates om,
+ * so each worker thread needs its own holder. Pass NULL to
+ * p7_Seq2BandsPinBridgeWrap() to get per-call build-and-free behavior (the
+ * single-sequence search/scan callers do this). */
+typedef struct cm_p7_om_holder_s {
+  P7_PROFILE  *gm_local;  /* LOCAL config of cm->fp7 (Convert source only)    */
+  P7_OPROFILE *om;        /* optimized LOCAL profile used by the SW scan      */
+  CM_PB_OM32  *om32;      /* 32-bit emission table for the 32-bit SW scan (brief 094) */
+  int          M;         /* model size the holder was built for (sanity)     */
+  int          built;     /* TRUE once gm_local/om/om32 are populated         */
+} CM_P7_OM_HOLDER;
+
+extern void  cm_p7_om_holder_Init (CM_P7_OM_HOLDER *h);
+extern void  cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h);
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
-				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
+				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+				      CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
@@ -3245,8 +3283,14 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               P7_BG *bg, P7_TRACE *p7_tr,
                                               ESL_DSQ *dsq, int L, int pad, int *nodepad,
                                               int hopback, int vitend,
+                                              CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+                                    int delta_milli, int base_slab,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
@@ -3442,7 +3486,14 @@ extern int   ILogsumNI(int s1, int s2);
 extern int   ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db);
 extern void  FLogsumInit(void);
 extern float LogSum2(float p1, float p2);
-extern float FLogsum(float p1, float p2);
+extern float flogsum_lookup[LOGSUM_TBL];
+static inline float
+FLogsum(float s1, float s2)
+{
+  const float max = ESL_MAX(s1, s2);
+  const float min = ESL_MIN(s1, s2);
+  return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
+}
 
 /* from mpisupport.c */
 #if HAVE_MPI
