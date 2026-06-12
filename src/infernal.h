@@ -2873,6 +2873,8 @@ extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, i
 extern float CYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CP9Bands_t *cp9b);
 extern void  CYKDeckTrackReset(void);   /* brief 007: D&C live-deck high-water instrumentation */
 extern double CYKDeckTrackMaxMb(void);
+extern double CYKDeckTrackVjdAtPeakMb(void); /* brief 008: class-1 banded-vjd bytes at peak */
+extern double CYKDeckTrackVjiAtPeakMb(void); /* brief 008: class-2 (V-problem) vji bytes at peak */
 extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
