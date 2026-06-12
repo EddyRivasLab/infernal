@@ -871,8 +871,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
 	p7_ReconfigLength(gm, sq->n);
 
-	/* preflight: check HMM matrix size vs --mxsize before GrowTo */
-	{
+	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
+	 * Skipped under --p7ibv: the full P7_GMX is never allocated. */
+	if (! do_p7ibv) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
 	  int    nmat         = do_hmmnoband ? 2 : 1;
 	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -1397,8 +1398,9 @@ hmm_pipeline_thread(void *arg)
     /* Reconfigure profile for this sequence length */
     p7_ReconfigLength(info->gm, sq->n);
 
-    /* preflight: check HMM matrix size vs --mxsize before GrowTo */
-    {
+    /* preflight: check HMM matrix size vs --mxsize before GrowTo.
+     * Skipped under --p7ibv: the full P7_GMX is never allocated. */
+    if (! info->do_p7ibv) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
       int    nmat         = info->do_hmmnoband ? 2 : 1;
       double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
