@@ -9,7 +9,7 @@
  *   --p7ibv --p7ibv-mem; --p7ibv alone still calls the flat p7_Seq2BandsIBV.
  *
  * SSE/memory conventions (unchanged from brief 121 C2/C3):
- *   k_stride = ((M+1+15) & ~15)  (16-float = 64-byte alignment)
+ *   k_stride = ((M+4+15) & ~15)  (16-float align + >=3 pad slots above M)
  *   Forward row i: scalar prefix k=0..3, SSE bulk k=4..k_sse_end-1 for M+I,
  *     scalar tail, scalar left-to-right D-fill.
  *   Backward row i from row i+1: scalar right-to-left D-fill, SSE bulk M+I,
@@ -370,7 +370,16 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   if (L < 1 || M < 1)
     ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV: bad L=%d or M=%d", L, M);
 
-  k_stride   = ((size_t)(M + 1) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
+  /* k_stride must leave padding ABOVE index M: the SSE backward loads
+   * _mm_loadu_ps(&BM_next[k+1]) reach index k+4 = k_sse_end <= M+1, so we
+   * need k_stride >= M+2. Rounding (M+1) up to 16 gives ZERO padding when
+   * M+1 is a multiple of 16 (M == 15 mod 16, e.g. M=287), leaving index M+1
+   * out of bounds. Round (M+4) up instead to guarantee >=3 padding slots
+   * (all NEG_INF), so the overread folds harmlessly. (Latent in brief 121's
+   * flat code too, but benign there with separate per-array allocations;
+   * harmful in the D&C's contiguous arena where BM_next[M+1] aliases the
+   * next state's k=0 cell.) */
+  k_stride   = ((size_t)(M + 4) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
   pool_cells = (size_t)(L + 1) * k_stride;
 
   if ((status = ibv_alloc_floats(k_stride, &MM_t)) != eslOK) goto ERROR;
@@ -808,7 +817,10 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if (L < 1 || M < 1)
     ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_dnc: bad L=%d or M=%d", L, M);
 
-  ks = ((size_t)(M + 1) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
+  /* See p7_Seq2BandsIBV: (M+4) rounding guarantees padding above index M so
+   * the SSE backward's k+4 overread folds into NEG_INF (critical for the
+   * contiguous arena, where M+1 would otherwise alias the next state). */
+  ks = ((size_t)(M + 4) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
 
   /* Adaptive base_slab when caller passes <= 0: cap base-case slab memory. */
   if (base_slab <= 0) {
