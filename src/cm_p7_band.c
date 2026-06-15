@@ -7197,7 +7197,20 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 	  float path[2];
 	  path[0] = t1b * GXB_XMX(gx, i, p7G_N);
 	  path[1] = t2b * GXB_XMX(gx, i, p7G_J);
-	  scur = (path[0] > path[1]) ? p7T_N : p7T_J;
+	  /* Brief 131: under a unihit profile (E->J == -inf, set by
+	   * p7_ProfileConfig for UNILOCAL/UNIGLOCAL), the J state is
+	   * semantically unreachable, so B must enter from N. The OA fill
+	   * floors forbidden transitions at FLT_MIN rather than hard -inf, so
+	   * xJ can be 0 (not -inf); combined with the strict-'>' tie-break
+	   * below, an xN==xJ==0 tie (which IBV's full-width boundary widening
+	   * at rows 1/L-1/L induces) would otherwise default to a spurious
+	   * p7T_J that map_new_msa() rejects ("J state unsupported"). Forcing N
+	   * here is correct, not heuristic: with E->J blocked no residue can
+	   * legitimately reach J. NOTE: do not "resync to stock" generic_optacc
+	   * select_b and drop this guard -- stock's unbanded path never produces
+	   * the boundary tie, but the IBV-banded path does. */
+	  if (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) scur = p7T_N;
+	  else scur = (path[0] > path[1]) ? p7T_N : p7T_J;
 	}
 	break;
 
