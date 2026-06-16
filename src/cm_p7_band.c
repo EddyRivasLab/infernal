@@ -2030,6 +2030,67 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	}
       }
 
+      /* brief 134: BM (B->M_k) coverage fix per brief 130 phase 3.
+       * The match loop above fills only k in [kn,kx], clipped by the diagonal
+       * MM-predecessor bound (kx=ESL_MIN(kmax[i],kmax[i-1]+1) at :1979).  The
+       * begin transition B=(i-1,0)->M_k and the EL-from-into-M contributions do
+       * not need that diagonal predecessor, but folding them inside the match
+       * loop gates them on it.  When row 0 is pinned by IBV (kmax[0]=0), row 1
+       * enters only M_1, dropping begin mass into M_2..M_M that cp9_BackwardP7BF
+       * counts over the full child band -> F<B asymmetry (brief 130).
+       *
+       * Fix: a dedicated pass over the full row band [max(1,kmin[i]),kmax[i]]
+       * MINUS the [kn,kx] range already handled by the match loop (skip to avoid
+       * double-count).  These supplementary cells have no in-band diagonal
+       * predecessor (low range k<=kmin[i-1], high range k>kmax[i-1]+1), so sc
+       * starts at -inf; we add begin + EL-from-into-M and fold the result into
+       * endsc (M->E) and elmx (M->EL) exactly as the match loop does.  Runs
+       * BEFORE the delete recursion and erow accumulation so they observe the
+       * corrected mmx[i][k]/endsc/elmx.  Gated on INBAND(i-1,0) && mmx[i-1][0] !=
+       * -inf (begin mass present).  kn/kx still hold the match-loop values here
+       * (the insert loop reassigns them below).  :1979 stays UNCHANGED.
+       */
+      if(INBAND(i-1, 0) && mmx[i-1][0] != -eslINFINITY) {
+	int k_lo = ESL_MAX(1, kmin[i]);
+	int k_hi = kmax[i];
+	for (k = k_lo; k <= k_hi; k++) {
+	  if(k >= kn && k <= kx) continue;   /* already filled by the match loop */
+	  kpcur = k - kmin[i];
+
+	  sc = mmx[i-1][0] + Scorify(CP9TSC(cp9O_BM,k));  /* begin; diagonal predecessor out of band here */
+
+	  if (cp9->flags & CPLAN9_EL) {
+	    int c_el, kpprv_el;
+	    for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
+	      if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
+		kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
+		sc = p7_FLogsum(sc, elmx[i-1][kpprv_el]);
+	      }
+	    }
+	  }
+
+	  if(sc != -eslINFINITY) {
+	    mmx[i][kpcur] = sc + Scorify(msc_i[k]);
+	    endsc = p7_FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+	  }
+	  else {
+	    mmx[i][kpcur] = -eslINFINITY;
+	  }
+
+	  {
+	    float el_sc = -eslINFINITY;
+	    if ((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+	      el_sc = mmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
+	      if (INBAND(i-1, k)) {                                  /* EL self-loop */
+		int kpprv_el = k - kmin[i-1];
+		el_sc = p7_FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
+	      }
+	    }
+	    elmx[i][kpcur] = el_sc;
+	  }
+	}
+      }
+
       /* insert */
       kn = ESL_MAX(kmin[i], kmin[i-1]);
       kx = ESL_MIN(kmax[i], kmax[i-1]);
