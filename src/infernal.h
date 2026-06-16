@@ -3290,6 +3290,7 @@ extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, 
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int delta_milli, int base_slab,
+                                    int do_boundary_widen,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 

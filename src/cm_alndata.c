@@ -502,6 +502,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      _p7b_kind = "p7ibv-dnc";
 	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
+					   TRUE, /* do_boundary_widen: CM-side preserves current behavior */
 					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    } else {
 	      status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,

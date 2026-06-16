@@ -924,6 +924,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->n,
 					      esl_opt_GetInteger(go, "--p7ibv-delta"),
 					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
+					      FALSE, /* do_boundary_widen: --hmm path is non-truncated */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
@@ -1449,6 +1450,7 @@ hmm_pipeline_thread(void *arg)
 	  cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  info->ibv_delta, info->ibv_base_slab,
+					  FALSE, /* do_boundary_widen: --hmm path is non-truncated */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }

@@ -810,6 +810,7 @@ ibv_dnc_alloc(size_t n, float **ret_p)
 int
 p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                     int delta_milli, int base_slab,
+                    int do_boundary_widen,
                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int          status;
@@ -971,10 +972,16 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                   F_row0_M, F_row0_I, F_row0_D,
                   B_seed_M, B_seed_I, B_seed_D);
 
-  /* Boundary widening + row-0 convention. */
-  if (L >= 1) { kmin_arr[1] = 1; kmax_arr[1] = M; }
-  if (L >= 2) { kmin_arr[L - 1] = 1; kmax_arr[L - 1] = M; }
-  if (L >= 1) { kmin_arr[L] = 1; kmax_arr[L] = M; }
+  /* Boundary widening + row-0 convention. The widening of rows 1, L-1, L to
+   * the full model [1,M] exists for truncated-alignment entry/exit. The
+   * non-truncated --hmm --p7ibv path passes do_boundary_widen=FALSE to skip it
+   * (IBV-JSTATE-NOTE2 finding 3); CM-side --p7band --p7ibv passes TRUE to
+   * preserve byte-identical behavior. The row-0 convention always applies. */
+  if (do_boundary_widen) {
+    if (L >= 1) { kmin_arr[1] = 1; kmax_arr[1] = M; }
+    if (L >= 2) { kmin_arr[L - 1] = 1; kmax_arr[L - 1] = M; }
+    if (L >= 1) { kmin_arr[L] = 1; kmax_arr[L] = M; }
+  }
   kmin_arr[0] = 0; kmax_arr[0] = 0;
 
   for (i = 1; i <= L; i++)
