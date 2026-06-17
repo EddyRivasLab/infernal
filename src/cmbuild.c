@@ -1526,6 +1526,27 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    }
 
    if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "--hand used, but alignment #%d has no reference coord annotation", cfg->nali);
+
+   /* --sscons <tag>: use the #=GC <tag> annotation line as the consensus structure,
+    * instead of the default #=GC SS_cons. The Stockholm parser stores SS_cons in
+    * msa->ss_cons and every other #=GC line in the generic msa->gc[]/gc_tag[] store, so
+    * we find <tag> there and copy it into msa->ss_cons before the existing structure
+    * cleaning/validation below runs. Everything downstream is identical to the default.
+    * (--sscons SS_cons is a no-op: that line already is msa->ss_cons.) Easel has no GC
+    * accessor in this version, so we scan gc_tag[] by hand. */
+   if (esl_opt_IsOn(go, "--sscons")) {
+     char *sstag = esl_opt_GetString(go, "--sscons");
+     if (strcmp(sstag, "SS_cons") != 0) {
+       int gc_idx = -1;
+       int g;
+       for (g = 0; g < msa->ngc; g++) { if (strcmp(msa->gc_tag[g], sstag) == 0) { gc_idx = g; break; } }
+       if (gc_idx == -1)                                  ESL_FAIL(eslFAIL, errbuf, "--sscons %s used, but alignment #%d has no #=GC %s annotation", sstag, cfg->nali, sstag);
+       if (strlen(msa->gc[gc_idx]) != (size_t) msa->alen) ESL_FAIL(eslFAIL, errbuf, "--sscons %s used, but #=GC %s in alignment #%d is length %d, not alignment length %d", sstag, sstag, cfg->nali, (int) strlen(msa->gc[gc_idx]), (int) msa->alen);
+       if (msa->ss_cons != NULL) free(msa->ss_cons);
+       if ((status = esl_strdup(msa->gc[gc_idx], -1, &(msa->ss_cons))) != eslOK) goto ERROR;
+     }
+   }
+
    if (esl_opt_GetBoolean(go, "--noss")) { /* --noss: if SS_cons exists, strip all BPs from it; if it doesn't create it with zero bps */
      if(msa->ss_cons == NULL) { ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1)); msa->ss_cons[msa->alen] = '\0'; }
      memset(msa->ss_cons,  '.', msa->alen);
