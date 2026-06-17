@@ -65,6 +65,7 @@ static ESL_OPTIONS options[] = {
   { "--fragnrfpos", eslARG_INT,    NULL,    NULL, "n>=0",   FRAGOPTS,  "--hand",         NULL, "w/--hand, seqs w/ > <n> 5' or 3' consensus gaps are fragments",  2 },
   { "--fraggiven", eslARG_NONE,    FALSE,   NULL,  NULL,    FRAGOPTS,      NULL,         NULL, "use fragment info, if any, in input MSA, don't infer frags",     2 },
   { "--noss",      eslARG_NONE,    FALSE,   NULL,  NULL,        NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
+  { "--sscons",    eslARG_STRING,   NULL,   NULL,  NULL,        NULL,      NULL,     "--noss", "build consensus structure from #=GC <s>, not SS_cons",           2 },
   { "--rsearch", eslARG_INFILE,     NULL,    NULL, NULL,     CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
   { "--consrf",    eslARG_NONE,    FALSE,   NULL, NULL,         NULL,  "--hand",         NULL, "with --hand, rewrite RF line with consensus sequence",           2 },
 
@@ -694,6 +695,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
   if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
   if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
   if (esl_opt_IsUsed(go, "--noss"))        { fprintf(ofp, "# ignore secondary structure, if any:                 yes\n"); }
+  if (esl_opt_IsUsed(go, "--sscons"))      { fprintf(ofp, "# define consensus structure from #=GC annotation:    %s\n", esl_opt_GetString(go, "--sscons")); }
   if (esl_opt_IsUsed(go, "--rsearch"))     { fprintf(ofp, "# RSEARCH parameterization mode w/RIBOSUM mx file:    %s\n", esl_opt_GetString(go, "--rsearch")); }
   if (esl_opt_IsUsed(go, "--consrf"))      { fprintf(ofp, "# rewrite RF as consensus sequence with --hand:       yes\n"); }
   if (esl_opt_IsUsed(go, "--betaW"))       { fprintf(ofp, "# tail loss probability for defining W:               %g\n", esl_opt_GetReal(go, "--betaW")); }
