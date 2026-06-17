@@ -916,15 +916,18 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  P7_GMXB *bxf   = NULL;
 	  P7_GMXB *bxb   = NULL;
 	  P7_TRACE *vtr  = NULL;
+	  float    bwdsc = 0.;                                                    /* brief 135b: capture backward total */
+	  int      p7ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");        /* brief 135b */
+	  int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 135b widen override */
 
 	  if (do_p7ibv) {
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
 	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
 	    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->n,
-					      esl_opt_GetInteger(go, "--p7ibv-delta"),
+					      p7ibv_delta,
 					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
-					      FALSE, /* do_boundary_widen: --hmm path is non-truncated */
+					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
@@ -975,8 +978,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
 	  if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, gm, bxf, &fwdsc)) != eslOK)
 	    cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
-	  if ((status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bxb, NULL)) != eslOK)
+	  if ((status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bxb, &bwdsc)) != eslOK)
 	    cm_Fail("p7_GBackwardBanded() failed for sequence %s", sq->name);
+	  if (getenv("P135B_FB_INSTRUMENT") != NULL)
+	    fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
+		    sq->name, hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
 	  if ((status = p7_GDecodingBanded(gm, bxf, bxb, bxb, fwdsc)) != eslOK)
 	    cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
 	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
@@ -1443,14 +1449,17 @@ hmm_pipeline_thread(void *arg)
       P7_GMXB *bxf   = NULL;
       P7_GMXB *bxb   = NULL;
       P7_TRACE *vtr  = NULL;
+      float    bwdsc = 0.;                                                    /* brief 135b: capture backward total */
+      int      p7ibv_delta = info->ibv_delta;                                 /* brief 135b */
+      int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 135b widen override */
 
       if (info->do_p7ibv) {
 	/* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	if (info->cm == NULL || info->cm->fp7 == NULL || info->cm->fp7->M != info->hmm->M)
 	  cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
-					  info->ibv_delta, info->ibv_base_slab,
-					  FALSE, /* do_boundary_widen: --hmm path is non-truncated */
+					  p7ibv_delta, info->ibv_base_slab,
+					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }
@@ -1502,8 +1511,11 @@ hmm_pipeline_thread(void *arg)
 
       if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, info->gm, bxf, &fwdsc)) != eslOK)
 	cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
-      if ((status = p7_GBackwardBanded(sq->dsq, sq->n, info->gm, bxb, NULL)) != eslOK)
+      if ((status = p7_GBackwardBanded(sq->dsq, sq->n, info->gm, bxb, &bwdsc)) != eslOK)
 	cm_Fail("p7_GBackwardBanded() failed for sequence %s", sq->name);
+      if (getenv("P135B_FB_INSTRUMENT") != NULL)
+	fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
+		sq->name, info->hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
       if ((status = p7_GDecodingBanded(info->gm, bxf, bxb, bxb, fwdsc)) != eslOK)
 	cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
       if ((status = p7_GOptimalAccuracyBanded(info->gm, bxb, bxf, &oasc)) != eslOK)
