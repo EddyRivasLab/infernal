@@ -69,6 +69,7 @@ CreateCMShell(void)
   cm->desc      = NULL;
   cm->rf        = NULL;
   cm->consensus = NULL;
+  cm->pknot     = NULL;
   cm->map       = NULL;
   cm->checksum  = 0;
 				/* null model information */
@@ -297,6 +298,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   /* Optional allocation, status flag dependent */
   if (cm->flags & CMH_RF)    ESL_ALLOC(cm->rf,          (cm->clen+2) * sizeof(char));
   if (cm->flags & CMH_CONS)  ESL_ALLOC(cm->consensus,   (cm->clen+2) * sizeof(char));
+  if (cm->flags & CMH_PKNOT) ESL_ALLOC(cm->pknot,       (cm->clen+2) * sizeof(char));
   if (cm->flags & CMH_MAP)   ESL_ALLOC(cm->map,         (cm->clen+1) * sizeof(int));
 
   return;
@@ -394,6 +396,7 @@ FreeCM(CM_t *cm)
   if (cm->desc      != NULL) free(cm->desc);
   if (cm->rf        != NULL) free(cm->rf);
   if (cm->consensus != NULL) free(cm->consensus);
+  if (cm->pknot     != NULL) free(cm->pknot);
   if (cm->map       != NULL) free(cm->map);
   if (cm->null      != NULL) free(cm->null);
 
@@ -1847,7 +1850,8 @@ CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm)
   if((status = esl_strdup(cm->desc,      -1, &(new->desc)))      != eslOK) goto ERROR;
   if((status = esl_strdup(cm->rf,        -1, &(new->rf)))        != eslOK) goto ERROR;
   if((status = esl_strdup(cm->consensus, -1, &(new->consensus))) != eslOK) goto ERROR;
-  if(cm->map != NULL) { 
+  if((status = esl_strdup(cm->pknot,     -1, &(new->pknot)))     != eslOK) goto ERROR;
+  if(cm->map != NULL) {
     ESL_ALLOC(new->map, sizeof(int) * (cm->clen+1));
     esl_vec_ICopy(cm->map, cm->clen+1, new->map);
   }
@@ -3068,7 +3072,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if (cm->desc      != NULL) { if (esl_strdup(cm->desc,      -1, &(new->desc))      != eslOK) { status = eslEMEM; goto ERROR;} }
   if (cm->rf        != NULL) { if (esl_strdup(cm->rf,        -1, &(new->rf))        != eslOK) { status = eslEMEM; goto ERROR;} }
   if (cm->consensus != NULL) { if (esl_strdup(cm->consensus, -1, &(new->consensus)) != eslOK) { status = eslEMEM; goto ERROR;} }
-  if(cm->map != NULL) { 
+  if (cm->pknot     != NULL) { if (esl_strdup(cm->pknot,     -1, &(new->pknot))     != eslOK) { status = eslEMEM; goto ERROR;} }
+  if(cm->map != NULL) {
     ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
     esl_vec_ICopy(cm->map, (new->clen+1), new->map);
   }
@@ -3311,6 +3316,7 @@ cm_Sizeof(CM_t *cm)
   if(cm->desc       != NULL) bytes += sizeof(char)  * (strlen(cm->desc) + 2);
   if(cm->rf         != NULL) bytes += sizeof(char)  * (strlen(cm->rf) + 2);
   if(cm->consensus  != NULL) bytes += sizeof(char)  * (strlen(cm->consensus) + 2);
+  if(cm->pknot      != NULL) bytes += sizeof(char)  * (strlen(cm->pknot) + 2);
   if(cm->map        != NULL) bytes += sizeof(int)   * (cm->clen+1);
   if(cm->root_trans != NULL) bytes += sizeof(float) * (cm->cnum[0]);
 

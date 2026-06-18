@@ -1766,6 +1766,7 @@ typedef struct cm_s {
   char    *desc;        /* brief (1-line) description of model          (CMH_DESC))      */ /* String, \0-terminated   */
   char    *rf;          /* reference line from alignment    1..clen     (CMH_RF)         */ /* String; 0=' ', clen+1='\0' */
   char    *consensus;   /* consensus residue line           1..clen     (CMH_CONS)       */ /* String; 0=' ', clen+1='\0' */
+  char    *pknot;       /* canonical consensus pseudoknots  1..clen     (CMH_PKNOT)      */ /* String; 0=' ', clen+1='\0'; pknot letter at pknot cols, '.' elsewhere; NULL if no pknots */
   uint32_t checksum;    /* checksum of training sequences               (CMH_CHKSUM)     */
   int     *map;         /* map of alignment cols onto model 1..clen     (CMH_MAP)        */ /* Array; map[0]=0 */
 
@@ -1969,6 +1970,7 @@ typedef struct cm_s {
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
 #define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
+#define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
