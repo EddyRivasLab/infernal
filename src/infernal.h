@@ -2033,6 +2033,7 @@ enum cm_file_formats_e {
   CM_FILE_1  = 0, /* Infernal v1.0->v1.0.2 */
   CM_FILE_1a = 1,
   CM_FILE_1b = 2, /* v1.2: adds optional P7NODEPAD per-HMM-node band pad array */
+  CM_FILE_1c = 3, /* adds consensus pseudoknot annotation (cm->pknot)          */
 };
 
 typedef struct cm_file_s {
