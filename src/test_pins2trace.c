@@ -90,8 +90,8 @@ main(int argc, char **argv)
   sq = esl_sq_CreateDigital(abc);
 
   printf("# CM=%s  M=%d  mode=%s\n", cmfile, hmm->M, (p7mode==p7_UNIGLOCAL)?"UNIGLOCAL":"UNILOCAL");
-  printf("# %-22s %6s %8s %8s  %5s %5s %5s %5s  %3s %3s %5s  %s\n",
-         "seq", "L", "vit_sc", "pins_eq", "ncore", "match", "mism", "flank", "rNM", "rIN", "valid", "verdict");
+  printf("# %-22s %6s %8s %7s %8s  %5s %5s %5s  %3s %3s %5s  %s\n",
+         "seq", "L", "vit_sc", "scgap", "pins_eq", "ncore", "mism", "flank", "rNM", "rIN", "valid", "verdict");
 
   int tot_seq=0, tot_clean=0, tot_drift=0, tot_fail=0;
 
@@ -135,20 +135,58 @@ main(int argc, char **argv)
     status = p7_IBVPins2Trace(gm, sq->dsq, L, i2k, kmin, kmax, ncells, &ttr);
     if (status != eslOK) { walker_ok = 0; }
 
+    float rsc=0, tsc=0;   /* trace scores under the SAME gm */
     if (walker_ok) {
-      if (p7_trace_Validate(ttr, abc, sq->dsq, errbuf) != eslOK) { valid_ok = 0; printf("#   %s validate: %s\n", sq->name, errbuf); }
+      p7_trace_Score(rtr, sq->dsq, gm, &rsc);
+      p7_trace_Score(ttr, sq->dsq, gm, &tsc);
+      if (p7_trace_Validate(ttr, abc, sq->dsq, errbuf) != eslOK) {
+        valid_ok = 0; printf("#   %s validate: %s\n", sq->name, errbuf);
+        /* find first illegal D-entry or I->E and dump its neighborhood */
+        int bad=-1;
+        for (int z=1; z<ttr->N; z++) {
+          int p=ttr->st[z-1], c=ttr->st[z];
+          if (c==p7T_D && p!=p7T_M && p!=p7T_D) { bad=z; break; }
+          if (c==p7T_E && p!=p7T_M && p!=p7T_D) { bad=z; break; }
+        }
+        printf("#     bad@z=%d region:", bad);
+        for (int z=(bad>4?bad-4:0); z<ttr->N && z<bad+3; z++)
+          printf(" %c%d/%d", "?MDISNBECTJ"[ttr->st[z]], ttr->k[z], ttr->i[z]);
+        printf("\n");
+      }
       trace_to_resmap(rtr, L, rstate, rk);
       trace_to_resmap(ttr, L, tstate, tk);
+      int first_mism=-1, last_mism=-1;
       for (int i = 1; i <= L; i++) {
         int rin = (rstate[i] != 0), tin = (tstate[i] != 0);
         if (!rin && !tin) continue;
         if (rin && tin) {
           ncore++;
           if (rstate[i]==tstate[i] && rk[i]==tk[i]) match++;
-          else { mism++; if (verbose && mism<=8) printf("#   %s i=%d ref=(%c,%d) test=(%c,%d)\n",
+          else { mism++; if(first_mism<0)first_mism=i; last_mism=i;
+                 if (verbose && mism<=8) printf("#   %s i=%d ref=(%c,%d) test=(%c,%d)\n",
                           sq->name, i, "?MDI"[rstate[i]], rk[i], "?MDI"[tstate[i]], tk[i]); }
         } else flank++;   /* one side put it in core, other in N/C */
       }
+      /* #1 mechanism test: is the gm-Viterbi optimal path itself INSIDE the IBV
+       * Delta=0 co-optimal band?  If a ref-trace core cell falls outside
+       * [kmin,kmax], the IBV DP does not consider gm's optimum co-optimal ->
+       * the two DPs optimize different score functions (not a walker artifact). */
+      int ref_oob=0, ref_oob_first=-1, ref_oob_k=-1, ref_band_lo=-1, ref_band_hi=-1;
+      for (int i=1;i<=L;i++){
+        if (rstate[i]!=0) {  /* ref put residue i in core at model pos rk[i] */
+          if (rk[i] < kmin[i] || rk[i] > kmax[i]) {
+            ref_oob++;
+            if (ref_oob_first<0){ ref_oob_first=i; ref_oob_k=rk[i]; ref_band_lo=kmin[i]; ref_band_hi=kmax[i]; }
+          }
+        }
+      }
+      if ((rsc-tsc) > 0.01)
+        printf("#   %s GAP=%.2f mism=%d flank=%d | refPathOutsideIBVband=%d cells%s\n",
+               sq->name, rsc-tsc, mism, flank, ref_oob,
+               ref_oob? "" : " (gm-optimum IS in band -> tie/quantization)");
+      if (ref_oob)
+        printf("#       first ref-OOB @i=%d: gm wants M%d but IBV band=[%d,%d]\n",
+               ref_oob_first, ref_oob_k, ref_band_lo, ref_band_hi);
     }
 
     const char *verdict;
@@ -159,8 +197,11 @@ main(int argc, char **argv)
     tot_seq++;
 
     double eq = (ncore+flank>0) ? (100.0*match/(ncore+flank)) : 0.0;
-    printf("  %-22s %6d %8.2f %7.1f%%  %5d %5d %5d %5d  %3d %3d %5s  %s\n",
-           sq->name, L, vsc, eq, ncore, match, mism, flank, rawNM, rawINF,
+    /* score gap: GViterbi-trace score minus IBV-pins-trace score, both under gm.
+     * 0 => pins are a co-optimal Viterbi alignment (cell diffs are ties). */
+    float scgap = walker_ok ? (rsc - tsc) : 0.0;
+    printf("  %-22s %6d %8.2f %7.2f %7.1f%%  %5d %5d %5d  %3d %3d %5s  %s\n",
+           sq->name, L, vsc, scgap, eq, ncore, mism, flank, rawNM, rawINF,
            walker_ok ? (valid_ok?"yes":"NO") : "-", verdict);
     if (!walker_ok) printf("#   walker returned status %d on %s\n", status, sq->name);
 

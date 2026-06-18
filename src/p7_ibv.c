@@ -1103,8 +1103,7 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
   int      *w       = NULL;
   int       M       = gm->M;
   int       islocal = p7_IsLocal(gm->mode);
-  int       i, k, kd, kprev, prev_match;
-  int       last_is_insert = FALSE;
+  int       i, k, kd, kprev, prev_match, i_lastM;
   int       status;
 
   (void) dsq; (void) ncells;
@@ -1146,6 +1145,15 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
     kprev      = k;
   }
 
+  /* Locate the last match in the threaded path.  Residues after it are held at
+   * the final model position and so would be inserts with no following match;
+   * a profile trace cannot end on an insert (E connects from M/D), so they are
+   * emitted as C-state (post-core) residues instead -- which is also what a
+   * p7 Viterbi trace does with trailing residues. */
+  i_lastM = 0;
+  { int kp = 0; for (i = 1; i <= L; i++) { if (w[i] > kp) i_lastM = i; kp = w[i]; } }
+  /* (w[1] is always a match since w[1] >= 1 > w[0]=0, so i_lastM >= 1.) */
+
   if ((tr = p7_trace_Create()) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* S -> N (non-emitting) -> B */
@@ -1154,33 +1162,31 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
   if ((status = p7_trace_Append(tr, p7T_B, 0, 0)) != eslOK) goto ERROR;
 
   kprev = 0;   /* B-state model position */
-  for (i = 1; i <= L; i++) {
+  for (i = 1; i <= i_lastM; i++) {
     k = w[i];
-    if (k > kprev) {           /* match emission, possibly after a DL run */
-      kd = kprev + 1;
-      if (islocal && kprev == 0) kd = k;   /* local begin B->Mk: no leading D */
-      for (; kd < k; kd++)
+    if (k > kprev) {           /* match emission, possibly after an internal DL run */
+      /* No leading deletes: B->Mk is a direct (wing-retracted) begin in a
+       * profile trace; B->D is illegal.  Internal M->D..->M runs are emitted. */
+      for (kd = (kprev == 0 ? k : kprev + 1); kd < k; kd++)
         if ((status = p7_trace_Append(tr, p7T_D, kd, 0)) != eslOK) goto ERROR;
       if ((status = p7_trace_Append(tr, p7T_M, k, i)) != eslOK) goto ERROR;
-      last_is_insert = FALSE;
-    } else {                   /* k == kprev: insert emission */
+    } else {                   /* k == kprev: internal insert emission */
       if ((status = p7_trace_Append(tr, p7T_I, k, i)) != eslOK) goto ERROR;
-      last_is_insert = TRUE;
     }
     kprev = k;
   }
 
-  /* Exit.  Glocal: trailing D-run to D_M then E (E connects from M/D only, so
-   * a trailing D-run after an insert at k<M would be an invalid I->D edge --
-   * that cannot arise from a sequence-global IBV optimum, which always ends at
-   * k=M; guard against it defensively). */
-  if (!islocal && kprev < M) {
-    if (last_is_insert) { status = eslEINVAL; goto ERROR; }
+  /* Exit from the final match M_kprev.  Glocal: M_kprev -> D..->D_M -> E (valid
+   * M/D->D->E run).  Local: M_kprev -> E directly. */
+  if (!islocal)
     for (k = kprev + 1; k <= M; k++)
       if ((status = p7_trace_Append(tr, p7T_D, k, 0)) != eslOK) goto ERROR;
-  }
   if ((status = p7_trace_Append(tr, p7T_E, 0, 0)) != eslOK) goto ERROR;
+
+  /* C: first is non-emitting (E->C); trailing residues i_lastM+1..L emit on C. */
   if ((status = p7_trace_Append(tr, p7T_C, 0, 0)) != eslOK) goto ERROR;
+  for (i = i_lastM + 1; i <= L; i++)
+    if ((status = p7_trace_Append(tr, p7T_C, 0, i)) != eslOK) goto ERROR;
   if ((status = p7_trace_Append(tr, p7T_T, 0, 0)) != eslOK) goto ERROR;
 
   tr->M = M;
