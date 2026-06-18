@@ -308,7 +308,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
                  const float *FM, const float *FI, const float *FD,
                  const float *BM, const float *BI, const float *BD,
                  float *through_scratch,
-                 int *ret_kmin, int *ret_kmax)
+                 int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   int k;
   int k_thru_end = 0;
@@ -331,10 +331,18 @@ ibv_through_scan(int M, size_t k_stride, float thr,
     through_scratch[k] = t;
   }
 
-  int row_kmin = -1, row_kmax = -1;
+  int   row_kmin = -1, row_kmax = -1;
+  int   k_argmax = -1;
+  float t_argmax = P7IBV_NEG_INF;
   for (k = 1; k <= M; k++) {
     float t = through_scratch[k];
     if (t < P7IBV_HALF_NEG_INF) continue;
+    /* argmax-k for pins-to-trace (brief 137): the cell on the Viterbi-optimal
+     * path.  Strict '>' keeps the lowest-k cell among exact ties; on the
+     * optimal path the residue-emitting M/I cell precedes (lower k than) any
+     * following D-state cells that share the same through-score, so the
+     * lowest-k tie is the emitting cell. */
+    if (t > t_argmax) { t_argmax = t; k_argmax = k; }
     if (t >= thr) {
       if (row_kmin < 0) row_kmin = k;
       row_kmax = k;
@@ -342,6 +350,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
   }
   if (row_kmin < 0) { *ret_kmin = 1; *ret_kmax = M; }
   else              { *ret_kmin = row_kmin; *ret_kmax = row_kmax; }
+  if (ret_kargmax) *ret_kargmax = k_argmax;
 }
 
 
@@ -523,7 +532,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
       ibv_through_scan(M, k_stride, thr,
                        F_M(i), F_I(i), F_D(i),
                        B_M_curr, B_I_curr, B_D_curr,
-                       through, &kmin[i], &kmax[i]);
+                       through, &kmin[i], &kmax[i], &i2k[i]);
 
     float *t_M = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t_M;
     float *t_I = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t_I;
@@ -625,6 +634,7 @@ typedef struct {
   const ESL_DSQ *dsq;
   int    *kmin;
   int    *kmax;
+  int    *i2k;     /* argmax-k per row (brief 137); i2k[i] = Viterbi-trace cell. */
   float   thr;
 } IBV_DnC_Ctx;
 
@@ -705,7 +715,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
                        ctx->slab_F + off + 0*ks, ctx->slab_F + off + 1*ks, ctx->slab_F + off + 2*ks,
                        ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks,
                        ctx->through,
-                       &ctx->kmin[i_lo + r], &ctx->kmax[i_lo + r]);
+                       &ctx->kmin[i_lo + r], &ctx->kmax[i_lo + r], &ctx->i2k[i_lo + r]);
     }
     return;
   }
@@ -781,7 +791,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   ibv_through_scan(M, ks, ctx->thr,
                    F_mid_M, F_mid_I, F_mid_D,
                    ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks,
-                   ctx->through, &ctx->kmin[i_mid], &ctx->kmax[i_mid]);
+                   ctx->through, &ctx->kmin[i_mid], &ctx->kmax[i_mid], &ctx->i2k[i_mid]);
 
   /* Recurse top half [i_lo, i_mid] with F_lo + B_mid1. */
   ibv_dnc_recurse(ctx, i_lo, i_mid, depth + 1,
@@ -960,6 +970,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.dsq      = dsq;
   ctx.kmin     = kmin_arr;
   ctx.kmax     = kmax_arr;
+  ctx.i2k      = i2k;
   ctx.thr      = thr;
 
   /* B seed for top-level: all NEG_INF; terminal injected via global_L. */
@@ -983,6 +994,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     if (L >= 1) { kmin_arr[L] = 1; kmax_arr[L] = M; }
   }
   kmin_arr[0] = 0; kmax_arr[0] = 0;
+  i2k[0] = 0;   /* B-state convention (brief 137): i2k[i]=argmax_k for i in [1,L]. */
 
   for (i = 1; i <= L; i++)
     ncells += (kmax_arr[i] - kmin_arr[i] + 1);
@@ -1035,5 +1047,151 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   *ret_kmin   = NULL;
   *ret_kmax   = NULL;
   *ret_ncells = 0;
+  return status;
+}
+
+
+/* Function:  p7_IBVPins2Trace()
+ * Synopsis:  Convert IBV per-row argmax-k pins to a P7_TRACE.
+ * Incept:    brief 137, 2026-06-17.
+ *
+ * Purpose:   Given the per-row argmax-k pin array <i2k> produced by
+ *            p7_Seq2BandsIBV_dnc(... delta_milli=0 ...) for a sequence of
+ *            length <L> aligned to profile <gm>, emit a unihit P7_TRACE that
+ *            is alignment-equivalent to what p7_GViterbi -> p7_GTrace would
+ *            produce on the same input.
+ *
+ *            i2k[i] (i in 1..L) is the model position k of the Viterbi-optimal
+ *            cell that emits residue i; i2k[0] = 0 (B-state convention).
+ *            Residue i is a match emission ML(i2k[i]) when i2k[i] advances over
+ *            i2k[i-1] (a DL run fills any skipped match positions), or an
+ *            insert emission IL(i2k[i]) when i2k[i] == i2k[i-1].  Because the
+ *            IBV DP is global w.r.t. the sequence, every residue 1..L is
+ *            consumed in the core and the N/C states are non-emitting.
+ *
+ *            Begin/exit depend on gm->mode:
+ *              - glocal (p7_UNIGLOCAL): B->D1..D_{k-1}->Mk leading deletes and
+ *                M_{i2k[L]}->D..D_M->E trailing deletes are emitted.
+ *              - local  (p7_UNILOCAL):  B->Mk and Mk->E directly, no flanking
+ *                deletes.
+ *            Internal DL runs between consecutive pins are emitted in both
+ *            modes.  Multihit modes (p7_LOCAL/p7_GLOCAL) are rejected: the
+ *            walker never emits p7T_J.
+ *
+ * Args:      gm     - configured profile (gm->mode selects begin/end semantics)
+ *            dsq    - digital sequence 1..L (unused; kept for API symmetry)
+ *            L      - sequence length
+ *            i2k    - per-row argmax-k pins, length L+1, with i2k[0]=0
+ *            kmin   - per-row band low  (length L+1) or NULL to skip the check
+ *            kmax   - per-row band high (length L+1) or NULL to skip the check
+ *            ncells - total band cell count (unused; kept for API symmetry)
+ *            ret_tr - RETURN: newly allocated P7_TRACE (caller frees)
+ *
+ * Returns:   <eslOK> on success, with *ret_tr the trace.
+ *            <eslEINVAL> if i2k is inconsistent (interior -1 sentinel,
+ *               non-monotone, k out of [1,M], or outside [kmin,kmax]).
+ *            <eslEUNIMPLEMENTED> if gm is configured multihit.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
+                 const int *i2k, const int *kmin, const int *kmax, int ncells,
+                 P7_TRACE **ret_tr)
+{
+  P7_TRACE *tr      = NULL;
+  int      *w       = NULL;
+  int       M       = gm->M;
+  int       islocal = p7_IsLocal(gm->mode);
+  int       i, k, kd, kprev, prev_match;
+  int       last_is_insert = FALSE;
+  int       status;
+
+  (void) dsq; (void) ncells;
+  *ret_tr = NULL;
+
+  if (p7_IsMulti(gm->mode)) return eslEUNIMPLEMENTED;  /* unihit only: no J. */
+  if (L < 1)                return eslEINVAL;
+  if (i2k[0] != 0)          return eslEINVAL;
+  for (i = 1; i <= L; i++)
+    if (i2k[i] < 1 || i2k[i] > M) return eslEINVAL;    /* interior -1 / OOB */
+
+  /* ---- Band-aware path threading ----
+   * The per-row argmax pins are independently chosen and so at Δ=0 co-optimal
+   * ties they can (a) dip non-monotonically and (b) imply infeasible Plan7
+   * transitions (an insert followed by a match >1 position ahead would need
+   * deletes after an insert, which Plan7 forbids).  Thread a single monotone,
+   * transition-feasible path w[] through the per-row co-optimal band [kmin,kmax]
+   * (every in-band cell scores >= optimal at Δ=0, so any in-band monotone path
+   * is itself score-optimal, i.e. alignment-equivalent).  Deletes are allowed
+   * only out of a match or the begin state.  Falls back to a plain monotone
+   * clamp when kmin/kmax are unavailable. */
+  ESL_ALLOC(w, sizeof(int) * (L + 1));
+  w[0]  = 0;
+  kprev = 0;
+  prev_match = TRUE;        /* begin behaves like a match: B->D->M is allowed */
+  for (i = 1; i <= L; i++) {
+    k = i2k[i];
+    if (k < kprev) k = kprev;                 /* (a) monotone clamp -> hold */
+    if (k > kprev && !prev_match && k > kprev + 1) {
+      /* (b) need deletes to enter Mk, but came from an insert: pull the match
+       * down to kprev+1 if that cell is co-optimal, else hold as an insert. */
+      if (!kmin || !kmax || (kprev + 1 >= kmin[i] && kprev + 1 <= kmax[i]))
+        k = kprev + 1;
+      else
+        k = kprev;
+    }
+    w[i]       = k;
+    prev_match = (k > kprev);
+    kprev      = k;
+  }
+
+  if ((tr = p7_trace_Create()) == NULL) { status = eslEMEM; goto ERROR; }
+
+  /* S -> N (non-emitting) -> B */
+  if ((status = p7_trace_Append(tr, p7T_S, 0, 0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_Append(tr, p7T_N, 0, 0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_Append(tr, p7T_B, 0, 0)) != eslOK) goto ERROR;
+
+  kprev = 0;   /* B-state model position */
+  for (i = 1; i <= L; i++) {
+    k = w[i];
+    if (k > kprev) {           /* match emission, possibly after a DL run */
+      kd = kprev + 1;
+      if (islocal && kprev == 0) kd = k;   /* local begin B->Mk: no leading D */
+      for (; kd < k; kd++)
+        if ((status = p7_trace_Append(tr, p7T_D, kd, 0)) != eslOK) goto ERROR;
+      if ((status = p7_trace_Append(tr, p7T_M, k, i)) != eslOK) goto ERROR;
+      last_is_insert = FALSE;
+    } else {                   /* k == kprev: insert emission */
+      if ((status = p7_trace_Append(tr, p7T_I, k, i)) != eslOK) goto ERROR;
+      last_is_insert = TRUE;
+    }
+    kprev = k;
+  }
+
+  /* Exit.  Glocal: trailing D-run to D_M then E (E connects from M/D only, so
+   * a trailing D-run after an insert at k<M would be an invalid I->D edge --
+   * that cannot arise from a sequence-global IBV optimum, which always ends at
+   * k=M; guard against it defensively). */
+  if (!islocal && kprev < M) {
+    if (last_is_insert) { status = eslEINVAL; goto ERROR; }
+    for (k = kprev + 1; k <= M; k++)
+      if ((status = p7_trace_Append(tr, p7T_D, k, 0)) != eslOK) goto ERROR;
+  }
+  if ((status = p7_trace_Append(tr, p7T_E, 0, 0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_Append(tr, p7T_C, 0, 0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_Append(tr, p7T_T, 0, 0)) != eslOK) goto ERROR;
+
+  tr->M = M;
+  tr->L = L;
+  if (w) free(w);
+  *ret_tr = tr;
+  return eslOK;
+
+ ERROR:
+  if (w)  free(w);
+  if (tr) p7_trace_Destroy(tr);
+  *ret_tr = NULL;
   return status;
 }
