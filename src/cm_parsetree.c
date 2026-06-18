@@ -1382,9 +1382,13 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    msa->ss_cons[matmap[cpos]] = '.';
 	    msa->rf[matmap[cpos]]      = (cm->flags & CMH_RF) ? cm->rf[cpos] : cm->cmcons->cseq[cpos-1];
 	  } else {
-	    msa->ss_cons[matmap[cpos]] = cm->cmcons->cstr[cpos-1];	
+	    msa->ss_cons[matmap[cpos]] = cm->cmcons->cstr[cpos-1];
 	    msa->rf[matmap[cpos]]      = (cm->flags & CMH_RF) ? cm->rf[cpos] : cm->cmcons->cseq[cpos-1];
 	  }
+	  /* Feature B: overlay the canonical pseudoknot letter (if any) for this consensus
+	   * column; nested structure stays from cstr. Truncation orphans are removed below. */
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[cpos]))
+	    msa->ss_cons[matmap[cpos]] = cm->pknot[cpos];
 	}
       if ((maxil[cpos] > 0) && (! do_matchonly)) 
 	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
@@ -1407,6 +1411,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+  /* Feature B: drop any pseudoknot letter whose partner column was truncated/absent */
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(msa->ss_cons, alen);
   if (wgt != NULL) msa->flags |= eslMSA_HASWGTS;
 
   if(tmp_aseq != NULL) free(tmp_aseq);

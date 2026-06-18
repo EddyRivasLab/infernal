@@ -2746,6 +2746,64 @@ cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
   return status;
 }
 
+/* Function:  cm_pknot_FixBrokenString()
+ * Synopsis:  Drop truncation-orphaned pseudoknot letters from an emitted structure string.
+ *
+ * Purpose:   Feature B (pseudoknot passthrough). Given a WUSS-like consensus
+ *            structure string <ss> (0-based, length <n>) that has had pseudoknot
+ *            letters overlaid onto it, set to '.' any pseudoknot letter whose
+ *            matching partner letter is absent from <ss> -- e.g. one half of a
+ *            pseudoknot stem was truncated away in a hit, or removed by a column
+ *            downselect. Pseudoknots are matching-letter pairs (A..a, B..b, ...),
+ *            paired with the same nested pushdown discipline that <esl_wuss2ct()>
+ *            uses, so multi-bp stems with partial truncation are handled
+ *            correctly (innermost pairs match first).
+ *
+ *            Only the pseudoknot letters are touched; nested brackets (<>()[]{}
+ *            etc.) are ignored, so this never repartitions or relabels the
+ *            structure the way feeding output back through <esl_ct2wuss()> would.
+ *            It is therefore safe to run on a possibly-unbalanced (truncated)
+ *            output structure line, which <esl_wuss2ct()> itself would reject.
+ *
+ * Returns:   <eslOK> on success; <ss> may be modified in place.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_pknot_FixBrokenString(char *ss, int n)
+{
+  int   status;
+  int   i, c, idx;
+  int  *sp    = NULL;        /* sp[idx]    = depth of stack for letter idx (A-Z)   */
+  int **stack = NULL;        /* stack[idx] = positions of unmatched opens, letter idx */
+
+  /* quick exit if there are no pseudoknot letters at all */
+  for (i = 0; i < n; i++) if (isalpha((int) ss[i])) break;
+  if (i == n) return eslOK;
+
+  ESL_ALLOC(sp,    sizeof(int)   * 26);
+  ESL_ALLOC(stack, sizeof(int *) * 26);
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < n; i++) {
+    c = (int) ss[i];
+    if      (isupper(c)) { idx = c - 'A'; if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (n+1)); stack[idx][sp[idx]++] = i; }
+    else if (islower(c)) { idx = c - 'a'; if (sp[idx] > 0) sp[idx]--; else ss[i] = '.'; }  /* matched close: pop & keep; else orphan */
+  }
+  /* any opens still on a stack never found a partner -> orphans */
+  for (idx = 0; idx < 26; idx++)
+    for (i = 0; i < sp[idx]; i++) ss[ stack[idx][i] ] = '.';
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  free(stack); free(sp);
+  return eslOK;
+
+ ERROR:
+  if (stack != NULL) { for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]); free(stack); }
+  if (sp != NULL) free(sp);
+  return status;
+}
+
 /* Function: cm_AppendComlog()
  * Synopsis: Concatenate and append command line to the command line log.
  * 

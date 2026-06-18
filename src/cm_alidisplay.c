@@ -449,6 +449,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  do_left = TRUE;
 	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
 	  lstr   = cm->cmcons->cstr[lc];
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[lc+1])) lstr = cm->pknot[lc+1]; /* Feature B pknot overlay */
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cm->cmcons->cseq[lc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
 	    lseq = cm->abc->sym[symi];
@@ -463,6 +464,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  do_right = TRUE;
 	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
 	  rstr   = cm->cmcons->cstr[rc];
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[rc+1])) rstr = cm->pknot[rc+1]; /* Feature B pknot overlay */
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cm->cmcons->cseq[rc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
 	    rseq = cm->abc->sym[symj];
@@ -604,6 +606,8 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
+  /* Feature B: drop any pseudoknot letter on the CS line whose partner was truncated out of this hit */
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(ad->csline, ad->N);
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
@@ -1382,10 +1386,18 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   /*cm_alidisplay_Dump(stdout, ad);*/
 
   upos = 0;
-  for(apos = 0; apos < msa->alen; apos++) { 
-    msa->ss_cons[apos] = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? cm->cmcons->cstr[upos++] : '.'; 
+  for(apos = 0; apos < msa->alen; apos++) {
+    if (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') {
+      char ch = cm->cmcons->cstr[upos];
+      /* Feature B: overlay canonical pseudoknot letter (truncation orphans removed below) */
+      if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[upos+1])) ch = cm->pknot[upos+1];
+      msa->ss_cons[apos] = ch;
+      upos++;
+    }
+    else msa->ss_cons[apos] = '.';
   }
   msa->ss_cons[msa->alen] = '\0';
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(msa->ss_cons, msa->alen);
   if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_Backconvert() failed to create temporary msa");
   
   esl_msa_FormatSeqName(msa, 0, "%s/%ld-%ld", ad->sqname, ad->sqfrom, ad->sqto);
