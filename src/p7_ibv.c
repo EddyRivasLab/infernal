@@ -337,12 +337,18 @@ ibv_through_scan(int M, size_t k_stride, float thr,
   for (k = 1; k <= M; k++) {
     float t = through_scratch[k];
     if (t < P7IBV_HALF_NEG_INF) continue;
-    /* argmax-k for pins-to-trace (brief 137): the cell on the Viterbi-optimal
-     * path.  Strict '>' keeps the lowest-k cell among exact ties; on the
-     * optimal path the residue-emitting M/I cell precedes (lower k than) any
-     * following D-state cells that share the same through-score, so the
-     * lowest-k tie is the emitting cell. */
-    if (t > t_argmax) { t_argmax = t; k_argmax = k; }
+    /* Band (kmin/kmax) uses the full through-score incl. delete cells.
+     *
+     * The argmax-k pin (brief 137), however, must be over EMITTING states (M,I)
+     * only: residue i is emitted by a match or insert, never a delete.  A
+     * delete cell D(i,k) sits on the optimal path too (with through == optimal,
+     * at a higher k than the emitter) and float F+B reconstruction can tip the
+     * tie so the delete edges out the emitter -- which would make i2k[i] point
+     * at a model position where residue i is actually *deleted*.  Restricting
+     * the argmax to FM+BM / FI+BI excludes delete cells from the pin. */
+    float t_emit = FM[k] + BM[k];
+    { float ti = FI[k] + BI[k]; if (ti > t_emit) t_emit = ti; }
+    if (t_emit >= P7IBV_HALF_NEG_INF && t_emit > t_argmax) { t_argmax = t_emit; k_argmax = k; }
     if (t >= thr) {
       if (row_kmin < 0) row_kmin = k;
       row_kmax = k;

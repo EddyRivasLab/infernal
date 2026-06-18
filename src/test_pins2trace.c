@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -90,6 +91,24 @@ main(int argc, char **argv)
   sq = esl_sq_CreateDigital(abc);
 
   printf("# CM=%s  M=%d  mode=%s\n", cmfile, hmm->M, (p7mode==p7_UNIGLOCAL)?"UNIGLOCAL":"UNILOCAL");
+
+  /* Emission-objective audit: IBV match lod = log2(mat/ins); gm MSC = log(mat/bg).
+   * Equal iff ins==bg.  Also compare in bits directly (gm MSC is in nats). */
+  { double max_insbg=0, max_lod=0;
+    for (int k=1;k<hmm->M;k++) for (int x=0;x<abc->K;x++){
+      double d = fabs((double)hmm->ins[k][x]-(double)bg->f[x]);
+      if (d>max_insbg) max_insbg=d;
+    }
+    for (int k=1;k<=hmm->M;k++) for (int x=0;x<abc->K;x++){
+      if (hmm->mat[k][x]<=0||hmm->ins[k][x]<=0) continue;
+      double ibv_bits = log((double)hmm->mat[k][x]/(double)hmm->ins[k][x])/M_LN2;
+      double gm_bits  = (double)p7P_MSC(gm,k,x)/M_LN2;   /* MSC stored in nats */
+      double d = fabs(ibv_bits-gm_bits);
+      if (d>max_lod) max_lod=d;
+    }
+    printf("# EMISSION AUDIT: max|ins-bg|=%.6g  max|IBVmatch_bits - gmMSC_bits|=%.6g (0 => emissions identical)\n",
+           max_insbg, max_lod);
+  }
   printf("# %-22s %6s %8s %7s %8s  %5s %5s %5s  %3s %3s %5s  %s\n",
          "seq", "L", "vit_sc", "scgap", "pins_eq", "ncore", "mism", "flank", "rNM", "rIN", "valid", "verdict");
 
