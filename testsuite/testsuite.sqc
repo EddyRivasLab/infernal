@@ -47,6 +47,7 @@
 1 exercise  itest/build-frags       !testsuite/itest10-build-frags.pl!       @@ !! %OUTFILES%
 1 exercise  itest/search-frags      !testsuite/itest11-search-frags.pl!      @@ !! %OUTFILES%
 1 exercise  itest/p7nodepad         !testsuite/itest12-p7nodepad.pl!         @@ !! %OUTFILES%
+1 exercise  itest/pknot             !testsuite/itest13-pknot.pl!             @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@
 
 ################################################################
