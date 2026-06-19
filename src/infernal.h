@@ -1889,6 +1889,8 @@ typedef struct cm_s {
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
   int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
   int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
+  int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 140, --p7ibv-mode) */
+  int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 140, --p7ibv-width) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -3286,11 +3288,19 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* Brief 140: IBV band-derivation modes (enrich the per-row band using the
+ * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
+ * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */
+#define P7IBV_MODE_DELTA  0
+#define P7IBV_MODE_FIXED  1
+#define P7IBV_MODE_HYBRID 2
 extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                                    int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int delta_milli, int base_slab,
                                     int do_boundary_widen,
+                                    int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
                                     const int *i2k, const int *kmin, const int *kmax, int ncells,

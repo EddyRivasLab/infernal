@@ -134,6 +134,7 @@ main(int argc, char **argv)
 
     /* Test (IBV pins -> trace), delta=0, no boundary widen. */
     if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, 0, 0, FALSE,
+                                      P7IBV_MODE_DELTA, 0, /* brief 140 */
                                       &i2k, &kmin, &kmax, &ncells)) != eslOK)
       p7_Fail("p7_Seq2BandsIBV_dnc failed on %s: %s", sq->name, errbuf);
     /* RAW-PIN validity (mode-independent): is the per-row argmax sequence a

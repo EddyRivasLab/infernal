@@ -126,6 +126,8 @@ static ESL_OPTIONS options[] = {
   { "--p7pinbridge-vitgaps", eslARG_NONE, FALSE, NULL,     NULL,       NULL, "--p7pinbridge",                 NULL, "use exact mini-Viterbi gap costs in gap-aware LSIS (Option 3)", 3 },
   { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,  "--p7pinbridge", "use F+B direct-band derivation (w/--p7band or --hmm)",        3 },
   { "--p7ibv-delta",  eslARG_INT,      "3000", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "IBV Delta milli-bits",                                       3 },
+  { "--p7ibv-mode",  eslARG_STRING, "delta", NULL,        NULL,       NULL,     "--p7ibv",              NULL, "IBV band mode: delta|fixed|hybrid (brief 140)",             3 },
+  { "--p7ibv-width", eslARG_INT,       "20", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "fixed-width pad W around argmax-k pin (fixed/hybrid)",       3 },
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver (brief 124)",                 3 },
   { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
@@ -928,6 +930,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 					      p7ibv_delta,
 					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
@@ -1460,6 +1463,7 @@ hmm_pipeline_thread(void *arg)
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  p7ibv_delta, info->ibv_base_slab,
 					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }
@@ -2744,6 +2748,14 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--p7ibv")) {
     cm->p7_use_ibv   = TRUE;
     cm->p7_ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");
+    cm->p7_ibv_width = esl_opt_GetInteger(go, "--p7ibv-width");  /* brief 140 */
+    {                                                            /* brief 140: parse --p7ibv-mode */
+      const char *ibvmode = esl_opt_GetString(go, "--p7ibv-mode");
+      if      (strcmp(ibvmode, "delta")  == 0) cm->p7_ibv_mode = P7IBV_MODE_DELTA;
+      else if (strcmp(ibvmode, "fixed")  == 0) cm->p7_ibv_mode = P7IBV_MODE_FIXED;
+      else if (strcmp(ibvmode, "hybrid") == 0) cm->p7_ibv_mode = P7IBV_MODE_HYBRID;
+      else cm_Fail("--p7ibv-mode must be one of: delta, fixed, hybrid (got '%s')", ibvmode);
+    }
     if(esl_opt_GetBoolean(go, "--p7ibv-mem")) {
       cm->p7_ibv_mem       = TRUE;
       cm->p7_ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");

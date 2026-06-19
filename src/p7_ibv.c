@@ -305,6 +305,7 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L,
  */
 static void
 ibv_through_scan(int M, size_t k_stride, float thr,
+                 int ibv_mode, int ibv_width,
                  const float *FM, const float *FI, const float *FD,
                  const float *BM, const float *BI, const float *BD,
                  float *through_scratch,
@@ -357,6 +358,27 @@ ibv_through_scan(int M, size_t k_stride, float thr,
   if (row_kmin < 0) { *ret_kmin = 1; *ret_kmax = M; }
   else              { *ret_kmin = row_kmin; *ret_kmax = row_kmax; }
   if (ret_kargmax) *ret_kargmax = k_argmax;
+
+  /* Brief 140: enrich the per-row band using the argmax-k pin (k_argmax = i2k[i],
+   * the IBV-Viterbi cell that emits residue i).  This follows the optimal path by
+   * construction, unlike the Delta-cloud which admits noisy off-path cells.
+   *   FIXED  : replace band with the fixed-width spine [k_argmax-W, k_argmax+W].
+   *   HYBRID : union the Delta cloud with that spine (kmin <- min, kmax <- max).
+   *   DELTA  : leave the cloud unchanged (back-compat; this whole block is skipped).
+   * No-op when k_argmax < 1 (no emitting cell on this row, e.g. a pure-delete row,
+   * or the row-0 B-state convention i2k[0]=0): keep the Delta/default band so the
+   * existing boundary-row handling is preserved.  Clamp to model positions [1,M]. */
+  if (ibv_mode != P7IBV_MODE_DELTA && k_argmax >= 1) {
+    int lo = k_argmax - ibv_width; if (lo < 1) lo = 1;
+    int hi = k_argmax + ibv_width; if (hi > M) hi = M;
+    if (ibv_mode == P7IBV_MODE_FIXED) {
+      *ret_kmin = lo;
+      *ret_kmax = hi;
+    } else { /* P7IBV_MODE_HYBRID: union spine into the Delta cloud */
+      if (lo < *ret_kmin) *ret_kmin = lo;
+      if (hi > *ret_kmax) *ret_kmax = hi;
+    }
+  }
 }
 
 
@@ -366,6 +388,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
 
 int
 p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                int ibv_mode, int ibv_width,
                 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int       status;
@@ -536,6 +559,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 
     if (i >= 2 && i <= L - 2)
       ibv_through_scan(M, k_stride, thr,
+                       ibv_mode, ibv_width,
                        F_M(i), F_I(i), F_D(i),
                        B_M_curr, B_I_curr, B_D_curr,
                        through, &kmin[i], &kmax[i], &i2k[i]);
@@ -642,6 +666,8 @@ typedef struct {
   int    *kmax;
   int    *i2k;     /* argmax-k per row (brief 137); i2k[i] = Viterbi-trace cell. */
   float   thr;
+  int     ibv_mode;  /* brief 140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
+  int     ibv_width; /* brief 140: fixed-width pad W around argmax-k pin */
 } IBV_DnC_Ctx;
 
 static inline const float *
@@ -718,6 +744,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
     for (int r = 1; r <= slab_size; r++) {
       size_t off = (size_t) r * 3 * ks;
       ibv_through_scan(M, ks, ctx->thr,
+                       ctx->ibv_mode, ctx->ibv_width,
                        ctx->slab_F + off + 0*ks, ctx->slab_F + off + 1*ks, ctx->slab_F + off + 2*ks,
                        ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks,
                        ctx->through,
@@ -795,6 +822,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
 
   /* Through-scan at i_mid. */
   ibv_through_scan(M, ks, ctx->thr,
+                   ctx->ibv_mode, ctx->ibv_width,
                    F_mid_M, F_mid_I, F_mid_D,
                    ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks,
                    ctx->through, &ctx->kmin[i_mid], &ctx->kmax[i_mid], &ctx->i2k[i_mid]);
@@ -827,6 +855,7 @@ int
 p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                     int delta_milli, int base_slab,
                     int do_boundary_widen,
+                    int ibv_mode, int ibv_width,
                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int          status;
@@ -978,6 +1007,8 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.kmax     = kmax_arr;
   ctx.i2k      = i2k;
   ctx.thr      = thr;
+  ctx.ibv_mode = ibv_mode;   /* brief 140 */
+  ctx.ibv_width= ibv_width;  /* brief 140 */
 
   /* B seed for top-level: all NEG_INF; terminal injected via global_L. */
   if ((status = ibv_dnc_alloc(ks, &B_seed_M)) != eslOK) goto ERROR;

@@ -503,10 +503,12 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
 					   TRUE, /* do_boundary_widen: CM-side preserves current behavior */
+					   cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    } else {
 	      status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,
 				       cm->p7_ibv_delta,
+				       cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
 	    /* No internal ncells==0 fallback here: IBV always produces a band.
@@ -543,8 +545,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  {
 	    double _p7b_s = (_tb_p7b.tv_sec - _ta_p7b.tv_sec) +
 	                    (_tb_p7b.tv_nsec - _ta_p7b.tv_nsec) / 1e9;
-	    fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f\n",
-	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s);
+	    fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f ncells=%d ibvmode=%d ibvwidth=%d ibvdelta=%d\n",
+	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s,
+	            p7_ncells, cm->p7_ibv_mode, cm->p7_ibv_width, cm->p7_ibv_delta); /* brief 140: ncells = band-size discriminator */
 	  }
 
 	  /* Debug: report Viterbi band stats */
