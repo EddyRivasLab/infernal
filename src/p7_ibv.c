@@ -382,6 +382,55 @@ ibv_through_scan(int M, size_t k_stride, float thr,
 }
 
 
+/* ibv_connectivity_guard -- bridge inter-row band gaps for FIXED/HYBRID modes.
+ *
+ * Brief 140a.  The narrow per-row FIXED/HYBRID bands (centered on the argmax-k
+ * pin) can be DISCONNECTED between adjacent rows when the pin jumps -- e.g. a
+ * long insert on the optimal path makes k_argmax[i] >> k_argmax[i-1], so
+ * kmin[i] > kmax[i-1] + 1.  The downstream banded CP9 Forward/Backward
+ * (cp9_ForwardP7BF / cp9_BackwardP7BF) then has no complete row-0..row-L path:
+ * the backward total bmx->mmx[0][0] collapses to -inf, the posterior
+ *   pmx = fmx + bmx - (-inf) = (-inf) + (-inf) + inf = NaN
+ * (cp9_FB2HMMBandsP7BF), and the NaN reaches p7_FLogsum, whose lookup-table
+ * index (int)((max-min)*1000) overflows the 16000-entry flogsum_lookup -> SIGSEGV.
+ *
+ * Connectivity precondition (per adjacent pair i-1,i): residue i is emitted by
+ * M_{i,k} (predecessor k-1 in band[i-1]) or I_{i,k} (predecessor k in band[i-1]),
+ * with intra-row deletes shifting k upward only.  A valid entry into band[i]
+ * exists iff [kmin[i-1], kmax[i-1]+1] intersects [kmin[i], kmax[i]], i.e.
+ *     kmin[i] <= kmax[i-1] + 1   AND   kmax[i] >= kmin[i-1].
+ * (The brief 140a sketch used kmin[i-1]-1 for the second test; that is too weak
+ *  by one -- kmax[i]==kmin[i-1]-1 still leaves no in-band predecessor.)
+ *
+ * The guard widens band[i] minimally to satisfy this for every i.  DELTA mode is
+ * skipped (its posterior-reachable bands are connected by construction).  Rows 0
+ * and 1 connect to the B-state via the begin transition (no diagonal needed), so
+ * the forward sweep starts at i=2.  A single forward sweep is provably sufficient
+ * to guarantee a complete path (hence a finite total); the backward sweep is kept
+ * for robustness -- it can only widen further and so cannot re-introduce a gap.
+ * Widening keeps kmin>=1 and kmax<=M; the final clamp is purely defensive.
+ */
+static void
+ibv_connectivity_guard(int L, int M, int ibv_mode, int *kmin, int *kmax)
+{
+  int i;
+  if (ibv_mode == P7IBV_MODE_DELTA) return;
+  for (i = 2; i <= L; i++) {                 /* forward: connect row i down to i-1 */
+    if (kmin[i] > kmax[i-1] + 1) kmin[i] = kmax[i-1] + 1;
+    if (kmax[i] < kmin[i-1])     kmax[i] = kmin[i-1];
+  }
+  for (i = L - 1; i >= 1; i--) {             /* backward: connect row i up to i+1 */
+    if (kmin[i] > kmax[i+1] + 1) kmin[i] = kmax[i+1] + 1;
+    if (kmax[i] < kmin[i+1])     kmax[i] = kmin[i+1];
+  }
+  for (i = 1; i <= L; i++) {                  /* defensive clamp to [1,M] */
+    if (kmin[i] < 1) kmin[i] = 1;
+    if (kmax[i] > M) kmax[i] = M;
+    if (kmax[i] < kmin[i]) kmax[i] = kmin[i];
+  }
+}
+
+
 /* ---------------------------------------------------------------------------
  * p7_Seq2BandsIBV -- C1 rewrite (byte-exact vs brief 121 C3)
  * ---------------------------------------------------------------------------*/
@@ -573,6 +622,10 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   if (L >= 2) { kmin[L - 1] = 1; kmax[L - 1] = M; }
   if (L >= 1) { kmin[L] = 1; kmax[L] = M; }
   kmin[0] = 0; kmax[0] = 0;
+
+  /* Brief 140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
+   * (DELTA untouched).  Must run before ncells is summed. */
+  ibv_connectivity_guard(L, M, ibv_mode, kmin, kmax);
 
   for (i = 1; i <= L; i++)
     ncells += (kmax[i] - kmin[i] + 1);
@@ -1032,6 +1085,10 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   }
   kmin_arr[0] = 0; kmax_arr[0] = 0;
   i2k[0] = 0;   /* B-state convention (brief 137): i2k[i]=argmax_k for i in [1,L]. */
+
+  /* Brief 140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
+   * (DELTA untouched).  Must run before ncells is summed. */
+  ibv_connectivity_guard(L, M, ibv_mode, kmin_arr, kmax_arr);
 
   for (i = 1; i <= L; i++)
     ncells += (kmax_arr[i] - kmin_arr[i] + 1);
