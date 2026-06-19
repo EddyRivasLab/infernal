@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>		/* isalpha(), for pknot char validation */
 
 #ifdef HMMER_THREADS
 #include <pthread.h>
@@ -2106,16 +2107,20 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	    if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK) ESL_XFAIL(status,    cmfp->errbuf, "Too few fields on node line: expected %d, got %d", nnfields, 12);
 	    if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL)) != eslOK) ESL_XFAIL(status,    cmfp->errbuf, "Too few fields on node line: expected %d, got %d", nnfields, 13);
 	    if      ((cm->flags & CMH_PKNOT) && cm->ndtype[nd] == MATP_nd) {
+	      if (! (isalpha((int) *tok1) || *tok1 == '.' || *tok1 == '-'))                ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st pknot character on MATP node line: should be alpha, '.', or '-', not %s", tok1);
+	      if (! (isalpha((int) *tok2) || *tok2 == '.' || *tok2 == '-'))                ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd pknot character on MATP node line: should be alpha, '.', or '-', not %s", tok2);
 	      tmp_pknot_left[nd]  = *tok1;
 	      tmp_pknot_right[nd] = *tok2;
 	    }
 	    else if((cm->flags & CMH_PKNOT) && cm->ndtype[nd] == MATL_nd) {
+	      if (! (isalpha((int) *tok1) || *tok1 == '.' || *tok1 == '-'))                ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st pknot character on MATL node line: should be alpha, '.', or '-', not %s", tok1);
 	      if (*tok2 != '-')                                                            ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd pknot character on MATL node line: should be '-', not %s", tok2);
 	      tmp_pknot_left[nd]  = *tok1;
 	      tmp_pknot_right[nd] = *tok2;
 	    }
 	    else if((cm->flags & CMH_PKNOT) && cm->ndtype[nd] == MATR_nd) {
 	      if (*tok1 != '-')                                                            ESL_XFAIL(status,    cmfp->errbuf, "Invalid 1st pknot character on MATR node line: should be '-', not %s", tok1);
+	      if (! (isalpha((int) *tok2) || *tok2 == '.' || *tok2 == '-'))                ESL_XFAIL(status,    cmfp->errbuf, "Invalid 2nd pknot character on MATR node line: should be alpha, '.', or '-', not %s", tok2);
 	      tmp_pknot_left[nd]  = *tok1;
 	      tmp_pknot_right[nd] = *tok2;
 	    }
