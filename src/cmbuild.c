@@ -2123,12 +2123,18 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
        char c = pk[cpos];
        if (isupper((int) c)) {
          i = c - 'A';
-         if (relabel[i] == 0) relabel[i] = (char) ('A' + (nextlab++));
+         if (relabel[i] == 0) {
+           if (nextlab >= 26) ESL_XFAIL(eslEINVAL, errbuf, "More than 26 distinct pseudoknot stems survive in the consensus; cannot relabel to A-Z without emitting non-alphabetic (invalid) WUSS");
+           relabel[i] = (char) ('A' + (nextlab++));
+         }
          pk[cpos] = relabel[i];
        }
        else if (islower((int) c)) {
          i = c - 'a';
-         if (relabel[i] == 0) relabel[i] = (char) ('A' + (nextlab++));  /* defensive: close seen before open */
+         if (relabel[i] == 0) {                                         /* defensive: close seen before open */
+           if (nextlab >= 26) ESL_XFAIL(eslEINVAL, errbuf, "More than 26 distinct pseudoknot stems survive in the consensus; cannot relabel to A-Z without emitting non-alphabetic (invalid) WUSS");
+           relabel[i] = (char) ('A' + (nextlab++));
+         }
          pk[cpos] = (char) tolower((int) relabel[i]);
        }
      }
