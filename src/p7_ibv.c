@@ -637,11 +637,24 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
       if (fp != NULL) {
         fprintf(fp, "# M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d\n",
                 M, L, delta_milli, (double) optimal, (double) thr, ncells);
-        fprintf(fp, "# i\tkmin\tkmax\twidth\n");
+        fprintf(fp, "# i\tkmin\tkmax\twidth\ti2k\n");   /* brief 142: + i2k (argmax-k pin) */
         for (i = 1; i <= L; i++)
-          fprintf(fp, "%d\t%d\t%d\t%d\n", i, kmin[i], kmax[i], kmax[i] - kmin[i] + 1);
+          fprintf(fp, "%d\t%d\t%d\t%d\t%d\n", i, kmin[i], kmax[i], kmax[i] - kmin[i] + 1, i2k[i]);
         fclose(fp);
       }
+    }
+  }
+
+  /* Brief 142: per-row band dump to stderr (multi-seq safe; one block/seq). */
+  {
+    const char *p142 = getenv("P142_DUMP_BANDS");
+    if (p142 != NULL && *p142 != '\0') {
+      fprintf(stderr, "#P142_BAND_BEGIN M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d path=flat\n",
+              M, L, delta_milli, (double) optimal, (double) thr, ncells);
+      for (i = 1; i <= L; i++)
+        fprintf(stderr, "#P7BAND_DUMP i=%d i2k=%d kmin=%d kmax=%d width=%d\n",
+                i, i2k[i], kmin[i], kmax[i], kmax[i] - kmin[i] + 1);
+      fprintf(stderr, "#P142_BAND_END L=%d\n", L);
     }
   }
 
@@ -1100,11 +1113,24 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
       if (fp != NULL) {
         fprintf(fp, "# M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d\n",
                 M, L, delta_milli, (double) optimal, (double) thr, ncells);
-        fprintf(fp, "# i\tkmin\tkmax\twidth\n");
+        fprintf(fp, "# i\tkmin\tkmax\twidth\ti2k\n");   /* brief 142: + i2k (argmax-k pin) */
         for (i = 1; i <= L; i++)
-          fprintf(fp, "%d\t%d\t%d\t%d\n", i, kmin_arr[i], kmax_arr[i], kmax_arr[i] - kmin_arr[i] + 1);
+          fprintf(fp, "%d\t%d\t%d\t%d\t%d\n", i, kmin_arr[i], kmax_arr[i], kmax_arr[i] - kmin_arr[i] + 1, i2k[i]);
         fclose(fp);
       }
+    }
+  }
+
+  /* Brief 142: per-row band dump to stderr (multi-seq safe; one block/seq). */
+  {
+    const char *p142 = getenv("P142_DUMP_BANDS");
+    if (p142 != NULL && *p142 != '\0') {
+      fprintf(stderr, "#P142_BAND_BEGIN M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d path=dnc\n",
+              M, L, delta_milli, (double) optimal, (double) thr, ncells);
+      for (i = 1; i <= L; i++)
+        fprintf(stderr, "#P7BAND_DUMP i=%d i2k=%d kmin=%d kmax=%d width=%d\n",
+                i, i2k[i], kmin_arr[i], kmax_arr[i], kmax_arr[i] - kmin_arr[i] + 1);
+      fprintf(stderr, "#P142_BAND_END L=%d\n", L);
     }
   }
 
