@@ -1453,7 +1453,40 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      if (w_pcut != NULL) esl_stopwatch_Destroy(w_pcut);
    }
 
-   if ((status = cm_FastCalibrate(cm)) != eslOK) ESL_FAIL(status, errbuf, "cm_FastCalibrate failed");
+   /* Automatic E-value calibration (fastcal) was trained only on default
+    * cmbuild construction. Non-default local-begin/end probabilities
+    * (--pbegin/--pebegin/--pend/--pfend) or a custom null model (--null) take
+    * fastcal out of its trained domain, where it can emit silently wrong
+    * E-value parameters. For these flags, skip fastcal entirely and write a
+    * CM with NO E-value statistics; the user must run cmcalibrate before
+    * searching (the classic build->calibrate->search workflow). Skipping
+    * cm_FastCalibrate() leaves CMH_EXPTAIL_STATS unset, so cm_file_WriteASCII
+    * emits no ECM lines.
+    */
+   int nondefault_construct =
+        esl_opt_IsUsed(go, "--pbegin")  || esl_opt_IsUsed(go, "--pebegin") ||
+        esl_opt_IsUsed(go, "--pend")    || esl_opt_IsUsed(go, "--pfend")   ||
+        esl_opt_IsUsed(go, "--null");
+   if (nondefault_construct) {
+     fprintf(cfg->ofp, "# WARNING: this CM was built with a non-default local-begin/end or null model\n");
+     fprintf(cfg->ofp, "# (--pbegin/--pebegin/--pend/--pfend/--null). Automatic E-value calibration does\n");
+     fprintf(cfg->ofp, "# not support this construction, so NO E-value statistics were written.\n");
+     fprintf(cfg->ofp, "# Run 'cmcalibrate' on this CM before using cmsearch/cmscan\n");
+     fprintf(cfg->ofp, "# (use 'cmcalibrate --nonull3' if you will search with --nonull3).\n");
+     fflush(cfg->ofp);
+     /* Also emit to stderr so a user who did not redirect output with -o still
+      * sees it; avoid double-printing when cfg->ofp is already stdout. */
+     if (cfg->ofp != stdout) {
+       fprintf(stderr, "# WARNING: this CM was built with a non-default local-begin/end or null model\n");
+       fprintf(stderr, "# (--pbegin/--pebegin/--pend/--pfend/--null). Automatic E-value calibration does\n");
+       fprintf(stderr, "# not support this construction, so NO E-value statistics were written.\n");
+       fprintf(stderr, "# Run 'cmcalibrate' on this CM before using cmsearch/cmscan\n");
+       fprintf(stderr, "# (use 'cmcalibrate --nonull3' if you will search with --nonull3).\n");
+     }
+   }
+   else {
+     if ((status = cm_FastCalibrate(cm)) != eslOK) ESL_FAIL(status, errbuf, "cm_FastCalibrate failed");
+   }
    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
    if (avgpad >= 0.0) {
