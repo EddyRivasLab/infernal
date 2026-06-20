@@ -104,7 +104,7 @@ static ESL_OPTIONS options[] = {
   { "--maxtau",      eslARG_REAL,      "0.05", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
-  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g","--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 3 },
+  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        "-g","--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 3 },
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
@@ -1640,7 +1640,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc */
   if(  esl_opt_GetBoolean(go, "--small"))       cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
-  if(  esl_opt_GetBoolean(go, "--ckpt"))        cm->align_opts |= CM_ALIGN_CHECKPT; /* --ckpt requires --notrunc -g (sqrt(M)-mem optacc) */
+  if(  esl_opt_GetBoolean(go, "--ckpt"))        cm->align_opts |= CM_ALIGN_CHECKPT; /* --ckpt requires -g; sqrt(M)-mem optacc in both truncated (default) and --notrunc modes */
   if((! esl_opt_GetBoolean(go, "--fixedtau")) &&
      (  esl_opt_GetBoolean(go, "--hbanded"))) { 
     cm->align_opts |= CM_ALIGN_XTAU;
