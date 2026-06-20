@@ -427,7 +427,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	 * models (M < ~200), causing accuracy regression on rmark4e (Lacto-usp, atoC,
 	 * snoZ152, ar45, SNORA47). Fall back to unbanded CP9 F/B for small CMs; the
 	 * absolute wall savings from --p7band on tiny CMs is negligible. See brief 059. */
-#define P7BAND_MIN_M 200
+#define P7BAND_MIN_M 0   /* was 200; gate was introduced in brief 062 (session 19) for
+                            the pinbridge-era band-derivation path. The current F+B IBV
+                            (briefs 116-126) is a different algorithm; gate removed per
+                            brief 141. */
 	if(do_p7band && cm->fp7 != NULL && cm->fp7->M < P7BAND_MIN_M) {
 	  fprintf(stderr, "#P7BAND_SKIP M=%d reason=small_M_acc_gap (threshold=%d)\n",
 		  cm->fp7->M, P7BAND_MIN_M);
