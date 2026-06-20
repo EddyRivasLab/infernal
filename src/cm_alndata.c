@@ -422,12 +422,24 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
       
       if(w != NULL) esl_stopwatch_Start(w);
-      if(do_trunc) { 
-	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      if(do_trunc) {
+	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
-				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
-				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
+	 * (CM_ALIGN_CHECKPT) for the global, pure-MATL-chain (bps=0) OptAcc case it
+	 * supports (marginal modes J/L/R, T absent); stock cm_TrAlignHB() otherwise
+	 * (byte-identical output, but full-cube memory). */
+	int do_trckpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+			 cm_CheckptTrAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+	if(do_trckpt) {
+	  if((status = cm_CheckptTrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+					   cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	}
+	else {
+      	  if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+				    do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
+				    cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	}
       }
       else {
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
