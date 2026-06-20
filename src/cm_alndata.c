@@ -727,22 +727,35 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
 
       if(w != NULL) esl_stopwatch_Start(w);
-      struct timespec _ta_cm, _tb_cm;
-      clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
-    CM_ALIGN_HB_RETRY:
-      if(do_trunc) {
-	/* brief 126 merge: keep cd577024's #DBG-009 instrumentation, but route
-	 * SizeNeededHB failure to CM_ALIGN_HB_CHECK_FB (IBV vitband fallback)
-	 * instead of directly to ERROR, so the brief-120 IBV fallback stays live
-	 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR. */
-	status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	  struct timespec _ta_cm, _tb_cm;
+	  clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
+	CM_ALIGN_HB_RETRY:
+	  if(do_trunc) {
+		/* brief 126 merge: keep cd577024's #DBG-009 instrumentation, but route
+		 * SizeNeededHB failure to CM_ALIGN_HB_CHECK_FB (IBV vitband fallback)
+		 * instead of directly to ERROR, so the brief-120 IBV fallback stays live
+		 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR. */
+		status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
-	fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
-		status, mb_tot, (float) mxsize, do_post, errbuf);
-	if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
-      	status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
-				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
-				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc);
+		fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
+			status, mb_tot, (float) mxsize, do_post, errbuf);
+		if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+		/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
+		 * (CM_ALIGN_CHECKPT) for the global, pure-MATL-chain (bps=0) OptAcc case it
+		 * supports (marginal modes J/L/R, T absent); stock cm_TrAlignHB() otherwise
+		 * (byte-identical output, but full-cube memory). On failure fall through to
+		 * CM_ALIGN_HB_CHECK_FB (IBV vitband fallback), not ERROR. */
+		int do_trckpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+				 cm_CheckptTrAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+		if(do_trckpt) {
+		  status = cm_CheckptTrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+					       cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc);
+		}
+		else {
+	      	  status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+				    do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
+				    cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc);
+		}
       }
       else {
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
