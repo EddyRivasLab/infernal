@@ -2025,9 +2025,16 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   }
 
   /* ROOT_S band sanity */
-  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L outside ROOT_S j band");
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    int jp0dbg = (cx.jmax[0] >= L && cx.jmin[0] <= L) ? (L - cx.jmin[0]) : -1;
+    fprintf(stderr, "#TRCKPT-DBG entry: M=%d L=%d  ROOT_S j[%d..%d]  d[%d..%d]@jp_0=%d  Jv0=%d Lv0=%d Rv0=%d\n",
+            M, L, cx.jmin[0], cx.jmax[0],
+            (jp0dbg>=0?cx.hdmin[0][jp0dbg]:-999), (jp0dbg>=0?cx.hdmax[0][jp0dbg]:-999), jp0dbg,
+            cx.Jv[0], cx.Lv[0], cx.Rv[0]);
+  }
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L (%d) outside ROOT_S j band [%d..%d]", L, cx.jmin[0], cx.jmax[0]);
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L outside ROOT_S d band");
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L (%d) outside ROOT_S d band [%d..%d]", L, cx.hdmin[0][jp_0], cx.hdmax[0][jp_0]);
 
   /* deck geometry + child/parent reach */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
