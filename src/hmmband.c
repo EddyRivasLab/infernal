@@ -1358,7 +1358,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
-  int hd_needed;
+  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated (brief 147) */
   int j;
 
 
@@ -1462,8 +1462,8 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
 {
   int status;
   int v;
-  int cur_size = 0;
-  int jbw;
+  int64_t cur_size = 0; /* int64: cumulative hd offset can exceed 2^31 at genome-scale truncated (brief 147) */
+  int jbw;              /* per-state j-band width; bounded by L+1, fits int */
 
   /* count size we need for hdmin/hdmax given current jmin, jmax */
   cp9b->hd_needed = 0; /* we'll rewrite this */
