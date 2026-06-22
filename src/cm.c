@@ -134,6 +134,7 @@ CreateCMShell(void)
   cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 124) */
   cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 140, --p7ibv-mode) */
   cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 140, --p7ibv-width) */
+  cm->p7_ibv_ckpt      = FALSE;          /* default: non-checkpointed Pass-2 CP9 F/B (--p7ibv-ckpt, brief 146) */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3121,6 +3122,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_ibv_base_slab = cm->p7_ibv_base_slab;
   new->p7_ibv_mode      = cm->p7_ibv_mode;
   new->p7_ibv_width     = cm->p7_ibv_width;
+  new->p7_ibv_ckpt      = cm->p7_ibv_ckpt;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

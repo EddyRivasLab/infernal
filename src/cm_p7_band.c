@@ -2903,11 +2903,12 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
    * per-cell pruning in cp9_FB2HMMBands doesn't suffer the sum-then-threshold
    * accumulation problem, and we want zero changes to the int path here. */
 
-  /* brief 146 (144-B): checkpointed banded CP9 F/B. Opt-in via CP9_CKPT env
-   * (proper --p7ibv-ckpt CLI added in Phase 3). Holds O(sqrt(L)*avg_bw) memory
-   * instead of three ncells matrices; bands are byte-identical. Each tau bump
-   * recomputes the checkpointed F/B (no cached pmx). */
-  if(getenv("CP9_CKPT") != NULL) {
+  /* brief 146 (144-B): checkpointed banded CP9 F/B (--p7ibv-ckpt, or CP9_CKPT
+   * env for debugging). Holds O(sqrt(L)*avg_bw) memory instead of three ncells
+   * matrices; bands are byte-identical. Each tau bump recomputes the
+   * checkpointed F/B (no cached pmx) — bump count instrumented below. */
+  if(cm->p7_ibv_ckpt || getenv("CP9_CKPT") != NULL) {
+    int nbump = 0;
     while(1) {
       if((status = cp9_FBMatrices2BandsP7B_chk(cm, errbuf, cp9, dsq, cm->cp9b,
                                                kmin, kmax, L, i0, j0, pass_idx, 0,
@@ -2924,7 +2925,9 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
       if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
       if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
       if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+      nbump++;
     }
+    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPT_TAU L=%d tau_bumps=%d (each bump recomputes the checkpointed F/B)\n", L, nbump);
     if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
     if(hbmx_Mb > size_limit) return eslERANGE;
     return eslOK;
