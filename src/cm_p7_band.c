@@ -2903,6 +2903,33 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
    * per-cell pruning in cp9_FB2HMMBands doesn't suffer the sum-then-threshold
    * accumulation problem, and we want zero changes to the int path here. */
 
+  /* brief 146 (144-B): checkpointed banded CP9 F/B. Opt-in via CP9_CKPT env
+   * (proper --p7ibv-ckpt CLI added in Phase 3). Holds O(sqrt(L)*avg_bw) memory
+   * instead of three ncells matrices; bands are byte-identical. Each tau bump
+   * recomputes the checkpointed F/B (no cached pmx). */
+  if(getenv("CP9_CKPT") != NULL) {
+    while(1) {
+      if((status = cp9_FBMatrices2BandsP7B_chk(cm, errbuf, cp9, dsq, cm->cp9b,
+                                               kmin, kmax, L, i0, j0, pass_idx, 0,
+                                               do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
+      if(doing_search) {
+        if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR;
+      }
+      else {
+        status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+        if(status != eslOK && status != eslERANGE) goto ERROR;
+      }
+      if(hbmx_Mb < size_limit)                                  break;
+      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+    }
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    if(hbmx_Mb > size_limit) return eslERANGE;
+    return eslOK;
+  }
+
   /* Phase 1: P7-banded CP9 Forward + Backward — run once, cache across iterations. */
   if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, cm->cp9_mx, dsq, L, kmin, kmax, &sc)) != eslOK) goto ERROR;
   if((status = cp9_BackwardP7B(cp9, errbuf, cm->cp9_bmx, dsq, L, kmin, kmax, NULL)) != eslOK) goto ERROR;
