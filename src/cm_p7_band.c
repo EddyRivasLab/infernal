@@ -5860,6 +5860,24 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
     /* float path: do_renorm always FALSE. The point of the float DP is that
      * pocc[k] arrives at ~1.0 in glocal mode without the median heuristic. */
     cp9_PredictStartAndEndPositionsP7BF(pmx, cp9b, kmin, kmax, i0, j0);
+    /* brief 149: in glocal alignment the full (J-mode) parse must always be
+     * geometrically available. The thresh1 escalation in cp9_IterateSeq2BandsP7B
+     * can retreat ep1 below clen (and, in principle, push sp1 above 1) on models
+     * with a decaying posterior-occupancy tail -- e.g. pure-MATL VADR genome
+     * models such as NC_001959, where every state's rpos == clen, so once
+     * ep1 < clen every state gets Jvalid[v] = FALSE in
+     * cp9_MarginalCandidatesFromStartEndPositions(). That excludes the full parse
+     * and cm_TrInsideAlignHB() returns "no valid parsetree" in -g mode (local mode
+     * survives via an EL escape). Floor sp1 <= 1 and ep1 >= clen so the entire
+     * model stays J-valid. Scoped to glocal (CMH_LOCAL_BEGIN off) to leave local
+     * mode byte-identical (it already has a valid root, and EL handles the tail).
+     * This whole float-truncated band path is cmalign-only: cp9_IterateSeq2BandsP7B
+     * is reached only from cm_alndata.c with doing_search == FALSE, so
+     * (do_align && !doing_search) holds by construction. */
+    if(! (cm->flags & CMH_LOCAL_BEGIN)) {
+      if(cp9b->sp1 > 1)        cp9b->sp1 = 1;
+      if(cp9b->ep1 < cm->clen) cp9b->ep1 = cm->clen;
+    }
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
