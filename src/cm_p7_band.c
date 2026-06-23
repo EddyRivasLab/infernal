@@ -2859,6 +2859,37 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cp9 is NULL (pass_idx %d).", pass_idx);
 
   if(do_trunc) {
+    /* brief 150 (144-B Phase 2): checkpointed banded CP9 float F/B for the
+     * truncated path (--p7ibv-ckpt, or CP9_CKPT env). Byte-identical bands in
+     * O(sqrt(L)*avg_bw) memory. Wired BEFORE the float matrices below are
+     * allocated; the tau-ratchet recomputes the checkpointed float F/B each
+     * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
+    if(cm->p7_ibv_ckpt || getenv("CP9_CKPT") != NULL) {
+      int nbump = 0;
+      while(1) {
+        if((status = cp9_FBMatrices2BandsP7BF_chk(cm, errbuf, cp9, dsq, cm->cp9b,
+                                                  kmin, kmax, L, i0, j0, pass_idx, 0,
+                                                  do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
+        if(doing_search) {
+          if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR;
+        }
+        else {
+          status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+          if(status != eslOK && status != eslERANGE) goto ERROR;
+        }
+        if(hbmx_Mb < size_limit)                                  break;
+        if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+        if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+        if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+        if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+        nbump++;
+      }
+      if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPTF_TAU L=%d tau_bumps=%d (each bump recomputes the checkpointed float F/B)\n", L, nbump);
+      if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+      if(hbmx_Mb > size_limit) return eslERANGE;
+      return eslOK;
+    }
+
     /* Float path: use float-DP CP9 F/B/Posterior to avoid the ~3% per-cell
      * precision drift that destabilizes pocc-based sp/ep prediction in
      * truncated mode. Allocate local float matrices; we do NOT reuse

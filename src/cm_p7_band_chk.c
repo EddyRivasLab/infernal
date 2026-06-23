@@ -1197,3 +1197,1286 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
 
   return eslOK;
 }
+
+
+/*****************************************************************
+ * FLOAT/TRUNCATED PATH (brief 150, Phase 2).
+ *
+ * A parallel set of float-typed checkpointed kernels mirroring the int
+ * (non-trunc) machinery above, but transcribed VERBATIM from the float
+ * originals cp9_ForwardP7BF / cp9_BackwardP7BF / cp9_PosteriorP7BF (inline in
+ * cp9_FB2HMMBandsP7BF) / cp9_PredictStartAndEndPositionsP7BF (cm_p7_band.c),
+ * so that the checkpointed float bands are BYTE-IDENTICAL to the
+ * non-checkpointed float truncated path. Two float-specific structural
+ * features that the int path lacks and MUST be reproduced:
+ *   (a) cp9_ForwardP7BF has the brief-134 BM-coverage supplementary pass
+ *       (begin + EL-from-into-M for the full row band minus the match range);
+ *       it writes mmx/elmx cells the posterior reads.
+ *   (b) the erow EL-from-M+1 accumulation is NOT gated on INBAND(i,M).
+ *       (erow is dead for band derivation, but reproduced for fidelity.)
+ *
+ * Function/struct suffix F. Substitutions vs the originals:
+ *   mmx[i]->mc, mmx[i-1]->mp, mmx[i+1]->mn (and i/d/el likewise).
+ *****************************************************************/
+
+/* Forward row 0 (init). Verbatim from cp9_ForwardP7BF i=0 block.
+ * Planes mc/ic/dc/ec are row-0 (offset 0 = kmin[0]==0). */
+static void
+cp9_chk_fwd_row0F(CP9_t *cp9, int *kmin, int *kmax, int M,
+                  float *mc, float *ic, float *dc, float *ec, float *ret_erow0)
+{
+  int const *tsc = cp9->otsc;
+  int k, kn, kp;
+  float sc, erow0;
+
+  mc[0] = 0.;       /* M_0 is state B */
+  ic[0] = -eslINFINITY;
+  dc[0] = -eslINFINITY;
+  ec[0] = -eslINFINITY;
+
+  kn = ESL_MAX(1, kmin[0]);
+  kp = kn - kmin[0];
+  for (k = kn; k <= kmax[0]; k++, kp++) {
+    mc[kp] = ic[kp] = ec[kp] = -eslINFINITY;
+    sc = -eslINFINITY;
+    if(kp > 0) {
+      sc = p7_FLogsum(p7_FLogsum(mc[kp-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+                                 ic[kp-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
+                      dc[kp-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
+    }
+    dc[kp] = sc;
+  }
+  erow0 = -eslINFINITY;
+  if(INBAND(0, M)) { erow0 = dc[M] + Scorify(CP9TSC(cp9O_DM,M)); } /* kmin[0]==0 so abs M == rel M */
+  if(ret_erow0) *ret_erow0 = erow0;
+}
+
+/* Forward row i (1..L). Verbatim from cp9_ForwardP7BF main loop body, INCLUDING
+ * the brief-134 BM-coverage supplementary pass. Cur planes mc/ic/dc/ec (offset
+ * 0 = kmin[i]); prev planes mp/ip/dp/ep (offset 0 = kmin[i-1]). */
+static void
+cp9_chk_fwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
+                 float *mp, float *ip, float *dp, float *ep,
+                 float *mc, float *ic, float *dc, float *ec, float *ret_erow)
+{
+  int const *tsc = cp9->otsc;
+  int const *isc_i = cp9->isc[dsq[i]];
+  int const *msc_i = cp9->msc[dsq[i]];
+  float endsc = -eslINFINITY;
+  float sc;
+  int k, kn, kx, kpcur, kpprv;
+
+  if(kmin[i] == 0) {
+    mc[0]  = -eslINFINITY;
+    dc[0]  = -eslINFINITY;
+    ec[0]  = -eslINFINITY;
+    sc = p7_FLogsum(p7_FLogsum(mp[0] + Scorify(CP9TSC(cp9O_MI,0)),
+                               ip[0] + Scorify(CP9TSC(cp9O_II,0))),
+                    dp[0] + Scorify(CP9TSC(cp9O_DI,0)));
+    ic[0] = sc + Scorify(isc_i[0]);
+    kn = 1;
+  }
+  else {
+    kn = kmin[i];
+  }
+
+  /* match */
+  kn = ESL_MAX(kn, (kmin[i-1]+1));
+  kx = ESL_MIN(kmax[i], kmax[i-1]+1);
+
+  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mc[kpcur] = -eslINFINITY;
+  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mc[kpcur] = -eslINFINITY;
+  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) ec[kpcur] = -eslINFINITY;
+  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) ec[kpcur] = -eslINFINITY;
+
+  kpcur = kn - kmin[i];
+  kpprv = kn - kmin[i-1];
+  for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
+    sc = p7_FLogsum(p7_FLogsum(mp[kpprv-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
+                               ip[kpprv-1] + Scorify(CP9TSC(cp9O_IM,k-1))),
+                    dp[kpprv-1] + Scorify(CP9TSC(cp9O_DM,k-1)));
+    if(INBAND(i-1, 0)) {
+      assert(kmin[(i-1)] == 0);
+      if(mp[0] != -eslINFINITY)
+        sc = p7_FLogsum(sc, mp[0] + Scorify(CP9TSC(cp9O_BM,k)));
+    }
+    if (cp9->flags & CPLAN9_EL) {
+      int c_el, kpprv_el;
+      for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
+        if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
+          kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
+          sc = p7_FLogsum(sc, ep[kpprv_el]);
+        }
+      }
+    }
+    if(sc != -eslINFINITY) {
+      mc[kpcur] = sc + Scorify(msc_i[k]);
+      endsc = p7_FLogsum(endsc, mc[kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+    }
+    else {
+      mc[kpcur] = -eslINFINITY;
+    }
+    {
+      float el_sc = -eslINFINITY;
+      if ((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+        el_sc = mc[kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
+        if (INBAND(i-1, k)) {                              /* EL self-loop */
+          int kpprv_el = k - kmin[i-1];
+          el_sc = p7_FLogsum(el_sc, ep[kpprv_el] + Scorify(cp9->el_selfsc));
+        }
+      }
+      ec[kpcur] = el_sc;
+    }
+  }
+
+  /* brief 134 BM-coverage supplementary pass (float-only; absent in int kernel).
+   * Full row band [max(1,kmin[i]),kmax[i]] MINUS the [kn,kx] match range, adding
+   * begin + EL-from-into-M (no in-band diagonal predecessor here). */
+  if(INBAND(i-1, 0) && mp[0] != -eslINFINITY) {
+    int k_lo = ESL_MAX(1, kmin[i]);
+    int k_hi = kmax[i];
+    for (k = k_lo; k <= k_hi; k++) {
+      if(k >= kn && k <= kx) continue;   /* already filled by the match loop */
+      kpcur = k - kmin[i];
+
+      sc = mp[0] + Scorify(CP9TSC(cp9O_BM,k));  /* begin; diagonal predecessor out of band here */
+
+      if (cp9->flags & CPLAN9_EL) {
+        int c_el, kpprv_el;
+        for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
+          if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
+            kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
+            sc = p7_FLogsum(sc, ep[kpprv_el]);
+          }
+        }
+      }
+
+      if(sc != -eslINFINITY) {
+        mc[kpcur] = sc + Scorify(msc_i[k]);
+        endsc = p7_FLogsum(endsc, mc[kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+      }
+      else {
+        mc[kpcur] = -eslINFINITY;
+      }
+
+      {
+        float el_sc = -eslINFINITY;
+        if ((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+          el_sc = mc[kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
+          if (INBAND(i-1, k)) {                              /* EL self-loop */
+            int kpprv_el = k - kmin[i-1];
+            el_sc = p7_FLogsum(el_sc, ep[kpprv_el] + Scorify(cp9->el_selfsc));
+          }
+        }
+        ec[kpcur] = el_sc;
+      }
+    }
+  }
+
+  /* insert */
+  kn = ESL_MAX(kmin[i], kmin[i-1]);
+  kx = ESL_MIN(kmax[i], kmax[i-1]);
+  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) ic[kpcur] = -eslINFINITY;
+  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) ic[kpcur] = -eslINFINITY;
+  kpcur = kn - kmin[i];
+  kpprv = kn - kmin[i-1];
+  for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
+    sc = p7_FLogsum(p7_FLogsum(mp[kpprv] + Scorify(CP9TSC(cp9O_MI,k)),
+                               ip[kpprv] + Scorify(CP9TSC(cp9O_II,k))),
+                    dp[kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+    if(sc != -eslINFINITY) ic[kpcur] = sc + Scorify(isc_i[k]);
+    else                   ic[kpcur] = -eslINFINITY;
+  }
+
+  /* delete */
+  kn = kmin[i]+1;
+  for (kpcur = 0; kpcur < (kn - kmin[i]); kpcur++) dc[kpcur] = -eslINFINITY;
+  kpcur = kn - kmin[i];
+  for (k = kn; k <= kmax[i]; k++, kpcur++) {
+    sc = p7_FLogsum(p7_FLogsum(mc[kpcur-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+                               ic[kpcur-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
+                    dc[kpcur-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
+    dc[kpcur] = sc;
+  }
+
+  if(INBAND(i, M)) {
+    endsc = p7_FLogsum(p7_FLogsum(endsc, dc[M-kmin[i]] + Scorify(CP9TSC(cp9O_DM,M))),
+                       ic[M-kmin[i]] + Scorify(CP9TSC(cp9O_IM,M)));
+  }
+  /* erow[i] = endsc; EL-from-M+1 accumulation is UNGATED in the float original
+   * (does not require INBAND(i,M)). erow is dead for band derivation. */
+  if (cp9->flags & CPLAN9_EL) {
+    int c_el;
+    for (c_el = 0; c_el < cp9->el_from_ct[M+1]; c_el++) {
+      if (INBAND(i, cp9->el_from_idx[M+1][c_el])) {
+        int kpel = cp9->el_from_idx[M+1][c_el] - kmin[i];
+        endsc = p7_FLogsum(endsc, ec[kpel]);
+      }
+    }
+  }
+  if(ret_erow) *ret_erow = endsc;
+}
+
+/* Backward row L (init). Verbatim from cp9_BackwardP7BF i=L block. */
+static void
+cp9_chk_bwd_rowLF(CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int M,
+                  float *mc, float *ic, float *dc, float *ec)
+{
+  int const *tsc = cp9->otsc;
+  int i = L;
+  int k, c, kpcur, kpcur_el, kx;
+
+  kpcur = 0;
+  for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) ec[kpcur] = -eslINFINITY;
+  if(cp9->flags & CPLAN9_EL) {
+    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++)
+      if(INBAND(i, cp9->el_from_idx[M+1][c])) {
+        kpcur_el = cp9->el_from_idx[M+1][c] - kmin[i];
+        ec[kpcur_el] = 0.;
+      }
+  }
+
+  if(INBAND(i, M)) {
+    assert(M == kmax[i]);
+    kpcur = M-kmin[i];
+    mc[kpcur]  = 0. +
+      p7_FLogsum(ec[kpcur] + Scorify(CP9TSC(cp9O_MEL, M)),
+                 Scorify(CP9TSC(cp9O_ME,M)));
+    mc[kpcur] += Scorify(cp9->msc[dsq[i]][M]);
+    ic[kpcur]  = 0. + Scorify(CP9TSC(cp9O_IM,M));
+    ic[kpcur] += Scorify(cp9->isc[dsq[i]][M]);
+    dc[kpcur]  = Scorify(CP9TSC(cp9O_DM,M));
+    kx = M-1;
+    kpcur--;
+  }
+  else { kx = kmax[i]; kpcur = kmax[i]-kmin[i]; }
+
+  for (k = kx; k >= kmin[i]; k--, kpcur--)
+    {
+      mc[kpcur]  = 0 + Scorify(CP9TSC(cp9O_ME,k));
+      if(INBAND(i, k+1)) {
+        mc[kpcur]  = p7_FLogsum(mc[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
+      }
+      if(cp9->flags & CPLAN9_EL)
+        mc[kpcur]  = p7_FLogsum(mc[kpcur], ec[kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+      mc[kpcur] += Scorify(cp9->msc[dsq[i]][k]);
+
+      if(INBAND(i, k+1)) {
+        ic[kpcur]  = dc[kpcur+1] + Scorify(CP9TSC(cp9O_ID,k));
+        ic[kpcur] += Scorify(cp9->isc[dsq[i]][k]);
+        dc[kpcur]  = dc[kpcur+1] + Scorify(CP9TSC(cp9O_DD,k));
+      }
+      else {
+        ic[kpcur] = -eslINFINITY;
+        dc[kpcur] = -eslINFINITY;
+      }
+    }
+
+  if(INBAND(i, 0)) {
+    mc[0]  = dc[1] + Scorify(CP9TSC(cp9O_MD,0));
+    ic[0]  = dc[1] + Scorify(CP9TSC(cp9O_ID,0));
+    ic[0] += Scorify(cp9->isc[dsq[i]][0]);
+    dc[0]   = -eslINFINITY;
+    ec[0]  = -eslINFINITY;
+  }
+}
+
+/* Backward row i (1..L-1). Verbatim from cp9_BackwardP7BF main loop body.
+ * Cur planes mc/ic/dc/ec (row i); next planes mn/in/dn/en (row i+1). */
+static void
+cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
+                 float *mc, float *ic, float *dc, float *ec,
+                 float *mn, float *in, float *dn, float *en)
+{
+  int const *tsc = cp9->otsc;
+  int k, c, kpcur, kpprv, kpcur_el, kn, kx, kprv, kprvn, kprvx;
+
+  kpcur = 0;
+  for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) ec[kpcur] = -eslINFINITY;
+
+  if(INBAND(i, M)) {
+    kpcur = M-kmin[i];
+    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
+      ec[kpcur] = ec[kpcur] + Scorify(cp9->el_selfsc);
+
+    if(INBAND(i+1, M)) {
+      kpprv = M-kmin[i+1];
+      mc[kpcur]  = in[kpprv] + Scorify(CP9TSC(cp9O_MI,M));
+      mc[kpcur] += Scorify(cp9->msc[dsq[i]][M]);
+      ic[kpcur]  = in[kpprv] + Scorify(CP9TSC(cp9O_II,M));
+      ic[kpcur] += Scorify(cp9->isc[dsq[i]][M]);
+      dc[kpcur]  = in[kpprv] + Scorify(CP9TSC(cp9O_DI,M));
+    }
+    else {
+      mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
+    }
+
+    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
+      mc[kpcur] = p7_FLogsum(mc[kpcur], ec[kpcur] + Scorify(CP9TSC(cp9O_MEL,M)));
+
+    if(INBAND(i+1, M)) {
+      if(cp9->flags & CPLAN9_EL) {
+        for(c = 0; c < cp9->el_from_ct[M]; c++)
+          if(INBAND(i, cp9->el_from_idx[M][c])) {
+            kpcur_el = cp9->el_from_idx[M][c] - kmin[i];
+            ec[kpcur_el] = p7_FLogsum(ec[kpcur_el], mn[kpprv]);
+          }
+      }
+    }
+  }
+
+  /* MATCH: *_k <- M_k+1 */
+  kn = ESL_MAX(kmin[i], kmin[i+1]-1);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i+1]-1);
+
+  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
+  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
+
+  kpcur = kx - kmin[i];
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    {
+      if(cp9->flags & CPLAN9_EL) {
+        for(c = 0; c < cp9->el_from_ct[k]; c++) {
+          if(INBAND(i, cp9->el_from_idx[k][c])) {
+            kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
+            ec[kpcur_el] = p7_FLogsum(ec[kpcur_el], mn[kpprv]);
+          }
+        }
+      }
+      if(INBAND(i+1, k)) {
+        if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+          ec[kpcur] = p7_FLogsum(ec[kpcur], en[kpprv] + Scorify(cp9->el_selfsc));
+      }
+      mc[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_MM,k));
+      ic[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_IM,k));
+      dc[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
+    }
+
+  /* INSERTIONS: *_k <- I_k+1 */
+  kn = ESL_MAX(kmin[i], kmin[i+1]);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i+1]);
+  kpcur = kx - kmin[i];
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    {
+      mc[kpcur] = p7_FLogsum(mc[kpcur], in[kpprv] + Scorify(CP9TSC(cp9O_MI,k)));
+      ic[kpcur] = p7_FLogsum(ic[kpcur], in[kpprv] + Scorify(CP9TSC(cp9O_II,k)));
+      dc[kpcur] = p7_FLogsum(dc[kpcur], in[kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+    }
+
+  /* DELETIONS: *_k <- D_k+1 */
+  kn = ESL_MAX(kmin[i], kmin[i]-1);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i]-1);
+  kpcur = kx - kmin[i];
+  for (k = kx; k >= kn; k--, kpcur--)
+    {
+      mc[kpcur] = p7_FLogsum(mc[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
+      ic[kpcur] = p7_FLogsum(ic[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
+      dc[kpcur] = p7_FLogsum(dc[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+      mc[kpcur] += Scorify(cp9->msc[dsq[i]][k]);
+      ic[kpcur] += Scorify(cp9->isc[dsq[i]][k]);
+    }
+  for(k = kx+1; k <= kmax[i]; k++) {
+    kpcur = k - kmin[i];
+    mc[kpcur] += Scorify(cp9->msc[dsq[i]][k]);
+    ic[kpcur] += Scorify(cp9->isc[dsq[i]][k]);
+  }
+
+  /* special case k == 0 */
+  kpcur = 0;
+  kpprv = 0 - kmin[i+1];
+  if(INBAND(i, 0)) {
+    assert(kmin[i] == 0);
+    dc[kpcur]  = -eslINFINITY;
+    ec[kpcur] = -eslINFINITY;
+
+    ic[kpcur] = -eslINFINITY;
+    if(INBAND(i+1, 1)) {
+      if(mn[kpprv+1] != -eslINFINITY)
+        ic[kpcur] = p7_FLogsum(ic[kpcur], mn[kpprv+1] + Scorify(CP9TSC(cp9O_IM,0)));
+    }
+    if(INBAND(i+1, 0)) {
+      if(in[kpprv] != -eslINFINITY)
+        ic[kpcur] = p7_FLogsum(ic[kpcur], in[kpprv] + Scorify(CP9TSC(cp9O_II,0)));
+    }
+    if(INBAND(i, 1)) {
+      if(dc[kpcur+1] != -eslINFINITY)
+        ic[kpcur] = p7_FLogsum(ic[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_ID,0)));
+    }
+
+    kprvn = ESL_MAX(1, kmin[i+1]);
+    kprvx = kmax[i+1];
+    kpprv = kprvx - kmin[i+1];
+    mc[kpcur] = -eslINFINITY;
+    for(kprv = kprvx; kprv >= kprvn; kprv--, kpprv--) {
+      if(mn[kpprv] != -eslINFINITY)
+        mc[kpcur] = p7_FLogsum(mc[kpcur], (mn[kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
+    }
+    k = 0;
+    if(INBAND(i+1, 0)) {
+      kpprv = k - kmin[i+1];
+      if(in[kpprv] != -eslINFINITY) {
+        mc[kpcur] = p7_FLogsum(mc[kpcur], (in[kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
+      }
+    }
+    if(INBAND(i, 1)) {
+      if(dc[kpcur+1] != -eslINFINITY) {
+        mc[kpcur] = p7_FLogsum(mc[kpcur], (dc[kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
+      }
+    }
+  }
+}
+
+/* Backward row 0. Verbatim from cp9_BackwardP7BF i==0 block.
+ * Cur planes mc/ic/dc/ec (row 0); next planes mn/in/dn/en (row 1). */
+static void
+cp9_chk_bwd_row0F(CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, int M,
+                  float *mc, float *ic, float *dc, float *ec,
+                  float *mn, float *in, float *dn, float *en)
+{
+  int const *tsc = cp9->otsc;
+  int i = 0;
+  int k, kpcur, kpprv, kn, kx, kprv, kprvn, kprvx;
+
+  for (kpcur = 0; kpcur <= kmax[0] - kmin[0]; kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
+
+  /* D_M(i==0) <- I_M(i==1) */
+  if(INBAND(i, M)) {
+    kpcur = M - kmin[i];
+    kpprv = M - kmin[i+1];
+    if(INBAND(i+1, M)) {
+      dc[kpcur]  = in[kpprv] + Scorify(CP9TSC(cp9O_DI,M));
+    }
+  }
+
+  /* D_k(i==0) <- M_k+1(i==1) */
+  kn = ESL_MAX(kmin[i], kmin[i+1]-1);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i+1]-1);
+  kpcur = kx - kmin[i];
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    dc[kpcur]  = mn[kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
+
+  /* D_k(i==0) <- I_k(i==1) */
+  kn = ESL_MAX(kmin[i], kmin[i+1]);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i+1]);
+  kpcur = kx - kmin[i];
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    dc[kpcur] = p7_FLogsum(dc[kpcur], in[kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+
+  /* D_k(i==0) <- D_k+1(i==0) */
+  kn = ESL_MAX(kmin[i], kmin[i]-1);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i]-1);
+  kpcur = kx - kmin[i];
+  for (k = kx; k >= kn; k--, kpcur--)
+    dc[kpcur] = p7_FLogsum(dc[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+
+  /* k == 0 */
+  k = 0;
+  if(INBAND(i, 0)) {
+    assert(kmin[i]  == 0);
+    ic[0] = -eslINFINITY;
+    dc[0]   = -eslINFINITY;
+    ec[0]  = -eslINFINITY;
+    mc[0] = -eslINFINITY;
+
+    kprvn = ESL_MAX(1, kmin[i+1]);
+    kprvx = kmax[i+1];
+    kpcur = 0;
+    kpprv = kprvx - kmin[i+1];
+    mc[kpcur] = -eslINFINITY;
+    for(kprv = kprvx; kprv >= kprvn; kprv--, kpprv--) {
+      if(mn[kpprv] != -eslINFINITY)
+        mc[kpcur] = p7_FLogsum(mc[kpcur], (mn[kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
+    }
+    k = 0;
+    if(INBAND(i+1, 0)) {
+      kpprv = k - kmin[i+1];
+      if(in[kpprv] != -eslINFINITY) {
+        mc[kpcur] = p7_FLogsum(mc[kpcur], (in[kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
+      }
+    }
+    if(INBAND(i, 1)) {
+      if(dc[kpcur+1] != -eslINFINITY) {
+        mc[kpcur] = p7_FLogsum(mc[kpcur], (dc[kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
+      }
+    }
+  }
+}
+
+/*****************************************************************
+ * FLOAT: Checkpoint store + fills (mirror of cp9chk_t).
+ *****************************************************************/
+
+typedef struct {
+  int   L;
+  int   M;
+  int   blk;       /* block size B (~sqrt(L)) */
+  int   nbnd;      /* # boundaries */
+  int  *bnd;       /* [0..nbnd-1] boundary row indices */
+  int64_t *off;    /* [0..nbnd-1] cell offset of each boundary row's planes */
+  int64_t ncells;  /* total stored cells */
+  float *fmmx, *fimx, *fdmx, *felmx;   /* Forward checkpoint planes */
+  float *bmmx, *bimx, *bdmx, *belmx;   /* Backward checkpoint planes */
+} cp9chkF_t;
+
+static void
+cp9chkF_Destroy(cp9chkF_t *s)
+{
+  if(s == NULL) return;
+  if(s->bnd)  free(s->bnd);
+  if(s->off)  free(s->off);
+  if(s->fmmx) free(s->fmmx);
+  if(s->fimx) free(s->fimx);
+  if(s->fdmx) free(s->fdmx);
+  if(s->felmx)free(s->felmx);
+  if(s->bmmx) free(s->bmmx);
+  if(s->bimx) free(s->bimx);
+  if(s->bdmx) free(s->bdmx);
+  if(s->belmx)free(s->belmx);
+  free(s);
+}
+
+static cp9chkF_t *
+cp9chkF_Create(int L, int M, int *kmin, int *kmax, char *errbuf)
+{
+  int status;
+  cp9chkF_t *s = NULL;
+  int blk, cap, j, r;
+  int64_t cum;
+
+  ESL_ALLOC(s, sizeof(cp9chkF_t));
+  s->bnd = NULL; s->off = NULL;
+  s->fmmx = s->fimx = s->fdmx = s->felmx = NULL;
+  s->bmmx = s->bimx = s->bdmx = s->belmx = NULL;
+  s->L = L; s->M = M;
+
+  blk = (int) sqrt((double) (L > 0 ? L : 1));
+  if(blk < 1) blk = 1;
+  { const char *bs = getenv("CP9_CKPT_BLK"); if(bs != NULL) { blk = atoi(bs); if(blk < 1) blk = 1; } }
+  s->blk = blk;
+
+  cap = (L / blk) + 3;
+  ESL_ALLOC(s->bnd, sizeof(int)     * cap);
+  ESL_ALLOC(s->off, sizeof(int64_t) * cap);
+
+  j = 0; r = 0;
+  while(r < L) { s->bnd[j++] = r; r += blk; }
+  s->bnd[j++] = L;
+  s->nbnd = j;
+
+  cum = 0;
+  for(j = 0; j < s->nbnd; j++) {
+    r = s->bnd[j];
+    s->off[j] = cum;
+    cum += (kmax[r] - kmin[r] + 1);
+  }
+  s->ncells = cum;
+
+  ESL_ALLOC(s->fmmx,  sizeof(float) * s->ncells);
+  ESL_ALLOC(s->fimx,  sizeof(float) * s->ncells);
+  ESL_ALLOC(s->fdmx,  sizeof(float) * s->ncells);
+  ESL_ALLOC(s->felmx, sizeof(float) * s->ncells);
+  ESL_ALLOC(s->bmmx,  sizeof(float) * s->ncells);
+  ESL_ALLOC(s->bimx,  sizeof(float) * s->ncells);
+  ESL_ALLOC(s->bdmx,  sizeof(float) * s->ncells);
+  ESL_ALLOC(s->belmx, sizeof(float) * s->ncells);
+
+  return s;
+
+ ERROR:
+  cp9chkF_Destroy(s);
+  if(errbuf) sprintf(errbuf, "cp9chkF_Create: OOM");
+  return NULL;
+}
+
+/* Forward-checkpointed fill (float): roll 2 rows over 1..L, store F planes at
+ * each boundary. Buffers memset-0 (all-bytes-zero = float 0.0f) before each
+ * kernel call, replicating GrowCP9FMatrix's memset-0 (recurrences read some
+ * cells before assigning them). */
+static int
+cp9chkF_FwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, char *errbuf)
+{
+  int status;
+  int M = s->M, L = s->L;
+  float *m0,*i0,*d0,*e0, *m1,*i1,*d1,*e1;
+  float *mp,*ip,*dp,*ep, *mc,*ic,*dc,*ec;
+  int i, j, w;
+
+  ESL_ALLOC(m0, sizeof(float)*(M+1)); ESL_ALLOC(i0, sizeof(float)*(M+1));
+  ESL_ALLOC(d0, sizeof(float)*(M+1)); ESL_ALLOC(e0, sizeof(float)*(M+1));
+  ESL_ALLOC(m1, sizeof(float)*(M+1)); ESL_ALLOC(i1, sizeof(float)*(M+1));
+  ESL_ALLOC(d1, sizeof(float)*(M+1)); ESL_ALLOC(e1, sizeof(float)*(M+1));
+
+  mc=m0; ic=i0; dc=d0; ec=e0;
+  memset(mc,0,sizeof(float)*(M+1)); memset(ic,0,sizeof(float)*(M+1)); memset(dc,0,sizeof(float)*(M+1)); memset(ec,0,sizeof(float)*(M+1));
+  cp9_chk_fwd_row0F(cp9, kmin, kmax, M, mc, ic, dc, ec, NULL);
+  j = 0;
+  if(s->bnd[j] == 0) {
+    w = kmax[0]-kmin[0]+1;
+    memcpy(s->fmmx + s->off[j], mc, sizeof(float)*w);
+    memcpy(s->fimx + s->off[j], ic, sizeof(float)*w);
+    memcpy(s->fdmx + s->off[j], dc, sizeof(float)*w);
+    memcpy(s->felmx+ s->off[j], ec, sizeof(float)*w);
+    j++;
+  }
+  mp=m0; ip=i0; dp=d0; ep=e0;
+
+  for(i = 1; i <= L; i++) {
+    if((i & 1) == 1) { mc=m1; ic=i1; dc=d1; ec=e1; }
+    else             { mc=m0; ic=i0; dc=d0; ec=e0; }
+    memset(mc,0,sizeof(float)*(M+1)); memset(ic,0,sizeof(float)*(M+1)); memset(dc,0,sizeof(float)*(M+1)); memset(ec,0,sizeof(float)*(M+1));
+    cp9_chk_fwd_rowF(cp9, dsq, i, kmin, kmax, M, mp, ip, dp, ep, mc, ic, dc, ec, NULL);
+    if(j < s->nbnd && s->bnd[j] == i) {
+      w = kmax[i]-kmin[i]+1;
+      memcpy(s->fmmx + s->off[j], mc, sizeof(float)*w);
+      memcpy(s->fimx + s->off[j], ic, sizeof(float)*w);
+      memcpy(s->fdmx + s->off[j], dc, sizeof(float)*w);
+      memcpy(s->felmx+ s->off[j], ec, sizeof(float)*w);
+      j++;
+    }
+    mp=mc; ip=ic; dp=dc; ep=ec;
+  }
+
+  free(m0);free(i0);free(d0);free(e0);free(m1);free(i1);free(d1);free(e1);
+  return eslOK;
+ ERROR:
+  if(errbuf) sprintf(errbuf, "cp9chkF_FwdFill: OOM");
+  return status;
+}
+
+/* Backward-checkpointed fill (float): roll 2 rows over L..0, store B planes at
+ * each boundary. Returns sc = bmx->mmx[0][0]. */
+static int
+cp9chkF_BwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, float *ret_sc, char *errbuf)
+{
+  int status;
+  int M = s->M, L = s->L;
+  float *m0,*i0,*d0,*e0, *m1,*i1,*d1,*e1;
+  float *mn,*in,*dn,*en, *mc,*ic,*dc,*ec;
+  int i, j, w;
+
+  ESL_ALLOC(m0, sizeof(float)*(M+1)); ESL_ALLOC(i0, sizeof(float)*(M+1));
+  ESL_ALLOC(d0, sizeof(float)*(M+1)); ESL_ALLOC(e0, sizeof(float)*(M+1));
+  ESL_ALLOC(m1, sizeof(float)*(M+1)); ESL_ALLOC(i1, sizeof(float)*(M+1));
+  ESL_ALLOC(d1, sizeof(float)*(M+1)); ESL_ALLOC(e1, sizeof(float)*(M+1));
+
+  j = s->nbnd - 1;
+
+  /* row L. Buffer = i%2. */
+  if(L & 1) { mc=m1; ic=i1; dc=d1; ec=e1; } else { mc=m0; ic=i0; dc=d0; ec=e0; }
+  memset(mc,0,sizeof(float)*(M+1)); memset(ic,0,sizeof(float)*(M+1)); memset(dc,0,sizeof(float)*(M+1)); memset(ec,0,sizeof(float)*(M+1));
+  cp9_chk_bwd_rowLF(cp9, dsq, L, kmin, kmax, M, mc, ic, dc, ec);
+  if(s->bnd[j] == L) {
+    w = kmax[L]-kmin[L]+1;
+    memcpy(s->bmmx + s->off[j], mc, sizeof(float)*w);
+    memcpy(s->bimx + s->off[j], ic, sizeof(float)*w);
+    memcpy(s->bdmx + s->off[j], dc, sizeof(float)*w);
+    memcpy(s->belmx+ s->off[j], ec, sizeof(float)*w);
+    j--;
+  }
+  mn=mc; in=ic; dn=dc; en=ec; /* next row (L) = whatever buffer row L used (Phase-1 fix: NOT hardcoded m0) */
+
+  for(i = L-1; i >= 1; i--) {
+    if(i & 1) { mc=m1; ic=i1; dc=d1; ec=e1; }
+    else      { mc=m0; ic=i0; dc=d0; ec=e0; }
+    memset(mc,0,sizeof(float)*(M+1)); memset(ic,0,sizeof(float)*(M+1)); memset(dc,0,sizeof(float)*(M+1)); memset(ec,0,sizeof(float)*(M+1));
+    cp9_chk_bwd_rowF(cp9, dsq, i, kmin, kmax, M, mc, ic, dc, ec, mn, in, dn, en);
+    if(j >= 0 && s->bnd[j] == i) {
+      w = kmax[i]-kmin[i]+1;
+      memcpy(s->bmmx + s->off[j], mc, sizeof(float)*w);
+      memcpy(s->bimx + s->off[j], ic, sizeof(float)*w);
+      memcpy(s->bdmx + s->off[j], dc, sizeof(float)*w);
+      memcpy(s->belmx+ s->off[j], ec, sizeof(float)*w);
+      j--;
+    }
+    mn=mc; in=ic; dn=dc; en=ec;
+  }
+
+  /* row 0 (buffer 0 = m0; next=row1 used buffer 1 -> differ) */
+  mc=m0; ic=i0; dc=d0; ec=e0;
+  memset(mc,0,sizeof(float)*(M+1)); memset(ic,0,sizeof(float)*(M+1)); memset(dc,0,sizeof(float)*(M+1)); memset(ec,0,sizeof(float)*(M+1));
+  cp9_chk_bwd_row0F(cp9, dsq, kmin, kmax, M, mc, ic, dc, ec, mn, in, dn, en);
+  *ret_sc = mc[0]; /* bmx->mmx[0][0] */
+  if(j >= 0 && s->bnd[j] == 0) {
+    w = kmax[0]-kmin[0]+1;
+    memcpy(s->bmmx + s->off[j], mc, sizeof(float)*w);
+    memcpy(s->bimx + s->off[j], ic, sizeof(float)*w);
+    memcpy(s->bdmx + s->off[j], dc, sizeof(float)*w);
+    memcpy(s->belmx+ s->off[j], ec, sizeof(float)*w);
+    j--;
+  }
+
+  free(m0);free(i0);free(d0);free(e0);free(m1);free(i1);free(d1);free(e1);
+  return eslOK;
+ ERROR:
+  if(errbuf) sprintf(errbuf, "cp9chkF_BwdFill: OOM");
+  return status;
+}
+
+/*****************************************************************
+ * FLOAT: Segment materialize + posterior + dual-sweep reduction.
+ *****************************************************************/
+
+typedef struct {
+  int     maxrows;
+  int64_t maxcells;
+  float  *fm,*fi,*fd,*fe;
+  float  *bm,*bi,*bd,*be;
+  float **fmr,**fir,**fdr,**fer;
+  float **bmr,**bir,**bdr,**ber;
+  float  *pm,*pi,*pd;
+} cp9segF_t;
+
+static void
+cp9segF_Destroy(cp9segF_t *g)
+{
+  if(g == NULL) return;
+  if(g->fm)free(g->fm); if(g->fi)free(g->fi); if(g->fd)free(g->fd); if(g->fe)free(g->fe);
+  if(g->bm)free(g->bm); if(g->bi)free(g->bi); if(g->bd)free(g->bd); if(g->be)free(g->be);
+  if(g->fmr)free(g->fmr); if(g->fir)free(g->fir); if(g->fdr)free(g->fdr); if(g->fer)free(g->fer);
+  if(g->bmr)free(g->bmr); if(g->bir)free(g->bir); if(g->bdr)free(g->bdr); if(g->ber)free(g->ber);
+  if(g->pm)free(g->pm); if(g->pi)free(g->pi); if(g->pd)free(g->pd);
+  free(g);
+}
+
+static cp9segF_t *
+cp9segF_Create(cp9chkF_t *s, int *kmin, int *kmax, char *errbuf)
+{
+  int status;
+  cp9segF_t *g = NULL;
+  int j, r, maxw = 0;
+  int64_t maxcells = 0;
+
+  ESL_ALLOC(g, sizeof(cp9segF_t));
+  g->fm=g->fi=g->fd=g->fe=NULL; g->bm=g->bi=g->bd=g->be=NULL;
+  g->fmr=g->fir=g->fdr=g->fer=NULL; g->bmr=g->bir=g->bdr=g->ber=NULL;
+  g->pm=g->pi=g->pd=NULL;
+
+  for(j = 1; j < s->nbnd; j++) {
+    int a = s->bnd[j-1], b = s->bnd[j];
+    int64_t cells = 0;
+    for(r = a; r <= b; r++) cells += (kmax[r]-kmin[r]+1);
+    if(cells > maxcells) maxcells = cells;
+  }
+  for(r = 0; r <= s->L; r++) { int w = kmax[r]-kmin[r]+1; if(w > maxw) maxw = w; }
+  g->maxrows  = s->blk + 1;
+  g->maxcells = maxcells;
+
+  ESL_ALLOC(g->fm, sizeof(float)*maxcells); ESL_ALLOC(g->fi, sizeof(float)*maxcells);
+  ESL_ALLOC(g->fd, sizeof(float)*maxcells); ESL_ALLOC(g->fe, sizeof(float)*maxcells);
+  ESL_ALLOC(g->bm, sizeof(float)*maxcells); ESL_ALLOC(g->bi, sizeof(float)*maxcells);
+  ESL_ALLOC(g->bd, sizeof(float)*maxcells); ESL_ALLOC(g->be, sizeof(float)*maxcells);
+  ESL_ALLOC(g->fmr, sizeof(float*)*(g->maxrows+1)); ESL_ALLOC(g->fir, sizeof(float*)*(g->maxrows+1));
+  ESL_ALLOC(g->fdr, sizeof(float*)*(g->maxrows+1)); ESL_ALLOC(g->fer, sizeof(float*)*(g->maxrows+1));
+  ESL_ALLOC(g->bmr, sizeof(float*)*(g->maxrows+1)); ESL_ALLOC(g->bir, sizeof(float*)*(g->maxrows+1));
+  ESL_ALLOC(g->bdr, sizeof(float*)*(g->maxrows+1)); ESL_ALLOC(g->ber, sizeof(float*)*(g->maxrows+1));
+  ESL_ALLOC(g->pm, sizeof(float)*maxw); ESL_ALLOC(g->pi, sizeof(float)*maxw); ESL_ALLOC(g->pd, sizeof(float)*maxw);
+
+  return g;
+ ERROR:
+  cp9segF_Destroy(g);
+  if(errbuf) sprintf(errbuf, "cp9segF_Create: OOM");
+  return NULL;
+}
+
+/* Materialize float segment j = rows [a..b]: fwd from F-ckpt at a, bck from
+ * B-ckpt at b. Buffers memset-0 to replicate GrowCP9FMatrix's memset-0. */
+static void
+cp9segF_Fill(cp9segF_t *g, cp9chkF_t *s, int j, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax)
+{
+  int M = s->M, L = s->L;
+  int a = s->bnd[j-1], b = s->bnd[j];
+  int r, w;
+  int64_t fo, bo, segcells;
+
+  segcells = 0;
+  for(r = a; r <= b; r++) segcells += (kmax[r]-kmin[r]+1);
+  memset(g->fm,0,sizeof(float)*segcells); memset(g->fi,0,sizeof(float)*segcells);
+  memset(g->fd,0,sizeof(float)*segcells); memset(g->fe,0,sizeof(float)*segcells);
+  memset(g->bm,0,sizeof(float)*segcells); memset(g->bi,0,sizeof(float)*segcells);
+  memset(g->bd,0,sizeof(float)*segcells); memset(g->be,0,sizeof(float)*segcells);
+
+  fo = 0; bo = 0;
+  for(r = a; r <= b; r++) {
+    w = kmax[r]-kmin[r]+1;
+    g->fmr[r-a] = g->fm + fo; g->fir[r-a] = g->fi + fo; g->fdr[r-a] = g->fd + fo; g->fer[r-a] = g->fe + fo;
+    g->bmr[r-a] = g->bm + bo; g->bir[r-a] = g->bi + bo; g->bdr[r-a] = g->bd + bo; g->ber[r-a] = g->be + bo;
+    fo += w; bo += w;
+  }
+
+  /* forward: row a = stored F-ckpt[j-1], recompute a+1..b */
+  w = kmax[a]-kmin[a]+1;
+  memcpy(g->fmr[0], s->fmmx + s->off[j-1], sizeof(float)*w);
+  memcpy(g->fir[0], s->fimx + s->off[j-1], sizeof(float)*w);
+  memcpy(g->fdr[0], s->fdmx + s->off[j-1], sizeof(float)*w);
+  memcpy(g->fer[0], s->felmx+ s->off[j-1], sizeof(float)*w);
+  for(r = a+1; r <= b; r++) {
+    cp9_chk_fwd_rowF(cp9, dsq, r, kmin, kmax, M,
+                     g->fmr[r-1-a], g->fir[r-1-a], g->fdr[r-1-a], g->fer[r-1-a],
+                     g->fmr[r-a],   g->fir[r-a],   g->fdr[r-a],   g->fer[r-a], NULL);
+  }
+
+  /* backward: row b = stored B-ckpt[j], recompute b-1..a */
+  w = kmax[b]-kmin[b]+1;
+  memcpy(g->bmr[b-a], s->bmmx + s->off[j], sizeof(float)*w);
+  memcpy(g->bir[b-a], s->bimx + s->off[j], sizeof(float)*w);
+  memcpy(g->bdr[b-a], s->bdmx + s->off[j], sizeof(float)*w);
+  memcpy(g->ber[b-a], s->belmx+ s->off[j], sizeof(float)*w);
+  for(r = b-1; r >= a; r--) {
+    if(r == 0)
+      cp9_chk_bwd_row0F(cp9, dsq, kmin, kmax, M,
+                        g->bmr[0], g->bir[0], g->bdr[0], g->ber[0],
+                        g->bmr[1], g->bir[1], g->bdr[1], g->ber[1]);
+    else if(r == L)
+      cp9_chk_bwd_rowLF(cp9, dsq, L, kmin, kmax, M,
+                        g->bmr[r-a], g->bir[r-a], g->bdr[r-a], g->ber[r-a]);
+    else
+      cp9_chk_bwd_rowF(cp9, dsq, r, kmin, kmax, M,
+                       g->bmr[r-a],   g->bir[r-a],   g->bdr[r-a],   g->ber[r-a],
+                       g->bmr[r+1-a], g->bir[r+1-a], g->bdr[r+1-a], g->ber[r+1-a]);
+  }
+}
+
+/* Compute float posterior row i into g->pm/pi/pd. Verbatim from the inline
+ * posterior in cp9_FB2HMMBandsP7BF / cp9_PosteriorP7BF. */
+static void
+cp9segF_PostRow(cp9segF_t *g, CP9_t *hmm, ESL_DSQ *dsq, int i, int *kmin, int *kmax, float sc,
+                float *fmr, float *fir, float *fdr, float *bmr, float *bir, float *bdr)
+{
+  int k, kp, kn, kx;
+  float *pm=g->pm, *pi=g->pi, *pd=g->pd;
+
+  if(i == 0) {
+    pm[0] = fmr[0] + bmr[0] - sc;
+    pi[0] = -eslINFINITY;
+    pd[0] = -eslINFINITY;
+    kn = ESL_MAX(kmin[0], 1);
+    kx = kmax[0];
+    kp = kn - kmin[0];
+    for(k = kn; k <= kx; k++, kp++) {
+      pm[kp] = -eslINFINITY;
+      pi[kp] = -eslINFINITY;
+      pd[kp] = fdr[kp] + bdr[kp] - sc;
+    }
+    return;
+  }
+
+  k = 0;
+  if(INBAND(i,0)) {
+    kp = 0;
+    pm[kp] = ESL_MAX(fmr[kp] + bmr[kp] - sc, -eslINFINITY);
+    pi[kp] = ESL_MAX(fir[kp] + bir[kp] - Scorify(hmm->isc[dsq[i]][0]) - sc, -eslINFINITY);
+    pd[kp] = -eslINFINITY;
+  }
+  kn = ESL_MAX(kmin[i], 1);
+  kx = kmax[i];
+  kp = kn - kmin[i];
+  for(k = kn; k <= kx; k++, kp++) {
+    pm[kp] = ESL_MAX(fmr[kp] + bmr[kp] - Scorify(hmm->msc[dsq[i]][k]) - sc, -eslINFINITY);
+    pi[kp] = ESL_MAX(fir[kp] + bir[kp] - Scorify(hmm->isc[dsq[i]][k]) - sc, -eslINFINITY);
+    pd[kp] = ESL_MAX(fdr[kp] + bdr[kp] - sc, -eslINFINITY);
+  }
+}
+
+/* The float checkpointed band reduction: produces cp9b pn_min/pn_max bands and
+ * the per-node pocc_arr (match+delete occupancy, streamed in the MIN sweep)
+ * exactly as cp9_FB2HMMBandsP7BF + cp9_PredictStartAndEndPositionsP7BF's pocc
+ * loop, but with O(sqrt(L)*avg_bw) memory.
+ *
+ * pocc_arr: caller-allocated [0..M]. Filled here: pocc_arr[k] = sum over
+ * i=0..L of (expf(pmx->mmx[i][kp]) + expf(pmx->dmx[i][kp])) for nodes k with a
+ * band set, else -1.0 (matches the original's skip+sentinel behavior).
+ */
+int
+cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b,
+                        int L, int M, double p_thresh, int *kmin, int *kmax,
+                        int debug_level, int do_pnmono, int do_pnmono_print,
+                        float *pocc_arr)
+{
+  int status;
+  float thresh = logf((1. - p_thresh) / 2.);
+  int *nset_m=NULL,*nset_i=NULL,*nset_d=NULL;
+  int *xset_m=NULL,*xset_i=NULL,*xset_d=NULL;
+  float *mass_m=NULL,*mass_i=NULL,*mass_d=NULL;
+  int i, k, kp, kn, kx, j;
+  float sc;
+  int hmm_is_localized;
+  cp9chkF_t *s = NULL;
+  cp9segF_t *g = NULL;
+
+  hmm_is_localized = ((hmm->flags & CPLAN9_LOCAL_BEGIN) || (hmm->flags & CPLAN9_LOCAL_END) || (hmm->flags & CPLAN9_EL)) ? TRUE : FALSE;
+
+  ESL_ALLOC(nset_m, sizeof(int)*(M+1)); ESL_ALLOC(nset_i, sizeof(int)*(M+1)); ESL_ALLOC(nset_d, sizeof(int)*(M+1));
+  ESL_ALLOC(xset_m, sizeof(int)*(M+1)); ESL_ALLOC(xset_i, sizeof(int)*(M+1)); ESL_ALLOC(xset_d, sizeof(int)*(M+1));
+  ESL_ALLOC(mass_m, sizeof(float)*(M+1)); ESL_ALLOC(mass_i, sizeof(float)*(M+1)); ESL_ALLOC(mass_d, sizeof(float)*(M+1));
+  esl_vec_FSet(mass_m, M+1, -eslINFINITY); esl_vec_FSet(mass_i, M+1, -eslINFINITY); esl_vec_FSet(mass_d, M+1, -eslINFINITY);
+  esl_vec_ISet(nset_m, M+1, FALSE); esl_vec_ISet(nset_i, M+1, FALSE); esl_vec_ISet(nset_d, M+1, FALSE);
+  esl_vec_ISet(xset_m, M+1, FALSE); esl_vec_ISet(xset_i, M+1, FALSE); esl_vec_ISet(xset_d, M+1, FALSE);
+
+  /* pocc accumulators (k=0..M). k=0 is the B state, never summed. */
+  for(k = 0; k <= M; k++) pocc_arr[k] = 0.0;
+
+  if((s = cp9chkF_Create(L, M, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
+
+  /* DEBUG: float kernels + posterior + pn vs the non-checkpointed float path. */
+  if(getenv("CP9_CKPTF_FBCMP") != NULL) {
+    CP9_FMX *fr=CreateCP9FMatrix(L,M), *br=CreateCP9FMatrix(L,M);
+    CP9_FMX *fc=CreateCP9FMatrix(L,M), *bc=CreateCP9FMatrix(L,M);
+    float rsc; int ii, kk, kpp, fmis=0, bmis=0;
+    cp9_ForwardP7BF (hmm, errbuf, fr, dsq, L, kmin, kmax, &rsc);
+    cp9_BackwardP7BF(hmm, errbuf, br, dsq, L, kmin, kmax, NULL);
+    cp9_chk_fwd_row0F(hmm, kmin, kmax, M, fc->mmx[0], fc->imx[0], fc->dmx[0], fc->elmx[0], NULL);
+    for(ii=1; ii<=L; ii++) cp9_chk_fwd_rowF(hmm, dsq, ii, kmin, kmax, M, fc->mmx[ii-1],fc->imx[ii-1],fc->dmx[ii-1],fc->elmx[ii-1], fc->mmx[ii],fc->imx[ii],fc->dmx[ii],fc->elmx[ii], NULL);
+    cp9_chk_bwd_rowLF(hmm, dsq, L, kmin, kmax, M, bc->mmx[L],bc->imx[L],bc->dmx[L],bc->elmx[L]);
+    for(ii=L-1; ii>=1; ii--) cp9_chk_bwd_rowF(hmm, dsq, ii, kmin, kmax, M, bc->mmx[ii],bc->imx[ii],bc->dmx[ii],bc->elmx[ii], bc->mmx[ii+1],bc->imx[ii+1],bc->dmx[ii+1],bc->elmx[ii+1]);
+    cp9_chk_bwd_row0F(hmm, dsq, kmin, kmax, M, bc->mmx[0],bc->imx[0],bc->dmx[0],bc->elmx[0], bc->mmx[1],bc->imx[1],bc->dmx[1],bc->elmx[1]);
+    for(ii=0; ii<=L; ii++){ kpp=0; for(kk=kmin[ii]; kk<=kmax[ii]; kk++,kpp++){
+      if(fr->mmx[ii][kpp]!=fc->mmx[ii][kpp]||fr->imx[ii][kpp]!=fc->imx[ii][kpp]||fr->dmx[ii][kpp]!=fc->dmx[ii][kpp]||fr->elmx[ii][kpp]!=fc->elmx[ii][kpp]){ if(fmis<12) fprintf(stderr,"#FBCMPF F i=%d k=%d ref[M%g I%g D%g E%g] chk[M%g I%g D%g E%g]\n",ii,kk,fr->mmx[ii][kpp],fr->imx[ii][kpp],fr->dmx[ii][kpp],fr->elmx[ii][kpp],fc->mmx[ii][kpp],fc->imx[ii][kpp],fc->dmx[ii][kpp],fc->elmx[ii][kpp]); fmis++; }
+      if(br->mmx[ii][kpp]!=bc->mmx[ii][kpp]||br->imx[ii][kpp]!=bc->imx[ii][kpp]||br->dmx[ii][kpp]!=bc->dmx[ii][kpp]||br->elmx[ii][kpp]!=bc->elmx[ii][kpp]){ if(bmis<12) fprintf(stderr,"#FBCMPF B i=%d k=%d ref[M%g I%g D%g E%g] chk[M%g I%g D%g E%g]\n",ii,kk,br->mmx[ii][kpp],br->imx[ii][kpp],br->dmx[ii][kpp],br->elmx[ii][kpp],bc->mmx[ii][kpp],bc->imx[ii][kpp],bc->dmx[ii][kpp],bc->elmx[ii][kpp]); bmis++; }
+    }}
+    fprintf(stderr,"#FBCMPF forward mismatches=%d backward mismatches=%d (L=%d M=%d)\n", fmis, bmis, L, M);
+    FreeCP9FMatrix(fr);FreeCP9FMatrix(br);FreeCP9FMatrix(fc);FreeCP9FMatrix(bc);
+  }
+
+  if(getenv("CP9_CKPT_VERBOSE") != NULL) {
+    int64_t full_ncells = 0; int r;
+    for(r = 0; r <= L; r++) full_ncells += (kmax[r]-kmin[r]+1);
+    fprintf(stderr, "#CP9_CKPTF L=%d M=%d blk=%d nbnd=%d | non-ckpt 3xCP9_FMX=%.1f MB | ckpt stores=%.1f MB (%.0fx smaller)\n",
+            L, M, s->blk, s->nbnd,
+            3.0 * 16.0 * (double) full_ncells / 1.0e6,
+            2.0 * 16.0 * (double) s->ncells   / 1.0e6,
+            (3.0 * (double) full_ncells) / (2.0 * (double) (s->ncells > 0 ? s->ncells : 1)));
+  }
+
+  if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
+  if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
+  if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
+
+  /* === MIN sweep: ascending i (0..L). Streams pocc_arr. === */
+  for(j = 1; j < s->nbnd; j++) {
+    int a = s->bnd[j-1], b = s->bnd[j];
+    int istart = (j == 1) ? 0 : a+1;
+    cp9segF_Fill(g, s, j, hmm, dsq, kmin, kmax);
+    for(i = istart; i <= b; i++) {
+      int ri = i - a;
+      int kk, kkp;
+      cp9segF_PostRow(g, hmm, dsq, i, kmin, kmax, sc,
+                      g->fmr[ri], g->fir[ri], g->fdr[ri], g->bmr[ri], g->bir[ri], g->bdr[ri]);
+      if(i == 0) {
+        if((mass_m[0] = g->pm[0]) > thresh) { cp9b->pn_min_m[0] = 0; nset_m[0] = TRUE; }
+        mass_i[0] = -eslINFINITY;
+        mass_d[0] = -eslINFINITY;
+        kn = ESL_MAX(kmin[0], 1); kx = kmax[0]; kp = kn - kmin[0];
+        for(k = kn; k <= kx; k++, kp++) {
+          if((mass_d[k] = g->pd[kp]) > thresh) { cp9b->pn_min_d[k] = 0; nset_d[k] = TRUE; }
+        }
+      }
+      else {
+        k = 0;
+        if(INBAND(i,0)) {
+          kp = 0;
+          if(! nset_m[0]) { if((mass_m[0] = p7_FLogsum(mass_m[0], g->pm[kp])) > thresh) { cp9b->pn_min_m[0] = i; nset_m[0] = TRUE; } }
+          if(! nset_i[0]) { if((mass_i[0] = p7_FLogsum(mass_i[0], g->pi[kp])) > thresh) { cp9b->pn_min_i[0] = i; nset_i[0] = TRUE; } }
+        }
+        kn = ESL_MAX(kmin[i], 1); kx = kmax[i]; kp = kn - kmin[i];
+        for(k = kn; k <= kx; k++, kp++) {
+          if(! nset_m[k]) { if((mass_m[k] = p7_FLogsum(mass_m[k], g->pm[kp])) > thresh) { cp9b->pn_min_m[k] = i; nset_m[k] = TRUE; } }
+          if(! nset_i[k]) { if((mass_i[k] = p7_FLogsum(mass_i[k], g->pi[kp])) > thresh) { cp9b->pn_min_i[k] = i; nset_i[k] = TRUE; } }
+          if(! nset_d[k]) { if((mass_d[k] = p7_FLogsum(mass_d[k], g->pd[kp])) > thresh) { cp9b->pn_min_d[k] = i; nset_d[k] = TRUE; } }
+        }
+      }
+      /* pocc streaming: sum expf(pm)+expf(pd) over k>=1 in band, in TWO separate
+       * adds (matches cp9_PredictStartAndEndPositionsP7BF's float add order). */
+      kkp = ESL_MAX(1, kmin[i]) - kmin[i];
+      for(kk = ESL_MAX(1, kmin[i]); kk <= kmax[i]; kk++, kkp++) {
+        pocc_arr[kk] += expf(g->pm[kkp]);
+        pocc_arr[kk] += expf(g->pd[kkp]);
+      }
+    }
+  }
+
+  /* === MAX sweep: descending i (L..1), then row 0 boundary === */
+  esl_vec_FSet(mass_m, M+1, -eslINFINITY); esl_vec_FSet(mass_i, M+1, -eslINFINITY); esl_vec_FSet(mass_d, M+1, -eslINFINITY);
+  for(j = s->nbnd - 1; j >= 1; j--) {
+    int a = s->bnd[j-1], b = s->bnd[j];
+    int istart = b;
+    int iend   = (j == 1) ? 1 : a+1;
+    cp9segF_Fill(g, s, j, hmm, dsq, kmin, kmax);
+    for(i = istart; i >= iend; i--) {
+      int ri = i - a;
+      cp9segF_PostRow(g, hmm, dsq, i, kmin, kmax, sc,
+                      g->fmr[ri], g->fir[ri], g->fdr[ri], g->bmr[ri], g->bir[ri], g->bdr[ri]);
+      kp = 0;
+      for(k = kmin[i]; k <= kmax[i]; k++, kp++) {
+        if(! xset_m[k]) { if((mass_m[k] = p7_FLogsum(mass_m[k], g->pm[kp])) > thresh) { cp9b->pn_max_m[k] = i; xset_m[k] = TRUE; } }
+        if(! xset_i[k]) { if((mass_i[k] = p7_FLogsum(mass_i[k], g->pi[kp])) > thresh) { cp9b->pn_max_i[k] = i; xset_i[k] = TRUE; } }
+        if(! xset_d[k]) { if((mass_d[k] = p7_FLogsum(mass_d[k], g->pd[kp])) > thresh) { cp9b->pn_max_d[k] = i; xset_d[k] = TRUE; } }
+      }
+      if(j == 1 && i == 1) {
+        cp9segF_PostRow(g, hmm, dsq, 0, kmin, kmax, sc,
+                        g->fmr[0], g->fir[0], g->fdr[0], g->bmr[0], g->bir[0], g->bdr[0]);
+        if(INBAND(0,0)) {
+          if(! xset_m[0]) { if((mass_m[0] = p7_FLogsum(mass_m[0], g->pm[0])) > thresh) { cp9b->pn_max_m[0] = 0; xset_m[0] = TRUE; } }
+        }
+        kn = ESL_MAX(kmin[0], 1); kx = kmax[0]; kp = kn - kmin[0];
+        for(k = kn; k <= kx; k++, kp++) {
+          if(!xset_d[k]) { if((mass_d[k] = p7_FLogsum(mass_d[k], g->pd[kp])) > thresh) { cp9b->pn_max_d[k] = 0; xset_d[k] = TRUE; } }
+        }
+      }
+    }
+  }
+
+  /* finalize (verbatim from cp9_FB2HMMBandsP7BF) */
+  {
+    int mset, dset;
+    for(k = 0; k <= M; k++) {
+      mset = dset = TRUE;
+      if(((! nset_m[k])) || (! xset_m[k]) || (cp9b->pn_max_m[k] < cp9b->pn_min_m[k])) { cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1; mset = FALSE; }
+      if(((! nset_i[k])) || (! xset_i[k]) || (cp9b->pn_max_i[k] < cp9b->pn_min_i[k])) { cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1; }
+      if(((! nset_d[k])) || (! xset_d[k]) || (cp9b->pn_max_d[k] < cp9b->pn_min_d[k])) { cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1; dset = FALSE; }
+      if((!hmm_is_localized) && (mset == FALSE && dset == FALSE)) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
+    }
+    cp9b->pn_min_d[0] = -1;
+    cp9b->pn_max_d[0] = -1;
+  }
+
+  if(do_pnmono) pn_match_bands_enforce_monotone(cp9b->pn_min_m, cp9b->pn_max_m, M, L, do_pnmono_print, "fb2hmm_p7bf_chk");
+
+  /* Mask pocc_arr: nodes with no band set -> -1.0 (sentinel), matching the
+   * original's skip behavior; k=0 (B state) -> -1.0. */
+  pocc_arr[0] = -1.0;
+  for(k = 1; k <= M; k++) {
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) pocc_arr[k] = -1.0;
+  }
+
+  /* DEBUG: compare chk pn arrays vs the non-checkpointed float reduction. */
+  if(getenv("CP9_CKPTF_DEBUG") != NULL) {
+    int *tmn,*tmx_m,*tin,*tix,*tdn,*tdx;
+    CP9_FMX *fmx=NULL,*bmx=NULL,*pmx=NULL; float rsc; int kk, nmis=0;
+    ESL_ALLOC(tmn, sizeof(int)*(M+1)); ESL_ALLOC(tmx_m, sizeof(int)*(M+1));
+    ESL_ALLOC(tin, sizeof(int)*(M+1)); ESL_ALLOC(tix, sizeof(int)*(M+1));
+    ESL_ALLOC(tdn, sizeof(int)*(M+1)); ESL_ALLOC(tdx, sizeof(int)*(M+1));
+    for(kk=0;kk<=M;kk++){ tmn[kk]=cp9b->pn_min_m[kk]; tmx_m[kk]=cp9b->pn_max_m[kk]; tin[kk]=cp9b->pn_min_i[kk]; tix[kk]=cp9b->pn_max_i[kk]; tdn[kk]=cp9b->pn_min_d[kk]; tdx[kk]=cp9b->pn_max_d[kk]; }
+    fmx=CreateCP9FMatrix(1,M); bmx=CreateCP9FMatrix(1,M); pmx=CreateCP9FMatrix(1,M);
+    cp9_ForwardP7BF (hmm, errbuf, fmx, dsq, L, kmin, kmax, &rsc);
+    cp9_BackwardP7BF(hmm, errbuf, bmx, dsq, L, kmin, kmax, NULL);
+    cp9_FB2HMMBandsP7BF(hmm, errbuf, dsq, fmx, bmx, pmx, cp9b, L, M, p_thresh, 0, kmin, kmax, 0, do_pnmono, do_pnmono_print);
+    for(kk=0;kk<=M;kk++){
+      if(tmn[kk]!=cp9b->pn_min_m[kk]||tmx_m[kk]!=cp9b->pn_max_m[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d M ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],tmn[kk],tmx_m[kk]); nmis++; }
+      if(tin[kk]!=cp9b->pn_min_i[kk]||tix[kk]!=cp9b->pn_max_i[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d I ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],tin[kk],tix[kk]); nmis++; }
+      if(tdn[kk]!=cp9b->pn_min_d[kk]||tdx[kk]!=cp9b->pn_max_d[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d D ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],tdn[kk],tdx[kk]); nmis++; }
+    }
+    fprintf(stderr,"#CKPTFDBG total pn mismatches: %d (M=%d L=%d)\n", nmis, M, L);
+    for(kk=0;kk<=M;kk++){ cp9b->pn_min_m[kk]=tmn[kk]; cp9b->pn_max_m[kk]=tmx_m[kk]; cp9b->pn_min_i[kk]=tin[kk]; cp9b->pn_max_i[kk]=tix[kk]; cp9b->pn_min_d[kk]=tdn[kk]; cp9b->pn_max_d[kk]=tdx[kk]; }
+    FreeCP9FMatrix(fmx); FreeCP9FMatrix(bmx); FreeCP9FMatrix(pmx);
+    free(tmn);free(tmx_m);free(tin);free(tix);free(tdn);free(tdx);
+  }
+
+  cp9segF_Destroy(g);
+  cp9chkF_Destroy(s);
+  free(nset_m);free(nset_i);free(nset_d);
+  free(xset_m);free(xset_i);free(xset_d);
+  free(mass_m);free(mass_i);free(mass_d);
+  return eslOK;
+
+ ERROR:
+  if(g) cp9segF_Destroy(g);
+  if(s) cp9chkF_Destroy(s);
+  if(nset_m)free(nset_m); if(nset_i)free(nset_i); if(nset_d)free(nset_d);
+  if(xset_m)free(xset_m); if(xset_i)free(xset_i); if(xset_d)free(xset_d);
+  if(mass_m)free(mass_m); if(mass_i)free(mass_i); if(mass_d)free(mass_d);
+  return status;
+}
+
+/*****************************************************************
+ * FLOAT: truncated start/end prediction from a precomputed pocc_arr +
+ *        the checkpointed truncated band-derivation wrapper.
+ *****************************************************************/
+
+/* Parts 1-4 of cp9_PredictStartAndEndPositionsP7BF (cm_p7_band.c), taking the
+ * already-streamed pocc_arr instead of recomputing it from a full pmx. Verbatim
+ * from the original starting at "Part 1: sp1/sp2". */
+static void
+cp9_PredictStartAndEndFromPoccF(float *pocc_arr, CP9Bands_t *cp9b, int i0, int j0)
+{
+  int   k;
+  float pocc;
+
+  /* Part 1: sp1/sp2 — leftmost nodes with significant occupancy. */
+  k = 1;
+  cp9b->sp1 = cp9b->sp2 = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) {
+    if(pocc_arr[k] < 0.0) { k++; }
+    else {
+      pocc = pocc_arr[k];
+      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
+      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
+      k++;
+    }
+  }
+  if(k == cp9b->hmm_M+1) {
+    if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; }
+    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; }
+  }
+
+  /* Part 2: ep1/ep2 — rightmost nodes with significant occupancy. */
+  if((cp9b->sp1 == cp9b->hmm_M+1) &&
+     (cp9b->sp2 == cp9b->hmm_M+1)) {
+    cp9b->ep1 = 0;
+    cp9b->ep2 = 0;
+  }
+  else {
+    cp9b->ep1 = cp9b->ep2 = -1;
+    k = cp9b->hmm_M;
+    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) {
+      if(pocc_arr[k] < 0.0) { k--; }
+      else {
+        pocc = pocc_arr[k];
+        if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
+        if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
+        k--;
+      }
+    }
+    if(k == 0) {
+      if(cp9b->ep1 == -1) { cp9b->ep1 = 0; }
+      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; }
+    }
+  }
+
+  /* Parts 3-4: Rmarg/Lmarg derivation — identical to the float original. */
+
+  /* Rmarg_imin */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imin = i0; }
+  else {
+    cp9b->Rmarg_imin = INT_MAX;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imin == INT_MAX || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imin = ESL_MAX(i0,   cp9b->Rmarg_imin);
+    cp9b->Rmarg_imin = ESL_MIN(j0+1, cp9b->Rmarg_imin);
+  }
+  /* Rmarg_imax */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imax = j0; }
+  else {
+    cp9b->Rmarg_imax = INT_MIN;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imax == INT_MIN || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imax = j0+1;
+    cp9b->Rmarg_imax = ESL_MAX(i0,   cp9b->Rmarg_imax);
+    cp9b->Rmarg_imax = ESL_MIN(j0+1, cp9b->Rmarg_imax);
+  }
+  /* Lmarg_jmin */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmin = i0-1; }
+  else {
+    cp9b->Lmarg_jmin = INT_MAX;
+    if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmin = i0-1;
+    cp9b->Lmarg_jmin = ESL_MAX(i0-1, cp9b->Lmarg_jmin);
+    cp9b->Lmarg_jmin = ESL_MIN(j0,   cp9b->Lmarg_jmin);
+  }
+  /* Lmarg_jmax */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmax = j0; }
+  else {
+    cp9b->Lmarg_jmax = INT_MIN;
+    if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmax = j0;
+    cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax);
+    cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax);
+  }
+}
+
+/* Function: cp9_FBMatrices2BandsP7BF_chk()
+ *
+ * Checkpointed float drop-in for cp9_FBMatrices2BandsF (truncated path).
+ * Produces the same cp9b bands + sp/ep prediction via cp9_FB2HMMBandsP7BF_chk
+ * (which streams pocc_arr) + the identical downstream
+ * MarginalCandidates/HMM2ij/GrowHD/ij2d tail. No full CP9_FMX matrices.
+ */
+int
+cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b,
+                             int *kmin, int *kmax, int L, int i0, int j0, int pass_idx,
+                             int debug_level, int do_pnmono, int do_pnmono_print)
+{
+  int status;
+  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+  float *pocc_arr   = NULL;
+
+  if(use_sums) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FBMatrices2BandsP7BF_chk: use_sums not supported.");
+
+  ESL_ALLOC(pocc_arr, sizeof(float) * (cp9b->hmm_M + 1));
+
+  /* Step 1+2: checkpointed float F/B -> HMM bands + streamed pocc_arr. */
+  if((status = cp9_FB2HMMBandsP7BF_chk(cp9, errbuf, dsq, cp9b, L, cp9b->hmm_M,
+                                       (1.-cm->tau), kmin, kmax, debug_level,
+                                       do_pnmono, do_pnmono_print, pocc_arr)) != eslOK) goto ERROR;
+  cp9b->tau = cm->tau;
+
+  /* Step 2b: shift HMM bands from 1..L to i0..j0 coords. */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    int k;
+    for(k = 0; k <= cp9b->hmm_M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Step 2c: marginal candidates (trunc) or non-trunc valid arrays. */
+  if(do_trunc) {
+    cp9_PredictStartAndEndFromPoccF(pocc_arr, cp9b, i0, j0);
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) goto ERROR;
+  }
+  else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
+  }
+
+  /* Step 3: HMM bands -> CM bands. */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) goto ERROR;
+  }
+  else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) goto ERROR;
+  }
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
+  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+
+  free(pocc_arr);
+  return eslOK;
+
+ ERROR:
+  if(pocc_arr) free(pocc_arr);
+  return status;
+}
