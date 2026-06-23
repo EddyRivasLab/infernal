@@ -26,6 +26,20 @@
 static int   bp_is_canonical(char lseq, char rseq);
 static float post_code_to_avg_pp(char postcode);
 
+/* Pseudoknot pair-status (PS line) glyphs.
+ * The NC base-pair-quality line is relabeled "PS" (Pair Status) on all CM hits.
+ * For pseudoknot pairs (singlet ML/MR columns, disjoint from the MATP columns
+ * that carry the nested 'v'/'?' markup) we overlay one of these three marks at
+ * both ends of each complete pknot pair. Gathered here so they are easy to
+ * change in one place. See annotate_pknot_pairs().
+ *   Note the documented asymmetry: nested base pairs still get negative-only
+ *   markup ('v' broken nested, '?' truncated); only pknot pairs get the full
+ *   positive+negative (=/$/x) scheme. */
+#define PS_PKNOT_MAINT   '='   /* pknot pair maintained: WC/GU and observed pair == consensus pair          */
+#define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
+#define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
+static void  annotate_pknot_pairs(CM_ALIDISPLAY *ad);
+
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
  *****************************************************************/
@@ -611,7 +625,11 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
-  if(ppstr != NULL)  ad->ppline[ad->N] = '\0'; 
+  if(ppstr != NULL)  ad->ppline[ad->N] = '\0';
+  /* PS line: overlay pseudoknot pair-status marks (=/$/x) onto ncline. Done
+   * here (after FixBrokenString fixed csline and the lines are NUL-terminated)
+   * so the marks are baked into ncline before serialization. */
+  if (cm->flags & CMH_PKNOT) annotate_pknot_pairs(ad);
   ad->sqfrom      = tr->emitl[0] + seqoffset-1;
   ad->sqto        = tr->emitr[0] + seqoffset-1;
   ad->cfrom_emit  = cfrom_emit;
@@ -1066,6 +1084,78 @@ bp_is_canonical(char lseq, char rseq)
   return FALSE;
 }
 
+/* Function: annotate_pknot_pairs()
+ *
+ * Purpose:  Overlay pseudoknot pair-status marks (=/$/x) onto ad->ncline (the
+ *           line printed with the "PS" label). Called at Create time, after
+ *           cm_pknot_FixBrokenString() has run on ad->csline so that only
+ *           complete pknot pairs still carry their (upper/lower) letters.
+ *
+ *           Walk the finished csline with the SAME per-letter pushdown
+ *           discipline that cm_pknot_FixBrokenString()/esl_wuss2ct() use,
+ *           recovering each complete pknot base pair as display positions
+ *           (z_open, z_close). Classify each pair from the observed residues
+ *           (ad->aseq) vs the consensus residues (ad->model):
+ *             - gap on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
+ *             - canonical AND observed pair == consensus pair           -> PS_PKNOT_MAINT
+ *             - canonical AND observed pair != consensus pair           -> PS_PKNOT_COVARY
+ *           The mark is written at BOTH ends, into ad->ncline. Pknot columns
+ *           are ML/MR singlets, disjoint from the MATP columns that carry the
+ *           nested 'v'/'?' markup, so the overlay only ever writes onto blank
+ *           ncline positions; we assert/skip defensively if not.
+ *
+ *           Doing this at Create (rather than Print) time means the marks are
+ *           part of ad->ncline before the hit is serialized for the
+ *           worker->master merge, so they flow through the existing
+ *           _Serialize/_Deserialize/_Clone/_Sizeof machinery with no new field.
+ *
+ * Returns:  (void) On malloc failure for an internal stack, silently leaves the
+ *           remaining pairs unmarked (annotation is cosmetic; never fatal).
+ */
+static void
+annotate_pknot_pairs(CM_ALIDISPLAY *ad)
+{
+  int   sp[26];        /* stack pointers, one per pknot letter A-Z / a-z */
+  int  *stack[26];     /* per-letter stacks of open display positions     */
+  int   i, c, idx;
+
+  if (ad == NULL || ad->ncline == NULL || ad->csline == NULL || ad->aseq == NULL || ad->model == NULL) return;
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < ad->N; i++) {
+    c = (int) ad->csline[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (ad->N + 1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {              /* matched close: recover the pair (z_open, z_close) */
+        int  zo = stack[idx][--sp[idx]];
+        int  zc = i;
+        char ol = ad->aseq[zo],  orr = ad->aseq[zc];
+        char ml = ad->model[zo], mr  = ad->model[zc];
+        char mark;
+        if      (ol == '-' || orr == '-' || ! bp_is_canonical(ol, orr))     mark = PS_PKNOT_BROKEN;
+        else if (toupper(ol) == toupper(ml) && toupper(orr) == toupper(mr)) mark = PS_PKNOT_MAINT;
+        else                                                                mark = PS_PKNOT_COVARY;
+        /* pknot columns are singlets, disjoint from nested-pair MATP columns,
+         * so ncline must be blank here; overwrite defensively but not silently. */
+        ESL_DASSERT1((ad->ncline[zo] == ' ' && ad->ncline[zc] == ' '));
+        ad->ncline[zo] = mark;
+        ad->ncline[zc] = mark;
+      }
+      /* sp[idx]==0 here would be an orphan close, but FixBrokenString already
+       * dropped those to '.', so this branch should not fire post-fix. */
+    }
+  }
+
+ DONE:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  return;
+}
+
 /*---------------- end, alidisplay object -----------------------*/
 
 
@@ -1239,7 +1329,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       if (ad->sqfrom < ad->sqto) { i2 = i1+ni-1; }
       else                       { i2 = i1-ni+1; }
 
-      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sPS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); } /* "PS" = Pair Status; was "NC" */
       strncpy(buf, ad->csline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sCS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, "");
       strncpy(buf, ad->model+pos,  cur_aliwidth); fprintf(fp, "  %*s %*d %s %*s%-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, aliwidth-cur_aliwidth, "", coordwidth, k2);
       strncpy(buf, ad->mline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s\n", namewidth+coordwidth+1, " ", buf);
