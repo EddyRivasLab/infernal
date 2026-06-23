@@ -5870,10 +5870,15 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   }
 
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+    /* brief 148 (lands brief 082): pass doing_search=FALSE so cp9_HMM2ijBands_OLD applies the
+     * global-alignment ROOT_S span enforcement (hmmband.c). This float-truncated band path is
+     * cmalign-only / do_trunc-only; without the pin the full J-mode parse is geometrically
+     * excluded in -g mode -> cm_TrInsideAlignHB returns "no valid parsetree". */
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+    /* brief 148 (lands brief 082): doing_search=FALSE (see comment above). */
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
