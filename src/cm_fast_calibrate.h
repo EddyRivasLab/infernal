@@ -60,6 +60,17 @@ extern int    g_localmu_fitlambda;   /* if 1, refit lambda in cm_LocalMu (defaul
  */
 extern void cm_FastCalibrateCleanup(void);
 
+/* cm_fastcal_gc_emit()
+ *   brief 67: corrected consensus-emission GC fraction of a (built) CM —
+ *   one consensus emission per node (MATP->MP marginalized, MATL->ML,
+ *   MATR->MR), excluding MATP-internal fallback states. Used as the
+ *   Option-E AT-rich routing gate; also intended for reuse by the planned
+ *   null3 store-both work. If opt_ncons != NULL it receives the consensus-
+ *   position count, which must equal cm->clen. Returns gc in [0,1], or
+ *   -1.0 if the CM has no consensus emission mass.
+ */
+extern double cm_fastcal_gc_emit(const CM_t *cm, int *opt_ncons);
+
 /* cm_FastCalibrate_PrintModels()
  *   Phase 1 debug helper: dump loaded ridge structures to fp in a
  *   format that can be diff'd against the source JSONs.

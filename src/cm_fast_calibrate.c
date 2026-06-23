@@ -68,6 +68,16 @@
 #define MODE_ECMGC  2
 #define MODE_ECMGI  3
 
+/* brief 67: Option-E gated AT-rich predictor.
+ * The dedicated AT-rich models exist for the tiny and small buckets only
+ * (the predictor is tiny/small only; medlarge/large/huge never route).
+ * The AT-rich bucket index reuses BUCKET_TINY(0)/BUCKET_SMALL(1), so a
+ * tiny/small CM's bucket value indexes the atrich arrays directly. */
+#define N_ATRICH_BUCKETS 2     /* ATRICH_TINY=0, ATRICH_SMALL=1 */
+#define ATRICH_TINY      0
+#define ATRICH_SMALL     1
+#define ATRICH_GC_GATE   0.45  /* corrected gc_emit gate (brief 064/065) */
+
 /* =========================================================================
  * Data structures
  */
@@ -106,6 +116,13 @@ typedef struct {
   FastCalRidge noss_mu_extrap[N_BUCKETS][N_MODES];
   FastCalRidge noss_mu_orig  [N_BUCKETS][N_MODES];
   FastCalRidge noss_K        [N_BUCKETS][N_MODES];   /* K-ridge (NOSS / is_noss=1) */
+  /* brief 67: Option-E gated AT-rich predictor. Dedicated STR lambda/mu_extrap
+   * ridges for tiny/small CMs with corrected gc_emit <= 0.45, for the 7
+   * CV-firmed (mode,target) cells only. Indexed [ATRICH_TINY|ATRICH_SMALL][mode].
+   * Only the adopted cells are defined; all other slots stay undefined and the
+   * shipped str_* ridge is used (zero regression). */
+  FastCalRidge atrich_lambda   [N_ATRICH_BUCKETS][N_MODES];
+  FastCalRidge atrich_mu_extrap[N_ATRICH_BUCKETS][N_MODES];
   char         models_version[65];   /* SHA-256 hex of concatenated JSONs + NUL */
   int          loaded;
 } FastCalModelSet;
@@ -1306,6 +1323,44 @@ load_models(void)
   /* 8. v4.x→ridge K (NOSS) — REMOVED (brief 46). NOSS K is now loaded
    * from the hybrid JSON in step 5+6 above. */
 
+  /* 9. brief 67: Option-E gated AT-rich predictor (STR, tiny + small).
+   * Same flat MODE_target schema as the v5.5 STR JSONs, so parse_v55_flat
+   * loads them directly. Only the 7 CV-firmed cells are present; absent
+   * (mode,target) keys leave the slot undefined and the router falls back
+   * to shipped v5.5. The AT-rich bucket index == BUCKET_TINY/BUCKET_SMALL. */
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_atrich_tiny_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_atrich_tiny_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    ATRICH_TINY, g_models.atrich_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", ATRICH_TINY, g_models.atrich_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+  {
+    ESL_BUFFER *bf = NULL;
+    ESL_JSON   *pi = NULL;
+    if ((status = esl_buffer_OpenMem(
+           (const char *)__cm_fast_calibrate_data_v55_atrich_small_models_json,
+           (esl_pos_t)  __cm_fast_calibrate_data_v55_atrich_small_models_json_len,
+           &bf)) != eslOK) return status;
+    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
+      { esl_buffer_Close(bf); return status; }
+    status  = parse_v55_flat(pi, bf, "lambda",    ATRICH_SMALL, g_models.atrich_lambda);
+    if (status == eslOK)
+      status = parse_v55_flat(pi, bf, "mu_extrap", ATRICH_SMALL, g_models.atrich_mu_extrap);
+    esl_json_Destroy(pi);
+    esl_buffer_Close(bf);
+    if (status != eslOK) return status;
+  }
+
   /* Record the embedded version hash */
   strncpy(g_models.models_version, fast_cal_models_version, 64);
   g_models.models_version[64] = '\0';
@@ -1401,6 +1456,97 @@ predict_K(int mode, int is_noss, int bucket, const double *feats)
 }
 
 
+/* ===== brief 67: Option-E gated AT-rich predictor =====================
+ *
+ * cm_fastcal_gc_emit(): corrected consensus-emission GC fraction. Counts ONE
+ * consensus emission per node — MATP node -> MP state (pair, marginalized to
+ * its two consensus positions), MATL -> ML singlet, MATR -> MR singlet. The
+ * MATP-internal ML/MR fallback states are NOT consensus columns and are
+ * excluded naturally by walking nodes (cm->ndtype/cm->nodemap) rather than
+ * states (this was the brief-051 overcount bug). The struct cm->e[] are
+ * emission PROBABILITIES; to match the Python reference (which parses the
+ * 3-dp log-odds in the ASCII CM file, brief063_run/gc_emit_v2.py:gc_new) we
+ * requantize each prob to 3-dp log-odds vs cm->null and renormalize per state,
+ * exactly as extract_str_struct()/extract_composition() do. Each consensus
+ * position contributes a distribution summing to 1; gc = (C+G)/(A+C+G+U) over
+ * the accumulated marginal mass. *opt_ncons (if non-NULL) returns the
+ * consensus-position count, which MUST equal cm->clen.
+ *
+ * Shared helper: the planned null3 store-both build-out reuses this same
+ * corrected gc as its routing gate + delta-lambda feature (brief 67 sec 3).
+ * Returns gc in [0,1], or -1.0 if no consensus emission mass.
+ */
+double
+cm_fastcal_gc_emit(const CM_t *cm, int *opt_ncons)
+{
+  double acc[4] = { 0.0, 0.0, 0.0, 0.0 };
+  int    n_cons = 0;
+  int    nd, v, a, b, ab;
+
+  for (nd = 0; nd < cm->nodes; nd++)
+    {
+      if (cm->ndtype[nd] == MATP_nd)
+        {
+          v = cm->nodemap[nd];
+          if (cm->stid[v] != MATP_MP) continue;   /* MP is the first state of a MATP node */
+          double p[16], s = 0.0;
+          for (ab = 0; ab < 16; ab++) {
+            a = ab / 4; b = ab % 4;
+            double e  = (double) cm->e[v][ab];
+            double nl = (double) cm->null[a] * (double) cm->null[b];
+            if (e <= 0.0 || nl <= 0.0) { p[ab] = 0.0; continue; }
+            double lo = round(log2(e / nl) * 1000.0) / 1000.0;  /* 3-dp file log-odds */
+            p[ab] = nl * exp2(lo);
+            s += p[ab];
+          }
+          if (s <= 0.0) continue;
+          /* renormalize over the 16 pairs, then marginalize to left+right
+           * (index ab = 4*left + right) -> total mass 2, one per position */
+          for (a = 0; a < 4; a++)
+            for (b = 0; b < 4; b++) {
+              double pv = p[4 * a + b] / s;
+              acc[a] += pv;   /* left  consensus position */
+              acc[b] += pv;   /* right consensus position */
+            }
+          n_cons += 2;
+        }
+      else if (cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd)
+        {
+          v = cm->nodemap[nd];   /* ML (MATL) or MR (MATR) is the first state */
+          double p[4], s = 0.0;
+          for (a = 0; a < 4; a++) {
+            double e  = (double) cm->e[v][a];
+            double nl = (double) cm->null[a];
+            if (e <= 0.0 || nl <= 0.0) { p[a] = 0.0; continue; }
+            double lo = round(log2(e / nl) * 1000.0) / 1000.0;
+            p[a] = nl * exp2(lo);
+            s += p[a];
+          }
+          if (s <= 0.0) continue;
+          for (a = 0; a < 4; a++) acc[a] += p[a] / s;
+          n_cons += 1;
+        }
+    }
+
+  if (opt_ncons) *opt_ncons = n_cons;
+  double tot = acc[0] + acc[1] + acc[2] + acc[3];
+  if (tot <= 0.0) return -1.0;
+  return (acc[1] + acc[2]) / tot;
+}
+
+/* brief 67 CV-firmed 7-cell adopt matrix (mirrors
+ * brief065_run/predict_time_spec.json routing_per_cell.adopt_matrix).
+ * [bucket: ATRICH_TINY|ATRICH_SMALL][mode][0 = lambda, 1 = mu_extrap].
+ * 1 = route to the dedicated AT-rich ridge (gated); 0 = keep shipped v5.5.
+ * Firmed set: tiny {ECMGC_lambda, ECMGI_lambda};
+ *             small {ECMLI_lambda, ECMGC_lambda+mu, ECMGI_lambda+mu}.
+ * K and mu_orig are NEVER routed. */
+static const int atrich_adopt[N_ATRICH_BUCKETS][N_MODES][2] = {
+  /* ATRICH_TINY  */ { /*ECMLC*/{0,0}, /*ECMLI*/{0,0}, /*ECMGC*/{1,0}, /*ECMGI*/{1,0} },
+  /* ATRICH_SMALL */ { /*ECMLC*/{0,0}, /*ECMLI*/{1,0}, /*ECMGC*/{1,1}, /*ECMGI*/{1,1} },
+};
+
+
 /* cm_FastCalibrate()
  * Predict ECM parameters (λ, μ_extrap, μ_orig) for all 4 ECM modes and
  * populate cm->expA[0..EXP_NMODES-1] in place.
@@ -1444,6 +1590,30 @@ cm_FastCalibrate(CM_t *cm)
    * STR path is unchanged (no clamp ever applied for STR).
    */
   bucket = bucket_of(cm->clen);
+
+  /* brief 67: Option-E gated AT-rich routing gate. Compute the corrected
+   * consensus-emission GC once per CM. Route to the dedicated AT-rich ridges
+   * ONLY for STR CMs (is_noss==0; NOSS uses its own hybrid predictor) in the
+   * tiny/small buckets with gc <= 0.45, and only for the CV-firmed adopt
+   * cells (atrich_adopt[][][]). Everything else is byte-identical to shipped. */
+  int    atrich_ncons = 0;
+  double atrich_gc    = cm_fastcal_gc_emit(cm, &atrich_ncons);
+  int    atrich_route = (!is_noss &&
+                         (bucket == BUCKET_TINY || bucket == BUCKET_SMALL) &&
+                         atrich_gc >= 0.0 && atrich_gc <= ATRICH_GC_GATE);
+  {
+    /* Optional validation dump (n_cons must == clen; gc must match Python). */
+    const char *gc_dump = getenv("FASTCAL_GC_DUMP");
+    if (gc_dump != NULL) {
+      FILE *gfp = fopen(gc_dump, "a");
+      if (gfp != NULL) {
+        fprintf(gfp, "%s\t%d\t%d\t%.10g\t%d\n",
+                cm->name ? cm->name : "unknown", cm->clen, atrich_ncons,
+                atrich_gc, atrich_route);
+        fclose(gfp);
+      }
+    }
+  }
 
   /* Allocate cm->expA if needed */
   if (cm->expA == NULL)
@@ -1519,6 +1689,20 @@ cm_FastCalibrate(CM_t *cm)
       double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
       double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
 
+      /* brief 67: Option-E gated AT-rich override. For routed CMs (STR,
+       * tiny/small, gc<=0.45), replace lambda and/or mu_extrap with the
+       * dedicated AT-rich ridge for the CV-firmed adopt cells only. Applied
+       * LAST so it wins over the shipped value; mu_orig and K are never
+       * touched. Purely additive: non-routed CMs/cells never reach here. */
+      if (atrich_route) {
+        const FastCalRidge *ra_lam = &g_models.atrich_lambda   [bucket][mode];
+        const FastCalRidge *ra_mue = &g_models.atrich_mu_extrap[bucket][mode];
+        if (atrich_adopt[bucket][mode][0] && ra_lam->defined)
+          lam  = ridge_predict(ra_lam, feats);
+        if (atrich_adopt[bucket][mode][1] && ra_mue->defined && r_mue->nfeat > 0)
+          mu_e = ridge_predict(ra_mue, feats);
+      }
+
       /* Predict K = nrandhits/dbsize via the K ridge.
        * In cmsearch, cur_eff_dbsize = (Z_search/dbsize) * nrandhits, so
        * K controls the absolute E-value scale. The K ridge is loaded as
@@ -1587,6 +1771,13 @@ cm_FastCalibrateCleanup(void)
         ridge_free(&g_models.noss_mu_extrap[b][m]);
         ridge_free(&g_models.noss_mu_orig  [b][m]);
         ridge_free(&g_models.noss_K        [b][m]);
+      }
+  /* brief 67: AT-rich slots (tiny + small only) */
+  for (b = 0; b < N_ATRICH_BUCKETS; b++)
+    for (m = 0; m < N_MODES; m++)
+      {
+        ridge_free(&g_models.atrich_lambda   [b][m]);
+        ridge_free(&g_models.atrich_mu_extrap[b][m]);
       }
   g_models.loaded = 0;
 }
