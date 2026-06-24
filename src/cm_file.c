@@ -675,9 +675,36 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
       fprintf(fp, "ECMLI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 	      cm->expA[EXP_CM_LI]->lambda, cm->expA[EXP_CM_LI]->mu_extrap, cm->expA[EXP_CM_LI]->mu_orig, 
 	      (long) (cm->expA[EXP_CM_LI]->dbsize + 0.5), cm->expA[EXP_CM_LI]->nrandhits, cm->expA[EXP_CM_LI]->tailp);
-      fprintf(fp, "ECMGI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
-	      cm->expA[EXP_CM_GI]->lambda, cm->expA[EXP_CM_GI]->mu_extrap, cm->expA[EXP_CM_GI]->mu_orig, 
+      fprintf(fp, "ECMGI    %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n",
+	      cm->expA[EXP_CM_GI]->lambda, cm->expA[EXP_CM_GI]->mu_extrap, cm->expA[EXP_CM_GI]->mu_orig,
 	      (long) (cm->expA[EXP_CM_GI]->dbsize + 0.5), cm->expA[EXP_CM_GI]->nrandhits, cm->expA[EXP_CM_GI]->tailp);
+    }
+
+  /* null3-OFF E-value parameters (optional, additive; CMH_EXPTAIL_NONULL3_STATS).
+   * Written under distinct NONULL3_xx tags AFTER the 4 on-set ECMxx lines so the
+   * default (null3-on) block is byte-identical and old parsers silently skip
+   * these unknown tags (the if/else-if tag chain has no error else-clause). The
+   * tag does NOT begin with "ECM" on purpose: an "ECM"-prefixed tag would trip
+   * the old reader's ECM branch and fail. See briefs 053/068/069. */
+  if (cm->flags & CMH_EXPTAIL_NONULL3_STATS)
+    {
+      if(cm->expA_nonull3[EXP_CM_LC]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big) EXP_CM_LC");
+      if(cm->expA_nonull3[EXP_CM_GC]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big) EXP_CM_GC");
+      if(cm->expA_nonull3[EXP_CM_LI]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big) EXP_CM_LI");
+      if(cm->expA_nonull3[EXP_CM_GI]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big) EXP_CM_GI");
+
+      fprintf(fp, "NONULL3_LC %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n",
+	      cm->expA_nonull3[EXP_CM_LC]->lambda, cm->expA_nonull3[EXP_CM_LC]->mu_extrap, cm->expA_nonull3[EXP_CM_LC]->mu_orig,
+	      (long) (cm->expA_nonull3[EXP_CM_LC]->dbsize + 0.5), cm->expA_nonull3[EXP_CM_LC]->nrandhits, cm->expA_nonull3[EXP_CM_LC]->tailp);
+      fprintf(fp, "NONULL3_GC %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n",
+	      cm->expA_nonull3[EXP_CM_GC]->lambda, cm->expA_nonull3[EXP_CM_GC]->mu_extrap, cm->expA_nonull3[EXP_CM_GC]->mu_orig,
+	      (long) (cm->expA_nonull3[EXP_CM_GC]->dbsize + 0.5), cm->expA_nonull3[EXP_CM_GC]->nrandhits, cm->expA_nonull3[EXP_CM_GC]->tailp);
+      fprintf(fp, "NONULL3_LI %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n",
+	      cm->expA_nonull3[EXP_CM_LI]->lambda, cm->expA_nonull3[EXP_CM_LI]->mu_extrap, cm->expA_nonull3[EXP_CM_LI]->mu_orig,
+	      (long) (cm->expA_nonull3[EXP_CM_LI]->dbsize + 0.5), cm->expA_nonull3[EXP_CM_LI]->nrandhits, cm->expA_nonull3[EXP_CM_LI]->tailp);
+      fprintf(fp, "NONULL3_GI %.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n",
+	      cm->expA_nonull3[EXP_CM_GI]->lambda, cm->expA_nonull3[EXP_CM_GI]->mu_extrap, cm->expA_nonull3[EXP_CM_GI]->mu_orig,
+	      (long) (cm->expA_nonull3[EXP_CM_GI]->dbsize + 0.5), cm->expA_nonull3[EXP_CM_GI]->nrandhits, cm->expA_nonull3[EXP_CM_GI]->tailp);
     }
 
   /* main model section */
@@ -904,6 +931,29 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
       if (fwrite((char *) &(dbsize_long),            sizeof(long),   1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->nrandhits), sizeof(int),    1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->expA[z]->tailp),     sizeof(double), 1, fp) != 1) return eslFAIL;
+    }
+  }
+
+  /* null3-OFF E-value parameters (v1/b and later, flag-gated optional block;
+   * P7NODEPAD-style: same v1b magic, only the bytes are added). Written here,
+   * immediately after the on-set EXPTAIL block, so the on-set block stays
+   * byte-identical and the off-set is purely additive. IMPORTANT backward-compat
+   * caveat (briefs 069/053): because binary CM records are POSITIONAL with no
+   * length framing, an OLD v1b binary that lacks this reader CANNOT skip this
+   * block -- it will mis-parse the following bytes (fp7 HMM) and fail. ASCII has
+   * no such issue (unknown tags are skipped). See the brief-069 summary; the
+   * old-binary-skip question is an open EPN decision (magic bump vs accept). */
+  if (format >= CM_FILE_1b && (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) {
+    long dbsize_long;
+    for(z = 0; z < EXP_NMODES; z++) {
+      if(cm->expA_nonull3[z]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big)");
+      dbsize_long = (long) cm->expA_nonull3[z]->dbsize + 0.5;
+      if (fwrite((char *) &(cm->expA_nonull3[z]->lambda),    sizeof(double), 1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(cm->expA_nonull3[z]->mu_extrap), sizeof(double), 1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(cm->expA_nonull3[z]->mu_orig),   sizeof(double), 1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(dbsize_long),                    sizeof(long),   1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(cm->expA_nonull3[z]->nrandhits), sizeof(int),    1, fp) != 1) return eslFAIL;
+      if (fwrite((char *) &(cm->expA_nonull3[z]->tailp),     sizeof(double), 1, fp) != 1) return eslFAIL;
     }
   }
 
@@ -1592,7 +1642,8 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   int           v, x, y, nd;            /* counters */
   int           read_fp7_stats = FALSE;
   uint32_t      cm_statstracker = 0; /* for making sure we have all CM E-value stats, if we have any */
-  int           exp_mode;   
+  uint32_t      cm_nonull3_statstracker = 0; /* same, for the optional null3-off E-value stats */
+  int           exp_mode;
   int           read_el_selfsc = FALSE; /* set to true when we read ELSELF line */
 
   /* temporary parameters, for storing values prior to their allocation in the CM */
@@ -1866,6 +1917,31 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	cm->expA[exp_mode]->tailp     = atof(tok6);
 	cm->expA[exp_mode]->is_valid  = TRUE;
       }
+      else if (strncmp(tag, "NONULL3_", 8) == 0) { /* one of 4 optional null3-off CM E-value lines */
+	/* determine which one (tag+8 == LC/GC/LI/GI). Same 6 fields as ECMxx. */
+	if      (strncmp(tag+8, "LC", 2) == 0) { exp_mode = EXP_CM_LC; cm_nonull3_statstracker += 1; }
+	else if (strncmp(tag+8, "GC", 2) == 0) { exp_mode = EXP_CM_GC; cm_nonull3_statstracker += 2; }
+	else if (strncmp(tag+8, "LI", 2) == 0) { exp_mode = EXP_CM_LI; cm_nonull3_statstracker += 4; }
+	else if (strncmp(tag+8, "GI", 2) == 0) { exp_mode = EXP_CM_GI; cm_nonull3_statstracker += 8; }
+	else                                   { ESL_XFAIL(status, cmfp->errbuf, "Invalid tag beginning with NONULL3_"); }
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on NONULL3_ line"); /* lambda    */
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on NONULL3_ line"); /* mu_extrap */
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok3, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on NONULL3_ line"); /* mu_orig   */
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok4, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on NONULL3_ line"); /* dbsize    */
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok5, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on NONULL3_ line"); /* nrandhits */
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok6, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on NONULL3_ line"); /* tailp     */
+	if (cm->expA_nonull3 == NULL) {
+	  ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+	  for(x = 0; x < EXP_NMODES; x++) { cm->expA_nonull3[x] = CreateExpInfo(); }
+	}
+	cm->expA_nonull3[exp_mode]->lambda    = atof(tok1);
+	cm->expA_nonull3[exp_mode]->mu_extrap = atof(tok2);
+	cm->expA_nonull3[exp_mode]->mu_orig   = atof(tok3);
+	cm->expA_nonull3[exp_mode]->dbsize    = atof(tok4); /* store as double, even though it was written as a long */
+	cm->expA_nonull3[exp_mode]->nrandhits = atoi(tok5);
+	cm->expA_nonull3[exp_mode]->tailp     = atof(tok6);
+	cm->expA_nonull3[exp_mode]->is_valid  = TRUE;
+      }
       else if (strcmp(tag, "CM") == 0) {  
 	/* skip the remainder of this line */
 	if ((status = esl_fileparser_NextLine(cmfp->efp)) != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Premature end of data before main model section");
@@ -1889,9 +1965,15 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
   /* Check to make sure we parsed CM E-value stats correctly. 
    */
-  if (cm->expA != NULL) { 
+  if (cm->expA != NULL) {
     if      (cm_statstracker == 15) cm->flags |= CMH_EXPTAIL_STATS;
     else if (cm_statstracker != 0)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Missing one or more ECM.. parameter lines");
+  }
+
+  /* Same check for the optional null3-off stats: all 4 NONULL3_ lines or none. */
+  if (cm->expA_nonull3 != NULL) {
+    if      (cm_nonull3_statstracker == 15) cm->flags |= CMH_EXPTAIL_NONULL3_STATS;
+    else if (cm_nonull3_statstracker != 0)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Missing one or more NONULL3_ parameter lines");
   }
 
   /* Allocate body of CM now that # states (M) and # nodes (nnodes) are known */
@@ -2383,6 +2465,24 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
       cm->expA[x]->dbsize = (double) dbsize_long;
       if (! fread((char *) &(cm->expA[x]->nrandhits), sizeof(int),    1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
       if (! fread((char *) &(cm->expA[x]->tailp),     sizeof(double), 1, cmfp->f))        ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM E-value stats");
+    }
+  }
+
+  /* null3-OFF E-value parameters (v1/b and later, flag-gated optional block;
+   * mirror of the write side above). Must be read in the same position. */
+  if (cmfp->format >= CM_FILE_1b && (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) {
+    long dbsize_long;
+    ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for(x = 0; x < EXP_NMODES; x++) {
+      cm->expA_nonull3[x] = CreateExpInfo();
+      if (! fread((char *) &(cm->expA_nonull3[x]->lambda),    sizeof(double), 1, cmfp->f))   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM null3-off E-value stats");
+      if (! fread((char *) &(cm->expA_nonull3[x]->mu_extrap), sizeof(double), 1, cmfp->f))   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM null3-off E-value stats");
+      if (! fread((char *) &(cm->expA_nonull3[x]->mu_orig),   sizeof(double), 1, cmfp->f))   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM null3-off E-value stats");
+      if (! fread((char *) &(dbsize_long),                    sizeof(long),   1, cmfp->f))   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM null3-off E-value stats");
+      cm->expA_nonull3[x]->dbsize = (double) dbsize_long;
+      if (! fread((char *) &(cm->expA_nonull3[x]->nrandhits), sizeof(int),    1, cmfp->f))   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM null3-off E-value stats");
+      if (! fread((char *) &(cm->expA_nonull3[x]->tailp),     sizeof(double), 1, cmfp->f))   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read CM null3-off E-value stats");
+      cm->expA_nonull3[x]->is_valid = TRUE;
     }
   }
 
