@@ -1012,8 +1012,8 @@ cp9_FB2HMMBandsP7B_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b,
      * stores (F,B) of 16*s->ncells B + transient segment buffers. */
     fprintf(stderr, "#CP9_CKPT L=%d M=%d blk=%d nbnd=%d | non-ckpt 3xCP9_MX=%.1f MB | ckpt stores=%.1f MB (%.0fx smaller)\n",
             L, M, s->blk, s->nbnd,
-            3.0 * 32.0 * (double) full_ncells / 1.0e6,
-            2.0 * 32.0 * (double) s->ncells   / 1.0e6,
+            3.0 * 16.0 * (double) full_ncells / 1.0e6,
+            2.0 * 16.0 * (double) s->ncells   / 1.0e6,
             (3.0 * (double) full_ncells) / (2.0 * (double) (s->ncells > 0 ? s->ncells : 1)));
   }
   if((status = cp9chk_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
