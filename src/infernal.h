@@ -3276,7 +3276,7 @@ extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, C
 extern int          cp9_FB2HMMBandsP7B_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
 extern int          cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
 /* checkpointed banded CP9 P7B float/truncated F/B (brief 150, Phase 2, cm_p7_band_chk.c) */
-extern int          cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, float *pocc_arr);
+extern int          cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, double *pocc_arr);
 extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
 extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
