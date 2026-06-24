@@ -5921,6 +5921,24 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
     /* float path: do_renorm always FALSE. The point of the float DP is that
      * pocc[k] arrives at ~1.0 in glocal mode without the median heuristic. */
     cp9_PredictStartAndEndPositionsP7BF(pmx, cp9b, kmin, kmax, i0, j0);
+    /* brief 149: in glocal alignment the full (J-mode) parse must always be
+     * geometrically available. The thresh1 escalation in cp9_IterateSeq2BandsP7B
+     * can retreat ep1 below clen (and, in principle, push sp1 above 1) on models
+     * with a decaying posterior-occupancy tail -- e.g. pure-MATL VADR genome
+     * models such as NC_001959, where every state's rpos == clen, so once
+     * ep1 < clen every state gets Jvalid[v] = FALSE in
+     * cp9_MarginalCandidatesFromStartEndPositions(). That excludes the full parse
+     * and cm_TrInsideAlignHB() returns "no valid parsetree" in -g mode (local mode
+     * survives via an EL escape). Floor sp1 <= 1 and ep1 >= clen so the entire
+     * model stays J-valid. Scoped to glocal (CMH_LOCAL_BEGIN off) to leave local
+     * mode byte-identical (it already has a valid root, and EL handles the tail).
+     * This whole float-truncated band path is cmalign-only: cp9_IterateSeq2BandsP7B
+     * is reached only from cm_alndata.c with doing_search == FALSE, so
+     * (do_align && !doing_search) holds by construction. */
+    if(! (cm->flags & CMH_LOCAL_BEGIN)) {
+      if(cp9b->sp1 > 1)        cp9b->sp1 = 1;
+      if(cp9b->ep1 < cm->clen) cp9b->ep1 = cm->clen;
+    }
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
@@ -5931,10 +5949,15 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   }
 
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+    /* brief 148 (lands brief 082): pass doing_search=FALSE so cp9_HMM2ijBands_OLD applies the
+     * global-alignment ROOT_S span enforcement (hmmband.c). This float-truncated band path is
+     * cmalign-only / do_trunc-only; without the pin the full J-mode parse is geometrically
+     * excluded in -g mode -> cm_TrInsideAlignHB returns "no valid parsetree". */
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+    /* brief 148 (lands brief 082): doing_search=FALSE (see comment above). */
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
