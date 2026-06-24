@@ -78,6 +78,48 @@
 #define ATRICH_SMALL     1
 #define ATRICH_GC_GATE   0.45  /* corrected gc_emit gate (brief 064/065) */
 
+/* ============================ null3-OFF corrector ============================
+ * brief 068 (brief068_run/offset_spec_gc_corrected.json + CORRECTOR_SPEC.md):
+ * predict the --nonull3 (null3-OFF) E-value parameter set from the on-set, as a
+ * gated Δλ correction keyed on corrected gc_emit (cm_fastcal_gc_emit) and clen.
+ *
+ *   lam_off = lam_on + Δλ(gc, lc),  lc = log10(clen)
+ *   mu_extrap_off = mu_orig_on - ln(1/t_eff_mode)/lam_off   (μ_orig reused; Δμ_orig=0)
+ *   K (nrandhits), dbsize, tailp reused from the on-set (composition-independent)
+ * Gate: apply only if gc_emit <= 0.48 (else off=on). Degeneracy: lam_off<=0 -> off=on.
+ *
+ * Δλ form per mode (mode index = MODE_ECMLC/LI/GC/GI below):
+ *   ECMLC/ECMGC/ECMGI: b0 + b1*gc + b2*gc*lc + b3*gc*lc^2   ("gc_quadlogc")
+ *   ECMLI            : b0 + b1*gc + b2*lc    + b3*gc*lc      ("b0+b1gc+b2logc+b3_gc_logc")
+ * Coefficients are verbatim from offset_spec_gc_corrected.json (brief 068).
+ */
+#define NONULL3_GC_GATE  0.48  /* corrected gc_emit gate for the null3-off corrector (brief 068) */
+
+static const double nonull3_dlam_coef[N_MODES][4] = {
+  /* ECMLC */ { -0.26405523686056775, -0.7613954123488369,  1.1527883933479806, -0.2657580589698738 },
+  /* ECMLI */ {  2.0677636328662783,  -3.7780182458253924, -1.194062250628696,   2.1615796027902023 },
+  /* ECMGC */ { -0.15690783757436041,  1.375800970559872,  -0.8997431990754934,  0.16810422340129869 },
+  /* ECMGI */ { -0.18671066783680723,  1.743042910230306,  -1.1587088412111677,  0.21748100163485096 },
+};
+/* per-mode effective tailp t_eff (brief 068; from 054 fastcal preds) */
+static const double nonull3_teff[N_MODES] = {
+  /* ECMLC */ 0.00236,
+  /* ECMLI */ 0.00361,
+  /* ECMGC */ 0.00905,
+  /* ECMGI */ 0.01181,
+};
+
+/* Δλ(gc, lc) for the given model-mode (MODE_ECMLC/LI/GC/GI), brief 068 forms. */
+static double
+nonull3_dlam(int mode, double gc, double lc)
+{
+  const double *c = nonull3_dlam_coef[mode];
+  if (mode == MODE_ECMLI)
+    return c[0] + c[1]*gc + c[2]*lc + c[3]*gc*lc;
+  /* ECMLC, ECMGC, ECMGI: gc_quadlogc */
+  return c[0] + c[1]*gc + c[2]*gc*lc + c[3]*gc*lc*lc;
+}
+
 /* =========================================================================
  * Data structures
  */
@@ -1742,6 +1784,64 @@ cm_FastCalibrate(CM_t *cm)
       /* Surface the error */
       fprintf(stderr, "cm_LocalMu() failed: %s\n", localmu_errbuf);
       return eslFAIL;
+    }
+  }
+
+  /* brief 068/069: produce the null3-OFF E-value parameter set (cm->expA_nonull3).
+   * Done LAST, after cm_LocalMu has finalized the on-set, so the off-set is
+   * derived from the final on-set params. PURELY ADDITIVE: cm->expA is untouched.
+   * Reuse the corrected gc_emit already computed above (atrich_gc). Gate on
+   * gc_emit <= 0.48; per-mode Δλ + μ recompute + on-set K/dbsize reuse; the
+   * lam_off<=0 degeneracy guard (and the gate) ship off==on. No is_noss gate:
+   * Δλ is a composition-driven calibration delta added to whatever lam_on is
+   * (briefs 053/068); this also covers NOSS CMs. */
+  {
+    double lc        = log10((double) cm->clen);
+    int    apply_off = (atrich_gc >= 0.0 && atrich_gc <= NONULL3_GC_GATE);
+
+    if (cm->expA_nonull3 == NULL) {
+      ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+      for (i = 0; i < EXP_NMODES; i++) cm->expA_nonull3[i] = NULL;
+    }
+    for (i = 0; i < EXP_NMODES; i++) {
+      if (cm->expA_nonull3[i] == NULL) {
+        cm->expA_nonull3[i] = CreateExpInfo();
+        if (cm->expA_nonull3[i] == NULL) goto ERROR;
+      }
+      /* default: off = on (balanced/GC-rich, out-of-gate, or degenerate) */
+      CopyExpInfo(cm->expA[i], cm->expA_nonull3[i]);
+
+      if (apply_off) {
+        int    mmode      = inf_to_model_mode[i];
+        double lam_on     = cm->expA[i]->lambda;
+        double lam_off    = lam_on + nonull3_dlam(mmode, atrich_gc, lc);
+        if (lam_off > 0.0) {                 /* else: degeneracy guard -> keep off=on */
+          double mu_orig_on = cm->expA[i]->mu_orig;
+          cm->expA_nonull3[i]->lambda    = lam_off;
+          cm->expA_nonull3[i]->mu_orig   = mu_orig_on;   /* Δμ_orig = 0 (brief 068) */
+          cm->expA_nonull3[i]->mu_extrap = mu_orig_on - log(1.0 / nonull3_teff[mmode]) / lam_off;
+          /* nrandhits (K), dbsize, tailp reused via CopyExpInfo */
+        }
+      }
+      cm->expA_nonull3[i]->is_valid = TRUE;
+    }
+    cm->flags |= CMH_EXPTAIL_NONULL3_STATS;
+
+    /* Optional full-precision validation dump (brief 069): one line per mode,
+     * name mode(0=GC,1=GI,2=LC,3=LI) gc clen apply lam_on lam_off muorig_on muext_off */
+    {
+      const char *n3_dump = getenv("FASTCAL_NONULL3_DUMP");
+      if (n3_dump != NULL) {
+        FILE *nfp = fopen(n3_dump, "a");
+        if (nfp != NULL) {
+          for (i = 0; i < EXP_NMODES; i++)
+            fprintf(nfp, "%s\t%d\t%.17g\t%d\t%d\t%.17g\t%.17g\t%.17g\t%.17g\n",
+                    cm->name ? cm->name : "unknown", i, atrich_gc, cm->clen, apply_off,
+                    cm->expA[i]->lambda, cm->expA_nonull3[i]->lambda,
+                    cm->expA[i]->mu_orig, cm->expA_nonull3[i]->mu_extrap);
+          fclose(nfp);
+        }
+      }
     }
   }
 
