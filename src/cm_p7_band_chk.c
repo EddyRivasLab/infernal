@@ -1800,6 +1800,7 @@ typedef struct {
   int64_t ncells;  /* total stored cells */
   double *fmmx, *fimx, *fdmx, *felmx;   /* Forward checkpoint planes */
   double *bmmx, *bimx, *bdmx, *belmx;   /* Backward checkpoint planes */
+  double fsc;      /* brief 154 diag: forward total (erow at i==L), for P154_FBDUMP */
 } cp9chkF_t;
 
 static void
@@ -1908,7 +1909,7 @@ cp9chkF_FwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, ch
     if((i & 1) == 1) { mc=m1; ic=i1; dc=d1; ec=e1; }
     else             { mc=m0; ic=i0; dc=d0; ec=e0; }
     memset(mc,0,sizeof(double)*(M+1)); memset(ic,0,sizeof(double)*(M+1)); memset(dc,0,sizeof(double)*(M+1)); memset(ec,0,sizeof(double)*(M+1));
-    cp9_chk_fwd_rowF(cp9, dsq, i, kmin, kmax, M, mp, ip, dp, ep, mc, ic, dc, ec, NULL);
+    cp9_chk_fwd_rowF(cp9, dsq, i, kmin, kmax, M, mp, ip, dp, ep, mc, ic, dc, ec, (i==L ? &s->fsc : NULL));
     if(j < s->nbnd && s->bnd[j] == i) {
       w = kmax[i]-kmin[i]+1;
       memcpy(s->fmmx + s->off[j], mc, sizeof(double)*w);
@@ -2237,6 +2238,11 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
 
   if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
   if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
+  /* brief 154 diag: double checkpointed CP9 F/B totals (cf. 153 ref fwd/bwd≈7993.144,
+   * gap≈+0.00003; float ckpt path gave gap≈-1.687 at norovirus, ≈-35/-45 at HSV/MPXV). */
+  if(getenv("P154_FBDUMP") != NULL)
+    fprintf(stderr, "P154 FBDUMP L=%d M=%d fwd_d=%.6f bwd_d=%.6f gap_d=%.6f\n",
+            L, M, s->fsc, sc, s->fsc - sc);
   if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* === MIN sweep: ascending i (0..L). Streams pocc_arr. === */
