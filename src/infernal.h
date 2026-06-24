@@ -1911,6 +1911,13 @@ typedef struct cm_s {
   /* statistics */
   ExpInfo_t       **expA;  /* Exponential tail stats, [0..EXP_NMODES-1]  */
 
+  /* null3-OFF exponential tail stats (CMH_EXPTAIL_NONULL3_STATS). Parallel
+   * to expA, holding the E-value params to use under cmsearch/cmscan
+   * --nonull3. Produced by cm_FastCalibrate (brief 068 corrector) at cmbuild
+   * time and (future, Part B) by cmcalibrate --nonull3. NULL if not present;
+   * the on-set expA above is UNTOUCHED. See briefs 053/068/069. */
+  ExpInfo_t       **expA_nonull3; /* null3-off exp tail stats, [0..EXP_NMODES-1]; NULL if not set */
+
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
   P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
@@ -1969,6 +1976,7 @@ typedef struct cm_s {
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
 #define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
+#define CMH_EXPTAIL_NONULL3_STATS (1<<26) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
