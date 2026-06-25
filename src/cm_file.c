@@ -46,6 +46,7 @@ static unsigned int v01magic = 0xe3edb0b1; /* v0.1 binary: "cm01" + 0x80808080 *
 
 static uint32_t  v1a_magic  = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
 static uint32_t  v1b_magic  = 0xe3edb0b3; /* v1.2 binary: "cm03" + 0x80808080 (adds optional P7NODEPAD) */
+static uint32_t  v1c_magic  = 0xe3edb0b4; /* v1.2 binary: "cm04" + 0x80808080 (adds optional null3-OFF E-value block) */
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -462,7 +463,8 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
   if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1b_magic) { cmfp->format = CM_FILE_1b; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
-  else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/b. Previous binary formats are not supported.", cmfp->fname);
+  else if (magic.n == v1c_magic) { cmfp->format = CM_FILE_1c; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
+  else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/c. Previous binary formats are not supported.", cmfp->fname);
 
   /* 8. Checks for ASCII file format */
   if (cmfp->parser == NULL)
@@ -840,11 +842,16 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
 
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
 
-  if (format == -1) format = CM_FILE_1b;
+  /* Default format: write the v1c magic iff the CM carries a null3-OFF
+   * E-value set, so the new (additive) binary block lives behind a NEW magic
+   * an old binary cleanly rejects (briefs 053/069). A CM without the off-set
+   * stays v1b -- byte-identical to base output. */
+  if (format == -1) format = (cm->flags & CMH_EXPTAIL_NONULL3_STATS) ? CM_FILE_1c : CM_FILE_1b;
 
   /* ye olde magic number */
   if      (format == CM_FILE_1a) { if (fwrite((char *) &(v1a_magic), sizeof(uint32_t), 1, fp) != 1) return eslFAIL; }
   else if (format == CM_FILE_1b) { if (fwrite((char *) &(v1b_magic), sizeof(uint32_t), 1, fp) != 1) return eslFAIL; }
+  else if (format == CM_FILE_1c) { if (fwrite((char *) &(v1c_magic), sizeof(uint32_t), 1, fp) != 1) return eslFAIL; }
   else ESL_EXCEPTION(eslEINVAL, "invalid CM file format code");
 
   /* info necessary for sizes of things
@@ -934,16 +941,15 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
     }
   }
 
-  /* null3-OFF E-value parameters (v1/b and later, flag-gated optional block;
-   * P7NODEPAD-style: same v1b magic, only the bytes are added). Written here,
-   * immediately after the on-set EXPTAIL block, so the on-set block stays
-   * byte-identical and the off-set is purely additive. IMPORTANT backward-compat
-   * caveat (briefs 069/053): because binary CM records are POSITIONAL with no
-   * length framing, an OLD v1b binary that lacks this reader CANNOT skip this
-   * block -- it will mis-parse the following bytes (fp7 HMM) and fail. ASCII has
-   * no such issue (unknown tags are skipped). See the brief-069 summary; the
-   * old-binary-skip question is an open EPN decision (magic bump vs accept). */
-  if (format >= CM_FILE_1b && (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) {
+  /* null3-OFF E-value parameters (v1/c and later, flag-gated optional block).
+   * Written here, immediately after the on-set EXPTAIL block, so the on-set
+   * block stays byte-identical and the off-set is purely additive. Because
+   * binary CM records are POSITIONAL with no length framing, an old v1b binary
+   * could not skip this block; so it lives behind the NEW v1c magic (set above
+   * whenever the off-set is present), which an old binary cleanly rejects
+   * (briefs 053/069). ASCII has no such issue (unknown NONULL3_ tags are
+   * skipped) and stays v1b. */
+  if (format >= CM_FILE_1c && (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) {
     long dbsize_long;
     for(z = 0; z < EXP_NMODES; z++) {
       if(cm->expA_nonull3[z]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big)");
@@ -2350,6 +2356,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 
       if      (cmfp->format == CM_FILE_1a) { if (magic != v1a_magic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic number at start of CM");  }
       else if (cmfp->format == CM_FILE_1b) { if (magic != v1b_magic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic number at start of CM");  }
+      else if (cmfp->format == CM_FILE_1c) { if (magic != v1c_magic)  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad magic number at start of CM");  }
       else                                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "no such CM file format code");
     }
 
@@ -2368,11 +2375,16 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
    * CM we're about to read (since not all CM parameters go into the
    * file).
    */
-  cm->flags &= ~CMH_BITS; 
+  cm->flags &= ~CMH_BITS;
   cm->flags &= ~CMH_CP9;
   cm->flags &= ~CMH_CP9_TRUNC;
   cm->flags &= ~CMH_MLP7;
   cm->flags &= ~CM_IS_CONFIGURED;
+  /* The null3-OFF E-value block only exists in v1c (and later) binary files.
+   * Defensively clear its flag for older formats so the flag can never be set
+   * without the block actually being read below (keeps flag<->slot consistent
+   * even for a stray pre-magic-bump v1b file that had the bit set). */
+  if (cmfp->format < CM_FILE_1c) cm->flags &= ~CMH_EXPTAIL_NONULL3_STATS;
 
   if (! fread((char *) &(cm->M),         sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of states");
   if (! fread((char *) &(cm->nodes),     sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of nodes");
@@ -2468,9 +2480,12 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     }
   }
 
-  /* null3-OFF E-value parameters (v1/b and later, flag-gated optional block;
-   * mirror of the write side above). Must be read in the same position. */
-  if (cmfp->format >= CM_FILE_1b && (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) {
+  /* null3-OFF E-value parameters (v1/c and later, flag-gated optional block;
+   * mirror of the write side above). Must be read in the same position. Gated
+   * on the v1c magic: only v1c files carry this block (v1a/v1b have on-set
+   * only), so an old v1b file with this flag bit somehow set is never
+   * mis-parsed here. */
+  if (cmfp->format >= CM_FILE_1c && (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) {
     long dbsize_long;
     ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
     for(x = 0; x < EXP_NMODES; x++) {
