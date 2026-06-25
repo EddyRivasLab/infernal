@@ -1452,6 +1452,34 @@ cm_CheckptAlignHB_Qualifies(CM_t *cm)
   return TRUE;
 }
 
+/* Function: cm_CheckptOptAccAlignHB_Qualifies()
+ * Purpose:  Return TRUE iff <cm> is a GLOBAL (no local begins/ends) STRUCTURED
+ *           CM (>= 1 B/MP/MR) whose state set is the supported rung-3 surface
+ *           (S/IL/IR/ML/MR/MP/D/E/B).  These are the conditions under which the
+ *           rung-3 pipeline (cm_CheckptPostAlignHB + cm_CheckptOptAccAlignHB)
+ *           reproduces the stock NON-truncated OptAcc path's alignment (modulo
+ *           the brief-032 accuracy-neutral pin-B flips), with a sqrt(M) working
+ *           set.  bps=0 CMs return FALSE here (they use the fused
+ *           cm_CheckptAlignHB instead).  Deliberately SEPARATE from
+ *           cm_CheckptAlignHB_Qualifies so the truncated qualifier
+ *           (cm_CheckptTrAlignHB_Qualifies, which delegates to that one) is NOT
+ *           relaxed -- truncated bps>0 --ckpt must fall back to the stock engine,
+ *           not mis-route to the bps=0 truncated engine. */
+int
+cm_CheckptOptAccAlignHB_Qualifies(CM_t *cm)
+{
+  int v, has_bps = FALSE;
+  if (cm->flags & CMH_LOCAL_BEGIN) return FALSE;
+  if (cm->flags & CMH_LOCAL_END)   return FALSE;
+  for (v = 0; v < cm->M; v++) {
+    int st = cm->sttype[v];
+    if (st == B_st || st == MP_st || st == MR_st) has_bps = TRUE;
+    if (! (st==S_st || st==IL_st || st==IR_st || st==ML_st || st==MR_st ||
+           st==MP_st || st==D_st || st==E_st || st==B_st)) return FALSE;
+  }
+  return has_bps;
+}
+
 /* Function: cm_CheckptAlignHB()
  * Incept:   Brief 028 (library port of drivers 022/023)
  *
