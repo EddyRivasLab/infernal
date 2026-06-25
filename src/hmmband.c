@@ -1493,25 +1493,25 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
  * EPN 11.03.05
  * Function: ij2d_bands()
  *
- * Purpose:  Determine the band for each cm state v on d (the band on the 
+ * Purpose:  Determine the band for each cm state v on d (the band on the
  *           length of the subsequence emitted from the subtree rooted
  *           at state v). These are easily calculated given the bands on i
  *           and j.
- * 
+ *
+ *           Brief 157: rather than materialize the flat hdmin[v][jp]/hdmax[v][jp]
+ *           arrays (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale
+ *           truncated), this function now stores only the per-state d-band floor
+ *           cp9b->hd_dn[v], from which hd_min()/hd_max() (infernal.h) recompute
+ *           hdmin[v][jp]/hdmax[v][jp] on demand. hd_dn[v] is -1 for E_st states
+ *           (sentinel: hdmin=hdmax=0) and otherwise dn = do_trunc ?
+ *           max(StateLeftDelta,StateRightDelta) : StateDelta. The full per-jp
+ *           formula (reproduced exactly by the accessors) is documented at the
+ *           hd_min()/hd_max() definitions.
+ *
  * arguments:
  *
- * CM_t *cm         the CM 
- * int  W           length of sequence we're aligning
- * int *imin        imin[v] = first position in band on i for state v
- * int *imax        imax[v] = last position in band on i for state v
- * int *jmin        jmin[v] = first position in band on j for state v
- * int *jmax        jmax[v] = last position in band on j for state v
- * int **hdmin      hdmin[v][jp] = first position in band on d for state v
- *                                 and j position: j = jp+jmin[v].
- *                  Filled in this function.
- * int **hdmax      hdmax[v][jp] = last position in band on d for state v
- *                                 and j position: j = jp+jmin[v].
- *                  Filled in this function.
+ * CM_t *cm         the CM
+ * CP9Bands_t *cp9b the CP9 bands object; reads imin/imax/jmin/jmax, writes hd_dn[]
  * int do_trunc     TRUE if we'll use these bands in a truncated version of CYK/Inside/Outside
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
