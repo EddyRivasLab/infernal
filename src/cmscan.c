@@ -940,7 +940,7 @@ serial_loop(THREAD_INFO *tinfo, READER_INFO *rinfo, CM_FILE *cmfp)
           
           if(tinfo->th->N != prv_ntophits && (! tinfo->pli->do_trm_F3)) { 
             if(tinfo->pli->do_hmmonly_cur) eZ = tinfo->pli->Z / (float) om->max_length;
-            else                 	        eZ = cm->expA[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
+            else                 	        eZ = cm_pli_ExpInfoA(tinfo->pli, cm)[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
             cm_tophits_ComputeEvalues(tinfo->th, eZ, prv_ntophits);
           }
         } /* end of 'while(prv_posn != tinfo->qsq->L)' */
@@ -1222,7 +1222,7 @@ pipeline_thread(void *arg)
             
             if(tinfo->th->N != prv_ntophits && (! tinfo->pli->do_trm_F3)) { 
               if(tinfo->pli->do_hmmonly_cur || tinfo->pli->do_trm_F5) eZ = tinfo->pli->Z / (float) om->max_length;
-              else                	  eZ = cm->expA[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
+              else                	  eZ = cm_pli_ExpInfoA(tinfo->pli, cm)[tinfo->pli->final_cm_exp_mode]->cur_eff_dbsize;
               cm_tophits_ComputeEvalues(tinfo->th, eZ, prv_ntophits);
             }
           } /* end of 'while(prv_posn != tinfo->qsq->L)' */
@@ -1945,7 +1945,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
                     
                     if(th->N != prv_ntophits) { 
                       if(pli->do_hmmonly_cur || pli->do_trm_F5) eZ = pli->Z / (float) om->max_length;
-                      else                	  eZ = cm->expA[pli->final_cm_exp_mode]->cur_eff_dbsize;
+                      else                	  eZ = cm_pli_ExpInfoA(pli, cm)[pli->final_cm_exp_mode]->cur_eff_dbsize;
                       cm_tophits_ComputeEvalues(th, eZ, prv_ntophits);
                     }
                   } /* end of 'while(prv_posn != oqsq->L)' */

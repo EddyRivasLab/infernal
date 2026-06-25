@@ -1019,6 +1019,36 @@ cm_pli_TargetIncludable(CM_PIPELINE *pli, float score, double Eval)
   return FALSE;
 }
 
+/* Function:  cm_pli_ExpInfoA()
+ * Synopsis:  Select the exponential-tail E-value parameter set for this search.
+ *
+ * Purpose:   Return the per-mode <ExpInfo_t> array the pipeline should use to
+ *            compute E-values for CM <cm>, given the pipeline's null3 setting.
+ *
+ *            Default (null3 ON, <pli->do_null3> == TRUE): the on-set
+ *            <cm->expA>. This is the historical, unchanged path -- byte-for-byte
+ *            identical E-values to pre-store-both Infernal.
+ *
+ *            With <--nonull3> (<pli->do_null3> == FALSE) AND the CM carries a
+ *            stored null3-OFF set (<CMH_EXPTAIL_NONULL3_STATS>): the off-set
+ *            <cm->expA_nonull3>. With <--nonull3> but no off-set present: fall
+ *            back to the on-set <cm->expA> (today's behavior; cmsearch/cmscan
+ *            emit a one-line warning at model load -- see cm_pli_NewModel()).
+ *
+ *            The returned array feeds *every* E-value site consistently
+ *            (P-value, CYK-filter cutoffs, and the eZ/cur_eff_dbsize the
+ *            caller multiplies in via UpdateExpsForDBSize), so lambda/mu and
+ *            nrandhits/dbsize always come from the same set. See briefs
+ *            053/069.
+ */
+ExpInfo_t **
+cm_pli_ExpInfoA(const CM_PIPELINE *pli, const CM_t *cm)
+{
+  if (pli->do_null3 == FALSE && (cm->flags & CMH_EXPTAIL_NONULL3_STATS))
+    return cm->expA_nonull3;
+  return cm->expA;
+}
+
 /* Function:  cm_pli_NewModel()
  * Synopsis:  Prepare pipeline for a new CM/HMM
  * Incept:    EPN, Fri Sep 24 16:35:35 2010
@@ -1232,7 +1262,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     else { /* ! do_hmmonly_cur && ! do_trm_F5 */
       if((status = UpdateExpsForDBSize(cm, pli->errbuf, pli->Z)) != eslOK) return status;
       if(pli->by_E) { 
-	if((status = E2ScoreGivenExpInfo(cm->expA[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
+	if((status = E2ScoreGivenExpInfo(cm_pli_ExpInfoA(pli, cm)[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
 	pli->T = (double) T;
       }
     }
@@ -4640,7 +4670,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
    * be included in the redefined envelope, any that doesn't will not
    * be.
    */
-  cyk_env_cutoff = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
+  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 053/069) */
+  cyk_env_cutoff = fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * fcyk_expA[pli->fcyk_cm_exp_mode]->lambda));
 
 #if eslDEBUGLEVEL >= 2
   printf("#DEBUG:\n#DEBUG: PIPELINE EnvCYKFilter() %s  %" PRId64 " residues\n", sq->name, sq->n);
@@ -4702,7 +4733,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     }
     else if(status != eslOK) return status;
 
-    P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
+    P = esl_exp_surv(sc, fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap, fcyk_expA[pli->fcyk_cm_exp_mode]->lambda);
 
     if(getenv("CYKBANDS_DUMP")) {
       fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
@@ -4898,7 +4929,8 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
   save_tau        = cm->tau;
   cm->tau         = pli->fcyk_tau;
   qdbidx          = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
-  cutoff          = cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * cm->expA[pli->fcyk_cm_exp_mode]->lambda));
+  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 053/069) */
+  cutoff          = fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * fcyk_expA[pli->fcyk_cm_exp_mode]->lambda));
   sq_hitlist      = cm_tophits_Create();
   status = pli_dispatch_cm_search(pli, cm, sq->dsq, 1, sq->n, sq_hitlist, cutoff, 0., qdbidx, &sc, NULL, NULL);
   pli->stg_time_F6_cp9bands += pli->last_dispatch_cp9bands;
@@ -4929,7 +4961,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
     jwin = ESL_MIN(sq->n, sq_hitlist->hit[h]->start + (cm->W-1));
 
 #if eslDEBUGLEVEL >= 2
-    double P = esl_exp_surv(sq_hitlist->hit[h]->score, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
+    double P = esl_exp_surv(sq_hitlist->hit[h]->score, fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap, fcyk_expA[pli->fcyk_cm_exp_mode]->lambda);
     printf("#DEBUG: SURVIVOR window       [%10" PRId64 "..%10" PRId64 "] survived SeqCYKFilter   %6.2f bits  P %g\n", iwin, jwin, sq_hitlist->hit[h]->score, P);
 #endif
 
@@ -5097,7 +5129,7 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
       hit->clan_idx = pli->cur_clan_idx;
       hit->seq_idx  = pli->cur_seq_idx;
       hit->pass_idx = pli->cur_pass_idx;
-      hit->pvalue   = esl_exp_surv(hit->score, cm->expA[pli->final_cm_exp_mode]->mu_extrap, cm->expA[pli->final_cm_exp_mode]->lambda);
+      hit->pvalue   = esl_exp_surv(hit->score, cm_pli_ExpInfoA(pli, cm)[pli->final_cm_exp_mode]->mu_extrap, cm_pli_ExpInfoA(pli, cm)[pli->final_cm_exp_mode]->lambda);
       hit->srcL     = sq->L; /* this may be -1, in which case it will be updated by caller (cmsearch or cmscan) when full length is known */
       hit->glocal   = (pli->final_cm_exp_mode == EXP_CM_GI || pli->final_cm_exp_mode == EXP_CM_GC) ? TRUE : FALSE;
 

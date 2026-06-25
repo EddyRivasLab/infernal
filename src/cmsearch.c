@@ -692,7 +692,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* we need to re-compute e-values before merging (when list will be sorted) */
     for (i = 0; i < infocnt; ++i) { 
       if(info[i].pli->do_hmmonly_cur || info[i].pli->do_trm_F5) eZ = info[i].pli->Z / (float) info[i].om->max_length;
-      else                 	                                     eZ = info[i].cm->expA[info[i].pli->final_cm_exp_mode]->cur_eff_dbsize;
+      else                 	                                     eZ = cm_pli_ExpInfoA(info[i].pli, info[i].cm)[info[i].pli->final_cm_exp_mode]->cur_eff_dbsize;
       cm_tophits_ComputeEvalues(info[i].th, eZ, 0);
     }
 
@@ -1735,7 +1735,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* compute E-values before sending back to master */
     if(info->pli->do_hmmonly_cur || info->pli->do_trm_F5) eZ = info->pli->Z / (float) info->om->max_length;
-    else              	                                   eZ = info->cm->expA[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
+    else              	                                   eZ = cm_pli_ExpInfoA(info->pli, info->cm)[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
     cm_tophits_ComputeEvalues(info->th, eZ, 0);
       
     cm_tophits_MPISend(info->th,   0, INFERNAL_TOPHITS_TAG,  MPI_COMM_WORLD,  &mpi_buf, &mpi_size);

@@ -542,12 +542,23 @@ UpdateExpsForDBSize(CM_t *cm, char *errbuf, double dbsize)
   /* contract checks */
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats\nYou may need to run cmcalibrate.");
 
-  for(i = 0; i < EXP_NMODES; i++) { 
+  for(i = 0; i < EXP_NMODES; i++) {
     cm->expA[i]->cur_eff_dbsize = (dbsize / cm->expA[i]->dbsize) * ((double) cm->expA[i]->nrandhits);
   }
 
+  /* If a stored null3-OFF set is present (store-both CMs), update its
+   * cur_eff_dbsize too, from ITS own dbsize/nrandhits. Harmless for the default
+   * (null3-on) search, which never reads it; required so that an --nonull3
+   * search picks a consistent (lambda/mu, eZ) pair from the off-set. See
+   * cm_pli_ExpInfoA() and briefs 053/069. */
+  if(cm->flags & CMH_EXPTAIL_NONULL3_STATS) {
+    for(i = 0; i < EXP_NMODES; i++) {
+      cm->expA_nonull3[i]->cur_eff_dbsize = (dbsize / cm->expA_nonull3[i]->dbsize) * ((double) cm->expA_nonull3[i]->nrandhits);
+    }
+  }
+
   return eslOK;
-}  
+}
 
 
 
