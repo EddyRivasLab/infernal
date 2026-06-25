@@ -841,6 +841,8 @@ typedef struct ckpt_ctx_s {
   float  **my_rpp;     /* alias to emit_mx->r_pp (right-emitter posteriors) */
   int64_t  cur_bytes;  /* live CM-DP cell bytes (working-set tracking)       */
   int64_t  peak_bytes; /* high-water mark of cur_bytes                       */
+  int     *kpin;       /* rung-3: per-B pinned right-frag length k* (or NULL)*/
+  float ***ifull;      /* rung-3: full Inside alpha, for Outside sibling reads at B (or NULL) */
 } CKPT_CTX;
 
 /* deck = float** of j-rows; row[0] is start of the contiguous cell block. */
@@ -980,7 +982,36 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
     }
     return;
   }
-  else { /* ML, D, S (no self-transit, no B) */
+  else if (cm->sttype[v] == B_st) { /* rung-3: pinned bifurcation (single k*) */
+    int z = cm->cnum[v];            /* right (BEGR) subtree; y=cfirst[v]=left (BEGL) */
+    int kpinned = (cx->kpin != NULL) ? cx->kpin[v] : -1;
+    int jp_z, jp_y, kp_z, k, kn, kx, dp_y;
+    y = cm->cfirst[v];
+    int jnn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+    int jxx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+    for (j = jnn; j <= jxx; j++) {
+      jp_v = j - jmin[v];
+      jp_y = j - jmin[y];
+      jp_z = j - jmin[z];
+      kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kn = ESL_MAX(kn, 0);
+      kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        dp_v = d - hdmin[v][jp_v];
+        int klo = kn, khi = kx;
+        if (kpinned >= 0) { if (kpinned < kn || kpinned > kx) continue; klo = khi = kpinned; }
+        for (k = klo; k <= khi; k++) {
+          if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+            kp_z = k-hdmin[z][jp_z];
+            dp_y = d-hdmin[y][jp_y-k];
+            av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], IA(y)[jp_y-k][dp_y - k] + IA(z)[jp_z][kp_z]);
+          }
+        }
+      }
+    }
+    return;
+  }
+  else { /* ML, MP, MR, D, S (no self-transit, no B) */
     int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
     float tsc;
     for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
@@ -1002,13 +1033,31 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
         }
       }
     }
-    if (cm->sttype[v] == ML_st) {
+    switch (cm->sttype[v]) {        /* rung-3: ML (left), MR (right), MP (pair) emission */
+    case ML_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
         i = j - hdmin[v][jp_v] + 1;
         for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
           av[jp_v][dp_v] += esc_v[dsq[i--]];
       }
+      break;
+    case MR_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          av[jp_v][dp_v] += esc_v[dsq[j]];
+      }
+      break;
+    case MP_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        i = j - hdmin[v][jp_v] + 1;
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          av[jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
+      }
+      break;
+    default: break;
     }
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
@@ -1041,6 +1090,56 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
 
   if (v == 0) { bv[jp_0][Lp_0] = 0.; return; }
 
+  /* rung-3: BEGL_S / BEGR_S children of a pinned bifurcation.  Reads parent
+   * beta from bb[] and sibling Inside alpha from cx->ifull[]; pinned to k*. */
+  if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) {
+    float ***alpha = cx->ifull;
+    int z, jp_z, k, kmin, kmax, kp_z;
+    int yB = cm->plast[v];                          /* parent bifurcation */
+    int kpinned = (cx->kpin != NULL) ? cx->kpin[yB] : -1;
+    if (cm->stid[v] == BEGL_S) {
+      y = yB; z = cm->cnum[yB];                     /* z = right (BEGR) sibling */
+      for (j = jmax[v]; j >= jmin[v]; j--) {
+        jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
+        for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
+          dp_v = d - hdmin[v][jp_v];
+          kmin = ESL_MAX(jmin[y], jmin[z]) - j;
+          kmax = ESL_MIN(jmax[y], jmax[z]) - j;
+          if (kpinned >= 0) { if (kpinned < kmin || kpinned > kmax) continue; kmin = kmax = kpinned; }
+          for (k = kmin; k <= kmax; k++) {
+            if (k < (hdmin[y][jp_y+k] - d) || k > (hdmax[y][jp_y+k] - d)) continue;
+            if (k < (hdmin[z][jp_z+k])     || k > (hdmax[z][jp_z+k]))     continue;
+            kp_z = k-hdmin[z][jp_z+k];
+            dp_y = d-hdmin[y][jp_y+k];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y+k][dp_y+k] + alpha[z][jp_z+k][kp_z]));
+          }
+        }
+      }
+    }
+    else { /* BEGR_S */
+      y = yB; z = cm->cfirst[yB];                   /* z = left (BEGL) sibling */
+      jn = ESL_MAX(jmin[v], jmin[y]);
+      jx = ESL_MIN(jmax[v], jmax[y]);
+      for (j = jx; j >= jn; j--) {
+        jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
+        dn = ESL_MAX(hdmin[v][jp_v], j-jmax[z]);
+        dx = ESL_MIN(hdmax[v][jp_v], jp_z);
+        for (d = dx; d >= dn; d--) {
+          dp_v = d - hdmin[v][jp_v];
+          if (kpinned >= 0 && d != kpinned) continue;   /* BEGR own-d == right-frag length */
+          kmin = ESL_MAX((hdmin[y][jp_y]-d), (hdmin[z][jp_z-d]));
+          kmax = ESL_MIN((hdmax[y][jp_y]-d), (hdmax[z][jp_z-d]));
+          for (k = kmin; k <= kmax; k++) {
+            kp_z = k-hdmin[z][jp_z-d];
+            dp_y = d-hdmin[y][jp_y];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y][dp_y+k] + alpha[z][jp_z-d][kp_z]));
+          }
+        }
+      }
+    }
+    return;
+  }
+
   if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
     for (j = jmax[v]; j >= jmin[v]; j--) {
       jp_v = j - jmin[v];
@@ -1050,7 +1149,15 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
         for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--) {
           voffset = v - cm->cfirst[y];
           switch (cm->sttype[y]) {
-          case MP_st: break;
+          case MP_st: /* rung-3: MP parent of an IL/IR child */
+            if (j == L || d == j) continue;
+            if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue;
+            jp_y = j - jmin[y];
+            if ((d+2) < hdmin[y][(jp_y+1)] || (d+2) > hdmax[y][(jp_y+1)]) continue;
+            dp_y = d - hdmin[y][jp_y+1];
+            escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y+1][dp_y+2] + cm->tsc[y][voffset] + escore));
+            break;
           case ML_st:
           case IL_st:
             if (d == j) continue;
@@ -1105,7 +1212,12 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
         dp_y = dx - hdmin[y][jp_y + sdr];
         i    = j - dx + 1;
         switch (emitmode) {
-        case EMITPAIR: break;
+        case EMITPAIR: /* rung-3: MP parent (pair emission) */
+          for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) {
+            escore = esc_vAA_y[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y + sdr][dp_y + sd] + cm->tsc[y][voffset] + escore));
+          }
+          break;
         case EMITLEFT:
           for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) {
             escore = esc_vAA_y[y][dsq[i-1]];
@@ -1351,6 +1463,7 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL; /* set below */
+  cx.kpin = NULL; cx.ifull = NULL;       /* bps=0 path: no bifurcations */
 
   /* ROOT_S band sanity */
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S j band");
@@ -1567,6 +1680,120 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   if (tr)    FreeParsetree(tr);
   if (ppstr) free(ppstr);
   return status;
+}
+
+/* Function: cm_PinPostAlignHB()
+ * Incept:   Brief 037 (rung-3 pinned posterior, milestone 1: full storage)
+ *
+ * Purpose:  Pinned (bps>0, structured-RNA) HMM-banded posterior, FULL storage.
+ *           Builds the pinned Inside and Outside CM-DP matrices using the
+ *           extended deck recurrences (MP/MR + single-k* bifurcation), then
+ *           calls the STOCK cm_PosteriorHB() + cm_EmitterPosteriorHB() to
+ *           produce <emit_mx> (l_pp/r_pp) and returns the Inside score Z.
+ *
+ *           This is the byte-exact-correctness milestone for the rung-3
+ *           recurrence port: with identical <kpin> it must reproduce the
+ *           non-checkpointed pinned reference cell-for-cell.  Memory is full
+ *           (no checkpointing); cm_CheckptPostAlignHB() adds the sqrt(M) win.
+ *
+ *           GLOBAL, non-truncated only (have_el=FALSE).
+ *
+ * Args:     cm, errbuf, dsq, L, size_limit - usual
+ *           emit_mx - the deliverable, grown + filled here
+ *           kpin    - [0..M-1] per-B pinned right-frag length k* (B states
+ *                     only; -1 elsewhere).  NULL => unpinned (full sum).
+ *           ret_sc  - RETURN: Inside score Z (bits)
+ */
+int
+cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                  CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc)
+{
+  int      status;
+  CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, jp;
+  CM_HB_MX *imx = NULL, *omx = NULL;
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.my_lpp = cx.my_rpp = NULL;
+  cx.kpin = kpin; cx.ifull = NULL;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinPostAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinPostAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - cx.hdmin[0][jp_0];
+
+  /* deck geometry (used by ckpt_deck_init_impossible inside the deck helpers) */
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+  }
+
+  /* full Inside, into imx->dp (same banded layout the deck helpers assume) */
+  imx = cm_hb_mx_Create(M);
+  if ((status = cm_hb_mx_GrowTo(cm, imx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  for (v = M-1; v >= 0; v--) ckpt_inside_deck(&cx, v, imx->dp, NULL);
+  float Z = imx->dp[0][jp_0][Lp_0];
+
+  /* full Outside, into omx->dp; sibling Inside reads come from cx.ifull=imx->dp */
+  omx = cm_hb_mx_Create(M);
+  if ((status = cm_hb_mx_GrowTo(cm, omx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  cx.ifull = imx->dp;
+  for (v = 0; v < M; v++) ckpt_outside_deck(&cx, v, omx->dp, jp_0, Lp_0);
+
+  /* stock posterior + emitter (byte-exact with the reference, which uses these too) */
+  if ((status = cm_PosteriorHB(cm, errbuf, L, size_limit, imx, omx, omx)) != eslOK) goto ERROR;
+  if ((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, omx, emit_mx, FALSE)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    int64_t cube=0; for (v=0;v<M;v++) cube += cx.deck_nc[v];
+    int64_t ecells = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
+    /* largest bifurcation-free chain: contiguous non-B state run, cell count */
+    int64_t chain=0, best=0; for (v=0;v<M;v++){ if (cm->sttype[v]==B_st){ if(chain>best)best=chain; chain=0;} else chain+=cx.deck_nc[v]; } if(chain>best)best=chain;
+    fprintf(stderr, "# cm_PinPostAlignHB: M=%d L=%d Z=%.4f  full-IO-cube(2x)=%.2f Mb  emit_mx=%.2f Mb  largest-chain-cube=%.2f Mb (1x)\n",
+            M, L, Z, 2.0*cube*4/(1024.0*1024.0), ecells*4.0/(1024.0*1024.0), best*4.0/(1024.0*1024.0));
+  }
+
+  cm_hb_mx_Destroy(imx); cm_hb_mx_Destroy(omx);
+  free(cx.deck_nc); free(cx.deck_njr);
+  if (ret_sc != NULL) *ret_sc = Z;
+  return eslOK;
+
+ ERROR:
+  if (imx) cm_hb_mx_Destroy(imx);
+  if (omx) cm_hb_mx_Destroy(omx);
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  return status;
+}
+
+/* Function: cm_CheckptPostAlignHB()
+ * Incept:   Brief 037 (rung-3 pinned posterior, milestone 2: sqrt(M) checkpointed)
+ *
+ * Purpose:  sqrt(M)-memory pinned posterior (the rung-3 deliverable).  Same
+ *           result as cm_PinPostAlignHB() but with a sqrt(M)-bounded CM-DP
+ *           working set per bifurcation-free chain (tree-of-chains).
+ *
+ *           STATUS: under construction.  Currently delegates to the full-storage
+ *           cm_PinPostAlignHB() so the byte-exact recurrence port can be
+ *           validated first; the checkpointing layer is added on top once the
+ *           recurrences are confirmed byte-exact.  See summary 037.
+ */
+int
+cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                      CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc)
+{
+  return cm_PinPostAlignHB(cm, errbuf, dsq, L, size_limit, emit_mx, kpin, ret_sc);
 }
 
 /* Function: cm_CYKInsideAlign()
@@ -4548,7 +4775,6 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   fail1_flag = FALSE;
   fail2_flag = FALSE;
   fail3_flag = FALSE;
-  printf("DO CHECK: %d\n", do_check);
   if(do_check) {
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. We assume the Inside CYK parse score
