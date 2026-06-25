@@ -1320,7 +1320,46 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
     }
     return;
   }
-  else { /* ML, D, S (non-self, non-B); E already returned */
+  else if (cm->sttype[v] == B_st) { /* rung-3: pinned bifurcation (single k*), OA = FLogsum of subtrees */
+    int z = cm->cnum[v];            /* right (BEGR) subtree; y=cfirst[v]=left (BEGL) */
+    int kpinned = (cx->kpin != NULL) ? cx->kpin[v] : -1;
+    int jp_z, jp_y, kp_z, k, kn, kx, dp_y, jp_y_minus_k, dp_y_minus_k;
+    y = cm->cfirst[v];
+    int jnn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+    int jxx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+    for (j = jnn; j <= jxx; j++) {
+      jp_v = j - jmin[v];
+      jp_y = j - jmin[y];
+      jp_z = j - jmin[z];
+      kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kn = ESL_MAX(kn, 0);
+      kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        dp_v = d - hdmin[v][jp_v];
+        int klo = kn, khi = kx;
+        if (kpinned >= 0) { if (kpinned < kn || kpinned > kx) continue; klo = khi = kpinned; }
+        for (k = klo; k <= khi; k++) {
+          if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+            kp_z = k-hdmin[z][jp_z];
+            dp_y = d-hdmin[y][jp_y-k];
+            jp_y_minus_k = jp_y-k;
+            dp_y_minus_k = dp_y-k;
+            /* OA: accumulate (logsum) the posterior of both subtrees; record k
+             * via the i15 validity guard (left/right IMPOSSIBLE allowed only at
+             * length 0).  Traceback splits at kpin[v], so no kshadow is stored. */
+            if ((sc = FLogsum(OA(y)[jp_y_minus_k][dp_y_minus_k], OA(z)[jp_z][kp_z])) > av[jp_v][dp_v]) {
+              if (((d == k) || (NOT_IMPOSSIBLE(OA(y)[jp_y_minus_k][dp_y_minus_k]))) &&
+                  ((k == 0) || (NOT_IMPOSSIBLE(OA(z)[jp_z][kp_z])))) {
+                av[jp_v][dp_v] = sc;
+              }
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+  else { /* ML, MP, MR, D, S (non-self, non-B); E already returned */
     int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
     for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
       yoffset = y - cm->cfirst[v];
@@ -1343,7 +1382,8 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
         }
       }
     }
-    if (cm->sttype[v] == ML_st) {
+    switch (cm->sttype[v]) {        /* rung-3: ML (left), MR (right), MP (pair) posterior */
+    case ML_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
         i = j - hdmin[v][jp_v] + 1;
@@ -1351,6 +1391,24 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
         for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--)
           av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_lpp[v][ip_v]);
       }
+      break;
+    case MR_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_rpp[v][jp_v]);
+      }
+      break;
+    case MP_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        i = j - hdmin[v][jp_v] + 1;
+        ip_v = i - imin[v];
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--)
+          av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], FLogsum(cx->my_lpp[v][ip_v], cx->my_rpp[v][jp_v]));
+      }
+      break;
+    default: break;
     }
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
@@ -2032,6 +2090,394 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   if (bb) { for (v = 0; v < M; v++) if (bb[v]) ckpt_deck_free(&cx, v, bb[v]); free(bb); }
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  return status;
+}
+
+/*****************************************************************
+ * rung-3 OptAcc + pinned-tree traceback (brief 039)
+ *
+ * The OptAcc max-DP runs over the SAME extended deck recurrence
+ * (ckpt_optacc_deck, now with MP/MR + single-k* B), reading the emit_mx
+ * posteriors that cm_PinPostAlignHB / cm_CheckptPostAlignHB produce.  The
+ * pinned-tree traceback is pin-B's payoff (030 sec Q3.3): the stock
+ * B-traceback's only use of the 3D shadow is reading one integer k
+ * (cm_alignT_hb), and kpin[v] already supplies k*.  So the traceback is a
+ * deterministic descent of the known bifurcation tree (split each B at k*) +
+ * the per-chain linear yshadow descent -- no OA-outside, no 3D OA kshadow.
+ *****************************************************************/
+
+/* yshadow fetch callback: returns yshadow[v][jp_v][dp_v].  Two implementations:
+ * full-storage (cm_PinOptAccAlignHB) just indexes; checkpointed
+ * (cm_CheckptOptAccAlignHB) block-recomputes the OA deck + yshadow on demand. */
+typedef char (*ckpt_ysh_fetch_fn)(void *ctx, int v, int jp_v, int dp_v);
+
+/* full-storage fetch: all yshadow decks resident */
+typedef struct { char ***ysh; } pin_ysh_ctx;
+static char
+pin_ysh_fetch(void *p, int v, int jp_v, int dp_v)
+{
+  pin_ysh_ctx *c = (pin_ysh_ctx *) p;
+  return c->ysh[v][jp_v][dp_v];
+}
+
+/* checkpointed fetch: block-recompute the OA deck + yshadow for v's block,
+ * reading children from OAstore (retained chain roots + sqrt(M) seeds).
+ * Handles non-monotonic visiting (the bifurcation DFS jumps around) by
+ * reloading whenever v's block differs from the loaded block. */
+typedef struct {
+  CKPT_CTX *cx; int M, B;
+  float ***OAstore;      /* retained roots + sqrt(M) OA seeds */
+  float ***tba; char ***tysh;
+  int cur_blk, blk_lo, blk_hi;
+} ckpt_ysh_ctx;
+static char
+ckpt_ysh_fetch(void *p, int v, int jp_v, int dp_v)
+{
+  ckpt_ysh_ctx *c = (ckpt_ysh_ctx *) p;
+  int blk = v / c->B;
+  if (blk != c->cur_blk) {
+    int w;
+    for (w = c->blk_lo; w <= c->blk_hi; w++) {
+      if (c->tba[w])  { ckpt_deck_free (c->cx, w, c->tba[w]);  c->tba[w]  = NULL; }
+      if (c->tysh[w]) { ckpt_cdeck_free(c->cx, w, c->tysh[w]); c->tysh[w] = NULL; }
+    }
+    c->cur_blk = blk; c->blk_lo = blk * c->B; c->blk_hi = ESL_MIN((blk+1)*c->B - 1, c->M-1);
+    for (w = c->blk_hi; w >= c->blk_lo; w--) {
+      c->tba[w]  = ckpt_deck_alloc(c->cx, w);
+      c->tysh[w] = (c->cx->cm->sttype[w] == B_st) ? NULL : ckpt_cdeck_alloc(c->cx, w);
+      ckpt_optacc_deck(c->cx, w, c->tba, c->OAstore, c->tysh[w]);
+    }
+  }
+  return c->tysh[v][jp_v][dp_v];
+}
+
+/* Shared pinned-tree OptAcc traceback.  Mirrors stock cm_alignT_hb's descent +
+ * bifurcation stack exactly, EXCEPT a B splits at kpin[v] (not a kshadow read)
+ * and yshadow is obtained via <fetch>.  GLOBAL mode (every B is on the parse, so
+ * every B is pinned by the CYK parse). */
+static int
+ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
+                      int *jmin, int *jmax, int **hdmin, int **hdmax,
+                      ckpt_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
+{
+  int status;
+  Parsetree_t *tr  = NULL;
+  ESL_STACK   *pda = NULL;
+  int v = 0, i = 1, j = L, d = L, k, y, yoffset, bifparent;
+  int jp_v = 0, dp_v = 0, allow_S_local_end;
+
+  tr = CreateParsetree(100);
+  if (tr == NULL) { status = eslEMEM; goto ERROR; }
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0);
+  pda = esl_stack_ICreate();
+  if (pda == NULL) { status = eslEMEM; goto ERROR; }
+
+  while (1) {
+    /* OptAcc d==0 BEGL_S/BEGR_S special case (mirror cm_alignT_hb): a zero-length
+     * START subtree whose cell is outside the bands -> route to USED_EL. */
+    if (d == 0 && (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) &&
+        ((j < jmin[v] || j > jmax[v]) ||
+         (d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) {
+      allow_S_local_end = TRUE;
+    }
+    else if (cm->sttype[v] != EL_st) {
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+      allow_S_local_end = FALSE;
+    }
+
+    if (cm->sttype[v] == B_st) {
+      k = (kpin != NULL) ? kpin[v] : -1;     /* pinned right-fragment length */
+      if (k < 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "ckpt_optacc_traceback: B state v=%d not pinned (global mode expected)", v);
+      if ((status = esl_stack_IPush(pda, j))       != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda, k))       != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
+      j = j - k;
+      d = d - k;
+      i = j - d + 1;
+      y = cm->cfirst[v];
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    }
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;  /* traceback complete */
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];
+      y = cm->cnum[v];                       /* right START state */
+      i = j - d + 1;
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+      v = y;
+    }
+    else {
+      if (allow_S_local_end) yoffset = USED_EL;
+      else                   yoffset = fetch(fctx, v, jp_v, dp_v);
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default: ESL_XFAIL(eslEINVAL, errbuf, "ckpt_optacc_traceback: bogus state type v=%d", v);
+      }
+      d = j - i + 1;
+      if (yoffset == (char) USED_EL) {
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+        v = cm->M;
+      }
+      else {
+        y = cm->cfirst[v] + yoffset;
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+        v = y;
+      }
+    }
+  }
+  esl_stack_Destroy(pda);
+  *ret_tr = tr;
+  return eslOK;
+
+ ERROR:
+  if (pda) esl_stack_Destroy(pda);
+  if (tr)  FreeParsetree(tr);
+  return status;
+}
+
+/* Function: cm_PinOptAccAlignHB()
+ * Incept:   Brief 039 (rung-3 OptAcc, milestone 1: full storage)
+ *
+ * Purpose:  Full-storage pinned OptAcc alignment (the byte-exact correctness
+ *           anchor for the sqrt(M) wrap).  Runs the extended OA max-DP
+ *           (ckpt_optacc_deck, with MP/MR + single-k* B) into full per-state
+ *           decks reading the pre-filled <emit_mx>, then a pinned-tree
+ *           traceback -> parsetree + per-residue PP.  GLOBAL, non-truncated.
+ */
+int
+cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                    CM_HB_EMIT_MX *emit_mx, int *kpin,
+                    char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp)
+{
+  int      status;
+  CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, jp;
+  float  ***OA  = NULL;
+  char   ***ysh = NULL;
+  Parsetree_t *tr = NULL;
+  char    *ppstr  = NULL;
+  float    avgpp  = 0., pp = 0.;
+  pin_ysh_ctx fctx;
+
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): emit_mx is NULL");
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.kpin = kpin; cx.ifull = NULL;        /* OA reads child OA decks, not Inside */
+  cx.my_lpp = emit_mx->l_pp; cx.my_rpp = emit_mx->r_pp;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - cx.hdmin[0][jp_0];
+
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+  }
+
+  /* full OA max-DP (v = M-1 .. 0) + per-state yshadow (NULL for B; B uses kpin) */
+  ESL_ALLOC(OA,  sizeof(float**) * M);
+  ESL_ALLOC(ysh, sizeof(char**)  * M);
+  for (v = 0; v < M; v++) { OA[v] = NULL; ysh[v] = NULL; }
+  for (v = 0; v < M; v++) {
+    OA[v]  = ckpt_deck_alloc(&cx, v);
+    ysh[v] = (cm->sttype[v] == B_st) ? NULL : ckpt_cdeck_alloc(&cx, v);
+  }
+  for (v = M-1; v >= 0; v--) ckpt_optacc_deck(&cx, v, OA, NULL, ysh[v]);
+
+  pp = sreEXP2(OA[0][jp_0][Lp_0]) / (float) L;
+
+  /* pinned-tree traceback (full-storage yshadow fetch) */
+  fctx.ysh = ysh;
+  if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                      pin_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+
+  /* per-residue PP string + avg PP from the emit matrix */
+  if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    int64_t cube=0; for (v=0;v<M;v++) cube += cx.deck_nc[v];
+    fprintf(stderr, "# cm_PinOptAccAlignHB: M=%d L=%d pp=%.5f  full-OA-cube(1x)=%.2f Mb (+ yshadow ~%.2f Mb)\n",
+            M, L, pp, cube*4.0/(1024.0*1024.0), cube*1.0/(1024.0*1024.0));
+  }
+
+  for (v = 0; v < M; v++) { if (OA[v]) ckpt_deck_free(&cx, v, OA[v]); if (ysh[v]) ckpt_cdeck_free(&cx, v, ysh[v]); }
+  free(OA); free(ysh);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
+  if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
+  if (ret_avgpp != NULL) *ret_avgpp = avgpp;
+  if (ret_pp    != NULL) *ret_pp    = pp;
+  return eslOK;
+
+ ERROR:
+  if (OA)  { for (v = 0; v < M; v++) if (OA[v])  ckpt_deck_free(&cx, v, OA[v]);  free(OA); }
+  if (ysh) { for (v = 0; v < M; v++) if (ysh[v]) ckpt_cdeck_free(&cx, v, ysh[v]); free(ysh); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr)    FreeParsetree(tr);
+  if (ppstr) free(ppstr);
+  return status;
+}
+
+/* Function: cm_CheckptOptAccAlignHB()
+ * Incept:   Brief 039 (rung-3 OptAcc, milestone 2: sqrt(M) checkpointed)
+ *
+ * Purpose:  sqrt(M)-memory pinned OptAcc alignment (the rung-3 standalone
+ *           aligner's max-DP half).  Same parsetree + PP as cm_PinOptAccAlignHB
+ *           but with a sqrt(M)-bounded OA working set per bifurcation-free chain.
+ *
+ *           STEP OA : checkpointed OA max-DP (descending sweep, exactly the
+ *                     bps=0 scheme + the 038 STEP-A bifurcation retention) ->
+ *                     OAstore = {all chain roots} + {global sqrt(M) seeds}.
+ *                     Chain-root OA decks are never auto-freed (a parent B reads
+ *                     its child roots; the traceback block-recompute reads them).
+ *           STEP TB : pinned-tree traceback (ckpt_optacc_traceback) with the
+ *                     yshadow block-recomputed on demand from OAstore.  B splits
+ *                     at kpin[v]; no OA-outside, no 3D OA kshadow.
+ *
+ *           Byte-exact vs cm_PinOptAccAlignHB() by construction: identical OA
+ *           deck recurrence (ckpt_optacc_deck) and identical descent; only deck
+ *           STORAGE differs.  GLOBAL, non-truncated only.
+ */
+int
+cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                        CM_HB_EMIT_MX *emit_mx, int *kpin,
+                        char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp)
+{
+  int      status;
+  CKPT_CTX cx;
+  int      M = cm->M;
+  int      v;
+  float  ***OAstore = NULL, ***tba = NULL;
+  char   ***tysh = NULL;
+  Parsetree_t *tr = NULL;
+  char    *ppstr  = NULL;
+  float    avgpp  = 0., pp = 0.;
+  ckpt_ysh_ctx fctx;
+
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): emit_mx is NULL");
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.kpin = kpin; cx.ifull = NULL;
+  cx.my_lpp = emit_mx->l_pp; cx.my_rpp = emit_mx->r_pp;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - cx.hdmin[0][jp_0];
+
+  /* deck geometry + B-aware linear child reach (037/038 Delta-fix) */
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int64_t full_cube_cells = 0, root_cells = 0;
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    full_cube_cells += nc;
+    if (ckpt_is_chain_root(cm, v)) root_cells += nc;
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* ============================================================= */
+  /* STEP OA: checkpointed OA max-DP -> roots + sqrt(M) OA seeds    */
+  /* ============================================================= */
+  ESL_ALLOC(OAstore, sizeof(float**) * M);
+  for (v = 0; v < M; v++) OAstore[v] = NULL;
+  for (v = M-1; v >= 0; v--) {
+    char **ysh = (cm->sttype[v] == B_st) ? NULL : ckpt_cdeck_alloc(&cx, v);
+    OAstore[v] = ckpt_deck_alloc(&cx, v);
+    ckpt_optacc_deck(&cx, v, OAstore, NULL, ysh);  /* B reads child roots from OAstore (retained) */
+    if (ysh) ckpt_cdeck_free(&cx, v, ysh);          /* forward-sweep yshadow not kept (recomputed in TB) */
+    int y = v + Delta;
+    if (y < M && OAstore[y] != NULL && ! ckpt_is_chain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain checkpoint seed */ }
+      else { ckpt_deck_free(&cx, y, OAstore[y]); OAstore[y] = NULL; }
+    }
+  }
+  pp = sreEXP2(OAstore[0][jp_0][Lp_0]) / (float) L;
+
+  /* ============================================================= */
+  /* STEP TB: pinned-tree traceback (block-recompute yshadow)       */
+  /* ============================================================= */
+  ESL_ALLOC(tba,  sizeof(float**) * M);
+  ESL_ALLOC(tysh, sizeof(char**)  * M);
+  for (v = 0; v < M; v++) { tba[v] = NULL; tysh[v] = NULL; }
+  fctx.cx = &cx; fctx.M = M; fctx.B = B; fctx.OAstore = OAstore;
+  fctx.tba = tba; fctx.tysh = tysh;
+  fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
+
+  if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                      ckpt_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+
+  /* free the loaded traceback block */
+  { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
+      if (tba[w])  { ckpt_deck_free (&cx, w, tba[w]);  tba[w]  = NULL; }
+      if (tysh[w]) { ckpt_cdeck_free(&cx, w, tysh[w]); tysh[w] = NULL; } } }
+
+  if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    double full_mb = full_cube_cells * 4 / (1024.0*1024.0);   /* OA is 1 cube (vs posterior 2) */
+    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    int64_t ecells = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
+    fprintf(stderr, "# cm_CheckptOptAccAlignHB: M=%d L=%d B=%d pp=%.5f  OA-DP peak=%.2f Mb  full-OA-cube(1x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb\n",
+            M, L, B, pp, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.,
+            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0));
+  }
+
+  for (v = 0; v < M; v++) if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]);
+  free(OAstore); free(tba); free(tysh);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
+  if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
+  if (ret_avgpp != NULL) *ret_avgpp = avgpp;
+  if (ret_pp    != NULL) *ret_pp    = pp;
+  return eslOK;
+
+ ERROR:
+  if (OAstore) { for (v = 0; v < M; v++) if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]); free(OAstore); }
+  if (tba)  { for (v = 0; v < M; v++) if (tba[v])  ckpt_deck_free(&cx, v, tba[v]);  free(tba); }
+  if (tysh) { for (v = 0; v < M; v++) if (tysh[v]) ckpt_cdeck_free(&cx, v, tysh[v]); free(tysh); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr)    FreeParsetree(tr);
+  if (ppstr) free(ppstr);
   return status;
 }
 
