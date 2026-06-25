@@ -1301,10 +1301,11 @@ trckpt_deck_alloc(TR_CKPT_CTX *cx, int v)
   float  *mem = malloc(sizeof(float)  * (nc  > 0 ? nc  : 1));
   int64_t off = 0;
   int     jp;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (row == NULL || mem == NULL) cm_Fail("trckpt_deck_alloc OOM v=%d", v);
   row[0] = mem; /* ensure row[0]==mem even when njr==0 (so free(row[0]) is valid) */
   for (jp = 0; jp < njr; jp++) {
-    int w = cx->hdmax[v][jp] - cx->hdmin[v][jp] + 1;
+    int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     row[jp] = mem + off;
     if (w < 0) w = 0;
     off += w;
@@ -1336,10 +1337,11 @@ trckpt_cdeck_alloc(TR_CKPT_CTX *cx, int v)
   char   *mem = malloc(sizeof(char)  * (nc  > 0 ? nc  : 1));
   int64_t off = 0;
   int     jp;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (row == NULL || mem == NULL) cm_Fail("trckpt_cdeck_alloc OOM v=%d", v);
   row[0] = mem;
   for (jp = 0; jp < njr; jp++) {
-    int w = cx->hdmax[v][jp] - cx->hdmin[v][jp] + 1;
+    int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     row[jp] = mem + off;
     if (w < 0) w = 0;
     off += w;
@@ -1372,7 +1374,7 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
   CM_t *cm = cx->cm;
   ESL_DSQ *dsq = cx->dsq;
   int   *jmin = cx->jmin, *jmax = cx->jmax;
-  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   int   *Jv = cx->Jv, *Lv = cx->Lv, *Rv = cx->Rv;
   int    fill_L = cx->fill_L, fill_R = cx->fill_R;
   float **Jav = Jba[v];
@@ -1407,9 +1409,9 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
       yvalid_ct = 0; j_sdr = j - sdr;
       for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
         if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
         i = j - d + 1;
-        dp_v = d - hdmin[v][jp_v];
+        dp_v = d - hd_min(cp9b, v, jp_v);
         /* J and L */
         if (do_J_v || do_L_v) {
           for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
@@ -1418,8 +1420,8 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
             do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L);
             if (do_J_y || do_L_y) {
               jp_y_sdr = j - jmin[y] - sdr;
-              if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-                dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+              if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+                dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
                 if (do_J_v && do_J_y) Jav[jp_v][dp_v] = FLogsum(Jav[jp_v][dp_v], JA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
                 if (do_L_v && do_L_y) Lav[jp_v][dp_v] = FLogsum(Lav[jp_v][dp_v], LA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
               }
@@ -1437,8 +1439,8 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
             do_R_y = (Rv[y] && fill_R); do_J_y = Jv[y];
             if ((do_J_y || do_R_y) && (y != v)) {
               jp_y_sdr = j - jmin[y] - sdr;
-              if ((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) {
-                dp_y = d - hdmin[y][jp_y_sdr];
+              if ((d) >= hd_min(cp9b, y, jp_y_sdr) && (d) <= hd_max(cp9b, y, jp_y_sdr)) {
+                dp_y = d - hd_min(cp9b, y, jp_y_sdr);
                 if (do_J_y) Rav[jp_v][dp_v] = FLogsum(Rav[jp_v][dp_v], JA(y)[jp_y_sdr][dp_y] + tsc_v[yoffset]);
                 if (do_R_y) Rav[jp_v][dp_v] = FLogsum(Rav[jp_v][dp_v], RA(y)[jp_y_sdr][dp_y] + tsc_v[yoffset]);
               }
@@ -1459,16 +1461,16 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
         yvalid_ct = 0; j_sdr = j - sdr;
         for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
           if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-          dp_v = d - hdmin[v][jp_v];
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+          dp_v = d - hd_min(cp9b, v, jp_v);
           for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
             yoffset = yvalidA[yvalid_idx];
             y = cm->cfirst[v] + yoffset;
             do_J_y = Jv[y]; do_R_y = (Rv[y] && fill_R);
             if (do_J_y || do_R_y) {
               jp_y_sdr = j - jmin[y] - sdr;
-              if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-                dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+              if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+                dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
                 if (do_J_v && do_J_y) Jav[jp_v][dp_v] = FLogsum(Jav[jp_v][dp_v], JA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
                 if (do_R_v && do_R_y) Rav[jp_v][dp_v] = FLogsum(Rav[jp_v][dp_v], RA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
               }
@@ -1486,16 +1488,16 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
         yvalid_ct = 0;
         for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
           if (j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset;
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-          dp_v = d - hdmin[v][jp_v];
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+          dp_v = d - hd_min(cp9b, v, jp_v);
           for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
             yoffset = yvalidA[yvalid_idx];
             y = cm->cfirst[v] + yoffset;
             do_L_y = (Lv[y] && fill_L); do_J_y = Jv[y];
             if ((do_J_y || do_L_y) && (y != v)) {
               jp_y = j - jmin[y];
-              if ((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) {
-                dp_y = d - hdmin[y][jp_y];
+              if ((d) >= hd_min(cp9b, y, jp_y) && (d) <= hd_max(cp9b, y, jp_y)) {
+                dp_y = d - hd_min(cp9b, y, jp_y);
                 if (do_J_y) Lav[jp_v][dp_v] = FLogsum(Lav[jp_v][dp_v], JA(y)[jp_y][dp_y] + tsc_v[yoffset]);
                 if (do_L_y) Lav[jp_v][dp_v] = FLogsum(Lav[jp_v][dp_v], LA(y)[jp_y][dp_y] + tsc_v[yoffset]);
               }
@@ -1522,10 +1524,10 @@ trckpt_tr_inside_deck(TR_CKPT_CTX *cx, int v,
         jpn = jn - jmin[v]; jpx = jx - jmin[v];
         jp_y_sdr = jn - jmin[y] - sdr;
         for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-          dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-          dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-          dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v];
-          dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+          dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+          dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+          dpn = dn - hd_min(cp9b, v, jp_v); dpx = dx - hd_min(cp9b, v, jp_v);
+          dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
           for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
             if (do_J_v && do_J_y) Jav[jp_v][dp_v] = FLogsum(Jav[jp_v][dp_v], JA(y)[jp_y_sdr][dp_y_sd] + tsc);
             if (do_L_v && do_L_y) Lav[jp_v][dp_v] = FLogsum(Lav[jp_v][dp_v], LA(y)[jp_y_sdr][dp_y_sd] + tsc);
@@ -1552,15 +1554,15 @@ trckpt_tr_root_contrib(TR_CKPT_CTX *cx, int v, float **Jav, float **Lav, float *
                        float *J0, float *L0, float *R0)
 {
   int   *jmin = cx->jmin, *jmax = cx->jmax;
-  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   int   *Jv = cx->Jv, *Lv = cx->Lv, *Rv = cx->Rv;
   int    fill_L = cx->fill_L, fill_R = cx->fill_R;
   int    L = cx->L;
   int do_J_v = Jv[v], do_L_v = (Lv[v] && fill_L), do_R_v = (Rv[v] && fill_R);
   if (L >= jmin[v] && L <= jmax[v]) {
     int jp_v = L - jmin[v];
-    if (L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) {
-      int Lp = L - hdmin[v][jp_v];
+    if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+      int Lp = L - hd_min(cp9b, v, jp_v);
       float trp = cx->g_pty[v];
       if (NOT_IMPOSSIBLE(trp)) {
         if (do_J_v && Jv[0]) *J0 = FLogsum(*J0, Jav[jp_v][Lp] + trp);
@@ -1582,7 +1584,7 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
   ESL_DSQ *dsq = cx->dsq;
   int    L = cx->L;
   int   *jmin = cx->jmin, *jmax = cx->jmax;
-  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   int   *Jv = cx->Jv, *Lv = cx->Lv, *Rv = cx->Rv;
   int    fill_L = cx->fill_L, fill_R = cx->fill_R;
   float **Jbv = Jbb[v];
@@ -1601,8 +1603,8 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
   /* truncated-begin init: a full alignment in resolved mode is "outside" this cell */
   if (L >= jmin[v] && L <= jmax[v]) {
     jp_v = L - jmin[v];
-    if (L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) {
-      int Lp = L - hdmin[v][jp_v];
+    if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+      int Lp = L - hd_min(cp9b, v, jp_v);
       float trp = cx->g_pty[v];
       if (NOT_IMPOSSIBLE(trp)) {
         if (cx->preset_mode == TRMODE_J && do_J_v) Jbv[jp_v][Lp] = trp;
@@ -1614,9 +1616,9 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
 
   for (j = jmax[v]; j >= jmin[v]; j--) {
     jp_v = j - jmin[v];
-    for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
+    for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
       i = j - d + 1;
-      dp_v = d - hdmin[v][jp_v];
+      dp_v = d - hd_min(cp9b, v, jp_v);
       for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--) {
         if (y == 0) continue;
         voffset = v - cm->cfirst[y];
@@ -1632,16 +1634,16 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
           jp_y = j - jmin[y];
           if (d != j &&
               (j     >= jmin[y]        && j     <= jmax[y]) &&
-              (d+sdl >= hdmin[y][jp_y] && d+sdl <= hdmax[y][jp_y])) {
-            dp_y = d - hdmin[y][jp_y];
+              (d+sdl >= hd_min(cp9b, y, jp_y) && d+sdl <= hd_max(cp9b, y, jp_y))) {
+            dp_y = d - hd_min(cp9b, y, jp_y);
             escore = cm->oesc[y][dsq[i-1]];
             if (do_J_v && do_J_y) Jbv[jp_v][dp_v] = FLogsum(Jbv[jp_v][dp_v], Jbb[y][jp_y][dp_y+sd] + tsc_y[voffset] + escore);
             if (do_L_v && do_L_y) Lbv[jp_v][dp_v] = FLogsum(Lbv[jp_v][dp_v], Lbb[y][jp_y][dp_y+sd] + tsc_y[voffset] + escore);
           }
           if (i == 1 && v != y && do_R_y &&
               (j >= jmin[y] && j <= jmax[y]) &&
-              (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) {
-            dp_y = d - hdmin[y][jp_y];
+              (d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y))) {
+            dp_y = d - hd_min(cp9b, y, jp_y);
             if (do_J_v) Jbv[jp_v][dp_v] = FLogsum(Jbv[jp_v][dp_v], Rbb[y][jp_y][dp_y] + tsc_y[voffset]);
             if (do_R_v) Rbv[jp_v][dp_v] = FLogsum(Rbv[jp_v][dp_v], Rbb[y][jp_y][dp_y] + tsc_y[voffset]);
           }
@@ -1651,16 +1653,16 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
           jp_y = j - jmin[y];
           if (j != L &&
               (j+sdr >= jmin[y]            && j+sdr <= jmax[y]) &&
-              (d+sd  >= hdmin[y][jp_y+sdr] && d+sd  <= hdmax[y][jp_y+sdr])) {
-            dp_y = d - hdmin[y][jp_y+sdr];
+              (d+sd  >= hd_min(cp9b, y, jp_y+sdr) && d+sd  <= hd_max(cp9b, y, jp_y+sdr))) {
+            dp_y = d - hd_min(cp9b, y, jp_y+sdr);
             escore = cm->oesc[y][dsq[j+1]];
             if (do_J_v && do_J_y) Jbv[jp_v][dp_v] = FLogsum(Jbv[jp_v][dp_v], Jbb[y][jp_y+sdr][dp_y+sd] + tsc_y[voffset] + escore);
             if (do_R_v && do_R_y) Rbv[jp_v][dp_v] = FLogsum(Rbv[jp_v][dp_v], Rbb[y][jp_y+sdr][dp_y+sd] + tsc_y[voffset] + escore);
           }
           if (j == L && v != y && do_L_y &&
               (j >= jmin[y] && j <= jmax[y]) &&
-              (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) {
-            dp_y = d - hdmin[y][jp_y];
+              (d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y))) {
+            dp_y = d - hd_min(cp9b, y, jp_y);
             if (do_J_v) Jbv[jp_v][dp_v] = FLogsum(Jbv[jp_v][dp_v], Lbb[y][jp_y][dp_y] + tsc_y[voffset]);
             if (do_L_v) Lbv[jp_v][dp_v] = FLogsum(Lbv[jp_v][dp_v], Lbb[y][jp_y][dp_y] + tsc_y[voffset]);
           }
@@ -1670,8 +1672,8 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
         case D_st:
           jp_y = j - jmin[y];
           if ((j >= jmin[y] && j <= jmax[y]) &&
-              (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])) {
-            dp_y = d - hdmin[y][jp_y];
+              (d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y))) {
+            dp_y = d - hd_min(cp9b, y, jp_y);
             if (do_J_v && do_J_y) Jbv[jp_v][dp_v] = FLogsum(Jbv[jp_v][dp_v], Jbb[y][jp_y][dp_y] + tsc_y[voffset]);
             if (do_L_v && do_L_y) Lbv[jp_v][dp_v] = FLogsum(Lbv[jp_v][dp_v], Lbb[y][jp_y][dp_y] + tsc_y[voffset]);
             if (do_R_v && do_R_y) Rbv[jp_v][dp_v] = FLogsum(Rbv[jp_v][dp_v], Rbb[y][jp_y][dp_y] + tsc_y[voffset]);
@@ -1703,7 +1705,7 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
 #define ROA(vv) (Roa[vv] ? Roa[vv] : (Rck ? Rck[vv] : NULL))
   CM_t *cm = cx->cm;
   int   *jmin = cx->jmin, *jmax = cx->jmax, *imin = cx->imin;
-  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   int   *Jv = cx->Jv, *Lv = cx->Lv, *Rv = cx->Rv;
   int    fill_L = cx->fill_L, fill_R = cx->fill_R;
   float **Jl_pp = cx->Jl_pp, **Ll_pp = cx->Ll_pp, **Jr_pp = cx->Jr_pp, **Rr_pp = cx->Rr_pp;
@@ -1735,12 +1737,12 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
     int yoff = yy - cm->cfirst[v];
     for (j = ESL_MAX(sd, jmin[v]); j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      if (hdmin[v][jp_v] <= hdmax[v][jp_v]) {
+      if (hd_min(cp9b, v, jp_v) <= hd_max(cp9b, v, jp_v)) {
         if ((j - sdr) >= jmin[yy] && (j - sdr) <= jmax[yy]) {
           int jp_y2 = j - sdr - jmin[yy];
-          if (sd >= hdmin[v][jp_v] && sd <= hdmax[v][jp_v] &&
-              0  >= hdmin[yy][jp_y2] && 0 <= hdmax[yy][jp_y2]) {
-            dp_v = sd - hdmin[v][jp_v];
+          if (sd >= hd_min(cp9b, v, jp_v) && sd <= hd_max(cp9b, v, jp_v) &&
+              0  >= hd_min(cp9b, yy, jp_y2) && 0 <= hd_max(cp9b, yy, jp_y2)) {
+            dp_v = sd - hd_min(cp9b, v, jp_v);
             Jshv[jp_v][dp_v] = (char) yoff;
           }
         }
@@ -1760,16 +1762,16 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
           if (j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset;
         }
         if (do_J_v || do_L_v) {
-          i = j - hdmin[v][jp_v] + 1;
-          for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, i--) {
+          i = j - hd_min(cp9b, v, jp_v) + 1;
+          for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++, i--) {
             ip_v = i - imin[v];
-            dp_v = d - hdmin[v][jp_v];
+            dp_v = d - hd_min(cp9b, v, jp_v);
             for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
               yoffset = yvalidA[yvalid_idx]; y = cm->cfirst[v] + yoffset;
               jp_y = j - jmin[y]; do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L);
               if (do_J_y || do_L_y) {
-                if ((d-sd) >= hdmin[y][jp_y] && (d-sd) <= hdmax[y][jp_y]) {
-                  dp_y_sd = d - hdmin[y][jp_y] - sd;
+                if ((d-sd) >= hd_min(cp9b, y, jp_y) && (d-sd) <= hd_max(cp9b, y, jp_y)) {
+                  dp_y_sd = d - hd_min(cp9b, y, jp_y) - sd;
                   if (do_J_v && do_J_y) { if ((sc = JOA(y)[jp_y][dp_y_sd]) > Jav[jp_v][dp_v]) { Jav[jp_v][dp_v]=sc; if(Jshv) Jshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; } }
                   if (do_L_v && do_L_y) { if ((sc = LOA(y)[jp_y][dp_y_sd]) > Lav[jp_v][dp_v]) { Lav[jp_v][dp_v]=sc; if(Lshv) Lshv[jp_v][dp_v]=yoffset+TRMODE_L_OFFSET; } }
                 }
@@ -1793,14 +1795,14 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
           }
         }
         if (do_R_v) {
-          for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-            dp_v = d - hdmin[v][jp_v];
+          for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+            dp_v = d - hd_min(cp9b, v, jp_v);
             for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
               yoffset = yvalidA[yvalid_idx]; y = cm->cfirst[v] + yoffset;
               jp_y = j - jmin[y]; do_J_y = Jv[y]; do_R_y = (Rv[y] && fill_R);
               if ((do_J_y || do_R_y) && (y != v)) {
-                if (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) {
-                  dp_y = d - hdmin[y][jp_y];
+                if (d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) {
+                  dp_y = d - hd_min(cp9b, y, jp_y);
                   if (do_J_y) { if ((sc = JOA(y)[jp_y][dp_y]) > Rav[jp_v][dp_v]) { Rav[jp_v][dp_v]=sc; if(Rshv) Rshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; } }
                   if (do_R_y) { if ((sc = ROA(y)[jp_y][dp_y]) > Rav[jp_v][dp_v]) { Rav[jp_v][dp_v]=sc; if(Rshv) Rshv[jp_v][dp_v]=yoffset+TRMODE_R_OFFSET; } }
                 }
@@ -1825,14 +1827,14 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
           if ((j_sdr) >= jmin[y] && (j_sdr) <= jmax[y]) yvalidA[yvalid_ct++] = yoffset;
         }
         if (do_J_v || do_R_v) {
-          for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-            dp_v = d - hdmin[v][jp_v];
+          for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+            dp_v = d - hd_min(cp9b, v, jp_v);
             for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
               yoffset = yvalidA[yvalid_idx]; y = cm->cfirst[v] + yoffset;
               int jp_y_sdr = j - jmin[y] - sdr; do_J_y = Jv[y]; do_R_y = (Rv[y] && fill_R);
               if (do_J_y || do_R_y) {
-                if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-                  dp_y_sd = d - hdmin[y][jp_y_sdr] - sd;
+                if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+                  dp_y_sd = d - hd_min(cp9b, y, jp_y_sdr) - sd;
                   if (do_J_v && do_J_y) { if ((sc = JOA(y)[jp_y_sdr][dp_y_sd]) > Jav[jp_v][dp_v]) { Jav[jp_v][dp_v]=sc; if(Jshv) Jshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; } }
                   if (do_R_v && do_R_y) { if ((sc = ROA(y)[jp_y_sdr][dp_y_sd]) > Rav[jp_v][dp_v]) { Rav[jp_v][dp_v]=sc; if(Rshv) Rshv[jp_v][dp_v]=yoffset+TRMODE_R_OFFSET; } }
                 }
@@ -1862,14 +1864,14 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
             yoffset = (yctr + nins_v) % cm->cnum[v]; y = cm->cfirst[v] + yoffset;
             if (j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset;
           }
-          for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-            dp_v = d - hdmin[v][jp_v];
+          for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+            dp_v = d - hd_min(cp9b, v, jp_v);
             for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
               yoffset = yvalidA[yvalid_idx]; y = cm->cfirst[v] + yoffset;
               jp_y = j - jmin[y]; do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L);
               if ((do_J_y || do_L_y) && (y != v)) {
-                if (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) {
-                  dp_y = d - hdmin[y][jp_y];
+                if (d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) {
+                  dp_y = d - hd_min(cp9b, y, jp_y);
                   if (do_J_y) { if ((sc = JOA(y)[jp_y][dp_y]) > Lav[jp_v][dp_v]) { Lav[jp_v][dp_v]=sc; if(Lshv) Lshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; } }
                   if (do_L_y) { if ((sc = LOA(y)[jp_y][dp_y]) > Lav[jp_v][dp_v]) { Lav[jp_v][dp_v]=sc; if(Lshv) Lshv[jp_v][dp_v]=yoffset+TRMODE_L_OFFSET; } }
                 }
@@ -1894,8 +1896,8 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
           jn = ESL_MAX(jmin[v], jmin[y]); jx = ESL_MIN(jmax[v], jmax[y]);
           jpn = jn - jmin[v]; jpx = jx - jmin[v]; jp_y = jn - jmin[y];
           for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
-            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]); dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-            dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v]; dp_y = dn - hdmin[y][jp_y];
+            dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y)); dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y));
+            dpn = dn - hd_min(cp9b, v, jp_v); dpx = dx - hd_min(cp9b, v, jp_v); dp_y = dn - hd_min(cp9b, y, jp_y);
             for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++) {
               if ((sc = JOA(y)[jp_y][dp_y]) > Jav[jp_v][dp_v]) { Jav[jp_v][dp_v]=sc; if(Jshv) Jshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; }
             }
@@ -1905,8 +1907,8 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
           jn = ESL_MAX(jmin[v], jmin[y]); jx = ESL_MIN(jmax[v], jmax[y]);
           jpn = jn - jmin[v]; jpx = jx - jmin[v]; jp_y = jn - jmin[y];
           for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
-            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]); dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-            dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v]; dp_y = dn - hdmin[y][jp_y];
+            dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y)); dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y));
+            dpn = dn - hd_min(cp9b, v, jp_v); dpx = dx - hd_min(cp9b, v, jp_v); dp_y = dn - hd_min(cp9b, y, jp_y);
             for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++) {
               if ((sc = LOA(y)[jp_y][dp_y]) > Lav[jp_v][dp_v]) { Lav[jp_v][dp_v]=sc; if(Lshv) Lshv[jp_v][dp_v]=yoffset+TRMODE_L_OFFSET; }
             }
@@ -1914,15 +1916,15 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
         }
         if (do_L_v) {
           for (jp_v = 0; jp_v <= (jmax[v]-jmin[v]); jp_v++) {
-            if (hdmin[v][jp_v] == 0) { Lav[jp_v][0] = IMPOSSIBLE; if (cm->sttype[v]==S_st && Lshv) Lshv[jp_v][0] = USED_TRUNC_END; }
+            if (hd_min(cp9b, v, jp_v) == 0) { Lav[jp_v][0] = IMPOSSIBLE; if (cm->sttype[v]==S_st && Lshv) Lshv[jp_v][0] = USED_TRUNC_END; }
           }
         }
         if (do_R_v && do_R_y) {
           jn = ESL_MAX(jmin[v], jmin[y]); jx = ESL_MIN(jmax[v], jmax[y]);
           jpn = jn - jmin[v]; jpx = jx - jmin[v]; jp_y = jn - jmin[y];
           for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
-            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]); dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-            dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v]; dp_y = dn - hdmin[y][jp_y];
+            dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y)); dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y));
+            dpn = dn - hd_min(cp9b, v, jp_v); dpx = dx - hd_min(cp9b, v, jp_v); dp_y = dn - hd_min(cp9b, y, jp_y);
             for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++) {
               if ((sc = ROA(y)[jp_y][dp_y]) > Rav[jp_v][dp_v]) { Rav[jp_v][dp_v]=sc; if(Rshv) Rshv[jp_v][dp_v]=yoffset+TRMODE_R_OFFSET; }
             }
@@ -1930,7 +1932,7 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
         }
         if (do_R_v) {
           for (jp_v = 0; jp_v <= (jmax[v]-jmin[v]); jp_v++) {
-            if (hdmin[v][jp_v] == 0) { Rav[jp_v][0] = IMPOSSIBLE; if (cm->sttype[v]==S_st && Rshv) Rshv[jp_v][0] = USED_TRUNC_END; }
+            if (hd_min(cp9b, v, jp_v) == 0) { Rav[jp_v][0] = IMPOSSIBLE; if (cm->sttype[v]==S_st && Rshv) Rshv[jp_v][0] = USED_TRUNC_END; }
           }
         }
       }
@@ -2040,6 +2042,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   cx.jmin  = cm->cp9b->jmin;  cx.jmax  = cm->cp9b->jmax;
   cx.imin  = cm->cp9b->imin;  cx.imax  = cm->cp9b->imax;
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  CP9Bands_t *cp9b = cm->cp9b;
   cx.Jv    = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid;
   cx.g_pty = cm->trp->g_ptyAA[pty_idx];
   cx.preset_mode = TRMODE_UNKNOWN;
@@ -2056,7 +2059,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   /* ROOT_S band sanity */
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L outside ROOT_S d band");
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L outside ROOT_S d band");
 
   /* deck geometry + child/parent reach */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
@@ -2067,7 +2070,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
     cx.deck_njr[v] = njr;
     int64_t nc = 0; int jp;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
     if (cx.Jv[v]) Jcells += nc;
     if (cx.Lv[v]) Lcells += nc;
@@ -2168,8 +2171,8 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v];
           int d;
-          for (d = cx.hdmin[v][jp]; d <= cx.hdmax[v][jp]; d++) {
-            int dp = d - cx.hdmin[v][jp];
+          for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
             int i = j - d + 1, ip = i - cx.imin[v];
             if (cx.Jv[v])               emit_mx->Jl_pp[v][ip] = FLogsum(emit_mx->Jl_pp[v][ip], Jba[v][jp][dp] + Jbb[v][jp][dp] - Z_ckpt);
             if (cx.Lv[v] && cx.fill_L)  emit_mx->Ll_pp[v][ip] = FLogsum(emit_mx->Ll_pp[v][ip], Lba[v][jp][dp] + Lbb[v][jp][dp] - Z_ckpt);
@@ -2183,12 +2186,12 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
           int d;
           if (cx.Jv[v]) {
             emit_mx->Jr_pp[v][jp] = Jba[v][jp][0] + Jbb[v][jp][0] - Z_ckpt;
-            for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) { int dp=d-cx.hdmin[v][jp];
+            for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
               emit_mx->Jr_pp[v][jp] = FLogsum(emit_mx->Jr_pp[v][jp], Jba[v][jp][dp] + Jbb[v][jp][dp] - Z_ckpt); }
           }
           if (cx.Rv[v] && cx.fill_R) {
             emit_mx->Rr_pp[v][jp] = Rba[v][jp][0] + Rbb[v][jp][0] - Z_ckpt;
-            for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) { int dp=d-cx.hdmin[v][jp];
+            for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
               emit_mx->Rr_pp[v][jp] = FLogsum(emit_mx->Rr_pp[v][jp], Rba[v][jp][dp] + Rbb[v][jp][dp] - Z_ckpt); }
           }
         }
@@ -2252,8 +2255,8 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     /* root resolution (resolved mode), track best entry state b */
     if (L >= cx.jmin[v] && L <= cx.jmax[v]) {
       int jp_v = L - cx.jmin[v];
-      if (L >= cx.hdmin[v][jp_v] && L <= cx.hdmax[v][jp_v]) {
-        int Lp = L - cx.hdmin[v][jp_v];
+      if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+        int Lp = L - hd_min(cp9b, v, jp_v);
         if (NOT_IMPOSSIBLE(cx.g_pty[v])) {
           if (mode_ckpt == TRMODE_J && cx.Jv[v]              && JAoa[v][jp_v][Lp] > oaJ0) { oaJ0 = JAoa[v][jp_v][Lp]; b = v; }
           if (mode_ckpt == TRMODE_L && cx.Lv[v] && cx.fill_L && LAoa[v][jp_v][Lp] > oaL0) { oaL0 = LAoa[v][jp_v][Lp]; b = v; }
@@ -2307,7 +2310,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
             trckpt_tr_optacc_deck(&cx, w, tJa, tLa, tRa, JAoa, LAoa, RAoa, tJs[w], tLs[w], tRs[w]);
           }
         }
-        int jp_v = j - cx.jmin[v], dp_v = d - cx.hdmin[v][jp_v];
+        int jp_v = j - cx.jmin[v], dp_v = d - hd_min(cp9b, v, jp_v);
         yoffset = (mode==TRMODE_J) ? tJs[v][jp_v][dp_v] : (mode==TRMODE_L) ? tLs[v][jp_v][dp_v] : tRs[v][jp_v][dp_v];
       } else {
         yoffset = USED_TRUNC_BEGIN; /* root */
