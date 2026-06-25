@@ -249,10 +249,18 @@ cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, i
   if (cm->flags & CMH_MAP)  { if (MPI_Unpack(buf, n, pos, cm->map,       cm->clen+1, MPI_INT,  comm)  != 0)     ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); }
 
   /* the E-value stats */
-  if (cm->flags & CMH_EXPTAIL_STATS) { 
+  if (cm->flags & CMH_EXPTAIL_STATS) {
     ESL_ALLOC(cm->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
-    for(i = 0; i < EXP_NMODES; i++) { 
+    for(i = 0; i < EXP_NMODES; i++) {
       if((status = expinfo_MPIUnpack(buf, n, pos, comm, &(cm->expA[i]))) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+    }
+  }
+
+  /* the null3-OFF E-value stats (store-both; symmetric to the on-set above) */
+  if (cm->flags & CMH_EXPTAIL_NONULL3_STATS) {
+    ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for(i = 0; i < EXP_NMODES; i++) {
+      if((status = expinfo_MPIUnpack(buf, n, pos, comm, &(cm->expA_nonull3[i]))) != eslOK) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
     }
   }
 
@@ -368,12 +376,18 @@ cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI
   if (cm->flags & CMH_MAP)  { if (MPI_Pack(cm->map,       cm->clen+1, MPI_INT,  buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); }
 
   /* the E-value stats */
-  if (cm->flags & CMH_EXPTAIL_STATS) { 
-    for(i = 0; i < EXP_NMODES; i++) { 
+  if (cm->flags & CMH_EXPTAIL_STATS) {
+    for(i = 0; i < EXP_NMODES; i++) {
       if ((status = expinfo_MPIPack(cm->expA[i], buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed");
     }
   }
-  if ((cm->flags & CMH_FP7) && (cm->fp7 != NULL)) { 
+  /* the null3-OFF E-value stats (store-both; symmetric to the on-set above) */
+  if (cm->flags & CMH_EXPTAIL_NONULL3_STATS) {
+    for(i = 0; i < EXP_NMODES; i++) {
+      if ((status = expinfo_MPIPack(cm->expA_nonull3[i], buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack failed");
+    }
+  }
+  if ((cm->flags & CMH_FP7) && (cm->fp7 != NULL)) {
     if (MPI_Pack(&(cm->fp7_evparam[CM_p7_GFMU]),     1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
     if (MPI_Pack(&(cm->fp7_evparam[CM_p7_GFLAMBDA]), 1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
     if((status = p7_hmm_MPIPack(cm->fp7, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(status, "pack failed");
@@ -465,9 +479,16 @@ cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   if (cm->flags & CMH_MAP)  if (MPI_Pack_size(cm->clen+1,   MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; /* map */
 
-  if (cm->flags & CMH_EXPTAIL_STATS) { 
-    for(i = 0; i < EXP_NMODES; i++) { 
+  if (cm->flags & CMH_EXPTAIL_STATS) {
+    for(i = 0; i < EXP_NMODES; i++) {
       if ((status = expinfo_MPIPackSize(cm->expA[i], comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
+      n += sz;
+    }
+  }
+  /* the null3-OFF E-value stats (store-both; symmetric to the on-set above) */
+  if (cm->flags & CMH_EXPTAIL_NONULL3_STATS) {
+    for(i = 0; i < EXP_NMODES; i++) {
+      if ((status = expinfo_MPIPackSize(cm->expA_nonull3[i], comm, &sz)) != eslOK) ESL_XEXCEPTION(eslESYS, "pack size failed");
       n += sz;
     }
   }
