@@ -834,8 +834,12 @@ typedef struct cp9bands_s {
   int **hdmax;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = last position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
-  int *hdmin_mem;             /* actual memory for hdmin */
-  int *hdmax_mem;             /* actual memory for hdmax */
+  int *hdmin_mem;             /* actual memory for hdmin (DEPRECATED, brief 157: no longer allocated; d-bands recomputed on demand via hd_min()/hd_max(), kept NULL) */
+  int *hdmax_mem;             /* actual memory for hdmax (DEPRECATED, brief 157, kept NULL) */
+  int *hd_dn;                 /* [0..cm_M-1] per-state d-band floor used by hd_min()/hd_max() recompute:
+			       * E_st states store -1 (sentinel: hdmin=hdmax=0 for all j); all other states
+			       * store dn = do_trunc ? max(StateLeftDelta,StateRightDelta) : StateDelta (>=0).
+			       * Set by ij2d_bands(). Replaces the flat hdmin_mem/hdmax_mem cache (brief 157). */
   int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
@@ -846,6 +850,40 @@ typedef struct cp9bands_s {
   double   tau;               /* tau used to calculate current bands */
 
 } CP9Bands_t;
+
+/* Recompute-on-demand accessors for the per-state d-band (brief 157).
+ *
+ * These replace the formerly-materialized flat hdmin_mem/hdmax_mem arrays
+ * (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale truncated).
+ * They reproduce ij2d_bands()'s formula EXACTLY and byte-for-byte:
+ *   E_st (hd_dn[v] == -1):  hdmin = hdmax = 0
+ *   else, for j = jp + jmin[v], hdx = j - imin[v] + 1, dn = hd_dn[v] (>=0):
+ *      if hdx <  dn :  hdmin = -1, hdmax = -2  (empty-band sentinel)
+ *      else         :  hdmin = max(j - imax[v] + 1, dn), hdmax = hdx
+ * jp is the offset index into v's j-band, i.e. j = jp + jmin[v], exactly as the
+ * old hdmin[v][jp]/hdmax[v][jp] indexing. Pure function of cp9b; O(1); correct
+ * for any CM topology including bifurcations (no neighbor/window reasoning). */
+static inline int
+hd_min(const CP9Bands_t *cp9b, int v, int jp)
+{
+  int dn = cp9b->hd_dn[v];
+  if (dn < 0) return 0;                       /* E_st sentinel */
+  int j   = jp + cp9b->jmin[v];
+  int hdx = j - cp9b->imin[v] + 1;
+  if (hdx < dn) return -1;
+  int hdn = j - cp9b->imax[v] + 1;
+  return (hdn > dn) ? hdn : dn;
+}
+static inline int
+hd_max(const CP9Bands_t *cp9b, int v, int jp)
+{
+  int dn = cp9b->hd_dn[v];
+  if (dn < 0) return 0;                       /* E_st sentinel */
+  int j   = jp + cp9b->jmin[v];
+  int hdx = j - cp9b->imin[v] + 1;
+  if (hdx < dn) return -2;
+  return hdx;
+}
 
 /*************************************************************************************
  * 13. CP9trace_t: traceback structure for CP9 HMMs. 
@@ -3495,8 +3533,7 @@ extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
 extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
-extern void         ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
-			       int **hdmin, int **hdmax, int do_trunc, int debug_level);
+extern void         ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level);
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
 

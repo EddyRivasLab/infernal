@@ -2777,7 +2777,7 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
@@ -3283,7 +3283,7 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
 
   /* CM ij bands -> CM d bands */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
@@ -3589,7 +3589,7 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
 
   /* CM ij bands -> CM d bands */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) goto ERROR;
@@ -4324,7 +4324,7 @@ p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
 
   /* CM ij bands -> CM d bands */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
@@ -4900,8 +4900,7 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
 
   /* Compute hdmin/hdmax */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
-             cp9b->hdmin, cp9b->hdmax, do_trunc, debug);
+  ij2d_bands(cm, cp9b, do_trunc, debug);
 
   free(visited);
   return eslOK;
@@ -5960,7 +5959,7 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;

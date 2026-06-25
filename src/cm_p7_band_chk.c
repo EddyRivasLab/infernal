@@ -1193,7 +1193,7 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
   return eslOK;
 }
@@ -2555,7 +2555,7 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) goto ERROR;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
   free(pocc_arr);
   return eslOK;

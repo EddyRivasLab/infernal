@@ -118,6 +118,8 @@ AllocCP9Bands(int cm_M, int hmm_M)
   esl_vec_ISet(cp9bands->safe_hdmax, cp9bands->cm_M, 0);
   ESL_ALLOC(cp9bands->hdmin,      sizeof(int *) * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmax,      sizeof(int *) * cp9bands->cm_M);
+  ESL_ALLOC(cp9bands->hd_dn,      sizeof(int)   * cp9bands->cm_M);
+  esl_vec_ISet(cp9bands->hd_dn, cp9bands->cm_M, 0);  /* brief 157: per-state d-band floor for hd_min()/hd_max() recompute */
   cp9bands->hdmin_mem = NULL;
   cp9bands->hdmax_mem = NULL;
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, the ptrs are 
@@ -169,9 +171,10 @@ SizeofCP9Bands(CP9Bands_t *cp9b)
   bytes += sizeof(int) *  cp9b->cm_M; /* safe_hdmax */
   bytes += sizeof(int *) *  cp9b->cm_M; /* hdmin */
   bytes += sizeof(int *) *  cp9b->cm_M; /* hdmax */
+  bytes += sizeof(int) *  cp9b->cm_M; /* hd_dn (brief 157) */
 
-  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmin */
-  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmax */
+  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmin (brief 157: hd_alloced==0, no flat array) */
+  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmax (brief 157: hd_alloced==0, no flat array) */
 
   return bytes / 1000000.;
 }
@@ -194,6 +197,7 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
     free(cp9bands->hdmax_mem); /* all v were malloc'ed as a block */
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
+  free(cp9bands->hd_dn);
 
   free(cp9bands->pn_min_m);
   free(cp9bands->pn_max_m);
@@ -405,7 +409,7 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
   }
 
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, do_trunc, debug_level);
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
@@ -1457,44 +1461,31 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
  *           
  * Returns: eslOK on success, eslEMEM if memory allocation error
  */
-int 
+int
 cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
 {
-  int status;
   int v;
-  int64_t cur_size = 0; /* int64: cumulative hd offset can exceed 2^31 at genome-scale truncated (brief 147) */
-  int jbw;              /* per-state j-band width; bounded by L+1, fits int */
 
-  /* count size we need for hdmin/hdmax given current jmin, jmax */
-  cp9b->hd_needed = 0; /* we'll rewrite this */
+  /* Brief 157: the flat hdmin_mem/hdmax_mem cache (Sum_v (jmax[v]-jmin[v]+1)
+   * ints each; 466 GB / 933 GB both at genome-scale truncated) is no longer
+   * materialized. The d-bands are recomputed on demand by hd_min()/hd_max()
+   * (infernal.h) from hd_dn[] (set by ij2d_bands()) plus imin/imax/jmin. This
+   * function is retained only to report the size that WOULD be needed (used by
+   * diagnostics) and to keep hd_alloced/hdmin[] in a consistent, harmless
+   * state; it performs no large allocation. */
+  cp9b->hd_needed = 0;
   for(v = 0; v < cp9b->cm_M; v++) {
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
-    /* printf("hd needed v: %4d bw: %4d total: %5d\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
-  if(cp9b->hd_alloced < cp9b->hd_needed) {
-    void *tmp;
-    if(cp9b->hdmin_mem == NULL) ESL_ALLOC(cp9b->hdmin_mem, sizeof(int) * cp9b->hd_needed);
-    else                        ESL_RALLOC(cp9b->hdmin_mem, tmp, sizeof(int) * cp9b->hd_needed);
-    if(cp9b->hdmax_mem == NULL) ESL_ALLOC(cp9b->hdmax_mem, sizeof(int) * cp9b->hd_needed);
-    else                        ESL_RALLOC(cp9b->hdmax_mem, tmp, sizeof(int) * cp9b->hd_needed);
+  /* hdmin_mem/hdmax_mem stay NULL; the per-v hdmin[]/hdmax[] pointers are unused
+   * by the recompute path. Leave them NULL so any stray flat-array read faults
+   * loudly rather than silently reading freed memory. */
+  for(v = 0; v < cp9b->cm_M; v++) {
+    cp9b->hdmin[v] = NULL;
+    cp9b->hdmax[v] = NULL;
   }
- 
-  /* set pointers */
-  cur_size = 0;
-  for(v = 0; v < cp9b->cm_M; v++) { 
-    cp9b->hdmin[v] = cp9b->hdmin_mem + cur_size;
-    cp9b->hdmax[v] = cp9b->hdmax_mem + cur_size;
-    jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
-    assert(jbw >= 0);
-    ESL_DASSERT1((jbw >= 0));
-    cur_size += jbw;
-  }
-  cp9b->hd_alloced = cur_size;
-  ESL_DASSERT1((cp9b->hd_alloced == cp9b->hd_needed));
+  cp9b->hd_alloced = 0;
   return eslOK;
-  
- ERROR:
-  ESL_FAIL(status, errbuf, "Memory allocation error.");
 }
 
 
@@ -1526,46 +1517,32 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
  *                  statements to print.
  *****************************************************************************/
 void
-ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
-	   int **hdmin, int **hdmax, int do_trunc, int debug_level)
+ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level)
 {
   int v;            /* counter over states of the CM */
-  int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
-  int j;            /* actual j */
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
-  int dn;           /* max_sdl_sdr if do_trunc, else sd */
-  int hdn, hdx;     /* temporary hdmin/hdmax */
+
+  /* Brief 157: instead of materializing the flat hdmin/hdmax arrays
+   * (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale truncated),
+   * store only the per-state d-band floor hd_dn[v]. The hd_min()/hd_max()
+   * accessors (infernal.h) recompute hdmin[v][jp]/hdmax[v][jp] on demand from
+   * hd_dn[v] plus imin/imax/jmin, reproducing the old formula byte-for-byte.
+   *
+   * E_st states stored as -1 (sentinel: hdmin=hdmax=0 for all j). For all other
+   * states dn = do_trunc ? max(StateLeftDelta,StateRightDelta) : StateDelta (>=0).
+   * if (do_trunc) d can be 1 for MP states, this is why we use the max of the
+   * left/right deltas. Note: d can't be 0 for ML/IL in R mode, MR/IR in L mode
+   * even though you might think it could be. We'll always do a truncated begin
+   * with d=1 for L,R marginal alignments. */
   for(v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == E_st) {
-      for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
-	hdmin[v][jp] = 0;
-	hdmax[v][jp] = 0;
-      }
+      cp9b->hd_dn[v] = -1;
     }
     else {
       sd          = StateDelta(cm->sttype[v]);
       max_sdl_sdr = ESL_MAX(StateLeftDelta(cm->sttype[v]), StateRightDelta(cm->sttype[v]));
-      dn          = do_trunc ? max_sdl_sdr : sd;
-      /* if (do_trunc) d can be 1 for MP states, this is why we use dn
-       * here.  Note: d can't be 0 for ML/IL in R mode, MR/IR in L
-       * mode even though you might think it could be. We'll always do
-       * a truncated begin with d=1 for L,R marginal alignments. */
-
-      for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++) {
-	j   = jp+jmin[v];
-	hdn = j-imax[v]+1;
-	hdx = j-imin[v]+1;
-	if(hdx < dn) { 
-	  hdmin[v][jp] = -1;
-	  hdmax[v][jp] = -2;
-	}
-	else { 
-	  hdmin[v][jp] = ESL_MAX(hdn, dn);
-	  hdmax[v][jp] = hdx;
-	}
-	/* printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (jp+jmin[v]), hdmin[v][jp], hdmax[v][jp]); */
-      }
+      cp9b->hd_dn[v] = do_trunc ? max_sdl_sdr : sd;
     }
   }
 }
@@ -4764,7 +4741,7 @@ cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc)
       }
     }	
   }
-  ij2d_bands(cm, Lp, cm->cp9b->imin, cm->cp9b->imax, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, do_trunc, 0);
+  ij2d_bands(cm, cm->cp9b, do_trunc, 0);
   /* Note that this will not update hdmin bands that are no longer within jmin..jmax, that's okay */
 
   return;
@@ -4818,12 +4795,11 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
   esl_vec_ICopy(src_cp9b->jmin, src_cp9b->cm_M, dest_cp9b->jmin);
   esl_vec_ICopy(src_cp9b->jmax, src_cp9b->cm_M, dest_cp9b->jmax);
 
-  if(src_cp9b->hd_alloced > 0) { 
-    /* set hdmin, hdmax ptrs and hd_needed and hd_alloced (all set in cp9GrowHDBands()) */
-    if((status = cp9_GrowHDBands(dest_cp9b, errbuf)) != eslOK) goto ERROR;
-    esl_vec_ICopy(src_cp9b->hdmin_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmin_mem);
-    esl_vec_ICopy(src_cp9b->hdmax_mem, dest_cp9b->hd_alloced, dest_cp9b->hdmax_mem);
-  }
+  /* Brief 157: d-bands are recomputed on demand from hd_dn[] (no flat
+   * hdmin_mem/hdmax_mem to copy). Clone hd_dn[] plus the size bookkeeping. */
+  esl_vec_ICopy(src_cp9b->hd_dn, src_cp9b->cm_M, dest_cp9b->hd_dn);
+  dest_cp9b->hd_needed  = src_cp9b->hd_needed;
+  dest_cp9b->hd_alloced = src_cp9b->hd_alloced;
 
   esl_vec_ICopy(src_cp9b->safe_hdmin, src_cp9b->cm_M, dest_cp9b->safe_hdmin);
   esl_vec_ICopy(src_cp9b->safe_hdmax, src_cp9b->cm_M, dest_cp9b->safe_hdmax);
