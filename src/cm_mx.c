@@ -1841,6 +1841,15 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   if(ret_Tncells != NULL) *ret_Tncells = Tncells;
   if(ret_Mb      != NULL) *ret_Mb      = Mb_needed;
 
+  /* Brief 157 G3 instrumentation: with the flat hd_arrays gone, this size gate
+   * is the first point that reaches genome scale. Print the truncated DP-matrix
+   * cell count + Mb (once per tau iteration; cheap) when CM157_SIZEGATE is set. */
+  if(getenv("CM157_SIZEGATE") != NULL) {
+    int64_t tot = Jncells + Lncells + Rncells + Tncells;
+    fprintf(stderr, "[CM157_SIZEGATE] tau=%.3g L=%d trDPcells: J=%" PRId64 " L=%" PRId64 " R=%" PRId64 " T=%" PRId64 " tot=%" PRId64 " Mb=%.1f\n",
+	    cm->tau, L, Jncells, Lncells, Rncells, Tncells, tot, Mb_needed);
+  }
+
   /*printf("in cm_tr_hb_mx_SizeNeeded() returning %.2f total Mb (EL: %.2f Mb)\n",
     Mb_needed, (sizeof(float) * (L+2) * (L+1) * 0.5) * 0.000001); */
 
