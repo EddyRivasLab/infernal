@@ -636,8 +636,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
         int _v, _jp;
         for(_v = 0; _v < cm->M; _v++)
           for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
-            if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
-              _cp9_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+            if(hd_min(_cp9b, _v, _jp) <= hd_max(_cp9b, _v, _jp))
+              _cp9_cells += hd_max(_cp9b, _v, _jp) - hd_min(_cp9b, _v, _jp) + 1;
         fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_band_cells=%.0f\n",
                 (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cp9_cells);
       }
@@ -654,8 +654,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  int _v, _jp;
 	  for(_v = 0; _v < cm->M; _v++)
 	    for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
-	      if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
-		_orig_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+	      if(hd_min(_cp9b, _v, _jp) <= hd_max(_cp9b, _v, _jp))
+		_orig_cells += hd_max(_cp9b, _v, _jp) - hd_min(_cp9b, _v, _jp) + 1;
 	}
 
 	Parsetree_t *_cyk_tr = NULL;
@@ -692,8 +692,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    int _v, _jp;
 	    for(_v = 0; _v < cm->M; _v++)
 	      for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
-		if(_cp9b->hdmin[_v][_jp] <= _cp9b->hdmax[_v][_jp])
-		  _tight_cells += _cp9b->hdmax[_v][_jp] - _cp9b->hdmin[_v][_jp] + 1;
+		if(hd_min(_cp9b, _v, _jp) <= hd_max(_cp9b, _v, _jp))
+		  _tight_cells += hd_max(_cp9b, _v, _jp) - hd_min(_cp9b, _v, _jp) + 1;
 	  }
 	  FreeParsetree(_cyk_tr);
 	}
@@ -715,8 +715,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
           for(_dv = 0; _dv < cm->M; _dv++) {
             for(_djp = 0; _djp <= _dbands->jmax[_dv] - _dbands->jmin[_dv]; _djp++) {
               _dj = _dbands->jmin[_dv] + _djp;
-              int _dmin = _dbands->hdmin[_dv][_djp];
-              int _dmax = _dbands->hdmax[_dv][_djp];
+              int _dmin = hd_min(_dbands, _dv, _djp);
+              int _dmax = hd_max(_dbands, _dv, _djp);
               int _dwidth = (_dmax >= _dmin) ? (_dmax - _dmin + 1) : 0;
               fprintf(_dbfp, "%d\t%s\t%d\t%d\t%d\t%d\n",
                       _dv, Statetype(cm->sttype[_dv]), _dj, _dmin, _dmax, _dwidth);
