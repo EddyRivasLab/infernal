@@ -25,6 +25,11 @@
 
 #include "infernal.h"
 
+/* Process-global dedup for the --nonull3 "no off-set stats, falling back to
+ * default" warning (cm_pli_NewModel). Static so it dedups across every CM,
+ * query sequence, pipeline, and worker thread to one line per program run. */
+static int nonull3_fb_warned = FALSE;
+
 /* local declarations for banded F4/F5 functions (--msvband) */
 extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
 extern int p7_GBackwardBanded  (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
@@ -1260,8 +1265,24 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
       }
     }
     else { /* ! do_hmmonly_cur && ! do_trm_F5 */
+      /* Fallback warning: --nonull3 requested, but this CM carries no stored
+       * null3-OFF E-value set, so we fall back to the default (null3-on) stats
+       * via cm_pli_ExpInfoA(). That preserves today's behavior (no regression)
+       * but the silent FP inflation for AT-rich/low-GC models survives -- so
+       * say so, ONCE per run. Dedup is a process-global static (not a pli flag):
+       * cmscan creates a fresh pipeline per query sequence, so a pli-level flag
+       * would re-warn per query; cmscan also calls this per CM in the DB, which
+       * would spam per-CM. The static dedups across all CMs, queries, and
+       * worker threads to one line per invocation (a benign duplicate is
+       * possible if two threads race; harmless). See brief 053 addendum D. */
+      if(pli->do_null3 == FALSE && (! (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) && (! nonull3_fb_warned)) {
+	fprintf(stderr, "# WARNING: --nonull3 requested but this CM has no --nonull3 E-value stats;\n");
+	fprintf(stderr, "# using default (null3-on) stats. E-values may be inflated for low-GC/AT-rich\n");
+	fprintf(stderr, "# models. Rebuild (cmbuild) or recalibrate (cmcalibrate --nonull3) to fix.\n");
+	nonull3_fb_warned = TRUE;
+      }
       if((status = UpdateExpsForDBSize(cm, pli->errbuf, pli->Z)) != eslOK) return status;
-      if(pli->by_E) { 
+      if(pli->by_E) {
 	if((status = E2ScoreGivenExpInfo(cm_pli_ExpInfoA(pli, cm)[pli->final_cm_exp_mode], pli->errbuf, pli->E, &T)) != eslOK) ESL_FAIL(status, pli->errbuf, "problem determining min score for E-value %6g for model %s\n", pli->E, cm->name);
 	pli->T = (double) T;
       }
