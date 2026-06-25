@@ -1682,6 +1682,16 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   return status;
 }
 
+/* is v a chain-root START state?  Its Inside root deck must survive from the
+ * Inside pass to the Outside pass (read by its parent B's Inside recurrence and
+ * by its sibling chain's BEGL_S/BEGR_S Outside recurrence). */
+static int
+ckpt_is_chain_root(CM_t *cm, int v)
+{
+  int s = cm->stid[v];
+  return (s == ROOT_S || s == BEGL_S || s == BEGR_S);
+}
+
 /* Function: cm_PinPostAlignHB()
  * Incept:   Brief 037 (rung-3 pinned posterior, milestone 1: full storage)
  *
@@ -1784,16 +1794,245 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
  *           result as cm_PinPostAlignHB() but with a sqrt(M)-bounded CM-DP
  *           working set per bifurcation-free chain (tree-of-chains).
  *
- *           STATUS: under construction.  Currently delegates to the full-storage
- *           cm_PinPostAlignHB() so the byte-exact recurrence port can be
- *           validated first; the checkpointing layer is added on top once the
- *           recurrences are confirmed byte-exact.  See summary 037.
+ *           Design (brief 038, "global two-pass" tree-of-chains):
+ *             STEP A : checkpointed Inside (descending sweep, exactly the bps=0
+ *                      scheme) -> Z + sqrt(M) seed decks.  Two bifurcation tweaks:
+ *                      (i) the linear child-reach Delta EXCLUDES B states
+ *                      (cnum[B] is the BEGR index, not a child count -- 037 §9);
+ *                      (ii) chain-root (START) Inside decks are NEVER auto-freed
+ *                      -- they are read later by their parent B (Inside) and by
+ *                      their sibling chain (Outside).  After STEP A, Astore holds
+ *                      Z, all chain roots, and the global sqrt(M) seeds.
+ *             STEP B : checkpointed Outside (ascending block sweep, bps=0 scheme)
+ *                      + MATP-aware fused posterior into emit_mx.  Tweaks:
+ *                      (i) the parent-reach Delta_p EXCLUDES B-parent edges
+ *                      (BEGL_S/BEGR_S have a far B parent);
+ *                      (ii) cx.ifull = Astore, so BEGL_S/BEGR_S Outside reads the
+ *                      sibling's retained Inside root;
+ *                      (iii) B-state beta decks are not auto-freed by the linear
+ *                      rule -- they feed both child chains' Outside;
+ *                      (iv) bounded co-floor reclaim: once a BEGR_S Outside is
+ *                      done, its parent B-beta and BOTH child Inside roots are
+ *                      consumed, so free them (bounds the retained-root/B-beta
+ *                      co-floor to O(tree depth) instead of O(#bifurcations));
+ *                      (v) the per-state posterior fold is extended to MP (folds
+ *                      BOTH l_pp and r_pp) and MR (r_pp), and a final MATP l_pp/
+ *                      r_pp merge (cm_EmitterPosteriorHB step 3) is reproduced.
+ *
+ *           Byte-exact vs cm_PinPostAlignHB() by construction: identical deck
+ *           recurrences (ckpt_inside_deck / ckpt_outside_deck) and identical
+ *           FLogsum/normalization order; only deck STORAGE differs.
+ *
+ *           GLOBAL, non-truncated only (have_el=FALSE).
  */
 int
 cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
                       CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc)
 {
-  return cm_PinPostAlignHB(cm, errbuf, dsq, L, size_limit, emit_mx, kpin, ret_sc);
+  int      status;
+  CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, k;
+  float    Z_ckpt = 0.;
+  float ***Astore = NULL, ***ba = NULL, ***bb = NULL;
+
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): emit_mx is NULL");
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin  = cm->cp9b->jmin;  cx.jmax  = cm->cp9b->jmax;
+  cx.imin  = cm->cp9b->imin;  cx.imax  = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+  cx.kpin = kpin; cx.ifull = NULL;
+  cx.my_lpp = cx.my_rpp = NULL;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - cx.hdmin[0][jp_0];
+
+  /* deck geometry + linear child/parent reach (B-aware) */
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int64_t full_cube_cells = 0, root_cells = 0, bstate_cells = 0;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    full_cube_cells += nc;
+    if (ckpt_is_chain_root(cm, v)) root_cells   += nc;
+    if (cm->sttype[v] == B_st)     bstate_cells += nc;
+    /* child reach: skip B (cnum[B] = BEGR index, not a count) */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+    /* parent reach: skip B-parent edges (only BEGL_S/BEGR_S have a B parent) */
+    if (cm->pnum[v] > 0 && cm->stid[v] != BEGL_S && cm->stid[v] != BEGR_S) {
+      int ymin_par = cm->plast[v] - cm->pnum[v] + 1;
+      if (v - ymin_par > Delta_p) Delta_p = v - ymin_par;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* ============================================================= */
+  /* STEP A: checkpointed Inside -> Z_ckpt + sqrt(M) seeds + roots  */
+  /* ============================================================= */
+  ESL_ALLOC(Astore, sizeof(float**) * M);
+  for (v = 0; v < M; v++) Astore[v] = NULL;
+  for (v = M-1; v >= 0; v--) {
+    Astore[v] = ckpt_deck_alloc(&cx, v);
+    ckpt_inside_deck(&cx, v, Astore, NULL); /* B reads its child roots from Astore (retained) */
+    int y = v + Delta;
+    if (y < M && Astore[y] != NULL && ! ckpt_is_chain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain checkpoint seed */ }
+      else { ckpt_deck_free(&cx, y, Astore[y]); Astore[y] = NULL; }
+    }
+  }
+  Z_ckpt = Astore[0][jp_0][Lp_0];
+
+  /* ============================================================= */
+  /* STEP B: checkpointed Outside + MATP-aware fused posterior      */
+  /* ============================================================= */
+  if ((status = cm_hb_emit_mx_GrowTo(cm, emit_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  esl_vec_FSet(emit_mx->l_pp_mem, emit_mx->l_ncells_valid, IMPOSSIBLE);
+  esl_vec_FSet(emit_mx->r_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
+  cx.my_lpp = emit_mx->l_pp;
+  cx.my_rpp = emit_mx->r_pp;
+  cx.ifull  = Astore;  /* BEGL_S/BEGR_S Outside reads sibling Inside root from here */
+
+  ESL_ALLOC(ba, sizeof(float**) * M);
+  ESL_ALLOC(bb, sizeof(float**) * M);
+  for (v = 0; v < M; v++) { ba[v] = NULL; bb[v] = NULL; }
+
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k * B;
+    int hi = ESL_MIN((k+1)*B - 1, M-1);
+    /* recompute alpha for [lo..hi], descending; children in-block (ba) or seeds/roots (Astore) */
+    for (v = hi; v >= lo; v--) { ba[v] = ckpt_deck_alloc(&cx, v); ckpt_inside_deck(&cx, v, ba, Astore); }
+    /* beta ascending; fold posterior into l_pp/r_pp; free alpha + spent betas/roots as we go */
+    for (v = lo; v <= hi; v++) {
+      int st = cm->sttype[v];
+      bb[v] = ckpt_deck_alloc(&cx, v);
+      ckpt_outside_deck(&cx, v, bb, jp_0, Lp_0);
+
+      /* --- fused posterior, step 1 (mirror cm_EmitterPosteriorHB exactly) --- */
+      if (st==MP_st || st==ML_st || st==IL_st) { /* leftwise emitter -> l_pp */
+        int j;
+        for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+          int jp = j - cx.jmin[v]; int d;
+          for (d = cx.hdmin[v][jp]; d <= cx.hdmax[v][jp]; d++) {
+            int dp = d - cx.hdmin[v][jp];
+            int i  = j - d + 1;
+            int ip = i - cx.imin[v];
+            float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
+            emit_mx->l_pp[v][ip] = FLogsum(emit_mx->l_pp[v][ip], postcell);
+          }
+        }
+      }
+      if (st==MP_st || st==MR_st || st==IR_st) { /* rightwise emitter -> r_pp */
+        int j;
+        for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+          int jp = j - cx.jmin[v]; int d;
+          emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt; /* peel d=hdmin */
+          for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) {
+            int dp = d - cx.hdmin[v][jp];
+            float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
+            emit_mx->r_pp[v][jp] = FLogsum(emit_mx->r_pp[v][jp], postcell);
+          }
+        }
+      }
+
+      /* free this state's recomputed alpha */
+      ckpt_deck_free(&cx, v, ba[v]); ba[v] = NULL;
+      /* free a non-B beta now out of linear parent reach */
+      int old = v - Delta_p - 1;
+      if (old >= 0 && bb[old] != NULL && cm->sttype[old] != B_st) { ckpt_deck_free(&cx, old, bb[old]); bb[old] = NULL; }
+      /* bounded co-floor reclaim: once BOTH child chains of a bifurcation have had
+       * their root-state Outside computed, the parent B-beta and both child Inside
+       * roots have had their last read.  The two children are cfirst[yB] (BEGL) and
+       * cnum[yB] (BEGR); the model does NOT guarantee BEGL < BEGR, so trigger on the
+       * higher-indexed sibling (processed second in this ascending sweep). */
+      if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) {
+        int yB   = cm->plast[v];   /* parent bifurcation               */
+        int begl = cm->cfirst[yB]; /* left  child Inside root          */
+        int begr = cm->cnum[yB];   /* right child Inside root          */
+        int second = (begl > begr) ? begl : begr; /* sibling processed last */
+        if (v == second) {
+          if (bb[yB]       != NULL) { ckpt_deck_free(&cx, yB,   bb[yB]);       bb[yB]       = NULL; }
+          if (Astore[begl] != NULL) { ckpt_deck_free(&cx, begl, Astore[begl]); Astore[begl] = NULL; }
+          if (Astore[begr] != NULL) { ckpt_deck_free(&cx, begr, Astore[begr]); Astore[begr] = NULL; }
+        }
+      }
+    }
+  }
+  for (v = 0; v < M; v++) if (bb[v]) { ckpt_deck_free(&cx, v, bb[v]); bb[v] = NULL; }
+
+  /* EmitterPosterior step 2: normalize (mirror stock order exactly) */
+  esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
+  for (v = 0; v < M; v++) {
+    if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i], emit_mx->l_pp[v][ip]); } }
+    if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j], emit_mx->r_pp[v][jp]); } }
+  }
+  for (v = 0; v < M; v++) {
+    if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->l_pp[v][ip] -= emit_mx->sum[i]; } }
+    if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->r_pp[v][jp] -= emit_mx->sum[j]; } }
+  }
+
+  /* EmitterPosterior step 3: combine l_pp for MATP_MP(v)/MATP_ML(v+1) and r_pp
+   * for MATP_MP(v)/MATP_MR(v+2) in the same node (mirror stock exactly). */
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] == MP_st) {
+      if (cx.imax[v] >= 1 && cx.imax[v+1] >= 1) {
+        int in = ESL_MAX(cx.imin[v], cx.imin[v+1]);
+        int ix = ESL_MIN(cx.imax[v], cx.imax[v+1]);
+        int i;
+        for (i = in; i <= ix; i++) {
+          int ip_v = i - cx.imin[v], ip_v2 = i - cx.imin[v+1];
+          emit_mx->l_pp[v][ip_v]    = FLogsum(emit_mx->l_pp[v][ip_v], emit_mx->l_pp[v+1][ip_v2]);
+          emit_mx->l_pp[v+1][ip_v2] = emit_mx->l_pp[v][ip_v];
+        }
+      }
+      if (cx.jmax[v] >= 1 && cx.jmax[v+2] >= 1) {
+        int jn = ESL_MAX(cx.jmin[v], cx.jmin[v+2]);
+        int jx = ESL_MIN(cx.jmax[v], cx.jmax[v+2]);
+        int j;
+        for (j = jn; j <= jx; j++) {
+          int jp_v = j - cx.jmin[v], jp_v2 = j - cx.jmin[v+2];
+          emit_mx->r_pp[v][jp_v]    = FLogsum(emit_mx->r_pp[v][jp_v], emit_mx->r_pp[v+2][jp_v2]);
+          emit_mx->r_pp[v+2][jp_v2] = emit_mx->r_pp[v][jp_v];
+        }
+      }
+    }
+  }
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    double  full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
+    double  peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    int64_t ecells  = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
+    fprintf(stderr, "# cm_CheckptPostAlignHB: M=%d L=%d B=%d Z=%.4f  CM-DP peak=%.2f Mb  full-IO-cube(2x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb  Bstate-cells(1x)=%.2f Mb\n",
+            M, L, B, Z_ckpt, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.,
+            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0), bstate_cells*4.0/(1024.0*1024.0));
+  }
+
+  for (v = 0; v < M; v++) if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]);
+  free(Astore); free(ba); free(bb);
+  free(cx.deck_nc); free(cx.deck_njr);
+  if (ret_sc != NULL) *ret_sc = Z_ckpt;
+  return eslOK;
+
+ ERROR:
+  if (Astore) { for (v = 0; v < M; v++) if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]); free(Astore); }
+  if (ba) { for (v = 0; v < M; v++) if (ba[v]) ckpt_deck_free(&cx, v, ba[v]); free(ba); }
+  if (bb) { for (v = 0; v < M; v++) if (bb[v]) ckpt_deck_free(&cx, v, bb[v]); free(bb); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  return status;
 }
 
 /* Function: cm_CYKInsideAlign()
