@@ -2549,10 +2549,16 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
 
   /* Step 3: HMM bands -> CM bands. */
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) goto ERROR;
+    /* brief 162 (mirrors brief 148/082 in the non-ckpt twin cp9_FBMatrices2BandsF):
+     * pass doing_search=FALSE so cp9_HMM2ijBands_OLD builds alignment-mode (tight,
+     * per-node diagonal) j-bands rather than search-mode (whole-sequence jmin=1,jmax=L)
+     * bands. This checkpointed path is cmalign-only / do_trunc-only; the previous
+     * doing_search=TRUE inflated the CM-DP cube 10-32x (1027x on calici). */
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) goto ERROR;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) goto ERROR;
+    /* brief 162: doing_search=FALSE (see comment above). */
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) goto ERROR;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
