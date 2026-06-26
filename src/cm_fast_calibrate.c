@@ -201,6 +201,22 @@ typedef struct {
    * shipped str_* ridge is used (zero regression). */
   FastCalRidge atrich_lambda   [N_ATRICH_BUCKETS][N_MODES];
   FastCalRidge atrich_mu_extrap[N_ATRICH_BUCKETS][N_MODES];
+  /* brief 074: ere predictor (--ere/--enone dispatch path). A full parallel
+   * predictor over all 5 buckets × 4 modes × 4 targets, NAIVE-fit on
+   * default+enone data (brief 073). Same v5.5 feature pool as the C0 str_ and
+   * noss_ ridges (ere-axis feats dropped per the brief-073 ablation), so
+   * ridge_predict() reuses the same extracted feature vector. Only DEPLOYED
+   * cells are parsed (defined==1); GAPS stay undefined and the consumer falls
+   * back to the C0 ridge: huge-glocal STR (ECMGC/ECMGI) and NOSS
+   * medlarge/large/huge (no ere model). Used ONLY when g_fastcal_ere_mode==1. */
+  FastCalRidge ere_str_lambda   [N_BUCKETS][N_MODES];
+  FastCalRidge ere_str_mu_extrap[N_BUCKETS][N_MODES];
+  FastCalRidge ere_str_mu_orig  [N_BUCKETS][N_MODES];
+  FastCalRidge ere_str_K        [N_BUCKETS][N_MODES];
+  FastCalRidge ere_noss_lambda   [N_BUCKETS][N_MODES];
+  FastCalRidge ere_noss_mu_extrap[N_BUCKETS][N_MODES];
+  FastCalRidge ere_noss_mu_orig  [N_BUCKETS][N_MODES];
+  FastCalRidge ere_noss_K        [N_BUCKETS][N_MODES];
   char         models_version[65];   /* SHA-256 hex of concatenated JSONs + NUL */
   int          loaded;
 } FastCalModelSet;
@@ -231,6 +247,14 @@ double g_smallcm_lambda         = 0.62;  /* brief 41 ship default: constant loca
 int    g_smallcm_clen_max       = 60;    /* clen threshold for small-CM lambda override and --localmu-smallonly routing */
 int    g_localmu_smallonly      = 0;     /* if 1, run cm_LocalMu only for CMs with clen < g_smallcm_clen_max (ridge for clen >= threshold) (arm A) */
 int    g_localmu_fitlambda      = 1;     /* if 1, refit lambda jointly with mu in cm_LocalMu Step 5 (current ship default); if 0, hold ridge lambda (legacy fixed-lambda) */
+
+/* brief 074: ere-path dispatch. Default 0 (the shipped C0 --eent path,
+ * BYTE-IDENTICAL to pre-074). cmbuild sets this to 1 when the build used a
+ * non-default entropy target (--ere X or --enone), routing cm_FastCalibrate
+ * to the ere predictor PER CELL where deployed (gaps fall back to C0). Set as
+ * a global (like g_localmu_*) so the regression/test harnesses, which never
+ * set it, keep the byte-identical default path. */
+int    g_fastcal_ere_mode       = 0;
 
 
 /* =========================================================================
@@ -1111,6 +1135,37 @@ parse_v55_flat(ESL_JSON *pi, ESL_BUFFER *bf,
 
 
 /* =========================================================================
+ * load_ere_bin() (brief 074)
+ *   Parse one embedded ere-predictor JSON (flat MODE_target schema, all 4
+ *   targets in one file) for a single bucket into the four ere ridge arrays.
+ *   Absent (mode,target) keys — the documented gaps (huge-glocal STR;
+ *   NOSS medlarge/large/huge) — leave the slot undefined for C0 fallback.
+ */
+static int
+load_ere_bin(const unsigned char *json, unsigned int json_len, int bucket,
+             FastCalRidge lam[][N_MODES], FastCalRidge mue[][N_MODES],
+             FastCalRidge muo[][N_MODES], FastCalRidge Kr [][N_MODES])
+{
+  ESL_BUFFER *bf = NULL;
+  ESL_JSON   *pi = NULL;
+  int         status;
+
+  if ((status = esl_buffer_OpenMem((const char *)json, (esl_pos_t)json_len, &bf)) != eslOK)
+    return status;
+  if ((status = esl_json_Parse(bf, &pi)) != eslOK) { esl_buffer_Close(bf); return status; }
+
+  status = parse_v55_flat(pi, bf, "lambda",    bucket, lam);
+  if (status == eslOK) status = parse_v55_flat(pi, bf, "mu_extrap", bucket, mue);
+  if (status == eslOK) status = parse_v55_flat(pi, bf, "mu_orig",   bucket, muo);
+  if (status == eslOK) status = parse_v55_flat(pi, bf, "K",         bucket, Kr);
+
+  esl_json_Destroy(pi);
+  esl_buffer_Close(bf);
+  return status;
+}
+
+
+/* =========================================================================
  * load_models()
  *   Parse all 6 embedded JSONs into g_models on first call.
  *   Idempotent (returns eslOK immediately if already loaded).
@@ -1439,6 +1494,32 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
+  /* 10. brief 074: ere predictor (--ere/--enone dispatch path). 7 flat-schema
+   * JSONs (5 STR buckets + tiny/small NOSS), each carrying lambda/mu_extrap/
+   * mu_orig/K for the deployed (mode,target) cells. Loaded into the dedicated
+   * ere_* arrays; used only when g_fastcal_ere_mode==1 (default path untouched).
+   * The 8 huge-glocal STR cells and all NOSS medlarge/large/huge cells are
+   * absent → stay undefined → C0 fallback at predict time. */
+#define LOAD_ERE(SYM, BK, STR_OR_NOSS) \
+  do { \
+    status = load_ere_bin(__cm_fast_calibrate_data_ere_predictor_##SYM##_json, \
+                          __cm_fast_calibrate_data_ere_predictor_##SYM##_json_len, (BK), \
+                          g_models.ere_##STR_OR_NOSS##_lambda, \
+                          g_models.ere_##STR_OR_NOSS##_mu_extrap, \
+                          g_models.ere_##STR_OR_NOSS##_mu_orig, \
+                          g_models.ere_##STR_OR_NOSS##_K); \
+    if (status != eslOK) return status; \
+  } while (0)
+
+  LOAD_ERE(tiny_str,     BUCKET_TINY,     str);
+  LOAD_ERE(small_str,    BUCKET_SMALL,    str);
+  LOAD_ERE(medlarge_str, BUCKET_MEDLARGE, str);
+  LOAD_ERE(large_str,    BUCKET_LARGE,    str);
+  LOAD_ERE(huge_str,     BUCKET_HUGE,     str);
+  LOAD_ERE(tiny_noss,    BUCKET_TINY,     noss);
+  LOAD_ERE(small_noss,   BUCKET_SMALL,    noss);
+#undef LOAD_ERE
+
   /* Record the embedded version hash */
   strncpy(g_models.models_version, fast_cal_models_version, 64);
   g_models.models_version[64] = '\0';
@@ -1737,6 +1818,28 @@ cm_FastCalibrate(CM_t *cm)
         r_muo = &g_models.str_mu_orig  [bucket][mode];
       }
 
+      /* brief 074: ere dispatch. For --ere/--enone builds (g_fastcal_ere_mode),
+       * swap each target's ridge to the ere predictor PER CELL where deployed;
+       * undeployed cells (gaps) keep the C0 ridge selected above (fall back).
+       * Same feature vector as C0, so ridge_predict() needs nothing new. The
+       * default path (g_fastcal_ere_mode==0) is byte-identical to pre-074. */
+      int ere_lam_used = 0;
+      if (g_fastcal_ere_mode) {
+        FastCalRidge *e_lam, *e_mue, *e_muo;
+        if (is_noss) {
+          e_lam = &g_models.ere_noss_lambda   [bucket][mode];
+          e_mue = &g_models.ere_noss_mu_extrap[bucket][mode];
+          e_muo = &g_models.ere_noss_mu_orig  [bucket][mode];
+        } else {
+          e_lam = &g_models.ere_str_lambda   [bucket][mode];
+          e_mue = &g_models.ere_str_mu_extrap[bucket][mode];
+          e_muo = &g_models.ere_str_mu_orig  [bucket][mode];
+        }
+        if (e_lam->defined) { r_lam = e_lam; ere_lam_used = 1; }
+        if (e_mue->defined)   r_mue = e_mue;
+        if (e_muo->defined)   r_muo = e_muo;
+      }
+
       if (r_lam->nfeat == 0) return eslFAIL;  /* no ridge for this slot */
 
       double lam = ridge_predict(r_lam, feats);
@@ -1764,6 +1867,16 @@ cm_FastCalibrate(CM_t *cm)
       if (is_noss && (mode == MODE_ECMGC || mode == MODE_ECMGI) && lam < 0.005)
         lam = 0.005;
 
+      /* brief 074: ere glocal lambda floor (0.005, brief 044/073). The C0 STR
+       * path has no glocal floor, but the DEPLOYED ere STR glocal cells
+       * (tiny/small/medlarge/large ECMGC/ECMGI) carry glocal_lambda_floor=0.005,
+       * matching the Python predictor's apply_floor. Gated on ere_lam_used so
+       * the huge-glocal STR gap (C0 fallback) is NOT floored (byte-identical
+       * to C0 there). NOSS glocal is already floored by the block above. */
+      if (g_fastcal_ere_mode && !is_noss && ere_lam_used &&
+          (mode == MODE_ECMGC || mode == MODE_ECMGI) && lam < 0.005)
+        lam = 0.005;
+
       double mu_e = (r_mue->nfeat > 0) ? ridge_predict(r_mue, feats) : 0.0;
       double mu_o = (r_muo->nfeat > 0) ? ridge_predict(r_muo, feats) : 0.0;
 
@@ -1771,8 +1884,12 @@ cm_FastCalibrate(CM_t *cm)
        * tiny/small, gc<=0.45), replace lambda and/or mu_extrap with the
        * dedicated AT-rich ridge for the CV-firmed adopt cells only. Applied
        * LAST so it wins over the shipped value; mu_orig and K are never
-       * touched. Purely additive: non-routed CMs/cells never reach here. */
-      if (atrich_route) {
+       * touched. Purely additive: non-routed CMs/cells never reach here.
+       * brief 074: SUPPRESSED in ere-mode — the AT-rich routing is a default
+       * (C0) on-set refinement validated on default builds; in ere-mode the
+       * ere predictor already supplies the (e.g. ECMLI) on-set, so layering
+       * the default-validated AT-rich override on top would be unvalidated. */
+      if (atrich_route && !g_fastcal_ere_mode) {
         const FastCalRidge *ra_lam = &g_models.atrich_lambda   [bucket][mode];
         const FastCalRidge *ra_mue = &g_models.atrich_mu_extrap[bucket][mode];
         if (atrich_adopt[bucket][mode][0] && ra_lam->defined)
@@ -1788,7 +1905,17 @@ cm_FastCalibrate(CM_t *cm)
        * swap is JSON-only). Local-mode K ridges are intercept-only;
        * glocal-mode K ridges are clen power laws (feature=log_clen).
        */
-      double K_pred = predict_K(mode, is_noss, bucket, feats);
+      /* brief 074: ere K dispatch — use the ere K ridge where deployed, else
+       * fall back to C0's predict_K (gaps: huge-glocal STR, NOSS ml/large/huge). */
+      double K_pred;
+      if (g_fastcal_ere_mode) {
+        const FastCalRidge *e_K = is_noss ? &g_models.ere_noss_K[bucket][mode]
+                                          : &g_models.ere_str_K [bucket][mode];
+        K_pred = e_K->defined ? ridge_predict(e_K, feats)
+                              : predict_K(mode, is_noss, bucket, feats);
+      } else {
+        K_pred = predict_K(mode, is_noss, bucket, feats);
+      }
       int    nrh    = (int) round(K_pred * 1.6e6);
       if (nrh < 1) nrh = 1;
 
@@ -1801,6 +1928,25 @@ cm_FastCalibrate(CM_t *cm)
     }
 
   cm->flags |= CMH_EXPTAIL_STATS;
+
+  /* brief 074: optional full-precision on-set dump (validation only). One line
+   * per mode: name clen ere_mode inf_mode(0=GC,1=GI,2=LC,3=LI) lambda mu_extrap
+   * mu_orig nrandhits. Env-gated -> zero effect on the default build. Emitted
+   * BEFORE cm_LocalMu (OFF by default) so it captures the ridge/ere prediction. */
+  {
+    const char *onset_dump = getenv("FASTCAL_ONSET_DUMP");
+    if (onset_dump != NULL) {
+      FILE *odp = fopen(onset_dump, "a");
+      if (odp != NULL) {
+        for (i = 0; i < EXP_NMODES; i++)
+          fprintf(odp, "%s\t%d\t%d\t%d\t%.17g\t%.17g\t%.17g\t%d\n",
+                  cm->name ? cm->name : "unknown", cm->clen, g_fastcal_ere_mode, i,
+                  cm->expA[i]->lambda, cm->expA[i]->mu_extrap, cm->expA[i]->mu_orig,
+                  cm->expA[i]->nrandhits);
+        fclose(odp);
+      }
+    }
+  }
 
   /* Refine local-mode mu via mini-simulation (cm_LocalMu).
    * Overrides regression mu_extrap/mu_orig for ECMLC and ECMLI.
@@ -1921,6 +2067,15 @@ cm_FastCalibrateCleanup(void)
         ridge_free(&g_models.noss_mu_extrap[b][m]);
         ridge_free(&g_models.noss_mu_orig  [b][m]);
         ridge_free(&g_models.noss_K        [b][m]);
+        /* brief 074: ere predictor slots (5 buckets × 4 modes × 4 targets) */
+        ridge_free(&g_models.ere_str_lambda    [b][m]);
+        ridge_free(&g_models.ere_str_mu_extrap [b][m]);
+        ridge_free(&g_models.ere_str_mu_orig   [b][m]);
+        ridge_free(&g_models.ere_str_K         [b][m]);
+        ridge_free(&g_models.ere_noss_lambda   [b][m]);
+        ridge_free(&g_models.ere_noss_mu_extrap[b][m]);
+        ridge_free(&g_models.ere_noss_mu_orig  [b][m]);
+        ridge_free(&g_models.ere_noss_K        [b][m]);
       }
   /* brief 67: AT-rich slots (tiny + small only) */
   for (b = 0; b < N_ATRICH_BUCKETS; b++)

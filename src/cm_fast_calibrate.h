@@ -55,6 +55,11 @@ extern int    g_smallcm_clen_max;    /* clen threshold for small-CM lambda overr
 extern int    g_localmu_smallonly;   /* if 1, run cm_LocalMu only for clen < g_smallcm_clen_max */
 extern int    g_localmu_fitlambda;   /* if 1, refit lambda in cm_LocalMu (default); 0 = hold ridge lambda */
 
+/* brief 074: ere-path dispatch flag. 0 = shipped C0 --eent path (default,
+ * byte-identical to pre-074); 1 = route cm_FastCalibrate to the ere predictor
+ * (set by cmbuild for --ere/--enone builds). */
+extern int    g_fastcal_ere_mode;
+
 /* cm_FastCalibrateCleanup()
  *   Free model memory. Idempotent.
  */

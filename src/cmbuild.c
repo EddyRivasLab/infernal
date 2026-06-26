@@ -522,6 +522,18 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
      g_smallcm_lambda = esl_opt_GetReal(go, "--smallcm-lambda");
    g_smallcm_clen_max = esl_opt_GetInteger(go, "--smallcm-clenmax");
 
+   /* brief 074: ere-path dispatch. A non-default entropy target (--ere X or
+    * --enone) shifts the built model off the default-relent operating point
+    * where the shipped C0 fastcal predictor was fit, so C0 mispredicts the
+    * E-value params (brief 047/073). Route cm_FastCalibrate to the dedicated
+    * ere predictor for these builds; the default --eent path is UNCHANGED
+    * (byte-identical to pre-074). One boolean covers all --ere X values and
+    * --enone — the specific target is reflected in the CM's features, which
+    * the ere predictor reads. Composes with the brief-061 guard (when present
+    * on this branch, it skips fastcal entirely for --pbegin/--pend/--null
+    * builds; this flag only selects WHICH predictor a surviving build uses). */
+   g_fastcal_ere_mode = (esl_opt_IsUsed(go, "--ere") || esl_opt_IsUsed(go, "--enone")) ? 1 : 0;
+
    /* brief 41: ship default is mini-sim OFF (ridge-only). --localmu turns it
     * back on for A/B and experiments; --no-localmu is accepted as an explicit
     * form of the default for backwards-compat with older benchmark scripts.
