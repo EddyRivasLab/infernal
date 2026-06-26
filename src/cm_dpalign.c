@@ -60,6 +60,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <math.h>
 #include <time.h>
@@ -834,6 +835,776 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
 
   ESL_DPRINTF1(("#DEBUG: returning from cm_AlignHB() sc : %f\n", sc)); 
   return eslOK;
+}
+
+/*****************************************************************
+ * Checkpointed (sqrt(M)-memory) HMM-banded posterior + OptAcc
+ * alignment, for NON-truncated, GLOBAL, bps=0 (pure left-emitting
+ * MATL chain) CMs.
+ *
+ * Brief 028: library port of the validated standalone drivers
+ *   ckpt_drv.c   (022) -- checkpointed Inside + Outside + fused posterior
+ *   ckptoa_drv.c (023) -- checkpointed OptAcc max-DP + checkpointed traceback
+ *
+ * The recurrences mirror cm_InsideAlignHB / cm_OutsideAlignHB /
+ * cm_EmitterPosteriorHB / cm_OptAccAlignHB / cm_alignT_hb cell-for-cell
+ * (FLogsum/max call order preserved) for the state types that occur in a
+ * pure MATL chain (S, IL, IR, ML, D, E) in global mode (no local
+ * begins/ends, no EL).  Only deck *storage* is windowed (sqrt(M) seed decks
+ * + recompute), so the output (Z, l_pp/r_pp, parsetree, per-residue PP) is
+ * byte-for-byte identical to the stock path.
+ *
+ * Routed by the CM_ALIGN_CHECKPT align_opt; cm_CheckptAlignHB_Qualifies()
+ * gates engagement (stock path used otherwise).  These functions do NOT
+ * touch cm->hb_mx / hb_omx / hb_shmx (they allocate their own sqrt(M)
+ * decks); they DO grow + fill the passed emit_mx, which is the deliverable
+ * read by cm_PostCodeHB().
+ *****************************************************************/
+
+/* per-call context (replaces the drivers' file-scope statics; keeps the
+ * library reentrant / thread-safe -- cmalign may run multithreaded). */
+typedef struct ckpt_ctx_s {
+  CM_t    *cm;
+  ESL_DSQ *dsq;
+  int      L;
+  int      M;
+  int     *jmin, *jmax, *imin, *imax;
+  int    **hdmin, **hdmax;
+  int64_t *deck_nc;    /* [v] number of cells in deck v */
+  int     *deck_njr;   /* [v] number of j-rows in deck v (jmax-jmin+1) */
+  float  **my_lpp;     /* alias to emit_mx->l_pp (left-emitter posteriors)  */
+  float  **my_rpp;     /* alias to emit_mx->r_pp (right-emitter posteriors) */
+  int64_t  cur_bytes;  /* live CM-DP cell bytes (working-set tracking)       */
+  int64_t  peak_bytes; /* high-water mark of cur_bytes                       */
+} CKPT_CTX;
+
+/* deck = float** of j-rows; row[0] is start of the contiguous cell block. */
+static float **
+ckpt_deck_alloc(CKPT_CTX *cx, int v)
+{
+  int     njr = cx->deck_njr[v];
+  int64_t nc  = cx->deck_nc[v];
+  float **row = malloc(sizeof(float*) * (njr > 0 ? njr : 1));
+  float  *mem = malloc(sizeof(float)  * (nc  > 0 ? nc  : 1));
+  int64_t off = 0;
+  int     jp;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
+  if (row == NULL || mem == NULL) cm_Fail("ckpt_deck_alloc OOM v=%d", v);
+  row[0] = mem; /* ensure row[0]==mem even when njr==0 (so free(row[0]) is valid) */
+  for (jp = 0; jp < njr; jp++) {
+    int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
+    row[jp] = mem + off;
+    if (w < 0) w = 0;
+    off += w;
+  }
+  cx->cur_bytes += nc * (int64_t)sizeof(float);
+  if (cx->cur_bytes > cx->peak_bytes) cx->peak_bytes = cx->cur_bytes;
+  return row;
+}
+static void
+ckpt_deck_free(CKPT_CTX *cx, int v, float **row)
+{
+  if (row == NULL) return;
+  free(row[0]);
+  free(row);
+  cx->cur_bytes -= cx->deck_nc[v] * (int64_t)sizeof(float);
+}
+static void
+ckpt_deck_init_impossible(CKPT_CTX *cx, int v, float **row)
+{
+  if (cx->deck_nc[v] > 0) esl_vec_FSet(row[0], (int) cx->deck_nc[v], IMPOSSIBLE);
+}
+/* char deck (yshadow), same row layout as a float deck */
+static char **
+ckpt_cdeck_alloc(CKPT_CTX *cx, int v)
+{
+  int     njr = cx->deck_njr[v];
+  int64_t nc  = cx->deck_nc[v];
+  char  **row = malloc(sizeof(char*) * (njr > 0 ? njr : 1));
+  char   *mem = malloc(sizeof(char)  * (nc  > 0 ? nc  : 1));
+  int64_t off = 0;
+  int     jp;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
+  if (row == NULL || mem == NULL) cm_Fail("ckpt_cdeck_alloc OOM v=%d", v);
+  row[0] = mem;
+  for (jp = 0; jp < njr; jp++) {
+    int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
+    row[jp] = mem + off;
+    if (w < 0) w = 0;
+    off += w;
+  }
+  cx->cur_bytes += nc * (int64_t)sizeof(char);
+  if (cx->cur_bytes > cx->peak_bytes) cx->peak_bytes = cx->cur_bytes;
+  return row;
+}
+static void
+ckpt_cdeck_free(CKPT_CTX *cx, int v, char **row)
+{
+  if (row == NULL) return;
+  free(row[0]);
+  free(row);
+  cx->cur_bytes -= cx->deck_nc[v] * (int64_t)sizeof(char);
+}
+
+/* Inside deck v: mirrors cm_InsideAlignHB for S/IL/IR/ML/D/E, global mode.
+ * Reads children from ba[] (in-block decks) or ck[] (checkpoint seeds). */
+static void
+ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
+{
+#define IA(vv) (ba[vv] ? ba[vv] : (ck ? ck[vv] : NULL))
+  CM_t *cm = cx->cm;
+  ESL_DSQ *dsq = cx->dsq;
+  int   *jmin = cx->jmin, *jmax = cx->jmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
+  float **av = ba[v];
+  float const *esc_v = cm->oesc[v];
+  float const *tsc_v = cm->tsc[v];
+  int sd  = StateDelta(cm->sttype[v]);
+  int sdr = StateRightDelta(cm->sttype[v]);
+  int j, d, i, y, yoffset, jp_v, dp_v, jp_y_sdr, dp_y_sd, j_sdr;
+  int yvalidA[MAXCONNECT], yvalid_ct, yvalid_idx;
+
+  ckpt_deck_init_impossible(cx, v, av);
+
+  if (cm->sttype[v] == E_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) { jp_v = j - jmin[v]; av[jp_v][0] = 0.; }
+    return;
+  }
+  else if (cm->sttype[v] == IL_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      yvalid_ct = 0; j_sdr = j - sdr;
+      for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+        if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        i = j - d + 1;
+        dp_v = d - hd_min(cp9b, v, jp_v);
+        for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+          yoffset = yvalidA[yvalid_idx];
+          y = cm->cfirst[v] + yoffset;
+          jp_y_sdr = j - jmin[y] - sdr;
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+            av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], IA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+          }
+        }
+        av[jp_v][dp_v] += esc_v[dsq[i--]];
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+      }
+    }
+    return;
+  }
+  else if (cm->sttype[v] == IR_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      yvalid_ct = 0; j_sdr = j - sdr;
+      for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+        if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        dp_v = d - hd_min(cp9b, v, jp_v);
+        for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+          yoffset = yvalidA[yvalid_idx];
+          y = cm->cfirst[v] + yoffset;
+          jp_y_sdr = j - jmin[y] - sdr;
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+            av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], IA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
+          }
+        }
+        av[jp_v][dp_v] += esc_v[dsq[j]];
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+      }
+    }
+    return;
+  }
+  else { /* ML, D, S (no self-transit, no B) */
+    int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
+    float tsc;
+    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+      yoffset = y - cm->cfirst[v];
+      tsc = tsc_v[yoffset];
+      jn = ESL_MAX(jmin[v], jmin[y] + sdr);
+      jx = ESL_MIN(jmax[v], jmax[y] + sdr);
+      jpn = jn - jmin[v];
+      jpx = jx - jmin[v];
+      jp_y_sdr = jn - jmin[y] - sdr;
+      for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+        dpn = dn - hd_min(cp9b, v, jp_v);
+        dpx = dx - hd_min(cp9b, v, jp_v);
+        dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
+        for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
+          av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], (IA(y)[jp_y_sdr][dp_y_sd] + tsc));
+        }
+      }
+    }
+    if (cm->sttype[v] == ML_st) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        i = j - hd_min(cp9b, v, jp_v) + 1;
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
+          av[jp_v][dp_v] += esc_v[dsq[i--]];
+      }
+    }
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+    }
+    (void) jn; (void) jx; (void) jpn; (void) jpx; (void) dn; (void) dx; (void) dpn; (void) dpx;
+    return;
+  }
+#undef IA
+}
+
+/* Outside deck v: mirrors cm_OutsideAlignHB for S/IL/IR/ML/D/E, global mode.
+ * Reads beta from bb[] (parents, lower index).  v==0 (ROOT_S) boundary:
+ * only beta[0][L][L]=0. */
+static void
+ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
+{
+  CM_t *cm = cx->cm;
+  ESL_DSQ *dsq = cx->dsq;
+  int   L = cx->L;
+  int  *jmin = cx->jmin, *jmax = cx->jmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
+  float **bv = bb[v];
+  float **esc_vAA_y;
+  int j, d, i, y, voffset, jp_v, jp_y, dp_v, dp_y, sd, sdr, emitmode, jn, jx, dn, dx;
+  float escore;
+
+  ckpt_deck_init_impossible(cx, v, bv);
+
+  if (v == 0) { bv[jp_0][Lp_0] = 0.; return; }
+
+  if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+    for (j = jmax[v]; j >= jmin[v]; j--) {
+      jp_v = j - jmin[v];
+      for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
+        i = j - d + 1;
+        dp_v = d - hd_min(cp9b, v, jp_v);
+        for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--) {
+          voffset = v - cm->cfirst[y];
+          switch (cm->sttype[y]) {
+          case MP_st: break;
+          case ML_st:
+          case IL_st:
+            if (d == j) continue;
+            if (j < jmin[y] || j > jmax[y]) continue;
+            jp_y = j - jmin[y];
+            if ((d+1) < hd_min(cp9b, y, jp_y) || (d+1) > hd_max(cp9b, y, jp_y)) continue;
+            dp_y = d - hd_min(cp9b, y, jp_y);
+            escore = cm->oesc[y][dsq[i-1]];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y][dp_y+1] + cm->tsc[y][voffset] + escore));
+            break;
+          case MR_st:
+          case IR_st:
+            if (j == L) continue;
+            if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue;
+            jp_y = j - jmin[y];
+            if ((d+1) < hd_min(cp9b, y, (jp_y+1)) || (d+1) > hd_max(cp9b, y, (jp_y+1))) continue;
+            dp_y = d - hd_min(cp9b, y, (jp_y+1));
+            escore = cm->oesc[y][dsq[j+1]];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y+1][dp_y+1] + cm->tsc[y][voffset] + escore));
+            break;
+          case S_st:
+          case E_st:
+          case D_st:
+            if (j < jmin[y] || j > jmax[y]) continue;
+            jp_y = j - jmin[y];
+            if (d < hd_min(cp9b, y, jp_y) || d > hd_max(cp9b, y, jp_y)) continue;
+            dp_y = d - hd_min(cp9b, y, jp_y);
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y][dp_y] + cm->tsc[y][voffset]));
+            break;
+          }
+        }
+        if (bv[jp_v][dp_v] < IMPOSSIBLE) bv[jp_v][dp_v] = IMPOSSIBLE;
+      }
+    }
+    return;
+  }
+  else {
+    esc_vAA_y = cm->oesc;
+    for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--) {
+      voffset = v - cm->cfirst[y];
+      sdr = StateRightDelta(cm->sttype[y]);
+      sd  = StateDelta(cm->sttype[y]);
+      emitmode = Emitmode(cm->sttype[y]);
+      jn = ESL_MAX(jmin[v], jmin[y] - sdr);
+      jx = ESL_MIN(jmax[v], jmax[y] - sdr);
+      for (j = jx; j >= jn; j--) {
+        jp_v = j - jmin[v];
+        jp_y = j - jmin[y];
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y + sdr) - sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y + sdr) - sd);
+        dp_v = dx - hd_min(cp9b, v, jp_v);
+        dp_y = dx - hd_min(cp9b, y, jp_y + sdr);
+        i    = j - dx + 1;
+        switch (emitmode) {
+        case EMITPAIR: break;
+        case EMITLEFT:
+          for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) {
+            escore = esc_vAA_y[y][dsq[i-1]];
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y + sdr][dp_y + sd] + cm->tsc[y][voffset] + escore));
+          }
+          break;
+        case EMITRIGHT:
+          escore = esc_vAA_y[y][dsq[j+1]];
+          for (d = dx; d >= dn; d--, dp_v--, dp_y--) {
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y + sdr][dp_y + sd] + cm->tsc[y][voffset] + escore));
+          }
+          break;
+        case EMITNONE:
+          for (d = dx; d >= dn; d--, dp_v--, dp_y--) {
+            bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y + sdr][dp_y + sd] + cm->tsc[y][voffset]));
+          }
+          break;
+        }
+      }
+    }
+    return;
+  }
+}
+
+/* OptAcc deck v: mirrors cm_OptAccAlignHB's per-cell recurrence + FLogsum/max
+ * order VERBATIM for S/IL/IR/ML/D/E, global (have_el=FALSE).  Reads emit
+ * posteriors from cx->my_lpp / my_rpp; children OA-alpha from oa[] (block) or
+ * ck[] (seeds).  Writes OA-alpha into oa[v] and (if ysh != NULL) yshadow. */
+static void
+ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
+{
+#define OA(vv) (oa[vv] ? oa[vv] : (ck ? ck[vv] : NULL))
+  CM_t *cm = cx->cm;
+  int  *jmin = cx->jmin, *jmax = cx->jmax, *imin = cx->imin;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
+  float **av = oa[v];
+  int sd  = StateDelta(cm->sttype[v]);
+  int sdr = StateRightDelta(cm->sttype[v]);
+  int j, d, i, y, yoffset, jp_v, dp_v, ip_v, jp_y_sdr, dp_y_sd, j_sdr;
+  int yvalidA[MAXCONNECT], yvalid_ct, yvalid_idx;
+  float sc;
+
+  ckpt_deck_init_impossible(cx, v, av);
+  if (ysh != NULL && cx->deck_nc[v] > 0) memset(ysh[0], (int) ((char) USED_EL), (size_t) cx->deck_nc[v]);
+
+  if (cm->sttype[v] == E_st) {
+    return; /* OA: E cells remain IMPOSSIBLE */
+  }
+
+  /* d==0 (zero-length subtree) shadow init, have_el=FALSE branch of
+   * cm_InitializeOptAccShadowDZeroHB: route the d==sd cell to the unique
+   * StateDelta==0 child (the delete path). */
+  if (ysh != NULL && cm->sttype[v] != B_st && cm->cp9b->Jvalid[v]) {
+    int yy = cm->cfirst[v];
+    while (StateDelta(cm->sttype[yy]) != 0) yy++;
+    int yoff = yy - cm->cfirst[v];
+    for (j = ESL_MAX(sd, jmin[v]); j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      if (hd_min(cp9b, v, jp_v) <= hd_max(cp9b, v, jp_v)) {
+        if ((j - sdr) >= jmin[yy] && (j - sdr) <= jmax[yy]) {
+          int jp_y = j - sdr - jmin[yy];
+          if (sd >= hd_min(cp9b, v, jp_v) && sd <= hd_max(cp9b, v, jp_v) &&
+              0  >= hd_min(cp9b, yy, jp_y) && 0 <= hd_max(cp9b, yy, jp_y)) {
+            dp_v = sd - hd_min(cp9b, v, jp_v);
+            ysh[jp_v][dp_v] = (char) yoff;
+          }
+        }
+      }
+    }
+  }
+
+  if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      yvalid_ct = 0; j_sdr = j - sdr;
+      for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+        if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+      i = j - hd_min(cp9b, v, jp_v) + 1;
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++, i--) {
+        ip_v = i - imin[v];
+        dp_v = d - hd_min(cp9b, v, jp_v);
+        for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+          yoffset = yvalidA[yvalid_idx];
+          y = cm->cfirst[v] + yoffset;
+          jp_y_sdr = j - jmin[y] - sdr;
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+            if ((sc = OA(y)[jp_y_sdr][dp_y_sd]) > av[jp_v][dp_v]) {
+              av[jp_v][dp_v] = sc;
+              if (ysh != NULL) ysh[jp_v][dp_v] = (char) yoffset;
+            }
+          }
+        }
+        if (cm->sttype[v] == IL_st) av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_lpp[v][ip_v]);
+        else                        av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_rpp[v][jp_v]);
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+        if (ysh != NULL && ysh[jp_v][dp_v] == (char) USED_EL && d > sd)
+          av[jp_v][dp_v] = IMPOSSIBLE;
+      }
+    }
+    return;
+  }
+  else { /* ML, D, S (non-self, non-B); E already returned */
+    int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
+    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+      yoffset = y - cm->cfirst[v];
+      jn = ESL_MAX(jmin[v], jmin[y] + sdr);
+      jx = ESL_MIN(jmax[v], jmax[y] + sdr);
+      jpn = jn - jmin[v];
+      jpx = jx - jmin[v];
+      jp_y_sdr = jn - jmin[y] - sdr;
+      for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+        dpn = dn - hd_min(cp9b, v, jp_v);
+        dpx = dx - hd_min(cp9b, v, jp_v);
+        dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
+        for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
+          if ((sc = OA(y)[jp_y_sdr][dp_y_sd]) > av[jp_v][dp_v]) {
+            av[jp_v][dp_v] = sc;
+            if (ysh != NULL) ysh[jp_v][dp_v] = (char) yoffset;
+          }
+        }
+      }
+    }
+    if (cm->sttype[v] == ML_st) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        i = j - hd_min(cp9b, v, jp_v) + 1;
+        ip_v = i - imin[v];
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, ip_v--)
+          av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_lpp[v][ip_v]);
+      }
+    }
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+    }
+    if (sd > 0 && ysh != NULL) { /* emitters only (ML here); have_el=FALSE */
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        d = ESL_MAX(sd+1, hd_min(cp9b, v, jp_v));
+        dp_v = d - hd_min(cp9b, v, jp_v);
+        for (; d <= hd_max(cp9b, v, jp_v); d++, dp_v++)
+          if (ysh[jp_v][dp_v] == (char) USED_EL) av[jp_v][dp_v] = IMPOSSIBLE;
+      }
+    }
+    (void) jn; (void) jx; (void) jpn; (void) jpx; (void) dn; (void) dx; (void) dpn; (void) dpx;
+    return;
+  }
+#undef OA
+}
+
+/* Function: cm_CheckptAlignHB_Qualifies()
+ * Purpose:  Return TRUE iff <cm> is a pure left-emitting MATL chain
+ *           (0 B_st, no MP/MR, only S/IL/IR/ML/D/E) configured in GLOBAL
+ *           mode (no local begins/ends).  These are the conditions under
+ *           which the checkpointed engines (cm_CheckptAlignHB) reproduce
+ *           the stock non-truncated OptAcc path byte-for-byte.  The caller
+ *           (DispatchSqAlignment) falls back to the stock path when FALSE.
+ */
+int
+cm_CheckptAlignHB_Qualifies(CM_t *cm)
+{
+  int v;
+  if (cm->flags & CMH_LOCAL_BEGIN) return FALSE;
+  if (cm->flags & CMH_LOCAL_END)   return FALSE;
+  for (v = 0; v < cm->M; v++) {
+    int st = cm->sttype[v];
+    if (st == B_st || st == MP_st || st == MR_st) return FALSE;
+    if (! (st==S_st || st==IL_st || st==IR_st || st==ML_st || st==D_st || st==E_st)) return FALSE;
+  }
+  return TRUE;
+}
+
+/* Function: cm_CheckptAlignHB()
+ * Incept:   Brief 028 (library port of drivers 022/023)
+ *
+ * Purpose:  Checkpointed (sqrt(M)-memory) HMM-banded optimal-accuracy
+ *           alignment for a NON-truncated, GLOBAL, pure-MATL-chain CM.
+ *           Drop-in replacement for the do_optacc=TRUE path of cm_AlignHB(),
+ *           producing byte-identical Inside score, per-residue PPs, parsetree
+ *           and avg PP, but with a sqrt(M) CM-DP working set instead of two
+ *           full HMM-banded cubes.
+ *
+ *           Pipeline (each step byte-exact vs its stock counterpart):
+ *             A : checkpointed Inside  -> Z, sqrt(M) alpha seed decks
+ *             B : checkpointed Outside + fused posterior -> emit_mx l_pp/r_pp
+ *             OA: checkpointed OptAcc max-DP -> OA score, sqrt(M) OA seed decks
+ *             TB: checkpointed OptAcc traceback (block-recompute) -> parsetree
+ *           Then cm_PostCodeHB() reads emit_mx for the PP string / avg PP.
+ *
+ *           cm->cp9b must already hold valid bands for <dsq>,<L> (the caller,
+ *           DispatchSqAlignment, derives them).  Engagement must be gated by
+ *           cm_CheckptAlignHB_Qualifies(); behavior is undefined otherwise.
+ *
+ *           Does NOT touch cm->hb_mx / hb_omx / hb_shmx.  Grows + fills the
+ *           passed <emit_mx> (the deliverable).
+ *
+ * Args:     cm        - the covariance model (pure MATL chain, global)
+ *           errbuf    - for error messages
+ *           dsq       - digitized sequence 1..L
+ *           L         - length of dsq
+ *           size_limit- max Mb for emit_mx (passed to cm_hb_emit_mx_GrowTo)
+ *           emit_mx   - emit matrix, grown + filled here
+ *           ret_ppstr - RETURN: PP code string (NULL if not wanted)
+ *           ret_tr    - RETURN: parsetree (NULL if not wanted)
+ *           ret_avgpp - RETURN: avg PP of emitted residues
+ *           ret_sc    - RETURN: alignment score in bits (Inside score Z)
+ *
+ * Returns:  <eslOK> on success.
+ * Throws:   <eslEINCOMPAT> on contract violation (bands invalid for L);
+ *           <eslERANGE> if emit_mx exceeds size_limit.
+ */
+int
+cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                  CM_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr,
+                  float *ret_avgpp, float *ret_sc)
+{
+  int      status;
+  CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, k;
+  float    Z_ckpt = 0.;
+  Parsetree_t *tr = NULL;
+  char    *ppstr = NULL;
+  float    avgpp = 0.;
+  float ***Astore = NULL, ***ba = NULL, ***bb = NULL, ***OAstore = NULL;
+  float ***tba = NULL;
+  char  ***tysh = NULL;
+
+  /* contract: optacc requires emit_mx */
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): emit_mx is NULL");
+
+  /* set up the per-call context from cm->cp9b bands */
+  cx.cm    = cm;
+  cx.dsq   = dsq;
+  cx.L     = L;
+  cx.M     = M;
+  cx.jmin  = cm->cp9b->jmin;  cx.jmax  = cm->cp9b->jmax;
+  cx.imin  = cm->cp9b->imin;  cx.imax  = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  CP9Bands_t *cp9b = cm->cp9b;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.deck_nc = NULL; cx.deck_njr = NULL; /* set below */
+
+  /* ROOT_S band sanity */
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
+
+  /* deck geometry + child/parent reach */
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int64_t full_cube_cells = 0;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0;
+    int jp;
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    full_cube_cells += nc;
+    if (cm->sttype[v] != E_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+    if (cm->pnum[v] > 0) {
+      int ymin_par = cm->plast[v] - cm->pnum[v] + 1;
+      if (v - ymin_par > Delta_p) Delta_p = v - ymin_par;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* ============================================================= */
+  /* STEP A: checkpointed Inside -> Z_ckpt + sqrt(M) seed store     */
+  /* ============================================================= */
+  ESL_ALLOC(Astore, sizeof(float**) * M);
+  for (v = 0; v < M; v++) Astore[v] = NULL;
+  for (v = M-1; v >= 0; v--) {
+    Astore[v] = ckpt_deck_alloc(&cx, v);
+    ckpt_inside_deck(&cx, v, Astore, NULL);
+    int y = v + Delta;
+    if (y < M && Astore[y] != NULL) {
+      if ((y % B) < Delta) { /* retain as checkpoint seed */ }
+      else { ckpt_deck_free(&cx, y, Astore[y]); Astore[y] = NULL; }
+    }
+  }
+  Z_ckpt = Astore[0][jp_0][Lp_0];
+
+  /* ============================================================= */
+  /* STEP B: checkpointed Outside + fused posterior -> emit_mx      */
+  /* ============================================================= */
+  /* grow + initialize the emit matrix (the deliverable); alias into ctx */
+  if ((status = cm_hb_emit_mx_GrowTo(cm, emit_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  esl_vec_FSet(emit_mx->l_pp_mem, emit_mx->l_ncells_valid, IMPOSSIBLE);
+  esl_vec_FSet(emit_mx->r_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
+  cx.my_lpp = emit_mx->l_pp;
+  cx.my_rpp = emit_mx->r_pp;
+
+  ESL_ALLOC(ba, sizeof(float**) * M);
+  ESL_ALLOC(bb, sizeof(float**) * M);
+  for (v = 0; v < M; v++) { ba[v] = NULL; bb[v] = NULL; }
+
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k * B;
+    int hi = ESL_MIN((k+1)*B - 1, M-1);
+    /* recompute alpha for [lo..hi], descending; children in-block (ba) or seeds (Astore) */
+    for (v = hi; v >= lo; v--) { ba[v] = ckpt_deck_alloc(&cx, v); ckpt_inside_deck(&cx, v, ba, Astore); }
+    /* beta ascending through block, fold posterior into l_pp/r_pp, free alpha as we go */
+    for (v = lo; v <= hi; v++) {
+      int st = cm->sttype[v];
+      bb[v] = ckpt_deck_alloc(&cx, v);
+      ckpt_outside_deck(&cx, v, bb, jp_0, Lp_0);
+      if (st==ML_st || st==IL_st) {
+        int j;
+        for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+          int jp = j - cx.jmin[v];
+          int d;
+          for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
+            int i = j - d + 1;
+            float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
+            int ip = i - cx.imin[v];
+            emit_mx->l_pp[v][ip] = FLogsum(emit_mx->l_pp[v][ip], postcell);
+          }
+        }
+      }
+      if (st==IR_st) {
+        int j;
+        for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+          int jp = j - cx.jmin[v];
+          int d;
+          emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt;
+          for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
+            float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
+            emit_mx->r_pp[v][jp] = FLogsum(emit_mx->r_pp[v][jp], postcell);
+          }
+        }
+      }
+      ckpt_deck_free(&cx, v, ba[v]); ba[v] = NULL;
+      int old = v - Delta_p - 1;
+      if (old >= 0 && bb[old] != NULL) { ckpt_deck_free(&cx, old, bb[old]); bb[old] = NULL; }
+    }
+  }
+  for (v = 0; v < M; v++) if (bb[v]) { ckpt_deck_free(&cx, v, bb[v]); bb[v] = NULL; }
+
+  /* EmitterPosterior step 2: normalize (mirror stock order exactly).  EL/MATP
+   * combine steps (1's EL deck, 3's MATP merge) don't apply to a MATL chain. */
+  esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
+  for (v = 0; v < M; v++) {
+    if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i], emit_mx->l_pp[v][ip]); } }
+    if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j], emit_mx->r_pp[v][jp]); } }
+  }
+  for (v = 0; v < M; v++) {
+    if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->l_pp[v][ip] -= emit_mx->sum[i]; } }
+    if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->r_pp[v][jp] -= emit_mx->sum[j]; } }
+  }
+
+  /* ============================================================= */
+  /* STEP OA: checkpointed OptAcc max-DP -> sqrt(M) OA seed decks   */
+  /* ============================================================= */
+  ESL_ALLOC(OAstore, sizeof(float**) * M);
+  for (v = 0; v < M; v++) OAstore[v] = NULL;
+  for (v = M-1; v >= 0; v--) {
+    char **ysh = ckpt_cdeck_alloc(&cx, v);
+    OAstore[v] = ckpt_deck_alloc(&cx, v);
+    ckpt_optacc_deck(&cx, v, OAstore, NULL, ysh); /* children all in-window (ck=NULL) */
+    ckpt_cdeck_free(&cx, v, ysh);                 /* yshadow only needed inside this call */
+    int y = v + Delta;
+    if (y < M && OAstore[y] != NULL) {
+      if ((y % B) < Delta) { /* retain seed */ }
+      else { ckpt_deck_free(&cx, y, OAstore[y]); OAstore[y] = NULL; }
+    }
+  }
+
+  /* ============================================================= */
+  /* STEP TB: checkpointed OptAcc traceback (block-recompute)      */
+  /* ============================================================= */
+  ESL_ALLOC(tba,  sizeof(float**) * M);
+  ESL_ALLOC(tysh, sizeof(char**)  * M);
+  for (v = 0; v < M; v++) { tba[v] = NULL; tysh[v] = NULL; }
+  int cur_blk = -1, blk_lo = 0, blk_hi = -1;
+
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0);
+  {
+    int i = 1, j = L, d = L, y;
+    v = 0;
+    while (1) {
+      if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) break;
+      int blk = v / B;
+      if (blk != cur_blk) {
+        int w;
+        for (w = blk_lo; w <= blk_hi; w++) { if (tba[w]) { ckpt_deck_free(&cx,w,tba[w]); tba[w]=NULL; } if (tysh[w]) { ckpt_cdeck_free(&cx,w,tysh[w]); tysh[w]=NULL; } }
+        cur_blk = blk; blk_lo = blk * B; blk_hi = ESL_MIN((blk+1)*B - 1, M-1);
+        for (w = blk_hi; w >= blk_lo; w--) {
+          tba[w]  = ckpt_deck_alloc(&cx, w);
+          tysh[w] = ckpt_cdeck_alloc(&cx, w);
+          ckpt_optacc_deck(&cx, w, tba, OAstore, tysh[w]);
+        }
+      }
+      int jp_v = j - cx.jmin[v], dp_v = d - hd_min(cp9b, v, jp_v);
+      int yoffset = tysh[v][jp_v][dp_v];
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default: ESL_XFAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): bogus state type in traceback v=%d", v);
+      }
+      d = j - i + 1;
+      if (yoffset == (char) USED_EL) { InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M); v = cm->M; }
+      else { y = cm->cfirst[v] + yoffset; InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y); v = y; }
+    }
+    {
+      int w;
+      for (w = blk_lo; w <= blk_hi; w++) { if (tba[w]) { ckpt_deck_free(&cx,w,tba[w]); tba[w]=NULL; } if (tysh[w]) { ckpt_cdeck_free(&cx,w,tysh[w]); tysh[w]=NULL; } }
+    }
+  }
+
+  /* per-residue PP string + avg PP from the emit matrix */
+  if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    double full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
+    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    fprintf(stderr, "# cm_CheckptAlignHB engaged: M=%d L=%d B=%d Z=%.4f  CM-DP peak=%.2f Mb  full-cube(2x)=%.2f Mb  win~%.1fx\n",
+            M, L, B, Z_ckpt, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
+  }
+
+  /* free seed stores + scratch */
+  for (v = 0; v < M; v++) { if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]); if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]); }
+  free(Astore); free(ba); free(bb); free(OAstore); free(tba); free(tysh);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
+  if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
+  if (ret_avgpp != NULL) *ret_avgpp = avgpp;
+  if (ret_sc    != NULL) *ret_sc    = Z_ckpt;
+  return eslOK;
+
+ ERROR:
+  if (Astore)  { for (v = 0; v < M; v++) if (Astore[v])  ckpt_deck_free(&cx, v, Astore[v]);  free(Astore); }
+  if (OAstore) { for (v = 0; v < M; v++) if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]); free(OAstore); }
+  if (ba)   { for (v = 0; v < M; v++) if (ba[v])   ckpt_deck_free(&cx, v, ba[v]);   free(ba); }
+  if (bb)   { for (v = 0; v < M; v++) if (bb[v])   ckpt_deck_free(&cx, v, bb[v]);   free(bb); }
+  if (tba)  { for (v = 0; v < M; v++) if (tba[v])  ckpt_deck_free(&cx, v, tba[v]);  free(tba); }
+  if (tysh) { for (v = 0; v < M; v++) if (tysh[v]) ckpt_cdeck_free(&cx, v, tysh[v]); free(tysh); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr)    FreeParsetree(tr);
+  if (ppstr) free(ppstr);
+  return status;
 }
 
 /* Function: cm_CYKInsideAlign()
