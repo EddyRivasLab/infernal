@@ -57,18 +57,21 @@ CreateCP9Matrix(int N, int M)
   ESL_ALLOC(mx->dmx, sizeof(int *) * (N+1));
   ESL_ALLOC(mx->elmx,sizeof(int *) * (N+1)); 
   /* slightly wasteful, some nodes can't go to EL (for ex: right half of MATPs) */
+  /* int64 cell count: a non-banded CP9 mx is (N+1)*(M+1) cells, which at
+   * genome scale (N=L~2e5, M=clen~2e5) is ~4e10, far over int32. */
+  int64_t ncells = (int64_t) (N+1) * (M+1);
   ESL_ALLOC(mx->erow,    sizeof(int) * (N+1));
-  ESL_ALLOC(mx->mmx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->imx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->dmx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->elmx_mem,sizeof(int) * ((N+1)*(M+1)));
-  memset(mx->mmx_mem,  0, sizeof(int) * ((N+1)*(M+1)));
-  memset(mx->imx_mem,  0, sizeof(int) * ((N+1)*(M+1)));
-  memset(mx->dmx_mem,  0, sizeof(int) * ((N+1)*(M+1)));
-  memset(mx->elmx_mem, 0, sizeof(int) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx->mmx_mem, sizeof(int) * ncells);
+  ESL_ALLOC(mx->imx_mem, sizeof(int) * ncells);
+  ESL_ALLOC(mx->dmx_mem, sizeof(int) * ncells);
+  ESL_ALLOC(mx->elmx_mem,sizeof(int) * ncells);
+  memset(mx->mmx_mem,  0, sizeof(int) * ncells);
+  memset(mx->imx_mem,  0, sizeof(int) * ncells);
+  memset(mx->dmx_mem,  0, sizeof(int) * ncells);
+  memset(mx->elmx_mem, 0, sizeof(int) * ncells);
 
   /* The indirect assignment below looks wasteful; it's actually
-   * used for aligning data on 16-byte boundaries as a cache 
+   * used for aligning data on 16-byte boundaries as a cache
    * optimization in the fast altivec implementation
    */
   mx->mmx[0] = (int *) mx->mmx_mem;
@@ -77,18 +80,18 @@ CreateCP9Matrix(int N, int M)
   mx->elmx[0]= (int *) mx->elmx_mem;
   for (i = 1; i <= N; i++)
     {
-      mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-      mx->imx[i] = mx->imx[0] + (i*(M+1));
-      mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-      mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
+      mx->mmx[i] = mx->mmx[0] + ((int64_t) i*(M+1));
+      mx->imx[i] = mx->imx[0] + ((int64_t) i*(M+1));
+      mx->dmx[i] = mx->dmx[0] + ((int64_t) i*(M+1));
+      mx->elmx[i]= mx->elmx[0]+ ((int64_t) i*(M+1));
     }
 
   mx->M = M;
   mx->rows = N;
   mx->kmin = NULL;
   mx->kmax = NULL;
-  mx->ncells_allocated = (M+1) * (N+1);
-  mx->ncells_valid     = (M+1) * (N+1);
+  mx->ncells_allocated = ncells;
+  mx->ncells_valid     = ncells;
   mx->size_Mb =  (float) sizeof(CP9_MX);
   mx->size_Mb += (float) (sizeof(int *) * (mx->rows+1) * 4); /* mx->*mx ptrs */
   mx->size_Mb += (float) (sizeof(int)   * (mx->rows+1) * (M+1) * 4); /* mx->*mx_mem */
@@ -164,9 +167,9 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   int status;
   void *p;
   int i;
-  int ncells_needed = 0;
+  int64_t ncells_needed = 0; /* int64: non-banded genome-scale CP9 mx is ~4e10 cells (overflows int32) */
   int do_banded;
-  int cur_ncells = 0;
+  int64_t cur_ncells = 0;    /* int64: running cell offset, same scale as ncells_needed */
   int do_reallocate;
   int do_grow_rows;
 
@@ -177,7 +180,7 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   if(do_banded) {
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
-  else ncells_needed = (N+1) * (M+1);
+  else ncells_needed = (int64_t) (N+1) * (M+1);
   do_reallocate = (ncells_needed <= mx->ncells_allocated) ? FALSE : TRUE;
   do_grow_rows  = (N > mx->rows) ? TRUE : FALSE;
 
@@ -210,7 +213,7 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   if(do_grow_rows || do_reallocate) {
     /* update size */
     int nrows_for_size = (N > mx->rows) ? N : mx->rows;
-    int ncells_for_size = (ncells_needed > mx->ncells_allocated) ? ncells_needed : mx->ncells_allocated;
+    int64_t ncells_for_size = (ncells_needed > mx->ncells_allocated) ? ncells_needed : mx->ncells_allocated;
     mx->size_Mb =  (float) sizeof(CP9_MX);
     mx->size_Mb += (float) (sizeof(int *) * (nrows_for_size+1) * 4);   /* mx->*mx ptrs */
     mx->size_Mb += (float) (sizeof(int)   * (ncells_for_size * 4));     /* mx->*mx_mem */
@@ -236,10 +239,10 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
     }
     else { /* non-banded, we only get here if we didn't go to done, i.e. we reallocated */
       for (i = 1; i <= N; i++) {
-	mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-	mx->imx[i] = mx->imx[0] + (i*(M+1));
-	mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-	mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
+	mx->mmx[i] = mx->mmx[0] + ((int64_t) i*(M+1));
+	mx->imx[i] = mx->imx[0] + ((int64_t) i*(M+1));
+	mx->dmx[i] = mx->dmx[0] + ((int64_t) i*(M+1));
+	mx->elmx[i]= mx->elmx[0]+ ((int64_t) i*(M+1));
       }
     }
   }
@@ -267,10 +270,13 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
 void
 InitializeCP9Matrix(CP9_MX *mx)
 {
-  esl_vec_ISet(mx->mmx_mem, mx->ncells_valid, -INFTY);
-  esl_vec_ISet(mx->imx_mem, mx->ncells_valid, -INFTY);
-  esl_vec_ISet(mx->dmx_mem, mx->ncells_valid, -INFTY);
-  esl_vec_ISet(mx->elmx_mem, mx->ncells_valid, -INFTY);
+  /* esl_vec_ISet takes int n; ncells_valid is int64 but a successfully
+   * allocated CP9 mx is always < 2^31 cells (genome-scale non-banded mxes
+   * fail ESL_ALLOC before they are ever Initialize'd), so the cast is safe. */
+  esl_vec_ISet(mx->mmx_mem, (int) mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->imx_mem, (int) mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->dmx_mem, (int) mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->elmx_mem, (int) mx->ncells_valid, -INFTY);
   esl_vec_ISet(mx->erow, mx->rows, -INFTY);
   return;
 }
@@ -303,10 +309,10 @@ SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax)
   float ret_mb = 0.;
 
   do_banded = (kmin != NULL && kmax != NULL) ?  TRUE : FALSE;
-  if(do_banded) { 
+  if(do_banded) {
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
-  else ncells_needed = (N+1) * (M+1);
+  else ncells_needed = (int64_t) (N+1) * (M+1);
 
   ret_mb  = (float) sizeof(CP9_MX);
   ret_mb += (float) (sizeof(int *) * (N+1) * 4);           /* mx->*mx ptrs */
@@ -338,15 +344,17 @@ CreateCP9FMatrix(int N, int M)
   ESL_ALLOC(mx->imx, sizeof(float *) * (N+1));
   ESL_ALLOC(mx->dmx, sizeof(float *) * (N+1));
   ESL_ALLOC(mx->elmx,sizeof(float *) * (N+1));
+  /* int64 cell count: see CreateCP9Matrix() */
+  int64_t ncells = (int64_t) (N+1) * (M+1);
   ESL_ALLOC(mx->erow,    sizeof(float) * (N+1));
-  ESL_ALLOC(mx->mmx_mem, sizeof(float) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->imx_mem, sizeof(float) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->dmx_mem, sizeof(float) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->elmx_mem,sizeof(float) * ((N+1)*(M+1)));
-  memset(mx->mmx_mem,  0, sizeof(float) * ((N+1)*(M+1)));
-  memset(mx->imx_mem,  0, sizeof(float) * ((N+1)*(M+1)));
-  memset(mx->dmx_mem,  0, sizeof(float) * ((N+1)*(M+1)));
-  memset(mx->elmx_mem, 0, sizeof(float) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx->mmx_mem, sizeof(float) * ncells);
+  ESL_ALLOC(mx->imx_mem, sizeof(float) * ncells);
+  ESL_ALLOC(mx->dmx_mem, sizeof(float) * ncells);
+  ESL_ALLOC(mx->elmx_mem,sizeof(float) * ncells);
+  memset(mx->mmx_mem,  0, sizeof(float) * ncells);
+  memset(mx->imx_mem,  0, sizeof(float) * ncells);
+  memset(mx->dmx_mem,  0, sizeof(float) * ncells);
+  memset(mx->elmx_mem, 0, sizeof(float) * ncells);
 
   mx->mmx[0] = mx->mmx_mem;
   mx->imx[0] = mx->imx_mem;
@@ -354,18 +362,18 @@ CreateCP9FMatrix(int N, int M)
   mx->elmx[0]= mx->elmx_mem;
   for (i = 1; i <= N; i++)
     {
-      mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-      mx->imx[i] = mx->imx[0] + (i*(M+1));
-      mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-      mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
+      mx->mmx[i] = mx->mmx[0] + ((int64_t) i*(M+1));
+      mx->imx[i] = mx->imx[0] + ((int64_t) i*(M+1));
+      mx->dmx[i] = mx->dmx[0] + ((int64_t) i*(M+1));
+      mx->elmx[i]= mx->elmx[0]+ ((int64_t) i*(M+1));
     }
 
   mx->M = M;
   mx->rows = N;
   mx->kmin = NULL;
   mx->kmax = NULL;
-  mx->ncells_allocated = (M+1) * (N+1);
-  mx->ncells_valid     = (M+1) * (N+1);
+  mx->ncells_allocated = ncells;
+  mx->ncells_valid     = ncells;
   mx->size_Mb =  (float) sizeof(CP9_FMX);
   mx->size_Mb += (float) (sizeof(float *) * (mx->rows+1) * 4);
   mx->size_Mb += (float) (sizeof(float)   * (mx->rows+1) * (M+1) * 4);
@@ -404,9 +412,9 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
   int status;
   void *p;
   int i;
-  int ncells_needed = 0;
+  int64_t ncells_needed = 0; /* int64: see GrowCP9Matrix() */
   int do_banded;
-  int cur_ncells = 0;
+  int64_t cur_ncells = 0;    /* int64: see GrowCP9Matrix() */
   int do_reallocate;
   int do_grow_rows;
 
@@ -417,7 +425,7 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
   if(do_banded) {
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
-  else ncells_needed = (N+1) * (M+1);
+  else ncells_needed = (int64_t) (N+1) * (M+1);
   do_reallocate = (ncells_needed <= mx->ncells_allocated) ? FALSE : TRUE;
   do_grow_rows  = (N > mx->rows) ? TRUE : FALSE;
 
@@ -444,7 +452,7 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
 
   if(do_grow_rows || do_reallocate) {
     int nrows_for_size = (N > mx->rows) ? N : mx->rows;
-    int ncells_for_size = (ncells_needed > mx->ncells_allocated) ? ncells_needed : mx->ncells_allocated;
+    int64_t ncells_for_size = (ncells_needed > mx->ncells_allocated) ? ncells_needed : mx->ncells_allocated;
     mx->size_Mb =  (float) sizeof(CP9_FMX);
     mx->size_Mb += (float) (sizeof(float *) * (nrows_for_size+1) * 4);
     mx->size_Mb += (float) (sizeof(float)   * (ncells_for_size * 4));
@@ -470,10 +478,10 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
     }
     else {
       for (i = 1; i <= N; i++) {
-	mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-	mx->imx[i] = mx->imx[0] + (i*(M+1));
-	mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-	mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
+	mx->mmx[i] = mx->mmx[0] + ((int64_t) i*(M+1));
+	mx->imx[i] = mx->imx[0] + ((int64_t) i*(M+1));
+	mx->dmx[i] = mx->dmx[0] + ((int64_t) i*(M+1));
+	mx->elmx[i]= mx->elmx[0]+ ((int64_t) i*(M+1));
       }
     }
   }
@@ -497,10 +505,11 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
 void
 InitializeCP9FMatrix(CP9_FMX *mx)
 {
-  esl_vec_FSet(mx->mmx_mem, mx->ncells_valid, -eslINFINITY);
-  esl_vec_FSet(mx->imx_mem, mx->ncells_valid, -eslINFINITY);
-  esl_vec_FSet(mx->dmx_mem, mx->ncells_valid, -eslINFINITY);
-  esl_vec_FSet(mx->elmx_mem, mx->ncells_valid, -eslINFINITY);
+  /* esl_vec_FSet takes int n; cast is safe (see InitializeCP9Matrix). */
+  esl_vec_FSet(mx->mmx_mem, (int) mx->ncells_valid, -eslINFINITY);
+  esl_vec_FSet(mx->imx_mem, (int) mx->ncells_valid, -eslINFINITY);
+  esl_vec_FSet(mx->dmx_mem, (int) mx->ncells_valid, -eslINFINITY);
+  esl_vec_FSet(mx->elmx_mem, (int) mx->ncells_valid, -eslINFINITY);
   esl_vec_FSet(mx->erow, mx->rows, -eslINFINITY);
   return;
 }
@@ -518,7 +527,7 @@ SizeNeededCP9FMatrix(int N, int M, int *kmin, int *kmax)
   if(do_banded) {
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
-  else ncells_needed = (N+1) * (M+1);
+  else ncells_needed = (int64_t) (N+1) * (M+1);
 
   ret_mb  = (float) sizeof(CP9_FMX);
   ret_mb += (float) (sizeof(float *) * (N+1) * 4);
