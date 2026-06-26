@@ -2538,6 +2538,25 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
   /* Step 2c: marginal candidates (trunc) or non-trunc valid arrays. */
   if(do_trunc) {
     cp9_PredictStartAndEndFromPoccF(pocc_arr, cp9b, i0, j0);
+    /* brief 149 (restored for the ckpt path in brief 162; mirrors
+     * cm_p7_band.c:5937-5940): in glocal alignment the full (J-mode) parse must
+     * always be geometrically available. The thresh1 escalation can retreat ep1
+     * below clen (and push sp1 above 1) on models with a decaying posterior-
+     * occupancy tail -- e.g. pure-MATL VADR genome models such as NC_001959,
+     * where once ep1 < clen every state gets Jvalid[v] = FALSE in
+     * cp9_MarginalCandidatesFromStartEndPositions(), excluding the full parse so
+     * cm_TrInsideAlignHB() returns "no valid parsetree" in -g mode. Floor sp1 <= 1
+     * and ep1 >= clen so the whole model stays J-valid. Scoped to glocal so local
+     * mode (which already has a valid root + EL tail escape) stays byte-identical.
+     * Without this, removing the search-mode full-span safety net (the doing_search
+     * fix above) would re-expose the brief-149 failure on pure-MATL models. The
+     * floor changes only sp1/ep1, not the Rmarg/Lmarg fields that
+     * cp9_PredictStartAndEndFromPoccF already derived from the pre-floor sp1/ep1 --
+     * identical to the non-ckpt twin, where the floor likewise follows the predictor. */
+    if(! (cm->flags & CMH_LOCAL_BEGIN)) {
+      if(cp9b->sp1 > 1)        cp9b->sp1 = 1;
+      if(cp9b->ep1 < cm->clen) cp9b->ep1 = cm->clen;
+    }
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) goto ERROR;
   }
   else {
