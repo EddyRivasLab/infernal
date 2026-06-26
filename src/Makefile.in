@@ -124,7 +124,14 @@ MODEL_JSONS = \
 	$(FASTCAL_DATA_DIR)/production_models_v42_noss.json \
 	$(FASTCAL_DATA_DIR)/production_mu_models_v42_noss.json \
 	$(FASTCAL_DATA_DIR)/v4x_K_ridge_str.json \
-	$(FASTCAL_DATA_DIR)/v4x_K_ridge_noss.json
+	$(FASTCAL_DATA_DIR)/v4x_K_ridge_noss.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_tiny_str.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_small_str.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_medlarge_str.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_large_str.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_huge_str.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_tiny_noss.json \
+	$(FASTCAL_DATA_DIR)/ere_predictor_small_noss.json
 
 OBJS  = cm.o\
 	cm_fast_calibrate.o\
