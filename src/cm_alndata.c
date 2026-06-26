@@ -602,6 +602,23 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
 	  if(status != eslOK) {
 	    /* P7B bands too wide even at maxtau; fall back to standard cp9 band derivation */
+	    /* Brief 159: the standard fallback below builds a *non-banded* full CP9
+	     * F/B matrix, (L+1)*(M+1) cells. At genome scale (M~L~2e5) that alone is
+	     * hundreds of GB, far over --mxsize, and unlike the CM DP matrix there is
+	     * no banding/tau lever to shrink the CP9 F/B. The p7-banded path already
+	     * returned !eslOK (matrix too big), so attempting the even-larger
+	     * non-banded CP9 F/B would only OOM (it did: brief-157 SIGSEGV via int32
+	     * overflow, now int64-correct but still 155 GB -> SIGKILL). If the
+	     * non-banded CP9 F/B (fwd+bck) would itself exceed --mxsize, refuse with
+	     * eslERANGE up front -- the eslERANGE-before-alloc convention used for
+	     * every CM DP matrix (cm_mx.c). Only fires in this already-over-budget
+	     * p7band fallback, so plain non-p7band cmalign is unaffected (its CP9 F/B
+	     * is intentionally not mxsize-gated, matching cm_*AlignSizeNeededHB). */
+	    float cp9fb_Mb = 2.0 * (float) SizeNeededCP9Matrix(sq->L, cm->cp9->M, NULL, NULL);
+	    if(cp9fb_Mb > mxsize)
+	      ESL_XFAIL(eslERANGE, errbuf,
+			"non-banded CP9 F/B band derivation needs %.1f > %.1f Mb limit.\nUse --mxsize, --maxtau or --tau (this seq needs a p7-banded/--ckpt path).",
+			cp9fb_Mb, (float) mxsize);
 	    if(do_xtau) {
 	      if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1,
 						cm->maxtau, NULL)) != eslOK) goto ERROR;
