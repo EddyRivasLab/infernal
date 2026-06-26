@@ -5062,10 +5062,10 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
 	    {
 	      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
 						 p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
-	      
 
-	      if (k >= kap && k <= kbp) {  mvp = *dpp++;       ivp = *dpp++;        dvp = *dpp++;       } 	      // an if seems unavoidable. alternatively, might unroll 
-	      else                      {  mvp = -eslINFINITY; ivp = -eslINFINITY;  dvp = -eslINFINITY; }	      // all possible (kap,kac)..(kbp,kbc) orderings, but this 
+
+	      if (k >= kap && k <= kbp) {  mvp = *dpp++;       ivp = *dpp++;        dvp = *dpp++;       } 	      // an if seems unavoidable. alternatively, might unroll
+	      else                      {  mvp = -eslINFINITY; ivp = -eslINFINITY;  dvp = -eslINFINITY; }	      // all possible (kap,kac)..(kbp,kbc) orderings, but this
                                                                                                                       // seems too complex
 
 	      *dpc++ = ISC(k) + p7_FLogsum( mvp + TSC(p7P_MI, k), ivp + TSC(p7P_II, k));
@@ -5284,19 +5284,25 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
           dc = (kbc == gm->M) ? xE : -eslINFINITY;
           for (k = kbc2; k >= kac; k--)
             {
-              /* Get scores from next row i+1 */
+              /* Get scores from next row i+1.
+               * mnext (M(i+1,k+1)) and dnext (D(i+1,k+1)) require k+1 in the next
+               * row's band; inext (I(i+1,k)) requires k in the next row's band.
+               * These two conditions are INDEPENDENT: on a vertical insert run the
+               * band can hold k but not k+1, so inext must be tested separately or
+               * the insert chain is silently broken (loses all mass through it).
+               */
               if (k+1 >= kan && k+1 <= kbn) {
                 int offset = (k+1 - kan) * p7G_NSCELLS;
                 mnext = dpn[offset]   + (rsc ? MSC(k+1) : 0);
                 dnext = dpn[offset+2];
-                if (k >= kan && k <= kbn) {
-                  int curr_offset = (k - kan) * p7G_NSCELLS;
-                  inext = dpn[curr_offset+1] + (rsc ? ISC(k) : 0);
-                } else {
-                  inext = -eslINFINITY;
-                }
               } else {
-                mnext = inext = dnext = -eslINFINITY;
+                mnext = dnext = -eslINFINITY;
+              }
+              if (k >= kan && k <= kbn) {
+                int curr_offset = (k - kan) * p7G_NSCELLS;
+                inext = dpn[curr_offset+1] + (rsc ? ISC(k) : 0);
+              } else {
+                inext = -eslINFINITY;
               }
 
 
@@ -5319,7 +5325,7 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
               float mk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
                                         p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)));
               *(--dpc) = sc = mk;
-              
+
               /* Update dc for next iteration */
               dc = dk;
               
@@ -5373,7 +5379,7 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
     
     /* Calculate N(0) = logsum(N(1) + N_LOOP, B(0) + N_MOVE) */
     xN_0 = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB_0 + gm->xsc[p7P_N][p7P_MOVE]);
-    
+
     *opt_sc = xN_0;
   }
 
