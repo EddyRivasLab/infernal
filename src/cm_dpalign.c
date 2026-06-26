@@ -3780,7 +3780,6 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   fail1_flag = FALSE;
   fail2_flag = FALSE;
   fail3_flag = FALSE;
-  printf("DO CHECK: %d\n", do_check);
   if(do_check) {
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. We assume the Inside CYK parse score

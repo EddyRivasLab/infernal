@@ -6288,6 +6288,1685 @@ v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return;
 }
 
+/*################################################################
+ * Truncated banded HMM-banded D&C CYK (brief 044, rung R4.4a: J-plane).
+ *
+ * These tr_*_hb functions are the TRUNCATED analogues of the non-truncated
+ * banded D&C CYK family above (CYKDivideAndConquerHB + *_hb engines, briefs
+ * 007-009). For rung R4.4a we fill/search the J (Joint) plane ONLY: the J-plane
+ * interior recurrence is IDENTICAL to standard CYK (so the engine bodies are
+ * near-verbatim copies of inside_hb/outside_hb/etc.), and the only genuinely-new
+ * truncated machinery is the *truncated-begin ROOT*:
+ *
+ *   In truncated alignment the ONLY exit from ROOT_S (state 0) is a 'truncated
+ *   begin' into ANY state v (with cp9b->Jvalid[v]) spanning the full subsequence,
+ *   carrying a penalty cm->trp->{l,g}_ptyAA[pty_idx][v] (replaces cm->beginsc[v]).
+ *   This REPLACES the normal ROOT_S->children descent entirely. We mirror the
+ *   oracle cm_TrCYKInsideAlignHB()'s root block (cm_dpalign_trunc.c ~2787-2846):
+ *   state 0 is excluded from the normal recurrence, and Jalpha[0][L][L] =
+ *   max_v (Jalpha[v][L][L] + trpenalty[v]), recorded with a USED_TRUNC_BEGIN
+ *   shadow. The begin search is penalty-AWARE (penalty folded into the score),
+ *   so the D&C score == the oracle's Jalpha[0][L][L] byte-for-byte. Every
+ *   parsetree node is tagged with its marginal mode (all TRMODE_J this rung) via
+ *   InsertTraceNodewithMode(). The L/R/T planes are deferred to R4.4b/c; the
+ *   r_allow_L/r_allow_R/v_allow_T flags are threaded through (FALSE this rung) so
+ *   those rungs just turn on the planes.
+ *
+ * The truncated begin (penalty + Jvalid gating + USED_TRUNC_BEGIN + skip-state-0-
+ * normal-recurrence) is the surgical change applied to inside/outside/vinside/
+ * voutside; the splitters are copies that tag modes. The pty_idx and local/global
+ * choice are held in file-static tr_dnc_pty_idx / tr_dnc_local, set once at the
+ * TrCYKDivideAndConquerHB() entry (mirrors the cyk_dnc_track static pattern).
+ *################################################################*/
+
+static int tr_dnc_pty_idx = -1;   /* truncation-penalty index (TRPENALTY_*), set at entry */
+static int tr_dnc_local   = 0;    /* TRUE if CMH_LOCAL_BEGIN (use l_ptyAA), else g_ptyAA  */
+
+/* The (penalty-aware) truncated-begin score for entering state v, or IMPOSSIBLE. */
+static float
+tr_trpenalty(CM_t *cm, int v)
+{
+  if (tr_dnc_pty_idx < 0) return IMPOSSIBLE;
+  return tr_dnc_local ? cm->trp->l_ptyAA[tr_dnc_pty_idx][v]
+                      : cm->trp->g_ptyAA[tr_dnc_pty_idx][v];
+}
+
+/* forward declarations (mutually recursive) */
+static float tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+				    int r, int z, int i0, int j0,
+				    int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
+static float tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+				  int r, int z, int i0, int j0,
+				  int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
+static void  tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+			      int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			      int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
+static float tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+			  float ***alpha, float ****ret_alpha,
+			  struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			  void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
+static void  tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+			   int do_full, float ***beta, float ****ret_beta,
+			   struct deckpool_s *dpool, struct deckpool_s **ret_dpool, CP9Bands_t *cp9b);
+static float tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+			   int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b);
+static float tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+			   int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			   int do_full, float ***a, float ****ret_a, char ****ret_shadow,
+			   int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
+static void  tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+			    int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			    int do_full, float ***beta, float ****ret_beta, CP9Bands_t *cp9b);
+static float tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+			    int r, int z, int i0, int i1, int j1, int j0, int useEL,
+			    int allow_begin, CP9Bands_t *cp9b);
+
+/* Function: tr_inside_hb()  [brief 044, R4.4a]
+ *
+ * Purpose:  J-plane truncated analogue of inside_hb(). Identical banded CYK
+ *           recurrence, EXCEPT: (1) state 0 (ROOT_S) gets NO normal transitions
+ *           when allow_begin (its alpha is set only by the truncated begin), and
+ *           (2) the begin bookkeeping uses the penalty-aware truncated begin
+ *           (tr_trpenalty(), over all cp9b->Jvalid[] states, marked
+ *           USED_TRUNC_BEGIN) rather than cm->beginsc[]/USED_LOCAL_BEGIN.
+ */
+static float
+tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+	     float ***alpha, float ****ret_alpha,
+	     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+	     void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b)
+{
+  int      status;
+  int     *touch;
+  int      v,y,z;
+  int      j,d,i,k;
+  float    sc;
+  int      yoffset;
+  int      W;
+  int      jp;
+  int      jp_v;
+  void  ***shadow;
+  int    **kshad;
+  char   **yshad;
+  int      b;
+  float    bsc;
+  int      jn, jx;
+  int      yy, zz;
+  int      jp_y, jp_z;
+  int      kn, kx;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;
+  if (dpool == NULL) dpool = deckpool_create();
+
+  if (alpha == NULL) {
+    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * (cm->M+1));
+  for (v = 0;     v < vroot; v++) touch[v] = 0;
+  for (v = vroot; v <= vend; v++) touch[v] = cm->pnum[v];
+  for (v = vend+1;v < cm->M; v++) touch[v] = 0;
+
+  if (ret_shadow != NULL) {
+    ESL_ALLOC(shadow, sizeof(void **) * cm->M);
+    for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+  }
+
+  for (v = vend; v >= vroot; v--)
+    {
+      alpha[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+
+      if (ret_shadow != NULL && cm->sttype[v] != E_st) {
+	if (cm->sttype[v] == B_st) {
+	  kshad     = alloc_banded_hb_vjd_kshadow_deck(L, i0, j0, v, cp9b);
+	  shadow[v] = (void **) kshad;
+	} else {
+	  yshad     = alloc_banded_hb_vjd_yshadow_deck(L, i0, j0, v, cp9b);
+	  shadow[v] = (void **) yshad;
+	}
+      }
+
+      jn = ESL_MAX(i0-1, jmin[v]);
+      jx = ESL_MIN(j0,   jmax[v]);
+
+      for (j = jn; j <= jx; j++) {
+	jp_v = j - jmin[v];
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+	  alpha[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+      }
+
+      if (allow_begin && v == 0)
+	{
+	  /* TRUNCATED: ROOT_S has NO normal transitions; alpha[0] is set only by
+	   * the truncated begin (handled in the begin bookkeeping below). */
+	}
+      else if (cm->sttype[v] == E_st)
+	{
+	  int dpe;
+	  for (j = jn; j <= jx; j++)
+	    if (hb_inband(cp9b, v, j, 0, i0, j0, &dpe)) alpha[v][j][dpe] = 0.;
+	}
+      else if (cm->sttype[v] == D_st || cm->sttype[v] == S_st)
+	{
+	  for (j = jn; j <= jx; j++) {
+	    jp   = j - (i0-1);
+	    jp_v = j - jmin[v];
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	      {
+		int dp_v = d - hdmin[v][jp_v];
+		y = cm->cfirst[v];
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  {
+		    int dp_yo;
+		    if (hb_inband(cp9b, y+yoffset, j, d, i0, j0, &dp_yo) &&
+			(sc = alpha[y+yoffset][j][dp_yo] + cm->tsc[v][yoffset]) > alpha[v][j][dp_v]) {
+		      alpha[v][j][dp_v] = sc;
+		      if (ret_shadow != NULL) yshad[j][dp_v] = yoffset;
+		    }
+		  }
+		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == B_st)
+	{
+	  yy = cm->cfirst[v];
+	  zz = cm->cnum[v];
+	  jn = ESL_MAX(jn, jmin[zz]);
+	  jx = ESL_MIN(jx, jmax[zz]);
+	  for (j = jn; j <= jx; j++) {
+	    jp   = j - (i0-1);
+	    jp_v = j - jmin[v];
+	    jp_y = j - jmin[yy];
+	    jp_z = j - jmin[zz];
+	    kn = ESL_MAX(j - jmax[yy], hdmin[zz][jp_z]);
+	    kn = ESL_MAX(kn, 0);
+	    kx = ESL_MIN(jp_y, hdmax[zz][jp_z]);
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	      {
+		int dp_v = d - hdmin[v][jp_v];
+		for (k = kn; k <= kx; k++)
+		  if ((k >= d - hdmax[yy][jp_y-k]) && (k <= d - hdmin[yy][jp_y-k]))
+		    {
+		      int dp_yk = (d-k) - hdmin[yy][jp_y-k];
+		      int dp_zk =  k    - hdmin[zz][jp_z];
+		      if ((sc = alpha[yy][j-k][dp_yk] + alpha[zz][j][dp_zk]) > alpha[v][j][dp_v]) {
+			alpha[v][j][dp_v] = sc;
+			if (ret_shadow != NULL) kshad[j][dp_v] = k;
+		      }
+		    }
+		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == MP_st)
+	{
+	  for (j = jn; j <= jx; j++) {
+	    jp   = j - (i0-1);
+	    jp_v = j - jmin[v];
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	      {
+		int dp_v = d - hdmin[v][jp_v];
+		y = cm->cfirst[v];
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  {
+		    int dp_yo;
+		    if (hb_inband(cp9b, y+yoffset, j-1, d-2, i0, j0, &dp_yo) &&
+			(sc = alpha[y+yoffset][j-1][dp_yo] + cm->tsc[v][yoffset]) > alpha[v][j][dp_v]) {
+		      alpha[v][j][dp_v] = sc;
+		      if (ret_shadow != NULL) yshad[j][dp_v] = yoffset;
+		    }
+		  }
+		i = j-d+1;
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
+		else
+		  alpha[v][j][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
+		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st)
+	{
+	  for (j = jn; j <= jx; j++) {
+	    jp   = j - (i0-1);
+	    jp_v = j - jmin[v];
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	      {
+		int dp_v = d - hdmin[v][jp_v];
+		y = cm->cfirst[v];
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  {
+		    int dp_yo;
+		    if (hb_inband(cp9b, y+yoffset, j, d-1, i0, j0, &dp_yo) &&
+			(sc = alpha[y+yoffset][j][dp_yo] + cm->tsc[v][yoffset]) > alpha[v][j][dp_v]) {
+		      alpha[v][j][dp_v] = sc;
+		      if (ret_shadow != NULL) yshad[j][dp_v] = yoffset;
+		    }
+		  }
+		i = j-d+1;
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][dsq[i]];
+		else
+		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
+	{
+	  for (j = jn; j <= jx; j++) {
+	    jp   = j - (i0-1);
+	    jp_v = j - jmin[v];
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	      {
+		int dp_v = d - hdmin[v][jp_v];
+		y = cm->cfirst[v];
+		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  {
+		    int dp_yo;
+		    if (hb_inband(cp9b, y+yoffset, j-1, d-1, i0, j0, &dp_yo) &&
+			(sc = alpha[y+yoffset][j-1][dp_yo] + cm->tsc[v][yoffset]) > alpha[v][j][dp_v]) {
+		      alpha[v][j][dp_v] = sc;
+		      if (ret_shadow != NULL) yshad[j][dp_v] = yoffset;
+		    }
+		  }
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][j][dp_v] += cm->esc[v][dsq[j]];
+		else
+		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
+	      }
+	  }
+	}
+
+      /* TRUNCATED-BEGIN bookkeeping (penalty-aware; replaces non-trunc local begin). */
+      if (allow_begin && v != 0 && cp9b->Jvalid[v]) {
+	int dpb;
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) &&
+	    hb_inband(cp9b, v, j0, W, i0, j0, &dpb) &&
+	    alpha[v][j0][dpb] + trpen > bsc)
+	  {
+	    b   = v;
+	    bsc = alpha[v][j0][dpb] + trpen;
+	  }
+      }
+      if (allow_begin && v == 0 && cp9b->Jvalid[0]) {
+	int dpb0;
+	if (hb_inband(cp9b, 0, j0, W, i0, j0, &dpb0)) {
+	  alpha[0][j0][dpb0] = bsc;
+	  if (ret_shadow != NULL) yshad[j0][dpb0] = USED_TRUNC_BEGIN;
+	}
+      }
+
+      if (! do_full) {
+	if (cm->sttype[v] == B_st)
+	  {
+	    y = cm->cfirst[v]; free_banded_hb_vjd_deck(alpha[y], i0, j0, y, cp9b); alpha[y] = NULL;
+	    z = cm->cnum[v];   free_banded_hb_vjd_deck(alpha[z], i0, j0, z, cp9b); alpha[z] = NULL;
+	  }
+	else
+	  {
+	    for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	      {
+		touch[y]--;
+		if (touch[y] == 0) { free_banded_hb_vjd_deck(alpha[y], i0, j0, y, cp9b); alpha[y] = NULL; }
+	      }
+	  }
+      }
+  } /* end loop over all v */
+
+  { int dpr; sc = hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr) ? alpha[vroot][j0][dpr] : IMPOSSIBLE; }
+  if (ret_b != NULL)   *ret_b   = b;
+  if (ret_bsc != NULL) *ret_bsc = bsc;
+
+  if (ret_alpha == NULL) {
+    for (v = vroot; v <= vend; v++)
+      if (alpha[v] != NULL) { free_banded_hb_vjd_deck(alpha[v], i0, j0, v, cp9b); alpha[v] = NULL; }
+    free(alpha);
+  } else *ret_alpha = alpha;
+
+  if (ret_dpool == NULL) deckpool_free(dpool);
+  else                   *ret_dpool = dpool;
+
+  free(touch);
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.;
+}
+
+/* Function: tr_outside_hb()  [brief 044, R4.4a]
+ *
+ * Purpose:  J-plane truncated analogue of outside_hb(). Identical banded outside
+ *           recurrence, EXCEPT the root deck handling implements the truncated
+ *           begin: when vroot==0 the normal root seed beta[0][j0][W]=0 is OMITTED
+ *           (no normal ROOT_S descent), and every cp9b->Jvalid[] state in the
+ *           subgraph gets a penalty-aware truncated-begin entry beta[v][j0][W] =
+ *           tr_trpenalty(v) (replacing the local-begin cm->beginsc[v] injection),
+ *           which then propagates down. This makes beta[v] carry "begin into an
+ *           ancestor -> descend to v", exactly the oracle's semantics.
+ */
+static void
+tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+	      int do_full, float ***beta, float ****ret_beta,
+	      struct deckpool_s *dpool, struct deckpool_s **ret_dpool, CP9Bands_t *cp9b)
+{
+  int      status;
+  int      v,y;
+  int      j,d,i;
+  float    sc;
+  int     *touch;
+  float    escore;
+  int      W;
+  int      jp;
+  int      jp_v;
+  int      voffset;
+  int      w1,w2;
+  int      jn, jx;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  W = j0-i0+1;
+  if (dpool == NULL) dpool = deckpool_create();
+
+  if (beta == NULL) {
+    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
+    for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
+  }
+
+  w1 = cm->nodemap[cm->ndidx[vroot]];
+  if (cm->sttype[vroot] == B_st) {
+    w2 = w1;
+    if (vend != vroot) cm_Fail("oh no. not again.");
+  } else
+    w2 = cm->cfirst[w1]-1;
+
+  for (v = w1; v <= w2; v++) {
+    beta[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+    for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
+      jp_v = j - jmin[v];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+    }
+  }
+  /* TRUNCATED: omit the normal root seed (beta[0][j0][W]=0) when vroot==0 -- in
+   * truncated mode there is no normal ROOT_S descent. For interior subproblems
+   * (vroot!=0) keep the standard root seed. */
+  if (vroot != 0) { int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) beta[vroot][j0][dpr] = 0; }
+
+  if (cm->flags & CMH_LOCAL_END) {
+    if (! deckpool_pop(dpool, &(beta[cm->M])))
+      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0; d <= jp; d++) beta[cm->M][j][d] = IMPOSSIBLE;
+    }
+    if (vroot != 0 && NOT_IMPOSSIBLE(cm->endsc[vroot])) {
+      switch (cm->sttype[vroot]) {
+      case MP_st:
+	if (W < 2) break;
+	if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
+	  escore = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
+	else
+	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
+	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + (cm->el_selfsc * (W-2)) + escore;
+	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
+	break;
+      case ML_st:
+      case IL_st:
+	if (W < 1) break;
+	if (dsq[i0] < cm->abc->K)
+	  escore = cm->esc[vroot][(int) dsq[i0]];
+	else
+	  escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[vroot]);
+	beta[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
+	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+	break;
+      case MR_st:
+      case IR_st:
+	if (W < 1) break;
+	if (dsq[j0] < cm->abc->K)
+	  escore = cm->esc[vroot][(int) dsq[j0]];
+	else
+	  escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[vroot]);
+	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
+	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
+	break;
+      case S_st:
+      case D_st:
+	beta[cm->M][j0][W] = cm->endsc[vroot] + (cm->el_selfsc * W);
+	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
+	break;
+      case B_st:
+      default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
+      }
+    }
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
+  for (v = 0;      v < w1; v++) touch[v] = 0;
+  for (v = vend+1; v < cm->M; v++) touch[v] = 0;
+  for (v = w1; v <= vend; v++) {
+    if (cm->sttype[v] == B_st) touch[v] = 2;
+    else                       touch[v] = cm->cnum[v];
+  }
+
+  for (v = w2+1; v <= vend; v++)
+    {
+      beta[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+
+      for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
+	jp_v = j - jmin[v];
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+      }
+
+      /* TRUNCATED-BEGIN injection: at the top (vroot==0, full span i0=1,j0=L) any
+       * Jvalid state v may be entered via a truncated begin with penalty
+       * tr_trpenalty(v). (Replaces the non-trunc CMH_LOCAL_BEGIN / cm->beginsc[v]
+       * injection; unconditional on local mode -- truncated begins always apply.) */
+      if (vroot == 0 && i0 == 1 && j0 == L && cp9b->Jvalid[v]) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen)
+	    && (jmin[v] <= j0 && jmax[v] >= j0)
+	    && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)
+	    && trpen > beta[v][j0][W - hdmin[v][j0-jmin[v]]])
+	  beta[v][j0][W - hdmin[v][j0-jmin[v]]] = trpen;
+      }
+
+      jn = ESL_MAX(i0-1, jmin[v]);
+      jx = ESL_MIN(j0,   jmax[v]);
+      for (j = jx; j >= jn; j--) {
+	jp   = j - (i0-1);
+	jp_v = j - jmin[v];
+	for (d = ESL_MIN(hdmax[v][jp_v], jp); d >= hdmin[v][jp_v]; d--)
+	  {
+	    int dp_v = d - hdmin[v][jp_v];
+	    int dp_y;
+	    i = j-d+1;
+	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	      if (y < vroot) continue;
+	      voffset = v - cm->cfirst[y];
+
+	      switch(cm->sttype[y]) {
+	      case MP_st:
+		if (j == j0 || d == jp) continue;
+		if (! hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y)) continue;
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+		else
+		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+		if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		break;
+	      case ML_st:
+	      case IL_st:
+		if (d == jp) continue;
+		if (! hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y)) continue;
+		if (dsq[i-1] < cm->abc->K)
+		  escore = cm->esc[y][(int) dsq[i-1]];
+		else
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
+		if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		break;
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		if (! hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y)) continue;
+		if (dsq[j+1] < cm->abc->K)
+		  escore = cm->esc[y][(int) dsq[j+1]];
+		else
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
+		if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		break;
+	      case S_st:
+	      case E_st:
+	      case D_st:
+		if (! hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) continue;
+		if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		break;
+	      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
+	      }
+	    }
+	    if (beta[v][j][dp_v] < IMPOSSIBLE) beta[v][j][dp_v] = IMPOSSIBLE;
+	  }
+      }
+
+      if (NOT_IMPOSSIBLE(cm->endsc[v])) {
+	int dp_v;
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    {
+	      i = j-d+1;
+	      switch (cm->sttype[v]) {
+	      case MP_st:
+		if (j == j0 || d == jp) continue;
+		if (! hb_inband(cp9b, v, j+1, d+2, i0, j0, &dp_v)) continue;
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+		else
+		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
+		if ((sc = beta[v][j+1][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case ML_st:
+	      case IL_st:
+		if (d == jp) continue;
+		if (! hb_inband(cp9b, v, j, d+1, i0, j0, &dp_v)) continue;
+		if (dsq[i-1] < cm->abc->K)
+		  escore = cm->esc[v][(int) dsq[i-1]];
+		else
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
+		if ((sc = beta[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		if (! hb_inband(cp9b, v, j+1, d+1, i0, j0, &dp_v)) continue;
+		if (dsq[j+1] < cm->abc->K)
+		  escore = cm->esc[v][(int) dsq[j+1]];
+		else
+		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
+		if ((sc = beta[v][j+1][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case S_st:
+	      case D_st:
+	      case E_st:
+		if (! hb_inband(cp9b, v, j, d, i0, j0, &dp_v)) continue;
+		if ((sc = beta[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d)) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc;
+		break;
+	      case B_st:
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	      }
+	    }
+	}
+      }
+
+      if (! do_full) {
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  touch[y]--;
+	  if (touch[y] == 0) { free_banded_hb_vjd_deck(beta[y], i0, j0, y, cp9b); beta[y] = NULL; }
+	}
+      }
+    }
+
+  if (ret_beta == NULL) {
+    for (v = w1; v <= vend; v++)
+      if (beta[v] != NULL) { free_banded_hb_vjd_deck(beta[v], i0, j0, v, cp9b); beta[v] = NULL; }
+    if (cm->flags & CMH_LOCAL_END) {
+      free_vjd_deck(beta[cm->M], i0, j0);
+      beta[cm->M] = NULL;
+    }
+    free(beta);
+  } else *ret_beta = beta;
+
+  if (ret_dpool == NULL) deckpool_free(dpool);
+  else                   *ret_dpool = dpool;
+  free(touch);
+  return;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+}
+
+/* Function: tr_insideT_hb()  [brief 044, R4.4a]
+ *
+ * Purpose:  J-plane truncated analogue of insideT_hb(): run tr_inside_hb() with a
+ *           shadow matrix, then trace back, tagging every node TRMODE_J and
+ *           handling the USED_TRUNC_BEGIN root entry. The on-path mode is J
+ *           throughout for this rung.
+ */
+static float
+tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+	      int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b)
+{
+  int       status;
+  void   ***shadow;
+  float     sc;
+  ESL_STACK *pda;
+  int       v,j,d,i;
+  int       k;
+  int       y, yoffset;
+  int       bifparent;
+  int       b;
+  float     bsc;
+
+  sc = tr_inside_hb(cm, dsq, L, r, z, i0, j0,
+		    BE_EFFICIENT,
+		    NULL, NULL,
+		    NULL, NULL,
+		    &shadow,
+		    allow_begin,
+		    &b, &bsc,
+		    cp9b);
+
+  pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
+  v = r;
+  j = j0;
+  i = i0;
+  d = j0-i0+1;
+
+  while (1) {
+    if (cm->sttype[v] == B_st) {
+      k = ((int **) shadow[v])[j][d - cp9b->hdmin[v][j - cp9b->jmin[v]]];
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      y = cm->cfirst[v];
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, TRMODE_J);
+      v = y;
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];
+      y = cm->cnum[v];
+      i = j-d+1;
+      InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, TRMODE_J);
+      v = y;
+    } else {
+      yoffset = ((char **) shadow[v])[j][d - cp9b->hdmin[v][j - cp9b->jmin[v]]];
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL)
+	{
+	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, TRMODE_J);
+	  v = cm->M;
+	}
+      else if (yoffset == USED_TRUNC_BEGIN)
+	{
+	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, TRMODE_J);
+	  v = b;
+	}
+      else
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, TRMODE_J);
+	  v = y;
+	}
+    }
+  }
+  esl_stack_Destroy(pda);
+  free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.;
+}
+
+/* Function: tr_vinside_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of vinside_hb(). */
+static float
+tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+	      int r, int z, int i0, int i1, int j1, int j0, int useEL,
+	      int do_full, float ***a, float ****ret_a, char ****ret_shadow,
+	      int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b)
+{
+  int      status;
+  char  ***shadow = NULL;
+  int      v, i, j;
+  int      w1, w2;
+  int      jp, op, op_y;
+  int     *touch;
+  int      y, yoffset;
+  float    sc, val;
+  int      b;
+  float    bsc;
+  int      jpb, ilo, ihi;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1;
+
+  if (a == NULL) {
+    ESL_ALLOC(a, sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) a[v] = NULL;
+  }
+
+  w1 = cm->nodemap[cm->ndidx[z]];
+  w2 = cm->cfirst[w1]-1;
+  for (v = w1; v <= w2; v++) {
+    a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
+    banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
+  }
+
+  if (ret_shadow != NULL) {
+    ESL_ALLOC(shadow, sizeof(char **) * cm->M);
+    for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+  }
+
+  if (! useEL) {
+    if (vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) a[z][0][op] = 0.;
+  } else {
+    if (ret_shadow != NULL) shadow[z] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,z,cp9b);
+    switch (cm->sttype[z]) {
+    case D_st:
+    case S_st:
+      if (vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) {
+	a[z][0][op] = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (ret_shadow != NULL) shadow[z][0][op] = USED_EL;
+      }
+      break;
+    case MP_st:
+      if (i0 == i1 || j1 == j0) break;
+      if (vji_inband(cp9b, z, j1+1, i1-1, i0,i1,j1,j0, &op)) {
+	val = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (dsq[i1-1] < cm->abc->K && dsq[j1+1] < cm->abc->K)
+	  val += cm->esc[z][(int) (dsq[i1-1]*cm->abc->K+dsq[j1+1])];
+	else
+	  val += DegeneratePairScore(cm->abc, cm->esc[z], dsq[i1-1], dsq[j1+1]);
+	if (val < IMPOSSIBLE) val = IMPOSSIBLE;
+	a[z][1][op] = val;
+	if (ret_shadow != NULL) shadow[z][1][op] = USED_EL;
+      }
+      break;
+    case ML_st:
+    case IL_st:
+      if (i0 == i1) break;
+      if (vji_inband(cp9b, z, j1, i1-1, i0,i1,j1,j0, &op)) {
+	val = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (dsq[i1-1] < cm->abc->K)
+	  val += cm->esc[z][(int) dsq[i1-1]];
+	else
+	  val += esl_abc_FAvgScore(cm->abc, dsq[i1-1], cm->esc[z]);
+	if (val < IMPOSSIBLE) val = IMPOSSIBLE;
+	a[z][0][op] = val;
+	if (ret_shadow != NULL) shadow[z][0][op] = USED_EL;
+      }
+      break;
+    case MR_st:
+    case IR_st:
+      if (j1 == j0) break;
+      if (vji_inband(cp9b, z, j1+1, i1, i0,i1,j1,j0, &op)) {
+	val = cm->endsc[z] + (cm->el_selfsc * ((j1)-(i1)+1));
+	if (dsq[j1+1] < cm->abc->K)
+	  val += cm->esc[z][(int) dsq[j1+1]];
+	else
+	  val += esl_abc_FAvgScore(cm->abc, dsq[j1+1], cm->esc[z]);
+	if (val < IMPOSSIBLE) val = IMPOSSIBLE;
+	a[z][1][op] = val;
+	if (ret_shadow != NULL) shadow[z][1][op] = USED_EL;
+      }
+      break;
+    }
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
+  for (v = 0;    v < r;      v++) touch[v] = 0;
+  for (v = r;    v <= w2;    v++) touch[v] = cm->pnum[v];
+  for (v = w2+1; v < cm->M;  v++) touch[v] = 0;
+
+  /* TRUNCATED begin straight into z on empty subsequences. */
+  if (allow_begin && j0-j1 == 0 && i1-i0 == 0 && z != 0 && cp9b->Jvalid[z]) {
+    float trpen = tr_trpenalty(cm, z);
+    if (NOT_IMPOSSIBLE(trpen) && vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) {
+      b   = z;
+      bsc = a[z][0][op] + trpen;
+      if (z == 0) {
+	a[0][0][op] = bsc;
+	if (ret_shadow != NULL) shadow[0][0][op] = USED_TRUNC_BEGIN;
+      }
+    }
+  }
+
+  for (v = w1-1; v >= r; v--)
+    {
+      a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
+      banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
+      if (ret_shadow != NULL)
+	shadow[v] = alloc_banded_hb_vji_shadow_deck(i0, i1, j1, j0, v, cp9b);
+
+      if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
+	cm_Fail("you told me you wouldn't ever do that again.");
+
+      /* TRUNCATED: ROOT_S (state 0 == r) gets no normal transitions; its a[] stays
+       * IMPOSSIBLE except for the truncated begin (handled in begin bookkeeping). */
+      if (allow_begin && v == 0) {
+	/* nothing */
+      }
+      else
+      for (j = ESL_MAX(j1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
+	jp  = j - j1;
+	jpb = j - jmin[v];
+	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	for (i = ihi; i >= ilo; i--)
+	  {
+	    int d = j - i + 1;
+	    op = i - ilo;
+	    y  = cm->cfirst[v];
+
+	    if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) {
+	      if (vji_inband(cp9b, y, j, i, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j, i, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	    else if (cm->sttype[v] == MP_st) {
+	      if (vji_inband(cp9b, y, j-1, i+1, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp-1][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j-1, i+1, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp-1][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		a[v][jp][op] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
+	      else
+		a[v][jp][op] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	    else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
+	      if (vji_inband(cp9b, y, j, i+1, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j, i+1, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (dsq[i] < cm->abc->K)
+		a[v][jp][op] += cm->esc[v][dsq[i]];
+	      else
+		a[v][jp][op] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	    else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+	      if (vji_inband(cp9b, y, j-1, i, i0,i1,j1,j0, &op_y))
+		a[v][jp][op] = a[y][jp-1][op_y] + cm->tsc[v][0];
+	      else a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = (char) 0;
+	      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v]) &&
+		  ((cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])))) > a[v][jp][op])) {
+		a[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+		if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	      }
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++)
+		if (vji_inband(cp9b, y+yoffset, j-1, i, i0,i1,j1,j0, &op_y) &&
+		    (sc = a[y+yoffset][jp-1][op_y] + cm->tsc[v][yoffset]) > a[v][jp][op]) {
+		  a[v][jp][op] = sc;
+		  if (ret_shadow != NULL) shadow[v][jp][op] = (char) yoffset;
+		}
+	      if (dsq[j] < cm->abc->K)
+		a[v][jp][op] += cm->esc[v][dsq[j]];
+	      else
+		a[v][jp][op] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
+	    }
+	  }
+      }
+
+      /* TRUNCATED begin bookkeeping (cell (j0,i0)) */
+      if (allow_begin && v != 0 && cp9b->Jvalid[v] && vji_inband(cp9b, v, j0, i0, i0,i1,j1,j0, &op)) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && a[v][j0-j1][op] + trpen > bsc) {
+	  b   = v;
+	  bsc = a[v][j0-j1][op] + trpen;
+	}
+      }
+      if (allow_begin && v == 0 && cp9b->Jvalid[0] && vji_inband(cp9b, 0, j0, i0, i0,i1,j1,j0, &op)) {
+	a[0][j0-j1][op] = bsc;
+	if (ret_shadow != NULL) shadow[v][j0-j1][op] = USED_TRUNC_BEGIN;
+      }
+
+      if (! do_full) {
+	for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++) {
+	  touch[y]--;
+	  if (touch[y] == 0) { free_banded_hb_vji_deck(a[y], i0,i1,j1,j0, y, cp9b); a[y] = NULL; }
+	}
+      }
+    }
+
+  { int dpr; sc = vji_inband(cp9b, r, j0, i0, i0,i1,j1,j0, &dpr) ? a[r][j0-j1][dpr] : IMPOSSIBLE; }
+  if (ret_b   != NULL) *ret_b   = b;
+  if (ret_bsc != NULL) *ret_bsc = bsc;
+
+  if (ret_a == NULL) {
+    for (v = r; v <= w2; v++)
+      if (a[v] != NULL) { free_banded_hb_vji_deck(a[v], i0,i1,j1,j0, v, cp9b); a[v] = NULL; }
+    free(a);
+  } else *ret_a = a;
+
+  free(touch);
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+  return 0.;
+}
+
+/* Function: tr_voutside_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of voutside_hb(). */
+static void
+tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
+	       int r, int z, int i0, int i1, int j1, int j0, int useEL,
+	       int do_full, float ***beta, float ****ret_beta, CP9Bands_t *cp9b)
+{
+  int      status;
+  int      v, y;
+  int      i, j;
+  int      jp, ip, op, op_y;
+  float    sc;
+  int     *touch;
+  float    escore;
+  int      voffset;
+  int      jpb, ilo, ihi;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1;
+
+  if (beta == NULL) {
+    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) beta[v] = NULL;
+  }
+
+  beta[r] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, r, cp9b);
+  banded_hb_vji_init_impossible(beta[r], i0, i1, j1, j0, r, cp9b);
+  /* TRUNCATED: omit normal root seed when r==0 (no normal ROOT_S descent). */
+  if (r != 0 && vji_inband(cp9b, r, j0, i0, i0,i1,j1,j0, &op)) beta[r][j0-j1][op] = 0;
+
+  if (useEL && cm->flags & CMH_LOCAL_END) {
+    beta[cm->M] = alloc_vji_deck(i0, i1, j1, j0);
+    for (jp = 0; jp <= j0-j1; jp++)
+      for (ip = 0; ip <= i1-i0; ip++)
+	beta[cm->M][jp][ip] = IMPOSSIBLE;
+  }
+  if (r != 0 && useEL && NOT_IMPOSSIBLE(cm->endsc[r])) {
+    switch (cm->sttype[r]) {
+    case MP_st:
+      if (i0 == i1 || j1 == j0) break;
+      if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
+	escore = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
+      else
+	escore = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
+      beta[cm->M][j0-j1-1][1] = cm->endsc[r] + (cm->el_selfsc * ((j0-1)-(i0+1)+1)) + escore;
+      break;
+    case ML_st:
+    case IL_st:
+      if (i0 == i1) break;
+      if (dsq[i0] < cm->abc->K) escore = cm->esc[r][(int) dsq[i0]];
+      else                      escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[r]);
+      beta[cm->M][j0-j1][1] = cm->endsc[r] + (cm->el_selfsc * ((j0)-(i0+1)+1)) + escore;
+      break;
+    case MR_st:
+    case IR_st:
+      if (j0 == j1) break;
+      if (dsq[j0] < cm->abc->K) escore = cm->esc[r][(int) dsq[j0]];
+      else                      escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[r]);
+      beta[cm->M][j0-j1-1][0] = cm->endsc[r] + (cm->el_selfsc * ((j0-1)-(i0)+1)) + escore;
+      break;
+    case S_st:
+    case D_st:
+      beta[cm->M][j0-j1][0] = cm->endsc[r] + (cm->el_selfsc * ((j0)-(i0)+1));
+      break;
+    default:  cm_Fail("bogus parent state %d\n", cm->sttype[r]);
+    }
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
+  for (v = 0;   v < r;     v++) touch[v] = 0;
+  for (v = z+1; v < cm->M; v++) touch[v] = 0;
+  for (v = r;   v <= z;    v++) {
+    if (cm->sttype[v] == B_st) touch[v] = 2;
+    else                       touch[v] = cm->cnum[v];
+  }
+
+  for (v = r+1; v <= z; v++)
+    {
+      beta[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
+      banded_hb_vji_init_impossible(beta[v], i0, i1, j1, j0, v, cp9b);
+
+      /* TRUNCATED begin into v at (j0,i0) -- penalty-aware, all Jvalid states. */
+      if (r == 0 && i0 == 1 && j0 == L && cp9b->Jvalid[v]) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && vji_inband(cp9b, v, j0, i0, i0,i1,j1,j0, &op) && trpen > beta[v][j0-j1][op])
+	  beta[v][j0-j1][op] = trpen;
+      }
+
+      for (j = ESL_MIN(j0, jmax[v]); j >= ESL_MAX(j1, jmin[v]); j--) {
+	jp  = j - j1;
+	jpb = j - jmin[v];
+	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	for (i = ilo; i <= ihi; i++) {
+	  op = i - ilo;
+	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	    if (y < r) continue;
+	    voffset = v - cm->cfirst[y];
+	    switch (cm->sttype[y]) {
+	    case MP_st:
+	      if (j == j0 || i == i0) continue;
+	      if (! vji_inband(cp9b, y, j+1, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+	      else
+		escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+	      if ((sc = beta[y][jp+1][op_y] + cm->tsc[y][voffset] + escore) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    case ML_st:
+	    case IL_st:
+	      if (i == i0) continue;
+	      if (! vji_inband(cp9b, y, j, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K) escore = cm->esc[y][(int) dsq[i-1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
+	      if ((sc = beta[y][jp][op_y] + cm->tsc[y][voffset] + escore) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if (j == j0) continue;
+	      if (! vji_inband(cp9b, y, j+1, i, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[j+1] < cm->abc->K) escore = cm->esc[y][(int) dsq[j+1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
+	      if ((sc = beta[y][jp+1][op_y] + cm->tsc[y][voffset] + escore) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    case S_st:
+	    case E_st:
+	    case D_st:
+	      if (! vji_inband(cp9b, y, j, i, i0,i1,j1,j0, &op_y)) continue;
+	      if ((sc = beta[y][jp][op_y] + cm->tsc[y][voffset]) > beta[v][jp][op])
+		beta[v][jp][op] = sc;
+	      break;
+	    default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
+	    }
+	  }
+	  if (beta[v][jp][op] < IMPOSSIBLE) beta[v][jp][op] = IMPOSSIBLE;
+	}
+      }
+
+      if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
+	for (jp = j0-j1; jp >= 0; jp--) {
+	  j = jp + j1;
+	  for (ip = 0; ip <= i1-i0; ip++) {
+	    i = ip + i0;
+	    switch (cm->sttype[v]) {
+	    case MP_st:
+	      if (j == j0 || i == i0) continue;
+	      if (! vji_inband(cp9b, v, j+1, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+	      else
+		escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
+	      if ((sc = beta[v][jp+1][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    case ML_st:
+	    case IL_st:
+	      if (i == i0) continue;
+	      if (! vji_inband(cp9b, v, j, i-1, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[i-1] < cm->abc->K) escore = cm->esc[v][(int) dsq[i-1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
+	      if ((sc = beta[v][jp][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    case MR_st:
+	    case IR_st:
+	      if (j == j0) continue;
+	      if (! vji_inband(cp9b, v, j+1, i, i0,i1,j1,j0, &op_y)) continue;
+	      if (dsq[j+1] < cm->abc->K) escore = cm->esc[v][(int) dsq[j+1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
+	      if ((sc = beta[v][jp+1][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1)) + escore) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    case S_st:
+	    case D_st:
+	    case E_st:
+	      if (! vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op_y)) continue;
+	      if ((sc = beta[v][jp][op_y] + cm->endsc[v] + (cm->el_selfsc * (j-i+1))) > beta[cm->M][jp][ip])
+		beta[cm->M][jp][ip] = sc;
+	      break;
+	    default:  cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	    }
+	  }
+	}
+      }
+
+      if (! do_full) {
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  touch[y]--;
+	  if (touch[y] == 0) { free_banded_hb_vji_deck(beta[y], i0,i1,j1,j0, y, cp9b); beta[y] = NULL; }
+	}
+      }
+    }
+
+  if (ret_beta == NULL) {
+    for (v = r; v <= z; v++)
+      if (beta[v] != NULL) { free_banded_hb_vji_deck(beta[v], i0,i1,j1,j0, v, cp9b); beta[v] = NULL; }
+    if (useEL && cm->flags & CMH_LOCAL_END) { free_vji_deck(beta[cm->M], j1, j0); beta[cm->M] = NULL; }
+    free(beta);
+  } else *ret_beta = beta;
+
+  free(touch);
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+}
+
+/* Function: tr_vinsideT_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of vinsideT_hb(). */
+static float
+tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+	       int r, int z, int i0, int i1, int j1, int j0, int useEL,
+	       int allow_begin, CP9Bands_t *cp9b)
+{
+  char ***shadow;
+  float   sc;
+  int     v, y;
+  int     j, i;
+  int     op;
+  int     yoffset;
+  int     b;
+  float   bsc;
+
+  if (r == z) {
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, TRMODE_J);
+    return 0.;
+  }
+
+  sc = tr_vinside_hb(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
+		     BE_EFFICIENT, NULL, NULL, &shadow,
+		     allow_begin, &b, &bsc, cp9b);
+
+  v = r;
+  j = j0;
+  i = i0;
+  while (1) {
+    if (! vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op)) {
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, z, TRMODE_J);
+      break;
+    }
+    yoffset = shadow[v][j-j1][op];
+
+    switch (cm->sttype[v]) {
+    case D_st:            break;
+    case MP_st: i++; j--; break;
+    case ML_st: i++;      break;
+    case MR_st:      j--; break;
+    case IL_st: i++;      break;
+    case IR_st:      j--; break;
+    case S_st:            break;
+    default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+    }
+
+    if (yoffset == USED_EL) {
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, TRMODE_J);
+      break;
+    }
+    else if (yoffset == USED_TRUNC_BEGIN) {
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, TRMODE_J);
+      v = b;
+      if (! useEL && v == z) break;
+    }
+    else {
+      y = cm->cfirst[v] + yoffset;
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, TRMODE_J);
+      v = y;
+      if (! useEL && v == z) break;
+    }
+  }
+
+  free_vji_shadow_matrix(shadow, cm->M, j1, j0);
+  return sc;
+}
+
+/* Function: tr_v_splitter_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of v_splitter_hb(). */
+static void
+tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+		 int r, int z, int i0, int i1, int j1, int j0, int useEL,
+		 int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
+{
+  float ***alpha, ***beta;
+  float    sc;
+  int      v, w, y;
+  int      i, j, jp, ip, op;
+  int      best_v, best_i, best_j;
+  float    best_sc;
+  int      midnode;
+  int      b;
+  float    bsc;
+
+  if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z ||
+      vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT) {
+    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), cp9b);
+    return;
+  }
+
+  midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r]) / 2);
+  w = cm->nodemap[midnode];
+  y = cm->cfirst[w]-1;
+
+  tr_vinside_hb (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT,
+		 NULL, &alpha, NULL, (r==0), &b, &bsc, cp9b);
+  tr_voutside_hb(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT,
+		 NULL, &beta, cp9b);
+
+  best_sc = IMPOSSIBLE;
+  best_v  = -99;
+  for (v = w; v <= y; v++)
+    for (ip = 0; ip <= i1-i0; ip++) {
+      i = ip + i0;
+      for (jp = 0; jp <= j0-j1; jp++) {
+	j = jp + j1;
+	if (vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op) &&
+	    (sc = alpha[v][jp][op] + beta[v][jp][op]) > best_sc) {
+	  best_sc = sc;
+	  best_v  = v;
+	  best_i  = i;
+	  best_j  = j;
+	}
+      }
+    }
+
+  if (useEL && (cm->flags & CMH_LOCAL_END)) {
+    for (ip = 0; ip <= i1-i0; ip++)
+      for (jp = 0; jp <= j0-j1; jp++)
+	if ((sc = beta[cm->M][jp][ip]) > best_sc) {
+	  best_sc = sc;
+	  best_v  = -1;
+	  best_i  = ip + i0;
+	  best_j  = jp + j1;
+	}
+  }
+
+  if (r == 0) {
+    if (bsc > best_sc) {
+      best_sc = bsc;
+      best_v  = -2;
+      best_i  = i0;
+      best_j  = j0;
+    }
+  }
+
+  free_banded_hb_vji_matrix(alpha, cm, i0, i1, j1, j0, cp9b);
+  free_banded_hb_vji_matrix(beta,  cm, i0, i1, j1, j0, cp9b);
+
+  if (best_v == -99 || ! NOT_IMPOSSIBLE(best_sc)) {
+    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), cp9b);
+    return;
+  }
+
+  if (best_v == -1) {
+    tr_v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE,
+		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return;
+  }
+  if (best_v == -2) {
+    if (b != z)
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b, TRMODE_J);
+    tr_v_splitter_hb(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL,
+		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return;
+  }
+
+  tr_v_splitter_hb(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE,
+		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+  tr_v_splitter_hb(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL,
+		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+  return;
+}
+
+/* Function: tr_wedge_splitter_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of wedge_splitter_hb(). */
+static float
+tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
+		     int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
+{
+  float ***alpha;
+  float ***beta;
+  float sc;
+  float best_sc;
+  int   v,w,y;
+  int   W;
+  int   d, jp, j, jp_v;
+  int   best_v, best_d, best_j;
+  int   midnode;
+  int   b;
+  float bsc;
+  int  *jmin  = cp9b->jmin;
+  int  *jmax  = cp9b->jmax;
+  int **hdmin = cp9b->hdmin;
+  int **hdmax = cp9b->hdmax;
+
+  if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
+      insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
+    {
+      sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), cp9b);
+      return sc;
+    }
+
+  midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r]) / 2);
+  w = cm->nodemap[midnode];
+  y = cm->cfirst[w]-1;
+
+  tr_inside_hb(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
+	       NULL, &alpha, NULL, NULL, NULL,
+	       (r==0), &b, &bsc, cp9b);
+  tr_outside_hb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, NULL, NULL, cp9b);
+
+  W = j0-i0+1;
+  best_sc = IMPOSSIBLE;
+  best_v  = -99;
+  for (v = w; v <= y; v++)
+    for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++)
+      {
+	jp   = j - (i0-1);
+	jp_v = j - jmin[v];
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	  {
+	    int dp_v = d - hdmin[v][jp_v];
+	    if ((sc = alpha[v][j][dp_v] + beta[v][j][dp_v]) > best_sc)
+	      {
+		best_sc = sc;
+		best_v  = v;
+		best_d  = d;
+		best_j  = j;
+	      }
+	  }
+      }
+
+  if (cm->flags & CMH_LOCAL_END) {
+    for (jp = 0; jp <= W; jp++)
+      {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  if ((sc = beta[cm->M][j][d]) > best_sc) {
+	    best_sc = sc;
+	    best_v  = -1;
+	    best_j  = j;
+	    best_d  = d;
+	  }
+      }
+  }
+
+  if (r==0) {
+    if (bsc > best_sc) { best_sc = bsc; best_v = -2; best_j = j0; best_d = W; }
+  }
+
+  free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
+  free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
+
+  /* TRUNCATED infeasibility guard (brief-003 hazard analogue): no valid J wedge
+   * split under bands -> return IMPOSSIBLE rather than recurse on garbage. */
+  if (best_v == -99) return best_sc;
+
+  if (best_v == -1) {
+    tr_v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE,
+		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return best_sc;
+  }
+  if (best_v == -2) {
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b, TRMODE_J);
+    tr_wedge_splitter_hb(cm, dsq, L, tr, b, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return best_sc;
+  }
+
+  tr_v_splitter_hb(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE,
+		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+  tr_wedge_splitter_hb(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j,
+		       r_allow_J, r_allow_L, r_allow_R, cp9b);
+  return best_sc;
+}
+
+/* Function: tr_generic_splitter_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of generic_splitter_hb(). */
+static float
+tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
+		       int r, int z, int i0, int j0,
+		       int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
+{
+  float ***alpha;
+  float ***beta;
+  int      v,w,y;
+  int      wend, yend;
+  int      jp;
+  int      jp_v;
+  int      W;
+  float    sc;
+  int      j,d,k;
+  float    best_sc;
+  int      best_k;
+  int      best_d;
+  int      best_j;
+  int      tv;
+  int      b1,b2;
+  float    b1_sc, b2_sc;
+  int     *jmin  = cp9b->jmin;
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+  if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
+    sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), cp9b);
+    return sc;
+  }
+
+  for (v = r; v <= z-5; v++)
+    if (cm->sttype[v] == B_st) break;
+
+  if (v > z-5) {
+    if (cm->sttype[z] != E_st) cm_Fail("inconceivable.");
+    sc = tr_wedge_splitter_hb(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return sc;
+  }
+
+  w = cm->cfirst[v];
+  y = cm->cnum[v];
+  if (w < y) { wend = y-1; yend = z; }
+  else       { yend = w-1; wend = z; }
+
+  tr_inside_hb(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, NULL, NULL,
+	       (r==0), &b1, &b1_sc, cp9b);
+  tr_inside_hb(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, NULL, NULL, NULL,
+	       (r==0), &b2, &b2_sc, cp9b);
+  tr_outside_hb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, NULL, NULL, cp9b);
+
+  W = j0-i0+1;
+  best_sc = IMPOSSIBLE;
+  best_k  = -99;
+  for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++)
+    {
+      jp   = j - (i0-1);
+      jp_v = j - jmin[v];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	{
+	  int dp_v = d - hdmin[v][jp_v];
+	  for (k = 0; k <= d; k++)
+	    {
+	      int dp_w, dp_y;
+	      if (hb_inband(cp9b, w, j-k, d-k, i0, j0, &dp_w) &&
+		  hb_inband(cp9b, y, j,   k,   i0, j0, &dp_y) &&
+		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
+		{
+		  best_sc = sc;
+		  best_k  = k;
+		  best_j  = j;
+		  best_d  = d;
+		}
+	    }
+	}
+    }
+
+  if (cm->flags & CMH_LOCAL_END) {
+    for (jp = 0; jp <= W; jp++)
+      {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  if ((sc = beta[cm->M][j][d]) > best_sc) {
+	    best_sc = sc;
+	    best_k  = -1;
+	    best_j  = j;
+	    best_d  = d;
+	  }
+      }
+  }
+
+  if (r == 0) {
+    if (b1_sc > best_sc) { best_sc = b1_sc; best_k = -2; best_j = j0; best_d = W; }
+    if (b2_sc > best_sc) { best_sc = b2_sc; best_k = -3; best_j = j0; best_d = W; }
+  }
+
+  free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
+
+  /* TRUNCATED infeasibility guard (brief-003 hazard analogue, cf. tr_v_splitter_hb):
+   * if no in-band J split, EL, or truncated begin beat IMPOSSIBLE, this subproblem
+   * has no valid J parse under the bands. Do NOT recurse on uninitialized
+   * best_j/best_d (that crashes). Return IMPOSSIBLE cleanly. */
+  if (best_k == -99) {
+    /* beta shares the alpha array (outside reused it), already freed above. */
+    return best_sc;
+  }
+
+  if (best_k == -1) {
+    tr_v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE,
+		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return best_sc;
+  }
+  if (best_k == -2) {
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1, TRMODE_J);
+    z = CMSubtreeFindEnd(cm, b1);
+    tr_generic_splitter_hb(cm, dsq, L, tr, b1, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return best_sc;
+  }
+  if (best_k == -3) {
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2, TRMODE_J);
+    z = CMSubtreeFindEnd(cm, b2);
+    tr_generic_splitter_hb(cm, dsq, L, tr, b2, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+    return best_sc;
+  }
+
+  tr_v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE,
+		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+  tv = tr->n-1;
+
+  InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w, TRMODE_J);
+  tr_generic_splitter_hb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k,
+			 r_allow_J, r_allow_L, r_allow_R, cp9b);
+  InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, TRMODE_J);
+  tr_generic_splitter_hb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j,
+			 r_allow_J, r_allow_L, r_allow_R, cp9b);
+
+  return best_sc;
+}
+
+/* Function: TrCYKDivideAndConquerHB()  [brief 044, R4.4a]
+ *
+ * Purpose:  HMM-banded truncated divide-and-conquer CYK, J (Joint) plane only
+ *           (rung R4.4a). The truncated analogue of CYKDivideAndConquerHB().
+ *           Returns the resolved marginal mode (TRMODE_J this rung) in <ret_mode>
+ *           and the optimal parsetree (is_std=FALSE, pass_idx + trpenalty set,
+ *           every node mode-tagged) in <ret_tr>. The returned score already
+ *           includes the truncated-begin penalty (penalty-folded), so it equals
+ *           the oracle cm_TrCYKInsideAlignHB()'s Jalpha[0][L][L] byte-for-byte.
+ */
+float
+TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx,
+			char *ret_mode, Parsetree_t **ret_tr, CP9Bands_t *cp9b)
+{
+  Parsetree_t *tr;
+  float        sc;
+  int          z;
+  int          b;
+
+  if (cp9b == NULL) cm_Fail("TrCYKDivideAndConquerHB(): cp9b is NULL");
+  if (r != 0)       cm_Fail("TrCYKDivideAndConquerHB(): r must be 0 (truncated begins enter from ROOT_S)");
+
+  /* set the file-static truncation-penalty context (read by tr_trpenalty()) */
+  if ((tr_dnc_pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)
+    cm_Fail("TrCYKDivideAndConquerHB(): unexpected pass idx: %d", pass_idx);
+  tr_dnc_local = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+
+  tr = CreateParsetree(100);
+  tr->is_std   = FALSE;
+  tr->pass_idx = pass_idx;
+  /* root node, J mode (resolved mode for this rung). The truncated begin target
+   * <b> is recovered from the parse's first non-root node after D&C completes. */
+  InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0, TRMODE_J);
+  z = cm->M-1;
+
+  sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, TRUE, FALSE, FALSE, cp9b);
+
+  /* the truncated-begin entry state is the first state attached below ROOT_S */
+  b = (tr->n > 1) ? tr->state[1] : 0;
+  tr->trpenalty = tr_trpenalty(cm, b);
+
+  if (ret_mode != NULL) *ret_mode = TRMODE_J;
+  if (ret_tr   != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  return sc;
+}
+
 /* Function: vsplitter_b()
  *           EPN 05.19.05
  * *based on vsplitter(), only difference is bands are used :
