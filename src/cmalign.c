@@ -129,6 +129,7 @@ static ESL_OPTIONS options[] = {
   { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--sub,--small", "use the p7 HMM only to align (no CM alignment)",                  2 },
   { "--hmmvit",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm", "--hmmnoband", "w/--hmm, use Viterbi traces (faster, less accurate)",               2 },
   { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use Viterbi bands for OA alignment",              2 },
+  { "--nohmm",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,        "--hmm", "do not auto-switch to HMM mode on 0-basepair CMs",               2 },
   /* options affecting speed and memory */
   { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands",               3 },
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
@@ -466,6 +467,72 @@ main(int argc, char **argv)
 
   return status;
 }
+
+/* autoswitch_force_opt()
+ *
+ * Force option <optname> in <go> into the exact internal state that
+ * esl_opt_ProcessCmdline() would produce had the user typed it on the
+ * command line (setby = SETBY_CMDLINE). For booleans, pass <strval> =
+ * NULL; for valued options, <strval> must be a string with program
+ * lifetime (a string literal), because the cmdline path stores the
+ * pointer without allocating (valloc stays 0). Mirrors easel's internal
+ * set_option() do_alloc=FALSE path. Used only by maybe_hmm_autoswitch().
+ */
+static void
+autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
+{
+  int opti = -1, i;
+  for (i = 0; i < go->nopts; i++)
+    if (strcmp(optname, go->opt[i].name) == 0) { opti = i; break; }
+  if (opti == -1) cm_Fail("autoswitch_force_opt(): no such option %s", optname);
+
+  if (go->valloc[opti] > 0) { free(go->val[opti]); go->valloc[opti] = 0; }
+  go->setby[opti] = eslARG_SETBY_CMDLINE;
+  if (go->opt[opti].type == eslARG_NONE)
+    go->val[opti] = go->opt[opti].defval ? go->opt[opti].defval : (char *) TRUE;
+  else
+    go->val[opti] = strval;
+}
+
+/* maybe_hmm_autoswitch()
+ *
+ * cmsearch auto-switches to HMM-only mode on 0-basepair CMs
+ * (cm_pipeline.c: do_hmmonly_cur = (... || cm_nbp == 0), where
+ * cm_nbp = CMCountNodetype(cm, MATP_nd)). cmalign historically had no
+ * analogous default: VADR-viral CMs are bps=0 (MATL-only) and VADR runs
+ * cmalign WITHOUT --hmm, so they ground through full CM-DP even though a
+ * bps=0 CM is a degenerate HMM (no MATP, no bifurcations) whose CM-DP and
+ * HMM-DP score the same parsetree -- making the switch correctness-
+ * preserving, not an approximation.
+ *
+ * If the loaded CM has 0 basepairs and the user requested no explicit
+ * alignment mode, force the memory-minimal production HMM path
+ * (--hmm --p7ibv --p7ibv-delta 1000) by setting those options in <go> as
+ * if given on the command line, then emit a one-line note to stderr. The
+ * resulting run is byte-identical to that explicit invocation. --nohmm
+ * forces the historical CM-DP default; bps>0 CMs are never touched.
+ */
+static void
+maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
+{
+  if (CMCountNodetype(cm, MATP_nd) != 0)  return; /* structured CM: leave untouched           */
+  if (esl_opt_GetBoolean(go, "--nohmm"))  return; /* explicit override: force CM-DP            */
+  if (esl_opt_GetBoolean(go, "--hmm"))    return; /* user already requested HMM mode           */
+  /* explicit CM-DP / sub-CM mode requests: respect them, don't auto-switch */
+  if (esl_opt_GetBoolean(go, "--sub")    || esl_opt_GetBoolean(go, "--small")  ||
+      esl_opt_GetBoolean(go, "--cyk")    || esl_opt_GetBoolean(go, "--sample") ||
+      esl_opt_GetBoolean(go, "--p7band")) return;
+
+  autoswitch_force_opt(go, "--hmm", NULL);
+  if (! esl_opt_GetBoolean(go, "--p7ibv"))
+    autoswitch_force_opt(go, "--p7ibv", NULL);
+  if (esl_opt_IsDefault(go, "--p7ibv-delta"))
+    autoswitch_force_opt(go, "--p7ibv-delta", "1000");
+
+  fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
+          esl_opt_GetInteger(go, "--p7ibv-delta"));
+}
+
 /* serial_master()
  * The serial version of cmalign.
  * 
@@ -570,6 +637,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(status != eslOK) cm_Fail(cfg->cmfp->errbuf);
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) cm_Fail("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
+
+  /* 0-basepair CMs: auto-switch to the fast HMM path (--hmm --p7ibv) unless
+   * the user requested an explicit mode or passed --nohmm. Must run before
+   * output_header() and initialize_cm() so they see the switched options. */
+  maybe_hmm_autoswitch(go, cm);
 
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
 
@@ -2320,6 +2392,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
+  /* 0-basepair CM auto-switch to HMM mode (see maybe_hmm_autoswitch); must
+   * match the worker's switch so master/worker agree on the dispatch path. */
+  maybe_hmm_autoswitch(go, cm);
+
   nworkers  = cfg->nproc - 1;
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
 
@@ -2697,6 +2773,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(status != eslOK) mpi_failure(cfg->cmfp->errbuf);
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
+
+  /* 0-basepair CM auto-switch to HMM mode (see maybe_hmm_autoswitch); must
+   * match the master's switch so master/worker agree on the dispatch path. */
+  maybe_hmm_autoswitch(go, cm);
 
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
