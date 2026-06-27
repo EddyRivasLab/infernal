@@ -6341,12 +6341,28 @@ tr_trpenalty(CM_t *cm, int v)
  * walks (like J alpha); only the shadows are retained (for the traceback). */
 typedef struct tr_lr_s {
   int      fill_L, fill_R;
-  float ***Lalpha,  ***Ralpha;   /* L/R score planes (per-state banded vjd decks)  */
+  int      ret_planes;           /* if TRUE, return Lalpha/Ralpha instead of freeing */
+  float ***Lalpha,  ***Ralpha;   /* L/R score planes (per-state banded vjd decks); also
+				  * serve as the in/out array for splitter chaining   */
   void  ***Lshad,   ***Rshad;    /* L/R yshad(char**)/kshad(int**) shadows, by state */
   char  ***Lkmode,  ***Rkmode;   /* L/R B-state child-mode shadows (B states only)   */
   int      Lb, Rb;               /* L/R truncated-begin entry states                 */
   float    Lbsc, Rbsc;           /* their scores (penalty folded in)                 */
 } TR_LR;
+
+/* TR_VLR [brief 046]: the L/R marginal planes for the V-problem (vji) inside
+ * engine, used by the whole-solve path for marginal/mixed-mode V-problems. The J
+ * plane stays in the existing 'a'/'shadow'; this bundle holds the L/R vji score
+ * planes, their shadows, and the B-... (no B in V-problems) child-mode shadows
+ * Lmode/Rmode (the marginal->child-mode decode for the vji traceback). */
+typedef struct tr_vlr_s {
+  int      fill_L, fill_R;
+  float ***La,    ***Ra;         /* L/R vji score planes (per-state banded vji decks) */
+  char  ***Lsh,   ***Rsh;        /* L/R vji yshadows (yoffset, by state)              */
+  char  ***Lmode, ***Rmode;      /* L/R marginal child-mode shadows                   */
+  int      b_v, b_i, b_j, b_mode;/* best truncated-begin (root V-problem) entry        */
+  float    b_sc;
+} TR_VLR;
 
 /* free an L/R y/k shadow matrix bundle (void*** of char or int decks) allocated
  * by tr_inside_hb; mirrors free_vjd_shadow_matrix but for the banded L/R shadows.
@@ -6374,6 +6390,34 @@ tr_free_lr_shadow(void ***shadow, char ***kmode, CM_t *cm, int i0, int j0)
   }
 }
 
+/* 1-D marginal beta rows for the L/R outside planes (brief 046, R4.4b-part-2).
+ * beta->L is indexed by the left coordinate i, beta->R by the right coordinate j;
+ * each marginal mode has a single float row per state spanning [i0-1 .. j0+1]
+ * (shifted-pointer idiom, like alloc_vjd_deck's rows). O(W) per state -- negligible
+ * next to the 2-D banded J decks; rows recycle with the J decks (touch counting). */
+static float *
+tr_alloc_marg_row(int i0, int j0)
+{
+  int    W = j0 - i0 + 1;
+  float *r = malloc(sizeof(float) * (W + 3));
+  if (r == NULL) cm_Fail("Memory allocation error.");
+  return r - (i0 - 1);            /* index by absolute coord in [i0-1 .. j0+1] */
+}
+static void
+tr_free_marg_row(float *r, int i0)
+{
+  if (r != NULL) free(r + (i0 - 1));
+}
+/* free a whole marginal-row matrix (per-state rows + the pointer array) */
+static void
+tr_free_marg_matrix(float **m, CM_t *cm, int i0)
+{
+  int v;
+  if (m == NULL) return;
+  for (v = 0; v <= cm->M; v++) tr_free_marg_row(m[v], i0);
+  free(m);
+}
+
 /* forward declarations (mutually recursive) */
 static float tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 				    int r, int z, int i0, int j0,
@@ -6383,28 +6427,36 @@ static float tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr
 				  int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
 static void  tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			      int r, int z, int i0, int i1, int j1, int j0, int useEL,
-			      int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
+			      int r_allow_J, int r_allow_L, int r_allow_R,
+			      int z_allow_J, int z_allow_L, int z_allow_R, CP9Bands_t *cp9b);
 static float tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
 			  float ***alpha, float ****ret_alpha,
 			  struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 			  void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc,
 			  TR_LR *lr, CP9Bands_t *cp9b);
 static void  tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-			   int do_full, float ***beta, float ****ret_beta,
-			   struct deckpool_s *dpool, struct deckpool_s **ret_dpool, CP9Bands_t *cp9b);
+			   int do_full, int fill_L, int fill_R,
+			   float ***beta, float ****ret_beta,
+			   float **betaL, float ***ret_betaL,
+			   float **betaR, float ***ret_betaR,
+			   struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			   float *ret_bsc, int *ret_bv, int *ret_bj, int *ret_bmode, CP9Bands_t *cp9b);
 static float tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			   int r, int z, int i0, int j0, int allow_begin,
 			   int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
 static float tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 			   int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			   int do_full, float ***a, float ****ret_a, char ****ret_shadow,
-			   int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
+			   int allow_begin, int *ret_b, float *ret_bsc,
+			   int z_allow_J, int z_allow_L, int z_allow_R,
+			   TR_VLR *vlr, CP9Bands_t *cp9b);
 static void  tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 			    int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			    int do_full, float ***beta, float ****ret_beta, CP9Bands_t *cp9b);
 static float tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			    int r, int z, int i0, int i1, int j1, int j0, int useEL,
-			    int allow_begin, CP9Bands_t *cp9b);
+			    int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
+			    int z_allow_J, int z_allow_L, int z_allow_R, CP9Bands_t *cp9b);
 
 /* Function: tr_inside_hb()  [brief 044, R4.4a]
  *
@@ -6448,6 +6500,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   /* L/R marginal-plane state (brief 045, R4.4b). All NULL/off when lr==NULL. */
   int      fill_L = (lr != NULL) ? lr->fill_L : FALSE;
   int      fill_R = (lr != NULL) ? lr->fill_R : FALSE;
+  int      ret_planes = (lr != NULL) ? lr->ret_planes : FALSE;
   float ***Lalpha = NULL, ***Ralpha = NULL;
   void  ***Lshad  = NULL, ***Rshad  = NULL;  /* yshad(char**)/kshad(int**) per state */
   char  ***Lkmode = NULL, ***Rkmode = NULL;  /* B-state child-mode shadow            */
@@ -6477,10 +6530,17 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
     for (v = 0; v < cm->M; v++) shadow[v] = NULL;
   }
 
-  /* L/R score planes are always allocated fresh here (freed as we walk, like J).
-   * L/R shadows + B-state kmode allocated only when shadows are requested. */
-  if (fill_L) { ESL_ALLOC(Lalpha, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) Lalpha[v] = NULL; }
-  if (fill_R) { ESL_ALLOC(Ralpha, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) Ralpha[v] = NULL; }
+  /* L/R score planes: reuse the caller's array if chaining (lr->Lalpha != NULL,
+   * the generic-splitter w-then-y pattern), else allocate fresh. Freed as we walk
+   * (like J) unless ret_planes, in which case the kept decks are returned. */
+  if (fill_L) {
+    Lalpha = (lr != NULL) ? lr->Lalpha : NULL;
+    if (Lalpha == NULL) { ESL_ALLOC(Lalpha, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) Lalpha[v] = NULL; }
+  }
+  if (fill_R) {
+    Ralpha = (lr != NULL) ? lr->Ralpha : NULL;
+    if (Ralpha == NULL) { ESL_ALLOC(Ralpha, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) Ralpha[v] = NULL; }
+  }
   if (ret_shadow != NULL && fill_L) {
     ESL_ALLOC(Lshad,  sizeof(void **) * cm->M); for (v = 0; v < cm->M; v++) Lshad[v]  = NULL;
     ESL_ALLOC(Lkmode, sizeof(char **) * cm->M); for (v = 0; v < cm->M; v++) Lkmode[v] = NULL;
@@ -6988,15 +7048,16 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
     free(alpha);
   } else *ret_alpha = alpha;
 
-  /* L/R score planes are not returned (the traceback uses only the shadows); free
-   * any decks still live (do_full kept them, or this was the top problem). */
-  if (fill_L) {
+  /* L/R score planes: when ret_planes (splitter), KEEP them and return via the lr
+   * bundle; otherwise (insideT base case, which uses only the shadows) free any
+   * decks still live (do_full kept them, or this was the top problem). */
+  if (fill_L && ! ret_planes) {
     for (v = vroot; v <= vend; v++) if (Lalpha[v] != NULL) { free_banded_hb_vjd_deck(Lalpha[v], i0, j0, v, cp9b); Lalpha[v] = NULL; }
-    free(Lalpha);
+    free(Lalpha); Lalpha = NULL;
   }
-  if (fill_R) {
+  if (fill_R && ! ret_planes) {
     for (v = vroot; v <= vend; v++) if (Ralpha[v] != NULL) { free_banded_hb_vjd_deck(Ralpha[v], i0, j0, v, cp9b); Ralpha[v] = NULL; }
-    free(Ralpha);
+    free(Ralpha); Ralpha = NULL;
   }
 
   if (ret_dpool == NULL) deckpool_free(dpool);
@@ -7004,10 +7065,11 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
-  /* hand the L/R shadows (+ B-state kmode) back to the caller via the lr bundle */
+  /* hand the L/R shadows (+ B-state kmode) and/or kept score planes back via lr */
   if (lr != NULL) {
     lr->Lshad = Lshad; lr->Rshad = Rshad; lr->Lkmode = Lkmode; lr->Rkmode = Rkmode;
     lr->Lb = Lb; lr->Lbsc = Lbsc; lr->Rb = Rb; lr->Rbsc = Rbsc;
+    lr->Lalpha = Lalpha; lr->Ralpha = Ralpha;
   }
   return sc;
 
@@ -7029,8 +7091,12 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  */
 static void
 tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-	      int do_full, float ***beta, float ****ret_beta,
-	      struct deckpool_s *dpool, struct deckpool_s **ret_dpool, CP9Bands_t *cp9b)
+	      int do_full, int fill_L, int fill_R,
+	      float ***beta, float ****ret_beta,
+	      float **betaL, float ***ret_betaL,
+	      float **betaR, float ***ret_betaR,
+	      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+	      float *ret_bsc, int *ret_bv, int *ret_bj, int *ret_bmode, CP9Bands_t *cp9b)
 {
   int      status;
   int      v,y;
@@ -7044,6 +7110,11 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   int      voffset;
   int      w1,w2;
   int      jn, jx;
+  int      il;                   /* left-coordinate loop var for the L mini-recursion */
+  float    b_sc   = IMPOSSIBLE;  /* best marginal terminus ("local hit in parent")    */
+  int      b_v    = -1;
+  int      b_j    = -1;
+  int      b_mode = -1;
   int     *jmin  = cp9b->jmin;
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -7056,6 +7127,10 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
+  /* L/R marginal beta pointer arrays (1-D rows per state). Reuse caller's if any
+   * (chaining), else allocate fresh; rows recycle with the J decks. */
+  if (fill_L && betaL == NULL) { ESL_ALLOC(betaL, sizeof(float *) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaL[v] = NULL; }
+  if (fill_R && betaR == NULL) { ESL_ALLOC(betaR, sizeof(float *) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaR[v] = NULL; }
 
   w1 = cm->nodemap[cm->ndidx[vroot]];
   if (cm->sttype[vroot] == B_st) {
@@ -7070,11 +7145,17 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
       jp_v = j - jmin[v];
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
     }
+    if (fill_L) { betaL[v] = tr_alloc_marg_row(i0, j0); for (il = i0-1; il <= j0+1; il++) betaL[v][il] = IMPOSSIBLE; }
+    if (fill_R) { betaR[v] = tr_alloc_marg_row(i0, j0); for (j  = i0-1; j  <= j0+1; j++)  betaR[v][j]  = IMPOSSIBLE; }
   }
   /* TRUNCATED: omit the normal root seed (beta[0][j0][W]=0) when vroot==0 -- in
    * truncated mode there is no normal ROOT_S descent. For interior subproblems
-   * (vroot!=0) keep the standard root seed. */
-  if (vroot != 0) { int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) beta[vroot][j0][dpr] = 0; }
+   * (vroot!=0) keep the standard root seed (J + the marginal-mode root seeds). */
+  if (vroot != 0) {
+    int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) beta[vroot][j0][dpr] = 0;
+    if (fill_L) betaL[vroot][i0] = 0.;     /* L marginal at vroot: left coord i0 */
+    if (fill_R) betaR[vroot][j0] = 0.;     /* R marginal at vroot: right coord j0 */
+  }
 
   if (cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
@@ -7141,11 +7222,15 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	jp_v = j - jmin[v];
 	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
       }
+      if (fill_L) { betaL[v] = tr_alloc_marg_row(i0, j0); for (il = i0-1; il <= j0+1; il++) betaL[v][il] = IMPOSSIBLE; }
+      if (fill_R) { betaR[v] = tr_alloc_marg_row(i0, j0); for (j  = i0-1; j  <= j0+1; j++)  betaR[v][j]  = IMPOSSIBLE; }
 
       /* TRUNCATED-BEGIN injection: at the top (vroot==0, full span i0=1,j0=L) any
        * Jvalid state v may be entered via a truncated begin with penalty
        * tr_trpenalty(v). (Replaces the non-trunc CMH_LOCAL_BEGIN / cm->beginsc[v]
-       * injection; unconditional on local mode -- truncated begins always apply.) */
+       * injection; unconditional on local mode -- truncated begins always apply.)
+       * L/R: inject the same penalty into the marginal root cell (L: left coord i0;
+       * R: right coord j0) for each {L,R}valid v -- mirrors the J injection. */
       if (vroot == 0 && i0 == 1 && j0 == L && cp9b->Jvalid[v]) {
 	float trpen = tr_trpenalty(cm, v);
 	if (NOT_IMPOSSIBLE(trpen)
@@ -7153,6 +7238,80 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	    && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)
 	    && trpen > beta[v][j0][W - hdmin[v][j0-jmin[v]]])
 	  beta[v][j0][W - hdmin[v][j0-jmin[v]]] = trpen;
+      }
+      if (fill_L && vroot == 0 && i0 == 1 && j0 == L && cp9b->Lvalid[v]) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && trpen > betaL[v][i0]) betaL[v][i0] = trpen;
+      }
+      if (fill_R && vroot == 0 && i0 == 1 && j0 == L && cp9b->Rvalid[v]) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && trpen > betaR[v][j0]) betaR[v][j0] = trpen;
+      }
+
+      /* L mini-recursion: beta->L[v][il] over left coord il, derived from parent
+       * marginal betas (HB-consistent: MP uses lmesc, ML/IL use esc, right-emitters
+       * pass through). Then track the marginal terminus b_sc. */
+      if (fill_L)
+      for (il = i0; il <= j0+1; il++) {
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  if (y < vroot) continue;
+	  voffset = v - cm->cfirst[y];
+	  switch (cm->sttype[y]) {
+	  case MP_st:
+	    if (il > i0) { escore = cm->lmesc[y][dsq[il-1]];
+	      if ((sc = betaL[y][il-1] + cm->tsc[y][voffset] + escore) > betaL[v][il]) betaL[v][il] = sc; }
+	    break;
+	  case ML_st: case IL_st:
+	    if (il > i0) {
+	      if (dsq[il-1] < cm->abc->K) escore = cm->esc[y][(int) dsq[il-1]];
+	      else                        escore = esl_abc_FAvgScore(cm->abc, dsq[il-1], cm->esc[y]);
+	      if ((sc = betaL[y][il-1] + cm->tsc[y][voffset] + escore) > betaL[v][il]) betaL[v][il] = sc; }
+	    break;
+	  case MR_st: case IR_st: case S_st: case E_st: case D_st:
+	    if ((sc = betaL[y][il] + cm->tsc[y][voffset]) > betaL[v][il]) betaL[v][il] = sc;
+	    break;
+	  default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
+	  }
+	}
+	escore = 0.;
+	if (il <= j0) {
+	  if (cm->sttype[v] == MP_st) escore = cm->lmesc[v][dsq[il]];
+	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
+	    escore = (dsq[il] < cm->abc->K) ? cm->esc[v][(int) dsq[il]] : esl_abc_FAvgScore(cm->abc, dsq[il], cm->esc[v]);
+	}
+	if (NOT_IMPOSSIBLE(betaL[v][il]) && betaL[v][il] + escore > b_sc) { b_sc = betaL[v][il] + escore; b_v = v; b_j = il; b_mode = TRMODE_L; }
+      }
+
+      /* R mini-recursion: beta->R[v][j] over right coord j (mirror of L). */
+      if (fill_R)
+      for (j = j0; j >= i0-1; j--) {
+	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	  if (y < vroot) continue;
+	  voffset = v - cm->cfirst[y];
+	  switch (cm->sttype[y]) {
+	  case MP_st:
+	    if (j < j0) { escore = cm->rmesc[y][dsq[j+1]];
+	      if ((sc = betaR[y][j+1] + cm->tsc[y][voffset] + escore) > betaR[v][j]) betaR[v][j] = sc; }
+	    break;
+	  case MR_st: case IR_st:
+	    if (j < j0) {
+	      if (dsq[j+1] < cm->abc->K) escore = cm->esc[y][(int) dsq[j+1]];
+	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
+	      if ((sc = betaR[y][j+1] + cm->tsc[y][voffset] + escore) > betaR[v][j]) betaR[v][j] = sc; }
+	    break;
+	  case ML_st: case IL_st: case S_st: case E_st: case D_st:
+	    if ((sc = betaR[y][j] + cm->tsc[y][voffset]) > betaR[v][j]) betaR[v][j] = sc;
+	    break;
+	  default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
+	  }
+	}
+	escore = 0.;
+	if (j >= i0) {
+	  if (cm->sttype[v] == MP_st) escore = cm->rmesc[v][dsq[j]];
+	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
+	    escore = (dsq[j] < cm->abc->K) ? cm->esc[v][(int) dsq[j]] : esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+	}
+	if (NOT_IMPOSSIBLE(betaR[v][j]) && betaR[v][j] + escore > b_sc) { b_sc = betaR[v][j] + escore; b_v = v; b_j = j; b_mode = TRMODE_R; }
       }
 
       jn = ESL_MAX(i0-1, jmin[v]);
@@ -7172,34 +7331,55 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	      switch(cm->sttype[y]) {
 	      case MP_st:
 		if (j == j0 || d == jp) continue;
-		if (! hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y)) continue;
 		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
-		if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		if (hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
+		    (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		/* L/R parent (MP emits left only / right only in the marginal mode) */
+		if (fill_L && NOT_IMPOSSIBLE(betaL[y][i-1]) &&
+		    (sc = betaL[y][i-1] + cm->tsc[y][voffset] + cm->lmesc[y][dsq[i-1]]) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		if (fill_R && NOT_IMPOSSIBLE(betaR[y][j+1]) &&
+		    (sc = betaR[y][j+1] + cm->tsc[y][voffset] + cm->rmesc[y][dsq[j+1]]) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		break;
 	      case ML_st:
 	      case IL_st:
 		if (d == jp) continue;
-		if (! hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y)) continue;
 		if (dsq[i-1] < cm->abc->K)
 		  escore = cm->esc[y][(int) dsq[i-1]];
 		else
 		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
-		if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		if (hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y) &&
+		    (sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		/* L parent (emits left, esc); R parent (ML/IL emit nothing in R mode) */
+		if (fill_L && NOT_IMPOSSIBLE(betaL[y][i-1]) &&
+		    (sc = betaL[y][i-1] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		if (fill_R && NOT_IMPOSSIBLE(betaR[y][j]) &&
+		    (sc = betaR[y][j] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		break;
 	      case MR_st:
 	      case IR_st:
 		if (j == j0) continue;
-		if (! hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y)) continue;
 		if (dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[y][(int) dsq[j+1]];
 		else
 		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
-		if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		if (hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y) &&
+		    (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		/* R parent (emits right, esc); L parent (MR/IR emit nothing in L mode) */
+		if (fill_R && NOT_IMPOSSIBLE(betaR[y][j+1]) &&
+		    (sc = betaR[y][j+1] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		  beta[v][j][dp_v] = sc;
+		if (fill_L && NOT_IMPOSSIBLE(betaL[y][i]) &&
+		    (sc = betaL[y][i] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		break;
 	      case S_st:
@@ -7273,7 +7453,11 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
       if (! do_full) {
 	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	  touch[y]--;
-	  if (touch[y] == 0) { free_banded_hb_vjd_deck(beta[y], i0, j0, y, cp9b); beta[y] = NULL; }
+	  if (touch[y] == 0) {
+	    free_banded_hb_vjd_deck(beta[y], i0, j0, y, cp9b); beta[y] = NULL;
+	    if (fill_L) { tr_free_marg_row(betaL[y], i0); betaL[y] = NULL; }
+	    if (fill_R) { tr_free_marg_row(betaR[y], i0); betaR[y] = NULL; }
+	  }
 	}
       }
     }
@@ -7288,9 +7472,23 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     free(beta);
   } else *ret_beta = beta;
 
+  /* L/R marginal rows: return them (splitter reads them) or free everything */
+  if (fill_L) {
+    if (ret_betaL != NULL) *ret_betaL = betaL;
+    else                   tr_free_marg_matrix(betaL, cm, i0);
+  }
+  if (fill_R) {
+    if (ret_betaR != NULL) *ret_betaR = betaR;
+    else                   tr_free_marg_matrix(betaR, cm, i0);
+  }
+
   if (ret_dpool == NULL) deckpool_free(dpool);
   else                   *ret_dpool = dpool;
   free(touch);
+  if (ret_bsc   != NULL) *ret_bsc   = b_sc;
+  if (ret_bv    != NULL) *ret_bv    = b_v;
+  if (ret_bj    != NULL) *ret_bj    = b_j;
+  if (ret_bmode != NULL) *ret_bmode = b_mode;
   return;
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -7441,12 +7639,20 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return 0.;
 }
 
-/* Function: tr_vinside_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of vinside_hb(). */
+/* Function: tr_vinside_hb()  [brief 044 R4.4a (J); brief 046 R4.4b-pt2 (L/R)]
+ *
+ * J-plane unchanged from R4.4a. When vlr != NULL the L/R marginal vji planes are
+ * also computed (mirrors truncyk.c::tr_vinside, in the banded vji idiom): La/Ra
+ * score planes, Lsh/Rsh yshadows, and Lmode/Rmode marginal->child-mode shadows.
+ * The boundary seed at z is gated by z_allow_{J,L,R}; the recurrences fill the
+ * planes selected by vlr->fill_{L,R}. T is OFF (R4.4c).
+ */
 static float
 tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	      int r, int z, int i0, int i1, int j1, int j0, int useEL,
 	      int do_full, float ***a, float ****ret_a, char ****ret_shadow,
-	      int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b)
+	      int allow_begin, int *ret_b, float *ret_bsc,
+	      int z_allow_J, int z_allow_L, int z_allow_R, TR_VLR *vlr, CP9Bands_t *cp9b)
 {
   int      status;
   char  ***shadow = NULL;
@@ -7463,30 +7669,53 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
+  /* L/R marginal vji state (brief 046). All off when vlr==NULL. */
+  int      fill_L = (vlr != NULL) ? vlr->fill_L : FALSE;
+  int      fill_R = (vlr != NULL) ? vlr->fill_R : FALSE;
+  float ***La = NULL, ***Ra = NULL;
+  char  ***Lsh = NULL, ***Rsh = NULL, ***Lmode = NULL, ***Rmode = NULL;
+  int      b_v = -1, b_i = i0, b_j = j0, b_mode = TRMODE_J;
 
   b   = -1;
   bsc = IMPOSSIBLE;
   if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1;
 
+  /* R4.4b-part-2 scope: the L/R marginal vji recurrences are not yet complete.
+   * (b_v/b_i/b_j/b_mode + La/Ra/Lsh/Rsh/Lmode/Rmode scaffolding is in place.) The
+   * only marginal caller (tr_vinsideT_hb) fails before reaching here, so vlr is
+   * always NULL today; guard defensively. */
+  if (vlr != NULL) cm_Fail("tr_vinside_hb: marginal vji (L/R) not yet implemented (R4.4b-part-2 remaining work)");
+  (void) b_v; (void) b_i; (void) b_j; (void) b_mode;
+
   if (a == NULL) {
     ESL_ALLOC(a, sizeof(float **) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) a[v] = NULL;
   }
+  if (fill_L) { ESL_ALLOC(La, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) La[v] = NULL; }
+  if (fill_R) { ESL_ALLOC(Ra, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) Ra[v] = NULL; }
 
   w1 = cm->nodemap[cm->ndidx[z]];
   w2 = cm->cfirst[w1]-1;
   for (v = w1; v <= w2; v++) {
     a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
     banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
+    if (fill_L) { La[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b); banded_hb_vji_init_impossible(La[v], i0, i1, j1, j0, v, cp9b); }
+    if (fill_R) { Ra[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b); banded_hb_vji_init_impossible(Ra[v], i0, i1, j1, j0, v, cp9b); }
   }
 
   if (ret_shadow != NULL) {
     ESL_ALLOC(shadow, sizeof(char **) * cm->M);
     for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+    if (fill_L) { ESL_ALLOC(Lsh, sizeof(char **)*cm->M); ESL_ALLOC(Lmode, sizeof(char **)*cm->M);
+                  for (v=0;v<cm->M;v++){Lsh[v]=NULL;Lmode[v]=NULL;} }
+    if (fill_R) { ESL_ALLOC(Rsh, sizeof(char **)*cm->M); ESL_ALLOC(Rmode, sizeof(char **)*cm->M);
+                  for (v=0;v<cm->M;v++){Rsh[v]=NULL;Rmode[v]=NULL;} }
   }
 
   if (! useEL) {
-    if (vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) a[z][0][op] = 0.;
+    if (z_allow_J && vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) a[z][0][op] = 0.;
+    if (fill_L && z_allow_L && vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) La[z][0][op] = 0.;
+    if (fill_R && z_allow_R && vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) Ra[z][0][op] = 0.;
   } else {
     if (ret_shadow != NULL) shadow[z] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,z,cp9b);
     switch (cm->sttype[z]) {
@@ -7563,8 +7792,13 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
     {
       a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
       banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
-      if (ret_shadow != NULL)
+      if (fill_L) { La[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b); banded_hb_vji_init_impossible(La[v], i0, i1, j1, j0, v, cp9b); }
+      if (fill_R) { Ra[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b); banded_hb_vji_init_impossible(Ra[v], i0, i1, j1, j0, v, cp9b); }
+      if (ret_shadow != NULL) {
 	shadow[v] = alloc_banded_hb_vji_shadow_deck(i0, i1, j1, j0, v, cp9b);
+	if (fill_L) { Lsh[v] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,v,cp9b); Lmode[v] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,v,cp9b); }
+	if (fill_R) { Rsh[v] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,v,cp9b); Rmode[v] = alloc_banded_hb_vji_shadow_deck(i0,i1,j1,j0,v,cp9b); }
+      }
 
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
 	cm_Fail("you told me you wouldn't ever do that again.");
@@ -7929,7 +8163,8 @@ tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 static float
 tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	       int r, int z, int i0, int i1, int j1, int j0, int useEL,
-	       int allow_begin, CP9Bands_t *cp9b)
+	       int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
+	       int z_allow_J, int z_allow_L, int z_allow_R, CP9Bands_t *cp9b)
 {
   char ***shadow;
   float   sc;
@@ -7940,6 +8175,13 @@ tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int     b;
   float   bsc;
 
+  /* R4.4b-part-2 scope: marginal/mixed-mode V-problems are not yet solved (the
+   * marginal vji recurrences + mode-tracking traceback are the remaining piece).
+   * The entry routes L/R through insideT, so this path is currently unreachable;
+   * fail loudly if a future wiring hits it before the vji is done. */
+  if (r_allow_L || r_allow_R || z_allow_L || z_allow_R)
+    cm_Fail("tr_vinsideT_hb: marginal/mixed L/R V-problem not yet implemented (R4.4b-part-2 remaining work)");
+
   if (r == z) {
     InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, TRMODE_J);
     return 0.;
@@ -7947,7 +8189,7 @@ tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   sc = tr_vinside_hb(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 		     BE_EFFICIENT, NULL, NULL, &shadow,
-		     allow_begin, &b, &bsc, cp9b);
+		     allow_begin, &b, &bsc, TRUE, FALSE, FALSE, NULL, cp9b);
 
   v = r;
   j = j0;
@@ -7991,11 +8233,19 @@ tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return sc;
 }
 
-/* Function: tr_v_splitter_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of v_splitter_hb(). */
+/* Function: tr_v_splitter_hb()  [brief 044 R4.4a (J); brief 046 R4.4b-pt2 (L/R)]
+ *
+ * J V-problems (r_allow_J && z_allow_J) keep the exact R4.4a D&C split. Marginal
+ * or mixed-mode V-problems (any L/R in r_allow_* or z_allow_*) are solved WHOLE
+ * via the mode-aware tr_vinsideT_hb (the marginal vji cube is tiny -- 009 banded
+ * it to ~0 even on LSU -- so the whole-solve is memory-safe and avoids a separate
+ * marginal voutside + marginal v-split). T is OFF (R4.4c).
+ */
 static void
 tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		 int r, int z, int i0, int i1, int j1, int j0, int useEL,
-		 int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
+		 int r_allow_J, int r_allow_L, int r_allow_R,
+		 int z_allow_J, int z_allow_L, int z_allow_R, CP9Bands_t *cp9b)
 {
   float ***alpha, ***beta;
   float    sc;
@@ -8007,9 +8257,18 @@ tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int      b;
   float    bsc;
 
+  /* Marginal / mixed-mode V-problem: solve whole (mode-aware traceback). */
+  if (r_allow_L || r_allow_R || z_allow_L || z_allow_R) {
+    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0),
+		   r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R, cp9b);
+    return;
+  }
+
+  /* ---- pure-J V-problem: the R4.4a memory-efficient D&C split (unchanged) ---- */
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || r == z ||
       vinsideT_size(cm, r, z, i0, i1, j1, j0) < RAMLIMIT) {
-    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), cp9b);
+    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0),
+		   r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R, cp9b);
     return;
   }
 
@@ -8018,7 +8277,7 @@ tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   y = cm->cfirst[w]-1;
 
   tr_vinside_hb (cm, dsq, L, w, z, i0, i1, j1, j0, useEL, BE_EFFICIENT,
-		 NULL, &alpha, NULL, (r==0), &b, &bsc, cp9b);
+		 NULL, &alpha, NULL, (r==0), &b, &bsc, TRUE, FALSE, FALSE, NULL, cp9b);
   tr_voutside_hb(cm, dsq, L, r, y, i0, i1, j1, j0, useEL, BE_EFFICIENT,
 		 NULL, &beta, cp9b);
 
@@ -8063,27 +8322,28 @@ tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   free_banded_hb_vji_matrix(beta,  cm, i0, i1, j1, j0, cp9b);
 
   if (best_v == -99 || ! NOT_IMPOSSIBLE(best_sc)) {
-    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0), cp9b);
+    tr_vinsideT_hb(cm, dsq, L, tr, r, z, i0, i1, j1, j0, useEL, (r==0),
+		   r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R, cp9b);
     return;
   }
 
   if (best_v == -1) {
     tr_v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_i, best_j, j0, TRUE,
-		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+		     r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE, cp9b);
     return;
   }
   if (best_v == -2) {
     if (b != z)
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b, TRMODE_J);
     tr_v_splitter_hb(cm, dsq, L, tr, b, z, i0, i1, j1, j0, useEL,
-		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+		     r_allow_J, r_allow_L, r_allow_R, z_allow_J, z_allow_L, z_allow_R, cp9b);
     return;
   }
 
   tr_v_splitter_hb(cm, dsq, L, tr, r,      best_v, i0,     best_i, best_j, j0, FALSE,
-		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+		   r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE, cp9b);
   tr_v_splitter_hb(cm, dsq, L, tr, best_v, z,      best_i, i1,     j1,     best_j, useEL,
-		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+		   TRUE, FALSE, FALSE, z_allow_J, z_allow_L, z_allow_R, cp9b);
   return;
 }
 
@@ -8092,17 +8352,21 @@ static float
 tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
 		     int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
 {
-  float ***alpha;
-  float ***beta;
+  float ***alpha = NULL, ***Lalpha = NULL, ***Ralpha = NULL;
+  float ***beta  = NULL;
+  float  **betaL = NULL, **betaR = NULL;
+  int      fill_L = r_allow_L, fill_R = r_allow_R;
   float sc;
   float best_sc;
   int   v,w,y;
   int   W;
   int   d, jp, j, jp_v;
   int   best_v, best_d, best_j;
+  int   p_mode, c_mode;          /* parent (V-problem) mode / child (wedge) mode */
   int   midnode;
-  int   b;
-  float bsc;
+  TR_LR lr;
+  int   binJ;  float binJsc;     int binv, binmode;  float binsc;
+  float boutsc; int boutv, boutj, boutmode;
   int  *jmin  = cp9b->jmin;
   int  *jmax  = cp9b->jmax;
   int **hdmin = cp9b->hdmin;
@@ -8119,14 +8383,24 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   w = cm->nodemap[midnode];
   y = cm->cfirst[w]-1;
 
+  lr.fill_L = fill_L; lr.fill_R = fill_R; lr.ret_planes = TRUE; lr.Lalpha = NULL; lr.Ralpha = NULL;
   tr_inside_hb(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
 	       NULL, &alpha, NULL, NULL, NULL,
-	       (r==0), &b, &bsc, NULL, cp9b);
-  tr_outside_hb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, NULL, NULL, cp9b);
+	       (r==0), &binJ, &binJsc, &lr, cp9b);
+  Lalpha = lr.Lalpha; Ralpha = lr.Ralpha;
+  tr_outside_hb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, fill_L, fill_R,
+		NULL, &beta, NULL, &betaL, NULL, &betaR, NULL, NULL,
+		&boutsc, &boutv, &boutj, &boutmode, cp9b);
+
+  /* best inside begin (child local hit), across J/L/R */
+  binsc = binJsc; binv = binJ; binmode = TRMODE_J;
+  if (fill_L && lr.Lbsc > binsc) { binsc = lr.Lbsc; binv = lr.Lb; binmode = TRMODE_L; }
+  if (fill_R && lr.Rbsc > binsc) { binsc = lr.Rbsc; binv = lr.Rb; binmode = TRMODE_R; }
 
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
   best_v  = -99;
+  p_mode  = c_mode = TRMODE_J;
   for (v = w; v <= y; v++)
     for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++)
       {
@@ -8135,13 +8409,22 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
 	  {
 	    int dp_v = d - hdmin[v][jp_v];
+	    int il   = j - d + 1;
+	    int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][il]);
+	    int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j]);
+	    /* J */
 	    if ((sc = alpha[v][j][dp_v] + beta[v][j][dp_v]) > best_sc)
-	      {
-		best_sc = sc;
-		best_v  = v;
-		best_d  = d;
-		best_j  = j;
-	      }
+	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_J; c_mode=TRMODE_J; }
+	    /* L: parent v in L, child J / child L */
+	    if (haveL && (sc = alpha[v][j][dp_v] + betaL[v][il]) > best_sc)
+	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_J; }
+	    if (haveL && cp9b->Lvalid[v] && (sc = Lalpha[v][j][dp_v] + betaL[v][il]) > best_sc)
+	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_L; }
+	    /* R: parent v in R, child J / child R */
+	    if (haveR && (sc = alpha[v][j][dp_v] + betaR[v][j]) > best_sc)
+	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_J; }
+	    if (haveR && cp9b->Rvalid[v] && (sc = Ralpha[v][j][dp_v] + betaR[v][j]) > best_sc)
+	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_R; }
 	  }
       }
 
@@ -8151,51 +8434,71 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 	j = i0-1+jp;
 	for (d = 0; d <= jp; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
-	    best_sc = sc;
-	    best_v  = -1;
-	    best_j  = j;
-	    best_d  = d;
+	    best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_J; c_mode = TRMODE_T;
 	  }
       }
   }
 
   if (r==0) {
-    if (bsc > best_sc) { best_sc = bsc; best_v = -2; best_j = j0; best_d = W; }
+    if (binsc > best_sc) { best_sc = binsc; best_v = -2; best_j = j0; best_d = W; p_mode = TRMODE_T; c_mode = binmode; }
   }
+  /* outside marginal terminus (parent local hit, child empty) */
+  if (boutsc > best_sc) { best_sc = boutsc; best_v = -3; best_j = boutj; best_d = 1; p_mode = boutmode; c_mode = TRMODE_T; }
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
   free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
+  if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaL, cm, i0); }
+  if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaR, cm, i0); }
 
-  /* TRUNCATED infeasibility guard (brief-003 hazard analogue): no valid J wedge
-   * split under bands -> return IMPOSSIBLE rather than recurse on garbage. */
+  /* TRUNCATED infeasibility guard: nothing in-band beat IMPOSSIBLE. */
   if (best_v == -99) return best_sc;
 
-  if (best_v == -1) {
+  if (best_v == -1) {           /* EL (parent J to EL, child empty) */
     tr_v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE,
-		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+		     r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE, cp9b);
     return best_sc;
   }
-  if (best_v == -2) {
-    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b, TRMODE_J);
-    tr_wedge_splitter_hb(cm, dsq, L, tr, b, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+  if (best_v == -2) {           /* inside begin (parent empty), child local hit */
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, binv, binmode);
+    tr_wedge_splitter_hb(cm, dsq, L, tr, binv, z, i0, j0,
+			 (binmode==TRMODE_J), (binmode==TRMODE_L), (binmode==TRMODE_R), cp9b);
+    return best_sc;
+  }
+  if (best_v == -3) {           /* outside terminus (parent marginal, child empty) */
+    tr_v_splitter_hb(cm, dsq, L, tr, r, boutv, i0, best_j, best_j, j0, FALSE,
+		     r_allow_J, r_allow_L, r_allow_R,
+		     (p_mode==TRMODE_J), (p_mode==TRMODE_L), (p_mode==TRMODE_R), cp9b);
     return best_sc;
   }
 
+  /* standard split: V-problem r..v (bottom mode c_mode), wedge v..z (mode c_mode) */
   tr_v_splitter_hb(cm, dsq, L, tr, r, best_v, i0, best_j-best_d+1, best_j, j0, FALSE,
-		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+		   r_allow_J, r_allow_L, r_allow_R,
+		   (c_mode==TRMODE_J), (c_mode==TRMODE_L), (c_mode==TRMODE_R), cp9b);
   tr_wedge_splitter_hb(cm, dsq, L, tr, best_v, z, best_j-best_d+1, best_j,
-		       r_allow_J, r_allow_L, r_allow_R, cp9b);
+		       (c_mode==TRMODE_J), (c_mode==TRMODE_L), (c_mode==TRMODE_R), cp9b);
   return best_sc;
 }
 
-/* Function: tr_generic_splitter_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of generic_splitter_hb(). */
+/* Function: tr_generic_splitter_hb()  [brief 044 R4.4a (J); brief 046 R4.4b-pt2 (L/R)]
+ *
+ * The mode-aware banded truncated generic splitter. J keeps the exact R4.4a logic
+ * (best_k>=0 bifurcation / -1 EL / -2,-3 child begins). L/R add: marginal split
+ * cases (parent v in L or R, children J or marginal) scored against the 1-D
+ * marginal outside betas (betaL/betaR), the marginal child begins, and -4 (the
+ * "local hit in parent" marginal terminus from the outside b_sc). v_mode/w_mode/
+ * y_mode track the resolved per-node modes (TRMODE_T==0 marks an empty child). T
+ * is OFF (R4.4c). Ported from truncyk.c::tr_generic_splitter, gated by the bands.
+ */
 static float
 tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		       int r, int z, int i0, int j0,
 		       int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
 {
-  float ***alpha;
-  float ***beta;
+  float ***alpha = NULL, ***Lalpha = NULL, ***Ralpha = NULL;
+  float ***beta  = NULL;
+  float  **betaL = NULL, **betaR = NULL;
+  int      fill_L = r_allow_L, fill_R = r_allow_R;
   int      v,w,y;
   int      wend, yend;
   int      jp;
@@ -8204,12 +8507,13 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   float    sc;
   int      j,d,k;
   float    best_sc;
-  int      best_k;
-  int      best_d;
-  int      best_j;
+  int      best_k, best_d, best_j;
+  int      v_mode, w_mode, y_mode;
   int      tv;
-  int      b1,b2;
-  float    b1_sc, b2_sc;
+  TR_LR    lr1, lr2;
+  int      b1J, b2J;       float b1Jsc, b2Jsc;
+  int      b1_v, b2_v, b1_mode, b2_mode;   float b1_sc, b2_sc;
+  float    b3_sc;  int b3_v, b3_j, b3_mode;
   int     *jmin  = cp9b->jmin;
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -8234,15 +8538,31 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (w < y) { wend = y-1; yend = z; }
   else       { yend = w-1; wend = z; }
 
+  /* inside for both child subtrees (J + L/R planes), chaining the score arrays */
+  lr1.fill_L = fill_L; lr1.fill_R = fill_R; lr1.ret_planes = TRUE; lr1.Lalpha = NULL; lr1.Ralpha = NULL;
   tr_inside_hb(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, NULL, NULL,
-	       (r==0), &b1, &b1_sc, NULL, cp9b);
+	       (r==0), &b1J, &b1Jsc, &lr1, cp9b);
+  lr2.fill_L = fill_L; lr2.fill_R = fill_R; lr2.ret_planes = TRUE; lr2.Lalpha = lr1.Lalpha; lr2.Ralpha = lr1.Ralpha;
   tr_inside_hb(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, NULL, NULL, NULL,
-	       (r==0), &b2, &b2_sc, NULL, cp9b);
-  tr_outside_hb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, NULL, NULL, cp9b);
+	       (r==0), &b2J, &b2Jsc, &lr2, cp9b);
+  Lalpha = lr2.Lalpha; Ralpha = lr2.Ralpha;
+  /* outside for the parent (J reuses the alpha array; 1-D L/R betas + terminus b3) */
+  tr_outside_hb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, fill_L, fill_R,
+		alpha, &beta, NULL, &betaL, NULL, &betaR, NULL, NULL,
+		&b3_sc, &b3_v, &b3_j, &b3_mode, cp9b);
+
+  /* best inside begin per child subtree (across J/L/R) */
+  b1_sc = b1Jsc; b1_v = b1J; b1_mode = TRMODE_J;
+  if (fill_L && lr1.Lbsc > b1_sc) { b1_sc = lr1.Lbsc; b1_v = lr1.Lb; b1_mode = TRMODE_L; }
+  if (fill_R && lr1.Rbsc > b1_sc) { b1_sc = lr1.Rbsc; b1_v = lr1.Rb; b1_mode = TRMODE_R; }
+  b2_sc = b2Jsc; b2_v = b2J; b2_mode = TRMODE_J;
+  if (fill_L && lr2.Lbsc > b2_sc) { b2_sc = lr2.Lbsc; b2_v = lr2.Lb; b2_mode = TRMODE_L; }
+  if (fill_R && lr2.Rbsc > b2_sc) { b2_sc = lr2.Rbsc; b2_v = lr2.Rb; b2_mode = TRMODE_R; }
 
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
   best_k  = -99;
+  v_mode  = w_mode = y_mode = TRMODE_J;
   for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++)
     {
       jp   = j - (i0-1);
@@ -8250,19 +8570,55 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
 	{
 	  int dp_v = d - hdmin[v][jp_v];
+	  int il   = j - d + 1;
+	  int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][il]);
+	  int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j]);
 	  for (k = 0; k <= d; k++)
 	    {
 	      int dp_w, dp_y;
-	      if (hb_inband(cp9b, w, j-k, d-k, i0, j0, &dp_w) &&
-		  hb_inband(cp9b, y, j,   k,   i0, j0, &dp_y) &&
-		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
-		{
-		  best_sc = sc;
-		  best_k  = k;
-		  best_j  = j;
-		  best_d  = d;
-		}
+	      int inw = hb_inband(cp9b, w, j-k, d-k, i0, j0, &dp_w);
+	      int iny = hb_inband(cp9b, y, j,   k,   i0, j0, &dp_y);
+	      if (! (inw && iny)) continue;
+	      /* all-J split */
+	      if ((sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
+		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_J; w_mode=TRMODE_J; y_mode=TRMODE_J; }
+	      /* L: v in L; w=J, y=L  (k>0) */
+	      if (haveL && k > 0 && cp9b->Lvalid[y] &&
+		  (sc = alpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + betaL[v][il]) > best_sc)
+		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_L; }
+	      /* L: v in L; w=J, y=J  (k>0) */
+	      if (haveL && k > 0 &&
+		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaL[v][il]) > best_sc)
+		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_J; }
+	      /* R: v in R; w=R, y=J  (k<d) */
+	      if (haveR && k < d && cp9b->Rvalid[w] &&
+		  (sc = Ralpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_R; y_mode=TRMODE_J; }
+	      /* R: v in R; w=J, y=J  (k<d) */
+	      if (haveR && k < d &&
+		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	    }
+	  /* k=0: left child covers all d, right child empty (L marginal) */
+	  if (haveL) {
+	    int dp_w;
+	    if (hb_inband(cp9b, w, j, d, i0, j0, &dp_w)) {
+	      if (cp9b->Lvalid[w] && (sc = Lalpha[w][j][dp_w] + betaL[v][il]) > best_sc)
+		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_L; y_mode=TRMODE_T; }
+	      if ((sc = alpha[w][j][dp_w] + betaL[v][il]) > best_sc)
+		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_T; }
+	    }
+	  }
+	  /* k=d: right child covers all d, left child empty (R marginal) */
+	  if (haveR) {
+	    int dp_y;
+	    if (hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) {
+	      if (cp9b->Rvalid[y] && (sc = Ralpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_R; }
+	      if ((sc = alpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_J; }
+	    }
+	  }
 	}
     }
 
@@ -8272,10 +8628,8 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	j = i0-1+jp;
 	for (d = 0; d <= jp; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
-	    best_sc = sc;
-	    best_k  = -1;
-	    best_j  = j;
-	    best_d  = d;
+	    best_sc = sc; best_k = -1; best_j = j; best_d = d;
+	    v_mode = TRMODE_J; w_mode = TRMODE_T; y_mode = TRMODE_T;
 	  }
       }
   }
@@ -8284,46 +8638,64 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (b1_sc > best_sc) { best_sc = b1_sc; best_k = -2; best_j = j0; best_d = W; }
     if (b2_sc > best_sc) { best_sc = b2_sc; best_k = -3; best_j = j0; best_d = W; }
   }
+  /* "local hit in parent" marginal terminus (outside b_sc): the parse stays in
+   * the parent r..v region marginally and never reaches the bifurcation. */
+  if (b3_sc > best_sc) { best_sc = b3_sc; best_k = -4; best_j = b3_j; v_mode = b3_mode; }
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
+  if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaL, cm, i0); }
+  if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaR, cm, i0); }
 
-  /* TRUNCATED infeasibility guard (brief-003 hazard analogue, cf. tr_v_splitter_hb):
-   * if no in-band J split, EL, or truncated begin beat IMPOSSIBLE, this subproblem
-   * has no valid J parse under the bands. Do NOT recurse on uninitialized
-   * best_j/best_d (that crashes). Return IMPOSSIBLE cleanly. */
-  if (best_k == -99) {
-    /* beta shares the alpha array (outside reused it), already freed above. */
-    return best_sc;
-  }
+  /* TRUNCATED infeasibility guard: no in-band split/EL/begin/terminus beat
+   * IMPOSSIBLE -> no valid parse under the bands; return cleanly (no garbage recurse). */
+  if (best_k == -99) return best_sc;
 
   if (best_k == -1) {
     tr_v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE,
-		     r_allow_J, r_allow_L, r_allow_R, cp9b);
+		     r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE, cp9b);
     return best_sc;
   }
   if (best_k == -2) {
-    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1, TRMODE_J);
-    z = CMSubtreeFindEnd(cm, b1);
-    tr_generic_splitter_hb(cm, dsq, L, tr, b1, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1_v, b1_mode);
+    z = CMSubtreeFindEnd(cm, b1_v);
+    tr_generic_splitter_hb(cm, dsq, L, tr, b1_v, z, i0, j0,
+			   (b1_mode==TRMODE_J), (b1_mode==TRMODE_L), (b1_mode==TRMODE_R), cp9b);
     return best_sc;
   }
   if (best_k == -3) {
-    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2, TRMODE_J);
-    z = CMSubtreeFindEnd(cm, b2);
-    tr_generic_splitter_hb(cm, dsq, L, tr, b2, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2_v, b2_mode);
+    z = CMSubtreeFindEnd(cm, b2_v);
+    tr_generic_splitter_hb(cm, dsq, L, tr, b2_v, z, i0, j0,
+			   (b2_mode==TRMODE_J), (b2_mode==TRMODE_L), (b2_mode==TRMODE_R), cp9b);
+    return best_sc;
+  }
+  if (best_k == -4) {
+    /* marginal terminus: solve the parent V-problem r..b3_v with a degenerate hole */
+    tr_v_splitter_hb(cm, dsq, L, tr, r, b3_v, i0, best_j, best_j, j0, FALSE,
+		     r_allow_J, r_allow_L, r_allow_R,
+		     (v_mode==TRMODE_J), (v_mode==TRMODE_L), (v_mode==TRMODE_R), cp9b);
     return best_sc;
   }
 
+  /* bifurcation split (best_k in [0,d]); one child may be empty (mode TRMODE_T) */
   tr_v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, FALSE,
-		   r_allow_J, r_allow_L, r_allow_R, cp9b);
+		   r_allow_J, r_allow_L, r_allow_R,
+		   (v_mode==TRMODE_J), (v_mode==TRMODE_L), (v_mode==TRMODE_R), cp9b);
   tv = tr->n-1;
 
-  InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w, TRMODE_J);
-  tr_generic_splitter_hb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k,
-			 r_allow_J, r_allow_L, r_allow_R, cp9b);
-  InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, TRMODE_J);
-  tr_generic_splitter_hb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j,
-			 r_allow_J, r_allow_L, r_allow_R, cp9b);
+  if (w_mode != TRMODE_T) {
+    InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w, w_mode);
+    tr_generic_splitter_hb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k,
+			   (w_mode==TRMODE_J), (w_mode==TRMODE_L), (w_mode==TRMODE_R), cp9b);
+  } else
+    InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_d, w, TRMODE_T);
+
+  if (y_mode != TRMODE_T) {
+    InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, y_mode);
+    tr_generic_splitter_hb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j,
+			   (y_mode==TRMODE_J), (y_mode==TRMODE_L), (y_mode==TRMODE_R), cp9b);
+  } else
+    InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, TRMODE_T);
 
   return best_sc;
 }
