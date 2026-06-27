@@ -58,6 +58,20 @@
 #define DEBUGSERIAL 0
 #define DEBUGMPI    0
 
+/* Brief 017 (Part A): scale-aware default for the IBV D&C base-case slab
+ * on the --hmm --p7ibv path. When the user has NOT set --p7ibv-base-slab,
+ * the deriver otherwise picks the adaptive 256 MB-capped slab, which is
+ * far above the memory knee at common scale (brief 015: base_slab 1024 for
+ * norovirus, 372 for sars). Brief 015's sweep showed base_slab ~= 64 is the
+ * memory knee at common scale (norovirus 237->70 MB, sars 476->265 MB for
+ * ~+0.4-1.6 s wall) AND is at/below the adaptive value at genome scale
+ * (HSV adaptive ~72, and 64 is below the matrix peak so peak RSS is
+ * unchanged there). A flat 64 default is therefore robust across scales.
+ * The deriver's OUTPUT is byte-invariant to base_slab (brief 017 gate A1),
+ * so this is a silent memory-only default; an explicit --p7ibv-base-slab
+ * overrides it. */
+#define HMM_P7IBV_KNEE_BASE_SLAB 64
+
 typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
@@ -829,7 +843,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].do_hmmnoband = do_hmmnoband;
 	winfo[k].do_p7ibv    = do_p7ibv;
 	winfo[k].ibv_delta   = esl_opt_GetInteger(go, "--p7ibv-delta");
-	winfo[k].ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");
+	/* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
+	 * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
+	winfo[k].ibv_base_slab = esl_opt_IsDefault(go, "--p7ibv-base-slab")
+	                         ? HMM_P7IBV_KNEE_BASE_SLAB
+	                         : esl_opt_GetInteger(go, "--p7ibv-base-slab");
 	/* CM only needed by the IBV deriver (for cm->fp7); else unused in --hmm mode */
 	winfo[k].cm          = do_p7ibv ? cm : NULL;
 	winfo[k].dataA       = NULL;
@@ -927,9 +945,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
 	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
+	    /* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
+	     * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
 	    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->n,
 					      p7ibv_delta,
-					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
+					      (esl_opt_IsDefault(go, "--p7ibv-base-slab")
+					       ? HMM_P7IBV_KNEE_BASE_SLAB
+					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
