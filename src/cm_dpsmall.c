@@ -6321,6 +6321,8 @@ v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
 static int tr_dnc_pty_idx = -1;   /* truncation-penalty index (TRPENALTY_*), set at entry */
 static int tr_dnc_local   = 0;    /* TRUE if CMH_LOCAL_BEGIN (use l_ptyAA), else g_ptyAA  */
+static int tr_dnc_scoreonly = 0;  /* brief 049: if TRUE, splitters return best_sc without
+                                  * recursing (SCORE gate for part-2c-i; parse is part-2c-ii) */
 
 /* The (penalty-aware) truncated-begin score for entering state v, or IMPOSSIBLE. */
 static float
@@ -6392,33 +6394,6 @@ tr_free_lr_shadow(void ***shadow, char ***kmode, CM_t *cm, int i0, int j0)
   }
 }
 
-/* 1-D marginal beta rows for the L/R outside planes (brief 046, R4.4b-part-2).
- * beta->L is indexed by the left coordinate i, beta->R by the right coordinate j;
- * each marginal mode has a single float row per state spanning [i0-1 .. j0+1]
- * (shifted-pointer idiom, like alloc_vjd_deck's rows). O(W) per state -- negligible
- * next to the 2-D banded J decks; rows recycle with the J decks (touch counting). */
-static float *
-tr_alloc_marg_row(int i0, int j0)
-{
-  int    W = j0 - i0 + 1;
-  float *r = malloc(sizeof(float) * (W + 3));
-  if (r == NULL) cm_Fail("Memory allocation error.");
-  return r - (i0 - 1);            /* index by absolute coord in [i0-1 .. j0+1] */
-}
-static void
-tr_free_marg_row(float *r, int i0)
-{
-  if (r != NULL) free(r + (i0 - 1));
-}
-/* free a whole marginal-row matrix (per-state rows + the pointer array) */
-static void
-tr_free_marg_matrix(float **m, CM_t *cm, int i0)
-{
-  int v;
-  if (m == NULL) return;
-  for (v = 0; v <= cm->M; v++) tr_free_marg_row(m[v], i0);
-  free(m);
-}
 
 /* forward declarations (mutually recursive) */
 static float tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
@@ -6439,8 +6414,8 @@ static float tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
 static void  tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 			   int do_full, int fill_L, int fill_R,
 			   float ***beta, float ****ret_beta,
-			   float **betaL, float ***ret_betaL,
-			   float **betaR, float ***ret_betaR,
+			   float ***betaL, float ****ret_betaL,
+			   float ***betaR, float ****ret_betaR,
 			   struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 			   float *ret_bsc, int *ret_bv, int *ret_bj, int *ret_bmode, CP9Bands_t *cp9b);
 static float tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
@@ -7080,7 +7055,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   return 0.;
 }
 
-/* Function: tr_outside_hb()  [brief 044, R4.4a]
+/* Function: tr_outside_hb()  [brief 044, R4.4a J; brief 049, R4.4b-pt2c-i: 2-D L/R]
  *
  * Purpose:  J-plane truncated analogue of outside_hb(). Identical banded outside
  *           recurrence, EXCEPT the root deck handling implements the truncated
@@ -7090,13 +7065,27 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           tr_trpenalty(v) (replacing the local-begin cm->beginsc[v] injection),
  *           which then propagates down. This makes beta[v] carry "begin into an
  *           ancestor -> descend to v", exactly the oracle's semantics.
+ *
+ *           Brief 049 (R4.4b-part-2c-i): the L/R marginal outside is now stored as
+ *           full 2-D banded vjd decks betaL[v][j][d] / betaR[v][j][d] (NOT the 1-D
+ *           rows brief 046 used). The L/R recurrence is transcribed cell-for-cell
+ *           from the canonical banded oracle cm_TrCYKOutsideAlignHB()
+ *           (cm_dpalign_trunc.c:6952-7102): the marginal-mode boundary gates are the
+ *           subproblem boundaries j==j0 (L) / i==i0 (R) -- the D&C sub-region
+ *           restriction of the oracle's global j==L / i==1. The 2-D form is
+ *           band-consistent by construction (it can represent "j==j0", which the
+ *           1-D betaL[v][j][dp_v] could not -> 047's mixed-split over-score is gone).
+ *           Decks are banded vjd and free on the same touch-count loop as the J
+ *           beta, so the live frontier stays O(log N). T is OFF (R4.4c).
+ *           NOTE: marginal local-end (Lbeta/Rbeta at deck M) is NOT yet built;
+ *           valid only for CMH_LOCAL_END==off (global) -- see brief 049 summary.
  */
 static void
 tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      int do_full, int fill_L, int fill_R,
 	      float ***beta, float ****ret_beta,
-	      float **betaL, float ***ret_betaL,
-	      float **betaR, float ***ret_betaR,
+	      float ***betaL, float ****ret_betaL,
+	      float ***betaR, float ****ret_betaR,
 	      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
 	      float *ret_bsc, int *ret_bv, int *ret_bj, int *ret_bmode, CP9Bands_t *cp9b)
 {
@@ -7112,7 +7101,6 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   int      voffset;
   int      w1,w2;
   int      jn, jx;
-  int      il;                   /* left-coordinate loop var for the L mini-recursion */
   float    b_sc   = IMPOSSIBLE;  /* best marginal terminus ("local hit in parent")    */
   int      b_v    = -1;
   int      b_j    = -1;
@@ -7129,10 +7117,11 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
-  /* L/R marginal beta pointer arrays (1-D rows per state). Reuse caller's if any
-   * (chaining), else allocate fresh; rows recycle with the J decks. */
-  if (fill_L && betaL == NULL) { ESL_ALLOC(betaL, sizeof(float *) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaL[v] = NULL; }
-  if (fill_R && betaR == NULL) { ESL_ALLOC(betaR, sizeof(float *) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaR[v] = NULL; }
+  /* L/R marginal beta pointer arrays (2-D banded vjd decks per state, brief 049).
+   * Reuse caller's if any (chaining), else allocate fresh; decks recycle with the
+   * J decks (touch counting). */
+  if (fill_L && betaL == NULL) { ESL_ALLOC(betaL, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaL[v] = NULL; }
+  if (fill_R && betaR == NULL) { ESL_ALLOC(betaR, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaR[v] = NULL; }
 
   w1 = cm->nodemap[cm->ndidx[vroot]];
   if (cm->sttype[vroot] == B_st) {
@@ -7147,16 +7136,24 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
       jp_v = j - jmin[v];
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
     }
-    if (fill_L) { betaL[v] = tr_alloc_marg_row(i0, j0); for (il = i0-1; il <= j0+1; il++) betaL[v][il] = IMPOSSIBLE; }
-    if (fill_R) { betaR[v] = tr_alloc_marg_row(i0, j0); for (j  = i0-1; j  <= j0+1; j++)  betaR[v][j]  = IMPOSSIBLE; }
+    if (fill_L) { betaL[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+      for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaL[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
+    if (fill_R) { betaR[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+      for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaR[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
   }
   /* TRUNCATED: omit the normal root seed (beta[0][j0][W]=0) when vroot==0 -- in
    * truncated mode there is no normal ROOT_S descent. For interior subproblems
-   * (vroot!=0) keep the standard root seed (J + the marginal-mode root seeds). */
+   * (vroot!=0) keep the standard root seed (J + the marginal-mode root seeds). The
+   * L/R marginal root cell is (j0,W) -- same cell as J (the full-span subproblem
+   * corner), the 2-D analogue of the 1-D betaL[vroot][i0]/betaR[vroot][j0]. */
   if (vroot != 0) {
-    int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) beta[vroot][j0][dpr] = 0;
-    if (fill_L) betaL[vroot][i0] = 0.;     /* L marginal at vroot: left coord i0 */
-    if (fill_R) betaR[vroot][j0] = 0.;     /* R marginal at vroot: right coord j0 */
+    int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) {
+      beta[vroot][j0][dpr] = 0;
+      if (fill_L && cp9b->Lvalid[vroot]) betaL[vroot][j0][dpr] = 0.;
+      if (fill_R && cp9b->Rvalid[vroot]) betaR[vroot][j0][dpr] = 0.;
+    }
   }
 
   if (cm->flags & CMH_LOCAL_END) {
@@ -7224,96 +7221,30 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	jp_v = j - jmin[v];
 	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
       }
-      if (fill_L) { betaL[v] = tr_alloc_marg_row(i0, j0); for (il = i0-1; il <= j0+1; il++) betaL[v][il] = IMPOSSIBLE; }
-      if (fill_R) { betaR[v] = tr_alloc_marg_row(i0, j0); for (j  = i0-1; j  <= j0+1; j++)  betaR[v][j]  = IMPOSSIBLE; }
+      if (fill_L) { betaL[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+	for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaL[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
+      if (fill_R) { betaR[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
+	for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaR[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
 
       /* TRUNCATED-BEGIN injection: at the top (vroot==0, full span i0=1,j0=L) any
        * Jvalid state v may be entered via a truncated begin with penalty
        * tr_trpenalty(v). (Replaces the non-trunc CMH_LOCAL_BEGIN / cm->beginsc[v]
        * injection; unconditional on local mode -- truncated begins always apply.)
-       * L/R: inject the same penalty into the marginal root cell (L: left coord i0;
-       * R: right coord j0) for each {L,R}valid v -- mirrors the J injection. */
-      if (vroot == 0 && i0 == 1 && j0 == L && cp9b->Jvalid[v]) {
+       * L/R (brief 049): inject into the 2-D marginal root cell (j0,W) -- the same
+       * full-span corner as J (oracle cm_TrCYKOutsideAlignHB:6739-6741) -- for each
+       * {L,R}valid v. */
+      if (vroot == 0 && i0 == 1 && j0 == L &&
+	  (jmin[v] <= j0 && jmax[v] >= j0)
+	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)) {
+	int dpW = W - hdmin[v][j0-jmin[v]];
 	float trpen = tr_trpenalty(cm, v);
-	if (NOT_IMPOSSIBLE(trpen)
-	    && (jmin[v] <= j0 && jmax[v] >= j0)
-	    && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)
-	    && trpen > beta[v][j0][W - hdmin[v][j0-jmin[v]]])
-	  beta[v][j0][W - hdmin[v][j0-jmin[v]]] = trpen;
-      }
-      if (fill_L && vroot == 0 && i0 == 1 && j0 == L && cp9b->Lvalid[v]) {
-	float trpen = tr_trpenalty(cm, v);
-	if (NOT_IMPOSSIBLE(trpen) && trpen > betaL[v][i0]) betaL[v][i0] = trpen;
-      }
-      if (fill_R && vroot == 0 && i0 == 1 && j0 == L && cp9b->Rvalid[v]) {
-	float trpen = tr_trpenalty(cm, v);
-	if (NOT_IMPOSSIBLE(trpen) && trpen > betaR[v][j0]) betaR[v][j0] = trpen;
-      }
-
-      /* L mini-recursion: beta->L[v][il] over left coord il, derived from parent
-       * marginal betas (HB-consistent: MP uses lmesc, ML/IL use esc, right-emitters
-       * pass through). Then track the marginal terminus b_sc. */
-      if (fill_L)
-      for (il = i0; il <= j0+1; il++) {
-	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	  if (y < vroot) continue;
-	  voffset = v - cm->cfirst[y];
-	  switch (cm->sttype[y]) {
-	  case MP_st:
-	    if (il > i0) { escore = cm->lmesc[y][dsq[il-1]];
-	      if ((sc = betaL[y][il-1] + cm->tsc[y][voffset] + escore) > betaL[v][il]) betaL[v][il] = sc; }
-	    break;
-	  case ML_st: case IL_st:
-	    if (il > i0) {
-	      if (dsq[il-1] < cm->abc->K) escore = cm->esc[y][(int) dsq[il-1]];
-	      else                        escore = esl_abc_FAvgScore(cm->abc, dsq[il-1], cm->esc[y]);
-	      if ((sc = betaL[y][il-1] + cm->tsc[y][voffset] + escore) > betaL[v][il]) betaL[v][il] = sc; }
-	    break;
-	  case MR_st: case IR_st: case S_st: case E_st: case D_st:
-	    if ((sc = betaL[y][il] + cm->tsc[y][voffset]) > betaL[v][il]) betaL[v][il] = sc;
-	    break;
-	  default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
-	  }
+	if (NOT_IMPOSSIBLE(trpen)) {
+	  if (cp9b->Jvalid[v]            && trpen > beta[v][j0][dpW])  beta[v][j0][dpW]  = trpen;
+	  if (fill_L && cp9b->Lvalid[v]  && trpen > betaL[v][j0][dpW]) betaL[v][j0][dpW] = trpen;
+	  if (fill_R && cp9b->Rvalid[v]  && trpen > betaR[v][j0][dpW]) betaR[v][j0][dpW] = trpen;
 	}
-	escore = 0.;
-	if (il <= j0) {
-	  if (cm->sttype[v] == MP_st) escore = cm->lmesc[v][dsq[il]];
-	  else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
-	    escore = (dsq[il] < cm->abc->K) ? cm->esc[v][(int) dsq[il]] : esl_abc_FAvgScore(cm->abc, dsq[il], cm->esc[v]);
-	}
-	if (NOT_IMPOSSIBLE(betaL[v][il]) && betaL[v][il] + escore > b_sc) { b_sc = betaL[v][il] + escore; b_v = v; b_j = il; b_mode = TRMODE_L; }
-      }
-
-      /* R mini-recursion: beta->R[v][j] over right coord j (mirror of L). */
-      if (fill_R)
-      for (j = j0; j >= i0-1; j--) {
-	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	  if (y < vroot) continue;
-	  voffset = v - cm->cfirst[y];
-	  switch (cm->sttype[y]) {
-	  case MP_st:
-	    if (j < j0) { escore = cm->rmesc[y][dsq[j+1]];
-	      if ((sc = betaR[y][j+1] + cm->tsc[y][voffset] + escore) > betaR[v][j]) betaR[v][j] = sc; }
-	    break;
-	  case MR_st: case IR_st:
-	    if (j < j0) {
-	      if (dsq[j+1] < cm->abc->K) escore = cm->esc[y][(int) dsq[j+1]];
-	      else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
-	      if ((sc = betaR[y][j+1] + cm->tsc[y][voffset] + escore) > betaR[v][j]) betaR[v][j] = sc; }
-	    break;
-	  case ML_st: case IL_st: case S_st: case E_st: case D_st:
-	    if ((sc = betaR[y][j] + cm->tsc[y][voffset]) > betaR[v][j]) betaR[v][j] = sc;
-	    break;
-	  default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
-	  }
-	}
-	escore = 0.;
-	if (j >= i0) {
-	  if (cm->sttype[v] == MP_st) escore = cm->rmesc[v][dsq[j]];
-	  else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
-	    escore = (dsq[j] < cm->abc->K) ? cm->esc[v][(int) dsq[j]] : esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
-	}
-	if (NOT_IMPOSSIBLE(betaR[v][j]) && betaR[v][j] + escore > b_sc) { b_sc = betaR[v][j] + escore; b_v = v; b_j = j; b_mode = TRMODE_R; }
       }
 
       jn = ESL_MAX(i0-1, jmin[v]);
@@ -7325,64 +7256,100 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	  {
 	    int dp_v = d - hdmin[v][jp_v];
 	    int dp_y;
+	    int do_L_v = fill_L && cp9b->Lvalid[v];
+	    int do_R_v = fill_R && cp9b->Rvalid[v];
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	      if (y < vroot) continue;
 	      voffset = v - cm->cfirst[y];
 
+	      /* Brief 049: J keeps the exact R4.4a recurrence; L/R now fill the
+	       * 2-D banded decks betaL[v][j][d]/betaR[v][j][d], transcribed cell-
+	       * for-cell from cm_TrCYKOutsideAlignHB (cm_dpalign_trunc.c:7000-7093).
+	       * Marginal boundary gates are j==j0 (L) / i==i0 (R) -- the D&C sub-
+	       * region restriction of the oracle's global j==L / i==1. */
 	      switch(cm->sttype[y]) {
 	      case MP_st:
-		if (j == j0 || d == jp) continue;
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
-		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
-		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
-		if (hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
+		/* J <- J : gate j!=j0 && d!=jp ; y at (j+1,d+2) ; pair esc */
+		if (j != j0 && d != jp) {
+		  if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
+		    escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+		  else
+		    escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+		  if (hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
 		    (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
-		/* L/R parent (MP emits left only / right only in the marginal mode) */
-		if (fill_L && NOT_IMPOSSIBLE(betaL[y][i-1]) &&
-		    (sc = betaL[y][i-1] + cm->tsc[y][voffset] + cm->lmesc[y][dsq[i-1]]) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
-		if (fill_R && NOT_IMPOSSIBLE(betaR[y][j+1]) &&
-		    (sc = betaR[y][j+1] + cm->tsc[y][voffset] + cm->rmesc[y][dsq[j+1]]) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
+		}
+		/* L branch (MP parent emits LEFT in L mode): gate j==j0 && d!=jp ; y at (j,d+1) ; lmesc */
+		if (fill_L && j == j0 && d != jp) {
+		  int dpyL;
+		  if (hb_inband(cp9b, y, j, d+1, i0, j0, &dpyL) && NOT_IMPOSSIBLE(betaL[y][j][dpyL])) {
+		    sc = betaL[y][j][dpyL] + cm->tsc[y][voffset] + cm->lmesc[y][dsq[i-1]];
+		    if (cp9b->Jvalid[v] && sc > beta[v][j][dp_v])  beta[v][j][dp_v]  = sc;
+		    if (do_L_v          && sc > betaL[v][j][dp_v]) betaL[v][j][dp_v] = sc;
+		  }
+		}
+		/* R branch (MP parent emits RIGHT in R mode): gate i==i0 && j!=j0 ; y at (j+1,d+1) ; rmesc */
+		if (fill_R && i == i0 && j != j0) {
+		  int dpyR;
+		  if (hb_inband(cp9b, y, j+1, d+1, i0, j0, &dpyR) && NOT_IMPOSSIBLE(betaR[y][j+1][dpyR])) {
+		    sc = betaR[y][j+1][dpyR] + cm->tsc[y][voffset] + cm->rmesc[y][dsq[j+1]];
+		    if (cp9b->Jvalid[v] && sc > beta[v][j][dp_v])  beta[v][j][dp_v]  = sc;
+		    if (do_R_v          && sc > betaR[v][j][dp_v]) betaR[v][j][dp_v] = sc;
+		  }
+		}
 		break;
 	      case ML_st:
 	      case IL_st:
-		if (d == jp) continue;
-		if (dsq[i-1] < cm->abc->K)
-		  escore = cm->esc[y][(int) dsq[i-1]];
-		else
-		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
-		if (hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y) &&
-		    (sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
-		/* L parent (emits left, esc); R parent (ML/IL emit nothing in R mode) */
-		if (fill_L && NOT_IMPOSSIBLE(betaL[y][i-1]) &&
-		    (sc = betaL[y][i-1] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
-		if (fill_R && NOT_IMPOSSIBLE(betaR[y][j]) &&
-		    (sc = betaR[y][j] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
+		/* J<-J and L<-L : gate d!=jp ; y at (j,d+1) ; left esc(i-1) */
+		if (d != jp) {
+		  if (dsq[i-1] < cm->abc->K)
+		    escore = cm->esc[y][(int) dsq[i-1]];
+		  else
+		    escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
+		  if (hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y)) {
+		    if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		      beta[v][j][dp_v] = sc;
+		    if (do_L_v && NOT_IMPOSSIBLE(betaL[y][j][dp_y]) &&
+		      (sc = betaL[y][j][dp_y] + cm->tsc[y][voffset] + escore) > betaL[v][j][dp_v])
+		      betaL[v][j][dp_v] = sc;
+		  }
+		}
+		/* R<-R (no emit): gate i==i0 && v!=y (IL self-transit guard) ; y at (j,d) */
+		if (fill_R && i == i0 && v != y) {
+		  int dpyR;
+		  if (hb_inband(cp9b, y, j, d, i0, j0, &dpyR) && NOT_IMPOSSIBLE(betaR[y][j][dpyR])) {
+		    sc = betaR[y][j][dpyR] + cm->tsc[y][voffset];
+		    if (cp9b->Jvalid[v] && sc > beta[v][j][dp_v])  beta[v][j][dp_v]  = sc;
+		    if (do_R_v          && sc > betaR[v][j][dp_v]) betaR[v][j][dp_v] = sc;
+		  }
+		}
 		break;
 	      case MR_st:
 	      case IR_st:
-		if (j == j0) continue;
-		if (dsq[j+1] < cm->abc->K)
-		  escore = cm->esc[y][(int) dsq[j+1]];
-		else
-		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
-		if (hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y) &&
-		    (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
-		/* R parent (emits right, esc); L parent (MR/IR emit nothing in L mode) */
-		if (fill_R && NOT_IMPOSSIBLE(betaR[y][j+1]) &&
-		    (sc = betaR[y][j+1] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
-		if (fill_L && NOT_IMPOSSIBLE(betaL[y][i]) &&
-		    (sc = betaL[y][i] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
-		  beta[v][j][dp_v] = sc;
+		/* J<-J and R<-R : gate j!=j0 ; y at (j+1,d+1) ; right esc(j+1) */
+		if (j != j0) {
+		  if (dsq[j+1] < cm->abc->K)
+		    escore = cm->esc[y][(int) dsq[j+1]];
+		  else
+		    escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
+		  if (hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y)) {
+		    if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		      beta[v][j][dp_v] = sc;
+		    if (do_R_v && NOT_IMPOSSIBLE(betaR[y][j+1][dp_y]) &&
+		      (sc = betaR[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > betaR[v][j][dp_v])
+		      betaR[v][j][dp_v] = sc;
+		  }
+		}
+		/* L<-L (no emit): gate j==j0 && v!=y (IR self-transit guard) ; y at (j,d) */
+		if (fill_L && j == j0 && v != y) {
+		  int dpyL;
+		  if (hb_inband(cp9b, y, j, d, i0, j0, &dpyL) && NOT_IMPOSSIBLE(betaL[y][j][dpyL])) {
+		    sc = betaL[y][j][dpyL] + cm->tsc[y][voffset];
+		    if (cp9b->Jvalid[v] && sc > beta[v][j][dp_v])  beta[v][j][dp_v]  = sc;
+		    if (do_L_v          && sc > betaL[v][j][dp_v]) betaL[v][j][dp_v] = sc;
+		  }
+		}
 		break;
 	      case S_st:
 	      case E_st:
@@ -7390,14 +7357,49 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		if (! hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) continue;
 		if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
+		if (do_L_v && NOT_IMPOSSIBLE(betaL[y][j][dp_y]) &&
+		  (sc = betaL[y][j][dp_y] + cm->tsc[y][voffset]) > betaL[v][j][dp_v])
+		  betaL[v][j][dp_v] = sc;
+		if (do_R_v && NOT_IMPOSSIBLE(betaR[y][j][dp_y]) &&
+		  (sc = betaR[y][j][dp_y] + cm->tsc[y][voffset]) > betaR[v][j][dp_v])
+		  betaR[v][j][dp_v] = sc;
 		break;
 	      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 	      }
 	    }
 	    if (beta[v][j][dp_v] < IMPOSSIBLE) beta[v][j][dp_v] = IMPOSSIBLE;
+	    if (do_L_v && betaL[v][j][dp_v] < IMPOSSIBLE) betaL[v][j][dp_v] = IMPOSSIBLE;
+	    if (do_R_v && betaR[v][j][dp_v] < IMPOSSIBLE) betaR[v][j][dp_v] = IMPOSSIBLE;
 	  }
       }
 
+      /* Marginal terminus b_sc (2-D, brief 049): the "local hit in parent" -- the
+       * optimal marginal parse stays within r..v and ends at v via a TRUNCATED END
+       * (the child bifurcation/wedge is empty). The truncated-end inside base is the
+       * d==1 single-emission cell (tr_inside_hb USED_TRUNC_END, :6775/:6795): for an
+       * emitting v in the marginal mode, inside = v's marginal emission. So the
+       * terminus is beta{L,R}[v][j][d==1] + that emission, scanned over j, for
+       * left/right-emitting v only (non-emitters get IMPOSSIBLE truncated-end). The
+       * d==1 restriction is what the 1-D row implicitly encoded; an earlier all-d
+       * scan over-claimed -> bifurcated-5S R over-score. */
+      if (fill_L && cp9b->Lvalid[v] && (cm->sttype[v]==MP_st || cm->sttype[v]==ML_st || cm->sttype[v]==IL_st))
+	for (j = ESL_MAX(i0, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
+	  int dpv1;
+	  if (! hb_inband(cp9b, v, j, 1, i0, j0, &dpv1)) continue;
+	  if (! NOT_IMPOSSIBLE(betaL[v][j][dpv1])) continue;
+	  escore = (cm->sttype[v]==MP_st) ? cm->lmesc[v][dsq[j]]
+	         : ((dsq[j] < cm->abc->K) ? cm->esc[v][(int) dsq[j]] : esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]));
+	  if (betaL[v][j][dpv1] + escore > b_sc) { b_sc = betaL[v][j][dpv1] + escore; b_v = v; b_j = j; b_mode = TRMODE_L; }
+	}
+      if (fill_R && cp9b->Rvalid[v] && (cm->sttype[v]==MP_st || cm->sttype[v]==MR_st || cm->sttype[v]==IR_st))
+	for (j = ESL_MAX(i0, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
+	  int dpv1;
+	  if (! hb_inband(cp9b, v, j, 1, i0, j0, &dpv1)) continue;
+	  if (! NOT_IMPOSSIBLE(betaR[v][j][dpv1])) continue;
+	  escore = (cm->sttype[v]==MP_st) ? cm->rmesc[v][dsq[j]]
+	         : ((dsq[j] < cm->abc->K) ? cm->esc[v][(int) dsq[j]] : esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]));
+	  if (betaR[v][j][dpv1] + escore > b_sc) { b_sc = betaR[v][j][dpv1] + escore; b_v = v; b_j = j; b_mode = TRMODE_R; }
+	}
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	int dp_v;
 	for (jp = 0; jp <= W; jp++) {
@@ -7457,8 +7459,8 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	  touch[y]--;
 	  if (touch[y] == 0) {
 	    free_banded_hb_vjd_deck(beta[y], i0, j0, y, cp9b); beta[y] = NULL;
-	    if (fill_L) { tr_free_marg_row(betaL[y], i0); betaL[y] = NULL; }
-	    if (fill_R) { tr_free_marg_row(betaR[y], i0); betaR[y] = NULL; }
+	    if (fill_L) { free_banded_hb_vjd_deck(betaL[y], i0, j0, y, cp9b); betaL[y] = NULL; }
+	    if (fill_R) { free_banded_hb_vjd_deck(betaR[y], i0, j0, y, cp9b); betaR[y] = NULL; }
 	  }
 	}
       }
@@ -7474,14 +7476,16 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     free(beta);
   } else *ret_beta = beta;
 
-  /* L/R marginal rows: return them (splitter reads them) or free everything */
+  /* L/R marginal 2-D banded decks (brief 049): return them (splitter reads them)
+   * or free everything. NOTE: deck M (EL) is not allocated for L/R yet, so use the
+   * vjd-deck free over [w1..vend], not free_banded_hb_vjd_matrix (which touches M). */
   if (fill_L) {
     if (ret_betaL != NULL) *ret_betaL = betaL;
-    else                   tr_free_marg_matrix(betaL, cm, i0);
+    else { for (v = w1; v <= vend; v++) if (betaL[v] != NULL) { free_banded_hb_vjd_deck(betaL[v], i0, j0, v, cp9b); betaL[v] = NULL; } free(betaL); }
   }
   if (fill_R) {
     if (ret_betaR != NULL) *ret_betaR = betaR;
-    else                   tr_free_marg_matrix(betaR, cm, i0);
+    else { for (v = w1; v <= vend; v++) if (betaR[v] != NULL) { free_banded_hb_vjd_deck(betaR[v], i0, j0, v, cp9b); betaR[v] = NULL; } free(betaR); }
   }
 
   if (ret_dpool == NULL) deckpool_free(dpool);
@@ -8550,7 +8554,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 {
   float ***alpha = NULL, ***Lalpha = NULL, ***Ralpha = NULL;
   float ***beta  = NULL;
-  float  **betaL = NULL, **betaR = NULL;
+  float ***betaL = NULL, ***betaR = NULL;
   int      fill_L = r_allow_L, fill_R = r_allow_R;
   float sc;
   float best_sc;
@@ -8605,21 +8609,20 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
 	  {
 	    int dp_v = d - hdmin[v][jp_v];
-	    int il   = j - d + 1;
-	    int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][il]);
-	    int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j]);
+	    int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][j][dp_v]);
+	    int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j][dp_v]);
 	    /* J */
 	    if ((sc = alpha[v][j][dp_v] + beta[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_J; c_mode=TRMODE_J; }
 	    /* L: parent v in L, child J / child L */
-	    if (haveL && (sc = alpha[v][j][dp_v] + betaL[v][il]) > best_sc)
+	    if (haveL && (sc = alpha[v][j][dp_v] + betaL[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_J; }
-	    if (haveL && cp9b->Lvalid[v] && (sc = Lalpha[v][j][dp_v] + betaL[v][il]) > best_sc)
+	    if (haveL && cp9b->Lvalid[v] && (sc = Lalpha[v][j][dp_v] + betaL[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_L; }
 	    /* R: parent v in R, child J / child R */
-	    if (haveR && (sc = alpha[v][j][dp_v] + betaR[v][j]) > best_sc)
+	    if (haveR && (sc = alpha[v][j][dp_v] + betaR[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_J; }
-	    if (haveR && cp9b->Rvalid[v] && (sc = Ralpha[v][j][dp_v] + betaR[v][j]) > best_sc)
+	    if (haveR && cp9b->Rvalid[v] && (sc = Ralpha[v][j][dp_v] + betaR[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_R; }
 	  }
       }
@@ -8643,9 +8646,12 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
   free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
-  if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaL, cm, i0); }
-  if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaR, cm, i0); }
+  if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaL, cm, i0, j0, cp9b); }
+  if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaR, cm, i0, j0, cp9b); }
 
+  /* brief 049 part-2c-i: SCORE gate -- return the combine score, skip the
+   * (part-2c-ii) V-problem traceback that isn't correct yet. */
+  if (tr_dnc_scoreonly) return best_sc;
   /* TRUNCATED infeasibility guard: nothing in-band beat IMPOSSIBLE. */
   if (best_v == -99) return best_sc;
 
@@ -8693,7 +8699,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 {
   float ***alpha = NULL, ***Lalpha = NULL, ***Ralpha = NULL;
   float ***beta  = NULL;
-  float  **betaL = NULL, **betaR = NULL;
+  float ***betaL = NULL, ***betaR = NULL;
   int      fill_L = r_allow_L, fill_R = r_allow_R;
   int      v,w,y;
   int      wend, yend;
@@ -8766,9 +8772,8 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
 	{
 	  int dp_v = d - hdmin[v][jp_v];
-	  int il   = j - d + 1;
-	  int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][il]);
-	  int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j]);
+	  int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][j][dp_v]);
+	  int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j][dp_v]);
 	  for (k = 0; k <= d; k++)
 	    {
 	      int dp_w, dp_y;
@@ -8780,28 +8785,28 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_J; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	      /* L: v in L; w=J, y=L  (k>0) */
 	      if (haveL && k > 0 && cp9b->Lvalid[y] &&
-		  (sc = alpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + betaL[v][il]) > best_sc)
+		  (sc = alpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_L; }
 	      /* L: v in L; w=J, y=J  (k>0) */
 	      if (haveL && k > 0 &&
-		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaL[v][il]) > best_sc)
+		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	      /* R: v in R; w=R, y=J  (k<d) */
 	      if (haveR && k < d && cp9b->Rvalid[w] &&
-		  (sc = Ralpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+		  (sc = Ralpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_R; y_mode=TRMODE_J; }
 	      /* R: v in R; w=J, y=J  (k<d) */
 	      if (haveR && k < d &&
-		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	    }
 	  /* k=0: left child covers all d, right child empty (L marginal) */
 	  if (haveL) {
 	    int dp_w;
 	    if (hb_inband(cp9b, w, j, d, i0, j0, &dp_w)) {
-	      if (cp9b->Lvalid[w] && (sc = Lalpha[w][j][dp_w] + betaL[v][il]) > best_sc)
+	      if (cp9b->Lvalid[w] && (sc = Lalpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_L; y_mode=TRMODE_T; }
-	      if ((sc = alpha[w][j][dp_w] + betaL[v][il]) > best_sc)
+	      if ((sc = alpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_T; }
 	    }
 	  }
@@ -8809,9 +8814,9 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	  if (haveR) {
 	    int dp_y;
 	    if (hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) {
-	      if (cp9b->Rvalid[y] && (sc = Ralpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+	      if (cp9b->Rvalid[y] && (sc = Ralpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_R; }
-	      if ((sc = alpha[y][j][dp_y] + betaR[v][j]) > best_sc)
+	      if ((sc = alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_J; }
 	    }
 	  }
@@ -8839,11 +8844,12 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (b3_sc > best_sc) { best_sc = b3_sc; best_k = -4; best_j = b3_j; v_mode = b3_mode; }
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
-  if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaL, cm, i0); }
-  if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); tr_free_marg_matrix(betaR, cm, i0); }
+  if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaL, cm, i0, j0, cp9b); }
+  if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaR, cm, i0, j0, cp9b); }
 
   /* TRUNCATED infeasibility guard: no in-band split/EL/begin/terminus beat
    * IMPOSSIBLE -> no valid parse under the bands; return cleanly (no garbage recurse). */
+  if (tr_dnc_scoreonly) return best_sc;  /* brief 049 part-2c-i: SCORE gate */
   if (best_k == -99) return best_sc;
 
   if (best_k == -1) {
@@ -8927,6 +8933,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   if ((tr_dnc_pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)
     cm_Fail("TrCYKDivideAndConquerHB(): unexpected pass idx: %d", pass_idx);
   tr_dnc_local = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  tr_dnc_scoreonly = (getenv("TRDNC_SCORE_ONLY") != NULL);
 
   tr = CreateParsetree(100);
   tr->is_std   = FALSE;
@@ -8948,10 +8955,12 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
    * (j0,i0)+USED_TRUNC_BEGIN / USED_TRUNC_END marginal-end idiom). Until that layer
    * is corrected (R4.4b-part-2c), L/R stay on the byte-exact insideT path so no
    * unproven correctness-critical code is shipped wired-in. */
-  if (r_allow_J)
-    sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, TRUE, FALSE, FALSE, cp9b);
-  else
-    sc = tr_insideT_hb(cm, dsq, L, tr, 0, z, i0, j0, TRUE, r_allow_J, r_allow_L, r_allow_R, cp9b);
+  /* Brief 049 (R4.4b-part-2c-i): L/R now route through the mode-aware generic
+   * splitter (the 2-D marginal outside + combine). This is a SCORE-gated flip: with
+   * TRDNC_SCORE_ONLY set the splitter returns best_sc without the V-problem
+   * traceback (part-2c-ii), which is not yet correct. Driver-only (rung-3/4 is not
+   * wired into cmalign dispatch on this branch), so safe to leave in with this note. */
+  sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
 
   /* the truncated-begin entry state is the first state attached below ROOT_S */
   b = (tr->n > 1) ? tr->state[1] : 0;
