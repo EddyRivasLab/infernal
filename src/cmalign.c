@@ -752,6 +752,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
   extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
   extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 016 */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -976,6 +977,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  bxf = p7_gmxb_Create(bnd);
 	  bxb = p7_gmxb_Create(bnd);
 
+	  if (getenv("INFERNAL_HMM_CKPT") != NULL) {
+	    /* brief 016: sqrt(nrow)-checkpointed F/B/Decode -> posterior in bxb.
+	     * (STEP A+B; OA + traceback still run on full bxf below.) */
+	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc)) != eslOK)
+	      cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
+	  }
+	  else {
 	  if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, gm, bxf, &fwdsc)) != eslOK)
 	    cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
 	  if ((status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bxb, &bwdsc)) != eslOK)
@@ -985,6 +993,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 		    sq->name, hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
 	  if ((status = p7_GDecodingBanded(gm, bxf, bxb, bxb, fwdsc)) != eslOK)
 	    cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
+	  }
 	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
 	    cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
 

@@ -7328,6 +7328,599 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 #undef GXB_XMX
 }
 
+
+/*****************************************************************
+ * Brief 016: sqrt(M)-row checkpointed banded F / B / Decoding / OA
+ *
+ * The banded Forward/Backward matrices (P7_GMXB bxf/bxb) are the
+ * dominant per-thread memory term at genome scale (brief 014). This
+ * block reduces that term by sqrt(nrow)-checkpointing the row axis:
+ * instead of storing all <nrow> banded rows of the Forward (and OA)
+ * matrix, store ~sqrt(nrow) "seed" rows and recompute the inter-seed
+ * row blocks on demand. The Backward matrix is never materialized: it
+ * streams (2 rows live) while its posterior is folded into the
+ * resident posterior matrix <pp>.
+ *
+ * Construction mirrors 26_0610's linear-chain cm_CheckptAlignHB
+ * (STEP A/B/OA/TB), adapted to the p7 banded DP whose checkpoint axis
+ * is the sequence row i (not the CM state v). Byte-exact discipline:
+ * the per-cell recurrences and p7_FLogsum / ESL_MAX call order are
+ * copied VERBATIM from my_p7_GForwardBanded / p7_GBackwardBanded /
+ * p7_GDecodingBanded / p7_GOptimalAccuracyBanded / p7_GOATraceBanded
+ * above; only deck *storage* is windowed. p7_FLogsum is a symmetric
+ * deterministic LUT, so identical inputs in identical order -> identical
+ * bits. The existing non-checkpointed functions are NOT modified.
+ *****************************************************************/
+
+/* Per-call banded-row geometry, derived once from a P7_GBANDS. */
+typedef struct {
+  int      nrow;     /* number of banded rows                         */
+  int      nseg;     /* number of band segments                       */
+  int      M;        /* profile length                                */
+  int      L;        /* sequence length                               */
+  int     *irow;     /* [0..nrow-1] sequence position i of banded row */
+  int     *ka;       /* [0..nrow-1] band low  k for the row           */
+  int     *kb;       /* [0..nrow-1] band high k for the row           */
+  int     *gap;      /* [0..nrow-1] # unbanded rows just below this    */
+                     /*   row (i_r - i_{r-1} - 1; r=0: i_0 - 1).       */
+                     /*   gap>0  <=>  row r starts a new segment.      */
+  int64_t *dpoff;    /* [0..nrow-1] cell offset of row in a full dp    */
+  int      B;        /* checkpoint block size ~ round(sqrt(nrow))     */
+  int      nblk;     /* number of blocks = ceil(nrow/B)               */
+  int      maxnc;    /* max (kb-ka+1) over rows (scratch sizing)       */
+} P7B_GEO;
+
+static void
+p7b_geo_Destroy(P7B_GEO *g)
+{
+  if (g == NULL) return;
+  if (g->irow)  free(g->irow);
+  if (g->ka)    free(g->ka);
+  if (g->kb)    free(g->kb);
+  if (g->gap)   free(g->gap);
+  if (g->dpoff) free(g->dpoff);
+  free(g);
+}
+
+static P7B_GEO *
+p7b_geo_Create(const P7_GBANDS *bnd, int M, int L)
+{
+  P7B_GEO *g = NULL;
+  int      status;
+  int     *ip = bnd->imem;
+  int     *kp = bnd->kmem;
+  int      nrow = bnd->nrow;
+  int      seg, i, r = 0, prev_i = 0;
+  int64_t  cum = 0;
+
+  ESL_ALLOC(g, sizeof(P7B_GEO));
+  g->irow = g->ka = g->kb = g->gap = NULL;
+  g->dpoff = NULL;
+  g->nrow = nrow; g->nseg = bnd->nseg; g->M = M; g->L = L;
+  ESL_ALLOC(g->irow,  sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->ka,    sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->kb,    sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->gap,   sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->dpoff, sizeof(int64_t) * (nrow ? nrow : 1));
+
+  g->maxnc = 0;
+  for (seg = 0; seg < bnd->nseg; seg++) {
+    int ia = *ip++;
+    int ib = *ip++;
+    for (i = ia; i <= ib; i++) {
+      int ka = *kp++;
+      int kb = *kp++;
+      int nc = kb - ka + 1;
+      g->irow[r]  = i;
+      g->ka[r]    = ka;
+      g->kb[r]    = kb;
+      g->gap[r]   = i - prev_i - 1;     /* prev_i = 0 before first row */
+      g->dpoff[r] = cum;
+      cum        += (int64_t) nc * p7G_NSCELLS;
+      if (nc > g->maxnc) g->maxnc = nc;
+      prev_i = i;
+      r++;
+    }
+  }
+  g->B = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
+  if (g->B < 1) g->B = 1;
+  g->nblk = (nrow + g->B - 1) / g->B;
+  return g;
+
+ ERROR:
+  p7b_geo_Destroy(g);
+  return NULL;
+}
+
+/* p7b_fwd_row(): fill one banded Forward row.  Verbatim copy of the
+ * per-row body of my_p7_GForwardBanded() (k-loop + special updates).
+ *
+ *   dpc  - OUT: row's dp cells, p7G_NSCELLS*(kb-ka+1) floats, k ascending
+ *   dpp  - prev row's dp cells (k=kap..kbp), or NULL at a segment start
+ *   xB_in- B-state value entering this row
+ *   x{N,J,C}_in - N/J/C running specials entering this row
+ *   o_x* - OUT: specials after this row (xE,xN,xJ,xB,xC)
+ */
+static void
+p7b_fwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, float esc,
+            int i, int kac, int kbc, const float *dpp, int kap, int kbp,
+            float xB, float xN_in, float xJ_in, float xC_in,
+            float *dpc,
+            float *o_xE, float *o_xN, float *o_xJ, float *o_xB, float *o_xC)
+{
+  float const *tsc = gm->tsc;
+  float const *rsc = gm->rsc[dsq[i]];
+  float        mvp, ivp, dvp, dc, sc, xE;
+  int          k;
+  int          kbc2 = (kbc == M ? kbc - 1 : kbc);
+
+  dc = -eslINFINITY;
+  xE = -eslINFINITY;
+
+  /* advance dpp by any left overhang of the previous row */
+  if (dpp != NULL) dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
+
+  if (dpp != NULL && kac > kap && kac-1 <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+  else                                          { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+  for (k = kac; k <= kbc2; k++)
+    {
+      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+                                         p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+
+      if (dpp != NULL && k >= kap && k <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+      else                                     { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+      *dpc++ = ISC(k) + p7_FLogsum( mvp + TSC(p7P_MI, k), ivp + TSC(p7P_II, k));
+
+      xE     = p7_FLogsum( p7_FLogsum(sc + esc, dc + esc), xE);
+
+      *dpc++ = dc;
+      dc     = p7_FLogsum( sc + TSC(p7P_MD, k), dc + TSC(p7P_DD, k));
+    }
+
+  if (kbc2 < kbc) /* kbc==M: unrolled final column */
+    {
+      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+                                         p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+      *dpc++ = -eslINFINITY;
+      *dpc++ = dc;
+      xE     = p7_FLogsum( p7_FLogsum(sc, dc), xE);
+    }
+
+  *o_xE = xE;
+  *o_xN = xN_in + gm->xsc[p7P_N][p7P_LOOP];
+  *o_xJ = p7_FLogsum( xJ_in + gm->xsc[p7P_J][p7P_LOOP], xE + gm->xsc[p7P_E][p7P_LOOP]);
+  *o_xB = p7_FLogsum( *o_xJ + gm->xsc[p7P_J][p7P_MOVE],  *o_xN + gm->xsc[p7P_N][p7P_MOVE]);
+  *o_xC = p7_FLogsum( xE + gm->xsc[p7P_E][p7P_MOVE],     xC_in + gm->xsc[p7P_C][p7P_LOOP]);
+}
+
+/* A Forward checkpoint seed: the state ENTERING a block (= the state
+ * after the last row of the previous block).  block b (b>=1) starts
+ * from seed[b]; block 0 starts from the initial state.
+ */
+typedef struct {
+  float  *dp;        /* copy of the previous row's dp cells (NULL if none) */
+  int     ka, kb;    /* that row's band (kap,kbp for the next row)         */
+  float   xN, xJ, xC, xB;  /* running specials after that row             */
+  int     valid;
+} P7B_FSEED;
+
+/* p7b_forward_seeds(): STEP A.  Stream banded Forward once, store the
+ * entering state for each block, and return the Forward score.
+ */
+static int
+p7b_forward_seeds(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+                  P7B_FSEED *seed, float *ret_fwdsc)
+{
+  int    status;
+  int    M = g->M, L = g->L, B = g->B;
+  float  esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  float *buf0 = NULL, *buf1 = NULL;     /* prev / cur row dp scratch */
+  float *prev = NULL, *cur;
+  int    r, kap = M+1, kbp = M+1;
+  float  xN = 0.0f, xJ = -eslINFINITY, xC = -eslINFINITY, xB;
+  float  xE_o, xN_o, xJ_o, xB_o, xC_o;
+
+  ESL_ALLOC(buf0, sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(buf1, sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+
+  xB = -eslINFINITY;
+  for (r = 0; r < g->nrow; r++)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      const float *dpp;
+      int   seg_start = (g->gap[r] > 0) || (r == 0);
+
+      cur = (prev == buf0) ? buf1 : buf0;
+
+      if (seg_start) {
+        if (g->gap[r] > 0) {
+          xN += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+          xJ += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+          xC += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+        }
+        xB  = p7_FLogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+        dpp = NULL;
+      } else {
+        /* continue segment: xN/xJ/xC/xB already hold prev row's output */
+        dpp = prev;
+      }
+
+      p7b_fwd_row(dsq, gm, M, esc, i, kac, kbc, dpp, kap, kbp,
+                  xB, xN, xJ, xC, cur,
+                  &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      kap = kac; kbp = kbc;
+      prev = cur;
+
+      /* snapshot a seed if the NEXT row begins a new block */
+      if (r + 1 < g->nrow && ((r + 1) % B) == 0) {
+        int b = (r + 1) / B;
+        int nc = kbc - kac + 1;
+        ESL_ALLOC(seed[b].dp, sizeof(float) * nc * p7G_NSCELLS);
+        memcpy(seed[b].dp, cur, sizeof(float) * nc * p7G_NSCELLS);
+        seed[b].ka = kac; seed[b].kb = kbc;
+        seed[b].xN = xN;  seed[b].xJ = xJ; seed[b].xC = xC; seed[b].xB = xB;
+        seed[b].valid = 1;
+      }
+    }
+
+  /* Forward score: tail last_ib+1..L runs through C only. */
+  { int last_ib = (g->nrow > 0) ? g->irow[g->nrow-1] : 0;
+    int tail    = L - last_ib;
+    *ret_fwdsc  = (tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE];
+  }
+
+  free(buf0); free(buf1);
+  return eslOK;
+
+ ERROR:
+  if (buf0) free(buf0);
+  if (buf1) free(buf1);
+  return status;
+}
+
+/* p7b_fwd_block(): recompute Forward rows [lo..hi] from seed[b], into
+ * caller buffers: fdp[r-lo] points into a packed block buffer, and the
+ * per-row running specials are returned in fxN/fxJ/fxC (specials AFTER
+ * each row).  Also returns, in *s_xN/*s_xJ/*s_xC, the specials of the
+ * row just below lo (i.e. the seed's specials) for the decoder's
+ * fwd(i-1) at i=lo.  blkbuf must hold the block's cells contiguously.
+ */
+static void
+p7b_fwd_block(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+              const P7B_FSEED *seed, int b, int lo, int hi,
+              float *blkbuf, int64_t *roff,
+              float *fxN, float *fxJ, float *fxC,
+              float *s_xN, float *s_xJ, float *s_xC)
+{
+  int    M = g->M;
+  float  esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  int    r, kap, kbp;
+  float  xN, xJ, xC, xB = -eslINFINITY;
+  int64_t cum = 0;
+
+  if (b == 0) { xN = 0.0f; xJ = -eslINFINITY; xC = -eslINFINITY; kap = kbp = M+1; }
+  else        { xN = seed[b].xN; xJ = seed[b].xJ; xC = seed[b].xC; xB = seed[b].xB;
+                kap = seed[b].ka; kbp = seed[b].kb; }
+
+  *s_xN = xN; *s_xJ = xJ; *s_xC = xC;   /* seed specials = row (lo-1) */
+
+  for (r = lo; r <= hi; r++)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      float xE_o, xN_o, xJ_o, xB_o, xC_o;
+      float *dpc = blkbuf + cum;
+      const float *dpp;
+      int   no_prev   = (r == 0);                 /* global row 0 only */
+      int   seg_start = (g->gap[r] > 0) || no_prev;
+
+      if (seg_start) {
+        if (g->gap[r] > 0) {
+          xN += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+          xJ += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+          xC += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+        }
+        xB  = p7_FLogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+        dpp = NULL;
+      } else {
+        /* continue: xN/xJ/xC/xB hold prev row's output (seed for r==lo) */
+        dpp = (r == lo) ? seed[b].dp : (blkbuf + roff[r-1-lo]);
+      }
+
+      p7b_fwd_row(dsq, gm, M, esc, i, kac, kbc, dpp, kap, kbp,
+                  xB, xN, xJ, xC, dpc,
+                  &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+
+      roff[r-lo] = cum;
+      fxN[r-lo] = xN_o; fxJ[r-lo] = xJ_o; fxC[r-lo] = xC_o;
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      kap = kac; kbp = kbc;
+      cum += (int64_t)(kbc - kac + 1) * p7G_NSCELLS;
+    }
+}
+
+/* p7b_bwd_row(): fill one banded Backward row.  Verbatim copy of the
+ * per-row body of p7_GBackwardBanded() (both the i==L special-case and
+ * the normal i<L recurrence), writing dp cells in ascending-k [M,I,D]
+ * layout.  Carried specials (xC,xJ,xN,xE,xB) are updated in place.
+ *
+ *   dpn       - next row (i+1) dp cells (k=kan..kbn), unused if segment top
+ *   kan,kbn   - next row band (M+1,M+1 if next row outside band)
+ *   dpc       - OUT: this row's dp cells (k ascending, [M,I,D])
+ */
+static void
+p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, float esc,
+            int i, int L, int kac, int kbc,
+            const float *dpn, int kan, int kbn,
+            float *xC_io, float *xJ_io, float *xN_io, float *xE_io, float *xB_io,
+            float *dpc)
+{
+  float const *tsc = gm->tsc;
+  float        xC = *xC_io, xJ = *xJ_io, xN = *xN_io, xE = *xE_io, xB;
+  float        dc;
+  int          k;
+  int          kbc2 = (kbc == M ? kbc - 1 : kbc);
+
+  if (i == L)
+    {
+      /* row L special case (mirror lines ~6581-6622) */
+      xB = -eslINFINITY; xJ = -eslINFINITY; xN = -eslINFINITY;  /* xC,xE carried */
+
+      if (kbc == M) { int o=(M-kac)*p7G_NSCELLS; dpc[o]=xE; dpc[o+1]=-eslINFINITY; dpc[o+2]=xE; }
+      dc = (kbc == M) ? xE : -eslINFINITY;
+      for (k = kbc2; k >= kac; k--) {
+        float dk = p7_FLogsum(xE + esc, dc + TSC(p7P_DD, k));
+        float mk = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k));
+        int   o  = (k-kac)*p7G_NSCELLS;
+        dpc[o]   = mk; dpc[o+1] = -eslINFINITY; dpc[o+2] = dk;
+        dc = dk;
+      }
+    }
+  else
+    {
+      float const *rsc = gm->rsc[dsq[i+1]];
+
+      xB = -eslINFINITY;
+      for (k = ESL_MAX(1, kan); k <= ESL_MIN(M, kbn); k++) {
+        int   off    = (k - kan) * p7G_NSCELLS;
+        float m_next = dpn[off];
+        xB = p7_FLogsum(xB, m_next + TSC(p7P_BM, k-1) + MSC(k));
+      }
+
+      xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+      xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+      xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+      xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+
+      if (kbc == M) { int o=(M-kac)*p7G_NSCELLS; dpc[o]=xE; dpc[o+1]=-eslINFINITY; dpc[o+2]=xE; }
+      dc = (kbc == M) ? xE : -eslINFINITY;
+
+      for (k = kbc2; k >= kac; k--)
+        {
+          float mnext, inext, dnext;
+          if (k+1 >= kan && k+1 <= kbn) { int o=(k+1-kan)*p7G_NSCELLS; mnext = dpn[o] + MSC(k+1); dnext = dpn[o+2]; }
+          else                          { mnext = dnext = -eslINFINITY; }
+          if (k   >= kan && k   <= kbn) { int o=(k-kan)*p7G_NSCELLS;   inext = dpn[o+1] + ISC(k); }
+          else                          { inext = -eslINFINITY; }
+
+          float dk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_DM, k), dc + TSC(p7P_DD, k)), xE + esc);
+          float ik = p7_FLogsum(mnext + TSC(p7P_IM, k), inext + TSC(p7P_II, k));
+          float mk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
+                                p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)));
+          int   o  = (k-kac)*p7G_NSCELLS;
+          dpc[o] = mk; dpc[o+1] = ik; dpc[o+2] = dk;
+          dc = dk;
+          (void) dnext;
+        }
+    }
+
+  *xC_io = xC; *xJ_io = xJ; *xN_io = xN; *xE_io = xE; *xB_io = xB;
+}
+
+/* p7b_decode_row(): fold one row's posterior into <pp>.  Verbatim copy
+ * of the per-row body of p7_GDecodingBanded() (expf + per-row denom
+ * normalization + NaN guards). */
+static void
+p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, float fwdsc,
+               int r, int kac, int kbc,
+               const float *fdp, const float *bdp,
+               float bck_xN, float bck_xJ, float bck_xC,
+               float fwd_xN_prev, float fwd_xJ_prev, float fwd_xC_prev,
+               P7_GMXB *pp)
+{
+  int    M = g->M;
+  float *pdp = pp->dp  + g->dpoff[r];
+  float *pxp = pp->xmx + (int64_t) r * p7G_NXCELLS;
+  float  denom = 0.0f;
+  int    k;
+
+  for (k = kac; k <= kbc; k++) {
+    int off = (k - kac) * p7G_NSCELLS;
+    pdp[off] = expf(fdp[off] + bdp[off] - fwdsc);          /* M */
+    denom += pdp[off];
+    if (k < M) { pdp[off+1] = expf(fdp[off+1] + bdp[off+1] - fwdsc); denom += pdp[off+1]; }  /* I */
+    else         pdp[off+1] = 0.0f;
+    pdp[off+2] = 0.0f;                                     /* D */
+  }
+
+  pxp[p7G_E] = 0.0f;
+
+  pxp[p7G_N] = expf(fwd_xN_prev + bck_xN + gm->xsc[p7P_N][p7P_LOOP] - fwdsc);
+  if (! isfinite(pxp[p7G_N])) pxp[p7G_N] = 0.0f;
+  denom += pxp[p7G_N];
+
+  pxp[p7G_J] = expf(fwd_xJ_prev + bck_xJ + gm->xsc[p7P_J][p7P_LOOP] - fwdsc);
+  if (! isfinite(pxp[p7G_J])) pxp[p7G_J] = 0.0f;
+  denom += pxp[p7G_J];
+
+  pxp[p7G_B] = 0.0f;
+
+  pxp[p7G_C] = expf(fwd_xC_prev + bck_xC + gm->xsc[p7P_C][p7P_LOOP] - fwdsc);
+  if (! isfinite(pxp[p7G_C])) pxp[p7G_C] = 0.0f;
+  denom += pxp[p7G_C];
+
+  if (denom > 0.0f) {
+    denom = 1.0f / denom;
+    for (k = kac; k <= kbc; k++) { int off = (k - kac) * p7G_NSCELLS; pdp[off] *= denom; pdp[off+1] *= denom; }
+    pxp[p7G_N] *= denom;
+    pxp[p7G_J] *= denom;
+    pxp[p7G_C] *= denom;
+  }
+}
+
+/* p7b_backdecode(): STEP B.  Stream Backward (2 rows live) in descending
+ * blocks, recompute each block's Forward from seeds, fold the posterior
+ * into the resident <pp>.  The full Backward matrix is never stored.
+ */
+static int
+p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+               const P7B_FSEED *seed, float fwdsc, P7_GMXB *pp)
+{
+  int      status;
+  int      M = g->M, L = g->L, B = g->B;
+  float    esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  float   *blkbuf = NULL, *bbuf0 = NULL, *bbuf1 = NULL;
+  int64_t *roff   = NULL;
+  float   *fxN = NULL, *fxJ = NULL, *fxC = NULL;
+  int      b, r;
+  /* backward carry */
+  float    xC, xJ, xN, xE, xB;
+  const float *dpn = NULL;
+  int      kan = M+1, kbn = M+1;
+  float   *bnext = NULL, *bcur;
+
+  ESL_ALLOC(blkbuf, sizeof(float) * ((int64_t) B * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(roff,   sizeof(int64_t) * B);
+  ESL_ALLOC(fxN,    sizeof(float) * B);
+  ESL_ALLOC(fxJ,    sizeof(float) * B);
+  ESL_ALLOC(fxC,    sizeof(float) * B);
+  ESL_ALLOC(bbuf0,  sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(bbuf1,  sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+
+  /* init backward specials (mirror p7_GBackwardBanded init) */
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ = xB = xN = -eslINFINITY;
+
+  for (b = g->nblk - 1; b >= 0; b--)
+    {
+      int   lo = b * B;
+      int   hi = ESL_MIN((b+1)*B - 1, g->nrow - 1);
+      float s_xN, s_xJ, s_xC;
+
+      p7b_fwd_block(dsq, gm, g, seed, b, lo, hi, blkbuf, roff, fxN, fxJ, fxC, &s_xN, &s_xJ, &s_xC);
+
+      for (r = hi; r >= lo; r--)
+        {
+          int   i   = g->irow[r];
+          int   kac = g->ka[r], kbc = g->kb[r];
+          int   top = (r == g->nrow - 1) || (g->gap[r+1] > 0);
+          const float *use_dpn = dpn;
+          int   use_kan = kan, use_kbn = kbn;
+          float fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+
+          if (top) {
+            int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
+            if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
+                                 xE  = p7_FLogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+            use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
+          }
+
+          bcur = (bnext == bbuf0) ? bbuf1 : bbuf0;
+          p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, use_dpn, use_kan, use_kbn,
+                      &xC, &xJ, &xN, &xE, &xB, bcur);
+
+          /* fwd specials of row (r-1), gap-adjusted, for the decoder */
+          if (r == lo) { fwd_xN_prev = s_xN; fwd_xJ_prev = s_xJ; fwd_xC_prev = s_xC; }
+          else         { fwd_xN_prev = fxN[r-1-lo]; fwd_xJ_prev = fxJ[r-1-lo]; fwd_xC_prev = fxC[r-1-lo]; }
+          if (g->gap[r] > 0) {
+            fwd_xN_prev += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+            fwd_xJ_prev += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+            fwd_xC_prev += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+          }
+
+          p7b_decode_row(g, gm, fwdsc, r, kac, kbc, blkbuf + roff[r-lo], bcur,
+                         xN, xJ, xC, fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev, pp);
+
+          dpn = bcur; kan = kac; kbn = kbc; bnext = bcur;
+        }
+    }
+
+  free(blkbuf); free(roff); free(fxN); free(fxJ); free(fxC); free(bbuf0); free(bbuf1);
+  return eslOK;
+
+ ERROR:
+  if (blkbuf) free(blkbuf);
+  if (roff)   free(roff);
+  if (fxN)    free(fxN);
+  if (fxJ)    free(fxJ);
+  if (fxC)    free(fxC);
+  if (bbuf0)  free(bbuf0);
+  if (bbuf1)  free(bbuf1);
+  return status;
+}
+
+/* Function: p7_GCheckptFBDecode_Banded()
+ * Incept:   Brief 016
+ *
+ * Purpose:  sqrt(nrow)-row checkpointed banded Forward + Backward +
+ *           posterior decoding. Drop-in replacement for the
+ *               my_p7_GForwardBanded + p7_GBackwardBanded + p7_GDecodingBanded
+ *           sequence, producing a byte-identical posterior matrix <pp>
+ *           and Forward score, but never materializing either full F or
+ *           B banded matrix (only the resident <pp> and O(sqrt(nrow))
+ *           working set).
+ *
+ * Args:     dsq       - digital sequence 1..L
+ *           L         - sequence length
+ *           gm        - profile (glocal)
+ *           pp        - RESULT: posterior matrix (created by caller from
+ *                       the same P7_GBANDS); filled here.
+ *           ret_fwdsc - RETURN: Forward score in nats
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+                           P7_GMXB *pp, float *ret_fwdsc)
+{
+  int        status;
+  P7B_GEO   *g = NULL;
+  P7B_FSEED *seed = NULL;
+  float      fwdsc = 0.;
+  int        b;
+
+  g = p7b_geo_Create(pp->bnd, gm->M, L);
+  if (g == NULL) { status = eslEMEM; goto ERROR; }
+
+  ESL_ALLOC(seed, sizeof(P7B_FSEED) * (g->nblk > 0 ? g->nblk : 1));
+  for (b = 0; b < g->nblk; b++) { seed[b].dp = NULL; seed[b].valid = 0; }
+
+  if ((status = p7b_forward_seeds(dsq, gm, g, seed, &fwdsc)) != eslOK) goto ERROR;
+  if ((status = p7b_backdecode  (dsq, gm, g, seed, fwdsc, pp)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE"))
+    fprintf(stderr, "# p7_GCheckptFBDecode_Banded: M=%d L=%d nrow=%d B=%d nblk=%d fwdsc=%.6f\n",
+            gm->M, L, g->nrow, g->B, g->nblk, fwdsc);
+
+  for (b = 0; b < g->nblk; b++) if (seed[b].dp) free(seed[b].dp);
+  free(seed);
+  p7b_geo_Destroy(g);
+  if (ret_fwdsc) *ret_fwdsc = fwdsc;
+  return eslOK;
+
+ ERROR:
+  if (seed) { for (b = 0; b < (g ? g->nblk : 0); b++) if (seed[b].dp) free(seed[b].dp); free(seed); }
+  if (g) p7b_geo_Destroy(g);
+  return status;
+}
+
+
 /* Function: cm_nodepad_cmpint()
  * Helper for qsort in cm_ComputeP7CMNodePad().
  */
