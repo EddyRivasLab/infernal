@@ -6362,6 +6362,8 @@ typedef struct tr_vlr_s {
   char  ***Lmode, ***Rmode;      /* L/R marginal child-mode shadows                   */
   int      b_v, b_i, b_j, b_mode;/* best truncated-begin (root V-problem) entry        */
   float    b_sc;
+  int      Lb, Rb;               /* L/R truncated-begin entry states (root V-problem)  */
+  float    Lbsc, Rbsc;           /* their scores (penalty folded in)                  */
 } TR_VLR;
 
 /* free an L/R y/k shadow matrix bundle (void*** of char or int decks) allocated
@@ -7674,18 +7676,12 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   int      fill_R = (vlr != NULL) ? vlr->fill_R : FALSE;
   float ***La = NULL, ***Ra = NULL;
   char  ***Lsh = NULL, ***Rsh = NULL, ***Lmode = NULL, ***Rmode = NULL;
-  int      b_v = -1, b_i = i0, b_j = j0, b_mode = TRMODE_J;
+  int      Lb = -1, Rb = -1;
+  float    Lbsc = IMPOSSIBLE, Rbsc = IMPOSSIBLE;
 
   b   = -1;
   bsc = IMPOSSIBLE;
   if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1;
-
-  /* R4.4b-part-2 scope: the L/R marginal vji recurrences are not yet complete.
-   * (b_v/b_i/b_j/b_mode + La/Ra/Lsh/Rsh/Lmode/Rmode scaffolding is in place.) The
-   * only marginal caller (tr_vinsideT_hb) fails before reaching here, so vlr is
-   * always NULL today; guard defensively. */
-  if (vlr != NULL) cm_Fail("tr_vinside_hb: marginal vji (L/R) not yet implemented (R4.4b-part-2 remaining work)");
-  (void) b_v; (void) b_i; (void) b_j; (void) b_mode;
 
   if (a == NULL) {
     ESL_ALLOC(a, sizeof(float **) * (cm->M+1));
@@ -7904,6 +7900,146 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		a[v][jp][op] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
 	    }
+
+	    /* ---- L/R marginal vji recurrences (brief 047): a cell-for-cell
+	     * translation of the vjd tr_inside_hb L/R recurrences into vji
+	     * coords (d = j-i+1). MP uses lmesc/rmesc (NOT pair-esc); ML/IL & MR/IR
+	     * try BOTH a J child (the J->marginal heal) and the same-mode child;
+	     * D/S pass the mode through. Lmode/Rmode record the child mode for the
+	     * mode-tracking traceback. ---- */
+	    {
+	      int   styp = cm->sttype[v];
+	      int   sdl  = StateLeftDelta(styp);
+	      int   sdr  = StateRightDelta(styp);
+	      int   op_y;
+	      float esc_i, esc_j;
+	      esc_i = (dsq[i] < cm->abc->K) ? cm->esc[v][dsq[i]] : esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+	      esc_j = (dsq[j] < cm->abc->K) ? cm->esc[v][dsq[j]] : esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+
+	      /* ----- L marginal ----- */
+	      if (fill_L && cp9b->Lvalid[v]) {
+		if (styp == D_st || styp == S_st) {
+		  if (d == 0) {
+		    La[v][jp][op] = IMPOSSIBLE;
+		    if (ret_shadow != NULL && styp == S_st) { Lsh[v][jp][op] = USED_TRUNC_END; Lmode[v][jp][op] = TRMODE_L; }
+		    else if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) 0; Lmode[v][jp][op] = TRMODE_L; }
+		  } else {
+		    La[v][jp][op] = IMPOSSIBLE;
+		    if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) 0; Lmode[v][jp][op] = TRMODE_L; }
+		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		      int yy2 = cm->cfirst[v] + yoffset;
+		      if (cp9b->Lvalid[yy2] && vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y) &&
+			  (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_L; }
+		      }
+		    }
+		    if (La[v][jp][op] < IMPOSSIBLE) La[v][jp][op] = IMPOSSIBLE;
+		  }
+		}
+		else { /* emitting states: MP / ML / IL / MR / IR */
+		  La[v][jp][op] = IMPOSSIBLE;
+		  if (ret_shadow != NULL) { Lsh[v][jp][op] = USED_EL; Lmode[v][jp][op] = TRMODE_J; }
+		  if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
+		    La[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - sdl));
+		    if (ret_shadow != NULL) Lsh[v][jp][op] = USED_EL;
+		  }
+		  if (styp == MP_st || styp == ML_st || styp == IL_st) {
+		    /* L emits the left residue -> child drops it (j, i+1) */
+		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		      int yy2 = cm->cfirst[v] + yoffset;
+		      if (vji_inband(cp9b, yy2, j, i+1, i0,i1,j1,j0, &op_y)) {
+			if ((sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_J; }
+			}
+			if (cp9b->Lvalid[yy2] && (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_L; }
+			}
+		      }
+		    }
+		    if (d >= 2) La[v][jp][op] += (styp == MP_st) ? cm->lmesc[v][dsq[i]] : esc_i;
+		    else { La[v][jp][op] = (styp == MP_st) ? cm->lmesc[v][dsq[i]] : esc_i;
+			   if (ret_shadow != NULL) Lsh[v][jp][op] = USED_TRUNC_END; }
+		  }
+		  else { /* MR / IR : L mode emits nothing here -> child keeps d (j, i) */
+		    int Lyoffset0 = (styp == IR_st) ? 1 : 0;
+		    for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) {
+		      int yy2 = cm->cfirst[v] + yoffset;
+		      if (vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y)) {
+			if ((sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_J; }
+			}
+			if (cp9b->Lvalid[yy2] && (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_L; }
+			}
+		      }
+		    }
+		  }
+		  if (La[v][jp][op] < IMPOSSIBLE) La[v][jp][op] = IMPOSSIBLE;
+		}
+	      }
+
+	      /* ----- R marginal ----- */
+	      if (fill_R && cp9b->Rvalid[v]) {
+		if (styp == D_st || styp == S_st) {
+		  if (d == 0) {
+		    Ra[v][jp][op] = IMPOSSIBLE;
+		    if (ret_shadow != NULL && styp == S_st) { Rsh[v][jp][op] = USED_TRUNC_END; Rmode[v][jp][op] = TRMODE_R; }
+		    else if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) 0; Rmode[v][jp][op] = TRMODE_R; }
+		  } else {
+		    Ra[v][jp][op] = IMPOSSIBLE;
+		    if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) 0; Rmode[v][jp][op] = TRMODE_R; }
+		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		      int yy2 = cm->cfirst[v] + yoffset;
+		      if (cp9b->Rvalid[yy2] && vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y) &&
+			  (sc = Ra[yy2][jp][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_R; }
+		      }
+		    }
+		    if (Ra[v][jp][op] < IMPOSSIBLE) Ra[v][jp][op] = IMPOSSIBLE;
+		  }
+		}
+		else { /* emitting states */
+		  Ra[v][jp][op] = IMPOSSIBLE;
+		  if (ret_shadow != NULL) { Rsh[v][jp][op] = USED_EL; Rmode[v][jp][op] = TRMODE_J; }
+		  if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
+		    Ra[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - sdr));
+		    if (ret_shadow != NULL) Rsh[v][jp][op] = USED_EL;
+		  }
+		  if (styp == MP_st || styp == MR_st || styp == IR_st) {
+		    /* R emits the right residue -> child drops it (j-1, i) */
+		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+		      int yy2 = cm->cfirst[v] + yoffset;
+		      if (vji_inband(cp9b, yy2, j-1, i, i0,i1,j1,j0, &op_y)) {
+			if ((sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_J; }
+			}
+			if (cp9b->Rvalid[yy2] && (sc = Ra[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_R; }
+			}
+		      }
+		    }
+		    if (d >= 2) Ra[v][jp][op] += (styp == MP_st) ? cm->rmesc[v][dsq[j]] : esc_j;
+		    else { Ra[v][jp][op] = (styp == MP_st) ? cm->rmesc[v][dsq[j]] : esc_j;
+			   if (ret_shadow != NULL) Rsh[v][jp][op] = USED_TRUNC_END; }
+		  }
+		  else { /* ML / IL : R mode emits nothing here -> child keeps d (j, i) */
+		    int Ryoffset0 = (styp == IL_st) ? 1 : 0;
+		    for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) {
+		      int yy2 = cm->cfirst[v] + yoffset;
+		      if (vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y)) {
+			if ((sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_J; }
+			}
+			if (cp9b->Rvalid[yy2] && (sc = Ra[yy2][jp][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_R; }
+			}
+		      }
+		    }
+		  }
+		  if (Ra[v][jp][op] < IMPOSSIBLE) Ra[v][jp][op] = IMPOSSIBLE;
+		}
+	      }
+	    }
 	  }
       }
 
@@ -7919,11 +8055,31 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	a[0][j0-j1][op] = bsc;
 	if (ret_shadow != NULL) shadow[v][j0-j1][op] = USED_TRUNC_BEGIN;
       }
+      /* marginal truncated-begin bookkeeping (cell (j0,i0)), per mode */
+      if (allow_begin && v != 0 && fill_L && cp9b->Lvalid[v] && vji_inband(cp9b, v, j0, i0, i0,i1,j1,j0, &op)) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && La[v][j0-j1][op] + trpen > Lbsc) { Lb = v; Lbsc = La[v][j0-j1][op] + trpen; }
+      }
+      if (allow_begin && v == 0 && fill_L && cp9b->Lvalid[0] && vji_inband(cp9b, 0, j0, i0, i0,i1,j1,j0, &op)) {
+	La[0][j0-j1][op] = Lbsc;
+	if (ret_shadow != NULL) Lsh[v][j0-j1][op] = USED_TRUNC_BEGIN;
+      }
+      if (allow_begin && v != 0 && fill_R && cp9b->Rvalid[v] && vji_inband(cp9b, v, j0, i0, i0,i1,j1,j0, &op)) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && Ra[v][j0-j1][op] + trpen > Rbsc) { Rb = v; Rbsc = Ra[v][j0-j1][op] + trpen; }
+      }
+      if (allow_begin && v == 0 && fill_R && cp9b->Rvalid[0] && vji_inband(cp9b, 0, j0, i0, i0,i1,j1,j0, &op)) {
+	Ra[0][j0-j1][op] = Rbsc;
+	if (ret_shadow != NULL) Rsh[v][j0-j1][op] = USED_TRUNC_BEGIN;
+      }
 
       if (! do_full) {
 	for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++) {
 	  touch[y]--;
-	  if (touch[y] == 0) { free_banded_hb_vji_deck(a[y], i0,i1,j1,j0, y, cp9b); a[y] = NULL; }
+	  if (touch[y] == 0) { free_banded_hb_vji_deck(a[y], i0,i1,j1,j0, y, cp9b); a[y] = NULL;
+	    if (fill_L) { free_banded_hb_vji_deck(La[y], i0,i1,j1,j0, y, cp9b); La[y] = NULL; }
+	    if (fill_R) { free_banded_hb_vji_deck(Ra[y], i0,i1,j1,j0, y, cp9b); Ra[y] = NULL; }
+	  }
 	}
       }
     }
@@ -7938,8 +8094,25 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
     free(a);
   } else *ret_a = a;
 
+  /* marginal L/R score planes are never returned (only the shadows feed the
+   * mode-tracking traceback); free any decks still live. */
+  if (fill_L) {
+    for (v = r; v <= w2; v++) if (La[v] != NULL) { free_banded_hb_vji_deck(La[v], i0,i1,j1,j0, v, cp9b); La[v] = NULL; }
+    free(La); La = NULL;
+  }
+  if (fill_R) {
+    for (v = r; v <= w2; v++) if (Ra[v] != NULL) { free_banded_hb_vji_deck(Ra[v], i0,i1,j1,j0, v, cp9b); Ra[v] = NULL; }
+    free(Ra); Ra = NULL;
+  }
+
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
+  /* hand the marginal shadows (+ child-mode shadows) and per-mode begins to the
+   * caller (tr_vinsideT_hb) via the vlr bundle. */
+  if (vlr != NULL) {
+    vlr->Lsh = Lsh; vlr->Rsh = Rsh; vlr->Lmode = Lmode; vlr->Rmode = Rmode;
+    vlr->Lb = Lb; vlr->Lbsc = Lbsc; vlr->Rb = Rb; vlr->Rbsc = Rbsc;
+  }
   return sc;
 
  ERROR:
@@ -8159,7 +8332,16 @@ tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   cm_Fail("Memory allocation error.\n");
 }
 
-/* Function: tr_vinsideT_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of vinsideT_hb(). */
+/* Function: tr_vinsideT_hb()  [brief 044 R4.4a (J); brief 047 R4.4b-pt2b (L/R)]
+ *
+ * Whole-solve a (possibly marginal) V-problem and trace it back with full
+ * marginal-mode tracking. J (r_allow_J & z_allow_J) is the R4.4a path; L/R route
+ * the root mode through the now-implemented marginal vji recurrences. Each node
+ * carries its on-path mode; the per-mode shadow (J=shadow, L=Lsh/Lmode,
+ * R=Rsh/Rmode) supplies the child yoffset + child mode; marginal states advance
+ * only the emitting end; USED_TRUNC_END terminates the marginal chain (the
+ * emitting leaf), USED_EL/USED_TRUNC_BEGIN as in J.
+ */
 static float
 tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	       int r, int z, int i0, int i1, int j1, int j0, int useEL,
@@ -8167,69 +8349,83 @@ tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	       int z_allow_J, int z_allow_L, int z_allow_R, CP9Bands_t *cp9b)
 {
   char ***shadow;
+  TR_VLR  vlr;
   float   sc;
   int     v, y;
-  int     j, i;
-  int     op;
+  int     j, i, d, op;
   int     yoffset;
-  int     b;
+  int     b, bb;
   float   bsc;
+  char    mode, nxtmode;
 
-  /* R4.4b-part-2 scope: marginal/mixed-mode V-problems are not yet solved (the
-   * marginal vji recurrences + mode-tracking traceback are the remaining piece).
-   * The entry routes L/R through insideT, so this path is currently unreachable;
-   * fail loudly if a future wiring hits it before the vji is done. */
-  if (r_allow_L || r_allow_R || z_allow_L || z_allow_R)
-    cm_Fail("tr_vinsideT_hb: marginal/mixed L/R V-problem not yet implemented (R4.4b-part-2 remaining work)");
+  /* the V-problem's root mode (exactly one of r_allow_{J,L,R} is set) */
+  mode = r_allow_L ? TRMODE_L : (r_allow_R ? TRMODE_R : TRMODE_J);
 
   if (r == z) {
-    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, TRMODE_J);
+    InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, r, mode);
     return 0.;
   }
 
+  vlr.fill_L = r_allow_L; vlr.fill_R = r_allow_R;
+  vlr.La = vlr.Ra = NULL; vlr.Lsh = vlr.Rsh = NULL; vlr.Lmode = vlr.Rmode = NULL;
+  vlr.Lb = vlr.Rb = -1; vlr.Lbsc = vlr.Rbsc = IMPOSSIBLE;
+
   sc = tr_vinside_hb(cm, dsq, L, r, z, i0, i1, j1, j0, useEL,
 		     BE_EFFICIENT, NULL, NULL, &shadow,
-		     allow_begin, &b, &bsc, TRUE, FALSE, FALSE, NULL, cp9b);
+		     allow_begin, &b, &bsc,
+		     z_allow_J, z_allow_L, z_allow_R, &vlr, cp9b);
+
+  bb = (mode == TRMODE_L) ? vlr.Lb : (mode == TRMODE_R) ? vlr.Rb : b;
 
   v = r;
   j = j0;
   i = i0;
   while (1) {
     if (! vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op)) {
-      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, z, TRMODE_J);
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, z, mode);
       break;
     }
-    yoffset = shadow[v][j-j1][op];
+    d = j - i + 1;
+    if      (mode == TRMODE_J) { yoffset = shadow[v][j-j1][op];   nxtmode = TRMODE_J; }
+    else if (mode == TRMODE_L) { yoffset = vlr.Lsh[v][j-j1][op];  nxtmode = vlr.Lmode[v][j-j1][op]; }
+    else                       { yoffset = vlr.Rsh[v][j-j1][op];  nxtmode = vlr.Rmode[v][j-j1][op]; }
 
+    /* advance coords past v's emission (mode-dependent; only the emitting end) */
     switch (cm->sttype[v]) {
-    case D_st:            break;
-    case MP_st: i++; j--; break;
-    case ML_st: i++;      break;
-    case MR_st:      j--; break;
-    case IL_st: i++;      break;
-    case IR_st:      j--; break;
-    case S_st:            break;
+    case D_st:  break;
+    case S_st:  break;
+    case MP_st: if (mode==TRMODE_J) { i++; j--; } else if (mode==TRMODE_L && d>0) i++; else if (mode==TRMODE_R && d>0) j--; break;
+    case ML_st: if (mode==TRMODE_J || (mode==TRMODE_L && d>0)) i++; break;
+    case IL_st: if (mode==TRMODE_J || (mode==TRMODE_L && d>0)) i++; break;
+    case MR_st: if (mode==TRMODE_J || (mode==TRMODE_R && d>0)) j--; break;
+    case IR_st: if (mode==TRMODE_J || (mode==TRMODE_R && d>0)) j--; break;
     default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
     }
 
-    if (yoffset == USED_EL) {
-      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, TRMODE_J);
+    if (yoffset == USED_TRUNC_END) {
+      break;                          /* marginal leaf: the chain ends here */
+    }
+    else if (yoffset == USED_EL) {
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
       break;
     }
     else if (yoffset == USED_TRUNC_BEGIN) {
-      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, TRMODE_J);
-      v = b;
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, bb, mode);
+      v = bb;
       if (! useEL && v == z) break;
     }
     else {
+      mode = nxtmode;
       y = cm->cfirst[v] + yoffset;
-      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, TRMODE_J);
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
       v = y;
       if (! useEL && v == z) break;
     }
   }
 
   free_vji_shadow_matrix(shadow, cm->M, j1, j0);
+  if (r_allow_L) { free_vji_shadow_matrix(vlr.Lsh, cm->M, j1, j0); free_vji_shadow_matrix(vlr.Lmode, cm->M, j1, j0); }
+  if (r_allow_R) { free_vji_shadow_matrix(vlr.Rsh, cm->M, j1, j0); free_vji_shadow_matrix(vlr.Rmode, cm->M, j1, j0); }
   return sc;
 }
 
@@ -8740,12 +8936,18 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0, preset_mode);
   z = cm->M-1;
 
-  /* J: the memory-efficient HMM-banded D&C (R4.4a splitters, mode J throughout).
-   * L/R: the marginal recurrences + mode-tracking traceback are byte-exact in
-   * tr_inside_hb/tr_insideT_hb (R4.4b); they are dispatched here as a single
-   * whole-problem insideT (correct, full banded cube). The memory-efficient L/R
-   * D&C decomposition (marginal outside betas + mode-aware splitters + V-problems)
-   * is the remaining R4.4b work; J keeps its D&C memory win meanwhile. */
+  /* J: the memory-efficient HMM-banded D&C splitters (R4.4a, mode J throughout).
+   * L/R: routed through the whole-problem mode-tracking insideT (045), which is
+   * byte-exact vs the oracle. NOTE (brief 047): the marginal vji V-problem
+   * recurrences + mode-tracking traceback are now WRITTEN (tr_vinside_hb /
+   * tr_vinsideT_hb), but flipping L/R to the splitters exposed correctness bugs in
+   * the brief-046 marginal-outside/combine layer (the 1-D betaL/betaR + the
+   * truncyk-derived marginal split cases over-score / select band-infeasible
+   * splits) AND a marginal V-problem begin/termination mismatch (V-problems need a
+   * truncyk-style all-cell begin scan + z-boundary termination, not the vjd
+   * (j0,i0)+USED_TRUNC_BEGIN / USED_TRUNC_END marginal-end idiom). Until that layer
+   * is corrected (R4.4b-part-2c), L/R stay on the byte-exact insideT path so no
+   * unproven correctness-critical code is shipped wired-in. */
   if (r_allow_J)
     sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, TRUE, FALSE, FALSE, cp9b);
   else
