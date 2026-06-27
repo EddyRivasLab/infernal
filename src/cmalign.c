@@ -975,8 +975,10 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
-	  if (getenv("INFERNAL_HMM_CKPT") != NULL) {
+	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
 	    /* brief 016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
+	     * Default-on (byte-exact vs the full path at norovirus/dengue/
+	     * sars/HSV); set INFERNAL_HMM_CKPT_OFF to force the full path.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
 	     * is ever materialized (bxf is not allocated). */
 	    bxb = p7_gmxb_Create(bnd);
