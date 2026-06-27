@@ -7352,6 +7352,46 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
  * bits. The existing non-checkpointed functions are NOT modified.
  *****************************************************************/
 
+/* Brief 017: the resident posterior <pp> stores only M and I per cell,
+ * not the full p7G_NSCELLS=3 (M,I,D). pp_D is provably always 0 --
+ * p7b_decode_row() set it to 0, the OA fill (p7b_oa_row) reads only
+ * ppp[0]=M and ppp[1]=I, and the traceback reads pp only via PP_M/PP_I
+ * (cells p7G_M=0, p7G_I=1) -- so no site ever reads pp_D. Storing 2
+ * floats/cell instead of 3 shrinks the resident pp by ~1/3 (HSV genome
+ * ~343 -> ~228 MB). This is a STORAGE-LAYOUT change only: the M and I
+ * values written and read are bit-identical to before. The pp cell
+ * stride is P7B_PP_NSCELLS; M stays at offset 0 (p7G_M), I at offset 1
+ * (p7G_I). The Forward/Backward/OA scratch buffers keep p7G_NSCELLS. */
+#define P7B_PP_NSCELLS 2   /* resident pp cell stride: M=0, I=1; D dropped */
+
+/* p7b_pp_Create(): allocate a resident posterior matrix with the compact
+ * 2-floats/cell dp (M,I).  Mirrors p7_gmxb_Create() (hmmer/, shared --
+ * not edited) but sizes dp at P7B_PP_NSCELLS, not p7G_NSCELLS.  xmx is
+ * unchanged (p7G_NXCELLS specials).  Freed with p7_gmxb_Destroy(). */
+P7_GMXB *
+p7b_pp_Create(P7_GBANDS *bnd)
+{
+  P7_GMXB *pp = NULL;
+  int      status;
+
+  ESL_ALLOC(pp, sizeof(P7_GMXB));
+  pp->dp     = NULL;
+  pp->xmx    = NULL;
+  pp->bnd    = bnd;
+  pp->dalloc = 0;
+  pp->xalloc = 0;
+
+  ESL_ALLOC(pp->dp,  sizeof(float) * bnd->ncell * P7B_PP_NSCELLS); /* M,I only (brief 017) */
+  ESL_ALLOC(pp->xmx, sizeof(float) * bnd->nrow  * p7G_NXCELLS);    /* ENJBC (0..4)        */
+  pp->dalloc = bnd->ncell;
+  pp->xalloc = bnd->nrow;
+  return pp;
+
+ ERROR:
+  p7_gmxb_Destroy(pp);
+  return NULL;
+}
+
 /* Per-call banded-row geometry, derived once from a P7_GBANDS. */
 typedef struct {
   int      nrow;     /* number of banded rows                         */
@@ -7416,7 +7456,7 @@ p7b_geo_Create(const P7_GBANDS *bnd, int M, int L)
       g->kb[r]    = kb;
       g->gap[r]   = i - prev_i - 1;     /* prev_i = 0 before first row */
       g->dpoff[r] = cum;
-      cum        += (int64_t) nc * p7G_NSCELLS;
+      cum        += (int64_t) nc * P7B_PP_NSCELLS;   /* brief 017: dpoff indexes the compact 2-cell pp */
       if (nc > g->maxnc) g->maxnc = nc;
       prev_i = i;
       r++;
@@ -7740,12 +7780,13 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, float fwdsc,
   int    k;
 
   for (k = kac; k <= kbc; k++) {
-    int off = (k - kac) * p7G_NSCELLS;
-    pdp[off] = expf(fdp[off] + bdp[off] - fwdsc);          /* M */
-    denom += pdp[off];
-    if (k < M) { pdp[off+1] = expf(fdp[off+1] + bdp[off+1] - fwdsc); denom += pdp[off+1]; }  /* I */
-    else         pdp[off+1] = 0.0f;
-    pdp[off+2] = 0.0f;                                     /* D */
+    int off  = (k - kac) * p7G_NSCELLS;     /* fdp/bdp: full 3-cell Forward/Backward rows */
+    int poff = (k - kac) * P7B_PP_NSCELLS;  /* brief 017: pp is compact 2-cell (M,I)      */
+    pdp[poff] = expf(fdp[off] + bdp[off] - fwdsc);          /* M */
+    denom += pdp[poff];
+    if (k < M) { pdp[poff+1] = expf(fdp[off+1] + bdp[off+1] - fwdsc); denom += pdp[poff+1]; }  /* I */
+    else         pdp[poff+1] = 0.0f;
+    /* pp_D dropped (brief 017): was always 0 and never read downstream */
   }
 
   pxp[p7G_E] = 0.0f;
@@ -7766,7 +7807,7 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, float fwdsc,
 
   if (denom > 0.0f) {
     denom = 1.0f / denom;
-    for (k = kac; k <= kbc; k++) { int off = (k - kac) * p7G_NSCELLS; pdp[off] *= denom; pdp[off+1] *= denom; }
+    for (k = kac; k <= kbc; k++) { int poff = (k - kac) * P7B_PP_NSCELLS; pdp[poff] *= denom; pdp[poff+1] *= denom; }
     pxp[p7G_N] *= denom;
     pxp[p7G_J] *= denom;
     pxp[p7G_C] *= denom;
@@ -7971,7 +8012,7 @@ p7b_oa_row(const P7_PROFILE *gm, int M, float esc,
       *dpc++ = dc;
       dc = ESL_MAX(P7B_TSCDELTA(p7P_MD, k) * sc, P7B_TSCDELTA(p7P_DD, k) * dc);
 
-      ppp += p7G_NSCELLS;
+      ppp += P7B_PP_NSCELLS;   /* brief 017: pp is compact 2-cell (M,I) */
     }
 
   if (kbc2 < kbc) /* kbc==M unrolled */
@@ -7984,7 +8025,7 @@ p7b_oa_row(const P7_PROFILE *gm, int M, float esc,
       *dpc++ = -eslINFINITY;
       *dpc++ = dc;
       xE = ESL_MAX(xE, ESL_MAX(sc, dc));
-      ppp += p7G_NSCELLS;
+      ppp += P7B_PP_NSCELLS;   /* brief 017: pp is compact 2-cell (M,I) */
     }
 
   *o_xE = xE;
@@ -8169,7 +8210,7 @@ p7b_pp_dp(const P7B_GEO *g, const int *row_idx, const P7_GMXB *pp, int p, int k,
   r = row_idx[p];
   if (r < 0) return -eslINFINITY;
   if (k < g->ka[r] || k > g->kb[r]) return -eslINFINITY;
-  return pp->dp[ g->dpoff[r] + (int64_t)(k - g->ka[r]) * p7G_NSCELLS + cell ];
+  return pp->dp[ g->dpoff[r] + (int64_t)(k - g->ka[r]) * P7B_PP_NSCELLS + cell ];  /* brief 017: 2-cell pp; cell in {p7G_M=0, p7G_I=1} */
 }
 
 static float

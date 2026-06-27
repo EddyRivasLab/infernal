@@ -754,6 +754,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 016 */
+  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 017: compact 2-cell resident pp */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -980,8 +981,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	     * Default-on (byte-exact vs the full path at norovirus/dengue/
 	     * sars/HSV); set INFERNAL_HMM_CKPT_OFF to force the full path.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
-	     * is ever materialized (bxf is not allocated). */
-	    bxb = p7_gmxb_Create(bnd);
+	     * is ever materialized (bxf is not allocated). brief 017: bxb uses
+	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
+	    bxb = p7b_pp_Create(bnd);
 	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	    p7_trace_Reuse(tr[idx]);
