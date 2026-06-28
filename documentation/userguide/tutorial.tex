@@ -1510,7 +1510,53 @@ in the case of local end insertions. Because the same insert state
 might correspond to more than one column, the probability on an insert
 residue is \emph{not} the probability that it belongs in that
 particular column; again, where there's a choice of column for
-inserted residues, that choice is arbitrary. 
+inserted residues, that choice is arbitrary.
+
+\subsubsection{Optional structure-status annotation: \texttt{--bpstatus} and \texttt{--bpcons}}
+\label{section:cmalign-bpstatus}
+By default \prog{cmalign} does not annotate base-pair quality. Two optional
+flags add it, both off by default (so default output is unchanged):
+
+\begin{sreitems}{\emprog{--bpstatus}}
+\item[\emprog{--bpstatus}]
+  adds two per-sequence \otext{\#=GR} lines to each aligned sequence, on
+  consensus (match) columns only (insert and EL columns are left blank):
+  \begin{sreitems}{\otext{\#=GR <seq> PS}}
+  \item[\otext{\#=GR <seq> PS}] (``pair status'') marks the status of each
+    base pair, using exactly the same scheme as the \prog{cmsearch}/\prog{cmscan}
+    \otext{PS} line (see section~\ref{section:formats} and the \prog{cmsearch}
+    tutorial above). \emph{Nested} pairs are marked with \otext{v} (a
+    negative-scoring non-canonical pair) or \otext{?} (a pair with one half
+    truncated away); \emph{pseudoknot} pairs are marked with \otext{=}
+    (maintained), \otext{\$} (covarying), or \otext{x} (broken). Both ends of
+    each pair are marked; all other columns are blank.
+  \item[\otext{\#=GR <seq> MM}] (``match'') is a sparse substitution mark:
+    \otext{:} for a consistent (non-negative-scoring) base-pair substitution,
+    \otext{+} for a positive-scoring single-residue substitution, and blank
+    everywhere else, including at columns where the residue matches the
+    consensus. (The full residue is already shown on the sequence line above,
+    so identity columns are left blank here.)
+  \end{sreitems}
+  Be aware that \otext{--bpstatus} adds two lines per sequence, which roughly
+  triples the size of a large alignment.
+\item[\emprog{--bpcons}]
+  adds a single \otext{\#=GC bp\_cons} line: for each base pair (nested and
+  pseudoknot), the fraction of sequences whose two aligned residues form a
+  canonical WC/GU pair, written at both paired columns as a single digit using
+  the same \otext{0}--\otext{9}/\otext{*} bucketing as the \otext{PP} lines
+  (\otext{*} $\approx 1.0$, \otext{0} $\approx 0.0$). A \otext{.} is written if
+  fewer than two sequences have a residue present at both columns; non-pair
+  columns are blank. This is a \emph{descriptive} measure of how well each pair
+  is preserved across the family; it is not a statistical test of covariation
+  (it does not distinguish an invariant pair from a covarying one, and is noisy
+  for small numbers of sequences or pairs with many gaps). For a proper
+  statistical covariation analysis use a dedicated tool such as R-scape.
+\end{sreitems}
+
+These annotations are computed for the common in-memory alignment path only. When
+the alignment is built in the low-memory, multi-block manner (\otext{--small}, or
+an input too large to fit in one block), they are suppressed with a one-line note
+on \texttt{stderr}.
 
 \subsubsection{cmalign assumes sequences may be truncated}
 \prog{cmalign} assumes that input sequences may be truncated and uses

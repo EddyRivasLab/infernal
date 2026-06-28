@@ -560,9 +560,58 @@ with the
 .B --fraggiven
 option. This option has no effect if 
 .B --notrunc
-is also used. 
+is also used.
 
-.TP 
+.TP
+.B --bpstatus
+Add per-sequence base-pair status annotation to the output alignment, as two
+.B #=GR
+lines per sequence (on consensus columns only). The
+.B PS
+line marks pair status with the same scheme as the
+.B cmsearch
+PS line:
+.B v
+(negative-scoring non-canonical) or
+.B ?
+(truncated half) for nested pairs, and
+.B =
+(maintained),
+.B $
+(covarying), or
+.B x
+(broken) for pseudoknot pairs. The
+.B MM
+line marks substitutions sparsely:
+.B :
+for a consistent base-pair substitution and
+.B +
+for a positive-scoring single-residue substitution; blank elsewhere. Note
+this adds two lines per sequence. Computed for the default in-memory output
+path only; suppressed (with a note) under
+.B --small
+or multi-block output.
+
+.TP
+.B --bpcons
+Add a single
+.B #=GC bp_cons
+line giving, for each base pair (nested and pseudoknot), the fraction of
+sequences whose two aligned residues form a canonical WC/GU pair, as a single
+.B 0
+\-
+.B 9
+/
+.B *
+digit (same bucketing as the PP lines) at both paired columns;
+.B .
+if fewer than two sequences have both residues present. This is a descriptive
+conservation measure, not a statistical covariation test. Computed for the
+default in-memory output path only; suppressed (with a note) under
+.B --small
+or multi-block output.
+
+.TP
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
 that may be more convenient for examination. This was the default output
