@@ -430,6 +430,8 @@ double cyk_dnc_vji_bytes = 0.0;   /* bytes currently held in class-2 vji decks  
 double cyk_dnc_max_bytes = 0.0;   /* high-water mark of (vjd + vji) total bytes   */
 double cyk_dnc_max_vjd   = 0.0;   /* vjd component at the moment of the high-water */
 double cyk_dnc_max_vji   = 0.0;   /* vji component at the moment of the high-water */
+double cyk_dnc_shad_cur  = 0.0;   /* brief 050: bytes in the current leaf's shadow */
+double cyk_dnc_shad_max  = 0.0;   /* brief 050: shadow high-water (largest leaf)   */
 int    cyk_dnc_vji_row_floats = 0;/* current V-problem row width (i1-i0+1), set at  */
                                   /* vinside()/voutside() entry so free_vji_deck()   */
                                   /* (which lacks i0/i1) can decrement correctly.    */
@@ -457,6 +459,8 @@ CYKDeckTrackReset(void)
   cyk_dnc_max_bytes = 0.0;
   cyk_dnc_max_vjd   = 0.0;
   cyk_dnc_max_vji   = 0.0;
+  cyk_dnc_shad_cur  = 0.0;   /* brief 050 shadow high-water (see below) */
+  cyk_dnc_shad_max  = 0.0;
 }
 double
 CYKDeckTrackMaxMb(void)
@@ -476,6 +480,19 @@ CYKDeckTrackVjiAtPeakMb(void)
 {
   return cyk_dnc_max_vji / 1000000.;
 }
+
+/* brief 050 shadow accounting: the SHADOW high-water (yshad/kshad/Lshad/Rshad/
+ * Lkmode/Rkmode), separate from the score-deck frontier above. Shadows live only
+ * inside a single leaf tr_insideT_hb / tr_vinsideT_hb call (built by the engine,
+ * consumed by that call's traceback, then freed); those calls do not nest, so the
+ * counter is bumped by the shadow allocators and zeroed by each leaf after it frees
+ * its shadow. The max therefore = the largest single-subproblem shadow, NOT the
+ * full O(N) parse-tree shadow (the thing 045/046/047 could not bank). */
+static void cyk_dnc_shad_add(double bytes)
+{ if (! cyk_dnc_track) return; cyk_dnc_shad_cur += bytes; if (cyk_dnc_shad_cur > cyk_dnc_shad_max) cyk_dnc_shad_max = cyk_dnc_shad_cur; }
+void   CYKShadowTrackReset(void)      { cyk_dnc_shad_cur = 0.0; cyk_dnc_shad_max = 0.0; }
+void   CYKShadowTrackLeafDone(void)   { cyk_dnc_shad_cur = 0.0; }  /* leaf freed its shadow */
+double CYKShadowTrackMaxMb(void)      { return cyk_dnc_shad_max / 1000000.; }
 
 /* Function: CYKDivideAndConquerHB()
  * Date:     EPN 2026 [brief 007]
@@ -4423,12 +4440,14 @@ alloc_banded_hb_vjd_yshadow_deck(int L, int i0, int j0, int v, CP9Bands_t *cp9b)
   for (j = 0; j <= L; j++) a[j] = NULL;
   jlo = ESL_MAX(i0-1, cp9b->jmin[v]);
   jhi = ESL_MIN(j0,   cp9b->jmax[v]);
+  { double nb = 0.0;
   for (j = jlo; j <= jhi; j++) {
     jp_v = j - cp9b->jmin[v];
     w = cp9b->hdmax[v][jp_v] - cp9b->hdmin[v][jp_v] + 1;
-    if (w > 0) ESL_ALLOC(a[j], sizeof(char) * w);
+    if (w > 0) { ESL_ALLOC(a[j], sizeof(char) * w); nb += (double) w * sizeof(char); }
     else       a[j] = NULL;
   }
+  cyk_dnc_shad_add(nb); }
   return a;
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -4445,12 +4464,14 @@ alloc_banded_hb_vjd_kshadow_deck(int L, int i0, int j0, int v, CP9Bands_t *cp9b)
   for (j = 0; j <= L; j++) a[j] = NULL;
   jlo = ESL_MAX(i0-1, cp9b->jmin[v]);
   jhi = ESL_MIN(j0,   cp9b->jmax[v]);
+  { double nb = 0.0;
   for (j = jlo; j <= jhi; j++) {
     jp_v = j - cp9b->jmin[v];
     w = cp9b->hdmax[v][jp_v] - cp9b->hdmin[v][jp_v] + 1;
-    if (w > 0) ESL_ALLOC(a[j], sizeof(int) * w);
+    if (w > 0) { ESL_ALLOC(a[j], sizeof(int) * w); nb += (double) w * sizeof(int); }
     else       a[j] = NULL;
   }
+  cyk_dnc_shad_add(nb); }
   return a;
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -4584,15 +4605,17 @@ alloc_banded_hb_vji_shadow_deck(int i0, int i1, int j1, int j0, int v, CP9Bands_
   if (njp < 1) njp = 1;
   ESL_ALLOC(a, sizeof(char *) * njp);
   for (jp = 0; jp < njp; jp++) a[jp] = NULL;
+  { double nb = 0.0;
   for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
     jp  = j - j1;
     jpb = j - cp9b->jmin[v];
     ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
     ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
     w   = ihi - ilo + 1;
-    if (w > 0) ESL_ALLOC(a[jp], sizeof(char) * w);
+    if (w > 0) { ESL_ALLOC(a[jp], sizeof(char) * w); nb += (double) w * sizeof(char); }
     else       a[jp] = NULL;
   }
+  cyk_dnc_shad_add(nb); }
   return a;
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -6321,8 +6344,6 @@ v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
 static int tr_dnc_pty_idx = -1;   /* truncation-penalty index (TRPENALTY_*), set at entry */
 static int tr_dnc_local   = 0;    /* TRUE if CMH_LOCAL_BEGIN (use l_ptyAA), else g_ptyAA  */
-static int tr_dnc_scoreonly = 0;  /* brief 049: if TRUE, splitters return best_sc without
-                                  * recursing (SCORE gate for part-2c-i; parse is part-2c-ii) */
 
 /* The (penalty-aware) truncated-begin score for entering state v, or IMPOSSIBLE. */
 static float
@@ -7638,6 +7659,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   tr_free_lr_shadow(lr.Lshad, lr.Lkmode, cm, i0, j0);
   tr_free_lr_shadow(lr.Rshad, lr.Rkmode, cm, i0, j0);
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  CYKShadowTrackLeafDone();   /* brief 050: this leaf's shadow is now freed */
   return retsc;
 
  ERROR:
@@ -8430,6 +8452,7 @@ tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   free_vji_shadow_matrix(shadow, cm->M, j1, j0);
   if (r_allow_L) { free_vji_shadow_matrix(vlr.Lsh, cm->M, j1, j0); free_vji_shadow_matrix(vlr.Lmode, cm->M, j1, j0); }
   if (r_allow_R) { free_vji_shadow_matrix(vlr.Rsh, cm->M, j1, j0); free_vji_shadow_matrix(vlr.Rmode, cm->M, j1, j0); }
+  CYKShadowTrackLeafDone();   /* brief 050: this V-problem's shadow is now freed */
   return sc;
 }
 
@@ -8641,17 +8664,18 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   if (r==0) {
     if (binsc > best_sc) { best_sc = binsc; best_v = -2; best_j = j0; best_d = W; p_mode = TRMODE_T; c_mode = binmode; }
   }
-  /* outside marginal terminus (parent local hit, child empty) */
-  if (boutsc > best_sc) { best_sc = boutsc; best_v = -3; best_j = boutj; best_d = 1; p_mode = boutmode; c_mode = TRMODE_T; }
+  /* outside marginal terminus (parent local hit, child empty). Use >= so the
+   * terminus WINS ties vs a standard split that lands on the same marginal-end
+   * cell: the oracle inside DP forces the marginal-end at d<2 (it OVERWRITES the
+   * transit), so a tied "split-and-continue-below" must collapse to the terminus
+   * (else the wedge below emits spurious all-delete-to-end nodes -- brief 050). */
+  if (boutsc >= best_sc) { best_sc = boutsc; best_v = -3; best_j = boutj; best_d = 1; p_mode = boutmode; c_mode = TRMODE_T; }
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
   free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
   if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaL, cm, i0, j0, cp9b); }
   if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaR, cm, i0, j0, cp9b); }
 
-  /* brief 049 part-2c-i: SCORE gate -- return the combine score, skip the
-   * (part-2c-ii) V-problem traceback that isn't correct yet. */
-  if (tr_dnc_scoreonly) return best_sc;
   /* TRUNCATED infeasibility guard: nothing in-band beat IMPOSSIBLE. */
   if (best_v == -99) return best_sc;
 
@@ -8849,7 +8873,6 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* TRUNCATED infeasibility guard: no in-band split/EL/begin/terminus beat
    * IMPOSSIBLE -> no valid parse under the bands; return cleanly (no garbage recurse). */
-  if (tr_dnc_scoreonly) return best_sc;  /* brief 049 part-2c-i: SCORE gate */
   if (best_k == -99) return best_sc;
 
   if (best_k == -1) {
@@ -8890,14 +8913,16 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     tr_generic_splitter_hb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k,
 			   (w_mode==TRMODE_J), (w_mode==TRMODE_L), (w_mode==TRMODE_R), cp9b);
   } else
-    InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_d, w, TRMODE_T);
+    /* empty (truncated-away) marginal child: the oracle (tr_insideT_hb) labels it
+     * with the PARENT marginal mode (v_mode), not TRMODE_T (brief 050). */
+    InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_d, w, v_mode);
 
   if (y_mode != TRMODE_T) {
     InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, y_mode);
     tr_generic_splitter_hb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j,
 			   (y_mode==TRMODE_J), (y_mode==TRMODE_L), (y_mode==TRMODE_R), cp9b);
   } else
-    InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, TRMODE_T);
+    InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, v_mode);
 
   return best_sc;
 }
@@ -8933,7 +8958,6 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   if ((tr_dnc_pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)
     cm_Fail("TrCYKDivideAndConquerHB(): unexpected pass idx: %d", pass_idx);
   tr_dnc_local = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
-  tr_dnc_scoreonly = (getenv("TRDNC_SCORE_ONLY") != NULL);
 
   tr = CreateParsetree(100);
   tr->is_std   = FALSE;
@@ -8943,23 +8967,16 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, i0, j0, 0, preset_mode);
   z = cm->M-1;
 
-  /* J: the memory-efficient HMM-banded D&C splitters (R4.4a, mode J throughout).
-   * L/R: routed through the whole-problem mode-tracking insideT (045), which is
-   * byte-exact vs the oracle. NOTE (brief 047): the marginal vji V-problem
-   * recurrences + mode-tracking traceback are now WRITTEN (tr_vinside_hb /
-   * tr_vinsideT_hb), but flipping L/R to the splitters exposed correctness bugs in
-   * the brief-046 marginal-outside/combine layer (the 1-D betaL/betaR + the
-   * truncyk-derived marginal split cases over-score / select band-infeasible
-   * splits) AND a marginal V-problem begin/termination mismatch (V-problems need a
-   * truncyk-style all-cell begin scan + z-boundary termination, not the vjd
-   * (j0,i0)+USED_TRUNC_BEGIN / USED_TRUNC_END marginal-end idiom). Until that layer
-   * is corrected (R4.4b-part-2c), L/R stay on the byte-exact insideT path so no
-   * unproven correctness-critical code is shipped wired-in. */
-  /* Brief 049 (R4.4b-part-2c-i): L/R now route through the mode-aware generic
-   * splitter (the 2-D marginal outside + combine). This is a SCORE-gated flip: with
-   * TRDNC_SCORE_ONLY set the splitter returns best_sc without the V-problem
-   * traceback (part-2c-ii), which is not yet correct. Driver-only (rung-3/4 is not
-   * wired into cmalign dispatch on this branch), so safe to leave in with this note. */
+  /* J and L/R all route through the mode-aware HMM-banded D&C generic splitter.
+   * J is R4.4a (mode J throughout). L/R (R4.4b): the 2-D marginal outside + combine
+   * (049, SCORE byte-exact) drives the split, and the FULL mode-tracking traceback
+   * is now byte-exact too (brief 050, R4.4b-part-2c-ii): the part-2c-i SCORE-only
+   * guard is removed. The two part-2c-ii parse fixes were (a) empty (truncated-away)
+   * marginal bifurcation children must carry the PARENT marginal mode (v_mode), not
+   * TRMODE_T, and (b) the marginal terminus (outside b_sc) must WIN ties vs a
+   * standard split landing on the same marginal-end cell (oracle forces the
+   * marginal-end at d<2). T is OFF (R4.4c). Driver-only entry (rung-3/4 not yet in
+   * the cmalign dispatch on this branch). */
   sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
 
   /* the truncated-begin entry state is the first state attached below ROOT_S */
