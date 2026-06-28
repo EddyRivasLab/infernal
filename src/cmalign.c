@@ -131,6 +131,11 @@ static ESL_OPTIONS options[] = {
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver (brief 124)",                 3 },
   { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
   { "--p7ibv-ckpt",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-mem",              NULL, "checkpoint Pass-2 banded CP9 F/B (low mem; brief 146)",      3 },
+  { "--p7ibv-wv",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "windowed-Viterbi band: i2k +/- F+B-halfwidth pad (brief 169)",3 },
+  { "--p7wv-nsamp",  eslARG_INT,        "40", NULL,       "n>0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: # CM-emitted samples",                  3 },
+  { "--p7wv-q",      eslARG_REAL,     "0.99", NULL,    "0<x<=1",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: half-width quantile",                   3 },
+  { "--p7wv-floor",  eslARG_INT,         "2", NULL,      "n>=0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: floor pad",                             3 },
+  { "--p7wv-seed",   eslARG_INT,       "181", NULL,      "n>=0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: RNG seed",                              3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -2764,6 +2769,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->p7_ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");
       if(esl_opt_GetBoolean(go, "--p7ibv-ckpt")) cm->p7_ibv_ckpt = TRUE;
     }
+    if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 169 */
   }
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
@@ -2779,7 +2785,27 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   }
   
   /* configure */
-  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status; 
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
+
+  /* Brief 169: with --p7ibv-wv, calibrate the windowed-Viterbi per-node pad
+   * (F+B-halfwidth quantile) ONCE per CM here -- single-threaded, after
+   * cm_Configure populated cm->fp7 and before any worker threads spawn -- and
+   * cache it on the CM (workers read it read-only).  This is the align-time
+   * calibration: works on existing CMs (only needs cm->fp7), no rebuild. */
+  if(cm->p7_ibv_wv) {
+    if(cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "--p7ibv-wv requires cm->fp7 (ML p7 filter)");
+    ESL_RANDOMNESS *wv_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7wv-seed"));
+    if(wv_r == NULL) ESL_FAIL(eslEMEM, errbuf, "failed to allocate RNG for --p7ibv-wv pad calibration");
+    status = cm_ComputeP7WVNodePad(cm, errbuf, wv_r,
+                                   esl_opt_GetInteger(go, "--p7wv-nsamp"),
+                                   esl_opt_GetReal(go,    "--p7wv-q"),
+                                   esl_opt_GetInteger(go, "--p7ibv-delta"),
+                                   esl_opt_GetInteger(go, "--p7wv-floor"),
+                                   &(cm->p7_wv_nodepad));
+    esl_randomness_Destroy(wv_r);
+    if(status != eslOK) return status;
+    cm->p7_wv_nodepad_M = cm->fp7->M;
+  }
 
   return eslOK;
 }
