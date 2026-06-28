@@ -1485,7 +1485,7 @@ bp_cons_digit(CM_t *cm, ESL_MSA *msa, int apos1, int apos2, char *bpc)
  * bp_cons_digit(). Requires cm_pknot_FixBrokenString() already applied to
  * ss_cons (Parsetrees2Alignment does this). */
 static void
-bp_cons_pknot(CM_t *cm, ESL_MSA *msa, char *modelstr, char *bpc, int alen)
+bp_cons_pknot(CM_t *cm, ESL_MSA *msa, char *bpc, int alen)
 {
   int  sp[26];
   int *stack[26];
@@ -1525,24 +1525,32 @@ bp_cons_pknot(CM_t *cm, ESL_MSA *msa, char *modelstr, char *bpc, int alen)
  *           cm_bp_nc_mark() / cm_singlet_mark() / annotate_pknot_pairs_str()
  *           helpers so the marks match cmsearch exactly.
  *
- *           If <do_perseq>: add two #=GR lines per sequence:
- *             #=GR <seq> PS : pair status. Nested pairs (from cm->cmcons->ct):
- *               'v' negative non-canonical / half-present, '?' truncated half.
- *               Pknot pairs (from the SS_cons pushdown): '=' maintained,
- *               '$' covarying, 'x' broken. Disjoint columns, one combined line.
- *             #=GR <seq> MM : match/substitution, SPARSE: blank for identity,
- *               ':' for a consistent (score>=0) pair substitution, '+' for a
- *               positive-scoring singlet substitution. Consensus columns only.
- *           If <do_famcons>: add one #=GC line:
- *             #=GC bp_cons : per base pair (nested + pknot), the fraction of
- *               sequences whose two residues form a canonical WC/GU pair,
- *               bucketed to the 0..9/'*' PP-digit convention, written at both
- *               paired columns; '.' if fewer than BP_CONS_MIN_NPAIR sequences
- *               have both residues present; blank at non-pair columns.
+ *           If <do_perseq>: add ONE combined #=GR <seq> PS line per sequence,
+ *           a fusion of cmsearch's match line and NC/PS line. Marks (consensus
+ *           columns only):
+ *             '=' '$' 'x' : pknot pair maintained / covarying / broken
+ *             'v' '?'     : nested pair broken-or-half-present / truncated half
+ *             ':'         : consistent (pair score >= 0) base-pair substitution
+ *             '+'         : favorable (singlet avg score > 0) singlet substitution
+ *           Collision: the only column where two marks compete is a pknot column
+ *           (an ML/MR singlet that can be both a '+' singlet-sub and a '='/'$'/'x'
+ *           pknot pair) -- pknot status wins, the '+' is dropped. The half-present
+ *           nested case similarly resolves to the pair-status 'v'. Everywhere else
+ *           the marks are mutually exclusive, so the merge is lossless.
+ *           Every other column holds a NON-BLANK placeholder so the line is dense
+ *           and re-readable by the standard Easel Stockholm parser:
+ *             '.' insert/off-consensus col;  '~' missing/local-end (echo aseq);
+ *             '-' deletion at a consensus col (echo aseq);  '_' present-unmarked.
+ *           If <do_famcons>: add one #=GC bp_cons line: per base pair (nested +
+ *           pknot), the fraction of sequences whose two residues form a canonical
+ *           WC/GU pair, bucketed to the 0..9/'*' PP-digit convention at both
+ *           paired columns; '.' if fewer than BP_CONS_MIN_NPAIR sequences have
+ *           both residues present, and '.' at all non-pair/insert columns (dense,
+ *           non-blank, SS_cons-like).
  *
- *           Marks are placed on consensus (match) columns only; insert/EL
- *           columns stay blank (match-column apos are fixed anchors, so this
- *           needs no lockstep with the insert rejustification).
+ *           Marks are placed on consensus (match) columns only; insert/EL columns
+ *           get the '.'/'~' placeholder (match-column apos are fixed anchors, so
+ *           this needs no lockstep with the insert rejustification).
  *
  * Returns:  eslOK on success; the new lines are appended to <msa>.
  *           eslEINCOMPAT (errbuf set) on a contract violation; eslEMEM on
@@ -1556,8 +1564,8 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   int          *cpos2apos= NULL;  /* [0..clen]   consensus pos -> alignment column (0..alen-1), -1 if absent */
   int          *cpos2nd  = NULL;  /* [0..clen]   consensus pos -> CM node index                              */
   char         *modelstr = NULL;  /* [0..alen]   consensus residue per column ('.' off-consensus), NUL-term  */
-  char         *ps       = NULL;  /* [0..alen]   per-seq PS line scratch                                     */
-  char         *mm       = NULL;  /* [0..alen]   per-seq MM line scratch                                     */
+  char         *ps       = NULL;  /* [0..alen]   per-seq combined #=GR PS line scratch                       */
+  char         *pk       = NULL;  /* [0..alen]   per-seq pknot-overlay scratch (blank input for helper)      */
   char         *bpc      = NULL;  /* [0..alen]   #=GC bp_cons line                                           */
   int          *ct;
   int           clen     = cm->clen;
@@ -1582,7 +1590,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
       if (cpos <= clen) cpos2apos[cpos] = apos;
     }
   }
-  if (cpos != clen) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignment_annotate_status(): RF consensus length %d != clen %d", cpos, clen);
+  if (cpos != clen) ESL_XFAIL(eslEINCOMPAT, errbuf, "cm_alignment_annotate_status(): RF consensus length %d != clen %d", cpos, clen);
 
   /* (2) consensus position -> CM node + side, via the emit map. For MATP both
    *     ends map to the node; for MATL/MATR the single emitted col maps. */
@@ -1604,15 +1612,35 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
       modelstr[apos] = (cm->flags & CMH_CONS) ? cm->consensus[cpos] : cm->cmcons->cseq[cpos-1];
   }
 
-  /* ---- per-seq PS / MM lines ---- */
+  /* ---- per-seq combined #=GR PS line ---- */
   if (do_perseq) {
     ESL_ALLOC(ps, sizeof(char) * (alen+1));
-    ESL_ALLOC(mm, sizeof(char) * (alen+1));
+    ESL_ALLOC(pk, sizeof(char) * (alen+1));
     for (i = 0; i < msa->nseq; i++) {
       char *aseq = msa->aseq[i];
-      for (apos = 0; apos < alen; apos++) { ps[apos] = ' '; mm[apos] = ' '; }
-      ps[alen] = mm[alen] = '\0';
 
+      /* (a) non-blank placeholders, echoing aseq so the line is dense and
+       *     re-readable (every column holds a non-blank char):
+       *       '.'  insert / off-consensus column          (matches RF/SS_cons)
+       *       '~'  missing / local-end (echo aseq's '~')
+       *       '-'  deletion at a consensus column (echo aseq's '-')
+       *       '_'  consensus column, residue present, no mark
+       *     Marks (set in (b)/(c)) overwrite these. */
+      for (apos = 0; apos < alen; apos++) {
+        char c = aseq[apos];
+        if (modelstr[apos] != '.') {             /* consensus (match) column */
+          if      (isalpha((int) c)) ps[apos] = '_';
+          else if (c == '~')         ps[apos] = '~';
+          else                       ps[apos] = '-';   /* deletion */
+        }
+        else {                                   /* insert / off-consensus column */
+          if (c == '~')              ps[apos] = '~';
+          else                       ps[apos] = '.';   /* '.' or lowercase insert residue */
+        }
+      }
+      ps[alen] = '\0';
+
+      /* (b) nested-pair + singlet marks on consensus columns */
       for (cpos = 1; cpos <= clen; cpos++) {
         if ((apos = cpos2apos[cpos]) < 0) continue;
         if ((nd   = cpos2nd[cpos])   < 0) continue;
@@ -1628,8 +1656,6 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
           char lcons = modelstr[apos], rcons = modelstr[papos];
           int  Lres = isalpha((int) L), Rres = isalpha((int) R);
           int  mpstate = cm->nodemap[nd];        /* MATP_MP */
-          int  mlstate = cm->nodemap[nd] + 1;    /* MATP_ML (left singlet)  */
-          int  mrstate = cm->nodemap[nd] + 2;    /* MATP_MR (right singlet) */
 
           if (Lres && Rres) {                    /* both present: MP (Joint) */
             char  lmid, rmid;
@@ -1637,49 +1663,51 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
                                                esl_abc_DigitizeSymbol(cm->abc, toupper((int)L)),
                                                esl_abc_DigitizeSymbol(cm->abc, toupper((int)R)));
             cm_bp_match_marks(toupper((int)L), toupper((int)R), lcons, rcons, pairsc, &lmid, &rmid);
-            if (lmid == MM_SUBPAIR) mm[apos]  = MM_SUBPAIR;   /* sparse: keep only ':' */
-            if (rmid == MM_SUBPAIR) mm[papos] = MM_SUBPAIR;
-            { char nc = cm_bp_nc_mark(toupper((int)L), toupper((int)R), pairsc);
-              if (nc != ' ') { ps[apos] = nc; ps[papos] = nc; } }
+            if (lmid == MM_SUBPAIR) ps[apos]  = MM_SUBPAIR;   /* ':' consistent sub */
+            if (rmid == MM_SUBPAIR) ps[papos] = MM_SUBPAIR;
+            { char nc = cm_bp_nc_mark(toupper((int)L), toupper((int)R), pairsc);  /* 'v' broken */
+              if (nc != ' ') { ps[apos] = nc; ps[papos] = nc; } }  /* exclusive with ':' (sign) */
           }
-          else if (Lres && R == '-') {           /* left half present (MATP_ML) */
-            float avgsc = esl_abc_FAvgScore(cm->abc, esl_abc_DigitizeSymbol(cm->abc, toupper((int)L)), cm->esc[mlstate]);
-            if (cm_singlet_mark(toupper((int)L), lcons, avgsc) == MM_SUBSINGLET) mm[apos] = MM_SUBSINGLET;
-            ps[apos] = 'v'; ps[papos] = 'v';
-          }
-          else if (L == '-' && Rres) {           /* right half present (MATP_MR) */
-            float avgsc = esl_abc_FAvgScore(cm->abc, esl_abc_DigitizeSymbol(cm->abc, toupper((int)R)), cm->esc[mrstate]);
-            if (cm_singlet_mark(toupper((int)R), rcons, avgsc) == MM_SUBSINGLET) mm[papos] = MM_SUBSINGLET;
+          else if ((Lres && R == '-') || (L == '-' && Rres)) {  /* half present (MATP_ML/MR) */
+            /* pair status 'v' wins the column; the present half's singlet '+'
+             * is dropped (same precedence as pknot-status over '+'). */
             ps[apos] = 'v'; ps[papos] = 'v';
           }
           else if (Lres) { ps[apos]  = '?'; }    /* right side truncated/missing */
           else if (Rres) { ps[papos] = '?'; }    /* left side truncated/missing  */
-          /* else: both deleted/missing -> blank */
+          /* else: both deleted/missing -> placeholders remain */
         }
         else {
           /* unpaired in nested ct: a true singlet (MATL/MATR) or a pknot column
-           * (pknots are modeled as singlets). Singlet MM mark only; the pknot
-           * pair status (=/$/x) is overlaid onto PS by annotate_pknot_pairs_str
-           * below. */
+           * (pknots are modeled as singlets). Singlet '+' mark only; the pknot
+           * pair status (=/$/x) is overlaid in (c) and wins the column. */
           if (isalpha((int) seq)) {
             int   sstate = cm->nodemap[nd];      /* MATL_ML or MATR_MR (first state of node) */
             float avgsc  = esl_abc_FAvgScore(cm->abc, esl_abc_DigitizeSymbol(cm->abc, toupper((int)seq)), cm->esc[sstate]);
-            if (cm_singlet_mark(toupper((int)seq), modelstr[apos], avgsc) == MM_SUBSINGLET) mm[apos] = MM_SUBSINGLET;
+            if (cm_singlet_mark(toupper((int)seq), modelstr[apos], avgsc) == MM_SUBSINGLET) ps[apos] = MM_SUBSINGLET;
           }
         }
       }
-      /* overlay pknot pair status (=/$/x) onto PS, exactly as cmsearch does */
-      if (cm->flags & CMH_PKNOT) annotate_pknot_pairs_str(msa->ss_cons, aseq, modelstr, ps, alen);
 
-      if ((status = esl_msa_AppendGR(msa, "PS", i, ps)) != eslOK) ESL_FAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGR PS failed");
-      if ((status = esl_msa_AppendGR(msa, "MM", i, mm)) != eslOK) ESL_FAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGR MM failed");
+      /* (c) pknot pair status (=/$/x) overlay. Computed on a blank scratch (the
+       *     shared annotate_pknot_pairs_str() requires blank input and asserts
+       *     it), then merged in -- pknot status WINS any '+' at the shared
+       *     ML/MR pknot column. */
+      if (cm->flags & CMH_PKNOT) {
+        for (apos = 0; apos < alen; apos++) pk[apos] = ' ';
+        pk[alen] = '\0';
+        annotate_pknot_pairs_str(msa->ss_cons, aseq, modelstr, pk, alen);
+        for (apos = 0; apos < alen; apos++) if (pk[apos] != ' ') ps[apos] = pk[apos];
+      }
+
+      if ((status = esl_msa_AppendGR(msa, "PS", i, ps)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGR PS failed");
     }
   }
 
   /* ---- #=GC bp_cons family conservation line ---- */
   if (do_famcons) {
     ESL_ALLOC(bpc, sizeof(char) * (alen+1));
-    for (apos = 0; apos < alen; apos++) bpc[apos] = ' ';
+    for (apos = 0; apos < alen; apos++) bpc[apos] = '.';   /* dense, non-blank: '.' at non-pair/insert cols (SS_cons-like) */
     bpc[alen] = '\0';
 
     /* nested pairs from cm->cmcons->ct */
@@ -1692,15 +1720,15 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
       bp_cons_digit(cm, msa, apos1, apos2, bpc);
     }
     /* pknot pairs from the SS_cons pushdown (alignment columns directly) */
-    if (cm->flags & CMH_PKNOT) bp_cons_pknot(cm, msa, modelstr, bpc, alen);
+    if (cm->flags & CMH_PKNOT) bp_cons_pknot(cm, msa, bpc, alen);
 
-    if ((status = esl_msa_AppendGC(msa, "bp_cons", bpc)) != eslOK) ESL_FAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGC bp_cons failed");
+    if ((status = esl_msa_AppendGC(msa, "bp_cons", bpc)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGC bp_cons failed");
   }
 
   FreeEmitMap(emap);
   free(cpos2apos); free(cpos2nd); free(modelstr);
   if (ps  != NULL) free(ps);
-  if (mm  != NULL) free(mm);
+  if (pk  != NULL) free(pk);
   if (bpc != NULL) free(bpc);
   return eslOK;
 
@@ -1710,7 +1738,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   if (cpos2nd   != NULL) free(cpos2nd);
   if (modelstr  != NULL) free(modelstr);
   if (ps  != NULL) free(ps);
-  if (mm  != NULL) free(mm);
+  if (pk  != NULL) free(pk);
   if (bpc != NULL) free(bpc);
   return status;
 }
