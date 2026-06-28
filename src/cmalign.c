@@ -119,6 +119,8 @@ static ESL_OPTIONS options[] = {
   { "--noprob",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not include posterior probabilities in the alignment",    5 },
   { "--matchonly",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "include only match columns in output alignment",             5 },
   { "--miss",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "mark seqs w/terminal gaps as fragments w/missing (~) chars", 5 },
+  { "--bpstatus",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "add per-seq #=GR PS (pair status) and MM (match) annotation", 5 },
+  { "--bpcons",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "add #=GC bp_cons family base-pair conservation annotation",   5 },
   { "--ileaved",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--outformat","force output in interleaved Stockholm format",                5 },
   { "--flanktoins",  eslARG_REAL,        NULL, NULL,   "0<x<0.4",       NULL,"--flankselfins",      NULL, "change transition probs into ROOT_IL/IR to <x> (e.g. 0.1)",  5 }, 
   { "--flankselfins",eslARG_REAL,        NULL, NULL,   "0<x<0.9",       NULL,"--flanktoins",        NULL, "change self transit probs for ROOT_IL/IR to <x> (e.g. 0.8)", 5 }, 
@@ -1890,6 +1892,24 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
   if(ofp == cfg->rfp) { /* --regress file, remove GF author annotation */
     free(msa->au);
     msa->au = NULL;
+  }
+
+  /* optional structure-status annotation (#=GR PS/MM, #=GC bp_cons).
+   * Off by default -> no Append* calls -> byte-identical output.
+   * The per-seq #=GR lines ride the GR=TRUE regurgitation in the merge path,
+   * so they work for both the in-memory and the --small/multi-block paths.
+   * The cross-all-seqs #=GC bp_cons line cannot be computed per block, so it is
+   * suppressed when writing to the temporary merge file (--small or input too
+   * large for one block); a one-line note is printed once in that case. */
+  if(esl_opt_GetBoolean(go, "--bpstatus") || esl_opt_GetBoolean(go, "--bpcons")) {
+    int do_perseq  = esl_opt_GetBoolean(go, "--bpstatus");
+    int do_famcons = esl_opt_GetBoolean(go, "--bpcons") && (ofp != cfg->tmpfp);
+    if(esl_opt_GetBoolean(go, "--bpcons") && (ofp == cfg->tmpfp) && first_ali) {
+      fprintf(stderr, "# note: #=GC bp_cons (--bpcons) is suppressed under --small / multi-block output.\n");
+    }
+    if(do_perseq || do_famcons) {
+      if((status = cm_alignment_annotate_status(cm, errbuf, msa, do_perseq, do_famcons)) != eslOK) return status;
+    }
   }
 
   /* rewrite SS_cons if --mapstr used */
