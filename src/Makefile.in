@@ -69,7 +69,8 @@ PROGS = cmalign\
 	sub_cm-test\
 	truncyk_check\
 	p7band-test\
-	p7bandsim
+	p7bandsim\
+	test_wviterbi
 
 # list of executable programs that get installed
 IPROGS = \
