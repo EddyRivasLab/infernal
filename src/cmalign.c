@@ -1894,24 +1894,24 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
     msa->au = NULL;
   }
 
-  /* optional structure-status annotation (#=GR PS/MM, #=GC bp_cons).
+  /* optional structure-status annotation (#=GR PS, #=GC bp_cons).
    * Off by default -> no Append* calls -> byte-identical output.
    *
-   * Phase 1 supports the in-memory (single-block) output path only. When writing
-   * to the temporary merge file (ofp == cfg->tmpfp, i.e. --small or an input too
-   * large for one block), ALL of these lines are suppressed with a one-line note:
-   *   - #=GC bp_cons cannot be computed per block (it spans all sequences);
-   *   - the per-seq #=GR PS/MM lines contain embedded spaces (blank = "no mark"),
-   *     which the small-memory Pfam regurgitator (esl_msafile2_RegurgitatePfam)
-   *     cannot round-trip -- it tokenizes #=GR values on whitespace -- so leaving
-   *     them in would corrupt or abort the merge. Full merge-path support is a
-   *     Phase 2 follow-up. */
+   * The per-seq #=GR PS line uses non-blank placeholders (no embedded spaces), so
+   * it round-trips the small-memory Pfam regurgitator (esl_msafile2_RegurgitatePfam,
+   * which tokenizes #=GR values on whitespace) and is emitted on BOTH the in-memory
+   * and the merge (ofp == cfg->tmpfp, i.e. --small or input too large for one block)
+   * output paths.
+   *
+   * #=GC bp_cons spans all sequences, so it cannot be computed per block; it is
+   * suppressed on the merge path with a one-line note (cross-block accumulation is
+   * a Phase 2 follow-up). */
   if(esl_opt_GetBoolean(go, "--bpstatus") || esl_opt_GetBoolean(go, "--bpcons")) {
     int in_merge_path = (ofp == cfg->tmpfp);
-    int do_perseq     = esl_opt_GetBoolean(go, "--bpstatus") && (! in_merge_path);
+    int do_perseq     = esl_opt_GetBoolean(go, "--bpstatus");
     int do_famcons    = esl_opt_GetBoolean(go, "--bpcons")   && (! in_merge_path);
-    if(in_merge_path && first_ali) {
-      fprintf(stderr, "# note: --bpstatus/--bpcons structure annotation is suppressed under --small / multi-block output (Phase 1 supports single-block output only).\n");
+    if(in_merge_path && esl_opt_GetBoolean(go, "--bpcons") && first_ali) {
+      fprintf(stderr, "# note: --bpcons (#=GC bp_cons) is suppressed under --small / multi-block output (it spans all sequences; Phase 1 supports single-block output only).\n");
     }
     if(do_perseq || do_famcons) {
       if((status = cm_alignment_annotate_status(cm, errbuf, msa, do_perseq, do_famcons)) != eslOK) return status;
