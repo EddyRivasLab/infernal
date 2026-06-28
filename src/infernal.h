@@ -2808,6 +2808,8 @@ extern int   cm_PinOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L
 extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
+/* rung-4 (R4.2a, brief 053): pinned truncated structured (bps>0) posterior */
+extern int   cm_PinTrPostAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);
 extern int   cm_CYKInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_sc);
 extern int   cm_CYKInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_sc);
 extern int   cm_alignT_hb         (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, float *ret_sc_or_pp);
