@@ -58,6 +58,20 @@
 #define DEBUGSERIAL 0
 #define DEBUGMPI    0
 
+/* Brief 017 (Part A): scale-aware default for the IBV D&C base-case slab
+ * on the --hmm --p7ibv path. When the user has NOT set --p7ibv-base-slab,
+ * the deriver otherwise picks the adaptive 256 MB-capped slab, which is
+ * far above the memory knee at common scale (brief 015: base_slab 1024 for
+ * norovirus, 372 for sars). Brief 015's sweep showed base_slab ~= 64 is the
+ * memory knee at common scale (norovirus 237->70 MB, sars 476->265 MB for
+ * ~+0.4-1.6 s wall) AND is at/below the adaptive value at genome scale
+ * (HSV adaptive ~72, and 64 is below the matrix peak so peak RSS is
+ * unchanged there). A flat 64 default is therefore robust across scales.
+ * The deriver's OUTPUT is byte-invariant to base_slab (brief 017 gate A1),
+ * so this is a silent memory-only default; an explicit --p7ibv-base-slab
+ * overrides it. */
+#define HMM_P7IBV_KNEE_BASE_SLAB 64
+
 typedef struct {
 #ifdef HMMER_THREADS
   ESL_WORK_QUEUE   *queue;
@@ -756,6 +770,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
   extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
   extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 016 */
+  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 016 */
+  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 017: compact 2-cell resident pp */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -830,7 +847,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].do_hmmnoband = do_hmmnoband;
 	winfo[k].do_p7ibv    = do_p7ibv;
 	winfo[k].ibv_delta   = esl_opt_GetInteger(go, "--p7ibv-delta");
-	winfo[k].ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");
+	/* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
+	 * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
+	winfo[k].ibv_base_slab = esl_opt_IsDefault(go, "--p7ibv-base-slab")
+	                         ? HMM_P7IBV_KNEE_BASE_SLAB
+	                         : esl_opt_GetInteger(go, "--p7ibv-base-slab");
 	/* CM only needed by the IBV deriver (for cm->fp7); else unused in --hmm mode */
 	winfo[k].cm          = do_p7ibv ? cm : NULL;
 	winfo[k].dataA       = NULL;
@@ -928,9 +949,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
 	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
+	    /* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
+	     * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
 	    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->n,
 					      p7ibv_delta,
-					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
+					      (esl_opt_IsDefault(go, "--p7ibv-base-slab")
+					       ? HMM_P7IBV_KNEE_BASE_SLAB
+					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
@@ -978,6 +1003,21 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
+	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
+	    /* brief 016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
+	     * Default-on (byte-exact vs the full path at norovirus/dengue/
+	     * sars/HSV); set INFERNAL_HMM_CKPT_OFF to force the full path.
+	     * bxb holds the resident posterior; no full F, B, or OA matrix
+	     * is ever materialized (bxf is not allocated). brief 017: bxb uses
+	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
+	    bxb = p7b_pp_Create(bnd);
+	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc)) != eslOK)
+	      cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
+	    p7_trace_Reuse(tr[idx]);
+	    if ((status = p7_GCheckptOA_Banded(gm, bxb, tr[idx], &oasc)) != eslOK)
+	      cm_Fail("p7_GCheckptOA_Banded() failed for sequence %s", sq->name);
+	  }
+	  else {
 	  bxf = p7_gmxb_Create(bnd);
 	  bxb = p7_gmxb_Create(bnd);
 
@@ -996,13 +1036,14 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  p7_trace_Reuse(tr[idx]);
 	  if ((status = p7_GOATraceBanded(gm, bxb, bxf, tr[idx])) != eslOK)
 	    cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+	  }
 
 	  free(i2k);
 	  free(kmin);
 	  free(kmax);
 	  if (vtr) p7_trace_Destroy(vtr);
 	  p7_gbands_Destroy(bnd);
-	  p7_gmxb_Destroy(bxf);
+	  if (bxf) p7_gmxb_Destroy(bxf);
 	  p7_gmxb_Destroy(bxb);
 	}
       } /* end serial for loop */
