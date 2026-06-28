@@ -510,8 +510,10 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	else if (mode == TRMODE_J) {
 	  /* shared classification: identity-letter / ':' (consistent sub) for the
 	   * mline, and 'v' (negative non-canonical) for the ncline. */
+	  char clmid, crmid;  /* lmid/rmid are int here; helper takes char* */
 	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
-	  cm_bp_match_marks(lseq, rseq, lcons, rcons, tmpsc, &lmid, &rmid);
+	  cm_bp_match_marks(lseq, rseq, lcons, rcons, tmpsc, &clmid, &crmid);
+	  lmid = clmid; rmid = crmid;
 	  lnnc = rnnc = cm_bp_nc_mark(lseq, rseq, tmpsc);
 	}
       }
