@@ -25,6 +25,26 @@
 
 static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
 
+/* rung-3: derive the per-bifurcation right-fragment length k* (kpin[v]) from a
+ * CYK parsetree, exactly as the rung3_drv extract_bifs harness does.  kpin[v]
+ * stays -1 for B states not on the parse (none, in global mode -- every B is
+ * visited).  Used to pin cm_CheckptPostAlignHB / cm_CheckptOptAccAlignHB. */
+static void
+rung3_kpin_from_cyk(CM_t *cm, Parsetree_t *tr, int *kpin)
+{
+  int n;
+  for (n = 0; n < cm->M; n++) kpin[n] = -1;
+  for (n = 0; n < tr->n; n++) {
+    int v = tr->state[n];
+    if (cm->sttype[v] != B_st) continue;
+    int ln = tr->nxtl[n], rn = tr->nxtr[n];
+    int lstid = cm->stid[tr->state[ln]];
+    int begl_node = (lstid == BEGL_S) ? ln : rn;      /* left  (BEGL) subtree node */
+    int ksplit    = tr->emitr[begl_node];             /* last residue of left fragment */
+    kpin[v]       = tr->emitr[n] - ksplit;            /* right-fragment length k* */
+  }
+}
+
 /*****************************************************************
  * 1. The CM_ALNDATA object
  *****************************************************************/
@@ -422,18 +442,67 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
       
       if(w != NULL) esl_stopwatch_Start(w);
-      if(do_trunc) { 
-	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      if(do_trunc) {
+	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-      	if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
-				  do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx, 
-				  cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
+	 * (CM_ALIGN_CHECKPT) for the global, pure-MATL-chain (bps=0) OptAcc case it
+	 * supports (marginal modes J/L/R, T absent); stock cm_TrAlignHB() otherwise
+	 * (byte-identical output, but full-cube memory). */
+	int do_trckpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+			 cm_CheckptTrAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+	if(do_trckpt) {
+	  if((status = cm_CheckptTrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+					   cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	}
+	else {
+      	  if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
+				    do_optacc, do_sample, cm->trhb_mx, cm->trhb_shmx, cm->trhb_omx,
+				    cm->trhb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	}
       }
-      else { 
-	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
+      else {
+	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
-	if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx, 
-				cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
+	/* checkpointed sqrt(M)-memory OptAcc path: engaged by --ckpt (CM_ALIGN_CHECKPT)
+	 * only for the non-truncated, global, pure-MATL-chain OptAcc case it supports;
+	 * stock cm_AlignHB() otherwise (byte-identical output, but full-cube memory). */
+	int do_checkpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+			  cm_CheckptAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+	/* rung-3 checkpointed STRUCTURED (bps>0) OptAcc pipeline: engaged by --ckpt
+	 * for global, non-truncated structured CMs.  Pass 1 CYK D&C supplies the
+	 * bifurcation k* pins; pass 2 = checkpointed pinned posterior -> emit_mx ->
+	 * checkpointed pinned OptAcc + pinned-tree traceback.  Separate qualifier so
+	 * the truncated gate is NOT relaxed (truncated bps>0 falls back to stock). */
+	int do_checkpt_r3 = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+			     (! do_checkpt) && cm_CheckptOptAccAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+	if(do_checkpt) {
+	  if((status = cm_CheckptAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, cm->hb_emx,
+					 do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
+	}
+	else if(do_checkpt_r3) {
+	  int    *kpin   = NULL;
+	  Parsetree_t *tr_cyk = NULL;
+	  float   r3_Z   = 0.;
+	  ESL_ALLOC(kpin, sizeof(int) * cm->M);
+	  /* pass 1: HMM-banded CYK parse -> k* pins (cm_alignT_hb does the CYK fill) */
+	  if((status = cm_alignT_hb(cm, errbuf, sq->dsq, sq->L, mxsize, FALSE, cm->hb_mx, cm->hb_shmx,
+				    NULL, &tr_cyk, NULL)) != eslOK) { free(kpin); goto ERROR; }
+	  rung3_kpin_from_cyk(cm, tr_cyk, kpin);
+	  FreeParsetree(tr_cyk); tr_cyk = NULL;
+	  /* pass 2: checkpointed pinned posterior + checkpointed pinned OptAcc + traceback */
+	  if((status = cm_CheckptPostAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, cm->hb_emx, kpin, &r3_Z)) != eslOK) { free(kpin); goto ERROR; }
+	  if((status = cm_CheckptOptAccAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, cm->hb_emx, kpin,
+					       do_post ? &ppstr : NULL, &tr, &pp, NULL)) != eslOK) { free(kpin); goto ERROR; }
+	  sc = r3_Z;
+	  free(kpin);
+	  if(getenv("INFERNAL_CKPT_VERBOSE"))
+	    fprintf(stderr, "# rung-3 checkpointed structured OptAcc engaged: M=%d L=%d (global, non-truncated, bps>0)\n", cm->M, (int) sq->L);
+	}
+	else {
+	  if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
+				  cm->hb_omx, cm->hb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
+	}
       }
     }
   }
