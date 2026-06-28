@@ -2865,29 +2865,21 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
      * allocated; the tau-ratchet recomputes the checkpointed float F/B each
      * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
     if(cm->p7_ibv_ckpt || getenv("CP9_CKPT") != NULL) {
+      /* brief 167 (tau-ratchet single-pass): the old while(1) loop recomputed the
+       * WHOLE checkpointed float F/B on every bump (up to ~26 passes). The F/B is
+       * tau/thresh-independent (brief 166 Q3), so the driver runs it ONCE: step 0
+       * via the single-call path (zero overhead for the common 0-bump case), and
+       * if that doesn't fit, ONE multi-threshold F/B sweep over the whole ratchet
+       * grid + scan-and-pick. Output is byte-identical to the old loop. */
       int nbump = 0;
-      while(1) {
-        if((status = cp9_FBMatrices2BandsP7BF_chk(cm, errbuf, cp9, dsq, cm->cp9b,
-                                                  kmin, kmax, L, i0, j0, pass_idx, 0,
-                                                  do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
-        if(doing_search) {
-          if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR;
-        }
-        else {
-          status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
-          if(status != eslOK && status != eslERANGE) goto ERROR;
-        }
-        if(hbmx_Mb < size_limit)                                  break;
-        if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
-        if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
-        if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
-        if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
-        nbump++;
-      }
-      if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPTF_TAU L=%d tau_bumps=%d (each bump recomputes the checkpointed float F/B)\n", L, nbump);
+      status = cp9_IterateSeq2BandsP7BF_chk_multi(cm, errbuf, cp9, dsq, L, kmin, kmax, i0, j0,
+                                                  pass_idx, size_limit, doing_search, do_sample,
+                                                  do_post, maxtau, do_pnmono, do_pnmono_print,
+                                                  &nbump, &hbmx_Mb);
+      if(status != eslOK && status != eslERANGE) goto ERROR;
+      if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPTF_TAU L=%d tau_bumps=%d (single-pass tabulation; one checkpointed float F/B)\n", L, nbump);
       if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-      if(hbmx_Mb > size_limit) return eslERANGE;
-      return eslOK;
+      return status; /* eslOK or eslERANGE, exactly as the old loop returned */
     }
 
     /* Float path: use float-DP CP9 F/B/Posterior to avoid the ~3% per-cell
