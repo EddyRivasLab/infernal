@@ -564,15 +564,15 @@ is also used.
 
 .TP
 .B --bpstatus
-Add per-sequence base-pair status annotation to the output alignment, as two
-.B #=GR
-lines per sequence (on consensus columns only). The
-.B PS
-line marks pair status with the same scheme as the
+Add per-sequence base-pair status annotation to the output alignment, as one
+combined
+.B #=GR <seqname> PS
+line per sequence (marks on consensus columns only). The line marks pair status
+with the same scheme as the
 .B cmsearch
 PS line:
 .B v
-(negative-scoring non-canonical) or
+(negative-scoring non-canonical or half-present) or
 .B ?
 (truncated half) for nested pairs, and
 .B =
@@ -580,17 +580,30 @@ PS line:
 .B $
 (covarying), or
 .B x
-(broken) for pseudoknot pairs. The
-.B MM
-line marks substitutions sparsely:
+(broken) for pseudoknot pairs. It additionally marks substitutions:
 .B :
 for a consistent base-pair substitution and
 .B +
-for a positive-scoring single-residue substitution; blank elsewhere. Note
-this adds two lines per sequence. Computed for the default in-memory output
-path only; suppressed (with a note) under
+for a positive-scoring single-residue substitution. The only column where two
+marks compete is a pseudoknot column (a single-residue state that can be both a
+.B +
+substitution and a
+.B = $
+or
+.B x
+pseudoknot pair); there the pseudoknot pair status wins. Columns that carry no
+mark hold a non-blank placeholder so the line is dense and machine-re-readable:
+.B .
+at insert columns,
+.B ~
+at missing/local-end columns,
+.B \-
+at deletions, and
+.B _
+at an unmarked consensus residue. This adds one line per sequence and is emitted
+on both the default (in-memory) and the
 .B --small
-or multi-block output.
+/ multi-block (merge) output paths.
 
 .TP
 .B --bpcons
@@ -605,11 +618,14 @@ sequences whose two aligned residues form a canonical WC/GU pair, as a single
 .B *
 digit (same bucketing as the PP lines) at both paired columns;
 .B .
-if fewer than two sequences have both residues present. This is a descriptive
-conservation measure, not a statistical covariation test. Computed for the
-default in-memory output path only; suppressed (with a note) under
+at all other columns (including pairs with fewer than two sequences having both
+residues present). This is a descriptive conservation measure, not a statistical
+covariation test. Because it is computed across all sequences at once, it is
+written only on the in-memory (single-block) output path; when output is routed
+through the temporary merge file (i.e. under
 .B --small
-or multi-block output.
+or whenever the input is too large for a single block), it is suppressed with a
+note.
 
 .TP
 .B --ileaved
