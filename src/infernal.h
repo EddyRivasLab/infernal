@@ -2788,6 +2788,10 @@ extern char          *cm_alidisplay_TruncString   (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_SQ **ret_sq, Parsetree_t **ret_tr, char **ret_pp);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
+/* MM line (match/substitution) glyphs, shared by cmsearch alidisplay and the
+ * cmalign #=GR <seq> MM line. */
+#define MM_SUBPAIR    ':'      /* consistent (score>=0) base-pair substitution */
+#define MM_SUBSINGLET '+'      /* positive-scoring singlet substitution        */
 /* shared base-pair / singlet classification helpers (cm_alidisplay.c); used by
  * both the cmsearch alidisplay path and the cmalign per-seq annotation path. */
 extern int            bp_is_canonical(char lseq, char rseq);

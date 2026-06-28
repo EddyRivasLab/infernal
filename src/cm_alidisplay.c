@@ -41,10 +41,7 @@ static float post_code_to_avg_pp(char postcode);
 #define PS_PKNOT_MAINT   '='   /* pknot pair maintained: WC/GU and observed pair == consensus pair          */
 #define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
 #define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
-
-/* MM line (match/substitution) glyphs, shared with cmalign's #=GR <seq> MM. */
-#define MM_SUBPAIR    ':'      /* consistent (score>=0) base-pair substitution */
-#define MM_SUBSINGLET '+'      /* positive-scoring singlet substitution        */
+/* MM_SUBPAIR / MM_SUBSINGLET glyphs are defined in infernal.h (shared with cmalign). */
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
