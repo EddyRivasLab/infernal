@@ -1930,6 +1930,9 @@ typedef struct cm_s {
   int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 140, --p7ibv-mode) */
   int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 140, --p7ibv-width) */
   int     p7_ibv_ckpt;         /* if TRUE, checkpointed banded CP9 P7B F/B in Pass 2 (--p7ibv-ckpt, brief 146/144-B) */
+  int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 169) */
+  int    *p7_wv_nodepad;       /* [0..M] WV per-node pad (F+B-halfwidth p95), computed align-time; NULL until set */
+  int     p7_wv_nodepad_M;     /* length of p7_wv_nodepad (= fp7->M); 0 if not set */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -3355,6 +3358,11 @@ extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *d
 extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
                                     const int *i2k, const int *kmin, const int *kmax, int ncells,
                                     P7_TRACE **ret_tr);
+/* Brief 169: windowed-Viterbi band = MAP-trace i2k +/- per-node pad. */
+extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
+                                    double quantile, int delta_milli, int floorpad, int **ret_nodepad);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);

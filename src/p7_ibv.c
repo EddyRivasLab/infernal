@@ -33,6 +33,8 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_random.h"
+#include "esl_sq.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
@@ -1319,5 +1321,244 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
   if (w)  free(w);
   if (tr) p7_trace_Destroy(tr);
   *ret_tr = NULL;
+  return status;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * cm_ComputeP7WVNodePad -- brief 169 per-node pad calibration (F+B-halfwidth p95)
+ * ---------------------------------------------------------------------------
+ *
+ * The windowed-Viterbi band uses a per-node pad calibrated as the <quantile>
+ * (default p95) of the F+B Delta-band half-width observed at the Viterbi MAP
+ * trace cell, over a Monte-Carlo sample of CM-emitted sequences.  This is the
+ * brief-168 prototype's calibrate_pernode_hw / pad_from_hw, ported to C:
+ *
+ *   for s in 1..nsamples:
+ *     emit a sequence from the CM (EmitParsetree)
+ *     run the flat F+B IBV deriver at <delta_milli> -> (i2k, kmin, kmax)
+ *     for each residue i with c = i2k[i] >= 1:
+ *       hw[c].append( max(c-kmin[i], kmax[i]-c) )       # the F+B half-width
+ *   pad[k] = max(floorpad, ceil( quantile(hw[k]) ))     # linear interp, numpy-style
+ *
+ * IMPORTANT: this is a DIFFERENT calibration from cm->p7_cm_nodepad
+ * (cm_ComputeP7CMNodePad), which is the p99 of a *Viterbi-pin deficit* against
+ * the embedded true alignment -- a much narrower quantity tuned for the
+ * p7_Seq2BandsVit pin band.  Using cm->p7_cm_nodepad here regresses accuracy
+ * (brief 169 spot-check: MISL -0.19, Bp1 -0.06 vs F+B); the wider F+B-halfwidth
+ * pad reproduces F+B accuracy (the prototype's pn_p95 result).
+ *
+ * Caller owns the returned pad[0..M].  Align-time use: compute once per CM and
+ * cache; works on existing CMs with no rebuild (only needs cm->fp7).
+ */
+static int
+p7wv_cmp_int(const void *a, const void *b)
+{
+  int x = *(const int *) a, y = *(const int *) b;
+  return (x > y) - (x < y);
+}
+
+int
+cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
+                      double quantile, int delta_milli, int floorpad,
+                      int **ret_nodepad)
+{
+  int       status;
+  P7_HMM   *hmm = NULL;
+  int       M, k, s, i;
+  int     **hw  = NULL;   /* hw[k] = collected half-widths at node k */
+  int      *hwn = NULL;   /* hw[k] count */
+  int      *hwa = NULL;   /* hw[k] alloc */
+  int      *pad = NULL;
+
+  if (cm == NULL || cm->fp7 == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "cm_ComputeP7WVNodePad: cm->fp7 is NULL");
+  if (r == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "cm_ComputeP7WVNodePad: RNG is NULL");
+  hmm = cm->fp7;
+  M   = hmm->M;
+  if (floorpad < 0) floorpad = 0;
+
+  ESL_ALLOC(hw,  sizeof(int *) * (M + 1));
+  ESL_ALLOC(hwn, sizeof(int)   * (M + 1));
+  ESL_ALLOC(hwa, sizeof(int)   * (M + 1));
+  for (k = 0; k <= M; k++) { hw[k] = NULL; hwn[k] = 0; hwa[k] = 0; }
+
+  for (s = 0; s < nsamples; s++) {
+    Parsetree_t *tr  = NULL;
+    ESL_SQ      *esq = NULL;
+    int          L   = 0;
+    char         name[32];
+    int         *i2k = NULL, *kmin = NULL, *kmax = NULL, nc = 0;
+
+    snprintf(name, sizeof(name), "wv%d", s);
+    if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &tr, &esq, &L)) != eslOK) goto ERROR;
+
+    if (L >= 3 &&
+        p7_Seq2BandsIBV(cm, errbuf, esq->dsq, L, delta_milli,
+                        P7IBV_MODE_DELTA, 0, &i2k, &kmin, &kmax, &nc) == eslOK) {
+      for (i = 1; i <= L; i++) {
+        int c = i2k[i];
+        int d1, d2, h;
+        if (c < 1 || c > M) continue;
+        d1 = c - kmin[i];
+        d2 = kmax[i] - c;
+        h  = (d1 > d2) ? d1 : d2;
+        if (h < 0) h = 0;
+        if (hwn[c] >= hwa[c]) {
+          int ns = hwa[c] ? hwa[c] * 2 : 8;
+          ESL_REALLOC(hw[c], sizeof(int) * ns);
+          hwa[c] = ns;
+        }
+        hw[c][hwn[c]++] = h;
+      }
+      free(i2k); free(kmin); free(kmax);
+    }
+    FreeParsetree(tr);
+    esl_sq_Destroy(esq);
+  }
+
+  ESL_ALLOC(pad, sizeof(int) * (M + 1));
+  pad[0] = 0;
+  for (k = 1; k <= M; k++) {
+    if (hwn[k] > 0) {
+      double idx, frac;
+      int    lo, hi, v;
+      qsort(hw[k], hwn[k], sizeof(int), p7wv_cmp_int);
+      idx  = quantile * (double)(hwn[k] - 1);   /* numpy 'linear' percentile */
+      lo   = (int) floor(idx);
+      hi   = lo + 1;
+      frac = idx - (double) lo;
+      if (hi >= hwn[k]) v = hw[k][hwn[k] - 1];
+      else              v = (int) ceil((double) hw[k][lo] + frac * (double)(hw[k][hi] - hw[k][lo]));
+      pad[k] = (v > floorpad) ? v : floorpad;
+    } else {
+      pad[k] = floorpad;
+    }
+  }
+
+  for (k = 0; k <= M; k++) if (hw[k]) free(hw[k]);
+  free(hw); free(hwn); free(hwa);
+  *ret_nodepad = pad;
+  return eslOK;
+
+ ERROR:
+  if (hw)  { for (k = 0; k <= M; k++) if (hw[k]) free(hw[k]); free(hw); }
+  if (hwn) free(hwn);
+  if (hwa) free(hwa);
+  if (pad) free(pad);
+  *ret_nodepad = NULL;
+  return status;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * p7_Seq2BandsWV -- brief 169 windowed-Viterbi band deriver
+ * ---------------------------------------------------------------------------
+ *
+ * The windowed-Viterbi band (brief 168 prototype, GO verdict) is, by
+ * construction:
+ *
+ *     band[i] = [ i2k[i] - nodepad[i2k[i]] ,  i2k[i] + nodepad[i2k[i]] ]
+ *
+ * where i2k[] is the Viterbi MAP trace (the model column the optimal path
+ * occupies at residue i) and nodepad[k] is the per-node pad.  The prototype
+ * proved this reproduces the F+B Delta-band's alignment accuracy on 183/189
+ * sequences (96.8%; exact on all rmark + dossier) -- see brief 168 summary.
+ *
+ * Two facts make this a thin composition of existing, validated machinery:
+ *   (a) The MAP trace i2k is exactly the per-row argmax-k pin the IBV deriver
+ *       already returns (ibv_through_scan restricts the argmax to emitting
+ *       M/I cells, brief 137).
+ *   (b) The per-node pad is exactly cm->p7_cm_nodepad -- cm_ComputeP7CMNodePad
+ *       calibrates it by the same emit-from-CM Monte-Carlo deficit-quantile
+ *       method the prototype reinvented (calibrate_pernode_hw / pad_from_hw).
+ *       It is stored on the CM file (CMH_P7NODEPAD), so it works on existing
+ *       Rfam/VADR CMs with NO rebuild.
+ *   The band itself is then the same i2k+nodepad construction the
+ *   --p7pinbridge / vitband paths already use via p7_pins2bands_nodepad
+ *   (D-state bridge / connectivity guard built in).
+ *
+ * So the ONLY genuinely new lever is *how fast* and *at what memory* we obtain
+ * i2k.  This v1 obtains i2k from the existing memory-bounded D&C deriver
+ * (p7_Seq2BandsIBV_dnc) -- correct, genome-capable, accuracy-validatable, but
+ * NOT yet faster than --p7ibv-mem (same ~35-sweep i2k cost).  The brief-169
+ * speed win (single windowed forward-Viterbi + traceback for i2k, ~3 sweeps or
+ * less) is a drop-in replacement for the i2k source below; it must reproduce
+ * this i2k byte-for-byte (the monotone-k trace is unique up to float ties).
+ *
+ * <nodepad> is the caller-owned [0..M] per-node pad array (typically
+ * cm->p7_cm_nodepad[k] + cm->p7bpad).  Returns (i2k, kmin, kmax, ncells) with
+ * the same conventions as p7_Seq2BandsIBV.
+ */
+int
+p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int   status;
+  int   M;
+  int  *i2k = NULL, *kmin_tmp = NULL, *kmax_tmp = NULL;
+  int  *i2k_band = NULL, *kmin = NULL, *kmax = NULL;
+  int   nc_tmp = 0, ncells = 0;
+
+  if (cm == NULL || cm->fp7 == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsWV: cm->fp7 is NULL");
+  if (nodepad == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsWV: nodepad is NULL (CM lacks P7NODEPAD?)");
+  M = cm->fp7->M;
+
+  /* (1) Exact MAP trace i2k.  We keep only i2k (the per-row argmax pin); the
+   *     Delta band is discarded.  i2k is threshold-independent so the delta
+   *     value does not matter.
+   *
+   *     Speed/memory: the FLAT deriver is ~2 sweeps (vs the D&C's ~35) but
+   *     needs an O(L*M) forward pool (~12*L*M bytes).  Use it when that pool
+   *     fits a ~2 GB budget (covers small/viral), else fall back to the
+   *     memory-bounded D&C (genome).  This delivers the de-recursion speedup
+   *     wherever memory allows; the genome-scale windowed forward-Viterbi
+   *     (single bounded sweep) is the remaining brief-169 speed lever and is a
+   *     drop-in replacement for this block (must reproduce this i2k). */
+  {
+    double flat_pool_bytes = 12.0 * (double)(L + 1) * (double)(M + 4);
+    const double FLAT_BUDGET = 2.0e9;
+    if (flat_pool_bytes <= FLAT_BUDGET)
+      status = p7_Seq2BandsIBV(cm, errbuf, dsq, L, cm->p7_ibv_delta,
+                               P7IBV_MODE_DELTA, 0,
+                               &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
+    else
+      status = p7_Seq2BandsIBV_dnc(cm, errbuf, dsq, L,
+                                   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
+                                   FALSE, P7IBV_MODE_DELTA, 0,
+                                   &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
+  }
+  if (status != eslOK)
+    return status;
+  free(kmin_tmp); kmin_tmp = NULL;
+  free(kmax_tmp); kmax_tmp = NULL;
+
+  /* (2) Windowed-Viterbi band = i2k +/- nodepad.  p7_pins2bands_nodepad prunes
+   *     i2k in place (non-monotone pins), so build the band from a copy and
+   *     return the unpruned i2k to the caller. */
+  ESL_ALLOC(i2k_band, sizeof(int) * (L + 1));
+  memcpy(i2k_band, i2k, sizeof(int) * (L + 1));
+  if ((status = p7_pins2bands_nodepad(i2k_band, errbuf, L, M, nodepad, 0,
+                                      &kmin, &kmax, &ncells)) != eslOK)
+    goto ERROR;
+  free(i2k_band); i2k_band = NULL;
+
+  *ret_i2k    = i2k;
+  *ret_kmin   = kmin;
+  *ret_kmax   = kmax;
+  *ret_ncells = ncells;
+  return eslOK;
+
+ ERROR:
+  if (i2k)      free(i2k);
+  if (i2k_band) free(i2k_band);
+  if (kmin)     free(kmin);
+  if (kmax)     free(kmax);
+  if (kmin_tmp) free(kmin_tmp);
+  if (kmax_tmp) free(kmax_tmp);
+  *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   return status;
 }
