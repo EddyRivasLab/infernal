@@ -6364,6 +6364,7 @@ tr_trpenalty(CM_t *cm, int v)
  * walks (like J alpha); only the shadows are retained (for the traceback). */
 typedef struct tr_lr_s {
   int      fill_L, fill_R;
+  int      fill_T;               /* brief 051 (R4.4c): also compute the T plane (B states only) */
   int      ret_planes;           /* if TRUE, return Lalpha/Ralpha instead of freeing */
   float ***Lalpha,  ***Ralpha;   /* L/R score planes (per-state banded vjd decks); also
 				  * serve as the in/out array for splitter chaining   */
@@ -6371,6 +6372,16 @@ typedef struct tr_lr_s {
   char  ***Lkmode,  ***Rkmode;   /* L/R B-state child-mode shadows (B states only)   */
   int      Lb, Rb;               /* L/R truncated-begin entry states                 */
   float    Lbsc, Rbsc;           /* their scores (penalty folded in)                 */
+  /* T marginal (brief 051): T mode appears ONLY at B states, reached ONLY by a
+   * truncated begin into the B at full span -> children are R-left (BEGL) + L-right
+   * (BEGR). So the T data is just the full-span T-combine per B state (Tfull) and
+   * its k* split (Tfullk), plus the T begin (Tb/Tbsc). No T plane/outside is needed:
+   * the begin scalar is the only T outside (oracle cm_TrCYKOutsideAlignHB:6743), and
+   * the parent region above the B is degenerate (the begin jumps straight in). */
+  float   *Tfull;                /* Talpha[v][j0][W] per state (IMPOSSIBLE off B/in-band) */
+  int     *Tfullk;               /* the T-combine k* at the full-span cell, per B state   */
+  int      Tb;                   /* T truncated-begin entry B state                       */
+  float    Tbsc;                 /* its score (penalty folded in)                        */
 } TR_LR;
 
 /* TR_VLR [brief 046]: the L/R marginal planes for the V-problem (vji) inside
@@ -6419,7 +6430,7 @@ tr_free_lr_shadow(void ***shadow, char ***kmode, CM_t *cm, int i0, int j0)
 /* forward declarations (mutually recursive) */
 static float tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 				    int r, int z, int i0, int j0,
-				    int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
+				    int r_allow_J, int r_allow_L, int r_allow_R, int r_allow_T, CP9Bands_t *cp9b);
 static float tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 				  int r, int z, int i0, int j0,
 				  int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
@@ -6441,7 +6452,7 @@ static void  tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, i
 			   float *ret_bsc, int *ret_bv, int *ret_bj, int *ret_bmode, CP9Bands_t *cp9b);
 static float tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			   int r, int z, int i0, int j0, int allow_begin,
-			   int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b);
+			   int r_allow_J, int r_allow_L, int r_allow_R, int r_allow_T, CP9Bands_t *cp9b);
 static float tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 			   int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			   int do_full, float ***a, float ****ret_a, char ****ret_shadow,
@@ -6498,7 +6509,14 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   /* L/R marginal-plane state (brief 045, R4.4b). All NULL/off when lr==NULL. */
   int      fill_L = (lr != NULL) ? lr->fill_L : FALSE;
   int      fill_R = (lr != NULL) ? lr->fill_R : FALSE;
+  int      fill_T = (lr != NULL) ? lr->fill_T : FALSE;  /* brief 051 (R4.4c) */
   int      ret_planes = (lr != NULL) ? lr->ret_planes : FALSE;
+  /* T (brief 051) needs the L+R child planes to form the B-state T-combine
+   * (Ralpha[BEGL] + Lalpha[BEGR]); force them on whenever fill_T. */
+  float   *Tfull  = NULL;     /* Talpha[v][j0][W] per state (begin scan + traceback) */
+  int     *Tfullk = NULL;     /* the T-combine k* at the full-span cell, per B state  */
+  int      Tb   = -1;
+  float    Tbsc = IMPOSSIBLE;
   float ***Lalpha = NULL, ***Ralpha = NULL;
   void  ***Lshad  = NULL, ***Rshad  = NULL;  /* yshad(char**)/kshad(int**) per state */
   char  ***Lkmode = NULL, ***Rkmode = NULL;  /* B-state child-mode shadow            */
@@ -6511,7 +6529,14 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;
+  if (fill_T) { fill_L = TRUE; fill_R = TRUE; }   /* T-combine reads R(BEGL)+L(BEGR) */
   if (dpool == NULL) dpool = deckpool_create();
+
+  if (fill_T) {
+    ESL_ALLOC(Tfull,  sizeof(float) * cm->M);
+    ESL_ALLOC(Tfullk, sizeof(int)   * cm->M);
+    for (v = 0; v < cm->M; v++) { Tfull[v] = IMPOSSIBLE; Tfullk[v] = 0; }
+  }
 
   if (alpha == NULL) {
     ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -6701,6 +6726,16 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 			  (sc = Ralpha[yy][j-k][dp_yk] + alpha[zz][j][dp_zk]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) { Rkshad[j][dp_v] = k; Rkmode[v][j][dp_v] = TRMODE_J; }
+		      }
+		      /* T (brief 051): both ends truncated -> left child R, right child L;
+		       * k != 0, k != d (both children non-empty). Only the full-span cell
+		       * (j0,W) is needed -- that is the only place T occurs (the begin enters
+		       * the B at full span). Transcribed from oracle cm_TrCYKInsideAlignHB
+		       * (cm_dpalign_trunc.c:2692-2698). */
+		      if (fill_T && j == j0 && d == W && k != 0 && k != d &&
+			  do_R_y && do_L_z &&
+			  (sc = Ralpha[yy][j-k][dp_yk] + Lalpha[zz][j][dp_zk]) > Tfull[v]) {
+			Tfull[v] = sc; Tfullk[v] = k;
 		      }
 		    }
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
@@ -6989,6 +7024,14 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	    Ralpha[v][j0][dpb] + trpen > Rbsc)
 	  { Rb = v; Rbsc = Ralpha[v][j0][dpb] + trpen; }
       }
+      /* T begin (brief 051): only B states, gated cp9b->Tvalid[0] && Tvalid[v]; the
+       * begin enters the B in T mode at full span (oracle cm_TrCYKInsideAlignHB:2837). */
+      if (allow_begin && v != 0 && fill_T && cm->sttype[v] == B_st &&
+	  cp9b->Tvalid[0] && cp9b->Tvalid[v] && NOT_IMPOSSIBLE(Tfull[v])) {
+	float trpen = tr_trpenalty(cm, v);
+	if (NOT_IMPOSSIBLE(trpen) && Tfull[v] + trpen > Tbsc)
+	  { Tb = v; Tbsc = Tfull[v] + trpen; }
+      }
       if (allow_begin && v == 0 && cp9b->Jvalid[0]) {
 	int dpb0;
 	if (hb_inband(cp9b, 0, j0, W, i0, j0, &dpb0)) {
@@ -7063,11 +7106,17 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
+  /* T (brief 051): Tfull was consumed into Tbsc above; free it always. Tfullk (the
+   * full-span k* per B state) is needed by tr_insideT_hb's traceback, so return it
+   * when ret_shadow != NULL (the traceback path); otherwise free it. */
+  if (Tfull != NULL) { free(Tfull); Tfull = NULL; }
+  if (Tfullk != NULL && ret_shadow == NULL) { free(Tfullk); Tfullk = NULL; }
   /* hand the L/R shadows (+ B-state kmode) and/or kept score planes back via lr */
   if (lr != NULL) {
     lr->Lshad = Lshad; lr->Rshad = Rshad; lr->Lkmode = Lkmode; lr->Rkmode = Rkmode;
     lr->Lb = Lb; lr->Lbsc = Lbsc; lr->Rb = Rb; lr->Rbsc = Rbsc;
     lr->Lalpha = Lalpha; lr->Ralpha = Ralpha;
+    lr->Tb = Tb; lr->Tbsc = Tbsc; lr->Tfullk = (ret_shadow != NULL) ? Tfullk : NULL;
   }
   return sc;
 
@@ -7097,7 +7146,10 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           band-consistent by construction (it can represent "j==j0", which the
  *           1-D betaL[v][j][dp_v] could not -> 047's mixed-split over-score is gone).
  *           Decks are banded vjd and free on the same touch-count loop as the J
- *           beta, so the live frontier stays O(log N). T is OFF (R4.4c).
+ *           beta, so the live frontier stays O(log N). T (brief 051) needs NO
+ *           outside here: its only "outside" is the begin scalar at a B's full-span
+ *           cell (handled in the splitter), matching oracle cm_TrCYKOutsideAlignHB
+ *           where Tbeta[v][L][L]=trpenalty with no T recurrence.
  *           NOTE: marginal local-end (Lbeta/Rbeta at deck M) is NOT yet built;
  *           valid only for CMH_LOCAL_END==off (global) -- see brief 049 summary.
  */
@@ -7536,7 +7588,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 static float
 tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	      int r, int z, int i0, int j0, int allow_begin,
-	      int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
+	      int r_allow_J, int r_allow_L, int r_allow_R, int r_allow_T, CP9Bands_t *cp9b)
 {
   int       status;
   void   ***shadow;
@@ -7553,9 +7605,13 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int      *jmin = cp9b->jmin, *jmax = cp9b->jmax;
   int     **hdmin = cp9b->hdmin, **hdmax = cp9b->hdmax;
 
-  lr.fill_L = r_allow_L; lr.fill_R = r_allow_R;
+  /* T (brief 051) needs the L+R child planes/shadows for the BEGL(R)+BEGR(L)
+   * subtree traceback; fill them whenever r_allow_T (tr_inside_hb forces them too). */
+  lr.fill_L = r_allow_L || r_allow_T; lr.fill_R = r_allow_R || r_allow_T; lr.fill_T = r_allow_T;
+  lr.ret_planes = FALSE;
   lr.Lalpha = lr.Ralpha = NULL; lr.Lshad = lr.Rshad = NULL; lr.Lkmode = lr.Rkmode = NULL;
   lr.Lb = lr.Rb = -1; lr.Lbsc = lr.Rbsc = IMPOSSIBLE;
+  lr.Tfull = NULL; lr.Tfullk = NULL; lr.Tb = -1; lr.Tbsc = IMPOSSIBLE;
 
   sc = tr_inside_hb(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
 		    NULL, NULL, NULL, NULL, &shadow, allow_begin, &b, &bsc, &lr, cp9b);
@@ -7563,6 +7619,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   /* resolve the root mode and the begin-target state / returned score */
   if      (r_allow_L) { mode = TRMODE_L; retsc = lr.Lbsc; bb = lr.Lb; }
   else if (r_allow_R) { mode = TRMODE_R; retsc = lr.Rbsc; bb = lr.Rb; }
+  else if (r_allow_T) { mode = TRMODE_T; retsc = lr.Tbsc; bb = lr.Tb; }
   else                { mode = TRMODE_J; retsc = sc;      bb = b;     }
 
   pda_i = esl_stack_ICreate();
@@ -7581,18 +7638,21 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (cm->sttype[v] == B_st) {
       if      (mode == TRMODE_J) k = ((int**)shadow[v])[j][dp_v];
       else if (mode == TRMODE_L) k = ((int**)lr.Lshad[v])[j][dp_v];
-      else                       k = ((int**)lr.Rshad[v])[j][dp_v];
+      else if (mode == TRMODE_R) k = ((int**)lr.Rshad[v])[j][dp_v];
+      else                       k = lr.Tfullk[v];          /* T: full-span k* (brief 051) */
       prvmode = mode;
       if      (mode == TRMODE_J) nxtmode = TRMODE_J;
       else if (mode == TRMODE_L) nxtmode = TRMODE_L;       /* L: right child stays L */
-      else                       nxtmode = lr.Rkmode[v][j][dp_v]; /* R: right child J or R */
+      else if (mode == TRMODE_R) nxtmode = lr.Rkmode[v][j][dp_v]; /* R: right child J or R */
+      else                       nxtmode = TRMODE_L;       /* T: right child always L (oracle :615) */
       if((status = esl_stack_CPush(pda_c, nxtmode))    != eslOK) goto ERROR;
       if((status = esl_stack_IPush(pda_i, j))          != eslOK) goto ERROR;
       if((status = esl_stack_IPush(pda_i, k))          != eslOK) goto ERROR;
       if((status = esl_stack_IPush(pda_i, tr->n-1))    != eslOK) goto ERROR;
       if      (prvmode == TRMODE_J) mode = TRMODE_J;
       else if (prvmode == TRMODE_L) mode = lr.Lkmode[v][j][dp_v]; /* L: left child J or L */
-      else                          mode = TRMODE_R;             /* R: left child stays R */
+      else if (prvmode == TRMODE_R) mode = TRMODE_R;             /* R: left child stays R */
+      else                          mode = TRMODE_R;             /* T: left child always R (oracle :628) */
       j = j-k; d = d-k; i = j-d+1;
       y = cm->cfirst[v];
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
@@ -7619,7 +7679,8 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       if      (allow_S_trunc_end)  yoffset = USED_TRUNC_END;
       else if (mode == TRMODE_J)   yoffset = ((char**)shadow[v])[j][dp_v];
       else if (mode == TRMODE_L)   yoffset = ((char**)lr.Lshad[v])[j][dp_v];
-      else                         yoffset = ((char**)lr.Rshad[v])[j][dp_v];
+      else if (mode == TRMODE_R)   yoffset = ((char**)lr.Rshad[v])[j][dp_v];
+      else                         yoffset = USED_TRUNC_BEGIN;  /* T at root v==0: begin into the B (brief 051; oracle :683-685) */
 
       if      (yoffset == USED_TRUNC_BEGIN) { nxtmode = mode; }
       else if (yoffset == USED_TRUNC_END)   { }
@@ -7658,6 +7719,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   esl_stack_Destroy(pda_c);
   tr_free_lr_shadow(lr.Lshad, lr.Lkmode, cm, i0, j0);
   tr_free_lr_shadow(lr.Rshad, lr.Rkmode, cm, i0, j0);
+  if (lr.Tfullk != NULL) free(lr.Tfullk);   /* T full-span k* array (brief 051) */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   CYKShadowTrackLeafDone();   /* brief 050: this leaf's shadow is now freed */
   return retsc;
@@ -8598,7 +8660,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
     {
-      sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), r_allow_J, r_allow_L, r_allow_R, cp9b);
+      sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), r_allow_J, r_allow_L, r_allow_R, FALSE, cp9b);
       return sc;
     }
 
@@ -8606,7 +8668,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   w = cm->nodemap[midnode];
   y = cm->cfirst[w]-1;
 
-  lr.fill_L = fill_L; lr.fill_R = fill_R; lr.ret_planes = TRUE; lr.Lalpha = NULL; lr.Ralpha = NULL;
+  lr.fill_L = fill_L; lr.fill_R = fill_R; lr.fill_T = FALSE; lr.ret_planes = TRUE; lr.Lalpha = NULL; lr.Ralpha = NULL;  /* T never reaches the wedge (brief 051) */
   tr_inside_hb(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
 	       NULL, &alpha, NULL, NULL, NULL,
 	       (r==0), &binJ, &binJsc, &lr, cp9b);
@@ -8713,18 +8775,25 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
  * cases (parent v in L or R, children J or marginal) scored against the 1-D
  * marginal outside betas (betaL/betaR), the marginal child begins, and -4 (the
  * "local hit in parent" marginal terminus from the outside b_sc). v_mode/w_mode/
- * y_mode track the resolved per-node modes (TRMODE_T==0 marks an empty child). T
- * is OFF (R4.4c). Ported from truncyk.c::tr_generic_splitter, gated by the bands.
+ * y_mode track the resolved per-node modes (an empty marginal child is carried as
+ * the parent mode v_mode, brief 050). T (brief 051, R4.4c): T appears only at B
+ * states, reached only by a truncated begin into the B at full span -> a T split
+ * (v_mode=T, w=R-left BEGL, y=L-right BEGR) whose "outside" is just the begin
+ * scalar (no T outside recurrence), plus deeper-B T begins via b1/b2. The T split
+ * attaches root->B(T) + children directly (no V-problem: the parent region above a
+ * T B is degenerate). Ported from truncyk.c::tr_generic_splitter, gated by the bands.
  */
 static float
 tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		       int r, int z, int i0, int j0,
-		       int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
+		       int r_allow_J, int r_allow_L, int r_allow_R, int r_allow_T, CP9Bands_t *cp9b)
 {
   float ***alpha = NULL, ***Lalpha = NULL, ***Ralpha = NULL;
   float ***beta  = NULL;
   float ***betaL = NULL, ***betaR = NULL;
-  int      fill_L = r_allow_L, fill_R = r_allow_R;
+  /* T (brief 051) forces the L+R planes on (the T-combine reads R(BEGL)+L(BEGR)). */
+  int      fill_L = r_allow_L || r_allow_T, fill_R = r_allow_R || r_allow_T;
+  int      fill_T = r_allow_T;
   int      v,w,y;
   int      wend, yend;
   int      jp;
@@ -8746,7 +8815,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int    **hdmax = cp9b->hdmax;
 
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
-    sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), r_allow_J, r_allow_L, r_allow_R, cp9b);
+    sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), r_allow_J, r_allow_L, r_allow_R, r_allow_T, cp9b);
     return sc;
   }
 
@@ -8754,6 +8823,9 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (cm->sttype[v] == B_st) break;
 
   if (v > z-5) {
+    /* No bifurcation in r..z. T is only valid at B states, so a T problem always
+     * has a bifurcation -> this branch is reached only for J/L/R (the R-left/L-right
+     * subtrees of a T split recurse here as pure R/L). */
     if (cm->sttype[z] != E_st) cm_Fail("inconceivable.");
     sc = tr_wedge_splitter_hb(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
     return sc;
@@ -8764,11 +8836,11 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (w < y) { wend = y-1; yend = z; }
   else       { yend = w-1; wend = z; }
 
-  /* inside for both child subtrees (J + L/R planes), chaining the score arrays */
-  lr1.fill_L = fill_L; lr1.fill_R = fill_R; lr1.ret_planes = TRUE; lr1.Lalpha = NULL; lr1.Ralpha = NULL;
+  /* inside for both child subtrees (J + L/R planes [+ T begins]), chaining the arrays */
+  lr1.fill_L = fill_L; lr1.fill_R = fill_R; lr1.fill_T = fill_T; lr1.ret_planes = TRUE; lr1.Lalpha = NULL; lr1.Ralpha = NULL;
   tr_inside_hb(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT, NULL,  &alpha, NULL, NULL, NULL,
 	       (r==0), &b1J, &b1Jsc, &lr1, cp9b);
-  lr2.fill_L = fill_L; lr2.fill_R = fill_R; lr2.ret_planes = TRUE; lr2.Lalpha = lr1.Lalpha; lr2.Ralpha = lr1.Ralpha;
+  lr2.fill_L = fill_L; lr2.fill_R = fill_R; lr2.fill_T = fill_T; lr2.ret_planes = TRUE; lr2.Lalpha = lr1.Lalpha; lr2.Ralpha = lr1.Ralpha;
   tr_inside_hb(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, NULL, NULL, NULL,
 	       (r==0), &b2J, &b2Jsc, &lr2, cp9b);
   Lalpha = lr2.Lalpha; Ralpha = lr2.Ralpha;
@@ -8777,13 +8849,16 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		alpha, &beta, NULL, &betaL, NULL, &betaR, NULL, NULL,
 		&b3_sc, &b3_v, &b3_j, &b3_mode, cp9b);
 
-  /* best inside begin per child subtree (across J/L/R) */
+  /* best inside begin per child subtree (across J/L/R/T). A T begin targets a
+   * deeper bifurcation inside the subtree (brief 051); it competes with J/L/R. */
   b1_sc = b1Jsc; b1_v = b1J; b1_mode = TRMODE_J;
   if (fill_L && lr1.Lbsc > b1_sc) { b1_sc = lr1.Lbsc; b1_v = lr1.Lb; b1_mode = TRMODE_L; }
   if (fill_R && lr1.Rbsc > b1_sc) { b1_sc = lr1.Rbsc; b1_v = lr1.Rb; b1_mode = TRMODE_R; }
+  if (fill_T && lr1.Tbsc > b1_sc) { b1_sc = lr1.Tbsc; b1_v = lr1.Tb; b1_mode = TRMODE_T; }
   b2_sc = b2Jsc; b2_v = b2J; b2_mode = TRMODE_J;
   if (fill_L && lr2.Lbsc > b2_sc) { b2_sc = lr2.Lbsc; b2_v = lr2.Lb; b2_mode = TRMODE_L; }
   if (fill_R && lr2.Rbsc > b2_sc) { b2_sc = lr2.Rbsc; b2_v = lr2.Rb; b2_mode = TRMODE_R; }
+  if (fill_T && lr2.Tbsc > b2_sc) { b2_sc = lr2.Tbsc; b2_v = lr2.Tb; b2_mode = TRMODE_T; }
 
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
@@ -8798,6 +8873,16 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	  int dp_v = d - hdmin[v][jp_v];
 	  int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][j][dp_v]);
 	  int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j][dp_v]);
+	  /* T (brief 051): the only T "outside" is the begin scalar at the B's
+	   * full-span cell (oracle cm_TrCYKOutsideAlignHB:6743): trpenalty at the
+	   * root (r==0), else 0 (deeper-B recursion; penalty already in b1/b2).
+	   * No T outside recurrence -> T contributes only at (j0,W). */
+	  float Tbeta_v = IMPOSSIBLE;
+	  if (fill_T && cp9b->Tvalid[v] && j == j0 && d == W) {
+	    if (r == 0) { if (cp9b->Tvalid[0]) Tbeta_v = tr_trpenalty(cm, v); }
+	    else        Tbeta_v = 0.;
+	  }
+	  int haveT = NOT_IMPOSSIBLE(Tbeta_v);
 	  for (k = 0; k <= d; k++)
 	    {
 	      int dp_w, dp_y;
@@ -8823,6 +8908,11 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	      if (haveR && k < d &&
 		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_J; y_mode=TRMODE_J; }
+	      /* T: v in T; w=R (left BEGL), y=L (right BEGR); 1<=k<=d-1 (both children
+	       * non-empty). Tbeta_v is the begin scalar (only at j0,W). (brief 051) */
+	      if (haveT && k > 0 && k < d && cp9b->Rvalid[w] && cp9b->Lvalid[y] &&
+		  (sc = Ralpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + Tbeta_v) > best_sc)
+		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_T; w_mode=TRMODE_R; y_mode=TRMODE_L; }
 	    }
 	  /* k=0: left child covers all d, right child empty (L marginal) */
 	  if (haveL) {
@@ -8884,14 +8974,14 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b1_v, b1_mode);
     z = CMSubtreeFindEnd(cm, b1_v);
     tr_generic_splitter_hb(cm, dsq, L, tr, b1_v, z, i0, j0,
-			   (b1_mode==TRMODE_J), (b1_mode==TRMODE_L), (b1_mode==TRMODE_R), cp9b);
+			   (b1_mode==TRMODE_J), (b1_mode==TRMODE_L), (b1_mode==TRMODE_R), (b1_mode==TRMODE_T), cp9b);
     return best_sc;
   }
   if (best_k == -3) {
     InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, b2_v, b2_mode);
     z = CMSubtreeFindEnd(cm, b2_v);
     tr_generic_splitter_hb(cm, dsq, L, tr, b2_v, z, i0, j0,
-			   (b2_mode==TRMODE_J), (b2_mode==TRMODE_L), (b2_mode==TRMODE_R), cp9b);
+			   (b2_mode==TRMODE_J), (b2_mode==TRMODE_L), (b2_mode==TRMODE_R), (b2_mode==TRMODE_T), cp9b);
     return best_sc;
   }
   if (best_k == -4) {
@@ -8899,6 +8989,25 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     tr_v_splitter_hb(cm, dsq, L, tr, r, b3_v, i0, best_j, best_j, j0, FALSE,
 		     r_allow_J, r_allow_L, r_allow_R,
 		     (v_mode==TRMODE_J), (v_mode==TRMODE_L), (v_mode==TRMODE_R), cp9b);
+    return best_sc;
+  }
+
+  /* T bifurcation (brief 051): the parse begins (T) directly into the B state v,
+   * splitting into left child BEGL in R mode + right child BEGR in L mode. The
+   * parent region r..v is degenerate (the truncated begin jumps straight to v), so
+   * we attach v + children directly -- NO V-problem (the begin has no descent above
+   * a B). best_k in [1,d-1]. At r==0 attach the root->v begin here; for a deeper-B
+   * recursion (r!=0, v==r) v was already attached by the b1/b2 begin pre-attach. */
+  if (v_mode == TRMODE_T) {
+    if (r == 0)
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i0, j0, v, TRMODE_T);
+    tv = tr->n-1;
+    InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD,  best_j-best_d+1, best_j-best_k, w, TRMODE_R);
+    tr_generic_splitter_hb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k,
+			   FALSE, FALSE, TRUE, FALSE, cp9b);
+    InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j,       y, TRMODE_L);
+    tr_generic_splitter_hb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j,
+			   FALSE, TRUE, FALSE, FALSE, cp9b);
     return best_sc;
   }
 
@@ -8911,7 +9020,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (w_mode != TRMODE_T) {
     InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_k, w, w_mode);
     tr_generic_splitter_hb(cm, dsq, L, tr, w, wend, best_j-best_d+1, best_j-best_k,
-			   (w_mode==TRMODE_J), (w_mode==TRMODE_L), (w_mode==TRMODE_R), cp9b);
+			   (w_mode==TRMODE_J), (w_mode==TRMODE_L), (w_mode==TRMODE_R), FALSE, cp9b);
   } else
     /* empty (truncated-away) marginal child: the oracle (tr_insideT_hb) labels it
      * with the PARENT marginal mode (v_mode), not TRMODE_T (brief 050). */
@@ -8920,22 +9029,23 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (y_mode != TRMODE_T) {
     InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, y_mode);
     tr_generic_splitter_hb(cm, dsq, L, tr, y, yend, best_j-best_k+1, best_j,
-			   (y_mode==TRMODE_J), (y_mode==TRMODE_L), (y_mode==TRMODE_R), cp9b);
+			   (y_mode==TRMODE_J), (y_mode==TRMODE_L), (y_mode==TRMODE_R), FALSE, cp9b);
   } else
     InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j-best_k+1, best_j, y, v_mode);
 
   return best_sc;
 }
 
-/* Function: TrCYKDivideAndConquerHB()  [brief 044 R4.4a; brief 045 R4.4b adds L/R]
+/* Function: TrCYKDivideAndConquerHB()  [brief 044 R4.4a; 045 R4.4b L/R; 051 R4.4c T]
  *
  * Purpose:  HMM-banded truncated divide-and-conquer CYK. <preset_mode> selects
- *           the marginal mode to solve (TRMODE_J / TRMODE_L / TRMODE_R; T is
- *           R4.4c). Returns that mode in <ret_mode> and the optimal parsetree
+ *           the marginal mode to solve (TRMODE_J / TRMODE_L / TRMODE_R / TRMODE_T;
+ *           all four modes are now supported -> the truncated D&C CYK is complete).
+ *           Returns that mode in <ret_mode> and the optimal parsetree
  *           (is_std=FALSE, pass_idx + trpenalty set, every node mode-tagged) in
  *           <ret_tr>. The returned score includes the (penalty-folded) truncated
  *           begin so it equals the oracle cm_TrCYKInsideAlignHB()'s
- *           {J,L,R}alpha[0][L][L] byte-for-byte for the chosen mode.
+ *           {J,L,R,T}alpha[0][L][L] byte-for-byte for the chosen mode.
  */
 float
 TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx,
@@ -8948,11 +9058,12 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   int          r_allow_J = (preset_mode == TRMODE_J);
   int          r_allow_L = (preset_mode == TRMODE_L);
   int          r_allow_R = (preset_mode == TRMODE_R);
+  int          r_allow_T = (preset_mode == TRMODE_T);   /* brief 051 (R4.4c) */
 
   if (cp9b == NULL) cm_Fail("TrCYKDivideAndConquerHB(): cp9b is NULL");
   if (r != 0)       cm_Fail("TrCYKDivideAndConquerHB(): r must be 0 (truncated begins enter from ROOT_S)");
-  if (! (r_allow_J || r_allow_L || r_allow_R))
-    cm_Fail("TrCYKDivideAndConquerHB(): preset_mode must be J, L, or R (T is R4.4c)");
+  if (! (r_allow_J || r_allow_L || r_allow_R || r_allow_T))
+    cm_Fail("TrCYKDivideAndConquerHB(): preset_mode must be J, L, R, or T");
 
   /* set the file-static truncation-penalty context (read by tr_trpenalty()) */
   if ((tr_dnc_pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1)
@@ -8977,7 +9088,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
    * standard split landing on the same marginal-end cell (oracle forces the
    * marginal-end at d<2). T is OFF (R4.4c). Driver-only entry (rung-3/4 not yet in
    * the cmalign dispatch on this branch). */
-  sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, cp9b);
+  sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, r_allow_T, cp9b);
 
   /* the truncated-begin entry state is the first state attached below ROOT_S */
   b = (tr->n > 1) ? tr->state[1] : 0;
