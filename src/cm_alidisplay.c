@@ -23,22 +23,28 @@
 
 #include "infernal.h"
 
-static int   bp_is_canonical(char lseq, char rseq);
 static float post_code_to_avg_pp(char postcode);
+/* bp_is_canonical(), cm_bp_match_marks(), cm_bp_nc_mark(), cm_singlet_mark()
+ * and annotate_pknot_pairs_str() are now extern (declared in infernal.h) so the
+ * cmalign per-seq annotation path can share the exact same classification rules.
+ */
 
 /* Pseudoknot pair-status (PS line) glyphs.
  * The NC base-pair-quality line is relabeled "PS" (Pair Status) on all CM hits.
  * For pseudoknot pairs (singlet ML/MR columns, disjoint from the MATP columns
  * that carry the nested 'v'/'?' markup) we overlay one of these three marks at
  * both ends of each complete pknot pair. Gathered here so they are easy to
- * change in one place. See annotate_pknot_pairs().
+ * change in one place. See annotate_pknot_pairs_str().
  *   Note the documented asymmetry: nested base pairs still get negative-only
  *   markup ('v' broken nested, '?' truncated); only pknot pairs get the full
  *   positive+negative (=/$/x) scheme. */
 #define PS_PKNOT_MAINT   '='   /* pknot pair maintained: WC/GU and observed pair == consensus pair          */
 #define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
 #define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
-static void  annotate_pknot_pairs(CM_ALIDISPLAY *ad);
+
+/* MM line (match/substitution) glyphs, shared with cmalign's #=GR <seq> MM. */
+#define MM_SUBPAIR    ':'      /* consistent (score>=0) base-pair substitution */
+#define MM_SUBSINGLET '+'      /* positive-scoring singlet substitution        */
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
@@ -496,50 +502,29 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
       lmid = rmid = ' ';
       lnnc = rnnc = ' ';
       if (cm->sttype[v] == MP_st) {
-	if (mode == TRMODE_L) { 
+	if (mode == TRMODE_L) {
 	  if(lseq == toupper(lcons)) lmid = lseq;
 	  lnnc = '?';
 	}
-	else if (mode == TRMODE_R) { 
+	else if (mode == TRMODE_R) {
 	  if(rseq == toupper(rcons)) rmid = rseq;
 	  rnnc = '?';
 	}
-	else if (mode == TRMODE_J) { 
-	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
-	  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { 
-	    lmid = lseq; 
-	    rmid = rseq; 
-	  }
-	  else if (tmpsc >= 0) { 
-	    lmid = rmid = ':';
-	  }
-	  /* determine lnnc, rnnc for optional negative scoring
-	   * non-canonical annotation, they are 'v' if lseq and rseq
-	   * are a negative scoring non-canonical (not a
-	   * AU,UA,GC,CG,GU,UG) pair. 
-	   */
-	  if (tmpsc < 0 && (! bp_is_canonical(lseq, rseq))) {
-	    lnnc = rnnc = 'v';
-	  }
+	else if (mode == TRMODE_J) {
+	  /* shared classification: identity-letter / ':' (consistent sub) for the
+	   * mline, and 'v' (negative non-canonical) for the ncline. */
+	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
+	  cm_bp_match_marks(lseq, rseq, lcons, rcons, tmpsc, &lmid, &rmid);
+	  lnnc = rnnc = cm_bp_nc_mark(lseq, rseq, tmpsc);
 	}
-      } 
+      }
       else if ((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) &&
-	       (mode == TRMODE_J || mode == TRMODE_L)) { 
-	if (lseq == toupper(lcons)) { 
-	  lmid = lseq; 
-	}
-	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0) { 
-	  lmid = '+';
-	}
-      } 
-      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && 
+	       (mode == TRMODE_J || mode == TRMODE_L)) {
+	lmid = cm_singlet_mark(lseq, lcons, esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]));
+      }
+      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) &&
 	       (mode == TRMODE_J || mode == TRMODE_R)) {
-	if (rseq == toupper(rcons)) {
-	  rmid = rseq;
-	}
-	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0) {
-	  rmid = '+';
-	}
+	rmid = cm_singlet_mark(rseq, rcons, esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]));
       }
       if((cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) && mode == TRMODE_J) { 
 	lnnc = rnnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
@@ -629,7 +614,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   /* PS line: overlay pseudoknot pair-status marks (=/$/x) onto ncline. Done
    * here (after FixBrokenString fixed csline and the lines are NUL-terminated)
    * so the marks are baked into ncline before serialization. */
-  if (cm->flags & CMH_PKNOT) annotate_pknot_pairs(ad);
+  if (cm->flags & CMH_PKNOT) annotate_pknot_pairs_str(ad->csline, ad->aseq, ad->model, ad->ncline, ad->N);
   ad->sqfrom      = tr->emitl[0] + seqoffset-1;
   ad->sqto        = tr->emitr[0] + seqoffset-1;
   ad->cfrom_emit  = cfrom_emit;
@@ -1084,49 +1069,110 @@ bp_is_canonical(char lseq, char rseq)
   return FALSE;
 }
 
-/* Function: annotate_pknot_pairs()
+/* Function: cm_bp_match_marks()
  *
- * Purpose:  Overlay pseudoknot pair-status marks (=/$/x) onto ad->ncline (the
- *           line printed with the "PS" label). Called at Create time, after
- *           cm_pknot_FixBrokenString() has run on ad->csline so that only
- *           complete pknot pairs still carry their (upper/lower) letters.
+ * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
+ *           consensus base pair for the "match" (mline / #=GR MM) line.
+ *           Given the two observed residues <lseq>,<rseq> (uppercase), the two
+ *           consensus residues <lcons>,<rcons>, and the model pair-emission
+ *           score <pairsc> = DegeneratePairScore() for the observed pair:
+ *             - both residues == consensus  -> identity letters (lseq, rseq)
+ *             - else pairsc >= 0            -> ':' at both ends (consistent sub)
+ *             - else                        -> ' ' at both ends
+ *           Mirrors the inline logic that used to live in cm_alidisplay_Create().
+ *           cmsearch prints the identity letters; cmalign's sparse MM keeps only
+ *           the ':' marks (it blanks identity letters).
+ */
+void
+cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, char *ret_lmid, char *ret_rmid)
+{
+  char lmid = ' ';
+  char rmid = ' ';
+  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { lmid = lseq; rmid = rseq; }
+  else if (pairsc >= 0)                                 { lmid = rmid = MM_SUBPAIR; }
+  if (ret_lmid != NULL) *ret_lmid = lmid;
+  if (ret_rmid != NULL) *ret_rmid = rmid;
+  return;
+}
+
+/* Function: cm_bp_nc_mark()
  *
- *           Walk the finished csline with the SAME per-letter pushdown
- *           discipline that cm_pknot_FixBrokenString()/esl_wuss2ct() use,
- *           recovering each complete pknot base pair as display positions
- *           (z_open, z_close). Classify each pair from the observed residues
- *           (ad->aseq) vs the consensus residues (ad->model):
+ * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
+ *           consensus base pair for the negative-non-canonical "PS" (ncline)
+ *           mark: returns 'v' iff the observed pair scores negative AND is not a
+ *           canonical WC/GU pair; ' ' otherwise. (The 'v' for half-present pairs
+ *           and the '?' for truncated pairs are state/gap-pattern based and set
+ *           by the caller, not here.)
+ */
+char
+cm_bp_nc_mark(char lseq, char rseq, float pairsc)
+{
+  if (pairsc < 0 && (! bp_is_canonical(lseq, rseq))) return 'v';
+  return ' ';
+}
+
+/* Function: cm_singlet_mark()
+ *
+ * Purpose:  Shared classification of an emitted singlet residue for the mline /
+ *           #=GR MM line, given the observed residue <seq> (uppercase), the
+ *           consensus residue <cons>, and the model average singlet-emission
+ *           score <avgsc> = esl_abc_FAvgScore():
+ *             - seq == consensus -> identity letter (seq)
+ *             - else avgsc > 0   -> '+'  (positive substitution)
+ *             - else             -> ' '
+ *           cmsearch prints the identity letter; cmalign's sparse MM keeps only
+ *           the '+' marks.
+ */
+char
+cm_singlet_mark(char seq, char cons, float avgsc)
+{
+  if (seq == toupper(cons)) return seq;
+  else if (avgsc > 0)       return MM_SUBSINGLET;
+  return ' ';
+}
+
+/* Function: annotate_pknot_pairs_str()
+ *
+ * Purpose:  Overlay pseudoknot pair-status marks (=/$/x) onto the <out> line
+ *           (the "PS" line for cmsearch alidisplay, or a per-seq #=GR PS line
+ *           for cmalign), at both ends of each complete pknot pair. Generalized
+ *           from the old annotate_pknot_pairs(ad): operates on plain strings so
+ *           both the alidisplay path (ss=csline, aseq, model=consensus residues,
+ *           out=ncline) and the cmalign path (ss=msa->ss_cons, aseq=msa->aseq[i],
+ *           model=consensus-residue string, out=per-seq PS) share one rule.
+ *
+ *           Requires that cm_pknot_FixBrokenString() has already run on <ss> so
+ *           that only complete pknot pairs still carry their (upper/lower)
+ *           letters. Walk <ss> with the SAME per-letter pushdown discipline that
+ *           cm_pknot_FixBrokenString()/esl_wuss2ct() use, recovering each
+ *           complete pknot base pair (z_open, z_close), and classify it from the
+ *           observed residues <aseq> vs the consensus residues <model>:
  *             - gap on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
  *             - canonical AND observed pair == consensus pair           -> PS_PKNOT_MAINT
  *             - canonical AND observed pair != consensus pair           -> PS_PKNOT_COVARY
- *           The mark is written at BOTH ends, into ad->ncline. Pknot columns
- *           are ML/MR singlets, disjoint from the MATP columns that carry the
- *           nested 'v'/'?' markup, so the overlay only ever writes onto blank
- *           ncline positions; we assert/skip defensively if not.
- *
- *           Doing this at Create (rather than Print) time means the marks are
- *           part of ad->ncline before the hit is serialized for the
- *           worker->master merge, so they flow through the existing
- *           _Serialize/_Deserialize/_Clone/_Sizeof machinery with no new field.
+ *           The mark is written at BOTH ends, into <out>. Pknot columns are
+ *           ML/MR singlets, disjoint from the MATP columns that carry the nested
+ *           'v'/'?' markup, so the overlay only ever writes onto blank <out>
+ *           positions; we assert/skip defensively if not.
  *
  * Returns:  (void) On malloc failure for an internal stack, silently leaves the
  *           remaining pairs unmarked (annotation is cosmetic; never fatal).
  */
-static void
-annotate_pknot_pairs(CM_ALIDISPLAY *ad)
+void
+annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N)
 {
   int   sp[26];        /* stack pointers, one per pknot letter A-Z / a-z */
   int  *stack[26];     /* per-letter stacks of open display positions     */
   int   i, c, idx;
 
-  if (ad == NULL || ad->ncline == NULL || ad->csline == NULL || ad->aseq == NULL || ad->model == NULL) return;
+  if (ss == NULL || aseq == NULL || model == NULL || out == NULL) return;
   for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
 
-  for (i = 0; i < ad->N; i++) {
-    c = (int) ad->csline[i];
+  for (i = 0; i < N; i++) {
+    c = (int) ss[i];
     if (isupper(c)) {
       idx = c - 'A';
-      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (ad->N + 1))) == NULL) goto DONE;
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (N + 1))) == NULL) goto DONE;
       stack[idx][sp[idx]++] = i;
     }
     else if (islower(c)) {
@@ -1134,17 +1180,17 @@ annotate_pknot_pairs(CM_ALIDISPLAY *ad)
       if (sp[idx] > 0) {              /* matched close: recover the pair (z_open, z_close) */
         int  zo = stack[idx][--sp[idx]];
         int  zc = i;
-        char ol = ad->aseq[zo],  orr = ad->aseq[zc];
-        char ml = ad->model[zo], mr  = ad->model[zc];
+        char ol = aseq[zo],  orr = aseq[zc];
+        char ml = model[zo], mr  = model[zc];
         char mark;
         if      (ol == '-' || orr == '-' || ! bp_is_canonical(ol, orr))     mark = PS_PKNOT_BROKEN;
         else if (toupper(ol) == toupper(ml) && toupper(orr) == toupper(mr)) mark = PS_PKNOT_MAINT;
         else                                                                mark = PS_PKNOT_COVARY;
         /* pknot columns are singlets, disjoint from nested-pair MATP columns,
-         * so ncline must be blank here; overwrite defensively but not silently. */
-        ESL_DASSERT1((ad->ncline[zo] == ' ' && ad->ncline[zc] == ' '));
-        ad->ncline[zo] = mark;
-        ad->ncline[zc] = mark;
+         * so out must be blank here; overwrite defensively but not silently. */
+        ESL_DASSERT1((out[zo] == ' ' && out[zc] == ' '));
+        out[zo] = mark;
+        out[zc] = mark;
       }
       /* sp[idx]==0 here would be an orphan close, but FixBrokenString already
        * dropped those to '.', so this branch should not fire post-fix. */
