@@ -2803,6 +2803,28 @@ extern void           annotate_pknot_pairs_str(const char *ss, const char *aseq,
 /* from cm_parsetree.c : post-hoc cmalign structure-status annotation */
 extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq, int do_famcons);
 
+/* CM_BPCONS_ACC : cross-block accumulator for the #=GC bp_cons family line on
+ * the large-alignment merge path. The fraction-canonical digit for each
+ * consensus base pair is computed over ALL sequences, but the merge path never
+ * holds them all in memory; instead per-block counts are summed here (counts are
+ * additive over a partition of the sequences, so the final digit is byte-
+ * identical to the single-block in-memory result). Pairs are keyed in consensus-
+ * position space (1..clen), which is stable across blocks (only insert columns
+ * vary). See cm_parsetree.c. */
+typedef struct cm_bpcons_acc_s {
+  int   npair;     /* number of consensus base pairs (nested + pknot)              */
+  int   clen;      /* consensus length, for cpos<->apos mapping sanity checks      */
+  int  *lcpos;     /* [0..npair-1] left  consensus position (1..clen), lcpos<rcpos */
+  int  *rcpos;     /* [0..npair-1] right consensus position (1..clen)              */
+  int  *n_pair;    /* [0..npair-1] running #seqs with a residue at both columns    */
+  int  *n_wc;      /* [0..npair-1] running #seqs whose pair is canonical (WC/GU)   */
+} CM_BPCONS_ACC;
+
+extern int   cm_alignment_bpcons_acc_Create  (CM_t *cm, char *errbuf, ESL_MSA *msa, CM_BPCONS_ACC **ret_acc);
+extern int   cm_alignment_bpcons_acc_Add     (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, ESL_MSA *msa);
+extern int   cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
+extern void  cm_alignment_bpcons_acc_Destroy (CM_BPCONS_ACC *acc);
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);

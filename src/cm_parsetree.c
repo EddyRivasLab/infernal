@@ -1454,26 +1454,49 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
 #define BP_CONS_MIN_NPAIR 2   /* below this many seqs with both residues present, emit '.' in #=GC bp_cons */
 
-/* bp_cons_digit(): for one base pair at alignment columns <apos1>,<apos2>,
- * tally over all sequences how many have a (non-gap, non-missing) residue at
- * both columns (n_pair) and how many of those form a canonical WC/GU pair
- * (n_wc), then write the pairing-conservation digit (PP bucket of n_wc/n_pair)
- * at both columns of <bpc>. Below BP_CONS_MIN_NPAIR informative sequences,
- * write '.'. Unweighted counts. */
+/* bp_cons_accum_pair(): for one base pair at alignment columns <apos1>,<apos2>
+ * of <msa>, tally over all of <msa>'s sequences how many have a (non-gap,
+ * non-missing) residue at both columns (added to *n_pair) and how many of those
+ * form a canonical WC/GU pair (added to *n_wc). The two counters are ADDED to
+ * (not reset), so the same pair can be accumulated across several block MSAs on
+ * the merge path. Unweighted counts. This is the single shared tally used by
+ * BOTH the single-block in-memory path (bp_cons_digit) and the cross-block merge
+ * path (cm_alignment_bpcons_acc_Add), so the two agree by construction. */
 static void
-bp_cons_digit(CM_t *cm, ESL_MSA *msa, int apos1, int apos2, char *bpc)
+bp_cons_accum_pair(CM_t *cm, ESL_MSA *msa, int apos1, int apos2, int *n_pair, int *n_wc)
 {
-  int   i, n_pair = 0, n_wc = 0;
-  char  d;
+  int i;
   for (i = 0; i < msa->nseq; i++) {
     char c1 = msa->aseq[i][apos1];
     char c2 = msa->aseq[i][apos2];
     if (esl_abc_CIsGap(cm->abc, c1) || esl_abc_CIsMissing(cm->abc, c1)) continue;
     if (esl_abc_CIsGap(cm->abc, c2) || esl_abc_CIsMissing(cm->abc, c2)) continue;
-    n_pair++;
-    if (bp_is_canonical(c1, c2)) n_wc++;
+    (*n_pair)++;
+    if (bp_is_canonical(c1, c2)) (*n_wc)++;
   }
-  d = (n_pair < BP_CONS_MIN_NPAIR) ? '.' : cm_alidisplay_EncodePostProb((float) n_wc / (float) n_pair);
+  return;
+}
+
+/* bp_cons_encode(): turn accumulated (n_wc, n_pair) counts into the single
+ * #=GC bp_cons digit: '.' below BP_CONS_MIN_NPAIR informative sequences, else
+ * the PP bucket of the canonical fraction n_wc/n_pair. Shared by the in-memory
+ * and merge paths so the digit is identical for the same counts. */
+static char
+bp_cons_encode(int n_pair, int n_wc)
+{
+  return (n_pair < BP_CONS_MIN_NPAIR) ? '.' : cm_alidisplay_EncodePostProb((float) n_wc / (float) n_pair);
+}
+
+/* bp_cons_digit(): single-block in-memory path. Tally over all sequences and
+ * write the pairing-conservation digit at both columns <apos1>,<apos2> of
+ * <bpc>. */
+static void
+bp_cons_digit(CM_t *cm, ESL_MSA *msa, int apos1, int apos2, char *bpc)
+{
+  int  n_pair = 0, n_wc = 0;
+  char d;
+  bp_cons_accum_pair(cm, msa, apos1, apos2, &n_pair, &n_wc);
+  d = bp_cons_encode(n_pair, n_wc);
   bpc[apos1] = d;
   bpc[apos2] = d;
   return;
@@ -1741,6 +1764,223 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   if (pk  != NULL) free(pk);
   if (bpc != NULL) free(bpc);
   return status;
+}
+
+/*****************************************************************
+ * #=GC bp_cons cross-block accumulation (large-alignment merge path)
+ *
+ * On the merge path cmalign streams blocks of sequences through a temp file and
+ * never holds them all in memory, so the per-pair fraction-canonical digit can't
+ * be computed in one pass as the single-block path does. Instead we accumulate
+ * per-consensus-pair (n_pair, n_wc) counts as each block's MSA is built, then
+ * emit the line once all blocks are seen. Counts are additive over a partition
+ * of the sequences and the encode step is shared (bp_cons_accum_pair /
+ * bp_cons_encode, above), so the merged digit is byte-identical to what the
+ * single-block in-memory path would produce on the same sequences.
+ *
+ * Pairs are keyed in consensus-position space (1..clen), which is invariant
+ * across blocks (only the insert columns between consensus columns vary). The
+ * pair list (nested from cm->cmcons->ct + pknot from the SS_cons pushdown) is
+ * built once in _Create() and consumed unchanged by every _Add().
+ *****************************************************************/
+
+/* Function: cm_alignment_bpcons_acc_Create()
+ * Purpose:  Build the consensus base-pair list (nested + pknot) and a zeroed
+ *           accumulator. <msa> is any one block's MSA, used only for its
+ *           SS_cons (pknot annotation) and RF (apos->cpos map); the pknot
+ *           structure is identical across blocks. Returns eslEMEM / eslEINCOMPAT
+ *           on failure (errbuf set), with *ret_acc = NULL.
+ */
+int
+cm_alignment_bpcons_acc_Create(CM_t *cm, char *errbuf, ESL_MSA *msa, CM_BPCONS_ACC **ret_acc)
+{
+  int            status;
+  CM_BPCONS_ACC *acc       = NULL;
+  int           *apos2cpos = NULL;   /* [0..alen-1] consensus pos (1..clen) of an aln col, 0 if insert/non-consensus */
+  int            sp[26];
+  int           *stack[26];          /* pknot pushdown stacks A..Z, freed in ERROR */
+  int           *ct;
+  int            clen = cm->clen;
+  int            alen = msa->alen;
+  int            cpos, apos, np, idx, c;
+
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  if (cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Create(): cm->cmcons is NULL");
+  if (msa->rf == NULL || msa->ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Create(): msa lacks RF/SS_cons");
+  ct = cm->cmcons->ct;  /* [0..clen-1], 0-indexed partner consensus pos or -1 */
+
+  ESL_ALLOC(acc, sizeof(CM_BPCONS_ACC));
+  acc->npair = 0;
+  acc->clen  = clen;
+  acc->lcpos = acc->rcpos = acc->n_pair = acc->n_wc = NULL;
+  /* each pair occupies 2 distinct consensus positions, so npair <= clen/2 < clen+1 */
+  ESL_ALLOC(acc->lcpos,  sizeof(int) * (clen+1));
+  ESL_ALLOC(acc->rcpos,  sizeof(int) * (clen+1));
+  ESL_ALLOC(acc->n_pair, sizeof(int) * (clen+1));
+  ESL_ALLOC(acc->n_wc,   sizeof(int) * (clen+1));
+
+  np = 0;
+  /* nested pairs from the consensus ct (consensus-position space, fixed for the run) */
+  for (cpos = 1; cpos <= clen; cpos++) {
+    int pcpos;
+    if (ct[cpos-1] == -1) continue;
+    pcpos = ct[cpos-1] + 1;          /* 1-indexed partner */
+    if (cpos >= pcpos) continue;     /* once per pair, at the left (smaller) column */
+    acc->lcpos[np] = cpos; acc->rcpos[np] = pcpos; np++;
+  }
+
+  /* pknot pairs from the SS_cons pushdown (same discipline as bp_cons_pknot /
+   * esl_wuss2ct), mapped from alignment columns to consensus positions via RF.
+   * Pknot columns are MATL/MATR singlets -> consensus columns, so each maps to a
+   * valid cpos (defensively skip any that don't). */
+  if (cm->flags & CMH_PKNOT) {
+    ESL_ALLOC(apos2cpos, sizeof(int) * alen);
+    cpos = 0;
+    for (apos = 0; apos < alen; apos++) {
+      if ((! esl_abc_CIsGap(cm->abc, msa->rf[apos])) && (! esl_abc_CIsMissing(cm->abc, msa->rf[apos]))) { cpos++; apos2cpos[apos] = cpos; }
+      else apos2cpos[apos] = 0;
+    }
+    for (apos = 0; apos < alen; apos++) {
+      c = (int) msa->ss_cons[apos];
+      if (isupper(c)) {
+        idx = c - 'A';
+        if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (alen+1));
+        stack[idx][sp[idx]++] = apos;
+      }
+      else if (islower(c)) {
+        idx = c - 'a';
+        if (sp[idx] > 0) {
+          int ao = stack[idx][--sp[idx]];
+          int lc = apos2cpos[ao], rc = apos2cpos[apos];
+          if (lc > 0 && rc > 0) { acc->lcpos[np] = lc; acc->rcpos[np] = rc; np++; }
+        }
+      }
+    }
+  }
+
+  acc->npair = np;
+  for (np = 0; np < acc->npair; np++) { acc->n_pair[np] = 0; acc->n_wc[np] = 0; }
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  if (apos2cpos != NULL) free(apos2cpos);
+  *ret_acc = acc;
+  return eslOK;
+
+ ERROR:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  if (apos2cpos != NULL) free(apos2cpos);
+  cm_alignment_bpcons_acc_Destroy(acc);
+  *ret_acc = NULL;
+  return status;
+}
+
+/* Function: cm_alignment_bpcons_acc_Add()
+ * Purpose:  Accumulate one block's sequences into <acc>. Maps each consensus
+ *           pair to this block's alignment columns via the block's RF, then adds
+ *           the per-pair counts using the shared bp_cons_accum_pair() helper (so
+ *           the tally matches the in-memory path exactly).
+ */
+int
+cm_alignment_bpcons_acc_Add(CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, ESL_MSA *msa)
+{
+  int   status;
+  int  *cpos2apos = NULL;
+  int   clen = cm->clen;
+  int   alen = msa->alen;
+  int   cpos, apos, p;
+
+  if (msa->rf == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Add(): msa lacks RF");
+
+  ESL_ALLOC(cpos2apos, sizeof(int) * (clen+1));
+  for (cpos = 0; cpos <= clen; cpos++) cpos2apos[cpos] = -1;
+  cpos = 0;
+  for (apos = 0; apos < alen; apos++) {
+    if ((! esl_abc_CIsGap(cm->abc, msa->rf[apos])) && (! esl_abc_CIsMissing(cm->abc, msa->rf[apos]))) {
+      cpos++;
+      if (cpos <= clen) cpos2apos[cpos] = apos;
+    }
+  }
+  if (cpos != clen) ESL_XFAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Add(): block RF consensus length %d != clen %d", cpos, clen);
+
+  for (p = 0; p < acc->npair; p++) {
+    int apos1 = cpos2apos[acc->lcpos[p]];
+    int apos2 = cpos2apos[acc->rcpos[p]];
+    if (apos1 < 0 || apos2 < 0) continue;
+    bp_cons_accum_pair(cm, msa, apos1, apos2, &(acc->n_pair[p]), &(acc->n_wc[p]));
+  }
+
+  free(cpos2apos);
+  return eslOK;
+
+ ERROR:
+  if (cpos2apos != NULL) free(cpos2apos);
+  return status;
+}
+
+/* Function: cm_alignment_bpcons_acc_Finalize()
+ * Purpose:  Build the dense '.'-initialized #=GC bp_cons string for the merged
+ *           alignment. <rf2print> is the final merged RF (length = merged alen);
+ *           its consensus columns are mapped to each pair and the encoded digit
+ *           written at both columns. Caller frees *ret_bpc.
+ */
+int
+cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc)
+{
+  int   status;
+  char *bpc       = NULL;
+  int  *cpos2apos = NULL;
+  int   clen = cm->clen;
+  int   alen = (int) strlen(rf2print);
+  int   cpos, apos, p;
+
+  ESL_ALLOC(bpc, sizeof(char) * (alen+1));
+  for (apos = 0; apos < alen; apos++) bpc[apos] = '.';   /* dense, non-blank: '.' at non-pair/insert cols */
+  bpc[alen] = '\0';
+
+  ESL_ALLOC(cpos2apos, sizeof(int) * (clen+1));
+  for (cpos = 0; cpos <= clen; cpos++) cpos2apos[cpos] = -1;
+  cpos = 0;
+  for (apos = 0; apos < alen; apos++) {
+    if ((! esl_abc_CIsGap(cm->abc, rf2print[apos])) && (! esl_abc_CIsMissing(cm->abc, rf2print[apos]))) {
+      cpos++;
+      if (cpos <= clen) cpos2apos[cpos] = apos;
+    }
+  }
+  if (cpos != clen) ESL_XFAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Finalize(): merged RF consensus length %d != clen %d", cpos, clen);
+
+  for (p = 0; p < acc->npair; p++) {
+    int  apos1 = cpos2apos[acc->lcpos[p]];
+    int  apos2 = cpos2apos[acc->rcpos[p]];
+    char d;
+    if (apos1 < 0 || apos2 < 0) continue;
+    d = bp_cons_encode(acc->n_pair[p], acc->n_wc[p]);
+    bpc[apos1] = d;
+    bpc[apos2] = d;
+  }
+
+  free(cpos2apos);
+  *ret_bpc = bpc;
+  return eslOK;
+
+ ERROR:
+  if (bpc       != NULL) free(bpc);
+  if (cpos2apos != NULL) free(cpos2apos);
+  *ret_bpc = NULL;
+  return status;
+}
+
+/* Function: cm_alignment_bpcons_acc_Destroy() */
+void
+cm_alignment_bpcons_acc_Destroy(CM_BPCONS_ACC *acc)
+{
+  if (acc == NULL) return;
+  if (acc->lcpos  != NULL) free(acc->lcpos);
+  if (acc->rcpos  != NULL) free(acc->rcpos);
+  if (acc->n_pair != NULL) free(acc->n_pair);
+  if (acc->n_wc   != NULL) free(acc->n_wc);
+  free(acc);
+  return;
 }
 
 /* Function: ParsetreeScore_Global2Local()
