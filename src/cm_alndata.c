@@ -512,6 +512,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      ESL_ALLOC(wv_nodepad, sizeof(int) * (cm->fp7->M + 1));
 	      for (wk = 0; wk <= cm->fp7->M; wk++) wv_nodepad[wk] = cm->p7_wv_nodepad[wk] + cm->p7bpad;
 	      status = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, wv_nodepad,
+				      do_trunc, /* brief 171 */
 				      &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	      free(wv_nodepad);
 	    } else if (cm->p7_ibv_mem) {
@@ -519,11 +520,12 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
 					   TRUE, /* do_boundary_widen: CM-side preserves current behavior */
+					   do_trunc, /* brief 171 */
 					   cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    } else {
 	      status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,
-				       cm->p7_ibv_delta,
+				       cm->p7_ibv_delta, do_trunc, /* brief 171 */
 				       cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }

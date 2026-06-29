@@ -117,6 +117,15 @@ p7ibv_mm_max3(__m128 a, __m128 b, __m128 c)
  * emit_row = emit_table[dsq[i]].  FM_prev/FI_prev/FD_prev = row i-1.
  * FM_curr/FI_curr/FD_curr are written (k=0..M).  Tail k>M not touched.
  * Valid for i >= 1.
+ *
+ * begin_milli (brief 171, Tgm begin-anywhere): if non-NULL, fold a local
+ * begin into each match cell: M_k <- max(M_k, begin_milli[k] + emit_row[k]).
+ * This is the truncated-mode entry (enter the model at any node k with score
+ * log(occ[k]/Z)).  It must be folded BEFORE the left-to-right D-fill so that
+ * begins can be followed by deletes on the same row.  Pass NULL for the glocal
+ * path (begins handled by the row-0 D-cascade in the caller) and for every row
+ * except the global begin row (Tgm: row 1 only, since N->N is impossible). The
+ * begin_milli array must be valid for k=0..k_stride-1 (k=0 and k>M = NEG_INF).
  */
 static void
 ibv_forward_one_row(int M, size_t k_stride,
@@ -124,6 +133,7 @@ ibv_forward_one_row(int M, size_t k_stride,
                     const float *IM_t, const float *II_t,
                     const float *DM_t, const float *DD_t,
                     const float *emit_row,
+                    const float *begin_milli,
                     const float *FM_prev, const float *FI_prev, const float *FD_prev,
                     float *FM_curr, float *FI_curr, float *FD_curr)
 {
@@ -144,6 +154,10 @@ ibv_forward_one_row(int M, size_t k_stride,
       float m = (a > b) ? a : b;
       if (c > m) m = c;
       cM = m + emit_row[k];
+      if (begin_milli != NULL) {
+        float bc = begin_milli[k] + emit_row[k];
+        if (bc > cM) cM = bc;
+      }
       float a2 = FM_curr[k - 1] + MD_t[k - 1];
       float b2 = FD_curr[k - 1] + DD_t[k - 1];
       cD = (a2 > b2) ? a2 : b2;
@@ -167,6 +181,7 @@ ibv_forward_one_row(int M, size_t k_stride,
     __m128 b      = _mm_add_ps(i_prev, t_im);
     __m128 c      = _mm_add_ps(d_prev, t_dm);
     __m128 mx     = p7ibv_mm_max3(a, b, c);
+    if (begin_milli != NULL) mx = _mm_max_ps(mx, _mm_loadu_ps(&begin_milli[k]));
     __m128 e_vec  = _mm_loadu_ps(&emit_row[k]);
     _mm_storeu_ps(&FM_curr[k], _mm_add_ps(mx, e_vec));
 
@@ -193,6 +208,10 @@ ibv_forward_one_row(int M, size_t k_stride,
       float m = (a > b) ? a : b;
       if (c > m) m = c;
       cM = m + emit_row[k];
+      if (begin_milli != NULL) {
+        float bc = begin_milli[k] + emit_row[k];
+        if (bc > cM) cM = bc;
+      }
     }
     FM_curr[k] = cM;
     FI_curr[k] = cI;
@@ -214,9 +233,17 @@ ibv_forward_one_row(int M, size_t k_stride,
  *   i  < global_L : normal backward step.
  *
  * Writes BM_curr/BI_curr/BD_curr for k=0..M.  Tail k>M not touched.
+ *
+ * do_trunc (brief 171, Tgm end-anywhere): when set, the terminal injection at
+ * row L mirrors local exit -- every match state M_k may exit to E with score 0
+ * (esc=0 in HMMER local mode), instead of the glocal forced exit from node M
+ * (delete-cascade to D_M).  The delete cascade to D_M->E is kept (D_M->E is
+ * allowed even in local mode); inserts still cannot be the last emitted state.
+ * Only affects the terminal branch (i == global_L); the interior backward
+ * recursion is mode-independent because the end is carried in by the terminal.
  */
 static void
-ibv_backward_one_row(int M, size_t k_stride, int i, int global_L,
+ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
                      const float *MM_t, const float *MI_t, const float *MD_t,
                      const float *IM_t, const float *II_t,
                      const float *DM_t, const float *DD_t,
@@ -229,6 +256,13 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L,
   (void) k_stride;
 
   if (i == global_L) {
+    if (do_trunc) {
+      /* Tgm end-anywhere: M_k -> E exit (esc=0) at any node k. */
+      for (k = 0; k <= M; k++) { BM_curr[k] = 0.0f; BI_curr[k] = P7IBV_NEG_INF; }
+      BD_curr[M] = 0.0f;
+      for (k = M - 1; k >= 0; k--) BD_curr[k] = DD_t[k] + BD_curr[k + 1];
+      return;
+    }
     BM_curr[M] = 0.0f;
     BI_curr[M] = 0.0f;
     BD_curr[M] = 0.0f;
@@ -439,6 +473,7 @@ ibv_connectivity_guard(int L, int M, int ibv_mode, int *kmin, int *kmax)
 
 int
 p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                int do_trunc,
                 int ibv_mode, int ibv_width,
                 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -447,6 +482,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   int       M;
   int       i, k;
   int       K;
+  float    *begin_milli = NULL;
   float    *MM_t = NULL, *MI_t = NULL, *MD_t = NULL;
   float    *IM_t = NULL, *II_t = NULL;
   float    *DM_t = NULL, *DD_t = NULL;
@@ -536,28 +572,53 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 
   if ((status = ibv_alloc_floats(k_stride, &through)) != eslOK) goto ERROR;
 
+  /* Brief 171: Tgm begin-anywhere vector.  begin_milli[k] = milli-bit log2 of
+   * the local entry probability into M_k (occ[k] / sum_i occ[i]*(M-i+1)), the
+   * same occupancy-weighted local begin HMMER's p7_ProfileConfig(p7_LOCAL) sets
+   * (and the vitband/pinbridge Tgm reference uses via cm_alndata.c:459-461).
+   * Only used at the global begin row (row 1). */
+  if (do_trunc) {
+    float *occ = NULL;
+    double Z = 0.0;
+    ESL_ALLOC(occ, sizeof(float) * (M + 1));
+    if ((status = p7_hmm_CalculateOccupancy(hmm, occ, NULL)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 1; k <= M; k++) Z += (double) occ[k] * (double) (M - k + 1);
+    if ((status = ibv_alloc_floats(k_stride, &begin_milli)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 0; k < (int) k_stride; k++) begin_milli[k] = P7IBV_NEG_INF;
+    for (k = 1; k <= M; k++) {
+      double b = (Z > 0.0 && occ[k] > 0.0) ? (double) occ[k] / Z : 0.0;
+      begin_milli[k] = (b > 0.0) ? (float)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
+    }
+    free(occ);
+  }
+
 #define F_M(i)  (FM_pool + (size_t)(i) * k_stride)
 #define F_I(i)  (FI_pool + (size_t)(i) * k_stride)
 #define F_D(i)  (FD_pool + (size_t)(i) * k_stride)
 
-  /* Row 0: D-cascade init. */
-  F_M(0)[0] = 0.0f;
-  {
-    float *fm0 = F_M(0);
-    float *fd0 = F_D(0);
-    for (k = 1; k <= M; k++) {
-      float a = fm0[k - 1] + MD_t[k - 1];
-      float b = fd0[k - 1] + DD_t[k - 1];
-      fd0[k] = (a > b) ? a : b;
+  /* Row 0 init.  Glocal: D-cascade from M_0 (B-state).  Tgm (do_trunc): leave
+   * row 0 all NEG_INF (no glocal entry); begins are injected at row 1 via
+   * begin_milli, so the parse may start at any node. */
+  if (! do_trunc) {
+    F_M(0)[0] = 0.0f;
+    {
+      float *fm0 = F_M(0);
+      float *fd0 = F_D(0);
+      for (k = 1; k <= M; k++) {
+        float a = fm0[k - 1] + MD_t[k - 1];
+        float b = fd0[k - 1] + DD_t[k - 1];
+        fd0[k] = (a > b) ? a : b;
+      }
     }
   }
 
   for (i = 1; i <= L; i++) {
     int x  = (int) dsq[i];
     int xt = (x >= 0 && x < K) ? x : K;
+    const float *brow = (do_trunc && i == 1) ? begin_milli : NULL;
     ibv_forward_one_row(M, k_stride,
                         MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
-                        emit_table[xt],
+                        emit_table[xt], brow,
                         F_M(i-1), F_I(i-1), F_D(i-1),
                         F_M(i),   F_I(i),   F_D(i));
   }
@@ -566,9 +627,15 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     float *fm_L = F_M(L);
     float *fi_L = F_I(L);
     float *fd_L = F_D(L);
-    optimal = fm_L[M];
-    if (fi_L[M] > optimal) optimal = fi_L[M];
-    if (fd_L[M] > optimal) optimal = fd_L[M];
+    if (do_trunc) {
+      /* Tgm end-anywhere: exit from any match node, or D_M->E. */
+      optimal = fd_L[M];
+      for (k = 1; k <= M; k++) if (fm_L[k] > optimal) optimal = fm_L[k];
+    } else {
+      optimal = fm_L[M];
+      if (fi_L[M] > optimal) optimal = fi_L[M];
+      if (fd_L[M] > optimal) optimal = fd_L[M];
+    }
   }
   assert(optimal == optimal);
   floor_milli = (float) delta_milli;
@@ -594,7 +661,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   float *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
 
   /* Row L: terminal injection. */
-  ibv_backward_one_row(M, k_stride, L, L,
+  ibv_backward_one_row(M, k_stride, L, L, do_trunc,
                        MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
                        NULL, NULL, NULL,
                        B_M_prev, B_I_prev, B_D_prev);
@@ -603,7 +670,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     int x_next = (int) dsq[i + 1];
     int xt     = (x_next >= 0 && x_next < K) ? x_next : K;
 
-    ibv_backward_one_row(M, k_stride, i, L,
+    ibv_backward_one_row(M, k_stride, i, L, do_trunc,
                          MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
                          emit_table[xt], B_M_prev, B_I_prev,
                          B_M_curr, B_I_curr, B_D_curr);
@@ -669,6 +736,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   free(FM_pool); free(FI_pool); free(FD_pool);
   free(BM_a); free(BM_b); free(BI_a); free(BI_b); free(BD_a); free(BD_b);
   free(through);
+  if (begin_milli) free(begin_milli);
   free(emit_pool); free(emit_table);
 
   *ret_i2k    = i2k;
@@ -686,6 +754,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   if (BI_a) free(BI_a); if (BI_b) free(BI_b);
   if (BD_a) free(BD_a); if (BD_b) free(BD_b);
   if (through) free(through);
+  if (begin_milli) free(begin_milli);
   if (emit_pool) free(emit_pool); if (emit_table) free(emit_table);
   if (i2k)  free(i2k);
   if (kmin) free(kmin);
@@ -729,6 +798,8 @@ typedef struct {
   size_t  k_stride;
   int     global_L;
   int     base_slab;
+  int     do_trunc;        /* brief 171: Tgm begin/end-anywhere semantics       */
+  const float *begin_milli;/* brief 171: Tgm begin vector (NULL unless do_trunc) */
   const ESL_DSQ *dsq;
   int    *kmin;
   int    *kmax;
@@ -737,6 +808,14 @@ typedef struct {
   int     ibv_mode;  /* brief 140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
   int     ibv_width; /* brief 140: fixed-width pad W around argmax-k pin */
 } IBV_DnC_Ctx;
+
+/* brief 171: begin vector for the forward call at absolute row `absrow`
+ * (non-NULL only at the global begin row 1 under Tgm). */
+static inline const float *
+ibv_brow(const IBV_DnC_Ctx *ctx, int absrow)
+{
+  return (ctx->do_trunc && absrow == 1) ? ctx->begin_milli : NULL;
+}
 
 static inline const float *
 ibv_emit(const IBV_DnC_Ctx *ctx, int pos)
@@ -772,7 +851,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
       ibv_forward_one_row(M, ks,
                           ctx->MM_t, ctx->MI_t, ctx->MD_t,
                           ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                          ibv_emit(ctx, i_lo + r),
+                          ibv_emit(ctx, i_lo + r), ibv_brow(ctx, i_lo + r),
                           ctx->slab_F + prev_off + 0*ks,
                           ctx->slab_F + prev_off + 1*ks,
                           ctx->slab_F + prev_off + 2*ks,
@@ -786,7 +865,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
       int row_ihi = i_hi;
       const float *em = (row_ihi < global_L) ? ibv_emit(ctx, row_ihi + 1) : NULL;
       size_t off = (size_t) slab_size * 3 * ks;
-      ibv_backward_one_row(M, ks, row_ihi, global_L,
+      ibv_backward_one_row(M, ks, row_ihi, global_L, ctx->do_trunc,
                            ctx->MM_t, ctx->MI_t, ctx->MD_t,
                            ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                            em, B_hi_M, B_hi_I,
@@ -797,7 +876,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
     for (int r = slab_size - 1; r >= 1; r--) {
       size_t next_off = (size_t)(r + 1) * 3 * ks;
       size_t curr_off = (size_t) r       * 3 * ks;
-      ibv_backward_one_row(M, ks, i_lo + r, global_L,
+      ibv_backward_one_row(M, ks, i_lo + r, global_L, ctx->do_trunc,
                            ctx->MM_t, ctx->MI_t, ctx->MD_t,
                            ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                            ibv_emit(ctx, i_lo + r + 1),
@@ -844,7 +923,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   for (int r = i_lo + 1; r < i_mid; r++) {
     ibv_forward_one_row(M, ks, ctx->MM_t, ctx->MI_t, ctx->MD_t,
                         ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                        ibv_emit(ctx, r),
+                        ibv_emit(ctx, r), ibv_brow(ctx, r),
                         rFpM, rFpI, rFpD, rFcM, rFcI, rFcD);
     float *t; t=rFpM; rFpM=rFcM; rFcM=t;
                t=rFpI; rFpI=rFcI; rFcI=t;
@@ -852,7 +931,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   }
   ibv_forward_one_row(M, ks, ctx->MM_t, ctx->MI_t, ctx->MD_t,
                       ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                      ibv_emit(ctx, i_mid),
+                      ibv_emit(ctx, i_mid), ibv_brow(ctx, i_mid),
                       rFpM, rFpI, rFpD, F_mid_M, F_mid_I, F_mid_D);
 
   /* Backward stream i_hi .. i_mid+1 into B_mid1. */
@@ -861,7 +940,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   memcpy(rBpD, B_hi_D, ks * sizeof(float));
   for (int r = i_hi; r > i_mid + 1; r--) {
     const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
-    ibv_backward_one_row(M, ks, r, global_L,
+    ibv_backward_one_row(M, ks, r, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, rBpM, rBpI, rBcM, rBcI, rBcD);
@@ -872,7 +951,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   {
     int r = i_mid + 1;
     const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
-    ibv_backward_one_row(M, ks, r, global_L,
+    ibv_backward_one_row(M, ks, r, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, rBpM, rBpI, B_mid1_M, B_mid1_I, B_mid1_D);
@@ -881,7 +960,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   /* One more backward step: B[i_mid] from B_mid1 = B[i_mid+1]. */
   {
     const float *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
-    ibv_backward_one_row(M, ks, i_mid, global_L,
+    ibv_backward_one_row(M, ks, i_mid, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, B_mid1_M, B_mid1_I,
@@ -923,6 +1002,7 @@ int
 p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                     int delta_milli, int base_slab,
                     int do_boundary_widen,
+                    int do_trunc,
                     int ibv_mode, int ibv_width,
                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -934,6 +1014,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   size_t       ks;
   int          max_depth;
   IBV_DnC_Ctx  ctx;
+  float       *begin_milli = NULL;
   float       *emit_pool  = NULL;
   float       *F_row0_M   = NULL, *F_row0_I   = NULL, *F_row0_D   = NULL;
   float       *B_seed_M   = NULL, *B_seed_I   = NULL, *B_seed_D   = NULL;
@@ -1001,15 +1082,33 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   }
   for (k = 0; k < (int) ks; k++) ctx.emit_table[K][k] = 0.0f;
 
-  /* F[0]: D-cascade init. */
+  /* Brief 171: Tgm begin-anywhere vector (see p7_Seq2BandsIBV). */
+  if (do_trunc) {
+    float *occ = NULL;
+    double Z = 0.0;
+    ESL_ALLOC(occ, sizeof(float) * (M + 1));
+    if ((status = p7_hmm_CalculateOccupancy(hmm, occ, NULL)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 1; k <= M; k++) Z += (double) occ[k] * (double) (M - k + 1);
+    if ((status = ibv_alloc_floats(ks, &begin_milli)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 0; k < (int) ks; k++) begin_milli[k] = P7IBV_NEG_INF;
+    for (k = 1; k <= M; k++) {
+      double b = (Z > 0.0 && occ[k] > 0.0) ? (double) occ[k] / Z : 0.0;
+      begin_milli[k] = (b > 0.0) ? (float)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
+    }
+    free(occ);
+  }
+
+  /* F[0]: glocal D-cascade init; Tgm leaves row 0 all NEG_INF (begins at row 1). */
   if ((status = ibv_dnc_alloc(ks, &F_row0_M)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &F_row0_I)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &F_row0_D)) != eslOK) goto ERROR;
-  F_row0_M[0] = 0.0f;
-  for (k = 1; k <= M; k++) {
-    float a = F_row0_M[k - 1] + ctx.MD_t[k - 1];
-    float b = F_row0_D[k - 1] + ctx.DD_t[k - 1];
-    F_row0_D[k] = (a > b) ? a : b;
+  if (! do_trunc) {
+    F_row0_M[0] = 0.0f;
+    for (k = 1; k <= M; k++) {
+      float a = F_row0_M[k - 1] + ctx.MD_t[k - 1];
+      float b = F_row0_D[k - 1] + ctx.DD_t[k - 1];
+      F_row0_D[k] = (a > b) ? a : b;
+    }
   }
 
   /* Global forward pass (2-row rolling) to get optimal score.
@@ -1024,16 +1123,23 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     for (i = 1; i <= L; i++) {
       int x = (int) dsq[i];
       int xt = (x >= 0 && x < K) ? x : K;
+      const float *brow = (do_trunc && i == 1) ? begin_milli : NULL;
       ibv_forward_one_row(M, ks,
                           ctx.MM_t, ctx.MI_t, ctx.MD_t,
                           ctx.IM_t, ctx.II_t, ctx.DM_t, ctx.DD_t,
-                          ctx.emit_table[xt],
+                          ctx.emit_table[xt], brow,
                           rM, rI, rD, cM, cI, cD);
       float *t; t=rM; rM=cM; cM=t; t=rI; rI=cI; cI=t; t=rD; rD=cD; cD=t;
     }
-    optimal = rM[M];
-    if (rI[M] > optimal) optimal = rI[M];
-    if (rD[M] > optimal) optimal = rD[M];
+    if (do_trunc) {
+      /* Tgm end-anywhere: exit from any match node, or D_M->E. */
+      optimal = rD[M];
+      for (k = 1; k <= M; k++) if (rM[k] > optimal) optimal = rM[k];
+    } else {
+      optimal = rM[M];
+      if (rI[M] > optimal) optimal = rI[M];
+      if (rD[M] > optimal) optimal = rD[M];
+    }
   }
   assert(optimal == optimal);
   floor_milli = (float) delta_milli;
@@ -1075,6 +1181,8 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.kmax     = kmax_arr;
   ctx.i2k      = i2k;
   ctx.thr      = thr;
+  ctx.do_trunc    = do_trunc;     /* brief 171 */
+  ctx.begin_milli = begin_milli;  /* brief 171 */
   ctx.ibv_mode = ibv_mode;   /* brief 140 */
   ctx.ibv_width= ibv_width;  /* brief 140 */
 
@@ -1144,6 +1252,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   free(ctx.slab_F); free(ctx.slab_B);
   free(ctx.Bmid); free(ctx.through);
   free(B_seed_M); free(B_seed_I); free(B_seed_D);
+  if (begin_milli) free(begin_milli);
 
   *ret_i2k    = i2k;
   *ret_kmin   = kmin_arr;
@@ -1162,6 +1271,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if (ctx.slab_F) free(ctx.slab_F); if (ctx.slab_B) free(ctx.slab_B);
   if (ctx.Bmid)   free(ctx.Bmid);   if (ctx.through) free(ctx.through);
   if (B_seed_M)   free(B_seed_M);   if (B_seed_I) free(B_seed_I); if (B_seed_D) free(B_seed_D);
+  if (begin_milli) free(begin_milli);
   if (i2k)        free(i2k);
   if (kmin_arr)   free(kmin_arr);
   if (kmax_arr)   free(kmax_arr);
@@ -1370,6 +1480,9 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
   int      *hwn = NULL;   /* hw[k] count */
   int      *hwa = NULL;   /* hw[k] alloc */
   int      *pad = NULL;
+  /* brief 171: calibrate with the same begin/end semantics the align-time band
+   * will use, so the F+B half-widths match the deployed deriver. */
+  int       do_trunc = (cm->align_opts & CM_ALIGN_TRUNC) ? TRUE : FALSE;
 
   if (cm == NULL || cm->fp7 == NULL)
     ESL_FAIL(eslEINVAL, errbuf, "cm_ComputeP7WVNodePad: cm->fp7 is NULL");
@@ -1395,7 +1508,7 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
     if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &tr, &esq, &L)) != eslOK) goto ERROR;
 
     if (L >= 3 &&
-        p7_Seq2BandsIBV(cm, errbuf, esq->dsq, L, delta_milli,
+        p7_Seq2BandsIBV(cm, errbuf, esq->dsq, L, delta_milli, do_trunc,
                         P7IBV_MODE_DELTA, 0, &i2k, &kmin, &kmax, &nc) == eslOK) {
       for (i = 1; i <= L; i++) {
         int c = i2k[i];
@@ -1493,6 +1606,7 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
  */
 int
 p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+               int do_trunc,
                int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int   status;
@@ -1522,13 +1636,13 @@ p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
     double flat_pool_bytes = 12.0 * (double)(L + 1) * (double)(M + 4);
     const double FLAT_BUDGET = 2.0e9;
     if (flat_pool_bytes <= FLAT_BUDGET)
-      status = p7_Seq2BandsIBV(cm, errbuf, dsq, L, cm->p7_ibv_delta,
+      status = p7_Seq2BandsIBV(cm, errbuf, dsq, L, cm->p7_ibv_delta, do_trunc,
                                P7IBV_MODE_DELTA, 0,
                                &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
     else
       status = p7_Seq2BandsIBV_dnc(cm, errbuf, dsq, L,
                                    cm->p7_ibv_delta, cm->p7_ibv_base_slab,
-                                   FALSE, P7IBV_MODE_DELTA, 0,
+                                   FALSE, do_trunc, P7IBV_MODE_DELTA, 0,
                                    &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
   }
   if (status != eslOK)

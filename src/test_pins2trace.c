@@ -133,7 +133,7 @@ main(int argc, char **argv)
     if (p7_GTrace(sq->dsq, L, gm, gx, rtr) != eslOK) p7_Fail("GTrace failed on %s", sq->name);
 
     /* Test (IBV pins -> trace), delta=0, no boundary widen. */
-    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, 0, 0, FALSE,
+    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, 0, 0, FALSE, FALSE,
                                       P7IBV_MODE_DELTA, 0, /* brief 140 */
                                       &i2k, &kmin, &kmax, &ncells)) != eslOK)
       p7_Fail("p7_Seq2BandsIBV_dnc failed on %s: %s", sq->name, errbuf);

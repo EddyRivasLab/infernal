@@ -3348,11 +3348,13 @@ extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, 
 #define P7IBV_MODE_FIXED  1
 #define P7IBV_MODE_HYBRID 2
 extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                                    int do_trunc,
                                     int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int delta_milli, int base_slab,
                                     int do_boundary_widen,
+                                    int do_trunc,
                                     int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
@@ -3360,6 +3362,7 @@ extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, i
                                     P7_TRACE **ret_tr);
 /* Brief 169: windowed-Viterbi band = MAP-trace i2k +/- per-node pad. */
 extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+                                    int do_trunc,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
                                     double quantile, int delta_milli, int floorpad, int **ret_nodepad);

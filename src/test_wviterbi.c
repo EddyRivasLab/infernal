@@ -46,6 +46,7 @@ static ESL_OPTIONS options[] = {
   { "--flat", eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "use flat IBV (not D&C) for i2k",         0 },
   { "--wv",   eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "use windowed-Viterbi kernel for i2k",    0 },
   { "-c", eslARG_NONE,   FALSE, NULL, NULL, NULL, NULL, NULL, "cross-check WV i2k vs D&C i2k",          0 },
+  { "--trunc", eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "brief171: Tgm begin/end-anywhere bands", 0 },
   { "--delta", eslARG_INT,"20000",NULL,"n>=0",NULL,NULL,NULL,"IBV delta milli-bits (for delta band)",  0 },
   { "--calib", eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "use F+B-halfwidth WV pad (not cm nodepad)",0 },
   { "--nsamp", eslARG_INT, "40", NULL, "n>0", NULL, NULL, NULL, "calib: # CM-emitted samples",          0 },
@@ -68,6 +69,7 @@ main(int argc, char **argv)
   int           use_flat= esl_opt_GetBoolean(go, "--flat");
   int           use_wv  = esl_opt_GetBoolean(go, "--wv");
   int           do_cc   = esl_opt_GetBoolean(go, "-c");
+  int           do_trunc= esl_opt_GetBoolean(go, "--trunc");
   int           delta   = esl_opt_GetInteger(go, "--delta");
   char          errbuf[eslERRBUFSIZE];
 
@@ -124,16 +126,16 @@ main(int argc, char **argv)
 
     /* (1) derive i2k (the MAP trace) */
     if (use_wv) {
-      if ((status = p7_Seq2BandsWV(cm, errbuf, sq->dsq, L, nodepad,
+      if ((status = p7_Seq2BandsWV(cm, errbuf, sq->dsq, L, nodepad, do_trunc,
                                    &i2k, &kmin, &kmax, &nc)) != eslOK)
         p7_Fail("p7_Seq2BandsWV failed on %s: %s", sq->name, errbuf);
       /* WV returns the nodepad band directly; also keep i2k for cross-check. */
     } else {
       if (use_flat)
-        status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, L, delta,
+        status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, L, delta, do_trunc,
                                  P7IBV_MODE_DELTA, 0, &i2k, &kmin_d, &kmax_d, &nc_d);
       else
-        status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE,
+        status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE, do_trunc,
                                      P7IBV_MODE_DELTA, 0, &i2k, &kmin_d, &kmax_d, &nc_d);
       if (status != eslOK) p7_Fail("IBV deriver failed on %s: %s", sq->name, errbuf);
 
@@ -149,7 +151,7 @@ main(int argc, char **argv)
 
     /* optional cross-check WV i2k vs D&C i2k */
     if (do_cc) {
-      if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE,
+      if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE, do_trunc,
                                         P7IBV_MODE_DELTA, 0, &i2k_dnc, &kd2, &kx2, &ncd2)) != eslOK)
         p7_Fail("D&C oracle failed on %s: %s", sq->name, errbuf);
       i2kdiff = 0;

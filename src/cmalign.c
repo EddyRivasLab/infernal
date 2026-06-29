@@ -937,6 +937,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 					      p7ibv_delta,
 					      esl_opt_GetInteger(go, "--p7ibv-base-slab"),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					      FALSE,    /* brief 171: --hmm path is non-truncated (glocal) */
 					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
@@ -1470,6 +1471,7 @@ hmm_pipeline_thread(void *arg)
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  p7ibv_delta, info->ibv_base_slab,
 					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					  FALSE,    /* brief 171: --hmm path is non-truncated (glocal) */
 					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
