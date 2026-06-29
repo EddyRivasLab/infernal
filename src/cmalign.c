@@ -136,8 +136,10 @@ static ESL_OPTIONS options[] = {
   { "--p7wv-q",      eslARG_REAL,     "0.99", NULL,    "0<x<=1",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: half-width quantile",                   3 },
   { "--p7wv-floor",  eslARG_INT,         "2", NULL,      "n>=0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: floor pad",                             3 },
   { "--p7wv-seed",   eslARG_INT,       "181", NULL,      "n>=0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: RNG seed",                              3 },
-  { "--p7wvpad-dump",eslARG_OUTFILE,   NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",  "--p7wvpad-file", "brief172: dump calibrated WV pad to <f> (amortize calib)",   3 },
-  { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp", "brief172: load WV pad from <f> (skip per-run calib)",        3 },
+  { "--p7wvpad-dump",eslARG_OUTFILE,   NULL,  NULL,        NULL,       NULL, "--p7wv-calib","--p7wvpad-file", "brief172: dump calibrated WV pad to <f> (amortize calib)",   3 },
+  { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp,--p7wv-pad", "brief172: load WV pad from <f> (skip per-run calib)",  3 },
+  { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "brief173: constant WV band half-width (no calibration)",     3 },
+  { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "brief173: opt back in to per-node WV pad calibration",       3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -2822,6 +2824,20 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       }
       fclose(pf);
       if(padM != cm->fp7->M) ESL_FAIL(eslEINCOMPAT, errbuf, "--p7wvpad-file max index %d != fp7->M %d", padM, cm->fp7->M);
+      cm->p7_wv_nodepad_M = cm->fp7->M;
+    } else if(! esl_opt_GetBoolean(go, "--p7wv-calib")) {
+      /* Brief 173 Part A (DEFAULT): a constant band half-width of 30 ties the
+       * per-node calibrated p95 pad in aggregate (brief 174), so the default WV
+       * path skips Monte-Carlo calibration entirely -- the post-172 genome
+       * dominator (~29-50 min cm_ComputeP7WVNodePad) vanishes.  Fill every node
+       * with --p7wv-pad's value (index 0 = 0, matching the calibrator).  The
+       * per-node calibration machinery is preserved (opt-in via --p7wv-calib /
+       * --p7wvpad-file) for the later tighter-band optimization phase. */
+      int padval = esl_opt_GetInteger(go, "--p7wv-pad");
+      cm->p7_wv_nodepad = malloc(sizeof(int) * (cm->fp7->M + 1));
+      if(cm->p7_wv_nodepad == NULL) ESL_FAIL(eslEMEM, errbuf, "malloc failed for --p7wv-pad constant pad");
+      cm->p7_wv_nodepad[0] = 0;
+      for(wk = 1; wk <= cm->fp7->M; wk++) cm->p7_wv_nodepad[wk] = padval;
       cm->p7_wv_nodepad_M = cm->fp7->M;
     } else {
       ESL_RANDOMNESS *wv_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7wv-seed"));
