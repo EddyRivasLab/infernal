@@ -520,6 +520,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
 					   TRUE, /* do_boundary_widen: CM-side preserves current behavior */
+					   FALSE, /* brief 172: do_kband (unbanded; --p7ibv-mem keeps exact delta band) */
 					   do_trunc, /* brief 171 */
 					   cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);

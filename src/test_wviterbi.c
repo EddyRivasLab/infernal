@@ -135,7 +135,7 @@ main(int argc, char **argv)
         status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, L, delta, do_trunc,
                                  P7IBV_MODE_DELTA, 0, &i2k, &kmin_d, &kmax_d, &nc_d);
       else
-        status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE, do_trunc,
+        status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE, FALSE, do_trunc,
                                      P7IBV_MODE_DELTA, 0, &i2k, &kmin_d, &kmax_d, &nc_d);
       if (status != eslOK) p7_Fail("IBV deriver failed on %s: %s", sq->name, errbuf);
 
@@ -151,7 +151,7 @@ main(int argc, char **argv)
 
     /* optional cross-check WV i2k vs D&C i2k */
     if (do_cc) {
-      if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE, do_trunc,
+      if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, L, delta, 0, FALSE, FALSE, do_trunc,
                                         P7IBV_MODE_DELTA, 0, &i2k_dnc, &kd2, &kx2, &ncd2)) != eslOK)
         p7_Fail("D&C oracle failed on %s: %s", sq->name, errbuf);
       i2kdiff = 0;

@@ -3354,6 +3354,7 @@ extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, 
 extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int delta_milli, int base_slab,
                                     int do_boundary_widen,
+                                    int do_kband,
                                     int do_trunc,
                                     int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
