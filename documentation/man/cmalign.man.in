@@ -620,12 +620,11 @@ digit (same bucketing as the PP lines) at both paired columns;
 .B .
 at all other columns (including pairs with fewer than two sequences having both
 residues present). This is a descriptive conservation measure, not a statistical
-covariation test. Because it is computed across all sequences at once, it is
-written only on the in-memory (single-block) output path; when output is routed
-through the temporary merge file (i.e. under
+covariation test. It is emitted on both the default (in-memory) and the
 .B --small
-or whenever the input is too large for a single block), it is suppressed with a
-note.
+/ multi-block (merge) output paths; on the merge path the per-pair canonical
+counts are accumulated block by block and the line is written once after the
+final merge, so the digit is identical to the single-block result.
 
 .TP
 .B --ileaved

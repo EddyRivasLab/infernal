@@ -1555,11 +1555,13 @@ flags add it, both off by default (so default output is unchanged):
   as R-scape.
 \end{sreitems}
 
-The \otext{\#=GR PS} line is emitted on both the common in-memory alignment path
-and the low-memory, multi-block path (\otext{--small}, or an input too large to
-fit in one block). The \otext{\#=GC bp\_cons} line, however, is computed across all
-sequences at once, so it cannot be built per block; on the multi-block path it is
-suppressed with a one-line note on \texttt{stderr}.
+Both the \otext{\#=GR PS} and \otext{\#=GC bp\_cons} lines are emitted on the
+common in-memory alignment path and on the low-memory, multi-block path
+(\otext{--small}, or an input too large to fit in one block). The
+\otext{\#=GC bp\_cons} line spans all sequences, so on the multi-block path its
+per-pair canonical counts are accumulated block by block and the line is written
+once after the final merge; because the counts are additive over the sequences,
+the resulting digits are identical to those of the single-block path.
 
 \subsubsection{cmalign assumes sequences may be truncated}
 \prog{cmalign} assumes that input sequences may be truncated and uses

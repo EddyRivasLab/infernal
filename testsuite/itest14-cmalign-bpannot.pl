@@ -112,9 +112,10 @@ assert_count("$tmppfx.def.sto", qr/^#=GC\s+bp_cons\b/,  0, "subtest 5: no bp_con
 ######################################################################
 # Subtest 6: multi-block (merge) path. Emit > 10000 seqs so cmalign routes
 # output through the temporary merge file. The per-seq PS line must survive the
-# regurgitation and re-read; #=GC bp_cons is suppressed there with a note.
-# A tiny model is built just for this volume test (keeps the 10001-seq
-# alignment cheap; pseudoknots are not needed to exercise the merge round-trip).
+# regurgitation and re-read; #=GC bp_cons is now EMITTED there too (brief 020),
+# computed by cross-block accumulation: it must be present, dense (no embedded
+# blanks), carry a conservation digit, and re-read cleanly. A tiny model is built
+# just for this volume test (keeps the 10001-seq alignment cheap).
 ######################################################################
 write_tiny_sto("$tmppfx.tiny.sto");
 run("$cmbuild --wnone -F $tmppfx.tiny.cm $tmppfx.tiny.sto > $tmppfx.log 2>&1",
@@ -125,9 +126,15 @@ run("$cmemit -N $nbig --seed 3 -o $tmppfx.big.fa $tmppfx.tiny.cm > $tmppfx.log 2
 run("$cmalign --cpu 0 --bpstatus --bpcons $tmppfx.tiny.cm $tmppfx.big.fa > $tmppfx.big.sto 2>$tmppfx.big.err",
     "cmalign (multi-block, both flags) failed");
 assert_count("$tmppfx.big.sto", qr/^#=GR\s+\S+\s+PS\b/, $nbig, "subtest 6: all PS lines survive the merge path");
-assert_count("$tmppfx.big.sto", qr/^#=GC\s+bp_cons\b/,  0,     "subtest 6: bp_cons suppressed on the merge path");
+assert_count("$tmppfx.big.sto", qr/^#=GC\s+bp_cons\b/,  1,     "subtest 6: bp_cons emitted on the merge path");
+# the bp_cons line must be dense (single whitespace-free token, length == alen):
+assert_dense_gc("$tmppfx.big.sto", "bp_cons", "subtest 6");
+# and carry at least one conservation digit (the tiny model's conserved stems):
+gc_has("$tmppfx.big.sto", "bp_cons", qr/[0-9*]/, "subtest 6: multi-block bp_cons conservation digit");
+# no suppression note should be printed any more:
 slurp("$tmppfx.big.err") =~ /bp_cons.*suppressed|suppressed.*bp_cons/i
-    or die "FAIL: subtest 6: expected a bp_cons-suppression note on stderr\n";
+    and die "FAIL: subtest 6: a stale bp_cons-suppression note was printed on stderr\n";
+# WRITE-THEN-RE-READ gate on the merge-path output WITH the bp_cons line present:
 reread_ok("$tmppfx.big.sto", "$tmppfx.big.sto.rr", "subtest 6 (multi-block, merge path)");
 unlink "$tmppfx.big.sto.rr";
 
@@ -198,6 +205,21 @@ sub assert_dense_ps {
         $checked++;
     }
     $checked > 0 or die "FAIL: $where: no PS lines found to dense-check\n";
+}
+
+# A #=GC <tag> line must be ONE whitespace-free token exactly as long as the
+# alignment (== the #=GC SS_cons value length): dense, no embedded blanks, so it
+# round-trips the regurgitator and the standard Stockholm reader.
+sub assert_dense_gc {
+    my ($file, $tag, $where) = @_;
+    my ($alen, $val);
+    for my $l (split /\n/, slurp($file)) {
+        if ($l =~ /^#=GC\s+SS_cons\s+(\S+)\s*$/)        { $alen = length($1); }
+        if ($l =~ /^#=GC\s+\Q$tag\E\s+(\S+)\s*$/)       { $val  = $1; }
+    }
+    defined $alen or die "FAIL: $where: no #=GC SS_cons found to determine alen\n";
+    defined $val  or die "FAIL: $where: no dense (whitespace-free) #=GC $tag line found\n";
+    if (length($val) != $alen) { die "FAIL: $where: #=GC $tag length ".length($val)." != alen $alen\n"; }
 }
 
 # At least one #=GR PS value contains a char matching $re.
