@@ -1,0 +1,63 @@
+#HDBANDS cm_M=184 hd_needed=915 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=184 L=60 B=14 Z=94.8384  CM-DP peak=0.02 Mb  full-cube(2x)=0.05 Mb  win~2.8x
+#   EL-deck: banded=0.001 Mb/deck (290 cells) vs unbanded O(L^2/2)=0.007 Mb/deck  reduction~6.5x
+#HDBANDS cm_M=184 hd_needed=765 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=184 L=60 B=14 Z=36.2182  CM-DP peak=0.07 Mb  full-cube(2x)=0.20 Mb  win~2.7x
+#   EL-deck: banded=0.001 Mb/deck (234 cells) vs unbanded O(L^2/2)=0.007 Mb/deck  reduction~8.1x
+#HDBANDS cm_M=184 hd_needed=405 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=184 L=60 B=14 Z=26.1374  CM-DP peak=0.04 Mb  full-cube(2x)=0.11 Mb  win~2.8x
+#   EL-deck: banded=0.000 Mb/deck (119 cells) vs unbanded O(L^2/2)=0.007 Mb/deck  reduction~15.9x
+#HDBANDS cm_M=184 hd_needed=1663 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=184 L=60 B=14 Z=52.7146  CM-DP peak=0.12 Mb  full-cube(2x)=0.32 Mb  win~2.7x
+#   EL-deck: banded=0.002 Mb/deck (504 cells) vs unbanded O(L^2/2)=0.007 Mb/deck  reduction~3.8x
+#HDBANDS cm_M=184 hd_needed=1663 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=184 L=60 B=14 Z=51.1982  CM-DP peak=0.11 Mb  full-cube(2x)=0.29 Mb  win~2.7x
+#   EL-deck: banded=0.002 Mb/deck (504 cells) vs unbanded O(L^2/2)=0.007 Mb/deck  reduction~3.8x
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=184 L=70 B=14 Z=84.9078  CM-DP peak=0.04 Mb  full-cube(2x)=0.11 Mb  win~2.7x
+#   EL-deck: banded=0.001 Mb/deck (340 cells) vs unbanded O(L^2/2)=0.010 Mb/deck  reduction~7.5x
+# CM=matl60 M=184 clen=60 mode=local(EL-only,no-begins) tau=1e-07 tag=matl60_elonly
+# flags: LOCAL_BEGIN=0 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=perfect L=60
+# RESULT tag=matl60_elonly seq=perfect mode=local L=60
+#   score : ckpt=94.838425 stock=94.838425 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=1.000255 avgpp(ckpt)=1.000255
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+# RESULT tag=matl60_elonly seq=prefix30_polyA30 mode=local L=60
+#   score : ckpt=36.218201 stock=36.218201 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=32 stock_nodes=32 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.954428 avgpp(ckpt)=0.954428
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+# RESULT tag=matl60_elonly seq=prefix24_div36 mode=local L=60
+#   score : ckpt=26.137381 stock=26.137381 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=26 stock_nodes=26 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.967011 avgpp(ckpt)=0.967011
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+# RESULT tag=matl60_elonly seq=prefix40_div20 mode=local L=60
+#   score : ckpt=52.714584 stock=52.714584 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=42 stock_nodes=42 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.945526 avgpp(ckpt)=0.945526
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+# RESULT tag=matl60_elonly seq=div_tail_mixed mode=local L=60
+#   score : ckpt=51.198238 stock=51.198238 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.985113 avgpp(ckpt)=0.985113
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+# RESULT tag=matl60_elonly seq=prefix20_insert mode=local L=70
+#   score : ckpt=84.907806 stock=84.907806 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=73 stock_nodes=73 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.912930 avgpp(ckpt)=0.912930
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS

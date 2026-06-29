@@ -1,0 +1,23 @@
+#HDBANDS cm_M=904 hd_needed=1052 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=904 L=300 B=30 Z=150.5469  CM-DP peak=0.16 Mb  full-cube(2x)=0.94 Mb  win~5.9x
+#   EL-deck: banded=0.001 Mb/deck (300 cells) vs unbanded O(L^2/2)=0.173 Mb/deck  reduction~151.5x
+#HDBANDS cm_M=904 hd_needed=5421 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=904 L=300 B=30 Z=343.3722  CM-DP peak=0.12 Mb  full-cube(2x)=0.71 Mb  win~6.0x
+#   EL-deck: banded=0.007 Mb/deck (1785 cells) vs unbanded O(L^2/2)=0.173 Mb/deck  reduction~25.5x
+# CM=matl300 M=904 clen=300 mode=local(EL-only,no-begins) tau=1e-07 tag=matl300_elonly
+# flags: LOCAL_BEGIN=0 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=pre150_polyG150 L=300
+# RESULT tag=matl300_elonly seq=pre150_polyG150 mode=local L=300
+#   score : ckpt=150.546875 stock=150.546875 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=154 stock_nodes=154 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.847334 avgpp(ckpt)=0.847334
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=perfect300 L=300
+# RESULT tag=matl300_elonly seq=perfect300 mode=local L=300
+#   score : ckpt=343.372192 stock=343.372192 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=302 stock_nodes=302 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.986347 avgpp(ckpt)=0.986347
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS

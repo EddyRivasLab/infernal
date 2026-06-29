@@ -1,0 +1,100 @@
+## tau=1e-3
+# SEQ=perfect L=60
+#   score : ckpt=94.836769 stock=94.836769 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+#   score : ckpt=36.188015 stock=36.188015 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+#   score : ckpt=26.113894 stock=26.113894 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+#   score : ckpt=52.684971 stock=52.684971 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+#   score : ckpt=51.170918 stock=51.170918 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+#   score : ckpt=84.900215 stock=84.900215 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+## tau=1e-5
+# SEQ=perfect L=60
+#   score : ckpt=94.837921 stock=94.837921 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+#   score : ckpt=36.209644 stock=36.209644 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+#   score : ckpt=26.131783 stock=26.131783 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+#   score : ckpt=52.710682 stock=52.710682 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+#   score : ckpt=51.197701 stock=51.197701 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+#   score : ckpt=84.907417 stock=84.907417 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+## tau=1e-7
+# SEQ=perfect L=60
+#   score : ckpt=94.838425 stock=94.838425 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+#   score : ckpt=36.218201 stock=36.218201 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+#   score : ckpt=26.137381 stock=26.137381 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+#   score : ckpt=52.714584 stock=52.714584 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+#   score : ckpt=51.198238 stock=51.198238 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+#   score : ckpt=84.907806 stock=84.907806 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+## tau=1e-10
+# SEQ=perfect L=60
+#   score : ckpt=94.838432 stock=94.838432 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+#   score : ckpt=36.218719 stock=36.218719 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+#   score : ckpt=26.140774 stock=26.140774 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+#   score : ckpt=52.714588 stock=52.714588 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=1 ckpt=1 match=YES
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+#   score : ckpt=51.198242 stock=51.198242 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+#   score : ckpt=84.907822 stock=84.907822 |dsc|=0.000e+00 byte-exact=YES
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
