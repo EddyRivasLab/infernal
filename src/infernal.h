@@ -2807,6 +2807,7 @@ extern int   cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, 
 extern int   cm_PinOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
 extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
+extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 /* rung-4 (R4.2a, brief 053): pinned truncated structured (bps>0) posterior */
 extern int   cm_PinTrPostAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);

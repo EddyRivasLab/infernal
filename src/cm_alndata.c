@@ -45,6 +45,40 @@ rung3_kpin_from_cyk(CM_t *cm, Parsetree_t *tr, int *kpin)
   }
 }
 
+/* rung-4: derive the per-bifurcation pin skeleton (kind, k*, B/left/right modes)
+ * from a TRUNCATED CYK D&C parsetree, exactly as the rung-4 troa_drv extract_tr_pins
+ * harness does.  Truncated analogue of rung3_kpin_from_cyk that additionally
+ * records the bifurcation kind (1=INTERIOR, 2=LEFT_FULL, 3=RIGHT_FULL) and the
+ * per-B marginal modes the engine traceback needs.  All five arrays are sized
+ * cm->M; B states not on the parse stay {kind=0, k*=-1, modes=UNKNOWN} (none, in
+ * global mode -- every B is visited).  Used to pin cm_CheckptTrPostAlignHB /
+ * cm_CheckptTrOptAccAlignHB. */
+static void
+rung4_trpins_from_cyk(CM_t *cm, Parsetree_t *tr,
+                      int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode)
+{
+  int v, n;
+  for (v = 0; v < cm->M; v++) { bkind[v] = 0; kpin[v] = -1; bbmode[v] = blmode[v] = brmode[v] = TRMODE_UNKNOWN; }
+  for (n = 0; n < tr->n; n++) {
+    v = tr->state[n];
+    if (cm->sttype[v] != B_st) continue;
+    int ln = tr->nxtl[n], rn = tr->nxtr[n];
+    int lstid = cm->stid[tr->state[ln]], rstid = cm->stid[tr->state[rn]];
+    int begl_node, begr_node;
+    if      (lstid == BEGL_S && rstid == BEGR_S) { begl_node = ln; begr_node = rn; }
+    else if (lstid == BEGR_S && rstid == BEGL_S) { begl_node = rn; begr_node = ln; }
+    else                                         { begl_node = ln; begr_node = rn; }
+    int lspan = (tr->emitl[begl_node] <= tr->emitr[begl_node]) ? (tr->emitr[begl_node] - tr->emitl[begl_node] + 1) : 0;
+    int rspan = (tr->emitl[begr_node] <= tr->emitr[begr_node]) ? (tr->emitr[begr_node] - tr->emitl[begr_node] + 1) : 0;
+    bbmode[v] = tr->mode[n];
+    blmode[v] = tr->mode[begl_node];
+    brmode[v] = tr->mode[begr_node];
+    if      (lspan == 0) { bkind[v] = 3; kpin[v] = -1;    }  /* RIGHT_FULL: left empty (k*=d at traceback) */
+    else if (rspan == 0) { bkind[v] = 2; kpin[v] = 0;     }  /* LEFT_FULL:  right empty (k*=0)             */
+    else                 { bkind[v] = 1; kpin[v] = rspan; }  /* INTERIOR:   k*=right span                  */
+  }
+}
+
 /*****************************************************************
  * 1. The CM_ALNDATA object
  *****************************************************************/
@@ -451,9 +485,69 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	 * (byte-identical output, but full-cube memory). */
 	int do_trckpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
 			 cm_CheckptTrAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+	/* rung-4 checkpointed STRUCTURED (bps>0) TRUNCATED OptAcc pipeline: engaged
+	 * by --ckpt for global, structured CMs in truncated mode.  Truncated analogue
+	 * of the non-truncated rung-3 path below.  SEPARATE qualifier so the bps=0
+	 * truncated gate (cm_CheckptTrAlignHB_Qualifies, which delegates to the bps=0
+	 * cm_CheckptAlignHB_Qualifies) is NOT relaxed: bps=0 truncated stays on
+	 * cm_CheckptTrAlignHB; structured truncated --ckpt routes here; structured
+	 * truncated WITHOUT --ckpt falls back to stock cm_TrAlignHB. */
+	int do_trckpt_r4 = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+			    (! do_trckpt) && cm_CheckptTrOptAccAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 	if(do_trckpt) {
 	  if((status = cm_CheckptTrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
 					   cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
+	}
+	else if(do_trckpt_r4) {
+	  /* Resolve the marginal mode + bifurcation pins from a sqrt(M) truncated D&C
+	   * CYK.  This is the only sqrt(M) way to resolve the mode for a STRUCTURED CM:
+	   * an unpinned sqrt(M) bifurcation Inside hits the brief-017 2D-coupling wall
+	   * (which is exactly why the pinned approach exists).  Run D&C CYK once per
+	   * root-valid marginal mode; the argmax penalty-folded root score picks the
+	   * mode (each TrCYKDivideAndConquerHB() score == the oracle
+	   * cm_TrCYKInsideAlignHB()'s {J,L,R,T}alpha[0][L][L], so the argmax == stock's
+	   * CYK mode resolution), and that mode's parse supplies the (kind,k*,modes)
+	   * pins.  cmalign passes mode==TRMODE_UNKNOWN, so we cannot seed the D&C CYK
+	   * directly. */
+	  int   *bkind = NULL, *kpin = NULL;
+	  char  *bbmode = NULL, *blmode = NULL, *brmode = NULL;
+	  Parsetree_t *tr_best = NULL;
+	  char   r4_mode = TRMODE_UNKNOWN;
+	  float  r4_cyk  = IMPOSSIBLE, r4_Z = 0.;
+	  char   cand[4]; int ncand = 0, m;
+	  if(cm->cp9b->Jvalid[0]) cand[ncand++] = TRMODE_J;
+	  if(cm->cp9b->Lvalid[0]) cand[ncand++] = TRMODE_L;
+	  if(cm->cp9b->Rvalid[0]) cand[ncand++] = TRMODE_R;
+	  if(cm->cp9b->Tvalid[0]) cand[ncand++] = TRMODE_T;
+	  ESL_ALLOC(bkind,  sizeof(int)  * cm->M);
+	  ESL_ALLOC(kpin,   sizeof(int)  * cm->M);
+	  ESL_ALLOC(bbmode, sizeof(char) * cm->M);
+	  ESL_ALLOC(blmode, sizeof(char) * cm->M);
+	  ESL_ALLOC(brmode, sizeof(char) * cm->M);
+	  for(m = 0; m < ncand; m++) {
+	    Parsetree_t *tr_m = NULL; char mm = TRMODE_UNKNOWN;
+	    float sc_m = TrCYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, pass_idx, cand[m], &mm, &tr_m, cm->cp9b);
+	    if(sc_m > r4_cyk) { r4_cyk = sc_m; r4_mode = cand[m]; if(tr_best) FreeParsetree(tr_best); tr_best = tr_m; }
+	    else if(tr_m) FreeParsetree(tr_m);
+	  }
+	  if(tr_best == NULL) { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode);
+	    ESL_XFAIL(eslEINCOMPAT, errbuf, "rung-4 --ckpt: no root-valid truncation mode for %s", sq->name); }
+	  rung4_trpins_from_cyk(cm, tr_best, bkind, kpin, bbmode, blmode, brmode);
+	  FreeParsetree(tr_best); tr_best = NULL;
+	  /* pass 2: checkpointed pinned truncated posterior -> emit_mx, then checkpointed
+	   * pinned truncated OptAcc + pinned-tree traceback -> parsetree + PP.  sc = the
+	   * truncated Inside score Z (matches stock cm_TrAlignHB's optacc ret_sc=ins_sc). */
+	  if((status = cm_CheckptTrPostAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, r4_mode, pass_idx, cm->trhb_emx,
+					       bkind, kpin, bbmode, blmode, brmode, &r4_Z, NULL)) != eslOK)
+	    { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode); goto ERROR; }
+	  if((status = cm_CheckptTrOptAccAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, r4_mode, pass_idx, cm->trhb_emx,
+						 bkind, kpin, bbmode, blmode, brmode, do_post ? &ppstr : NULL, &tr, NULL, &pp, NULL)) != eslOK)
+	    { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode); goto ERROR; }
+	  sc = r4_Z;
+	  free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode);
+	  if(getenv("INFERNAL_CKPT_VERBOSE"))
+	    fprintf(stderr, "# rung-4 checkpointed structured truncated OptAcc engaged: M=%d L=%d mode=%c (global, truncated, bps>0)\n",
+		    cm->M, (int) sq->L, (r4_mode==TRMODE_J)?'J':(r4_mode==TRMODE_L)?'L':(r4_mode==TRMODE_R)?'R':'T');
 	}
 	else {
       	  if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
