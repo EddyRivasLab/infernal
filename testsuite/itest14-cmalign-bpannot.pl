@@ -1,13 +1,15 @@
 #! /usr/bin/perl
 
-# Test the cmalign --bpstatus / --bpcons structure-status annotation:
+# Test the cmalign --bpstatus / --bpcons / --bpcov structure-status annotation:
 #   - one COMBINED #=GR <seq> PS line per sequence (no separate MM line);
-#   - a dense #=GC bp_cons family line;
+#   - a dense #=GC bp_cons family conservation line;
+#   - a dense #=GC bp_cov  family covariation (mutual information) line;
 #   - NON-BLANK placeholders so the annotated output is re-readable by the
 #     standard Easel Stockholm parser (the write-then-re-read gate, the hole
 #     that hid the round-trip bug found in review of the first implementation);
-#   - the per-seq PS line survives the low-memory / multi-block (merge) output
-#     path, while #=GC bp_cons is suppressed there with a note.
+#   - the per-seq PS line and BOTH #=GC family lines survive the low-memory /
+#     multi-block (merge) output path (bp_cons / bp_cov via cross-block
+#     accumulation, briefs 020 / 022).
 #
 # Exercises a model that carries BOTH nested and pseudoknot pairs (PK-HAV) and a
 # pure-nested model (tRNA), so all of v / ? / : / + / = / $ / x can appear.
@@ -38,7 +40,7 @@ my $pkseed = "$srcdir/testsuite/PK-HAV.sto";
 my $trcm   = "$srcdir/testsuite/tRNA.c.cm";
 
 my @tmpsuffixes = ("pk.cm","pk.fa","pk.sto","pk.rr","tr.fa","tr.sto","tr.rr",
-                   "bs.sto","bc.sto","def.sto",
+                   "bs.sto","bc.sto","bv.sto","def.sto",
                    "tiny.sto","tiny.cm","big.fa","big.sto","big.err","big.sto.rr","log");
 sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s"; } }
 cleanup();
@@ -56,20 +58,29 @@ file_has_header("$tmppfx.pk.cm", "PKNOT", "yes")
 ######################################################################
 run("$cmemit -N 5 --seed 7 -o $tmppfx.pk.fa $tmppfx.pk.cm > $tmppfx.log 2>&1",
     "cmemit from pknot CM failed");
-run("$cmalign --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.pk.fa > $tmppfx.pk.sto 2>$tmppfx.log",
-    "cmalign --bpstatus --bpcons (pknot) failed");
+run("$cmalign --cpu 0 --bpstatus --bpcons --bpcov $tmppfx.pk.cm $tmppfx.pk.fa > $tmppfx.pk.sto 2>$tmppfx.log",
+    "cmalign --bpstatus --bpcons --bpcov (pknot) failed");
 
 my $nseq_pk = count_match("$tmppfx.pk.fa", qr/^>/);
 assert_count("$tmppfx.pk.sto", qr/^#=GR\s+\S+\s+PS\b/, $nseq_pk, "subtest 1: one combined PS line per sequence");
 assert_count("$tmppfx.pk.sto", qr/^#=GR\s+\S+\s+MM\b/, 0,        "subtest 1: no separate MM line");
 assert_count("$tmppfx.pk.sto", qr/^#=GC\s+bp_cons\b/,  1,        "subtest 1: one #=GC bp_cons line");
+assert_count("$tmppfx.pk.sto", qr/^#=GC\s+bp_cov\b/,   1,        "subtest 1: one #=GC bp_cov line");
 assert_dense_ps("$tmppfx.pk.sto", "subtest 1");
+# both family lines must be dense (whitespace-free token, length == alen):
+assert_dense_gc("$tmppfx.pk.sto", "bp_cons", "subtest 1");
+assert_dense_gc("$tmppfx.pk.sto", "bp_cov",  "subtest 1");
 # pknot model must show at least one pknot pair-status mark (= / $ / x):
 ps_marks_include("$tmppfx.pk.sto", qr/[=\$x]/, "subtest 1: pknot pair-status mark (=/\$/x)");
-# bp_cons must carry at least one conservation digit:
+# bp_cons must carry at least one conservation digit; bp_cov a covariation digit:
 gc_has("$tmppfx.pk.sto", "bp_cons", qr/[0-9*]/, "subtest 1: bp_cons conservation digit");
+gc_has("$tmppfx.pk.sto", "bp_cov",  qr/[0-9*]/, "subtest 1: bp_cov covariation digit");
+# bp_cov annotates EXACTLY the same columns as bp_cons (same pair set), but the
+# values differ (covariation != conservation) -- a value spot-check:
+assert_same_pair_cols("$tmppfx.pk.sto", "bp_cons", "bp_cov", "subtest 1");
+gc_lines_differ("$tmppfx.pk.sto", "bp_cons", "bp_cov", "subtest 1: bp_cov differs from bp_cons");
 # WRITE-THEN-RE-READ gate (standard Easel reader, via esl-reformat):
-reread_ok("$tmppfx.pk.sto", "$tmppfx.pk.rr", "subtest 1 (pknot, both flags)");
+reread_ok("$tmppfx.pk.sto", "$tmppfx.pk.rr", "subtest 1 (pknot, all three flags)");
 
 ######################################################################
 # Subtest 2: pure-nested model (tRNA), single-block, both flags.
@@ -98,7 +109,19 @@ run("$cmalign --cpu 0 --bpcons $tmppfx.pk.cm $tmppfx.pk.fa > $tmppfx.bc.sto 2>$t
     "cmalign --bpcons (only) failed");
 assert_count("$tmppfx.bc.sto", qr/^#=GR\s+\S+\s+PS\b/, 0,        "subtest 4: no PS lines with --bpcons only");
 assert_count("$tmppfx.bc.sto", qr/^#=GC\s+bp_cons\b/,  1,        "subtest 4: bp_cons present with --bpcons only");
+assert_count("$tmppfx.bc.sto", qr/^#=GC\s+bp_cov\b/,   0,        "subtest 4: no bp_cov with --bpcons only");
 reread_ok("$tmppfx.bc.sto", "$tmppfx.pk.rr", "subtest 4 (--bpcons only)");
+
+# Subtest 4b: --bpcov alone (independent of --bpcons): bp_cov present, no bp_cons,
+# no PS; dense; carries a covariation digit; re-readable.
+run("$cmalign --cpu 0 --bpcov $tmppfx.pk.cm $tmppfx.pk.fa > $tmppfx.bv.sto 2>$tmppfx.log",
+    "cmalign --bpcov (only) failed");
+assert_count("$tmppfx.bv.sto", qr/^#=GR\s+\S+\s+PS\b/, 0,        "subtest 4b: no PS lines with --bpcov only");
+assert_count("$tmppfx.bv.sto", qr/^#=GC\s+bp_cons\b/,  0,        "subtest 4b: no bp_cons with --bpcov only");
+assert_count("$tmppfx.bv.sto", qr/^#=GC\s+bp_cov\b/,   1,        "subtest 4b: bp_cov present with --bpcov only");
+assert_dense_gc("$tmppfx.bv.sto", "bp_cov", "subtest 4b");
+gc_has("$tmppfx.bv.sto", "bp_cov", qr/[0-9*]/, "subtest 4b: bp_cov covariation digit");
+reread_ok("$tmppfx.bv.sto", "$tmppfx.pk.rr", "subtest 4b (--bpcov only)");
 
 ######################################################################
 # Subtest 5: default (no flags) output carries NONE of the new lines.
@@ -108,6 +131,7 @@ run("$cmalign --cpu 0 $tmppfx.pk.cm $tmppfx.pk.fa > $tmppfx.def.sto 2>$tmppfx.lo
 assert_count("$tmppfx.def.sto", qr/^#=GR\s+\S+\s+PS\b/, 0, "subtest 5: no PS lines without flags");
 assert_count("$tmppfx.def.sto", qr/^#=GR\s+\S+\s+MM\b/, 0, "subtest 5: no MM lines without flags");
 assert_count("$tmppfx.def.sto", qr/^#=GC\s+bp_cons\b/,  0, "subtest 5: no bp_cons without flags");
+assert_count("$tmppfx.def.sto", qr/^#=GC\s+bp_cov\b/,   0, "subtest 5: no bp_cov without flags");
 
 ######################################################################
 # Subtest 6: multi-block (merge) path. Emit > 10000 seqs so cmalign routes
@@ -123,14 +147,19 @@ run("$cmbuild --wnone -F $tmppfx.tiny.cm $tmppfx.tiny.sto > $tmppfx.log 2>&1",
 my $nbig = 10001;   # just over CMALIGN_MAX_NSEQ (10000) -> forces a 2nd block / merge path
 run("$cmemit -N $nbig --seed 3 -o $tmppfx.big.fa $tmppfx.tiny.cm > $tmppfx.log 2>&1",
     "cmemit of $nbig seqs failed");
-run("$cmalign --cpu 0 --bpstatus --bpcons $tmppfx.tiny.cm $tmppfx.big.fa > $tmppfx.big.sto 2>$tmppfx.big.err",
-    "cmalign (multi-block, both flags) failed");
+run("$cmalign --cpu 0 --bpstatus --bpcons --bpcov $tmppfx.tiny.cm $tmppfx.big.fa > $tmppfx.big.sto 2>$tmppfx.big.err",
+    "cmalign (multi-block, all three flags) failed");
 assert_count("$tmppfx.big.sto", qr/^#=GR\s+\S+\s+PS\b/, $nbig, "subtest 6: all PS lines survive the merge path");
 assert_count("$tmppfx.big.sto", qr/^#=GC\s+bp_cons\b/,  1,     "subtest 6: bp_cons emitted on the merge path");
-# the bp_cons line must be dense (single whitespace-free token, length == alen):
+assert_count("$tmppfx.big.sto", qr/^#=GC\s+bp_cov\b/,   1,     "subtest 6: bp_cov emitted on the merge path");
+# both family lines must be dense (single whitespace-free token, length == alen):
 assert_dense_gc("$tmppfx.big.sto", "bp_cons", "subtest 6");
-# and carry at least one conservation digit (the tiny model's conserved stems):
+assert_dense_gc("$tmppfx.big.sto", "bp_cov",  "subtest 6");
+# and carry at least one digit (the tiny model's conserved + covarying stems):
 gc_has("$tmppfx.big.sto", "bp_cons", qr/[0-9*]/, "subtest 6: multi-block bp_cons conservation digit");
+gc_has("$tmppfx.big.sto", "bp_cov",  qr/[0-9*]/, "subtest 6: multi-block bp_cov covariation digit");
+# merge-path bp_cov annotates exactly the same columns as bp_cons (same pair set):
+assert_same_pair_cols("$tmppfx.big.sto", "bp_cons", "bp_cov", "subtest 6");
 # no suppression note should be printed any more:
 slurp("$tmppfx.big.err") =~ /bp_cons.*suppressed|suppressed.*bp_cons/i
     and die "FAIL: subtest 6: a stale bp_cons-suppression note was printed on stderr\n";
@@ -240,6 +269,43 @@ sub gc_has {
         return 1 if $1 =~ $re;
     }
     die "FAIL: $where: #=GC $tag missing or lacked the expected content\n";
+}
+
+# Return the (dense) value string of a #=GC <tag> line, or die.
+sub gc_value {
+    my ($file, $tag, $where) = @_;
+    for my $l (split /\n/, slurp($file)) {
+        return $1 if $l =~ /^#=GC\s+\Q$tag\E\s+(\S+)\s*$/;
+    }
+    die "FAIL: $where: no #=GC $tag line found\n";
+}
+
+# Two #=GC lines must mark the SAME set of pair columns: a column is '.' in one
+# iff it is '.' in the other. (bp_cov and bp_cons annotate the identical pair set;
+# both emit '.' off-pair.) A structural spot-check that does not depend on the
+# exact digit values.
+sub assert_same_pair_cols {
+    my ($file, $tag1, $tag2, $where) = @_;
+    my $a = gc_value($file, $tag1, $where);
+    my $b = gc_value($file, $tag2, $where);
+    length($a) == length($b)
+        or die "FAIL: $where: #=GC $tag1 / $tag2 differ in length\n";
+    for (my $i = 0; $i < length($a); $i++) {
+        my $da = (substr($a,$i,1) eq '.') ? 1 : 0;
+        my $db = (substr($b,$i,1) eq '.') ? 1 : 0;
+        if ($da != $db) {
+            die "FAIL: $where: $tag1 / $tag2 mark different columns at col $i ".
+                "('".substr($a,$i,1)."' vs '".substr($b,$i,1)."')\n";
+        }
+    }
+}
+
+# Two #=GC lines must NOT be byte-identical (covariation != conservation).
+sub gc_lines_differ {
+    my ($file, $tag1, $tag2, $where) = @_;
+    my $a = gc_value($file, $tag1, $where);
+    my $b = gc_value($file, $tag2, $where);
+    $a ne $b or die "FAIL: $where: #=GC $tag1 and $tag2 are byte-identical (expected to differ)\n";
 }
 
 # Write-then-re-read gate: the standard Easel Stockholm reader (via esl-reformat)

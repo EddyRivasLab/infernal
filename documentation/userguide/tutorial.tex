@@ -1512,10 +1512,10 @@ residue is \emph{not} the probability that it belongs in that
 particular column; again, where there's a choice of column for
 inserted residues, that choice is arbitrary.
 
-\subsubsection{Optional structure-status annotation: \texttt{--bpstatus} and \texttt{--bpcons}}
+\subsubsection{Optional structure-status annotation: \texttt{--bpstatus}, \texttt{--bpcons}, and \texttt{--bpcov}}
 \label{section:cmalign-bpstatus}
-By default \prog{cmalign} does not annotate base-pair quality. Two optional
-flags add it, both off by default (so default output is unchanged):
+By default \prog{cmalign} does not annotate base-pair quality. Three optional
+flags add it, all off by default (so default output is unchanged):
 
 \begin{sreitems}{\emprog{--bpstatus}}
 \item[\emprog{--bpstatus}]
@@ -1553,15 +1553,53 @@ flags add it, both off by default (so default output is unchanged):
   a covarying one, and is noisy for small numbers of sequences or pairs with many
   gaps). For a proper statistical covariation analysis use a dedicated tool such
   as R-scape.
+\item[\emprog{--bpcov}]
+  adds a single \otext{\#=GC bp\_cov} line: a per-pair \emph{covariation} digit
+  that complements the \otext{--bpcons} conservation digit. For each base pair
+  (nested and pseudoknot) it computes the absolute mutual information (MI, in
+  bits) of the two columns' standard-nucleotide composition over a $4\times4$
+  joint count table (a sequence contributes only when both of its aligned
+  residues are standard nucleotides A/C/G/U), and writes
+  \otext{EncodePostProb(MI$/1.5$ bits)} at both paired columns: a single
+  \otext{0}--\otext{9}/\otext{*} digit on the same scale as \otext{bp\_cons}
+  (\otext{*} for the strongest covariation, MI $\gtrsim 1.4$ bits), \otext{.}
+  elsewhere. Because MI is bounded by the columns' entropy, a near-invariant pair
+  automatically reads a low digit, so no special ``no-power'' symbol is needed.
+  Like \otext{bp\_cons} this is a \emph{transparent, descriptive hint}, not a
+  substitute for the rigorous covariation statistics of a tool such as R-scape.
+  \otext{--bpcov} is independent of \otext{--bpcons} (give either, both, or
+  neither).
 \end{sreitems}
 
-Both the \otext{\#=GR PS} and \otext{\#=GC bp\_cons} lines are emitted on the
-common in-memory alignment path and on the low-memory, multi-block path
-(\otext{--small}, or an input too large to fit in one block). The
-\otext{\#=GC bp\_cons} line spans all sequences, so on the multi-block path its
-per-pair canonical counts are accumulated block by block and the line is written
-once after the final merge; because the counts are additive over the sequences,
-the resulting digits are identical to those of the single-block path.
+Reading \otext{bp\_cons} and \otext{bp\_cov} together separates two distinct
+properties of a pair --- how well it is \emph{conserved} versus how much it
+\emph{covaries}. A pair with a high \otext{bp\_cons} but a low \otext{bp\_cov}
+is well conserved but shows no covariation power; a pair high on both is a
+canonical pair whose two columns also vary in a correlated way. For example,
+aligning sequences to a pseudoknotted model (here the PK-HAV test model, which
+carries a nested stem and an \otext{A}/\otext{a} pseudoknot stem) gives:
+
+\begin{sreoutput}
+#=GC SS_cons   .:<<<<<<<<<<______.__.._AAAA.AAA~~~...>>>>>>>>>>.:::::::.::a:aa.a:aaa:
+#=GC RF        .UUAAACAAAucUUCUUA.AA..AUUUC.UGA~~~...ggUUUGUUUA.UUUuuuu.UAUUCA.GUAAAU
+#=GC bp_cons   ..9**9*9**79............6778.887......97**9*9**9...........7.88.8.776.
+#=GC bp_cov    ..5576456546............1011.000......6456546755...........0.00.1.101.
+\end{sreoutput}
+
+The nested stem (\otext{<<<<}\,\ldots\,\otext{>>>>}) is both well conserved
+(\otext{bp\_cons} \otext{9}/\otext{*}) and moderately covarying (\otext{bp\_cov}
+\otext{4}--\otext{7}); the pseudoknot columns (\otext{AAAA}\,\ldots\,\otext{aaa})
+are conserved (\otext{bp\_cons} \otext{6}--\otext{8}) but show little covariation
+in this small sample (\otext{bp\_cov} \otext{0}--\otext{1}).
+
+All of the \otext{\#=GR PS}, \otext{\#=GC bp\_cons}, and \otext{\#=GC bp\_cov}
+lines are emitted on the common in-memory alignment path and on the low-memory,
+multi-block path (\otext{--small}, or an input too large to fit in one block).
+The two \otext{\#=GC} family lines span all sequences, so on the multi-block path
+their per-pair counts (canonical counts for \otext{bp\_cons}, joint nucleotide
+tables for \otext{bp\_cov}) are accumulated block by block and each line is
+written once after the final merge; because the counts are additive over the
+sequences, the resulting digits are identical to those of the single-block path.
 
 \subsubsection{cmalign assumes sequences may be truncated}
 \prog{cmalign} assumes that input sequences may be truncated and uses

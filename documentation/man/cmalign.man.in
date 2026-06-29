@@ -627,6 +627,53 @@ counts are accumulated block by block and the line is written once after the
 final merge, so the digit is identical to the single-block result.
 
 .TP
+.B --bpcov
+Add a single
+.B #=GC bp_cov
+line giving, for each base pair (nested and pseudoknot), a per-pair
+.I covariation
+digit, complementing the
+.B --bpcons
+conservation digit. The value is the absolute mutual information (MI) of the two
+columns' standard-nucleotide composition, computed in bits over a 4x4 joint count
+table (a sequence contributes only if both of its aligned residues are standard
+nucleotides A/C/G/U), then encoded as
+.B EncodePostProb(MI / 1.5 bits)
+\(em a
+.B 0
+\-
+.B 9
+/
+.B *
+digit (same bucketing as the PP and
+.B bp_cons
+lines) at both paired columns, with
+.B *
+for the strongest covariation (MI at or above ~1.4 bits) and
+.B .
+at all other columns. Because MI is bounded by the columns' entropy,
+near-invariant pairs intrinsically read a low digit; no special no-power glyph is
+used. This is a transparent, descriptive hint and is
+.I not
+a substitute for the rigorous covariation statistics of a tool such as R-scape.
+Reading it together with
+.B bp_cons
+distinguishes conservation from covariation: a high
+.B bp_cons
+with a low
+.B bp_cov
+is a pair that is well conserved but shows no covariation power.
+.B --bpcov
+is independent of
+.B --bpcons
+(either, both, or neither may be given) and is emitted on both the default
+(in-memory) and the
+.B --small
+/ multi-block (merge) output paths; on the merge path the per-pair joint counts
+are accumulated block by block and the MI computed once after the final merge, so
+the digit is identical to the single-block result.
+
+.TP
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
 that may be more convenient for examination. This was the default output
