@@ -201,6 +201,7 @@ static char banner[] = "align sequences to a CM";
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMNESS *r);
 static void hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
+static void output_hmm_insert_info(FILE *ifp, CM_t *cm, P7_HMM *hmm, ESL_SQ **sqarr, P7_TRACE **tr, int nseq);
 
 #ifdef HMMER_THREADS
 static int  thread_loop(WORKER_INFO *info, char *errbuf, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQ_BLOCK *sq_block);
@@ -705,6 +706,110 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   return;
 }
 
+/* output_hmm_insert_info()
+ *
+ * Emit the per-sequence insert-information file (--ifile) for the
+ * --hmm alignment path, derived from the p7 traces <tr[]>.
+ *
+ * This is the trace-based analog of the CM path's ifile writer
+ * (Parsetrees2Alignment() -> insertfp emission in cm_parsetree.c).
+ * It is ADDITIVE: the CM path is untouched. The output format and
+ * semantics are mirrored from the CM path so VADR's
+ * vdr_CmalignParseInsertFile() parses both identically:
+ *
+ *   model line:  "<cm->name> <cm->clen>\n"   (mirrors output_alignment())
+ *   per-seq line: "<name> <L> <spos> <epos>  [<mdlpos> <uapos> <inslen>]...\n"
+ *   closing line: "//\n"
+ *
+ * spos/epos = first/last consensus (match) model position the sequence
+ * occupies (match-residue based, like the CM path; deletes don't count).
+ * Each insert triplet: <mdlpos> = model position after which the insert
+ * occurs (0..clen; 0 = before first consensus, clen = after last),
+ * <uapos> = unaligned position (1..L) of the first inserted residue,
+ * <inslen> = number of inserted residues.
+ *
+ * The model-position convention exactly matches p7_tracealign_Seqs()'s
+ * map_new_msa() (tracealign.c), which produces the .stk this run wrote:
+ *   - a run of emitting p7T_N states  -> mdlpos 0   (5' flanking)
+ *   - a run of p7T_I states at node k -> mdlpos k   (insert after match k)
+ *   - a run of emitting p7T_C states  -> mdlpos clen (3' flanking)
+ * so the ifile is a faithful encoding of the alignment in the .stk.
+ *
+ * Glocal vs local entry/exit is handled implicitly: spos/epos track the
+ * first/last p7T_M regardless of how the model was entered (B->M_k or
+ * via leading deletes), and the N/C flanking residues become the
+ * mdlpos=0 / mdlpos=clen inserts. VADR runs this under -g (UNIGLOCAL).
+ *
+ * Only the serial/threaded path is covered (traces land in the shared
+ * <tr[]> regardless of --cpu). MPI is out of scope (HAVE_MPI undefined).
+ */
+static void
+output_hmm_insert_info(FILE *ifp, CM_t *cm, P7_HMM *hmm, ESL_SQ **sqarr, P7_TRACE **tr, int nseq)
+{
+  int idx, z;
+  int M = hmm->M;   /* consensus length; == cm->clen for the ML p7 HMM */
+
+  /* model line: byte-identical to the CM path's output_alignment() emission */
+  fprintf(ifp, "%s %d\n", cm->name, cm->clen);
+
+  for (idx = 0; idx < nseq; idx++) {
+    P7_TRACE *t    = tr[idx];
+    int       spos = -1;
+    int       epos = -1;
+
+    /* spos/epos: first/last match-state model position (residue-bearing) */
+    for (z = 0; z < t->N; z++) {
+      if (t->st[z] == p7T_M) {
+        if (spos == -1) spos = t->k[z];
+        epos = t->k[z];
+      }
+    }
+
+    fprintf(ifp, "%s %" PRId64 " %d %d", sqarr[idx]->name, sqarr[idx]->n, spos, epos);
+
+    /* Walk the trace once, emitting insert triplets in increasing-mdlpos
+     * order (N-term=0, then I_k for k=1..M-1, then C-term=M), which is
+     * exactly trace order. Mute (non-emitting) N/C states have i==0 and
+     * are skipped; the first emitting state of each flanking run is the
+     * one whose predecessor shares the same state type (matching
+     * map_new_msa()'s "if (st[z-1]==p7T_N/C)" counting).
+     */
+    z = 0;
+    while (z < t->N) {
+      int st = t->st[z];
+
+      if (st == p7T_N && z > 0 && t->st[z-1] == p7T_N) {
+        /* 5' flanking run -> mdlpos 0 */
+        int first = t->i[z];
+        int len   = 0;
+        while (z < t->N && t->st[z] == p7T_N) { if (t->i[z] > 0) len++; z++; }
+        if (len > 0) fprintf(ifp, "  %d %d %d", 0, first, len);
+      }
+      else if (st == p7T_I) {
+        /* insert after match position k -> mdlpos k */
+        int k     = t->k[z];
+        int first = t->i[z];
+        int len   = 0;
+        while (z < t->N && t->st[z] == p7T_I && t->k[z] == k) { len++; z++; }
+        fprintf(ifp, "  %d %d %d", k, first, len);
+      }
+      else if (st == p7T_C && z > 0 && t->st[z-1] == p7T_C) {
+        /* 3' flanking run -> mdlpos M (== clen) */
+        int first = t->i[z];
+        int len   = 0;
+        while (z < t->N && t->st[z] == p7T_C) { if (t->i[z] > 0) len++; z++; }
+        if (len > 0) fprintf(ifp, "  %d %d %d", M, first, len);
+      }
+      else z++;
+    }
+
+    fprintf(ifp, "\n");
+  }
+
+  /* closing line, mirrors the CM path (cmalign.c serial_master end) */
+  fprintf(ifp, "//\n");
+}
+
 /* hmm_alignment()
  * 
  * HMM-only alignment mode (--hmm). Bypasses the CM alignment pipeline
@@ -1048,6 +1153,12 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   /* Write the MSA */
   status = esl_msafile_Write(cfg->ofp, msa, cfg->outfmt);
   if (status != eslOK) cm_Fail("Failed to write alignment");
+
+  /* Emit per-sequence insert info (--ifile), derived from the p7 traces.
+   * Gated on cfg->ifp (open iff --ifile was given), mirroring the CM path.
+   * The CM-path ifile writer is left untouched; this is a parallel
+   * trace-based emitter (see output_hmm_insert_info() above). */
+  if (cfg->ifp != NULL) output_hmm_insert_info(cfg->ifp, cm, hmm, sqarr, tr, nseq);
 
   /* Clean up */
   esl_msa_Destroy(msa);
