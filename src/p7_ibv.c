@@ -807,6 +807,7 @@ typedef struct {
   float   thr;
   int     ibv_mode;  /* brief 140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
   int     ibv_width; /* brief 140: fixed-width pad W around argmax-k pin */
+  int     kband_pad; /* brief 172: k-band child-narrowing pad (do_kband path) */
 } IBV_DnC_Ctx;
 
 /* brief 171: begin vector for the forward call at absolute row `absrow`
@@ -1023,12 +1024,16 @@ ibv_dnc_alloc(size_t n, float **ret_p)
  * (not SSE): correctness-first, and the geometric majority of nodes are deep
  * narrow-band ones.  KPAD widens each child band by a few nodes as cheap
  * insurance against float ties at band edges (the exactness proof needs none).
+ * In truncated (Tgm) mode the per-row argmax oracle wobbles between near-optimal
+ * registers over a wider k-spread, so KPAD=64 (not 8) is needed for exact i2k
+ * match there: empirically i2kdiff drops 92->0 on a truncated genome fragment
+ * (M=152k) going 8->64, at negligible speed cost (the full-M top levels dominate).
  *
  * Only i2k is consumed by the windowed-Viterbi band (p7_Seq2BandsWV rebuilds
  * the band from i2k +/- nodepad), so the banded delta-cloud kmin/kmax (which a
  * narrow band would shrink relative to the full-M cloud) is irrelevant here.
  */
-#define P7IBV_KPAD 8
+#define P7IBV_KPAD 64
 
 static void
 ibv_fwd_row_b(int M, int k_lo, int k_hi,
@@ -1278,8 +1283,8 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
   int kmid = ctx->i2k[i_mid];
   int top_hi, bot_lo;
   if (kmid >= 1) {
-    top_hi = kmid + P7IBV_KPAD; if (top_hi > k_hi) top_hi = k_hi;
-    bot_lo = kmid - P7IBV_KPAD; if (bot_lo < k_lo) bot_lo = k_lo;
+    top_hi = kmid + ctx->kband_pad; if (top_hi > k_hi) top_hi = k_hi;
+    bot_lo = kmid - ctx->kband_pad; if (bot_lo < k_lo) bot_lo = k_lo;
   } else {
     top_hi = k_hi; bot_lo = k_lo;   /* no emitting pin: keep parent band */
   }
@@ -1478,6 +1483,9 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.begin_milli = begin_milli;  /* brief 171 */
   ctx.ibv_mode = ibv_mode;   /* brief 140 */
   ctx.ibv_width= ibv_width;  /* brief 140 */
+  ctx.kband_pad = P7IBV_KPAD;  /* brief 172 */
+  { const char *kp = getenv("P7IBV_KBAND_PAD");
+    if (kp && *kp) { int v = atoi(kp); if (v >= 0) ctx.kband_pad = v; } }
 
   /* B seed for top-level: all NEG_INF; terminal injected via global_L. */
   if ((status = ibv_dnc_alloc(ks, &B_seed_M)) != eslOK) goto ERROR;

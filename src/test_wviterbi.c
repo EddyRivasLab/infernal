@@ -49,6 +49,7 @@ static ESL_OPTIONS options[] = {
   { "--trunc", eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "brief171: Tgm begin/end-anywhere bands", 0 },
   { "--delta", eslARG_INT,"20000",NULL,"n>=0",NULL,NULL,NULL,"IBV delta milli-bits (for delta band)",  0 },
   { "--calib", eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "use F+B-halfwidth WV pad (not cm nodepad)",0 },
+  { "--unifpad", eslARG_INT, "-1",NULL, NULL, NULL, NULL, NULL, "brief172: uniform pad <n> (skip calib; i2k is pad-indep)",0 },
   { "--nsamp", eslARG_INT, "40", NULL, "n>0", NULL, NULL, NULL, "calib: # CM-emitted samples",          0 },
   { "--q",     eslARG_REAL,"0.99",NULL,"0<x<=1",NULL,NULL,NULL,"calib: pad quantile",                   0 },
   { "--floor", eslARG_INT,  "2", NULL, "n>=0",NULL, NULL, NULL, "calib: floor pad",                     0 },
@@ -91,7 +92,11 @@ main(int argc, char **argv)
   hmm = cm->fp7;
   M   = hmm->M;
 
-  if (esl_opt_GetBoolean(go, "--calib")) {
+  if (esl_opt_GetInteger(go, "--unifpad") >= 0) {
+    int up = esl_opt_GetInteger(go, "--unifpad");
+    ESL_ALLOC(nodepad, sizeof(int) * (M + 1));
+    for (k = 0; k <= M; k++) nodepad[k] = up;
+  } else if (esl_opt_GetBoolean(go, "--calib")) {
     ESL_RANDOMNESS *rng = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--seed"));
     int *wvpad = NULL;
     if (cm_ComputeP7WVNodePad(cm, errbuf, rng, esl_opt_GetInteger(go, "--nsamp"),
