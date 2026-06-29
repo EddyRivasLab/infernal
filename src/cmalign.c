@@ -166,6 +166,11 @@ struct cfg_s {
   FILE            *efp;	        /* optional output for EL insert info */
   FILE            *sfp;         /* optional output for alignment scores */
   FILE            *rfp;         /* optional output for --regress alignment */
+
+  CM_BPCONS_ACC   *bpcons_acc;  /* cross-block #=GC bp_cons accumulator, non-NULL only
+				 * while building a multi-block (merge) alignment under
+				 * --bpcons; NULL otherwise. Created on the first merge
+				 * block, consumed/destroyed in create_and_output_final_msa(). */
 };
 
 static char usage[]  = "[-options] <cmfile> <seqfile>";
@@ -244,7 +249,8 @@ main(int argc, char **argv)
   cfg.efp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sfp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.rfp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
- 
+  cfg.bpcons_acc  = NULL;                /* created on first merge block under --bpcons, NULL otherwise */
+
 
   cfg.infmt       = eslSQFILE_UNKNOWN;    /* reset below in process_commandline() */
   cfg.outfmt      = eslMSAFILE_STOCKHOLM; /* reset below in process_commandline() */
@@ -321,8 +327,9 @@ main(int argc, char **argv)
     printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
   }
-  if(cfg.tmpfp != NULL) fclose(cfg.tmpfp); 
-  if(cfg.tfp   != NULL) fclose(cfg.tfp); 
+  if(cfg.tmpfp != NULL) fclose(cfg.tmpfp);
+  if(cfg.bpcons_acc != NULL) cm_alignment_bpcons_acc_Destroy(cfg.bpcons_acc); /* normally freed in create_and_output_final_msa; safety net */
+  if(cfg.tfp   != NULL) fclose(cfg.tfp);
   if(cfg.ifp   != NULL) fclose(cfg.ifp); 
   if(cfg.efp   != NULL) fclose(cfg.efp); 
   if(cfg.sfp   != NULL) fclose(cfg.sfp); 
@@ -1903,18 +1910,22 @@ output_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, FIL
    * and the merge (ofp == cfg->tmpfp, i.e. --small or input too large for one block)
    * output paths.
    *
-   * #=GC bp_cons spans all sequences, so it cannot be computed per block; it is
-   * suppressed on the merge path with a one-line note (cross-block accumulation is
-   * a Phase 2 follow-up). */
+   * #=GC bp_cons spans all sequences, so on the merge path it cannot be written
+   * per block. Instead each block's per-consensus-pair counts are accumulated into
+   * cfg->bpcons_acc (created on the first block here); create_and_output_final_msa()
+   * encodes and emits the single bp_cons line once all blocks are merged. On the
+   * in-memory (single-block) path it is written directly here, as before. */
   if(esl_opt_GetBoolean(go, "--bpstatus") || esl_opt_GetBoolean(go, "--bpcons")) {
     int in_merge_path = (ofp == cfg->tmpfp);
     int do_perseq     = esl_opt_GetBoolean(go, "--bpstatus");
     int do_famcons    = esl_opt_GetBoolean(go, "--bpcons")   && (! in_merge_path);
-    if(in_merge_path && esl_opt_GetBoolean(go, "--bpcons") && first_ali) {
-      fprintf(stderr, "# note: --bpcons (#=GC bp_cons) is suppressed under --small / multi-block output (it spans all sequences; Phase 1 supports single-block output only).\n");
-    }
     if(do_perseq || do_famcons) {
       if((status = cm_alignment_annotate_status(cm, errbuf, msa, do_perseq, do_famcons)) != eslOK) return status;
+    }
+    if(in_merge_path && esl_opt_GetBoolean(go, "--bpcons")) {
+      if(cfg->bpcons_acc == NULL &&
+         (status = cm_alignment_bpcons_acc_Create(cm, errbuf, msa, &(cfg->bpcons_acc))) != eslOK) return status;
+      if((status = cm_alignment_bpcons_acc_Add(cm, errbuf, cfg->bpcons_acc, msa)) != eslOK) return status;
     }
   }
 
@@ -2149,6 +2160,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
   int          *ngap_eitherA = NULL;            /* [0..apos..alen] = ngap_insA[apos] + ngap_elA[apos] */
   char         *rf2print = NULL;                /* #=GC RF annotation for final alignment */
   char         *ss_cons2print = NULL;           /* #=GC SS_cons annotation for final alignment */
+  char         *bpcons2print = NULL;            /* #=GC bp_cons annotation for final alignment (--bpcons merge path only) */
 
   /* variables only used in small mode */
   int           ngs_cur;                       /* number of GS lines in current alignment (only used if do_small) */
@@ -2312,12 +2324,24 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
   if (maxgr > 0 && maxname+maxgr+7 > margin) margin = maxname+maxgr+7; 
   fprintf(cfg->ofp, "#=GC %-*s %s\n", margin-6, "SS_cons", ss_cons2print);
   fprintf(cfg->ofp, "#=GC %-*s %s\n", margin-6, "RF", rf2print);
+  /* #=GC bp_cons: cross-block family base-pair conservation (--bpcons). Emitted
+   * after SS_cons/RF (same order as the single-block in-memory output), encoded
+   * from the per-pair counts accumulated over all blocks. The "bp_cons" tag is 7
+   * chars like "SS_cons", so it shares the SS_cons/RF margin. */
+  if(cfg->bpcons_acc != NULL) {
+    if((status = cm_alignment_bpcons_acc_Finalize(cm, errbuf, cfg->bpcons_acc, rf2print, &bpcons2print)) != eslOK)
+      cm_Fail("error finalizing #=GC bp_cons for the merged alignment:\n%s", errbuf);
+    fprintf(cfg->ofp, "#=GC %-*s %s\n", margin-6, "bp_cons", bpcons2print);
+    cm_alignment_bpcons_acc_Destroy(cfg->bpcons_acc);
+    ((struct cfg_s *) cfg)->bpcons_acc = NULL;  /* transient per-CM merge state; reset for any subsequent CM */
+  }
   fprintf(cfg->ofp, "//\n");
 
   esl_msafile2_Close(afp);
 
   if(ss_cons2print != NULL) free(ss_cons2print);
   if(rf2print != NULL) free(rf2print);
+  if(bpcons2print != NULL) free(bpcons2print);
   if(alenA != NULL)  free(alenA);
   if(msaA != NULL)   free(msaA);
   if(maxins != NULL) free(maxins);
