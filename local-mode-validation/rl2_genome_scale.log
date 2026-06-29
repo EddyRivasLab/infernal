@@ -1,0 +1,29 @@
+### calici genome-scale (M=22966 L=7912)
+## global (byte-exact vs stock):
+# cm_CheckptAlignHB engaged: M=22966 L=7912 B=152 Z=770.3678  CM-DP peak=4.20 Mb  full-cube(2x)=125.37 Mb  win~29.8x
+# RESULT tag=calici_g seq=NC_001959-sample1 mode=global L=7912
+#   score : ckpt=770.367798 stock=770.367798 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=8373 stock_nodes=8373 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.634222 avgpp(ckpt)=0.634222
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+## local ends-only (ckpt-only, stock OOMs):
+# cm_CheckptAlignHB engaged: M=22966 L=7912 B=152 Z=770.2121  CM-DP peak=4.57 Mb  full-cube(2x)=125.55 Mb  win~27.5x
+#   EL-deck: banded=0.362 Mb/deck (94878 cells) vs unbanded O(L^2/2)=119.445 Mb/deck  reduction~330.0x
+#   ckpt  : sc=770.212097 nodes=8373 avgpp=0.634209 EL=0
+#   VERDICT=CKPT-ONLY (no stock comparison)
+
+### flavi genome-scale (M~29000 L=9901)
+## global (byte-exact vs stock):
+# cm_CheckptAlignHB engaged: M=28942 L=9901 B=170 Z=1141.0139  CM-DP peak=2.92 Mb  full-cube(2x)=96.11 Mb  win~32.9x
+# RESULT tag=flavi_g seq=NC_004102-sample1 mode=global L=9901
+#   score : ckpt=1141.013916 stock=1141.013916 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=10472 stock_nodes=10472 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.647775 avgpp(ckpt)=0.647775
+#   EL    : stock=0 ckpt=0 match=YES
+#   VERDICT=PASS
+## local ends-only (ckpt-only):
+# cm_CheckptAlignHB engaged: M=28942 L=9901 B=170 Z=1140.7789  CM-DP peak=3.22 Mb  full-cube(2x)=96.11 Mb  win~29.8x
+#   EL-deck: banded=0.302 Mb/deck (79180 cells) vs unbanded O(L^2/2)=187.034 Mb/deck  reduction~619.2x
+#   ckpt  : sc=1140.778931 nodes=10472 avgpp=0.647768 EL=0
+#   VERDICT=CKPT-ONLY (no stock comparison)

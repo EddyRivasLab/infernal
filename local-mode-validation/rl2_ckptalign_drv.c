@@ -43,6 +43,7 @@ static ESL_OPTIONS options[] = {
   { "--tau", eslARG_REAL,  "1e-7",NULL, NULL, NULL, NULL, NULL, "HMM band tail loss tau", 0 },
   { "--mxsize", eslARG_REAL,"40000",NULL,NULL,NULL, NULL, NULL, "size limit (Mb)", 0 },
   { "--tag", eslARG_STRING,"run",  NULL, NULL, NULL, NULL, NULL, "label printed in output", 0 },
+  { "--nostock",eslARG_NONE, FALSE, NULL, NULL, NULL, NULL, NULL, "skip stock oracle (ckpt-only; for genome-scale where stock OOMs)", 0 },
   { 0,0,0,0,0,0,0,0,0,0 },
 };
 
@@ -64,6 +65,7 @@ int main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "-h") || esl_opt_ArgNumber(go) != 2)
     { printf("usage: rl2_ckptalign_drv [-g] [--tau x] [--tag T] <cmfile> <seqfile>\n"); exit(0); }
   int    do_global = esl_opt_GetBoolean(go, "-g");
+  int    do_stock  = ! esl_opt_GetBoolean(go, "--nostock");
   float  tau       = esl_opt_GetReal(go, "--tau");
   float  size_limit= esl_opt_GetReal(go, "--mxsize");
   char  *tag       = esl_opt_GetString(go, "--tag");
@@ -125,12 +127,15 @@ int main(int argc, char **argv)
                                 dsq, 1, L, cm->cp9b, FALSE, PLI_PASS_STD_ANY, 0)) != eslOK)
       cm_Fail("cp9_Seq2Bands: %s", errbuf);
 
-    /* ---- stock oracle: cm_AlignHB(do_optacc=TRUE) ---- */
+    /* ---- stock oracle: cm_AlignHB(do_optacc=TRUE) (skipped with --nostock,
+     *      e.g. genome-scale local where the full-cube stock pipeline OOMs) ---- */
     Parsetree_t *tr_s = NULL; char *pp_s = NULL; float avgpp_s = 0, sc_s = 0;
-    if ((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, TRUE, FALSE,
-                             cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, NULL,
-                             &pp_s, &tr_s, &avgpp_s, &sc_s)) != eslOK)
-      cm_Fail("stock cm_AlignHB: %s", errbuf);
+    if (do_stock) {
+      if ((status = cm_AlignHB(cm, errbuf, dsq, L, size_limit, TRUE, FALSE,
+                               cm->hb_mx, cm->hb_shmx, cm->hb_omx, cm->hb_emx, NULL,
+                               &pp_s, &tr_s, &avgpp_s, &sc_s)) != eslOK)
+        cm_Fail("stock cm_AlignHB: %s", errbuf);
+    }
 
     /* ---- checkpointed engine: cm_CheckptAlignHB ---- */
     CM_HB_EMIT_MX *emit_c = cm_hb_emit_mx_Create(cm);
@@ -139,12 +144,20 @@ int main(int argc, char **argv)
                                     emit_c, &pp_c, &tr_c, &avgpp_c, &sc_c)) != eslOK)
       cm_Fail("cm_CheckptAlignHB: %s", errbuf);
 
+    int elC = count_el(tr_c, M);
+    if (! do_stock) {
+      printf("# RESULT tag=%s seq=%s mode=%s L=%d (ckpt-only, --nostock)\n", tag, sq->name, do_global?"global":"local", L);
+      printf("#   ckpt  : sc=%.6f nodes=%d avgpp=%.6f EL=%d\n", sc_c, tr_c->n, avgpp_c, elC);
+      printf("#   VERDICT=CKPT-ONLY (no stock comparison)\n");
+      if (pp_c) free(pp_c); if (tr_c) FreeParsetree(tr_c);
+      cm_hb_emit_mx_Destroy(emit_c); esl_sq_Reuse(sq); continue;
+    }
+
     /* ---- compare ---- */
     int    peq  = ParsetreeCompare(tr_c, tr_s);
     int    ppeq = (pp_s && pp_c && strcmp(pp_s, pp_c) == 0);
     float  dsc  = fabsf(sc_c - sc_s);
     int    elS  = count_el(tr_s, M);
-    int    elC  = count_el(tr_c, M);
 
     printf("# RESULT tag=%s seq=%s mode=%s L=%d\n", tag, sq->name, do_global?"global":"local", L);
     printf("#   score : ckpt=%.6f stock=%.6f |dsc|=%.3e byte-exact=%s\n",
