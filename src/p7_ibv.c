@@ -1823,12 +1823,20 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
     int wv_derr = eslFAIL;
     if (L >= 3) {
       double pool = 12.0 * (double)(L + 1) * (double)(M + 4);
+      /* P7WV_FAST_CALIB: use the k-banded D&C for the calibration deriver at
+       * genome scale.  For typical (glocal/non-truncated) emits the KPAD=64
+       * monotone tube is wider than the Delta cloud, so the banded delta band
+       * equals the full one and the pad is unchanged -- but the per-emit deriver
+       * is ~order(s) faster, making genome-scale calibration tractable.  Off by
+       * default (exact full-cloud pad). */
+      int calib_kband = FALSE;
+      { const char *fc = getenv("P7WV_FAST_CALIB"); if (fc && *fc && *fc != '0') calib_kband = TRUE; }
       if (pool <= 2.0e9)
         wv_derr = p7_Seq2BandsIBV(cm, errbuf, esq->dsq, L, delta_milli, do_trunc,
                                   P7IBV_MODE_DELTA, 0, &i2k, &kmin, &kmax, &nc);
       else
         wv_derr = p7_Seq2BandsIBV_dnc(cm, errbuf, esq->dsq, L, delta_milli, 0,
-                                      FALSE, FALSE, do_trunc, P7IBV_MODE_DELTA, 0,
+                                      FALSE, calib_kband, do_trunc, P7IBV_MODE_DELTA, 0,
                                       &i2k, &kmin, &kmax, &nc);
     }
     if (wv_derr == eslOK) {
