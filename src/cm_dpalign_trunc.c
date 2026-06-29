@@ -1668,7 +1668,8 @@ trckpt_mode_decks(char mode, float ***Jd, float ***Ld, float ***Rd, float ***Td)
  * reference).  Unreached B states (kind==0) keep all planes IMPOSSIBLE.        */
 static void
 pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
-                float ***Jd, float ***Ld, float ***Rd, float ***Td)
+                float ***Jd, float ***Ld, float ***Rd, float ***Td,
+                float ***Jck, float ***Lck, float ***Rck, float ***Tck)
 {
   CM_t *cm = cx->cm;
   int   *jmin = cx->jmin, *jmax = cx->jmax;
@@ -1694,8 +1695,14 @@ pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
     float ***Pb = trckpt_mode_decks(bmode, Jd, Ld, Rd, Td);
     float ***Py = trckpt_mode_decks(lmode, Jd, Ld, Rd, Td);
     float ***Pz = trckpt_mode_decks(rmode, Jd, Ld, Rd, Td);
+    /* R4.2b sqrt(M): the child roots may live in the retained checkpoint store
+     * (Jck/...) rather than the recompute window (Jd/...); fall back per child. */
+    float ***Pyck = trckpt_mode_decks(lmode, Jck, Lck, Rck, Tck);
+    float ***Pzck = trckpt_mode_decks(rmode, Jck, Lck, Rck, Tck);
     if (Pb == NULL || Py == NULL) return;
     float **Pbv = Pb[v];
+    float **Pyy = (Py[y] != NULL) ? Py[y] : (Pyck ? Pyck[y] : NULL); /* left  child */
+    float **Pzz = (Pz != NULL && Pz[z] != NULL) ? Pz[z] : (Pzck ? Pzck[z] : NULL); /* right child */
 
     if (kind == 1) {  /* INTERIOR: single k=k*, reads y at [j-k*][d-k*], z at [j][k*] */
       int jn = ESL_MAX(jmin[v], jmin[z]);
@@ -1715,7 +1722,7 @@ pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
             kp_z = k - hdmin[z][jp_z];
             dp_y = d - hdmin[y][jp_y-k];
             Pbv[jp_v][dp_v] = FLogsum(Pbv[jp_v][dp_v],
-                                      Py[y][jp_y-k][dp_y-k] + Pz[z][jp_z][kp_z]);
+                                      Pyy[jp_y-k][dp_y-k] + Pzz[jp_z][kp_z]);
           }
         }
       }
@@ -1731,7 +1738,7 @@ pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
         for (d = dn; d <= dx; d++) {
           dp_v = d - hdmin[v][jp_v];
           dp_y = d - hdmin[y][jp_y];
-          Pbv[jp_v][dp_v] = FLogsum(Pbv[jp_v][dp_v], Py[y][jp_y][dp_y]);
+          Pbv[jp_v][dp_v] = FLogsum(Pbv[jp_v][dp_v], Pyy[jp_y][dp_y]);
         }
       }
     }
@@ -1746,7 +1753,7 @@ pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
         for (d = dn; d <= dx; d++) {
           dp_v = d - hdmin[v][jp_v];
           int dp_z = d - hdmin[z][jp_z];
-          Pbv[jp_v][dp_v] = FLogsum(Pbv[jp_v][dp_v], Pz[z][jp_z][dp_z]);
+          Pbv[jp_v][dp_v] = FLogsum(Pbv[jp_v][dp_v], Pzz[jp_z][dp_z]);
         }
       }
     }
@@ -2863,7 +2870,7 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if (imx->Rncells_valid > 0 && fill_R) esl_vec_FSet(imx->Rdp_mem, imx->Rncells_valid, IMPOSSIBLE);
   if (imx->Tncells_valid > 0 && fill_T) esl_vec_FSet(imx->Tdp_mem, imx->Tncells_valid, IMPOSSIBLE);
   for (v = M-1; v >= 1; v--) {
-    if (cm->sttype[v] == B_st) pin_tr_inside_B(&cx, v, imx->Jdp, imx->Ldp, imx->Rdp, imx->Tdp);
+    if (cm->sttype[v] == B_st) pin_tr_inside_B(&cx, v, imx->Jdp, imx->Ldp, imx->Rdp, imx->Tdp, NULL, NULL, NULL, NULL);
     else                       trckpt_tr_inside_deck(&cx, v, imx->Jdp, imx->Ldp, imx->Rdp, NULL, NULL, NULL);
     /* fold ROOT_S truncated begin: J/L/R for all v; T only for B states */
     trckpt_tr_root_contrib(&cx, v, imx->Jdp[v], imx->Ldp[v], imx->Rdp[v], &J0, &L0, &R0);
@@ -2919,6 +2926,375 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  ERROR:
   if (imx) cm_tr_hb_mx_Destroy(imx);
   if (omx) cm_tr_hb_mx_Destroy(omx);
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  return status;
+}
+
+/* Function: cm_CheckptTrPostAlignHB()
+ *           EPN 2026 [brief 054, rung R4.2b]
+ *
+ * Purpose:  sqrt(M)-memory PINNED truncated structured (bps>0) posterior -- the
+ *           R4.2b memory deliverable.  Same result (Z + every emit_mx cell) as
+ *           the full-storage cm_PinTrPostAlignHB() (R4.2a), but with a
+ *           sqrt(M)-bounded CM-DP working set per bifurcation-free chain
+ *           (tree-of-chains), instead of two full CM_TR_HB_MX.
+ *
+ *           This is the truncated analogue of rung-3's cm_CheckptPostAlignHB()
+ *           (brief 038, "global two-pass" tree-of-chains).  The bps=0 truncated
+ *           checkpoint scaffolding (cm_CheckptTrAlignHB, 3-mode STEP A/B) is
+ *           merged with 038's bifurcation machinery:
+ *
+ *             STEP A : checkpointed truncated Inside (descending) -> J0/L0/R0/T0
+ *                      root accumulators + Z + per-mode sqrt(M) seed decks +
+ *                      retained chain roots.  B states use pin_tr_inside_B()
+ *                      reading their child roots; the begin-scalar T fold is
+ *                      done at each B (the B's T plane is transient).  Delta
+ *                      (child reach) EXCLUDES B and E (037 §9).
+ *             STEP B : checkpointed Outside (ascending block sweep) + per-mode
+ *                      fused posterior into emit_mx.  BEGL_S/BEGR_S use
+ *                      pin_tr_outside_Bchild() (parent B-beta + sibling Inside
+ *                      root); Delta_p (parent reach) EXCLUDES BEGL_S/BEGR_S
+ *                      (their parent is a far B); B-betas are not auto-freed by
+ *                      the linear rule; bounded co-floor reclaim keyed on the
+ *                      higher-indexed sibling (the model does NOT guarantee
+ *                      BEGL<BEGR) frees parent B-beta + both child Inside roots
+ *                      (caps the co-floor at O(tree depth)).  The fused fold is
+ *                      the inline per-mode form of cm_TrEmitterPosteriorHB step
+ *                      1 (leftwise MP/ML/IL -> J/Ll_pp; rightwise MP/MR/IR ->
+ *                      J/Rr_pp), then steps 2 (normalize) + 3 (MATP merge).
+ *
+ *           Byte-exact vs cm_PinTrPostAlignHB() by construction: identical deck
+ *           recurrences (trckpt_tr_inside_deck / trckpt_tr_outside_deck /
+ *           pin_tr_inside_B / pin_tr_outside_Bchild) and identical FLogsum /
+ *           normalization order; only deck STORAGE differs (allocation-only).
+ *           Modes filled globally per cm_TrFillFromMode(preset_mode), exactly
+ *           as R4.2a (J: J only; L: J+L; R: J+R; T: J+L+R + T at B states).
+ *
+ *           GLOBAL, no local ends (gates run -g).  cm->cp9b must hold valid
+ *           truncated bands.  preset_mode is the D&C parse's resolved mode.
+ *
+ * Returns:  <eslOK> on success; fills <emit_mx>, *ret_sc = Inside Z (bits),
+ *           *ret_mode = preset_mode.
+ */
+int
+cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                        char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx,
+                        int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode,
+                        float *ret_sc, char *ret_mode)
+{
+  int      status;
+  TR_CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, k;
+  int      pty_idx;
+  int      fill_L, fill_R, fill_T;
+  float    J0 = IMPOSSIBLE, L0 = IMPOSSIBLE, R0 = IMPOSSIBLE, T0 = IMPOSSIBLE;
+  float    Z;
+  float ***JA = NULL, ***LA = NULL, ***RA = NULL, ***TAtmp = NULL;
+  float ***Jba = NULL, ***Lba = NULL, ***Rba = NULL;
+  float ***Jbb = NULL, ***Lbb = NULL, ***Rbb = NULL;
+
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): emit_mx is NULL");
+  if (cm->trp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): cm->trp is NULL");
+  if ((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): bad pass_idx %d", pass_idx);
+  if (preset_mode != TRMODE_J && preset_mode != TRMODE_L && preset_mode != TRMODE_R && preset_mode != TRMODE_T)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): preset_mode must be resolved (J/L/R/T)");
+  if ((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
+  /* per-call context (mirror cm_PinTrPostAlignHB) */
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin;  cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
+  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  cx.preset_mode = preset_mode;
+  cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
+  cx.Jl_pp = cx.Ll_pp = cx.Jr_pp = cx.Rr_pp = NULL;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+  cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): L (%d) outside ROOT_S j band [%d..%d]", L, cx.jmin[0], cx.jmax[0]);
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): L (%d) outside ROOT_S d band", L);
+
+  /* deck geometry + linear child/parent reach (B-aware, per 038) */
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int64_t full_cube_cells = 0, root_cells = 0, bstate_cells = 0;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    int modes = (cx.Jv[v] ? 1 : 0) + ((cx.Lv[v] && fill_L) ? 1 : 0) + ((cx.Rv[v] && fill_R) ? 1 : 0);
+    if (cm->sttype[v] == B_st && cx.Tv[v] && fill_T) modes += 1;
+    full_cube_cells += (int64_t) modes * nc;
+    if (cm->stid[v] == ROOT_S || cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) root_cells += nc;
+    if (cm->sttype[v] == B_st) bstate_cells += nc;
+    /* child reach: skip B (cnum[B] = BEGR index, not a count) and E */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+    /* parent reach: skip B-parent edges (only BEGL_S/BEGR_S have a B parent) */
+    if (cm->pnum[v] > 0 && cm->stid[v] != BEGL_S && cm->stid[v] != BEGR_S) {
+      int ymin_par = cm->plast[v] - cm->pnum[v] + 1;
+      if (v - ymin_par > Delta_p) Delta_p = v - ymin_par;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* ============================================================= */
+  /* STEP A: checkpointed truncated Inside -> J0/L0/R0/T0 + seeds  */
+  /* ============================================================= */
+  ESL_ALLOC(JA,    sizeof(float**) * M); ESL_ALLOC(LA,    sizeof(float**) * M);
+  ESL_ALLOC(RA,    sizeof(float**) * M); ESL_ALLOC(TAtmp, sizeof(float**) * M);
+  for (v = 0; v < M; v++) { JA[v] = LA[v] = RA[v] = TAtmp[v] = NULL; }
+  for (v = M-1; v >= 1; v--) {
+    if (cx.Jv[v])               JA[v] = trckpt_deck_alloc(&cx, v);
+    if (cx.Lv[v] && fill_L)     LA[v] = trckpt_deck_alloc(&cx, v);
+    if (cx.Rv[v] && fill_R)     RA[v] = trckpt_deck_alloc(&cx, v);
+    if (cm->sttype[v] == B_st) {
+      if (cx.Tv[v] && fill_T)   TAtmp[v] = trckpt_deck_alloc(&cx, v);
+      pin_tr_inside_B(&cx, v, JA, LA, RA, TAtmp, NULL, NULL, NULL, NULL);
+    } else {
+      trckpt_tr_inside_deck(&cx, v, JA, LA, RA, NULL, NULL, NULL);
+    }
+    /* fold ROOT_S truncated begin: J/L/R for all v; T only for B states */
+    trckpt_tr_root_contrib(&cx, v, JA[v], LA[v], RA[v], &J0, &L0, &R0);
+    if (cm->sttype[v] == B_st && fill_T && cx.Tv[v] && cx.Tv[0]) {
+      if (L >= cx.jmin[v] && L <= cx.jmax[v]) {
+        int jpv = L - cx.jmin[v];
+        if (L >= cx.hdmin[v][jpv] && L <= cx.hdmax[v][jpv]) {
+          int Lpv = L - cx.hdmin[v][jpv];
+          float trp = cx.g_pty[v];
+          if (NOT_IMPOSSIBLE(trp)) T0 = FLogsum(T0, TAtmp[v][jpv][Lpv] + trp);
+        }
+      }
+    }
+    /* the B T-plane is consumed by the T0 fold only -> free immediately */
+    if (TAtmp[v]) { trckpt_deck_free(&cx, v, TAtmp[v]); TAtmp[v] = NULL; }
+    /* linear reclaim: free index y=v+Delta unless chain root or checkpoint seed */
+    int y = v + Delta;
+    if (y < M) {
+      int is_root = (cm->stid[y] == ROOT_S || cm->stid[y] == BEGL_S || cm->stid[y] == BEGR_S);
+      if (! is_root) {
+        int keep = ((y % B) < Delta);
+        if (! keep) {
+          if (JA[y]) { trckpt_deck_free(&cx, y, JA[y]); JA[y] = NULL; }
+          if (LA[y]) { trckpt_deck_free(&cx, y, LA[y]); LA[y] = NULL; }
+          if (RA[y]) { trckpt_deck_free(&cx, y, RA[y]); RA[y] = NULL; }
+        }
+      }
+    }
+  }
+  Z = (preset_mode==TRMODE_J) ? J0 : (preset_mode==TRMODE_L) ? L0 : (preset_mode==TRMODE_R) ? R0 : T0;
+
+  /* ============================================================= */
+  /* STEP B: checkpointed Outside + per-mode fused posterior        */
+  /* ============================================================= */
+  if ((status = cm_tr_hb_emit_mx_GrowTo(cm, emit_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  esl_vec_FSet(emit_mx->Jl_pp_mem, emit_mx->l_ncells_valid, IMPOSSIBLE);
+  if (fill_L) esl_vec_FSet(emit_mx->Ll_pp_mem, emit_mx->l_ncells_valid, IMPOSSIBLE);
+  esl_vec_FSet(emit_mx->Jr_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
+  if (fill_R) esl_vec_FSet(emit_mx->Rr_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
+  cx.Jl_pp = emit_mx->Jl_pp; cx.Ll_pp = emit_mx->Ll_pp;
+  cx.Jr_pp = emit_mx->Jr_pp; cx.Rr_pp = emit_mx->Rr_pp;
+
+  ESL_ALLOC(Jba, sizeof(float**) * M); ESL_ALLOC(Lba, sizeof(float**) * M); ESL_ALLOC(Rba, sizeof(float**) * M);
+  ESL_ALLOC(Jbb, sizeof(float**) * M); ESL_ALLOC(Lbb, sizeof(float**) * M); ESL_ALLOC(Rbb, sizeof(float**) * M);
+  for (v = 0; v < M; v++) { Jba[v]=Lba[v]=Rba[v]=Jbb[v]=Lbb[v]=Rbb[v]=NULL; }
+
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k * B;
+    int hi = ESL_MIN((k+1)*B - 1, M-1);
+    /* recompute inside alpha for [lo..hi], descending; children in-block (Jba)
+     * or retained roots/seeds (JA).  B reads its child roots from JA.          */
+    for (v = hi; v >= lo; v--) {
+      if (v == 0) continue;
+      if (cx.Jv[v])           Jba[v] = trckpt_deck_alloc(&cx, v);
+      if (cx.Lv[v] && fill_L) Lba[v] = trckpt_deck_alloc(&cx, v);
+      if (cx.Rv[v] && fill_R) Rba[v] = trckpt_deck_alloc(&cx, v);
+      if (cm->sttype[v] == B_st) pin_tr_inside_B(&cx, v, Jba, Lba, Rba, NULL, JA, LA, RA, NULL);
+      else                       trckpt_tr_inside_deck(&cx, v, Jba, Lba, Rba, JA, LA, RA);
+    }
+    /* outside ascending; fold posterior; free alpha + spent betas/roots as we go */
+    for (v = lo; v <= hi; v++) {
+      if (v == 0) continue;
+      int st = cm->sttype[v];
+      if (cx.Jv[v])           Jbb[v] = trckpt_deck_alloc(&cx, v);
+      if (cx.Lv[v] && fill_L) Lbb[v] = trckpt_deck_alloc(&cx, v);
+      if (cx.Rv[v] && fill_R) Rbb[v] = trckpt_deck_alloc(&cx, v);
+      if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S)
+        pin_tr_outside_Bchild(&cx, v, Jbb, Lbb, Rbb, NULL, JA, LA, RA, NULL);
+      else
+        trckpt_tr_outside_deck(&cx, v, Jbb, Lbb, Rbb);
+
+      /* --- per-mode fused posterior (mirror cm_TrEmitterPosteriorHB step 1) --- */
+      if (st==MP_st || st==ML_st || st==IL_st) { /* leftwise emitter -> Jl_pp/Ll_pp */
+        int j;
+        for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+          int jp = j - cx.jmin[v]; int d;
+          for (d = cx.hdmin[v][jp]; d <= cx.hdmax[v][jp]; d++) {
+            int dp = d - cx.hdmin[v][jp];
+            int i  = j - d + 1;
+            int ip = i - cx.imin[v];
+            if (cx.Jv[v])           emit_mx->Jl_pp[v][ip] = FLogsum(emit_mx->Jl_pp[v][ip], Jba[v][jp][dp] + Jbb[v][jp][dp] - Z);
+            if (cx.Lv[v] && fill_L) emit_mx->Ll_pp[v][ip] = FLogsum(emit_mx->Ll_pp[v][ip], Lba[v][jp][dp] + Lbb[v][jp][dp] - Z);
+          }
+        }
+      }
+      if (st==MP_st || st==MR_st || st==IR_st) { /* rightwise emitter -> Jr_pp/Rr_pp */
+        int j;
+        for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+          int jp = j - cx.jmin[v]; int d;
+          if (cx.Jv[v]) {
+            emit_mx->Jr_pp[v][jp] = Jba[v][jp][0] + Jbb[v][jp][0] - Z; /* peel d=hdmin */
+            for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) { int dp=d-cx.hdmin[v][jp];
+              emit_mx->Jr_pp[v][jp] = FLogsum(emit_mx->Jr_pp[v][jp], Jba[v][jp][dp] + Jbb[v][jp][dp] - Z); }
+          }
+          if (cx.Rv[v] && fill_R) {
+            emit_mx->Rr_pp[v][jp] = Rba[v][jp][0] + Rbb[v][jp][0] - Z; /* peel d=hdmin */
+            for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) { int dp=d-cx.hdmin[v][jp];
+              emit_mx->Rr_pp[v][jp] = FLogsum(emit_mx->Rr_pp[v][jp], Rba[v][jp][dp] + Rbb[v][jp][dp] - Z); }
+          }
+        }
+      }
+
+      /* free this state's recomputed alpha */
+      if (Jba[v]) { trckpt_deck_free(&cx, v, Jba[v]); Jba[v]=NULL; }
+      if (Lba[v]) { trckpt_deck_free(&cx, v, Lba[v]); Lba[v]=NULL; }
+      if (Rba[v]) { trckpt_deck_free(&cx, v, Rba[v]); Rba[v]=NULL; }
+      /* free a non-B beta now out of linear parent reach */
+      int old = v - Delta_p - 1;
+      if (old >= 0 && cm->sttype[old] != B_st) {
+        if (Jbb[old]) { trckpt_deck_free(&cx, old, Jbb[old]); Jbb[old]=NULL; }
+        if (Lbb[old]) { trckpt_deck_free(&cx, old, Lbb[old]); Lbb[old]=NULL; }
+        if (Rbb[old]) { trckpt_deck_free(&cx, old, Rbb[old]); Rbb[old]=NULL; }
+      }
+      /* bounded co-floor reclaim: once BOTH child chains of a bifurcation have
+       * had their root-state Outside computed, the parent B-beta + both child
+       * Inside roots have had their last read.  Trigger on the higher-indexed
+       * sibling (the model does NOT guarantee BEGL<BEGR -- 038 gotcha). */
+      if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) {
+        int yB   = cm->plast[v];   /* parent bifurcation               */
+        int begl = cm->cfirst[yB]; /* left  child Inside root          */
+        int begr = cm->cnum[yB];   /* right child Inside root (cnum=idx)*/
+        int second = (begl > begr) ? begl : begr;
+        if (v == second) {
+          if (Jbb[yB])   { trckpt_deck_free(&cx, yB,   Jbb[yB]);   Jbb[yB]=NULL; }
+          if (Lbb[yB])   { trckpt_deck_free(&cx, yB,   Lbb[yB]);   Lbb[yB]=NULL; }
+          if (Rbb[yB])   { trckpt_deck_free(&cx, yB,   Rbb[yB]);   Rbb[yB]=NULL; }
+          if (JA[begl])  { trckpt_deck_free(&cx, begl, JA[begl]);  JA[begl]=NULL; }
+          if (LA[begl])  { trckpt_deck_free(&cx, begl, LA[begl]);  LA[begl]=NULL; }
+          if (RA[begl])  { trckpt_deck_free(&cx, begl, RA[begl]);  RA[begl]=NULL; }
+          if (JA[begr])  { trckpt_deck_free(&cx, begr, JA[begr]);  JA[begr]=NULL; }
+          if (LA[begr])  { trckpt_deck_free(&cx, begr, LA[begr]);  LA[begr]=NULL; }
+          if (RA[begr])  { trckpt_deck_free(&cx, begr, RA[begr]);  RA[begr]=NULL; }
+        }
+      }
+    }
+  }
+  for (v = 0; v < M; v++) {
+    if (Jbb[v]) { trckpt_deck_free(&cx, v, Jbb[v]); Jbb[v]=NULL; }
+    if (Lbb[v]) { trckpt_deck_free(&cx, v, Lbb[v]); Lbb[v]=NULL; }
+    if (Rbb[v]) { trckpt_deck_free(&cx, v, Rbb[v]); Rbb[v]=NULL; }
+  }
+
+  /* EmitterPosterior step 2: sum + normalize (mirror stock order: per v, Jl, Ll,
+   * Jr, Rr).  EL deck (cm->M) N/A in global -g mode. */
+  esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
+  for (v = 0; v < M; v++) {
+    if (emit_mx->Jl_pp[v] && cx.Jv[v])             { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i],emit_mx->Jl_pp[v][ip]);} }
+    if (emit_mx->Ll_pp[v] && cx.Lv[v] && fill_L)   { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i],emit_mx->Ll_pp[v][ip]);} }
+    if (emit_mx->Jr_pp[v] && cx.Jv[v])             { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j],emit_mx->Jr_pp[v][jp]);} }
+    if (emit_mx->Rr_pp[v] && cx.Rv[v] && fill_R)   { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j],emit_mx->Rr_pp[v][jp]);} }
+  }
+  for (v = 0; v < M; v++) {
+    if (emit_mx->Jl_pp[v] && cx.Jv[v])             { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->Jl_pp[v][ip]-=emit_mx->sum[i];} }
+    if (emit_mx->Ll_pp[v] && cx.Lv[v] && fill_L)   { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->Ll_pp[v][ip]-=emit_mx->sum[i];} }
+    if (emit_mx->Jr_pp[v] && cx.Jv[v])             { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->Jr_pp[v][jp]-=emit_mx->sum[j];} }
+    if (emit_mx->Rr_pp[v] && cx.Rv[v] && fill_R)   { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->Rr_pp[v][jp]-=emit_mx->sum[j];} }
+  }
+
+  /* EmitterPosterior step 3: combine MATP_MP(v)/MATP_ML(v+1) l_pp and
+   * MATP_MP(v)/MATP_MR(v+2) r_pp in the same node (mirror stock exactly). */
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] == MP_st) {
+      if (cx.Jv[v] && cx.imax[v] >= 1 && cx.imax[v+1] >= 1) {
+        int in = ESL_MAX(cx.imin[v], cx.imin[v+1]);
+        int ix = ESL_MIN(cx.imax[v], cx.imax[v+1]); int i;
+        for (i = in; i <= ix; i++) {
+          int ip_v = i - cx.imin[v], ip_v2 = i - cx.imin[v+1];
+          emit_mx->Jl_pp[v][ip_v]    = FLogsum(emit_mx->Jl_pp[v][ip_v], emit_mx->Jl_pp[v+1][ip_v2]);
+          emit_mx->Jl_pp[v+1][ip_v2] = emit_mx->Jl_pp[v][ip_v];
+        }
+      }
+      if (cx.Lv[v] && fill_L && cx.imax[v] >= 1 && cx.imax[v+1] >= 1) {
+        int in = ESL_MAX(cx.imin[v], cx.imin[v+1]);
+        int ix = ESL_MIN(cx.imax[v], cx.imax[v+1]); int i;
+        for (i = in; i <= ix; i++) {
+          int ip_v = i - cx.imin[v], ip_v2 = i - cx.imin[v+1];
+          emit_mx->Ll_pp[v][ip_v]    = FLogsum(emit_mx->Ll_pp[v][ip_v], emit_mx->Ll_pp[v+1][ip_v2]);
+          emit_mx->Ll_pp[v+1][ip_v2] = emit_mx->Ll_pp[v][ip_v];
+        }
+      }
+      if (cx.Jv[v] && cx.jmax[v] >= 1 && cx.jmax[v+2] >= 1) {
+        int jn = ESL_MAX(cx.jmin[v], cx.jmin[v+2]);
+        int jx = ESL_MIN(cx.jmax[v], cx.jmax[v+2]); int j;
+        for (j = jn; j <= jx; j++) {
+          int jp_v = j - cx.jmin[v], jp_v2 = j - cx.jmin[v+2];
+          emit_mx->Jr_pp[v][jp_v]    = FLogsum(emit_mx->Jr_pp[v][jp_v], emit_mx->Jr_pp[v+2][jp_v2]);
+          emit_mx->Jr_pp[v+2][jp_v2] = emit_mx->Jr_pp[v][jp_v];
+        }
+      }
+      if (cx.Rv[v] && fill_R && cx.jmax[v] >= 1 && cx.jmax[v+2] >= 1) {
+        int jn = ESL_MAX(cx.jmin[v], cx.jmin[v+2]);
+        int jx = ESL_MIN(cx.jmax[v], cx.jmax[v+2]); int j;
+        for (j = jn; j <= jx; j++) {
+          int jp_v = j - cx.jmin[v], jp_v2 = j - cx.jmin[v+2];
+          emit_mx->Rr_pp[v][jp_v]    = FLogsum(emit_mx->Rr_pp[v][jp_v], emit_mx->Rr_pp[v+2][jp_v2]);
+          emit_mx->Rr_pp[v+2][jp_v2] = emit_mx->Rr_pp[v][jp_v];
+        }
+      }
+    }
+  }
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    double  full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
+    double  peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    int64_t ecells  = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
+    fprintf(stderr, "# cm_CheckptTrPostAlignHB: M=%d L=%d B=%d mode=%c Z=%.4f  CM-DP peak=%.2f Mb  full-IO-cube(2x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb  Bstate-cells(1x)=%.2f Mb\n",
+            M, L, B, (preset_mode==TRMODE_J)?'J':(preset_mode==TRMODE_L)?'L':(preset_mode==TRMODE_R)?'R':'T',
+            Z, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.,
+            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0), bstate_cells*4.0/(1024.0*1024.0));
+  }
+
+  for (v = 0; v < M; v++) { if (JA[v]) trckpt_deck_free(&cx, v, JA[v]); if (LA[v]) trckpt_deck_free(&cx, v, LA[v]); if (RA[v]) trckpt_deck_free(&cx, v, RA[v]); }
+  free(JA); free(LA); free(RA); free(TAtmp);
+  free(Jba); free(Lba); free(Rba); free(Jbb); free(Lbb); free(Rbb);
+  free(cx.deck_nc); free(cx.deck_njr);
+  if (ret_sc)   *ret_sc   = Z;
+  if (ret_mode) *ret_mode = preset_mode;
+  return eslOK;
+
+ ERROR:
+  if (JA)    { for (v = 0; v < M; v++) if (JA[v])    trckpt_deck_free(&cx, v, JA[v]);    free(JA); }
+  if (LA)    { for (v = 0; v < M; v++) if (LA[v])    trckpt_deck_free(&cx, v, LA[v]);    free(LA); }
+  if (RA)    { for (v = 0; v < M; v++) if (RA[v])    trckpt_deck_free(&cx, v, RA[v]);    free(RA); }
+  if (TAtmp) { for (v = 0; v < M; v++) if (TAtmp[v]) trckpt_deck_free(&cx, v, TAtmp[v]); free(TAtmp); }
+  if (Jba)   { for (v = 0; v < M; v++) if (Jba[v])   trckpt_deck_free(&cx, v, Jba[v]);   free(Jba); }
+  if (Lba)   { for (v = 0; v < M; v++) if (Lba[v])   trckpt_deck_free(&cx, v, Lba[v]);   free(Lba); }
+  if (Rba)   { for (v = 0; v < M; v++) if (Rba[v])   trckpt_deck_free(&cx, v, Rba[v]);   free(Rba); }
+  if (Jbb)   { for (v = 0; v < M; v++) if (Jbb[v])   trckpt_deck_free(&cx, v, Jbb[v]);   free(Jbb); }
+  if (Lbb)   { for (v = 0; v < M; v++) if (Lbb[v])   trckpt_deck_free(&cx, v, Lbb[v]);   free(Lbb); }
+  if (Rbb)   { for (v = 0; v < M; v++) if (Rbb[v])   trckpt_deck_free(&cx, v, Rbb[v]);   free(Rbb); }
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
   return status;
