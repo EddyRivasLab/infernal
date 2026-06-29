@@ -2085,6 +2085,7 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
   float **Rav = (Roa ? Roa[v] : NULL);
   int sd  = StateDelta(cm->sttype[v]);
   int sdr = StateRightDelta(cm->sttype[v]);
+  int sdl = StateLeftDelta(cm->sttype[v]);   /* rung-4 R4.3: MP left delta (sdl=1) */
   int nins_v = NumReachableInserts(cm->stid[v]);
   int do_J_v = Jv[v], do_L_v = (Lv[v] && fill_L), do_R_v = (Rv[v] && fill_R);
   int do_J_y, do_L_y, do_R_y;
@@ -2256,6 +2257,90 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
     return;
   }
 
+  /* MP (rung-4 R4.3): pair-emitter OptAcc.  Transcribed cell-for-cell from
+   * cm_TrOptAccAlignHB's MP_st block (max over children + yshadow record;
+   * emission folds the emit_mx posterior -- J: pair, L: left, R: right).
+   * sd=2, sdl=1, sdr=1.  B-state OA is handled by pin_tr_optacc_B(), not here. */
+  if (cm->sttype[v] == MP_st) {
+    int jn, jx, jpn, jpx, dn, dx, dpn, dpx, dp_y_sdl, dp_y_sdr;
+    if (do_J_v || do_L_v || do_R_v) {
+      for (yctr = 0; yctr < cm->cnum[v]; yctr++) {
+        yoffset = (yctr + nins_v) % cm->cnum[v]; y = cm->cfirst[v] + yoffset;
+        do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L); do_R_y = (Rv[y] && fill_R);
+        /* J: j-sdr, d-sd; reads J child only */
+        if (do_J_v && do_J_y) {
+          jn = ESL_MAX(jmin[v], jmin[y]+sdr); jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+          jpn = jn-jmin[v]; jpx = jx-jmin[v]; jp_y = jn-jmin[y]-sdr;
+          for (jp_v=jpn; jp_v<=jpx; jp_v++, jp_y++) {
+            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]+sd);
+            dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]+sd);
+            dpn = dn-hdmin[v][jp_v]; dpx = dx-hdmin[v][jp_v]; dp_y_sd = dn-hdmin[y][jp_y]-sd;
+            for (dp_v=dpn; dp_v<=dpx; dp_v++, dp_y_sd++)
+              if ((sc=JOA(y)[jp_y][dp_y_sd]) > Jav[jp_v][dp_v]) { Jav[jp_v][dp_v]=sc; if(Jshv) Jshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; }
+          }
+        }
+        /* L: j (no sdr), d-sdl; reads J and L child */
+        if (do_L_v && (do_J_y || do_L_y)) {
+          jn = ESL_MAX(jmin[v], jmin[y]); jx = ESL_MIN(jmax[v], jmax[y]);
+          jpn = jn-jmin[v]; jpx = jx-jmin[v]; jp_y = jn-jmin[y];
+          for (jp_v=jpn; jp_v<=jpx; jp_v++, jp_y++) {
+            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]+sdl);
+            dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]+sdl);
+            dpn = dn-hdmin[v][jp_v]; dpx = dx-hdmin[v][jp_v];
+            if (do_J_y) { dp_y_sdl = dn-hdmin[y][jp_y]-sdl;
+              for (dp_v=dpn; dp_v<=dpx; dp_v++, dp_y_sdl++)
+                if ((sc=JOA(y)[jp_y][dp_y_sdl]) > Lav[jp_v][dp_v]) { Lav[jp_v][dp_v]=sc; if(Lshv) Lshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; } }
+            if (do_L_y) { dp_y_sdl = dn-hdmin[y][jp_y]-sdl;
+              for (dp_v=dpn; dp_v<=dpx; dp_v++, dp_y_sdl++)
+                if ((sc=LOA(y)[jp_y][dp_y_sdl]) > Lav[jp_v][dp_v]) { Lav[jp_v][dp_v]=sc; if(Lshv) Lshv[jp_v][dp_v]=yoffset+TRMODE_L_OFFSET; } }
+          }
+        }
+        /* R: j-sdr, d-sdr; reads J and R child */
+        if (do_R_v && (do_J_y || do_R_y)) {
+          jn = ESL_MAX(jmin[v], jmin[y]+sdr); jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+          jpn = jn-jmin[v]; jpx = jx-jmin[v]; jp_y = jn-jmin[y]-sdr;
+          for (jp_v=jpn; jp_v<=jpx; jp_v++, jp_y++) {
+            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]+sdr);
+            dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]+sdr);
+            dpn = dn-hdmin[v][jp_v]; dpx = dx-hdmin[v][jp_v];
+            if (do_J_y) { dp_y_sdr = dn-hdmin[y][jp_y]-sdr;
+              for (dp_v=dpn; dp_v<=dpx; dp_v++, dp_y_sdr++)
+                if ((sc=JOA(y)[jp_y][dp_y_sdr]) > Rav[jp_v][dp_v]) { Rav[jp_v][dp_v]=sc; if(Rshv) Rshv[jp_v][dp_v]=yoffset+TRMODE_J_OFFSET; } }
+            if (do_R_y) { dp_y_sdr = dn-hdmin[y][jp_y]-sdr;
+              for (dp_v=dpn; dp_v<=dpx; dp_v++, dp_y_sdr++)
+                if ((sc=ROA(y)[jp_y][dp_y_sdr]) > Rav[jp_v][dp_v]) { Rav[jp_v][dp_v]=sc; if(Rshv) Rshv[jp_v][dp_v]=yoffset+TRMODE_R_OFFSET; } }
+          }
+        }
+      }
+    }
+    /* emission posterior + d<2 marginal/truncation-end handling */
+    if (do_J_v) for (j=jmin[v]; j<=jmax[v]; j++) { jp_v=j-jmin[v]; i=j-hdmin[v][jp_v]+1; ip_v=i-imin[v];
+      for (d=hdmin[v][jp_v], dp_v=0; d<=hdmax[v][jp_v]; d++, dp_v++, ip_v--) {
+        if (d>=2) Jav[jp_v][dp_v] = FLogsum(Jav[jp_v][dp_v], FLogsum(Jl_pp[v][ip_v], Jr_pp[v][jp_v]));
+        else      Jav[jp_v][dp_v] = IMPOSSIBLE; } }
+    if (do_L_v) for (j=jmin[v]; j<=jmax[v]; j++) { jp_v=j-jmin[v]; i=j-hdmin[v][jp_v]+1; ip_v=i-imin[v];
+      for (d=hdmin[v][jp_v], dp_v=0; d<=hdmax[v][jp_v]; d++, dp_v++, ip_v--) {
+        if (d>=2) Lav[jp_v][dp_v] = FLogsum(Lav[jp_v][dp_v], Ll_pp[v][ip_v]);
+        else { Lav[jp_v][dp_v] = Ll_pp[v][ip_v]; if (Lshv) Lshv[jp_v][dp_v]=USED_TRUNC_END; } } }
+    if (do_R_v) for (j=jmin[v]; j<=jmax[v]; j++) { jp_v=j-jmin[v];
+      for (d=hdmin[v][jp_v], dp_v=0; d<=hdmax[v][jp_v]; d++, dp_v++) {
+        if (d>=2) Rav[jp_v][dp_v] = FLogsum(Rav[jp_v][dp_v], Rr_pp[v][jp_v]);
+        else { Rav[jp_v][dp_v] = Rr_pp[v][jp_v]; if (Rshv) Rshv[jp_v][dp_v]=USED_TRUNC_END; } } }
+    /* ensure >= IMPOSSIBLE + (have_el FALSE in -g) USED_EL disallow */
+    if (do_J_v) for (j=jmin[v];j<=jmax[v];j++){ jp_v=j-jmin[v]; d=hdmin[v][jp_v];
+      for(dp_v=0;dp_v<=hdmax[v][jp_v]-hdmin[v][jp_v];dp_v++,d++){ Jav[jp_v][dp_v]=ESL_MAX(Jav[jp_v][dp_v],IMPOSSIBLE);
+        if(Jshv && Jshv[jp_v][dp_v]==(char)USED_EL && d>sd)  Jav[jp_v][dp_v]=IMPOSSIBLE; } }
+    if (do_L_v) for (j=jmin[v];j<=jmax[v];j++){ jp_v=j-jmin[v]; d=hdmin[v][jp_v];
+      for(dp_v=0;dp_v<=hdmax[v][jp_v]-hdmin[v][jp_v];dp_v++,d++){ Lav[jp_v][dp_v]=ESL_MAX(Lav[jp_v][dp_v],IMPOSSIBLE);
+        if(Lshv && Lshv[jp_v][dp_v]==(char)USED_EL && d>sdl) Lav[jp_v][dp_v]=IMPOSSIBLE; } }
+    if (do_R_v) for (j=jmin[v];j<=jmax[v];j++){ jp_v=j-jmin[v]; d=hdmin[v][jp_v];
+      for(dp_v=0;dp_v<=hdmax[v][jp_v]-hdmin[v][jp_v];dp_v++,d++){ Rav[jp_v][dp_v]=ESL_MAX(Rav[jp_v][dp_v],IMPOSSIBLE);
+        if(Rshv && Rshv[jp_v][dp_v]==(char)USED_EL && d>sdr) Rav[jp_v][dp_v]=IMPOSSIBLE; } }
+    return;
+  }
+
+  if (cm->sttype[v] == B_st) return; /* rung-4: B handled by pin_tr_optacc_B(), not here */
+
   /* D, S */
   {
     int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
@@ -2312,6 +2397,111 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
 #undef JOA
 #undef LOA
 #undef ROA
+}
+
+/* rung-4 (R4.3): pinned OptAcc B-state v.  The OA analogue of pin_tr_inside_B:
+ * the trunc-D&C parse fixes (kind,k*,bmode,lmode,rmode); the over-k max collapses
+ * to ONE k, in ONE plane (bmode), reading the left child y in plane <lmode> and
+ * the right child z in plane <rmode>.  OptAcc accumulates posterior MASS, so the
+ * combine is FLogsum (sum of the two subtree OA values), not a +tsc product:
+ *
+ *   INTERIOR :  OA_bmode_v[j][d] = max(., FLogsum(OA_lmode_y[j-k*][d-k*], OA_rmode_z[j][k*]))
+ *               guarded by NOT_IMPOSSIBLE on both subtrees (mirrors the oracle's
+ *               i15 length-0 validity guard; for INTERIOR 0<k*<d so the
+ *               d==k/k==0 escapes never apply, leaving the both-NOT_IMPOSSIBLE form)
+ *   LEFT_FULL :  OA_bmode_v[j][d] = max(., OA_lmode_y[j][d])  (right empty, k=0)
+ *   RIGHT_FULL:  OA_bmode_v[j][d] = max(., OA_rmode_z[j][d])  (left  empty, k=d)
+ *
+ * NO kshadow / yshadow is written: the pinned-tree traceback splits at kpin[v]
+ * and reads child modes from blmode/brmode (pin-B obviates the OA-voutside, 030).
+ * sqrt(M): child roots may live in the retained store (Jck/...) -- fall back per
+ * child, exactly as pin_tr_inside_B.  Unreached B (kind==0) keeps planes IMPOSSIBLE. */
+static void
+pin_tr_optacc_B(TR_CKPT_CTX *cx, int v,
+                float ***Jd, float ***Ld, float ***Rd, float ***Td,
+                float ***Jck, float ***Lck, float ***Rck, float ***Tck)
+{
+  CM_t *cm = cx->cm;
+  int   *jmin = cx->jmin, *jmax = cx->jmax;
+  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  int    y = cm->cfirst[v];   /* BEGL_S, left  subtree */
+  int    z = cm->cnum[v];     /* BEGR_S, right subtree */
+  int    do_J_v = cx->Jv[v], do_L_v = (cx->Lv[v] && cx->fill_L);
+  int    do_R_v = (cx->Rv[v] && cx->fill_R), do_T_v = (cx->Tv[v] && cx->fill_T);
+  int    kind = cx->bkind ? cx->bkind[v] : 0;
+  int    j, d, k, jp_v, jp_y, jp_z, dp_v, dp_y, kp_z;
+  float  sc;
+
+  if (do_J_v) trckpt_deck_init_impossible(cx, v, Jd[v]);
+  if (do_L_v) trckpt_deck_init_impossible(cx, v, Ld[v]);
+  if (do_R_v) trckpt_deck_init_impossible(cx, v, Rd[v]);
+  if (do_T_v && Td) trckpt_deck_init_impossible(cx, v, Td[v]);
+
+  if (kind == 0) return;  /* unreached: planes stay IMPOSSIBLE */
+
+  {
+    char  bmode = cx->bbmode[v], lmode = cx->blmode[v], rmode = cx->brmode[v];
+    int   kstar = cx->kpin[v];
+    float ***Pb = trckpt_mode_decks(bmode, Jd, Ld, Rd, Td);
+    float ***Py = trckpt_mode_decks(lmode, Jd, Ld, Rd, Td);
+    float ***Pz = trckpt_mode_decks(rmode, Jd, Ld, Rd, Td);
+    float ***Pyck = trckpt_mode_decks(lmode, Jck, Lck, Rck, Tck);
+    float ***Pzck = trckpt_mode_decks(rmode, Jck, Lck, Rck, Tck);
+    if (Pb == NULL || Py == NULL) return;
+    float **Pbv = Pb[v];
+    float **Pyy = (Py[y] != NULL) ? Py[y] : (Pyck ? Pyck[y] : NULL);
+    float **Pzz = (Pz != NULL && Pz[z] != NULL) ? Pz[z] : (Pzck ? Pzck[z] : NULL);
+
+    if (kind == 1) {  /* INTERIOR */
+      int jn = ESL_MAX(jmin[v], jmin[z]);
+      int jx = ESL_MIN(jmax[v], jmax[z]);
+      for (j = jn; j <= jx; j++) {
+        jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
+        int kn = ESL_MAX(ESL_MAX(j - jmax[y], hdmin[z][jp_z]), 0);
+        int kx = ESL_MIN(jp_y, hdmax[z][jp_z]);
+        if (kstar < kn || kstar > kx) continue;
+        k = kstar;
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          dp_v = d - hdmin[v][jp_v];
+          if (k > d) continue;
+          if ((k >= d - hdmax[y][jp_y-k]) && (k <= d - hdmin[y][jp_y-k])) {
+            kp_z = k - hdmin[z][jp_z];
+            dp_y = d - hdmin[y][jp_y-k];
+            if (NOT_IMPOSSIBLE(Pyy[jp_y-k][dp_y-k]) && NOT_IMPOSSIBLE(Pzz[jp_z][kp_z])) {
+              sc = FLogsum(Pyy[jp_y-k][dp_y-k], Pzz[jp_z][kp_z]);
+              if (sc > Pbv[jp_v][dp_v]) Pbv[jp_v][dp_v] = sc;
+            }
+          }
+        }
+      }
+    }
+    else if (kind == 2) {  /* LEFT_FULL: right child empty */
+      int jn = ESL_MAX(jmin[v], jmin[y]);
+      int jx = ESL_MIN(jmax[v], jmax[y]);
+      for (j = jn; j <= jx; j++) {
+        jp_v = j - jmin[v]; jp_y = j - jmin[y];
+        int dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
+        int dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+        for (d = dn; d <= dx; d++) {
+          dp_v = d - hdmin[v][jp_v]; dp_y = d - hdmin[y][jp_y];
+          if ((sc = Pyy[jp_y][dp_y]) > Pbv[jp_v][dp_v]) Pbv[jp_v][dp_v] = sc;
+        }
+      }
+    }
+    else if (kind == 3) {  /* RIGHT_FULL: left child empty */
+      int jn = ESL_MAX(jmin[v], jmin[z]);
+      int jx = ESL_MIN(jmax[v], jmax[z]);
+      for (j = jn; j <= jx; j++) {
+        jp_v = j - jmin[v]; jp_z = j - jmin[z];
+        int dn = ESL_MAX(hdmin[v][jp_v], hdmin[z][jp_z]);
+        int dx = ESL_MIN(hdmax[v][jp_v], hdmax[z][jp_z]);
+        for (d = dn; d <= dx; d++) {
+          dp_v = d - hdmin[v][jp_v]; int dp_z = d - hdmin[z][jp_z];
+          if ((sc = Pzz[jp_z][dp_z]) > Pbv[jp_v][dp_v]) Pbv[jp_v][dp_v] = sc;
+        }
+      }
+    }
+  }
 }
 
 /* Function: cm_CheckptTrAlignHB_Qualifies()
@@ -3297,6 +3487,557 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   if (Rbb)   { for (v = 0; v < M; v++) if (Rbb[v])   trckpt_deck_free(&cx, v, Rbb[v]);   free(Rbb); }
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  return status;
+}
+
+/* ===================================================================== *
+ * rung-4 R4.3: PINNED truncated STRUCTURED OptAcc + pinned-tree traceback
+ * ===================================================================== */
+
+/* mode-aware yshadow fetch callback: returns the J/L/R yshadow char for
+ * (v, mode, jp_v, dp_v).  Two implementations: full-storage (pin) reads the
+ * resident shadow planes; sqrt(M) (ckpt) block-recomputes the OA deck+yshadow. */
+typedef char (*tr_ysh_fetch_fn)(void *ctx, int v, char mode, int jp_v, int dp_v);
+
+typedef struct { char ***Jsh, ***Lsh, ***Rsh; } tr_pin_ysh_ctx;
+static char
+tr_pin_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
+{
+  tr_pin_ysh_ctx *c = (tr_pin_ysh_ctx *) p;
+  char ***sh = (mode==TRMODE_J) ? c->Jsh : (mode==TRMODE_L) ? c->Lsh : c->Rsh;
+  return sh[v][jp_v][dp_v];
+}
+
+typedef struct {
+  TR_CKPT_CTX *cx; int M, B;
+  float ***JAoa, ***LAoa, ***RAoa;  /* retained OA roots + sqrt(M) seeds */
+  float ***tJa, ***tLa, ***tRa;     /* recompute-window OA decks         */
+  char  ***tJs, ***tLs, ***tRs;     /* recompute-window yshadows         */
+  int cur_blk, blk_lo, blk_hi;
+} tr_ckpt_ysh_ctx;
+static char
+tr_ckpt_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
+{
+  tr_ckpt_ysh_ctx *c = (tr_ckpt_ysh_ctx *) p;
+  TR_CKPT_CTX *cx = c->cx;
+  CM_t *cm = cx->cm;
+  int blk = v / c->B;
+  if (blk != c->cur_blk) {
+    int w;
+    for (w = c->blk_lo; w <= c->blk_hi; w++) {
+      if (c->tJa[w]) { trckpt_deck_free(cx,w,c->tJa[w]); c->tJa[w]=NULL; }
+      if (c->tLa[w]) { trckpt_deck_free(cx,w,c->tLa[w]); c->tLa[w]=NULL; }
+      if (c->tRa[w]) { trckpt_deck_free(cx,w,c->tRa[w]); c->tRa[w]=NULL; }
+      if (c->tJs[w]) { trckpt_cdeck_free(cx,w,c->tJs[w]); c->tJs[w]=NULL; }
+      if (c->tLs[w]) { trckpt_cdeck_free(cx,w,c->tLs[w]); c->tLs[w]=NULL; }
+      if (c->tRs[w]) { trckpt_cdeck_free(cx,w,c->tRs[w]); c->tRs[w]=NULL; }
+    }
+    c->cur_blk = blk; c->blk_lo = blk * c->B; c->blk_hi = ESL_MIN((blk+1)*c->B - 1, c->M-1);
+    for (w = c->blk_hi; w >= c->blk_lo; w--) {
+      if (w == 0) continue;
+      if (cx->Jv[w])              c->tJa[w] = trckpt_deck_alloc(cx, w);
+      if (cx->Lv[w] && cx->fill_L) c->tLa[w] = trckpt_deck_alloc(cx, w);
+      if (cx->Rv[w] && cx->fill_R) c->tRa[w] = trckpt_deck_alloc(cx, w);
+      if (cm->sttype[w] == B_st) {
+        /* recompute B's OA value (J/L/R bmode plane) reading child roots from
+         * the retained store; the entry-B's T plane is not needed in traceback. */
+        pin_tr_optacc_B(cx, w, c->tJa, c->tLa, c->tRa, NULL,
+                                c->JAoa, c->LAoa, c->RAoa, NULL);
+      } else {
+        if (cx->Jv[w])               c->tJs[w] = trckpt_cdeck_alloc(cx, w);
+        if (cx->Lv[w] && cx->fill_L) c->tLs[w] = trckpt_cdeck_alloc(cx, w);
+        if (cx->Rv[w] && cx->fill_R) c->tRs[w] = trckpt_cdeck_alloc(cx, w);
+        trckpt_tr_optacc_deck(cx, w, c->tJa, c->tLa, c->tRa,
+                              c->JAoa, c->LAoa, c->RAoa, c->tJs[w], c->tLs[w], c->tRs[w]);
+      }
+    }
+  }
+  { char ***sh = (mode==TRMODE_J) ? c->tJs : (mode==TRMODE_L) ? c->tLs : c->tRs;
+    return sh[v][jp_v][dp_v]; }
+}
+
+/* Shared mode-aware pinned-tree OptAcc traceback.  Merges cm_tr_alignT_hb's
+ * bifurcation stack + d==0 BEGL/BEGR special case (pinned: B splits at kpin[v],
+ * child modes from blmode/brmode -- T->{R-left, L-right}) with the per-mode
+ * yshadow descent (mode/nxtmode, TRMODE offsets, mode-aware i/j/d updates).
+ * yshadow obtained via <fetch>.  GLOBAL, do_optacc.  pin-B obviates the
+ * OA-voutside: a B reads only kpin[v] + the pinned child modes (030 Q3.3). */
+static int
+trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int b,
+                           int *bkind, int *kpin, char *blmode, char *brmode,
+                           int *jmin, int *jmax, int **hdmin, int **hdmax,
+                           tr_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
+{
+  int status;
+  Parsetree_t *tr = NULL;
+  ESL_STACK *pda_i = NULL, *pda_c = NULL;
+  int v, i, j, d, k, y, yoffset, bifparent;
+  int jp_v = 0, dp_v = 0;
+  char mode, nxtmode;
+  int allow_S_trunc_end, allow_S_local_end;
+  CP9Bands_t *cp9b = cm->cp9b;
+
+  tr = CreateParsetree(100);
+  if (tr == NULL) { status = eslEMEM; goto ERROR; }
+  InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, preset_mode);
+  pda_i = esl_stack_ICreate();
+  pda_c = esl_stack_CCreate();
+  if (pda_i == NULL || pda_c == NULL) { status = eslEMEM; goto ERROR; }
+  v = 0; i = 1; j = d = L; mode = preset_mode; nxtmode = preset_mode;
+
+  while (1) {
+    allow_S_trunc_end = FALSE; allow_S_local_end = FALSE;
+    if ((cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) && d == 0 &&
+        ((mode == TRMODE_J && (! cp9b->Jvalid[v])) ||
+         (mode == TRMODE_L && (! cp9b->Lvalid[v])) ||
+         (mode == TRMODE_R && (! cp9b->Rvalid[v])) ||
+         (j < jmin[v]             || j > jmax[v]) ||
+         (d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) {
+      if ((cm->stid[v] == BEGL_S && mode == TRMODE_R) || (cm->stid[v] == BEGR_S && mode == TRMODE_L))
+        allow_S_trunc_end = TRUE;
+      else
+        allow_S_local_end = TRUE; /* do_optacc */
+    }
+    else if (cm->sttype[v] != EL_st) {
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    }
+
+    if (cm->sttype[v] == B_st) {
+      int kind = (bkind != NULL) ? bkind[v] : 0;
+      if (kind == 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "trckpt_tr_optacc_traceback: B state v=%d not pinned", v);
+      /* INTERIOR/LEFT_FULL use kpin[v] (kstar or 0); RIGHT_FULL: left child empty -> k=d */
+      k = (kind == 3) ? d : kpin[v];
+      /* push the right child (BEGR) for later; descend left (BEGL) now */
+      mode = brmode[v];
+      if ((status = esl_stack_CPush(pda_c, mode))    != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda_i, j))       != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda_i, k))       != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda_i, tr->n-1)) != eslOK) goto ERROR;
+      mode = blmode[v];
+      j = j - k; d = d - k; i = j - d + 1;
+      y = cm->cfirst[v];
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
+      v = y;
+    }
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      if (esl_stack_IPop(pda_i, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda_i, &d);
+      esl_stack_IPop(pda_i, &j);
+      esl_stack_CPop(pda_c, &mode);
+      v = tr->state[bifparent];
+      y = cm->cnum[v];
+      i = j - d + 1;
+      InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, mode);
+      v = y;
+    }
+    else {
+      if      (allow_S_trunc_end) yoffset = USED_TRUNC_END;
+      else if (allow_S_local_end) yoffset = USED_EL;
+      else if (v == 0)            yoffset = USED_TRUNC_BEGIN;
+      else                        yoffset = fetch(fctx, v, mode, jp_v, dp_v);
+      if      (yoffset == USED_TRUNC_BEGIN) { nxtmode = mode; }
+      else if (yoffset == USED_TRUNC_END)   { }
+      else if (yoffset == USED_EL)          { }
+      else if (yoffset >= TRMODE_R_OFFSET)  { nxtmode = TRMODE_R; yoffset -= TRMODE_R_OFFSET; }
+      else if (yoffset >= TRMODE_L_OFFSET)  { nxtmode = TRMODE_L; yoffset -= TRMODE_L_OFFSET; }
+      else                                  { nxtmode = TRMODE_J; yoffset -= TRMODE_J_OFFSET; }
+      switch (cm->sttype[v]) {
+      case D_st:  break;
+      case MP_st: if (mode==TRMODE_J) i++; if (mode==TRMODE_L && d>0) i++; if (mode==TRMODE_J) j--; if (mode==TRMODE_R && d>0) j--; break;
+      case ML_st: if (mode==TRMODE_J) i++; if (mode==TRMODE_L && d>0) i++; break;
+      case MR_st: if (mode==TRMODE_J) j--; if (mode==TRMODE_R && d>0) j--; break;
+      case IL_st: if (mode==TRMODE_J) i++; if (mode==TRMODE_L && d>0) i++; break;
+      case IR_st: if (mode==TRMODE_J) j--; if (mode==TRMODE_R && d>0) j--; break;
+      case S_st:  break;
+      default: ESL_XFAIL(eslEINVAL, errbuf, "trckpt_tr_optacc_traceback: bogus state type v=%d", v);
+      }
+      d = j - i + 1;
+      if (yoffset == USED_EL || yoffset == USED_TRUNC_END) {
+        if (yoffset == USED_EL) InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
+        v = cm->M;
+      } else if (yoffset == USED_TRUNC_BEGIN) {
+        InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, mode);
+        v = b;
+      } else {
+        mode = nxtmode;
+        y = cm->cfirst[v] + yoffset;
+        InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
+        v = y;
+      }
+    }
+  }
+  esl_stack_Destroy(pda_i);
+  esl_stack_Destroy(pda_c);
+  *ret_tr = tr;
+  return eslOK;
+
+ ERROR:
+  if (pda_i) esl_stack_Destroy(pda_i);
+  if (pda_c) esl_stack_Destroy(pda_c);
+  if (tr)    FreeParsetree(tr);
+  return status;
+}
+
+/* Function: cm_PinTrOptAccAlignHB()
+ *           EPN 2026 [brief 055, rung R4.3]
+ *
+ * Purpose:  Full-storage PINNED truncated structured (bps>0) OptAcc + pinned-tree
+ *           traceback (the byte-exact correctness anchor for the sqrt(M) wrap).
+ *           Runs the per-mode (J/L/R, plus the begin-scalar T at the entry
+ *           bifurcation) OptAcc max-DP (trckpt_tr_optacc_deck for non-B,
+ *           pin_tr_optacc_B for B) into full per-state decks reading the pre-filled
+ *           <emit_mx> posterior, resolves the entry state b + score in the resolved
+ *           mode, then the mode-aware pinned-tree traceback -> parsetree + per-residue
+ *           PP (via cm_TrPostCodeHB).  The truncated analogue of rung-3's
+ *           cm_PinOptAccAlignHB (brief 039).  GLOBAL, no local ends.
+ *
+ * Returns:  <eslOK> on success; *ret_tr parsetree, *ret_ppstr PP string,
+ *           *ret_mode = preset_mode, *ret_avgpp avg PP, *ret_pp OA score (avg PP).
+ */
+int
+cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                      char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx,
+                      int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode,
+                      char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode,
+                      float *ret_avgpp, float *ret_pp)
+{
+  int      status;
+  TR_CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, pty_idx, fill_L, fill_R, fill_T;
+  float ***Joa=NULL, ***Loa=NULL, ***Roa=NULL, ***Toa=NULL;
+  char  ***Jsh=NULL, ***Lsh=NULL, ***Rsh=NULL;
+  Parsetree_t *tr = NULL;
+  char    *ppstr = NULL;
+  float    avgpp = 0., pp = 0.;
+  float    oaJ0=IMPOSSIBLE, oaL0=IMPOSSIBLE, oaR0=IMPOSSIBLE, oaT0=IMPOSSIBLE;
+  int      b = 0;
+  tr_pin_ysh_ctx fctx;
+
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrOptAccAlignHB(): emit_mx is NULL");
+  if ((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrOptAccAlignHB(): bad pass_idx %d", pass_idx);
+  if (preset_mode != TRMODE_J && preset_mode != TRMODE_L && preset_mode != TRMODE_R && preset_mode != TRMODE_T)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrOptAccAlignHB(): preset_mode must be resolved (J/L/R/T)");
+  if ((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin;  cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
+  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  cx.preset_mode = preset_mode;
+  cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
+  cx.Jl_pp = emit_mx->Jl_pp; cx.Ll_pp = emit_mx->Ll_pp; cx.Jr_pp = emit_mx->Jr_pp; cx.Rr_pp = emit_mx->Rr_pp;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+  cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrOptAccAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrOptAccAlignHB(): L outside ROOT_S d band");
+
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+  }
+
+  ESL_ALLOC(Joa, sizeof(float**) * M); ESL_ALLOC(Loa, sizeof(float**) * M);
+  ESL_ALLOC(Roa, sizeof(float**) * M); ESL_ALLOC(Toa, sizeof(float**) * M);
+  ESL_ALLOC(Jsh, sizeof(char**)  * M); ESL_ALLOC(Lsh, sizeof(char**)  * M); ESL_ALLOC(Rsh, sizeof(char**) * M);
+  for (v = 0; v < M; v++) { Joa[v]=Loa[v]=Roa[v]=Toa[v]=NULL; Jsh[v]=Lsh[v]=Rsh[v]=NULL; }
+
+  for (v = M-1; v >= 1; v--) {
+    if (cx.Jv[v])              Joa[v] = trckpt_deck_alloc(&cx, v);
+    if (cx.Lv[v] && fill_L)    Loa[v] = trckpt_deck_alloc(&cx, v);
+    if (cx.Rv[v] && fill_R)    Roa[v] = trckpt_deck_alloc(&cx, v);
+    if (cm->sttype[v] == B_st) {
+      if (cx.Tv[v] && fill_T)  Toa[v] = trckpt_deck_alloc(&cx, v);
+      pin_tr_optacc_B(&cx, v, Joa, Loa, Roa, Toa, NULL, NULL, NULL, NULL);
+      /* T-mode entry resolution from the (transient) B T-plane */
+      if (preset_mode == TRMODE_T && fill_T && Toa[v] && L >= cx.jmin[v] && L <= cx.jmax[v]) {
+        int jpv = L - cx.jmin[v];
+        if (L >= cx.hdmin[v][jpv] && L <= cx.hdmax[v][jpv] && NOT_IMPOSSIBLE(cx.g_pty[v])) {
+          int Lpv = L - cx.hdmin[v][jpv];
+          if (Toa[v][jpv][Lpv] > oaT0) { oaT0 = Toa[v][jpv][Lpv]; b = v; }
+        }
+      }
+      if (Toa[v]) { trckpt_deck_free(&cx, v, Toa[v]); Toa[v] = NULL; }
+    } else {
+      if (cx.Jv[v])            Jsh[v] = trckpt_cdeck_alloc(&cx, v);
+      if (cx.Lv[v] && fill_L)  Lsh[v] = trckpt_cdeck_alloc(&cx, v);
+      if (cx.Rv[v] && fill_R)  Rsh[v] = trckpt_cdeck_alloc(&cx, v);
+      trckpt_tr_optacc_deck(&cx, v, Joa, Loa, Roa, NULL, NULL, NULL, Jsh[v], Lsh[v], Rsh[v]);
+    }
+    /* J/L/R entry resolution (only the preset_mode branch fires) */
+    if (L >= cx.jmin[v] && L <= cx.jmax[v]) {
+      int jpv = L - cx.jmin[v];
+      if (L >= cx.hdmin[v][jpv] && L <= cx.hdmax[v][jpv] && NOT_IMPOSSIBLE(cx.g_pty[v])) {
+        int Lpv = L - cx.hdmin[v][jpv];
+        if (preset_mode==TRMODE_J && cx.Jv[v]           && Joa[v][jpv][Lpv] > oaJ0) { oaJ0=Joa[v][jpv][Lpv]; b=v; }
+        if (preset_mode==TRMODE_L && cx.Lv[v] && fill_L && Loa[v][jpv][Lpv] > oaL0) { oaL0=Loa[v][jpv][Lpv]; b=v; }
+        if (preset_mode==TRMODE_R && cx.Rv[v] && fill_R && Roa[v][jpv][Lpv] > oaR0) { oaR0=Roa[v][jpv][Lpv]; b=v; }
+      }
+    }
+  }
+  { float best = (preset_mode==TRMODE_J)?oaJ0 : (preset_mode==TRMODE_L)?oaL0 : (preset_mode==TRMODE_R)?oaR0 : oaT0;
+    pp = sreEXP2(best) / (float) L; }
+
+  fctx.Jsh = Jsh; fctx.Lsh = Lsh; fctx.Rsh = Rsh;
+  if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, bkind, kpin, blmode, brmode,
+                                           cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                           tr_pin_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+
+  if ((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    int64_t cube=0; for (v=0;v<M;v++) cube += cx.deck_nc[v];
+    fprintf(stderr, "# cm_PinTrOptAccAlignHB: M=%d L=%d mode=%c pp=%.5f  full-OA-cube(1x)=%.2f Mb\n",
+            M, L, (preset_mode==TRMODE_J)?'J':(preset_mode==TRMODE_L)?'L':(preset_mode==TRMODE_R)?'R':'T',
+            pp, cube*4.0/(1024.0*1024.0));
+  }
+
+  for (v = 0; v < M; v++) {
+    if (Joa[v]) trckpt_deck_free(&cx, v, Joa[v]);
+    if (Loa[v]) trckpt_deck_free(&cx, v, Loa[v]);
+    if (Roa[v]) trckpt_deck_free(&cx, v, Roa[v]);
+    if (Toa[v]) trckpt_deck_free(&cx, v, Toa[v]);
+    if (Jsh[v]) trckpt_cdeck_free(&cx, v, Jsh[v]);
+    if (Lsh[v]) trckpt_cdeck_free(&cx, v, Lsh[v]);
+    if (Rsh[v]) trckpt_cdeck_free(&cx, v, Rsh[v]);
+  }
+  free(Joa); free(Loa); free(Roa); free(Toa); free(Jsh); free(Lsh); free(Rsh);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
+  if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
+  if (ret_mode  != NULL) *ret_mode  = preset_mode;
+  if (ret_avgpp != NULL) *ret_avgpp = avgpp;
+  if (ret_pp    != NULL) *ret_pp    = pp;
+  return eslOK;
+
+ ERROR:
+  if (Joa) { for (v=0;v<M;v++) if (Joa[v]) trckpt_deck_free(&cx,v,Joa[v]); free(Joa); }
+  if (Loa) { for (v=0;v<M;v++) if (Loa[v]) trckpt_deck_free(&cx,v,Loa[v]); free(Loa); }
+  if (Roa) { for (v=0;v<M;v++) if (Roa[v]) trckpt_deck_free(&cx,v,Roa[v]); free(Roa); }
+  if (Toa) { for (v=0;v<M;v++) if (Toa[v]) trckpt_deck_free(&cx,v,Toa[v]); free(Toa); }
+  if (Jsh) { for (v=0;v<M;v++) if (Jsh[v]) trckpt_cdeck_free(&cx,v,Jsh[v]); free(Jsh); }
+  if (Lsh) { for (v=0;v<M;v++) if (Lsh[v]) trckpt_cdeck_free(&cx,v,Lsh[v]); free(Lsh); }
+  if (Rsh) { for (v=0;v<M;v++) if (Rsh[v]) trckpt_cdeck_free(&cx,v,Rsh[v]); free(Rsh); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr)    FreeParsetree(tr);
+  if (ppstr) free(ppstr);
+  return status;
+}
+
+/* Function: cm_CheckptTrOptAccAlignHB()
+ *           EPN 2026 [brief 055, rung R4.3]
+ *
+ * Purpose:  sqrt(M)-memory PINNED truncated structured (bps>0) OptAcc + pinned-tree
+ *           traceback.  Same parsetree + PP + OA score as cm_PinTrOptAccAlignHB but
+ *           with a sqrt(M)-bounded OA working set per bifurcation-free chain.
+ *
+ *             STEP OA : checkpointed OA max-DP (descending), B via pin_tr_optacc_B
+ *                       reading child roots from the retained store; chain roots
+ *                       (ROOT_S/BEGL_S/BEGR_S) never auto-freed + sqrt(M) seeds;
+ *                       Delta (child reach) EXCLUDES B and E.  Resolves entry b +
+ *                       score (T from the transient B T-plane).
+ *             STEP TB : mode-aware pinned-tree traceback with the yshadow
+ *                       block-recomputed on demand from the store.  B splits at
+ *                       kpin[v]; no OA-outside, no 3D OA kshadow.
+ *
+ *           Byte-exact vs cm_PinTrOptAccAlignHB by construction (identical
+ *           recurrences + descent; allocation-only).  GLOBAL, no local ends.
+ *           The truncated analogue of rung-3's cm_CheckptOptAccAlignHB (brief 039).
+ */
+int
+cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                          char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx,
+                          int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode,
+                          char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode,
+                          float *ret_avgpp, float *ret_pp)
+{
+  int      status;
+  TR_CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, pty_idx, fill_L, fill_R, fill_T;
+  float ***JAoa=NULL, ***LAoa=NULL, ***RAoa=NULL, ***Toa=NULL;
+  float ***tJa=NULL, ***tLa=NULL, ***tRa=NULL;
+  char  ***tJs=NULL, ***tLs=NULL, ***tRs=NULL;
+  Parsetree_t *tr = NULL;
+  char    *ppstr = NULL;
+  float    avgpp = 0., pp = 0.;
+  float    oaJ0=IMPOSSIBLE, oaL0=IMPOSSIBLE, oaR0=IMPOSSIBLE, oaT0=IMPOSSIBLE;
+  int      b = 0;
+  tr_ckpt_ysh_ctx fctx;
+
+  if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrOptAccAlignHB(): emit_mx is NULL");
+  if ((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrOptAccAlignHB(): bad pass_idx %d", pass_idx);
+  if (preset_mode != TRMODE_J && preset_mode != TRMODE_L && preset_mode != TRMODE_R && preset_mode != TRMODE_T)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrOptAccAlignHB(): preset_mode must be resolved (J/L/R/T)");
+  if ((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK) return status;
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin;  cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
+  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  cx.preset_mode = preset_mode;
+  cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
+  cx.Jl_pp = emit_mx->Jl_pp; cx.Ll_pp = emit_mx->Ll_pp; cx.Jr_pp = emit_mx->Jr_pp; cx.Rr_pp = emit_mx->Rr_pp;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+  cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrOptAccAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrOptAccAlignHB(): L outside ROOT_S d band");
+
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int64_t full_cube_cells = 0, root_cells = 0;
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    int modes = (cx.Jv[v]?1:0) + ((cx.Lv[v]&&fill_L)?1:0) + ((cx.Rv[v]&&fill_R)?1:0);
+    full_cube_cells += (int64_t) modes * nc;
+    if (cm->stid[v]==ROOT_S || cm->stid[v]==BEGL_S || cm->stid[v]==BEGR_S) root_cells += nc;
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* ============================================================= */
+  /* STEP OA: checkpointed OA max-DP -> roots + sqrt(M) seeds + b   */
+  /* ============================================================= */
+  ESL_ALLOC(JAoa, sizeof(float**) * M); ESL_ALLOC(LAoa, sizeof(float**) * M);
+  ESL_ALLOC(RAoa, sizeof(float**) * M); ESL_ALLOC(Toa,  sizeof(float**) * M);
+  for (v = 0; v < M; v++) { JAoa[v]=LAoa[v]=RAoa[v]=Toa[v]=NULL; }
+  for (v = M-1; v >= 1; v--) {
+    if (cx.Jv[v])              JAoa[v] = trckpt_deck_alloc(&cx, v);
+    if (cx.Lv[v] && fill_L)    LAoa[v] = trckpt_deck_alloc(&cx, v);
+    if (cx.Rv[v] && fill_R)    RAoa[v] = trckpt_deck_alloc(&cx, v);
+    if (cm->sttype[v] == B_st) {
+      if (cx.Tv[v] && fill_T)  Toa[v] = trckpt_deck_alloc(&cx, v);
+      pin_tr_optacc_B(&cx, v, JAoa, LAoa, RAoa, Toa, NULL, NULL, NULL, NULL);
+      if (preset_mode == TRMODE_T && fill_T && Toa[v] && L >= cx.jmin[v] && L <= cx.jmax[v]) {
+        int jpv = L - cx.jmin[v];
+        if (L >= cx.hdmin[v][jpv] && L <= cx.hdmax[v][jpv] && NOT_IMPOSSIBLE(cx.g_pty[v])) {
+          int Lpv = L - cx.hdmin[v][jpv];
+          if (Toa[v][jpv][Lpv] > oaT0) { oaT0 = Toa[v][jpv][Lpv]; b = v; }
+        }
+      }
+      if (Toa[v]) { trckpt_deck_free(&cx, v, Toa[v]); Toa[v] = NULL; }
+    } else {
+      char **Jshv = (cx.Jv[v])              ? trckpt_cdeck_alloc(&cx, v) : NULL;
+      char **Lshv = (cx.Lv[v] && fill_L)    ? trckpt_cdeck_alloc(&cx, v) : NULL;
+      char **Rshv = (cx.Rv[v] && fill_R)    ? trckpt_cdeck_alloc(&cx, v) : NULL;
+      trckpt_tr_optacc_deck(&cx, v, JAoa, LAoa, RAoa, NULL, NULL, NULL, Jshv, Lshv, Rshv);
+      if (Jshv) trckpt_cdeck_free(&cx, v, Jshv);
+      if (Lshv) trckpt_cdeck_free(&cx, v, Lshv);
+      if (Rshv) trckpt_cdeck_free(&cx, v, Rshv);
+    }
+    if (L >= cx.jmin[v] && L <= cx.jmax[v]) {
+      int jpv = L - cx.jmin[v];
+      if (L >= cx.hdmin[v][jpv] && L <= cx.hdmax[v][jpv] && NOT_IMPOSSIBLE(cx.g_pty[v])) {
+        int Lpv = L - cx.hdmin[v][jpv];
+        if (preset_mode==TRMODE_J && cx.Jv[v]           && JAoa[v][jpv][Lpv] > oaJ0) { oaJ0=JAoa[v][jpv][Lpv]; b=v; }
+        if (preset_mode==TRMODE_L && cx.Lv[v] && fill_L && LAoa[v][jpv][Lpv] > oaL0) { oaL0=LAoa[v][jpv][Lpv]; b=v; }
+        if (preset_mode==TRMODE_R && cx.Rv[v] && fill_R && RAoa[v][jpv][Lpv] > oaR0) { oaR0=RAoa[v][jpv][Lpv]; b=v; }
+      }
+    }
+    /* linear reclaim: free y=v+Delta unless chain root or sqrt(M) seed */
+    int y = v + Delta;
+    if (y < M) {
+      int is_root = (cm->stid[y]==ROOT_S || cm->stid[y]==BEGL_S || cm->stid[y]==BEGR_S);
+      if (! is_root) {
+        int keep = ((y % B) < Delta);
+        if (! keep) {
+          if (JAoa[y]) { trckpt_deck_free(&cx, y, JAoa[y]); JAoa[y]=NULL; }
+          if (LAoa[y]) { trckpt_deck_free(&cx, y, LAoa[y]); LAoa[y]=NULL; }
+          if (RAoa[y]) { trckpt_deck_free(&cx, y, RAoa[y]); RAoa[y]=NULL; }
+        }
+      }
+    }
+  }
+  { float best = (preset_mode==TRMODE_J)?oaJ0 : (preset_mode==TRMODE_L)?oaL0 : (preset_mode==TRMODE_R)?oaR0 : oaT0;
+    pp = sreEXP2(best) / (float) L; }
+
+  /* ============================================================= */
+  /* STEP TB: mode-aware pinned-tree traceback (block-recompute)    */
+  /* ============================================================= */
+  ESL_ALLOC(tJa, sizeof(float**) * M); ESL_ALLOC(tLa, sizeof(float**) * M); ESL_ALLOC(tRa, sizeof(float**) * M);
+  ESL_ALLOC(tJs, sizeof(char**)  * M); ESL_ALLOC(tLs, sizeof(char**)  * M); ESL_ALLOC(tRs, sizeof(char**)  * M);
+  for (v = 0; v < M; v++) { tJa[v]=tLa[v]=tRa[v]=NULL; tJs[v]=tLs[v]=tRs[v]=NULL; }
+  fctx.cx = &cx; fctx.M = M; fctx.B = B;
+  fctx.JAoa = JAoa; fctx.LAoa = LAoa; fctx.RAoa = RAoa;
+  fctx.tJa = tJa; fctx.tLa = tLa; fctx.tRa = tRa; fctx.tJs = tJs; fctx.tLs = tLs; fctx.tRs = tRs;
+  fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
+
+  if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, bkind, kpin, blmode, brmode,
+                                           cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                           tr_ckpt_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+
+  { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
+      if (tJa[w]) { trckpt_deck_free(&cx,w,tJa[w]); tJa[w]=NULL; }
+      if (tLa[w]) { trckpt_deck_free(&cx,w,tLa[w]); tLa[w]=NULL; }
+      if (tRa[w]) { trckpt_deck_free(&cx,w,tRa[w]); tRa[w]=NULL; }
+      if (tJs[w]) { trckpt_cdeck_free(&cx,w,tJs[w]); tJs[w]=NULL; }
+      if (tLs[w]) { trckpt_cdeck_free(&cx,w,tLs[w]); tLs[w]=NULL; }
+      if (tRs[w]) { trckpt_cdeck_free(&cx,w,tRs[w]); tRs[w]=NULL; } } }
+
+  if ((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    double  full_mb = full_cube_cells * 4 / (1024.0*1024.0);
+    double  peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    int64_t ecells  = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
+    fprintf(stderr, "# cm_CheckptTrOptAccAlignHB: M=%d L=%d B=%d mode=%c pp=%.5f  OA-DP peak=%.2f Mb  full-OA-cube(1x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb\n",
+            M, L, B, (preset_mode==TRMODE_J)?'J':(preset_mode==TRMODE_L)?'L':(preset_mode==TRMODE_R)?'R':'T',
+            pp, peak_mb, full_mb, (peak_mb>0.)?full_mb/peak_mb:0.,
+            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0));
+  }
+
+  for (v = 0; v < M; v++) { if (JAoa[v]) trckpt_deck_free(&cx,v,JAoa[v]); if (LAoa[v]) trckpt_deck_free(&cx,v,LAoa[v]); if (RAoa[v]) trckpt_deck_free(&cx,v,RAoa[v]); if (Toa[v]) trckpt_deck_free(&cx,v,Toa[v]); }
+  free(JAoa); free(LAoa); free(RAoa); free(Toa); free(tJa); free(tLa); free(tRa); free(tJs); free(tLs); free(tRs);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
+  if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
+  if (ret_mode  != NULL) *ret_mode  = preset_mode;
+  if (ret_avgpp != NULL) *ret_avgpp = avgpp;
+  if (ret_pp    != NULL) *ret_pp    = pp;
+  return eslOK;
+
+ ERROR:
+  if (JAoa) { for (v=0;v<M;v++) if (JAoa[v]) trckpt_deck_free(&cx,v,JAoa[v]); free(JAoa); }
+  if (LAoa) { for (v=0;v<M;v++) if (LAoa[v]) trckpt_deck_free(&cx,v,LAoa[v]); free(LAoa); }
+  if (RAoa) { for (v=0;v<M;v++) if (RAoa[v]) trckpt_deck_free(&cx,v,RAoa[v]); free(RAoa); }
+  if (Toa)  { for (v=0;v<M;v++) if (Toa[v])  trckpt_deck_free(&cx,v,Toa[v]);  free(Toa); }
+  if (tJa)  { for (v=0;v<M;v++) if (tJa[v])  trckpt_deck_free(&cx,v,tJa[v]);  free(tJa); }
+  if (tLa)  { for (v=0;v<M;v++) if (tLa[v])  trckpt_deck_free(&cx,v,tLa[v]);  free(tLa); }
+  if (tRa)  { for (v=0;v<M;v++) if (tRa[v])  trckpt_deck_free(&cx,v,tRa[v]);  free(tRa); }
+  if (tJs)  { for (v=0;v<M;v++) if (tJs[v])  trckpt_cdeck_free(&cx,v,tJs[v]); free(tJs); }
+  if (tLs)  { for (v=0;v<M;v++) if (tLs[v])  trckpt_cdeck_free(&cx,v,tLs[v]); free(tLs); }
+  if (tRs)  { for (v=0;v<M;v++) if (tRs[v])  trckpt_cdeck_free(&cx,v,tRs[v]); free(tRs); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr)    FreeParsetree(tr);
+  if (ppstr) free(ppstr);
   return status;
 }
 
