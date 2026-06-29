@@ -2801,7 +2801,7 @@ extern char           cm_singlet_mark(char seq, char cons, float avgsc);
 extern void           annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N);
 
 /* from cm_parsetree.c : post-hoc cmalign structure-status annotation */
-extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq, int do_famcons);
+extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq, int do_famcons, int do_famcov);
 
 /* CM_BPCONS_ACC : cross-block accumulator for the #=GC bp_cons family line on
  * the large-alignment merge path. The fraction-canonical digit for each
@@ -2818,11 +2818,17 @@ typedef struct cm_bpcons_acc_s {
   int  *rcpos;     /* [0..npair-1] right consensus position (1..clen)              */
   int  *n_pair;    /* [0..npair-1] running #seqs with a residue at both columns    */
   int  *n_wc;      /* [0..npair-1] running #seqs whose pair is canonical (WC/GU)   */
+  int  *joint;     /* [0..16*npair-1] per-pair 4x4 joint standard-nt count table,
+                    *   row-major joint[16*p + 4*l + r] (l,r in {A,C,G,U}=0..3), for
+                    *   the #=GC bp_cov covariation (mutual information) line; NULL
+                    *   unless --bpcov requested. Additive across blocks, same trick
+                    *   as (n_pair,n_wc): MI is computed once from the summed table. */
 } CM_BPCONS_ACC;
 
-extern int   cm_alignment_bpcons_acc_Create  (CM_t *cm, char *errbuf, ESL_MSA *msa, CM_BPCONS_ACC **ret_acc);
+extern int   cm_alignment_bpcons_acc_Create  (CM_t *cm, char *errbuf, ESL_MSA *msa, int do_cov, CM_BPCONS_ACC **ret_acc);
 extern int   cm_alignment_bpcons_acc_Add     (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, ESL_MSA *msa);
 extern int   cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
+extern int   cm_alignment_bpcov_acc_Finalize (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
 extern void  cm_alignment_bpcons_acc_Destroy (CM_BPCONS_ACC *acc);
 
 /* from cm_alndata.c */
