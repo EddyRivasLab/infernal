@@ -1982,6 +1982,14 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     double peak_mb = cx.peak_bytes / (1024.0*1024.0);
     fprintf(stderr, "# cm_CheckptAlignHB engaged: M=%d L=%d B=%d Z=%.4f  CM-DP peak=%.2f Mb  full-cube(2x)=%.2f Mb  win~%.1fx\n",
             M, L, B, Z_ckpt, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
+    if (cx.have_el && cx.eldmax != NULL) { /* R-L.2: EL-deck banding footprint */
+      int64_t elcells = 0; int j;
+      for (j = 0; j <= L; j++) if (cx.eldmax[j] >= 0) elcells += (cx.eldmax[j] + 1);
+      double unbanded_mb = ((double)(L+1) * (double)(L+2) / 2.0) * 4 / (1024.0*1024.0); /* full O(L^2/2) per EL deck */
+      double banded_mb   = (double) elcells * 4 / (1024.0*1024.0);
+      fprintf(stderr, "#   EL-deck: banded=%.3f Mb/deck (%lld cells) vs unbanded O(L^2/2)=%.3f Mb/deck  reduction~%.1fx\n",
+              banded_mb, (long long) elcells, unbanded_mb, (banded_mb>0.)? unbanded_mb/banded_mb : 0.);
+    }
   }
 
   /* free seed stores + scratch */
