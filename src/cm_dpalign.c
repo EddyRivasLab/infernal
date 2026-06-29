@@ -843,6 +843,17 @@ typedef struct ckpt_ctx_s {
   int64_t  peak_bytes; /* high-water mark of cur_bytes                       */
   int     *kpin;       /* rung-3: per-B pinned right-frag length k* (or NULL)*/
   float ***ifull;      /* rung-3: full Inside alpha, for Outside sibling reads at B (or NULL) */
+  /* R-L.2: EL (local-end) support, all NULL/0 unless CMH_LOCAL_END.  The two
+   * data-dependent EL decks (Outside beta[cm->M], OptAcc alpha[cm->M]) are
+   * banded on the UPPER d-edge: row j stores d=0..eldmax[j] (cells above are
+   * provably IMPOSSIBLE).  The Inside/forward EL needs no deck (fixed ramp). */
+  int      have_el;    /* TRUE iff cm->flags & CMH_LOCAL_END                  */
+  float    el_selfsc;  /* cm->el_selfsc (EL self-loop emit score)             */
+  int     *eldmax;     /* [0..L] upper d-band edge for EL rows; -1 = empty    */
+  float  **elbeta;     /* [0..L][0..eldmax[j]] Outside EL deck (Step B)       */
+  float  **elalpha;    /* [0..L][0..eldmax[j]] OptAcc EL prefix-sum (Step OA) */
+  float   *el_esc;     /* [0..M-1] all-deletes-to-E score (OA d==0 EL route)  */
+  float    el_endsc;   /* the (shared) v->EL transition score                 */
 } CKPT_CTX;
 
 /* deck = float** of j-rows; row[0] is start of the contiguous cell block. */
@@ -911,6 +922,95 @@ ckpt_cdeck_free(CKPT_CTX *cx, int v, char **row)
   cx->cur_bytes -= cx->deck_nc[v] * (int64_t)sizeof(char);
 }
 
+/* ---- R-L.2 EL (local-end) deck helpers --------------------------------- *
+ * The two data-dependent EL decks live at the (non-banded) EL state cm->M,
+ * indexed by ABSOLUTE (j,d) (j=0..L).  In stock these are full O(L^2/2)
+ * lower-triangular decks; here we band the UPPER d-edge to eldmax[j], the
+ * largest d any local-end-capable state references at EL-row j.  Cells with
+ * d > eldmax[j] are provably IMPOSSIBLE in stock (no v->EL write, and the
+ * self-transition/prefix-sum only descend from a written cell), so dropping
+ * them is byte-exact (FLogsum(x,IMPOSSIBLE)==x exactly since IMPOSSIBLE=-1e36).
+ */
+
+/* Fill cx->eldmax[0..L]: for each local-end state v, EL-row r = (v's j) - sdr
+ * references d-indices up to hdmax[v][jp] - sd.  This single bound covers BOTH
+ * the Outside v->EL write range and the OptAcc alpha[cm->M] read range (same
+ * (r,d) geometry).  -1 marks an EL-row no local end reaches. */
+static void
+ckpt_el_compute_dmax(CKPT_CTX *cx)
+{
+  CM_t *cm = cx->cm;
+  int   L  = cx->L, M = cx->M;
+  int   v, jp, r;
+  for (r = 0; r <= L; r++) cx->eldmax[r] = -1;
+  for (v = 0; v < M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int njr = cx->deck_njr[v];
+    for (jp = 0; jp < njr; jp++) {
+      int j_band = cx->jmin[v] + jp;   /* v's own j */
+      r = j_band - sdr;                /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = cx->hdmax[v][jp] - sd;
+      if (dmax_here > r)        dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > cx->eldmax[r]) cx->eldmax[r] = dmax_here;
+    }
+  }
+}
+
+/* Allocate a banded EL deck [0..L][0..eldmax[j]] (NULL rows where eldmax<0),
+ * initialized to IMPOSSIBLE; account its cells in the working-set tracker. */
+static float **
+ckpt_el_deck_alloc(CKPT_CTX *cx)
+{
+  int     L = cx->L, r, d;
+  float **deck = malloc(sizeof(float *) * (L+1));
+  if (deck == NULL) cm_Fail("ckpt_el_deck_alloc OOM");
+  for (r = 0; r <= L; r++) {
+    if (cx->eldmax[r] < 0) { deck[r] = NULL; continue; }
+    int n = cx->eldmax[r] + 1;
+    deck[r] = malloc(sizeof(float) * n);
+    if (deck[r] == NULL) cm_Fail("ckpt_el_deck_alloc OOM row %d", r);
+    for (d = 0; d < n; d++) deck[r][d] = IMPOSSIBLE;
+    cx->cur_bytes += (int64_t) n * (int64_t)sizeof(float);
+  }
+  if (cx->cur_bytes > cx->peak_bytes) cx->peak_bytes = cx->cur_bytes;
+  return deck;
+}
+static void
+ckpt_el_deck_free(CKPT_CTX *cx, float **deck)
+{
+  int L = cx->L, r;
+  if (deck == NULL) return;
+  for (r = 0; r <= L; r++) {
+    if (deck[r] != NULL) { cx->cur_bytes -= (int64_t)(cx->eldmax[r]+1) * (int64_t)sizeof(float); free(deck[r]); }
+  }
+  free(deck);
+}
+
+/* Precompute cx->el_esc[0..M-1] (the all-deletes-to-E path score) + cx->el_endsc,
+ * mirroring cm_InitializeOptAccShadowDZeroHB:7664-7724 (bps=0: no B states).
+ * Used by ckpt_optacc_deck's d==0 EL routing.  Caller allocs cx->el_esc. */
+static void
+ckpt_el_compute_esc(CKPT_CTX *cx)
+{
+  CM_t *cm = cx->cm;
+  int   M = cx->M, v;
+  esl_vec_FSet(cx->el_esc, M, IMPOSSIBLE);
+  v = 0; while (v < M && ! NOT_IMPOSSIBLE(cm->endsc[v])) v++;
+  cx->el_endsc = (v < M) ? cm->endsc[v] : IMPOSSIBLE;
+  for (v = M-1; v >= 0; v--) {
+    if (! cm->cp9b->Jvalid[v]) continue;
+    if (cm->sttype[v] == E_st) { cx->el_esc[v] = 0.; }
+    else {
+      int y = cm->cfirst[v];
+      while (StateDelta(cm->sttype[y]) != 0) y++;
+      cx->el_esc[v] = cx->el_esc[y] + cm->tsc[v][y - cm->cfirst[v]];
+    }
+  }
+}
+
 /* Inside deck v: mirrors cm_InsideAlignHB for S/IL/IR/ML/D/E, global mode.
  * Reads children from ba[] (in-block decks) or ck[] (checkpoint seeds). */
 static void
@@ -930,6 +1030,19 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
   int yvalidA[MAXCONNECT], yvalid_ct, yvalid_idx;
 
   ckpt_deck_init_impossible(cx, v, av);
+
+  /* R-L.2 EL: re-init this state's deck if a local end from v is allowed.  The
+   * forward EL is the FIXED ramp el_scA[d-sd]=el_selfsc*(d-sd) -- NO alpha[cm->M]
+   * deck is read (mirrors cm_InsideAlignHB:3576-3583, which fills the EL deck only
+   * "for completeness").  Placed before the per-state recurrence so children
+   * FLogsum onto, and emissions add to, this EL base -- exactly as stock. */
+  if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++)
+        av[jp_v][dp_v] = cx->el_selfsc * (d - sd) + cm->endsc[v];
+    }
+  }
 
   if (cm->sttype[v] == E_st) {
     for (j = jmin[v]; j <= jmax[v]; j++) { jp_v = j - jmin[v]; av[jp_v][0] = 0.; }
@@ -1192,7 +1305,6 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
         if (bv[jp_v][dp_v] < IMPOSSIBLE) bv[jp_v][dp_v] = IMPOSSIBLE;
       }
     }
-    return;
   }
   else {
     esc_vAA_y = cm->oesc;
@@ -1238,7 +1350,52 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
         }
       }
     }
-    return;
+  }
+
+  /* R-L.2 EL tail: deal with local-end transitions v->EL (EL deck = cx->elbeta,
+   * indexed by ABSOLUTE (j,d)).  Mirrors cm_OutsideAlignHB:6356-6402 verbatim;
+   * the only change is the banded target row (d<=eldmax[j], guaranteed to cover
+   * the [dn,dx] write range).  The EL->EL self-transition + posterior fold are
+   * done once, after the whole Step B sweep, in cm_CheckptAlignHB. */
+  if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    int sd_v  = StateDelta(cm->sttype[v]);
+    int sdr_v = StateRightDelta(cm->sttype[v]);
+    int emm   = Emitmode(cm->sttype[v]);
+    float **esc_vAA = cm->oesc;
+    int jn2 = jmin[v] - sdr_v;
+    int jx2 = jmax[v] - sdr_v;
+    for (j = jn2; j <= jx2; j++) {
+      jp_v = j - jmin[v];
+      dn   = hdmin[v][jp_v + sdr_v] - sd_v;
+      dx   = hdmax[v][jp_v + sdr_v] - sd_v;
+      i    = j - dn + 1;
+      dp_v = dn - hdmin[v][jp_v + sdr_v];
+      switch (emm) {
+      case EMITPAIR:
+        for (d = dn; d <= dx; d++, dp_v++, i--) {
+          escore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+          cx->elbeta[j][d] = FLogsum(cx->elbeta[j][d], (bb[v][jp_v+sdr_v][dp_v+sd_v] + cm->endsc[v] + escore));
+        }
+        break;
+      case EMITLEFT:
+        for (d = dn; d <= dx; d++, dp_v++, i--) {
+          escore = esc_vAA[v][dsq[i-1]];
+          cx->elbeta[j][d] = FLogsum(cx->elbeta[j][d], (bb[v][jp_v+sdr_v][dp_v+sd_v] + cm->endsc[v] + escore));
+        }
+        break;
+      case EMITRIGHT:
+        escore = esc_vAA[v][dsq[j+1]];
+        for (d = dn; d <= dx; d++, dp_v++) {
+          cx->elbeta[j][d] = FLogsum(cx->elbeta[j][d], (bb[v][jp_v+sdr_v][dp_v+sd_v] + cm->endsc[v] + escore));
+        }
+        break;
+      case EMITNONE:
+        for (d = dn; d <= dx; d++, dp_v++) {
+          cx->elbeta[j][d] = FLogsum(cx->elbeta[j][d], (bb[v][jp_v+sdr_v][dp_v+sd_v] + cm->endsc[v]));
+        }
+        break;
+      }
+    }
   }
 }
 
@@ -1267,13 +1424,15 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
     return; /* OA: E cells remain IMPOSSIBLE */
   }
 
-  /* d==0 (zero-length subtree) shadow init, have_el=FALSE branch of
-   * cm_InitializeOptAccShadowDZeroHB: route the d==sd cell to the unique
-   * StateDelta==0 child (the delete path). */
+  /* d==0 (zero-length subtree) shadow init, cm_InitializeOptAccShadowDZeroHB:
+   * route the d==sd cell to the unique StateDelta==0 child (the delete path) --
+   * OR to USED_EL if a local end beats the all-deletes path (have_el branch,
+   * :7698-7708). */
   if (ysh != NULL && cm->sttype[v] != B_st && cm->cp9b->Jvalid[v]) {
     int yy = cm->cfirst[v];
     while (StateDelta(cm->sttype[yy]) != 0) yy++;
     int yoff = yy - cm->cfirst[v];
+    if (cx->have_el && cx->el_endsc > cx->el_esc[v]) yoff = (int) USED_EL;
     for (j = ESL_MAX(sd, jmin[v]); j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
       if (hdmin[v][jp_v] <= hdmax[v][jp_v]) {
@@ -1285,6 +1444,20 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
             ysh[jp_v][dp_v] = (char) yoff;
           }
         }
+      }
+    }
+  }
+
+  /* R-L.2 EL: re-init this state's OA deck from the EL prefix-sum (substitute,
+   * don't omit -- the 51/053 segfault was omitting this).  alpha[v][j][d] =
+   * alpha[cm->M][j-sdr][d-sd] = elalpha[j-sdr][d-sd]; yshadow stays USED_EL.
+   * Mirrors cm_OptAccAlignHB:4319-4329. */
+  if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        dp_v = d - hdmin[v][jp_v];
+        av[jp_v][dp_v] = cx->elalpha[j-sdr][d-sd];  /* ysh remains USED_EL */
       }
     }
   }
@@ -1314,7 +1487,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
         if (cm->sttype[v] == IL_st) av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_lpp[v][ip_v]);
         else                        av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_rpp[v][jp_v]);
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
-        if (ysh != NULL && ysh[jp_v][dp_v] == (char) USED_EL && d > sd)
+        if ((! cx->have_el) && ysh != NULL && ysh[jp_v][dp_v] == (char) USED_EL && d > sd)
           av[jp_v][dp_v] = IMPOSSIBLE;
       }
     }
@@ -1415,7 +1588,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
       for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
     }
-    if (sd > 0 && ysh != NULL) { /* emitters only (ML here); have_el=FALSE */
+    if ((! cx->have_el) && sd > 0 && ysh != NULL) { /* emitters only (ML here); local: EL kept */
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
         d = ESL_MAX(sd+1, hdmin[v][jp_v]);
@@ -1550,6 +1723,10 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL; /* set below */
   cx.kpin = NULL; cx.ifull = NULL;       /* bps=0 path: no bifurcations */
+  cx.have_el    = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  /* R-L.2 */
+  cx.el_selfsc  = cm->el_selfsc;
+  cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
 
   /* ROOT_S band sanity */
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S j band");
@@ -1581,6 +1758,16 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   }
   int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
 
+  /* R-L.2: EL setup (local mode only).  Compute the per-EL-row upper d-band
+   * edge now; the banded EL decks are allocated lazily at the passes that need
+   * them (elbeta at Step B, elalpha at Step OA). */
+  if (cx.have_el) {
+    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
+    ckpt_el_compute_dmax(&cx);
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    ckpt_el_compute_esc(&cx);
+  }
+
   /* ============================================================= */
   /* STEP A: checkpointed Inside -> Z_ckpt + sqrt(M) seed store     */
   /* ============================================================= */
@@ -1606,6 +1793,10 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   esl_vec_FSet(emit_mx->r_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
   cx.my_lpp = emit_mx->l_pp;
   cx.my_rpp = emit_mx->r_pp;
+
+  /* R-L.2: allocate the banded Outside EL deck (persists across the whole Step
+   * B sweep, accumulating v->EL contributions from every local-end state). */
+  if (cx.have_el) cx.elbeta = ckpt_el_deck_alloc(&cx);
 
   ESL_ALLOC(ba, sizeof(float**) * M);
   ESL_ALLOC(bb, sizeof(float**) * M);
@@ -1656,16 +1847,66 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   }
   for (v = 0; v < M; v++) if (bb[v]) { ckpt_deck_free(&cx, v, bb[v]); bb[v] = NULL; }
 
-  /* EmitterPosterior step 2: normalize (mirror stock order exactly).  EL/MATP
-   * combine steps (1's EL deck, 3's MATP merge) don't apply to a MATL chain. */
+  /* R-L.2 EmitterPosterior step 1 (EL): the EL->EL self-transition over the
+   * accumulated elbeta, then fold the EL posterior into l_pp[cm->M] (1-D).
+   * Mirrors cm_OutsideAlignHB:6408-6412 + cm_EmitterPosteriorHB:6961-6968.
+   * post[cm->M][j][d] = el_scA[d] + elbeta[j][d] - Z; cells d>eldmax[j] are
+   * IMPOSSIBLE (skipped, byte-exact: FLogsum(x,IMPOSSIBLE)==x). */
+  if (cx.have_el) {
+    int j, d;
+    /* self-transition: descend d within each EL-row (band edge: top cell d=eldmax
+     * keeps its value; its absent d+1 neighbour is IMPOSSIBLE, as in stock). */
+    for (j = L; j >= 1; j--) {
+      if (cx.eldmax[j] < 1) continue;
+      for (d = cx.eldmax[j]-1; d >= 0; d--)
+        cx.elbeta[j][d] = FLogsum(cx.elbeta[j][d], (cx.elbeta[j][d+1] + cx.el_selfsc));
+    }
+    /* fold to l_pp[cm->M][i], i=j-d+1, d>=1 (ascending j, ascending d == stock) */
+    for (j = 1; j <= L; j++) {
+      int dx = (cx.eldmax[j] < j) ? cx.eldmax[j] : j;
+      int i = j;
+      for (d = 1; d <= dx; d++, i--) {
+        float postcell = (cx.el_selfsc * d) + cx.elbeta[j][d] - Z_ckpt;
+        emit_mx->l_pp[cm->M][i] = FLogsum(emit_mx->l_pp[cm->M][i], postcell);
+      }
+    }
+    ckpt_el_deck_free(&cx, cx.elbeta); cx.elbeta = NULL;  /* done with Outside EL */
+  }
+
+  /* EmitterPosterior step 2: normalize (mirror stock order exactly).  MATP
+   * combine (step 3) doesn't apply to a MATL chain; EL (step 1) handled above. */
   esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
   for (v = 0; v < M; v++) {
     if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i], emit_mx->l_pp[v][ip]); } }
     if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j], emit_mx->r_pp[v][jp]); } }
   }
+  /* EL contributes to sum[i] LAST (mirror cm_EmitterPosteriorHB:6995-6999) */
+  if (cx.have_el && emit_mx->l_pp[cm->M] != NULL) {
+    int i; for (i = 1; i <= L; i++) emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->l_pp[cm->M][i]);
+  }
   for (v = 0; v < M; v++) {
     if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->l_pp[v][ip] -= emit_mx->sum[i]; } }
     if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->r_pp[v][jp] -= emit_mx->sum[j]; } }
+  }
+  /* normalize EL row too (mirror cm_EmitterPosteriorHB:6832-6843 v==M case) */
+  if (cx.have_el && emit_mx->l_pp[cm->M] != NULL) {
+    int i; for (i = 1; i <= L; i++) emit_mx->l_pp[cm->M][i] -= emit_mx->sum[i];
+  }
+
+  /* R-L.2: build the OptAcc EL prefix-sum deck elalpha from the (normalized)
+   * 1-D l_pp[cm->M] (mirror cm_OptAccAlignHB:4298-4306).  elalpha[j][d] =
+   * logsum(l_pp[M][0], l_pp[M][j..j-d+1]); banded to 0..eldmax[j].  Persists
+   * through Step OA + Step TB (read by ckpt_optacc_deck's EL re-init). */
+  if (cx.have_el) {
+    int j, d;
+    cx.elalpha = ckpt_el_deck_alloc(&cx);
+    for (j = 0; j <= L; j++) {
+      if (cx.eldmax[j] < 0) continue;
+      int i = j;
+      cx.elalpha[j][0] = emit_mx->l_pp[cm->M][0];   /* = IMPOSSIBLE (i==0 never folded) */
+      for (d = 1; d <= cx.eldmax[j]; d++)
+        cx.elalpha[j][d] = FLogsum(cx.elalpha[j][d-1], emit_mx->l_pp[cm->M][i--]);
+    }
   }
 
   /* ============================================================= */
@@ -1746,6 +1987,10 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* free seed stores + scratch */
   for (v = 0; v < M; v++) { if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]); if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]); }
   free(Astore); free(ba); free(bb); free(OAstore); free(tba); free(tysh);
+  if (cx.elalpha) ckpt_el_deck_free(&cx, cx.elalpha);   /* R-L.2 EL */
+  if (cx.elbeta)  ckpt_el_deck_free(&cx, cx.elbeta);    /* (freed earlier on success, here for safety) */
+  if (cx.eldmax)  free(cx.eldmax);
+  if (cx.el_esc)  free(cx.el_esc);
   free(cx.deck_nc); free(cx.deck_njr);
 
   if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
@@ -1761,6 +2006,10 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   if (bb)   { for (v = 0; v < M; v++) if (bb[v])   ckpt_deck_free(&cx, v, bb[v]);   free(bb); }
   if (tba)  { for (v = 0; v < M; v++) if (tba[v])  ckpt_deck_free(&cx, v, tba[v]);  free(tba); }
   if (tysh) { for (v = 0; v < M; v++) if (tysh[v]) ckpt_cdeck_free(&cx, v, tysh[v]); free(tysh); }
+  if (cx.elalpha) ckpt_el_deck_free(&cx, cx.elalpha);   /* R-L.2 EL */
+  if (cx.elbeta)  ckpt_el_deck_free(&cx, cx.elbeta);
+  if (cx.eldmax)  free(cx.eldmax);
+  if (cx.el_esc)  free(cx.el_esc);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
   if (tr)    FreeParsetree(tr);
