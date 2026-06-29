@@ -572,9 +572,10 @@ with the same scheme as the
 .B cmsearch
 PS line:
 .B v
-(negative-scoring non-canonical or half-present) or
+(negative-scoring non-canonical or half-present, nested pairs only) or
 .B ?
-(truncated half) for nested pairs, and
+(truncated half: the pair's partner lies in a truncated-away region; applies to
+both nested and pseudoknot pairs), and
 .B =
 (maintained),
 .B $
@@ -605,7 +606,18 @@ on both the default (in-memory) and the
 .B --small
 / multi-block (merge) output paths.
 .IP
-Under
+The
+.B ?
+truncated-half mark appears only when the truncated-away flank is rendered as
+missing data, i.e. when
+.B --miss
+is also used; without
+.B --miss
+a truncated flank is written with deletions and a pair straddling it is marked
+.B v
+(nested) or
+.B x
+(pseudoknot) instead. Under
 .B --sub
 the marks remain relative to the full CM consensus (a partial-span sub-CM only
 changes which residues are present, not the consensus interpretation); consensus

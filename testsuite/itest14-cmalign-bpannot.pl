@@ -42,7 +42,7 @@ my $trcm   = "$srcdir/testsuite/tRNA.c.cm";
 my @tmpsuffixes = ("pk.cm","pk.fa","pk.sto","pk.rr","tr.fa","tr.sto","tr.rr",
                    "bs.sto","bc.sto","bv.sto","def.sto",
                    "tiny.sto","tiny.cm","big.fa","big.sto","big.err","big.sto.rr","log",
-                   "sub.fa","sub.sto","sub.rr");
+                   "sub.fa","sub.sto","sub.rr","miss.fa","miss.sto","miss.rr");
 sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s"; } }
 cleanup();
 
@@ -193,6 +193,31 @@ ps_marks_include("$tmppfx.sub.sto", qr/-{8,}/, "subtest 7: out-of-span '-' place
 # a boundary-straddling nested pair -> half-present 'v':
 ps_marks_include("$tmppfx.sub.sto", qr/v/,     "subtest 7: half-present nested 'v' on a span-boundary pair");
 reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (--sub partial-span)");
+
+######################################################################
+# Subtest 8 (brief 023, Part B): truncated-half '?' fidelity on truncated cmalign
+# parses. With --miss, cmalign marks a truncated 5'/3' flank with missing-data
+# '~'; a base pair straddling the truncation boundary then has one present half
+# and one '~' half. The truncated half must be classified '?' (not 'v', not a
+# placeholder, not a spurious '=/$/x'):
+#   - NESTED pairs: the present half -> '?' (mode-L/R rule, already correct);
+#   - PKNOT pairs: the present half -> '?' too (brief 023 fix in
+#     annotate_pknot_pairs_str: a '~' half is "truncated", NOT "broken 'x'").
+# So under --miss a '?' must appear AT A PKNOT-LETTER column of SS_cons -- the
+# direct regression guard for the fix (pre-fix that column showed 'x').
+######################################################################
+write_halves("$tmppfx.pk.fa", "$tmppfx.miss.fa");
+run("$cmalign --miss --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.miss.fa > $tmppfx.miss.sto 2>$tmppfx.log",
+    "subtest 8: cmalign --miss --bpstatus --bpcons (truncated) failed");
+assert_count("$tmppfx.miss.sto", qr/^#=GR\s+\S+\s+PS\b/, count_match("$tmppfx.miss.fa", qr/^>/),
+    "subtest 8: one combined PS line per truncated seq");
+assert_dense_ps("$tmppfx.miss.sto", "subtest 8");
+ps_marks_include("$tmppfx.miss.sto", qr/\?/, "subtest 8: truncated-half '?' mark present");
+ps_marks_include("$tmppfx.miss.sto", qr/~/,  "subtest 8: missing-data '~' placeholder present");
+# THE FIX: a truncated half of a PKNOT pair must be '?' (not 'x'). Assert some PS
+# line carries '?' at a column where SS_cons holds a pknot letter (A-Za-z):
+ps_mark_at_pknot_col("$tmppfx.miss.sto", '?', "subtest 8: pknot truncated half -> '?' (brief 023 fix)");
+reread_ok("$tmppfx.miss.sto", "$tmppfx.miss.rr", "subtest 8 (--miss truncated)");
 
 ######################################################################
 print "ok\n";
@@ -367,6 +392,26 @@ sub write_halves {
         print $out ">${n}_3half\n", substr($s, $h),    "\n";
     }
     close $out;
+}
+
+# At least one #=GR PS value carries char <mark> at a column where #=GC SS_cons
+# holds a pseudoknot letter (A-Z / a-z). Used to assert the brief-023 fix: a
+# truncated half of a PKNOT pair is marked '?' there (pre-fix it was 'x').
+sub ps_mark_at_pknot_col {
+    my ($file, $mark, $where) = @_;
+    my $ss;
+    for my $l (split /\n/, slurp($file)) {
+        if ($l =~ /^#=GC\s+SS_cons\s+(\S+)\s*$/) { $ss = $1; last; }
+    }
+    defined $ss or die "FAIL: $where: no #=GC SS_cons found\n";
+    my @pkcol = grep { substr($ss,$_,1) =~ /[A-Za-z]/ } (0 .. length($ss)-1);
+    @pkcol or die "FAIL: $where: SS_cons carries no pknot letters to check\n";
+    for my $l (split /\n/, slurp($file)) {
+        next unless $l =~ /^#=GR\s+\S+\s+PS\s+(\S+)\s*$/;
+        my $ps = $1;
+        for my $c (@pkcol) { return 1 if substr($ps,$c,1) eq $mark; }
+    }
+    die "FAIL: $where: no PS line carried '$mark' at a pknot column\n";
 }
 
 # A tiny gapless nested-stem alignment, used only for the multi-block volume

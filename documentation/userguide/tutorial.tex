@@ -1524,9 +1524,9 @@ flags add it, all off by default (so default output is unchanged):
   scheme as the \prog{cmsearch}/\prog{cmscan} \otext{PS} line (see
   section~\ref{section:formats} and the \prog{cmsearch} tutorial above):
   \emph{nested} pairs are marked \otext{v} (a negative-scoring non-canonical or
-  half-present pair) or \otext{?} (a pair with one half truncated away);
-  \emph{pseudoknot} pairs are marked \otext{=} (maintained), \otext{\$}
-  (covarying), or \otext{x} (broken). The same line additionally carries the
+  half-present pair); \emph{pseudoknot} pairs are marked \otext{=} (maintained),
+  \otext{\$} (covarying), or \otext{x} (broken); and a pair of \emph{either} kind
+  is marked \otext{?} when one half is truncated away. The same line additionally carries the
   substitution marks \otext{:} (a consistent, non-negative-scoring base-pair
   substitution) and \otext{+} (a positive-scoring single-residue substitution).
   This combined line is a fusion of the \prog{cmsearch} match line and pair-status
@@ -1539,10 +1539,15 @@ flags add it, all off by default (so default output is unchanged):
   the line is dense and can be re-read by standard Stockholm parsers: \otext{.} at
   an insert column, \otext{\~{}} at a missing/local-end column, \otext{-} at a
   deletion, and \otext{\_} at an unmarked consensus residue. \otext{--bpstatus}
-  adds one line per sequence. Under \prog{--sub} the marks stay relative to the
-  full-CM consensus (a partial-span sub-CM only changes which residues are
-  present), and consensus columns outside a fragment's span carry the \otext{-}
-  no-residue placeholder rather than a spurious mark.
+  adds one line per sequence.
+
+  The \otext{?} truncated-half mark requires \prog{--miss} (which renders a
+  truncated flank as missing data \otext{\~{}}); without it a truncated flank is
+  written with deletions, so a pair straddling the boundary is marked \otext{v}
+  (nested) or \otext{x} (pseudoknot) instead. Under \prog{--sub} the marks stay
+  relative to the full-CM consensus (a partial-span sub-CM only changes which
+  residues are present), and consensus columns outside a fragment's span carry the
+  \otext{-} no-residue placeholder rather than a spurious mark.
 \item[\emprog{--bpcons}]
   adds a single \otext{\#=GC bp\_cons} line: for each base pair (nested and
   pseudoknot), the fraction of sequences whose two aligned residues form a

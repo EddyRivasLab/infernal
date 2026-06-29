@@ -41,6 +41,7 @@ static float post_code_to_avg_pp(char postcode);
 #define PS_PKNOT_MAINT   '='   /* pknot pair maintained: WC/GU and observed pair == consensus pair          */
 #define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
 #define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
+#define PS_NESTED_TRUNC  '?'   /* truncated half: pair partner is missing-data ('~'), pair can't be evaluated */
 /* MM_SUBPAIR / MM_SUBSINGLET glyphs are defined in infernal.h (shared with cmalign). */
 
 /*****************************************************************
@@ -1146,10 +1147,17 @@ cm_singlet_mark(char seq, char cons, float avgsc)
  *           cm_pknot_FixBrokenString()/esl_wuss2ct() use, recovering each
  *           complete pknot base pair (z_open, z_close), and classify it from the
  *           observed residues <aseq> vs the consensus residues <model>:
- *             - gap on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
+ *             - missing-data ('~') on either side -> '?' on the PRESENT half only
+ *                                                    (truncated half; see note below)
+ *             - gap ('-') on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
  *             - canonical AND observed pair == consensus pair           -> PS_PKNOT_MAINT
  *             - canonical AND observed pair != consensus pair           -> PS_PKNOT_COVARY
- *           The mark is written at BOTH ends, into <out>. Pknot columns are
+ *           The =/$/x mark is written at BOTH ends, into <out>; the '?' truncated
+ *           mark is written only at the present (non-'~') end (mirroring the nested
+ *           MATP mode-L/R rule). The '~' branch is cmalign-only: cmsearch's
+ *           cm_pknot_FixBrokenString() drops a pknot letter whose partner is
+ *           truncated out of the hit before this runs, so cmsearch never presents a
+ *           '~'-bearing pknot pair here (cmsearch output is unchanged). Pknot columns are
  *           ML/MR singlets, disjoint from the MATP columns that carry the nested
  *           'v'/'?' markup, so the overlay only ever writes onto blank <out>
  *           positions; we assert/skip defensively if not.
@@ -1181,15 +1189,36 @@ annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, ch
         int  zc = i;
         char ol = aseq[zo],  orr = aseq[zc];
         char ml = model[zo], mr  = model[zc];
-        char mark;
-        if      (ol == '-' || orr == '-' || ! bp_is_canonical(ol, orr))     mark = PS_PKNOT_BROKEN;
-        else if (toupper(ol) == toupper(ml) && toupper(orr) == toupper(mr)) mark = PS_PKNOT_MAINT;
-        else                                                                mark = PS_PKNOT_COVARY;
         /* pknot columns are singlets, disjoint from nested-pair MATP columns,
          * so out must be blank here; overwrite defensively but not silently. */
         ESL_DASSERT1((out[zo] == ' ' && out[zc] == ' '));
-        out[zo] = mark;
-        out[zc] = mark;
+        if (ol == '~' || orr == '~') {
+          /* One (or both) halves truncated away (missing-data '~'): the pair
+           * CANNOT be evaluated -- it is not "broken" (we don't know the absent
+           * residue), so it must not become 'x'. Mark the PRESENT (residue) half
+           * '?' -- the same truncated-half glyph the nested MATP path emits in
+           * mode L/R -- and leave the '~' half unmarked so its placeholder
+           * survives. A '-' (deletion) half here is NOT present, so it stays a
+           * placeholder too (matches the nested rule: only a present half is
+           * marked).
+           *   cmsearch never reaches this branch: cm_pknot_FixBrokenString()
+           * drops any pknot letter whose partner column is truncated out of the
+           * (collapsed) hit display BEFORE this runs, so by here every pknot pair
+           * cmsearch sees is complete (no '~' half). It only fires on cmalign's
+           * full-width per-seq alignment, where the partner column physically
+           * exists (another sequence spans it) but THIS sequence's residue there
+           * is missing. Hence cmsearch output is byte-identical across this change. */
+          if (isalpha((int) ol))  out[zo] = PS_NESTED_TRUNC;
+          if (isalpha((int) orr)) out[zc] = PS_NESTED_TRUNC;
+        }
+        else {
+          char mark;
+          if      (ol == '-' || orr == '-' || ! bp_is_canonical(ol, orr))     mark = PS_PKNOT_BROKEN;
+          else if (toupper(ol) == toupper(ml) && toupper(orr) == toupper(mr)) mark = PS_PKNOT_MAINT;
+          else                                                                mark = PS_PKNOT_COVARY;
+          out[zo] = mark;
+          out[zc] = mark;
+        }
       }
       /* sp[idx]==0 here would be an orphan close, but FixBrokenString already
        * dropped those to '.', so this branch should not fire post-fix. */
