@@ -1,0 +1,31 @@
+===== dengue local =====
+# CM: NC_001477  M=32284 clen=10735  mode=local  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  NC_001477-cmcons/10735  14593.361  14593.360  -9999.000  OK tree==                    230.5455   238.6281     1.0x  vjd=230.5455 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=1 (tree==: 1), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=0  B=0 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=1
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+	Command being timed: "timeout 7200 ./hbdnc_drv_local --noexact --mxsize 30000 ../stage0_cyk_baseline/dengue.cm ../stage0_cyk_baseline/dengue_seq.fa"
+	User time (seconds): 840.69
+	System time (seconds): 4.57
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 14:10.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 4112792
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 7
+	Minor (reclaiming a frame) page faults: 1148489
+	Voluntary context switches: 94
+	Involuntary context switches: 1301
+	Swaps: 0
+	File system inputs: 20912
+	File system outputs: 0
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+RL1_DENGUE_LOCAL_DONE
