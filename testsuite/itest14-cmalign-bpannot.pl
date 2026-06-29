@@ -41,7 +41,8 @@ my $trcm   = "$srcdir/testsuite/tRNA.c.cm";
 
 my @tmpsuffixes = ("pk.cm","pk.fa","pk.sto","pk.rr","tr.fa","tr.sto","tr.rr",
                    "bs.sto","bc.sto","bv.sto","def.sto",
-                   "tiny.sto","tiny.cm","big.fa","big.sto","big.err","big.sto.rr","log");
+                   "tiny.sto","tiny.cm","big.fa","big.sto","big.err","big.sto.rr","log",
+                   "sub.fa","sub.sto","sub.rr");
 sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s"; } }
 cleanup();
 
@@ -166,6 +167,32 @@ slurp("$tmppfx.big.err") =~ /bp_cons.*suppressed|suppressed.*bp_cons/i
 # WRITE-THEN-RE-READ gate on the merge-path output WITH the bp_cons line present:
 reread_ok("$tmppfx.big.sto", "$tmppfx.big.sto.rr", "subtest 6 (multi-block, merge path)");
 unlink "$tmppfx.big.sto.rr";
+
+######################################################################
+# Subtest 7 (brief 023, Part A): --sub partial-span. Fragmentary targets that
+# cover only PART of the model build per-seq sub-CMs that span only a sub-range
+# of the consensus. The annotation is computed post-hoc against the FULL cm
+# (emap/ct/cmcons), so the marks must stay correct and the line re-readable:
+#   - the cpos!=clen RF-length guard must NOT trip on a legitimate partial-span
+#     parse (cmalign exits 0);
+#   - one dense combined PS line per seq, re-readable by the standard parser;
+#   - out-of-span consensus columns carry the no-residue '-' deletion placeholder
+#     (NOT a spurious mark), so each fragment's PS line has a long run of '-';
+#   - a pair straddling the span boundary (one half in-span, the other out) is a
+#     half-present pair -> 'v' (nested) appears.
+# 5'-half and 3'-half fragments of the pknot model are the partial-span targets.
+######################################################################
+write_halves("$tmppfx.pk.fa", "$tmppfx.sub.fa");
+run("$cmalign -g --sub --notrunc --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.sub.fa > $tmppfx.sub.sto 2>$tmppfx.log",
+    "subtest 7: cmalign -g --sub --notrunc --bpstatus --bpcons (partial-span) failed (cpos!=clen guard?)");
+my $nseq_sub = count_match("$tmppfx.sub.fa", qr/^>/);
+assert_count("$tmppfx.sub.sto", qr/^#=GR\s+\S+\s+PS\b/, $nseq_sub, "subtest 7: one combined PS line per partial-span seq");
+assert_dense_ps("$tmppfx.sub.sto", "subtest 7");
+# out-of-span columns: a long run of the '-' no-residue placeholder must appear:
+ps_marks_include("$tmppfx.sub.sto", qr/-{8,}/, "subtest 7: out-of-span '-' placeholder run");
+# a boundary-straddling nested pair -> half-present 'v':
+ps_marks_include("$tmppfx.sub.sto", qr/v/,     "subtest 7: half-present nested 'v' on a span-boundary pair");
+reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (--sub partial-span)");
 
 ######################################################################
 print "ok\n";
@@ -314,6 +341,32 @@ sub reread_ok {
     my ($file, $out, $where) = @_;
     my $err = `$reformat stockholm $file > $out 2>&1`;
     if ($? != 0) { die "FAIL: $where: annotated output is not re-readable by the standard Stockholm parser:\n$err\n"; }
+}
+
+# Read a FASTA file and write a new one holding the 5' half and the 3' half of
+# each sequence (named <name>_5half / <name>_3half). These fragmentary targets
+# cover only part of the model: under --sub they build partial-span sub-CMs;
+# under --miss (truncation on) they produce 5'/3'-truncated parses. Determinism
+# comes from the fixed-seed cmemit that produced the input.
+sub write_halves {
+    my ($infa, $outfa) = @_;
+    open(my $in, "<", $infa) or die "FAIL: cannot open $infa\n";
+    my ($name, %seq, @order);
+    while (my $l = <$in>) {
+        chomp $l;
+        if ($l =~ /^>(\S+)/) { $name = $1; push @order, $name; $seq{$name} = ""; }
+        elsif (defined $name) { $l =~ s/\s+//g; $seq{$name} .= $l; }
+    }
+    close $in;
+    open(my $out, ">", $outfa) or die "FAIL: cannot write $outfa\n";
+    for my $n (@order) {
+        my $s = $seq{$n};
+        my $h = int(length($s) / 2);
+        next if $h < 4;                       # too short to be a useful half
+        print $out ">${n}_5half\n", substr($s, 0, $h), "\n";
+        print $out ">${n}_3half\n", substr($s, $h),    "\n";
+    }
+    close $out;
 }
 
 # A tiny gapless nested-stem alignment, used only for the multi-block volume

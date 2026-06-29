@@ -604,6 +604,14 @@ at an unmarked consensus residue. This adds one line per sequence and is emitted
 on both the default (in-memory) and the
 .B --small
 / multi-block (merge) output paths.
+.IP
+Under
+.B --sub
+the marks remain relative to the full CM consensus (a partial-span sub-CM only
+changes which residues are present, not the consensus interpretation); consensus
+columns outside a fragment's span carry the
+.B \-
+no-residue placeholder, not a spurious mark.
 
 .TP
 .B --bpcons

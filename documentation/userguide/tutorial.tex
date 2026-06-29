@@ -1539,7 +1539,10 @@ flags add it, all off by default (so default output is unchanged):
   the line is dense and can be re-read by standard Stockholm parsers: \otext{.} at
   an insert column, \otext{\~{}} at a missing/local-end column, \otext{-} at a
   deletion, and \otext{\_} at an unmarked consensus residue. \otext{--bpstatus}
-  adds one line per sequence.
+  adds one line per sequence. Under \prog{--sub} the marks stay relative to the
+  full-CM consensus (a partial-span sub-CM only changes which residues are
+  present), and consensus columns outside a fragment's span carry the \otext{-}
+  no-residue placeholder rather than a spurious mark.
 \item[\emprog{--bpcons}]
   adds a single \otext{\#=GC bp\_cons} line: for each base pair (nested and
   pseudoknot), the fraction of sequences whose two aligned residues form a
