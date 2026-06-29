@@ -1,0 +1,127 @@
+===== tRNA local =====
+#HDBANDS cm_M=227 hd_needed=12932 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=9091 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=7899 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=11054 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=10968 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=11382 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=8787 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=11610 (0.0001 GB for hdmin+hdmax)
+# CM: tRNA  M=227 clen=71  mode=local  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  tRNA5-sample1-in/117        8.961      8.961      8.961  OK tree==                      0.2223     1.8840     8.5x  vjd=0.2223 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample2-in/114       31.200     31.200     31.200  OK tree==                      0.1488     1.8533    12.5x  vjd=0.1488 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample3-in/111       37.744     37.744     37.744  OK tree==                      0.1058     1.8437    17.4x  vjd=0.1058 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample4-in/110       20.599     20.599     20.599  OK tree==                      0.1580     1.8690    11.8x  vjd=0.1580 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample5-in/108       10.569     10.569     10.569  OK tree==                      0.1580     1.8683    11.8x  vjd=0.1580 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample6-in/103        8.018      8.018      8.018  OK tree==                      0.1820     1.8716    10.3x  vjd=0.1820 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample7-in/110       29.090     29.090     29.090  OK tree==                      0.1332     1.8508    13.9x  vjd=0.1332 vji=0.0000  elA=1 elB=1 entryB=3
+  tRNA5-sample8-in/112       24.867     24.867     24.867  OK tree==                      0.1923     1.8734     9.7x  vjd=0.1923 vji=0.0000  elA=1 elB=1 entryB=3
+# summary: non-clip=8 (tree==: 8), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=1  B=1 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=8
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+
+===== tRNA global =====
+#HDBANDS cm_M=227 hd_needed=4532 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=3322 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=2705 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=3864 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=3463 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=5082 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=2772 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=227 hd_needed=3582 (0.0000 GB for hdmin+hdmax)
+# CM: tRNA  M=227 clen=71  mode=global  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  tRNA5-sample1-in/117       -2.298     -2.298     -2.298  OK tree==                      0.0213     0.2833    13.3x  vjd=0.0213 vji=0.0000  elA=0 elB=0 entryB=3
+  tRNA5-sample2-in/114       16.241     16.241     16.241  OK tree==                      0.0212     0.2736    12.9x  vjd=0.0212 vji=0.0000  elA=0 elB=0 entryB=3
+  tRNA5-sample3-in/111       24.318     24.318     24.318  OK tree==                      0.0077     0.2686    35.0x  vjd=0.0077 vji=0.0000  elA=0 elB=0 entryB=3
+  tRNA5-sample4-in/110        6.032      6.032      6.032  OK tree==                      0.0185     0.2779    15.0x  vjd=0.0185 vji=0.0000  elA=0 elB=0 entryB=4
+  tRNA5-sample5-in/108       -0.779     -0.779     -0.779  OK tree==                      0.0174     0.2747    15.7x  vjd=0.0174 vji=0.0000  elA=0 elB=0 entryB=3
+  tRNA5-sample6-in/103      -10.088    -10.088    -10.088  OK tree==                      0.0333     0.3995    12.0x  vjd=0.0333 vji=0.0000  elA=0 elB=0 entryB=3
+  tRNA5-sample7-in/110       22.374     22.374     22.374  OK tree==                      0.0095     0.3810    40.1x  vjd=0.0095 vji=0.0000  elA=0 elB=0 entryB=3
+  tRNA5-sample8-in/112       15.395     15.395     15.395  OK tree==                      0.0134     0.3875    29.0x  vjd=0.0134 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=8 (tree==: 8), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=0  B=0 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=8
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+
+===== 5S local =====
+#HDBANDS cm_M=369 hd_needed=4984 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=4985 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=6185 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=6627 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=5412 (0.0000 GB for hdmin+hdmax)
+# CM: 5S_rRNA  M=369 clen=120  mode=local  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  5S_rRNA-sample1/120        67.929     67.929     67.929  OK tree==                      0.0351     0.2990     8.5x  vjd=0.0351 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample2/116        59.849     59.849     59.849  OK tree==                      0.0333     0.2990     9.0x  vjd=0.0333 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample3/112        54.173     54.173     54.173  OK tree==                      0.0322     0.3892    12.1x  vjd=0.0322 vji=0.0000  elA=1 elB=1 entryB=3
+  5S_rRNA-sample4/108        54.147     54.147     54.147  OK tree==                      0.0315     0.4230    13.4x  vjd=0.0315 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample5/117        54.725     54.725     54.725  OK tree==                      0.0333     0.4133    12.4x  vjd=0.0333 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=5 (tree==: 5), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=1  B=1 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=5
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+
+===== 5S global =====
+#HDBANDS cm_M=369 hd_needed=3887 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=4046 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=4609 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=5397 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=4398 (0.0000 GB for hdmin+hdmax)
+# CM: 5S_rRNA  M=369 clen=120  mode=global  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  5S_rRNA-sample1/120        67.791     67.791     67.791  OK tree==                      0.0081     0.1863    22.9x  vjd=0.0081 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample2/116        59.707     59.707     59.707  OK tree==                      0.0084     0.1971    23.5x  vjd=0.0084 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample3/112        53.653     53.653     53.653  OK tree==                      0.0126     0.2319    18.3x  vjd=0.0126 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample4/108        53.999     53.999     53.999  OK tree==                      0.0124     0.2950    23.7x  vjd=0.0124 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample5/117        54.583     54.583     54.583  OK tree==                      0.0077     0.2870    37.2x  vjd=0.0077 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=5 (tree==: 5), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=0  B=0 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=5
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+
+===== 5S local tau=0.2 (clip stress) =====
+#HDBANDS cm_M=369 hd_needed=110 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=133 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=116 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=146 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=369 hd_needed=131 (0.0000 GB for hdmin+hdmax)
+# CM: 5S_rRNA  M=369 clen=120  mode=local  tau=0.2
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  5S_rRNA-sample1/120        67.929     67.929     67.929  OK tree==                      0.0296     0.0353     1.2x  vjd=0.0296 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample2/116        49.603     49.603     59.849  clip(B-X=-10.246) tree==       0.0277     0.0355     1.3x  vjd=0.0277 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample3/112        54.173     54.173     54.173  OK tree==                      0.0258     0.0354     1.4x  vjd=0.0258 vji=0.0000  elA=1 elB=1 entryB=3
+  5S_rRNA-sample4/108        54.147     54.147     54.147  OK tree==                      0.0240     0.0356     1.5x  vjd=0.0240 vji=0.0000  elA=0 elB=0 entryB=3
+  5S_rRNA-sample5/117        54.725     54.725     54.725  OK tree==                      0.0281     0.0355     1.3x  vjd=0.0281 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=4 (tree==: 4), clip=1, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=1  B=1 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=5
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+
+===== RNaseP local =====
+#HDBANDS cm_M=960 hd_needed=117936 (0.0009 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=148808 (0.0012 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=163137 (0.0013 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=155547 (0.0012 GB for hdmin+hdmax)
+# CM: rnaseP-eubact  M=960 clen=307  mode=local  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  rnaseP-eubact-sa/509       87.319     87.319     87.319  OK tree==                      1.8679    36.9333    19.8x  vjd=1.8679 vji=0.0000  elA=1 elB=1 entryB=3
+  rnaseP-eubact-sa/499       95.073     95.073     95.073  OK tree==                      1.7124    53.1366    31.0x  vjd=1.7124 vji=0.0000  elA=1 elB=1 entryB=3
+  rnaseP-eubact-sa/480       50.264     50.264     50.264  OK tree==                      2.0224    59.0816    29.2x  vjd=2.0224 vji=0.0000  elA=2 elB=2 entryB=3
+  rnaseP-eubact-sa/501      102.937    102.937    102.937  OK tree==                      1.8569    59.0209    31.8x  vjd=1.8569 vji=0.0000  elA=1 elB=1 entryB=3
+# summary: non-clip=4 (tree==: 4), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=2  B=2 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=4
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+
+===== RNaseP global =====
+#HDBANDS cm_M=960 hd_needed=115816 (0.0009 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=39442 (0.0003 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=46158 (0.0004 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=91181 (0.0007 GB for hdmin+hdmax)
+# CM: rnaseP-eubact  M=960 clen=307  mode=global  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  rnaseP-eubact-sa/509       28.763     28.763     28.763  OK tree==                      1.3352    31.2772    23.4x  vjd=1.3352 vji=0.0000  elA=0 elB=0 entryB=3
+  rnaseP-eubact-sa/499       21.327     21.327     22.220  clip(B-X=-0.893) tree==        0.4653    30.6662    65.9x  vjd=0.4653 vji=0.0000  elA=0 elB=0 entryB=3
+  rnaseP-eubact-sa/480        6.468      6.468      6.468  OK tree==                      0.7692    30.7199    39.9x  vjd=0.7692 vji=0.0000  elA=0 elB=0 entryB=3
+  rnaseP-eubact-sa/501       33.703     33.703     33.703  OK tree==                      0.8054    31.0801    38.6x  vjd=0.8054 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=3 (tree==: 3), clip=1, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=0  B=0 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=4
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+

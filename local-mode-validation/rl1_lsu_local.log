@@ -1,0 +1,29 @@
+===== LSU local =====
+# CM: LSU_rRNA_eukarya  M=10559 clen=3400  mode=local  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  AB158483.1/67259/3441    3111.372   3111.371  -9999.000  OK tree==                     23.7034    59.7400     2.5x  vjd=23.7034 vji=0.0000  elA=3 elB=3 entryB=3
+# summary: non-clip=1 (tree==: 1), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=3  B=3 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=1
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+	Command being timed: "timeout 290 ./hbdnc_drv_local --noexact --mxsize 30000 ../stage0_cyk_baseline/LSU_rRNA_eukarya.cm ../stage0_cyk_baseline/LSU_rRNA_eukarya.fa"
+	User time (seconds): 4.87
+	System time (seconds): 0.37
+	Percent of CPU this job got: 94%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:05.57
+	Maximum resident set size (kbytes): 480048
+	Exit status: 0
+
+===== LSU global =====
+# CM: LSU_rRNA_eukarya  M=10559 clen=3400  mode=global  tau=1e-07
+# seqname/L              hbAlign(A)   hbDnC(B)   exact(X)  verdict                     DnCpeakMb     HBmxMb  xfactor
+  AB158483.1/67259/3441    3108.278   3108.277  -9999.000  OK tree==                      0.3087    26.1399    84.7x  vjd=0.3087 vji=0.0000  elA=0 elB=0 entryB=3
+# summary: non-clip=1 (tree==: 1), clip=0, score-mismatch(B!=A)=0, bug(B>X)=0
+# EL coverage: max EL-nodes/parse  A=0  B=0 ; EL-structure mismatches(non-clip)=0 ; local-begin cases=1
+# RESULT: PASS (byte-exact on all non-clip; B==A score on all; EL structure matches)
+	Command being timed: "timeout 290 ./hbdnc_drv_local -g --noexact --mxsize 30000 ../stage0_cyk_baseline/LSU_rRNA_eukarya.cm ../stage0_cyk_baseline/LSU_rRNA_eukarya.fa"
+	User time (seconds): 3.54
+	System time (seconds): 0.26
+	Percent of CPU this job got: 97%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:03.90
+	Maximum resident set size (kbytes): 421564
+	Exit status: 0
