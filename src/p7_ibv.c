@@ -1565,10 +1565,20 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   { const char *kp = getenv("P7IBV_KBAND_PAD");
     if (kp && *kp) { int v = atoi(kp); if (v >= 0) ctx.kband_pad = v; } }
   /* Brief 173 Part B: route nodes whose band width >= wide_thresh to the SSE
-   * full-M primitives.  Crossover ~ M/4 (SSE is ~4x/cell, so full-M SSE beats
-   * scalar-over-band once the band exceeds ~M/4 columns); default M/2 is a
-   * safe, slightly-conservative start.  P7WV_WIDE_THRESH overrides (absolute
-   * # columns) for tuning; a huge value (> M) disables SSE routing entirely. */
+   * full-M primitives, scalar _b below.  Default M/2.
+   *
+   * Genome perf finding (brief 173, HSV M=152222 deriver sweep): at genome M
+   * the full-M SSE primitives are MEMORY-BANDWIDTH bound -- they touch all of
+   * [0,M] (a full F/B row is ~3.6 MB at M=152k), so routing a mid-width band to
+   * SSE moves far more memory than scalar-over-band, and the 4x SIMD compute
+   * win is nullified.  Empirically LOWER thresholds are SLOWER (M/2 ~= scalar
+   * 9:42 vs 9:47; M/4 = 13:44).  M/2 routes only the top 1-2 levels (band ~= M,
+   * where scalar touches ~M cells too) so it is neutral and safe.  A genuine
+   * genome deriver speedup needs a BANDED SSE kernel (compute only [k_lo,k_hi]
+   * with SIMD) -- a deferred follow-on (the brief's overread caveat).  This
+   * routing stays exact for i2k at any threshold and may help at mid-M where a
+   * full row fits in cache.  P7WV_WIDE_THRESH overrides (absolute # columns);
+   * a value > M disables SSE routing entirely (pure scalar = brief-172). */
   ctx.wide_thresh = (M / 2 > 1) ? (M / 2) : 1;
   { const char *wt = getenv("P7WV_WIDE_THRESH");
     if (wt && *wt) { int v = atoi(wt); if (v >= 1) ctx.wide_thresh = v; } }
