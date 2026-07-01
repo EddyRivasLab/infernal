@@ -1,0 +1,161 @@
+=== tau sweep, begin panel, full-local ===
+--- tau=1e-3 ---
+#HDBANDS cm_M=184 hd_needed=94 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=186 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=74 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=279 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=local(full:begins+ends) tau=0.001 tag=tau1e-3
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=deepbegin_onlysuffix L=15
+# RESULT tag=tau1e-3 seq=deepbegin_onlysuffix mode=local(full) L=15
+#   score : ckpt=13.159403 stock=13.159403 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=17 stock_nodes=17 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.951188 avgpp(ckpt)=0.951188
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=138 entry_v(ckpt)=138
+#   VERDICT=PASS
+# SEQ=deepbegin_plus_elend L=30
+# RESULT tag=tau1e-3 seq=deepbegin_plus_elend mode=local(full) L=30
+#   score : ckpt=-0.555745 stock=-0.555745 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=11 stock_nodes=11 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.651656 avgpp(ckpt)=0.651656
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=6 entry_v(ckpt)=6
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_full L=80
+# RESULT tag=tau1e-3 seq=shallowbegin_junk_full mode=local(full) L=80
+#   score : ckpt=76.328865 stock=76.328865 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=82 stock_nodes=82 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.961714 avgpp(ckpt)=0.961714
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_plus_elend L=100
+# RESULT tag=tau1e-3 seq=shallowbegin_junk_plus_elend mode=local(full) L=100
+#   score : ckpt=63.855194 stock=63.855194 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=81 stock_nodes=81 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.888641 avgpp(ckpt)=0.888641
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+--- tau=1e-5 ---
+#HDBANDS cm_M=184 hd_needed=287 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=934 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=915 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1485 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=local(full:begins+ends) tau=1e-05 tag=tau1e-5
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=deepbegin_onlysuffix L=15
+# RESULT tag=tau1e-5 seq=deepbegin_onlysuffix mode=local(full) L=15
+#   score : ckpt=13.166262 stock=13.166262 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=17 stock_nodes=17 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.948919 avgpp(ckpt)=0.948919
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=138 entry_v(ckpt)=138
+#   VERDICT=PASS
+# SEQ=deepbegin_plus_elend L=30
+# RESULT tag=tau1e-5 seq=deepbegin_plus_elend mode=local(full) L=30
+#   score : ckpt=-0.505259 stock=-0.505259 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=11 stock_nodes=11 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.643421 avgpp(ckpt)=0.643421
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=6 entry_v(ckpt)=6
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_full L=80
+# RESULT tag=tau1e-5 seq=shallowbegin_junk_full mode=local(full) L=80
+#   score : ckpt=76.344765 stock=76.344765 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=82 stock_nodes=82 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.956464 avgpp(ckpt)=0.956464
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_plus_elend L=100
+# RESULT tag=tau1e-5 seq=shallowbegin_junk_plus_elend mode=local(full) L=100
+#   score : ckpt=63.895149 stock=63.895149 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=81 stock_nodes=81 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.880294 avgpp(ckpt)=0.880294
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+--- tau=1e-7 ---
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=2212 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1101 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=3855 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=local(full:begins+ends) tau=1e-07 tag=tau1e-7
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=deepbegin_onlysuffix L=15
+# RESULT tag=tau1e-7 seq=deepbegin_onlysuffix mode=local(full) L=15
+#   score : ckpt=13.166482 stock=13.166482 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=17 stock_nodes=17 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.948777 avgpp(ckpt)=0.948777
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=138 entry_v(ckpt)=138
+#   VERDICT=PASS
+# SEQ=deepbegin_plus_elend L=30
+# RESULT tag=tau1e-7 seq=deepbegin_plus_elend mode=local(full) L=30
+#   score : ckpt=-0.504484 stock=-0.504484 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=11 stock_nodes=11 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.643325 avgpp(ckpt)=0.643325
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=6 entry_v(ckpt)=6
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_full L=80
+# RESULT tag=tau1e-7 seq=shallowbegin_junk_full mode=local(full) L=80
+#   score : ckpt=76.345207 stock=76.345207 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=82 stock_nodes=82 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.956408 avgpp(ckpt)=0.956408
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_plus_elend L=100
+# RESULT tag=tau1e-7 seq=shallowbegin_junk_plus_elend mode=local(full) L=100
+#   score : ckpt=63.895622 stock=63.895622 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=81 stock_nodes=81 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.880127 avgpp(ckpt)=0.880127
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+--- tau=1e-10 ---
+#HDBANDS cm_M=184 hd_needed=1651 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=3669 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1651 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=4587 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=local(full:begins+ends) tau=1e-10 tag=tau1e-10
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=deepbegin_onlysuffix L=15
+# RESULT tag=tau1e-10 seq=deepbegin_onlysuffix mode=local(full) L=15
+#   score : ckpt=13.166483 stock=13.166483 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=17 stock_nodes=17 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.948777 avgpp(ckpt)=0.948777
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=138 entry_v(ckpt)=138
+#   VERDICT=PASS
+# SEQ=deepbegin_plus_elend L=30
+# RESULT tag=tau1e-10 seq=deepbegin_plus_elend mode=local(full) L=30
+#   score : ckpt=-0.504484 stock=-0.504484 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=11 stock_nodes=11 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.643335 avgpp(ckpt)=0.643335
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=6 entry_v(ckpt)=6
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_full L=80
+# RESULT tag=tau1e-10 seq=shallowbegin_junk_full mode=local(full) L=80
+#   score : ckpt=76.345215 stock=76.345215 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=82 stock_nodes=82 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.956408 avgpp(ckpt)=0.956408
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_plus_elend L=100
+# RESULT tag=tau1e-10 seq=shallowbegin_junk_plus_elend mode=local(full) L=100
+#   score : ckpt=63.895630 stock=63.895630 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=81 stock_nodes=81 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.880127 avgpp(ckpt)=0.880127
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS

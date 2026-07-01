@@ -1,0 +1,98 @@
+=== matl60 full-local (eltest.fa, default begins+ends) ===
+#HDBANDS cm_M=184 hd_needed=915 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=765 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=405 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1663 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1663 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=local(full:begins+ends) tau=1e-07 tag=matl60_full
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=perfect L=60
+# RESULT tag=matl60_full seq=perfect mode=local(full) L=60
+#   score : ckpt=94.807983 stock=94.807983 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=1.000241 avgpp(ckpt)=1.000241
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+# RESULT tag=matl60_full seq=prefix30_polyA30 mode=local(full) L=60
+#   score : ckpt=36.184322 stock=36.184322 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=32 stock_nodes=32 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.953024 avgpp(ckpt)=0.953024
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+# RESULT tag=matl60_full seq=prefix24_div36 mode=local(full) L=60
+#   score : ckpt=26.107061 stock=26.107061 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=26 stock_nodes=26 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.965680 avgpp(ckpt)=0.965680
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+# RESULT tag=matl60_full seq=prefix40_div20 mode=local(full) L=60
+#   score : ckpt=52.676796 stock=52.676796 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=42 stock_nodes=42 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.945157 avgpp(ckpt)=0.945157
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+# RESULT tag=matl60_full seq=div_tail_mixed mode=local(full) L=60
+#   score : ckpt=51.166721 stock=51.166721 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.985339 avgpp(ckpt)=0.985339
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+# RESULT tag=matl60_full seq=prefix20_insert mode=local(full) L=70
+#   score : ckpt=84.877350 stock=84.877350 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=73 stock_nodes=73 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.912936 avgpp(ckpt)=0.912936
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+=== matl60 begin panel (full local) ===
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=2212 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1101 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=3855 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=local(full:begins+ends) tau=1e-07 tag=matl60_begin
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=deepbegin_onlysuffix L=15
+# RESULT tag=matl60_begin seq=deepbegin_onlysuffix mode=local(full) L=15
+#   score : ckpt=13.166482 stock=13.166482 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=17 stock_nodes=17 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.948777 avgpp(ckpt)=0.948777
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=138 entry_v(ckpt)=138
+#   VERDICT=PASS
+# SEQ=deepbegin_plus_elend L=30
+# RESULT tag=matl60_begin seq=deepbegin_plus_elend mode=local(full) L=30
+#   score : ckpt=-0.504484 stock=-0.504484 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=11 stock_nodes=11 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.643325 avgpp(ckpt)=0.643325
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=6 entry_v(ckpt)=6
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_full L=80
+# RESULT tag=matl60_begin seq=shallowbegin_junk_full mode=local(full) L=80
+#   score : ckpt=76.345207 stock=76.345207 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=82 stock_nodes=82 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.956408 avgpp(ckpt)=0.956408
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=shallowbegin_junk_plus_elend L=100
+# RESULT tag=matl60_begin seq=shallowbegin_junk_plus_elend mode=local(full) L=100
+#   score : ckpt=63.895622 stock=63.895622 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=81 stock_nodes=81 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.880127 avgpp(ckpt)=0.880127
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS

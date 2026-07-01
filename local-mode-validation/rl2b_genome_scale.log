@@ -1,0 +1,21 @@
+=== genome-scale full-local (--nostock, memory/byte-exact-of-path check) ===
+#HDBANDS cm_M=22966 hd_needed=275616 (0.0022 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=22966 L=7912 B=152 Z=770.1823  CM-DP peak=4.57 Mb  full-cube(2x)=125.55 Mb  win~27.5x
+#   EL-deck: banded=0.362 Mb/deck (94878 cells) vs unbanded O(L^2/2)=119.445 Mb/deck  reduction~330.0x
+# CM=NC_001959 M=22966 clen=7654 mode=local(full:begins+ends) tau=1e-07 tag=calici_full
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=NC_001959-sample1 L=7912
+# RESULT tag=calici_full seq=NC_001959-sample1 mode=local(full) L=7912 (ckpt-only, --nostock)
+#   ckpt  : sc=770.182251 nodes=8373 avgpp=0.634233 EL=0 BEGIN=1 entry_v=3
+#   VERDICT=CKPT-ONLY (no stock comparison)
+#HDBANDS cm_M=28942 hd_needed=231540 (0.0019 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=28942 L=9901 B=170 Z=1140.7177  CM-DP peak=3.22 Mb  full-cube(2x)=96.11 Mb  win~29.8x
+#   EL-deck: banded=0.302 Mb/deck (79180 cells) vs unbanded O(L^2/2)=187.034 Mb/deck  reduction~619.2x
+# CM=NC_004102 M=28942 clen=9646 mode=local(full:begins+ends) tau=1e-07 tag=flavi_full
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=NC_004102-sample1 L=9901
+# RESULT tag=flavi_full seq=NC_004102-sample1 mode=local(full) L=9901 (ckpt-only, --nostock)
+#   ckpt  : sc=1140.717651 nodes=10472 avgpp=0.647773 EL=0 BEGIN=1 entry_v=3
+#   VERDICT=CKPT-ONLY (no stock comparison)

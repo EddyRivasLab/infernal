@@ -1,0 +1,79 @@
+=== regression -g (global, both CMs, all seqs incl begin panel) ===
+#HDBANDS cm_M=184 hd_needed=915 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=3127 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=3133 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=3301 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=1657 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=global tau=1e-07 tag=matl60_g
+# flags: LOCAL_BEGIN=0 LOCAL_END=0
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=perfect L=60
+# RESULT tag=matl60_g seq=perfect mode=global L=60
+#   score : ckpt=94.909752 stock=94.909752 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=1.000255 avgpp(ckpt)=1.000255
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+# RESULT tag=matl60_g seq=prefix30_polyA30 mode=global L=60
+#   score : ckpt=21.240263 stock=21.240263 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.614108 avgpp(ckpt)=0.614108
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+# RESULT tag=matl60_g seq=prefix24_div36 mode=global L=60
+#   score : ckpt=5.666630 stock=5.666630 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.451103 avgpp(ckpt)=0.451103
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+# RESULT tag=matl60_g seq=prefix40_div20 mode=global L=60
+#   score : ckpt=42.790489 stock=42.790489 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.690256 avgpp(ckpt)=0.690256
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+# RESULT tag=matl60_g seq=div_tail_mixed mode=global L=60
+#   score : ckpt=51.252945 stock=51.252945 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.987945 avgpp(ckpt)=0.987945
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+# RESULT tag=matl60_g seq=prefix20_insert mode=global L=70
+#   score : ckpt=84.979088 stock=84.979088 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=73 stock_nodes=73 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.912939 avgpp(ckpt)=0.912939
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+#HDBANDS cm_M=904 hd_needed=13584 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=5421 (0.0000 GB for hdmin+hdmax)
+# CM=matl300 M=904 clen=300 mode=global tau=1e-07 tag=matl300_g
+# flags: LOCAL_BEGIN=0 LOCAL_END=0
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=pre150_polyG150 L=300
+# RESULT tag=matl300_g seq=pre150_polyG150 mode=global L=300
+#   score : ckpt=127.982025 stock=127.982025 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=302 stock_nodes=302 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.365767 avgpp(ckpt)=0.365767
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=perfect300 L=300
+# RESULT tag=matl300_g seq=perfect300 mode=global L=300
+#   score : ckpt=343.444427 stock=343.444427 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=302 stock_nodes=302 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.986364 avgpp(ckpt)=0.986364
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS

@@ -1,0 +1,22 @@
+=== matl300 full-local ===
+#HDBANDS cm_M=904 hd_needed=1052 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=5421 (0.0000 GB for hdmin+hdmax)
+# CM=matl300 M=904 clen=300 mode=local(full:begins+ends) tau=1e-07 tag=matl300_full
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=pre150_polyG150 L=300
+# RESULT tag=matl300_full seq=pre150_polyG150 mode=local(full) L=300
+#   score : ckpt=150.546539 stock=150.546539 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=154 stock_nodes=154 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.846428 avgpp(ckpt)=0.846428
+#   EL    : stock=1 ckpt=1 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
+# SEQ=perfect300 L=300
+# RESULT tag=matl300_full seq=perfect300 mode=local(full) L=300
+#   score : ckpt=343.367950 stock=343.367950 |dsc|=0.000e+00 byte-exact=YES
+#   parse : ckpt_nodes=302 stock_nodes=302 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.986426 avgpp(ckpt)=0.986426
+#   EL    : stock=0 ckpt=0 match=YES
+#   BEGIN : stock=1 ckpt=1 match=YES entry_v(stock)=3 entry_v(ckpt)=3
+#   VERDICT=PASS
