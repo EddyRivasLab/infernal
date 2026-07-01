@@ -89,6 +89,7 @@ typedef struct {
 				  */
   /* HMM-only alignment fields (--hmm mode, used by hmm_pipeline_thread) */
   P7_PROFILE       *gm;           /* thread-local p7 profile (NULL if not --hmm) */
+  P7_BG            *bg;           /* brief 182: thread-local null model, needed to re-run p7_ProfileConfig() per-seq under Tgm (NULL if not --hmm) */
   P7_HMM           *hmm;          /* ptr to p7 HMM, shared read-only (NULL if not --hmm) */
   P7_GMX           *gx;           /* Viterbi DP matrix (NULL if not --hmm or unbanded-only) */
   P7_GMX           *gxf;          /* Forward matrix (NULL unless --hmm --hmmnoband) */
@@ -99,6 +100,7 @@ typedef struct {
   int               do_p7ibv;     /* TRUE for --hmm --p7ibv (banded OA via IBV deriver) */
   int               ibv_delta;    /* IBV Delta milli-bits (--p7ibv-delta) */
   int               ibv_base_slab;/* IBV D&C base-case slab; 0=auto (--p7ibv-base-slab) */
+  int               do_trunc;     /* brief 182: TRUE if CM_ALIGN_TRUNC set (drives Tgm gm config + IBV deriver do_trunc arg) */
 } WORKER_INFO;
 
 #define ACCOPTS      "--hbanded,--nonbanded,--p7band"         /* Exclusive choice for acceleration or not */
@@ -874,6 +876,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
    * CLI validation guarantees --p7ibv only reaches here in banded-OA mode.
    */
   int do_p7ibv     = (cm->p7_use_ibv && do_bandedoa)         ? TRUE : FALSE;
+  /* brief 182: mirror p7_ibv.c:1793's expression exactly -- the same test
+   * used to calibrate p7bpad/node-pad at align-time. Drives both the Tgm
+   * profile config (Part A) and the IBV deriver's do_trunc arg (Part B).
+   */
+  int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)       ? TRUE : FALSE;
 
   /* banded functions declared in cm_p7_band.c */
   extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
@@ -947,8 +954,18 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
       /* Initialize per-thread WORKER_INFO with HMM-specific fields */
       for (k = 0; k < ncpus; k++) {
 	winfo[k].queue       = queue;
+	winfo[k].bg          = p7_bg_Create(hmm->abc);
 	winfo[k].gm          = p7_profile_Create(hmm->M, hmm->abc);
-	p7_ProfileConfig(hmm, bg, winfo[k].gm, 400, p7mode);
+	/* brief 182 Part A: Tgm (5'+3' truncation-aware local profile) when
+	 * do_trunc, mirroring cm_alndata.c:459-461's proven --p7band pattern.
+	 * Per-sequence length is set later by p7_ReconfigLength() (non-trunc)
+	 * or the Tgm-aware re-setup in hmm_pipeline_thread() (trunc). */
+	if (do_trunc) {
+	  p7_ProfileConfig(hmm, bg, winfo[k].gm, 400, p7_LOCAL);
+	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(winfo[k].gm, 400);
+	} else {
+	  p7_ProfileConfig(hmm, bg, winfo[k].gm, 400, p7mode);
+	}
 	winfo[k].hmm         = hmm;
 	/* Under --p7ibv the banded-OA path needs no full Viterbi P7_GMX. */
 	winfo[k].gx          = (do_hmmvit || (do_bandedoa && ! do_p7ibv)) ? p7_gmx_Create(hmm->M, 400) : NULL;
@@ -958,6 +975,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].do_hmmvit   = do_hmmvit;
 	winfo[k].do_hmmnoband = do_hmmnoband;
 	winfo[k].do_p7ibv    = do_p7ibv;
+	winfo[k].do_trunc    = do_trunc;
 	winfo[k].ibv_delta   = esl_opt_GetInteger(go, "--p7ibv-delta");
 	/* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
 	 * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
@@ -988,6 +1006,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
       esl_threads_Destroy(threadObj);
       for (k = 0; k < ncpus; k++) {
 	p7_profile_Destroy(winfo[k].gm);
+	p7_bg_Destroy(winfo[k].bg);
 	if (winfo[k].gx)  p7_gmx_Destroy(winfo[k].gx);
 	if (winfo[k].gxf) p7_gmx_Destroy(winfo[k].gxf);
 	if (winfo[k].gxb) p7_gmx_Destroy(winfo[k].gxb);
@@ -998,7 +1017,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
     else {
       /* Serial path: single profile and matrices */
       gm = p7_profile_Create(hmm->M, hmm->abc);
-      p7_ProfileConfig(hmm, bg, gm, 400, p7mode);
+      /* brief 182 Part A: Tgm when do_trunc (see winfo[k].gm comment above). */
+      if (do_trunc) {
+	p7_ProfileConfig(hmm, bg, gm, 400, p7_LOCAL);
+	p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm, 400);
+      } else {
+	p7_ProfileConfig(hmm, bg, gm, 400, p7mode);
+      }
 
       if (do_hmmvit || (do_bandedoa && ! do_p7ibv)) gx  = p7_gmx_Create(hmm->M, 400);
       if (do_hmmnoband)           { gxf = p7_gmx_Create(hmm->M, 400); gxb = p7_gmx_Create(hmm->M, 400); }
@@ -1006,7 +1031,16 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
       for (idx = 0; idx < nseq; idx++) {
 	ESL_SQ *sq = sqarr[idx];
 
-	p7_ReconfigLength(gm, sq->n);
+	/* brief 182 Part A: p7_ReconfigLength() unconditionally overwrites
+	 * xsc[N/C/J][MOVE|LOOP], which would clobber the Tgm -eslINFINITY
+	 * N->N/C->C loop-disable set by p7_ProfileConfig5PrimeAnd3PrimeTrunc().
+	 * Re-run the Tgm setup per-sequence (sq->n) instead when do_trunc. */
+	if (do_trunc) {
+	  p7_ProfileConfig(hmm, bg, gm, sq->n, p7_LOCAL);
+	  p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm, sq->n);
+	} else {
+	  p7_ReconfigLength(gm, sq->n);
+	}
 
 	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
 	 * Skipped under --p7ibv: the full P7_GMX is never allocated. */
@@ -1070,7 +1104,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					      FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
-					      FALSE,    /* brief 171: --hmm path is non-truncated (glocal) */
+					      FALSE,   /* brief182-PARTA-STAGE-placeholder */ /* brief 182 Part B: was hardcoded FALSE; --hmm defaults to truncated (CM_ALIGN_TRUNC set unless --notrunc), so this must track it like p7_ibv.c:1793 */
 					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
@@ -1568,8 +1602,16 @@ hmm_pipeline_thread(void *arg)
   while (sq->L != -1) {
     int idx = sq->W;  /* sequence index, overloaded by hmm_thread_loop */
 
-    /* Reconfigure profile for this sequence length */
-    p7_ReconfigLength(info->gm, sq->n);
+    /* Reconfigure profile for this sequence length.
+     * brief 182 Part A: p7_ReconfigLength() unconditionally overwrites
+     * xsc[N/C/J][MOVE|LOOP], clobbering the Tgm N->N/C->C loop-disable;
+     * re-run the Tgm setup per-sequence instead when do_trunc. */
+    if (info->do_trunc) {
+      p7_ProfileConfig(info->hmm, info->bg, info->gm, sq->n, p7_LOCAL);
+      p7_ProfileConfig5PrimeAnd3PrimeTrunc(info->gm, sq->n);
+    } else {
+      p7_ReconfigLength(info->gm, sq->n);
+    }
 
     /* preflight: check HMM matrix size vs --mxsize before GrowTo.
      * Skipped under --p7ibv: the full P7_GMX is never allocated. */
@@ -1627,7 +1669,7 @@ hmm_pipeline_thread(void *arg)
 					  p7ibv_delta, info->ibv_base_slab,
 					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					  FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
-					  FALSE,    /* brief 171: --hmm path is non-truncated (glocal) */
+					  FALSE,    /* brief182-PARTA-STAGE-placeholder */ /* brief 182 Part B: was hardcoded FALSE; track CM_ALIGN_TRUNC like p7_ibv.c:1793 */
 					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
@@ -2293,6 +2335,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     int         do_hmmvit_w    = (cm->align_opts & CM_ALIGN_P7HMMVIT)    ? TRUE : FALSE;
     int         do_hmmnoband_w = (cm->align_opts & CM_ALIGN_P7HMMNOBAND) ? TRUE : FALSE;
     int         do_bandedoa_w  = (! do_hmmvit_w && ! do_hmmnoband_w);
+    int         do_trunc_w     = (cm->align_opts & CM_ALIGN_TRUNC)       ? TRUE : FALSE; /* brief 182 Part A */
     float       sc_w, fwdsc_w, oasc_w;
 
     /* banded functions declared in cm_p7_band.c */
@@ -2303,7 +2346,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
     extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
 
-    p7_ProfileConfig(hmm_w, bg_w, gm_w, 400, p7mode_w);
+    /* brief 182 Part A: Tgm when do_trunc_w (mirrors hmm_alignment()'s serial-path setup). */
+    if (do_trunc_w) {
+      p7_ProfileConfig(hmm_w, bg_w, gm_w, 400, p7_LOCAL);
+      p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm_w, 400);
+    } else {
+      p7_ProfileConfig(hmm_w, bg_w, gm_w, 400, p7mode_w);
+    }
     if (do_hmmvit_w || do_bandedoa_w) gx_w  = p7_gmx_Create(hmm_w->M, 400);
     if (do_hmmnoband_w)             { gxf_w = p7_gmx_Create(hmm_w->M, 400); gxb_w = p7_gmx_Create(hmm_w->M, 400); }
 
@@ -2317,7 +2366,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     while (dsq != NULL) {
       P7_TRACE *wtr = do_hmmvit_w ? p7_trace_Create() : p7_trace_CreateWithPP();
 
-      p7_ReconfigLength(gm_w, L);
+      /* brief 182 Part A: re-run Tgm setup per-seq (p7_ReconfigLength() would
+       * clobber the Tgm N->N/C->C loop-disable; see hmm_pipeline_thread comment). */
+      if (do_trunc_w) {
+	p7_ProfileConfig(hmm_w, bg_w, gm_w, L, p7_LOCAL);
+	p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm_w, L);
+      } else {
+	p7_ReconfigLength(gm_w, L);
+      }
 
       /* preflight: check HMM matrix size vs --mxsize before GrowTo */
       {
