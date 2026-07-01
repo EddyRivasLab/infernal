@@ -145,6 +145,13 @@ static ESL_OPTIONS options[] = {
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver (brief 124)",                 3 },
   { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
   { "--p7ibv-ckpt",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-mem",              NULL, "checkpoint Pass-2 banded CP9 F/B (low mem; brief 146)",      3 },
+  { "--p7ibv-wv",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "windowed-Viterbi band: i2k +/- F+B-halfwidth pad (brief 169)",3 },
+  { "--p7wv-nsamp",  eslARG_INT,        "40", NULL,       "n>0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: # CM-emitted samples",                  3 },
+  { "--p7wv-q",      eslARG_REAL,     "0.99", NULL,    "0<x<=1",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: half-width quantile",                   3 },
+  { "--p7wv-floor",  eslARG_INT,         "2", NULL,      "n>=0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: floor pad",                             3 },
+  { "--p7wv-seed",   eslARG_INT,       "181", NULL,      "n>=0",       NULL, "--p7ibv-wv",              NULL, "WV pad calibration: RNG seed",                              3 },
+  { "--p7wvpad-dump",eslARG_OUTFILE,   NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",  "--p7wvpad-file", "brief172: dump calibrated WV pad to <f> (amortize calib)",   3 },
+  { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp", "brief172: load WV pad from <f> (skip per-run calib)",        3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -1062,6 +1069,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 					       ? HMM_P7IBV_KNEE_BASE_SLAB
 					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					      FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
+					      FALSE,    /* brief 171: --hmm path is non-truncated (glocal) */
 					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
@@ -1617,6 +1626,8 @@ hmm_pipeline_thread(void *arg)
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  p7ibv_delta, info->ibv_base_slab,
 					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					  FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
+					  FALSE,    /* brief 171: --hmm path is non-truncated (glocal) */
 					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
@@ -2916,6 +2927,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->p7_ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");
       if(esl_opt_GetBoolean(go, "--p7ibv-ckpt")) cm->p7_ibv_ckpt = TRUE;
     }
+    if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 169 */
   }
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
@@ -2931,7 +2943,59 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   }
   
   /* configure */
-  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status; 
+  if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
+
+  /* Brief 169: with --p7ibv-wv, calibrate the windowed-Viterbi per-node pad
+   * (F+B-halfwidth quantile) ONCE per CM here -- single-threaded, after
+   * cm_Configure populated cm->fp7 and before any worker threads spawn -- and
+   * cache it on the CM (workers read it read-only).  This is the align-time
+   * calibration: works on existing CMs (only needs cm->fp7), no rebuild. */
+  if(cm->p7_ibv_wv) {
+    int wk;
+    if(cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "--p7ibv-wv requires cm->fp7 (ML p7 filter)");
+    /* Brief 172 Phase B (pad amortization): the genome WV pad calibration runs
+     * nsamp full-length deriver passes (prohibitive at genome). --p7wvpad-file
+     * loads a once-computed pad (skip per-run calib); --p7wvpad-dump writes the
+     * calibrated pad for reuse.  This is the pad-storage mechanism the brief
+     * requires; serializing it onto the CM file (tag P7WVPAD, cmbuild --p7wv-q)
+     * is the production form and is a mechanical follow-up (see summary).  The
+     * pad is per-consensus-column [0..fp7->M] (fp7->M == clen). */
+    if(esl_opt_IsOn(go, "--p7wvpad-file")) {
+      FILE *pf = fopen(esl_opt_GetString(go, "--p7wvpad-file"), "r");
+      int   padM = 0, kk, vv;
+      char  line[256];
+      if(pf == NULL) ESL_FAIL(eslFAIL, errbuf, "failed to open --p7wvpad-file %s", esl_opt_GetString(go, "--p7wvpad-file"));
+      cm->p7_wv_nodepad = malloc(sizeof(int) * (cm->fp7->M + 1));
+      if(cm->p7_wv_nodepad == NULL) { fclose(pf); ESL_FAIL(eslEMEM, errbuf, "malloc failed for --p7wvpad-file"); }
+      for(wk = 0; wk <= cm->fp7->M; wk++) cm->p7_wv_nodepad[wk] = 0;
+      while(fgets(line, sizeof(line), pf) != NULL) {
+        if(line[0] == '#') continue;
+        if(sscanf(line, "%d %d", &kk, &vv) == 2 && kk >= 0 && kk <= cm->fp7->M) { cm->p7_wv_nodepad[kk] = vv; if(kk > padM) padM = kk; }
+      }
+      fclose(pf);
+      if(padM != cm->fp7->M) ESL_FAIL(eslEINCOMPAT, errbuf, "--p7wvpad-file max index %d != fp7->M %d", padM, cm->fp7->M);
+      cm->p7_wv_nodepad_M = cm->fp7->M;
+    } else {
+      ESL_RANDOMNESS *wv_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7wv-seed"));
+      if(wv_r == NULL) ESL_FAIL(eslEMEM, errbuf, "failed to allocate RNG for --p7ibv-wv pad calibration");
+      status = cm_ComputeP7WVNodePad(cm, errbuf, wv_r,
+                                     esl_opt_GetInteger(go, "--p7wv-nsamp"),
+                                     esl_opt_GetReal(go,    "--p7wv-q"),
+                                     esl_opt_GetInteger(go, "--p7ibv-delta"),
+                                     esl_opt_GetInteger(go, "--p7wv-floor"),
+                                     &(cm->p7_wv_nodepad));
+      esl_randomness_Destroy(wv_r);
+      if(status != eslOK) return status;
+      cm->p7_wv_nodepad_M = cm->fp7->M;
+    }
+    if(esl_opt_IsOn(go, "--p7wvpad-dump")) {
+      FILE *df = fopen(esl_opt_GetString(go, "--p7wvpad-dump"), "w");
+      if(df == NULL) ESL_FAIL(eslFAIL, errbuf, "failed to open --p7wvpad-dump %s", esl_opt_GetString(go, "--p7wvpad-dump"));
+      fprintf(df, "# brief172 WV per-node pad  M=%d  (k pad)\n", cm->fp7->M);
+      for(wk = 0; wk <= cm->fp7->M; wk++) fprintf(df, "%d %d\n", wk, cm->p7_wv_nodepad[wk]);
+      fclose(df);
+    }
+  }
 
   return eslOK;
 }

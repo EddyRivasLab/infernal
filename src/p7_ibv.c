@@ -33,6 +33,8 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_random.h"
+#include "esl_sq.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
@@ -115,6 +117,15 @@ p7ibv_mm_max3(__m128 a, __m128 b, __m128 c)
  * emit_row = emit_table[dsq[i]].  FM_prev/FI_prev/FD_prev = row i-1.
  * FM_curr/FI_curr/FD_curr are written (k=0..M).  Tail k>M not touched.
  * Valid for i >= 1.
+ *
+ * begin_milli (brief 171, Tgm begin-anywhere): if non-NULL, fold a local
+ * begin into each match cell: M_k <- max(M_k, begin_milli[k] + emit_row[k]).
+ * This is the truncated-mode entry (enter the model at any node k with score
+ * log(occ[k]/Z)).  It must be folded BEFORE the left-to-right D-fill so that
+ * begins can be followed by deletes on the same row.  Pass NULL for the glocal
+ * path (begins handled by the row-0 D-cascade in the caller) and for every row
+ * except the global begin row (Tgm: row 1 only, since N->N is impossible). The
+ * begin_milli array must be valid for k=0..k_stride-1 (k=0 and k>M = NEG_INF).
  */
 static void
 ibv_forward_one_row(int M, size_t k_stride,
@@ -122,6 +133,7 @@ ibv_forward_one_row(int M, size_t k_stride,
                     const float *IM_t, const float *II_t,
                     const float *DM_t, const float *DD_t,
                     const float *emit_row,
+                    const float *begin_milli,
                     const float *FM_prev, const float *FI_prev, const float *FD_prev,
                     float *FM_curr, float *FI_curr, float *FD_curr)
 {
@@ -142,6 +154,10 @@ ibv_forward_one_row(int M, size_t k_stride,
       float m = (a > b) ? a : b;
       if (c > m) m = c;
       cM = m + emit_row[k];
+      if (begin_milli != NULL) {
+        float bc = begin_milli[k] + emit_row[k];
+        if (bc > cM) cM = bc;
+      }
       float a2 = FM_curr[k - 1] + MD_t[k - 1];
       float b2 = FD_curr[k - 1] + DD_t[k - 1];
       cD = (a2 > b2) ? a2 : b2;
@@ -165,6 +181,7 @@ ibv_forward_one_row(int M, size_t k_stride,
     __m128 b      = _mm_add_ps(i_prev, t_im);
     __m128 c      = _mm_add_ps(d_prev, t_dm);
     __m128 mx     = p7ibv_mm_max3(a, b, c);
+    if (begin_milli != NULL) mx = _mm_max_ps(mx, _mm_loadu_ps(&begin_milli[k]));
     __m128 e_vec  = _mm_loadu_ps(&emit_row[k]);
     _mm_storeu_ps(&FM_curr[k], _mm_add_ps(mx, e_vec));
 
@@ -191,6 +208,10 @@ ibv_forward_one_row(int M, size_t k_stride,
       float m = (a > b) ? a : b;
       if (c > m) m = c;
       cM = m + emit_row[k];
+      if (begin_milli != NULL) {
+        float bc = begin_milli[k] + emit_row[k];
+        if (bc > cM) cM = bc;
+      }
     }
     FM_curr[k] = cM;
     FI_curr[k] = cI;
@@ -212,9 +233,17 @@ ibv_forward_one_row(int M, size_t k_stride,
  *   i  < global_L : normal backward step.
  *
  * Writes BM_curr/BI_curr/BD_curr for k=0..M.  Tail k>M not touched.
+ *
+ * do_trunc (brief 171, Tgm end-anywhere): when set, the terminal injection at
+ * row L mirrors local exit -- every match state M_k may exit to E with score 0
+ * (esc=0 in HMMER local mode), instead of the glocal forced exit from node M
+ * (delete-cascade to D_M).  The delete cascade to D_M->E is kept (D_M->E is
+ * allowed even in local mode); inserts still cannot be the last emitted state.
+ * Only affects the terminal branch (i == global_L); the interior backward
+ * recursion is mode-independent because the end is carried in by the terminal.
  */
 static void
-ibv_backward_one_row(int M, size_t k_stride, int i, int global_L,
+ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
                      const float *MM_t, const float *MI_t, const float *MD_t,
                      const float *IM_t, const float *II_t,
                      const float *DM_t, const float *DD_t,
@@ -227,6 +256,13 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L,
   (void) k_stride;
 
   if (i == global_L) {
+    if (do_trunc) {
+      /* Tgm end-anywhere: M_k -> E exit (esc=0) at any node k. */
+      for (k = 0; k <= M; k++) { BM_curr[k] = 0.0f; BI_curr[k] = P7IBV_NEG_INF; }
+      BD_curr[M] = 0.0f;
+      for (k = M - 1; k >= 0; k--) BD_curr[k] = DD_t[k] + BD_curr[k + 1];
+      return;
+    }
     BM_curr[M] = 0.0f;
     BI_curr[M] = 0.0f;
     BD_curr[M] = 0.0f;
@@ -437,6 +473,7 @@ ibv_connectivity_guard(int L, int M, int ibv_mode, int *kmin, int *kmax)
 
 int
 p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                int do_trunc,
                 int ibv_mode, int ibv_width,
                 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -445,6 +482,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   int       M;
   int       i, k;
   int       K;
+  float    *begin_milli = NULL;
   float    *MM_t = NULL, *MI_t = NULL, *MD_t = NULL;
   float    *IM_t = NULL, *II_t = NULL;
   float    *DM_t = NULL, *DD_t = NULL;
@@ -534,28 +572,53 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 
   if ((status = ibv_alloc_floats(k_stride, &through)) != eslOK) goto ERROR;
 
+  /* Brief 171: Tgm begin-anywhere vector.  begin_milli[k] = milli-bit log2 of
+   * the local entry probability into M_k (occ[k] / sum_i occ[i]*(M-i+1)), the
+   * same occupancy-weighted local begin HMMER's p7_ProfileConfig(p7_LOCAL) sets
+   * (and the vitband/pinbridge Tgm reference uses via cm_alndata.c:459-461).
+   * Only used at the global begin row (row 1). */
+  if (do_trunc) {
+    float *occ = NULL;
+    double Z = 0.0;
+    ESL_ALLOC(occ, sizeof(float) * (M + 1));
+    if ((status = p7_hmm_CalculateOccupancy(hmm, occ, NULL)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 1; k <= M; k++) Z += (double) occ[k] * (double) (M - k + 1);
+    if ((status = ibv_alloc_floats(k_stride, &begin_milli)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 0; k < (int) k_stride; k++) begin_milli[k] = P7IBV_NEG_INF;
+    for (k = 1; k <= M; k++) {
+      double b = (Z > 0.0 && occ[k] > 0.0) ? (double) occ[k] / Z : 0.0;
+      begin_milli[k] = (b > 0.0) ? (float)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
+    }
+    free(occ);
+  }
+
 #define F_M(i)  (FM_pool + (size_t)(i) * k_stride)
 #define F_I(i)  (FI_pool + (size_t)(i) * k_stride)
 #define F_D(i)  (FD_pool + (size_t)(i) * k_stride)
 
-  /* Row 0: D-cascade init. */
-  F_M(0)[0] = 0.0f;
-  {
-    float *fm0 = F_M(0);
-    float *fd0 = F_D(0);
-    for (k = 1; k <= M; k++) {
-      float a = fm0[k - 1] + MD_t[k - 1];
-      float b = fd0[k - 1] + DD_t[k - 1];
-      fd0[k] = (a > b) ? a : b;
+  /* Row 0 init.  Glocal: D-cascade from M_0 (B-state).  Tgm (do_trunc): leave
+   * row 0 all NEG_INF (no glocal entry); begins are injected at row 1 via
+   * begin_milli, so the parse may start at any node. */
+  if (! do_trunc) {
+    F_M(0)[0] = 0.0f;
+    {
+      float *fm0 = F_M(0);
+      float *fd0 = F_D(0);
+      for (k = 1; k <= M; k++) {
+        float a = fm0[k - 1] + MD_t[k - 1];
+        float b = fd0[k - 1] + DD_t[k - 1];
+        fd0[k] = (a > b) ? a : b;
+      }
     }
   }
 
   for (i = 1; i <= L; i++) {
     int x  = (int) dsq[i];
     int xt = (x >= 0 && x < K) ? x : K;
+    const float *brow = (do_trunc && i == 1) ? begin_milli : NULL;
     ibv_forward_one_row(M, k_stride,
                         MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
-                        emit_table[xt],
+                        emit_table[xt], brow,
                         F_M(i-1), F_I(i-1), F_D(i-1),
                         F_M(i),   F_I(i),   F_D(i));
   }
@@ -564,9 +627,15 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     float *fm_L = F_M(L);
     float *fi_L = F_I(L);
     float *fd_L = F_D(L);
-    optimal = fm_L[M];
-    if (fi_L[M] > optimal) optimal = fi_L[M];
-    if (fd_L[M] > optimal) optimal = fd_L[M];
+    if (do_trunc) {
+      /* Tgm end-anywhere: exit from any match node, or D_M->E. */
+      optimal = fd_L[M];
+      for (k = 1; k <= M; k++) if (fm_L[k] > optimal) optimal = fm_L[k];
+    } else {
+      optimal = fm_L[M];
+      if (fi_L[M] > optimal) optimal = fi_L[M];
+      if (fd_L[M] > optimal) optimal = fd_L[M];
+    }
   }
   assert(optimal == optimal);
   floor_milli = (float) delta_milli;
@@ -592,7 +661,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   float *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
 
   /* Row L: terminal injection. */
-  ibv_backward_one_row(M, k_stride, L, L,
+  ibv_backward_one_row(M, k_stride, L, L, do_trunc,
                        MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
                        NULL, NULL, NULL,
                        B_M_prev, B_I_prev, B_D_prev);
@@ -601,7 +670,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
     int x_next = (int) dsq[i + 1];
     int xt     = (x_next >= 0 && x_next < K) ? x_next : K;
 
-    ibv_backward_one_row(M, k_stride, i, L,
+    ibv_backward_one_row(M, k_stride, i, L, do_trunc,
                          MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
                          emit_table[xt], B_M_prev, B_I_prev,
                          B_M_curr, B_I_curr, B_D_curr);
@@ -667,6 +736,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   free(FM_pool); free(FI_pool); free(FD_pool);
   free(BM_a); free(BM_b); free(BI_a); free(BI_b); free(BD_a); free(BD_b);
   free(through);
+  if (begin_milli) free(begin_milli);
   free(emit_pool); free(emit_table);
 
   *ret_i2k    = i2k;
@@ -684,6 +754,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   if (BI_a) free(BI_a); if (BI_b) free(BI_b);
   if (BD_a) free(BD_a); if (BD_b) free(BD_b);
   if (through) free(through);
+  if (begin_milli) free(begin_milli);
   if (emit_pool) free(emit_pool); if (emit_table) free(emit_table);
   if (i2k)  free(i2k);
   if (kmin) free(kmin);
@@ -727,6 +798,8 @@ typedef struct {
   size_t  k_stride;
   int     global_L;
   int     base_slab;
+  int     do_trunc;        /* brief 171: Tgm begin/end-anywhere semantics       */
+  const float *begin_milli;/* brief 171: Tgm begin vector (NULL unless do_trunc) */
   const ESL_DSQ *dsq;
   int    *kmin;
   int    *kmax;
@@ -734,7 +807,16 @@ typedef struct {
   float   thr;
   int     ibv_mode;  /* brief 140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
   int     ibv_width; /* brief 140: fixed-width pad W around argmax-k pin */
+  int     kband_pad; /* brief 172: k-band child-narrowing pad (do_kband path) */
 } IBV_DnC_Ctx;
+
+/* brief 171: begin vector for the forward call at absolute row `absrow`
+ * (non-NULL only at the global begin row 1 under Tgm). */
+static inline const float *
+ibv_brow(const IBV_DnC_Ctx *ctx, int absrow)
+{
+  return (ctx->do_trunc && absrow == 1) ? ctx->begin_milli : NULL;
+}
 
 static inline const float *
 ibv_emit(const IBV_DnC_Ctx *ctx, int pos)
@@ -770,7 +852,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
       ibv_forward_one_row(M, ks,
                           ctx->MM_t, ctx->MI_t, ctx->MD_t,
                           ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                          ibv_emit(ctx, i_lo + r),
+                          ibv_emit(ctx, i_lo + r), ibv_brow(ctx, i_lo + r),
                           ctx->slab_F + prev_off + 0*ks,
                           ctx->slab_F + prev_off + 1*ks,
                           ctx->slab_F + prev_off + 2*ks,
@@ -784,7 +866,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
       int row_ihi = i_hi;
       const float *em = (row_ihi < global_L) ? ibv_emit(ctx, row_ihi + 1) : NULL;
       size_t off = (size_t) slab_size * 3 * ks;
-      ibv_backward_one_row(M, ks, row_ihi, global_L,
+      ibv_backward_one_row(M, ks, row_ihi, global_L, ctx->do_trunc,
                            ctx->MM_t, ctx->MI_t, ctx->MD_t,
                            ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                            em, B_hi_M, B_hi_I,
@@ -795,7 +877,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
     for (int r = slab_size - 1; r >= 1; r--) {
       size_t next_off = (size_t)(r + 1) * 3 * ks;
       size_t curr_off = (size_t) r       * 3 * ks;
-      ibv_backward_one_row(M, ks, i_lo + r, global_L,
+      ibv_backward_one_row(M, ks, i_lo + r, global_L, ctx->do_trunc,
                            ctx->MM_t, ctx->MI_t, ctx->MD_t,
                            ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                            ibv_emit(ctx, i_lo + r + 1),
@@ -842,7 +924,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   for (int r = i_lo + 1; r < i_mid; r++) {
     ibv_forward_one_row(M, ks, ctx->MM_t, ctx->MI_t, ctx->MD_t,
                         ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                        ibv_emit(ctx, r),
+                        ibv_emit(ctx, r), ibv_brow(ctx, r),
                         rFpM, rFpI, rFpD, rFcM, rFcI, rFcD);
     float *t; t=rFpM; rFpM=rFcM; rFcM=t;
                t=rFpI; rFpI=rFcI; rFcI=t;
@@ -850,7 +932,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   }
   ibv_forward_one_row(M, ks, ctx->MM_t, ctx->MI_t, ctx->MD_t,
                       ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                      ibv_emit(ctx, i_mid),
+                      ibv_emit(ctx, i_mid), ibv_brow(ctx, i_mid),
                       rFpM, rFpI, rFpD, F_mid_M, F_mid_I, F_mid_D);
 
   /* Backward stream i_hi .. i_mid+1 into B_mid1. */
@@ -859,7 +941,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   memcpy(rBpD, B_hi_D, ks * sizeof(float));
   for (int r = i_hi; r > i_mid + 1; r--) {
     const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
-    ibv_backward_one_row(M, ks, r, global_L,
+    ibv_backward_one_row(M, ks, r, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, rBpM, rBpI, rBcM, rBcI, rBcD);
@@ -870,7 +952,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   {
     int r = i_mid + 1;
     const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
-    ibv_backward_one_row(M, ks, r, global_L,
+    ibv_backward_one_row(M, ks, r, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, rBpM, rBpI, B_mid1_M, B_mid1_I, B_mid1_D);
@@ -879,7 +961,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   /* One more backward step: B[i_mid] from B_mid1 = B[i_mid+1]. */
   {
     const float *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
-    ibv_backward_one_row(M, ks, i_mid, global_L,
+    ibv_backward_one_row(M, ks, i_mid, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, B_mid1_M, B_mid1_I,
@@ -917,10 +999,308 @@ ibv_dnc_alloc(size_t n, float **ret_p)
 }
 
 
+/* ---------------------------------------------------------------------------
+ * Brief 172: k-banded scalar primitives + k-banded D&C  (the windowed-Viterbi
+ *            i2k speed lever)
+ * ---------------------------------------------------------------------------
+ *
+ * The optimal (Viterbi) path's model column k is monotone non-decreasing in a
+ * left-right profile HMM (brief 168, verified: 0 backward steps).  So between
+ * two EXACT through-scan pins at rows i_lo and i_hi (k_lo = i2k[i_lo] <= k_hi =
+ * i2k[i_hi]) the path's k stays in [k_lo, k_hi].  Banding each D&C node's
+ * forward/backward streams to its boundary-pin k-range is therefore EXACT for
+ * the per-row argmax-k pin i2k: the path cell is interior to the band, and all
+ * of a path cell's in-band predecessors are themselves interior (a path cell
+ * at the band floor k_lo can only be reached by an I-transition that keeps k =
+ * k_lo, never by an M/D from k_lo-1, which would mean k decreased below the
+ * segment floor).  Out-of-band predecessors are read as NEG_INF via the
+ * (k-1>=k_lo)/(k+1<=k_hi) guards, so the primitives are self-contained and do
+ * not depend on neighbor-cell hygiene.
+ *
+ * The top level is the full model [0,M] (begin/end anywhere); children narrow
+ * to the monotone tube around the just-computed exact midline pin.  Deep nodes
+ * are thus cheap, and the per-level full-M factor of the unbanded D&C (~log L
+ * full sweeps) collapses to ~1-2 sweeps of work.  These primitives are scalar
+ * (not SSE): correctness-first, and the geometric majority of nodes are deep
+ * narrow-band ones.  KPAD widens each child band by a few nodes as cheap
+ * insurance against float ties at band edges (the exactness proof needs none).
+ * In truncated (Tgm) mode the per-row argmax oracle wobbles between near-optimal
+ * registers over a wider k-spread, so KPAD=64 (not 8) is needed for exact i2k
+ * match there: empirically i2kdiff drops 92->0 on a truncated genome fragment
+ * (M=152k) going 8->64, at negligible speed cost (the full-M top levels dominate).
+ *
+ * Only i2k is consumed by the windowed-Viterbi band (p7_Seq2BandsWV rebuilds
+ * the band from i2k +/- nodepad), so the banded delta-cloud kmin/kmax (which a
+ * narrow band would shrink relative to the full-M cloud) is irrelevant here.
+ */
+#define P7IBV_KPAD 64
+
+static void
+ibv_fwd_row_b(int M, int k_lo, int k_hi,
+              const float *MM_t, const float *MI_t, const float *MD_t,
+              const float *IM_t, const float *II_t,
+              const float *DM_t, const float *DD_t,
+              const float *emit_row, const float *begin_milli,
+              const float *FM_prev, const float *FI_prev, const float *FD_prev,
+              float *FM_curr, float *FI_curr, float *FD_curr)
+{
+  int k;
+  if (k_lo < 0) k_lo = 0;
+  if (k_hi > M) k_hi = M;
+  for (k = k_lo; k <= k_hi; k++) {
+    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+    {
+      float a = FM_prev[k] + MI_t[k];
+      float b = FI_prev[k] + II_t[k];
+      cI = (a > b) ? a : b;
+    }
+    if (k >= 1 && (k - 1) >= k_lo) {
+      float a = FM_prev[k - 1] + MM_t[k - 1];
+      float b = FI_prev[k - 1] + IM_t[k - 1];
+      float c = FD_prev[k - 1] + DM_t[k - 1];
+      float m = (a > b) ? a : b; if (c > m) m = c;
+      cM = m + emit_row[k];
+    }
+    if (begin_milli != NULL && k >= 1) {
+      float bc = begin_milli[k] + emit_row[k];
+      if (bc > cM) cM = bc;
+    }
+    FM_curr[k] = cM;
+    FI_curr[k] = cI;
+  }
+  for (k = k_lo; k <= k_hi; k++) {
+    if (k >= 1 && (k - 1) >= k_lo) {
+      float a = FM_curr[k - 1] + MD_t[k - 1];
+      float b = FD_curr[k - 1] + DD_t[k - 1];
+      FD_curr[k] = (a > b) ? a : b;
+    } else {
+      FD_curr[k] = P7IBV_NEG_INF;
+    }
+  }
+}
+
+static void
+ibv_bwd_row_b(int M, int k_lo, int k_hi, int i, int global_L, int do_trunc,
+              const float *MM_t, const float *MI_t, const float *MD_t,
+              const float *IM_t, const float *II_t,
+              const float *DM_t, const float *DD_t,
+              const float *emit_row_next,
+              const float *BM_next, const float *BI_next,
+              float *BM_curr, float *BI_curr, float *BD_curr)
+{
+  int k;
+  if (k_lo < 0) k_lo = 0;
+  if (k_hi > M) k_hi = M;
+
+  if (i == global_L) {
+    if (do_trunc) {
+      for (k = k_lo; k <= k_hi; k++) { BM_curr[k] = 0.0f; BI_curr[k] = P7IBV_NEG_INF; }
+      for (k = k_hi; k >= k_lo; k--) {
+        if      (k == M)            BD_curr[k] = 0.0f;
+        else if ((k + 1) <= k_hi)   BD_curr[k] = DD_t[k] + BD_curr[k + 1];
+        else                        BD_curr[k] = P7IBV_NEG_INF;
+      }
+      return;
+    }
+    for (k = k_hi; k >= k_lo; k--) {
+      if (k == M) { BM_curr[k] = 0.0f; BI_curr[k] = 0.0f; BD_curr[k] = 0.0f; }
+      else {
+        float bv = ((k + 1) <= k_hi) ? BD_curr[k + 1] : P7IBV_NEG_INF;
+        BM_curr[k] = MD_t[k] + bv;
+        BD_curr[k] = DD_t[k] + bv;
+        BI_curr[k] = P7IBV_NEG_INF;
+      }
+    }
+    return;
+  }
+
+  for (k = k_hi; k >= k_lo; k--) {
+    float bv_m = ((k + 1) <= k_hi) ? (BM_next[k + 1] + emit_row_next[k + 1]) : P7IBV_NEG_INF;
+    float bv_d = ((k + 1) <= k_hi) ? BD_curr[k + 1] : P7IBV_NEG_INF;
+    float a = DM_t[k] + bv_m;
+    float b = DD_t[k] + bv_d;
+    BD_curr[k] = (a > b) ? a : b;
+  }
+  for (k = k_lo; k <= k_hi; k++) {
+    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+    if ((k + 1) <= k_hi) {
+      float bv_m = BM_next[k + 1] + emit_row_next[k + 1];
+      float a = MM_t[k] + bv_m; if (a > cM) cM = a;
+      float b = IM_t[k] + bv_m; if (b > cI) cI = b;
+    }
+    {
+      float bv_i = BI_next[k];
+      float a = MI_t[k] + bv_i; if (a > cM) cM = a;
+      float b = II_t[k] + bv_i; if (b > cI) cI = b;
+    }
+    if ((k + 1) <= k_hi) {
+      float bv_d = BD_curr[k + 1];
+      float a = MD_t[k] + bv_d; if (a > cM) cM = a;
+    }
+    BM_curr[k] = cM;
+    BI_curr[k] = cI;
+  }
+}
+
+static void
+ibv_through_b(int M, int k_lo, int k_hi, float thr,
+              const float *FM, const float *FI, const float *FD,
+              const float *BM, const float *BI, const float *BD,
+              int *ret_kmin, int *ret_kmax, int *ret_kargmax)
+{
+  int   k, row_kmin = -1, row_kmax = -1, k_argmax = -1;
+  float t_argmax = P7IBV_NEG_INF;
+  if (k_lo < 1) k_lo = 1;
+  if (k_hi > M) k_hi = M;
+  for (k = k_lo; k <= k_hi; k++) {
+    float t_m = FM[k] + BM[k];
+    float t_i = FI[k] + BI[k];
+    float t_d = FD[k] + BD[k];
+    float t = t_m; if (t_i > t) t = t_i; if (t_d > t) t = t_d;
+    if (t < P7IBV_HALF_NEG_INF) continue;
+    float t_emit = (t_m > t_i) ? t_m : t_i;
+    if (t_emit >= P7IBV_HALF_NEG_INF && t_emit > t_argmax) { t_argmax = t_emit; k_argmax = k; }
+    if (t >= thr) { if (row_kmin < 0) row_kmin = k; row_kmax = k; }
+  }
+  if (row_kmin < 0) { *ret_kmin = 1; *ret_kmax = M; }
+  else              { *ret_kmin = row_kmin; *ret_kmax = row_kmax; }
+  if (ret_kargmax) *ret_kargmax = k_argmax;
+}
+
+/* k-banded mirror of ibv_dnc_recurse.  k_lo/k_hi bound the optimal path's
+ * model column over rows [i_lo,i_hi] (monotone-k tube).  Children narrow the
+ * band around the exact midline pin i2k[i_mid]. */
+static void
+ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
+                       int k_lo, int k_hi,
+                       const float *F_lo_M, const float *F_lo_I, const float *F_lo_D,
+                       const float *B_hi_M, const float *B_hi_I, const float *B_hi_D)
+{
+  int    M        = ctx->M;
+  size_t ks       = ctx->k_stride;
+  int    global_L = ctx->global_L;
+  int    base_slab= ctx->base_slab;
+
+  if (i_hi <= i_lo) return;
+  int slab_size = i_hi - i_lo;
+
+  if (slab_size <= base_slab) {
+    memcpy(ctx->slab_F + 0 * ks, F_lo_M, ks * sizeof(float));
+    memcpy(ctx->slab_F + 1 * ks, F_lo_I, ks * sizeof(float));
+    memcpy(ctx->slab_F + 2 * ks, F_lo_D, ks * sizeof(float));
+    for (int r = 1; r <= slab_size; r++) {
+      size_t po = (size_t)(r - 1) * 3 * ks, co = (size_t) r * 3 * ks;
+      ibv_fwd_row_b(M, k_lo, k_hi,
+                    ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                    ibv_emit(ctx, i_lo + r), ibv_brow(ctx, i_lo + r),
+                    ctx->slab_F + po + 0*ks, ctx->slab_F + po + 1*ks, ctx->slab_F + po + 2*ks,
+                    ctx->slab_F + co + 0*ks, ctx->slab_F + co + 1*ks, ctx->slab_F + co + 2*ks);
+    }
+    {
+      int rh = i_hi;
+      const float *em = (rh < global_L) ? ibv_emit(ctx, rh + 1) : NULL;
+      size_t off = (size_t) slab_size * 3 * ks;
+      ibv_bwd_row_b(M, k_lo, k_hi, rh, global_L, ctx->do_trunc,
+                    ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                    em, B_hi_M, B_hi_I,
+                    ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks);
+    }
+    for (int r = slab_size - 1; r >= 1; r--) {
+      size_t no = (size_t)(r + 1) * 3 * ks, co = (size_t) r * 3 * ks;
+      ibv_bwd_row_b(M, k_lo, k_hi, i_lo + r, global_L, ctx->do_trunc,
+                    ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                    ibv_emit(ctx, i_lo + r + 1),
+                    ctx->slab_B + no + 0*ks, ctx->slab_B + no + 1*ks,
+                    ctx->slab_B + co + 0*ks, ctx->slab_B + co + 1*ks, ctx->slab_B + co + 2*ks);
+    }
+    for (int r = 1; r <= slab_size; r++) {
+      size_t off = (size_t) r * 3 * ks;
+      ibv_through_b(M, k_lo, k_hi, ctx->thr,
+                    ctx->slab_F + off + 0*ks, ctx->slab_F + off + 1*ks, ctx->slab_F + off + 2*ks,
+                    ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks,
+                    &ctx->kmin[i_lo + r], &ctx->kmax[i_lo + r], &ctx->i2k[i_lo + r]);
+    }
+    return;
+  }
+
+  int i_mid = (i_lo + i_hi) / 2;
+  float *F_mid_M  = ctx->arena + (size_t) depth * 6 * ks + 0 * ks;
+  float *F_mid_I  = ctx->arena + (size_t) depth * 6 * ks + 1 * ks;
+  float *F_mid_D  = ctx->arena + (size_t) depth * 6 * ks + 2 * ks;
+  float *B_mid1_M = ctx->arena + (size_t) depth * 6 * ks + 3 * ks;
+  float *B_mid1_I = ctx->arena + (size_t) depth * 6 * ks + 4 * ks;
+  float *B_mid1_D = ctx->arena + (size_t) depth * 6 * ks + 5 * ks;
+
+  float *rFpM = ctx->roll_F + 0*ks, *rFpI = ctx->roll_F + 1*ks, *rFpD = ctx->roll_F + 2*ks;
+  float *rFcM = ctx->roll_F + 3*ks, *rFcI = ctx->roll_F + 4*ks, *rFcD = ctx->roll_F + 5*ks;
+  float *rBpM = ctx->roll_B + 0*ks, *rBpI = ctx->roll_B + 1*ks, *rBpD = ctx->roll_B + 2*ks;
+  float *rBcM = ctx->roll_B + 3*ks, *rBcI = ctx->roll_B + 4*ks, *rBcD = ctx->roll_B + 5*ks;
+
+  memcpy(rFpM, F_lo_M, ks * sizeof(float));
+  memcpy(rFpI, F_lo_I, ks * sizeof(float));
+  memcpy(rFpD, F_lo_D, ks * sizeof(float));
+  for (int r = i_lo + 1; r < i_mid; r++) {
+    ibv_fwd_row_b(M, k_lo, k_hi,
+                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                  ibv_emit(ctx, r), ibv_brow(ctx, r),
+                  rFpM, rFpI, rFpD, rFcM, rFcI, rFcD);
+    float *t; t=rFpM; rFpM=rFcM; rFcM=t; t=rFpI; rFpI=rFcI; rFcI=t; t=rFpD; rFpD=rFcD; rFcD=t;
+  }
+  ibv_fwd_row_b(M, k_lo, k_hi,
+                ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                ibv_emit(ctx, i_mid), ibv_brow(ctx, i_mid),
+                rFpM, rFpI, rFpD, F_mid_M, F_mid_I, F_mid_D);
+
+  memcpy(rBpM, B_hi_M, ks * sizeof(float));
+  memcpy(rBpI, B_hi_I, ks * sizeof(float));
+  memcpy(rBpD, B_hi_D, ks * sizeof(float));
+  for (int r = i_hi; r > i_mid + 1; r--) {
+    const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
+    ibv_bwd_row_b(M, k_lo, k_hi, r, global_L, ctx->do_trunc,
+                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                  em, rBpM, rBpI, rBcM, rBcI, rBcD);
+    float *t; t=rBpM; rBpM=rBcM; rBcM=t; t=rBpI; rBpI=rBcI; rBcI=t; t=rBpD; rBpD=rBcD; rBcD=t;
+  }
+  {
+    int r = i_mid + 1;
+    const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
+    ibv_bwd_row_b(M, k_lo, k_hi, r, global_L, ctx->do_trunc,
+                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                  em, rBpM, rBpI, B_mid1_M, B_mid1_I, B_mid1_D);
+  }
+  {
+    const float *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
+    ibv_bwd_row_b(M, k_lo, k_hi, i_mid, global_L, ctx->do_trunc,
+                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                  em, B_mid1_M, B_mid1_I, ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks);
+  }
+
+  ibv_through_b(M, k_lo, k_hi, ctx->thr,
+                F_mid_M, F_mid_I, F_mid_D,
+                ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks,
+                &ctx->kmin[i_mid], &ctx->kmax[i_mid], &ctx->i2k[i_mid]);
+
+  int kmid = ctx->i2k[i_mid];
+  int top_hi, bot_lo;
+  if (kmid >= 1) {
+    top_hi = kmid + ctx->kband_pad; if (top_hi > k_hi) top_hi = k_hi;
+    bot_lo = kmid - ctx->kband_pad; if (bot_lo < k_lo) bot_lo = k_lo;
+  } else {
+    top_hi = k_hi; bot_lo = k_lo;   /* no emitting pin: keep parent band */
+  }
+  ibv_dnc_recurse_banded(ctx, i_lo, i_mid, depth + 1, k_lo, top_hi,
+                         F_lo_M, F_lo_I, F_lo_D, B_mid1_M, B_mid1_I, B_mid1_D);
+  ibv_dnc_recurse_banded(ctx, i_mid, i_hi, depth + 1, bot_lo, k_hi,
+                         F_mid_M, F_mid_I, F_mid_D, B_hi_M, B_hi_I, B_hi_D);
+}
+
+
 int
 p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                     int delta_milli, int base_slab,
                     int do_boundary_widen,
+                    int do_kband,
+                    int do_trunc,
                     int ibv_mode, int ibv_width,
                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -932,6 +1312,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   size_t       ks;
   int          max_depth;
   IBV_DnC_Ctx  ctx;
+  float       *begin_milli = NULL;
   float       *emit_pool  = NULL;
   float       *F_row0_M   = NULL, *F_row0_I   = NULL, *F_row0_D   = NULL;
   float       *B_seed_M   = NULL, *B_seed_I   = NULL, *B_seed_D   = NULL;
@@ -999,15 +1380,33 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   }
   for (k = 0; k < (int) ks; k++) ctx.emit_table[K][k] = 0.0f;
 
-  /* F[0]: D-cascade init. */
+  /* Brief 171: Tgm begin-anywhere vector (see p7_Seq2BandsIBV). */
+  if (do_trunc) {
+    float *occ = NULL;
+    double Z = 0.0;
+    ESL_ALLOC(occ, sizeof(float) * (M + 1));
+    if ((status = p7_hmm_CalculateOccupancy(hmm, occ, NULL)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 1; k <= M; k++) Z += (double) occ[k] * (double) (M - k + 1);
+    if ((status = ibv_alloc_floats(ks, &begin_milli)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 0; k < (int) ks; k++) begin_milli[k] = P7IBV_NEG_INF;
+    for (k = 1; k <= M; k++) {
+      double b = (Z > 0.0 && occ[k] > 0.0) ? (double) occ[k] / Z : 0.0;
+      begin_milli[k] = (b > 0.0) ? (float)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
+    }
+    free(occ);
+  }
+
+  /* F[0]: glocal D-cascade init; Tgm leaves row 0 all NEG_INF (begins at row 1). */
   if ((status = ibv_dnc_alloc(ks, &F_row0_M)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &F_row0_I)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &F_row0_D)) != eslOK) goto ERROR;
-  F_row0_M[0] = 0.0f;
-  for (k = 1; k <= M; k++) {
-    float a = F_row0_M[k - 1] + ctx.MD_t[k - 1];
-    float b = F_row0_D[k - 1] + ctx.DD_t[k - 1];
-    F_row0_D[k] = (a > b) ? a : b;
+  if (! do_trunc) {
+    F_row0_M[0] = 0.0f;
+    for (k = 1; k <= M; k++) {
+      float a = F_row0_M[k - 1] + ctx.MD_t[k - 1];
+      float b = F_row0_D[k - 1] + ctx.DD_t[k - 1];
+      F_row0_D[k] = (a > b) ? a : b;
+    }
   }
 
   /* Global forward pass (2-row rolling) to get optimal score.
@@ -1022,16 +1421,23 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     for (i = 1; i <= L; i++) {
       int x = (int) dsq[i];
       int xt = (x >= 0 && x < K) ? x : K;
+      const float *brow = (do_trunc && i == 1) ? begin_milli : NULL;
       ibv_forward_one_row(M, ks,
                           ctx.MM_t, ctx.MI_t, ctx.MD_t,
                           ctx.IM_t, ctx.II_t, ctx.DM_t, ctx.DD_t,
-                          ctx.emit_table[xt],
+                          ctx.emit_table[xt], brow,
                           rM, rI, rD, cM, cI, cD);
       float *t; t=rM; rM=cM; cM=t; t=rI; rI=cI; cI=t; t=rD; rD=cD; cD=t;
     }
-    optimal = rM[M];
-    if (rI[M] > optimal) optimal = rI[M];
-    if (rD[M] > optimal) optimal = rD[M];
+    if (do_trunc) {
+      /* Tgm end-anywhere: exit from any match node, or D_M->E. */
+      optimal = rD[M];
+      for (k = 1; k <= M; k++) if (rM[k] > optimal) optimal = rM[k];
+    } else {
+      optimal = rM[M];
+      if (rI[M] > optimal) optimal = rI[M];
+      if (rD[M] > optimal) optimal = rD[M];
+    }
   }
   assert(optimal == optimal);
   floor_milli = (float) delta_milli;
@@ -1073,18 +1479,30 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.kmax     = kmax_arr;
   ctx.i2k      = i2k;
   ctx.thr      = thr;
+  ctx.do_trunc    = do_trunc;     /* brief 171 */
+  ctx.begin_milli = begin_milli;  /* brief 171 */
   ctx.ibv_mode = ibv_mode;   /* brief 140 */
   ctx.ibv_width= ibv_width;  /* brief 140 */
+  ctx.kband_pad = P7IBV_KPAD;  /* brief 172 */
+  { const char *kp = getenv("P7IBV_KBAND_PAD");
+    if (kp && *kp) { int v = atoi(kp); if (v >= 0) ctx.kband_pad = v; } }
 
   /* B seed for top-level: all NEG_INF; terminal injected via global_L. */
   if ((status = ibv_dnc_alloc(ks, &B_seed_M)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &B_seed_I)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &B_seed_D)) != eslOK) goto ERROR;
 
-  /* Run recursion. */
-  ibv_dnc_recurse(&ctx, 0, L, 0,
-                  F_row0_M, F_row0_I, F_row0_D,
-                  B_seed_M, B_seed_I, B_seed_D);
+  /* Run recursion.  Brief 172: with do_kband, band each node's streams to the
+   * monotone-k tube (exact for i2k; the windowed-Viterbi genome speed lever).
+   * Top band is the full model [0,M] (begin/end anywhere). */
+  if (do_kband)
+    ibv_dnc_recurse_banded(&ctx, 0, L, 0, 0, M,
+                           F_row0_M, F_row0_I, F_row0_D,
+                           B_seed_M, B_seed_I, B_seed_D);
+  else
+    ibv_dnc_recurse(&ctx, 0, L, 0,
+                    F_row0_M, F_row0_I, F_row0_D,
+                    B_seed_M, B_seed_I, B_seed_D);
 
   /* Boundary widening + row-0 convention. The widening of rows 1, L-1, L to
    * the full model [1,M] exists for truncated-alignment entry/exit. The
@@ -1142,6 +1560,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   free(ctx.slab_F); free(ctx.slab_B);
   free(ctx.Bmid); free(ctx.through);
   free(B_seed_M); free(B_seed_I); free(B_seed_D);
+  if (begin_milli) free(begin_milli);
 
   *ret_i2k    = i2k;
   *ret_kmin   = kmin_arr;
@@ -1160,6 +1579,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if (ctx.slab_F) free(ctx.slab_F); if (ctx.slab_B) free(ctx.slab_B);
   if (ctx.Bmid)   free(ctx.Bmid);   if (ctx.through) free(ctx.through);
   if (B_seed_M)   free(B_seed_M);   if (B_seed_I) free(B_seed_I); if (B_seed_D) free(B_seed_D);
+  if (begin_milli) free(begin_milli);
   if (i2k)        free(i2k);
   if (kmin_arr)   free(kmin_arr);
   if (kmax_arr)   free(kmax_arr);
@@ -1319,5 +1739,277 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
   if (w)  free(w);
   if (tr) p7_trace_Destroy(tr);
   *ret_tr = NULL;
+  return status;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * cm_ComputeP7WVNodePad -- brief 169 per-node pad calibration (F+B-halfwidth p95)
+ * ---------------------------------------------------------------------------
+ *
+ * The windowed-Viterbi band uses a per-node pad calibrated as the <quantile>
+ * (default p95) of the F+B Delta-band half-width observed at the Viterbi MAP
+ * trace cell, over a Monte-Carlo sample of CM-emitted sequences.  This is the
+ * brief-168 prototype's calibrate_pernode_hw / pad_from_hw, ported to C:
+ *
+ *   for s in 1..nsamples:
+ *     emit a sequence from the CM (EmitParsetree)
+ *     run the flat F+B IBV deriver at <delta_milli> -> (i2k, kmin, kmax)
+ *     for each residue i with c = i2k[i] >= 1:
+ *       hw[c].append( max(c-kmin[i], kmax[i]-c) )       # the F+B half-width
+ *   pad[k] = max(floorpad, ceil( quantile(hw[k]) ))     # linear interp, numpy-style
+ *
+ * IMPORTANT: this is a DIFFERENT calibration from cm->p7_cm_nodepad
+ * (cm_ComputeP7CMNodePad), which is the p99 of a *Viterbi-pin deficit* against
+ * the embedded true alignment -- a much narrower quantity tuned for the
+ * p7_Seq2BandsVit pin band.  Using cm->p7_cm_nodepad here regresses accuracy
+ * (brief 169 spot-check: MISL -0.19, Bp1 -0.06 vs F+B); the wider F+B-halfwidth
+ * pad reproduces F+B accuracy (the prototype's pn_p95 result).
+ *
+ * Caller owns the returned pad[0..M].  Align-time use: compute once per CM and
+ * cache; works on existing CMs with no rebuild (only needs cm->fp7).
+ */
+static int
+p7wv_cmp_int(const void *a, const void *b)
+{
+  int x = *(const int *) a, y = *(const int *) b;
+  return (x > y) - (x < y);
+}
+
+int
+cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
+                      double quantile, int delta_milli, int floorpad,
+                      int **ret_nodepad)
+{
+  int       status;
+  P7_HMM   *hmm = NULL;
+  int       M, k, s, i;
+  int     **hw  = NULL;   /* hw[k] = collected half-widths at node k */
+  int      *hwn = NULL;   /* hw[k] count */
+  int      *hwa = NULL;   /* hw[k] alloc */
+  int      *pad = NULL;
+  /* brief 171: calibrate with the same begin/end semantics the align-time band
+   * will use, so the F+B half-widths match the deployed deriver. */
+  int       do_trunc = (cm->align_opts & CM_ALIGN_TRUNC) ? TRUE : FALSE;
+
+  if (cm == NULL || cm->fp7 == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "cm_ComputeP7WVNodePad: cm->fp7 is NULL");
+  if (r == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "cm_ComputeP7WVNodePad: RNG is NULL");
+  hmm = cm->fp7;
+  M   = hmm->M;
+  if (floorpad < 0) floorpad = 0;
+
+  ESL_ALLOC(hw,  sizeof(int *) * (M + 1));
+  ESL_ALLOC(hwn, sizeof(int)   * (M + 1));
+  ESL_ALLOC(hwa, sizeof(int)   * (M + 1));
+  for (k = 0; k <= M; k++) { hw[k] = NULL; hwn[k] = 0; hwa[k] = 0; }
+
+  for (s = 0; s < nsamples; s++) {
+    Parsetree_t *tr  = NULL;
+    ESL_SQ      *esq = NULL;
+    int          L   = 0;
+    char         name[32];
+    int         *i2k = NULL, *kmin = NULL, *kmax = NULL, nc = 0;
+
+    snprintf(name, sizeof(name), "wv%d", s);
+    if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &tr, &esq, &L)) != eslOK) goto ERROR;
+
+    /* Brief 172: the pad calibration measures the FULL-M delta-band half-width,
+     * so it must NOT use the k-banded deriver (whose delta cloud is tube-clipped).
+     * Use the flat deriver when its O(L*M) pool fits ~2 GB (small/viral emits),
+     * else the memory-bounded UNbanded D&C (do_kband=FALSE) -- correct delta
+     * cloud, genome-safe.  (Flat would need ~466 GB at genome-length emits.) */
+    int wv_derr = eslFAIL;
+    if (L >= 3) {
+      double pool = 12.0 * (double)(L + 1) * (double)(M + 4);
+      /* P7WV_FAST_CALIB: use the k-banded D&C for the calibration deriver at
+       * genome scale.  For typical (glocal/non-truncated) emits the KPAD=64
+       * monotone tube is wider than the Delta cloud, so the banded delta band
+       * equals the full one and the pad is unchanged -- but the per-emit deriver
+       * is ~order(s) faster, making genome-scale calibration tractable.  Off by
+       * default (exact full-cloud pad). */
+      int calib_kband = FALSE;
+      { const char *fc = getenv("P7WV_FAST_CALIB"); if (fc && *fc && *fc != '0') calib_kband = TRUE; }
+      if (pool <= 2.0e9)
+        wv_derr = p7_Seq2BandsIBV(cm, errbuf, esq->dsq, L, delta_milli, do_trunc,
+                                  P7IBV_MODE_DELTA, 0, &i2k, &kmin, &kmax, &nc);
+      else
+        wv_derr = p7_Seq2BandsIBV_dnc(cm, errbuf, esq->dsq, L, delta_milli, 0,
+                                      FALSE, calib_kband, do_trunc, P7IBV_MODE_DELTA, 0,
+                                      &i2k, &kmin, &kmax, &nc);
+    }
+    if (wv_derr == eslOK) {
+      for (i = 1; i <= L; i++) {
+        int c = i2k[i];
+        int d1, d2, h;
+        if (c < 1 || c > M) continue;
+        d1 = c - kmin[i];
+        d2 = kmax[i] - c;
+        h  = (d1 > d2) ? d1 : d2;
+        if (h < 0) h = 0;
+        if (hwn[c] >= hwa[c]) {
+          int ns = hwa[c] ? hwa[c] * 2 : 8;
+          ESL_REALLOC(hw[c], sizeof(int) * ns);
+          hwa[c] = ns;
+        }
+        hw[c][hwn[c]++] = h;
+      }
+      free(i2k); free(kmin); free(kmax);
+    }
+    FreeParsetree(tr);
+    esl_sq_Destroy(esq);
+  }
+
+  ESL_ALLOC(pad, sizeof(int) * (M + 1));
+  pad[0] = 0;
+  for (k = 1; k <= M; k++) {
+    if (hwn[k] > 0) {
+      double idx, frac;
+      int    lo, hi, v;
+      qsort(hw[k], hwn[k], sizeof(int), p7wv_cmp_int);
+      idx  = quantile * (double)(hwn[k] - 1);   /* numpy 'linear' percentile */
+      lo   = (int) floor(idx);
+      hi   = lo + 1;
+      frac = idx - (double) lo;
+      if (hi >= hwn[k]) v = hw[k][hwn[k] - 1];
+      else              v = (int) ceil((double) hw[k][lo] + frac * (double)(hw[k][hi] - hw[k][lo]));
+      pad[k] = (v > floorpad) ? v : floorpad;
+    } else {
+      pad[k] = floorpad;
+    }
+  }
+
+  for (k = 0; k <= M; k++) if (hw[k]) free(hw[k]);
+  free(hw); free(hwn); free(hwa);
+  *ret_nodepad = pad;
+  return eslOK;
+
+ ERROR:
+  if (hw)  { for (k = 0; k <= M; k++) if (hw[k]) free(hw[k]); free(hw); }
+  if (hwn) free(hwn);
+  if (hwa) free(hwa);
+  if (pad) free(pad);
+  *ret_nodepad = NULL;
+  return status;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * p7_Seq2BandsWV -- brief 169 windowed-Viterbi band deriver
+ * ---------------------------------------------------------------------------
+ *
+ * The windowed-Viterbi band (brief 168 prototype, GO verdict) is, by
+ * construction:
+ *
+ *     band[i] = [ i2k[i] - nodepad[i2k[i]] ,  i2k[i] + nodepad[i2k[i]] ]
+ *
+ * where i2k[] is the Viterbi MAP trace (the model column the optimal path
+ * occupies at residue i) and nodepad[k] is the per-node pad.  The prototype
+ * proved this reproduces the F+B Delta-band's alignment accuracy on 183/189
+ * sequences (96.8%; exact on all rmark + dossier) -- see brief 168 summary.
+ *
+ * Two facts make this a thin composition of existing, validated machinery:
+ *   (a) The MAP trace i2k is exactly the per-row argmax-k pin the IBV deriver
+ *       already returns (ibv_through_scan restricts the argmax to emitting
+ *       M/I cells, brief 137).
+ *   (b) The per-node pad is exactly cm->p7_cm_nodepad -- cm_ComputeP7CMNodePad
+ *       calibrates it by the same emit-from-CM Monte-Carlo deficit-quantile
+ *       method the prototype reinvented (calibrate_pernode_hw / pad_from_hw).
+ *       It is stored on the CM file (CMH_P7NODEPAD), so it works on existing
+ *       Rfam/VADR CMs with NO rebuild.
+ *   The band itself is then the same i2k+nodepad construction the
+ *   --p7pinbridge / vitband paths already use via p7_pins2bands_nodepad
+ *   (D-state bridge / connectivity guard built in).
+ *
+ * So the ONLY genuinely new lever is *how fast* and *at what memory* we obtain
+ * i2k.  This v1 obtains i2k from the existing memory-bounded D&C deriver
+ * (p7_Seq2BandsIBV_dnc) -- correct, genome-capable, accuracy-validatable, but
+ * NOT yet faster than --p7ibv-mem (same ~35-sweep i2k cost).  The brief-169
+ * speed win (single windowed forward-Viterbi + traceback for i2k, ~3 sweeps or
+ * less) is a drop-in replacement for the i2k source below; it must reproduce
+ * this i2k byte-for-byte (the monotone-k trace is unique up to float ties).
+ *
+ * <nodepad> is the caller-owned [0..M] per-node pad array (typically
+ * cm->p7_cm_nodepad[k] + cm->p7bpad).  Returns (i2k, kmin, kmax, ncells) with
+ * the same conventions as p7_Seq2BandsIBV.
+ */
+int
+p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+               int do_trunc,
+               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int   status;
+  int   M;
+  int  *i2k = NULL, *kmin_tmp = NULL, *kmax_tmp = NULL;
+  int  *i2k_band = NULL, *kmin = NULL, *kmax = NULL;
+  int   nc_tmp = 0, ncells = 0;
+
+  if (cm == NULL || cm->fp7 == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsWV: cm->fp7 is NULL");
+  if (nodepad == NULL)
+    ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsWV: nodepad is NULL (CM lacks P7NODEPAD?)");
+  M = cm->fp7->M;
+
+  /* (1) Exact MAP trace i2k.  We keep only i2k (the per-row argmax pin); the
+   *     Delta band is discarded.  i2k is threshold-independent so the delta
+   *     value does not matter.
+   *
+   *     Speed/memory: the FLAT deriver is ~2 sweeps (vs the D&C's ~35) but
+   *     needs an O(L*M) forward pool (~12*L*M bytes).  Use it when that pool
+   *     fits a ~2 GB budget (covers small/viral), else fall back to the
+   *     memory-bounded D&C (genome).  This delivers the de-recursion speedup
+   *     wherever memory allows; the genome-scale windowed forward-Viterbi
+   *     (single bounded sweep) is the remaining brief-169 speed lever and is a
+   *     drop-in replacement for this block (must reproduce this i2k). */
+  {
+    double flat_pool_bytes = 12.0 * (double)(L + 1) * (double)(M + 4);
+    double FLAT_BUDGET = 2.0e9;
+    /* Brief 172: P7WV_FORCE_KBAND forces the k-banded D&C i2k path even when the
+     * flat pool would fit, so the banded kernel can be validated (exact i2k vs
+     * the unbanded D&C oracle) on small/viral seqs via test_wviterbi --wv -c. */
+    { const char *fk = getenv("P7WV_FORCE_KBAND"); if (fk && *fk && *fk != '0') FLAT_BUDGET = 0.0; }
+    if (flat_pool_bytes <= FLAT_BUDGET)
+      status = p7_Seq2BandsIBV(cm, errbuf, dsq, L, cm->p7_ibv_delta, do_trunc,
+                               P7IBV_MODE_DELTA, 0,
+                               &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
+    else
+      /* Brief 172: genome scale -- k-banded D&C (do_kband=TRUE) restricts each
+       * node's streams to the monotone-k tube, collapsing the unbanded D&C's
+       * ~log L full-M sweeps to ~1-2 sweeps of work.  Exact for i2k. */
+      status = p7_Seq2BandsIBV_dnc(cm, errbuf, dsq, L,
+                                   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
+                                   FALSE, TRUE, do_trunc, P7IBV_MODE_DELTA, 0,
+                                   &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
+  }
+  if (status != eslOK)
+    return status;
+  free(kmin_tmp); kmin_tmp = NULL;
+  free(kmax_tmp); kmax_tmp = NULL;
+
+  /* (2) Windowed-Viterbi band = i2k +/- nodepad.  p7_pins2bands_nodepad prunes
+   *     i2k in place (non-monotone pins), so build the band from a copy and
+   *     return the unpruned i2k to the caller. */
+  ESL_ALLOC(i2k_band, sizeof(int) * (L + 1));
+  memcpy(i2k_band, i2k, sizeof(int) * (L + 1));
+  if ((status = p7_pins2bands_nodepad(i2k_band, errbuf, L, M, nodepad, 0,
+                                      &kmin, &kmax, &ncells)) != eslOK)
+    goto ERROR;
+  free(i2k_band); i2k_band = NULL;
+
+  *ret_i2k    = i2k;
+  *ret_kmin   = kmin;
+  *ret_kmax   = kmax;
+  *ret_ncells = ncells;
+  return eslOK;
+
+ ERROR:
+  if (i2k)      free(i2k);
+  if (i2k_band) free(i2k_band);
+  if (kmin)     free(kmin);
+  if (kmax)     free(kmax);
+  if (kmin_tmp) free(kmin_tmp);
+  if (kmax_tmp) free(kmax_tmp);
+  *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   return status;
 }
