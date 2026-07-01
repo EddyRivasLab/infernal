@@ -25,6 +25,8 @@ our ($builddir, $srcdir, $tmppfx);
 # Verify executables and the checked-in pseudoknot seed (RF01096, one A/a stem).
 if (! -x "$builddir/src/cmbuild")          { die "FAIL: didn't find cmbuild binary in $builddir/src\n";   }
 if (! -x "$builddir/src/cmconvert")        { die "FAIL: didn't find cmconvert binary in $builddir/src\n"; }
+if (! -x "$builddir/src/cmcalibrate")      { die "FAIL: didn't find cmcalibrate binary in $builddir/src\n"; }
+if (! -x "$builddir/src/cmsearch")         { die "FAIL: didn't find cmsearch binary in $builddir/src\n";  }
 if (! -e "$srcdir/testsuite/PK-HAV.sto")   { die "FAIL: didn't find PK-HAV.sto in $srcdir/testsuite\n";   }
 
 my $pkhav = "$srcdir/testsuite/PK-HAV.sto";
@@ -35,6 +37,7 @@ my @tmpsuffixes = ("direct.cm", "refine.cm", "refine.sto",
                    "syn3.sto", "syn3.cm", "syn3.re.cm",
                    "bconv.cm", "bconv.reread.cm",
                    "bad.cm", "bad.err",
+                   "orph.sto", "orph.cm", "orph.cal.log", "orph.fa", "orph.out", "orph.max.out",
                    "log");
 sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s"; } }
 cleanup();
@@ -138,6 +141,50 @@ if ($err !~ /Invalid .*pknot character on MATP node line/) {
 }
 
 ######################################################################
+# Subtest 8: cmsearch PS-line orphan marking (brief 025). A pseudoknot
+# letter whose partner isn't present in a hit's displayed alignment keeps
+# its CS-line letter and gets '?' on the PS line, instead of being erased
+# to a plain singlet -- for BOTH a truncated hit and an ordinary
+# local-alignment hit that just doesn't span both stem halves. A complete
+# (both-halves-present) pair in the same run must be unaffected.
+######################################################################
+write_orphan_pk_sto("$tmppfx.orph.sto");
+run("$builddir/src/cmbuild --wnone -F $tmppfx.orph.cm $tmppfx.orph.sto > $tmppfx.log 2>&1",
+    "subtest 8: cmbuild (orphan fixture) failed");
+if (! file_has_header("$tmppfx.orph.cm", "PKNOT", "yes")) { die "FAIL: subtest 8: orphan-fixture build missing 'PKNOT yes'\n"; }
+run("$builddir/src/cmcalibrate -L 0.01 --seed 19 $tmppfx.orph.cm > $tmppfx.orph.cal.log 2>&1",
+    "subtest 8: cmcalibrate (orphan fixture) failed");
+
+# (a),(c): default (truncation-aware) pipeline over both a flanked complete
+# pair ("complete") and an unflanked 3'-truncated fragment ("localorphan")
+# in the SAME run.
+open(my $fafh, ">", "$tmppfx.orph.fa") || die "FAIL: subtest 8: unable to write $tmppfx.orph.fa\n";
+print $fafh ">complete\n" . ("N" x 10) . ("G" x 9) . ("A" x 20) . ("C" x 9) . ("N" x 10) . "\n";
+print $fafh ">localorphan\n" . ("G" x 9) . ("A" x 20) . ("C" x 5) . "\n";
+close $fafh;
+run("$builddir/src/cmsearch --toponly -T 1 --textw 200 --cpu 0 $tmppfx.orph.cm $tmppfx.orph.fa > $tmppfx.orph.out 2>&1",
+    "subtest 8: cmsearch (default pipeline) failed");
+my %blocks = parse_psline_blocks("$tmppfx.orph.out");
+
+# complete pair: no '?' anywhere, both ends still classified '=' (maintained).
+check_orphan_target(\%blocks, "complete",     0, "=");
+# truncated orphan: open (uppercase) pknot half (4 letters, AAAA) kept +
+# each marked '?'; the closing half must not appear on CS at all
+# (truncated out of the display).
+check_orphan_target(\%blocks, "localorphan",  4, "?");
+
+# (b): the SAME unflanked fragment, but with --max (turns truncated-hit
+# detection off entirely) -- this is the "ordinary local-alignment, no
+# truncation flag at all" orphan case.
+run("$builddir/src/cmsearch --toponly --max -T 1 --textw 200 --cpu 0 $tmppfx.orph.cm $tmppfx.orph.fa > $tmppfx.orph.max.out 2>&1",
+    "subtest 8: cmsearch (--max, ordinary-local orphan) failed");
+my %maxblocks = parse_psline_blocks("$tmppfx.orph.max.out");
+check_orphan_target(\%maxblocks, "localorphan", 4, "?");
+if ($maxblocks{"localorphan"}[0]{trunc} ne "no") {
+    die "FAIL: subtest 8: --max hit unexpectedly still flagged truncated ('" . $maxblocks{"localorphan"}[0]{trunc} . "'); the ordinary-local-coverage case requires trunc=no\n";
+}
+
+######################################################################
 print "ok\n";
 cleanup();
 exit 0;
@@ -238,6 +285,91 @@ sub distinct_pknot_letters {
         for my $c ($f[1], $f[2]) { next unless defined $c; $h{uc $c} = 1 if $c =~ /^[A-Za-z]$/; }
     }
     return %h;
+}
+
+# A synthetic gapless alignment for the orphan-marking subtest: nested
+# stem (5bp) + pknot open singlets (AAAA) + a short unpaired loop + nested
+# close (5bp) + pknot close singlets (aaaa). Small (clen 38) so
+# cmcalibrate is fast.
+sub write_orphan_pk_sto {
+    my ($path) = @_;
+    my $ss  = "<<<<<AAAA....................>>>>>aaaa";
+    my $seq = ("G" x 9) . ("A" x 20) . ("C" x 9);
+    die "FAIL: write_orphan_pk_sto length mismatch\n" unless length($ss) == length($seq);
+    open(my $fh, ">", $path) || die "FAIL: unable to write $path\n";
+    print $fh "# STOCKHOLM 1.0\n\n";
+    for my $n ("seq1","seq2","seq3") { printf $fh "%-20s %s\n", $n, $seq; }
+    printf $fh "%-20s %s\n", "#=GC SS_cons", $ss;
+    print $fh "//\n";
+    close $fh;
+}
+
+# Parse cmsearch human-readable output into per-target lists of
+# {ps, cs, trunc} display blocks (mirrors itest15's parser; also captures
+# the 'trunc' column from the hit-scores table since subtest 8 needs it).
+sub parse_psline_blocks {
+    my ($file) = @_;
+    my %out;
+    my %trunc;
+    open(my $fh, "<", $file) || die "FAIL: unable to open $file\n";
+    my @lines = <$fh>;
+    close $fh;
+    chomp @lines;
+
+    for my $line (@lines) {
+        # hit-scores table row: (n) sig E-value score bias sequence start end strand mdl trunc gc [desc]
+        if ($line =~ /^\s*\(\d+\)\s+(.*)$/) {
+            my @f = split /\s+/, $1;
+            # f = sig, E-value, score, bias, sequence, start, end, strand, mdl, trunc, gc, ...
+            if (scalar(@f) >= 11 && ($f[7] eq '+' || $f[7] eq '-')) {
+                $trunc{$f[4]} = $f[9] unless exists $trunc{$f[4]};
+            }
+        }
+    }
+
+    my $cur;
+    for (my $i = 0; $i < scalar(@lines); $i++) {
+        my $line = $lines[$i];
+        if ($line =~ /^>>\s+(\S+)/) { $cur = $1; $out{$cur} = [] unless exists $out{$cur}; next; }
+        next unless defined $cur;
+        if ($line =~ / PS$/ && $i + 1 < scalar(@lines) && $lines[$i+1] =~ / CS$/) {
+            (my $ps = $line)        =~ s/ PS$//;
+            (my $cs = $lines[$i+1]) =~ s/ CS$//;
+            push @{$out{$cur}}, { ps => $ps, cs => $cs, trunc => ($trunc{$cur} // "?") };
+            $i++;
+        }
+    }
+    return %out;
+}
+
+# Assertion driver for subtest 8: confirm the expected number of '?' marks
+# on the PS line, all pknot letters that ARE on CS are still present (not
+# erased), and (when expect_orphans) that the CS pknot-letter offsets that
+# carry no partner get exactly the expected mark.
+sub check_orphan_target {
+    my ($blocks, $target, $expect_qmarks, $expect_mark_if_orphan) = @_;
+    my $blks = $blocks->{$target};
+    if (!defined $blks || scalar(@$blks) == 0) { die "FAIL: subtest 8: no '>> $target' alignment found\n"; }
+    my $b = $blks->[0];
+    my @qpos = grep { substr($b->{ps}, $_, 1) eq '?' } (0 .. length($b->{ps}) - 1);
+    if (scalar(@qpos) != $expect_qmarks) {
+        die "FAIL: subtest 8: target '$target': expected $expect_qmarks '?' mark(s) on PS, got " . scalar(@qpos) . "\n  PS: |$b->{ps}|\n  CS: |$b->{cs}|\n";
+    }
+    if ($expect_qmarks > 0) {
+        for my $i (@qpos) {
+            my $c = substr($b->{cs}, $i, 1);
+            if ($c !~ /^[A-Za-z]$/) { die "FAIL: subtest 8: target '$target': PS '?' at offset $i is not over a pknot letter on CS (got '$c')\n"; }
+        }
+    } else {
+        # complete pair: no '?' at all, and any pknot letters present must
+        # carry the expected complete-pair mark (not blank, not '?').
+        for (my $i = 0; $i < length($b->{cs}); $i++) {
+            my $c = substr($b->{cs}, $i, 1);
+            next unless $c =~ /^[A-Za-z]$/;
+            my $m = substr($b->{ps}, $i, 1);
+            if ($m ne $expect_mark_if_orphan) { die "FAIL: subtest 8: target '$target': expected pknot mark '$expect_mark_if_orphan' at offset $i, got '$m'\n"; }
+        }
+    }
 }
 
 sub slurp {
