@@ -854,6 +854,20 @@ typedef struct ckpt_ctx_s {
   float  **elalpha;    /* [0..L][0..eldmax[j]] OptAcc EL prefix-sum (Step OA) */
   float   *el_esc;     /* [0..M-1] all-deletes-to-E score (OA d==0 EL route)  */
   float    el_endsc;   /* the (shared) v->EL transition score                 */
+  /* R-L.2b: local BEGIN support, all 0/-1/IMPOSSIBLE unless CMH_LOCAL_BEGIN.
+   * Begins have no per-cell deck (unlike EL): they're a ROOT_S reduction over
+   * begin-state root-diagonal cells (v's cell (L,L)), so this is just a few
+   * scalars threaded through the per-deck sweeps.  Forward (bsc_fwd) sums via
+   * FLogsum over all v visited before ROOT_S (non-idempotent -> needs the
+   * fwd_begin_applied guard so a later re-materialization of deck 0 doesn't
+   * re-apply it).  OA (begin_bsc/begin_b) is a running max -> idempotent, no
+   * guard needed; the same scalar persists correctly across Step OA and the
+   * later Step TB block-recompute of deck 0. */
+  int      have_local_begin;  /* TRUE iff cm->flags & CMH_LOCAL_BEGIN          */
+  float    bsc_fwd;           /* Step A: running FLogsum(alpha[v][L][L]+beginsc[v]) */
+  int      fwd_begin_applied; /* Step A: TRUE once applied to alpha[0][L][L]   */
+  float    begin_bsc;         /* Step OA/TB: running max alpha[v][L][L] over begin states */
+  int      begin_b;           /* Step OA/TB: argmax begin state (-1 if none)   */
 } CKPT_CTX;
 
 /* deck = float** of j-rows; row[0] is start of the contiguous cell block. */
@@ -1011,6 +1025,70 @@ ckpt_el_compute_esc(CKPT_CTX *cx)
   }
 }
 
+/* R-L.2b local-begin, Forward/Inside half: mirrors cm_InsideAlignHB's
+ * "for (v...) { ...; allow local begins ... bsc = FLogsum(bsc, alpha[v][L][L]
+ * + beginsc[v]); } ; alpha[0][jp_0][Lp_0] = FLogsum(alpha[0][jp_0][Lp_0], bsc);"
+ * Called once per deck v, AFTER that deck's cells are fully computed (right
+ * before ckpt_inside_deck's return).  cx->bsc_fwd accumulates across all v
+ * visited before ROOT_S in a single Step-A-style descending sweep (v=M-1..0);
+ * frozen (via fwd_begin_applied) the first time it's folded into alpha[0], so
+ * a later re-materialization of deck 0 (Step B's per-block ba[] recompute,
+ * whose value is otherwise unused) doesn't re-add it and corrupt the sum. */
+static void
+ckpt_apply_begin_fwd(CKPT_CTX *cx, int v, float **av)
+{
+  CM_t *cm = cx->cm;
+  int   L  = cx->L;
+  if (! cx->have_local_begin) return;
+  if (v == 0) {
+    if (! cx->fwd_begin_applied) {
+      int jp_0 = L - cx->jmin[0];
+      int Lp_0 = L - cx->hdmin[0][jp_0];
+      if (NOT_IMPOSSIBLE(cx->bsc_fwd)) av[jp_0][Lp_0] = FLogsum(av[jp_0][Lp_0], cx->bsc_fwd);
+      cx->fwd_begin_applied = TRUE;
+    }
+    return;
+  }
+  if (cx->fwd_begin_applied) return; /* Step B/TB re-materialization: already folded, skip */
+  if (NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= cx->jmin[v] && L <= cx->jmax[v]) {
+    int jp_v = L - cx->jmin[v];
+    if (L >= cx->hdmin[v][jp_v] && L <= cx->hdmax[v][jp_v]) {
+      int Lp = L - cx->hdmin[v][jp_v];
+      cx->bsc_fwd = FLogsum(cx->bsc_fwd, av[jp_v][Lp] + cm->beginsc[v]);
+    }
+  }
+}
+
+/* R-L.2b local-begin, OptAcc half: mirrors cm_OptAccAlignHB's "allow local
+ * begins ... if (alpha[v][jp_v][Lp] > bsc) { b=v; bsc=alpha[v][jp_v][Lp]; }"
+ * followed by (after the full v loop) "alpha[0][jp_0][Lp_0]=bsc;
+ * yshadow[0][jp_0][Lp_0]=USED_LOCAL_BEGIN;" (unconditional overwrite -- OA's
+ * recursion never adds tsc, so ROOT_S's own value doesn't need comparing).
+ * A running MAX is idempotent under re-comparison, so unlike the Forward
+ * half this needs no freeze: Step TB's block recompute of deck 0 re-derives
+ * (or re-confirms) the same (begin_b, begin_bsc) and reapplies the identical
+ * override to tysh[0], which is exactly what the traceback needs to see. */
+static void
+ckpt_apply_begin_oa(CKPT_CTX *cx, int v, float **av, char **ysh)
+{
+  CM_t *cm = cx->cm;
+  int   L  = cx->L;
+  if (! cx->have_local_begin) return;
+  if (NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= cx->jmin[v] && L <= cx->jmax[v]) {
+    int jp_v = L - cx->jmin[v];
+    if (L >= cx->hdmin[v][jp_v] && L <= cx->hdmax[v][jp_v]) {
+      int Lp = L - cx->hdmin[v][jp_v];
+      if (av[jp_v][Lp] > cx->begin_bsc) { cx->begin_bsc = av[jp_v][Lp]; cx->begin_b = v; }
+    }
+  }
+  if (v == 0 && NOT_IMPOSSIBLE(cx->begin_bsc)) {
+    int jp_0 = L - cx->jmin[0];
+    int Lp_0 = L - cx->hdmin[0][jp_0];
+    av[jp_0][Lp_0] = cx->begin_bsc;
+    if (ysh != NULL) ysh[jp_0][Lp_0] = (char) USED_LOCAL_BEGIN;
+  }
+}
+
 /* Inside deck v: mirrors cm_InsideAlignHB for S/IL/IR/ML/D/E, global mode.
  * Reads children from ba[] (in-block decks) or ck[] (checkpoint seeds). */
 static void
@@ -1046,6 +1124,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
 
   if (cm->sttype[v] == E_st) {
     for (j = jmin[v]; j <= jmax[v]; j++) { jp_v = j - jmin[v]; av[jp_v][0] = 0.; }
+    ckpt_apply_begin_fwd(cx, v, av);
     return;
   }
   else if (cm->sttype[v] == IL_st) {
@@ -1070,6 +1149,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
       }
     }
+    ckpt_apply_begin_fwd(cx, v, av);
     return;
   }
   else if (cm->sttype[v] == IR_st) {
@@ -1093,6 +1173,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
       }
     }
+    ckpt_apply_begin_fwd(cx, v, av);
     return;
   }
   else if (cm->sttype[v] == B_st) { /* rung-3: pinned bifurcation (single k*) */
@@ -1122,6 +1203,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
         }
       }
     }
+    ckpt_apply_begin_fwd(cx, v, av);
     return;
   }
   else { /* ML, MP, MR, D, S (no self-transit, no B) */
@@ -1178,6 +1260,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
     }
     (void) jn; (void) jx; (void) jpn; (void) jpx; (void) dn; (void) dx; (void) dpn; (void) dpx;
+    ckpt_apply_begin_fwd(cx, v, av);
     return;
   }
 #undef IA
@@ -1202,6 +1285,22 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
   ckpt_deck_init_impossible(cx, v, bv);
 
   if (v == 0) { bv[jp_0][Lp_0] = 0.; return; }
+
+  /* R-L.2b local-begin seed: mirrors cm_OutsideAlignHB's upfront "for (v=1;
+   * v<cm->M; v++) if (beginsc[v] valid) beta[v][L][L] = beginsc[v]" pass,
+   * done once before the whole v-ascending recursion.  Here it's transcribed
+   * per-deck instead (each v's deck is only ever (re)computed as a complete
+   * unit), which is equivalent: the seed only touches v's OWN cell (L,L) and
+   * has no cross-v ordering dependency, so seeding it immediately before
+   * this deck's own parent-contribution accumulation (which FLogsums onto
+   * whatever's already there) reproduces the oracle byte-for-byte. */
+  if (cx->have_local_begin && NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= jmin[v] && L <= jmax[v]) {
+    jp_v = L - jmin[v];
+    if (L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) {
+      int Lp = L - hdmin[v][jp_v];
+      bv[jp_v][Lp] = cm->beginsc[v];
+    }
+  }
 
   /* rung-3: BEGL_S / BEGR_S children of a pinned bifurcation.  Reads parent
    * beta from bb[] and sibling Inside alpha from cx->ifull[]; pinned to k*. */
@@ -1421,6 +1520,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
   if (ysh != NULL && cx->deck_nc[v] > 0) memset(ysh[0], (int) ((char) USED_EL), (size_t) cx->deck_nc[v]);
 
   if (cm->sttype[v] == E_st) {
+    ckpt_apply_begin_oa(cx, v, av, ysh);
     return; /* OA: E cells remain IMPOSSIBLE */
   }
 
@@ -1491,6 +1591,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
           av[jp_v][dp_v] = IMPOSSIBLE;
       }
     }
+    ckpt_apply_begin_oa(cx, v, av, ysh);
     return;
   }
   else if (cm->sttype[v] == B_st) { /* rung-3: pinned bifurcation (single k*), OA = FLogsum of subtrees */
@@ -1530,6 +1631,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
         }
       }
     }
+    ckpt_apply_begin_oa(cx, v, av, ysh);
     return;
   }
   else { /* ML, MP, MR, D, S (non-self, non-B); E already returned */
@@ -1598,6 +1700,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
       }
     }
     (void) jn; (void) jx; (void) jpn; (void) jpx; (void) dn; (void) dx; (void) dpn; (void) dpx;
+    ckpt_apply_begin_oa(cx, v, av, ysh);
     return;
   }
 #undef OA
@@ -1712,6 +1815,11 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* contract: optacc requires emit_mx */
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): emit_mx is NULL");
 
+  /* zero the whole context first: cheap defensive reset so any field this
+   * (or a future) rung doesn't explicitly set below defaults to 0/NULL
+   * rather than reading stack garbage (R-L.2b). */
+  memset(&cx, 0, sizeof(cx));
+
   /* set up the per-call context from cm->cp9b bands */
   cx.cm    = cm;
   cx.dsq   = dsq;
@@ -1727,6 +1835,10 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   cx.el_selfsc  = cm->el_selfsc;
   cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
   cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  /* R-L.2b: local BEGIN support */
+  cx.have_local_begin = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
+  cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
 
   /* ROOT_S band sanity */
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S j band");
@@ -1966,6 +2078,9 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
       }
       d = j - i + 1;
       if (yoffset == (char) USED_EL) { InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M); v = cm->M; }
+      else if (yoffset == (char) USED_LOCAL_BEGIN) { /* R-L.2b: local begin, can only happen once, from ROOT_S */
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cx.begin_b); v = cx.begin_b;
+      }
       else { y = cm->cfirst[v] + yoffset; InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y); v = y; }
     }
     {
@@ -2067,6 +2182,7 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      v, jp;
   CM_HB_MX *imx = NULL, *omx = NULL;
 
+  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
   cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
@@ -2179,6 +2295,7 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   float    Z_ckpt = 0.;
   float ***Astore = NULL, ***ba = NULL, ***bb = NULL;
 
+  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): emit_mx is NULL");
 
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
@@ -2556,6 +2673,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): emit_mx is NULL");
 
+  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
   cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
@@ -2662,6 +2780,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   float    avgpp  = 0., pp = 0.;
   ckpt_ysh_ctx fctx;
 
+  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): emit_mx is NULL");
 
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
