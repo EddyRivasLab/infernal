@@ -808,6 +808,8 @@ typedef struct {
   int     ibv_mode;  /* brief 140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
   int     ibv_width; /* brief 140: fixed-width pad W around argmax-k pin */
   int     kband_pad; /* brief 172: k-band child-narrowing pad (do_kband path) */
+  int     wide_thresh; /* brief 173: route nodes with band width >= this to the
+                        * SSE full-M primitives; narrower nodes use scalar _b.   */
 } IBV_DnC_Ctx;
 
 /* brief 171: begin vector for the forward call at absolute row `absrow`
@@ -1167,9 +1169,90 @@ ibv_through_b(int M, int k_lo, int k_hi, float thr,
   if (ret_kargmax) *ret_kargmax = k_argmax;
 }
 
+/* ---------------------------------------------------------------------------
+ * Brief 173 Part B: SSE-route the wide k-banded D&C levels.
+ * ---------------------------------------------------------------------------
+ *
+ * The scalar _b primitives compute over [k_lo,k_hi] one cell at a time; the
+ * full-M SSE primitives (ibv_forward_one_row / ibv_backward_one_row /
+ * ibv_through_scan) compute over [0,M] in __m128 chunks (~4x/op faster).  Per
+ * the 172 re-profile the WIDE top D&C levels (band ~= [1,M]) dominate the cost,
+ * so we route them through the SSE full-M primitives and keep the scalar _b
+ * primitives only for the narrow deep nodes.
+ *
+ * Exactness: the full-M SSE primitive computes a SUPERSET of the band
+ * ([0,M] >= [k_lo,k_hi]).  For i2k -- the per-row EMITTING argmax -- the
+ * monotone-k property (brief 172) guarantees the optimal path's cell at every
+ * row is interior to [k_lo,k_hi], and full-M Viterbi computes the true optimal
+ * value at that cell, so argmax over [1,M] == argmax over [k_lo,k_hi] == the
+ * path cell.  (A non-path cell's full-M through-score is <= the global optimum,
+ * so it cannot outscore the in-band path cell.)  The through-scan range
+ * difference ([1,M] vs [k_lo,k_hi]) is therefore i2k-invariant.
+ *
+ * Safety invariant: band width is non-increasing down the recursion (each child
+ * band is a subset of its parent's), so {nodes routed to SSE} = {nodes with
+ * width >= wide_thresh} form a connected TOP-PREFIX of the tree.  Every
+ * SSE-routed node thus receives full-M-valid boundary rows (F_lo/B_hi) from an
+ * equally-or-wider SSE ancestor (or the root seeds), so the SSE forward/backward
+ * never read stale out-of-band cells.  Narrow (scalar) descendants only read
+ * their own band (guards read NEG_INF beyond k_lo-1/k_hi+1), so they are
+ * unaffected by the extra full-M values a wide parent leaves in the buffers.
+ *
+ * We reuse the EXISTING SSE primitives unchanged (do NOT hand-roll a banded SSE
+ * primitive), so we inherit the brief-124/125 k_stride overread fix for
+ * M == 15 (mod 16) for free.
+ */
+static inline void
+ibv_fwd_row_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi, int absrow,
+                     const float *FM_prev, const float *FI_prev, const float *FD_prev,
+                     float *FM_curr, float *FI_curr, float *FD_curr)
+{
+  if (wide)
+    ibv_forward_one_row(ctx->M, ctx->k_stride,
+                        ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                        ibv_emit(ctx, absrow), ibv_brow(ctx, absrow),
+                        FM_prev, FI_prev, FD_prev, FM_curr, FI_curr, FD_curr);
+  else
+    ibv_fwd_row_b(ctx->M, k_lo, k_hi,
+                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                  ibv_emit(ctx, absrow), ibv_brow(ctx, absrow),
+                  FM_prev, FI_prev, FD_prev, FM_curr, FI_curr, FD_curr);
+}
+
+static inline void
+ibv_bwd_row_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi, int i,
+                     const float *emit_row_next,
+                     const float *BM_next, const float *BI_next,
+                     float *BM_curr, float *BI_curr, float *BD_curr)
+{
+  if (wide)
+    ibv_backward_one_row(ctx->M, ctx->k_stride, i, ctx->global_L, ctx->do_trunc,
+                         ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                         emit_row_next, BM_next, BI_next, BM_curr, BI_curr, BD_curr);
+  else
+    ibv_bwd_row_b(ctx->M, k_lo, k_hi, i, ctx->global_L, ctx->do_trunc,
+                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+                  emit_row_next, BM_next, BI_next, BM_curr, BI_curr, BD_curr);
+}
+
+static inline void
+ibv_through_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi,
+                     const float *FM, const float *FI, const float *FD,
+                     const float *BM, const float *BI, const float *BD,
+                     int *ret_kmin, int *ret_kmax, int *ret_kargmax)
+{
+  if (wide)
+    ibv_through_scan(ctx->M, ctx->k_stride, ctx->thr, ctx->ibv_mode, ctx->ibv_width,
+                     FM, FI, FD, BM, BI, BD, ctx->through, ret_kmin, ret_kmax, ret_kargmax);
+  else
+    ibv_through_b(ctx->M, k_lo, k_hi, ctx->thr,
+                  FM, FI, FD, BM, BI, BD, ret_kmin, ret_kmax, ret_kargmax);
+}
+
 /* k-banded mirror of ibv_dnc_recurse.  k_lo/k_hi bound the optimal path's
  * model column over rows [i_lo,i_hi] (monotone-k tube).  Children narrow the
- * band around the exact midline pin i2k[i_mid]. */
+ * band around the exact midline pin i2k[i_mid].  Brief 173: wide nodes route to
+ * the SSE full-M primitives, narrow nodes to the scalar _b primitives. */
 static void
 ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
                        int k_lo, int k_hi,
@@ -1184,15 +1267,19 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
   if (i_hi <= i_lo) return;
   int slab_size = i_hi - i_lo;
 
+  /* Brief 173: this node is "wide" if its band spans >= wide_thresh model
+   * columns; wide nodes route to the SSE full-M primitives, narrow nodes to the
+   * scalar _b primitives.  One decision per node (the band [k_lo,k_hi] is fixed
+   * for all of this node's forward/backward/through streams). */
+  int wide = (k_hi - k_lo + 1) >= ctx->wide_thresh;
+
   if (slab_size <= base_slab) {
     memcpy(ctx->slab_F + 0 * ks, F_lo_M, ks * sizeof(float));
     memcpy(ctx->slab_F + 1 * ks, F_lo_I, ks * sizeof(float));
     memcpy(ctx->slab_F + 2 * ks, F_lo_D, ks * sizeof(float));
     for (int r = 1; r <= slab_size; r++) {
       size_t po = (size_t)(r - 1) * 3 * ks, co = (size_t) r * 3 * ks;
-      ibv_fwd_row_b(M, k_lo, k_hi,
-                    ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                    ibv_emit(ctx, i_lo + r), ibv_brow(ctx, i_lo + r),
+      ibv_fwd_row_dispatch(ctx, wide, k_lo, k_hi, i_lo + r,
                     ctx->slab_F + po + 0*ks, ctx->slab_F + po + 1*ks, ctx->slab_F + po + 2*ks,
                     ctx->slab_F + co + 0*ks, ctx->slab_F + co + 1*ks, ctx->slab_F + co + 2*ks);
     }
@@ -1200,22 +1287,20 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
       int rh = i_hi;
       const float *em = (rh < global_L) ? ibv_emit(ctx, rh + 1) : NULL;
       size_t off = (size_t) slab_size * 3 * ks;
-      ibv_bwd_row_b(M, k_lo, k_hi, rh, global_L, ctx->do_trunc,
-                    ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+      ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, rh,
                     em, B_hi_M, B_hi_I,
                     ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks);
     }
     for (int r = slab_size - 1; r >= 1; r--) {
       size_t no = (size_t)(r + 1) * 3 * ks, co = (size_t) r * 3 * ks;
-      ibv_bwd_row_b(M, k_lo, k_hi, i_lo + r, global_L, ctx->do_trunc,
-                    ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+      ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, i_lo + r,
                     ibv_emit(ctx, i_lo + r + 1),
                     ctx->slab_B + no + 0*ks, ctx->slab_B + no + 1*ks,
                     ctx->slab_B + co + 0*ks, ctx->slab_B + co + 1*ks, ctx->slab_B + co + 2*ks);
     }
     for (int r = 1; r <= slab_size; r++) {
       size_t off = (size_t) r * 3 * ks;
-      ibv_through_b(M, k_lo, k_hi, ctx->thr,
+      ibv_through_dispatch(ctx, wide, k_lo, k_hi,
                     ctx->slab_F + off + 0*ks, ctx->slab_F + off + 1*ks, ctx->slab_F + off + 2*ks,
                     ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks,
                     &ctx->kmin[i_lo + r], &ctx->kmax[i_lo + r], &ctx->i2k[i_lo + r]);
@@ -1240,15 +1325,11 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
   memcpy(rFpI, F_lo_I, ks * sizeof(float));
   memcpy(rFpD, F_lo_D, ks * sizeof(float));
   for (int r = i_lo + 1; r < i_mid; r++) {
-    ibv_fwd_row_b(M, k_lo, k_hi,
-                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                  ibv_emit(ctx, r), ibv_brow(ctx, r),
+    ibv_fwd_row_dispatch(ctx, wide, k_lo, k_hi, r,
                   rFpM, rFpI, rFpD, rFcM, rFcI, rFcD);
     float *t; t=rFpM; rFpM=rFcM; rFcM=t; t=rFpI; rFpI=rFcI; rFcI=t; t=rFpD; rFpD=rFcD; rFcD=t;
   }
-  ibv_fwd_row_b(M, k_lo, k_hi,
-                ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
-                ibv_emit(ctx, i_mid), ibv_brow(ctx, i_mid),
+  ibv_fwd_row_dispatch(ctx, wide, k_lo, k_hi, i_mid,
                 rFpM, rFpI, rFpD, F_mid_M, F_mid_I, F_mid_D);
 
   memcpy(rBpM, B_hi_M, ks * sizeof(float));
@@ -1256,26 +1337,23 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
   memcpy(rBpD, B_hi_D, ks * sizeof(float));
   for (int r = i_hi; r > i_mid + 1; r--) {
     const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
-    ibv_bwd_row_b(M, k_lo, k_hi, r, global_L, ctx->do_trunc,
-                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+    ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, r,
                   em, rBpM, rBpI, rBcM, rBcI, rBcD);
     float *t; t=rBpM; rBpM=rBcM; rBcM=t; t=rBpI; rBpI=rBcI; rBcI=t; t=rBpD; rBpD=rBcD; rBcD=t;
   }
   {
     int r = i_mid + 1;
     const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
-    ibv_bwd_row_b(M, k_lo, k_hi, r, global_L, ctx->do_trunc,
-                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+    ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, r,
                   em, rBpM, rBpI, B_mid1_M, B_mid1_I, B_mid1_D);
   }
   {
     const float *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
-    ibv_bwd_row_b(M, k_lo, k_hi, i_mid, global_L, ctx->do_trunc,
-                  ctx->MM_t, ctx->MI_t, ctx->MD_t, ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
+    ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, i_mid,
                   em, B_mid1_M, B_mid1_I, ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks);
   }
 
-  ibv_through_b(M, k_lo, k_hi, ctx->thr,
+  ibv_through_dispatch(ctx, wide, k_lo, k_hi,
                 F_mid_M, F_mid_I, F_mid_D,
                 ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks,
                 &ctx->kmin[i_mid], &ctx->kmax[i_mid], &ctx->i2k[i_mid]);
@@ -1486,6 +1564,26 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.kband_pad = P7IBV_KPAD;  /* brief 172 */
   { const char *kp = getenv("P7IBV_KBAND_PAD");
     if (kp && *kp) { int v = atoi(kp); if (v >= 0) ctx.kband_pad = v; } }
+  /* Brief 173 Part B: route nodes whose band width >= wide_thresh to the SSE
+   * full-M primitives, scalar _b below.
+   *
+   * DEFAULT: SSE routing OFF (wide_thresh = M+2 > max band width M+1, so no node
+   * ever qualifies).  Genome finding (brief 173, HSV M=152222, controlled
+   * same-node A/B): reusing the full-M SSE primitives is MEMORY-BANDWIDTH bound
+   * at genome M -- a full F/B row is ~3.6 MB across the 6 arrays, so the [0,M]
+   * superset they compute moves the same (top level) or MORE (mid-width)
+   * memory than scalar-over-band, and the 4x SIMD compute win is nullified.
+   * Empirically SSE is ~8% SLOWER than scalar at M/2 (deriver 507 s vs 470 s,
+   * byte-identical output) and progressively worse at lower thresholds (M/4 =
+   * 13:44 vs 9:47).  So it is off by default to preserve the brief-172 scalar
+   * deriver (no regression).  A genuine genome deriver speedup needs a BANDED
+   * SSE kernel (compute only [k_lo,k_hi] with SIMD) -- a deferred follow-on (the
+   * brief's overread caveat).  The routing stays EXACT for i2k at any threshold
+   * (validated: SSE==scalar byte-identical at genome) and may help at mid-M
+   * where a full row fits in cache; opt in via P7WV_WIDE_THRESH (e.g. M/2). */
+  ctx.wide_thresh = M + 2;
+  { const char *wt = getenv("P7WV_WIDE_THRESH");
+    if (wt && *wt) { int v = atoi(wt); if (v >= 1) ctx.wide_thresh = v; } }
 
   /* B seed for top-level: all NEG_INF; terminal injected via global_L. */
   if ((status = ibv_dnc_alloc(ks, &B_seed_M)) != eslOK) goto ERROR;

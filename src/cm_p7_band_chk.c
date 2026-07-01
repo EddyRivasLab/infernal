@@ -2381,6 +2381,213 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
   return status;
 }
 
+/* Function: cp9_FB2HMMBandsP7BF_chk_multi()
+ *
+ * Brief 167 (tau-ratchet single-pass): multi-threshold sibling of
+ * cp9_FB2HMMBandsP7BF_chk. The checkpointed double CP9 F/B (FwdFill + BwdFill)
+ * and the posterior re-materialization (cp9segF_PostRow) are tau/thresh-
+ * independent (brief 166 Q3), so we run them ONCE and thread NS distinct
+ * tau-derived thresholds through the MIN/MAX sweeps simultaneously. For each
+ * materialized posterior row (computed once) we apply the existing "> thresh[t]"
+ * band-edge update for every step t. The per-(t,k) "if(!nset[t][k])"
+ * short-circuit is preserved exactly, so each step t's mass accumulation is
+ * bit-identical to its standalone single-threshold run (the load-bearing
+ * determinism property; see CP9_CKPTF_DEBUG-style cross-check in the driver).
+ *
+ * Inputs:  p_thresh[t] = (1. - tau_t) for step t, t=0..NS-1.
+ * Outputs: pn_{min,max}_{m,i,d}_out[t][0..M] = finalized, monotone-enforced
+ *          per-step band edges (1..L coords, pre-i0-shift); pocc_out[t][0..M] =
+ *          raw streamed pocc masked by step t's bands (matches the single
+ *          kernel's masking at lines ~2340). Caller owns all output arrays.
+ */
+int
+cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b,
+                              int L, int M, double *p_thresh, int NS, int *kmin, int *kmax,
+                              int debug_level, int do_pnmono, int do_pnmono_print,
+                              int **pn_min_m_out, int **pn_max_m_out,
+                              int **pn_min_i_out, int **pn_max_i_out,
+                              int **pn_min_d_out, int **pn_max_d_out,
+                              double **pocc_out)
+{
+  int status;
+  double *thresh = NULL;                       /* thresh[t] = log((1-p_thresh[t])/2) */
+  int    **nset_m=NULL,**nset_i=NULL,**nset_d=NULL;   /* [t][k] */
+  int    **xset_m=NULL,**xset_i=NULL,**xset_d=NULL;
+  double **mass_m=NULL,**mass_i=NULL,**mass_d=NULL;
+  double  *pocc_raw=NULL;                       /* tau-independent raw streamed pocc */
+  int i, k, kp, kn, kx, j, t;
+  double sc;
+  int hmm_is_localized;
+  cp9chkF_t *s = NULL;
+  cp9segF_t *g = NULL;
+
+  hmm_is_localized = ((hmm->flags & CPLAN9_LOCAL_BEGIN) || (hmm->flags & CPLAN9_LOCAL_END) || (hmm->flags & CPLAN9_EL)) ? TRUE : FALSE;
+
+  ESL_ALLOC(thresh,   sizeof(double)*NS);
+  for(t = 0; t < NS; t++) thresh[t] = log((1. - p_thresh[t]) / 2.);
+
+  /* Per-step accumulators (arrays of NS pointers, each (M+1) long). */
+  ESL_ALLOC(nset_m, sizeof(int*)*NS); ESL_ALLOC(nset_i, sizeof(int*)*NS); ESL_ALLOC(nset_d, sizeof(int*)*NS);
+  ESL_ALLOC(xset_m, sizeof(int*)*NS); ESL_ALLOC(xset_i, sizeof(int*)*NS); ESL_ALLOC(xset_d, sizeof(int*)*NS);
+  ESL_ALLOC(mass_m, sizeof(double*)*NS); ESL_ALLOC(mass_i, sizeof(double*)*NS); ESL_ALLOC(mass_d, sizeof(double*)*NS);
+  for(t = 0; t < NS; t++) { nset_m[t]=nset_i[t]=nset_d[t]=NULL; xset_m[t]=xset_i[t]=xset_d[t]=NULL; mass_m[t]=mass_i[t]=mass_d[t]=NULL; }
+  for(t = 0; t < NS; t++) {
+    ESL_ALLOC(nset_m[t], sizeof(int)*(M+1)); ESL_ALLOC(nset_i[t], sizeof(int)*(M+1)); ESL_ALLOC(nset_d[t], sizeof(int)*(M+1));
+    ESL_ALLOC(xset_m[t], sizeof(int)*(M+1)); ESL_ALLOC(xset_i[t], sizeof(int)*(M+1)); ESL_ALLOC(xset_d[t], sizeof(int)*(M+1));
+    ESL_ALLOC(mass_m[t], sizeof(double)*(M+1)); ESL_ALLOC(mass_i[t], sizeof(double)*(M+1)); ESL_ALLOC(mass_d[t], sizeof(double)*(M+1));
+    esl_vec_DSet(mass_m[t], M+1, -eslINFINITY); esl_vec_DSet(mass_i[t], M+1, -eslINFINITY); esl_vec_DSet(mass_d[t], M+1, -eslINFINITY);
+    esl_vec_ISet(nset_m[t], M+1, FALSE); esl_vec_ISet(nset_i[t], M+1, FALSE); esl_vec_ISet(nset_d[t], M+1, FALSE);
+    esl_vec_ISet(xset_m[t], M+1, FALSE); esl_vec_ISet(xset_i[t], M+1, FALSE); esl_vec_ISet(xset_d[t], M+1, FALSE);
+  }
+  ESL_ALLOC(pocc_raw, sizeof(double)*(M+1));
+  for(k = 0; k <= M; k++) pocc_raw[k] = 0.0;
+
+  if((s = cp9chkF_Create(L, M, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
+
+  if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
+  if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
+  if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
+
+  /* === MIN sweep: ascending i (0..L). Streams pocc_raw once. === */
+  for(j = 1; j < s->nbnd; j++) {
+    int a = s->bnd[j-1], b = s->bnd[j];
+    int istart = (j == 1) ? 0 : a+1;
+    cp9segF_Fill(g, s, j, hmm, dsq, kmin, kmax);
+    for(i = istart; i <= b; i++) {
+      int ri = i - a;
+      int kk, kkp;
+      cp9segF_PostRow(g, hmm, dsq, i, kmin, kmax, sc,
+                      g->fmr[ri], g->fir[ri], g->fdr[ri], g->bmr[ri], g->bir[ri], g->bdr[ri]);
+      if(i == 0) {
+        for(t = 0; t < NS; t++) {
+          if((mass_m[t][0] = g->pm[0]) > thresh[t]) { pn_min_m_out[t][0] = 0; nset_m[t][0] = TRUE; }
+          mass_i[t][0] = -eslINFINITY;
+          mass_d[t][0] = -eslINFINITY;
+        }
+        kn = ESL_MAX(kmin[0], 1); kx = kmax[0]; kp = kn - kmin[0];
+        for(k = kn; k <= kx; k++, kp++) {
+          for(t = 0; t < NS; t++) {
+            if((mass_d[t][k] = g->pd[kp]) > thresh[t]) { pn_min_d_out[t][k] = 0; nset_d[t][k] = TRUE; }
+          }
+        }
+      }
+      else {
+        if(INBAND(i,0)) {
+          kp = 0;
+          for(t = 0; t < NS; t++) {
+            if(! nset_m[t][0]) { if((mass_m[t][0] = cp9_chk_dlogsum(mass_m[t][0], g->pm[kp])) > thresh[t]) { pn_min_m_out[t][0] = i; nset_m[t][0] = TRUE; } }
+            if(! nset_i[t][0]) { if((mass_i[t][0] = cp9_chk_dlogsum(mass_i[t][0], g->pi[kp])) > thresh[t]) { pn_min_i_out[t][0] = i; nset_i[t][0] = TRUE; } }
+          }
+        }
+        kn = ESL_MAX(kmin[i], 1); kx = kmax[i]; kp = kn - kmin[i];
+        for(k = kn; k <= kx; k++, kp++) {
+          for(t = 0; t < NS; t++) {
+            if(! nset_m[t][k]) { if((mass_m[t][k] = cp9_chk_dlogsum(mass_m[t][k], g->pm[kp])) > thresh[t]) { pn_min_m_out[t][k] = i; nset_m[t][k] = TRUE; } }
+            if(! nset_i[t][k]) { if((mass_i[t][k] = cp9_chk_dlogsum(mass_i[t][k], g->pi[kp])) > thresh[t]) { pn_min_i_out[t][k] = i; nset_i[t][k] = TRUE; } }
+            if(! nset_d[t][k]) { if((mass_d[t][k] = cp9_chk_dlogsum(mass_d[t][k], g->pd[kp])) > thresh[t]) { pn_min_d_out[t][k] = i; nset_d[t][k] = TRUE; } }
+          }
+        }
+      }
+      /* pocc streaming: tau-independent, accumulate once (two separate adds to
+       * match the single kernel's double add order at lines ~2284-2286). */
+      kkp = ESL_MAX(1, kmin[i]) - kmin[i];
+      for(kk = ESL_MAX(1, kmin[i]); kk <= kmax[i]; kk++, kkp++) {
+        pocc_raw[kk] += exp(g->pm[kkp]);
+        pocc_raw[kk] += exp(g->pd[kkp]);
+      }
+    }
+  }
+
+  /* === MAX sweep: descending i (L..1), then row 0 boundary === */
+  for(t = 0; t < NS; t++) { esl_vec_DSet(mass_m[t], M+1, -eslINFINITY); esl_vec_DSet(mass_i[t], M+1, -eslINFINITY); esl_vec_DSet(mass_d[t], M+1, -eslINFINITY); }
+  for(j = s->nbnd - 1; j >= 1; j--) {
+    int a = s->bnd[j-1], b = s->bnd[j];
+    int istart = b;
+    int iend   = (j == 1) ? 1 : a+1;
+    cp9segF_Fill(g, s, j, hmm, dsq, kmin, kmax);
+    for(i = istart; i >= iend; i--) {
+      int ri = i - a;
+      cp9segF_PostRow(g, hmm, dsq, i, kmin, kmax, sc,
+                      g->fmr[ri], g->fir[ri], g->fdr[ri], g->bmr[ri], g->bir[ri], g->bdr[ri]);
+      kp = 0;
+      for(k = kmin[i]; k <= kmax[i]; k++, kp++) {
+        for(t = 0; t < NS; t++) {
+          if(! xset_m[t][k]) { if((mass_m[t][k] = cp9_chk_dlogsum(mass_m[t][k], g->pm[kp])) > thresh[t]) { pn_max_m_out[t][k] = i; xset_m[t][k] = TRUE; } }
+          if(! xset_i[t][k]) { if((mass_i[t][k] = cp9_chk_dlogsum(mass_i[t][k], g->pi[kp])) > thresh[t]) { pn_max_i_out[t][k] = i; xset_i[t][k] = TRUE; } }
+          if(! xset_d[t][k]) { if((mass_d[t][k] = cp9_chk_dlogsum(mass_d[t][k], g->pd[kp])) > thresh[t]) { pn_max_d_out[t][k] = i; xset_d[t][k] = TRUE; } }
+        }
+      }
+      if(j == 1 && i == 1) {
+        cp9segF_PostRow(g, hmm, dsq, 0, kmin, kmax, sc,
+                        g->fmr[0], g->fir[0], g->fdr[0], g->bmr[0], g->bir[0], g->bdr[0]);
+        if(INBAND(0,0)) {
+          for(t = 0; t < NS; t++) {
+            if(! xset_m[t][0]) { if((mass_m[t][0] = cp9_chk_dlogsum(mass_m[t][0], g->pm[0])) > thresh[t]) { pn_max_m_out[t][0] = 0; xset_m[t][0] = TRUE; } }
+          }
+        }
+        kn = ESL_MAX(kmin[0], 1); kx = kmax[0]; kp = kn - kmin[0];
+        for(k = kn; k <= kx; k++, kp++) {
+          for(t = 0; t < NS; t++) {
+            if(!xset_d[t][k]) { if((mass_d[t][k] = cp9_chk_dlogsum(mass_d[t][k], g->pd[kp])) > thresh[t]) { pn_max_d_out[t][k] = 0; xset_d[t][k] = TRUE; } }
+          }
+        }
+      }
+    }
+  }
+
+  /* Per-step finalize + monotone + mask (verbatim per-t from the single kernel). */
+  for(t = 0; t < NS; t++) {
+    int mset, dset;
+    for(k = 0; k <= M; k++) {
+      mset = dset = TRUE;
+      if(((! nset_m[t][k])) || (! xset_m[t][k]) || (pn_max_m_out[t][k] < pn_min_m_out[t][k])) { pn_min_m_out[t][k] = pn_max_m_out[t][k] = -1; mset = FALSE; }
+      if(((! nset_i[t][k])) || (! xset_i[t][k]) || (pn_max_i_out[t][k] < pn_min_i_out[t][k])) { pn_min_i_out[t][k] = pn_max_i_out[t][k] = -1; }
+      if(((! nset_d[t][k])) || (! xset_d[t][k]) || (pn_max_d_out[t][k] < pn_min_d_out[t][k])) { pn_min_d_out[t][k] = pn_max_d_out[t][k] = -1; dset = FALSE; }
+      if((!hmm_is_localized) && (mset == FALSE && dset == FALSE)) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
+    }
+    pn_min_d_out[t][0] = -1;
+    pn_max_d_out[t][0] = -1;
+
+    if(do_pnmono) pn_match_bands_enforce_monotone(pn_min_m_out[t], pn_max_m_out[t], M, L, do_pnmono_print, "fb2hmm_p7bf_chk_multi");
+
+    /* mask: copy raw pocc, then -1 sentinel for k=0 and nodes with no band set. */
+    pocc_out[t][0] = -1.0;
+    for(k = 1; k <= M; k++) {
+      pocc_out[t][k] = pocc_raw[k];
+      if(pn_min_m_out[t][k] == -1 && pn_min_i_out[t][k] == -1 && pn_min_d_out[t][k] == -1) pocc_out[t][k] = -1.0;
+    }
+  }
+
+  cp9segF_Destroy(g);
+  cp9chkF_Destroy(s);
+  free(thresh); free(pocc_raw);
+  for(t = 0; t < NS; t++) {
+    free(nset_m[t]); free(nset_i[t]); free(nset_d[t]);
+    free(xset_m[t]); free(xset_i[t]); free(xset_d[t]);
+    free(mass_m[t]); free(mass_i[t]); free(mass_d[t]);
+  }
+  free(nset_m); free(nset_i); free(nset_d);
+  free(xset_m); free(xset_i); free(xset_d);
+  free(mass_m); free(mass_i); free(mass_d);
+  return eslOK;
+
+ ERROR:
+  if(g) cp9segF_Destroy(g);
+  if(s) cp9chkF_Destroy(s);
+  if(thresh) free(thresh);
+  if(pocc_raw) free(pocc_raw);
+  if(nset_m) { for(t=0;t<NS;t++) if(nset_m[t]) free(nset_m[t]); free(nset_m); }
+  if(nset_i) { for(t=0;t<NS;t++) if(nset_i[t]) free(nset_i[t]); free(nset_i); }
+  if(nset_d) { for(t=0;t<NS;t++) if(nset_d[t]) free(nset_d[t]); free(nset_d); }
+  if(xset_m) { for(t=0;t<NS;t++) if(xset_m[t]) free(xset_m[t]); free(xset_m); }
+  if(xset_i) { for(t=0;t<NS;t++) if(xset_i[t]) free(xset_i[t]); free(xset_i); }
+  if(xset_d) { for(t=0;t<NS;t++) if(xset_d[t]) free(xset_d[t]); free(xset_d); }
+  if(mass_m) { for(t=0;t<NS;t++) if(mass_m[t]) free(mass_m[t]); free(mass_m); }
+  if(mass_i) { for(t=0;t<NS;t++) if(mass_i[t]) free(mass_i[t]); free(mass_i); }
+  if(mass_d) { for(t=0;t<NS;t++) if(mass_d[t]) free(mass_d[t]); free(mass_d); }
+  return status;
+}
+
 /*****************************************************************
  * FLOAT: truncated start/end prediction from a precomputed pocc_arr +
  *        the checkpointed truncated band-derivation wrapper.
@@ -2496,33 +2703,25 @@ cp9_PredictStartAndEndFromPoccF(double *pocc_arr, CP9Bands_t *cp9b, int i0, int 
   }
 }
 
-/* Function: cp9_FBMatrices2BandsP7BF_chk()
+/* Function: cp9_FinishBandsFromPnPoccF_chk()
  *
- * Checkpointed double drop-in for cp9_FBMatrices2BandsF (truncated path).
- * Produces the same cp9b bands + sp/ep prediction via cp9_FB2HMMBandsP7BF_chk
- * (which streams pocc_arr) + the identical downstream
- * MarginalCandidates/HMM2ij/GrowHD/ij2d tail. No full CP9_FMX matrices.
+ * Brief 167: the shared "band-finishing tail" extracted verbatim from
+ * cp9_FBMatrices2BandsP7BF_chk so the single-call path AND the tau-ratchet
+ * single-pass driver (cp9_IterateSeq2BandsP7BF_chk_multi) run a BYTE-IDENTICAL
+ * tail. Assumes cp9b->pn_{min,max}_{m,i,d} (1..L coords) and <pocc_arr> are
+ * already populated for the desired ratchet step, and that the caller has
+ * already set cm->tau, cp9b->thresh1/thresh2, cp9b->tau. Shifts bands to
+ * i0..j0, predicts sp/ep (+ brief-149 glocal floor) & marginal candidates
+ * (trunc) or sets non-trunc valid arrays, then HMM2ij -> GrowHD -> ij2d.
  */
-int
-cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b,
-                             int *kmin, int *kmax, int L, int i0, int j0, int pass_idx,
-                             int debug_level, int do_pnmono, int do_pnmono_print)
+static int
+cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b,
+                               double *pocc_arr, int *kmin, int *kmax, int L, int i0, int j0,
+                               int pass_idx, int debug_level)
 {
   int status;
-  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
   int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
   int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
-  double *pocc_arr   = NULL;
-
-  if(use_sums) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FBMatrices2BandsP7BF_chk: use_sums not supported.");
-
-  ESL_ALLOC(pocc_arr, sizeof(double) * (cp9b->hmm_M + 1));
-
-  /* Step 1+2: checkpointed double F/B -> HMM bands + streamed pocc_arr. */
-  if((status = cp9_FB2HMMBandsP7BF_chk(cp9, errbuf, dsq, cp9b, L, cp9b->hmm_M,
-                                       (1.-cm->tau), kmin, kmax, debug_level,
-                                       do_pnmono, do_pnmono_print, pocc_arr)) != eslOK) goto ERROR;
-  cp9b->tau = cm->tau;
 
   /* Step 2b: shift HMM bands from 1..L to i0..j0 coords. */
   if(i0 != 1) {
@@ -2548,16 +2747,14 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
      * cm_TrInsideAlignHB() returns "no valid parsetree" in -g mode. Floor sp1 <= 1
      * and ep1 >= clen so the whole model stays J-valid. Scoped to glocal so local
      * mode (which already has a valid root + EL tail escape) stays byte-identical.
-     * Without this, removing the search-mode full-span safety net (the doing_search
-     * fix above) would re-expose the brief-149 failure on pure-MATL models. The
-     * floor changes only sp1/ep1, not the Rmarg/Lmarg fields that
+     * The floor changes only sp1/ep1, not the Rmarg/Lmarg fields that
      * cp9_PredictStartAndEndFromPoccF already derived from the pre-floor sp1/ep1 --
      * identical to the non-ckpt twin, where the floor likewise follows the predictor. */
     if(! (cm->flags & CMH_LOCAL_BEGIN)) {
       if(cp9b->sp1 > 1)        cp9b->sp1 = 1;
       if(cp9b->ep1 < cm->clen) cp9b->ep1 = cm->clen;
     }
-    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) goto ERROR;
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
     esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
@@ -2568,24 +2765,229 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
 
   /* Step 3: HMM bands -> CM bands. */
   if(do_old_hmm2ij) {
-    /* brief 162 (mirrors brief 148/082 in the non-ckpt twin cp9_FBMatrices2BandsF):
-     * pass doing_search=FALSE so cp9_HMM2ijBands_OLD builds alignment-mode (tight,
-     * per-node diagonal) j-bands rather than search-mode (whole-sequence jmin=1,jmax=L)
-     * bands. This checkpointed path is cmalign-only / do_trunc-only; the previous
-     * doing_search=TRUE inflated the CM-DP cube 10-32x (1027x on calici). */
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) goto ERROR;
+    /* brief 162: doing_search=FALSE (alignment-mode tight j-bands). */
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
   }
   else {
-    /* brief 162: doing_search=FALSE (see comment above). */
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) goto ERROR;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) return status;
   }
-  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
+  return eslOK;
+}
+
+/* Function: cp9_FBMatrices2BandsP7BF_chk()
+ *
+ * Checkpointed double drop-in for cp9_FBMatrices2BandsF (truncated path).
+ * Produces the same cp9b bands + sp/ep prediction via cp9_FB2HMMBandsP7BF_chk
+ * (which streams pocc_arr) + the identical downstream finishing tail
+ * (cp9_FinishBandsFromPnPoccF_chk). No full CP9_FMX matrices.
+ */
+int
+cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b,
+                             int *kmin, int *kmax, int L, int i0, int j0, int pass_idx,
+                             int debug_level, int do_pnmono, int do_pnmono_print)
+{
+  int status;
+  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  double *pocc_arr   = NULL;
+
+  if(use_sums) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FBMatrices2BandsP7BF_chk: use_sums not supported.");
+
+  ESL_ALLOC(pocc_arr, sizeof(double) * (cp9b->hmm_M + 1));
+
+  /* Step 1+2: checkpointed double F/B -> HMM bands + streamed pocc_arr. */
+  if((status = cp9_FB2HMMBandsP7BF_chk(cp9, errbuf, dsq, cp9b, L, cp9b->hmm_M,
+                                       (1.-cm->tau), kmin, kmax, debug_level,
+                                       do_pnmono, do_pnmono_print, pocc_arr)) != eslOK) goto ERROR;
+  cp9b->tau = cm->tau;
+
+  if((status = cp9_FinishBandsFromPnPoccF_chk(cm, errbuf, cp9, cp9b, pocc_arr, kmin, kmax,
+                                              L, i0, j0, pass_idx, debug_level)) != eslOK) goto ERROR;
 
   free(pocc_arr);
   return eslOK;
 
  ERROR:
   if(pocc_arr) free(pocc_arr);
+  return status;
+}
+
+/* Function: cp9_IterateSeq2BandsP7BF_chk_multi()
+ *
+ * Brief 167: single-pass replacement for the ckpt-truncated tau-ratchet loop
+ * in cp9_IterateSeq2BandsP7B (which recomputed the WHOLE checkpointed float F/B
+ * on every step, up to ~26 steps). Two phases:
+ *
+ *   Phase 1 -- evaluate step 0 (the current cm->tau/thresh1/thresh2) via the
+ *     single-call cp9_FBMatrices2BandsP7BF_chk. For the common 0-bump case this
+ *     returns here, byte-identical to the old loop's first iteration, with ZERO
+ *     extra memory/compute (critical: keeps the brief-165 genome capstone path
+ *     and its 2-3 GB memory recipe unchanged).
+ *
+ *   Phase 2 -- if step 0 doesn't fit, enumerate the remaining ratchet grid
+ *     (steps 1..NS, mirroring the bump logic exactly) and run ONE checkpointed
+ *     F/B + MIN + MAX sweep (cp9_FB2HMMBandsP7BF_chk_multi) that evaluates all
+ *     NS thresholds at once, then scan steps in order and break at the first
+ *     that fits size_limit (NO binary search: size-vs-step is non-monotone via
+ *     deck-validity flips, brief 166 Q4). Breaking at first fit leaves cp9b in
+ *     the selected step's state automatically (each step's tail fully rederives
+ *     cp9b), so no separate "restore" is needed.
+ *
+ * Returns eslOK with bands fitting size_limit, or eslERANGE if even the
+ * all-capped final step still exceeds it (byte-identical terminal behavior to
+ * the old loop). *ret_nbump = selected step index (0 = no bump).
+ */
+int
+cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, int L,
+                                   int *kmin, int *kmax, int i0, int j0, int pass_idx,
+                                   float size_limit, int doing_search, int do_sample, int do_post,
+                                   double maxtau, int do_pnmono, int do_pnmono_print,
+                                   int *ret_nbump, float *ret_Mb)
+{
+  int status;
+  CP9Bands_t *cp9b = cm->cp9b;
+  int M = cp9b->hmm_M;
+  int do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  int debug_level = 0;
+  float cp9mx_Mb = 0., hbmx_Mb = 0., tot_Mb;
+  int   s, k, t, NS = 0;
+  double *tau_grid = NULL, *t1_grid = NULL, *t2_grid = NULL, *p_thresh = NULL;
+  int **pnmm = NULL, **pnxm = NULL, **pnmi = NULL, **pnxi = NULL, **pnmd = NULL, **pnxd = NULL;
+  double **pocc = NULL;
+
+  /* ---- Phase 1: step 0 (current tau/thresh1/thresh2). ---- */
+  if((status = cp9_FBMatrices2BandsP7BF_chk(cm, errbuf, cp9, dsq, cp9b, kmin, kmax, L, i0, j0,
+                                            pass_idx, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
+  if(doing_search) {
+    if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status;
+  }
+  else {
+    status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+    if(status != eslOK && status != eslERANGE) return status;
+  }
+  if(ret_nbump != NULL) *ret_nbump = 0;
+  if(hbmx_Mb < size_limit) { if(ret_Mb != NULL) *ret_Mb = hbmx_Mb; return eslOK; }
+
+  /* ---- Build the remaining ratchet grid (steps 1..NS), mirroring the bump
+   * logic in cp9_IterateSeq2BandsP7B exactly (tau*=2 cap maxtau; thresh1 +=
+   * DELTA cap MAX; thresh2 -= DELTA floor MIN; for do_trunc all three move). ---- */
+  {
+    double tau = cm->tau, th1 = cp9b->thresh1, th2 = cp9b->thresh2;
+    int tau_lim = FALSE;
+    int th1_lim = (do_trunc) ? FALSE : TRUE;
+    int th2_lim = (do_trunc) ? FALSE : TRUE;
+    int cap = 64; /* safety bound; real worst case ~25 (brief 166 Q1) */
+    ESL_ALLOC(tau_grid, sizeof(double)*cap);
+    ESL_ALLOC(t1_grid,  sizeof(double)*cap);
+    ESL_ALLOC(t2_grid,  sizeof(double)*cap);
+    while(! (tau_lim && th1_lim && th2_lim)) {
+      if(! tau_lim) { tau *= TAU_MULTIPLIER; if(tau >= maxtau) { tau = maxtau; tau_lim = TRUE; } }
+      if(! th1_lim) { th1 += DELTA_CP9BANDS_THRESH1; if(th1 >= MAX_CP9BANDS_THRESH1) { th1 = MAX_CP9BANDS_THRESH1; th1_lim = TRUE; } }
+      if(! th2_lim) { th2 -= DELTA_CP9BANDS_THRESH2; if(th2 <= MIN_CP9BANDS_THRESH2) { th2 = MIN_CP9BANDS_THRESH2; th2_lim = TRUE; } }
+      if(NS >= cap) ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "cp9_IterateSeq2BandsP7BF_chk_multi: ratchet grid overflow (NS=%d).", NS);
+      tau_grid[NS] = tau; t1_grid[NS] = th1; t2_grid[NS] = th2;
+      NS++;
+    }
+  }
+  if(NS == 0) { /* step 0 was already all-capped: old loop would break -> eslERANGE */
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    status = eslERANGE; goto DONE;
+  }
+
+  /* ---- Allocate multi-threshold outputs (NS slots). Each pointer array is
+   * NULL-initialized immediately after allocation so any OOM mid-allocation
+   * leaves a state the unified cleanup can free safely. ---- */
+  ESL_ALLOC(p_thresh, sizeof(double)*NS);
+  for(t = 0; t < NS; t++) p_thresh[t] = 1. - tau_grid[t];
+  ESL_ALLOC(pnmm, sizeof(int*)*NS);    for(t=0;t<NS;t++) pnmm[t]=NULL;
+  ESL_ALLOC(pnxm, sizeof(int*)*NS);    for(t=0;t<NS;t++) pnxm[t]=NULL;
+  ESL_ALLOC(pnmi, sizeof(int*)*NS);    for(t=0;t<NS;t++) pnmi[t]=NULL;
+  ESL_ALLOC(pnxi, sizeof(int*)*NS);    for(t=0;t<NS;t++) pnxi[t]=NULL;
+  ESL_ALLOC(pnmd, sizeof(int*)*NS);    for(t=0;t<NS;t++) pnmd[t]=NULL;
+  ESL_ALLOC(pnxd, sizeof(int*)*NS);    for(t=0;t<NS;t++) pnxd[t]=NULL;
+  ESL_ALLOC(pocc, sizeof(double*)*NS); for(t=0;t<NS;t++) pocc[t]=NULL;
+  for(t = 0; t < NS; t++) {
+    ESL_ALLOC(pnmm[t], sizeof(int)*(M+1)); ESL_ALLOC(pnxm[t], sizeof(int)*(M+1));
+    ESL_ALLOC(pnmi[t], sizeof(int)*(M+1)); ESL_ALLOC(pnxi[t], sizeof(int)*(M+1));
+    ESL_ALLOC(pnmd[t], sizeof(int)*(M+1)); ESL_ALLOC(pnxd[t], sizeof(int)*(M+1));
+    ESL_ALLOC(pocc[t], sizeof(double)*(M+1));
+  }
+
+  /* ---- Phase 2: ONE checkpointed F/B + MIN + MAX sweep over all NS steps. ---- */
+  if((status = cp9_FB2HMMBandsP7BF_chk_multi(cp9, errbuf, dsq, cp9b, L, M, p_thresh, NS, kmin, kmax,
+                                             debug_level, do_pnmono, do_pnmono_print,
+                                             pnmm, pnxm, pnmi, pnxi, pnmd, pnxd, pocc)) != eslOK) goto DONE;
+
+  /* ---- G3 determinism harness (brief 167): for every grid step, recompute the
+   * pn arrays + masked pocc the OLD single-call way (cp9_FB2HMMBandsP7BF_chk,
+   * which re-runs its own F/B) and assert equality vs the multi-threshold
+   * sweep's slot. Catches any accumulator-order divergence. cp9b->pn_* is used
+   * as scratch here; the per-step tail below re-sets it from the slots, so no
+   * save/restore is needed. Env-gated; off in production. ---- */
+  if(getenv("CP9_TAURATCHET_DBG") != NULL) {
+    double *dpocc = NULL;
+    int nmis = 0, ss, kk;
+    ESL_ALLOC(dpocc, sizeof(double)*(M+1));
+    for(ss = 0; ss < NS; ss++) {
+      if((status = cp9_FB2HMMBandsP7BF_chk(cp9, errbuf, dsq, cp9b, L, M, p_thresh[ss], kmin, kmax,
+                                           debug_level, do_pnmono, do_pnmono_print, dpocc)) != eslOK) { free(dpocc); goto DONE; }
+      for(kk = 0; kk <= M; kk++) {
+        if(cp9b->pn_min_m[kk]!=pnmm[ss][kk] || cp9b->pn_max_m[kk]!=pnxm[ss][kk] ||
+           cp9b->pn_min_i[kk]!=pnmi[ss][kk] || cp9b->pn_max_i[kk]!=pnxi[ss][kk] ||
+           cp9b->pn_min_d[kk]!=pnmd[ss][kk] || cp9b->pn_max_d[kk]!=pnxd[ss][kk] ||
+           dpocc[kk]!=pocc[ss][kk]) {
+          if(nmis < 20) fprintf(stderr, "#TAURATCHET_DBG MISMATCH s=%d(step%d) k=%d ref[m %d,%d|i %d,%d|d %d,%d|pocc %g] multi[m %d,%d|i %d,%d|d %d,%d|pocc %g]\n",
+              ss, ss+1, kk, cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],dpocc[kk],
+              pnmm[ss][kk],pnxm[ss][kk],pnmi[ss][kk],pnxi[ss][kk],pnmd[ss][kk],pnxd[ss][kk],pocc[ss][kk]);
+          nmis++;
+        }
+      }
+    }
+    free(dpocc);
+    fprintf(stderr, "#TAURATCHET_DBG total pn/pocc mismatches across %d grid steps: %d (M=%d L=%d)\n", NS, nmis, M, L);
+  }
+
+  /* ---- Per-step tail: scan s=0..NS-1, break at first fit. ---- */
+  for(s = 0; s < NS; s++) {
+    cm->tau       = tau_grid[s];
+    cp9b->thresh1 = t1_grid[s];
+    cp9b->thresh2 = t2_grid[s];
+    cp9b->tau     = tau_grid[s];
+    for(k = 0; k <= M; k++) {
+      cp9b->pn_min_m[k] = pnmm[s][k]; cp9b->pn_max_m[k] = pnxm[s][k];
+      cp9b->pn_min_i[k] = pnmi[s][k]; cp9b->pn_max_i[k] = pnxi[s][k];
+      cp9b->pn_min_d[k] = pnmd[s][k]; cp9b->pn_max_d[k] = pnxd[s][k];
+    }
+    if((status = cp9_FinishBandsFromPnPoccF_chk(cm, errbuf, cp9, cp9b, pocc[s], kmin, kmax,
+                                                L, i0, j0, pass_idx, debug_level)) != eslOK) goto DONE;
+    if(doing_search) {
+      if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto DONE;
+    }
+    else {
+      status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+      if(status != eslOK && status != eslERANGE) goto DONE;
+    }
+    if(ret_nbump != NULL) *ret_nbump = s + 1; /* grid slot s == ratchet step s+1 */
+    if(hbmx_Mb < size_limit) break; /* first fit; cp9b now holds this step */
+  }
+  /* If no step fit, cp9b holds the final all-capped step (s == NS-1). */
+
+  if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+  status = (hbmx_Mb > size_limit) ? eslERANGE : eslOK;
+
+ ERROR:  /* ESL_ALLOC failures land here; fall through to the same guarded cleanup. */
+ DONE:
+  if(tau_grid) free(tau_grid);
+  if(t1_grid)  free(t1_grid);
+  if(t2_grid)  free(t2_grid);
+  if(p_thresh) free(p_thresh);
+  if(pnmm) { for(t=0;t<NS;t++) if(pnmm[t]) free(pnmm[t]); free(pnmm); }
+  if(pnxm) { for(t=0;t<NS;t++) if(pnxm[t]) free(pnxm[t]); free(pnxm); }
+  if(pnmi) { for(t=0;t<NS;t++) if(pnmi[t]) free(pnmi[t]); free(pnmi); }
+  if(pnxi) { for(t=0;t<NS;t++) if(pnxi[t]) free(pnxi[t]); free(pnxi); }
+  if(pnmd) { for(t=0;t<NS;t++) if(pnmd[t]) free(pnmd[t]); free(pnmd); }
+  if(pnxd) { for(t=0;t<NS;t++) if(pnxd[t]) free(pnxd[t]); free(pnxd); }
+  if(pocc) { for(t=0;t<NS;t++) if(pocc[t]) free(pocc[t]); free(pocc); }
   return status;
 }
