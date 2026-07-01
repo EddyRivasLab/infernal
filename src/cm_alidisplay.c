@@ -620,8 +620,10 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
-  /* Feature B: drop any pseudoknot letter on the CS line whose partner was truncated out of this hit */
-  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(ad->csline, ad->N);
+  /* Feature B: keep any pseudoknot letter on the CS line whose partner isn't present in this
+   * hit's displayed alignment (truncated away, or simply not spanned by local coverage), and
+   * mark it '?' on ncline instead of erasing it to '.'. */
+  if (cm->flags & CMH_PKNOT) cm_pknot_MarkOrphansTrunc(ad->csline, ad->ncline, ad->N);
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
@@ -1088,8 +1090,13 @@ bp_is_canonical(char lseq, char rseq)
  *
  * Purpose:  Overlay pseudoknot pair-status marks (=/$/x) onto ad->ncline (the
  *           line printed with the "PS" label). Called at Create time, after
- *           cm_pknot_FixBrokenString() has run on ad->csline so that only
- *           complete pknot pairs still carry their (upper/lower) letters.
+ *           cm_pknot_MarkOrphansTrunc() has run on ad->csline/ad->ncline, which
+ *           leaves complete pknot pairs' (upper/lower) letters untouched, and
+ *           marks any orphan letter's ncline position with '?' (orphan letters
+ *           themselves are left in place on csline, not erased). The pushdown
+ *           scan below re-derives matched pairs the same way regardless, and
+ *           orphan letters (matched to nothing) simply never trigger the
+ *           matched-close branch below, so they can't collide with a real pair.
  *
  *           Walk the finished csline with the SAME per-letter pushdown
  *           discipline that cm_pknot_FixBrokenString()/esl_wuss2ct() use,
@@ -1146,8 +1153,9 @@ annotate_pknot_pairs(CM_ALIDISPLAY *ad)
         ad->ncline[zo] = mark;
         ad->ncline[zc] = mark;
       }
-      /* sp[idx]==0 here would be an orphan close, but FixBrokenString already
-       * dropped those to '.', so this branch should not fire post-fix. */
+      /* sp[idx]==0 here is an orphan close (its partner absent from this hit's
+       * display) -- cm_pknot_MarkOrphansTrunc() already marked its ncline '?'
+       * and left ss[i] as-is; nothing to do here, it's not a matched pair. */
     }
   }
 

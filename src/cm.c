@@ -2804,6 +2804,84 @@ cm_pknot_FixBrokenString(char *ss, int n)
   return status;
 }
 
+/* Function:  cm_pknot_MarkOrphansTrunc()
+ * Synopsis:  Keep truncation/coverage-orphaned pseudoknot letters, mark them '?' on ncline.
+ *
+ * Purpose:   Sibling of <cm_pknot_FixBrokenString()>, used ONLY at cmsearch/cmscan's
+ *            per-hit alidisplay construction (<cm_alidisplay_Create()>). Given a
+ *            WUSS-like consensus structure string <ss> (0-based, length <n>) that
+ *            has had pseudoknot letters overlaid onto it, and the parallel <nc>
+ *            (ncline) buffer of the same length, find any pseudoknot letter whose
+ *            matching partner letter is absent from <ss> -- its partner may be
+ *            missing because this hit was truncated, or simply because an ordinary
+ *            local alignment doesn't span both halves of the pknot stem. Either way,
+ *            the fact that the partner isn't present in THIS hit's displayed
+ *            alignment is exact, pure string bookkeeping -- no truncation-boundary
+ *            guessing is involved.
+ *
+ *            Unlike <cm_pknot_FixBrokenString()>, which erases an orphan letter to
+ *            '.', this function KEEPS <ss[i]> unchanged and instead marks the
+ *            parallel position <nc[i]> with '?' (the same glyph used for nested
+ *            truncated base pairs elsewhere in ncline), so the pknot identity
+ *            survives on the CS line with an honest "can't assess, partner missing"
+ *            annotation on the PS line, instead of being silently dropped to a plain
+ *            singlet mark.
+ *
+ *            Uses the identical per-letter pushdown discipline as
+ *            <cm_pknot_FixBrokenString()> (A..a, B..b, ... stacks), so multi-bp
+ *            stems with partial coverage are handled correctly (innermost pairs
+ *            match first). <nc[i]> is only written if it is currently blank (' '),
+ *            a defensive guard mirroring the <ESL_DASSERT1> discipline in
+ *            <annotate_pknot_pairs()> -- pknot columns are disjoint ML/MR singlets
+ *            from nested MATP columns by construction, so this should always hold.
+ *
+ *            Does NOT modify <cm_pknot_FixBrokenString()> itself; that function's
+ *            other call sites (column downselect / MSA-construction paths) are
+ *            untouched by this new sibling.
+ *
+ * Returns:   <eslOK> on success; <ss> is left untouched, <nc> may be modified in place.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_pknot_MarkOrphansTrunc(char *ss, char *nc, int n)
+{
+  int   status;
+  int   i, c, idx;
+  int  *sp    = NULL;        /* sp[idx]    = depth of stack for letter idx (A-Z)   */
+  int **stack = NULL;        /* stack[idx] = positions of unmatched opens, letter idx */
+
+  /* quick exit if there are no pseudoknot letters at all */
+  for (i = 0; i < n; i++) if (isalpha((int) ss[i])) break;
+  if (i == n) return eslOK;
+
+  ESL_ALLOC(sp,    sizeof(int)   * 26);
+  ESL_ALLOC(stack, sizeof(int *) * 26);
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < n; i++) {
+    c = (int) ss[i];
+    if      (isupper(c)) { idx = c - 'A'; if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (n+1)); stack[idx][sp[idx]++] = i; }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) sp[idx]--;                                /* matched close: pop, ss/nc untouched */
+      else             { if (nc[i] == ' ') nc[i] = '?'; }        /* orphan close: keep ss[i], mark nc[i] */
+    }
+  }
+  /* any opens still on a stack never found a partner -> orphans */
+  for (idx = 0; idx < 26; idx++)
+    for (i = 0; i < sp[idx]; i++) { int zo = stack[idx][i]; if (nc[zo] == ' ') nc[zo] = '?'; }
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  free(stack); free(sp);
+  return eslOK;
+
+ ERROR:
+  if (stack != NULL) { for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]); free(stack); }
+  if (sp != NULL) free(sp);
+  return status;
+}
+
 /* Function: cm_AppendComlog()
  * Synopsis: Concatenate and append command line to the command line log.
  * 
