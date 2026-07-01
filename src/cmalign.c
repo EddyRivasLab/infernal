@@ -1104,7 +1104,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
 					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					      FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
-					      FALSE,   /* brief182-PARTA-STAGE-placeholder */ /* brief 182 Part B: was hardcoded FALSE; --hmm defaults to truncated (CM_ALIGN_TRUNC set unless --notrunc), so this must track it like p7_ibv.c:1793 */
+					      do_trunc, /* brief 182 Part B: was hardcoded FALSE; --hmm defaults to truncated (CM_ALIGN_TRUNC set unless --notrunc), so this must track it like p7_ibv.c:1793 */
 					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
@@ -1669,7 +1669,7 @@ hmm_pipeline_thread(void *arg)
 					  p7ibv_delta, info->ibv_base_slab,
 					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
 					  FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
-					  FALSE,    /* brief182-PARTA-STAGE-placeholder */ /* brief 182 Part B: was hardcoded FALSE; track CM_ALIGN_TRUNC like p7_ibv.c:1793 */
+					  info->do_trunc, /* brief 182 Part B: was hardcoded FALSE; track CM_ALIGN_TRUNC like p7_ibv.c:1793 */
 					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
