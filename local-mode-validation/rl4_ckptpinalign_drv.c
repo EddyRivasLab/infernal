@@ -268,6 +268,29 @@ int main(int argc, char **argv)
              entryS, bifS, entryP, bifP, entryC, bifC);
       printf("#   VERDICT=%s\n",
              (peqPC && ppeqPC && dscPC==0. && elP==elC && entryP==entryC) ? "PASS" : "FAIL");
+
+      /* R-L.4b (065) validation (C): self-consistency -- every B_st node OA's
+       * own output parsetree (tr_c) actually visits must have kpin[v]>=0,
+       * i.e. OA's fixed output is, by construction, always consistent with
+       * CYK's own pins (the §1 argmax-never-picks-IMPOSSIBLE argument,
+       * confirmed empirically here rather than just trusted). */
+      {
+        int n, nb_visited = 0, nb_unpinned = 0;
+        for (n = 0; n < tr_c->n; n++) {
+          int v = tr_c->state[n];
+          if (v >= 0 && v < M && cm->sttype[v] == B_st) {
+            nb_visited++;
+            if (kpin[v] < 0) {
+              nb_unpinned++;
+              int d_here = tr_c->emitr[n] - tr_c->emitl[n] + 1;
+              printf("#     UNPINNED-B-VISITED: v=%d emitl=%d emitr=%d d=%d (forced-unique-k if d small/edge)\n",
+                     v, tr_c->emitl[n], tr_c->emitr[n], d_here);
+            }
+          }
+        }
+        printf("#   SELF-CONSISTENCY(C): B-states visited by ckpt output=%d unpinned-among-them=%d %s\n",
+               nb_visited, nb_unpinned, (nb_unpinned==0) ? "PASS" : "FAIL");
+      }
     }
 
   NEXT:

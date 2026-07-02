@@ -1192,8 +1192,38 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
       kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
         dp_v = d - hdmin[v][jp_v];
-        int klo = kn, khi = kx;
-        if (kpinned >= 0) { if (kpinned < kn || kpinned > kx) continue; klo = khi = kpinned; }
+        /* R-L.4b (065): if CYK's pin walk never visited this B state (kpinned<0)
+         * AND more than one k in [kn,kx] actually satisfies the per-cell band
+         * constraint below for THIS (j,d), do NOT fall back to an unrestricted
+         * full split-search -- that would compute a real value with no
+         * shadow/traceback record of which k won, and OA's own traceback
+         * could then have no pin to reconstruct from if it ever tried to step
+         * into this cell.  Leave the cell at its IMPOSSIBLE-initialized
+         * default instead; CYK's own reconstruction (built only from pinned B
+         * states) is always a valid, fully-computable alternative, so no
+         * legal traceback is ever forced through here.
+         * EXCEPTION: when exactly one k satisfies the constraint (checked
+         * per-d, NOT just via the j-only [kn,kx] window -- kn==kx is only a
+         * necessary, not sufficient, proxy: e.g. every d==0 cell forces a
+         * unique k=0 even when [kn,kx] spans many values), the split is
+         * unambiguous and needs no pin -- always compute it (this is NOT an
+         * untracked choice; ckpt_optacc_traceback re-derives the same unique
+         * k the same way, see there). */
+        int klo, khi;
+        if (kpinned >= 0) {
+          if (kpinned < kn || kpinned > kx) continue;
+          klo = khi = kpinned;
+        } else {
+          int uniq_k = -1, n_valid = 0;
+          for (k = kn; k <= kx; k++) {
+            if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+              n_valid++; uniq_k = k;
+              if (n_valid > 1) break;
+            }
+          }
+          if (n_valid != 1) continue;
+          klo = khi = uniq_k;
+        }
         for (k = klo; k <= khi; k++) {
           if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
             kp_z = k-hdmin[z][jp_z];
@@ -1610,8 +1640,33 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
       kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
         dp_v = d - hdmin[v][jp_v];
-        int klo = kn, khi = kx;
-        if (kpinned >= 0) { if (kpinned < kn || kpinned > kx) continue; klo = khi = kpinned; }
+        /* R-L.4b (065): if CYK's pin walk never visited this B state (kpinned<0)
+         * AND more than one k satisfies the per-cell band constraint below for
+         * THIS (j,d), do NOT fall back to an unrestricted full split-search --
+         * see the matching comment in ckpt_inside_deck's B_st combine for the
+         * full rationale (this is the OA-side half of the same fix; traceback
+         * here likewise never stores a kshadow for the unpinned+ambiguous
+         * case, so an untracked fallback value would be unreconstructable).
+         * EXCEPTION: when exactly one k satisfies the constraint (checked
+         * per-d, not just via the coarser j-only [kn,kx] window -- e.g. every
+         * d==0 cell forces a unique k=0), the split is unambiguous and needs
+         * no pin -- always compute it; ckpt_optacc_traceback re-derives the
+         * same unique k the same way. */
+        int klo, khi;
+        if (kpinned >= 0) {
+          if (kpinned < kn || kpinned > kx) continue;
+          klo = khi = kpinned;
+        } else {
+          int uniq_k = -1, n_valid = 0;
+          for (k = kn; k <= kx; k++) {
+            if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+              n_valid++; uniq_k = k;
+              if (n_valid > 1) break;
+            }
+          }
+          if (n_valid != 1) continue;
+          klo = khi = uniq_k;
+        }
         for (k = klo; k <= khi; k++) {
           if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
             kp_z = k-hdmin[z][jp_z];
@@ -2698,6 +2753,30 @@ ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
 
     if (cm->sttype[v] == B_st) {
       k = (kpin != NULL) ? kpin[v] : -1;     /* pinned right-fragment length */
+      if (k < 0) {
+        /* R-L.4b (065): CYK's pin walk never visited this B state.  If exactly
+         * one k satisfies the per-cell band constraint for THIS (j,d), this
+         * isn't really "unpinned" -- it's forced by band geometry alone,
+         * exactly mirroring the ckpt_*_deck B_st combine's own n_valid==1
+         * exception (checked per-d, not just via the coarser j-only [kn,kx]
+         * window -- e.g. every d==0 cell forces a unique k=0 even when
+         * [kn,kx] itself spans many values).  Re-derive it the same way the
+         * deck did rather than failing. */
+        int zz = cm->cnum[v], yy = cm->cfirst[v];
+        if (j >= jmin[yy] && j <= jmax[yy] && j >= jmin[zz] && j <= jmax[zz]) {
+          int jp_yy = j - jmin[yy], jp_zz = j - jmin[zz];
+          int kn2 = ESL_MAX(ESL_MAX(j - jmax[yy], hdmin[zz][jp_zz]), 0);
+          int kx2 = ESL_MIN(jp_yy, hdmax[zz][jp_zz]);
+          int kk, uniq_k = -1, n_valid = 0;
+          for (kk = kn2; kk <= kx2; kk++) {
+            if ((kk >= d - hdmax[yy][jp_yy-kk]) && (kk <= d - hdmin[yy][jp_yy-kk])) {
+              n_valid++; uniq_k = kk;
+              if (n_valid > 1) break;
+            }
+          }
+          if (n_valid == 1) k = uniq_k;
+        }
+      }
       if (k < 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "ckpt_optacc_traceback: B state v=%d not pinned (global mode expected)", v);
       if ((status = esl_stack_IPush(pda, j))       != eslOK) goto ERROR;
       if ((status = esl_stack_IPush(pda, k))       != eslOK) goto ERROR;

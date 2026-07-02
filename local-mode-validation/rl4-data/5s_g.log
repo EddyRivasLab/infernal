@@ -1,0 +1,90 @@
+#HDBANDS cm_M=366 hd_needed=3691 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4540 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4752 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4314 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4741 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4939 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4576 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=366 hd_needed=4119 (0.0000 GB for hdmin+hdmax)
+# CM=5S_rRNA M=366 clen=119 bifs=1 mode=global tau=1e-07 fixedtau=0 tag=5s_g
+# flags: LOCAL_BEGIN=0 LOCAL_END=0
+# SEQ=5S_rRNA-sample1 L=121
+# RESULT tag=5s_g seq=5S_rRNA-sample1 mode=global L=121
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=62.460167 pin=62.458492 |dP|=1.675e-03 ckpt=62.458492 |dC|=1.675e-03
+#     parse : stock_nodes=94 pin_nodes=94 PinCompare=IDENTICAL  ckpt_nodes=94 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.960882 avgpp(pin)=0.960941 avgpp(ckpt)=0.960941
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample2 L=118
+# RESULT tag=5s_g seq=5S_rRNA-sample2 mode=global L=118
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=53.507107 pin=53.504894 |dP|=2.213e-03 ckpt=53.504894 |dC|=2.213e-03
+#     parse : stock_nodes=91 pin_nodes=91 PinCompare=IDENTICAL  ckpt_nodes=91 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.980705 avgpp(pin)=0.980717 avgpp(ckpt)=0.980717
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample3 L=120
+# RESULT tag=5s_g seq=5S_rRNA-sample3 mode=global L=120
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=31.180565 pin=30.429783 |dP|=7.508e-01 ckpt=30.429783 |dC|=7.508e-01
+#     parse : stock_nodes=94 pin_nodes=94 PinCompare=IDENTICAL  ckpt_nodes=94 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.959205 avgpp(pin)=0.989184 avgpp(ckpt)=0.989184
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample4 L=117
+# RESULT tag=5s_g seq=5S_rRNA-sample4 mode=global L=117
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=59.508461 pin=59.491402 |dP|=1.706e-02 ckpt=59.491402 |dC|=1.706e-02
+#     parse : stock_nodes=91 pin_nodes=91 PinCompare=IDENTICAL  ckpt_nodes=91 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.998137 avgpp(pin)=0.998292 avgpp(ckpt)=0.998292
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample5 L=115
+# RESULT tag=5s_g seq=5S_rRNA-sample5 mode=global L=115
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=46.634533 pin=46.606056 |dP|=2.848e-02 ckpt=46.606056 |dC|=2.848e-02
+#     parse : stock_nodes=91 pin_nodes=91 PinCompare=IDENTICAL  ckpt_nodes=91 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.972587 avgpp(pin)=0.973895 avgpp(ckpt)=0.973895
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample6 L=119
+# RESULT tag=5s_g seq=5S_rRNA-sample6 mode=global L=119
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=55.156052 pin=55.117661 |dP|=3.839e-02 ckpt=55.117661 |dC|=3.839e-02
+#     parse : stock_nodes=91 pin_nodes=91 PinCompare=IDENTICAL  ckpt_nodes=91 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.994518 avgpp(pin)=0.995279 avgpp(ckpt)=0.995279
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample7 L=116
+# RESULT tag=5s_g seq=5S_rRNA-sample7 mode=global L=116
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=67.751541 pin=67.744942 |dP|=6.599e-03 ckpt=67.744942 |dC|=6.599e-03
+#     parse : stock_nodes=91 pin_nodes=91 PinCompare=IDENTICAL  ckpt_nodes=91 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.997227 avgpp(pin)=0.997392 avgpp(ckpt)=0.997392
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=5S_rRNA-sample8 L=118
+# RESULT tag=5s_g seq=5S_rRNA-sample8 mode=global L=118
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=40.393299 pin=40.392712 |dP|=5.875e-04 ckpt=40.392712 |dC|=5.875e-04
+#     parse : stock_nodes=92 pin_nodes=92 PinCompare=IDENTICAL  ckpt_nodes=92 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.989518 avgpp(pin)=0.989527 avgpp(ckpt)=0.989527
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS

@@ -1,0 +1,46 @@
+#HDBANDS cm_M=10562 hd_needed=259291 (0.0021 GB for hdmin+hdmax)
+#HDBANDS cm_M=10562 hd_needed=320591 (0.0026 GB for hdmin+hdmax)
+#HDBANDS cm_M=10562 hd_needed=288426 (0.0023 GB for hdmin+hdmax)
+#HDBANDS cm_M=10562 hd_needed=357390 (0.0029 GB for hdmin+hdmax)
+# CM=LSU_rRNA_eukarya M=10562 clen=3401 bifs=71 mode=local(full:begins+ends) tau=1e-07 fixedtau=1 tag=lsu_l
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# SEQ=LSU_rRNA_eukarya-sample1 L=3398
+# RESULT tag=lsu_l seq=LSU_rRNA_eukarya-sample1 mode=local(full) L=3398
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=1639.652466 pin=1631.218994 |dP|=8.433e+00 ckpt=1631.218994 |dC|=8.433e+00
+#     parse : stock_nodes=2875 pin_nodes=2873 PinCompare=DIFFER  ckpt_nodes=2873 CkptCompare=DIFFER
+#     avgpp(stock)=0.923640 avgpp(pin)=0.942467 avgpp(ckpt)=0.942467
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=LSU_rRNA_eukarya-sample2 L=3480
+# RESULT tag=lsu_l seq=LSU_rRNA_eukarya-sample2 mode=local(full) L=3480
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=1624.753540 pin=1619.793823 |dP|=4.960e+00 ckpt=1619.793823 |dC|=4.960e+00
+#     parse : stock_nodes=2960 pin_nodes=2960 PinCompare=DIFFER  ckpt_nodes=2960 CkptCompare=DIFFER
+#     avgpp(stock)=0.961127 avgpp(pin)=0.964980 avgpp(ckpt)=0.964980
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=LSU_rRNA_eukarya-sample3 L=3317
+# RESULT tag=lsu_l seq=LSU_rRNA_eukarya-sample3 mode=local(full) L=3317
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=1512.512329 pin=1508.163696 |dP|=4.349e+00 ckpt=1508.163696 |dC|=4.349e+00
+#     parse : stock_nodes=2856 pin_nodes=2856 PinCompare=DIFFER  ckpt_nodes=2856 CkptCompare=DIFFER
+#     avgpp(stock)=0.940561 avgpp(pin)=0.945023 avgpp(ckpt)=0.945023
+#     EL    : stock=1 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+# SEQ=LSU_rRNA_eukarya-sample4 L=3397
+# RESULT tag=lsu_l seq=LSU_rRNA_eukarya-sample4 mode=local(full) L=3397
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=1440.928101 pin=1438.377441 |dP|=2.551e+00 ckpt=1438.377441 |dC|=2.551e+00
+#     parse : stock_nodes=2912 pin_nodes=2913 PinCompare=DIFFER  ckpt_nodes=2913 CkptCompare=DIFFER
+#     avgpp(stock)=0.916043 avgpp(pin)=0.928432 avgpp(ckpt)=0.928432
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS

@@ -1,0 +1,206 @@
+#HDBANDS cm_M=960 hd_needed=17910 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=21470 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=27422 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=56612 (0.0005 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=37051 (0.0003 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=22420 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=7517 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=34705 (0.0003 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=13793 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=50752 (0.0004 GB for hdmin+hdmax)
+# CM=rnaseP-eubact M=960 clen=307 bifs=7 mode=local(full:begins+ends) tau=1e-07 fixedtau=0 tag=rnasep_frag5p.filt
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# SEQ=rnaseP-eubact-sample1 L=141
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample1 mode=local(full) L=141
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(45 vs 45) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=18.256388 pin=17.329428 |dP|=9.270e-01 ckpt=17.329428 |dC|=9.270e-01
+#     parse : stock_nodes=122 pin_nodes=122 PinCompare=DIFFER  ckpt_nodes=122 CkptCompare=DIFFER
+#     avgpp(stock)=0.835878 avgpp(pin)=0.909238 avgpp(ckpt)=0.909238
+#     EL    : stock=1 pin=1 ckpt=1
+#     entry_v: stock=45(bif=0) pin=45(bif=0) ckpt=45(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample2 L=283
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample2 mode=local(full) L=283
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(45 vs 45) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=145.165985 pin=145.154694 |dP|=1.129e-02 ckpt=145.154694 |dC|=1.129e-02
+#     parse : stock_nodes=243 pin_nodes=243 PinCompare=IDENTICAL  ckpt_nodes=243 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.950800 avgpp(pin)=0.951059 avgpp(ckpt)=0.951059
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=45(bif=0) pin=45(bif=0) ckpt=45(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=7 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample3 L=180
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample3 mode=local(full) L=180
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(39 vs 39) EL match=YES(2 vs 2)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=12.060949 pin=11.345316 |dP|=7.156e-01 ckpt=11.345316 |dC|=7.156e-01
+#     parse : stock_nodes=111 pin_nodes=112 PinCompare=DIFFER  ckpt_nodes=112 CkptCompare=DIFFER
+#     avgpp(stock)=0.714101 avgpp(pin)=0.808518 avgpp(ckpt)=0.808518
+#     EL    : stock=2 pin=2 ckpt=2
+#     entry_v: stock=39(bif=0) pin=39(bif=0) ckpt=39(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample5 L=277
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample5 mode=local(full) L=277
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=38.452843 pin=36.677479 |dP|=1.775e+00 ckpt=36.677479 |dC|=1.775e+00
+#     parse : stock_nodes=253 pin_nodes=264 PinCompare=DIFFER  ckpt_nodes=264 CkptCompare=DIFFER
+#     avgpp(stock)=0.800330 avgpp(pin)=0.837284 avgpp(ckpt)=0.837284
+#     EL    : stock=2 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=7 unpinned-among-them=1 FAIL
+# SEQ=rnaseP-eubact-sample6 L=166
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample6 mode=local(full) L=166
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=27.513182 pin=27.298874 |dP|=2.143e-01 ckpt=27.298874 |dC|=2.143e-01
+#     parse : stock_nodes=142 pin_nodes=142 PinCompare=IDENTICAL  ckpt_nodes=142 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.850457 avgpp(pin)=0.855796 avgpp(ckpt)=0.855796
+#     EL    : stock=1 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample7 L=131
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample7 mode=local(full) L=131
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=45.904137 pin=45.557903 |dP|=3.462e-01 ckpt=45.557903 |dC|=3.462e-01
+#     parse : stock_nodes=126 pin_nodes=130 PinCompare=DIFFER  ckpt_nodes=130 CkptCompare=DIFFER
+#     avgpp(stock)=0.957074 avgpp(pin)=0.958740 avgpp(ckpt)=0.958740
+#     EL    : stock=1 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample8 L=84
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample8 mode=local(full) L=84
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(45 vs 45) EL match=YES(2 vs 2)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=2.177630 pin=1.161655 |dP|=1.016e+00 ckpt=1.161655 |dC|=1.016e+00
+#     parse : stock_nodes=82 pin_nodes=84 PinCompare=DIFFER  ckpt_nodes=84 CkptCompare=DIFFER
+#     avgpp(stock)=0.875498 avgpp(pin)=0.924653 avgpp(ckpt)=0.924653
+#     EL    : stock=2 pin=2 ckpt=2
+#     entry_v: stock=45(bif=0) pin=45(bif=0) ckpt=45(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample9 L=242
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample9 mode=local(full) L=242
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=39.731674 pin=38.018860 |dP|=1.713e+00 ckpt=38.018860 |dC|=1.713e+00
+#     parse : stock_nodes=159 pin_nodes=135 PinCompare=DIFFER  ckpt_nodes=135 CkptCompare=DIFFER
+#     avgpp(stock)=0.697263 avgpp(pin)=0.758577 avgpp(ckpt)=0.758577
+#     EL    : stock=3 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample10 L=99
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample10 mode=local(full) L=99
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(2 vs 2)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=12.398824 pin=9.182296 |dP|=3.217e+00 ckpt=9.182296 |dC|=3.217e+00
+#     parse : stock_nodes=99 pin_nodes=99 PinCompare=DIFFER  ckpt_nodes=99 CkptCompare=DIFFER
+#     avgpp(stock)=0.876162 avgpp(pin)=0.926332 avgpp(ckpt)=0.926332
+#     EL    : stock=2 pin=2 ckpt=2
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample11 L=155
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample11 mode=local(full) L=155
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=8.626973 pin=7.458303 |dP|=1.169e+00 ckpt=7.458303 |dC|=1.169e+00
+#     parse : stock_nodes=150 pin_nodes=126 PinCompare=DIFFER  ckpt_nodes=126 CkptCompare=DIFFER
+#     avgpp(stoc#HDBANDS cm_M=960 hd_needed=20813 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=60095 (0.0005 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=61496 (0.0005 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=27872 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=97585 (0.0008 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=26861 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=113026 (0.0009 GB for hdmin+hdmax)
+k)=0.853930 avgpp(pin)=0.873721 avgpp(ckpt)=0.873721
+#     EL    : stock=3 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample12 L=310
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample12 mode=local(full) L=310
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=131.232590 pin=130.038254 |dP|=1.194e+00 ckpt=130.038254 |dC|=1.194e+00
+#     parse : stock_nodes=266 pin_nodes=266 PinCompare=IDENTICAL  ckpt_nodes=266 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.916322 avgpp(pin)=0.944095 avgpp(ckpt)=0.944095
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=7 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample14 L=237
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample14 mode=local(full) L=237
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(48 vs 48) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=41.087322 pin=39.749840 |dP|=1.337e+00 ckpt=39.749840 |dC|=1.337e+00
+#     parse : stock_nodes=218 pin_nodes=219 PinCompare=DIFFER  ckpt_nodes=219 CkptCompare=DIFFER
+#     avgpp(stock)=0.871055 avgpp(pin)=0.902609 avgpp(ckpt)=0.902609
+#     EL    : stock=1 pin=1 ckpt=1
+#     entry_v: stock=48(bif=0) pin=48(bif=0) ckpt=48(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=7 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample15 L=219
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample15 mode=local(full) L=219
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(667 vs 667) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=-3.268508 pin=-3.322770 |dP|=5.426e-02 ckpt=-3.322770 |dC|=5.426e-02
+#     parse : stock_nodes=68 pin_nodes=68 PinCompare=IDENTICAL  ckpt_nodes=68 CkptCompare=IDENTICAL
+#     avgpp(stock)=0.964482 avgpp(pin)=0.966201 avgpp(ckpt)=0.966201
+#     EL    : stock=1 pin=1 ckpt=1
+#     entry_v: stock=667(bif=1) pin=667(bif=1) ckpt=667(bif=1)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=2 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample16 L=82
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample16 mode=local(full) L=82
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(2 vs 2)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=-1.546291 pin=-3.895714 |dP|=2.349e+00 ckpt=-3.895714 |dC|=2.349e+00
+#     parse : stock_nodes=91 pin_nodes=92 PinCompare=DIFFER  ckpt_nodes=92 CkptCompare=DIFFER
+#     avgpp(stock)=0.910767 avgpp(pin)=0.971103 avgpp(ckpt)=0.971103
+#     EL    : stock=2 pin=2 ckpt=2
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample18 L=164
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample18 mode=local(full) L=164
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(2 vs 2)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=2.884475 pin=0.744952 |dP|=2.140e+00 ckpt=0.744952 |dC|=2.140e+00
+#     parse : stock_nodes=179 pin_nodes=134 PinCompare=DIFFER  ckpt_nodes=134 CkptCompare=DIFFER
+#     avgpp(stock)=0.689444 avgpp(pin)=0.799257 avgpp(ckpt)=0.799257
+#     EL    : stock=4 pin=2 ckpt=2
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample19 L=310
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample19 mode=local(full) L=310
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(0 vs 0)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=84.180656 pin=83.203041 |dP|=9.776e-01 ckpt=83.203041 |dC|=9.776e-01
+#     parse : stock_nodes=270 pin_nodes=269 PinCompare=DIFFER  ckpt_nodes=269 CkptCompare=DIFFER
+#     avgpp(stock)=0.836535 avgpp(pin)=0.863978 avgpp(ckpt)=0.863978
+#     EL    : stock=0 pin=0 ckpt=0
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=7 unpinned-among-them=0 PASS
+# SEQ=rnaseP-eubact-sample20 L=190
+# RESULT tag=rnasep_frag5p.filt seq=rnaseP-eubact-sample20 mode=local(full) L=190
+#   PRIMARY GATE (pin==ckpt, same kpin): ParsetreeCompare=IDENTICAL  |dsc|=0.000e+00  PPstr-byte-identical=YES  entry_v match=YES(3 vs 3) EL match=YES(1 vs 1)
+#   info (vs free unpinned stock, NOT gated -- pin/OA divergence is documented pre-existing behavior):
+#     score : stock=14.011181 pin=12.672098 |dP|=1.339e+00 ckpt=12.672098 |dC|=1.339e+00
+#     parse : stock_nodes=196 pin_nodes=134 PinCompare=DIFFER  ckpt_nodes=134 CkptCompare=DIFFER
+#     avgpp(stock)=0.851178 avgpp(pin)=0.931104 avgpp(ckpt)=0.931104
+#     EL    : stock=5 pin=1 ckpt=1
+#     entry_v: stock=3(bif=0) pin=3(bif=0) ckpt=3(bif=0)
+#   VERDICT=PASS
+#   SELF-CONSISTENCY(C): B-states visited by ckpt output=3 unpinned-among-them=0 PASS
