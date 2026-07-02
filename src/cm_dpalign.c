@@ -2370,13 +2370,6 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S d band");
   int Lp_0 = L - cx.hdmin[0][jp_0];
 
-  if (cx.have_el) {
-    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
-    ckpt_el_compute_dmax(&cx);
-    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
-    ckpt_el_compute_esc(&cx);
-  }
-
   /* deck geometry + linear child/parent reach (B-aware) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
@@ -2403,6 +2396,13 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
     }
   }
   int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  if (cx.have_el) {
+    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
+    ckpt_el_compute_dmax(&cx);
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    ckpt_el_compute_esc(&cx);
+  }
 
   /* ============================================================= */
   /* STEP A: checkpointed Inside -> Z_ckpt + sqrt(M) seeds + roots  */
