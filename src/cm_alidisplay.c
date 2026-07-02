@@ -1210,8 +1210,15 @@ annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, ch
         char ol = aseq[zo],  orr = aseq[zc];
         char ml = model[zo], mr  = model[zc];
         /* pknot columns are singlets, disjoint from nested-pair MATP columns,
-         * so out must be blank here; overwrite defensively but not silently. */
+         * so out must be blank here by construction. ESL_DASSERT1 catches a
+         * violation in debug builds; the runtime guard below additionally
+         * makes a release-build violation degrade to "this pair's mark is
+         * silently skipped" rather than "silently clobber whatever mark (e.g.
+         * a nested v/?) was already at this position" -- a future regression
+         * that breaks the disjointness invariant should lose a pknot mark,
+         * not corrupt an unrelated one. (review-012 ROBUSTNESS finding.) */
         ESL_DASSERT1((out[zo] == ' ' && out[zc] == ' '));
+        if (out[zo] != ' ' || out[zc] != ' ') continue;
         if (ol == '~' || orr == '~') {
           /* One (or both) halves truncated away (missing-data '~'): the pair
            * CANNOT be evaluated -- it is not "broken" (we don't know the absent
@@ -1221,13 +1228,15 @@ annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, ch
            * survives. A '-' (deletion) half here is NOT present, so it stays a
            * placeholder too (matches the nested rule: only a present half is
            * marked).
-           *   cmsearch never reaches this branch: cm_pknot_FixBrokenString()
-           * drops any pknot letter whose partner column is truncated out of the
-           * (collapsed) hit display BEFORE this runs, so by here every pknot pair
-           * cmsearch sees is complete (no '~' half). It only fires on cmalign's
-           * full-width per-seq alignment, where the partner column physically
-           * exists (another sequence spans it) but THIS sequence's residue there
-           * is missing. Hence cmsearch output is byte-identical across this change. */
+           *   cmsearch never reaches this branch: its collapsed per-hit display
+           * has no missing-data '~' placeholder concept at all (truncated flanks
+           * are represented via the "*[N]*" collapse, not a per-column char), so
+           * <aseq> can never contain '~' on the cmsearch call path regardless of
+           * which upstream orphan-handling function ran (see this function's
+           * header comment). It only fires on cmalign's full-width per-seq
+           * alignment, where the partner column physically exists (another
+           * sequence spans it) but THIS sequence's residue there is missing.
+           * Hence cmsearch output is byte-identical across this change. */
           if (isalpha((int) ol))  out[zo] = PS_NESTED_TRUNC;
           if (isalpha((int) orr)) out[zc] = PS_NESTED_TRUNC;
         }
