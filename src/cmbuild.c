@@ -29,6 +29,7 @@
 #endif
 #include "esl_tree.h"
 #include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "hmmer.h"
 
@@ -65,6 +66,7 @@ static ESL_OPTIONS options[] = {
   { "--fragnrfpos", eslARG_INT,    NULL,    NULL, "n>=0",   FRAGOPTS,  "--hand",         NULL, "w/--hand, seqs w/ > <n> 5' or 3' consensus gaps are fragments",  2 },
   { "--fraggiven", eslARG_NONE,    FALSE,   NULL,  NULL,    FRAGOPTS,      NULL,         NULL, "use fragment info, if any, in input MSA, don't infer frags",     2 },
   { "--noss",      eslARG_NONE,    FALSE,   NULL,  NULL,        NULL,      NULL,         NULL, "ignore secondary structure annotation in input alignment",       2 },
+  { "--sscons",    eslARG_STRING,   NULL,   NULL,  NULL,        NULL,      NULL,     "--noss", "build consensus structure from #=GC <s>, not SS_cons",           2 },
   { "--rsearch", eslARG_INFILE,     NULL,    NULL, NULL,     CONOPTS,      NULL,      "--p56", "use RSEARCH parameterization with RIBOSUM matrix file <f>",      2 }, 
   { "--consrf",    eslARG_NONE,    FALSE,   NULL, NULL,         NULL,  "--hand",         NULL, "with --hand, rewrite RF line with consensus sequence",           2 },
 
@@ -257,12 +259,13 @@ static void   output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char
 static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
-static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
+static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, char **ret_pknot_ss);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    mark_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
-static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
+static int    annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, char *pknot_ss);
+static int    set_cm_pknots(CM_t *cm, char *pknot_ss, char *errbuf);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do_print, CM_t *cm, const Prior_t *prior, float msa_nseq);
@@ -694,6 +697,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
   if (esl_opt_IsUsed(go, "--null"))        { fprintf(ofp, "# read null model from file:                          %s\n", esl_opt_GetString(go, "--null")); }
   if (esl_opt_IsUsed(go, "--prior"))       { fprintf(ofp, "# read prior from file:                               %s\n", esl_opt_GetString(go, "--prior")); }
   if (esl_opt_IsUsed(go, "--noss"))        { fprintf(ofp, "# ignore secondary structure, if any:                 yes\n"); }
+  if (esl_opt_IsUsed(go, "--sscons"))      { fprintf(ofp, "# define consensus structure from #=GC annotation:    %s\n", esl_opt_GetString(go, "--sscons")); }
   if (esl_opt_IsUsed(go, "--rsearch"))     { fprintf(ofp, "# RSEARCH parameterization mode w/RIBOSUM mx file:    %s\n", esl_opt_GetString(go, "--rsearch")); }
   if (esl_opt_IsUsed(go, "--consrf"))      { fprintf(ofp, "# rewrite RF as consensus sequence with --hand:       yes\n"); }
   if (esl_opt_IsUsed(go, "--betaW"))       { fprintf(ofp, "# tail loss probability for defining W:               %g\n", esl_opt_GetReal(go, "--betaW")); }
@@ -1012,8 +1016,9 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    CM_t         *cm = NULL;         /* the CM */
    int           pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
    Prior_t      *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
+   char         *pknot_ss = NULL;   /* Feature B: captured pseudoknotted full-WUSS structure (alignment resolution), or NULL */
 
-   if ((status =  check_and_clean_msa  (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
+   if ((status =  check_and_clean_msa  (go, cfg, errbuf, msa, &pknot_ss))                       != eslOK) goto ERROR;
    if ((status =  esl_msa_Checksum     (msa, &checksum))                                       != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate checksum"); 
    if ((status =  set_relative_weights (go, cfg, errbuf, msa))                                 != eslOK) goto ERROR;
    if(esl_opt_GetBoolean(go, "--fraggiven")) { 
@@ -1030,7 +1035,7 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
    pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
 
-   if ((status =  annotate                     (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
+   if ((status =  annotate                     (go, cfg, errbuf, msa, cm, pknot_ss))                   != eslOK) goto ERROR;
    if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
    if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, pri2use))                    != eslOK) goto ERROR;
    if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
@@ -1043,10 +1048,12 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
    *ret_cm = cm;
 
+   if (pknot_ss != NULL) free(pknot_ss);
    return eslOK;
 
   ERROR:
    if(cm != NULL) FreeCM(cm);
+   if(pknot_ss != NULL) free(pknot_ss);
    *ret_cm = NULL;
    return status;
  }
@@ -1511,10 +1518,12 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
   * This requires it has a name.
   */
  static int
- check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
+ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, char **ret_pknot_ss)
  {
    int status;
    ESL_STOPWATCH *w = NULL;
+
+   if (ret_pknot_ss != NULL) *ret_pknot_ss = NULL;
 
    if (cfg->be_verbose) {
      w = esl_stopwatch_Create();
@@ -1524,11 +1533,52 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    }
 
    if (esl_opt_GetBoolean(go, "--hand") && msa->rf == NULL)      ESL_FAIL(eslFAIL, errbuf, "--hand used, but alignment #%d has no reference coord annotation", cfg->nali);
+
+   /* --sscons <tag>: use the #=GC <tag> annotation line as the consensus structure,
+    * instead of the default #=GC SS_cons. The Stockholm parser stores SS_cons in
+    * msa->ss_cons and every other #=GC line in the generic msa->gc[]/gc_tag[] store, so
+    * we find <tag> there and copy it into msa->ss_cons before the existing structure
+    * cleaning/validation below runs. Everything downstream is identical to the default.
+    * (--sscons SS_cons is a no-op: that line already is msa->ss_cons.) Easel has no GC
+    * accessor in this version, so we scan gc_tag[] by hand. */
+   if (esl_opt_IsOn(go, "--sscons")) {
+     char *sstag = esl_opt_GetString(go, "--sscons");
+     if (strcmp(sstag, "SS_cons") != 0) {
+       int gc_idx = -1;
+       int g;
+       for (g = 0; g < msa->ngc; g++) { if (strcmp(msa->gc_tag[g], sstag) == 0) { gc_idx = g; break; } }
+       if (gc_idx == -1)                                  ESL_FAIL(eslFAIL, errbuf, "--sscons %s used, but alignment #%d has no #=GC %s annotation", sstag, cfg->nali, sstag);
+       if (strlen(msa->gc[gc_idx]) != (size_t) msa->alen) ESL_FAIL(eslFAIL, errbuf, "--sscons %s used, but #=GC %s in alignment #%d is length %d, not alignment length %d", sstag, sstag, cfg->nali, (int) strlen(msa->gc[gc_idx]), (int) msa->alen);
+       if (msa->ss_cons != NULL) free(msa->ss_cons);
+       if ((status = esl_strdup(msa->gc[gc_idx], -1, &(msa->ss_cons))) != eslOK) goto ERROR;
+     }
+   }
+
    if (esl_opt_GetBoolean(go, "--noss")) { /* --noss: if SS_cons exists, strip all BPs from it; if it doesn't create it with zero bps */
      if(msa->ss_cons == NULL) { ESL_ALLOC(msa->ss_cons, sizeof(char) * (msa->alen+1)); msa->ss_cons[msa->alen] = '\0'; }
      memset(msa->ss_cons,  '.', msa->alen);
    }
    if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment #%d has no consensus structure annotation, and --noss not used.", cfg->nali);
+
+   /* Feature B: capture pseudoknots from the effective consensus structure BEFORE
+    * clean_cs() strips them (clean_cs replaces every alpha pknot char with '.').
+    * esl_wuss_full() locks the nested/pknot partition to the input architecture and
+    * preserves the input pknot letters; annotate() later projects this onto consensus
+    * columns and canonicalizes the letters. No alpha chars => no pseudoknots => leave
+    * *ret_pknot_ss NULL (pknot-free families stay byte-identical to old behavior). If
+    * the structure is malformed esl_wuss_full() fails; we just don't carry pknots and
+    * let the clean_cs() call below report the real error. */
+   if (ret_pknot_ss != NULL && msa->ss_cons != NULL) {
+     int ai, havepk = FALSE;
+     for (ai = 0; ai < msa->alen; ai++) if (isalpha((int) msa->ss_cons[ai])) { havepk = TRUE; break; }
+     if (havepk) {
+       char *pkss = NULL;
+       ESL_ALLOC(pkss, sizeof(char) * (msa->alen+1));
+       if (esl_wuss_full(msa->ss_cons, pkss) != eslOK) { free(pkss); pkss = NULL; }
+       else { pkss[msa->alen] = '\0'; *ret_pknot_ss = pkss; }  /* esl_wuss_full doesn't write the \0 */
+     }
+   }
+
    if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation in alignment #%d", cfg->nali);
 
    if ( esl_opt_IsOn(go, "--rsearch")) { 
@@ -2015,16 +2065,106 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    return status;
  }
 
+ /* set_cm_pknots()
+  * Feature B (pseudoknot passthrough). Project the captured, partition-faithful
+  * full-WUSS pseudoknot string <pknot_ss> (alignment resolution, input pknot
+  * letters preserved by esl_wuss_full) onto the CM's consensus columns via
+  * cm->map, drop any pseudoknot pair with an end in a non-consensus (insert)
+  * column, canonicalize the surviving pknot letters to A,B,C... in 5' order, and
+  * store the result in cm->pknot, setting CMH_PKNOT. If <pknot_ss> is NULL or no
+  * pseudoknot survives projection, cm->pknot is left NULL and the flag unset (so
+  * pknot-free families stay byte-identical to old behavior). Requires cm->map,
+  * which HandModelmaker always sets (CMH_MAP).
+  *
+  * The stored string is 1..clen with cm->pknot[0]=' ', [clen+1]='\0': a canonical
+  * pknot letter at each pseudoknot consensus column, '.' everywhere else. Only the
+  * pseudoknots are stored; nested structure is always re-derived from cm->cmcons.
+  */
+ static int
+ set_cm_pknots(CM_t *cm, char *pknot_ss, char *errbuf)
+ {
+   int   status;
+   int  *ct  = NULL;             /* base-pair partners of pknot_ss (incl pknots), 1..alen */
+   int  *a2c = NULL;             /* a2c[apos] = consensus col for alignment col apos, or 0 (insert) */
+   char *pk  = NULL;             /* consensus-resolution pknot string, 1..clen */
+   char  relabel[26];            /* input pknot stem letter (idx) -> canonical letter */
+   int   alen, apos, cpos, partner, nk = 0, nextlab = 0, i;
+
+   if (pknot_ss == NULL || ! (cm->flags & CMH_MAP)) return eslOK;
+   alen = strlen(pknot_ss);
+
+   ESL_ALLOC(ct, sizeof(int) * (alen+1));
+   if ((status = esl_wuss2ct(pknot_ss, alen, ct)) != eslOK) ESL_XFAIL(status, errbuf, "Failed to derive pseudoknot pairing from consensus structure");
+
+   /* reverse map: which alignment columns are consensus (match) columns */
+   ESL_ALLOC(a2c, sizeof(int) * (alen+1));
+   esl_vec_ISet(a2c, alen+1, 0);
+   for (cpos = 1; cpos <= cm->clen; cpos++) a2c[cm->map[cpos]] = cpos;
+
+   /* project pknot letters onto consensus columns, dropping orphan pairs */
+   ESL_ALLOC(pk, sizeof(char) * (cm->clen+2));
+   pk[0] = ' ';
+   for (cpos = 1; cpos <= cm->clen; cpos++) pk[cpos] = '.';
+   pk[cm->clen+1] = '\0';
+
+   for (cpos = 1; cpos <= cm->clen; cpos++) {
+     apos = cm->map[cpos];
+     if (isalpha((int) pknot_ss[apos-1])) {
+       partner = ct[apos];
+       if (partner >= 1 && a2c[partner] != 0) { pk[cpos] = pknot_ss[apos-1]; nk++; }
+       /* else: pknot partner falls in an insert column -> orphan, leave '.' */
+     }
+   }
+
+   if (nk > 0) {
+     /* canonical relabel: distinct input pknot stems -> A,B,C... by 5' order */
+     for (i = 0; i < 26; i++) relabel[i] = 0;
+     for (cpos = 1; cpos <= cm->clen; cpos++) {
+       char c = pk[cpos];
+       if (isupper((int) c)) {
+         i = c - 'A';
+         if (relabel[i] == 0) {
+           if (nextlab >= 26) ESL_XFAIL(eslEINVAL, errbuf, "More than 26 distinct pseudoknot stems survive in the consensus; cannot relabel to A-Z without emitting non-alphabetic (invalid) WUSS");
+           relabel[i] = (char) ('A' + (nextlab++));
+         }
+         pk[cpos] = relabel[i];
+       }
+       else if (islower((int) c)) {
+         i = c - 'a';
+         if (relabel[i] == 0) {                                         /* defensive: close seen before open */
+           if (nextlab >= 26) ESL_XFAIL(eslEINVAL, errbuf, "More than 26 distinct pseudoknot stems survive in the consensus; cannot relabel to A-Z without emitting non-alphabetic (invalid) WUSS");
+           relabel[i] = (char) ('A' + (nextlab++));
+         }
+         pk[cpos] = (char) tolower((int) relabel[i]);
+       }
+     }
+     if (cm->pknot != NULL) free(cm->pknot);
+     cm->pknot = pk; pk = NULL;
+     cm->flags |= CMH_PKNOT;
+   }
+
+   if (pk  != NULL) free(pk);
+   free(a2c);
+   free(ct);
+   return eslOK;
+
+  ERROR:
+   if (pk  != NULL) free(pk);
+   if (a2c != NULL) free(a2c);
+   if (ct  != NULL) free(ct);
+   return status;
+ }
+
  /* annotate()
   * Transfer annotation information from MSA to new CM.
-  * 
-  * We've ensured the msa has a name in set_msa_name() so if 
-  * for some inconceivable reason it doesn't 
+  *
+  * We've ensured the msa has a name in set_msa_name() so if
+  * for some inconceivable reason it doesn't
   * we die.
   *
   */
  static int
- annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
+ annotate(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, char *pknot_ss)
  {
    int status = eslOK;
    ESL_STOPWATCH *w = NULL;
@@ -2042,7 +2182,10 @@ static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
    if ((status = cm_AppendComlog      (cm, go->argc, go->argv, FALSE, 0)) != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record command log");
    if ((status = cm_SetCtime          (cm))                               != eslOK)  ESL_XFAIL(status, errbuf, "Failed to record timestamp");
 
-   if (cfg->be_verbose) { 
+   /* Feature B: project captured pseudoknots onto consensus columns and store in cm->pknot */
+   if ((status = set_cm_pknots        (cm, pknot_ss, errbuf))             != eslOK)  goto ERROR;
+
+   if (cfg->be_verbose) {
      fprintf(cfg->ofp, "done.  ");
      esl_stopwatch_Stop(w);
      esl_stopwatch_Display(cfg->ofp, w, "CPU time: ");

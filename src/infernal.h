@@ -1766,6 +1766,7 @@ typedef struct cm_s {
   char    *desc;        /* brief (1-line) description of model          (CMH_DESC))      */ /* String, \0-terminated   */
   char    *rf;          /* reference line from alignment    1..clen     (CMH_RF)         */ /* String; 0=' ', clen+1='\0' */
   char    *consensus;   /* consensus residue line           1..clen     (CMH_CONS)       */ /* String; 0=' ', clen+1='\0' */
+  char    *pknot;       /* canonical consensus pseudoknots  1..clen     (CMH_PKNOT)      */ /* String; 0=' ', clen+1='\0'; pknot letter at pknot cols, '.' elsewhere; NULL if no pknots */
   uint32_t checksum;    /* checksum of training sequences               (CMH_CHKSUM)     */
   int     *map;         /* map of alignment cols onto model 1..clen     (CMH_MAP)        */ /* Array; map[0]=0 */
 
@@ -1969,6 +1970,7 @@ typedef struct cm_s {
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
 #define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
+#define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -2031,6 +2033,7 @@ enum cm_file_formats_e {
   CM_FILE_1  = 0, /* Infernal v1.0->v1.0.2 */
   CM_FILE_1a = 1,
   CM_FILE_1b = 2, /* v1.2: adds optional P7NODEPAD per-HMM-node band pad array */
+  CM_FILE_1c = 3, /* adds consensus pseudoknot annotation (cm->pknot)          */
 };
 
 typedef struct cm_file_s {
@@ -2755,6 +2758,8 @@ extern int   **ICalcInitDPScores             (CM_t *cm);
 extern int     cm_nonconfigured_Verify(CM_t *cm, char *errbuf);
 extern int     cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern float   cm_Sizeof(CM_t *cm);
+extern int     cm_pknot_FixBrokenString(char *ss, int n);
+extern int     cm_pknot_MarkOrphansTrunc(char *ss, char *nc, int n);
 extern int     Prob2Score(float p, float null);
 extern float   Score2Prob(int sc, float null);
 extern float   Scorify(int sc);
@@ -2784,6 +2789,48 @@ extern char          *cm_alidisplay_TruncString   (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_SQ **ret_sq, Parsetree_t **ret_tr, char **ret_pp);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
+/* MM line (match/substitution) glyphs, shared by cmsearch alidisplay and the
+ * cmalign #=GR <seq> MM line. */
+#define MM_SUBPAIR    ':'      /* consistent (score>=0) base-pair substitution */
+#define MM_SUBSINGLET '+'      /* positive-scoring singlet substitution        */
+/* shared base-pair / singlet classification helpers (cm_alidisplay.c); used by
+ * both the cmsearch alidisplay path and the cmalign per-seq annotation path. */
+extern int            bp_is_canonical(char lseq, char rseq);
+extern void           cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, char *ret_lmid, char *ret_rmid);
+extern char           cm_bp_nc_mark(char lseq, char rseq, float pairsc);
+extern char           cm_singlet_mark(char seq, char cons, float avgsc);
+extern void           annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N);
+
+/* from cm_parsetree.c : post-hoc cmalign structure-status annotation */
+extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq, int do_famcons, int do_famcov);
+
+/* CM_BPCONS_ACC : cross-block accumulator for the #=GC bp_cons family line on
+ * the large-alignment merge path. The fraction-canonical digit for each
+ * consensus base pair is computed over ALL sequences, but the merge path never
+ * holds them all in memory; instead per-block counts are summed here (counts are
+ * additive over a partition of the sequences, so the final digit is byte-
+ * identical to the single-block in-memory result). Pairs are keyed in consensus-
+ * position space (1..clen), which is stable across blocks (only insert columns
+ * vary). See cm_parsetree.c. */
+typedef struct cm_bpcons_acc_s {
+  int   npair;     /* number of consensus base pairs (nested + pknot)              */
+  int   clen;      /* consensus length, for cpos<->apos mapping sanity checks      */
+  int  *lcpos;     /* [0..npair-1] left  consensus position (1..clen), lcpos<rcpos */
+  int  *rcpos;     /* [0..npair-1] right consensus position (1..clen)              */
+  int  *n_pair;    /* [0..npair-1] running #seqs with a residue at both columns    */
+  int  *n_wc;      /* [0..npair-1] running #seqs whose pair is canonical (WC/GU)   */
+  int  *joint;     /* [0..16*npair-1] per-pair 4x4 joint standard-nt count table,
+                    *   row-major joint[16*p + 4*l + r] (l,r in {A,C,G,U}=0..3), for
+                    *   the #=GC bp_cov covariation (mutual information) line; NULL
+                    *   unless --bpcov requested. Additive across blocks, same trick
+                    *   as (n_pair,n_wc): MI is computed once from the summed table. */
+} CM_BPCONS_ACC;
+
+extern int   cm_alignment_bpcons_acc_Create  (CM_t *cm, char *errbuf, ESL_MSA *msa, int do_cov, CM_BPCONS_ACC **ret_acc);
+extern int   cm_alignment_bpcons_acc_Add     (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, ESL_MSA *msa);
+extern int   cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
+extern int   cm_alignment_bpcov_acc_Finalize (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
+extern void  cm_alignment_bpcons_acc_Destroy (CM_BPCONS_ACC *acc);
 
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);

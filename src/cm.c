@@ -69,6 +69,7 @@ CreateCMShell(void)
   cm->desc      = NULL;
   cm->rf        = NULL;
   cm->consensus = NULL;
+  cm->pknot     = NULL;
   cm->map       = NULL;
   cm->checksum  = 0;
 				/* null model information */
@@ -297,6 +298,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   /* Optional allocation, status flag dependent */
   if (cm->flags & CMH_RF)    ESL_ALLOC(cm->rf,          (cm->clen+2) * sizeof(char));
   if (cm->flags & CMH_CONS)  ESL_ALLOC(cm->consensus,   (cm->clen+2) * sizeof(char));
+  if (cm->flags & CMH_PKNOT) ESL_ALLOC(cm->pknot,       (cm->clen+2) * sizeof(char));
   if (cm->flags & CMH_MAP)   ESL_ALLOC(cm->map,         (cm->clen+1) * sizeof(int));
 
   return;
@@ -394,6 +396,7 @@ FreeCM(CM_t *cm)
   if (cm->desc      != NULL) free(cm->desc);
   if (cm->rf        != NULL) free(cm->rf);
   if (cm->consensus != NULL) free(cm->consensus);
+  if (cm->pknot     != NULL) free(cm->pknot);
   if (cm->map       != NULL) free(cm->map);
   if (cm->null      != NULL) free(cm->null);
 
@@ -1847,7 +1850,8 @@ CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm)
   if((status = esl_strdup(cm->desc,      -1, &(new->desc)))      != eslOK) goto ERROR;
   if((status = esl_strdup(cm->rf,        -1, &(new->rf)))        != eslOK) goto ERROR;
   if((status = esl_strdup(cm->consensus, -1, &(new->consensus))) != eslOK) goto ERROR;
-  if(cm->map != NULL) { 
+  if((status = esl_strdup(cm->pknot,     -1, &(new->pknot)))     != eslOK) goto ERROR;
+  if(cm->map != NULL) {
     ESL_ALLOC(new->map, sizeof(int) * (cm->clen+1));
     esl_vec_ICopy(cm->map, cm->clen+1, new->map);
   }
@@ -2742,6 +2746,142 @@ cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
   return status;
 }
 
+/* Function:  cm_pknot_FixBrokenString()
+ * Synopsis:  Drop truncation-orphaned pseudoknot letters from an emitted structure string.
+ *
+ * Purpose:   Feature B (pseudoknot passthrough). Given a WUSS-like consensus
+ *            structure string <ss> (0-based, length <n>) that has had pseudoknot
+ *            letters overlaid onto it, set to '.' any pseudoknot letter whose
+ *            matching partner letter is absent from <ss> -- e.g. one half of a
+ *            pseudoknot stem was truncated away in a hit, or removed by a column
+ *            downselect. Pseudoknots are matching-letter pairs (A..a, B..b, ...),
+ *            paired with the same nested pushdown discipline that <esl_wuss2ct()>
+ *            uses, so multi-bp stems with partial truncation are handled
+ *            correctly (innermost pairs match first).
+ *
+ *            Only the pseudoknot letters are touched; nested brackets (<>()[]{}
+ *            etc.) are ignored, so this never repartitions or relabels the
+ *            structure the way feeding output back through <esl_ct2wuss()> would.
+ *            It is therefore safe to run on a possibly-unbalanced (truncated)
+ *            output structure line, which <esl_wuss2ct()> itself would reject.
+ *
+ * Returns:   <eslOK> on success; <ss> may be modified in place.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_pknot_FixBrokenString(char *ss, int n)
+{
+  int   status;
+  int   i, c, idx;
+  int  *sp    = NULL;        /* sp[idx]    = depth of stack for letter idx (A-Z)   */
+  int **stack = NULL;        /* stack[idx] = positions of unmatched opens, letter idx */
+
+  /* quick exit if there are no pseudoknot letters at all */
+  for (i = 0; i < n; i++) if (isalpha((int) ss[i])) break;
+  if (i == n) return eslOK;
+
+  ESL_ALLOC(sp,    sizeof(int)   * 26);
+  ESL_ALLOC(stack, sizeof(int *) * 26);
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < n; i++) {
+    c = (int) ss[i];
+    if      (isupper(c)) { idx = c - 'A'; if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (n+1)); stack[idx][sp[idx]++] = i; }
+    else if (islower(c)) { idx = c - 'a'; if (sp[idx] > 0) sp[idx]--; else ss[i] = '.'; }  /* matched close: pop & keep; else orphan */
+  }
+  /* any opens still on a stack never found a partner -> orphans */
+  for (idx = 0; idx < 26; idx++)
+    for (i = 0; i < sp[idx]; i++) ss[ stack[idx][i] ] = '.';
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  free(stack); free(sp);
+  return eslOK;
+
+ ERROR:
+  if (stack != NULL) { for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]); free(stack); }
+  if (sp != NULL) free(sp);
+  return status;
+}
+
+/* Function:  cm_pknot_MarkOrphansTrunc()
+ * Synopsis:  Keep truncation/coverage-orphaned pseudoknot letters, mark them '?' on ncline.
+ *
+ * Purpose:   Sibling of <cm_pknot_FixBrokenString()>, used ONLY at cmsearch/cmscan's
+ *            per-hit alidisplay construction (<cm_alidisplay_Create()>). Given a
+ *            WUSS-like consensus structure string <ss> (0-based, length <n>) that
+ *            has had pseudoknot letters overlaid onto it, and the parallel <nc>
+ *            (ncline) buffer of the same length, find any pseudoknot letter whose
+ *            matching partner letter is absent from <ss> -- its partner may be
+ *            missing because this hit was truncated, or simply because an ordinary
+ *            local alignment doesn't span both halves of the pknot stem. Either way,
+ *            the fact that the partner isn't present in THIS hit's displayed
+ *            alignment is exact, pure string bookkeeping -- no truncation-boundary
+ *            guessing is involved.
+ *
+ *            Unlike <cm_pknot_FixBrokenString()>, which erases an orphan letter to
+ *            '.', this function KEEPS <ss[i]> unchanged and instead marks the
+ *            parallel position <nc[i]> with '?' (the same glyph used for nested
+ *            truncated base pairs elsewhere in ncline), so the pknot identity
+ *            survives on the CS line with an honest "can't assess, partner missing"
+ *            annotation on the PS line, instead of being silently dropped to a plain
+ *            singlet mark.
+ *
+ *            Uses the identical per-letter pushdown discipline as
+ *            <cm_pknot_FixBrokenString()> (A..a, B..b, ... stacks), so multi-bp
+ *            stems with partial coverage are handled correctly (innermost pairs
+ *            match first). <nc[i]> is only written if it is currently blank (' '),
+ *            a defensive guard mirroring the <ESL_DASSERT1> discipline in
+ *            <annotate_pknot_pairs()> -- pknot columns are disjoint ML/MR singlets
+ *            from nested MATP columns by construction, so this should always hold.
+ *
+ *            Does NOT modify <cm_pknot_FixBrokenString()> itself; that function's
+ *            other call sites (column downselect / MSA-construction paths) are
+ *            untouched by this new sibling.
+ *
+ * Returns:   <eslOK> on success; <ss> is left untouched, <nc> may be modified in place.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_pknot_MarkOrphansTrunc(char *ss, char *nc, int n)
+{
+  int   status;
+  int   i, c, idx;
+  int  *sp    = NULL;        /* sp[idx]    = depth of stack for letter idx (A-Z)   */
+  int **stack = NULL;        /* stack[idx] = positions of unmatched opens, letter idx */
+
+  /* quick exit if there are no pseudoknot letters at all */
+  for (i = 0; i < n; i++) if (isalpha((int) ss[i])) break;
+  if (i == n) return eslOK;
+
+  ESL_ALLOC(sp,    sizeof(int)   * 26);
+  ESL_ALLOC(stack, sizeof(int *) * 26);
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < n; i++) {
+    c = (int) ss[i];
+    if      (isupper(c)) { idx = c - 'A'; if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (n+1)); stack[idx][sp[idx]++] = i; }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) sp[idx]--;                                /* matched close: pop, ss/nc untouched */
+      else             { if (nc[i] == ' ') nc[i] = '?'; }        /* orphan close: keep ss[i], mark nc[i] */
+    }
+  }
+  /* any opens still on a stack never found a partner -> orphans */
+  for (idx = 0; idx < 26; idx++)
+    for (i = 0; i < sp[idx]; i++) { int zo = stack[idx][i]; if (nc[zo] == ' ') nc[zo] = '?'; }
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  free(stack); free(sp);
+  return eslOK;
+
+ ERROR:
+  if (stack != NULL) { for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]); free(stack); }
+  if (sp != NULL) free(sp);
+  return status;
+}
+
 /* Function: cm_AppendComlog()
  * Synopsis: Concatenate and append command line to the command line log.
  * 
@@ -3068,7 +3208,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if (cm->desc      != NULL) { if (esl_strdup(cm->desc,      -1, &(new->desc))      != eslOK) { status = eslEMEM; goto ERROR;} }
   if (cm->rf        != NULL) { if (esl_strdup(cm->rf,        -1, &(new->rf))        != eslOK) { status = eslEMEM; goto ERROR;} }
   if (cm->consensus != NULL) { if (esl_strdup(cm->consensus, -1, &(new->consensus)) != eslOK) { status = eslEMEM; goto ERROR;} }
-  if(cm->map != NULL) { 
+  if (cm->pknot     != NULL) { if (esl_strdup(cm->pknot,     -1, &(new->pknot))     != eslOK) { status = eslEMEM; goto ERROR;} }
+  if(cm->map != NULL) {
     ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
     esl_vec_ICopy(cm->map, (new->clen+1), new->map);
   }
@@ -3311,6 +3452,7 @@ cm_Sizeof(CM_t *cm)
   if(cm->desc       != NULL) bytes += sizeof(char)  * (strlen(cm->desc) + 2);
   if(cm->rf         != NULL) bytes += sizeof(char)  * (strlen(cm->rf) + 2);
   if(cm->consensus  != NULL) bytes += sizeof(char)  * (strlen(cm->consensus) + 2);
+  if(cm->pknot      != NULL) bytes += sizeof(char)  * (strlen(cm->pknot) + 2);
   if(cm->map        != NULL) bytes += sizeof(int)   * (cm->clen+1);
   if(cm->root_trans != NULL) bytes += sizeof(float) * (cm->cnum[0]);
 

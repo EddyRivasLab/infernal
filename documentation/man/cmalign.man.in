@@ -560,9 +560,140 @@ with the
 .B --fraggiven
 option. This option has no effect if 
 .B --notrunc
-is also used. 
+is also used.
 
-.TP 
+.TP
+.B --bpstatus
+Add per-sequence base-pair status annotation to the output alignment, as one
+combined
+.B #=GR <seqname> PS
+line per sequence (marks on consensus columns only). The line marks pair status
+with the same scheme as the
+.B cmsearch
+PS line:
+.B v
+(negative-scoring non-canonical or half-present, nested pairs only) or
+.B ?
+(truncated half: the pair's partner lies in a truncated-away region; applies to
+both nested and pseudoknot pairs), and
+.B =
+(maintained),
+.B $
+(covarying), or
+.B x
+(broken) for pseudoknot pairs. It additionally marks substitutions:
+.B :
+for a consistent base-pair substitution and
+.B +
+for a positive-scoring single-residue substitution. The only column where two
+marks compete is a pseudoknot column (a single-residue state that can be both a
+.B +
+substitution and a
+.B = $
+or
+.B x
+pseudoknot pair); there the pseudoknot pair status wins. Columns that carry no
+mark hold a non-blank placeholder so the line is dense and machine-re-readable:
+.B .
+at insert columns,
+.B ~
+at missing/local-end columns,
+.B \-
+at deletions, and
+.B _
+at an unmarked consensus residue. This adds one line per sequence and is emitted
+on both the default (in-memory) and the
+.B --small
+/ multi-block (merge) output paths.
+.IP
+The
+.B ?
+truncated-half mark appears only when the truncated-away flank is rendered as
+missing data, i.e. when
+.B --miss
+is also used; without
+.B --miss
+a truncated flank is written with deletions and a pair straddling it is marked
+.B v
+(nested) or
+.B x
+(pseudoknot) instead. Under
+.B --sub
+the marks remain relative to the full CM consensus (a partial-span sub-CM only
+changes which residues are present, not the consensus interpretation); consensus
+columns outside a fragment's span carry the
+.B \-
+no-residue placeholder, not a spurious mark.
+
+.TP
+.B --bpcons
+Add a single
+.B #=GC bp_cons
+line giving, for each base pair (nested and pseudoknot), the fraction of
+sequences whose two aligned residues form a canonical WC/GU pair, as a single
+.B 0
+\-
+.B 9
+/
+.B *
+digit (same bucketing as the PP lines) at both paired columns;
+.B .
+at all other columns (including pairs with fewer than two sequences having both
+residues present). This is a descriptive conservation measure, not a statistical
+covariation test. It is emitted on both the default (in-memory) and the
+.B --small
+/ multi-block (merge) output paths; on the merge path the per-pair canonical
+counts are accumulated block by block and the line is written once after the
+final merge, so the digit is identical to the single-block result.
+
+.TP
+.B --bpcov
+Add a single
+.B #=GC bp_cov
+line giving, for each base pair (nested and pseudoknot), a per-pair
+.I covariation
+digit, complementing the
+.B --bpcons
+conservation digit. The value is the absolute mutual information (MI) of the two
+columns' standard-nucleotide composition, computed in bits over a 4x4 joint count
+table (a sequence contributes only if both of its aligned residues are standard
+nucleotides A/C/G/U), then encoded as
+.B EncodePostProb(MI / 1.5 bits)
+\(em a
+.B 0
+\-
+.B 9
+/
+.B *
+digit (same bucketing as the PP and
+.B bp_cons
+lines) at both paired columns, with
+.B *
+for the strongest covariation (MI at or above ~1.4 bits) and
+.B .
+at all other columns. Because MI is bounded by the columns' entropy,
+near-invariant pairs intrinsically read a low digit; no special no-power glyph is
+used. This is a transparent, descriptive hint and is
+.I not
+a substitute for the rigorous covariation statistics of a tool such as R-scape.
+Reading it together with
+.B bp_cons
+distinguishes conservation from covariation: a high
+.B bp_cons
+with a low
+.B bp_cov
+is a pair that is well conserved but shows no covariation power.
+.B --bpcov
+is independent of
+.B --bpcons
+(either, both, or neither may be given) and is emitted on both the default
+(in-memory) and the
+.B --small
+/ multi-block (merge) output paths; on the merge path the per-pair joint counts
+are accumulated block by block and the MI computed once after the final merge, so
+the digit is identical to the single-block result.
+
+.TP
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
 that may be more convenient for examination. This was the default output
