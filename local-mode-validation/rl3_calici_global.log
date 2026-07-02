@@ -1,0 +1,13 @@
+#HDBANDS cm_M=22966 hd_needed=137791 (0.0011 GB for hdmin+hdmax)
+# CM=NC_001959 M=22966 clen=7654 mode=global tau=1e-07 tag=calici_g
+# flags: LOCAL_BEGIN=0 LOCAL_END=0
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=NC_001959 L=7654
+# RESULT tag=calici_g seq=NC_001959 mode=global L=7654
+#   score : ckpt=8380.500977 stock=8380.500977 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Joint ckpt=Joint match=YES
+#   parse : ckpt_nodes=7656 stock_nodes=7656 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=1.000008 avgpp(ckpt)=1.000008
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=3 ckpt=3 match=YES
+#   VERDICT=PASS

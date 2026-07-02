@@ -1,0 +1,13 @@
+#HDBANDS cm_M=28942 hd_needed=1041863 (0.0083 GB for hdmin+hdmax)
+# CM=NC_004102 M=28942 clen=9646 mode=global tau=1e-07 tag=flavi_g
+# flags: LOCAL_BEGIN=0 LOCAL_END=0
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=NC_004102-sample1 L=9901
+# RESULT tag=flavi_g seq=NC_004102-sample1 mode=global L=9901
+#   score : ckpt=1118.188110 stock=1118.188110 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=10470 stock_nodes=10470 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.646220 avgpp(ckpt)=0.646220
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=6 ckpt=6 match=YES
+#   VERDICT=PASS

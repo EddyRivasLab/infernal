@@ -1,0 +1,67 @@
+==1449324== Memcheck, a memory error detector
+==1449324== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==1449324== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==1449324== Command: ./rl3_ckpttralign_drv --tag vg_matl300 rl2-data/matl300.cm rl3-data/rl3_matl300_fragments.fa
+==1449324== 
+#HDBANDS cm_M=904 hd_needed=73072 (0.0006 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=73072 (0.0006 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=91112 (0.0007 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=90947 (0.0007 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=73072 (0.0006 GB for hdmin+hdmax)
+# CM=matl300 M=904 clen=300 mode=local(full:begins+ends) tau=1e-07 tag=vg_matl300
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=frag_5ptrunc_suffix220to300 L=80
+# RESULT tag=vg_matl300 seq=frag_5ptrunc_suffix220to300 mode=local(full) L=80
+#   score : ckpt=82.350922 stock=82.350922 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=93 stock_nodes=93 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.019209 avgpp(ckpt)=0.019209
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=627 ckpt=627 match=YES
+#   VERDICT=PASS
+# SEQ=frag_3ptrunc_prefix0to80 L=80
+# RESULT tag=vg_matl300 seq=frag_3ptrunc_prefix0to80 mode=local(full) L=80
+#   score : ckpt=82.350922 stock=82.350922 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=93 stock_nodes=93 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.019209 avgpp(ckpt)=0.019209
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=627 ckpt=627 match=YES
+#   VERDICT=PASS
+# SEQ=frag_5ptrunc_suffix_plus_junkhead L=100
+# RESULT tag=vg_matl300 seq=frag_5ptrunc_suffix_plus_junkhead mode=local(full) L=100
+#   score : ckpt=77.445175 stock=77.445175 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=119 stock_nodes=119 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.017985 avgpp(ckpt)=0.017985
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=549 ckpt=549 match=YES
+#   VERDICT=PASS
+# SEQ=frag_3ptrunc_prefix_plus_junktail L=100
+# RESULT tag=vg_matl300 seq=frag_3ptrunc_prefix_plus_junktail mode=local(full) L=100
+#   score : ckpt=76.603027 stock=76.603027 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=92 stock_nodes=92 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.021222 avgpp(ckpt)=0.021222
+#   EL    : stock=1 ckpt=1 match=YES
+#   entry_v: stock=579 ckpt=579 match=YES
+#   VERDICT=PASS
+# SEQ=frag_internal_100to180 L=80
+# RESULT tag=vg_matl300 seq=frag_internal_100to180 mode=local(full) L=80
+#   score : ckpt=82.350922 stock=82.350922 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=93 stock_nodes=93 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.019209 avgpp(ckpt)=0.019209
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=627 ckpt=627 match=YES
+#   VERDICT=PASS
+==1449324== 
+==1449324== HEAP SUMMARY:
+==1449324==     in use at exit: 0 bytes in 0 blocks
+==1449324==   total heap usage: 141,755 allocs, 141,755 frees, 885,086,570 bytes allocated
+==1449324== 
+==1449324== All heap blocks were freed -- no leaks are possible
+==1449324== 
+==1449324== For lists of detected and suppressed errors, rerun with: -s
+==1449324== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

@@ -1,0 +1,8 @@
+#HDBANDS cm_M=22966 hd_needed=137791 (0.0011 GB for hdmin+hdmax)
+# CM=NC_001959 M=22966 clen=7654 mode=local(full:begins+ends) tau=1e-07 tag=calici_local
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=NC_001959 L=7654
+# RESULT tag=calici_local seq=NC_001959 mode=local(full) L=7654 (ckpt-only, --nostock)
+#   ckpt  : sc=8380.397461 nodes=7656 avgpp=1.000008 mode=Joint EL=0 entry_v=3
+#   VERDICT=CKPT-ONLY (no stock comparison)

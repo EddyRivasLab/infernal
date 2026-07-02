@@ -1,0 +1,10 @@
+#HDBANDS cm_M=28942 hd_needed=1041863 (0.0083 GB for hdmin+hdmax)
+#TRCKPT-DBG entry: M=28942 L=9901  ROOT_S j[9866..9901]  d[9892..9901]@jp_0=35  Jv0=1 Lv0=1 Rv0=0
+# cm_CheckptTrAlignHB engaged: M=28942 L=9901 B=170 mode=L Z=1117.8782  CM-DP peak=18.86 Mb  full-cube(2x)=867.49 Mb  win~46.0x
+# CM=NC_004102 M=28942 clen=9646 mode=local(full:begins+ends) tau=1e-07 tag=flavi_local
+# flags: LOCAL_BEGIN=1 LOCAL_END=1
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=NC_004102-sample1 L=9901
+# RESULT tag=flavi_local seq=NC_004102-sample1 mode=local(full) L=9901 (ckpt-only, --nostock)
+#   ckpt  : sc=1117.878174 nodes=10470 avgpp=0.646216 mode=Left EL=0 entry_v=6
+#   VERDICT=CKPT-ONLY (no stock comparison)

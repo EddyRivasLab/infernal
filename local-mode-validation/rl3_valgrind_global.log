@@ -1,0 +1,77 @@
+==1433884== Memcheck, a memory error detector
+==1433884== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==1433884== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==1433884== Command: ./rl3_ckpttralign_drv -g --tag vg_global rl2-data/matl60.cm rl2-data/eltest.fa
+==1433884== 
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=11140 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=11148 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=8948 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=6582 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=184 hd_needed=919 (0.0000 GB for hdmin+hdmax)
+# CM=matl60 M=184 clen=60 mode=global tau=1e-07 tag=vg_global
+# flags: LOCAL_BEGIN=0 LOCAL_END=0
+# GATE ok: bps=0 (B_st=0, MP/MR=0)
+# SEQ=perfect L=60
+# RESULT tag=vg_global seq=perfect mode=global L=60
+#   score : ckpt=84.097847 stock=84.097847 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Joint ckpt=Joint match=YES
+#   parse : ckpt_nodes=62 stock_nodes=62 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.999399 avgpp(ckpt)=0.999399
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=3 ckpt=3 match=YES
+#   VERDICT=PASS
+# SEQ=prefix30_polyA30 L=60
+# RESULT tag=vg_global seq=prefix30_polyA30 mode=global L=60
+#   score : ckpt=25.477154 stock=25.477154 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=69 stock_nodes=69 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.103821 avgpp(ckpt)=0.103821
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=51 ckpt=51 match=YES
+#   VERDICT=PASS
+# SEQ=prefix24_div36 L=60
+# RESULT tag=vg_global seq=prefix24_div36 mode=global L=60
+#   score : ckpt=13.592517 stock=13.592517 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=87 stock_nodes=87 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.090050 avgpp(ckpt)=0.090050
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=3 ckpt=3 match=YES
+#   VERDICT=PASS
+# SEQ=prefix40_div20 L=60
+# RESULT tag=vg_global seq=prefix40_div20 mode=global L=60
+#   score : ckpt=43.840031 stock=43.840031 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=65 stock_nodes=65 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.197463 avgpp(ckpt)=0.197463
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=3 ckpt=3 match=YES
+#   VERDICT=PASS
+# SEQ=div_tail_mixed L=60
+# RESULT tag=vg_global seq=div_tail_mixed mode=global L=60
+#   score : ckpt=41.140453 stock=41.140453 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Left ckpt=Left match=YES
+#   parse : ckpt_nodes=61 stock_nodes=61 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.768752 avgpp(ckpt)=0.768752
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=3 ckpt=3 match=YES
+#   VERDICT=PASS
+# SEQ=prefix20_insert L=70
+# RESULT tag=vg_global seq=prefix20_insert mode=global L=70
+#   score : ckpt=74.181686 stock=74.181686 |dsc|=0.000e+00 byte-exact=YES
+#   mode  : stock=Joint ckpt=Joint match=YES
+#   parse : ckpt_nodes=73 stock_nodes=73 ParsetreeCompare=IDENTICAL
+#   PPstr : byte-identical=YES  avgpp(stock)=0.905865 avgpp(ckpt)=0.905865
+#   EL    : stock=0 ckpt=0 match=YES
+#   entry_v: stock=3 ckpt=3 match=YES
+#   VERDICT=PASS
+==1433884== 
+==1433884== HEAP SUMMARY:
+==1433884==     in use at exit: 0 bytes in 0 blocks
+==1433884==   total heap usage: 32,721 allocs, 32,721 frees, 66,878,029 bytes allocated
+==1433884== 
+==1433884== All heap blocks were freed -- no leaks are possible
+==1433884== 
+==1433884== For lists of detected and suppressed errors, rerun with: -s
+==1433884== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
