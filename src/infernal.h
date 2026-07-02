@@ -2759,6 +2759,7 @@ extern int     cm_nonconfigured_Verify(CM_t *cm, char *errbuf);
 extern int     cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern float   cm_Sizeof(CM_t *cm);
 extern int     cm_pknot_FixBrokenString(char *ss, int n);
+extern int     cm_pknot_MarkOrphansTrunc(char *ss, char *nc, int n);
 extern int     Prob2Score(float p, float null);
 extern float   Score2Prob(int sc, float null);
 extern float   Scorify(int sc);

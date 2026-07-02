@@ -638,6 +638,25 @@ markup, while pseudoknot pairs receive the full positive-and-negative
 stranded with respect to the nested structure, so the two markups never
 collide on the same column.)
 
+Sometimes a hit's displayed alignment contains only one half of a
+pseudoknot pair --- its partner may have been truncated out of the
+hit, or the hit's local alignment may simply not have extended far
+enough to cover it. Either way, the pair's status can't be assessed
+from this hit alone, so the surviving half keeps its pseudoknot letter
+on the \otext{CS} line and is marked with \otext{?} on the \otext{PS}
+line, instead of being silently dropped to a plain single-stranded
+mark. For example:
+\begin{sreoutput}
+                      ????                              PS
+                 <<<<<AAAA____________________>>>>> CS
+     small_pk  1 GGGGGGGGGAAAAAAAAAAAAAAAAAAAACCCCC 34
+                 GGGGGGGGGAAAAAAAAAAAAAAAAAAAACCCCC
+  localorphan  1 GGGGGGGGGAAAAAAAAAAAAAAAAAAAACCCCC 34
+\end{sreoutput}
+Here the \otext{aaaa} half of the \otext{Aa} pseudoknot pair isn't in
+this hit's displayed alignment at all, so the surviving \otext{AAAA}
+half is marked \otext{?} rather than \otext{=}/\otext{\$}/\otext{x}.
+
 The \otext{PS}
 annotation makes it easy to quickly identify suspicious basepairs in
 a hit. Importantly, the \otext{PS} annotation will only be present in

@@ -605,8 +605,10 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
-  /* Feature B: drop any pseudoknot letter on the CS line whose partner was truncated out of this hit */
-  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(ad->csline, ad->N);
+  /* Feature B: keep any pseudoknot letter on the CS line whose partner isn't present in this
+   * hit's displayed alignment (truncated away, or simply not spanned by local coverage), and
+   * mark it '?' on ncline instead of erasing it to '.'. */
+  if (cm->flags & CMH_PKNOT) cm_pknot_MarkOrphansTrunc(ad->csline, ad->ncline, ad->N);
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
@@ -1141,12 +1143,29 @@ cm_singlet_mark(char seq, char cons, float avgsc)
  *           out=ncline) and the cmalign path (ss=msa->ss_cons, aseq=msa->aseq[i],
  *           model=consensus-residue string, out=per-seq PS) share one rule.
  *
- *           Requires that cm_pknot_FixBrokenString() has already run on <ss> so
- *           that only complete pknot pairs still carry their (upper/lower)
- *           letters. Walk <ss> with the SAME per-letter pushdown discipline that
- *           cm_pknot_FixBrokenString()/esl_wuss2ct() use, recovering each
- *           complete pknot base pair (z_open, z_close), and classify it from the
- *           observed residues <aseq> vs the consensus residues <model>:
+ *           Requires that <ss> has already had incomplete pknot pairs resolved,
+ *           so that only complete pairs still carry their (upper/lower) letters.
+ *           The two callers use different upstream functions for this, and that
+ *           difference is exactly what keeps their orphan-handling independent:
+ *             - cmsearch/cmscan (ss=ad->csline): cm_pknot_MarkOrphansTrunc() runs
+ *               first (cm_alidisplay_Create()) -- it KEEPS an orphan letter (partner
+ *               missing, whether from truncation or ordinary local-alignment
+ *               coverage) and marks its <out> (ncline) position '?' directly.
+ *               By the time this function's pushdown scan reaches that letter, it
+ *               is an unmatched open or an orphan close (sp[idx]==0); either way
+ *               the scan below simply never triggers its matched-close branch for
+ *               it, so it can't collide with -- or overwrite -- the '?' already
+ *               written by MarkOrphansTrunc.
+ *             - cmalign (ss=msa->ss_cons): cm_pknot_FixBrokenString() runs first
+ *               (cm_alignment_annotate_status()) -- it ERASES an orphan letter to
+ *               '.', so it never reaches this function's isupper()/islower() tests
+ *               at all. cmalign does NOT get orphan '?' marking (a deliberate
+ *               scope boundary, not a gap to close here).
+ *           Walk <ss> with the SAME per-letter pushdown discipline that
+ *           cm_pknot_FixBrokenString()/cm_pknot_MarkOrphansTrunc()/esl_wuss2ct()
+ *           use, recovering each complete pknot base pair (z_open, z_close), and
+ *           classify it from the observed residues <aseq> vs the consensus
+ *           residues <model>:
  *             - missing-data ('~') on either side -> '?' on the PRESENT half only
  *                                                    (truncated half; see note below)
  *             - gap ('-') on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
@@ -1155,12 +1174,13 @@ cm_singlet_mark(char seq, char cons, float avgsc)
  *           The =/$/x mark is written at BOTH ends, into <out>; the '?' truncated
  *           mark is written only at the present (non-'~') end (mirroring the nested
  *           MATP mode-L/R rule). The '~' branch is cmalign-only: cmsearch's
- *           cm_pknot_FixBrokenString() drops a pknot letter whose partner is
- *           truncated out of the hit before this runs, so cmsearch never presents a
- *           '~'-bearing pknot pair here (cmsearch output is unchanged). Pknot columns are
- *           ML/MR singlets, disjoint from the MATP columns that carry the nested
- *           'v'/'?' markup, so the overlay only ever writes onto blank <out>
- *           positions; we assert/skip defensively if not.
+ *           cm_pknot_MarkOrphansTrunc() never leaves a '~' on ad->csline (it only
+ *           ever sees the real observed residue or a pknot letter, never missing-
+ *           data), so cmsearch never presents a '~'-bearing pknot pair here
+ *           (cmsearch output is unchanged). Pknot columns are ML/MR singlets,
+ *           disjoint from the MATP columns that carry the nested 'v'/'?' markup,
+ *           so the overlay only ever writes onto blank <out> positions; we
+ *           assert/skip defensively if not.
  *
  * Returns:  (void) On malloc failure for an internal stack, silently leaves the
  *           remaining pairs unmarked (annotation is cosmetic; never fatal).
@@ -1220,8 +1240,14 @@ annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, ch
           out[zc] = mark;
         }
       }
-      /* sp[idx]==0 here would be an orphan close, but FixBrokenString already
-       * dropped those to '.', so this branch should not fire post-fix. */
+      /* sp[idx]==0 here is an orphan close (its partner absent from this hit's
+       * display) -- not a matched pair, nothing to do here on either caller's
+       * path. On cmsearch's path cm_pknot_MarkOrphansTrunc() already marked
+       * this ncline position '?' and left ss[i] as-is (the orphan letter is
+       * still visible but this scan's matched-close branch never fires for
+       * it). On cmalign's path cm_pknot_FixBrokenString() already erased ss[i]
+       * to '.' (no orphan '?' marking there, see function header), so this
+       * branch is unreachable for cmalign orphans (islower('.') is false). */
     }
   }
 
