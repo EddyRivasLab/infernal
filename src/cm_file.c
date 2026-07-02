@@ -627,6 +627,10 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   fprintf(fp, "CONS     %s\n", (cm->flags & CMH_CONS) ? "yes" : "no");
   fprintf(fp, "MAP      %s\n", (cm->flags & CMH_MAP)  ? "yes" : "no");
   if (format >= CM_FILE_1b) fprintf(fp, "P7NODEPAD %s\n", (cm->flags & CMH_P7NODEPAD) ? "yes" : "no");
+  if (format >= CM_FILE_1b) {
+    if (cm->flags & CMH_FILTER_PVAL_CUTOFFS) fprintf(fp, "F1F2F3CUT %.6g %.6g %.6g\n", cm->F1_pcutoff, cm->F2_pcutoff, cm->F3_pcutoff);
+    else                                     fprintf(fp, "F1F2F3CUT no\n");
+  }
   if (cm->ctime   != NULL) fprintf  (fp, "DATE     %s\n", cm->ctime);
   if (cm->comlog  != NULL) multiline(fp, "COM     ",     cm->comlog);
   fprintf(fp, "PBEGIN   %g\n", cm->pbegin);
@@ -907,6 +911,13 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset)
   if (format >= CM_FILE_1b && (cm->flags & CMH_P7NODEPAD)) {
     if (fwrite((char *) &(cm->p7_cm_nodepad_M), sizeof(int), 1, fp) != 1) return eslFAIL;
     if (fwrite((char *)   cm->p7_cm_nodepad,    sizeof(int), cm->p7_cm_nodepad_M + 1, fp) != (size_t)(cm->p7_cm_nodepad_M + 1)) return eslFAIL;
+  }
+
+  /* per-CM F1/F2/F3 P-value cutoffs (v1/b and later, flag-gated) */
+  if (format >= CM_FILE_1b && (cm->flags & CMH_FILTER_PVAL_CUTOFFS)) {
+    if (fwrite((char *) &(cm->F1_pcutoff), sizeof(float), 1, fp) != 1) return eslFAIL;
+    if (fwrite((char *) &(cm->F2_pcutoff), sizeof(float), 1, fp) != 1) return eslFAIL;
+    if (fwrite((char *) &(cm->F3_pcutoff), sizeof(float), 1, fp) != 1) return eslFAIL;
   }
 
   /* finally, write the filter p7 HMM */
@@ -1701,6 +1712,26 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	else if (strcasecmp(tok1, "no")  != 0)                                            ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "P7NODEPAD header line must say yes/no, not %s", tok1);
       }
 
+      else if (strcmp(tag, "F1F2F3CUT") == 0) {
+	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Nothing follows F1F2F3CUT tag");
+	if (strcasecmp(tok1, "no") == 0) {
+	  /* explicitly disabled: leave flag clear */
+	}
+	else {
+	  if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok2, NULL)) != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few values on F1F2F3CUT line (need 3 or 'no')");
+	  if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok3, NULL)) != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few values on F1F2F3CUT line (need 3 or 'no')");
+	  cm->F1_pcutoff = atof(tok1);
+	  cm->F2_pcutoff = atof(tok2);
+	  cm->F3_pcutoff = atof(tok3);
+	  /* Raw 99%-quantile P-values; 0 is valid (= filter score overflowed
+	   * eslERANGE on a perfect emission, treated as P=0). */
+	  if (cm->F1_pcutoff < 0.0f || cm->F1_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F1 P-value cutoff on F1F2F3CUT line: %s", tok1);
+	  if (cm->F2_pcutoff < 0.0f || cm->F2_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F2 P-value cutoff on F1F2F3CUT line: %s", tok2);
+	  if (cm->F3_pcutoff < 0.0f || cm->F3_pcutoff > 1.0f) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "Invalid F3 P-value cutoff on F1F2F3CUT line: %s", tok3);
+	  cm->flags |= CMH_FILTER_PVAL_CUTOFFS;
+	}
+      }
+
       else if (strcmp(tag, "DATE") == 0) {
 	if ((status = esl_fileparser_GetRemainingLine(cmfp->efp, &tok1))       != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "No date found on DATE line");
 	if (esl_strdup(tok1, -1, &(cm->ctime))                                 != eslOK)  ESL_XFAIL(eslEMEM,    cmfp->errbuf, "strdup() failed to set date");
@@ -2361,6 +2392,13 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     ESL_ALLOC(cm->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
     if (fread((char *) cm->p7_cm_nodepad, sizeof(int), cm->p7_cm_nodepad_M + 1, cmfp->f) != (size_t)(cm->p7_cm_nodepad_M + 1))
                                                                                               ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read p7_nodepad array");
+  }
+
+  /* per-CM F1/F2/F3 P-value cutoffs (v1/b and later, flag-gated) */
+  if (cmfp->format >= CM_FILE_1b && (cm->flags & CMH_FILTER_PVAL_CUTOFFS)) {
+    if (! fread((char *) &(cm->F1_pcutoff), sizeof(float), 1, cmfp->f))                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read F1_pcutoff");
+    if (! fread((char *) &(cm->F2_pcutoff), sizeof(float), 1, cmfp->f))                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read F2_pcutoff");
+    if (! fread((char *) &(cm->F3_pcutoff), sizeof(float), 1, cmfp->f))                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read F3_pcutoff");
   }
 
   /* Finally, read the filter HMM for this CM, unless we're explicitly asked not to. */

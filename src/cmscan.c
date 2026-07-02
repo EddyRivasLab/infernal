@@ -245,13 +245,18 @@ static ESL_OPTIONS options[] = {
   { "--novitband", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "disable default vitband (F4/F5 unbanded)",                                   106 },
   { "--vitblocal", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--novitband,--msvband", "with --vitband, use local Viterbi instead of glocal",                  106 },
   { "--nop7post_cp9b", eslARG_NONE, FALSE, NULL, NULL,   NULL,  NULL, NULL, "disable default p7post_cp9b (CP9 bands from p7 post)",                                     106 },
+  { "--p7deltrigger", eslARG_NONE, FALSE, NULL, NULL,   NULL,  NULL, NULL, "re-run F7 Inside without CP9 bands when gFwd delta > 0.5 nats and F6 P < 1e-8",             106 },
   { "--pnmono",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "monotone reachability sweep on pn_min/max_m bands",          106 },
   { "--pnmono-print", eslARG_NONE, FALSE, NULL, NULL,   NULL, "--pnmono", NULL, "with --pnmono: print before/after band widths to stderr",                106 },
   { "--p7bpad",    eslARG_INT,    "3",   NULL, "n>=0",  NULL,  NULL, NULL, "set band half-width (padding) for F4/F5",                                     106 },
+  { "--p7vitend",  eslARG_INT,    "0",   NULL, "n>=0",  NULL,  NULL, NULL, "with --vitband, drop first/last <n> Vit pins",                                106 },
   { "--p7pthr",    eslARG_REAL, "1e-5", NULL, "0<x<1", NULL,  NULL, "--p7tau,--nop7post_cp9b", "with --p7post_cp9b: posterior prob threshold",                                    106 },
   { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  NULL, "--p7pthr,--nop7post_cp9b", "with --p7post_cp9b: cumulative tau for bands",                                    106 },
   { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },
   { "--cykbpad",   eslARG_INT,    "10",  NULL, "n>=0",  NULL,  "--cykbands", NULL, "with --cykbands, band pad",                                                                  106 },
+  { "--cykpadfile", eslARG_STRING, NULL, NULL, NULL,    NULL,  "--cykbands", NULL, "with --cykbands, dir of <CMname>.cykpads.tsv per-state pad TSVs",                              106 },
+  { "--cykbands-strict", eslARG_NONE, FALSE, NULL, NULL, NULL, "--cykbands", NULL, "with --cykbands, constrain F7 to F6 parsetree state path only",                              106 },
+  { "--debug-f6-envs", eslARG_OUTFILE, NULL, NULL, NULL, NULL, NULL, NULL, "dump per-envelope post-F6 TSV to <f>", 106 },
   { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, NULL, "--novitband,--msvband", "read per-consensus position p7 pads from <f>",                 106 },
   { "--p7padplus",  eslARG_INT,    "7", NULL, "n>=0", NULL, NULL, NULL, "add <n> to every per-state pad",                                                            106 },
   { "--p7vit-hopback", eslARG_INT, "0", NULL, "n>=0", NULL, NULL, "--msvband", "with --vitband, dilate per-pin band by trace-hop-back of <n> pins (D1)",          106 },
@@ -262,6 +267,15 @@ static ESL_OPTIONS options[] = {
   { "--p7mcprob",  eslARG_REAL,  "0.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "min cumul match phi prob for pruning",                                106 },
   { "--p7iprob",   eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max insert phi prob for pruning",                                     106 },
   { "--p7ilprob",  eslARG_REAL,  "1.0", NULL, "0<=x<=1", NULL, "--msvband", NULL, "max left-insert phi prob for pruning",                                106 },
+  /* per-CM F1/F2/F3 cutoff caps (CMH_FILTER_PVAL_CUTOFFS pcut). Search-time
+   * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap).
+   * Whole feature is opt-in via --use-fil-pcut; without that flag, F1F2F3CUT in
+   * the CM file is ignored. With --use-fil-pcut, default cap is 10 per stage
+   * (validated as the strict-improvement Pareto point on rmark4). */
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "enable per-CM F1/F2/F3 P-value override (reads F1F2F3CUT from CM file)", 106 },
+  { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
+  { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
+  { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },
   /* Options for timing individual pipeline stages */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                  docgroup*/
   { "--timeF1",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see *** above */ "abort after Stage 1 SSV; for timing expts",          107 },

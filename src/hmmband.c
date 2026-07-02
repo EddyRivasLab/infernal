@@ -1362,7 +1362,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
-  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated (brief 147) */
+  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated; must match cp9b->hd_needed (brief 097 + 147) */
   int j;
 
 
@@ -1476,7 +1476,10 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
   cp9b->hd_needed = 0;
   for(v = 0; v < cp9b->cm_M; v++) {
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    /* printf("hd needed v: %4d bw: %4d total: %" PRId64 "\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
+  /* diagnostic for band index array size (brief 097/098): always print for band expansion measurement */
+  fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.4f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
   /* hdmin_mem/hdmax_mem stay NULL; the per-v hdmin[]/hdmax[] pointers are unused
    * by the recompute path. Leave them NULL so any stray flat-array read faults
    * loudly rather than silently reading freed memory. */

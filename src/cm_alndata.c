@@ -718,7 +718,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  /* Per-state pad was archived 2026-05-19 (see cm_CYKPerstatePadCompute
 	   * doc comment for failure analysis). Production uses uniform pad. */
 	  if(cm_BandsFromCYKParsetree(cm, errbuf, _cyk_tr,
-				      1, sq->L, cm->p7_cykbands_pad,
+				      1, sq->L, cm->p7_cykbands_pad, NULL, FALSE,
 				      cm->cp9b, pass_idx, 0) == eslOK) {
 	    _tight_cells = 0.;
 	    CP9Bands_t *_cp9b = cm->cp9b;

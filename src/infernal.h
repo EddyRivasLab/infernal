@@ -844,7 +844,7 @@ typedef struct cp9bands_s {
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* info on size of bands */
-  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, brief 147) */
+  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 097 + 147) */
   int64_t hd_alloced;         /* number of hd arrays currently alloc'ed (int64, see hd_needed) */
 
   double   tau;               /* tau used to calculate current bands */
@@ -2016,6 +2016,15 @@ typedef struct cm_s {
   int          *p7_cm_nodepad;   /* [0..p7_cm_nodepad_M] per-node pad array; NULL if not set */
   int           p7_cm_nodepad_M; /* length of p7_cm_nodepad (= fp7->M); 0 if not set */
 
+  /* per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS). Computed by
+   * cm_CalibrateFilterPvalCutoffs() at cmbuild time from N CM-emitted sequences.
+   * The pipeline (cm_pli_NewModel) substitutes these for pli->F1/F2/F3 when the
+   * flag is set, allowing a CM-specific tightening of the HMM filter stages.
+   * Floor = global default (loosest), ceiling = default/10 (tightest). */
+  float         F1_pcutoff;   /* per-CM F1 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F2_pcutoff;   /* per-CM F2 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F3_pcutoff;   /* per-CM F3 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
 
@@ -2052,6 +2061,7 @@ typedef struct cm_s {
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_cm_nodepad) are valid */
+#define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -2370,7 +2380,8 @@ typedef struct cm_pipeline_s {
   int           do_p7post_cp9b;  /* TRUE to derive CP9 bands from p7 glocal F/B posteriors (--p7post_cp9b)    */
   int           do_pnmono;       /* TRUE to apply monotone reachability sweep on pn_min/max_m bands (--pnmono) */
   int           do_pnmono_print; /* TRUE to print before/after band widths for each pn-monosweep call        */
-  float         p7_fwdsc;        /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc;          /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc_unbanded; /* unbanded glocal Forward score (nats), computed alongside banded when --debug-f6-envs is on */
   int           p7_window_start; /* absolute start (1-indexed) of current window, for --p7post_cp9b coord map  */
   P7_GBANDS    *p7bnd;           /* band structure kept alive across dispatch when --p7post_cp9b (gxfb->bnd ref) */
   /* Per-envelope precomputed pn_min/max bands for --p7post_cp9b.
@@ -2398,7 +2409,12 @@ typedef struct cm_pipeline_s {
   int           p7vit_hopback;  /* hop-back radius (in pinned-position trace order) for D1 dilation (--p7vit-hopback, default 0 = off) */
   int           p7vitend;       /* drop first/last <n> Vit pins from i2k before pins->bands (--p7vitend, default 0) */
   int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
+  int           do_cykbands_strict; /* TRUE: set Jvalid[v]=FALSE for unvisited states (--cykbands-strict)  */
   int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
+  char         *cyk_bpad_dir;   /* dir for --cykpadfile per-CM TSVs, NULL if not set                       */
+  int          *cyk_bpad_perstate; /* [0..M-1] per-state CYK pad, NULL = use scalar cyk_bpad             */
+  int           cyk_bpad_perstate_M; /* M used when cyk_bpad_perstate was loaded; 0 if not loaded.       */
+  char         *cyk_bpad_perstate_cmname; /* CM name pads were loaded for; NULL if not loaded.           */
   Parsetree_t  *cyk_envtree;    /* CYK parsetree from most recent F6 CYK scan (for --cykbands), or NULL    */
   int64_t       cyk_envtree_es; /* envelope start position the parsetree corresponds to                    */
   int64_t       cyk_envtree_ee; /* envelope end position the parsetree corresponds to                      */
@@ -2407,6 +2423,12 @@ typedef struct cm_pipeline_s {
   int64_t      *cyk_envtreeA_es;/* [0..nenv-1] F6 dispatch start positions for cyk_envtreeA[i]             */
   int64_t      *cyk_envtreeA_ee;/* [0..nenv-1] F6 dispatch stop  positions for cyk_envtreeA[i]             */
   int           cyk_envtreeA_n; /* number of entries in cyk_envtreeA                                       */
+  int           do_p7deltrigger;/* TRUE: compute gfwd_unbanded; trigger F7 re-run without CP9 bands (--p7deltrigger) */
+  float        *f6_pvalA;       /* [0..nenv-1] F6 CYK p-value per surviving envelope, for delta trigger    */
+  int           f6_pvalA_n;     /* number of entries in f6_pvalA                                           */
+  float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
+  int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
+  float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
   int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
   int           cykbands_high_conf; /* TRUE: F6 dispatch should use FastCYKScanHB_shmx (saves second pass) */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
@@ -2457,6 +2479,27 @@ typedef struct cm_pipeline_s {
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F4b;		        /* bias-corrected gloc Forward filter threshold */
   double  F5b;		        /* bias-corrected env def filter threshold  */
+  /* original (pipeline-default) F1/F2/F3 thresholds, saved before any
+   * per-CM override (CMH_FILTER_PVAL_CUTOFFS). Used in cm_pli_NewModel()
+   * to restore defaults between CMs when per-CM override applies, and as
+   * a floor (loosest allowed) so per-CM cutoffs never loosen the pipeline.
+   */
+  double  F1_orig;
+  double  F2_orig;
+  double  F3_orig;
+  double  F3b_orig;
+  /* Per-stage cap on the per-CM tightening factor (CMH_FILTER_PVAL_CUTOFFS).
+   * effective_factor(stage) = min(cm_filter_ceiling_factor_clen(cm->clen), F*_cap)
+   * where logistic factor() asymptotes at 30. Each cap can be lowered to
+   * preserve recall at the cost of speed.
+   *
+   * The whole pcut path is opt-in via use_fil_pcut. Defaults when enabled:
+   * 10/10/10 (recommended cap from rmark4 sweep; strict improvement over 30×).
+   */
+  int     use_fil_pcut;
+  double  pcut_F1_cap;
+  double  pcut_F2_cap;
+  double  pcut_F3_cap;
   /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
@@ -3313,7 +3356,7 @@ extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, floa
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, int do_pnmono, int do_pnmono_print);
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, const float *pocc, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
-extern int          cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, CP9Bands_t *cp9b, int pass_idx, int debug);
+extern int          cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, const int *per_state_pad, int strict_unvisited, CP9Bands_t *cp9b, int pass_idx, int debug);
 extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpad);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
@@ -3371,6 +3414,10 @@ extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
 extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
                                     double quantile, int delta_milli, int floorpad, int **ret_nodepad);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
+
+/* from cm_filtercutoff.c */
+extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf);
+extern double       cm_filter_ceiling_factor_clen(int clen);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);

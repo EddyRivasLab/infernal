@@ -11,7 +11,8 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h> 
+#include <string.h>
+#include <limits.h>
 
 #include "easel.h"
 #include "esl_exponential.h"
@@ -57,6 +58,7 @@ static int   pli_check_one_or_zero_envelopes(int *nA);
 static int   pli_get_pass_of_best_envelope(float **bAA, int *nA);
 static int   pli_check_full_length_envelopes(int64_t **esAA, int64_t **eeAA, int *nA, int64_t L);
 static int   pli_check_overlap_envelopes(int64_t **sAA, int64_t **eAA, int *nA, int best_pass_idx, int best_env_idx, int64_t start_offset, float min_fract, int *ret_val, char *errbuf);
+
 
 /*****************************************************************
  * 1. The CM_PIPELINE object: allocation, initialization, destruction.
@@ -209,8 +211,15 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->band_kmax = NULL;
   pli->band_L    = 0;
   pli->p7bnd     = NULL;
-  pli->p7_fwdsc        = 0.0f;
+  pli->p7_fwdsc          = 0.0f;
+  pli->p7_fwdsc_unbanded = 0.0f;
   pli->p7_window_start = 0;
+  pli->do_p7deltrigger    = FALSE;
+  pli->f6_pvalA           = NULL;
+  pli->f6_pvalA_n         = 0;
+  pli->f6_deltaA          = NULL;
+  pli->f6_deltaA_n        = 0;
+  pli->p7env_delta_pre    = NULL;
   pli->p7pn_nenv       = 0;
   pli->p7pn_nenv_alloc = 0;
   pli->p7pn_M          = 0;
@@ -311,6 +320,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->vitband_local      = esl_opt_GetBoolean(go, "--vitblocal") ? TRUE : FALSE;
   pli->do_p7post_cp9b     = (pli->do_vitband &&
 			     ! esl_opt_GetBoolean(go, "--nop7post_cp9b")) ? TRUE : FALSE;
+  pli->do_p7deltrigger    = esl_opt_IsOn(go, "--p7deltrigger")    ? TRUE : FALSE;
   pli->do_pnmono          = esl_opt_GetBoolean(go, "--pnmono")        ? TRUE : FALSE;
   pli->do_pnmono_print    = esl_opt_GetBoolean(go, "--pnmono-print")  ? TRUE : FALSE;
   pli->p7band_pad         = esl_opt_IsOn(go, "--p7bpad")    ? esl_opt_GetInteger(go, "--p7bpad") : 3;
@@ -321,7 +331,12 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7vit_hopback      = esl_opt_GetInteger(go, "--p7vit-hopback");
   pli->p7vitend           = esl_opt_GetInteger(go, "--p7vitend");
   pli->do_cykbands        = (esl_opt_IsOn(go, "--cykbands"))   ? TRUE : FALSE;
+  pli->do_cykbands_strict = (esl_opt_IsOn(go, "--cykbands-strict")) ? TRUE : FALSE;
   pli->cyk_bpad           = esl_opt_IsOn(go, "--cykbpad")     ? esl_opt_GetInteger(go, "--cykbpad") : 10;
+  pli->cyk_bpad_dir       = esl_opt_IsOn(go, "--cykpadfile")  ? esl_opt_GetString(go, "--cykpadfile") : NULL;
+  pli->cyk_bpad_perstate  = NULL;
+  pli->cyk_bpad_perstate_M = 0;
+  pli->cyk_bpad_perstate_cmname = NULL;
   pli->cyk_envtree        = NULL;
   pli->cyk_envtree_es     = -1;
   pli->cyk_envtree_ee     = -1;
@@ -332,6 +347,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->cyk_envtreeA_n     = 0;
   pli->use_stored_cp9b    = FALSE;
   pli->cykbands_high_conf = FALSE;
+
   pli->p7post_thresh      = esl_opt_IsOn(go, "--p7pthr")    ? (float) esl_opt_GetReal(go, "--p7pthr") : 1e-5f;
   pli->p7post_tau         = esl_opt_IsOn(go, "--p7tau")     ? (float) esl_opt_GetReal(go, "--p7tau")  : -1.0f;
   pli->p7sc               = esl_opt_IsOn(go, "--p7sc")      ? (float) esl_opt_GetReal(go, "--p7sc")     : 0.0f;
@@ -739,6 +755,23 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   /* Finished setting filter stage on/off parameters and thresholds */
   /********************************************************************************/
 
+  /* Save the original F1/F2/F3 thresholds so cm_pli_NewModel() can apply
+   * per-CM overrides (CMH_FILTER_PVAL_CUTOFFS) without loosing the originals.
+   */
+  pli->F1_orig  = pli->F1;
+  pli->F2_orig  = pli->F2;
+  pli->F3_orig  = pli->F3;
+  pli->F3b_orig = pli->F3b;
+  /* Per-CM filter pcut: opt-in via --use-fil-pcut. Without that flag,
+   * F1F2F3CUT in the CM file is ignored regardless of the cap settings.
+   * With it, default cap is 10× per stage (recommended from rmark4 sweep).
+   */
+  pli->use_fil_pcut = (esl_opt_IsUsed(go, "--use-fil-pcut") &&
+                       esl_opt_GetBoolean(go, "--use-fil-pcut")) ? TRUE : FALSE;
+  pli->pcut_F1_cap = esl_opt_IsUsed(go, "--pcut-F1cap") ? esl_opt_GetReal(go, "--pcut-F1cap") : 10.0;
+  pli->pcut_F2_cap = esl_opt_IsUsed(go, "--pcut-F2cap") ? esl_opt_GetReal(go, "--pcut-F2cap") : 10.0;
+  pli->pcut_F3_cap = esl_opt_IsUsed(go, "--pcut-F3cap") ? esl_opt_GetReal(go, "--pcut-F3cap") : 10.0;
+
   /********************************************************************************/
   /* Configure options for the CM stages */
   pli->do_null2   = esl_opt_GetBoolean(go, "--null2")   ? TRUE  : FALSE;
@@ -951,6 +984,8 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7pn_max_d) free(pli->p7pn_max_d);
   if (pli->p7pn_pocc)  free(pli->p7pn_pocc);
   if (pli->p7_cm_nodepad)  free(pli->p7_cm_nodepad);
+  if (pli->cyk_bpad_perstate) free(pli->cyk_bpad_perstate);
+  if (pli->cyk_bpad_perstate_cmname) free(pli->cyk_bpad_perstate_cmname);
   if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
   if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
   if (pli->cyk_envtreeA) {
@@ -960,6 +995,9 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   }
   if (pli->cyk_envtreeA_es) free(pli->cyk_envtreeA_es);
   if (pli->cyk_envtreeA_ee) free(pli->cyk_envtreeA_ee);
+  if (pli->f6_pvalA)        free(pli->f6_pvalA);
+  if (pli->f6_deltaA)       free(pli->f6_deltaA);
+  if (pli->p7env_delta_pre) free(pli->p7env_delta_pre);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -1177,6 +1215,29 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     pli->cmW  = cm_W;
     pli->clen = cm_clen;
 
+    /* Lever 3: auto-disable cykbands for small CMs where the path's
+     * overhead exceeds its benefit. CYKBANDS_MIN_CLEN env var only
+     * DOWN-gates an already-on cykbands setting per-CM; never up-gates.
+     * Default behavior (env unset) is unchanged.
+     *
+     * To survive heterogeneous CM files, we cache the user's original
+     * --cykbands setting in a function-static the first time we see it,
+     * then re-apply per-call.  (Single-pipeline-per-process is the norm
+     * for cmsearch; this is an experimental hook.)  */
+    {
+      const char *min_clen_env = getenv("CYKBANDS_MIN_CLEN");
+      if(min_clen_env) {
+        static int cb_user_cached = -1;
+        if(cb_user_cached == -1) cb_user_cached = pli->do_cykbands;
+        int cb_min_clen = atoi(min_clen_env);
+        if(cb_user_cached && cm_clen < cb_min_clen) {
+          pli->do_cykbands = FALSE;
+        } else {
+          pli->do_cykbands = cb_user_cached;
+        }
+      }
+    }
+
     /* determine pli->maxW, this will be one more than the number of
      * residues that must overlap between adjacent windows on a single
      * sequence, this is MAX of cm->W and pli->cmult * cm->clen.
@@ -1221,8 +1282,56 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     }
 
     /* if we're using Rfam GA, NC, or TC cutoffs, update them for this model */
-    if (pli->use_bit_cutoffs) { 
+    if (pli->use_bit_cutoffs) {
       if((status = cm_pli_NewModelThresholds(pli, cm)) != eslOK) return status;
+    }
+
+    /* If the CM has per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS,
+     * computed at cmbuild time as raw 99%-quantile of CM emissions), apply
+     * floor/ceiling/monotonicity HERE — calibration stored only the raw
+     * quantile so policy can scale with the Z-tier-aware pli->F*_orig.
+     *
+     * Floor   = pli->F*_orig  (never looser than the pipeline default; if
+     *                          raw quantile is looser, use the default)
+     * Ceiling = pli->F*_orig / factor(clen)
+     *           where factor() is the logistic CLEN-scaled curve (max 30×;
+     *           see cm_filter_ceiling_factor_clen() in cm_filtercutoff.c).
+     * Monotonicity F1>=F2>=F3 re-enforced after both clamps.
+     *
+     * Skip in --max and --nohmm modes (filters disabled there).
+     */
+    if (cm != NULL && (cm->flags & CMH_FILTER_PVAL_CUTOFFS) &&
+        pli->use_fil_pcut && (! pli->do_max) && (! pli->do_nohmm)) {
+      double f       = cm_filter_ceiling_factor_clen(cm->clen);
+      /* Stage-specific caps: never tighten more than pcut_F*_cap, even if
+       * the logistic curve would (e.g., F1 cap=5 keeps F1 ceiling at
+       * pli_orig/5 even when factor(clen)=30 for big CMs). */
+      double f_F1    = ESL_MIN(f, pli->pcut_F1_cap);
+      double f_F2    = ESL_MIN(f, pli->pcut_F2_cap);
+      double f_F3    = ESL_MIN(f, pli->pcut_F3_cap);
+      double F1_ceil = pli->F1_orig  / f_F1;
+      double F2_ceil = pli->F2_orig  / f_F2;
+      double F3_ceil = pli->F3_orig  / f_F3;
+      double F3b_ceil = pli->F3b_orig / f_F3;
+      double F1_use  = ESL_MIN(pli->F1_orig,  ESL_MAX(F1_ceil,  (double) cm->F1_pcutoff));
+      double F2_use  = ESL_MIN(pli->F2_orig,  ESL_MAX(F2_ceil,  (double) cm->F2_pcutoff));
+      double F3_use  = ESL_MIN(pli->F3_orig,  ESL_MAX(F3_ceil,  (double) cm->F3_pcutoff));
+      double F3b_use = ESL_MIN(pli->F3b_orig, ESL_MAX(F3b_ceil, (double) cm->F3_pcutoff));
+      /* Monotonicity F1 >= F2 >= F3, re-enforced after clamping. F3b
+       * mirrors F3 throughout cm_pipeline; pin to F2 if violation. */
+      if (F2_use  > F1_use) F2_use  = F1_use;
+      if (F3_use  > F2_use) F3_use  = F2_use;
+      if (F3b_use > F2_use) F3b_use = F2_use;
+      pli->F1  = F1_use;
+      pli->F2  = F2_use;
+      pli->F3  = F3_use;
+      pli->F3b = F3b_use;
+    }
+    else {
+      pli->F1  = pli->F1_orig;
+      pli->F2  = pli->F2_orig;
+      pli->F3  = pli->F3_orig;
+      pli->F3b = pli->F3b_orig;
     }
   }
   return eslOK;
@@ -1630,6 +1739,59 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     pli->p7_cm_nodepad_M = M;
   }
 
+  /* --cykpadfile: load per-state CYK pad array for this CM (lazy, per-CM).
+   * Reload if cm->M differs or cm->name differs. If file missing, fall back
+   * to scalar pli->cyk_bpad with stderr warning.
+   */
+  if (pli->cyk_bpad_dir != NULL && opt_cm != NULL && *opt_cm != NULL) {
+    CM_t *cm_local = *opt_cm;
+    int   need_reload = (pli->cyk_bpad_perstate == NULL) ||
+                        (pli->cyk_bpad_perstate_M != cm_local->M) ||
+                        (pli->cyk_bpad_perstate_cmname == NULL) ||
+                        (cm_local->name != NULL && strcmp(pli->cyk_bpad_perstate_cmname, cm_local->name) != 0);
+    if (need_reload) {
+      char fpath[1024];
+      const char *cmname = (cm_local->name != NULL) ? cm_local->name : "UNKNOWN";
+      snprintf(fpath, sizeof(fpath), "%s/%s.cykpads.tsv", pli->cyk_bpad_dir, cmname);
+      FILE *pf = fopen(fpath, "r");
+      if (pli->cyk_bpad_perstate != NULL) { free(pli->cyk_bpad_perstate); pli->cyk_bpad_perstate = NULL; }
+      if (pli->cyk_bpad_perstate_cmname != NULL) { free(pli->cyk_bpad_perstate_cmname); pli->cyk_bpad_perstate_cmname = NULL; }
+      pli->cyk_bpad_perstate_M = 0;
+      if (pf == NULL) {
+        fprintf(stderr, "WARNING: --cykpadfile: %s not found, falling back to --cykbpad %d for CM %s\n",
+                fpath, pli->cyk_bpad, cmname);
+      } else {
+        int   M_cm = cm_local->M;
+        int  *parr = NULL;
+        ESL_ALLOC(parr, sizeof(int) * M_cm);
+        int   v;
+        for (v = 0; v < M_cm; v++) parr[v] = -1; /* sentinel: unset, fall back to scalar */
+        char  linebuf[256];
+        int   n_set = 0;
+        while (fgets(linebuf, sizeof(linebuf), pf) != NULL) {
+          if (linebuf[0] == '#') continue;
+          int v_read, pad_read;
+          if (sscanf(linebuf, "%d %d", &v_read, &pad_read) == 2) {
+            if (v_read >= 0 && v_read < M_cm) {
+              parr[v_read] = pad_read;
+              n_set++;
+            }
+          }
+        }
+        fclose(pf);
+        pli->cyk_bpad_perstate = parr;
+        pli->cyk_bpad_perstate_M = M_cm;
+        if (cm_local->name != NULL) {
+          pli->cyk_bpad_perstate_cmname = strdup(cm_local->name);
+        }
+        if (n_set < M_cm) {
+          fprintf(stderr, "NOTE: --cykpadfile %s set %d/%d states for CM %s; unset states use --cykbpad %d\n",
+                  fpath, n_set, M_cm, cmname, pli->cyk_bpad);
+        }
+      }
+    }
+  }
+
   /* First loop over each pipeline pass:
    * A. Update pipeline accounting numbers
    * B. Complete all HMM-based calculations (we'll do CM calculations in second loop over passes)
@@ -1951,7 +2113,46 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG\n#DEBUG: PIPELINE back from FinalStage() %s  %" PRId64 " residues model: %s (pass: %d) nhits: %" PRId64 "\n", sq2search->name, sq2search->n, om->name, p, hitlist->N);
 #endif
-    
+
+    /* Stage 7: window-level F6+F7 re-run with --novitband --nop7post_cp9b for triggered windows.
+     * Trigger: window-level gFwd delta (unbanded minus banded) > 0.5 nats AND at least one
+     * surviving F6 envelope has f6_pval < 1e-8.
+     * Re-run F6+F7 with do_vitband=FALSE, do_p7post_cp9b=FALSE (cp9_IterateSeq2Bands bands)
+     * and append the resulting hits to the same hitlist.  The hitlist's overlap dedup in cmsearch
+     * provides "take-best-of-two" automatically: if the re-run finds a better-scoring hit at the
+     * same position, it will displace the original; if the original was fine, it survives. */
+    if(pli->do_p7deltrigger && pli->do_edef && pli->do_fcyk && np7envA != NULL && np7envA[p] > 0) {
+      float window_delta = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+      int   any_low_pval = FALSE;
+      int   k;
+      for(k = 0; k < pli->f6_pvalA_n; k++) {
+        if(pli->f6_pvalA[k] < 1e-8f) { any_low_pval = TRUE; break; }
+      }
+      if(window_delta > 0.5f && any_low_pval) {
+        int64_t *es_rerun = NULL;
+        int64_t *ee_rerun = NULL;
+        int      nenv_rerun = 0;
+        /* Save flags */
+        int saved_do_p7post_cp9b = pli->do_p7post_cp9b;
+        int saved_do_vitband     = pli->do_vitband;
+        /* Switch to unbanded / cp9_IterateSeq2Bands path (same as --novitband --nop7post_cp9b) */
+        pli->do_p7post_cp9b = FALSE;
+        pli->do_vitband     = FALSE;
+        /* F6 re-run: same p7 envelopes, different CP9 bands */
+        status = pli_cyk_env_filter(pli, cm_offset, sq2search, p7esAA[p], p7eeAA[p], p7ebAA[p], p7_evparam, np7envA[p], opt_cm, &es_rerun, &ee_rerun, &nenv_rerun);
+        if(status == eslOK && nenv_rerun > 0) {
+          /* F7 re-run: append hits to same hitlist; overlap dedup in cmsearch picks best per position */
+          status = pli_final_stage(pli, cm_offset, sq2search, es_rerun, ee_rerun, nenv_rerun, hitlist, opt_cm);
+        }
+        /* Restore flags */
+        pli->do_p7post_cp9b = saved_do_p7post_cp9b;
+        pli->do_vitband     = saved_do_vitband;
+        if(es_rerun != NULL) { free(es_rerun); es_rerun = NULL; }
+        if(ee_rerun != NULL) { free(ee_rerun); ee_rerun = NULL; }
+        if(status != eslOK) return status;
+      }
+    }
+
     /* if we're researching a 3' terminus, adjust the start/stop
      * positions so they are relative to the actual 5' start 
      */
@@ -3589,10 +3790,14 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 
   nenv_alloc = nwin;
   ESL_ALLOC(es, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); // avoid 0 malloc
-  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc)); 
+  ESL_ALLOC(ee, sizeof(int64_t) * ESL_MAX(1, nenv_alloc));
   ESL_ALLOC(eb, sizeof(float)   * ESL_MAX(1, nenv_alloc));
   ESL_ALLOC(ead, sizeof(P7_ALIDISPLAY *) * ESL_MAX(1, nenv_alloc));
   for(i = 0; i < nenv_alloc; i++) ead[i] = NULL;
+  if(pli->do_p7deltrigger) {
+    if(pli->p7env_delta_pre) { free(pli->p7env_delta_pre); pli->p7env_delta_pre = NULL; }
+    ESL_ALLOC(pli->p7env_delta_pre, sizeof(float) * ESL_MAX(1, nenv_alloc));
+  }
   nenv = 0;
   seq = esl_sq_CreateDigital(sq->abc);
 
@@ -4007,34 +4212,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    p7_GForward(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
-	    fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
-		    " p7_Seq2Bands: FALLBACK(status=%d,ncells=%d) unbanded_fwdsc=%.3f\n",
-		    i, sq->name, ws[i], we[i], wlen, gm->M, status, ncells, fwdsc);
 	  } else {
-	    /* debug: summarize band range before using them */
-	    { int dbg_i, dbg_kmin_min=gm->M, dbg_kmax_max=0, dbg_npinned=0;
-	      int dbg_i_first_pin=-1, dbg_i_last_pin=-1, dbg_k_first_pin=-1, dbg_k_last_pin=-1;
-	      for(dbg_i=1; dbg_i<=(int)wlen; dbg_i++) {
-		if(kmin[dbg_i] >= 0) { dbg_kmin_min = ESL_MIN(dbg_kmin_min, kmin[dbg_i]); dbg_kmax_max = ESL_MAX(dbg_kmax_max, kmax[dbg_i]); dbg_npinned++; }
-	      }
-	      /* find first/last pinned sequence positions from i2k (not yet freed here) */
-	      for(dbg_i=1; dbg_i<=(int)wlen; dbg_i++) {
-		if(i2k[dbg_i] != -1) { if(dbg_i_first_pin == -1) { dbg_i_first_pin = dbg_i; dbg_k_first_pin = i2k[dbg_i]; } dbg_i_last_pin = dbg_i; dbg_k_last_pin = i2k[dbg_i]; }
-	      }
-	      fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
-		      " p7_Seq2Bands: OK ncells=%d kmin_min=%d kmax_max=%d npinned=%d"
-		      " first_pin=i%d:k%d last_pin=i%d:k%d\n",
-		      i, sq->name, ws[i], we[i], wlen, gm->M, ncells, dbg_kmin_min, dbg_kmax_max, dbg_npinned,
-		      dbg_i_first_pin, dbg_k_first_pin, dbg_i_last_pin, dbg_k_last_pin);
-	      /* print kmin/kmax at 5 evenly-spaced positions across the window */
-	      { int dbg_npt = 5, dbg_pt;
-		for(dbg_pt = 0; dbg_pt < dbg_npt; dbg_pt++) {
-		  dbg_i = 1 + (int)((wlen-1) * dbg_pt / (dbg_npt-1));
-		  fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s bands_at i=%5d: kmin=%3d kmax=%3d\n",
-			  i, sq->name, dbg_i, kmin[dbg_i], kmax[dbg_i]);
-		}
-	      }
-	    }
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, gm->M, &bnd)) != eslOK)
 	      ESL_FAIL(status, pli->errbuf, "p7_kbands2gbands() failed");
@@ -4052,15 +4230,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	      ESL_FAIL(status, pli->errbuf, "my_p7_GForwardBanded() failed");
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
-	    /* debug: also run unbanded for comparison */
-	    { float dbg_unbanded_fwdsc;
-	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
-	      fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"] wlen=%4"PRId64" M=%d"
-		      " banded_fwdsc=%.3f unbanded_fwdsc=%.3f delta=%.3f\n",
-		      i, sq->name, ws[i], we[i], wlen, gm->M,
-		      fwdsc, dbg_unbanded_fwdsc, dbg_unbanded_fwdsc - fwdsc);
-	    }
 	  }
 	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
 	  /* --vitband: derive Viterbi bands then run banded Forward.
@@ -4109,6 +4278,13 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    /* Save fwdsc and window start for --p7post_cp9b band derivation in dispatch */
 	    pli->p7_fwdsc        = fwdsc;
 	    pli->p7_window_start = (int)ws[i];
+	    /* --p7deltrigger: compute unbanded glocal Forward to measure delta. */
+	    if (pli->do_p7deltrigger) {
+	      float dbg_unbanded_fwdsc;
+	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
+	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
+	      pli->p7_fwdsc_unbanded = dbg_unbanded_fwdsc;
+	    }
 	  }
 	} else {
 	  esl_stopwatch_Start(stg_watch);
@@ -4119,10 +4295,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
 	sc_for_pvalue = (fwdsc - nullsc) / eslCONST_LOG2;
 	P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	fprintf(stderr, "#MSVBAND_DBG: F4 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-		" sc=%.3f P=%.3g F4=%.3g %s\n",
-		i, sq->name, ws[i], we[i], sc_for_pvalue, P, pli->F4,
-		(P > pli->F4) ? "KILLED_F4" : "passes_F4");
       }
 
 #if eslDEBUGLEVEL >= 2
@@ -4157,12 +4329,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	else if(use_gm) { /* normal case */
 	  sc_for_pvalue = (fwdsc - filtersc) / eslCONST_LOG2;
 	  P = esl_exp_surv (sc_for_pvalue,  p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA]);
-	}
-	if(pli->do_msvband) {
-	  fprintf(stderr, "#MSVBAND_DBG: F4b win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-		  " sc=%.3f P=%.3g F4b=%.3g %s\n",
-		  i, sq->name, ws[i], we[i], sc_for_pvalue, P, pli->F4b,
-		  (P > pli->F4b) ? "KILLED_F4b" : "passes_F4b");
 	}
 	if(P > pli->F4b) continue;
 #if eslDEBUGLEVEL >= 2
@@ -4287,14 +4453,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     pli->stg_time_F5 += stg_watch->elapsed;
 
     if (status != eslOK) ESL_FAIL(status, pli->errbuf, "envelope definition workflow failure"); /* eslERANGE can happen */
-    if(pli->do_msvband) {
-      fprintf(stderr, "#MSVBAND_DBG: F5 win %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-	      " nregions=%d nenvelopes=%d ndom=%d %s\n",
-	      i, sq->name, ws[i], we[i],
-	      pli->ddef->nregions, pli->ddef->nenvelopes, pli->ddef->ndom,
-	      (pli->ddef->nregions == 0) ? "KILLED_F5(nregions=0)" :
-	      (pli->ddef->nenvelopes == 0) ? "KILLED_F5(nenvelopes=0)" : "has_envelopes");
-    }
     if (pli->ddef->nregions   == 0)  continue; /* score passed threshold but there's no discrete domains here       */
     if (pli->ddef->nenvelopes == 0)  continue; /* rarer: region was found, stochastic clustered, no envelopes found */
 
@@ -4332,15 +4490,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       /***************************************************/
       
       /* check if we can skip this envelope based on its P-value */
-      if(pli->do_msvband) {
-	fprintf(stderr, "#MSVBAND_DBG: F5 env  %3d sq=%-20s abs=[%6"PRId64"..%6"PRId64"]"
-		" env_abs=[%6"PRId64"..%6"PRId64"] sc=%.3f P=%.3g F5=%.3g %s\n",
-		d, sq->name, ws[i], we[i],
-		pli->ddef->dcl[d].ienv + ws[i] - 1,
-		pli->ddef->dcl[d].jenv + ws[i] - 1,
-		env_sc_for_pvalue, P, pli->F5,
-		(P > pli->F5) ? "KILLED_F5" : "passes_F5");
-      }
       if(P > pli->F5) {
 	if(pli->ddef->dcl[d].ad) p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
 	continue;
@@ -4379,12 +4528,13 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       if(pli->do_time_F5) { continue; }
 
       /* if we get here, the envelope has survived, add it to the growing list */
-      if((nenv+1) == nenv_alloc) { 
+      if((nenv+1) == nenv_alloc) {
 	      nenv_alloc *= 2;
 	      ESL_RALLOC(es, p, sizeof(int64_t) * nenv_alloc);
 	      ESL_RALLOC(ee, p, sizeof(int64_t) * nenv_alloc);
         ESL_RALLOC(eb, p, sizeof(float)   * nenv_alloc);
         ESL_RALLOC(ead, p, sizeof(P7_ALIDISPLAY *) * nenv_alloc);
+        if(pli->do_p7deltrigger) ESL_RALLOC(pli->p7env_delta_pre, p, sizeof(float) * nenv_alloc);
       }
       /* Define envelope to search with CM */
       es[nenv] = pli->ddef->dcl[d].ienv + ws[i] - 1;
@@ -4392,6 +4542,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       eb[nenv] = env_sc_for_pvalue;
       ead[nenv] = pli->ddef->dcl[d].ad;
       pli->ddef->dcl[d].ad = NULL;
+      /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
+      if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
        * At CYK dispatch time, all windows have been processed and pli->gxfb/gxbb/p7bnd
        * would only reflect the last window; storing per-envelope here fixes that. */
@@ -4537,6 +4689,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   int64_t         *ee = NULL;              /* [0..si..nenv-1] end   posn of surviving envelope si */
   int              enforce_i0;             /* TRUE if first nt must be included in eventual parsetree */
   int              enforce_j0;             /* TRUE if final nt must be included in eventual parsetree */
+  float           *f6pval_tmp  = NULL;     /* [0..i..np7env-1] per-input-envelope F6 P-value, for --p7deltrigger */
+  float           *f6delta_tmp = NULL;     /* [0..i..np7env-1] per-input-envelope gFwd delta, for --p7deltrigger */
 
   if (sq->n == 0)  return eslOK;    /* silently skip length 0 seqs; they'd cause us all sorts of weird problems */
   if (np7env == 0) return eslOK;    /* if there's no envelopes to search in, return */
@@ -4564,6 +4718,15 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   ESL_ALLOC(i_surv, sizeof(int) * np7env);
   esl_vec_ISet(i_surv, np7env, FALSE);
 
+  /* --p7deltrigger: per-input-envelope F6 P-value/delta storage; survivors compacted to pli->f6_pvalA/f6_deltaA below */
+  if(pli->do_p7deltrigger) {
+    ESL_ALLOC(f6pval_tmp, sizeof(float) * np7env);
+    esl_vec_FSet(f6pval_tmp, np7env, 1.0f);
+    ESL_ALLOC(f6delta_tmp, sizeof(float) * np7env);
+    if(pli->p7env_delta_pre != NULL) esl_vec_FCopy(pli->p7env_delta_pre, np7env, f6delta_tmp);
+    else                              esl_vec_FSet(f6delta_tmp, np7env, 0.0f);
+  }
+
   /* --cykbands: per-envelope temporary parsetree storage; survivors copied to pli->cyk_envtreeA below */
   Parsetree_t **trA_tmp     = NULL;
   int64_t      *trA_tmp_es  = NULL;
@@ -4574,6 +4737,25 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     ESL_ALLOC(trA_tmp_ee, sizeof(int64_t)       * np7env);
     int ti; for(ti = 0; ti < np7env; ti++) { trA_tmp[ti] = NULL; trA_tmp_es[ti] = -1; trA_tmp_ee[ti] = -1; }
   }
+
+  /* F6SHADOW instrumentation: gated on env var F6SHADOW_DUMP=1.
+   * Per F6 survivor, dump cykbands-specific shadow-fill cost.
+   *   path=hc:   FastCYKScanHB_shmx replaced FastCYKScanHB in dispatch
+   *              (no separate plain-CYK call; we report DP time as the
+   *              shmx call wall, this is an over-estimate of overhead vs
+   *              defppp by the amount that shmx exceeds plain CYK).
+   *   path=bord: extra FastCYKScanHB_shmx after plain CYK; we time JUST
+   *              that extra call. Pure cykbands overhead.
+   *   path=miss: F6 survivor but no parsetree captured (overflow etc).
+   */
+  int f6shadow_dump = (getenv("F6SHADOW_DUMP") != NULL);
+  /* Lever 1: F6CYKTIMING_DUMP=1 dumps plain-vs-shmx timing pairs on the
+   * borderline path. plain_us = pli->last_dispatch_dp (FastCYKScanHB),
+   * shmx_us = w_f6shadow elapsed (FastCYKScanHB_shmx).
+   * Activates the same w_f6shadow stopwatch as F6SHADOW_DUMP. */
+  int f6cyktiming_dump = (getenv("F6CYKTIMING_DUMP") != NULL);
+  ESL_STOPWATCH *w_f6shadow = NULL;
+  if((f6shadow_dump || f6cyktiming_dump) && pli->do_cykbands) w_f6shadow = esl_stopwatch_Create();
 
   /* Determine bit score cutoff for CYK envelope redefinition, any
    * residue that exists in a CYK hit that reaches this threshold will
@@ -4613,8 +4795,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
        * (analysis script binned envelopes by F5 P-value and measured F6
        * pass-rate): bucket -10 has ~93% pass, bucket -15 has ~100%, but
        * the cost of a wrong guess (one wasted shmx call) is small, so
-       * 1e-10 strikes the right balance. */
-      if(f5_pval <= 1e-10) high_conf = TRUE;
+       * 1e-10 strikes the right balance. Env-overridable via
+       * CYKBANDS_F5_THRESH for sweep experiments (Lever 2). */
+      double cb_f5_thresh = 1e-10;
+      const char *cb_f5_thresh_env = getenv("CYKBANDS_F5_THRESH");
+      if(cb_f5_thresh_env) cb_f5_thresh = strtod(cb_f5_thresh_env, NULL);
+      if(f5_pval <= cb_f5_thresh) high_conf = TRUE;
     }
 
     /* DEBUG: dump per-envelope F5 P-value + F6 score for tuning */
@@ -4643,6 +4829,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     else if(status != eslOK) return status;
 
     P = esl_exp_surv(sc, cm->expA[pli->fcyk_cm_exp_mode]->mu_extrap, cm->expA[pli->fcyk_cm_exp_mode]->lambda);
+    if(f6pval_tmp) f6pval_tmp[i] = (float)P;
 
     if(getenv("CYKBANDS_DUMP")) {
       fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
@@ -4679,21 +4866,59 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
          * exactly the post-redef range. So shifting/storing as post-redef
          * envelope is correct. */
         pli->last_dispatch_tr = NULL;
+        if(f6shadow_dump) {
+          /* hc path: dispatch DP wall replaced plain CYK with shmx.
+           * The full DP time is reported; pure overhead = shmx_DP - plain_CYK_DP
+           * (we don't have plain CYK time on same env to subtract). */
+          fprintf(stderr, "F6SHADOW\t%s\t%lld\t%lld\t%d\thc\t%.0f\n",
+                  cm->name,
+                  (long long)p7es[i], (long long)p7ee[i],
+                  (int)(p7ee[i] - p7es[i] + 1),
+                  pli->last_dispatch_dp * 1.0e6);
+        }
       }
       else {
         Parsetree_t *new_tr = NULL;
         float dummy_sc;
         float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
+        if(w_f6shadow) esl_stopwatch_Start(w_f6shadow);
         int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
                                              sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
                                              0., NULL, NULL, &new_tr, &dummy_sc);
+        if(w_f6shadow) esl_stopwatch_Stop(w_f6shadow);
         if(tr_status == eslOK && new_tr != NULL) {
           trA_tmp[i]    = new_tr;
           trA_tmp_es[i] = p7es[i];
           trA_tmp_ee[i] = p7ee[i];
         }
+        if(f6shadow_dump) {
+          /* bord path: pure cykbands overhead — this shmx call would not
+           * exist without --cykbands. */
+          double bord_us = w_f6shadow ? (w_f6shadow->elapsed * 1.0e6) : 0.0;
+          fprintf(stderr, "F6SHADOW\t%s\t%lld\t%lld\t%d\t%s\t%.0f\n",
+                  cm->name,
+                  (long long)p7es[i], (long long)p7ee[i],
+                  (int)(p7ee[i] - p7es[i] + 1),
+                  (tr_status == eslOK && new_tr != NULL) ? "bord" : "miss",
+                  bord_us);
+        }
+        if(f6cyktiming_dump && tr_status == eslOK && new_tr != NULL) {
+          /* Lever 1 timing: pli->last_dispatch_dp is the plain CYK call
+           * (FastCYKScanHB) wall from pli_dispatch_cm_search above.
+           * w_f6shadow timed the extra FastCYKScanHB_shmx call.
+           * Both calls operated on the same envelope range. */
+          double plain_us = pli->last_dispatch_dp * 1.0e6;
+          double shmx_us  = w_f6shadow ? (w_f6shadow->elapsed * 1.0e6) : 0.0;
+          double ratio    = (plain_us > 0.0) ? (shmx_us / plain_us) : 0.0;
+          fprintf(stderr, "F6CYKTIMING\t%s\t%lld\t%lld\t%d\t%.0f\t%.0f\t%.3f\n",
+                  cm->name,
+                  (long long)p7es[i], (long long)p7ee[i],
+                  (int)(p7ee[i] - p7es[i] + 1),
+                  plain_us, shmx_us, ratio);
+        }
       }
     }
+
 
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG: SURVIVOR envelope     [%10" PRId64 "..%10" PRId64 "] survived EnvCYKFilter       %6.2f bits  P %g\n", p7es[i], p7ee[i], sc, P);
@@ -4709,6 +4934,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     free(pli->cyk_envtreeA_ee); pli->cyk_envtreeA_ee = NULL;
     pli->cyk_envtreeA_n = 0;
   }
+  /* Reset any per-pipeline f6_pvalA/f6_deltaA from a previous sequence */
+  if(pli->f6_pvalA)  { free(pli->f6_pvalA);  pli->f6_pvalA  = NULL; pli->f6_pvalA_n  = 0; }
+  if(pli->f6_deltaA) { free(pli->f6_deltaA); pli->f6_deltaA = NULL; pli->f6_deltaA_n = 0; }
   if(nenv > 0) {
     ESL_ALLOC(es, sizeof(int64_t) * nenv);
     ESL_ALLOC(ee, sizeof(int64_t) * nenv);
@@ -4717,6 +4945,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       ESL_ALLOC(pli->cyk_envtreeA_es, sizeof(int64_t)       * nenv);
       ESL_ALLOC(pli->cyk_envtreeA_ee, sizeof(int64_t)       * nenv);
       pli->cyk_envtreeA_n = nenv;
+    }
+    if(pli->do_p7deltrigger) {
+      ESL_ALLOC(pli->f6_pvalA,  sizeof(float) * nenv);
+      pli->f6_pvalA_n  = (int)nenv;
+      ESL_ALLOC(pli->f6_deltaA, sizeof(float) * nenv);
+      pli->f6_deltaA_n = (int)nenv;
     }
     si = 0;
     for(i = 0; i < np7env; i++) {
@@ -4731,6 +4965,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 	  pli->cyk_envtreeA_ee[si] = trA_tmp ? trA_tmp_ee[i] : -1;
 	  if(trA_tmp) trA_tmp[i] = NULL; /* ownership transferred */
 	}
+	if(pli->f6_pvalA)  pli->f6_pvalA[si]  = f6pval_tmp  ? f6pval_tmp[i]  : 1.0f;
+	if(pli->f6_deltaA) pli->f6_deltaA[si] = f6delta_tmp ? f6delta_tmp[i] : 0.0f;
 	si++;
       }
     }
@@ -4740,19 +4976,23 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     int ti; for(ti = 0; ti < np7env; ti++) if(trA_tmp[ti]) FreeParsetree(trA_tmp[ti]);
     free(trA_tmp); free(trA_tmp_es); free(trA_tmp_ee);
   }
+  if(f6pval_tmp)  { free(f6pval_tmp);  f6pval_tmp  = NULL; }
+  if(f6delta_tmp) { free(f6delta_tmp); f6delta_tmp = NULL; }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
+  if(w_f6shadow != NULL) esl_stopwatch_Destroy(w_f6shadow);
   *ret_es   = es;
   *ret_ee   = ee;
   *ret_nenv = nenv;
 
   return eslOK;
 
- ERROR: 
+ ERROR:
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
   if(es     != NULL) free(es);
   if(ee     != NULL) free(ee);
+  if(w_f6shadow != NULL) esl_stopwatch_Destroy(w_f6shadow);
   *ret_es   = NULL;
   *ret_ee   = NULL;
   *ret_nenv = 0;
@@ -5000,13 +5240,18 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
        * from the parsetree, with QDB-style child-to-parent inheritance for
        * unvisited states. Avoids the HMM-node sweep contamination that
        * breaks for permuted CMs. */
+      const int *psp = (pli->cyk_bpad_perstate != NULL && pli->cyk_bpad_perstate_M == cm->M) ? pli->cyk_bpad_perstate : NULL;
       if(cm_BandsFromCYKParsetree(cm, pli->errbuf, tr,
-                                  (int)f6_es, (int)f6_ee, pli->cyk_bpad,
+                                  (int)f6_es, (int)f6_ee, pli->cyk_bpad, psp,
+                                  pli->do_cykbands_strict,
                                   cm->cp9b, pli->cur_pass_idx, 0) == eslOK) {
         pli->use_stored_cp9b = TRUE;
       }
     }
 
+    /* Stage 6's per-envelope F7-only re-run trigger was removed (Stage 7).
+     * The --p7deltrigger flag is still active; the escalation now happens
+     * at window-level (F6+F7 re-run) in cm_Pipeline() after pli_final_stage(). */
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
     pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
@@ -5643,6 +5888,38 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     }
     else if(status == eslOK) {
       /* bands imply a matrix or size mxsize_limit or smaller with tau == cm->tau <= pli->maxtau */
+      /* F7BANDSIZE_DUMP: collect bandsize metadata before DP, then emit line
+       * AFTER DP completes so we can include f7_dp_us alongside band_derive_us. */
+      int     f7d_dump = (getenv("F7BANDSIZE_DUMP") != NULL) ? 1 : 0;
+      int64_t f7d_ncells = 0;
+      float   f7d_mb     = 0.;
+      int64_t f7d_active = 0;
+      int     f7d_njvalid = 0;
+      int     f7d_M       = 0;
+      const char *f7d_src = "defppp";
+      if(f7d_dump) {
+        f7d_src = pli->use_stored_cp9b   ? "cykbands"
+                : pli->do_p7post_cp9b    ? "p7post"
+                : pli->do_msvband        ? "msvband"
+                : pli->do_vitband        ? "vitband"
+                : "defppp";
+        if(cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, (int)(stop - start + 1),
+                               &f7d_ncells, &f7d_mb) == eslOK) {
+          int v_, jp_;
+          for(v_ = 0; v_ < cm->cp9b->cm_M; v_++) {
+            if(cm->cp9b->Jvalid[v_]) {
+              f7d_njvalid++;
+              for(jp_ = 0; jp_ <= (cm->cp9b->jmax[v_] - cm->cp9b->jmin[v_]); jp_++) {
+                f7d_active += hd_max(cm->cp9b, v_, jp_) - hd_min(cm->cp9b, v_, jp_) + 1;
+              }
+            }
+          }
+          f7d_M = cm->cp9b->cm_M;
+        }
+        else {
+          f7d_dump = 0; /* SizeNeeded failed; skip dump */
+        }
+      }
       esl_stopwatch_Start(w_dp);
       if(do_trunc) { /* HMM banded, truncated */
 	if(do_inside) {
@@ -5682,6 +5959,36 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
       esl_stopwatch_Stop(w_dp);
       pli->last_dispatch_dp = w_dp->elapsed;
+      if(f7d_dump) {
+        /* Schema:
+         *   F7BANDSIZE  cm  env_start  env_end  env_len  total_cells  mb
+         *               do_inside  band_source  active_cells  n_jvalid  M
+         *               band_derive_us  f7_dp_us
+         * Notes:
+         *   band_derive_us  = wall-time of the cp9-bands path (use_stored_cp9b
+         *                     short-circuit, p7post, vit/msv, or defppp
+         *                     cp9_IterateSeq2Bands), measured by w_cp9.
+         *   f7_dp_us        = wall-time of the F7 DP call (FastCYKScanHB /
+         *                     FastFInsideScanHB / TrCYKScanHB / FTrInsideScanHB
+         *                     / FastCYKScanHB_shmx). Includes the matrix
+         *                     GrowTo done inside the DP function — alloc is
+         *                     not separable without modifying those call sites.
+         */
+        fprintf(stderr,
+                "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\t%" PRId64 "\t%d\t%d\t%.0f\t%.0f\n",
+                cm->name,
+                start, stop,
+                (int)(stop - start + 1),
+                f7d_ncells,
+                f7d_mb,
+                do_inside ? 1 : 0,
+                f7d_src,
+                f7d_active,
+                f7d_njvalid,
+                f7d_M,
+                pli->last_dispatch_cp9bands * 1.0e6,
+                pli->last_dispatch_dp       * 1.0e6);
+      }
     }
     esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
   }

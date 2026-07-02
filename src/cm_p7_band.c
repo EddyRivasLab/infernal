@@ -4730,6 +4730,10 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
  *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
+ *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
+ *           strict_unvisited - if TRUE, set Jvalid[v]=FALSE for unvisited states (--cykbands-strict).
+ *                              This makes the F7 HB DP skip those states entirely, dramatically
+ *                              reducing matrix cell count at the risk of parse failure or score loss.
  *           cp9b      - bands to fill (caller pre-allocated)
  *           pass_idx  - pipeline pass index (for truncation handling)
  *           debug     - if >0, print bands
@@ -4738,7 +4742,8 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
  */
 int
 cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
-                         int i0, int j0, int pad,
+                         int i0, int j0, int pad, const int *per_state_pad,
+                         int strict_unvisited,
                          CP9Bands_t *cp9b, int pass_idx, int debug)
 {
   int    status;
@@ -4776,10 +4781,12 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(j > jmax[v]) jmax[v] = j;
   }
 
-  /* Step 2: Apply pad to visited states, clamp to [i0..j0]. */
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0].
+   * If per_state_pad != NULL and per_state_pad[v] >= 0, use it instead of scalar pad. */
   for(v = 0; v < M; v++) {
     if(visited[v]) {
       int p = pad;
+      if(per_state_pad != NULL && per_state_pad[v] >= 0) p = per_state_pad[v];
       imin[v] -= p; if(imin[v] < i0) imin[v] = i0;
       imax[v] += p; if(imax[v] > j0) imax[v] = j0;
       jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;
@@ -4874,9 +4881,18 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
   }
   if(skipped != NULL) { free(skipped); skipped = NULL; }
 
-  /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode */
+  /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode.
+   * In strict_unvisited mode, only visited states get Jvalid=TRUE; the F7 HB DP
+   * gates on Jvalid[v] before computing alpha cells, so unvisited states are
+   * skipped entirely. The EL state (M) is always kept valid (filler for end-locals).
+   */
   if(!do_trunc) {
-    esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    if(strict_unvisited) {
+      for(v = 0; v < M; v++) cp9b->Jvalid[v] = visited[v];
+      cp9b->Jvalid[M] = TRUE; /* EL state */
+    } else {
+      esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    }
     esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
     esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
     esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
@@ -4886,6 +4902,22 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
     esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
     esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
     esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
+  }
+
+  /* strict-alloc: shrink Jvalid=FALSE states' i,j bands to a single
+   * sentinel cell so the matrix allocator doesn't reserve memory for
+   * cells the DP will never compute. ij2d_bands below recomputes
+   * hdmin/hdmax from the shrunk imin/imax, so the d-band collapses too.
+   * The DP's existing Jvalid gating prevents the sentinel cells from
+   * being read for actual scores.
+   */
+  if(!do_trunc && strict_unvisited) {
+    for(v = 0; v < M; v++) {
+      if(!cp9b->Jvalid[v]) {
+        cp9b->imin[v] = cp9b->imax[v] = i0;
+        cp9b->jmin[v] = cp9b->jmax[v] = i0;
+      }
+    }
   }
 
   cp9b->tau = cm->tau;
