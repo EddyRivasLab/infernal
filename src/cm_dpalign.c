@@ -2182,7 +2182,7 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      v, jp;
   CM_HB_MX *imx = NULL, *omx = NULL;
 
-  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
+  memset(&cx, 0, sizeof(cx));
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
   cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
@@ -2191,6 +2191,14 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   cx.my_lpp = cx.my_rpp = NULL;
   cx.kpin = kpin; cx.ifull = NULL;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
+  /* R-L.4: local (EL+begin), mirrors cm_CheckptAlignHB's setup exactly */
+  cx.have_el          = (cm->flags & CMH_LOCAL_END)   ? TRUE : FALSE;
+  cx.el_selfsc        = cm->el_selfsc;
+  cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.have_local_begin = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
+  cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinPostAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
@@ -2208,17 +2216,54 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     cx.deck_nc[v] = nc;
   }
 
+  if (cx.have_el) {
+    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
+    ckpt_el_compute_dmax(&cx);
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    ckpt_el_compute_esc(&cx);
+  }
+
   /* full Inside, into imx->dp (same banded layout the deck helpers assume) */
   imx = cm_hb_mx_Create(M);
   if ((status = cm_hb_mx_GrowTo(cm, imx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
   for (v = M-1; v >= 0; v--) ckpt_inside_deck(&cx, v, imx->dp, NULL);
   float Z = imx->dp[0][jp_0][Lp_0];
 
+  /* R-L.4: fill alpha[cm->M] (EL "for completeness" ramp), mirrors
+   * cm_InsideAlignHB:2966-2975 exactly -- cm_PosteriorHB() reads this
+   * unbanded deck directly, so it must be materialized for real here (the
+   * forward EL substitution in ckpt_inside_deck never touches deck M). */
+  if (cx.have_el) {
+    int j, d;
+    for (j = 0; j <= L; j++)
+      for (d = 0; d <= j; d++) imx->dp[cm->M][j][d] = cx.el_selfsc * d;
+  }
+
   /* full Outside, into omx->dp; sibling Inside reads come from cx.ifull=imx->dp */
   omx = cm_hb_mx_Create(M);
   if ((status = cm_hb_mx_GrowTo(cm, omx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
   cx.ifull = imx->dp;
+  if (cx.have_el) cx.elbeta = ckpt_el_deck_alloc(&cx);
   for (v = 0; v < M; v++) ckpt_outside_deck(&cx, v, omx->dp, jp_0, Lp_0);
+
+  /* R-L.4: EL self-transition (mirrors cm_CheckptAlignHB's Step-B EL tail,
+   * cm_dpalign.c:1967-1975 / cm_OutsideAlignHB:6408-6412) then materialize
+   * the real beta[cm->M] deck cm_PosteriorHB() reads, banded cells from
+   * cx.elbeta, everything else IMPOSSIBLE (provably correct per eldmax's
+   * own banding argument). */
+  if (cx.have_el) {
+    int j, d;
+    for (j = L; j >= 1; j--) {
+      if (cx.eldmax[j] < 1) continue;
+      for (d = cx.eldmax[j]-1; d >= 0; d--)
+        cx.elbeta[j][d] = FLogsum(cx.elbeta[j][d], (cx.elbeta[j][d+1] + cx.el_selfsc));
+    }
+    for (j = 0; j <= L; j++) {
+      for (d = 0; d <= j; d++) omx->dp[cm->M][j][d] = IMPOSSIBLE;
+      if (cx.eldmax[j] >= 0) for (d = 0; d <= cx.eldmax[j]; d++) omx->dp[cm->M][j][d] = cx.elbeta[j][d];
+    }
+    ckpt_el_deck_free(&cx, cx.elbeta); cx.elbeta = NULL;
+  }
 
   /* stock posterior + emitter (byte-exact with the reference, which uses these too) */
   if ((status = cm_PosteriorHB(cm, errbuf, L, size_limit, imx, omx, omx)) != eslOK) goto ERROR;
@@ -2235,12 +2280,17 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   cm_hb_mx_Destroy(imx); cm_hb_mx_Destroy(omx);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
   if (ret_sc != NULL) *ret_sc = Z;
   return eslOK;
 
  ERROR:
   if (imx) cm_hb_mx_Destroy(imx);
   if (omx) cm_hb_mx_Destroy(omx);
+  if (cx.elbeta) ckpt_el_deck_free(&cx, cx.elbeta);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
   return status;
@@ -2295,7 +2345,7 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   float    Z_ckpt = 0.;
   float ***Astore = NULL, ***ba = NULL, ***bb = NULL;
 
-  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
+  memset(&cx, 0, sizeof(cx));
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): emit_mx is NULL");
 
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
@@ -2306,11 +2356,26 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   cx.deck_nc = NULL; cx.deck_njr = NULL;
   cx.kpin = kpin; cx.ifull = NULL;
   cx.my_lpp = cx.my_rpp = NULL;
+  /* R-L.4: local (EL+begin), mirrors cm_CheckptAlignHB's setup exactly */
+  cx.have_el          = (cm->flags & CMH_LOCAL_END)   ? TRUE : FALSE;
+  cx.el_selfsc        = cm->el_selfsc;
+  cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.have_local_begin = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
+  cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
   if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S d band");
   int Lp_0 = L - cx.hdmin[0][jp_0];
+
+  if (cx.have_el) {
+    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
+    ckpt_el_compute_dmax(&cx);
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    ckpt_el_compute_esc(&cx);
+  }
 
   /* deck geometry + linear child/parent reach (B-aware) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
@@ -2364,6 +2429,7 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   cx.my_lpp = emit_mx->l_pp;
   cx.my_rpp = emit_mx->r_pp;
   cx.ifull  = Astore;  /* BEGL_S/BEGR_S Outside reads sibling Inside root from here */
+  if (cx.have_el) cx.elbeta = ckpt_el_deck_alloc(&cx);
 
   ESL_ALLOC(ba, sizeof(float**) * M);
   ESL_ALLOC(bb, sizeof(float**) * M);
@@ -2433,15 +2499,44 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   }
   for (v = 0; v < M; v++) if (bb[v]) { ckpt_deck_free(&cx, v, bb[v]); bb[v] = NULL; }
 
+  /* R-L.4 EmitterPosterior step 1 (EL): EL->EL self-transition over the
+   * accumulated elbeta, then fold into l_pp[cm->M] (1-D, bifurcation-
+   * independent -- mirrors cm_CheckptAlignHB:1967-1985 verbatim). */
+  if (cx.have_el) {
+    int j, d;
+    for (j = L; j >= 1; j--) {
+      if (cx.eldmax[j] < 1) continue;
+      for (d = cx.eldmax[j]-1; d >= 0; d--)
+        cx.elbeta[j][d] = FLogsum(cx.elbeta[j][d], (cx.elbeta[j][d+1] + cx.el_selfsc));
+    }
+    for (j = 1; j <= L; j++) {
+      int dx = (cx.eldmax[j] < j) ? cx.eldmax[j] : j;
+      int i = j;
+      for (d = 1; d <= dx; d++, i--) {
+        float postcell = (cx.el_selfsc * d) + cx.elbeta[j][d] - Z_ckpt;
+        emit_mx->l_pp[cm->M][i] = FLogsum(emit_mx->l_pp[cm->M][i], postcell);
+      }
+    }
+    ckpt_el_deck_free(&cx, cx.elbeta); cx.elbeta = NULL;
+  }
+
   /* EmitterPosterior step 2: normalize (mirror stock order exactly) */
   esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
   for (v = 0; v < M; v++) {
     if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i], emit_mx->l_pp[v][ip]); } }
     if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j], emit_mx->r_pp[v][jp]); } }
   }
+  /* EL contributes to sum[i] LAST (mirror cm_EmitterPosteriorHB:6995-6999) */
+  if (cx.have_el && emit_mx->l_pp[cm->M] != NULL) {
+    int i; for (i = 1; i <= L; i++) emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->l_pp[cm->M][i]);
+  }
   for (v = 0; v < M; v++) {
     if (emit_mx->l_pp[v] != NULL) { int i; for (i = cx.imin[v]; i <= cx.imax[v]; i++) { int ip=i-cx.imin[v]; emit_mx->l_pp[v][ip] -= emit_mx->sum[i]; } }
     if (emit_mx->r_pp[v] != NULL) { int j; for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) { int jp=j-cx.jmin[v]; emit_mx->r_pp[v][jp] -= emit_mx->sum[j]; } }
+  }
+  /* normalize EL row too (mirror cm_EmitterPosteriorHB:6832-6843 v==M case) */
+  if (cx.have_el && emit_mx->l_pp[cm->M] != NULL) {
+    int i; for (i = 1; i <= L; i++) emit_mx->l_pp[cm->M][i] -= emit_mx->sum[i];
   }
 
   /* EmitterPosterior step 3: combine l_pp for MATP_MP(v)/MATP_ML(v+1) and r_pp
@@ -2483,6 +2578,8 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   for (v = 0; v < M; v++) if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]);
   free(Astore); free(ba); free(bb);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
   if (ret_sc != NULL) *ret_sc = Z_ckpt;
   return eslOK;
 
@@ -2490,6 +2587,9 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   if (Astore) { for (v = 0; v < M; v++) if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]); free(Astore); }
   if (ba) { for (v = 0; v < M; v++) if (ba[v]) ckpt_deck_free(&cx, v, ba[v]); free(ba); }
   if (bb) { for (v = 0; v < M; v++) if (bb[v]) ckpt_deck_free(&cx, v, bb[v]); free(bb); }
+  if (cx.elbeta) ckpt_el_deck_free(&cx, cx.elbeta);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
   return status;
@@ -2560,7 +2660,7 @@ ckpt_ysh_fetch(void *p, int v, int jp_v, int dp_v)
 static int
 ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
                       int *jmin, int *jmax, int **hdmin, int **hdmax,
-                      ckpt_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
+                      ckpt_ysh_fetch_fn fetch, void *fctx, int begin_b, Parsetree_t **ret_tr)
 {
   int status;
   Parsetree_t *tr  = NULL;
@@ -2629,6 +2729,10 @@ ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
         InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
         v = cm->M;
       }
+      else if (yoffset == (char) USED_LOCAL_BEGIN) { /* R-L.4: local begin, can only happen once, from ROOT_S */
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, begin_b);
+        v = begin_b;
+      }
       else {
         y = cm->cfirst[v] + yoffset;
         InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
@@ -2673,7 +2777,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): emit_mx is NULL");
 
-  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
+  memset(&cx, 0, sizeof(cx));
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
   cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
@@ -2682,6 +2786,14 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   cx.kpin = kpin; cx.ifull = NULL;        /* OA reads child OA decks, not Inside */
   cx.my_lpp = emit_mx->l_pp; cx.my_rpp = emit_mx->r_pp;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
+  /* R-L.4: local (EL+begin), mirrors cm_CheckptAlignHB's setup exactly */
+  cx.have_el          = (cm->flags & CMH_LOCAL_END)   ? TRUE : FALSE;
+  cx.el_selfsc        = cm->el_selfsc;
+  cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.have_local_begin = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
+  cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
@@ -2696,6 +2808,26 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     int64_t nc = 0;
     for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
+  }
+
+  if (cx.have_el) {
+    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
+    ckpt_el_compute_dmax(&cx);
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    ckpt_el_compute_esc(&cx);
+    /* R-L.4: OptAcc EL prefix-sum deck, built from the (normalized) 1-D
+     * l_pp[cm->M] the preceding posterior pass filled -- mirrors
+     * cm_CheckptAlignHB:2008-2022 exactly (bifurcation-independent: this
+     * is a pure per-residue prefix sum, not read/written by the B-combine). */
+    int j, d;
+    cx.elalpha = ckpt_el_deck_alloc(&cx);
+    for (j = 0; j <= L; j++) {
+      if (cx.eldmax[j] < 0) continue;
+      int ii = j;
+      cx.elalpha[j][0] = cx.my_lpp[cm->M][0];
+      for (d = 1; d <= cx.eldmax[j]; d++)
+        cx.elalpha[j][d] = FLogsum(cx.elalpha[j][d-1], cx.my_lpp[cm->M][ii--]);
+    }
   }
 
   /* full OA max-DP (v = M-1 .. 0) + per-state yshadow (NULL for B; B uses kpin) */
@@ -2713,7 +2845,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   /* pinned-tree traceback (full-storage yshadow fetch) */
   fctx.ysh = ysh;
   if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
-                                      pin_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+                                      pin_ysh_fetch, &fctx, cx.begin_b, &tr)) != eslOK) goto ERROR;
 
   /* per-residue PP string + avg PP from the emit matrix */
   if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
@@ -2727,6 +2859,9 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   for (v = 0; v < M; v++) { if (OA[v]) ckpt_deck_free(&cx, v, OA[v]); if (ysh[v]) ckpt_cdeck_free(&cx, v, ysh[v]); }
   free(OA); free(ysh);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.elalpha) ckpt_el_deck_free(&cx, cx.elalpha);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
 
   if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
@@ -2737,6 +2872,9 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  ERROR:
   if (OA)  { for (v = 0; v < M; v++) if (OA[v])  ckpt_deck_free(&cx, v, OA[v]);  free(OA); }
   if (ysh) { for (v = 0; v < M; v++) if (ysh[v]) ckpt_cdeck_free(&cx, v, ysh[v]); free(ysh); }
+  if (cx.elalpha) ckpt_el_deck_free(&cx, cx.elalpha);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
   if (tr)    FreeParsetree(tr);
@@ -2780,7 +2918,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   float    avgpp  = 0., pp = 0.;
   ckpt_ysh_ctx fctx;
 
-  memset(&cx, 0, sizeof(cx)); /* R-L.2b: defensive -- this driver doesn't set have_el/have_local_begin */
+  memset(&cx, 0, sizeof(cx));
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): emit_mx is NULL");
 
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
@@ -2791,6 +2929,14 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   cx.kpin = kpin; cx.ifull = NULL;
   cx.my_lpp = emit_mx->l_pp; cx.my_rpp = emit_mx->r_pp;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
+  /* R-L.4: local (EL+begin), mirrors cm_CheckptAlignHB's setup exactly */
+  cx.have_el          = (cm->flags & CMH_LOCAL_END)   ? TRUE : FALSE;
+  cx.el_selfsc        = cm->el_selfsc;
+  cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.have_local_begin = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
+  cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
+  cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
@@ -2816,6 +2962,23 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     }
   }
   int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  if (cx.have_el) {
+    ESL_ALLOC(cx.eldmax, sizeof(int) * (L+1));
+    ckpt_el_compute_dmax(&cx);
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    ckpt_el_compute_esc(&cx);
+    /* R-L.4: OptAcc EL prefix-sum deck (mirror cm_CheckptAlignHB:2008-2022) */
+    int j, d;
+    cx.elalpha = ckpt_el_deck_alloc(&cx);
+    for (j = 0; j <= L; j++) {
+      if (cx.eldmax[j] < 0) continue;
+      int ii = j;
+      cx.elalpha[j][0] = cx.my_lpp[cm->M][0];
+      for (d = 1; d <= cx.eldmax[j]; d++)
+        cx.elalpha[j][d] = FLogsum(cx.elalpha[j][d-1], cx.my_lpp[cm->M][ii--]);
+    }
+  }
 
   /* ============================================================= */
   /* STEP OA: checkpointed OA max-DP -> roots + sqrt(M) OA seeds    */
@@ -2846,7 +3009,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
   if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
-                                      ckpt_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+                                      ckpt_ysh_fetch, &fctx, cx.begin_b, &tr)) != eslOK) goto ERROR;
 
   /* free the loaded traceback block */
   { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
@@ -2867,6 +3030,9 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   for (v = 0; v < M; v++) if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]);
   free(OAstore); free(tba); free(tysh);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.elalpha) ckpt_el_deck_free(&cx, cx.elalpha);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
 
   if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
@@ -2878,6 +3044,9 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   if (OAstore) { for (v = 0; v < M; v++) if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]); free(OAstore); }
   if (tba)  { for (v = 0; v < M; v++) if (tba[v])  ckpt_deck_free(&cx, v, tba[v]);  free(tba); }
   if (tysh) { for (v = 0; v < M; v++) if (tysh[v]) ckpt_cdeck_free(&cx, v, tysh[v]); free(tysh); }
+  if (cx.elalpha) ckpt_el_deck_free(&cx, cx.elalpha);
+  if (cx.eldmax) free(cx.eldmax);
+  if (cx.el_esc) free(cx.el_esc);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
   if (tr)    FreeParsetree(tr);
