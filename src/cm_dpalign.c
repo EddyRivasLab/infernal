@@ -2164,7 +2164,11 @@ ckpt_is_chain_root(CM_t *cm, int v)
  *           non-checkpointed pinned reference cell-for-cell.  Memory is full
  *           (no checkpointing); cm_CheckptPostAlignHB() adds the sqrt(M) win.
  *
- *           GLOBAL, non-truncated only (have_el=FALSE).
+ *           Non-truncated only.  R-L.4: supports full local (EL+begin,
+ *           have_el/have_local_begin from cm->flags); GLOBAL when the CM
+ *           isn't in local mode.  Production dispatch still requires
+ *           GLOBAL (cm_CheckptOptAccAlignHB_Qualifies() rejects local CMs
+ *           -- relaxing that gate is R-L.6's job).
  *
  * Args:     cm, errbuf, dsq, L, size_limit - usual
  *           emit_mx - the deliverable, grown + filled here
@@ -2332,7 +2336,11 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
  *           recurrences (ckpt_inside_deck / ckpt_outside_deck) and identical
  *           FLogsum/normalization order; only deck STORAGE differs.
  *
- *           GLOBAL, non-truncated only (have_el=FALSE).
+ *           Non-truncated only.  R-L.4: supports full local (EL+begin,
+ *           have_el/have_local_begin from cm->flags); GLOBAL when the CM
+ *           isn't in local mode.  Production dispatch still requires
+ *           GLOBAL (cm_CheckptOptAccAlignHB_Qualifies() rejects local CMs
+ *           -- relaxing that gate is R-L.6's job).
  */
 int
 cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,

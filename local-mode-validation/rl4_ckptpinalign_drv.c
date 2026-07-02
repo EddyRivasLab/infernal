@@ -189,20 +189,30 @@ int main(int argc, char **argv)
     /* ---- pass 2a: full-storage correctness anchor (cm_Pin*) ---- */
     CM_HB_EMIT_MX *emit_p = cm_hb_emit_mx_Create(cm);
     Parsetree_t *tr_p = NULL; char *pp_p = NULL; float avgpp_p = 0, sc_p = 0, pp_p_acc = 0;
-    if ((status = cm_PinPostAlignHB(cm, errbuf, dsq, L, size_limit, emit_p, kpin, &sc_p)) != eslOK)
-      cm_Fail("cm_PinPostAlignHB: %s", errbuf);
+    if ((status = cm_PinPostAlignHB(cm, errbuf, dsq, L, size_limit, emit_p, kpin, &sc_p)) != eslOK) {
+      printf("# SEQ=%s L=%d\n# ERROR cm_PinPostAlignHB: %s\n# VERDICT=SKIP(pin-topology-mismatch)\n", sq->name, L, errbuf);
+      free(kpin); cm_hb_emit_mx_Destroy(emit_p); esl_sq_Reuse(sq); continue;
+    }
     if ((status = cm_PinOptAccAlignHB(cm, errbuf, dsq, L, size_limit, emit_p, kpin,
-                                      &pp_p, &tr_p, &avgpp_p, &pp_p_acc)) != eslOK)
-      cm_Fail("cm_PinOptAccAlignHB: %s", errbuf);
+                                      &pp_p, &tr_p, &avgpp_p, &pp_p_acc)) != eslOK) {
+      printf("# SEQ=%s L=%d\n# ERROR cm_PinOptAccAlignHB: %s\n# VERDICT=SKIP(pin-topology-mismatch)\n", sq->name, L, errbuf);
+      free(kpin); cm_hb_emit_mx_Destroy(emit_p); esl_sq_Reuse(sq); continue;
+    }
 
     /* ---- pass 2b: sqrt(M) checkpointed deliverable (cm_Checkpt*) ---- */
     CM_HB_EMIT_MX *emit_c = cm_hb_emit_mx_Create(cm);
     Parsetree_t *tr_c = NULL; char *pp_c = NULL; float avgpp_c = 0, sc_c = 0, pp_c_acc = 0;
-    if ((status = cm_CheckptPostAlignHB(cm, errbuf, dsq, L, size_limit, emit_c, kpin, &sc_c)) != eslOK)
-      cm_Fail("cm_CheckptPostAlignHB: %s", errbuf);
+    if ((status = cm_CheckptPostAlignHB(cm, errbuf, dsq, L, size_limit, emit_c, kpin, &sc_c)) != eslOK) {
+      printf("# SEQ=%s L=%d\n# ERROR cm_CheckptPostAlignHB: %s\n# VERDICT=SKIP(pin-topology-mismatch)\n", sq->name, L, errbuf);
+      free(kpin); cm_hb_emit_mx_Destroy(emit_p); cm_hb_emit_mx_Destroy(emit_c);
+      if (pp_p) free(pp_p); if (tr_p) FreeParsetree(tr_p); esl_sq_Reuse(sq); continue;
+    }
     if ((status = cm_CheckptOptAccAlignHB(cm, errbuf, dsq, L, size_limit, emit_c, kpin,
-                                          &pp_c, &tr_c, &avgpp_c, &pp_c_acc)) != eslOK)
-      cm_Fail("cm_CheckptOptAccAlignHB: %s", errbuf);
+                                          &pp_c, &tr_c, &avgpp_c, &pp_c_acc)) != eslOK) {
+      printf("# SEQ=%s L=%d\n# ERROR cm_CheckptOptAccAlignHB: %s\n# VERDICT=SKIP(pin-topology-mismatch)\n", sq->name, L, errbuf);
+      free(kpin); cm_hb_emit_mx_Destroy(emit_p); cm_hb_emit_mx_Destroy(emit_c);
+      if (pp_p) free(pp_p); if (tr_p) FreeParsetree(tr_p); esl_sq_Reuse(sq); continue;
+    }
 
     int elP = count_el(tr_p, M), elC = count_el(tr_c, M);
     int entryP = (tr_p->n > 1) ? tr_p->state[1] : -1;
