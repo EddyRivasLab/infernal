@@ -3528,13 +3528,25 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
   cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
-  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  /* R-L.5a: select the local- vs global-begin truncation penalty table
+   * (mirror cm_CheckptTrAlignHB:2954) -- was unconditionally g_ptyAA. */
+  cx.g_pty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx] : cm->trp->g_ptyAA[pty_idx];
   cx.preset_mode = preset_mode;
   cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
   cx.Jl_pp = cx.Ll_pp = cx.Jr_pp = cx.Rr_pp = NULL;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
   cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+  /* R-L.5a: EL fields were previously left completely uninitialized (undefined-
+   * behavior risk: trckpt_tr_inside_deck/trckpt_tr_outside_deck read cx->have_el
+   * unconditionally).  Defensive init + real wiring, mirrors cm_PinPostAlignHB's
+   * (rung-3 non-trunc) EL setup (cm_dpalign.c:2253-2257). */
+  cx.have_el   = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  cx.el_selfsc = cm->el_selfsc;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.Jeldmax = cx.Leldmax = cx.Reldmax = NULL;
+  cx.Jelbeta = cx.Lelbeta = cx.Relbeta = NULL;
+  cx.Jelalpha = cx.Lelalpha = cx.Relalpha = NULL;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrPostAlignHB(): L (%d) outside ROOT_S j band [%d..%d]", L, cx.jmin[0], cx.jmax[0]);
   int jp_0 = L - cx.jmin[0];
@@ -3587,6 +3599,18 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if (cx.Tv[0] && fill_T)  imx->Tdp[0][jp_0][Lp_0] = T0;
   Z = (preset_mode==TRMODE_J) ? J0 : (preset_mode==TRMODE_L) ? L0 : (preset_mode==TRMODE_R) ? R0 : T0;
 
+  /* R-L.5a: materialize the real (unbanded) Inside EL deck imx->{J,L,R}dp[cm->M],
+   * mirrors cm_PinPostAlignHB:2291-2299 (rung-3 non-trunc) -- cm_TrPosteriorHB()
+   * reads this deck directly, so it must be real, not the checkpointed engine's
+   * elbeta/elalpha side-channel shortcut.  The v->EL escape-then-self-loop score
+   * is mode-independent (el_selfsc*d); per-mode only in which deck needs it. */
+  if (cx.have_el) {
+    int j, d;
+    if (cx.Jv[M])            for (j = 0; j <= L; j++) for (d = 0; d <= j; d++) imx->Jdp[M][j][d] = cx.el_selfsc * d;
+    if (fill_L && cx.Lv[M])  for (j = 0; j <= L; j++) for (d = 0; d <= j; d++) imx->Ldp[M][j][d] = cx.el_selfsc * d;
+    if (fill_R && cx.Rv[M])  for (j = 0; j <= L; j++) for (d = 0; d <= j; d++) imx->Rdp[M][j][d] = cx.el_selfsc * d;
+  }
+
   /* ---- OUTSIDE into omx ---- */
   if (omx->Jncells_valid > 0)           esl_vec_FSet(omx->Jdp_mem, omx->Jncells_valid, IMPOSSIBLE);
   if (omx->Lncells_valid > 0 && fill_L) esl_vec_FSet(omx->Ldp_mem, omx->Lncells_valid, IMPOSSIBLE);
@@ -3597,12 +3621,67 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   else if (preset_mode == TRMODE_L && cx.Lv[0]) omx->Ldp[0][jp_0][Lp_0] = 0.;
   else if (preset_mode == TRMODE_R && cx.Rv[0]) omx->Rdp[0][jp_0][Lp_0] = 0.;
   else if (preset_mode == TRMODE_T && cx.Tv[0]) omx->Tdp[0][jp_0][Lp_0] = 0.;
+  /* R-L.5a: allocate the banded Outside EL accumulator decks BEFORE the sweep --
+   * trckpt_tr_outside_deck / pin_tr_outside_Bchild write v->EL contributions
+   * into these unconditionally whenever cx->have_el (mirror cm_CheckptTrAlignHB's
+   * Step B setup, cm_dpalign_trunc.c:3076-3094). */
+  if (cx.have_el) {
+    if (cx.Jv[M]) {
+      ESL_ALLOC(cx.Jeldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_J, cx.Jeldmax);
+      cx.Jelbeta = trckpt_el_deck_alloc(&cx, cx.Jeldmax);
+    }
+    if (fill_L && cx.Lv[M]) {
+      ESL_ALLOC(cx.Leldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_L, cx.Leldmax);
+      cx.Lelbeta = trckpt_el_deck_alloc(&cx, cx.Leldmax);
+    }
+    if (fill_R && cx.Rv[M]) {
+      ESL_ALLOC(cx.Reldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_R, cx.Reldmax);
+      cx.Relbeta = trckpt_el_deck_alloc(&cx, cx.Reldmax);
+    }
+  }
   for (v = 1; v < M; v++) {
     if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S)
       pin_tr_outside_Bchild(&cx, v, omx->Jdp, omx->Ldp, omx->Rdp, omx->Tdp,
                                     imx->Jdp, imx->Ldp, imx->Rdp, imx->Tdp);
     else
       trckpt_tr_outside_deck(&cx, v, omx->Jdp, omx->Ldp, omx->Rdp);
+  }
+  /* R-L.5a: EL self-transition, then materialize the real Outside EL deck
+   * omx->{J,L,R}dp[cm->M] from the accumulated elbeta (mirror cm_PinPostAlignHB:
+   * 2313-2325, 3x per mode).  omx->{J,L,R}dp_mem was already IMPOSSIBLE-filled
+   * above (includes the M-deck cells), so only banded cells need writing. */
+  if (cx.have_el) {
+    int j, d;
+    if (cx.Jelbeta) {
+      for (j = L; j >= 1; j--) {
+        if (cx.Jeldmax[j] < 1) continue;
+        for (d = cx.Jeldmax[j]-1; d >= 0; d--)
+          cx.Jelbeta[j][d] = FLogsum(cx.Jelbeta[j][d], (cx.Jelbeta[j][d+1] + cx.el_selfsc));
+      }
+      for (j = 0; j <= L; j++) if (cx.Jeldmax[j] >= 0) for (d = 0; d <= cx.Jeldmax[j]; d++) omx->Jdp[M][j][d] = cx.Jelbeta[j][d];
+      trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelbeta); cx.Jelbeta = NULL;
+    }
+    if (cx.Lelbeta) {
+      for (j = L; j >= 1; j--) {
+        if (cx.Leldmax[j] < 1) continue;
+        for (d = cx.Leldmax[j]-1; d >= 0; d--)
+          cx.Lelbeta[j][d] = FLogsum(cx.Lelbeta[j][d], (cx.Lelbeta[j][d+1] + cx.el_selfsc));
+      }
+      for (j = 0; j <= L; j++) if (cx.Leldmax[j] >= 0) for (d = 0; d <= cx.Leldmax[j]; d++) omx->Ldp[M][j][d] = cx.Lelbeta[j][d];
+      trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelbeta); cx.Lelbeta = NULL;
+    }
+    if (cx.Relbeta) {
+      for (j = L; j >= 1; j--) {
+        if (cx.Reldmax[j] < 1) continue;
+        for (d = cx.Reldmax[j]-1; d >= 0; d--)
+          cx.Relbeta[j][d] = FLogsum(cx.Relbeta[j][d], (cx.Relbeta[j][d+1] + cx.el_selfsc));
+      }
+      for (j = 0; j <= L; j++) if (cx.Reldmax[j] >= 0) for (d = 0; d <= cx.Reldmax[j]; d++) omx->Rdp[M][j][d] = cx.Relbeta[j][d];
+      trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relbeta); cx.Relbeta = NULL;
+    }
   }
 
   /* ---- stock Posterior + Emitter ---- */
@@ -3616,6 +3695,9 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   cm_tr_hb_mx_Destroy(omx);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
   return eslOK;
 
  ERROR:
@@ -3623,6 +3705,12 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   if (omx) cm_tr_hb_mx_Destroy(omx);
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  if (cx.Jelbeta)  trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelbeta);
+  if (cx.Lelbeta)  trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelbeta);
+  if (cx.Relbeta)  trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relbeta);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
   return status;
 }
 
@@ -3703,13 +3791,25 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
   cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
-  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  /* R-L.5a: select the local- vs global-begin truncation penalty table
+   * (mirror cm_CheckptTrAlignHB:2954) -- was unconditionally g_ptyAA. */
+  cx.g_pty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx] : cm->trp->g_ptyAA[pty_idx];
   cx.preset_mode = preset_mode;
   cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
   cx.Jl_pp = cx.Ll_pp = cx.Jr_pp = cx.Rr_pp = NULL;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
   cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+  /* R-L.5a: EL fields were previously left completely uninitialized (undefined-
+   * behavior risk: trckpt_tr_inside_deck/trckpt_tr_outside_deck read cx->have_el
+   * unconditionally).  Defensive init + real wiring, mirrors cm_CheckptTrAlignHB's
+   * setup (cm_dpalign_trunc.c:2960-2967). */
+  cx.have_el   = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  cx.el_selfsc = cm->el_selfsc;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.Jeldmax = cx.Leldmax = cx.Reldmax = NULL;
+  cx.Jelbeta = cx.Lelbeta = cx.Relbeta = NULL;
+  cx.Jelalpha = cx.Lelalpha = cx.Relalpha = NULL;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrPostAlignHB(): L (%d) outside ROOT_S j band [%d..%d]", L, cx.jmin[0], cx.jmax[0]);
   int jp_0 = L - cx.jmin[0];
@@ -3800,6 +3900,29 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   if (fill_R) esl_vec_FSet(emit_mx->Rr_pp_mem, emit_mx->r_ncells_valid, IMPOSSIBLE);
   cx.Jl_pp = emit_mx->Jl_pp; cx.Ll_pp = emit_mx->Ll_pp;
   cx.Jr_pp = emit_mx->Jr_pp; cx.Rr_pp = emit_mx->Rr_pp;
+
+  /* R-L.5a: allocate the banded Outside EL accumulator decks BEFORE the block
+   * sweep -- trckpt_tr_outside_deck / pin_tr_outside_Bchild write v->EL
+   * contributions into these unconditionally whenever cx->have_el (mirror
+   * cm_CheckptTrAlignHB's Step B setup, cm_dpalign_trunc.c:3076-3094); they
+   * persist across every block (accumulating over the WHOLE v=1..M-1 sweep). */
+  if (cx.have_el) {
+    if (cx.Jv[M]) {
+      ESL_ALLOC(cx.Jeldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_J, cx.Jeldmax);
+      cx.Jelbeta = trckpt_el_deck_alloc(&cx, cx.Jeldmax);
+    }
+    if (fill_L && cx.Lv[M]) {
+      ESL_ALLOC(cx.Leldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_L, cx.Leldmax);
+      cx.Lelbeta = trckpt_el_deck_alloc(&cx, cx.Leldmax);
+    }
+    if (fill_R && cx.Rv[M]) {
+      ESL_ALLOC(cx.Reldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_R, cx.Reldmax);
+      cx.Relbeta = trckpt_el_deck_alloc(&cx, cx.Reldmax);
+    }
+  }
 
   ESL_ALLOC(Jba, sizeof(float**) * M); ESL_ALLOC(Lba, sizeof(float**) * M); ESL_ALLOC(Rba, sizeof(float**) * M);
   ESL_ALLOC(Jbb, sizeof(float**) * M); ESL_ALLOC(Lbb, sizeof(float**) * M); ESL_ALLOC(Rbb, sizeof(float**) * M);
@@ -3902,8 +4025,58 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     if (Rbb[v]) { trckpt_deck_free(&cx, v, Rbb[v]); Rbb[v]=NULL; }
   }
 
+  /* R-L.5a EmitterPosterior step 1 (EL), per mode: the EL->EL self-transition
+   * over the accumulated el{J,L,R}beta, then fold into {Jl,Ll,Rr}_pp[cm->M]
+   * (1-D).  Mirrors cm_CheckptTrAlignHB's Step-B EL tail (cm_dpalign_trunc.c
+   * ~3176-3220) exactly. */
+  if (cx.have_el) {
+    int j, d;
+    if (cx.Jv[M]) {
+      for (j = L; j >= 1; j--) {
+        if (cx.Jeldmax[j] < 1) continue;
+        for (d = cx.Jeldmax[j]-1; d >= 0; d--)
+          cx.Jelbeta[j][d] = FLogsum(cx.Jelbeta[j][d], (cx.Jelbeta[j][d+1] + cx.el_selfsc));
+      }
+      for (j = 1; j <= L; j++) {
+        int dx = (cx.Jeldmax[j] < j) ? cx.Jeldmax[j] : j;
+        int i = j;
+        for (d = 1; d <= dx; d++, i--)
+          emit_mx->Jl_pp[M][i] = FLogsum(emit_mx->Jl_pp[M][i], (cx.el_selfsc * d) + cx.Jelbeta[j][d] - Z);
+      }
+    }
+    if (cx.Jelbeta) { trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelbeta); cx.Jelbeta = NULL; }
+    if (fill_L && cx.Lv[M]) {
+      for (j = L; j >= 1; j--) {
+        if (cx.Leldmax[j] < 1) continue;
+        for (d = cx.Leldmax[j]-1; d >= 0; d--)
+          cx.Lelbeta[j][d] = FLogsum(cx.Lelbeta[j][d], (cx.Lelbeta[j][d+1] + cx.el_selfsc));
+      }
+      for (j = 1; j <= L; j++) {
+        int dx = (cx.Leldmax[j] < j) ? cx.Leldmax[j] : j;
+        int i = j;
+        for (d = 1; d <= dx; d++, i--)
+          emit_mx->Ll_pp[M][i] = FLogsum(emit_mx->Ll_pp[M][i], (cx.el_selfsc * d) + cx.Lelbeta[j][d] - Z);
+      }
+    }
+    if (cx.Lelbeta) { trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelbeta); cx.Lelbeta = NULL; }
+    if (fill_R && cx.Rv[M]) {
+      for (j = L; j >= 1; j--) {
+        if (cx.Reldmax[j] < 1) continue;
+        for (d = cx.Reldmax[j]-1; d >= 0; d--)
+          cx.Relbeta[j][d] = FLogsum(cx.Relbeta[j][d], (cx.Relbeta[j][d+1] + cx.el_selfsc));
+      }
+      for (j = 1; j <= L; j++) {
+        int dx = (cx.Reldmax[j] < j) ? cx.Reldmax[j] : j;
+        int i = j;
+        for (d = 1; d <= dx; d++, i--)
+          emit_mx->Rr_pp[M][i] = FLogsum(emit_mx->Rr_pp[M][i], (cx.el_selfsc * d) + cx.Relbeta[j][d] - Z);
+      }
+    }
+    if (cx.Relbeta) { trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relbeta); cx.Relbeta = NULL; }
+  }
+
   /* EmitterPosterior step 2: sum + normalize (mirror stock order: per v, Jl, Ll,
-   * Jr, Rr).  EL deck (cm->M) N/A in global -g mode. */
+   * Jr, Rr, THEN EL last -- cm_TrEmitterPosteriorHB:12238-12290). */
   esl_vec_FSet(emit_mx->sum, (L+1), IMPOSSIBLE);
   for (v = 0; v < M; v++) {
     if (emit_mx->Jl_pp[v] && cx.Jv[v])             { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->sum[i]=FLogsum(emit_mx->sum[i],emit_mx->Jl_pp[v][ip]);} }
@@ -3911,11 +4084,23 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     if (emit_mx->Jr_pp[v] && cx.Jv[v])             { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j],emit_mx->Jr_pp[v][jp]);} }
     if (emit_mx->Rr_pp[v] && cx.Rv[v] && fill_R)   { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->sum[j]=FLogsum(emit_mx->sum[j],emit_mx->Rr_pp[v][jp]);} }
   }
+  if (cx.have_el) {
+    int i;
+    if (cx.Jv[M])           for (i = 1; i <= L; i++) emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->Jl_pp[M][i]);
+    if (fill_L && cx.Lv[M]) for (i = 1; i <= L; i++) emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->Ll_pp[M][i]);
+    if (fill_R && cx.Rv[M]) for (i = 1; i <= L; i++) emit_mx->sum[i] = FLogsum(emit_mx->sum[i], emit_mx->Rr_pp[M][i]);
+  }
   for (v = 0; v < M; v++) {
     if (emit_mx->Jl_pp[v] && cx.Jv[v])             { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->Jl_pp[v][ip]-=emit_mx->sum[i];} }
     if (emit_mx->Ll_pp[v] && cx.Lv[v] && fill_L)   { int in=ESL_MAX(cx.imin[v],1), ix=ESL_MIN(cx.imax[v],L); int i; for(i=in;i<=ix;i++){int ip=i-cx.imin[v]; emit_mx->Ll_pp[v][ip]-=emit_mx->sum[i];} }
     if (emit_mx->Jr_pp[v] && cx.Jv[v])             { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->Jr_pp[v][jp]-=emit_mx->sum[j];} }
     if (emit_mx->Rr_pp[v] && cx.Rv[v] && fill_R)   { int jn=ESL_MAX(cx.jmin[v],1), jx=ESL_MIN(cx.jmax[v],L); int j; for(j=jn;j<=jx;j++){int jp=j-cx.jmin[v]; emit_mx->Rr_pp[v][jp]-=emit_mx->sum[j];} }
+  }
+  if (cx.have_el) {
+    int i;
+    if (cx.Jv[M])           for (i = 1; i <= L; i++) emit_mx->Jl_pp[M][i] -= emit_mx->sum[i];
+    if (fill_L && cx.Lv[M]) for (i = 1; i <= L; i++) emit_mx->Ll_pp[M][i] -= emit_mx->sum[i];
+    if (fill_R && cx.Rv[M]) for (i = 1; i <= L; i++) emit_mx->Rr_pp[M][i] -= emit_mx->sum[i];
   }
 
   /* EmitterPosterior step 3: combine MATP_MP(v)/MATP_ML(v+1) l_pp and
@@ -3975,6 +4160,9 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   free(JA); free(LA); free(RA); free(TAtmp);
   free(Jba); free(Lba); free(Rba); free(Jbb); free(Lbb); free(Rbb);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.Jeldmax) free(cx.Jeldmax);
+  if (cx.Leldmax) free(cx.Leldmax);
+  if (cx.Reldmax) free(cx.Reldmax);
   if (ret_sc)   *ret_sc   = Z;
   if (ret_mode) *ret_mode = preset_mode;
   return eslOK;
@@ -3992,6 +4180,12 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   if (Rbb)   { for (v = 0; v < M; v++) if (Rbb[v])   trckpt_deck_free(&cx, v, Rbb[v]);   free(Rbb); }
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  if (cx.Jelbeta)  trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelbeta);
+  if (cx.Lelbeta)  trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelbeta);
+  if (cx.Relbeta)  trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relbeta);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
   return status;
 }
 
@@ -4231,13 +4425,25 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
   cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
-  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  /* R-L.5a: select the local- vs global-begin truncation penalty table
+   * (mirror cm_CheckptTrAlignHB:2954) -- was unconditionally g_ptyAA. */
+  cx.g_pty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx] : cm->trp->g_ptyAA[pty_idx];
   cx.preset_mode = preset_mode;
   cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
   cx.Jl_pp = emit_mx->Jl_pp; cx.Ll_pp = emit_mx->Ll_pp; cx.Jr_pp = emit_mx->Jr_pp; cx.Rr_pp = emit_mx->Rr_pp;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
   cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+  /* R-L.5a: EL fields were previously left completely uninitialized (undefined-
+   * behavior risk: trckpt_tr_optacc_deck reads cx->have_el/cx->el_endsc/
+   * cx->el_esc unconditionally).  Defensive init + real wiring, mirrors
+   * cm_PinOptAccAlignHB's (rung-3 non-trunc) EL setup (cm_dpalign.c:2876-2883). */
+  cx.have_el   = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  cx.el_selfsc = cm->el_selfsc;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.Jeldmax = cx.Leldmax = cx.Reldmax = NULL;
+  cx.Jelbeta = cx.Lelbeta = cx.Relbeta = NULL;
+  cx.Jelalpha = cx.Lelalpha = cx.Relalpha = NULL;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinTrOptAccAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
@@ -4251,6 +4457,48 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
     int64_t nc = 0; int jp;
     for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
+  }
+
+  /* R-L.5a: OptAcc EL prefix-sum decks el{J,L,R}alpha, built from the
+   * (normalized) 1-D {Jl,Ll,Rr}_pp[cm->M] the preceding Post pass filled --
+   * mirrors cm_CheckptTrAlignHB:3255-3284 exactly, 3x per mode. */
+  if (cx.have_el) {
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    trckpt_el_compute_esc(&cx);
+    int j, d;
+    if (cx.Jv[M]) {
+      ESL_ALLOC(cx.Jeldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_J, cx.Jeldmax);
+      cx.Jelalpha = trckpt_el_deck_alloc(&cx, cx.Jeldmax);
+      for (j = 0; j <= L; j++) {
+        if (cx.Jeldmax[j] < 0) continue;
+        int i = j;
+        cx.Jelalpha[j][0] = cx.Jl_pp[M][0];
+        for (d = 1; d <= cx.Jeldmax[j]; d++) cx.Jelalpha[j][d] = FLogsum(cx.Jelalpha[j][d-1], cx.Jl_pp[M][i--]);
+      }
+    }
+    if (fill_L && cx.Lv[M]) {
+      ESL_ALLOC(cx.Leldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_L, cx.Leldmax);
+      cx.Lelalpha = trckpt_el_deck_alloc(&cx, cx.Leldmax);
+      for (j = 0; j <= L; j++) {
+        if (cx.Leldmax[j] < 0) continue;
+        int i = j;
+        cx.Lelalpha[j][0] = cx.Ll_pp[M][0];
+        for (d = 1; d <= cx.Leldmax[j]; d++) cx.Lelalpha[j][d] = FLogsum(cx.Lelalpha[j][d-1], cx.Ll_pp[M][i--]);
+      }
+    }
+    if (fill_R && cx.Rv[M]) {
+      ESL_ALLOC(cx.Reldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_R, cx.Reldmax);
+      cx.Relalpha = trckpt_el_deck_alloc(&cx, cx.Reldmax);
+      for (j = 0; j <= L; j++) {
+        if (cx.Reldmax[j] < 0) continue;
+        int i = j;
+        cx.Relalpha[j][0] = cx.Rr_pp[M][0];
+        for (d = 1; d <= cx.Reldmax[j]; d++) cx.Relalpha[j][d] = FLogsum(cx.Relalpha[j][d-1], cx.Rr_pp[M][i--]);
+      }
+    }
   }
 
   ESL_ALLOC(Joa, sizeof(float**) * M); ESL_ALLOC(Loa, sizeof(float**) * M);
@@ -4319,6 +4567,13 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   }
   free(Joa); free(Loa); free(Roa); free(Toa); free(Jsh); free(Lsh); free(Rsh);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.Jelalpha) trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelalpha);
+  if (cx.Lelalpha) trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelalpha);
+  if (cx.Relalpha) trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relalpha);
+  if (cx.el_esc)   free(cx.el_esc);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
 
   if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
@@ -4337,6 +4592,13 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   if (Rsh) { for (v=0;v<M;v++) if (Rsh[v]) trckpt_cdeck_free(&cx,v,Rsh[v]); free(Rsh); }
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  if (cx.Jelalpha) trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelalpha);
+  if (cx.Lelalpha) trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelalpha);
+  if (cx.Relalpha) trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relalpha);
+  if (cx.el_esc)   free(cx.el_esc);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
   if (tr)    FreeParsetree(tr);
   if (ppstr) free(ppstr);
   return status;
@@ -4394,13 +4656,25 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
   cx.imin = cm->cp9b->imin;  cx.imax = cm->cp9b->imax;
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
   cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
-  cx.g_pty = cm->trp->g_ptyAA[pty_idx];
+  /* R-L.5a: select the local- vs global-begin truncation penalty table
+   * (mirror cm_CheckptTrAlignHB:2954) -- was unconditionally g_ptyAA. */
+  cx.g_pty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx] : cm->trp->g_ptyAA[pty_idx];
   cx.preset_mode = preset_mode;
   cx.fill_L = fill_L; cx.fill_R = fill_R; cx.fill_T = fill_T;
   cx.Jl_pp = emit_mx->Jl_pp; cx.Ll_pp = emit_mx->Ll_pp; cx.Jr_pp = emit_mx->Jr_pp; cx.Rr_pp = emit_mx->Rr_pp;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
   cx.bkind = bkind; cx.kpin = kpin; cx.bbmode = bbmode; cx.blmode = blmode; cx.brmode = brmode;
+  /* R-L.5a: EL fields were previously left completely uninitialized (undefined-
+   * behavior risk: trckpt_tr_optacc_deck reads cx->have_el/cx->el_endsc/
+   * cx->el_esc unconditionally).  Defensive init + real wiring, mirrors
+   * cm_CheckptOptAccAlignHB's (rung-3 non-trunc) EL setup. */
+  cx.have_el   = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  cx.el_selfsc = cm->el_selfsc;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.Jeldmax = cx.Leldmax = cx.Reldmax = NULL;
+  cx.Jelbeta = cx.Lelbeta = cx.Relbeta = NULL;
+  cx.Jelalpha = cx.Lelalpha = cx.Relalpha = NULL;
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrOptAccAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
@@ -4425,6 +4699,48 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
     }
   }
   int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* R-L.5a: OptAcc EL prefix-sum decks el{J,L,R}alpha, built from the
+   * (normalized) 1-D {Jl,Ll,Rr}_pp[cm->M] the preceding Post pass filled --
+   * mirrors cm_CheckptTrAlignHB:3255-3284 exactly, 3x per mode. */
+  if (cx.have_el) {
+    ESL_ALLOC(cx.el_esc, sizeof(float) * M);
+    trckpt_el_compute_esc(&cx);
+    int j, d;
+    if (cx.Jv[M]) {
+      ESL_ALLOC(cx.Jeldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_J, cx.Jeldmax);
+      cx.Jelalpha = trckpt_el_deck_alloc(&cx, cx.Jeldmax);
+      for (j = 0; j <= L; j++) {
+        if (cx.Jeldmax[j] < 0) continue;
+        int i = j;
+        cx.Jelalpha[j][0] = cx.Jl_pp[M][0];
+        for (d = 1; d <= cx.Jeldmax[j]; d++) cx.Jelalpha[j][d] = FLogsum(cx.Jelalpha[j][d-1], cx.Jl_pp[M][i--]);
+      }
+    }
+    if (fill_L && cx.Lv[M]) {
+      ESL_ALLOC(cx.Leldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_L, cx.Leldmax);
+      cx.Lelalpha = trckpt_el_deck_alloc(&cx, cx.Leldmax);
+      for (j = 0; j <= L; j++) {
+        if (cx.Leldmax[j] < 0) continue;
+        int i = j;
+        cx.Lelalpha[j][0] = cx.Ll_pp[M][0];
+        for (d = 1; d <= cx.Leldmax[j]; d++) cx.Lelalpha[j][d] = FLogsum(cx.Lelalpha[j][d-1], cx.Ll_pp[M][i--]);
+      }
+    }
+    if (fill_R && cx.Rv[M]) {
+      ESL_ALLOC(cx.Reldmax, sizeof(int) * (L+1));
+      trckpt_el_compute_dmax(&cx, TRMODE_R, cx.Reldmax);
+      cx.Relalpha = trckpt_el_deck_alloc(&cx, cx.Reldmax);
+      for (j = 0; j <= L; j++) {
+        if (cx.Reldmax[j] < 0) continue;
+        int i = j;
+        cx.Relalpha[j][0] = cx.Rr_pp[M][0];
+        for (d = 1; d <= cx.Reldmax[j]; d++) cx.Relalpha[j][d] = FLogsum(cx.Relalpha[j][d-1], cx.Rr_pp[M][i--]);
+      }
+    }
+  }
 
   /* ============================================================= */
   /* STEP OA: checkpointed OA max-DP -> roots + sqrt(M) seeds + b   */
@@ -4520,6 +4836,13 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
   for (v = 0; v < M; v++) { if (JAoa[v]) trckpt_deck_free(&cx,v,JAoa[v]); if (LAoa[v]) trckpt_deck_free(&cx,v,LAoa[v]); if (RAoa[v]) trckpt_deck_free(&cx,v,RAoa[v]); if (Toa[v]) trckpt_deck_free(&cx,v,Toa[v]); }
   free(JAoa); free(LAoa); free(RAoa); free(Toa); free(tJa); free(tLa); free(tRa); free(tJs); free(tLs); free(tRs);
   free(cx.deck_nc); free(cx.deck_njr);
+  if (cx.Jelalpha) trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelalpha);
+  if (cx.Lelalpha) trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelalpha);
+  if (cx.Relalpha) trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relalpha);
+  if (cx.el_esc)   free(cx.el_esc);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
 
   if (ret_ppstr != NULL) *ret_ppstr = ppstr; else free(ppstr);
   if (ret_tr    != NULL) *ret_tr    = tr;    else FreeParsetree(tr);
@@ -4541,6 +4864,13 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
   if (tRs)  { for (v=0;v<M;v++) if (tRs[v])  trckpt_cdeck_free(&cx,v,tRs[v]); free(tRs); }
   if (cx.deck_nc)  free(cx.deck_nc);
   if (cx.deck_njr) free(cx.deck_njr);
+  if (cx.Jelalpha) trckpt_el_deck_free(&cx, cx.Jeldmax, cx.Jelalpha);
+  if (cx.Lelalpha) trckpt_el_deck_free(&cx, cx.Leldmax, cx.Lelalpha);
+  if (cx.Relalpha) trckpt_el_deck_free(&cx, cx.Reldmax, cx.Relalpha);
+  if (cx.el_esc)   free(cx.el_esc);
+  if (cx.Jeldmax)  free(cx.Jeldmax);
+  if (cx.Leldmax)  free(cx.Leldmax);
+  if (cx.Reldmax)  free(cx.Reldmax);
   if (tr)    FreeParsetree(tr);
   if (ppstr) free(ppstr);
   return status;
