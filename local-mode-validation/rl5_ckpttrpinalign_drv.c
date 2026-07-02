@@ -256,6 +256,24 @@ int main(int argc, char **argv)
       int    elS   = count_el(tr_s, M);
       int    entryS = (tr_s->n > 1) ? tr_s->state[1] : -1;
 
+      /* R-L.5b Phase-1 structural probe: would the FREE (unpinned) stock
+       * oracle's own independently-optimal parsetree, if it were subject to
+       * our engine's bkind-based masking, ever try to visit a B state that
+       * CYK's own parse left unpinned (bkind[v]==0)?  If so, that is direct,
+       * sharp evidence that masking COULD block a legitimate optimal path
+       * (not just "the assert didn't fire" -- an absence-of-failure argument). */
+      { int nn, nunpinned_visited = 0;
+        for (nn = 0; nn < tr_s->n; nn++) {
+          int vv = tr_s->state[nn];
+          if (vv >= 0 && vv < M && cm->sttype[vv] == B_st && bkind[vv] == 0) {
+            nunpinned_visited++;
+            printf("#   STOCK-VISITS-UNPINNED-B: v=%d\n", vv);
+          }
+        }
+        if (nunpinned_visited > 0)
+          printf("#   STOCK_UNPINNED_B_COUNT=%d (free oracle's own optimal parse would need an unpinned B)\n", nunpinned_visited);
+      }
+
       printf("# RESULT tag=%s seq=%s mode=%s L=%d D&Cmode=%s stockmode=%s\n", tag, sq->name, modestr, L, MarginalMode(r4_mode), MarginalMode(mode_s));
       printf("#   PRIMARY GATE (pin==ckpt, same pins): ParsetreeCompare=%s  |dsc|=%.3e  PPstr-byte-identical=%s  entry_v match=%s(%d vs %d) EL match=%s(%d vs %d) mode match=%s\n",
              peqPC?"IDENTICAL":"DIFFER", dscPC, ppeqPC?"YES":"no",
