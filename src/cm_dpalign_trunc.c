@@ -2059,10 +2059,23 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
     /* J mode */
     if (do_J_v && Jv[cx->M]) {
       jn2 = jmin[v] - sdr_v; jx2 = jmax[v] - sdr_v;
+      /* R-L.5a fix: jn2 can go negative for right-emitting v (MP/MR/IR,
+       * sdr_v>0) when jmin[v]==0 -- v's own band is HMM-approximate and
+       * doesn't know a priori this recurrence needs j>=sdr_v; a negative
+       * EL-row j is a structurally-impossible position (would require
+       * indexing before residue 1), so skip it (equivalent to IMPOSSIBLE,
+       * matching the eldmax "r<0 skip" guard trckpt_el_compute_dmax already
+       * applies).  Never triggered by bps=0 (ML/IL/D/S/E have sdr_v==0). */
+      if (jn2 < 0) jn2 = 0;
       for (j = jn2; j <= jx2; j++) {
         jp_v = j - jmin[v];
         dn = hdmin[v][jp_v + sdr_v] - sd_v;
         dx = hdmax[v][jp_v + sdr_v] - sd_v;
+        /* R-L.5a fix: dn can also go negative (band-dependent, independent of
+         * the jn2 clamp above) when hdmin[row] < sd_v; clamp -- dp_v/i are
+         * both derived FROM dn so clamping before deriving them keeps the
+         * Jbv[][] read alignment correct (dp_v(d) = d - hdmin[row] always). */
+        if (dn < 0) dn = 0;
         i = j - dn + 1; dp_v = dn - hdmin[v][jp_v + sdr_v];
         switch (emm) {
         case EMITPAIR:
@@ -2095,6 +2108,8 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
         jp_v = j - jmin[v];
         dn = hdmin[v][jp_v] - sdl_v;
         dx = hdmax[v][jp_v] - sdl_v;
+        /* R-L.5a fix: same dn<0 clamp as the J-mode block above. */
+        if (dn < 0) dn = 0;
         i = j - dn + 1; dp_v = dn - hdmin[v][jp_v];
         switch (emm) {
         case EMITPAIR:
@@ -2127,10 +2142,14 @@ trckpt_tr_outside_deck(TR_CKPT_CTX *cx, int v, float ***Jbb, float ***Lbb, float
     /* R mode */
     if (do_R_v && Rv[cx->M]) {
       jn2 = jmin[v] - sdr_v; jx2 = jmax[v] - sdr_v;
+      /* R-L.5a fix: same jn2<0 clamp as the J-mode block above. */
+      if (jn2 < 0) jn2 = 0;
       for (j = jn2; j <= jx2; j++) {
         jp_v = j - jmin[v];
         dn = hdmin[v][jp_v + sdr_v] - sdr_v;
         dx = hdmax[v][jp_v + sdr_v] - sdr_v;
+        /* R-L.5a fix: same dn<0 clamp as the J-mode block above. */
+        if (dn < 0) dn = 0;
         i = j - dn + 1; dp_v = dn - hdmin[v][jp_v + sdr_v];
         switch (emm) {
         case EMITPAIR:
@@ -2391,11 +2410,20 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
    * yshadow stays USED_EL (memset above).  Mirrors cm_TrOptAccAlignHB's
    * per-mode read of {Jl,Ll,Rr}_pp[cm->M] via the elalpha-substitute pattern
    * (R-L.2 non-trunc port, cm_dpalign.c:1551-1563), 3x. */
+  /* R-L.5a fix: j-sdr/d-sd(l/r) can go negative for right-emitting v (MP/MR/IR)
+   * near v's own band edge (jmin[v]/hdmin[v] are HMM-approximate and don't
+   * know a priori this substitute needs j>=sdr, d>=sd) -- a negative
+   * elalpha index is a structurally-impossible EL-escape position, so skip
+   * it (Jav/Lav/Rav cell stays IMPOSSIBLE from the init above, which is
+   * correct: no such alignment exists).  Never triggered by bps=0
+   * (ML/IL/D/S/E have sdr==sdl==0, sd<=1). */
   if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
     if (do_J_v && Jv[cx->M]) {
       for (j = jmin[v]; j <= jmax[v]; j++) {
+        if (j - sdr < 0) continue;
         jp_v = j - jmin[v];
         for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          if (d - sd < 0) continue;
           dp_v = d - hdmin[v][jp_v];
           Jav[jp_v][dp_v] = cx->Jelalpha[j-sdr][d-sd];
         }
@@ -2405,6 +2433,7 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
         for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          if (d - sdl < 0) continue;
           dp_v = d - hdmin[v][jp_v];
           Lav[jp_v][dp_v] = cx->Lelalpha[j][d-sdl];
         }
@@ -2412,8 +2441,10 @@ trckpt_tr_optacc_deck(TR_CKPT_CTX *cx, int v,
     }
     if (do_R_v && Rv[cx->M]) {
       for (j = jmin[v]; j <= jmax[v]; j++) {
+        if (j - sdr < 0) continue;
         jp_v = j - jmin[v];
         for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          if (d - sdr < 0) continue;
           dp_v = d - hdmin[v][jp_v];
           Rav[jp_v][dp_v] = cx->Relalpha[j-sdr][d-sdr];
         }
