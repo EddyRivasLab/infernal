@@ -156,7 +156,7 @@ static ESL_OPTIONS options[] = {
   { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp,--p7wv-pad", "brief172: load WV pad from <f> (skip per-run calib)",  3 },
   { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "brief173: constant WV band half-width (no calibration)",     3 },
   { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "brief173: opt back in to per-node WV pad calibration",       3 },
-  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge", "band from k-mer best-window anchor (brief 026, opt-in)",     3 },
+  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge", "k-mer best-window anchor bands (brief 026)",                 3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },

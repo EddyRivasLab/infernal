@@ -1085,7 +1085,12 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   }
 
   /* 4. no usable window: signal caller to fall back to unbanded */
-  if (best_bin < 0 || best_on < KMW_MIN_CORRECT) { status = eslOK; goto CLEANUP; }
+  if (best_bin < 0 || best_on < KMW_MIN_CORRECT) {
+    fprintf(stderr, "#KMERANCHOR L=%d M=%d best_bin=NONE (no window >= floor)\n", L, M);
+    status = eslOK; goto CLEANUP;
+  }
+  fprintf(stderr, "#KMERANCHOR L=%d M=%d best_bin=%d model_range=[%d,%d] diag=%d on=%d ratio=%.3f\n",
+          L, M, best_bin, best_bin*KMW_BIN+1, ESL_MIN((best_bin+1)*KMW_BIN, M), best_center, best_on, best_ratio);
 
   /* 5. emit sparse pins on the best diagonal, expand outward with drift */
   ESL_ALLOC(i2k, sizeof(int) * (L+1));
@@ -1109,6 +1114,14 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
         dcur = center2;
       }
     }
+  }
+
+  /* report pin span (reach) */
+  {
+    int npin = 0, tmin = L+1, tmax = 0, i;
+    for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
+    fprintf(stderr, "#KMERANCHOR L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
+            L, M, npin, (npin? tmin:0), tmax, (double) npin / (double) L);
   }
 
   /* 6. pins -> bands via the UNMODIFIED consumer */
