@@ -56,7 +56,7 @@ main(int argc, char **argv)
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = NULL;
-  int            fmtcode = -1;	/* -1 = write the current default format (INFERNAL1/c); set by --outfmt */
+  int            fmtcode = -1;	/* -1 = write the current default format (INFERNAL1/d); set by --outfmt */
   int            status;
   char           errbuf[eslERRBUFSIZE];
 
@@ -89,16 +89,17 @@ main(int argc, char **argv)
   cmfile = esl_opt_GetArg(go, 1);
 
   /* --outfmt <s>: choose the 1.x output format for -a/-b. Default (NULL) writes
-   * the current default format (fmtcode -1 = INFERNAL1/c). 1/a and 1/b predate the
+   * the current default format (fmtcode -1 = INFERNAL1/d). 1/a and 1/b predate the
    * consensus pseudoknot annotation, so writing to them drops pknots (handled below).
+   * 1/c is a retired ambiguous dev format and cannot be selected.
    */
   {
     char *outfmt = esl_opt_GetString(go, "--outfmt");
     if (outfmt != NULL) {
       if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
       else if (strcmp(outfmt, "1/b") == 0) fmtcode = CM_FILE_1b;
-      else if (strcmp(outfmt, "1/c") == 0) fmtcode = CM_FILE_1c;
-      else    cm_Fail("No such output format code %s (try 1/a, 1/b, or 1/c).\n", outfmt);
+      else if (strcmp(outfmt, "1/d") == 0) fmtcode = CM_FILE_1d;
+      else    cm_Fail("No such output format code %s (try 1/a, 1/b, or 1/d).\n", outfmt);
     }
   }
 
@@ -169,7 +170,7 @@ main(int argc, char **argv)
 	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
       }
 
-      /* Feature B: the consensus pseudoknot annotation only exists in INFERNAL1/c.
+      /* Feature B: the consensus pseudoknot annotation only exists in INFERNAL1/d.
        * Converting to an older format that predates it (1/a, 1/b via --outfmt, or the
        * legacy v0.7-v1.0.2 -1 format) drops the pknots. For -a/-b targeting 1/a or 1/b
        * we must actually clear CMH_PKNOT and free cm->pknot, because the binary pknot

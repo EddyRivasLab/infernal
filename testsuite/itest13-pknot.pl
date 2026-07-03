@@ -1,8 +1,8 @@
 #! /usr/bin/perl
 
-# Test the INFERNAL1/c consensus-pseudoknot passthrough (Feature B):
+# Test the INFERNAL1/d consensus-pseudoknot passthrough (Feature B):
 # cmbuild capture/canonicalize/store, --refine preservation, the
-# canonical >=3-stem relabel, the 1c->1b back-convert, and the
+# canonical >=3-stem relabel, the 1d->1b back-convert, and the
 # malformed-node-line read validation. Covers the test gaps flagged by
 # review summary 007 (items 1, 3, 4). The binary older-format hardening
 # (item 2, the format gate) is covered by the companion C harness
@@ -43,12 +43,12 @@ sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s";
 cleanup();
 
 ######################################################################
-# Subtest 1: direct build of a pknot seed yields INFERNAL1/c, PKNOT yes.
+# Subtest 1: direct build of a pknot seed yields INFERNAL1/d, PKNOT yes.
 ######################################################################
 run("$builddir/src/cmbuild --wnone -F $tmppfx.direct.cm $pkhav > $tmppfx.log 2>&1",
     "subtest 1: cmbuild (direct) failed");
 my $first = first_line("$tmppfx.direct.cm");
-if ($first !~ /^INFERNAL1\/c\b/) { die "FAIL: subtest 1: direct build first line is '$first', expected INFERNAL1/c\n"; }
+if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 1: direct build first line is '$first', expected INFERNAL1/d\n"; }
 if (! file_has_header("$tmppfx.direct.cm", "PKNOT", "yes")) { die "FAIL: subtest 1: direct build missing 'PKNOT yes'\n"; }
 my $pk_direct = pknot_columns("$tmppfx.direct.cm");
 if ($pk_direct eq "") { die "FAIL: subtest 1: no pknot columns extracted from direct build\n"; }
@@ -113,7 +113,7 @@ my $pk_syn3_rt = pknot_columns("$tmppfx.syn3.re.cm");
 if ($pk_syn3 ne $pk_syn3_rt) { die "FAIL: subtest 5: synthetic 3-stem pknot columns changed across round-trip\n"; }
 
 ######################################################################
-# Subtest 6: 1c -> 1b back-convert drops pknots cleanly. cmconvert
+# Subtest 6: 1d -> 1b back-convert drops pknots cleanly. cmconvert
 # --outfmt 1/b writes INFERNAL1/b with NO PKNOT header and no pknot
 # letters on node lines, and the result re-reads cleanly.
 ######################################################################
@@ -128,7 +128,7 @@ run("$builddir/src/cmconvert -a $tmppfx.bconv.cm > $tmppfx.bconv.reread.cm 2>>$t
     "subtest 6: re-reading the 1b back-convert failed");
 
 ######################################################################
-# Subtest 7: a malformed 1c node line (non-alpha/non-dot pknot char in
+# Subtest 7: a malformed 1d node line (non-alpha/non-dot pknot char in
 # a MATP column) is rejected cleanly by the reader (Fix 2), not silently
 # stored. Corrupt the first MATP node line's left pknot column to '@'.
 ######################################################################
@@ -231,7 +231,7 @@ sub pknot_columns {
         next unless $line =~ /\[\s*MAT[PLR]\b/;
         my @f = split /\s+/, $line;
         shift @f if $f[0] eq "";
-        next if scalar(@f) < 14;            # 1c node line has 14 fields
+        next if scalar(@f) < 14;            # 1d node line has 14 fields
         $out .= "$f[2] $f[-2] $f[-1]\n";    # node index, left pknot, right pknot
     }
     close $fh;

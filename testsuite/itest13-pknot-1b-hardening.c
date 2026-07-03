@@ -4,7 +4,7 @@
  * (cm_file.c:879 write, :2421 read). Companion to itest13-pknot.pl.
  *
  * Guards the [CORRECTNESS-RISK] finding from review summary 007: the
- * binary pknot block must be FORMAT-AND-flag gated (>= CM_FILE_1c), not
+ * binary pknot block must be FORMAT-AND-flag gated (>= CM_FILE_1d), not
  * flag-gated alone. If it were flag-gated only, a CM that still carries
  * CMH_PKNOT but is written at an older format (1a/1b) would emit a
  * clen+2-byte pknot block that an older reader misreads as cm->map ->
@@ -19,8 +19,8 @@
  *       testsuite/itest13-pknot-1b-hardening.c \
  *       src/libinfernal.a hmmer/src/libhmmer.a easel/libeasel.a -lm -lpthread
  *
- * Usage:    ./itest13-1b-hardening <1c CM file with CMH_PKNOT set> <tmp prefix>
- * Example:  ./itest13-1b-hardening pkhav.1c.cm tmp13
+ * Usage:    ./itest13-1b-hardening <1d CM file with CMH_PKNOT set> <tmp prefix>
+ * Example:  ./itest13-1b-hardening pkhav.1d.cm tmp13
  *
  * Prints "ok\n" and exits 0 on success; prints "FAIL: ..." and exits
  * nonzero otherwise.
@@ -65,48 +65,48 @@ main(int argc, char **argv)
 {
   char          *cmfile;
   char          *pfx;
-  char           f_1b_set[1024], f_1b_clr[1024], f_1c_set[1024];
+  char           f_1b_set[1024], f_1b_clr[1024], f_1d_set[1024];
   char           errbuf[eslERRBUFSIZE];
   ESL_ALPHABET  *abc  = NULL;
   CM_FILE       *cmfp = NULL;
   CM_t          *cm   = NULL;
-  long           s_1b_set, s_1b_clr, s_1c_set, pkbytes;
+  long           s_1b_set, s_1b_clr, s_1d_set, pkbytes;
   int            status;
   int            nfail = 0;
 
-  if (argc != 3) { fprintf(stderr, "Usage: %s <1c CM file> <tmp prefix>\n", argv[0]); return 1; }
+  if (argc != 3) { fprintf(stderr, "Usage: %s <1d CM file> <tmp prefix>\n", argv[0]); return 1; }
   cmfile = argv[1];
   pfx    = argv[2];
   snprintf(f_1b_set, sizeof(f_1b_set), "%s.1b_flagset.cm",   pfx);
   snprintf(f_1b_clr, sizeof(f_1b_clr), "%s.1b_flagclear.cm", pfx);
-  snprintf(f_1c_set, sizeof(f_1c_set), "%s.1c_flagset.cm",   pfx);
+  snprintf(f_1d_set, sizeof(f_1d_set), "%s.1d_flagset.cm",   pfx);
 
-  /* Read the input 1c CM (must carry CMH_PKNOT). */
+  /* Read the input 1d CM (must carry CMH_PKNOT). */
   status = cm_file_Open(cmfile, NULL, FALSE, &cmfp, errbuf);
   if (status != eslOK) { fprintf(stderr, "FAIL: cannot open %s: %s\n", cmfile, errbuf); return 1; }
   status = cm_file_Read(cmfp, TRUE, &abc, &cm);
   if (status != eslOK) { fprintf(stderr, "FAIL: cannot read CM: %s\n", cmfp->errbuf); cm_file_Close(cmfp); return 1; }
   cm_file_Close(cmfp);
 
-  if (! (cm->flags & CMH_PKNOT)) { fprintf(stderr, "FAIL: input CM lacks CMH_PKNOT; need a 1c CM with pseudoknots\n"); goto DONE; }
+  if (! (cm->flags & CMH_PKNOT)) { fprintf(stderr, "FAIL: input CM lacks CMH_PKNOT; need a 1d CM with pseudoknots\n"); goto DONE; }
   if (cm->pknot == NULL)         { fprintf(stderr, "FAIL: CMH_PKNOT set but cm->pknot is NULL\n");                     goto DONE; }
   pkbytes = (long) cm->clen + 2;
 
   /* (a) write 1b binary WITH the flag still set (no cmconvert flag-clear) */
   if (write_bin(cm, CM_FILE_1b, f_1b_set) != eslOK) { fprintf(stderr, "FAIL: WriteBinary 1b (flag set)\n");  goto DONE; }
-  /* (b) write 1c binary WITH the flag set (the block SHOULD be present here) */
-  if (write_bin(cm, CM_FILE_1c, f_1c_set) != eslOK) { fprintf(stderr, "FAIL: WriteBinary 1c (flag set)\n");  goto DONE; }
+  /* (b) write 1d binary WITH the flag set (the block SHOULD be present here) */
+  if (write_bin(cm, CM_FILE_1d, f_1d_set) != eslOK) { fprintf(stderr, "FAIL: WriteBinary 1d (flag set)\n");  goto DONE; }
   /* (c) clear the flag, write 1b again (reference: definitely no block) */
   cm->flags &= ~CMH_PKNOT;
   if (write_bin(cm, CM_FILE_1b, f_1b_clr) != eslOK) { fprintf(stderr, "FAIL: WriteBinary 1b (flag clear)\n"); goto DONE; }
 
   s_1b_set = fsize(f_1b_set);
   s_1b_clr = fsize(f_1b_clr);
-  s_1c_set = fsize(f_1c_set);
-  if (s_1b_set < 0 || s_1b_clr < 0 || s_1c_set < 0) { fprintf(stderr, "FAIL: could not stat output files\n"); goto DONE; }
+  s_1d_set = fsize(f_1d_set);
+  if (s_1b_set < 0 || s_1b_clr < 0 || s_1d_set < 0) { fprintf(stderr, "FAIL: could not stat output files\n"); goto DONE; }
 
   printf("# clen=%d  pknot_block_bytes(clen+2)=%ld\n", cm->clen, pkbytes);
-  printf("# 1b_flagset=%ld  1b_flagclear=%ld  1c_flagset=%ld\n", s_1b_set, s_1b_clr, s_1c_set);
+  printf("# 1b_flagset=%ld  1b_flagclear=%ld  1d_flagset=%ld\n", s_1b_set, s_1b_clr, s_1d_set);
 
   /* CHECK 1 (the Fix-1 guarantee): a 1b write with the flag still set emits
    * NO pknot block, so its size equals the flag-cleared 1b write. (The flags
@@ -120,13 +120,13 @@ main(int argc, char **argv)
     printf("ok 1: 1b output size is independent of CMH_PKNOT -> no pknot block at 1b (format gate is load-bearing)\n");
   }
 
-  /* CHECK 2: the block IS emitted at 1c -- the 1c file is exactly clen+2 bytes
-   * larger than the 1b file (binary format has no other >=1c-gated field). */
-  if (s_1c_set - s_1b_set != pkbytes) {
-    printf("FAIL: 1c-minus-1b size delta = %ld, expected %ld (the pknot block)\n", s_1c_set - s_1b_set, pkbytes);
+  /* CHECK 2: the block IS emitted at 1d -- the 1d file is exactly clen+2 bytes
+   * larger than the 1b file (binary format has no other >=1d-gated field). */
+  if (s_1d_set - s_1b_set != pkbytes) {
+    printf("FAIL: 1d-minus-1b size delta = %ld, expected %ld (the pknot block)\n", s_1d_set - s_1b_set, pkbytes);
     nfail++;
   } else {
-    printf("ok 2: 1c output is exactly clen+2 (%ld) bytes larger than 1b -> pknot block present only at 1c\n", pkbytes);
+    printf("ok 2: 1d output is exactly clen+2 (%ld) bytes larger than 1b -> pknot block present only at 1d\n", pkbytes);
   }
 
   /* CHECK 3: the flag-set 1b file re-reads cleanly as 1b (read-side gate skips
@@ -149,7 +149,7 @@ main(int argc, char **argv)
     if (cmfp2 != NULL) cm_file_Close(cmfp2);
   }
 
-  remove(f_1b_set); remove(f_1b_clr); remove(f_1c_set);
+  remove(f_1b_set); remove(f_1b_clr); remove(f_1d_set);
 
  DONE:
   if (cm  != NULL) FreeCM(cm);
