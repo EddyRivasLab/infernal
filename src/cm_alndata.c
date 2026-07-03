@@ -548,6 +548,22 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	                               sq->dsq, sq->L, cm->p7bpad, local_nodepad,
 	                               0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
+	  } else if (cm->p7_use_kmerchain) {
+	    /* Brief 027: genome-scale k-mer seed-and-chain. Collect all seeds
+	     * genome-wide, chain by global colinearity, emit multi-segment pins
+	     * into the unmodified p7_pins2bands_nodepad. Opt-in. */
+	    _p7b_kind = "kmerchain";
+	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
+	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    /* ncells==0 => no usable chain; fall back to full unbanded Viterbi band
+	     * derivation (same shape as the kmeranchor ncells==0 fallback above). */
+	    if (status == eslOK && p7_ncells == 0) {
+	      _p7b_kind = "kmerchain->vitband";
+	      if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+	                               sq->dsq, sq->L, cm->p7bpad, local_nodepad,
+	                               0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    }
 	  } else if (cm->p7_use_pinbridge) {
 	    _p7b_kind = "pinbridge";
 	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,

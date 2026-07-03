@@ -1924,6 +1924,7 @@ typedef struct cm_s {
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
   int     p7_use_kmeranchor;   /* if TRUE, derive bands from a k-mer best-window anchor (--p7kmeranchor, brief 026) */
+  int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 027) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
   int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
@@ -3390,6 +3391,8 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* Brief 026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in). */
 extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* Brief 027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in). */
+extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* Brief 140: IBV band-derivation modes (enrich the per-row band using the
  * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
  * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */

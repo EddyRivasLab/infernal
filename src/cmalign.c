@@ -156,7 +156,8 @@ static ESL_OPTIONS options[] = {
   { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp,--p7wv-pad", "brief172: load WV pad from <f> (skip per-run calib)",  3 },
   { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "brief173: constant WV band half-width (no calibration)",     3 },
   { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "brief173: opt back in to per-node WV pad calibration",       3 },
-  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge", "k-mer best-window anchor bands (brief 026)",                 3 },
+  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge,--p7kmerchain", "k-mer best-window anchor bands (brief 026)",   3 },
+  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge,--p7kmeranchor", "genome-scale k-mer seed-and-chain bands (brief 027)", 3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -2989,6 +2990,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 169 */
   }
   if(esl_opt_GetBoolean(go, "--p7kmeranchor")) cm->p7_use_kmeranchor = TRUE;  /* brief 026 */
+  if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 027 */
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
     cm->p7_cykbands_pad = esl_opt_GetInteger(go, "--cykpad");
