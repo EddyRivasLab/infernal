@@ -76,3 +76,7 @@ testsuite/iss42.rf.sto
 
 # Misc generated temp files
 release-notes/*.md~
+# Phase 1: per-worktree generated/external data directory (symlinks to notebook)
+src/cm_fast_calibrate_data/
+# Phase 1: generated embedded-JSON header (built from production JSONs)
+src/cm_fast_calibrate_models.h

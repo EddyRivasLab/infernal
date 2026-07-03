@@ -404,6 +404,44 @@ found by searches during preparation of the Rfam database.
   parameters analogous to those described above in the \prog{ECMLC}
   line, except that these pertain to CM Inside scores in glocal mode.
 
+\item [\emprog{NONULL3\_LC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters needed for E-value calculations for the CM CYK algorithm
+  in local mode \emph{when the null3 composition-bias correction is
+  turned off} (the \prog{--nonull3} option to \prog{cmsearch} and
+  \prog{cmscan}). The fields are exactly analogous to those of the
+  \prog{ECMLC} line above, but they calibrate the null3-off score
+  distribution rather than the default null3-on one. This line, along
+  with the next three, with tags \prog{NONULL3\_GC}, \prog{NONULL3\_LI},
+  and \prog{NONULL3\_GI}, must either all be present or none of them
+  must be present. They are \textbf{optional}; a model that has only
+  the \prog{ECMxx} lines (the default null3-on set) is still fully
+  calibrated, and a \prog{--nonull3} search of such a model falls back
+  to the null3-on parameters with a warning. When present, the
+  null3-off set is used in place of the \prog{ECMxx} set only when
+  \prog{--nonull3} is in effect; the default (null3-on) search path is
+  unaffected. The tags deliberately do not begin with \prog{ECM} so
+  that parsers of older Infernal versions silently skip them. In the
+  \textbf{binary} CM file format the same four parameter sets are
+  written as an optional block immediately following the \prog{ECMxx}
+  (EXPTAIL) block; presence of this block advances the binary save-file
+  magic number to the \prog{v1c} code (the ASCII format identifier is
+  unchanged). An older Infernal binary cleanly rejects a \prog{v1c}
+  binary file rather than misreading it; binary files without the
+  null3-off block keep their previous magic number and remain readable
+  by older versions.
+
+\item [\emprog{NONULL3\_GC <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM CYK scores in
+  glocal mode.
+
+\item [\emprog{NONULL3\_LI <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM Inside scores in
+  local mode.
+
+\item [\emprog{NONULL3\_GI <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM Inside scores in
+  glocal mode.
+
 \item [\emprog{CM}] Flags the start of the main model
 section. \textbf{Mandatory.}
 

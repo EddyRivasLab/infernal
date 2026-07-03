@@ -3152,6 +3152,7 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
+extern ExpInfo_t **cm_pli_ExpInfoA    (const CM_PIPELINE *pli, const CM_t *cm);
 extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, int cur_clan_idx, ESL_KEYHASH *glocal_kh);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
