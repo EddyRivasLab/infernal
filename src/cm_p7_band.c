@@ -1178,6 +1178,290 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   goto CLEANUP;
 }
 
+/*****************************************************************
+ * Brief 027: k-mer seed-and-chain (minimap2/BLAST-style) guide-deriver for
+ * genome-scale (>40kb) anchoring.
+ *
+ * Where p7_Seq2BandsKmerAnchor (brief 026) picks the single best 200nt model
+ * window and seeds only from it -- which at genome scale (a) is fooled by
+ * repeat-driven false diagonals (HSV locks onto an internal repeat block) and
+ * (b) cannot span a genome from one anchor (HSV 41% / MPXV 88% coverage) --
+ * this deriver collects ALL k-mer seeds genome-wide and chains them by GLOBAL
+ * diagonal/colinearity consistency. A repeat block's seeds are internally
+ * consistent with each other but NOT colinear with the sequence-spanning chain
+ * elsewhere, so a standard colinear chaining DP structurally out-competes an
+ * isolated repeat block with a chain that covers far more of the genome.
+ *
+ * Reuses brief 026's k-mer index infrastructure unchanged (kmw_encode /
+ * kmw_kmer_cmp / kmw_lower_bound, k in {10,15,20,25,30}) and feeds the winning
+ * chain's pins through the SAME unmodified p7_pins2bands_nodepad consumer.
+ *****************************************************************/
+
+/* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned) */
+#define KMC_AVGK      15.0    /* representative k for gap-cost scaling            */
+#define KMC_MAX_QGAP  30000   /* max query gap between chained anchors (bounds DP)*/
+#define KMC_MAX_DGAP  10000   /* max implied-indel (|diagonal diff|) on one link  */
+#define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
+#define KMC_MIN_ANCHOR 20     /* min merged exact-match length to keep an anchor  */
+#define KMC_GAP_LIN   0.01    /* linear gap-cost coefficient                      */
+#define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
+#define KMC_HSV_RLO   9401    /* HSV known false-repeat block, model lo (brief026)*/
+#define KMC_HSV_RHI   9600    /*  ... model hi -- for the repeat-trap check       */
+
+/* a raw k-mer seed as a query interval on a diagonal: d = model_j - query_t,
+ * query positions [tlo,thi]. Point seeds are merged along a diagonal into
+ * maximal exact-match anchors (BLAST/minimap2-style) to collapse the multi-k
+ * and per-position seed redundancy before chaining. */
+typedef struct { int d, tlo, thi; } kmc_ival_t;
+
+/* sort intervals by diagonal d ascending, then query start tlo ascending. */
+static int kmc_ival_cmp(const void *a, const void *b) {
+  const kmc_ival_t *x = (const kmc_ival_t *)a, *y = (const kmc_ival_t *)b;
+  if (x->d   != y->d)   return (x->d   > y->d)   - (x->d   < y->d);
+  return (x->tlo > y->tlo) - (x->tlo < y->tlo);
+}
+
+/* sort anchors by query position t ascending, tiebreak model j ascending. */
+static int kmc_seed_cmp(const void *a, const void *b) {
+  const kmw_hit_t *x = (const kmw_hit_t *)a, *y = (const kmw_hit_t *)b;
+  if (x->t != y->t) return (x->t > y->t) - (x->t < y->t);
+  return (x->j > y->j) - (x->j < y->j);
+}
+
+/* Function: p7_Seq2BandsKmerChain()
+ * Date:     Brief 027, 2026-07-03
+ *
+ * Purpose:  Derive p7 bands from a genome-wide k-mer seed-and-chain instead of
+ *           a single best window. Collect all k-mer seeds (model vs target),
+ *           chain them by global colinearity/diagonal consistency (O(N^2)-with-
+ *           bounded-lookback DP), backtrack the single best chain, emit its
+ *           seeds as multi-segment sparse pins, then the UNMODIFIED
+ *           p7_pins2bands_nodepad.
+ *
+ * Args:     cm, errbuf, dsq, L, nodepad  - as p7_Seq2BandsKmerAnchor()
+ *           ret_i2k/ret_kmin/ret_kmax    - RETURN band arrays (caller frees)
+ *           ret_ncells - RETURN total banded cells (saturated int; 0 => no
+ *                        usable chain, caller falls back to unbanded Viterbi).
+ *
+ * Return:   eslOK on success (including the ncells=0 "no chain" case).
+ */
+int
+p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
+                      int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int status = eslOK;
+  int M = cm->fp7->M;
+  int K = cm->abc->K;
+  ESL_DSQ    *cons  = NULL;         /* model consensus, digital, cons[1..M]   */
+  kmc_ival_t *ival  = NULL;         /* raw seed intervals (all k), pre-merge  */
+  int         nival = 0, ivalcap = 0;
+  kmw_hit_t  *seeds = NULL;         /* merged maximal-exact-match anchors      */
+  int         nseed = 0, seedcap = 0;
+  int         nrawk[KMW_NK];        /* raw seed count per k (instrumentation)  */
+  kmw_kmer_t *idx   = NULL;         /* per-k target k-mer index               */
+  float      *f     = NULL;         /* best chain score ending at anchor i     */
+  int        *pre   = NULL;         /* chain predecessor                      */
+  int        *chain = NULL;         /* backtracked chain (anchor indices)      */
+  int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
+  int        *local_nodepad = NULL;
+  int ki, j, x, i;
+
+  *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
+  for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
+
+  /* 1. model consensus (argmax match emission per node) */
+  ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
+  cons[0] = eslDSQ_SENTINEL; cons[M+1] = eslDSQ_SENTINEL;
+  for (j = 1; j <= M; j++) {
+    int argmax = 0; float best = cm->fp7->mat[j][0];
+    for (x = 1; x < K; x++) if (cm->fp7->mat[j][x] > best) { best = cm->fp7->mat[j][x]; argmax = x; }
+    cons[j] = (ESL_DSQ) argmax;
+  }
+
+  /* 2. collect ALL k-mer seeds genome-wide as (diagonal, query-interval) records.
+   *    A raw genome-scale seed count is ~1e6 (measured: HSV 833k), dominated by
+   *    per-position and multi-k redundancy -- far too many for an O(N^2) chain.
+   *    We collect each seed as a query interval on its diagonal, then merge
+   *    contiguous/overlapping intervals per diagonal into maximal exact-match
+   *    anchors, which collapses the redundancy by ~1-2 orders of magnitude and
+   *    yields chain-anchors that are colinear match blocks. */
+  for (ki = 0; ki < KMW_NK; ki++) {
+    int k = kmw_kvals[ki], ntgt = 0, t, p;
+    if (k > M || k > L) continue;
+    ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
+    for (t = 1; t <= L - k + 1; t++) {
+      int ok; uint64_t code = kmw_encode(dsq, t, k, &ok);
+      if (ok) { idx[ntgt].code = code; idx[ntgt].pos = t; ntgt++; }
+    }
+    qsort(idx, ntgt, sizeof(kmw_kmer_t), kmw_kmer_cmp);
+    for (j = 1; j <= M - k + 1; j++) {
+      int ok; uint64_t code = kmw_encode(cons, j, k, &ok);
+      if (!ok) continue;
+      for (p = kmw_lower_bound(idx, ntgt, code); p < ntgt && idx[p].code == code; p++) {
+        int tt = idx[p].pos;
+        if (nival == ivalcap) {
+          int newcap = ivalcap ? ivalcap*2 : 8192;
+          void *tmp = realloc(ival, sizeof(kmc_ival_t) * newcap);
+          if (tmp == NULL) { status = eslEMEM; goto ERROR; }
+          ival = tmp; ivalcap = newcap;
+        }
+        ival[nival].d = j - tt; ival[nival].tlo = tt; ival[nival].thi = tt + k - 1;
+        nival++; nrawk[ki]++;
+      }
+    }
+    free(idx); idx = NULL;
+  }
+
+  /* merge intervals per diagonal into maximal exact-match anchors. Sort by
+   * (diagonal, tlo); an anchor extends while the next interval on the same
+   * diagonal overlaps or abuts (tlo <= cur_thi + 1). Keep anchors of length
+   * >= KMC_MIN_ANCHOR to drop isolated short (mostly spurious) matches. */
+  if (nival > 0) {
+    qsort(ival, nival, sizeof(kmc_ival_t), kmc_ival_cmp);
+    int r = 0;
+    while (r < nival) {
+      int d = ival[r].d, tlo = ival[r].tlo, thi = ival[r].thi;
+      int s = r + 1;
+      while (s < nival && ival[s].d == d && ival[s].tlo <= thi + 1) {
+        if (ival[s].thi > thi) thi = ival[s].thi;
+        s++;
+      }
+      int len = thi - tlo + 1;
+      if (len >= KMC_MIN_ANCHOR) {
+        if (nseed == seedcap) {
+          int newcap = seedcap ? seedcap*2 : 4096;
+          void *tmp = realloc(seeds, sizeof(kmw_hit_t) * newcap);
+          if (tmp == NULL) { status = eslEMEM; goto ERROR; }
+          seeds = tmp; seedcap = newcap;
+        }
+        seeds[nseed].j = tlo + d; seeds[nseed].t = tlo; seeds[nseed].k = len;
+        nseed++;
+      }
+      r = s;
+    }
+  }
+  fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
+          L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, KMC_MIN_ANCHOR);
+  free(ival); ival = NULL;
+
+  if (nseed == 0) {   /* no anchors: caller falls back to unbanded Viterbi */
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d chain=NONE (no anchors)\n", L, M);
+    status = eslOK; goto CLEANUP;
+  }
+
+  /* 3. colinear chaining DP. Sort anchors by query t (tiebreak model j). For
+   *    anchor i, the best predecessor j has t_j<t_i and model_j<model_i
+   *    (strictly colinear); link score = f[j] + overlap-adjusted match(i) -
+   *    gap_cost, where gap_cost penalizes the implied indel |diag_i - diag_j|
+   *    (minimap2-style). Lookback is bounded by KMC_MAX_QGAP (anchors sorted by
+   *    t => break once exceeded) and by KMC_MAX_ITER predecessors examined, so
+   *    the DP is O(N * min(W, MAX_ITER)). */
+  qsort(seeds, nseed, sizeof(kmw_hit_t), kmc_seed_cmp);
+  ESL_ALLOC(f,   sizeof(float) * nseed);
+  ESL_ALLOC(pre, sizeof(int)   * nseed);
+  int   best_end = 0;
+  float best_sc  = -1.0;
+  long   nlink    = 0;   /* DP work counter (instrumentation) */
+  for (i = 0; i < nseed; i++) {
+    int   ti = seeds[i].t, ji = seeds[i].j, di = ji - ti;
+    float fi = (float) seeds[i].k;   /* base weight = chain-start contribution */
+    int   pi = -1;
+    int   jj, iter = 0;
+    for (jj = i-1; jj >= 0; jj--) {
+      int qgap = ti - seeds[jj].t;
+      if (qgap > KMC_MAX_QGAP) break;   /* sorted by t: nothing earlier is closer */
+      if (++iter > KMC_MAX_ITER) break; /* bound predecessors examined per anchor */
+      if (qgap <= 0) continue;          /* need strictly increasing query pos */
+      int rgap = ji - seeds[jj].j;
+      if (rgap <= 0) continue;          /* need strictly increasing model pos (colinear) */
+      int dgap = di - (seeds[jj].j - seeds[jj].t); if (dgap < 0) dgap = -dgap;
+      if (dgap > KMC_MAX_DGAP) continue;
+      nlink++;
+      int   mn    = qgap < rgap ? qgap : rgap;
+      int   match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted */
+      float gapc  = (dgap > 0) ? (KMC_GAP_LIN*KMC_AVGK*(double)dgap + KMC_GAP_LOG*log2((double)dgap)) : 0.0;
+      float sc    = f[jj] + (float) match - gapc;
+      if (sc > fi) { fi = sc; pi = jj; }
+    }
+    f[i] = fi; pre[i] = pi;
+    if (fi > best_sc) { best_sc = fi; best_end = i; }
+  }
+
+  /* 4. backtrack the single best chain */
+  ESL_ALLOC(chain, sizeof(int) * nseed);
+  int nc = 0;
+  for (i = best_end; i != -1; i = pre[i]) chain[nc++] = i;   /* reversed (end->start) */
+  /* chain[0..nc-1] is end..start; reverse to start..end */
+  for (i = 0; i < nc/2; i++) { int tmp = chain[i]; chain[i] = chain[nc-1-i]; chain[nc-1-i] = tmp; }
+
+  /* 5. chain diagnostics + HSV repeat-trap check (brief 027 central question) */
+  {
+    int cs = chain[0], ce = chain[nc-1];
+    int mlo = seeds[cs].j, mhi = seeds[ce].j + seeds[ce].k - 1;
+    int qlo = seeds[cs].t, qhi = seeds[ce].t + seeds[ce].k - 1;
+    int nrep = 0, c;   /* chain anchors OVERLAPPING the HSV repeat block */
+    for (c = 0; c < nc; c++) {
+      int aj = seeds[chain[c]].j, ajx = seeds[chain[c]].j + seeds[chain[c]].k - 1;
+      if (aj <= KMC_HSV_RHI && ajx >= KMC_HSV_RLO) nrep++;
+    }
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] "
+                    "repeat_anchors_in[%d,%d]=%d nlink=%ld\n",
+            L, M, nc, best_sc, mlo, mhi, qlo, qhi, KMC_HSV_RLO, KMC_HSV_RHI, nrep, nlink);
+  }
+
+  /* 6. emit multi-segment pins from every seed in the winning chain */
+  ESL_ALLOC(i2k, sizeof(int) * (L+1));
+  esl_vec_ISet(i2k, L+1, -1);
+  {
+    int c, o;
+    for (c = 0; c < nc; c++) {
+      int jj = seeds[chain[c]].j, tt = seeds[chain[c]].t, kk = seeds[chain[c]].k;
+      for (o = 0; o < kk; o++) {
+        int T = tt + o, J = jj + o;
+        if (T >= 1 && T <= L && J >= 1 && J <= M && i2k[T] == -1) i2k[T] = J;
+      }
+    }
+  }
+
+  /* report pin span (reach) -- directly comparable to brief 026's cover= */
+  {
+    int npin = 0, tmin = L+1, tmax = 0;
+    for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
+            L, M, npin, (npin? tmin:0), tmax, (double) npin / (double) L);
+  }
+
+  /* 7. pins -> bands via the UNMODIFIED consumer */
+  if (nodepad == NULL) {
+    int k2;
+    ESL_ALLOC(local_nodepad, sizeof(int) * (M+1));
+    for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
+    nodepad = local_nodepad;
+  }
+  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
+
+  *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
+  i2k = kmin = kmax = NULL;   /* handed off to caller */
+
+ CLEANUP:
+  if (idx)           free(idx);
+  if (ival)          free(ival);
+  if (seeds)         free(seeds);
+  if (f)             free(f);
+  if (pre)           free(pre);
+  if (chain)         free(chain);
+  if (cons)          free(cons);
+  if (local_nodepad) free(local_nodepad);
+  if (i2k)           free(i2k);
+  if (kmin)          free(kmin);
+  if (kmax)          free(kmax);
+  return status;
+
+ ERROR:
+  if (errbuf != NULL) snprintf(errbuf, eslERRBUFSIZE, "p7_Seq2BandsKmerChain() memory error");
+  goto CLEANUP;
+}
+
 #if 0
   /* if we want to get imin/imax instead of kmin/kmax */
   int in = 1;
