@@ -1202,7 +1202,11 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
 #define KMC_MAX_QGAP  30000   /* max query gap between chained anchors (bounds DP)*/
 #define KMC_MAX_DGAP  10000   /* max implied-indel (|diagonal diff|) on one link  */
 #define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
-#define KMC_MIN_ANCHOR 20     /* min merged exact-match length to keep an anchor  */
+#define KMC_MIN_ANCHOR 10     /* min merged exact-match length to keep an anchor  */
+                               /* brief 029: lowered 20->10 (=smallest indexed k) to */
+                               /* admit far more anchors on sparse-anchor genomes    */
+                               /* (MPXV: 56->79 chain anchors, avg_bw 1223->279.6,   */
+                               /* peak RSS 12.95G->4.73G), zero accuracy cost.       */
 #define KMC_GAP_LIN   0.01    /* linear gap-cost coefficient                      */
 #define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
 #define KMC_HSV_RLO   9401    /* HSV known false-repeat block, model lo (brief026)*/
