@@ -1,0 +1,272 @@
+======================================================================
+### bps0_notrunc :  rl2-data/matl300.cm  x  rl2-data/el300.fa   [opts: --notrunc --fixedtau --tau 1e-7 --mxsize 16384]  (LOCAL, default config)
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     rl2-data/matl300.cm
+# sequence file:                               rl2-data/el300.fa
+# CM name:                                     matl300
+# saving alignment to file:                    rl6-data/bps0_notrunc_ck.sto
+# truncated sequence alignment mode:           off
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                 running time (s)                 
+#                                                                          -------------------------------          
+# idx  seq name         length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  pre150_polyG150     300        1      152     no    150.55   0.846       0.01       0.01       0.02      3.89
+    2  perfect300          300        1      300     no    343.37   0.986       0.01       0.01       0.03      3.43
+#
+# CPU time: 0.07u 0.00s 00:00:00.07 Elapsed: 00:00:00.05
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     rl2-data/matl300.cm
+# sequence file:                               rl2-data/el300.fa
+# CM name:                                     matl300
+# saving alignment to file:                    rl6-data/bps0_notrunc_st.sto
+# truncated sequence alignment mode:           off
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                 running time (s)                 
+#                                                                          -------------------------------          
+# idx  seq name         length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  pre150_polyG150     300        1      152     no    150.55   0.846       0.01       0.01       0.01      3.89
+    2  perfect300          300        1      300     no    343.37   0.986       0.01       0.01       0.01      3.43
+#
+# CPU time: 0.04u 0.01s 00:00:00.05 Elapsed: 00:00:00.04
+  exit codes: ckpt=0 stock=0
+  --- engine engaged (verbose):
+      # cm_CheckptAlignHB engaged: M=904 L=300 B=30 Z=150.5465  CM-DP peak=0.16 Mb  full-cube(2x)=0.94 Mb  win~5.9x
+      # cm_CheckptAlignHB engaged: M=904 L=300 B=30 Z=343.3680  CM-DP peak=0.12 Mb  full-cube(2x)=0.71 Mb  win~6.0x
+  RESULT: BYTE-IDENTICAL to stock
+======================================================================
+### bps0_trunc :  rl2-data/matl300.cm  x  rl2-data/el300.fa   [opts:  --fixedtau --tau 1e-7 --mxsize 16384]  (LOCAL, default config)
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     rl2-data/matl300.cm
+# sequence file:                               rl2-data/el300.fa
+# CM name:                                     matl300
+# saving alignment to file:                    rl6-data/bps0_trunc_ck.sto
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                 running time (s)                 
+#                                                                          -------------------------------          
+# idx  seq name         length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  pre150_polyG150     300        1      241     3'    139.99   0.492       0.01       3.19       3.20    195.51
+    2  perfect300          300        1      300     no    327.94   0.967       0.01       0.02       0.03      4.99
+#
+# CPU time: 3.21u 0.03s 00:00:03.24 Elapsed: 00:00:03.24
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     rl2-data/matl300.cm
+# sequence file:                               rl2-data/el300.fa
+# CM name:                                     matl300
+# saving alignment to file:                    rl6-data/bps0_trunc_st.sto
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                 running time (s)                 
+#                                                                          -------------------------------          
+# idx  seq name         length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  pre150_polyG150     300        1      241     3'    139.99   0.492       0.01       2.51       2.53    195.51
+    2  perfect300          300        1      300     no    327.94   0.967       0.01       0.02       0.03      4.99
+#
+# CPU time: 2.46u 0.13s 00:00:02.59 Elapsed: 00:00:02.57
+  exit codes: ckpt=0 stock=0
+  --- engine engaged (verbose):
+      # cm_CheckptTrAlignHB engaged: M=904 L=300 B=30 mode=J Z=327.9417  CM-DP peak=0.12 Mb  full-cube(2x)=1.20 Mb  win~10.3x
+      # cm_CheckptTrAlignHB engaged: M=904 L=300 B=30 mode=L Z=139.9853  CM-DP peak=16.54 Mb  full-cube(2x)=157.04 Mb  win~9.5x
+  RESULT: BYTE-IDENTICAL to stock
+======================================================================
+### struct_notrunc :  ../testsuite/rnaseP-eubact.c.cm  x  rl4-data/rnasep_full.fa   [opts: --notrunc --fixedtau --tau 1e-7 --mxsize 16384]  (LOCAL, default config)
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     ../testsuite/rnaseP-eubact.c.cm
+# sequence file:                               rl4-data/rnasep_full.fa
+# CM name:                                     rnaseP-eubact
+# saving alignment to file:                    rl6-data/struct_notrunc_ck.sto
+# truncated sequence alignment mode:           off
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                       running time (s)                 
+#                                                                                -------------------------------          
+# idx  seq name               length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  rnaseP-eubact-sample1     304        1      307     no    134.79   0.949       0.01       0.07       0.08      8.63
+    2  rnaseP-eubact-sample2     300        1      307     no    106.71   0.940       0.01       0.14       0.15     12.18
+    3  rnaseP-eubact-sample3     289        1      307     no     88.58   0.931       0.01       0.15       0.16     12.27
+    4  rnaseP-eubact-sample4     295        1      307     no    152.13   0.913       0.01       0.05       0.06      5.44
+    5  rnaseP-eubact-sample5     298        1      307     no    107.29   0.932       0.01       0.08       0.10      8.14
+    6  rnaseP-eubact-sample6     298        1      307     no    124.17   0.945       0.01       0.06       0.06      7.68
+    7  rnaseP-eubact-sample7     295        1      307     no    110.57   0.938       0.01       0.10       0.11     11.57
+    8  rnaseP-eubact-sample8     318        1      306     no    172.03   0.970       0.01       0.06       0.07      5.98
+#
+# CPU time: 0.78u 0.03s 00:00:00.81 Elapsed: 00:00:00.27
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     ../testsuite/rnaseP-eubact.c.cm
+# sequence file:                               rl4-data/rnasep_full.fa
+# CM name:                                     rnaseP-eubact
+# saving alignment to file:                    rl6-data/struct_notrunc_st.sto
+# truncated sequence alignment mode:           off
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                       running time (s)                 
+#                                                                                -------------------------------          
+# idx  seq name               length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  rnaseP-eubact-sample1     304        1      307     no    136.00   0.929       0.02       0.05       0.07      8.63
+    2  rnaseP-eubact-sample2     300        1      307     no    110.30   0.883       0.02       0.09       0.11     12.18
+    3  rnaseP-eubact-sample3     289        1      307     no     88.91   0.923       0.01       0.08       0.09     12.27
+    4  rnaseP-eubact-sample4     295        1      307     no    152.14   0.913       0.02       0.02       0.04      5.44
+    5  rnaseP-eubact-sample5     298        1      307     no    107.31   0.931       0.01       0.07       0.08      8.14
+    6  rnaseP-eubact-sample6     298        1      307     no    124.70   0.943       0.01       0.05       0.06      7.68
+    7  rnaseP-eubact-sample7     295        1      307     no    112.07   0.912       0.01       0.07       0.07     11.57
+    8  rnaseP-eubact-sample8     318        1      306     no    172.99   0.965       0.02       0.03       0.05      5.98
+#
+# CPU time: 0.54u 0.03s 00:00:00.57 Elapsed: 00:00:00.19
+  exit codes: ckpt=0 stock=0
+  --- engine engaged (verbose):
+      # cm_CheckptPostAlignHB: M=960 L=295 B=31 Z=152.1283  CM-DP peak=0.51 Mb  full-IO-cube(2x)=2.18 Mb  win~4.2x  emit_mx=0.05 Mb  root-cells(1x)=0.02 Mb  Bstate-cells(1x)=0.01 Mb
+      # cm_CheckptPostAlignHB: M=960 L=304 B=31 Z=134.7927  CM-DP peak=1.11 Mb  full-IO-cube(2x)=4.69 Mb  win~4.2x  emit_mx=0.08 Mb  root-cells(1x)=0.04 Mb  Bstate-cells(1x)=0.01 Mb
+      # cm_CheckptOptAccAlignHB: M=960 L=295 B=31 pp=0.91360  OA-DP peak=0.50 Mb  full-OA-cube(1x)=1.09 Mb  win~2.2x  emit_mx=0.05 Mb  root-cells(1x)=0.02 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=295 (local, non-truncated, bps>0)
+      # cm_CheckptOptAccAlignHB: M=960 L=304 B=31 pp=0.94903  OA-DP peak=1.10 Mb  full-OA-cube(1x)=2.34 Mb  win~2.1x  emit_mx=0.08 Mb  root-cells(1x)=0.04 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=304 (local, non-truncated, bps>0)
+      # cm_CheckptPostAlignHB: M=960 L=300 B=31 Z=106.7111  CM-DP peak=1.60 Mb  full-IO-cube(2x)=7.45 Mb  win~4.6x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb  Bstate-cells(1x)=0.03 Mb
+      # cm_CheckptPostAlignHB: M=960 L=289 B=31 Z=88.5793  CM-DP peak=1.62 Mb  full-IO-cube(2x)=7.59 Mb  win~4.7x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb  Bstate-cells(1x)=0.03 Mb
+      # cm_CheckptPostAlignHB: M=960 L=298 B=31 Z=124.1682  CM-DP peak=0.88 Mb  full-IO-cube(2x)=3.91 Mb  win~4.4x  emit_mx=0.07 Mb  root-cells(1x)=0.04 Mb  Bstate-cells(1x)=0.01 Mb
+      # cm_CheckptPostAlignHB: M=960 L=298 B=31 Z=107.2872  CM-DP peak=0.92 Mb  full-IO-cube(2x)=4.25 Mb  win~4.6x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.02 Mb
+      # cm_CheckptOptAccAlignHB: M=960 L=298 B=31 pp=0.94496  OA-DP peak=0.87 Mb  full-OA-cube(1x)=1.95 Mb  win~2.2x  emit_mx=0.07 Mb  root-cells(1x)=0.04 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=298 (local, non-truncated, bps>0)
+      # cm_CheckptOptAccAlignHB: M=960 L=300 B=31 pp=0.94014  OA-DP peak=1.62 Mb  full-OA-cube(1x)=3.72 Mb  win~2.3x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=300 (local, non-truncated, bps>0)
+      # cm_CheckptOptAccAlignHB: M=960 L=298 B=31 pp=0.93203  OA-DP peak=0.92 Mb  full-OA-cube(1x)=2.12 Mb  win~2.3x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=298 (local, non-truncated, bps>0)
+      # cm_CheckptOptAccAlignHB: M=960 L=289 B=31 pp=0.93151  OA-DP peak=1.62 Mb  full-OA-cube(1x)=3.79 Mb  win~2.3x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=289 (local, non-truncated, bps>0)
+      # cm_CheckptPostAlignHB: M=960 L=318 B=31 Z=172.0344  CM-DP peak=0.57 Mb  full-IO-cube(2x)=2.53 Mb  win~4.4x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb  Bstate-cells(1x)=0.01 Mb
+      # cm_CheckptOptAccAlignHB: M=960 L=318 B=31 pp=0.97079  OA-DP peak=0.56 Mb  full-OA-cube(1x)=1.27 Mb  win~2.2x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=318 (local, non-truncated, bps>0)
+      # cm_CheckptPostAlignHB: M=960 L=295 B=31 Z=110.5738  CM-DP peak=1.49 Mb  full-IO-cube(2x)=7.03 Mb  win~4.7x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb  Bstate-cells(1x)=0.02 Mb
+      # cm_CheckptOptAccAlignHB: M=960 L=295 B=31 pp=0.93885  OA-DP peak=1.47 Mb  full-OA-cube(1x)=3.52 Mb  win~2.4x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb
+      # rung-3 checkpointed structured OptAcc engaged: M=960 L=295 (local, non-truncated, bps>0)
+  RESULT: DIFFERS from stock (expected for structured/pin cases) — quantifying:
+      diff-lines: 50
+======================================================================
+### struct_trunc :  ../testsuite/rnaseP-eubact.c.cm  x  rl4-data/rnasep_full.fa   [opts:  --fixedtau --tau 1e-7 --mxsize 16384]  (LOCAL, default config)
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     ../testsuite/rnaseP-eubact.c.cm
+# sequence file:                               rl4-data/rnasep_full.fa
+# CM name:                                     rnaseP-eubact
+# saving alignment to file:                    rl6-data/struct_trunc_ck.sto
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                       running time (s)                 
+#                                                                                -------------------------------          
+# idx  seq name               length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  rnaseP-eubact-sample1     304        1      307     no    119.23   0.949       0.01       0.27       0.28     11.11
+    2  rnaseP-eubact-sample2     300        1      295     3'    100.94   0.929       0.01       0.74       0.75     21.95
+    3  rnaseP-eubact-sample3     289        1      307     no     73.02   0.931       0.01       0.49       0.50     19.82
+    4  rnaseP-eubact-sample4     295        1      307     no    136.62   0.913       0.01       0.15       0.16      6.66
+    5  rnaseP-eubact-sample5     298        1      306     3'     96.18   0.932       0.01       0.44       0.45     10.24
+    6  rnaseP-eubact-sample6     298        1      307     no    108.61   0.945       0.01       0.22       0.23     10.19
+    7  rnaseP-eubact-sample7     295        1      307     no     95.04   0.938       0.01       0.47       0.48     15.76
+    8  rnaseP-eubact-sample8     318        1      306     3'    162.61   0.972       0.01       0.29       0.30      7.57
+#
+# CPU time: 3.13u 0.03s 00:00:03.15 Elapsed: 00:00:01.02
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     ../testsuite/rnaseP-eubact.c.cm
+# sequence file:                               rl4-data/rnasep_full.fa
+# CM name:                                     rnaseP-eubact
+# saving alignment to file:                    rl6-data/struct_trunc_st.sto
+# maximum total DP matrix size set to:         16384.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                       running time (s)                 
+#                                                                                -------------------------------          
+# idx  seq name               length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  rnaseP-eubact-sample1     304        1      307     no    120.44   0.929       0.01       0.12       0.13     11.11
+    2  rnaseP-eubact-sample2     300        1      295     3'    102.17   0.905       0.01       0.29       0.30     21.95
+    3  rnaseP-eubact-sample3     289        1      307     no     73.34   0.923       0.01       0.38       0.39     19.82
+    4  rnaseP-eubact-sample4     295        1      307     no    136.63   0.913       0.01       0.08       0.09      6.66
+    5  rnaseP-eubact-sample5     298        1      306     3'     96.21   0.931       0.01       0.15       0.17     10.24
+    6  rnaseP-eubact-sample6     298        1      307     no    109.14   0.942       0.01       0.10       0.11     10.19
+    7  rnaseP-eubact-sample7     295        1      307     no     96.54   0.912       0.01       0.19       0.20     15.76
+    8  rnaseP-eubact-sample8     318        1      306     3'    163.57   0.967       0.01       0.09       0.10      7.57
+#
+# CPU time: 1.46u 0.05s 00:00:01.51 Elapsed: 00:00:00.47
+  exit codes: ckpt=0 stock=0
+  --- engine engaged (verbose):
+      # cm_CheckptTrPostAlignHB: M=960 L=295 B=31 mode=J Z=136.6192  CM-DP peak=0.56 Mb  full-IO-cube(2x)=2.42 Mb  win~4.3x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb  Bstate-cells(1x)=0.01 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=295 B=31 mode=J pp=0.91317  OA-DP peak=0.55 Mb  full-OA-cube(1x)=1.21 Mb  win~2.2x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=295 mode=J (local, truncated, bps>0)
+      # cm_CheckptTrPostAlignHB: M=960 L=304 B=31 mode=J Z=119.2294  CM-DP peak=1.38 Mb  full-IO-cube(2x)=5.87 Mb  win~4.3x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.02 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=304 B=31 mode=J pp=0.94900  OA-DP peak=1.36 Mb  full-OA-cube(1x)=2.93 Mb  win~2.2x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=304 mode=J (local, truncated, bps>0)
+      # cm_CheckptTrPostAlignHB: M=960 L=289 B=31 mode=J Z=73.0155  CM-DP peak=2.65 Mb  full-IO-cube(2x)=12.92 Mb  win~4.9x  emit_mx=0.14 Mb  root-cells(1x)=0.13 Mb  Bstate-cells(1x)=0.05 Mb
+      # cm_CheckptTrPostAlignHB: M=960 L=298 B=31 mode=J Z=108.6054  CM-DP peak=1.21 Mb  full-IO-cube(2x)=5.13 Mb  win~4.2x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.02 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=289 B=31 mode=J pp=0.93148  OA-DP peak=2.64 Mb  full-OA-cube(1x)=6.46 Mb  win~2.4x  emit_mx=0.14 Mb  root-cells(1x)=0.13 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=289 mode=J (local, truncated, bps>0)
+      # cm_CheckptTrOptAccAlignHB: M=960 L=298 B=31 mode=J pp=0.94493  OA-DP peak=1.18 Mb  full-OA-cube(1x)=2.56 Mb  win~2.2x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=298 mode=J (local, truncated, bps>0)
+      # cm_CheckptTrPostAlignHB: M=960 L=298 B=31 mode=L Z=96.1814  CM-DP peak=1.10 Mb  full-IO-cube(2x)=5.14 Mb  win~4.7x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.03 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=298 B=31 mode=L pp=0.93183  OA-DP peak=1.11 Mb  full-OA-cube(1x)=2.57 Mb  win~2.3x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=298 mode=L (local, truncated, bps>0)
+      # cm_CheckptTrPostAlignHB: M=960 L=300 B=31 mode=L Z=100.9398  CM-DP peak=3.32 Mb  full-IO-cube(2x)=14.17 Mb  win~4.3x  emit_mx=0.13 Mb  root-cells(1x)=0.12 Mb  Bstate-cells(1x)=0.05 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=300 B=31 mode=L pp=0.92933  OA-DP peak=3.27 Mb  full-OA-cube(1x)=7.08 Mb  win~2.2x  emit_mx=0.13 Mb  root-cells(1x)=0.12 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=300 mode=L (local, truncated, bps>0)
+      # cm_CheckptTrPostAlignHB: M=960 L=318 B=31 mode=L Z=162.6107  CM-DP peak=0.66 Mb  full-IO-cube(2x)=2.93 Mb  win~4.4x  emit_mx=0.06 Mb  root-cells(1x)=0.03 Mb  Bstate-cells(1x)=0.01 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=318 B=31 mode=L pp=0.97205  OA-DP peak=0.65 Mb  full-OA-cube(1x)=1.46 Mb  win~2.2x  emit_mx=0.06 Mb  root-cells(1x)=0.03 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=318 mode=L (local, truncated, bps>0)
+      # cm_CheckptTrPostAlignHB: M=960 L=295 B=31 mode=J Z=95.0411  CM-DP peak=2.13 Mb  full-IO-cube(2x)=9.62 Mb  win~4.5x  emit_mx=0.12 Mb  root-cells(1x)=0.09 Mb  Bstate-cells(1x)=0.03 Mb
+      # cm_CheckptTrOptAccAlignHB: M=960 L=295 B=31 mode=J pp=0.93875  OA-DP peak=2.10 Mb  full-OA-cube(1x)=4.81 Mb  win~2.3x  emit_mx=0.12 Mb  root-cells(1x)=0.09 Mb
+      # rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=295 mode=J (local, truncated, bps>0)
+  RESULT: DIFFERS from stock (expected for structured/pin cases) — quantifying:
+      diff-lines: 28
+======================================================================
+DONE

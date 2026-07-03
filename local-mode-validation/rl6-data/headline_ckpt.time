@@ -1,0 +1,27 @@
+#HDBANDS cm_M=10559 hd_needed=345768 (0.0028 GB for hdmin+hdmax)
+# cm_CheckptTrPostAlignHB: M=10559 L=2890 B=103 mode=R Z=673.9114  CM-DP peak=21.62 Mb  full-IO-cube(2x)=76.75 Mb  win~3.6x  emit_mx=1.13 Mb  root-cells(1x)=0.51 Mb  Bstate-cells(1x)=0.18 Mb
+# cm_CheckptTrOptAccAlignHB: M=10559 L=2890 B=103 mode=R pp=0.97708  OA-DP peak=23.32 Mb  full-OA-cube(1x)=38.38 Mb  win~1.6x  emit_mx=1.13 Mb  root-cells(1x)=0.51 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=10559 L=2890 mode=R (local, truncated, bps>0)
+	Command being timed: "/net/intdev/oblast01/infernal/git/EddyRivasLab/infernal-local-ckpt/src/cmalign --ckpt --cpu 0 --mxsize 60000 -o /net/intdev/oblast01/infernal/git/EddyRivasLab/infernal-local-ckpt/local-mode-validation/rl6-data/headline_ckpt.sto /net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/stage0_cyk_baseline/LSU_rRNA_eukarya.cm /net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/subagent-work/040/seqs/CH479288.fa"
+	User time (seconds): 7.42
+	System time (seconds): 0.16
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:07.66
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 527716
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 6
+	Minor (reclaiming a frame) page faults: 94682
+	Voluntary context switches: 59
+	Involuntary context switches: 15
+	Swaps: 0
+	File system inputs: 11072
+	File system outputs: 88
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

@@ -1,0 +1,26 @@
+#HDBANDS cm_M=22966 hd_needed=137791 (0.0011 GB for hdmin+hdmax)
+#TRCKPT-DBG entry: M=22966 L=7654  ROOT_S j[7649..7654]  d[7647..7654]@jp_0=5  Jv0=1 Lv0=0 Rv0=0
+# cm_CheckptTrAlignHB engaged: M=22966 L=7654 B=152 mode=J Z=8380.3975  CM-DP peak=0.39 Mb  full-cube(2x)=12.10 Mb  win~31.1x
+	Command being timed: "/net/intdev/oblast01/infernal/git/EddyRivasLab/infernal-local-ckpt/src/cmalign --ckpt --cpu 0 --mxsize 60000 -o /net/intdev/oblast01/infernal/git/EddyRivasLab/infernal-local-ckpt/local-mode-validation/rl6-data/hg_trunc_ckpt.sto /net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/segment-census/cms/vadr/calici-NC_001959.cm /net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/checkpoint-proto/genomes/NC_001959.fa"
+	User time (seconds): 3.68
+	System time (seconds): 0.77
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:04.50
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 2863220
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 5
+	Minor (reclaiming a frame) page faults: 476840
+	Voluntary context switches: 56
+	Involuntary context switches: 7
+	Swaps: 0
+	File system inputs: 16752
+	File system outputs: 88
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

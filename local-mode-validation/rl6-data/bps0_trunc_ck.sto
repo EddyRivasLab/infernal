@@ -1,0 +1,24 @@
+# STOCKHOLM 1.0
+#=GF AU Infernal 1.2dev
+
+pre150_polyG150         ACGUACGUACGUACGUACGU------------------------------------------------------------------------------------ACG----UACGUACGUACGUACGUACGUACGUACGUACGUACGUAC----GUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGU
+#=GR pre150_polyG150 PP 00000000000000000000....................................................................................000....000000000000000000000000000000000000000....0000000000000000000000000000000000000000000000
+perfect300              ACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGU
+#=GR perfect300      PP 9*******************************************************************************************************************************************************************************************************
+#=GC SS_cons            ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+#=GC RF                 ACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGU
+
+pre150_polyG150         ACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUA-----------------------------------------------------------cggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+#=GR pre150_polyG150 PP 00000000000000000000000000000000000000000...........................................................1134556677788889999999999***************************************************************************
+perfect300              ACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGU....................................................................................................
+#=GR perfect300      PP ****************************************************************************************************....................................................................................................
+#=GC SS_cons            ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#=GC RF                 ACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGU~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+pre150_polyG150         ggggggggggggggggggggggggggggggggggggggggggggggggggg
+#=GR pre150_polyG150 PP ***************************************************
+perfect300              ...................................................
+#=GR perfect300      PP ...................................................
+#=GC SS_cons            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#=GC RF                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//

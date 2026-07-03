@@ -1,0 +1,6 @@
+#HDBANDS cm_M=904 hd_needed=1052 (0.0000 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=5421 (0.0000 GB for hdmin+hdmax)
+# cm_CheckptAlignHB engaged: M=904 L=300 B=30 Z=150.5465  CM-DP peak=0.16 Mb  full-cube(2x)=0.94 Mb  win~5.9x
+#   EL-deck: banded=0.001 Mb/deck (300 cells) vs unbanded O(L^2/2)=0.173 Mb/deck  reduction~151.5x
+# cm_CheckptAlignHB engaged: M=904 L=300 B=30 Z=343.3680  CM-DP peak=0.12 Mb  full-cube(2x)=0.71 Mb  win~6.0x
+#   EL-deck: banded=0.007 Mb/deck (1785 cells) vs unbanded O(L^2/2)=0.173 Mb/deck  reduction~25.5x

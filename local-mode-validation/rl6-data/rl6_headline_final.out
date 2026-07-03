@@ -1,0 +1,32 @@
+############ HOST: sge800  DATE: Fri Jul  3 06:46:28 EDT 2026 ############
+===================================================================
+### NC_006875 -> calici-NC_001959.cm  (LOCAL, default truncated)
+### --ckpt:
+  ckpt exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:00.10
+	Maximum resident set size (kbytes): 2562796
+# cm_CheckptTrAlignHB engaged: M=22966 L=7453 B=152 mode=L Z=-130.6847  CM-DP peak=556.00 Mb  full-cube(2x)=23785.25 Mb  win~42.8x
+### stock:
+  stock exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:11.53
+	Maximum resident set size (kbytes): 30155792
+  ckpt=2562796kB stock=30155792kB
+  >>> NC_006875 LOCAL total-RSS win = 11.77x  (stock 29449 MB -> ckpt 2503 MB)
+  degapped: IDENTICAL NC_006875
+
+===================================================================
+### NC_008311 -> calici-NC_001959.cm  (LOCAL, default truncated)
+### --ckpt:
+  ckpt exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:21.86
+	Maximum resident set size (kbytes): 2350252
+# cm_CheckptTrAlignHB engaged: M=22966 L=7382 B=152 mode=L Z=1062.6643  CM-DP peak=281.85 Mb  full-cube(2x)=9210.20 Mb  win~32.7x
+### stock:
+  stock exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:52.74
+	Maximum resident set size (kbytes): 13672416
+  ckpt=2350252kB stock=13672416kB
+  >>> NC_008311 LOCAL total-RSS win = 5.82x  (stock 13352 MB -> ckpt 2295 MB)
+  degapped: IDENTICAL NC_008311
+
+############ DONE Fri Jul  3 06:57:55 EDT 2026 ############

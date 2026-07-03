@@ -1,0 +1,32 @@
+#HDBANDS cm_M=960 hd_needed=24117 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=16414 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=33190 (0.0003 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=35110 (0.0003 GB for hdmin+hdmax)
+# cm_CheckptPostAlignHB: M=960 L=295 B=31 Z=152.1283  CM-DP peak=0.51 Mb  full-IO-cube(2x)=2.18 Mb  win~4.2x  emit_mx=0.05 Mb  root-cells(1x)=0.02 Mb  Bstate-cells(1x)=0.01 Mb
+# cm_CheckptPostAlignHB: M=960 L=304 B=31 Z=134.7927  CM-DP peak=1.11 Mb  full-IO-cube(2x)=4.69 Mb  win~4.2x  emit_mx=0.08 Mb  root-cells(1x)=0.04 Mb  Bstate-cells(1x)=0.01 Mb
+# cm_CheckptOptAccAlignHB: M=960 L=295 B=31 pp=0.91360  OA-DP peak=0.50 Mb  full-OA-cube(1x)=1.09 Mb  win~2.2x  emit_mx=0.05 Mb  root-cells(1x)=0.02 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=295 (local, non-truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=25524 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptOptAccAlignHB: M=960 L=304 B=31 pp=0.94903  OA-DP peak=1.10 Mb  full-OA-cube(1x)=2.34 Mb  win~2.1x  emit_mx=0.08 Mb  root-cells(1x)=0.04 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=304 (local, non-truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=23928 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptPostAlignHB: M=960 L=300 B=31 Z=106.7111  CM-DP peak=1.60 Mb  full-IO-cube(2x)=7.45 Mb  win~4.6x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb  Bstate-cells(1x)=0.03 Mb
+# cm_CheckptPostAlignHB: M=960 L=289 B=31 Z=88.5793  CM-DP peak=1.62 Mb  full-IO-cube(2x)=7.59 Mb  win~4.7x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb  Bstate-cells(1x)=0.03 Mb
+# cm_CheckptPostAlignHB: M=960 L=298 B=31 Z=124.1682  CM-DP peak=0.88 Mb  full-IO-cube(2x)=3.91 Mb  win~4.4x  emit_mx=0.07 Mb  root-cells(1x)=0.04 Mb  Bstate-cells(1x)=0.01 Mb
+# cm_CheckptPostAlignHB: M=960 L=298 B=31 Z=107.2872  CM-DP peak=0.92 Mb  full-IO-cube(2x)=4.25 Mb  win~4.6x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.02 Mb
+# cm_CheckptOptAccAlignHB: M=960 L=298 B=31 pp=0.94496  OA-DP peak=0.87 Mb  full-OA-cube(1x)=1.95 Mb  win~2.2x  emit_mx=0.07 Mb  root-cells(1x)=0.04 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=298 (local, non-truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=30741 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptOptAccAlignHB: M=960 L=300 B=31 pp=0.94014  OA-DP peak=1.62 Mb  full-OA-cube(1x)=3.72 Mb  win~2.3x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=300 (local, non-truncated, bps>0)
+# cm_CheckptOptAccAlignHB: M=960 L=298 B=31 pp=0.93203  OA-DP peak=0.92 Mb  full-OA-cube(1x)=2.12 Mb  win~2.3x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=298 (local, non-truncated, bps>0)
+# cm_CheckptOptAccAlignHB: M=960 L=289 B=31 pp=0.93151  OA-DP peak=1.62 Mb  full-OA-cube(1x)=3.79 Mb  win~2.3x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=289 (local, non-truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=19201 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptPostAlignHB: M=960 L=318 B=31 Z=172.0344  CM-DP peak=0.57 Mb  full-IO-cube(2x)=2.53 Mb  win~4.4x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb  Bstate-cells(1x)=0.01 Mb
+# cm_CheckptOptAccAlignHB: M=960 L=318 B=31 pp=0.97079  OA-DP peak=0.56 Mb  full-OA-cube(1x)=1.27 Mb  win~2.2x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=318 (local, non-truncated, bps>0)
+# cm_CheckptPostAlignHB: M=960 L=295 B=31 Z=110.5738  CM-DP peak=1.49 Mb  full-IO-cube(2x)=7.03 Mb  win~4.7x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb  Bstate-cells(1x)=0.02 Mb
+# cm_CheckptOptAccAlignHB: M=960 L=295 B=31 pp=0.93885  OA-DP peak=1.47 Mb  full-OA-cube(1x)=3.52 Mb  win~2.4x  emit_mx=0.10 Mb  root-cells(1x)=0.08 Mb
+# rung-3 checkpointed structured OptAcc engaged: M=960 L=295 (local, non-truncated, bps>0)

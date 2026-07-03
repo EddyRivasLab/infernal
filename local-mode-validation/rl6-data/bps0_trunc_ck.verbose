@@ -1,0 +1,6 @@
+#HDBANDS cm_M=904 hd_needed=261705 (0.0021 GB for hdmin+hdmax)
+#HDBANDS cm_M=904 hd_needed=6327 (0.0001 GB for hdmin+hdmax)
+#TRCKPT-DBG entry: M=904 L=300  ROOT_S j[294..300]  d[284..300]@jp_0=6  Jv0=1 Lv0=0 Rv0=1
+#TRCKPT-DBG entry: M=904 L=300  ROOT_S j[0..300]  d[293..300]@jp_0=300  Jv0=1 Lv0=1 Rv0=0
+# cm_CheckptTrAlignHB engaged: M=904 L=300 B=30 mode=J Z=327.9417  CM-DP peak=0.12 Mb  full-cube(2x)=1.20 Mb  win~10.3x
+# cm_CheckptTrAlignHB engaged: M=904 L=300 B=30 mode=L Z=139.9853  CM-DP peak=16.54 Mb  full-cube(2x)=157.04 Mb  win~9.5x

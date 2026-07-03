@@ -1,0 +1,41 @@
+# STOCKHOLM 1.0
+#=GF AU Infernal 1.2dev
+
+rnaseP-eubact-sample1         GAGGAACGUCU---CUUAGCUaGGACAGCUGGGUCGAUGAAAUCGAUACGAA......GUG.A...UGCGUUGGAAA..GUCUCACAGGAAGGA-CUGUGUccAGAGGUG..........UUUU......CUCUUCUACAAACACUGAAAUGGUGCGGAAAGAGCGCACUcGCGUUGAUAGAAUUGUCAGCG.GC.cUAG
+#=GR rnaseP-eubact-sample1 PP *********96...99876556******************************......***.*...***********..**************9.89999999*******..........****......**************************************************************.**.*999
+rnaseP-eubact-sample2         GAGGAAUGUUAGAGCUCCGCA.GGGCAGCCCGGUUUGUUACGC----GGACA......GCA.A...UGUCGCUAAUAggGCGCGACAGAGUGAA-AGCGUA..GAGCCCA..........UUA-......CGGGCUCUAUAAACCCGAAAAAGUGCCGUAAGAGGGCCUU.CGGUCUGAAGUUAUUCAGACC.AU.gACG
+#=GR rnaseP-eubact-sample2 PP *********************.**************9988885....99999......999.9...999999999886689*********9999.******..******9..........888.......8************************************999.9********************.87.8***
+rnaseP-eubact-sample3         GAGAAAACUCCGGGAUAU---.---UGUUCUCCUGACUGCUCGUCAGCCCAC......GCGaA...GUGGAGGGACA..GCGUAUCAUAGAUGUUAGCAGC..UUUCUG-..........-CA-......CCAGAAAGCUAAGUGUGAAAUGGUCGG---AGAGACGUCU.GCCCGUUCGGUAACCAGCGAG.GC..GUA
+#=GR rnaseP-eubact-sample3 PP **************6666.......77*************************......88627...***********..**********************..***998............33.......4899*******************9995...9***9*****.*********************.**..***
+rnaseP-eubact-sample4         UAGAAGAGUUCGUACUUCGCA.UAGCGGGAAGAUCGCUAACAGCGACUAGGG......GUA.G...CCCUGGGCAUA..GCGCGACAGAAU--AGUCCUCC..UA-----..........CGAC......-----GAGGGAAGGAUGCAAAAGGGUGGCAAAAGCACCCU.GCAGCUUUUGAAAAAUUGCUG.AC..AUG
+#=GR rnaseP-eubact-sample4 PP *********************.******************************......***.*...***********..********9875..556****9..85...............3343...........589999*****************************.*********************.**..***
+rnaseP-eubact-sample5         GGAGAUAAAAGGGGCCCCACU.GUUCAAGACAAAAGUGGACCACUCAUAGGC......UUA.U...GCCUAGGUAAA..GGGCGAGAGAUGACAAACAACC..UUGAACG..........AGUU......CGUUUAAUGUAAAGAAACAGGGGUGAGCUAAAACCUCACU.GCGGGUCC--CGA-GGACCCG.GCgaGUG
+#=GR rnaseP-eubact-sample5 PP 9999999999***********.******************************......***.*...***********..**********************..*******..........****......****************************************.********..999.*******.*******
+rnaseP-eubact-sample6         GAAGAAAGUCAGGGCACCUUA.AGGCAGGGUGGCGCAAAACUUGCUCUGGAA......GCC.A...UUCUUGGGAUA..GAAAUACAGAGAACACAGUGCC..GUUAAGG..........UUUU......UCAAAACGGCGAGUGACAAAUGUUGGGCUUAGGACCUAAC.GUAC-UAUAGUA-UAUAGGUGgAC.uUAG
+#=GR rnaseP-eubact-sample6 PP *********************.******************************......***.*...***********..**********************..*******..........****......****************************************.9875.6777875.77766666247.9***
+rnaseP-eubact-sample7         UAGGUAAGUCCGGGCCCCUAA.AACCCGCGGGAUGGUUUACAACCAUC----......GUG.G...-----GAGAAA..GUUCCCAAGAAAUGAGACUAUG..GUUCCGGaaguagguuc----auagucUCGUGAAUAUAUGGUUGUAAGGGAAGUGUAAGCGACU-CC.GGUGUCCAAGCGAUGGGAC-C.GC..AGG
+#=GR rnaseP-eubact-sample7 PP *********************.**************************..........899.9........******..**********************..88888888998887543....35678999999*******************************6.88.777777777****766666.9.9*..***
+rnaseP-eubact-sample8         GAGGAAAGUCUGGACUCCCUA.AGGCACGAUGGUCCGAAAUGUGGACAGUGGaccccaGUA.UuuuCCACAUGGACA..GUUCCAGAGAGAAUAUACCAGC..UGGCUGU..........GCA-......ACGGACAGCUAAGGGUGAAAUGAUGAUGUAGCAGAUCAUC.AUCUACUGGAUAACCAGGAGG.CA.uCGG
+#=GR rnaseP-eubact-sample8 PP *********************.********************************9987555.5889***********..**********************..*******..........988.......****************************************.9*******************9.65.6***
+#=GC SS_cons                  ::::::::::::::[[[[---.-----[[[[[<<<<<_____>>>>><<<<<......___._...>>>>->((---..(((((,,,,,,,,,,,,<<<<<..<<<<<<<..........____......>>>>>>>>>>-->>,,,,,,,<<<<<<_______>>>>>>.<<<<<<<<<____>>>>>>>>.->..,))
+#=GC RF                       xxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx-......xxx.x...-xxxxxxxxxx..xxxxxxxxxxxxxxxxxxxxxx..xxxxxxx..........xxxx......xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxx.xx..xxx
+
+rnaseP-eubact-sample1         GAUACCCUCAGCAAAGCAAUGCCAAGUAGCUGUAG.CU...G-CGCUUGGUAUGCG-.CCACAGUGCAAGGCGGCACGAGUCGGUGG.u-AGCuCCACUGGCAUAGAUAUAUAUCAAUAUAUAUC........ACUA.......GAG---.AUAGAACACGGCUCA
+#=GR rnaseP-eubact-sample1 PP *********************************98.76...6.6667777777666..79**************************9.5.43249*******************99999888888........7777.......775....5559***********
+rnaseP-eubact-sample2         CAAGCUACGGGCGGAGCGAGUACAACUA-GUUAAUgCU...CUAGGAGGGUAUCCUA.CUUGACGCGUC----GCGUGAGCUUGUGU..GCAA.ACACAAGUUGACAUGGAUAAAGCCCCCCGUGaguucucc----gaagcuuUACGAGuAUA------------
+#=GR rnaseP-eubact-sample2 PP *******************998877766.666665166...7***************.*9988877665....9999**********..****.********************9999988888899876654....44567888888888888............
+rnaseP-eubact-sample3         UAAGCCCGAGAGAUACCAA----------CUAUCG.GU...CUGUCCGGUUAGGUCAgCGGUAGCUGU-GUACGCUUGGCUCUGUUUcuGCAA.UUACAGUGCGAGAGUAAAGGUACACUCCUCG.......gUUUC.......CGAUGG.AAGGAGCACGGUAUA
+#=GR rnaseP-eubact-sample3 PP ************9999999..........888888.88...899999999999999988888887777.4667***********99999****.9*********************999888888.......66776.......888899.***************
+rnaseP-eubact-sample4         CAAACGCCUUCCGAAGCAAGGGCCAU---AGCCCC.GAacgAAGCGACGAGUACGCG.GGGUCGGGGUUUACCGAUCUAACGUGGCG..GCAA.CGCCGCGUCCAGAAGCAUGUCCGUUCAGACC........CACA.......GGUCUG.GCAACACCUGCCUUA
+#=GR rnaseP-eubact-sample4 PP *********************65443...444444.434555788888888888887.5555567777778****************..****.*******************************........****.......******.***************
+rnaseP-eubact-sample5         CAGUCACGGUCUGGGGUAAGAUCGAA--ACUUUGGuGU...A--UGUGACGUACA--gCCGGACGGGACGAUCGAUCUACGCAAUCU..GCAA.AGAUUUCGCUAGAAUGAUCAUGGUCACGAAA........--A-.......AUUCGU.ACACAACAAGGCUA-
+#=GR rnaseP-eubact-sample5 PP ************************98..4555555143...3..55555555555..35666669999*******************..****.****************************994..........4........499***.**************.
+rnaseP-eubact-sample6         UAAUCCUUGCCCGGUGCAUGGCUAUGGGAAGACGG.GA...U--CGGGAUCACCG--.CCGUCUGUGCUUGCCGAGUAAAU-ACUCA..CCGA.UGA----UCAAGAGGAAUGGCGAUAAUCCCC........UUAA.......GGGGUU.ACUUAACCCGUCACA
+#=GR rnaseP-eubact-sample6 PP ***********************************.*9...9..77777777777...*******************9975.66888..9999.886....7***********************........****.......******.***************
+rnaseP-eubact-sample7         AAAACCUCACGCGGGGAAAGGCGGAAUGUGCUGCG.UA...-------GCUG-----.CGCAGCCGGACCGCCCGUUGUGGCACCAU..UGGG.AUGAUGCCCCUGAGAAAUGAUAGUCCGGUUG........UAGA.......GGGCCC.-UAUAACCAGGCGUA
+#=GR rnaseP-eubact-sample7 PP **********************************9.74..........5666......9****************************..99**.*************************677776........7776.......666665..7889**********
+rnaseP-eubact-sample8         AAAAUCCGGUCGGGAGCAAGGGCAAAUCCGCCUAC.UUc.cUGCUGUGGUCAGCAGU.GAAUGUGAGUAGCCCGCUCGACGCGUAAG..UUAA.CUUACGUGCGAUAUGGAUGGCAAUCAGUAUG........GUUA.......CAUACUgACAGAGUUAAGCAC-
+#=GR rnaseP-eubact-sample8 PP ***************************99999999.776.66999999999999999.*****************************..****.*******************************........****.......*********************.
+#=GC SS_cons                  )--))))]]]]]]]]],,,<<<<------<<<<<<.--...-<<<<<_____>>>>>.>>>>>>----->>>>,,,,,,<<<<<<<<..____.>>>>>>>>,,,,,,,,,,,,,,,,,<<<<<<........____.......>>>>>>.:::::::::::::::
+#=GC RF                       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xx...xxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx..xxxx.xxxxxxxxxxxxxxxxxxxxxxxxx------........----.......------.xxxxxxxxxxxxxxx
+//

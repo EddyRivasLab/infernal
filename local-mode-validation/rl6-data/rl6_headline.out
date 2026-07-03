@@ -1,0 +1,20 @@
+############ HOST: sge1652  DATE: Fri Jul  3 06:18:25 EDT 2026 ############
+CM=/net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/stage0_cyk_baseline/LSU_rRNA_eukarya.cm
+SEQ=/net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/subagent-work/040/seqs/CH479288.fa (LSU-divergent CH479288, 2890 nt)
+
+==================== A: cmalign --ckpt (LOCAL, default trunc) ====================
+ckpt exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:07.66
+	Maximum resident set size (kbytes): 527716
+# rung-4 checkpointed structured truncated OptAcc engaged: M=10559 L=2890 mode=R (local, truncated, bps>0)
+
+==================== B: cmalign STOCK (LOCAL, default trunc, no --ckpt) ====================
+stock exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.66
+	Maximum resident set size (kbytes): 551504
+
+==================== SUMMARY ====================
+ckpt  max RSS = 527716 kB
+stock max RSS = 551504 kB
+LOCAL total-RSS win = 1.05x  (stock 539 MB -> ckpt 515 MB)
+############ DONE Fri Jul  3 06:18:34 EDT 2026 ############

@@ -1,0 +1,17 @@
+# STOCKHOLM 1.0
+#=GF AU Infernal 1.2dev
+
+rnaseP-eubact-sample1         GAGGAACGUCU---CUUAGCUaGGACAGCUGGGUCGAUGAAAUCGAUACGAAGUGAUGCGUUGGAAA..GUCUCACAGGAAGGA-CUGUGUccAGAGGUGUUUUCUCUUCUACAAACACUGAAAUGGUGCGGAAAGAGCGCACUcGCGUUGAUAGAAUUGUCAGCGGCcUAGGAUACCCUCAGCAAAGCAAUGCCAAGUA
+#=GR rnaseP-eubact-sample1 PP *********96...99876556*********************************************..**************9.89999999****************************************************************************999****************************
+rnaseP-eubact-sample2         GAGGAAUGUUAGAGCUCCGCA.GGGCAGCCCGGUUUGUUACG----CGGACAGCAAUGUCGCUAAUAggGCGCGACAGAGUGAA-AGCGUA..GAGCCCAUUA-CGGGCUCUAUAAACCCGAAAAAGUGCCGUAAGAGGGCCUU.CGGUCUGAAGUUAUUCAGACCAUgACGCAAGCUACGGGCGGAGCGAGUACAACUA
+#=GR rnaseP-eubact-sample2 PP *********************.************99998888....5******************987789*********9999.******..******9888.8***************************************.**********************************************988877766
+#=GC SS_cons                  ::::::::::::::[[[[---.-----[[[[[<<<<<_____>>>>><<<<<____>>>>->((---..(((((,,,,,,,,,,,,<<<<<..<<<<<<<____>>>>>>>>>>-->>,,,,,,,<<<<<<_______>>>>>>.<<<<<<<<<____>>>>>>>>->.,)))--))))]]]]]]]]],,,<<<<-----
+#=GC RF                       xxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxx-xxxxxxxxxx..xxxxxxxxxxxxxxxxxxxxxx..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+rnaseP-eubact-sample1         GCUGUAG.CUG-CGCUUGGUAUGCG-CCACAGUGCAAGGCGGCACGAGUCGGUGGu-AG-cuCCACUGGCAUAGAUAUAUAUCAAUAUAUAUC........ACUA.......GAGAUA.---GAACACGGCUCA
+#=GR rnaseP-eubact-sample1 PP *****98.776.6666676666666.79**************************94.33.239******************************........****.......******....9***********
+rnaseP-eubact-sample2         -GUUAAUgCUCUAGGAGGGUAUCCUACUUGACGCGU----CGCGUGAGCUUGUGU.GCAA..ACACAAGUUGACAUGGAUAAAGCCCCCCGUGaguucucc----gaagcuuUACGAGuAUA------------
+#=GR rnaseP-eubact-sample2 PP .6666651557****************998887655....5**************.****..******************************999776554....3456788*******999............
+#=GC SS_cons                  -<<<<<<.---<<<<<_____>>>>>>>>>>>----->>>>,,,,,,<<<<<<<<.____~.>>>>>>>>,,,,,,,,,,,,,,,,,<<<<<<........____.......>>>>>>.:::::::::::::::
+#=GC RF                       xxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxx~.xxxxxxxxxxxxxxxxxxxxxxxxx------........----.......------.xxxxxxxxxxxxxxx
+//

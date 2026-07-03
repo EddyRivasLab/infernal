@@ -1,0 +1,49 @@
+=== LOCAL non-trunc (rung-3) ===
+seq                        degap       avgPP_ck  avgPP_st     dPP
+rnaseP-eubact-sample1      IDENT         0.9383    0.9247 +0.0137
+rnaseP-eubact-sample2      IDENT         0.9359    0.8890 +0.0469
+rnaseP-eubact-sample3      IDENT         0.9302    0.9253 +0.0048
+rnaseP-eubact-sample4      IDENT         0.9062    0.9062 +0.0000
+rnaseP-eubact-sample5      IDENT         0.9227    0.9227 +0.0000
+rnaseP-eubact-sample6      IDENT         0.9322    0.9316 +0.0006
+rnaseP-eubact-sample7      IDENT         0.9331    0.9114 +0.0216
+rnaseP-eubact-sample8      IDENT         0.9568    0.9534 +0.0035
+  --> degapped mismatches: 0/8   max|avgPP delta|: 0.0469
+
+=== LOCAL trunc (rung-4) ===
+seq                        degap       avgPP_ck  avgPP_st     dPP
+rnaseP-eubact-sample1      IDENT         0.9383    0.9247 +0.0137
+rnaseP-eubact-sample2      IDENT         0.9250    0.9136 +0.0114
+rnaseP-eubact-sample3      IDENT         0.9302    0.9253 +0.0048
+rnaseP-eubact-sample4      IDENT         0.9062    0.9062 +0.0000
+rnaseP-eubact-sample5      IDENT         0.9237    0.9237 +0.0000
+rnaseP-eubact-sample6      IDENT         0.9322    0.9316 +0.0006
+rnaseP-eubact-sample7      IDENT         0.9331    0.9114 +0.0216
+rnaseP-eubact-sample8      IDENT         0.9576    0.9542 +0.0035
+  --> degapped mismatches: 0/8   max|avgPP delta|: 0.0216
+
+=== GLOBAL non-trunc (rung-3) ===
+seq                        degap       avgPP_ck  avgPP_st     dPP
+rnaseP-eubact-sample1      IDENT         0.9410    0.9280 +0.0129
+rnaseP-eubact-sample2      IDENT         0.9362    0.8929 +0.0433
+rnaseP-eubact-sample3      IDENT         0.9322    0.9274 +0.0048
+rnaseP-eubact-sample4      IDENT         0.9072    0.9068 +0.0004
+rnaseP-eubact-sample5      IDENT         0.9227    0.9227 +0.0001
+rnaseP-eubact-sample6      IDENT         0.9383    0.9363 +0.0019
+rnaseP-eubact-sample7      IDENT         0.9371    0.9169 +0.0203
+rnaseP-eubact-sample8      IDENT         0.9595    0.9561 +0.0035
+  --> degapped mismatches: 0/8   max|avgPP delta|: 0.0433
+
+=== GLOBAL trunc (rung-4) ===
+seq                        degap       avgPP_ck  avgPP_st     dPP
+rnaseP-eubact-sample1      IDENT         0.9410    0.9280 +0.0129
+rnaseP-eubact-sample2      IDENT         0.9268    0.9167 +0.0102
+rnaseP-eubact-sample3      IDENT         0.9322    0.9274 +0.0048
+rnaseP-eubact-sample4      IDENT         0.9072    0.9068 +0.0004
+rnaseP-eubact-sample5      IDENT         0.9238    0.9237 +0.0001
+rnaseP-eubact-sample6      IDENT         0.9383    0.9363 +0.0019
+rnaseP-eubact-sample7      IDENT         0.9371    0.9169 +0.0203
+rnaseP-eubact-sample8      IDENT         0.9603    0.9568 +0.0035
+  --> degapped mismatches: 0/8   max|avgPP delta|: 0.0203
+
+TOTAL degapped-residue mismatches across all configs: 0 (0 = accuracy-neutral, residues preserved)

@@ -1,0 +1,21 @@
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     ../testsuite/rnaseP-eubact.c.cm
+# sequence file:                               rl6-data/rnasep_2seq.fa
+# CM name:                                     rnaseP-eubact
+# saving alignment to file:                    rl6-data/vg_struct.sto
+# maximum total DP matrix size set to:         8192.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                       running time (s)                 
+#                                                                                -------------------------------          
+# idx  seq name               length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  rnaseP-eubact-sample1     304        1      307     no    119.23   0.949       1.84       9.89      11.73     11.11
+    2  rnaseP-eubact-sample2     300        1      295     3'    100.94   0.929       0.46      19.87      20.34     21.95
+#
+# CPU time: 21.52u 0.13s 00:00:21.65 Elapsed: 00:00:21.74

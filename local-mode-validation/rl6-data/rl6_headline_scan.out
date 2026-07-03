@@ -1,0 +1,22 @@
+############ HOST: sge1374  DATE: Fri Jul  3 06:25:55 EDT 2026 ############
+### Phase 1: --ckpt cube scan (calici-NC_001959.cm x each divergent calicivirus, LOCAL trunc)
+genome         mode   cubeMB   ckptPeakMB   win         
+NC_000940      ?      0                                 
+NC_001481      ?      0                                 
+NC_001543      ?      0                                 
+NC_001959      J      12.10    0.39         win~31.1x   
+NC_002551      ?      0                                 
+NC_002615      ?      0                                 
+NC_004064      ?      0                                 
+NC_004541      ?      0                                 
+NC_004542      ?      0                                 
+NC_006269      ?      0                                 
+NC_006554      ?      0                                 
+NC_006875      L      23785.25 556.00       win~42.8x   
+NC_007916      ?      0                                 
+NC_008311      L      9210.20  281.85       win~32.7x   
+NC_008580      ?      0                                 
+NC_010624      ?      0                                 
+NC_011050      ?      0                                 
+NC_011704      ?      0                                 
+NC_012699      L      2330.73  52.25        win~44.6x   

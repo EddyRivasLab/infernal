@@ -1,0 +1,56 @@
+############ HOST: sge1652  DATE: Fri Jul  3 06:20:49 EDT 2026 ############
+CM=/net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/segment-census/cms/vadr/calici-NC_001959.cm (calici NC_001959, bps=0, M=22966)
+SEQ=/net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/checkpoint-proto/genomes/NC_001959.fa (7654 nt)
+
+==================== trunc : --ckpt (LOCAL) ====================
+  ckpt exit=137
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:02.76
+	Maximum resident set size (kbytes): 2095896
+==================== trunc : STOCK (LOCAL) ====================
+  stock exit=137
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:02.55
+	Maximum resident set size (kbytes): 2095788
+  --> trunc  ckpt=2095896kB  stock=2095788kB
+  >>> trunc LOCAL total-RSS win = 1.00x  (stock 2047 MB -> ckpt 2047 MB)
+
+==================== notrunc : --ckpt (LOCAL) ====================
+  ckpt exit=137
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:02.50
+	Maximum resident set size (kbytes): 2095604
+==================== notrunc : STOCK (LOCAL) ====================
+  stock exit=137
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:02.44
+	Maximum resident set size (kbytes): 2095676
+  --> notrunc  ckpt=2095604kB  stock=2095676kB
+  >>> notrunc LOCAL total-RSS win = 1.00x  (stock 2047 MB -> ckpt 2046 MB)
+
+############ DONE Fri Jul  3 06:20:59 EDT 2026 ############
+############ HOST: sge800  DATE: Fri Jul  3 06:21:43 EDT 2026 ############
+CM=/net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/segment-census/cms/vadr/calici-NC_001959.cm (calici NC_001959, bps=0, M=22966)
+SEQ=/net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/checkpoint-proto/genomes/NC_001959.fa (7654 nt)
+
+==================== trunc : --ckpt (LOCAL) ====================
+  ckpt exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:04.50
+	Maximum resident set size (kbytes): 2863220
+# cm_CheckptTrAlignHB engaged: M=22966 L=7654 B=152 mode=J Z=8380.3975  CM-DP peak=0.39 Mb  full-cube(2x)=12.10 Mb  win~31.1x
+==================== trunc : STOCK (LOCAL) ====================
+  stock exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:05.02
+	Maximum resident set size (kbytes): 2863140
+  --> trunc  ckpt=2863220kB  stock=2863140kB
+  >>> trunc LOCAL total-RSS win = 1.00x  (stock 2796 MB -> ckpt 2796 MB)
+
+==================== notrunc : --ckpt (LOCAL) ====================
+  ckpt exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:04.39
+	Maximum resident set size (kbytes): 2821480
+# cm_CheckptAlignHB engaged: M=22966 L=7654 B=152 Z=8405.2227  CM-DP peak=0.45 Mb  full-cube(2x)=10.07 Mb  win~22.2x
+==================== notrunc : STOCK (LOCAL) ====================
+  stock exit=0
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:04.91
+	Maximum resident set size (kbytes): 2821332
+  --> notrunc  ckpt=2821480kB  stock=2821332kB
+  >>> notrunc LOCAL total-RSS win = 1.00x  (stock 2755 MB -> ckpt 2755 MB)
+
+############ DONE Fri Jul  3 06:22:02 EDT 2026 ############

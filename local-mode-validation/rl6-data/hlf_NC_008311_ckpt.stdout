@@ -1,0 +1,20 @@
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     /net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/segment-census/cms/vadr/calici-NC_001959.cm
+# sequence file:                               /net/intdev/oblast01/infernal/notebook/26_0610_inf_dp_mem_cost/benchmark-runs/checkpoint-proto/genomes/NC_008311.fa
+# CM name:                                     NC_001959
+# saving alignment to file:                    /net/intdev/oblast01/infernal/git/EddyRivasLab/infernal-local-ckpt/local-mode-validation/rl6-data/hlf_NC_008311_ckpt.sto
+# maximum total DP matrix size set to:         65000.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    0 [--cpu]
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                           running time (s)                 
+#                                                                    -------------------------------          
+# idx  seq name   length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  NC_008311    7382      219     7556     3'   1062.66   0.689       3.82     137.75     141.57  13835.05
+#
+# CPU time: 136.75u 4.32s 00:02:21.07 Elapsed: 00:02:21.83

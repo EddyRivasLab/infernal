@@ -1,0 +1,4 @@
+local_notrunc    diff-lines=50    DEGAPPED-IDENTICAL
+local_trunc      diff-lines=28    DEGAPPED-IDENTICAL
+global_notrunc   diff-lines=52    DEGAPPED-IDENTICAL
+global_trunc     diff-lines=32    DEGAPPED-IDENTICAL

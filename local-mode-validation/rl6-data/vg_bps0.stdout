@@ -1,0 +1,21 @@
+# cmalign :: align sequences to a CM
+# INFERNAL 1.2dev (Apr 2026)
+# Copyright (C) 2026 Howard Hughes Medical Institute.
+# Freely distributed under the BSD open source license.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# CM file:                                     rl2-data/matl300.cm
+# sequence file:                               rl2-data/el300.fa
+# CM name:                                     matl300
+# saving alignment to file:                    rl6-data/vg_bps0.sto
+# maximum total DP matrix size set to:         8192.00 Mb
+# tighten HMM bands when necessary:            no
+# number of worker threads:                    4
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                                                                                 running time (s)                 
+#                                                                          -------------------------------          
+# idx  seq name         length  cm from    cm to  trunc    bit sc  avg pp  band calc  alignment      total  mem (Mb)
+# ---  ---------------  ------  -------  -------  -----  --------  ------  ---------  ---------  ---------  --------
+    1  pre150_polyG150     300        1      241     3'    139.99   0.492       0.47      72.57      73.04    195.51
+    2  perfect300          300        1      300     no    327.94   0.967       0.83       1.87       2.70      4.99
+#
+# CPU time: 72.29u 0.99s 00:01:13.28 Elapsed: 00:01:14.38

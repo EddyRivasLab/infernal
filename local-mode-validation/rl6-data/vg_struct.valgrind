@@ -1,0 +1,16 @@
+==2914151== Memcheck, a memory error detector
+==2914151== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==2914151== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==2914151== Command: ../src/cmalign --ckpt --fixedtau --tau 1e-7 --mxsize 8192 -o rl6-data/vg_struct.sto ../testsuite/rnaseP-eubact.c.cm rl6-data/rnasep_2seq.fa
+==2914151== 
+#HDBANDS cm_M=960 hd_needed=51400 (0.0004 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=27457 (0.0002 GB for hdmin+hdmax)
+==2914151== 
+==2914151== HEAP SUMMARY:
+==2914151==     in use at exit: 0 bytes in 0 blocks
+==2914151==   total heap usage: 732,816 allocs, 732,816 frees, 210,440,849 bytes allocated
+==2914151== 
+==2914151== All heap blocks were freed -- no leaks are possible
+==2914151== 
+==2914151== For lists of detected and suppressed errors, rerun with: -s
+==2914151== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

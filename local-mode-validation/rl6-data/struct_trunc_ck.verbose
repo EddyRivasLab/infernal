@@ -1,0 +1,32 @@
+#HDBANDS cm_M=960 hd_needed=17115 (0.0001 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=27457 (0.0002 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=42314 (0.0003 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=51400 (0.0004 GB for hdmin+hdmax)
+# cm_CheckptTrPostAlignHB: M=960 L=295 B=31 mode=J Z=136.6192  CM-DP peak=0.56 Mb  full-IO-cube(2x)=2.42 Mb  win~4.3x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb  Bstate-cells(1x)=0.01 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=295 B=31 mode=J pp=0.91317  OA-DP peak=0.55 Mb  full-OA-cube(1x)=1.21 Mb  win~2.2x  emit_mx=0.06 Mb  root-cells(1x)=0.02 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=295 mode=J (local, truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=27525 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptTrPostAlignHB: M=960 L=304 B=31 mode=J Z=119.2294  CM-DP peak=1.38 Mb  full-IO-cube(2x)=5.87 Mb  win~4.3x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.02 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=304 B=31 mode=J pp=0.94900  OA-DP peak=1.36 Mb  full-OA-cube(1x)=2.93 Mb  win~2.2x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=304 mode=J (local, truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=27658 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptTrPostAlignHB: M=960 L=289 B=31 mode=J Z=73.0155  CM-DP peak=2.65 Mb  full-IO-cube(2x)=12.92 Mb  win~4.9x  emit_mx=0.14 Mb  root-cells(1x)=0.13 Mb  Bstate-cells(1x)=0.05 Mb
+# cm_CheckptTrPostAlignHB: M=960 L=298 B=31 mode=J Z=108.6054  CM-DP peak=1.21 Mb  full-IO-cube(2x)=5.13 Mb  win~4.2x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.02 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=289 B=31 mode=J pp=0.93148  OA-DP peak=2.64 Mb  full-OA-cube(1x)=6.46 Mb  win~2.4x  emit_mx=0.14 Mb  root-cells(1x)=0.13 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=289 mode=J (local, truncated, bps>0)
+# cm_CheckptTrOptAccAlignHB: M=960 L=298 B=31 mode=J pp=0.94493  OA-DP peak=1.18 Mb  full-OA-cube(1x)=2.56 Mb  win~2.2x  emit_mx=0.08 Mb  root-cells(1x)=0.06 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=298 mode=J (local, truncated, bps>0)
+#HDBANDS cm_M=960 hd_needed=36326 (0.0003 GB for hdmin+hdmax)
+#HDBANDS cm_M=960 hd_needed=20980 (0.0002 GB for hdmin+hdmax)
+# cm_CheckptTrPostAlignHB: M=960 L=298 B=31 mode=L Z=96.1814  CM-DP peak=1.10 Mb  full-IO-cube(2x)=5.14 Mb  win~4.7x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb  Bstate-cells(1x)=0.03 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=298 B=31 mode=L pp=0.93183  OA-DP peak=1.11 Mb  full-OA-cube(1x)=2.57 Mb  win~2.3x  emit_mx=0.09 Mb  root-cells(1x)=0.06 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=298 mode=L (local, truncated, bps>0)
+# cm_CheckptTrPostAlignHB: M=960 L=300 B=31 mode=L Z=100.9398  CM-DP peak=3.32 Mb  full-IO-cube(2x)=14.17 Mb  win~4.3x  emit_mx=0.13 Mb  root-cells(1x)=0.12 Mb  Bstate-cells(1x)=0.05 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=300 B=31 mode=L pp=0.92933  OA-DP peak=3.27 Mb  full-OA-cube(1x)=7.08 Mb  win~2.2x  emit_mx=0.13 Mb  root-cells(1x)=0.12 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=300 mode=L (local, truncated, bps>0)
+# cm_CheckptTrPostAlignHB: M=960 L=318 B=31 mode=L Z=162.6107  CM-DP peak=0.66 Mb  full-IO-cube(2x)=2.93 Mb  win~4.4x  emit_mx=0.06 Mb  root-cells(1x)=0.03 Mb  Bstate-cells(1x)=0.01 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=318 B=31 mode=L pp=0.97205  OA-DP peak=0.65 Mb  full-OA-cube(1x)=1.46 Mb  win~2.2x  emit_mx=0.06 Mb  root-cells(1x)=0.03 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=318 mode=L (local, truncated, bps>0)
+# cm_CheckptTrPostAlignHB: M=960 L=295 B=31 mode=J Z=95.0411  CM-DP peak=2.13 Mb  full-IO-cube(2x)=9.62 Mb  win~4.5x  emit_mx=0.12 Mb  root-cells(1x)=0.09 Mb  Bstate-cells(1x)=0.03 Mb
+# cm_CheckptTrOptAccAlignHB: M=960 L=295 B=31 mode=J pp=0.93875  OA-DP peak=2.10 Mb  full-OA-cube(1x)=4.81 Mb  win~2.3x  emit_mx=0.12 Mb  root-cells(1x)=0.09 Mb
+# rung-4 checkpointed structured truncated OptAcc engaged: M=960 L=295 mode=J (local, truncated, bps>0)
