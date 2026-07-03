@@ -156,8 +156,8 @@ static ESL_OPTIONS options[] = {
   { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp,--p7wv-pad", "brief172: load WV pad from <f> (skip per-run calib)",  3 },
   { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "brief173: constant WV band half-width (no calibration)",     3 },
   { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "brief173: opt back in to per-node WV pad calibration",       3 },
-  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge,--p7kmerchain", "k-mer best-window anchor bands (brief 026)",   3 },
-  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band", "--p7ibv,--p7pinbridge,--p7kmeranchor", "genome-scale k-mer seed-and-chain bands (brief 027)", 3 },
+  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmerchain", "k-mer best-window anchor bands (--p7band/--hmm)",   3 },
+  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmeranchor", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -986,8 +986,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].ibv_base_slab = esl_opt_IsDefault(go, "--p7ibv-base-slab")
 	                         ? HMM_P7IBV_KNEE_BASE_SLAB
 	                         : esl_opt_GetInteger(go, "--p7ibv-base-slab");
-	/* CM only needed by the IBV deriver (for cm->fp7); else unused in --hmm mode */
-	winfo[k].cm          = do_p7ibv ? cm : NULL;
+	/* CM only needed by the IBV/kmeranchor/kmerchain derivers (for cm->fp7);
+	 * else unused in --hmm mode. brief 032: kmeranchor/kmerchain also need it. */
+	winfo[k].cm          = (do_p7ibv || cm->p7_use_kmeranchor || cm->p7_use_kmerchain) ? cm : NULL;
 	winfo[k].dataA       = NULL;
 	winfo[k].n           = 0;
 	winfo[k].mxsize      = esl_opt_GetReal(go, "--mxsize");
@@ -1114,43 +1115,72 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
 	  else {
-	    vtr = p7_trace_Create();
-	    p7_gmx_GrowTo(gx, hmm->M, sq->n);
-	    p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
-	    p7_trace_Reuse(vtr);
-	    status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
-
-	    if (status != eslOK || vtr->N == 0) {
-	      P7_GMX *fallback_gxf = p7_gmx_Create(hmm->M, sq->n);
-	      P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
-	      p7_GForward (sq->dsq, sq->n, gm, fallback_gxf, &fwdsc);
-	      p7_GBackward(sq->dsq, sq->n, gm, fallback_gxb, NULL);
-	      p7_GDecoding(gm, fallback_gxf, fallback_gxb, fallback_gxb);
-	      p7_GOptimalAccuracy(gm, fallback_gxb, fallback_gxf, &oasc);
-	      p7_trace_Reuse(tr[idx]);
-	      p7_GOATrace(gm, fallback_gxb, fallback_gxf, tr[idx]);
-	      p7_gmx_Destroy(fallback_gxf);
-	      p7_gmx_Destroy(fallback_gxb);
-	      p7_trace_Destroy(vtr);
-	      continue;
+	    /* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
+	     * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch;
+	     * --notrunc-only scope, do_trunc threading is out of scope here). */
+	    int did_kmer = FALSE;
+	    int *local_nodepad = NULL;
+	    if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
+	      int k;
+	      ESL_ALLOC(local_nodepad, sizeof(int) * (hmm->M + 1));
+	      for (k = 0; k <= hmm->M; k++) local_nodepad[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
 	    }
+	    if (cm->p7_use_kmeranchor) {
+	      did_kmer = TRUE;
+	      if ((status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->n, local_nodepad,
+						   &i2k, &kmin, &kmax, &ncells)) != eslOK)
+		cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
+	    }
+	    else if (cm->p7_use_kmerchain) {
+	      did_kmer = TRUE;
+	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
+						  &i2k, &kmin, &kmax, &ncells)) != eslOK)
+		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
+	    }
+	    if (local_nodepad) free(local_nodepad);
 
-	    {
-	      int tpos;
-	      ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
-	      esl_vec_ISet(i2k, (sq->n + 1), -1);
-	      for (tpos = 0; tpos < vtr->N; tpos++) {
-		if (vtr->st[tpos] == p7T_M) {
-		  int i = vtr->i[tpos];
-		  int k = vtr->k[tpos];
-		  if (i >= 1 && i <= sq->n && k >= 1 && k <= hmm->M)
-		    i2k[i] = k;
+	    if (! did_kmer || ncells == 0) {
+	      /* Default Mode-3 path (no kmer flag set), and also the kmeranchor/
+	       * kmerchain ncells==0 fallback (mirrors cm_alndata.c's
+	       * kmeranchor->vitband / kmerchain->vitband fallback shape). */
+	      vtr = p7_trace_Create();
+	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
+	      p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
+	      p7_trace_Reuse(vtr);
+	      status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
+
+	      if (status != eslOK || vtr->N == 0) {
+		P7_GMX *fallback_gxf = p7_gmx_Create(hmm->M, sq->n);
+		P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
+		p7_GForward (sq->dsq, sq->n, gm, fallback_gxf, &fwdsc);
+		p7_GBackward(sq->dsq, sq->n, gm, fallback_gxb, NULL);
+		p7_GDecoding(gm, fallback_gxf, fallback_gxb, fallback_gxb);
+		p7_GOptimalAccuracy(gm, fallback_gxb, fallback_gxf, &oasc);
+		p7_trace_Reuse(tr[idx]);
+		p7_GOATrace(gm, fallback_gxb, fallback_gxf, tr[idx]);
+		p7_gmx_Destroy(fallback_gxf);
+		p7_gmx_Destroy(fallback_gxb);
+		p7_trace_Destroy(vtr);
+		continue;
+	      }
+
+	      {
+		int tpos;
+		ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+		esl_vec_ISet(i2k, (sq->n + 1), -1);
+		for (tpos = 0; tpos < vtr->N; tpos++) {
+		  if (vtr->st[tpos] == p7T_M) {
+		    int i = vtr->i[tpos];
+		    int k = vtr->k[tpos];
+		    if (i >= 1 && i <= sq->n && k >= 1 && k <= hmm->M)
+		      i2k[i] = k;
+		  }
 		}
 	      }
-	    }
 
-	    if ((status = p7_pins2bands(i2k, errbuf, sq->n, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
-	      cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	      if ((status = p7_pins2bands(i2k, errbuf, sq->n, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+		cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	    }
 	  }
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
@@ -1679,44 +1709,74 @@ hmm_pipeline_thread(void *arg)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }
       else {
-	vtr = p7_trace_Create();
-	p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
-	p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
-	p7_trace_Reuse(vtr);
-	status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
-
-	if (status != eslOK || vtr->N == 0) {
-	  /* Viterbi failed; fall back to unbanded OA */
-	  P7_GMX *fallback_gxf = p7_gmx_Create(info->hmm->M, sq->n);
-	  P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
-	  p7_GForward (sq->dsq, sq->n, info->gm, fallback_gxf, &fwdsc);
-	  p7_GBackward(sq->dsq, sq->n, info->gm, fallback_gxb, NULL);
-	  p7_GDecoding(info->gm, fallback_gxf, fallback_gxb, fallback_gxb);
-	  p7_GOptimalAccuracy(info->gm, fallback_gxb, fallback_gxf, &oasc);
-	  p7_trace_Reuse(info->hmm_tr[idx]);
-	  p7_GOATrace(info->gm, fallback_gxb, fallback_gxf, info->hmm_tr[idx]);
-	  p7_gmx_Destroy(fallback_gxf);
-	  p7_gmx_Destroy(fallback_gxb);
-	  p7_trace_Destroy(vtr);
-	  goto HMM_NEXT_SQ;
+	/* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
+	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch;
+	 * --notrunc-only scope, do_trunc threading is out of scope here). */
+	int did_kmer = FALSE;
+	int *local_nodepad = NULL;
+	if (info->cm != NULL && (info->cm->p7_use_kmeranchor || info->cm->p7_use_kmerchain)
+	    && (info->cm->flags & CMH_P7NODEPAD)) {
+	  int k;
+	  ESL_ALLOC(local_nodepad, sizeof(int) * (info->hmm->M + 1));
+	  for (k = 0; k <= info->hmm->M; k++) local_nodepad[k] = info->cm->p7_cm_nodepad[k] + info->cm->p7bpad;
 	}
+	if (info->cm != NULL && info->cm->p7_use_kmeranchor) {
+	  did_kmer = TRUE;
+	  if ((status = p7_Seq2BandsKmerAnchor(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
+					       &i2k, &kmin, &kmax, &ncells)) != eslOK)
+	    cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
+	}
+	else if (info->cm != NULL && info->cm->p7_use_kmerchain) {
+	  did_kmer = TRUE;
+	  if ((status = p7_Seq2BandsKmerChain(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
+					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
+	    cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
+	}
+	if (local_nodepad) free(local_nodepad);
 
-	{
-	  int tpos;
-	  ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
-	  esl_vec_ISet(i2k, (sq->n + 1), -1);
-	  for (tpos = 0; tpos < vtr->N; tpos++) {
-	    if (vtr->st[tpos] == p7T_M) {
-	      int i = vtr->i[tpos];
-	      int k = vtr->k[tpos];
-	      if (i >= 1 && i <= sq->n && k >= 1 && k <= info->hmm->M)
-		i2k[i] = k;
+	if (! did_kmer || ncells == 0) {
+	  /* Default banded-OA path (no kmer flag set), and also the
+	   * kmeranchor/kmerchain ncells==0 fallback (mirrors cm_alndata.c's
+	   * kmeranchor->vitband / kmerchain->vitband fallback shape). */
+	  vtr = p7_trace_Create();
+	  p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
+	  p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
+	  p7_trace_Reuse(vtr);
+	  status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
+
+	  if (status != eslOK || vtr->N == 0) {
+	    /* Viterbi failed; fall back to unbanded OA */
+	    P7_GMX *fallback_gxf = p7_gmx_Create(info->hmm->M, sq->n);
+	    P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
+	    p7_GForward (sq->dsq, sq->n, info->gm, fallback_gxf, &fwdsc);
+	    p7_GBackward(sq->dsq, sq->n, info->gm, fallback_gxb, NULL);
+	    p7_GDecoding(info->gm, fallback_gxf, fallback_gxb, fallback_gxb);
+	    p7_GOptimalAccuracy(info->gm, fallback_gxb, fallback_gxf, &oasc);
+	    p7_trace_Reuse(info->hmm_tr[idx]);
+	    p7_GOATrace(info->gm, fallback_gxb, fallback_gxf, info->hmm_tr[idx]);
+	    p7_gmx_Destroy(fallback_gxf);
+	    p7_gmx_Destroy(fallback_gxb);
+	    p7_trace_Destroy(vtr);
+	    goto HMM_NEXT_SQ;
+	  }
+
+	  {
+	    int tpos;
+	    ESL_ALLOC(i2k, sizeof(int) * (sq->n + 1));
+	    esl_vec_ISet(i2k, (sq->n + 1), -1);
+	    for (tpos = 0; tpos < vtr->N; tpos++) {
+	      if (vtr->st[tpos] == p7T_M) {
+		int i = vtr->i[tpos];
+		int k = vtr->k[tpos];
+		if (i >= 1 && i <= sq->n && k >= 1 && k <= info->hmm->M)
+		  i2k[i] = k;
+	      }
 	    }
 	  }
-	}
 
-	if ((status = p7_pins2bands(i2k, errbuf, sq->n, info->hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
-	  cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	  if ((status = p7_pins2bands(i2k, errbuf, sq->n, info->hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+	    cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
+	}
       }
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
@@ -2416,40 +2476,70 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	P7_GBANDS *bnd_w = NULL;
 	P7_GMXB *bxf_w  = NULL;
 	P7_GMXB *bxb_w  = NULL;
-	P7_TRACE *vtr_w = p7_trace_Create();
+	P7_TRACE *vtr_w = NULL;
 	int       tpos_w;
 
-	p7_gmx_GrowTo(gx_w, hmm_w->M, L);
-	p7_GViterbi(dsq, L, gm_w, gx_w, &sc_w);
-	p7_GTrace(dsq, L, gm_w, gx_w, vtr_w);
-
-	if (vtr_w->N == 0) {
-	  /* fallback to unbanded */
-	  P7_GMX *fb_gxf = p7_gmx_Create(hmm_w->M, L);
-	  P7_GMX *fb_gxb = p7_gmx_Create(hmm_w->M, L);
-	  p7_GForward (dsq, L, gm_w, fb_gxf, &fwdsc_w);
-	  p7_GBackward(dsq, L, gm_w, fb_gxb, NULL);
-	  p7_GDecoding(gm_w, fb_gxf, fb_gxb, fb_gxb);
-	  p7_GOptimalAccuracy(gm_w, fb_gxb, fb_gxf, &oasc_w);
-	  p7_GOATrace(gm_w, fb_gxb, fb_gxf, wtr);
-	  p7_gmx_Destroy(fb_gxf);
-	  p7_gmx_Destroy(fb_gxb);
-	  p7_trace_Destroy(vtr_w);
-	  goto HMM_MPI_SEND;
+	/* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
+	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch;
+	 * --notrunc-only scope, do_trunc threading is out of scope here). */
+	int did_kmer_w = FALSE;
+	int *local_nodepad_w = NULL;
+	if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
+	  int k;
+	  ESL_ALLOC(local_nodepad_w, sizeof(int) * (hmm_w->M + 1));
+	  for (k = 0; k <= hmm_w->M; k++) local_nodepad_w[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
 	}
+	if (cm->p7_use_kmeranchor) {
+	  did_kmer_w = TRUE;
+	  if (p7_Seq2BandsKmerAnchor(cm, errbuf, dsq, L, local_nodepad_w,
+				     &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
+	    mpi_failure("p7_Seq2BandsKmerAnchor() failed: %s", errbuf);
+	}
+	else if (cm->p7_use_kmerchain) {
+	  did_kmer_w = TRUE;
+	  if (p7_Seq2BandsKmerChain(cm, errbuf, dsq, L, local_nodepad_w,
+				    &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
+	    mpi_failure("p7_Seq2BandsKmerChain() failed: %s", errbuf);
+	}
+	if (local_nodepad_w) free(local_nodepad_w);
 
-	ESL_ALLOC(i2k_w, sizeof(int) * (L + 1));
-	esl_vec_ISet(i2k_w, (L + 1), -1);
-	for (tpos_w = 0; tpos_w < vtr_w->N; tpos_w++) {
-	  if (vtr_w->st[tpos_w] == p7T_M) {
-	    int ii = vtr_w->i[tpos_w];
-	    int kk = vtr_w->k[tpos_w];
-	    if (ii >= 1 && ii <= L && kk >= 1 && kk <= hmm_w->M)
-	      i2k_w[ii] = kk;
+	if (! did_kmer_w || ncells_w == 0) {
+	  /* Default Viterbi-banded OA path (no kmer flag set), and also the
+	   * kmeranchor/kmerchain ncells==0 fallback (mirrors cm_alndata.c's
+	   * kmeranchor->vitband / kmerchain->vitband fallback shape). */
+	  vtr_w = p7_trace_Create();
+	  p7_gmx_GrowTo(gx_w, hmm_w->M, L);
+	  p7_GViterbi(dsq, L, gm_w, gx_w, &sc_w);
+	  p7_GTrace(dsq, L, gm_w, gx_w, vtr_w);
+
+	  if (vtr_w->N == 0) {
+	    /* fallback to unbanded */
+	    P7_GMX *fb_gxf = p7_gmx_Create(hmm_w->M, L);
+	    P7_GMX *fb_gxb = p7_gmx_Create(hmm_w->M, L);
+	    p7_GForward (dsq, L, gm_w, fb_gxf, &fwdsc_w);
+	    p7_GBackward(dsq, L, gm_w, fb_gxb, NULL);
+	    p7_GDecoding(gm_w, fb_gxf, fb_gxb, fb_gxb);
+	    p7_GOptimalAccuracy(gm_w, fb_gxb, fb_gxf, &oasc_w);
+	    p7_GOATrace(gm_w, fb_gxb, fb_gxf, wtr);
+	    p7_gmx_Destroy(fb_gxf);
+	    p7_gmx_Destroy(fb_gxb);
+	    p7_trace_Destroy(vtr_w);
+	    goto HMM_MPI_SEND;
 	  }
-	}
 
-	p7_pins2bands(i2k_w, errbuf, L, hmm_w->M, pad_w, &kmin_w, &kmax_w, &ncells_w);
+	  ESL_ALLOC(i2k_w, sizeof(int) * (L + 1));
+	  esl_vec_ISet(i2k_w, (L + 1), -1);
+	  for (tpos_w = 0; tpos_w < vtr_w->N; tpos_w++) {
+	    if (vtr_w->st[tpos_w] == p7T_M) {
+	      int ii = vtr_w->i[tpos_w];
+	      int kk = vtr_w->k[tpos_w];
+	      if (ii >= 1 && ii <= L && kk >= 1 && kk <= hmm_w->M)
+		i2k_w[ii] = kk;
+	    }
+	  }
+
+	  p7_pins2bands(i2k_w, errbuf, L, hmm_w->M, pad_w, &kmin_w, &kmax_w, &ncells_w);
+	}
 	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
 	bxf_w = p7_gmxb_Create(bnd_w);
 	bxb_w = p7_gmxb_Create(bnd_w);
@@ -2764,6 +2854,41 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
     if(esl_opt_GetBoolean(go, "--hmmnoband")) {
       puts("\nERROR: --hmmnoband incompatible with --p7ibv (--hmmnoband means no bands)\n");
+      goto ERROR;
+    }
+  }
+
+  /* brief 032: --p7kmeranchor/--p7kmerchain only derive bands; they need an
+   * anchor mode to use them: --p7band (CM-side) or --hmm (HMM-only banded OA),
+   * same requirement as --p7ibv above.
+   */
+  if((esl_opt_GetBoolean(go, "--p7kmeranchor") || esl_opt_GetBoolean(go, "--p7kmerchain")) &&
+     (! esl_opt_GetBoolean(go, "--p7band")) && (! esl_opt_GetBoolean(go, "--hmm"))) {
+    puts("\nERROR: --p7kmeranchor/--p7kmerchain require --p7band or --hmm\n");
+    goto ERROR;
+  }
+  /* --hmm --p7kmeranchor/--p7kmerchain is --notrunc-only (brief 030/032): the
+   * kmer derivers don't yet thread do_trunc/Tgm, matching CM-mode's current
+   * --p7band --p7kmeranchor/--p7kmerchain scope (brief 026/027, also
+   * --notrunc-only). Do not silently run truncation-aware alignment through
+   * this untested path -- reject loudly instead.
+   */
+  if((esl_opt_GetBoolean(go, "--p7kmeranchor") || esl_opt_GetBoolean(go, "--p7kmerchain")) &&
+     (! esl_opt_GetBoolean(go, "--notrunc"))) {
+    puts("\nERROR: --p7kmeranchor/--p7kmerchain require --notrunc (do_trunc threading not yet implemented; brief 030/032)\n");
+    goto ERROR;
+  }
+  /* --hmm --p7kmeranchor/--p7kmerchain is the k-mer-banded-OA HMM sub-mode;
+   * reject the other --hmm sub-modes (Viterbi-trace and unbanded full OA) in
+   * combination with it, mirroring the --p7ibv incompatibility above.
+   */
+  if(esl_opt_GetBoolean(go, "--hmm") && (esl_opt_GetBoolean(go, "--p7kmeranchor") || esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    if(esl_opt_GetBoolean(go, "--hmmvit")) {
+      puts("\nERROR: --hmmvit incompatible with --p7kmeranchor/--p7kmerchain (pins-to-trace not implemented yet)\n");
+      goto ERROR;
+    }
+    if(esl_opt_GetBoolean(go, "--hmmnoband")) {
+      puts("\nERROR: --hmmnoband incompatible with --p7kmeranchor/--p7kmerchain (--hmmnoband means no bands)\n");
       goto ERROR;
     }
   }
