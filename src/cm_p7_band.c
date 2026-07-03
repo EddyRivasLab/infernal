@@ -734,12 +734,24 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
     }
   }
 
-  /* get number of cells if wanted */
-  int ncells;
+  /* get number of cells if wanted.
+   * Brief 027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
+   * anchors -> wide bands) the true cell count reaches ~1e10, overflowing the
+   * int32 accumulator and wrapping to <=0, which would spuriously trip the
+   * caller's ncells==0 fallback. ret_ncells stays int (every caller uses it
+   * only as a >0/==0 discriminator + debug avg_bw; it never sizes memory), so
+   * we saturate the returned value at INT_MAX and emit the true int64 count on
+   * a debug line for genome-scale band-size measurement. */
   if(ret_ncells != NULL) {
-    ncells = 0;
-    for(i = 1; i <= L; i++) ncells += kmax[i] - kmin[i] + 1;
-    *ret_ncells = ncells;
+    int64_t ncells64 = 0;
+    for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
+    if(ncells64 > (int64_t) INT_MAX) {
+      fprintf(stderr, "#NCELLS64 p7_pins2bands L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+              L, M, (long long) ncells64);
+      *ret_ncells = INT_MAX;
+    } else {
+      *ret_ncells = (int) ncells64;
+    }
   }
 
   if(ret_kmin != NULL) { *ret_kmin = kmin; } else free(kmin);
@@ -873,12 +885,24 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
     free(pin_pos);
   }
 
-  /* get number of cells if wanted */
-  int ncells;
+  /* get number of cells if wanted.
+   * Brief 027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
+   * anchors -> wide bands) the true cell count reaches ~1e10, overflowing the
+   * int32 accumulator and wrapping to <=0, which would spuriously trip the
+   * caller's ncells==0 fallback. ret_ncells stays int (every caller uses it
+   * only as a >0/==0 discriminator + debug avg_bw; it never sizes memory), so
+   * we saturate the returned value at INT_MAX and emit the true int64 count on
+   * a debug line for genome-scale band-size measurement. */
   if(ret_ncells != NULL) {
-    ncells = 0;
-    for(i = 1; i <= L; i++) ncells += kmax[i] - kmin[i] + 1;
-    *ret_ncells = ncells;
+    int64_t ncells64 = 0;
+    for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
+    if(ncells64 > (int64_t) INT_MAX) {
+      fprintf(stderr, "#NCELLS64 p7_pins2bands_nodepad L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+              L, M, (long long) ncells64);
+      *ret_ncells = INT_MAX;
+    } else {
+      *ret_ncells = (int) ncells64;
+    }
   }
 
   if(ret_kmin != NULL) { *ret_kmin = kmin; } else free(kmin);
