@@ -2837,14 +2837,14 @@ pin_tr_optacc_B(TR_CKPT_CTX *cx, int v,
 
 /* Function: cm_CheckptTrAlignHB_Qualifies()
  * Purpose:  Return TRUE iff <cm> is a pure left-emitting MATL chain
- *           (0 B_st, no MP/MR, only S/IL/IR/ML/D/E) configured in GLOBAL
- *           mode (no local begins/ends).  These are the conditions (bps=0)
- *           under which the checkpointed truncated engines
+ *           (0 B_st, no MP/MR, only S/IL/IR/ML/D/E).  These are the
+ *           conditions (bps=0) under which the checkpointed truncated engines
  *           (cm_CheckptTrAlignHB) reproduce the stock cm_TrAlignHB OptAcc
  *           path byte-for-byte: marginal modes are J/L/R only (T is written
- *           only at B states; bps=0 has none).  Identical to the
- *           non-truncated gate; the caller (DispatchSqAlignment) falls back
- *           to the stock path when FALSE.
+ *           only at B states; bps=0 has none).  Local begins/ends are
+ *           supported (R-L.3), inherited for free by delegating to the
+ *           non-truncated gate cm_CheckptAlignHB_Qualifies(); the caller
+ *           (DispatchSqAlignment) falls back to the stock path when FALSE.
  */
 int
 cm_CheckptTrAlignHB_Qualifies(CM_t *cm)
@@ -2853,14 +2853,16 @@ cm_CheckptTrAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptTrOptAccAlignHB_Qualifies()
- * Purpose:  Return TRUE iff <cm> is a GLOBAL (no local begins/ends) STRUCTURED
- *           CM (>= 1 B/MP/MR) whose state set is the supported rung-4 surface
- *           (S/IL/IR/ML/MR/MP/D/E/B).  These are the conditions under which the
- *           rung-4 TRUNCATED pipeline (cm_CheckptTrPostAlignHB +
- *           cm_CheckptTrOptAccAlignHB + the pinned-tree traceback) reproduces
- *           the stock cm_TrAlignHB OptAcc path's alignment (modulo the brief-032
- *           accuracy-neutral pin-B flips) across marginal modes J/L/R/T, with a
- *           sqrt(M) per-mode working set.  bps=0 CMs return FALSE here (they use
+ * Purpose:  Return TRUE iff <cm> is a STRUCTURED CM (>= 1 B/MP/MR) whose
+ *           state set is the supported rung-4 surface (S/IL/IR/ML/MR/MP/D/E/B).
+ *           These are the conditions under which the rung-4 TRUNCATED pipeline
+ *           (cm_CheckptTrPostAlignHB + cm_CheckptTrOptAccAlignHB + the
+ *           pinned-tree traceback) reproduces the stock cm_TrAlignHB OptAcc
+ *           path's alignment (modulo the brief-032 accuracy-neutral pin-B
+ *           flips) across marginal modes J/L/R/T, with a sqrt(M) per-mode
+ *           working set.  Local begins/ends are supported (R-L.5a/5b: the
+ *           rung-4 engine consumes CMH_LOCAL_BEGIN/CMH_LOCAL_END), so this gate
+ *           does NOT reject local CMs.  bps=0 CMs return FALSE here (they use
  *           the fused cm_CheckptTrAlignHB instead).
  *
  *           Deliberately SEPARATE from (and NOT delegating to)
@@ -2875,8 +2877,6 @@ int
 cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm)
 {
   int v, has_bps = FALSE;
-  if (cm->flags & CMH_LOCAL_BEGIN) return FALSE;
-  if (cm->flags & CMH_LOCAL_END)   return FALSE;
   for (v = 0; v < cm->M; v++) {
     int st = cm->sttype[v];
     if (st == B_st || st == MP_st || st == MR_st) has_bps = TRUE;

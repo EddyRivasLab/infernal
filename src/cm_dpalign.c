@@ -1763,18 +1763,19 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
 
 /* Function: cm_CheckptAlignHB_Qualifies()
  * Purpose:  Return TRUE iff <cm> is a pure left-emitting MATL chain
- *           (0 B_st, no MP/MR, only S/IL/IR/ML/D/E) configured in GLOBAL
- *           mode (no local begins/ends).  These are the conditions under
- *           which the checkpointed engines (cm_CheckptAlignHB) reproduce
- *           the stock non-truncated OptAcc path byte-for-byte.  The caller
- *           (DispatchSqAlignment) falls back to the stock path when FALSE.
+ *           (0 B_st, no MP/MR, only S/IL/IR/ML/D/E).  These are the
+ *           conditions under which the checkpointed engines
+ *           (cm_CheckptAlignHB) reproduce the stock non-truncated OptAcc
+ *           path byte-for-byte.  Local begins/ends are supported (R-L.2/2b:
+ *           the engine consumes CMH_LOCAL_BEGIN/CMH_LOCAL_END via its
+ *           have_local_begin/have_el context), so this gate does NOT reject
+ *           local CMs.  The caller (DispatchSqAlignment) falls back to the
+ *           stock path when FALSE.
  */
 int
 cm_CheckptAlignHB_Qualifies(CM_t *cm)
 {
   int v;
-  if (cm->flags & CMH_LOCAL_BEGIN) return FALSE;
-  if (cm->flags & CMH_LOCAL_END)   return FALSE;
   for (v = 0; v < cm->M; v++) {
     int st = cm->sttype[v];
     if (st == B_st || st == MP_st || st == MR_st) return FALSE;
@@ -1784,13 +1785,15 @@ cm_CheckptAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptOptAccAlignHB_Qualifies()
- * Purpose:  Return TRUE iff <cm> is a GLOBAL (no local begins/ends) STRUCTURED
- *           CM (>= 1 B/MP/MR) whose state set is the supported rung-3 surface
- *           (S/IL/IR/ML/MR/MP/D/E/B).  These are the conditions under which the
- *           rung-3 pipeline (cm_CheckptPostAlignHB + cm_CheckptOptAccAlignHB)
- *           reproduces the stock NON-truncated OptAcc path's alignment (modulo
- *           the brief-032 accuracy-neutral pin-B flips), with a sqrt(M) working
- *           set.  bps=0 CMs return FALSE here (they use the fused
+ * Purpose:  Return TRUE iff <cm> is a STRUCTURED CM (>= 1 B/MP/MR) whose
+ *           state set is the supported rung-3 surface (S/IL/IR/ML/MR/MP/D/E/B).
+ *           These are the conditions under which the rung-3 pipeline
+ *           (cm_CheckptPostAlignHB + cm_CheckptOptAccAlignHB) reproduces the
+ *           stock NON-truncated OptAcc path's alignment (modulo the brief-032
+ *           accuracy-neutral pin-B flips), with a sqrt(M) working set.  Local
+ *           begins/ends are supported (R-L.4/4b: the rung-3 engine consumes
+ *           CMH_LOCAL_BEGIN/CMH_LOCAL_END), so this gate does NOT reject local
+ *           CMs.  bps=0 CMs return FALSE here (they use the fused
  *           cm_CheckptAlignHB instead).  Deliberately SEPARATE from
  *           cm_CheckptAlignHB_Qualifies so the truncated qualifier
  *           (cm_CheckptTrAlignHB_Qualifies, which delegates to that one) is NOT
@@ -1800,8 +1803,6 @@ int
 cm_CheckptOptAccAlignHB_Qualifies(CM_t *cm)
 {
   int v, has_bps = FALSE;
-  if (cm->flags & CMH_LOCAL_BEGIN) return FALSE;
-  if (cm->flags & CMH_LOCAL_END)   return FALSE;
   for (v = 0; v < cm->M; v++) {
     int st = cm->sttype[v];
     if (st == B_st || st == MP_st || st == MR_st) has_bps = TRUE;

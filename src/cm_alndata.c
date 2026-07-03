@@ -480,13 +480,14 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	if((status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
 	/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
-	 * (CM_ALIGN_CHECKPT) for the global, pure-MATL-chain (bps=0) OptAcc case it
-	 * supports (marginal modes J/L/R, T absent); stock cm_TrAlignHB() otherwise
-	 * (byte-identical output, but full-cube memory). */
+	 * (CM_ALIGN_CHECKPT) for the pure-MATL-chain (bps=0) OptAcc case it
+	 * supports (marginal modes J/L/R, T absent), in either local (default) or
+	 * global (-g) config; stock cm_TrAlignHB() otherwise (byte-identical
+	 * output, but full-cube memory). */
 	int do_trckpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
 			 cm_CheckptTrAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 	/* rung-4 checkpointed STRUCTURED (bps>0) TRUNCATED OptAcc pipeline: engaged
-	 * by --ckpt for global, structured CMs in truncated mode.  Truncated analogue
+	 * by --ckpt for structured CMs in truncated mode (local or global).  Truncated analogue
 	 * of the non-truncated rung-3 path below.  SEPARATE qualifier so the bps=0
 	 * truncated gate (cm_CheckptTrAlignHB_Qualifies, which delegates to the bps=0
 	 * cm_CheckptAlignHB_Qualifies) is NOT relaxed: bps=0 truncated stays on
@@ -546,8 +547,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  sc = r4_Z;
 	  free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode);
 	  if(getenv("INFERNAL_CKPT_VERBOSE"))
-	    fprintf(stderr, "# rung-4 checkpointed structured truncated OptAcc engaged: M=%d L=%d mode=%c (global, truncated, bps>0)\n",
-		    cm->M, (int) sq->L, (r4_mode==TRMODE_J)?'J':(r4_mode==TRMODE_L)?'L':(r4_mode==TRMODE_R)?'R':'T');
+	    fprintf(stderr, "# rung-4 checkpointed structured truncated OptAcc engaged: M=%d L=%d mode=%c (%s, truncated, bps>0)\n",
+		    cm->M, (int) sq->L, (r4_mode==TRMODE_J)?'J':(r4_mode==TRMODE_L)?'L':(r4_mode==TRMODE_R)?'R':'T',
+		    (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 	}
 	else {
       	  if((status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
@@ -559,12 +561,13 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
 	/* checkpointed sqrt(M)-memory OptAcc path: engaged by --ckpt (CM_ALIGN_CHECKPT)
-	 * only for the non-truncated, global, pure-MATL-chain OptAcc case it supports;
-	 * stock cm_AlignHB() otherwise (byte-identical output, but full-cube memory). */
+	 * only for the non-truncated, pure-MATL-chain OptAcc case it supports (local
+	 * or global config); stock cm_AlignHB() otherwise (byte-identical output, but
+	 * full-cube memory). */
 	int do_checkpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
 			  cm_CheckptAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 	/* rung-3 checkpointed STRUCTURED (bps>0) OptAcc pipeline: engaged by --ckpt
-	 * for global, non-truncated structured CMs.  Pass 1 CYK D&C supplies the
+	 * for non-truncated structured CMs (local or global).  Pass 1 CYK D&C supplies the
 	 * bifurcation k* pins; pass 2 = checkpointed pinned posterior -> emit_mx ->
 	 * checkpointed pinned OptAcc + pinned-tree traceback.  Separate qualifier so
 	 * the truncated gate is NOT relaxed (truncated bps>0 falls back to stock). */
@@ -591,7 +594,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  sc = r3_Z;
 	  free(kpin);
 	  if(getenv("INFERNAL_CKPT_VERBOSE"))
-	    fprintf(stderr, "# rung-3 checkpointed structured OptAcc engaged: M=%d L=%d (global, non-truncated, bps>0)\n", cm->M, (int) sq->L);
+	    fprintf(stderr, "# rung-3 checkpointed structured OptAcc engaged: M=%d L=%d (%s, non-truncated, bps>0)\n", cm->M, (int) sq->L,
+		    (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 	}
 	else {
 	  if((status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
