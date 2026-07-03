@@ -14,6 +14,7 @@
 #include <math.h>
 #include <float.h>
 #include <limits.h>
+#include <stdint.h>
 #include <assert.h>
 
 #include <xmmintrin.h>
@@ -887,6 +888,257 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  ERROR:
   ESL_FAIL(status, errbuf, "p7_pins2bands_nodepad() memory error.");
   return status; /* NEVERREACHED */
+}
+
+/*****************************************************************
+ * Brief 026: k-mer best-window anchor guide-deriver.
+ *
+ * A blind (no-oracle) guide-derivation-layer addition against the EXISTING,
+ * already-generic pin->band consumer chain. Finds the best-scoring k-mer window
+ * across the full model consensus by diagonal-dominance (minimap2-style: within
+ * a model window, hits on the dominant diagonal d = j - t are anchor-like,
+ * off-diagonal hits are spurious), emits sparse i2k pins on that diagonal with
+ * outward expansion (allowing the diagonal to drift with indels), and feeds them
+ * through the UNMODIFIED p7_pins2bands_nodepad exactly as the MSV/Viterbi pins
+ * do -- zero changes to the consumer. Gated behind --p7kmeranchor (opt-in).
+ *
+ * De-risked in Python first (notebook brief026_runs/, DERISK_FINDING.md):
+ * reproduces brief 025's oracle best-window selection on small models (~93%
+ * exact bin), but is fooled by repeat-driven false diagonals at genome scale
+ * (HSV) -- single-window blind anchoring is expected to fail the big track.
+ *****************************************************************/
+
+#define KMW_BIN         200   /* model-window (bin) width, matches brief 023/025 B */
+#define KMW_TOL         15    /* diagonal-cluster tolerance (brief 023/025 TOL)    */
+#define KMW_MIN_CORRECT 3     /* floor: min on-diagonal hits for a real window     */
+#define KMW_DRIFT       25    /* diagonal drift allowed when expanding outward     */
+#define KMW_EXP_FLOOR   2     /* min on-diagonal hits to accept an expansion bin   */
+
+static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-encodable */
+#define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
+
+typedef struct { uint64_t code; int pos; } kmw_kmer_t; /* a target k-mer occurrence */
+typedef struct { int j, t, k; }            kmw_hit_t;  /* model j / target t / k-length */
+
+static int kmw_kmer_cmp(const void *a, const void *b) {
+  uint64_t ca = ((const kmw_kmer_t *)a)->code, cb = ((const kmw_kmer_t *)b)->code;
+  return (ca > cb) - (ca < cb);
+}
+static int kmw_int_cmp(const void *a, const void *b) {
+  int ia = *(const int *)a, ib = *(const int *)b;
+  return (ia > ib) - (ia < ib);
+}
+
+/* first index in sorted arr[0..n-1] whose code >= key */
+static int kmw_lower_bound(const kmw_kmer_t *arr, int n, uint64_t key) {
+  int lo = 0, hi = n;
+  while (lo < hi) { int mid = (lo+hi)/2; if (arr[mid].code < key) lo = mid+1; else hi = mid; }
+  return lo;
+}
+
+/* encode digital k-mer of length k (<=31) at v[pos] (2 bits/residue).
+ * *ok=0 if any residue is degenerate (>3, i.e. not a canonical ACGU). */
+static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
+  uint64_t code = 0; int o;
+  for (o = 0; o < k; o++) {
+    ESL_DSQ r = v[pos+o];
+    if (r > 3) { *ok = 0; return 0; }
+    code |= ((uint64_t) r) << (2*o);
+  }
+  *ok = 1;
+  return code;
+}
+
+/* given sorted d[0..n-1], find the window of half-width `tol` covering the most
+ * points; returns that count and (via *center) a representative diagonal. */
+static int kmw_dominant(const int *d, int n, int tol, int *center) {
+  int best_cnt = 0, best_c = (n>0 ? d[0] : 0), lo = 0, i;
+  for (i = 0; i < n; i++) {
+    while (d[i] - d[lo] > 2*tol) lo++;
+    if (i - lo + 1 > best_cnt) { best_cnt = i - lo + 1; best_c = d[(i+lo)/2]; }
+  }
+  if (center) *center = best_c;
+  return best_cnt;
+}
+
+/* Emit pins for all hits whose diagonal is within `tol` of `dcenter`. For a hit
+ * (model j, target t, length k): pin i2k[t+o]=j+o for o=0..k-1, set only if
+ * currently unpinned (keeps the pin set monotone/conflict-free on one diagonal).
+ * Returns # positions newly pinned. */
+static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int tol, int L, int M) {
+  int i, o, npin = 0;
+  for (i = 0; i < n; i++) {
+    int d = hits[i].j - hits[i].t;
+    if (d < dcenter - tol || d > dcenter + tol) continue;
+    for (o = 0; o < hits[i].k; o++) {
+      int tt = hits[i].t + o, jj = hits[i].j + o;
+      if (tt >= 1 && tt <= L && jj >= 1 && jj <= M && i2k[tt] == -1) { i2k[tt] = jj; npin++; }
+    }
+  }
+  return npin;
+}
+
+/* Function: p7_Seq2BandsKmerAnchor()
+ * Date:     Brief 026, 2026-07-03
+ *
+ * Purpose:  Derive p7 bands from a k-mer best-window anchor instead of a full
+ *           MSV/Viterbi pass. Blind diagonal-dominance window scoring over the
+ *           model consensus, sparse-pin emission on the best diagonal with
+ *           outward expansion, then the UNMODIFIED p7_pins2bands_nodepad.
+ *
+ * Args:     cm         - covariance model (uses cm->fp7 for consensus, cm->p7bpad)
+ *           errbuf     - for error messages
+ *           dsq        - digital target sequence, 1..L
+ *           L          - length of dsq
+ *           nodepad    - [0..M] per-node pad array, or NULL for uniform cm->p7bpad
+ *           ret_i2k    - RETURN: per-residue pin array (caller frees), NULL if none
+ *           ret_kmin   - RETURN: per-residue kmin (caller frees), NULL if none
+ *           ret_kmax   - RETURN: per-residue kmax (caller frees), NULL if none
+ *           ret_ncells - RETURN: total banded cells; 0 => no usable anchor, caller
+ *                        should fall back to unbanded Forward (like pinbridge).
+ *
+ * Return:   eslOK on success (including the ncells=0 "no anchor" case).
+ */
+int
+p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
+                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int status = eslOK;
+  int M = cm->fp7->M;
+  int K = cm->abc->K;
+  int nbins = (M + KMW_BIN - 1) / KMW_BIN;
+  ESL_DSQ    *cons   = NULL;      /* model consensus, digital, cons[1..M] */
+  kmw_hit_t **binhit = NULL;      /* [b] growable hit array per bin */
+  int        *binn   = NULL, *bincap = NULL;
+  int        *dbuf   = NULL;      /* scratch for per-bin diagonals */
+  kmw_kmer_t *idx    = NULL;      /* per-k target k-mer index */
+  int        *i2k    = NULL, *kmin = NULL, *kmax = NULL;
+  int        *local_nodepad = NULL;
+  int b, ki, j, x;
+
+  *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
+  if (M < KMW_BIN) { return eslOK; }   /* too small to window-score; caller falls back */
+
+  /* 1. model consensus (argmax match emission per node) */
+  ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
+  cons[0] = eslDSQ_SENTINEL; cons[M+1] = eslDSQ_SENTINEL;
+  for (j = 1; j <= M; j++) {
+    int argmax = 0; float best = cm->fp7->mat[j][0];
+    for (x = 1; x < K; x++) if (cm->fp7->mat[j][x] > best) { best = cm->fp7->mat[j][x]; argmax = x; }
+    cons[j] = (ESL_DSQ) argmax;
+  }
+
+  /* 2. collect k-mer hits into per-bin arrays */
+  ESL_ALLOC(binhit, sizeof(kmw_hit_t *) * nbins);
+  ESL_ALLOC(binn,   sizeof(int)         * nbins);
+  ESL_ALLOC(bincap, sizeof(int)         * nbins);
+  for (b = 0; b < nbins; b++) { binhit[b] = NULL; binn[b] = 0; bincap[b] = 0; }
+
+  for (ki = 0; ki < KMW_NK; ki++) {
+    int k = kmw_kvals[ki], ntgt = 0, t, p;
+    if (k > M || k > L) continue;
+    ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
+    for (t = 1; t <= L - k + 1; t++) {
+      int ok; uint64_t code = kmw_encode(dsq, t, k, &ok);
+      if (ok) { idx[ntgt].code = code; idx[ntgt].pos = t; ntgt++; }
+    }
+    qsort(idx, ntgt, sizeof(kmw_kmer_t), kmw_kmer_cmp);
+    for (j = 1; j <= M - k + 1; j++) {
+      int ok; uint64_t code = kmw_encode(cons, j, k, &ok);
+      if (!ok) continue;
+      b = (j - 1) / KMW_BIN;
+      for (p = kmw_lower_bound(idx, ntgt, code); p < ntgt && idx[p].code == code; p++) {
+        if (binn[b] == bincap[b]) {
+          int newcap = bincap[b] ? bincap[b]*2 : 16;
+          void *tmp = realloc(binhit[b], sizeof(kmw_hit_t) * newcap);
+          if (tmp == NULL) { status = eslEMEM; goto ERROR; }
+          binhit[b] = tmp; bincap[b] = newcap;
+        }
+        binhit[b][binn[b]].j = j; binhit[b][binn[b]].t = idx[p].pos; binhit[b][binn[b]].k = k;
+        binn[b]++;
+      }
+    }
+    free(idx); idx = NULL;
+  }
+
+  /* 3. score each bin by diagonal-dominance; pick best (rank_bins semantics:
+   *    qualifying bins (on>=floor) beat non-qualifying; among qualifying by
+   *    (ratio desc, on desc)). */
+  int best_bin = -1, best_on = 0, best_center = 0; double best_ratio = -1.0;
+  int maxbinn = 0; for (b = 0; b < nbins; b++) if (binn[b] > maxbinn) maxbinn = binn[b];
+  if (maxbinn > 0) ESL_ALLOC(dbuf, sizeof(int) * maxbinn);
+  for (b = 0; b < nbins; b++) {
+    int n = binn[b], center, i;
+    if (n == 0) continue;
+    for (i = 0; i < n; i++) dbuf[i] = binhit[b][i].j - binhit[b][i].t;
+    qsort(dbuf, n, sizeof(int), kmw_int_cmp);
+    int on = kmw_dominant(dbuf, n, KMW_TOL, &center);
+    double ratio = (double) on / (double) n;
+    int qual = (on >= KMW_MIN_CORRECT), best_qual = (best_on >= KMW_MIN_CORRECT), take = 0;
+    if (best_bin < 0)                 take = 1;
+    else if (qual && !best_qual)      take = 1;
+    else if (qual == best_qual) {
+      if (qual) take = (ratio > best_ratio + 1e-9 || (fabs(ratio-best_ratio) < 1e-9 && on > best_on));
+      else      take = (on > best_on);
+    }
+    if (take) { best_bin = b; best_on = on; best_ratio = ratio; best_center = center; }
+  }
+
+  /* 4. no usable window: signal caller to fall back to unbanded */
+  if (best_bin < 0 || best_on < KMW_MIN_CORRECT) { status = eslOK; goto CLEANUP; }
+
+  /* 5. emit sparse pins on the best diagonal, expand outward with drift */
+  ESL_ALLOC(i2k, sizeof(int) * (L+1));
+  esl_vec_ISet(i2k, L+1, -1);
+  kmw_emit_bin(i2k, binhit[best_bin], binn[best_bin], best_center, KMW_TOL, L, M);
+  {
+    int dir;
+    for (dir = 0; dir < 2; dir++) {
+      int step = (dir == 0) ? +1 : -1, dcur = best_center;
+      for (b = best_bin + step; b >= 0 && b < nbins; b += step) {
+        int n = binn[b], i, m = 0, center2;
+        if (n == 0) break;
+        for (i = 0; i < n; i++) {
+          int d = binhit[b][i].j - binhit[b][i].t;
+          if (d >= dcur - KMW_DRIFT && d <= dcur + KMW_DRIFT) dbuf[m++] = d;
+        }
+        if (m == 0) break;
+        qsort(dbuf, m, sizeof(int), kmw_int_cmp);
+        if (kmw_dominant(dbuf, m, KMW_TOL, &center2) < KMW_EXP_FLOOR) break;
+        kmw_emit_bin(i2k, binhit[b], n, center2, KMW_TOL, L, M);
+        dcur = center2;
+      }
+    }
+  }
+
+  /* 6. pins -> bands via the UNMODIFIED consumer */
+  if (nodepad == NULL) {
+    int k2;
+    ESL_ALLOC(local_nodepad, sizeof(int) * (M+1));
+    for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
+    nodepad = local_nodepad;
+  }
+  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
+
+  *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
+  i2k = kmin = kmax = NULL;   /* handed off to caller */
+
+ CLEANUP:
+  if (idx)           free(idx);
+  if (dbuf)          free(dbuf);
+  if (binhit)        { for (b = 0; b < nbins; b++) if (binhit[b]) free(binhit[b]); free(binhit); }
+  if (binn)          free(binn);
+  if (bincap)        free(bincap);
+  if (cons)          free(cons);
+  if (local_nodepad) free(local_nodepad);
+  if (i2k)           free(i2k);
+  if (kmin)          free(kmin);
+  if (kmax)          free(kmax);
+  return status;
+
+ ERROR:
+  if (errbuf != NULL) snprintf(errbuf, eslERRBUFSIZE, "p7_Seq2BandsKmerAnchor() memory error");
+  goto CLEANUP;
 }
 
 #if 0
