@@ -538,6 +538,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * deriver feeding the unmodified p7_pins2bands_nodepad. Opt-in. */
 	    _p7b_kind = "kmeranchor";
 	    status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->L, local_nodepad,
+	                                    do_trunc, /* brief 033 */
 	                                    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    /* ncells==0 => no usable anchor; fall back to full unbanded Viterbi band
 	     * derivation (same shape as the pinbridge ncells==0 fallback below). */
@@ -554,6 +555,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * into the unmodified p7_pins2bands_nodepad. Opt-in. */
 	    _p7b_kind = "kmerchain";
 	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
+	                                   do_trunc, /* brief 033 */
 	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    /* ncells==0 => no usable chain; fall back to full unbanded Viterbi band
 	     * derivation (same shape as the kmeranchor ncells==0 fallback above). */

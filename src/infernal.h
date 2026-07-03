@@ -3390,9 +3390,9 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* Brief 026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in). */
-extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* Brief 027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in). */
-extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* Brief 140: IBV band-derivation modes (enrich the per-row band using the
  * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
  * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */

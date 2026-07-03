@@ -1018,6 +1018,21 @@ static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int
  *           ret_i2k    - RETURN: per-residue pin array (caller frees), NULL if none
  *           ret_kmin   - RETURN: per-residue kmin (caller frees), NULL if none
  *           ret_kmax   - RETURN: per-residue kmax (caller frees), NULL if none
+ *           do_trunc   - brief 033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
+ *                        do_trunc argument for signature-shape consistency. Unused
+ *                        internally: this deriver never runs a begin/end-anywhere
+ *                        (Tgm) score DP the way p7_Seq2BandsWV/IBV do -- it only
+ *                        does exact k-mer matching against the raw match-emission
+ *                        consensus (cm->fp7->mat), with no transition/begin/end
+ *                        probabilities involved. Boundary residues outside the
+ *                        pinned span are already left fully open ([0,M] or [1,M])
+ *                        by p7_pins2bands_nodepad's kn=0/kx=M initialization, so
+ *                        there is no glocal-only "must start at node 1 / end at
+ *                        node M" assumption to relax for truncation. (The existing,
+ *                        pre-brief-033 p7_Seq2BandsVit -- this deriver's own
+ *                        ncells==0 fallback -- has never taken do_trunc either, for
+ *                        the same reason: pins-based band derivation is trunc-
+ *                        agnostic; only score-based DP derivers need the flag.)
  *           ret_ncells - RETURN: total banded cells; 0 => no usable anchor, caller
  *                        should fall back to unbanded Forward (like pinbridge).
  *
@@ -1025,9 +1040,11 @@ static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int
  */
 int
 p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
+                       int do_trunc,
                        int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int status = eslOK;
+  (void) do_trunc; /* brief 033: no-op, see function header comment */
   int M = cm->fp7->M;
   int K = cm->abc->K;
   int nbins = (M + KMW_BIN - 1) / KMW_BIN;
@@ -1243,6 +1260,13 @@ static int kmc_seed_cmp(const void *a, const void *b) {
  *           p7_pins2bands_nodepad.
  *
  * Args:     cm, errbuf, dsq, L, nodepad  - as p7_Seq2BandsKmerAnchor()
+ *           do_trunc   - brief 033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
+ *                        do_trunc argument for signature-shape consistency. Unused
+ *                        internally, for the same reason documented in
+ *                        p7_Seq2BandsKmerAnchor()'s header comment above: this
+ *                        deriver chains exact k-mer seeds against the raw
+ *                        consensus, with no begin/end-anywhere (Tgm) score DP and
+ *                        no glocal-only boundary assumption for do_trunc to relax.
  *           ret_i2k/ret_kmin/ret_kmax    - RETURN band arrays (caller frees)
  *           ret_ncells - RETURN total banded cells (saturated int; 0 => no
  *                        usable chain, caller falls back to unbanded Viterbi).
@@ -1251,9 +1275,11 @@ static int kmc_seed_cmp(const void *a, const void *b) {
  */
 int
 p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
+                      int do_trunc,
                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int status = eslOK;
+  (void) do_trunc; /* brief 033: no-op, see function header comment */
   int M = cm->fp7->M;
   int K = cm->abc->K;
   ESL_DSQ    *cons  = NULL;         /* model consensus, digital, cons[1..M]   */
