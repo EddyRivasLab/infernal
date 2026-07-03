@@ -75,8 +75,10 @@ PROGS = cmalign\
 	test_phase4_predict
 
 # list of executable programs that get installed
-# cmcalibrate intentionally omitted: cmbuild now calls cm_FastCalibrate()
-# directly, so cmcalibrate is no longer needed in the standard pipeline.
+# cmcalibrate omitted from IPROGS (not installed by 'make install'): cmbuild's
+# cm_FastCalibrate() covers the standard pipeline, but cmcalibrate itself still
+# ships (built via PROGS above) as the accurate empirical fallback, e.g. for
+# --nonull3/pbnull off-set calibration.
 IPROGS = \
 	cmalign\
 	cmbuild\
