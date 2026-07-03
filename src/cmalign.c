@@ -1048,8 +1048,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	}
 
 	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
-	 * Skipped under --p7ibv: the full P7_GMX is never allocated. */
-	if (! do_p7ibv) {
+	 * Skipped under --p7ibv: the full P7_GMX is never allocated.
+	 * brief 032: also skipped under kmeranchor/kmerchain -- like --p7ibv,
+	 * the full P7_GMX is only touched on the rare ncells==0 fallback, not
+	 * on the genome-scale success path this brief's memory story depends on. */
+	if (! do_p7ibv && ! cm->p7_use_kmeranchor && ! cm->p7_use_kmerchain) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
 	  int    nmat         = do_hmmnoband ? 2 : 1;
 	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -1648,8 +1651,10 @@ hmm_pipeline_thread(void *arg)
     }
 
     /* preflight: check HMM matrix size vs --mxsize before GrowTo.
-     * Skipped under --p7ibv: the full P7_GMX is never allocated. */
-    if (! info->do_p7ibv) {
+     * Skipped under --p7ibv: the full P7_GMX is never allocated.
+     * brief 032: also skipped under kmeranchor/kmerchain (see serial-path
+     * comment in hmm_alignment() for reasoning). */
+    if (! info->do_p7ibv && ! (info->cm != NULL && (info->cm->p7_use_kmeranchor || info->cm->p7_use_kmerchain))) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
       int    nmat         = info->do_hmmnoband ? 2 : 1;
       double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -2439,8 +2444,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	p7_ReconfigLength(gm_w, L);
       }
 
-      /* preflight: check HMM matrix size vs --mxsize before GrowTo */
-      {
+      /* preflight: check HMM matrix size vs --mxsize before GrowTo.
+       * brief 032: skipped under kmeranchor/kmerchain -- the full P7_GMX is
+       * only touched on the rare ncells==0 fallback, not on the genome-scale
+       * success path (see serial-path comment in hmm_alignment()). */
+      if (! cm->p7_use_kmeranchor && ! cm->p7_use_kmerchain) {
 	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
 	int    nmat         = do_hmmnoband_w ? 2 : 1;
 	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
