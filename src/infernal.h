@@ -1912,6 +1912,13 @@ typedef struct cm_s {
   /* statistics */
   ExpInfo_t       **expA;  /* Exponential tail stats, [0..EXP_NMODES-1]  */
 
+  /* null3-OFF exponential tail stats (CMH_EXPTAIL_NONULL3_STATS). Parallel
+   * to expA, holding the E-value params to use under cmsearch/cmscan
+   * --nonull3. Produced by cm_FastCalibrate (brief 068 corrector) at cmbuild
+   * time and (future, Part B) by cmcalibrate --nonull3. NULL if not present;
+   * the on-set expA above is UNTOUCHED. See briefs 053/068/069. */
+  ExpInfo_t       **expA_nonull3; /* null3-off exp tail stats, [0..EXP_NMODES-1]; NULL if not set */
+
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
   P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
@@ -1971,6 +1978,7 @@ typedef struct cm_s {
 #define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
 #define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
 #define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
+#define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -2033,7 +2041,12 @@ enum cm_file_formats_e {
   CM_FILE_1  = 0, /* Infernal v1.0->v1.0.2 */
   CM_FILE_1a = 1,
   CM_FILE_1b = 2, /* v1.2: adds optional P7NODEPAD per-HMM-node band pad array */
-  CM_FILE_1c = 3, /* adds consensus pseudoknot annotation (cm->pknot)          */
+  CM_FILE_1c = 3, /* RETIRED: ambiguous dev-only format. Two unreleased branches both
+                   * bumped to 1/c (0xe3edb0b4 / INFERNAL1/c) with colliding meanings
+                   * (consensus pknot annotation vs. null3-OFF E-value block). Never
+                   * shipped. Unified into CM_FILE_1d below; 1/c is REJECTED on read.  */
+  CM_FILE_1d = 4, /* adds optional null3-OFF E-value block AND consensus pknot annotation
+                   * (union of the two retired 1/c formats; each block flag-gated)      */
 };
 
 typedef struct cm_file_s {

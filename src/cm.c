@@ -131,6 +131,7 @@ CreateCMShell(void)
   cm->cp9map       = NULL;
   cm->root_trans   = NULL;
   cm->expA         = NULL;
+  cm->expA_nonull3 = NULL;
   cm->smx          = NULL;
   cm->trsmx        = NULL;
   cm->hb_mx        = NULL;
@@ -476,14 +477,20 @@ FreeCM(CM_t *cm)
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   
-  if(cm->expA != NULL) { 
+  if(cm->expA != NULL) {
     for(i = 0; i < EXP_NMODES;  i++) {
       free(cm->expA[i]);
     }
     free(cm->expA);
   }
+  if(cm->expA_nonull3 != NULL) {
+    for(i = 0; i < EXP_NMODES;  i++) {
+      free(cm->expA_nonull3[i]);
+    }
+    free(cm->expA_nonull3);
+  }
 
-  if(cm->mlp7 != NULL) { 
+  if(cm->mlp7 != NULL) {
     p7_hmm_Destroy(cm->mlp7); 
     if(cm->fp7 == cm->mlp7) cm->fp7 = NULL;
     cm->mlp7 = NULL; 
@@ -3361,11 +3368,20 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->trsmx != NULL) { if((status = cm_tr_scan_mx_Create(new, errbuf, cm->trsmx->floats_valid, cm->trsmx->ints_valid, &(new->trsmx))) != eslOK) goto ERROR; }
 
   /* expA */
-  if(cm->expA != NULL) { 
+  if(cm->expA != NULL) {
     ESL_ALLOC(new->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
-    for(i = 0; i < EXP_NMODES; i++) { 
+    for(i = 0; i < EXP_NMODES; i++) {
       new->expA[i] = CreateExpInfo();
       CopyExpInfo(cm->expA[i], new->expA[i]);
+    }
+  }
+
+  /* expA_nonull3 (null3-off stats; parallel to expA) */
+  if(cm->expA_nonull3 != NULL) {
+    ESL_ALLOC(new->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for(i = 0; i < EXP_NMODES; i++) {
+      new->expA_nonull3[i] = CreateExpInfo();
+      CopyExpInfo(cm->expA_nonull3[i], new->expA_nonull3[i]);
     }
   }
 
@@ -3514,7 +3530,13 @@ cm_Sizeof(CM_t *cm)
   if(cm->trsmx != NULL) bytes += (1000000. * cm->trsmx->size_Mb);
 
   /* expA */
-  if(cm->expA != NULL) { 
+  if(cm->expA != NULL) {
+    bytes += sizeof(ExpInfo_t *) * EXP_NMODES;
+    bytes += sizeof(ExpInfo_t)   * EXP_NMODES;
+  }
+
+  /* expA_nonull3 */
+  if(cm->expA_nonull3 != NULL) {
     bytes += sizeof(ExpInfo_t *) * EXP_NMODES;
     bytes += sizeof(ExpInfo_t)   * EXP_NMODES;
   }
