@@ -376,8 +376,10 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 	/*if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} */
 	/*if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} */
 	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) {
-	  fprintf(stderr, "#MSVBAND_DBG: conflict at i=%d k=%d: i2k[i-1=%d]=%d k2i[k-1=%d]=%d\n",
-	          i, k, i-1, i2k[(i-1)], k-1, k2i[(k-1)]);
+	  if (getenv("MSVBAND_DBG")) {
+	    fprintf(stderr, "#MSVBAND_DBG: conflict at i=%d k=%d: i2k[i-1=%d]=%d k2i[k-1=%d]=%d\n",
+	            i, k, i-1, i2k[(i-1)], k-1, k2i[(k-1)]);
+	  }
 	  iconflict[(k2i[(k-1)])] = TRUE; /* eventually remove pin kmer that included k we *thought* pinned i-1 */
 	  iconflict[(i-1)]        = TRUE; /* eventually remove pin kmer that includes k we currently think pins i-1 */
 	}
@@ -4585,7 +4587,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   esl_stopwatch_Stop(s2b_watch);
 
   /* Debug: print pins with isc scores before pruning */
-  if(status == eslOK) {
+  if(status == eslOK && getenv("MSVBAND_DBG")) {
     int dbg_i;
     for(dbg_i = 1; dbg_i <= L; dbg_i++) {
       if(i2k[dbg_i] != -1) {
