@@ -263,34 +263,52 @@ to be human-interpretable. You can treat \otext{.cm} files as compiled
 models of your RNA alignment. The Infernal ASCII save file format is
 defined in Section~\ref{section:formats}.
 
-\subsubsection{Step 2: calibrate the model with cmcalibrate}
+As of Infernal 1.2, \prog{cmbuild} also calibrates the E-value
+statistical parameters that \prog{cmsearch} and \prog{cmscan} need in
+order to report E-values (expectation values), using a fast analytical
+predictor in place of the older \prog{cmcalibrate} Monte Carlo
+simulation (section~\ref{section:cmbuild-autocal}). That means
+\otext{tRNA5.cm} is already calibrated and search-ready right now --
+there's no separate calibration step to run. You can skip ahead to
+Step 2 below and search with it directly.
 
-The next step is to ``calibrate'' the model. This step must be
-performed prior to using your model for database searches with
-\prog{cmsearch} or \prog{cmscan}. In this step, statistical parameters
-necessary for reporting E-values (expectation values) are estimated
-and stored in the CM file. When \prog{cmsearch} or \prog{cmscan} is
-later used for a database search and a hit with score $x$ is found,
-the E-value of that hit is the number of hits expected to score $x$ or
-more just by chance (given the size of the search you're performing).
+\subsubsection{Optional: \prog{cmcalibrate} as an accuracy fallback}
 
-\emph{Importantly, if you're not going to use a model for database
-search, there is no need to calibrate it.} For example, if you are
-only going to use a model to create structurally annotated multiple
-alignments of a large family like small subunit ribosomal RNA, don't
-waste time calibrating it. \prog{cmsearch} and \prog{cmscan} are the
-only Infernal programs that use E-values, so if you're not going to
-use them then don't calibrate your model.
+Since calibration now happens automatically inside \prog{cmbuild},
+most users will never need to run \prog{cmcalibrate} at all. It's
+still part of Infernal, though, and it's worth knowing when you'd
+reach for it:
 
-Unfortunately, CM calibration takes a long time because fairly long
-random sequences must be searched to determine the expected
-distribution of hit scores against nonhomologous sequences, and none
-of the search acceleration heuristics described in
-section~\ref{section:pipeline} can be used because they rely on
-primary sequence similarity which is absent in random sequence.
+\begin{itemize}
+\item Your CM was built with one of the non-default construction
+  options that \prog{cmbuild} can't analytically calibrate
+  (\prog{--pbegin}, \prog{--pebegin}, \prog{--pend}, \prog{--pfend}, or
+  \prog{--null}). \prog{cmbuild} will warn you and write the CM
+  without any E-value statistics in this case; run \prog{cmcalibrate}
+  (or \prog{cmcalibrate --nonull3} if you also plan to search with
+  \prog{--nonull3}) on it before searching.
+\item You plan to search large or glocal-mode models with
+  \prog{--nonull3} and need accurate E-values for that combination
+  (section~\ref{section:calibration-limitations} explains why the
+  predicted \prog{--nonull3} values can be unreliable in that regime).
+\item You simply want true simulated E-value statistics instead of the
+  analytical prediction, for example to independently check the
+  predicted values.
+\end{itemize}
 
-The amount of time required for calibration varies widely, but
-depends mainly on the size of the RNA family being modeled.
+\emph{If you're not going to use a model for database search, there's
+no need to calibrate it at all}, whether by \prog{cmbuild}'s automatic
+calibration or by \prog{cmcalibrate}. \prog{cmsearch} and
+\prog{cmscan} are the only Infernal programs that use E-values.
+
+In the cases above, \prog{cmcalibrate} works exactly as it always has:
+it estimates statistical parameters by searching fairly long random
+sequences to determine the expected distribution of hit scores against
+nonhomologous sequences, and none of the search acceleration heuristics
+described in section~\ref{section:pipeline} can be used, because they
+rely on primary sequence similarity which is absent in random
+sequence. As a result \prog{cmcalibrate} can take a long time,
+depending mainly on the size of the RNA family being modeled.
 So you can know what kind of a wait you're in for, the
 \prog{cmcalibrate} has a \otext{--forecast} option which reports an
 estimate of the running time. To get an estimate for the tRNA model, do:
@@ -331,16 +349,16 @@ section). Using 4 CPUs, \prog{cmcalibrate}
 estimates the time required for calibration on the machine I'm using
 at about three and a half minutes.
 
-Feel free to perform the calibration yourself if you'd like (with the
-command \otext{cmcalibrate tRNA5.cm}). However, we've included the file
-\otext{tRNA5.c.cm}, an already calibrated version of \otext{tRNA5.cm},
-for you to use if you don't want to wait. To use this calibrated
-model, copy over the \otext{tRNA5.cm} file you just made with the
-calibrated version:
- 
-\user{cp tutorial/tRNA5.c.cm tRNA5.cm}\\
- 
-\subsubsection{Step 3: search a sequence database with cmsearch}
+This particular tRNA model is small enough that its
+\prog{cmbuild}-predicted E-values are already accurate
+(section~\ref{section:calibration-limitations}), so there's no need to
+actually run \prog{cmcalibrate} on it -- this is purely to illustrate
+what the fallback path looks like when you do need it, e.g. for one of
+the large or non-default models discussed above. \otext{tRNA5.cm} as
+produced by \prog{cmbuild} in Step 1 is already calibrated and
+search-ready, so we'll use it as-is below.
+
+\subsubsection{Step 2: search a sequence database with cmsearch}
 
 You can now use your tRNA model to search for tRNA homologs in a
 database. The file \otext{mrum-genome.fa} is the genome sequence of the
@@ -2216,6 +2234,10 @@ annotated as fragments.
 \subsection{Parallelizing calibration of large models by splitting
   into partitions}
 
+This section describes running \prog{cmcalibrate} itself, which is
+relevant when you're in one of the fallback situations described
+above -- most commonly, wanting accurate \prog{--nonull3} E-values on
+a large or glocal-mode model (section~\ref{section:calibration-limitations}).
 For large models, like small and large subunit ribosomal RNA (SSU and
 LSU rRNA) models, the \prog{cmcalibrate} step can be extremely slow
 and require a large amount of memory. Parallelization with
