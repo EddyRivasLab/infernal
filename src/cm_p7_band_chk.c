@@ -2773,6 +2773,33 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
+
+  if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
+    /* brief 185 (mirrors cm_p7_band.c's cp9_FBMatrices2BandsF, non-ckpt twin):
+     * the brief-149 sp1/ep1 floor above forces Jvalid[v] = TRUE for essentially
+     * every state without widening the real per-state (j,d) bands computed by
+     * ij2d_bands() just above, from the un-floored 1-tau threshold signal. On a
+     * sequence with a genuinely, biologically missing region this leaves
+     * "phantom valid" states whose real band is empty, which a truncated-
+     * alignment traceback can walk into and die on (cm_TrInsideAlignHB() "no
+     * valid parsetree found"). Veto Jvalid[v] back to FALSE for any state whose
+     * real band is empty at every j in its jband, via the hd_min()/hd_max()
+     * recompute-on-demand accessors (brief 157) -- never reintroduce flat
+     * hdmin[v][]/hdmax[v][] reads here, they're gone. This is the production
+     * --p7ibv-ckpt path (brief 162), so this fix must land here too, not just
+     * in the non-ckpt twin. */
+    int v, jp, njp, found;
+    for(v = 0; v < cp9b->cm_M; v++) {
+      if(! cp9b->Jvalid[v]) continue;
+      njp = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      found = FALSE;
+      for(jp = 0; jp < njp; jp++) {
+        if(hd_min(cp9b, v, jp) <= hd_max(cp9b, v, jp)) { found = TRUE; break; }
+      }
+      if(! found) cp9b->Jvalid[v] = FALSE;
+    }
+  }
+
   return eslOK;
 }
 

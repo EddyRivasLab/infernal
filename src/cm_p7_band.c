@@ -5985,6 +5985,32 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
+  if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
+    /* brief 185: brief 149's sp1/ep1 floor (above) forces Jvalid[v] = TRUE for
+     * essentially every state so the glocal J-parse stays geometrically available
+     * for models with a decaying-but-real occupancy tail (its target case, e.g.
+     * NC_001959). It does not widen the real per-state (j,d) bands, computed just
+     * above by ij2d_bands() from the un-floored 1-tau threshold signal -- so on a
+     * sequence with a genuinely, biologically missing region the floor also
+     * flags states whose real band is empty as "J-valid": geometrically
+     * unreachable "phantom valid" states that a truncated-alignment traceback
+     * can walk into and die on (cm_TrInsideAlignHB() "no valid parsetree
+     * found"). Veto Jvalid[v] back to FALSE for any state whose real band is
+     * empty at every j in its jband, using the hd_min()/hd_max()
+     * recompute-on-demand accessors (brief 157) -- never reintroduce flat
+     * hdmin[v][]/hdmax[v][] reads here, they're gone. */
+    int v, jp, njp, found;
+    for(v = 0; v < cp9b->cm_M; v++) {
+      if(! cp9b->Jvalid[v]) continue;
+      njp = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      found = FALSE;
+      for(jp = 0; jp < njp; jp++) {
+        if(hd_min(cp9b, v, jp) <= hd_max(cp9b, v, jp)) { found = TRUE; break; }
+      }
+      if(! found) cp9b->Jvalid[v] = FALSE;
+    }
+  }
+
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
 #endif
