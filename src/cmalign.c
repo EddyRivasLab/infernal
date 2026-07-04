@@ -226,6 +226,23 @@ struct cfg_s {
   FILE            *rfp;         /* optional output for --regress alignment */
 };
 
+/* brief 035: temporary peak-RSS attribution instrumentation, gated by
+ * BRIEF035_MEMPOINT. Reads /proc/self/status VmRSS. Revert before finishing
+ * if not worth keeping (duplicated from cm_p7_band.c's static copy). */
+static long
+brief035_rss_kb(void)
+{
+  FILE *fp = fopen("/proc/self/status", "r");
+  char line[256];
+  long rss = -1;
+  if (fp == NULL) return -1;
+  while (fgets(line, sizeof(line), fp) != NULL) {
+    if (strncmp(line, "VmRSS:", 6) == 0) { sscanf(line+6, "%ld", &rss); break; }
+  }
+  fclose(fp);
+  return rss;
+}
+
 static char usage[]  = "[-options] <cmfile> <seqfile>";
 static char banner[] = "align sequences to a CM";
 
@@ -1187,6 +1204,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  }
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+	  if (getenv("BRIEF035_MEMPOINT") != NULL)
+	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
 	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
 	    /* brief 016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
@@ -1196,6 +1215,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	     * is ever materialized (bxf is not allocated). brief 017: bxb uses
 	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
 	    bxb = p7b_pp_Create(bnd);
+	    if (getenv("BRIEF035_MEMPOINT") != NULL)
+	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	    p7_trace_Reuse(tr[idx]);
@@ -1205,6 +1226,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  else {
 	  bxf = p7_gmxb_Create(bnd);
 	  bxb = p7_gmxb_Create(bnd);
+	  if (getenv("BRIEF035_MEMPOINT") != NULL)
+	    fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
 	  if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, gm, bxf, &fwdsc)) != eslOK)
 	    cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
@@ -1223,6 +1246,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
 	  }
 
+	  if (getenv("BRIEF035_MEMPOINT") != NULL)
+	    fprintf(stderr, "#MEMPOINT alignment_peak seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	  free(i2k);
 	  free(kmin);
 	  free(kmax);
@@ -1785,9 +1810,13 @@ hmm_pipeline_thread(void *arg)
       }
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+      if (getenv("BRIEF035_MEMPOINT") != NULL)
+	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       bxf = p7_gmxb_Create(bnd);
       bxb = p7_gmxb_Create(bnd);
+      if (getenv("BRIEF035_MEMPOINT") != NULL)
+	fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, info->gm, bxf, &fwdsc)) != eslOK)
 	cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
@@ -1804,6 +1833,8 @@ hmm_pipeline_thread(void *arg)
       p7_trace_Reuse(info->hmm_tr[idx]);
       if ((status = p7_GOATraceBanded(info->gm, bxb, bxf, info->hmm_tr[idx])) != eslOK)
 	cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+      if (getenv("BRIEF035_MEMPOINT") != NULL)
+	fprintf(stderr, "#MEMPOINT alignment_peak_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       free(i2k);
       free(kmin);

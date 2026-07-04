@@ -1249,6 +1249,23 @@ static int kmc_seed_cmp(const void *a, const void *b) {
   return (x->j > y->j) - (x->j < y->j);
 }
 
+/* brief 035: temporary peak-RSS attribution instrumentation, gated by
+ * BRIEF035_MEMPOINT (mirrors P135B_FB_INSTRUMENT convention). Reads
+ * /proc/self/status VmRSS. Revert before finishing if not worth keeping. */
+static long
+brief035_rss_kb(void)
+{
+  FILE *fp = fopen("/proc/self/status", "r");
+  char line[256];
+  long rss = -1;
+  if (fp == NULL) return -1;
+  while (fgets(line, sizeof(line), fp) != NULL) {
+    if (strncmp(line, "VmRSS:", 6) == 0) { sscanf(line+6, "%ld", &rss); break; }
+  }
+  fclose(fp);
+  return rss;
+}
+
 /* Function: p7_Seq2BandsKmerChain()
  * Date:     Brief 027, 2026-07-03
  *
@@ -1298,6 +1315,8 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
+  if (getenv("BRIEF035_MEMPOINT") != NULL)
+    fprintf(stderr, "#MEMPOINT before_kmerchain L=%d M=%d rss_kb=%ld\n", L, M, brief035_rss_kb());
 
   /* 1. model consensus (argmax match emission per node) */
   ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
@@ -1372,6 +1391,8 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   }
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
           L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, KMC_MIN_ANCHOR);
+  if (getenv("BRIEF035_MEMPOINT") != NULL)
+    fprintf(stderr, "#MEMPOINT after_seedmerge L=%d nraw=%d nanchor=%d rss_kb=%ld\n", L, nival, nseed, brief035_rss_kb());
   free(ival); ival = NULL;
 
   if (nseed == 0) {   /* no anchors: caller falls back to unbanded Viterbi */
@@ -1437,6 +1458,8 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] "
                     "repeat_anchors_in[%d,%d]=%d nlink=%ld\n",
             L, M, nc, best_sc, mlo, mhi, qlo, qhi, KMC_HSV_RLO, KMC_HSV_RHI, nrep, nlink);
+    if (getenv("BRIEF035_MEMPOINT") != NULL)
+      fprintf(stderr, "#MEMPOINT after_chainDP L=%d nseed=%d nlink=%ld rss_kb=%ld\n", L, nseed, nlink, brief035_rss_kb());
   }
 
   /* 6. emit multi-segment pins from every seed in the winning chain */
@@ -1459,6 +1482,8 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
     fprintf(stderr, "#KMERCHAIN L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
             L, M, npin, (npin? tmin:0), tmax, (double) npin / (double) L);
+    if (getenv("BRIEF035_MEMPOINT") != NULL)
+      fprintf(stderr, "#MEMPOINT after_pinemission L=%d npins=%d rss_kb=%ld\n", L, npin, brief035_rss_kb());
   }
 
   /* 7. pins -> bands via the UNMODIFIED consumer */
@@ -1485,6 +1510,8 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   if (i2k)           free(i2k);
   if (kmin)          free(kmin);
   if (kmax)          free(kmax);
+  if (getenv("BRIEF035_MEMPOINT") != NULL)
+    fprintf(stderr, "#MEMPOINT after_kmerchain_return L=%d rss_kb=%ld\n", L, brief035_rss_kb());
   return status;
 
  ERROR:
