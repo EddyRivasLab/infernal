@@ -2346,6 +2346,15 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
   if(getenv("CP9_CKPTF_DEBUG") != NULL) {
     int *tmn,*tmx_m,*tin,*tix,*tdn,*tdx;
     CP9_FMX *fmx=NULL,*bmx=NULL,*pmx=NULL; float rsc; int kk, nmis=0;
+    /* brief 186: optional full CSV dump (every mismatch, not just the first
+     * 20) to a file, so a follow-on can characterize the divergence shape
+     * (uniform vs localized vs boundary-correlated) instead of eyeballing a
+     * truncated stderr sample. Env-gated, inert unless CP9_CKPTFDBG_CSV is
+     * set to an output path. */
+    FILE *csv = NULL;
+    char *csv_path = getenv("CP9_CKPTFDBG_CSV");
+    if(csv_path != NULL) csv = fopen(csv_path, "w");
+    if(csv != NULL) fprintf(csv, "k,type,ref_min,ref_max,chk_min,chk_max\n");
     ESL_ALLOC(tmn, sizeof(int)*(M+1)); ESL_ALLOC(tmx_m, sizeof(int)*(M+1));
     ESL_ALLOC(tin, sizeof(int)*(M+1)); ESL_ALLOC(tix, sizeof(int)*(M+1));
     ESL_ALLOC(tdn, sizeof(int)*(M+1)); ESL_ALLOC(tdx, sizeof(int)*(M+1));
@@ -2353,13 +2362,21 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
     fmx=CreateCP9FMatrix(1,M); bmx=CreateCP9FMatrix(1,M); pmx=CreateCP9FMatrix(1,M);
     cp9_ForwardP7BF (hmm, errbuf, fmx, dsq, L, kmin, kmax, &rsc);
     cp9_BackwardP7BF(hmm, errbuf, bmx, dsq, L, kmin, kmax, NULL);
+    /* brief 186: compare float-path total F/B scores (rsc = fwd total, bmx->mmx[0][0]
+     * = bwd total, both accumulated via p7_FLogsum over L residues) against the
+     * checkpointed double-path totals already in scope (s->fsc, sc) -- a direct
+     * check of whether the float path's cumulative FLogsum drift over this L is
+     * large enough to explain the pn-band collapse below. */
+    fprintf(stderr, "#CKPTFDBG_TOTALS float_fwd=%.6f float_bwd=%.6f dbl_fwd=%.6f dbl_bwd=%.6f fwd_gap=%.6f bwd_gap=%.6f (L=%d)\n",
+            rsc, bmx->mmx[0][0], s->fsc, sc, (double)rsc - s->fsc, (double)bmx->mmx[0][0] - sc, L);
     cp9_FB2HMMBandsP7BF(hmm, errbuf, dsq, fmx, bmx, pmx, cp9b, L, M, p_thresh, 0, kmin, kmax, 0, do_pnmono, do_pnmono_print);
     for(kk=0;kk<=M;kk++){
-      if(tmn[kk]!=cp9b->pn_min_m[kk]||tmx_m[kk]!=cp9b->pn_max_m[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d M ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],tmn[kk],tmx_m[kk]); nmis++; }
-      if(tin[kk]!=cp9b->pn_min_i[kk]||tix[kk]!=cp9b->pn_max_i[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d I ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],tin[kk],tix[kk]); nmis++; }
-      if(tdn[kk]!=cp9b->pn_min_d[kk]||tdx[kk]!=cp9b->pn_max_d[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d D ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],tdn[kk],tdx[kk]); nmis++; }
+      if(tmn[kk]!=cp9b->pn_min_m[kk]||tmx_m[kk]!=cp9b->pn_max_m[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d M ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],tmn[kk],tmx_m[kk]); if(csv!=NULL) fprintf(csv,"%d,M,%d,%d,%d,%d\n",kk,cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],tmn[kk],tmx_m[kk]); nmis++; }
+      if(tin[kk]!=cp9b->pn_min_i[kk]||tix[kk]!=cp9b->pn_max_i[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d I ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],tin[kk],tix[kk]); if(csv!=NULL) fprintf(csv,"%d,I,%d,%d,%d,%d\n",kk,cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],tin[kk],tix[kk]); nmis++; }
+      if(tdn[kk]!=cp9b->pn_min_d[kk]||tdx[kk]!=cp9b->pn_max_d[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d D ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],tdn[kk],tdx[kk]); if(csv!=NULL) fprintf(csv,"%d,D,%d,%d,%d,%d\n",kk,cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],tdn[kk],tdx[kk]); nmis++; }
     }
     fprintf(stderr,"#CKPTFDBG total pn mismatches: %d (M=%d L=%d)\n", nmis, M, L);
+    if(csv != NULL) fclose(csv);
     for(kk=0;kk<=M;kk++){ cp9b->pn_min_m[kk]=tmn[kk]; cp9b->pn_max_m[kk]=tmx_m[kk]; cp9b->pn_min_i[kk]=tin[kk]; cp9b->pn_max_i[kk]=tix[kk]; cp9b->pn_min_d[kk]=tdn[kk]; cp9b->pn_max_d[kk]=tdx[kk]; }
     FreeCP9FMatrix(fmx); FreeCP9FMatrix(bmx); FreeCP9FMatrix(pmx);
     free(tmn);free(tmx_m);free(tin);free(tix);free(tdn);free(tdx);
