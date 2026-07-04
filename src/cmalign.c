@@ -1648,6 +1648,9 @@ hmm_pipeline_thread(void *arg)
   extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
   extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
   extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 016 */
+  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 016 */
+  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 017: compact 2-cell resident pp */
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -1813,6 +1816,21 @@ hmm_pipeline_thread(void *arg)
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
+      if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
+	/* brief 036: port of brief 016's sqrt(nrow)-checkpointed F/B/Decode/OA/
+	 * traceback into the threaded worker (mirrors hmm_alignment()'s serial-path
+	 * gate above; see cm_p7_band.c:8641/9146). bxb holds the resident posterior;
+	 * bxf is never allocated. */
+	bxb = p7b_pp_Create(bnd);
+	if (getenv("BRIEF035_MEMPOINT") != NULL)
+	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
+	if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, info->gm, bxb, &fwdsc)) != eslOK)
+	  cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
+	p7_trace_Reuse(info->hmm_tr[idx]);
+	if ((status = p7_GCheckptOA_Banded(info->gm, bxb, info->hmm_tr[idx], &oasc)) != eslOK)
+	  cm_Fail("p7_GCheckptOA_Banded() failed for sequence %s", sq->name);
+      }
+      else {
       bxf = p7_gmxb_Create(bnd);
       bxb = p7_gmxb_Create(bnd);
       if (getenv("BRIEF035_MEMPOINT") != NULL)
@@ -1833,6 +1851,7 @@ hmm_pipeline_thread(void *arg)
       p7_trace_Reuse(info->hmm_tr[idx]);
       if ((status = p7_GOATraceBanded(info->gm, bxb, bxf, info->hmm_tr[idx])) != eslOK)
 	cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+      }
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT alignment_peak_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
@@ -1841,7 +1860,7 @@ hmm_pipeline_thread(void *arg)
       free(kmax);
       if (vtr) p7_trace_Destroy(vtr);
       p7_gbands_Destroy(bnd);
-      p7_gmxb_Destroy(bxf);
+      if (bxf) p7_gmxb_Destroy(bxf);
       p7_gmxb_Destroy(bxb);
     }
 
