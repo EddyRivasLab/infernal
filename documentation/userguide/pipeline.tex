@@ -1188,11 +1188,81 @@ composition would receive a $3.44$ bit penalty.
 
 By default, the null3 score correction is used by \prog{cmcalibrate,
 cmsearch} and \prog{cmscan}. It can be turned off in any of these
-programs by using the \prog{--nonull3} option. However, be careful,
-the E-values for models that are calibrated with \prog{--nonull3} are
-only valid when \prog{--nonull3} is also used with \prog{cmsearch} or
-\prog{cmscan}. Likewise, if \prog{--nonull3} is \emph{not} used during
-calibration, it should not be used during searches or scans.
+programs by using the \prog{--nonull3} option. E-value parameters are
+sensitive to whether or not the null3 correction was applied during
+calibration, so a CM must carry a null3-off calibration of its own in
+order for \prog{--nonull3} E-values to be meaningful; as of the
+\otext{INFERNAL1/d} format, a single CM stores \emph{both} sets (see
+section~\ref{section:calibration-limitations} below), so this happens
+automatically and \prog{--nonull3} searches do not require any extra
+calibration step.
+
+\subsubsection{Automatic E-value calibration, store-both
+  \prog{--nonull3} parameters, and known limitations.}
+\label{section:calibration-limitations}
+
+As of Infernal 1.2, \prog{cmbuild} calibrates E-value statistical
+parameters automatically, using an analytical predictor
+(\prog{cm\_FastCalibrate}) in place of \prog{cmcalibrate}'s older
+Monte Carlo simulation. Every default-construction CM that comes out
+of \prog{cmbuild} is therefore immediately ready for
+\prog{cmsearch}/\prog{cmscan}; see
+section~\ref{section:cmbuild} for details, including the small set of
+non-default \prog{cmbuild} construction options under which automatic
+calibration is not possible and \prog{cmcalibrate} is still required.
+
+The predictor computes two E-value parameter sets and stores them both
+in the CM file: the default set, for searches with the null3 biased
+composition correction on, and a null3-off set, used automatically
+when a search is run with \prog{--nonull3}. If a CM lacks the
+null3-off set (for example, an older CM file, or one produced by an
+external tool), a \prog{--nonull3} search falls back to the null3-on
+parameters and prints a one-time warning; this fallback is
+approximate, since null3-on and null3-off score distributions are not
+the same.
+
+The default (null3-on), local-mode E-values produced by the predictor
+were validated to be effectively identical to the values previously
+obtained from \prog{cmcalibrate}, and were confirmed against the
+\prog{rmark4h} benchmark. The following limitations apply to the
+remaining, off-default combinations:
+
+\begin{itemize}
+
+\item \textbf{\prog{--nonull3} accuracy for glocal-mode search and
+  larger models.} The predicted null3-off E-value parameters are
+  accurate for local-mode search of most models, but become
+  unreliable for glocal-mode search and for larger models (consensus
+  length greater than a few hundred). In these cases the predicted
+  \prog{--nonull3} E-values can be over-confident (too low) --
+  by up to several orders of magnitude for large, low-complexity
+  (AT-rich) models such as the large ribosomal RNAs. For accurate
+  \prog{--nonull3} E-values on such models, run
+  \prog{cmcalibrate --nonull3}, which computes and stores true
+  null3-off parameters in the CM; the predicted values are then used
+  only as a fallback, no longer as the parameters actually searched
+  with. Default (null3-on) E-values are not affected by this
+  limitation.
+
+\item \textbf{Glocal-mode E-value accuracy for large and huge
+  models.} More generally, glocal-mode E-values for large and huge
+  models (consensus length greater than $\sim$1500) are less reliable
+  than local-mode E-values, because the glocal score distributions are
+  sparsely sampled and the exponential-tail fits are correspondingly
+  ill-determined at that scale -- this is true of both the analytical
+  predictor and \prog{cmcalibrate}. Users who rely on glocal-mode
+  E-values for very large models should treat them with caution and,
+  where accuracy is critical, validate with \prog{cmcalibrate}.
+
+\item \textbf{Local-Inside (default) E-values for AT-rich models.} For
+  strongly AT-rich or low-complexity models, the default local-Inside
+  E-values carry a small residual over-confidence (roughly two- to
+  three-fold near the significance threshold) that the predictor
+  cannot fully remove. This residual is within the intrinsic
+  seed-to-seed variation of \prog{cmcalibrate} itself and does not
+  materially affect the ranking of hits.
+
+\end{itemize}
 
 \subsection{Truncated hit detection using variants of the pipeline}
 
