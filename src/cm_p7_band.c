@@ -2864,7 +2864,22 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
      * O(sqrt(L)*avg_bw) memory. Wired BEFORE the float matrices below are
      * allocated; the tau-ratchet recomputes the checkpointed float F/B each
      * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
-    if(cm->p7_ibv_ckpt || getenv("CP9_CKPT") != NULL) {
+    /* brief 187 (2026-07-05): temporary, pragmatic reroute. The float non-ckpt
+     * F/B below (cp9_ForwardP7BF/cp9_BackwardP7BF/cp9_FBMatrices2BandsF) was
+     * shown (briefs 185/186) to lose Fwd=Bwd consistency and collapse
+     * numerically on genuinely-truncated genome-scale sequences (L~147K,
+     * ~15x past its documented L=10K validation bound), producing garbage
+     * per-node bands. The checkpointed double-precision twin (brief 154) is
+     * already validated correct at both sub-genome and genome scale. Rather
+     * than write a second, parallel double-precision non-checkpointed kernel
+     * right now, we force ALL do_trunc traffic through the checkpointed
+     * double path unconditionally, regardless of --p7ibv-ckpt/CP9_CKPT. This
+     * CP9-level F/B is already p7-banded (small footprint either way), so
+     * this costs at most some recomputation overhead, not memory. The float
+     * non-ckpt code below is intentionally left in place, unmodified, but is
+     * now dead code for do_trunc pending a real double-precision
+     * non-checkpointed rewrite (a wanted future item, out of scope here). */
+    if(TRUE) {
       /* brief 167 (tau-ratchet single-pass): the old while(1) loop recomputed the
        * WHOLE checkpointed float F/B on every bump (up to ~26 passes). The F/B is
        * tau/thresh-independent (brief 166 Q3), so the driver runs it ONCE: step 0
