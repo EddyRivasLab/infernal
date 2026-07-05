@@ -1136,8 +1136,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  }
 	  else {
 	    /* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
-	     * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch;
-	     * --notrunc-only scope, do_trunc threading is out of scope here). */
+	     * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
+	     * brief 038: do_trunc now threaded through, mirroring cm_alndata.c's
+	     * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC). */
 	    int did_kmer = FALSE;
 	    int *local_nodepad = NULL;
 	    if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
@@ -1148,12 +1149,14 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if (cm->p7_use_kmeranchor) {
 	      did_kmer = TRUE;
 	      if ((status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->n, local_nodepad,
+						   do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
 						   &i2k, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	    else if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
+						  do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 						  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	    }
@@ -1743,8 +1746,9 @@ hmm_pipeline_thread(void *arg)
       }
       else {
 	/* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
-	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch;
-	 * --notrunc-only scope, do_trunc threading is out of scope here). */
+	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
+	 * brief 038: do_trunc now threaded through, mirroring cm_alndata.c's
+	 * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC). */
 	int did_kmer = FALSE;
 	int *local_nodepad = NULL;
 	if (info->cm != NULL && (info->cm->p7_use_kmeranchor || info->cm->p7_use_kmerchain)
@@ -1756,12 +1760,14 @@ hmm_pipeline_thread(void *arg)
 	if (info->cm != NULL && info->cm->p7_use_kmeranchor) {
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerAnchor(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
+					       info->do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
 					       &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
 	}
 	else if (info->cm != NULL && info->cm->p7_use_kmerchain) {
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerChain(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
+					      info->do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	}
@@ -2538,8 +2544,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	int       tpos_w;
 
 	/* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
-	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch;
-	 * --notrunc-only scope, do_trunc threading is out of scope here). */
+	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
+	 * brief 038: do_trunc now threaded through, mirroring cm_alndata.c's
+	 * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC); do_trunc_w already
+	 * computed above (brief 182 Part A) for the Tgm setup in this same scope. */
 	int did_kmer_w = FALSE;
 	int *local_nodepad_w = NULL;
 	if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
@@ -2550,12 +2558,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if (cm->p7_use_kmeranchor) {
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerAnchor(cm, errbuf, dsq, L, local_nodepad_w,
+				     do_trunc_w, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
 				     &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerAnchor() failed: %s", errbuf);
 	}
 	else if (cm->p7_use_kmerchain) {
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerChain(cm, errbuf, dsq, L, local_nodepad_w,
+				    do_trunc_w, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 				    &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerChain() failed: %s", errbuf);
 	}
@@ -2925,17 +2935,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nERROR: --p7kmeranchor/--p7kmerchain require --p7band or --hmm\n");
     goto ERROR;
   }
-  /* --hmm --p7kmeranchor/--p7kmerchain is --notrunc-only (brief 030/032): the
-   * kmer derivers don't yet thread do_trunc/Tgm, matching CM-mode's current
-   * --p7band --p7kmeranchor/--p7kmerchain scope (brief 026/027, also
-   * --notrunc-only). Do not silently run truncation-aware alignment through
-   * this untested path -- reject loudly instead.
-   */
-  if((esl_opt_GetBoolean(go, "--p7kmeranchor") || esl_opt_GetBoolean(go, "--p7kmerchain")) &&
-     (! esl_opt_GetBoolean(go, "--notrunc"))) {
-    puts("\nERROR: --p7kmeranchor/--p7kmerchain require --notrunc (do_trunc threading not yet implemented; brief 030/032)\n");
-    goto ERROR;
-  }
+  /* brief 038: --p7kmeranchor/--p7kmerchain no longer require --notrunc --
+   * do_trunc is now threaded through both the --p7band (brief 033) and
+   * --hmm (brief 038) call sites, mirroring cm_alndata.c's CM-mode dispatch. */
   /* --hmm --p7kmeranchor/--p7kmerchain is the k-mer-banded-OA HMM sub-mode;
    * reject the other --hmm sub-modes (Viterbi-trace and unbanded full OA) in
    * combination with it, mirroring the --p7ibv incompatibility above.
