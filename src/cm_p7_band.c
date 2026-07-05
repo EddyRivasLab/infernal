@@ -3467,7 +3467,22 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
      * O(sqrt(L)*avg_bw) memory. Wired BEFORE the float matrices below are
      * allocated; the tau-ratchet recomputes the checkpointed float F/B each
      * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
-    if(cm->p7_ibv_ckpt || getenv("CP9_CKPT") != NULL) {
+    /* brief 187 (2026-07-05): temporary, pragmatic reroute. The float non-ckpt
+     * F/B below (cp9_ForwardP7BF/cp9_BackwardP7BF/cp9_FBMatrices2BandsF) was
+     * shown (briefs 185/186) to lose Fwd=Bwd consistency and collapse
+     * numerically on genuinely-truncated genome-scale sequences (L~147K,
+     * ~15x past its documented L=10K validation bound), producing garbage
+     * per-node bands. The checkpointed double-precision twin (brief 154) is
+     * already validated correct at both sub-genome and genome scale. Rather
+     * than write a second, parallel double-precision non-checkpointed kernel
+     * right now, we force ALL do_trunc traffic through the checkpointed
+     * double path unconditionally, regardless of --p7ibv-ckpt/CP9_CKPT. This
+     * CP9-level F/B is already p7-banded (small footprint either way), so
+     * this costs at most some recomputation overhead, not memory. The float
+     * non-ckpt code below is intentionally left in place, unmodified, but is
+     * now dead code for do_trunc pending a real double-precision
+     * non-checkpointed rewrite (a wanted future item, out of scope here). */
+    if(TRUE) {
       /* brief 167 (tau-ratchet single-pass): the old while(1) loop recomputed the
        * WHOLE checkpointed float F/B on every bump (up to ~26 passes). The F/B is
        * tau/thresh-independent (brief 166 Q3), so the driver runs it ONCE: step 0
@@ -6587,6 +6602,32 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
+
+  if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
+    /* brief 185: brief 149's sp1/ep1 floor (above) forces Jvalid[v] = TRUE for
+     * essentially every state so the glocal J-parse stays geometrically available
+     * for models with a decaying-but-real occupancy tail (its target case, e.g.
+     * NC_001959). It does not widen the real per-state (j,d) bands, computed just
+     * above by ij2d_bands() from the un-floored 1-tau threshold signal -- so on a
+     * sequence with a genuinely, biologically missing region the floor also
+     * flags states whose real band is empty as "J-valid": geometrically
+     * unreachable "phantom valid" states that a truncated-alignment traceback
+     * can walk into and die on (cm_TrInsideAlignHB() "no valid parsetree
+     * found"). Veto Jvalid[v] back to FALSE for any state whose real band is
+     * empty at every j in its jband, using the hd_min()/hd_max()
+     * recompute-on-demand accessors (brief 157) -- never reintroduce flat
+     * hdmin[v][]/hdmax[v][] reads here, they're gone. */
+    int v, jp, njp, found;
+    for(v = 0; v < cp9b->cm_M; v++) {
+      if(! cp9b->Jvalid[v]) continue;
+      njp = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      found = FALSE;
+      for(jp = 0; jp < njp; jp++) {
+        if(hd_min(cp9b, v, jp) <= hd_max(cp9b, v, jp)) { found = TRUE; break; }
+      }
+      if(! found) cp9b->Jvalid[v] = FALSE;
+    }
+  }
 
 #if eslDEBUGLEVEL >= 1
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
