@@ -2607,7 +2607,7 @@ extern int   IntDigits(int i);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
-extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
+extern ESL_GETOPTS *cm_CreateDefaultApp(char *progname, ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
 extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
 extern float **FCalcOptimizedEmitScores      (CM_t *cm);

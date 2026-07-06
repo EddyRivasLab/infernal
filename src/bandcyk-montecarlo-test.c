@@ -33,7 +33,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                             docgroup*/
-  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",          0 },
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",                      0 },
+  { "--version", eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",                    0 },
   { "-n",        eslARG_INT,  "10000", NULL, NULL,  NULL,  NULL, NULL, "number of monte carlo samples to do",           0 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "set random number seed for Monte Carlo to <n>", 0 },
   { "-t",        eslARG_REAL,   "0.01",NULL, "x>0.",NULL,  NULL, NULL, "threshold for rejecting hypothesis that distros are identical ", 0 },
@@ -49,7 +50,7 @@ int
 main(int argc, char **argv)
 {
   int status;
-  ESL_GETOPTS    *go    = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_GETOPTS    *go    = cm_CreateDefaultApp("bandcyk-montecarlo-test", options, 1, argc, argv, banner, usage);
   char    *cmfile = esl_opt_GetArg(go, 1);
   CM_FILE  *cmfp;		/* open CM file for reading */
   CM_t    *cm;			/* a covariance model       */

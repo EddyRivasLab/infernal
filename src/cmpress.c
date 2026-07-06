@@ -21,7 +21,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs   incomp  help   docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "show brief help on version and usage",          0 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "show brief help and exit",                      0 },
+  { "--version", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "show version info and exit",                    0 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    NULL, "force: overwrite any previous pressed files",   0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -49,7 +50,7 @@ static void            close_dbfiles(struct dbfiles *dbf, int status);
 int
 main(int argc, char **argv)
 {
-  ESL_GETOPTS    *go         = cm_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  ESL_GETOPTS    *go         = cm_CreateDefaultApp("cmpress", options, 1, argc, argv, banner, usage);
   ESL_ALPHABET   *abc        = NULL;
   char           *cmfile     = esl_opt_GetArg(go, 1);
   CM_FILE        *cmfp       = NULL;

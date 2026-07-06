@@ -45,7 +45,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name        type         default  env  range toggles reqs incomp  help                                            docgroup*/
-  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",                0 },
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",                            0 },
+  { "--version", eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",                          0 },
   { "--betaW",   eslARG_REAL,  "1E-5", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for W calculation to <x>", 0 },
   { "--beta1",   eslARG_REAL,  "1E-5", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin1/dmax1 to <x>",   0 },
   { "--beta2",   eslARG_REAL,  "1E-6", NULL, "x>0.",NULL,  NULL, NULL, "set tail probability thresh for dmin2/dmax2 to <x>",  0 },
@@ -58,7 +59,7 @@ int
 main(int argc, char **argv)
 {
   int status;
-  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 3, argc, argv, banner, usage);
+  ESL_GETOPTS    *go      = cm_CreateDefaultApp("bandcyk-truncation-test", options, 3, argc, argv, banner, usage);
 
   char    *cmfile = esl_opt_GetArg(go, 1);
   int      Z1     = atoi(esl_opt_GetArg(go, 2));
