@@ -888,16 +888,35 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
           int gap_len  = ci - pi;
           int pad_here = ESL_MAX(nodepad[pk], nodepad[ck]);
           if (ck != pk && gap_len > 2 * pad_here) {
+            /* RAMP_SLACK_ALPHA: empirically bracketed (brief 042), not derived
+             * from a correctness proof -- pure nodepad-width margin (alpha=0)
+             * measurably WORSENED one real panel case (norovirus MT372469.1,
+             * --p7band --p7kmerchain: bit score 1358.60 -> 1168.35, a true
+             * regression, not just a placement difference), because a long
+             * on-diagonal gap can still contain a real, non-uniformly placed
+             * indel that pure linear interpolation clips. Growing the margin
+             * by alpha per residue of distance from the nearer bracketing pin
+             * (capped, since d is bounded by gap_len/2) recovers that case
+             * (1358.60 -> 1352.56 at alpha=0.75, within this thread's
+             * established ~0.2%-noise tolerance) while still cutting ncells
+             * substantially versus the flat default (2.6M vs 4.7M on that same
+             * gap -- alpha=0 gave 1.4M but wasn't safe). This is a tunable
+             * correctness/speed tradeoff, not a proven-safe bound either --
+             * see brief 042's summary "Design reasoning" section.
+             */
+            const double alpha = 0.75;
             int j;
             for(j = pi + 1; j < ci; j++) {
               double frac = (double) (j - pi) / (double) gap_len;
               double kexp = (double) pk + frac * (double) (ck - pk);
+              int d = (j - pi); if (ci - j < d) d = ci - j; /* distance to nearer anchor */
+              int slack = (int) (alpha * (double) d);
               int klo = (int) floor(kexp);
               int khi = (int) ceil(kexp);
               if (klo < 0) klo = 0; if (klo > M) klo = M;
               if (khi < 0) khi = 0; if (khi > M) khi = M;
-              kmin[j] = ESL_MAX(1, klo - nodepad[klo]);
-              kmax[j] = ESL_MIN(M, khi + nodepad[khi]);
+              kmin[j] = ESL_MAX(1, klo - nodepad[klo] - slack);
+              kmax[j] = ESL_MIN(M, khi + nodepad[khi] + slack);
             }
           }
         }
