@@ -855,6 +855,58 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
     }
   }
 
+  /* Interpolated ramp (brief 042). The base scans + bridge block above give
+   * every residue in a gap between two consecutive pins the SAME flat band,
+   * [prev_pin_k - pad, next_pin_k + pad] -- cost O(gap_len * gap_k) per gap,
+   * quadratic when both are large (kmerchain's typical sparse-anchor output;
+   * see brief 041). Replace that flat band on interior rows of long gaps
+   * with a band centered on the linear interpolation between the two
+   * bracketing pins, widened only by nodepad (the same local-wiggle margin
+   * used at a pin itself) -- not by the full model distance spanned by the
+   * gap. This assumes the true path's k-trajectory across a long gap tracks
+   * close to the diagonal implied by the two pins, which is reasonable for
+   * kmerchain anchors specifically because they were chained on near-zero
+   * diagonal drift in the first place (p7_Seq2BandsKmerChain's gapc chain
+   * cost penalizes exactly the drift this ramp assumes is small).
+   *
+   * Short gaps are deliberately left flat (untouched): with few interior
+   * rows the flat cost is cheap anyway, and a short gap carrying a large
+   * model jump is exactly the "one real deletion run concentrated in a
+   * single row" case the D-state bridge above exists to protect -- the ramp
+   * does not attempt to prove correctness for that case, so it stays out of
+   * its way. The gap_len > 2*pad_here threshold ties "short" to the same
+   * nodepad tunable already used for the pin margin itself, rather than an
+   * arbitrary constant.
+   */
+  {
+    int prev_pin_i = -1, prev_pin_k = -1;
+    for(i = 0; i <= L; i++) {
+      if(i2k[i] != -1) {
+        if(prev_pin_i >= 0) {
+          int pi = prev_pin_i, pk = prev_pin_k;
+          int ci = i,          ck = i2k[i];
+          int gap_len  = ci - pi;
+          int pad_here = ESL_MAX(nodepad[pk], nodepad[ck]);
+          if (ck != pk && gap_len > 2 * pad_here) {
+            int j;
+            for(j = pi + 1; j < ci; j++) {
+              double frac = (double) (j - pi) / (double) gap_len;
+              double kexp = (double) pk + frac * (double) (ck - pk);
+              int klo = (int) floor(kexp);
+              int khi = (int) ceil(kexp);
+              if (klo < 0) klo = 0; if (klo > M) klo = M;
+              if (khi < 0) khi = 0; if (khi > M) khi = M;
+              kmin[j] = ESL_MAX(1, klo - nodepad[klo]);
+              kmax[j] = ESL_MIN(M, khi + nodepad[khi]);
+            }
+          }
+        }
+        prev_pin_i = i;
+        prev_pin_k = i2k[i];
+      }
+    }
+  }
+
   /* D1 hop-back dilation pass.
    * For each pinned residue i, take min/max of i2k across the 2*hopback+1
    * window of pinned positions centred on i (clipped at trace ends), and
