@@ -3142,6 +3142,7 @@ extern int   MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, 
 extern int   sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 					  float psi_vs_phi_threshold, int debug_level);
 extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
+extern int   CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm);
 
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);
