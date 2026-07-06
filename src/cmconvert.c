@@ -18,7 +18,7 @@
 
 #include "infernal.h"
 
-#define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm"
+#define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm,--cp9ascm"
 
 static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
@@ -29,6 +29,7 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             0 },
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            0 },
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        0 },
+  { "--cp9ascm", eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output CM's ML CP9 HMM as an unstructured (linear MATL-chain) CM", 0 },
   /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     0 },*/
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -71,23 +72,35 @@ main(int argc, char **argv)
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
-      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm")) { 
+      CM_t *cp9cm = NULL;
+
+      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm") || esl_opt_GetBoolean(go, "--cp9ascm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
 	 * (cm->dmin, cm->dmax), cm->W, cm->consensus. These are
 	 * calculated during model configuration. If --mlhmm, we
 	 * need E-value params for the ML p7 HMM, we calc those
-	 * in configure_model().
+	 * in configure_model(). If --cp9ascm, we need cm->cp9 to be
+	 * built (globally, i.e. without CM_CONFIG_LOCAL), which
+	 * configure_model() also does as a side effect of cm_Configure().
 	 */
 	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
-      }	
-      /* append command line info to the appropriate comlog */
-      if (esl_opt_GetBoolean(go, "--mlhmm")) { 
-	if((status = p7_hmm_AppendComlog (cm->mlp7, go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log"); 
       }
-      else if (esl_opt_GetBoolean(go, "--fhmm")) { 
+
+      if (esl_opt_GetBoolean(go, "--cp9ascm")) {
+	if ((status = CP9_2_CM(cm, errbuf, &cp9cm)) != eslOK) cm_Fail(errbuf);
+      }
+
+      /* append command line info to the appropriate comlog */
+      if (esl_opt_GetBoolean(go, "--mlhmm")) {
+	if((status = p7_hmm_AppendComlog (cm->mlp7, go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
+      }
+      else if (esl_opt_GetBoolean(go, "--fhmm")) {
 	if((status = p7_hmm_AppendComlog (cm->fp7,  go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
       }
-      else { 
+      else if (esl_opt_GetBoolean(go, "--cp9ascm")) {
+	if((status = cm_AppendComlog (cp9cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
+      }
+      else {
 	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
       }
 
@@ -96,7 +109,9 @@ main(int argc, char **argv)
       else if (esl_opt_GetBoolean(go, "-1")       == TRUE) cm_file_Write1p0ASCII(ofp, cm);
       else if (esl_opt_GetBoolean(go, "--mlhmm")  == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->mlp7); /* -1 = write the current default format */
       else if (esl_opt_GetBoolean(go, "--fhmm")   == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->fp7);  /* -1 = write the current default format */
+      else if (esl_opt_GetBoolean(go, "--cp9ascm")== TRUE) cm_file_WriteASCII(ofp, -1, cp9cm);        /* -1 = write the current default format */
 
+      if (cp9cm != NULL) FreeCM(cp9cm);
       FreeCM(cm);
     }
   if      (status == eslEFORMAT)   cm_Fail("bad file format in CM file %s\n%s",             cmfile, cmfp->errbuf);
