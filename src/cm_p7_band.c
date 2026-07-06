@@ -780,6 +780,11 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  *                      Vit pins are monotone in (i,k); the dilation is
  *                      computed in O(L) with a sliding window over the
  *                      pinned positions in trace order. 0 = off (no-op).
+ *           alpha    - brief 043: distance-scaled slack coefficient for the
+ *                      interpolated-ramp inter-pin band (brief 042); see
+ *                      RAMP_SLACK_ALPHA comment below. Callers that don't
+ *                      expose a tunable knob should pass 0.75 (brief 042's
+ *                      validated default) to preserve prior behavior.
  *           ret_kmin - [0.i..L] = k, min node k for residue i
  *           ret_kmax - [0.i..L] = k, max node k for residue i
  *           ret_ncells - number of cells within bands, to return
@@ -789,7 +794,7 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  */
 int
 p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
-                      int hopback,
+                      int hopback, double alpha,
                       int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int     status;
@@ -902,9 +907,11 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
              * substantially versus the flat default (2.6M vs 4.7M on that same
              * gap -- alpha=0 gave 1.4M but wasn't safe). This is a tunable
              * correctness/speed tradeoff, not a proven-safe bound either --
-             * see brief 042's summary "Design reasoning" section.
+             * see brief 042's summary "Design reasoning" section. brief 043:
+             * alpha is now a caller-supplied parameter (default 0.75 preserved
+             * at every call site; only --p7kmerchain's cmalign call site
+             * exposes it as a runtime option, --p7kmerchain-alpha).
              */
-            const double alpha = 0.75;
             int j;
             for(j = pi + 1; j < ci; j++) {
               double frac = (double) (j - pi) / (double) gap_len;
@@ -1243,7 +1250,9 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
     for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
     nodepad = local_nodepad;
   }
-  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
+  /* brief 043: kmeranchor's single best-window anchor doesn't expose a tunable
+   * ramp alpha -- pass brief 042's validated default unconditionally. */
+  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, 0.75, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
 
   *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
   i2k = kmin = kmax = NULL;   /* handed off to caller */
@@ -1564,7 +1573,9 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
     nodepad = local_nodepad;
   }
-  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
+  /* brief 043: --p7kmerchain-alpha overrides brief 042's ramp-slack alpha
+   * (default 0.75, cm->p7_kmerchain_ramp_alpha initialized in cm.c). */
+  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, cm->p7_kmerchain_ramp_alpha, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
 
   *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
   i2k = kmin = kmax = NULL;   /* handed off to caller */
@@ -7005,7 +7016,9 @@ p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p
 
   /* Step 4: Pins -> bands */
   if (nodepad != NULL) {
-    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, &kmin, &kmax, &ncells)) != eslOK)
+    /* brief 043: Viterbi-trace path doesn't expose a tunable ramp alpha --
+     * pass brief 042's validated default unconditionally. */
+    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, 0.75, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
   }
   else {
@@ -12252,7 +12265,9 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   /* Step 4: pins -> bands (identical to p7_Seq2BandsVit) */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if (nodepad != NULL) {
-    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, &kmin, &kmax, &ncells)) != eslOK)
+    /* brief 043: pinbridge path doesn't expose a tunable ramp alpha -- pass
+     * brief 042's validated default unconditionally. */
+    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, 0.75, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
   } else {
     if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)

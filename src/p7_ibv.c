@@ -2090,7 +2090,9 @@ p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
    *     return the unpruned i2k to the caller. */
   ESL_ALLOC(i2k_band, sizeof(int) * (L + 1));
   memcpy(i2k_band, i2k, sizeof(int) * (L + 1));
-  if ((status = p7_pins2bands_nodepad(i2k_band, errbuf, L, M, nodepad, 0,
+  /* brief 043: IBV path doesn't expose a tunable ramp alpha -- pass brief
+   * 042's validated default unconditionally. */
+  if ((status = p7_pins2bands_nodepad(i2k_band, errbuf, L, M, nodepad, 0, 0.75,
                                       &kmin, &kmax, &ncells)) != eslOK)
     goto ERROR;
   free(i2k_band); i2k_band = NULL;

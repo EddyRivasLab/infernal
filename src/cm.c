@@ -130,6 +130,7 @@ CreateCMShell(void)
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
   cm->p7_use_kmeranchor = FALSE;         /* default: no k-mer best-window anchor (set by --p7kmeranchor, brief 026) */
   cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 027) */
+  cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 043) */
   cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 120) */
   cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
   cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 124) */
@@ -3127,6 +3128,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
   new->p7_use_kmeranchor = cm->p7_use_kmeranchor;
   new->p7_use_kmerchain  = cm->p7_use_kmerchain;
+  new->p7_kmerchain_ramp_alpha = cm->p7_kmerchain_ramp_alpha;
   new->p7_use_ibv       = cm->p7_use_ibv;
   new->p7_ibv_delta     = cm->p7_ibv_delta;
   new->p7_ibv_mem       = cm->p7_ibv_mem;
