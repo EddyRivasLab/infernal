@@ -1807,7 +1807,8 @@ trckpt_mode_decks(char mode, float ***Jd, float ***Ld, float ***Rd, float ***Td)
  *   RIGHT_FULL: bmode_v[j][d] += rmode_z[j][d]            (left  child empty)
  *
  * Band checks mirror cm_TrInsideAlignHB's B-state loop (and the rung-3 pinned
- * reference).  Unreached B states (kind==0) keep all planes IMPOSSIBLE.        */
+ * reference).  Unreached B states (kind==0): see the brief-26_0610-074 J-plane
+ * forced-split exception below; L/R/T planes keep IMPOSSIBLE.                 */
 static void
 pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
                 float ***Jd, float ***Ld, float ***Rd, float ***Td,
@@ -1829,7 +1830,54 @@ pin_tr_inside_B(TR_CKPT_CTX *cx, int v,
   if (do_R_v) trckpt_deck_init_impossible(cx, v, Rd[v]);
   if (do_T_v && Td) trckpt_deck_init_impossible(cx, v, Td[v]);
 
-  if (kind == 0) return;  /* unreached: planes stay IMPOSSIBLE */
+  if (kind == 0) {
+    /* brief-26_0610-074: v sits inside an ancestor's structurally-EMPTY
+     * LEFT_FULL/RIGHT_FULL branch (kind 2/3 collapses one whole child subtree
+     * to d==0), so CYK's D&C parse never visited v and bmode/lmode/rmode are
+     * undefined (065/067's "unpinned" case).  Stock's B-state combine
+     * (cm_TrOptAccAlignHB, cm_dpalign_trunc.c ~9505-9608) has NO LEFT_FULL/
+     * RIGHT_FULL alternate in the J-plane at all -- only L/R gain the extra
+     * k==0/k==d degenerate forms -- so an unpinned B's J-plane value is
+     * *always* the plain interior-sum-over-k form, with no mode ambiguity
+     * (067 section 2g's mode x kind x k cross-product concern is therefore
+     * moot for J).  Exactly mirroring rung-3's (065) d==0 forced-split
+     * exception: if precisely one k satisfies the per-(j,d) band constraint,
+     * the split is unambiguous and reconstructable without a CYK pin; compute
+     * it.  L/R/T have no comparable single-form guarantee (they retain a
+     * genuine LEFT_FULL/RIGHT_FULL alternative even when INTERIOR's k is
+     * forced), so they stay masked IMPOSSIBLE. */
+    if (do_J_v) {
+      float **Jyy = (Jd[y] != NULL) ? Jd[y] : (Jck ? Jck[y] : NULL);
+      float **Jzz = (Jd[z] != NULL) ? Jd[z] : (Jck ? Jck[z] : NULL);
+      if (Jyy != NULL && Jzz != NULL) {
+        float **Jbv = Jd[v];
+        int jn = ESL_MAX(jmin[v], jmin[z]);
+        int jx = ESL_MIN(jmax[v], jmax[z]);
+        for (j = jn; j <= jx; j++) {
+          jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
+          int kn = ESL_MAX(ESL_MAX(j - jmax[y], hdmin[z][jp_z]), 0);
+          int kx = ESL_MIN(jp_y, hdmax[z][jp_z]);
+          for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+            dp_v = d - hdmin[v][jp_v];
+            int kk, uniq_k = -1, n_valid = 0;
+            for (kk = kn; kk <= kx; kk++) {
+              if (kk > d) continue;
+              if ((kk >= d - hdmax[y][jp_y-kk]) && (kk <= d - hdmin[y][jp_y-kk])) {
+                n_valid++; uniq_k = kk;
+                if (n_valid > 1) break;
+              }
+            }
+            if (n_valid != 1) continue;
+            k = uniq_k;
+            kp_z = k - hdmin[z][jp_z];
+            dp_y = d - hdmin[y][jp_y-k];
+            Jbv[jp_v][dp_v] = FLogsum(Jbv[jp_v][dp_v], Jyy[jp_y-k][dp_y-k] + Jzz[jp_z][kp_z]);
+          }
+        }
+      }
+    }
+    return;
+  }
 
   {
     char  bmode = cx->bbmode[v], lmode = cx->blmode[v], rmode = cx->brmode[v];
@@ -2768,7 +2816,52 @@ pin_tr_optacc_B(TR_CKPT_CTX *cx, int v,
   if (do_R_v) trckpt_deck_init_impossible(cx, v, Rd[v]);
   if (do_T_v && Td) trckpt_deck_init_impossible(cx, v, Td[v]);
 
-  if (kind == 0) return;  /* unreached: planes stay IMPOSSIBLE */
+  if (kind == 0) {
+    /* brief-26_0610-074: OA-side analogue of pin_tr_inside_B's kind==0
+     * J-plane forced-split exception (see that function's comment for the
+     * full argument: J-plane has no LEFT_FULL/RIGHT_FULL alternate, so an
+     * unpinned B's J-plane split is either forced-unique or genuinely
+     * unreachable by any legal traceback -- never an untracked ambiguous
+     * choice).  OA form mirrors rung-3's (065) ckpt_optacc_deck B_st fix:
+     * FLogsum the two subtree OA values, guarded by NOT_IMPOSSIBLE with the
+     * d==k / k==0 zero-length escapes (both can apply at once when d==0). */
+    if (do_J_v) {
+      float **Jyy = (Jd[y] != NULL) ? Jd[y] : (Jck ? Jck[y] : NULL);
+      float **Jzz = (Jd[z] != NULL) ? Jd[z] : (Jck ? Jck[z] : NULL);
+      if (Jyy != NULL && Jzz != NULL) {
+        float **Jbv = Jd[v];
+        int jn = ESL_MAX(jmin[v], jmin[z]);
+        int jx = ESL_MIN(jmax[v], jmax[z]);
+        for (j = jn; j <= jx; j++) {
+          jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
+          int kn = ESL_MAX(ESL_MAX(j - jmax[y], hdmin[z][jp_z]), 0);
+          int kx = ESL_MIN(jp_y, hdmax[z][jp_z]);
+          for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+            dp_v = d - hdmin[v][jp_v];
+            int kk, uniq_k = -1, n_valid = 0;
+            for (kk = kn; kk <= kx; kk++) {
+              if (kk > d) continue;
+              if ((kk >= d - hdmax[y][jp_y-kk]) && (kk <= d - hdmin[y][jp_y-kk])) {
+                n_valid++; uniq_k = kk;
+                if (n_valid > 1) break;
+              }
+            }
+            if (n_valid != 1) continue;
+            k = uniq_k;
+            kp_z = k - hdmin[z][jp_z];
+            dp_y = d - hdmin[y][jp_y-k];
+            if ((sc = FLogsum(Jyy[jp_y-k][dp_y-k], Jzz[jp_z][kp_z])) > Jbv[jp_v][dp_v]) {
+              if (((d == k) || NOT_IMPOSSIBLE(Jyy[jp_y-k][dp_y-k])) &&
+                  ((k == 0) || NOT_IMPOSSIBLE(Jzz[jp_z][kp_z]))) {
+                Jbv[jp_v][dp_v] = sc;
+              }
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
 
   {
     char  bmode = cx->bbmode[v], lmode = cx->blmode[v], rmode = cx->brmode[v];
@@ -4335,16 +4428,41 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
 
     if (cm->sttype[v] == B_st) {
       int kind = (bkind != NULL) ? bkind[v] : 0;
-      if (kind == 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "trckpt_tr_optacc_traceback: B state v=%d not pinned", v);
+      int k_forced = -1;
+      if (kind == 0 && mode == TRMODE_J) {
+        /* brief-26_0610-074: re-derive a forced/unique J-plane split for an
+         * unpinned B state exactly as pin_tr_inside_B/pin_tr_optacc_B do (see
+         * those functions' comments for the full argument -- J-plane has no
+         * LEFT_FULL/RIGHT_FULL alternate, so no mode-cross-product ambiguity
+         * for this plane).  Purely a band-geometry re-check (mirrors rung-3's
+         * 065 ckpt_optacc_traceback fix): no deck/value lookup needed, since
+         * the deck computed the SAME unique k the SAME way. */
+        int zz = cm->cnum[v], yy = cm->cfirst[v];
+        if (j >= jmin[yy] && j <= jmax[yy] && j >= jmin[zz] && j <= jmax[zz]) {
+          int jp_yy = j - jmin[yy], jp_zz = j - jmin[zz];
+          int kn2 = ESL_MAX(ESL_MAX(j - jmax[yy], hdmin[zz][jp_zz]), 0);
+          int kx2 = ESL_MIN(jp_yy, hdmax[zz][jp_zz]);
+          int kk, uniq_k = -1, n_valid = 0;
+          for (kk = kn2; kk <= kx2; kk++) {
+            if (kk > d) continue;
+            if ((kk >= d - hdmax[yy][jp_yy-kk]) && (kk <= d - hdmin[yy][jp_yy-kk])) {
+              n_valid++; uniq_k = kk;
+              if (n_valid > 1) break;
+            }
+          }
+          if (n_valid == 1) k_forced = uniq_k;
+        }
+      }
+      if (kind == 0 && k_forced < 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "trckpt_tr_optacc_traceback: B state v=%d not pinned", v);
       /* INTERIOR/LEFT_FULL use kpin[v] (kstar or 0); RIGHT_FULL: left child empty -> k=d */
-      k = (kind == 3) ? d : kpin[v];
+      k = (k_forced >= 0) ? k_forced : (kind == 3) ? d : kpin[v];
       /* push the right child (BEGR) for later; descend left (BEGL) now */
-      mode = brmode[v];
+      mode = (k_forced >= 0) ? TRMODE_J : brmode[v];
       if ((status = esl_stack_CPush(pda_c, mode))    != eslOK) goto ERROR;
       if ((status = esl_stack_IPush(pda_i, j))       != eslOK) goto ERROR;
       if ((status = esl_stack_IPush(pda_i, k))       != eslOK) goto ERROR;
       if ((status = esl_stack_IPush(pda_i, tr->n-1)) != eslOK) goto ERROR;
-      mode = blmode[v];
+      mode = (k_forced >= 0) ? TRMODE_J : blmode[v];
       j = j - k; d = d - k; i = j - d + 1;
       y = cm->cfirst[v];
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
