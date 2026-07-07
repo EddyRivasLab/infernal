@@ -132,6 +132,8 @@ CreateCMShell(void)
   cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 027) */
   cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 043) */
   cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 046) */
+  cm->p7_kmerchain_mgate = 0;            /* default: disabled -- opt-in small-M gate (set by --p7kmerchain-mgate, brief 047) */
+  cm->p7_kmerchain_fallback_vit = FALSE; /* default: use --p7ibv as the kmer-gate fallback deriver (set by --p7kmerchain-fbvit, brief 047) */
   cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 120) */
   cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
   cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 124) */
@@ -3131,6 +3133,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_use_kmerchain  = cm->p7_use_kmerchain;
   new->p7_kmerchain_ramp_alpha = cm->p7_kmerchain_ramp_alpha;
   new->p7_kmerchain_mink = cm->p7_kmerchain_mink;
+  new->p7_kmerchain_mgate = cm->p7_kmerchain_mgate;
+  new->p7_kmerchain_fallback_vit = cm->p7_kmerchain_fallback_vit;
   new->p7_use_ibv       = cm->p7_use_ibv;
   new->p7_ibv_delta     = cm->p7_ibv_delta;
   new->p7_ibv_mem       = cm->p7_ibv_mem;

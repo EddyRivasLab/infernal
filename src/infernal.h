@@ -1930,6 +1930,13 @@ typedef struct cm_s {
                                  * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
                                  * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
                                  * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 046) */
+  int     p7_kmerchain_mgate;  /* brief 047: if >0, gate kmeranchor/kmerchain when M < this threshold (was a
+                                 * hardcoded, default-on M<4,000 constant under brief 045; now a real, OFF-BY-
+                                 * DEFAULT cmalign option -- --p7kmerchain-mgate <M>); default 0 (disabled) */
+  int     p7_kmerchain_fallback_vit; /* brief 047: if TRUE, revert the kmeranchor/kmerchain M-gate/N-gate/no-anchor
+                                 * fallback to the old p7_Seq2BandsVit (single Viterbi-MAP-trace band) mechanism
+                                 * instead of the new default (--p7ibv's D&C deriver) (--p7kmerchain-fbvit);
+                                 * default FALSE (use --p7ibv fallback) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
   int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
