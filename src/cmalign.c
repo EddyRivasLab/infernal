@@ -254,15 +254,22 @@ static char banner[] = "align sequences to a CM";
  * used by all 3 kmeranchor/kmerchain call sites below (serial, threaded
  * worker, MPI worker) in place of the old hardcoded p7_Seq2BandsVit-shaped
  * fallback. Defaults to --p7ibv's D&C deriver (p7_Seq2BandsIBV_dnc), the
- * same entry point --hmm --p7ibv itself calls, with --p7ibv-delta/-mode/
- * -width's own CLI defaults (cm->p7_ibv_mode/width are guaranteed to still
- * hold their cm.c defaults here, since --p7ibv and --p7kmeranchor/
- * --p7kmerchain are mutually exclusive CLI options -- see the "reqs"/
- * "incompat" fields on the --p7kmeranchor/--p7kmerchain option lines).
- * ibv_delta/ibv_base_slab are passed in already resolved to --p7ibv-delta's
- * CLI default (20000) / the brief-017 memory knee, exactly as the --hmm
- * --p7ibv call sites resolve them, since the caller may not have `go`
- * (the threaded worker doesn't). Returns ncells=0 (not a hard failure) if
+ * same entry point --hmm --p7ibv itself calls, with --p7ibv-mode/-width's
+ * own CLI defaults (cm->p7_ibv_mode/width are guaranteed to still hold
+ * their cm.c defaults here, since --p7ibv and --p7kmeranchor/--p7kmerchain
+ * are mutually exclusive CLI options -- see the "reqs"/"incompat" fields on
+ * the --p7kmeranchor/--p7kmerchain option lines).
+ * ibv_delta/ibv_base_slab are passed in already resolved: ibv_base_slab to
+ * the brief-017 memory knee, exactly as the --hmm --p7ibv call sites resolve
+ * it (the caller may not have `go`, e.g. the threaded worker). ibv_delta is
+ * cm->p7_ibv_delta (struct default 3000), deliberately NOT --p7ibv-delta's
+ * own CLI default (20000, what the direct --hmm --p7ibv call sites use) --
+ * brief 26_0628-050 found 20000 provably worse than <=10000 on mir-2807 and
+ * SNORA16 (a higher-forward-score but structurally wrong HMM registration
+ * only becomes reachable at wide deltas); cm->p7_ibv_delta is never
+ * CLI-overridden here since --p7ibv-delta requires --p7ibv, which is
+ * mutually exclusive with --p7kmeranchor/--p7kmerchain. Returns ncells=0
+ * (not a hard failure) if
  * cm->fp7 is unusable, mirroring the derivers' own ncells==0 "fall back
  * further" convention -- caller should still fall through to the old
  * unbanded-OA Forward/Backward safety net in that vanishingly rare case. */
@@ -1201,12 +1208,20 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	       * fallback target is now --p7ibv's D&C deriver instead of a
 	       * Vit-trace band (mir-2807: the old Vit-trace fallback itself
 	       * landed on the wrong alignment even when the gate correctly
-	       * fired; --p7ibv is known more accurate). */
+	       * fired; --p7ibv is known more accurate). brief 26_0628-050: use
+	       * cm->p7_ibv_delta (struct default 3000, same value cm_alndata.c's
+	       * --p7band fallback already uses) rather than --p7ibv-delta's own
+	       * CLI default (20000) -- 20000 is provably worse than <=10000 on
+	       * mir-2807 and slightly worse on SNORA16 (a different, higher-
+	       * scoring-but-wrong HMM registration only becomes reachable at wide
+	       * deltas). --p7ibv-delta can never be set here anyway (mutually
+	       * exclusive with --p7kmeranchor/--p7kmerchain), so this only
+	       * changes this fallback's own behavior. */
 	      int p7ibv_base_slab = (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 				      ? HMM_P7IBV_KNEE_BASE_SLAB
 				      : esl_opt_GetInteger(go, "--p7ibv-base-slab"));
 	      if ((status = kmer_gate_p7ibv_fallback(cm, errbuf, sq->dsq, sq->n, do_trunc,
-						      esl_opt_GetInteger(go, "--p7ibv-delta"), p7ibv_base_slab,
+						      cm->p7_ibv_delta, p7ibv_base_slab,
 						      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("kmer_gate_p7ibv_fallback() failed for sequence %s: %s", sq->name, errbuf);
 	    }
@@ -1826,9 +1841,12 @@ hmm_pipeline_thread(void *arg)
 	if (did_kmer && ncells == 0 && ! info->cm->p7_kmerchain_fallback_vit) {
 	  /* brief 26_0628-047: M-gate/N-gate fired, or no anchor found -- default
 	   * fallback target is --p7ibv's D&C deriver instead of a Vit-trace
-	   * band (see serial hmm_alignment()'s matching comment above). */
+	   * band (see serial hmm_alignment()'s matching comment above).
+	   * brief 26_0628-050: use info->cm->p7_ibv_delta (struct default 3000),
+	   * not info->ibv_delta (--p7ibv-delta's CLI default 20000) -- see the
+	   * serial hmm_alignment() comment above for why. */
 	  if ((status = kmer_gate_p7ibv_fallback(info->cm, errbuf, sq->dsq, sq->n, info->do_trunc,
-						  info->ibv_delta, info->ibv_base_slab,
+						  info->cm->p7_ibv_delta, info->ibv_base_slab,
 						  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	    cm_Fail("kmer_gate_p7ibv_fallback() failed for sequence %s: %s", sq->name, errbuf);
 	}
@@ -2635,12 +2653,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if (did_kmer_w && ncells_w == 0 && ! cm->p7_kmerchain_fallback_vit) {
 	  /* brief 26_0628-047: M-gate/N-gate fired, or no anchor found -- default
 	   * fallback target is --p7ibv's D&C deriver instead of a Vit-trace
-	   * band (see serial hmm_alignment()'s matching comment). */
+	   * band (see serial hmm_alignment()'s matching comment).
+	   * brief 26_0628-050: use cm->p7_ibv_delta (struct default 3000), not
+	   * --p7ibv-delta's CLI default (20000) -- see serial hmm_alignment(). */
 	  int p7ibv_base_slab_w = (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 				    ? HMM_P7IBV_KNEE_BASE_SLAB
 				    : esl_opt_GetInteger(go, "--p7ibv-base-slab"));
 	  if (kmer_gate_p7ibv_fallback(cm, errbuf, dsq, L, do_trunc_w,
-					esl_opt_GetInteger(go, "--p7ibv-delta"), p7ibv_base_slab_w,
+					cm->p7_ibv_delta, p7ibv_base_slab_w,
 					&i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
 	    mpi_failure("kmer_gate_p7ibv_fallback() failed: %s", errbuf);
 	}
