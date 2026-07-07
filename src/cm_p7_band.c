@@ -1026,6 +1026,16 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * fallback already taken whenever no k-mer anchor is found. */
 #define KMER_MGATE_MIN  4000
 
+/* brief 046: independent M-gate disable toggle, for controlled sweeps that need
+ * to isolate the (unvalidated) k>=N zero-hits gate from the (already-validated)
+ * M-gate -- e.g. "N-gate alone", "neither", "both" comparisons. Env-var, not a
+ * cmalign CLI option: this is a sweep-harness knob, not a user-facing feature. */
+static int
+kmer_mgate_enabled(void)
+{
+  return (getenv("INFERNAL_KMER_MGATE_OFF") == NULL);
+}
+
 #define KMW_BIN         200   /* model-window (bin) width, matches brief 023/025 B */
 #define KMW_TOL         15    /* diagonal-cluster tolerance (brief 023/025 TOL)    */
 #define KMW_MIN_CORRECT 3     /* floor: min on-diagonal hits for a real window     */
@@ -1034,6 +1044,21 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 
 static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-encodable */
 #define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
+
+/* brief 046: per-query k>=mink zero-hits signal gate, shared by kmeranchor and
+ * kmerchain. `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
+ * (returns TRUE) iff mink>0 and every tier with k>=mink has zero hits anywhere
+ * in the model for this query -- i.e. there is no exact-match content long
+ * enough to carry real signal, independent of M. Disabled (mink<=0, default)
+ * by construction returns FALSE. See brief 046 for the mechanism/rationale. */
+static int
+kmer_ngate_fires(const int *nrawk, int mink)
+{
+  int ki, sum = 0;
+  if (mink <= 0) return FALSE;
+  for (ki = 0; ki < KMW_NK; ki++) if (kmw_kvals[ki] >= mink) sum += nrawk[ki];
+  return (sum == 0);
+}
 
 typedef struct { uint64_t code; int pos; } kmw_kmer_t; /* a target k-mer occurrence */
 typedef struct { int j, t, k; }            kmw_hit_t;  /* model j / target t / k-length */
@@ -1149,14 +1174,16 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   kmw_kmer_t *idx    = NULL;      /* per-k target k-mer index */
   int        *i2k    = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
+  int         nrawk[KMW_NK];   /* brief 046: raw hit count per k-tier (N-gate input) */
   int b, ki, j, x;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
-  if (M < KMER_MGATE_MIN) {
+  if (M < KMER_MGATE_MIN && kmer_mgate_enabled()) {
     fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, KMER_MGATE_MIN);
     return eslOK;   /* brief 045 small-M gate; caller falls back to unbanded */
   }
   if (M < KMW_BIN) { return eslOK; }   /* too small to window-score; caller falls back */
+  for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
 
   /* 1. model consensus (argmax match emission per node) */
   ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
@@ -1194,10 +1221,19 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
           binhit[b] = tmp; bincap[b] = newcap;
         }
         binhit[b][binn[b]].j = j; binhit[b][binn[b]].t = idx[p].pos; binhit[b][binn[b]].k = k;
-        binn[b]++;
+        binn[b]++; nrawk[ki]++;
       }
     }
     free(idx); idx = NULL;
+  }
+
+  /* brief 046: per-query k>=mink zero-hits signal gate (unvalidated, default
+   * off -- see kmer_ngate_fires() header comment). Checked right after the raw
+   * hit collection, independent of the M-gate above. */
+  if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
+    fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
+                    "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
+    status = eslOK; goto CLEANUP;
   }
 
   /* 3. score each bin by diagonal-dominance; pick best (rank_bins semantics:
@@ -1433,7 +1469,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int ki, j, x, i;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
-  if (M < KMER_MGATE_MIN) {
+  if (M < KMER_MGATE_MIN && kmer_mgate_enabled()) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, KMER_MGATE_MIN);
     return eslOK;   /* brief 045 small-M gate; caller falls back to unbanded */
   }
@@ -1514,6 +1550,16 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   }
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
           L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, KMC_MIN_ANCHOR);
+
+  /* brief 046: per-query k>=mink zero-hits signal gate (unvalidated, default
+   * off -- see kmer_ngate_fires() header comment). Checked right after the raw
+   * hit collection/perk breakdown above, independent of the M-gate above. */
+  if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
+                    "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
+    status = eslOK; goto CLEANUP;
+  }
+
   /* brief 045: dump every pre-chain anchor (not just the winning chain), gated
    * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
    * 041's BRIEF041_CHAINDUMP). Lets us see whether a given model region has

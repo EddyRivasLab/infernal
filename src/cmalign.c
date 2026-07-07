@@ -159,6 +159,7 @@ static ESL_OPTIONS options[] = {
   { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmerchain", "k-mer best-window anchor bands (--p7band/--hmm)",   3 },
   { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmeranchor", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
   { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain",                   NULL, "brief 043: kmerchain ramp-slack alpha [default 0.75]",       3 },
+  { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 046: gate kmeranchor/kmerchain if k>=<n> tier finds 0 hits [default 0=off]", 3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -2953,6 +2954,15 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       goto ERROR;
     }
   }
+  /* brief 046: --p7kmerchain-mink only means something if kmeranchor/kmerchain
+   * is actually in use; not expressible as an esl_getopts "reqs" OR (either
+   * flag suffices), so check manually, mirroring the --p7kmeranchor/--p7kmerchain
+   * "requires --p7band or --hmm" check above. */
+  if(esl_opt_IsOn(go, "--p7kmerchain-mink") && esl_opt_GetInteger(go, "--p7kmerchain-mink") > 0 &&
+     (! esl_opt_GetBoolean(go, "--p7kmeranchor")) && (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    puts("\nERROR: --p7kmerchain-mink requires --p7kmeranchor or --p7kmerchain\n");
+    goto ERROR;
+  }
 
   *ret_go     = go;
   *ret_infmt  = infmt;
@@ -3178,6 +3188,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--p7kmeranchor")) cm->p7_use_kmeranchor = TRUE;  /* brief 026 */
   if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 027 */
   cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 043; req="--p7kmerchain" so only meaningful there */
+  cm->p7_kmerchain_mink = esl_opt_GetInteger(go, "--p7kmerchain-mink");     /* brief 046; 0 = disabled (default) */
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
     cm->p7_cykbands_pad = esl_opt_GetInteger(go, "--cykpad");

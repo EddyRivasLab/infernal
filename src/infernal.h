@@ -1926,6 +1926,10 @@ typedef struct cm_s {
   int     p7_use_kmeranchor;   /* if TRUE, derive bands from a k-mer best-window anchor (--p7kmeranchor, brief 026) */
   int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 027) */
   double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 042); default 0.75 (--p7kmerchain-alpha, brief 043) */
+  int     p7_kmerchain_mink;   /* brief 046: if >0, gate kmeranchor/kmerchain (independent of the M-gate) when the
+                                 * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
+                                 * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
+                                 * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 046) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
   int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
