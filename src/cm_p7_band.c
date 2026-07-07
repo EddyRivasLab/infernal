@@ -1024,7 +1024,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * OFF-BY-DEFAULT cmalign option (--p7kmerchain-mgate <M>, cm->p7_kmerchain_mgate,
  * 0=off) -- fires (M < threshold) only when the user opts in, same gating
  * logic as before. Below the threshold, both derivers immediately report
- * "no anchor" (ret_ncells=0), and the caller falls back per brief 047's new
+ * "no anchor" (ret_ncells=0), and the caller falls back per brief 26_0628-047's new
  * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
 
 #define KMW_BIN         200   /* model-window (bin) width, matches brief 023/025 B */
@@ -1171,9 +1171,9 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 047's fallback mechanism */
+    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
   }
-  /* brief 047: removed the old M<KMW_BIN=200 silent bail-out here (inherited
+  /* brief 26_0628-047: removed the old M<KMW_BIN=200 silent bail-out here (inherited
    * from brief 026, unrelated to the M-gate/N-gate mechanisms above) -- it
    * pre-empted kmeranchor's k-mer seed collection on small models before
    * either gate got a chance to run, and was never validated as a correctness
@@ -1467,7 +1467,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 047's fallback mechanism */
+    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
   }
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)

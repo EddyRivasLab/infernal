@@ -160,8 +160,8 @@ static ESL_OPTIONS options[] = {
   { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmeranchor", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
   { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain",                   NULL, "brief 043: kmerchain ramp-slack alpha [default 0.75]",       3 },
   { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 046: gate kmeranchor/kmerchain if k>=<n> tier finds 0 hits [default 0=off]", 3 },
-  { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 047: gate kmeranchor/kmerchain if M < <n> [default 0=off]",          3 },
-  { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL,        NULL,                     NULL, "brief 047: gate fallback uses old Vit-trace band, not --p7ibv",           3 },
+  { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 26_0628-047: gate kmeranchor/kmerchain if M < <n> [default 0=off]",          3 },
+  { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL,        NULL,                     NULL, "brief 26_0628-047: gate fallback uses old Vit-trace band, not --p7ibv",           3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
   { "--cykskip-unvisited", eslARG_NONE, FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "skip CM states not visited by CYK parsetree (aggressive)",    3 },
@@ -250,7 +250,7 @@ brief035_rss_kb(void)
 static char usage[]  = "[-options] <cmfile> <seqfile>";
 static char banner[] = "align sequences to a CM";
 
-/* brief 047: shared kmer-gate (M-gate/N-gate/no-anchor) fallback deriver,
+/* brief 26_0628-047: shared kmer-gate (M-gate/N-gate/no-anchor) fallback deriver,
  * used by all 3 kmeranchor/kmerchain call sites below (serial, threaded
  * worker, MPI worker) in place of the old hardcoded p7_Seq2BandsVit-shaped
  * fallback. Defaults to --p7ibv's D&C deriver (p7_Seq2BandsIBV_dnc), the
@@ -1197,7 +1197,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if (local_nodepad) free(local_nodepad);
 
 	    if (did_kmer && ncells == 0 && ! cm->p7_kmerchain_fallback_vit) {
-	      /* brief 047: M-gate/N-gate fired, or no anchor found -- default
+	      /* brief 26_0628-047: M-gate/N-gate fired, or no anchor found -- default
 	       * fallback target is now --p7ibv's D&C deriver instead of a
 	       * Vit-trace band (mir-2807: the old Vit-trace fallback itself
 	       * landed on the wrong alignment even when the gate correctly
@@ -1824,7 +1824,7 @@ hmm_pipeline_thread(void *arg)
 	if (local_nodepad) free(local_nodepad);
 
 	if (did_kmer && ncells == 0 && ! info->cm->p7_kmerchain_fallback_vit) {
-	  /* brief 047: M-gate/N-gate fired, or no anchor found -- default
+	  /* brief 26_0628-047: M-gate/N-gate fired, or no anchor found -- default
 	   * fallback target is --p7ibv's D&C deriver instead of a Vit-trace
 	   * band (see serial hmm_alignment()'s matching comment above). */
 	  if ((status = kmer_gate_p7ibv_fallback(info->cm, errbuf, sq->dsq, sq->n, info->do_trunc,
@@ -2633,7 +2633,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if (local_nodepad_w) free(local_nodepad_w);
 
 	if (did_kmer_w && ncells_w == 0 && ! cm->p7_kmerchain_fallback_vit) {
-	  /* brief 047: M-gate/N-gate fired, or no anchor found -- default
+	  /* brief 26_0628-047: M-gate/N-gate fired, or no anchor found -- default
 	   * fallback target is --p7ibv's D&C deriver instead of a Vit-trace
 	   * band (see serial hmm_alignment()'s matching comment). */
 	  int p7ibv_base_slab_w = (esl_opt_IsDefault(go, "--p7ibv-base-slab")
@@ -3037,7 +3037,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nERROR: --p7kmerchain-mink requires --p7kmeranchor or --p7kmerchain\n");
     goto ERROR;
   }
-  /* brief 047: --p7kmerchain-mgate/-fallback-vit only mean something if
+  /* brief 26_0628-047: --p7kmerchain-mgate/-fallback-vit only mean something if
    * kmeranchor/kmerchain is actually in use; same manual-check shape as
    * --p7kmerchain-mink above (not expressible as esl_getopts "reqs" OR). */
   if(esl_opt_IsOn(go, "--p7kmerchain-mgate") && esl_opt_GetInteger(go, "--p7kmerchain-mgate") > 0 &&
@@ -3276,8 +3276,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 027 */
   cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 043; req="--p7kmerchain" so only meaningful there */
   cm->p7_kmerchain_mink = esl_opt_GetInteger(go, "--p7kmerchain-mink");     /* brief 046; 0 = disabled (default) */
-  cm->p7_kmerchain_mgate = esl_opt_GetInteger(go, "--p7kmerchain-mgate");   /* brief 047; 0 = disabled (default) */
-  cm->p7_kmerchain_fallback_vit = esl_opt_GetBoolean(go, "--p7kmerchain-fbvit"); /* brief 047; default FALSE (--p7ibv fallback) */
+  cm->p7_kmerchain_mgate = esl_opt_GetInteger(go, "--p7kmerchain-mgate");   /* brief 26_0628-047; 0 = disabled (default) */
+  cm->p7_kmerchain_fallback_vit = esl_opt_GetBoolean(go, "--p7kmerchain-fbvit"); /* brief 26_0628-047; default FALSE (--p7ibv fallback) */
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
     cm->p7_cykbands_pad = esl_opt_GetInteger(go, "--cykpad");
