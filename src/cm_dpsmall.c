@@ -6715,14 +6715,19 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 			alpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) kshad[j][dp_v] = k;
 		      }
-		      /* L: left child full (J), right child L marginal */
-		      if (do_L_v && do_L_z &&
+		      /* L: left child full (J), right child L marginal.  yy's J-plane
+		       * cross-term is only a valid truncated contribution if yy's own
+		       * node lies entirely within the observed (non-truncated) sequence
+		       * (brief 070: cp9b->Jvalid[yy], mirrors the do_J_y convention used
+		       * throughout cm_dpalign_trunc.c's stock truncated recursions). */
+		      if (do_L_v && do_L_z && cp9b->Jvalid[yy] &&
 			  (sc = alpha[yy][j-k][dp_yk] + Lalpha[zz][j][dp_zk]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) { Lkshad[j][dp_v] = k; Lkmode[v][j][dp_v] = TRMODE_J; }
 		      }
-		      /* R: left child R marginal, right child full (J) */
-		      if (do_R_v && do_R_y &&
+		      /* R: left child R marginal, right child full (J).  Same Jvalid[zz]
+		       * gate on the right child's J-plane cross-term (brief 070). */
+		      if (do_R_v && do_R_y && cp9b->Jvalid[zz] &&
 			  (sc = Ralpha[yy][j-k][dp_yk] + alpha[zz][j][dp_zk]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) { Rkshad[j][dp_v] = k; Rkmode[v][j][dp_v] = TRMODE_J; }
@@ -6752,7 +6757,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      for (d = dnn; d <= dxx && d <= jpp; d++) {
 		int dp_v = d - hdmin[v][j-jmin[v]];
 		int dp_y = d - hdmin[yy][j-jmin[yy]];
-		if ((sc = alpha[yy][j][dp_y]) > Lalpha[v][j][dp_v]) {
+		/* brief 070: yy's J-plane is only a valid contribution here if yy's own
+		 * node lies entirely within the observed sequence (cp9b->Jvalid[yy]). */
+		if (cp9b->Jvalid[yy] && (sc = alpha[yy][j][dp_y]) > Lalpha[v][j][dp_v]) {
 		  Lalpha[v][j][dp_v] = sc;
 		  if (ret_shadow != NULL) { Lkshad[j][dp_v] = 0; Lkmode[v][j][dp_v] = TRMODE_J; }
 		}
@@ -6774,7 +6781,13 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      for (d = dnn; d <= dxx && d <= jpp; d++) {
 		int dp_v = d - hdmin[v][j-jmin[v]];
 		int dp_z = d - hdmin[zz][j-jmin[zz]];
-		if ((sc = alpha[zz][j][dp_z]) > Ralpha[v][j][dp_v]) {
+		/* brief 070: zz's J-plane is only a valid contribution here if zz's own
+		 * node lies entirely within the observed sequence (cp9b->Jvalid[zz]).
+		 * Without this gate, a RIGHT_FULL bifurcation can pull in zz's plain
+		 * (truncation-unaware) classical Inside value even when zz's node
+		 * structurally spans past the truncation boundary -- exactly the
+		 * crash reproduced in brief 070 (frag5p_s12 L24, v=518/z=566). */
+		if (cp9b->Jvalid[zz] && (sc = alpha[zz][j][dp_z]) > Ralpha[v][j][dp_v]) {
 		  Ralpha[v][j][dp_v] = sc;
 		  if (ret_shadow != NULL) { Rkshad[j][dp_v] = d; Rkmode[v][j][dp_v] = TRMODE_J; }
 		}
@@ -8910,20 +8923,23 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	      /* all-J split */
 	      if ((sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_J; w_mode=TRMODE_J; y_mode=TRMODE_J; }
-	      /* L: v in L; w=J, y=L  (k>0) */
-	      if (haveL && k > 0 && cp9b->Lvalid[y] &&
+	      /* L: v in L; w=J, y=L  (k>0).  brief 070: w's J-plane cross-term needs
+	       * cp9b->Jvalid[w] -- w's node must lie entirely within the observed
+	       * sequence for its plain (truncation-unaware) alpha[w] to be a valid
+	       * contribution (mirrors the do_J_y convention in cm_dpalign_trunc.c). */
+	      if (haveL && k > 0 && cp9b->Lvalid[y] && cp9b->Jvalid[w] &&
 		  (sc = alpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_L; }
-	      /* L: v in L; w=J, y=J  (k>0) */
-	      if (haveL && k > 0 &&
+	      /* L: v in L; w=J, y=J  (k>0).  brief 070: gate both children's J-planes. */
+	      if (haveL && k > 0 && cp9b->Jvalid[w] && cp9b->Jvalid[y] &&
 		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_J; }
-	      /* R: v in R; w=R, y=J  (k<d) */
-	      if (haveR && k < d && cp9b->Rvalid[w] &&
+	      /* R: v in R; w=R, y=J  (k<d).  brief 070: gate y's J-plane. */
+	      if (haveR && k < d && cp9b->Rvalid[w] && cp9b->Jvalid[y] &&
 		  (sc = Ralpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_R; y_mode=TRMODE_J; }
-	      /* R: v in R; w=J, y=J  (k<d) */
-	      if (haveR && k < d &&
+	      /* R: v in R; w=J, y=J  (k<d).  brief 070: gate both children's J-planes. */
+	      if (haveR && k < d && cp9b->Jvalid[w] && cp9b->Jvalid[y] &&
 		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	      /* T: v in T; w=R (left BEGL), y=L (right BEGR); 1<=k<=d-1 (both children
@@ -8938,7 +8954,9 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    if (hb_inband(cp9b, w, j, d, i0, j0, &dp_w)) {
 	      if (cp9b->Lvalid[w] && (sc = Lalpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_L; y_mode=TRMODE_T; }
-	      if ((sc = alpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
+	      /* brief 070: w's J-plane cross-term needs cp9b->Jvalid[w] (LEFT_FULL
+	       * mirror of the RIGHT_FULL crash site below). */
+	      if (cp9b->Jvalid[w] && (sc = alpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_T; }
 	    }
 	  }
@@ -8948,7 +8966,10 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    if (hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) {
 	      if (cp9b->Rvalid[y] && (sc = Ralpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_R; }
-	      if ((sc = alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
+	      /* brief 070: y's J-plane cross-term needs cp9b->Jvalid[y] -- the
+	       * tr_generic_splitter_hb (true D&C, large-subtree) mirror of the
+	       * tr_inside_hb "B special case 2" crash site (frag5p_s12 L24). */
+	      if (cp9b->Jvalid[y] && (sc = alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_J; }
 	    }
 	  }
