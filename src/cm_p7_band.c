@@ -1203,6 +1203,25 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
     if (take) { best_bin = b; best_on = on; best_ratio = ratio; best_center = center; }
   }
 
+  /* brief 045: dump every bin's candidate window (not just the winner), gated
+   * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
+   * 041's BRIEF041_CHAINDUMP / this notebook's own new BRIEF045_SEEDDUMP for
+   * kmerchain above). Lets us see whether the bin containing the true region
+   * had a qualifying window at all, vs simply lost the bin-vs-bin comparison. */
+  if (getenv("BRIEF045_SEEDDUMP") != NULL) {
+    for (b = 0; b < nbins; b++) {
+      int n = binn[b], center, i;
+      if (n == 0) { fprintf(stderr, "#KMERANCHOR_BIN L=%d M=%d bin=%d model_range=[%d,%d] n=0\n",
+                            L, M, b, b*KMW_BIN+1, ESL_MIN((b+1)*KMW_BIN, M)); continue; }
+      for (i = 0; i < n; i++) dbuf[i] = binhit[b][i].j - binhit[b][i].t;
+      qsort(dbuf, n, sizeof(int), kmw_int_cmp);
+      int on = kmw_dominant(dbuf, n, KMW_TOL, &center);
+      fprintf(stderr, "#KMERANCHOR_BIN L=%d M=%d bin=%d model_range=[%d,%d] n=%d diag=%d on=%d ratio=%.3f%s\n",
+              L, M, b, b*KMW_BIN+1, ESL_MIN((b+1)*KMW_BIN, M), n, center, on, (double) on / (double) n,
+              (b == best_bin ? " WINNER" : ""));
+    }
+  }
+
   /* 4. no usable window: signal caller to fall back to unbanded */
   if (best_bin < 0 || best_on < KMW_MIN_CORRECT) {
     fprintf(stderr, "#KMERANCHOR L=%d M=%d best_bin=NONE (no window >= floor)\n", L, M);
@@ -1471,6 +1490,17 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   }
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
           L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, KMC_MIN_ANCHOR);
+  /* brief 045: dump every pre-chain anchor (not just the winning chain), gated
+   * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
+   * 041's BRIEF041_CHAINDUMP). Lets us see whether a given model region has
+   * ANY candidate anchor at all, vs has one that the chaining DP rejected. */
+  if (getenv("BRIEF045_SEEDDUMP") != NULL) {
+    int si;
+    for (si = 0; si < nseed; si++)
+      fprintf(stderr, "#KMERCHAIN_SEED L=%d M=%d idx=%d/%d model=[%d,%d] query=[%d,%d] len=%d\n",
+              L, M, si, nseed, seeds[si].j, seeds[si].j + seeds[si].k - 1,
+              seeds[si].t, seeds[si].t + seeds[si].k - 1, seeds[si].k);
+  }
   if (getenv("BRIEF035_MEMPOINT") != NULL)
     fprintf(stderr, "#MEMPOINT after_seedmerge L=%d nraw=%d nanchor=%d rss_kb=%ld\n", L, nival, nseed, brief035_rss_kb());
   free(ival); ival = NULL;
@@ -1538,6 +1568,25 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] "
                     "repeat_anchors_in[%d,%d]=%d nlink=%ld\n",
             L, M, nc, best_sc, mlo, mhi, qlo, qhi, KMC_HSV_RLO, KMC_HSV_RHI, nrep, nlink);
+    /* brief 041 (ported from infernal-brief040-stagetime): per-anchor chain dump,
+     * gated by BRIEF041_CHAINDUMP (silent no-op by default, mirrors
+     * BRIEF035_MEMPOINT convention). */
+    if (getenv("BRIEF041_CHAINDUMP") != NULL) {
+      for (c = 0; c < nc; c++) {
+        int aj  = seeds[chain[c]].j,  ajx = seeds[chain[c]].j + seeds[chain[c]].k - 1;
+        int at  = seeds[chain[c]].t,  atx = seeds[chain[c]].t + seeds[chain[c]].k - 1;
+        int qgap = -1, mgap = -1, dgap = -1;
+        if (c+1 < nc) {
+          int nj = seeds[chain[c+1]].j, nt = seeds[chain[c+1]].t;
+          qgap = nt - atx - 1;
+          mgap = nj - ajx - 1;
+          dgap = (nj - nt) - (aj - at);
+        }
+        fprintf(stderr, "#KMERCHAIN_ANCHOR L=%d M=%d idx=%d/%d model=[%d,%d] query=[%d,%d] len=%d "
+                        "gap_to_next: query=%d model=%d diagdelta=%d\n",
+                L, M, c, nc, aj, ajx, at, atx, seeds[chain[c]].k, qgap, mgap, dgap);
+      }
+    }
     if (getenv("BRIEF035_MEMPOINT") != NULL)
       fprintf(stderr, "#MEMPOINT after_chainDP L=%d nseed=%d nlink=%ld rss_kb=%ld\n", L, nseed, nlink, brief035_rss_kb());
   }
