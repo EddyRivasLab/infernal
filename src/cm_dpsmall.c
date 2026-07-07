@@ -7200,6 +7200,14 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   if (cm->sttype[vroot] == B_st) {
     w2 = w1;
     if (vend != vroot) cm_Fail("oh no. not again.");
+  } else if (cm->sttype[vroot] == IL_st || cm->sttype[vroot] == IR_st) {
+    /* TRUNCATED begins (unlike classical CMH_LOCAL_BEGIN) may enter directly at
+     * an insert state -- a fragment can start/end mid-insertion (brief 069 fix).
+     * An insert state is not part of any node's split set (w1 above is its
+     * node's first SPLIT state, not vroot itself), so the split-set grouping
+     * below doesn't apply; vroot has no split-set siblings to allocate here,
+     * only its own single deck. */
+    w1 = w2 = vroot;
   } else
     w2 = cm->cfirst[w1]-1;
 
@@ -7779,7 +7787,17 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   if (fill_R) { ESL_ALLOC(Ra, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) Ra[v] = NULL; }
 
   w1 = cm->nodemap[cm->ndidx[z]];
-  w2 = cm->cfirst[w1]-1;
+  /* TRUNCATED marginal termini / begins (unlike classical CMH_LOCAL_BEGIN) may
+   * land directly on an insert state -- a fragment can begin/end mid-insertion
+   * (brief 069 fix). Normally z is the split set's own last state (cfirst[w1]-1)
+   * and w1..w2 is exactly that split set; the main recursion below (v = w1-1
+   * downto r) never expands w1..w2 itself; it only reads them as already-seeded
+   * boundary values. When z is instead a same-node insert state (index beyond
+   * the split set, since inserts are numbered as split states' first children),
+   * z needs the SAME treatment: seeded, not recursively expanded (its own
+   * children lie beyond z, outside this V-problem's domain and never allocated
+   * here). So the seeded range must extend through z, not stop at cfirst[w1]-1. */
+  w2 = ESL_MAX(cm->cfirst[w1]-1, z);
   for (v = w1; v <= w2; v++) {
     a[v] = alloc_banded_hb_vji_deck(i0, i1, j1, j0, v, cp9b);
     banded_hb_vji_init_impossible(a[v], i0, i1, j1, j0, v, cp9b);
