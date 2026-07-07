@@ -18,7 +18,7 @@
  * path); --endsonly switches to the R-L.2 ends-only config (regression:
  * must stay byte-identical to R-L.2's own result).
  *
- * NOTE (brief 062 scope boundary): this driver calls cm_CheckptAlignHB()
+ * NOTE (brief 26_0610-062 scope boundary): this driver calls cm_CheckptAlignHB()
  * directly, bypassing cm_CheckptAlignHB_Qualifies() (which still correctly
  * rejects CMH_LOCAL_BEGIN in production -- relaxing THAT qualifier is R-L.6's
  * job, once begins+ends+trunc are all built).  Only the DRIVER's own

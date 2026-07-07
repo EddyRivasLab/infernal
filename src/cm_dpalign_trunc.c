@@ -1216,7 +1216,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 /*****************************************************************
  * Checkpointed sqrt(M)-memory TRUNCATED HMM-banded OptAcc engine
  *
- * Brief 029: library port of the validated standalone driver
+ * Brief 26_0610-029: library port of the validated standalone driver
  *   ckpttr_drv.c (027) -- checkpointed truncated Inside + Outside + fused
  *   posterior + OptAcc max-DP + mode-aware traceback, for a bps=0 (pure
  *   MATL chain) global CM in the three marginal modes that can occur there:
@@ -2858,7 +2858,7 @@ cm_CheckptTrAlignHB_Qualifies(CM_t *cm)
  *           These are the conditions under which the rung-4 TRUNCATED pipeline
  *           (cm_CheckptTrPostAlignHB + cm_CheckptTrOptAccAlignHB + the
  *           pinned-tree traceback) reproduces the stock cm_TrAlignHB OptAcc
- *           path's alignment (modulo the brief-032 accuracy-neutral pin-B
+ *           path's alignment (modulo the brief-26_0610-032 accuracy-neutral pin-B
  *           flips) across marginal modes J/L/R/T, with a sqrt(M) per-mode
  *           working set.  Local begins/ends are supported (R-L.5a/5b: the
  *           rung-4 engine consumes CMH_LOCAL_BEGIN/CMH_LOCAL_END), so this gate
@@ -2887,7 +2887,7 @@ cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptTrAlignHB()
- * Incept:   Brief 029 (library port of driver 027 ckpttr_drv.c)
+ * Incept:   Brief 26_0610-029 (library port of driver 027 ckpttr_drv.c)
  *
  * Purpose:  Checkpointed (sqrt(M)-memory) HMM-banded optimal-accuracy
  *           TRUNCATED alignment for a global, pure-MATL-chain (bps=0) CM.
@@ -3509,7 +3509,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 }
 
 /* Function: cm_PinTrPostAlignHB()
- *           EPN 2026 [brief 053, rung R4.2a]
+ *           EPN 2026 [brief 26_0610-053, rung R4.2a]
  *
  * Purpose:  Full-storage PINNED truncated structured (bps>0) posterior.  The
  *           trunc-D&C parse supplies, per B state v, the single bifurcation
@@ -3521,7 +3521,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  *           cm_TrPosteriorHB + cm_TrEmitterPosteriorHB -> emit_mx + Z.
  *
  *           This is the truncated analogue of rung-3's cm_PinPostAlignHB
- *           (brief 037).  The deck recurrences are the ones brief R4.2b wraps
+ *           (brief 26_0610-037).  The deck recurrences are the ones brief R4.2b wraps
  *           in sqrt(M).  Byte-exact gate: emit_mx + Z vs a non-checkpointed
  *           PINNED monolithic reference consuming the SAME pins.
  *
@@ -3746,7 +3746,7 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 }
 
 /* Function: cm_CheckptTrPostAlignHB()
- *           EPN 2026 [brief 054, rung R4.2b]
+ *           EPN 2026 [brief 26_0610-054, rung R4.2b]
  *
  * Purpose:  sqrt(M)-memory PINNED truncated structured (bps>0) posterior -- the
  *           R4.2b memory deliverable.  Same result (Z + every emit_mx cell) as
@@ -3755,7 +3755,7 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  *           (tree-of-chains), instead of two full CM_TR_HB_MX.
  *
  *           This is the truncated analogue of rung-3's cm_CheckptPostAlignHB()
- *           (brief 038, "global two-pass" tree-of-chains).  The bps=0 truncated
+ *           (brief 26_0610-038, "global two-pass" tree-of-chains).  The bps=0 truncated
  *           checkpoint scaffolding (cm_CheckptTrAlignHB, 3-mode STEP A/B) is
  *           merged with 038's bifurcation machinery:
  *
@@ -4410,7 +4410,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
 }
 
 /* Function: cm_PinTrOptAccAlignHB()
- *           EPN 2026 [brief 055, rung R4.3]
+ *           EPN 2026 [brief 26_0610-055, rung R4.3]
  *
  * Purpose:  Full-storage PINNED truncated structured (bps>0) OptAcc + pinned-tree
  *           traceback (the byte-exact correctness anchor for the sqrt(M) wrap).
@@ -4420,7 +4420,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
  *           <emit_mx> posterior, resolves the entry state b + score in the resolved
  *           mode, then the mode-aware pinned-tree traceback -> parsetree + per-residue
  *           PP (via cm_TrPostCodeHB).  The truncated analogue of rung-3's
- *           cm_PinOptAccAlignHB (brief 039).  GLOBAL, no local ends.
+ *           cm_PinOptAccAlignHB (brief 26_0610-039).  GLOBAL, no local ends.
  *
  * Returns:  <eslOK> on success; *ret_tr parsetree, *ret_ppstr PP string,
  *           *ret_mode = preset_mode, *ret_avgpp avg PP, *ret_pp OA score (avg PP).
@@ -4636,7 +4636,7 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
 }
 
 /* Function: cm_CheckptTrOptAccAlignHB()
- *           EPN 2026 [brief 055, rung R4.3]
+ *           EPN 2026 [brief 26_0610-055, rung R4.3]
  *
  * Purpose:  sqrt(M)-memory PINNED truncated structured (bps>0) OptAcc + pinned-tree
  *           traceback.  Same parsetree + PP + OA score as cm_PinTrOptAccAlignHB but
@@ -4653,7 +4653,7 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
  *
  *           Byte-exact vs cm_PinTrOptAccAlignHB by construction (identical
  *           recurrences + descent; allocation-only).  GLOBAL, no local ends.
- *           The truncated analogue of rung-3's cm_CheckptOptAccAlignHB (brief 039).
+ *           The truncated analogue of rung-3's cm_CheckptOptAccAlignHB (brief 26_0610-039).
  */
 int
 cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,

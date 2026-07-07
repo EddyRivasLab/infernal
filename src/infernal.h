@@ -2800,7 +2800,7 @@ extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, 
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_CheckptAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
-/* rung-3 (bps>0) checkpointed structured aligner (briefs 037/038/039) */
+/* rung-3 (bps>0) checkpointed structured aligner (briefs 26_0610-037/038/039) */
 extern int   cm_CheckptOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_PinPostAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc);
 extern int   cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc);
@@ -2809,7 +2809,7 @@ extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
-/* rung-4 (R4.2a, brief 053): pinned truncated structured (bps>0) posterior */
+/* rung-4 (R4.2a, brief 26_0610-053): pinned truncated structured (bps>0) posterior */
 extern int   cm_PinTrPostAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);
 extern int   cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);
 extern int   cm_PinTrOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_pp);
@@ -2889,10 +2889,10 @@ extern int  cm_TrFillFromPassIdx(int pass_idx, int *ret_fill_L, int *ret_fill_R,
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CP9Bands_t *cp9b);
 extern float TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx, char preset_mode, char *ret_mode, Parsetree_t **ret_tr, CP9Bands_t *cp9b);
-extern void  CYKDeckTrackReset(void);   /* brief 007: D&C live-deck high-water instrumentation */
+extern void  CYKDeckTrackReset(void);   /* brief 26_0610-007: D&C live-deck high-water instrumentation */
 extern double CYKDeckTrackMaxMb(void);
-extern double CYKDeckTrackVjdAtPeakMb(void); /* brief 008: class-1 banded-vjd bytes at peak */
-extern double CYKDeckTrackVjiAtPeakMb(void); /* brief 008: class-2 (V-problem) vji bytes at peak */
+extern double CYKDeckTrackVjdAtPeakMb(void); /* brief 26_0610-008: class-1 banded-vjd bytes at peak */
+extern double CYKDeckTrackVjiAtPeakMb(void); /* brief 26_0610-008: class-2 (V-problem) vji bytes at peak */
 extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);

@@ -807,7 +807,7 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
  * alignment, for NON-truncated, GLOBAL, bps=0 (pure left-emitting
  * MATL chain) CMs.
  *
- * Brief 028: library port of the validated standalone drivers
+ * Brief 26_0610-028: library port of the validated standalone drivers
  *   ckpt_drv.c   (022) -- checkpointed Inside + Outside + fused posterior
  *   ckptoa_drv.c (023) -- checkpointed OptAcc max-DP + checkpointed traceback
  *
@@ -1789,7 +1789,7 @@ cm_CheckptAlignHB_Qualifies(CM_t *cm)
  *           state set is the supported rung-3 surface (S/IL/IR/ML/MR/MP/D/E/B).
  *           These are the conditions under which the rung-3 pipeline
  *           (cm_CheckptPostAlignHB + cm_CheckptOptAccAlignHB) reproduces the
- *           stock NON-truncated OptAcc path's alignment (modulo the brief-032
+ *           stock NON-truncated OptAcc path's alignment (modulo the brief-26_0610-032
  *           accuracy-neutral pin-B flips), with a sqrt(M) working set.  Local
  *           begins/ends are supported (R-L.4/4b: the rung-3 engine consumes
  *           CMH_LOCAL_BEGIN/CMH_LOCAL_END), so this gate does NOT reject local
@@ -1813,7 +1813,7 @@ cm_CheckptOptAccAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptAlignHB()
- * Incept:   Brief 028 (library port of drivers 022/023)
+ * Incept:   Brief 26_0610-028 (library port of drivers 022/023)
  *
  * Purpose:  Checkpointed (sqrt(M)-memory) HMM-banded optimal-accuracy
  *           alignment for a NON-truncated, GLOBAL, pure-MATL-chain CM.
@@ -2207,7 +2207,7 @@ ckpt_is_chain_root(CM_t *cm, int v)
 }
 
 /* Function: cm_PinPostAlignHB()
- * Incept:   Brief 037 (rung-3 pinned posterior, milestone 1: full storage)
+ * Incept:   Brief 26_0610-037 (rung-3 pinned posterior, milestone 1: full storage)
  *
  * Purpose:  Pinned (bps>0, structured-RNA) HMM-banded posterior, FULL storage.
  *           Builds the pinned Inside and Outside CM-DP matrices using the
@@ -2357,13 +2357,13 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 }
 
 /* Function: cm_CheckptPostAlignHB()
- * Incept:   Brief 037 (rung-3 pinned posterior, milestone 2: sqrt(M) checkpointed)
+ * Incept:   Brief 26_0610-037 (rung-3 pinned posterior, milestone 2: sqrt(M) checkpointed)
  *
  * Purpose:  sqrt(M)-memory pinned posterior (the rung-3 deliverable).  Same
  *           result as cm_PinPostAlignHB() but with a sqrt(M)-bounded CM-DP
  *           working set per bifurcation-free chain (tree-of-chains).
  *
- *           Design (brief 038, "global two-pass" tree-of-chains):
+ *           Design (brief 26_0610-038, "global two-pass" tree-of-chains):
  *             STEP A : checkpointed Inside (descending sweep, exactly the bps=0
  *                      scheme) -> Z + sqrt(M) seed decks.  Two bifurcation tweaks:
  *                      (i) the linear child-reach Delta EXCLUDES B states
@@ -2660,7 +2660,7 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
 }
 
 /*****************************************************************
- * rung-3 OptAcc + pinned-tree traceback (brief 039)
+ * rung-3 OptAcc + pinned-tree traceback (brief 26_0610-039)
  *
  * The OptAcc max-DP runs over the SAME extended deck recurrence
  * (ckpt_optacc_deck, now with MP/MR + single-k* B), reading the emit_mx
@@ -2839,7 +2839,7 @@ ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
 }
 
 /* Function: cm_PinOptAccAlignHB()
- * Incept:   Brief 039 (rung-3 OptAcc, milestone 1: full storage)
+ * Incept:   Brief 26_0610-039 (rung-3 OptAcc, milestone 1: full storage)
  *
  * Purpose:  Full-storage pinned OptAcc alignment (the byte-exact correctness
  *           anchor for the sqrt(M) wrap).  Runs the extended OA max-DP
@@ -2971,7 +2971,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 }
 
 /* Function: cm_CheckptOptAccAlignHB()
- * Incept:   Brief 039 (rung-3 OptAcc, milestone 2: sqrt(M) checkpointed)
+ * Incept:   Brief 26_0610-039 (rung-3 OptAcc, milestone 2: sqrt(M) checkpointed)
  *
  * Purpose:  sqrt(M)-memory pinned OptAcc alignment (the rung-3 standalone
  *           aligner's max-DP half).  Same parsetree + PP as cm_PinOptAccAlignHB

@@ -217,7 +217,7 @@ static void  voutside_qdb(CM_t *cm, ESL_DSQ *dsq, int L,
 /*******************************************************************************
  * EPN 2026: HMM-banded (CP9) divide-and-conquer CYK engines, named *_hb().
  *
- * Stage 1a.1 (brief 007): class-1 (vjd-deck) engines are BANDED here, using the
+ * Stage 1a.1 (brief 26_0610-007): class-1 (vjd-deck) engines are BANDED here, using the
  * CP9/HMM bands in <cp9b> (per-v j-band jmin[v]..jmax[v], and per-(v,j) d-band
  * hdmin[v][j-jmin[v]]..hdmax[v][j-jmin[v]]) -- the SAME bands cm_CYKInsideAlignHB
  * uses. Memory model is option (a): FULL sub-problem-rectangle deck allocation
@@ -253,7 +253,7 @@ static void  outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int 
 			CP9Bands_t *cp9b);
 static float insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b);
-/* Stage 1a.2 (brief 009): banded V-problem (class-2 vji) engines. */
+/* Stage 1a.2 (brief 26_0610-009): banded V-problem (class-2 vji) engines. */
 static void  v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			   int r, int z, int i0, int i1, int j1, int j0, int useEL,
 			   CP9Bands_t *cp9b);
@@ -272,7 +272,7 @@ static float vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 /* High-water-mark instrumentation for the D&C-HB live-deck working set.
  * Defined just below; incremented on alloc_vjd_deck()/pop and decremented on
  * push/free within the *_hb path, to measure peak simultaneously-live deck
- * bytes (the capacity-win evidence for brief 007). */
+ * bytes (the capacity-win evidence for brief 26_0610-007). */
 
 /*******************************************************************************
  * 05.24.05
@@ -415,7 +415,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
 
 /*****************************************************************
  * High-water-mark instrumentation for D&C live-deck working set
- * (brief 007 capacity-win evidence).
+ * (brief 26_0610-007 capacity-win evidence).
  *
  * When cyk_dnc_track is TRUE, alloc_vjd_deck()/free_vjd_deck() (and the shadow
  * deck allocators/freers) add/subtract the deck's byte size to cyk_dnc_cur_bytes
@@ -430,15 +430,15 @@ double cyk_dnc_vji_bytes = 0.0;   /* bytes currently held in class-2 vji decks  
 double cyk_dnc_max_bytes = 0.0;   /* high-water mark of (vjd + vji) total bytes   */
 double cyk_dnc_max_vjd   = 0.0;   /* vjd component at the moment of the high-water */
 double cyk_dnc_max_vji   = 0.0;   /* vji component at the moment of the high-water */
-double cyk_dnc_shad_cur  = 0.0;   /* brief 050: bytes in the current leaf's shadow */
-double cyk_dnc_shad_max  = 0.0;   /* brief 050: shadow high-water (largest leaf)   */
+double cyk_dnc_shad_cur  = 0.0;   /* brief 26_0610-050: bytes in the current leaf's shadow */
+double cyk_dnc_shad_max  = 0.0;   /* brief 26_0610-050: shadow high-water (largest leaf)   */
 int    cyk_dnc_vji_row_floats = 0;/* current V-problem row width (i1-i0+1), set at  */
                                   /* vinside()/voutside() entry so free_vji_deck()   */
                                   /* (which lacks i0/i1) can decrement correctly.    */
 
 /* Recompute the live total and, if it sets a new high-water, snapshot the
  * class-1 (banded vjd) vs class-2 (full vji V-problem) split. Called from every
- * deck allocator on the growth path (brief 008 measurement). */
+ * deck allocator on the growth path (brief 26_0610-008 measurement). */
 void
 cyk_dnc_note(void)
 {
@@ -459,7 +459,7 @@ CYKDeckTrackReset(void)
   cyk_dnc_max_bytes = 0.0;
   cyk_dnc_max_vjd   = 0.0;
   cyk_dnc_max_vji   = 0.0;
-  cyk_dnc_shad_cur  = 0.0;   /* brief 050 shadow high-water (see below) */
+  cyk_dnc_shad_cur  = 0.0;   /* brief 26_0610-050 shadow high-water (see below) */
   cyk_dnc_shad_max  = 0.0;
 }
 double
@@ -481,7 +481,7 @@ CYKDeckTrackVjiAtPeakMb(void)
   return cyk_dnc_max_vji / 1000000.;
 }
 
-/* brief 050 shadow accounting: the SHADOW high-water (yshad/kshad/Lshad/Rshad/
+/* brief 26_0610-050 shadow accounting: the SHADOW high-water (yshad/kshad/Lshad/Rshad/
  * Lkmode/Rkmode), separate from the score-deck frontier above. Shadows live only
  * inside a single leaf tr_insideT_hb / tr_vinsideT_hb call (built by the engine,
  * consumed by that call's traceback, then freed); those calls do not nest, so the
@@ -495,7 +495,7 @@ void   CYKShadowTrackLeafDone(void)   { cyk_dnc_shad_cur = 0.0; }  /* leaf freed
 double CYKShadowTrackMaxMb(void)      { return cyk_dnc_shad_max / 1000000.; }
 
 /* Function: CYKDivideAndConquerHB()
- * Date:     EPN 2026 [brief 007]
+ * Date:     EPN 2026 [brief 26_0610-007]
  *
  * Purpose:  HMM-banded (CP9) divide-and-conquer CYK alignment. Mirrors
  *           CYKDivideAndConquer() but carries the CP9 bands <cp9b> down the
@@ -2323,7 +2323,7 @@ vinside(CM_t *cm, ESL_DSQ *dsq, int L,
    */
   b   = -1;
   bsc = IMPOSSIBLE;
-  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1; /* brief 008 vji accounting */
+  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1; /* brief 26_0610-008 vji accounting */
   if (dpool == NULL) dpool = deckpool_create();
   if (a == NULL) {
     ESL_ALLOC(a, sizeof(float **) * (cm->M+1));
@@ -2700,7 +2700,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 
   /* Allocations and initializations
    */
-  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1; /* brief 008 vji accounting */
+  if (cyk_dnc_track) cyk_dnc_vji_row_floats = i1 - i0 + 1; /* brief 26_0610-008 vji accounting */
   			/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = deckpool_create();
 
@@ -3670,7 +3670,7 @@ alloc_vji_deck(int i0, int i1, int j1, int j0)
   ESL_ALLOC(a, sizeof(float *) * (j0-j1+1));
   for (jp = 0; jp <= j0-j1; jp++)
     ESL_ALLOC(a[jp], sizeof(float)*(i1-i0+1));
-  if (cyk_dnc_track) {  /* brief 008: count the (full, unbanded) V-problem decks */
+  if (cyk_dnc_track) {  /* brief 26_0610-008: count the (full, unbanded) V-problem decks */
     cyk_dnc_vji_bytes += (double) sizeof(float) * (double)(j0-j1+1) * (double)(i1-i0+1);
     cyk_dnc_note();
   }
@@ -3694,7 +3694,7 @@ free_vji_deck(float **a, int j1, int j0)
 {
   int jp;
   ESL_DPRINTF3(("#DEBUG: free_vji_deck called\n"));
-  if (cyk_dnc_track)  /* brief 008: width (i1-i0+1) stashed by vinside/voutside entry */
+  if (cyk_dnc_track)  /* brief 26_0610-008: width (i1-i0+1) stashed by vinside/voutside entry */
     cyk_dnc_vji_bytes -= (double) sizeof(float) * (double)(j0-j1+1) * (double) cyk_dnc_vji_row_floats;
   for (jp = 0; jp <= j0-j1; jp++) 
     if (a[jp] != NULL) free(a[jp]);
@@ -4345,7 +4345,7 @@ wedge_splitter_qdb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
  *################################################################*/
 
 /*****************************************************************
- * Banded-cell vjd deck allocation for the HMM-banded D&C (brief 008, Stage 1b).
+ * Banded-cell vjd deck allocation for the HMM-banded D&C (brief 26_0610-008, Stage 1b).
  *
  * Unlike Stage 1a.1 (full O(W^2)-triangle decks via alloc_vjd_deck()), a Stage
  * 1b deck for state v stores ONLY the in-band cells -- exactly the cell set
@@ -4495,7 +4495,7 @@ free_banded_hb_vjd_matrix(float ***a, CM_t *cm, int i0, int j0, CP9Bands_t *cp9b
 }
 
 /*****************************************************************
- * Banded-cell vji deck allocation for the HMM-banded D&C (brief 009, Stage 1a.2).
+ * Banded-cell vji deck allocation for the HMM-banded D&C (brief 26_0610-009, Stage 1a.2).
  *
  * V problems are solved in the vji coordinate system: the Platonic deck for state
  * v over a one-hole subseq [i0..i1]//[j1..j0] is a[jp][ip], jp=j-j1 in [0..j0-j1],
@@ -4509,7 +4509,7 @@ free_banded_hb_vjd_matrix(float ***a, CM_t *cm, int i0, int j0, CP9Bands_t *cp9b
  * (outer dim j0-j1+1, out-of-band rows NULL) so the existing NULL-safe vji shadow
  * free routines apply; only the i dimension is offset, mirroring the vjd Stage 1b.
  *
- * THE HAZARD (brief 003): the QDB vji path crashed with a negative malloc when a
+ * THE HAZARD (brief 26_0610-003): the QDB vji path crashed with a negative malloc when a
  * collapsed band left v_splitter_qdb with degenerate corners. Here, with tight
  * per-(v,j) CP9 bands, empty rows are NORMAL, so the allocator NEVER allocs a
  * non-positive row (w<=0 -> NULL row), and the outer dim is clamped >= 1. The
@@ -4654,7 +4654,7 @@ free_banded_hb_vji_matrix(float ***a, CM_t *cm, int i0, int i1, int j1, int j0, 
 }
 
 /* Function: generic_splitter_hb()
- *           EPN 2026 [brief 007]
+ *           EPN 2026 [brief 26_0610-007]
  *
  * Purpose:  HMM-banded analogue of generic_splitter_qdb(). Identical control
  *           flow, but uses the *_hb engines (inside_hb/outside_hb/insideT_hb)
@@ -4799,7 +4799,7 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 }
 
 /* Function: wedge_splitter_hb()
- *           EPN 2026 [brief 007]
+ *           EPN 2026 [brief 26_0610-007]
  *
  * Purpose:  HMM-banded analogue of wedge_splitter_qdb(). V problems solved with
  *           the EXACT (unbanded) v_splitter().
@@ -4933,7 +4933,7 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
 }
 
 /* Function: inside_hb()
- *           EPN 2026 [brief 007]
+ *           EPN 2026 [brief 26_0610-007]
  *
  * Purpose:  HMM-banded (CP9) inside engine, full-deck (option-a) allocation.
  *           Mirrors inside_qdb() but enforces the CP9 j-band (jmin/jmax) and the
@@ -5239,7 +5239,7 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 }
 
 /* Function: outside_hb()
- *           EPN 2026 [brief 007]
+ *           EPN 2026 [brief 26_0610-007]
  *
  * Purpose:  HMM-banded (CP9) outside engine, full-deck (option-a) allocation.
  *           Mirrors outside_qdb() but computes beta[v][j][d] only at v's in-band
@@ -5521,7 +5521,7 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 }
 
 /* Function: insideT_hb()
- *           EPN 2026 [brief 007]
+ *           EPN 2026 [brief 26_0610-007]
  *
  * Purpose:  HMM-banded analogue of insideT(): run inside_hb() with a shadow
  *           matrix, then trace back. The traceback loop is band-agnostic (it
@@ -5622,7 +5622,7 @@ insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 }
 
 /*################################################################
- * Stage 1a.2 (brief 009): banded V-problem (class-2 vji) engines.
+ * Stage 1a.2 (brief 26_0610-009): banded V-problem (class-2 vji) engines.
  *
  * These are the banded analogues of the EXACT vinside()/voutside()/vinsideT()/
  * v_splitter(), NOT ports of the hazardous QDB vinside_qdb()/.../v_splitter_qdb().
@@ -5637,7 +5637,7 @@ insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * for byte-exactness vs the oracle on CLIP cases (the Stage 1a.2 gate).
  *################################################################*/
 
-/* Function: vinside_hb()  [brief 009] -- banded analogue of vinside(). */
+/* Function: vinside_hb()  [brief 26_0610-009] -- banded analogue of vinside(). */
 static float
 vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	   int r, int z, int i0, int i1, int j1, int j0, int useEL,
@@ -5914,7 +5914,7 @@ vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   return 0.; /* never reached */
 }
 
-/* Function: voutside_hb()  [brief 009] -- banded analogue of voutside(). */
+/* Function: voutside_hb()  [brief 26_0610-009] -- banded analogue of voutside(). */
 static void
 voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	    int r, int z, int i0, int i1, int j1, int j0, int useEL,
@@ -6133,7 +6133,7 @@ voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   cm_Fail("Memory allocation error.\n");
 }
 
-/* Function: vinsideT_hb()  [brief 009] -- banded analogue of vinsideT(). */
+/* Function: vinsideT_hb()  [brief 26_0610-009] -- banded analogue of vinsideT(). */
 static float
 vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    int r, int z, int i0, int i1, int j1, int j0, int useEL,
@@ -6161,7 +6161,7 @@ vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   j = j0;
   i = i0;
   while (1) {
-    /* Defensive (brief 003 hazard): if the on-path cell fell out of band (empty/
+    /* Defensive (brief 26_0610-003 hazard): if the on-path cell fell out of band (empty/
      * collapsed V-problem), terminate cleanly by attaching z -- never crash. */
     if (! vji_inband(cp9b, v, j, i, i0,i1,j1,j0, &op)) {
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, z);
@@ -6201,7 +6201,7 @@ vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return sc;
 }
 
-/* Function: v_splitter_hb()  [brief 009] -- banded analogue of v_splitter(). */
+/* Function: v_splitter_hb()  [brief 26_0610-009] -- banded analogue of v_splitter(). */
 static void
 v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	      int r, int z, int i0, int i1, int j1, int j0, int useEL, CP9Bands_t *cp9b)
@@ -6281,7 +6281,7 @@ v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   free_banded_hb_vji_matrix(alpha, cm, i0, i1, j1, j0, cp9b);
   free_banded_hb_vji_matrix(beta,  cm, i0, i1, j1, j0, cp9b);
 
-  /* EXPLICIT empty-band path (THE brief-003 hazard, designed out): if no in-band
+  /* EXPLICIT empty-band path (THE brief-26_0610-003 hazard, designed out): if no in-band
    * split point beat IMPOSSIBLE, this V-problem is unreachable under the bands.
    * Do NOT recurse with degenerate best_i/best_j (that is the QDB negative-malloc
    * crash). Terminate cleanly via the banded base case (which defensively
@@ -6312,7 +6312,7 @@ v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 }
 
 /*################################################################
- * Truncated banded HMM-banded D&C CYK (brief 044, rung R4.4a: J-plane).
+ * Truncated banded HMM-banded D&C CYK (brief 26_0610-044, rung R4.4a: J-plane).
  *
  * These tr_*_hb functions are the TRUNCATED analogues of the non-truncated
  * banded D&C CYK family above (CYKDivideAndConquerHB + *_hb engines, briefs
@@ -6354,7 +6354,7 @@ tr_trpenalty(CM_t *cm, int v)
                       : cm->trp->g_ptyAA[tr_dnc_pty_idx][v];
 }
 
-/* TR_LR [brief 045, R4.4b]: the L and R marginal planes for the truncated D&C
+/* TR_LR [brief 26_0610-045, R4.4b]: the L and R marginal planes for the truncated D&C
  * inside engine. The J plane stays in the existing 'alpha'/'shadow' (so the J
  * path is byte-identical to R4.4a); this bundle holds the additional L/R score
  * planes, their y/k shadows, the B-state child-mode shadows (Lkmode/Rkmode), and
@@ -6364,7 +6364,7 @@ tr_trpenalty(CM_t *cm, int v)
  * walks (like J alpha); only the shadows are retained (for the traceback). */
 typedef struct tr_lr_s {
   int      fill_L, fill_R;
-  int      fill_T;               /* brief 051 (R4.4c): also compute the T plane (B states only) */
+  int      fill_T;               /* brief 26_0610-051 (R4.4c): also compute the T plane (B states only) */
   int      ret_planes;           /* if TRUE, return Lalpha/Ralpha instead of freeing */
   float ***Lalpha,  ***Ralpha;   /* L/R score planes (per-state banded vjd decks); also
 				  * serve as the in/out array for splitter chaining   */
@@ -6372,7 +6372,7 @@ typedef struct tr_lr_s {
   char  ***Lkmode,  ***Rkmode;   /* L/R B-state child-mode shadows (B states only)   */
   int      Lb, Rb;               /* L/R truncated-begin entry states                 */
   float    Lbsc, Rbsc;           /* their scores (penalty folded in)                 */
-  /* T marginal (brief 051): T mode appears ONLY at B states, reached ONLY by a
+  /* T marginal (brief 26_0610-051): T mode appears ONLY at B states, reached ONLY by a
    * truncated begin into the B at full span -> children are R-left (BEGL) + L-right
    * (BEGR). So the T data is just the full-span T-combine per B state (Tfull) and
    * its k* split (Tfullk), plus the T begin (Tb/Tbsc). No T plane/outside is needed:
@@ -6384,7 +6384,7 @@ typedef struct tr_lr_s {
   float    Tbsc;                 /* its score (penalty folded in)                        */
 } TR_LR;
 
-/* TR_VLR [brief 046]: the L/R marginal planes for the V-problem (vji) inside
+/* TR_VLR [brief 26_0610-046]: the L/R marginal planes for the V-problem (vji) inside
  * engine, used by the whole-solve path for marginal/mixed-mode V-problems. The J
  * plane stays in the existing 'a'/'shadow'; this bundle holds the L/R vji score
  * planes, their shadows, and the B-... (no B in V-problems) child-mode shadows
@@ -6467,7 +6467,7 @@ static float tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			    int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
 			    int z_allow_J, int z_allow_L, int z_allow_R, CP9Bands_t *cp9b);
 
-/* Function: tr_inside_hb()  [brief 044, R4.4a]
+/* Function: tr_inside_hb()  [brief 26_0610-044, R4.4a]
  *
  * Purpose:  J-plane truncated analogue of inside_hb(). Identical banded CYK
  *           recurrence, EXCEPT: (1) state 0 (ROOT_S) gets NO normal transitions
@@ -6506,12 +6506,12 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
 
-  /* L/R marginal-plane state (brief 045, R4.4b). All NULL/off when lr==NULL. */
+  /* L/R marginal-plane state (brief 26_0610-045, R4.4b). All NULL/off when lr==NULL. */
   int      fill_L = (lr != NULL) ? lr->fill_L : FALSE;
   int      fill_R = (lr != NULL) ? lr->fill_R : FALSE;
-  int      fill_T = (lr != NULL) ? lr->fill_T : FALSE;  /* brief 051 (R4.4c) */
+  int      fill_T = (lr != NULL) ? lr->fill_T : FALSE;  /* brief 26_0610-051 (R4.4c) */
   int      ret_planes = (lr != NULL) ? lr->ret_planes : FALSE;
-  /* T (brief 051) needs the L+R child planes to form the B-state T-combine
+  /* T (brief 26_0610-051) needs the L+R child planes to form the B-state T-combine
    * (Ralpha[BEGL] + Lalpha[BEGR]); force them on whenever fill_T. */
   float   *Tfull  = NULL;     /* Talpha[v][j0][W] per state (begin scan + traceback) */
   int     *Tfullk = NULL;     /* the T-combine k* at the full-span cell, per B state  */
@@ -6662,7 +6662,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		    }
 		  }
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* L/R marginal (brief 045): D/S do not emit, so the marginal mode
+		/* L/R marginal (brief 26_0610-045): D/S do not emit, so the marginal mode
 		 * passes through unchanged (L child stays L, R child stays R). */
 		if (do_L_v || do_R_v) {
 		  if (d == 0) {
@@ -6718,7 +6718,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		      /* L: left child full (J), right child L marginal.  yy's J-plane
 		       * cross-term is only a valid truncated contribution if yy's own
 		       * node lies entirely within the observed (non-truncated) sequence
-		       * (brief 070: cp9b->Jvalid[yy], mirrors the do_J_y convention used
+		       * (brief 26_0610-070: cp9b->Jvalid[yy], mirrors the do_J_y convention used
 		       * throughout cm_dpalign_trunc.c's stock truncated recursions). */
 		      if (do_L_v && do_L_z && cp9b->Jvalid[yy] &&
 			  (sc = alpha[yy][j-k][dp_yk] + Lalpha[zz][j][dp_zk]) > Lalpha[v][j][dp_v]) {
@@ -6726,13 +6726,13 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 			if (ret_shadow != NULL) { Lkshad[j][dp_v] = k; Lkmode[v][j][dp_v] = TRMODE_J; }
 		      }
 		      /* R: left child R marginal, right child full (J).  Same Jvalid[zz]
-		       * gate on the right child's J-plane cross-term (brief 070). */
+		       * gate on the right child's J-plane cross-term (brief 26_0610-070). */
 		      if (do_R_v && do_R_y && cp9b->Jvalid[zz] &&
 			  (sc = Ralpha[yy][j-k][dp_yk] + alpha[zz][j][dp_zk]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) { Rkshad[j][dp_v] = k; Rkmode[v][j][dp_v] = TRMODE_J; }
 		      }
-		      /* T (brief 051): both ends truncated -> left child R, right child L;
+		      /* T (brief 26_0610-051): both ends truncated -> left child R, right child L;
 		       * k != 0, k != d (both children non-empty). Only the full-span cell
 		       * (j0,W) is needed -- that is the only place T occurs (the begin enters
 		       * the B at full span). Transcribed from oracle cm_TrCYKInsideAlignHB
@@ -6757,7 +6757,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      for (d = dnn; d <= dxx && d <= jpp; d++) {
 		int dp_v = d - hdmin[v][j-jmin[v]];
 		int dp_y = d - hdmin[yy][j-jmin[yy]];
-		/* brief 070: yy's J-plane is only a valid contribution here if yy's own
+		/* brief 26_0610-070: yy's J-plane is only a valid contribution here if yy's own
 		 * node lies entirely within the observed sequence (cp9b->Jvalid[yy]). */
 		if (cp9b->Jvalid[yy] && (sc = alpha[yy][j][dp_y]) > Lalpha[v][j][dp_v]) {
 		  Lalpha[v][j][dp_v] = sc;
@@ -6781,12 +6781,12 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      for (d = dnn; d <= dxx && d <= jpp; d++) {
 		int dp_v = d - hdmin[v][j-jmin[v]];
 		int dp_z = d - hdmin[zz][j-jmin[zz]];
-		/* brief 070: zz's J-plane is only a valid contribution here if zz's own
+		/* brief 26_0610-070: zz's J-plane is only a valid contribution here if zz's own
 		 * node lies entirely within the observed sequence (cp9b->Jvalid[zz]).
 		 * Without this gate, a RIGHT_FULL bifurcation can pull in zz's plain
 		 * (truncation-unaware) classical Inside value even when zz's node
 		 * structurally spans past the truncation boundary -- exactly the
-		 * crash reproduced in brief 070 (frag5p_s12 L24, v=518/z=566). */
+		 * crash reproduced in brief 26_0610-070 (frag5p_s12 L24, v=518/z=566). */
 		if (cp9b->Jvalid[zz] && (sc = alpha[zz][j][dp_z]) > Ralpha[v][j][dp_v]) {
 		  Ralpha[v][j][dp_v] = sc;
 		  if (ret_shadow != NULL) { Rkshad[j][dp_v] = d; Rkmode[v][j][dp_v] = TRMODE_J; }
@@ -7037,7 +7037,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	    Ralpha[v][j0][dpb] + trpen > Rbsc)
 	  { Rb = v; Rbsc = Ralpha[v][j0][dpb] + trpen; }
       }
-      /* T begin (brief 051): only B states, gated cp9b->Tvalid[0] && Tvalid[v]; the
+      /* T begin (brief 26_0610-051): only B states, gated cp9b->Tvalid[0] && Tvalid[v]; the
        * begin enters the B in T mode at full span (oracle cm_TrCYKInsideAlignHB:2837). */
       if (allow_begin && v != 0 && fill_T && cm->sttype[v] == B_st &&
 	  cp9b->Tvalid[0] && cp9b->Tvalid[v] && NOT_IMPOSSIBLE(Tfull[v])) {
@@ -7119,7 +7119,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
-  /* T (brief 051): Tfull was consumed into Tbsc above; free it always. Tfullk (the
+  /* T (brief 26_0610-051): Tfull was consumed into Tbsc above; free it always. Tfullk (the
    * full-span k* per B state) is needed by tr_insideT_hb's traceback, so return it
    * when ret_shadow != NULL (the traceback path); otherwise free it. */
   if (Tfull != NULL) { free(Tfull); Tfull = NULL; }
@@ -7138,7 +7138,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   return 0.;
 }
 
-/* Function: tr_outside_hb()  [brief 044, R4.4a J; brief 049, R4.4b-pt2c-i: 2-D L/R]
+/* Function: tr_outside_hb()  [brief 26_0610-044, R4.4a J; brief 26_0610-049, R4.4b-pt2c-i: 2-D L/R]
  *
  * Purpose:  J-plane truncated analogue of outside_hb(). Identical banded outside
  *           recurrence, EXCEPT the root deck handling implements the truncated
@@ -7149,9 +7149,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           which then propagates down. This makes beta[v] carry "begin into an
  *           ancestor -> descend to v", exactly the oracle's semantics.
  *
- *           Brief 049 (R4.4b-part-2c-i): the L/R marginal outside is now stored as
+ *           Brief 26_0610-049 (R4.4b-part-2c-i): the L/R marginal outside is now stored as
  *           full 2-D banded vjd decks betaL[v][j][d] / betaR[v][j][d] (NOT the 1-D
- *           rows brief 046 used). The L/R recurrence is transcribed cell-for-cell
+ *           rows brief 26_0610-046 used). The L/R recurrence is transcribed cell-for-cell
  *           from the canonical banded oracle cm_TrCYKOutsideAlignHB()
  *           (cm_dpalign_trunc.c:6952-7102): the marginal-mode boundary gates are the
  *           subproblem boundaries j==j0 (L) / i==i0 (R) -- the D&C sub-region
@@ -7159,12 +7159,12 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           band-consistent by construction (it can represent "j==j0", which the
  *           1-D betaL[v][j][dp_v] could not -> 047's mixed-split over-score is gone).
  *           Decks are banded vjd and free on the same touch-count loop as the J
- *           beta, so the live frontier stays O(log N). T (brief 051) needs NO
+ *           beta, so the live frontier stays O(log N). T (brief 26_0610-051) needs NO
  *           outside here: its only "outside" is the begin scalar at a B's full-span
  *           cell (handled in the splitter), matching oracle cm_TrCYKOutsideAlignHB
  *           where Tbeta[v][L][L]=trpenalty with no T recurrence.
  *           NOTE: marginal local-end (Lbeta/Rbeta at deck M) is NOT yet built;
- *           valid only for CMH_LOCAL_END==off (global) -- see brief 049 summary.
+ *           valid only for CMH_LOCAL_END==off (global) -- see brief 26_0610-049 summary.
  */
 static void
 tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
@@ -7203,7 +7203,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
-  /* L/R marginal beta pointer arrays (2-D banded vjd decks per state, brief 049).
+  /* L/R marginal beta pointer arrays (2-D banded vjd decks per state, brief 26_0610-049).
    * Reuse caller's if any (chaining), else allocate fresh; decks recycle with the
    * J decks (touch counting). */
   if (fill_L && betaL == NULL) { ESL_ALLOC(betaL, sizeof(float **) * (cm->M+1)); for (v = 0; v <= cm->M; v++) betaL[v] = NULL; }
@@ -7215,7 +7215,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     if (vend != vroot) cm_Fail("oh no. not again.");
   } else if (cm->sttype[vroot] == IL_st || cm->sttype[vroot] == IR_st) {
     /* TRUNCATED begins (unlike classical CMH_LOCAL_BEGIN) may enter directly at
-     * an insert state -- a fragment can start/end mid-insertion (brief 069 fix).
+     * an insert state -- a fragment can start/end mid-insertion (brief 26_0610-069 fix).
      * An insert state is not part of any node's split set (w1 above is its
      * node's first SPLIT state, not vroot itself), so the split-set grouping
      * below doesn't apply; vroot has no split-set siblings to allocate here,
@@ -7326,7 +7326,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * Jvalid state v may be entered via a truncated begin with penalty
        * tr_trpenalty(v). (Replaces the non-trunc CMH_LOCAL_BEGIN / cm->beginsc[v]
        * injection; unconditional on local mode -- truncated begins always apply.)
-       * L/R (brief 049): inject into the 2-D marginal root cell (j0,W) -- the same
+       * L/R (brief 26_0610-049): inject into the 2-D marginal root cell (j0,W) -- the same
        * full-span corner as J (oracle cm_TrCYKOutsideAlignHB:6739-6741) -- for each
        * {L,R}valid v. */
       if (vroot == 0 && i0 == 1 && j0 == L &&
@@ -7357,7 +7357,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	      if (y < vroot) continue;
 	      voffset = v - cm->cfirst[y];
 
-	      /* Brief 049: J keeps the exact R4.4a recurrence; L/R now fill the
+	      /* Brief 26_0610-049: J keeps the exact R4.4a recurrence; L/R now fill the
 	       * 2-D banded decks betaL[v][j][d]/betaR[v][j][d], transcribed cell-
 	       * for-cell from cm_TrCYKOutsideAlignHB (cm_dpalign_trunc.c:7000-7093).
 	       * Marginal boundary gates are j==j0 (L) / i==i0 (R) -- the D&C sub-
@@ -7467,7 +7467,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	  }
       }
 
-      /* Marginal terminus b_sc (2-D, brief 049): the "local hit in parent" -- the
+      /* Marginal terminus b_sc (2-D, brief 26_0610-049): the "local hit in parent" -- the
        * optimal marginal parse stays within r..v and ends at v via a TRUNCATED END
        * (the child bifurcation/wedge is empty). The truncated-end inside base is the
        * d==1 single-emission cell (tr_inside_hb USED_TRUNC_END, :6775/:6795): for an
@@ -7570,7 +7570,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     free(beta);
   } else *ret_beta = beta;
 
-  /* L/R marginal 2-D banded decks (brief 049): return them (splitter reads them)
+  /* L/R marginal 2-D banded decks (brief 26_0610-049): return them (splitter reads them)
    * or free everything. NOTE: deck M (EL) is not allocated for L/R yet, so use the
    * vjd-deck free over [w1..vend], not free_banded_hb_vjd_matrix (which touches M). */
   if (fill_L) {
@@ -7594,7 +7594,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   cm_Fail("Memory allocation error.");
 }
 
-/* Function: tr_insideT_hb()  [brief 045, R4.4b]
+/* Function: tr_insideT_hb()  [brief 26_0610-045, R4.4b]
  *
  * Purpose:  Truncated analogue of insideT_hb(): run tr_inside_hb() filling the
  *           J plane plus whichever marginal planes (L/R) the root permits
@@ -7626,7 +7626,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int      *jmin = cp9b->jmin, *jmax = cp9b->jmax;
   int     **hdmin = cp9b->hdmin, **hdmax = cp9b->hdmax;
 
-  /* T (brief 051) needs the L+R child planes/shadows for the BEGL(R)+BEGR(L)
+  /* T (brief 26_0610-051) needs the L+R child planes/shadows for the BEGL(R)+BEGR(L)
    * subtree traceback; fill them whenever r_allow_T (tr_inside_hb forces them too). */
   lr.fill_L = r_allow_L || r_allow_T; lr.fill_R = r_allow_R || r_allow_T; lr.fill_T = r_allow_T;
   lr.ret_planes = FALSE;
@@ -7660,7 +7660,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       if      (mode == TRMODE_J) k = ((int**)shadow[v])[j][dp_v];
       else if (mode == TRMODE_L) k = ((int**)lr.Lshad[v])[j][dp_v];
       else if (mode == TRMODE_R) k = ((int**)lr.Rshad[v])[j][dp_v];
-      else                       k = lr.Tfullk[v];          /* T: full-span k* (brief 051) */
+      else                       k = lr.Tfullk[v];          /* T: full-span k* (brief 26_0610-051) */
       prvmode = mode;
       if      (mode == TRMODE_J) nxtmode = TRMODE_J;
       else if (mode == TRMODE_L) nxtmode = TRMODE_L;       /* L: right child stays L */
@@ -7701,7 +7701,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       else if (mode == TRMODE_J)   yoffset = ((char**)shadow[v])[j][dp_v];
       else if (mode == TRMODE_L)   yoffset = ((char**)lr.Lshad[v])[j][dp_v];
       else if (mode == TRMODE_R)   yoffset = ((char**)lr.Rshad[v])[j][dp_v];
-      else                         yoffset = USED_TRUNC_BEGIN;  /* T at root v==0: begin into the B (brief 051; oracle :683-685) */
+      else                         yoffset = USED_TRUNC_BEGIN;  /* T at root v==0: begin into the B (brief 26_0610-051; oracle :683-685) */
 
       if      (yoffset == USED_TRUNC_BEGIN) { nxtmode = mode; }
       else if (yoffset == USED_TRUNC_END)   { }
@@ -7740,9 +7740,9 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   esl_stack_Destroy(pda_c);
   tr_free_lr_shadow(lr.Lshad, lr.Lkmode, cm, i0, j0);
   tr_free_lr_shadow(lr.Rshad, lr.Rkmode, cm, i0, j0);
-  if (lr.Tfullk != NULL) free(lr.Tfullk);   /* T full-span k* array (brief 051) */
+  if (lr.Tfullk != NULL) free(lr.Tfullk);   /* T full-span k* array (brief 26_0610-051) */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
-  CYKShadowTrackLeafDone();   /* brief 050: this leaf's shadow is now freed */
+  CYKShadowTrackLeafDone();   /* brief 26_0610-050: this leaf's shadow is now freed */
   return retsc;
 
  ERROR:
@@ -7750,7 +7750,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return 0.;
 }
 
-/* Function: tr_vinside_hb()  [brief 044 R4.4a (J); brief 046 R4.4b-pt2 (L/R)]
+/* Function: tr_vinside_hb()  [brief 26_0610-044 R4.4a (J); brief 26_0610-046 R4.4b-pt2 (L/R)]
  *
  * J-plane unchanged from R4.4a. When vlr != NULL the L/R marginal vji planes are
  * also computed (mirrors truncyk.c::tr_vinside, in the banded vji idiom): La/Ra
@@ -7780,7 +7780,7 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
-  /* L/R marginal vji state (brief 046). All off when vlr==NULL. */
+  /* L/R marginal vji state (brief 26_0610-046). All off when vlr==NULL. */
   int      fill_L = (vlr != NULL) ? vlr->fill_L : FALSE;
   int      fill_R = (vlr != NULL) ? vlr->fill_R : FALSE;
   float ***La = NULL, ***Ra = NULL;
@@ -7802,7 +7802,7 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   w1 = cm->nodemap[cm->ndidx[z]];
   /* TRUNCATED marginal termini / begins (unlike classical CMH_LOCAL_BEGIN) may
    * land directly on an insert state -- a fragment can begin/end mid-insertion
-   * (brief 069 fix). Normally z is the split set's own last state (cfirst[w1]-1)
+   * (brief 26_0610-069 fix). Normally z is the split set's own last state (cfirst[w1]-1)
    * and w1..w2 is exactly that split set; the main recursion below (v = w1-1
    * downto r) never expands w1..w2 itself; it only reads them as already-seeded
    * boundary values. When z is instead a same-node insert state (index beyond
@@ -8020,7 +8020,7 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	      if (a[v][jp][op] < IMPOSSIBLE) a[v][jp][op] = IMPOSSIBLE;
 	    }
 
-	    /* ---- L/R marginal vji recurrences (brief 047): a cell-for-cell
+	    /* ---- L/R marginal vji recurrences (brief 26_0610-047): a cell-for-cell
 	     * translation of the vjd tr_inside_hb L/R recurrences into vji
 	     * coords (d = j-i+1). MP uses lmesc/rmesc (NOT pair-esc); ML/IL & MR/IR
 	     * try BOTH a J child (the J->marginal heal) and the same-mode child;
@@ -8239,7 +8239,7 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   return 0.;
 }
 
-/* Function: tr_voutside_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of voutside_hb(). */
+/* Function: tr_voutside_hb()  [brief 26_0610-044, R4.4a] -- J-plane truncated analogue of voutside_hb(). */
 static void
 tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	       int r, int z, int i0, int i1, int j1, int j0, int useEL,
@@ -8451,7 +8451,7 @@ tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   cm_Fail("Memory allocation error.\n");
 }
 
-/* Function: tr_vinsideT_hb()  [brief 044 R4.4a (J); brief 047 R4.4b-pt2b (L/R)]
+/* Function: tr_vinsideT_hb()  [brief 26_0610-044 R4.4a (J); brief 26_0610-047 R4.4b-pt2b (L/R)]
  *
  * Whole-solve a (possibly marginal) V-problem and trace it back with full
  * marginal-mode tracking. J (r_allow_J & z_allow_J) is the R4.4a path; L/R route
@@ -8545,11 +8545,11 @@ tr_vinsideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   free_vji_shadow_matrix(shadow, cm->M, j1, j0);
   if (r_allow_L) { free_vji_shadow_matrix(vlr.Lsh, cm->M, j1, j0); free_vji_shadow_matrix(vlr.Lmode, cm->M, j1, j0); }
   if (r_allow_R) { free_vji_shadow_matrix(vlr.Rsh, cm->M, j1, j0); free_vji_shadow_matrix(vlr.Rmode, cm->M, j1, j0); }
-  CYKShadowTrackLeafDone();   /* brief 050: this V-problem's shadow is now freed */
+  CYKShadowTrackLeafDone();   /* brief 26_0610-050: this V-problem's shadow is now freed */
   return sc;
 }
 
-/* Function: tr_v_splitter_hb()  [brief 044 R4.4a (J); brief 046 R4.4b-pt2 (L/R)]
+/* Function: tr_v_splitter_hb()  [brief 26_0610-044 R4.4a (J); brief 26_0610-046 R4.4b-pt2 (L/R)]
  *
  * J V-problems (r_allow_J && z_allow_J) keep the exact R4.4a D&C split. Marginal
  * or mixed-mode V-problems (any L/R in r_allow_* or z_allow_*) are solved WHOLE
@@ -8663,7 +8663,7 @@ tr_v_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return;
 }
 
-/* Function: tr_wedge_splitter_hb()  [brief 044, R4.4a] -- J-plane truncated analogue of wedge_splitter_hb(). */
+/* Function: tr_wedge_splitter_hb()  [brief 26_0610-044, R4.4a] -- J-plane truncated analogue of wedge_splitter_hb(). */
 static float
 tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
 		     int r_allow_J, int r_allow_L, int r_allow_R, CP9Bands_t *cp9b)
@@ -8699,7 +8699,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   w = cm->nodemap[midnode];
   y = cm->cfirst[w]-1;
 
-  lr.fill_L = fill_L; lr.fill_R = fill_R; lr.fill_T = FALSE; lr.ret_planes = TRUE; lr.Lalpha = NULL; lr.Ralpha = NULL;  /* T never reaches the wedge (brief 051) */
+  lr.fill_L = fill_L; lr.fill_R = fill_R; lr.fill_T = FALSE; lr.ret_planes = TRUE; lr.Lalpha = NULL; lr.Ralpha = NULL;  /* T never reaches the wedge (brief 26_0610-051) */
   tr_inside_hb(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
 	       NULL, &alpha, NULL, NULL, NULL,
 	       (r==0), &binJ, &binJsc, &lr, cp9b);
@@ -8761,7 +8761,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
    * terminus WINS ties vs a standard split that lands on the same marginal-end
    * cell: the oracle inside DP forces the marginal-end at d<2 (it OVERWRITES the
    * transit), so a tied "split-and-continue-below" must collapse to the terminus
-   * (else the wedge below emits spurious all-delete-to-end nodes -- brief 050). */
+   * (else the wedge below emits spurious all-delete-to-end nodes -- brief 26_0610-050). */
   if (boutsc >= best_sc) { best_sc = boutsc; best_v = -3; best_j = boutj; best_d = 1; p_mode = boutmode; c_mode = TRMODE_T; }
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
@@ -8799,7 +8799,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   return best_sc;
 }
 
-/* Function: tr_generic_splitter_hb()  [brief 044 R4.4a (J); brief 046 R4.4b-pt2 (L/R)]
+/* Function: tr_generic_splitter_hb()  [brief 26_0610-044 R4.4a (J); brief 26_0610-046 R4.4b-pt2 (L/R)]
  *
  * The mode-aware banded truncated generic splitter. J keeps the exact R4.4a logic
  * (best_k>=0 bifurcation / -1 EL / -2,-3 child begins). L/R add: marginal split
@@ -8807,7 +8807,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
  * marginal outside betas (betaL/betaR), the marginal child begins, and -4 (the
  * "local hit in parent" marginal terminus from the outside b_sc). v_mode/w_mode/
  * y_mode track the resolved per-node modes (an empty marginal child is carried as
- * the parent mode v_mode, brief 050). T (brief 051, R4.4c): T appears only at B
+ * the parent mode v_mode, brief 26_0610-050). T (brief 26_0610-051, R4.4c): T appears only at B
  * states, reached only by a truncated begin into the B at full span -> a T split
  * (v_mode=T, w=R-left BEGL, y=L-right BEGR) whose "outside" is just the begin
  * scalar (no T outside recurrence), plus deeper-B T begins via b1/b2. The T split
@@ -8822,7 +8822,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   float ***alpha = NULL, ***Lalpha = NULL, ***Ralpha = NULL;
   float ***beta  = NULL;
   float ***betaL = NULL, ***betaR = NULL;
-  /* T (brief 051) forces the L+R planes on (the T-combine reads R(BEGL)+L(BEGR)). */
+  /* T (brief 26_0610-051) forces the L+R planes on (the T-combine reads R(BEGL)+L(BEGR)). */
   int      fill_L = r_allow_L || r_allow_T, fill_R = r_allow_R || r_allow_T;
   int      fill_T = r_allow_T;
   int      v,w,y;
@@ -8881,7 +8881,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		&b3_sc, &b3_v, &b3_j, &b3_mode, cp9b);
 
   /* best inside begin per child subtree (across J/L/R/T). A T begin targets a
-   * deeper bifurcation inside the subtree (brief 051); it competes with J/L/R. */
+   * deeper bifurcation inside the subtree (brief 26_0610-051); it competes with J/L/R. */
   b1_sc = b1Jsc; b1_v = b1J; b1_mode = TRMODE_J;
   if (fill_L && lr1.Lbsc > b1_sc) { b1_sc = lr1.Lbsc; b1_v = lr1.Lb; b1_mode = TRMODE_L; }
   if (fill_R && lr1.Rbsc > b1_sc) { b1_sc = lr1.Rbsc; b1_v = lr1.Rb; b1_mode = TRMODE_R; }
@@ -8904,7 +8904,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	  int dp_v = d - hdmin[v][jp_v];
 	  int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][j][dp_v]);
 	  int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j][dp_v]);
-	  /* T (brief 051): the only T "outside" is the begin scalar at the B's
+	  /* T (brief 26_0610-051): the only T "outside" is the begin scalar at the B's
 	   * full-span cell (oracle cm_TrCYKOutsideAlignHB:6743): trpenalty at the
 	   * root (r==0), else 0 (deeper-B recursion; penalty already in b1/b2).
 	   * No T outside recurrence -> T contributes only at (j0,W). */
@@ -8923,27 +8923,27 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	      /* all-J split */
 	      if ((sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_J; w_mode=TRMODE_J; y_mode=TRMODE_J; }
-	      /* L: v in L; w=J, y=L  (k>0).  brief 070: w's J-plane cross-term needs
+	      /* L: v in L; w=J, y=L  (k>0).  brief 26_0610-070: w's J-plane cross-term needs
 	       * cp9b->Jvalid[w] -- w's node must lie entirely within the observed
 	       * sequence for its plain (truncation-unaware) alpha[w] to be a valid
 	       * contribution (mirrors the do_J_y convention in cm_dpalign_trunc.c). */
 	      if (haveL && k > 0 && cp9b->Lvalid[y] && cp9b->Jvalid[w] &&
 		  (sc = alpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_L; }
-	      /* L: v in L; w=J, y=J  (k>0).  brief 070: gate both children's J-planes. */
+	      /* L: v in L; w=J, y=J  (k>0).  brief 26_0610-070: gate both children's J-planes. */
 	      if (haveL && k > 0 && cp9b->Jvalid[w] && cp9b->Jvalid[y] &&
 		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_J; }
-	      /* R: v in R; w=R, y=J  (k<d).  brief 070: gate y's J-plane. */
+	      /* R: v in R; w=R, y=J  (k<d).  brief 26_0610-070: gate y's J-plane. */
 	      if (haveR && k < d && cp9b->Rvalid[w] && cp9b->Jvalid[y] &&
 		  (sc = Ralpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_R; y_mode=TRMODE_J; }
-	      /* R: v in R; w=J, y=J  (k<d).  brief 070: gate both children's J-planes. */
+	      /* R: v in R; w=J, y=J  (k<d).  brief 26_0610-070: gate both children's J-planes. */
 	      if (haveR && k < d && cp9b->Jvalid[w] && cp9b->Jvalid[y] &&
 		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	      /* T: v in T; w=R (left BEGL), y=L (right BEGR); 1<=k<=d-1 (both children
-	       * non-empty). Tbeta_v is the begin scalar (only at j0,W). (brief 051) */
+	       * non-empty). Tbeta_v is the begin scalar (only at j0,W). (brief 26_0610-051) */
 	      if (haveT && k > 0 && k < d && cp9b->Rvalid[w] && cp9b->Lvalid[y] &&
 		  (sc = Ralpha[w][j-k][dp_w] + Lalpha[y][j][dp_y] + Tbeta_v) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_T; w_mode=TRMODE_R; y_mode=TRMODE_L; }
@@ -8954,7 +8954,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    if (hb_inband(cp9b, w, j, d, i0, j0, &dp_w)) {
 	      if (cp9b->Lvalid[w] && (sc = Lalpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_L; y_mode=TRMODE_T; }
-	      /* brief 070: w's J-plane cross-term needs cp9b->Jvalid[w] (LEFT_FULL
+	      /* brief 26_0610-070: w's J-plane cross-term needs cp9b->Jvalid[w] (LEFT_FULL
 	       * mirror of the RIGHT_FULL crash site below). */
 	      if (cp9b->Jvalid[w] && (sc = alpha[w][j][dp_w] + betaL[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=0; best_j=j; best_d=d; v_mode=TRMODE_L; w_mode=TRMODE_J; y_mode=TRMODE_T; }
@@ -8966,7 +8966,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    if (hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) {
 	      if (cp9b->Rvalid[y] && (sc = Ralpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=d; best_j=j; best_d=d; v_mode=TRMODE_R; w_mode=TRMODE_T; y_mode=TRMODE_R; }
-	      /* brief 070: y's J-plane cross-term needs cp9b->Jvalid[y] -- the
+	      /* brief 26_0610-070: y's J-plane cross-term needs cp9b->Jvalid[y] -- the
 	       * tr_generic_splitter_hb (true D&C, large-subtree) mirror of the
 	       * tr_inside_hb "B special case 2" crash site (frag5p_s12 L24). */
 	      if (cp9b->Jvalid[y] && (sc = alpha[y][j][dp_y] + betaR[v][j][dp_v]) > best_sc)
@@ -9031,7 +9031,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     return best_sc;
   }
 
-  /* T bifurcation (brief 051): the parse begins (T) directly into the B state v,
+  /* T bifurcation (brief 26_0610-051): the parse begins (T) directly into the B state v,
    * splitting into left child BEGL in R mode + right child BEGR in L mode. The
    * parent region r..v is degenerate (the truncated begin jumps straight to v), so
    * we attach v + children directly -- NO V-problem (the begin has no descent above
@@ -9062,7 +9062,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			   (w_mode==TRMODE_J), (w_mode==TRMODE_L), (w_mode==TRMODE_R), FALSE, cp9b);
   } else
     /* empty (truncated-away) marginal child: the oracle (tr_insideT_hb) labels it
-     * with the PARENT marginal mode (v_mode), not TRMODE_T (brief 050). */
+     * with the PARENT marginal mode (v_mode), not TRMODE_T (brief 26_0610-050). */
     InsertTraceNodewithMode(tr, tv, TRACE_LEFT_CHILD, best_j-best_d+1, best_j-best_d, w, v_mode);
 
   if (y_mode != TRMODE_T) {
@@ -9075,7 +9075,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return best_sc;
 }
 
-/* Function: TrCYKDivideAndConquerHB()  [brief 044 R4.4a; 045 R4.4b L/R; 051 R4.4c T]
+/* Function: TrCYKDivideAndConquerHB()  [brief 26_0610-044 R4.4a; 045 R4.4b L/R; 051 R4.4c T]
  *
  * Purpose:  HMM-banded truncated divide-and-conquer CYK. <preset_mode> selects
  *           the marginal mode to solve (TRMODE_J / TRMODE_L / TRMODE_R / TRMODE_T;
@@ -9097,7 +9097,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   int          r_allow_J = (preset_mode == TRMODE_J);
   int          r_allow_L = (preset_mode == TRMODE_L);
   int          r_allow_R = (preset_mode == TRMODE_R);
-  int          r_allow_T = (preset_mode == TRMODE_T);   /* brief 051 (R4.4c) */
+  int          r_allow_T = (preset_mode == TRMODE_T);   /* brief 26_0610-051 (R4.4c) */
 
   if (cp9b == NULL) cm_Fail("TrCYKDivideAndConquerHB(): cp9b is NULL");
   if (r != 0)       cm_Fail("TrCYKDivideAndConquerHB(): r must be 0 (truncated begins enter from ROOT_S)");
@@ -9120,7 +9120,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   /* J and L/R all route through the mode-aware HMM-banded D&C generic splitter.
    * J is R4.4a (mode J throughout). L/R (R4.4b): the 2-D marginal outside + combine
    * (049, SCORE byte-exact) drives the split, and the FULL mode-tracking traceback
-   * is now byte-exact too (brief 050, R4.4b-part-2c-ii): the part-2c-i SCORE-only
+   * is now byte-exact too (brief 26_0610-050, R4.4b-part-2c-ii): the part-2c-i SCORE-only
    * guard is removed. The two part-2c-ii parse fixes were (a) empty (truncated-away)
    * marginal bifurcation children must carry the PARENT marginal mode (v_mode), not
    * TRMODE_T, and (b) the marginal terminus (outside b_sc) must WIN ties vs a

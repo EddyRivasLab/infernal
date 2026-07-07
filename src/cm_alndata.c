@@ -502,7 +502,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	else if(do_trckpt_r4) {
 	  /* Resolve the marginal mode + bifurcation pins from a sqrt(M) truncated D&C
 	   * CYK.  This is the only sqrt(M) way to resolve the mode for a STRUCTURED CM:
-	   * an unpinned sqrt(M) bifurcation Inside hits the brief-017 2D-coupling wall
+	   * an unpinned sqrt(M) bifurcation Inside hits the brief-26_0610-017 2D-coupling wall
 	   * (which is exactly why the pinned approach exists).  Run D&C CYK once per
 	   * root-valid marginal mode; the argmax penalty-folded root score picks the
 	   * mode (each TrCYKDivideAndConquerHB() score == the oracle

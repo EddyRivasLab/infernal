@@ -1,5 +1,5 @@
 /* hbdnc_drv.c : isolated correctness + memory driver for HMM-banded (CP9)
- * divide-and-conquer CYK (brief 007, Stage 1a.1).
+ * divide-and-conquer CYK (brief 26_0610-007, Stage 1a.1).
  *
  * For each sequence in <seqfile>, derives CP9 bands and aligns it:
  *   route A: cm_AlignHB() CYK (full banded matrix CM_HB_MX)   [oracle: parsetree A]
