@@ -119,7 +119,7 @@ AllocCP9Bands(int cm_M, int hmm_M)
   ESL_ALLOC(cp9bands->hdmin,      sizeof(int *) * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmax,      sizeof(int *) * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hd_dn,      sizeof(int)   * cp9bands->cm_M);
-  esl_vec_ISet(cp9bands->hd_dn, cp9bands->cm_M, 0);  /* brief 157: per-state d-band floor for hd_min()/hd_max() recompute */
+  esl_vec_ISet(cp9bands->hd_dn, cp9bands->cm_M, 0);  /* brief 26_0430-157: per-state d-band floor for hd_min()/hd_max() recompute */
   cp9bands->hdmin_mem = NULL;
   cp9bands->hdmax_mem = NULL;
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, the ptrs are 
@@ -171,10 +171,10 @@ SizeofCP9Bands(CP9Bands_t *cp9b)
   bytes += sizeof(int) *  cp9b->cm_M; /* safe_hdmax */
   bytes += sizeof(int *) *  cp9b->cm_M; /* hdmin */
   bytes += sizeof(int *) *  cp9b->cm_M; /* hdmax */
-  bytes += sizeof(int) *  cp9b->cm_M; /* hd_dn (brief 157) */
+  bytes += sizeof(int) *  cp9b->cm_M; /* hd_dn (brief 26_0430-157) */
 
-  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmin (brief 157: hd_alloced==0, no flat array) */
-  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmax (brief 157: hd_alloced==0, no flat array) */
+  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmin (brief 26_0430-157: hd_alloced==0, no flat array) */
+  bytes += sizeof(int) * cp9b->hd_alloced; /* hdmax (brief 26_0430-157: hd_alloced==0, no flat array) */
 
   return bytes / 1000000.;
 }
@@ -1362,7 +1362,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
-  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated; must match cp9b->hd_needed (brief 097 + 147) */
+  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated; must match cp9b->hd_needed (brief 26_0316-097 + 147) */
   int j;
 
 
@@ -1466,7 +1466,7 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
 {
   int v;
 
-  /* Brief 157: the flat hdmin_mem/hdmax_mem cache (Sum_v (jmax[v]-jmin[v]+1)
+  /* Brief 26_0430-157: the flat hdmin_mem/hdmax_mem cache (Sum_v (jmax[v]-jmin[v]+1)
    * ints each; 466 GB / 933 GB both at genome-scale truncated) is no longer
    * materialized. The d-bands are recomputed on demand by hd_min()/hd_max()
    * (infernal.h) from hd_dn[] (set by ij2d_bands()) plus imin/imax/jmin. This
@@ -1478,7 +1478,7 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
     /* printf("hd needed v: %4d bw: %4d total: %" PRId64 "\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
-  /* diagnostic for band index array size (brief 097/098): always print for band expansion measurement */
+  /* diagnostic for band index array size (brief 26_0316-097/098): always print for band expansion measurement */
   fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.4f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
   /* hdmin_mem/hdmax_mem stay NULL; the per-v hdmin[]/hdmax[] pointers are unused
    * by the recompute path. Leave them NULL so any stray flat-array read faults
@@ -1501,7 +1501,7 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
  *           at state v). These are easily calculated given the bands on i
  *           and j.
  *
- *           Brief 157: rather than materialize the flat hdmin[v][jp]/hdmax[v][jp]
+ *           Brief 26_0430-157: rather than materialize the flat hdmin[v][jp]/hdmax[v][jp]
  *           arrays (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale
  *           truncated), this function now stores only the per-state d-band floor
  *           cp9b->hd_dn[v], from which hd_min()/hd_max() (infernal.h) recompute
@@ -1526,7 +1526,7 @@ ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level)
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
 
-  /* Brief 157: instead of materializing the flat hdmin/hdmax arrays
+  /* Brief 26_0430-157: instead of materializing the flat hdmin/hdmax arrays
    * (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale truncated),
    * store only the per-state d-band floor hd_dn[v]. The hd_min()/hd_max()
    * accessors (infernal.h) recompute hdmin[v][jp]/hdmax[v][jp] on demand from
@@ -4798,7 +4798,7 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
   esl_vec_ICopy(src_cp9b->jmin, src_cp9b->cm_M, dest_cp9b->jmin);
   esl_vec_ICopy(src_cp9b->jmax, src_cp9b->cm_M, dest_cp9b->jmax);
 
-  /* Brief 157: d-bands are recomputed on demand from hd_dn[] (no flat
+  /* Brief 26_0430-157: d-bands are recomputed on demand from hd_dn[] (no flat
    * hdmin_mem/hdmax_mem to copy). Clone hd_dn[] plus the size bookkeeping. */
   esl_vec_ICopy(src_cp9b->hd_dn, src_cp9b->cm_M, dest_cp9b->hd_dn);
   dest_cp9b->hd_needed  = src_cp9b->hd_needed;

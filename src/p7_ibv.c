@@ -1,10 +1,10 @@
 /* p7_ibv.c -- F+B direct-band derivation: SSE per-row primitives + D&C wrapper
  *
- * Brief 124 C1: refactor brief 121's monolithic p7_Seq2BandsIBV into three
+ * Brief 26_0430-124 C1: refactor brief 121's monolithic p7_Seq2BandsIBV into three
  *   reusable per-row SSE primitives (ibv_forward_one_row, ibv_backward_one_row,
  *   ibv_through_scan).  No algorithm change; byte-exact vs brief 121 C3.
  *
- * Brief 124 C2: p7_Seq2BandsIBV_dnc wraps the C1 primitives in a recursive
+ * Brief 26_0430-124 C2: p7_Seq2BandsIBV_dnc wraps the C1 primitives in a recursive
  *   divide-and-conquer band deriver (O(M * log L) peak memory).  Accessed via
  *   --p7ibv --p7ibv-mem; --p7ibv alone still calls the flat p7_Seq2BandsIBV.
  *
@@ -118,7 +118,7 @@ p7ibv_mm_max3(__m128 a, __m128 b, __m128 c)
  * FM_curr/FI_curr/FD_curr are written (k=0..M).  Tail k>M not touched.
  * Valid for i >= 1.
  *
- * begin_milli (brief 171, Tgm begin-anywhere): if non-NULL, fold a local
+ * begin_milli (brief 26_0430-171, Tgm begin-anywhere): if non-NULL, fold a local
  * begin into each match cell: M_k <- max(M_k, begin_milli[k] + emit_row[k]).
  * This is the truncated-mode entry (enter the model at any node k with score
  * log(occ[k]/Z)).  It must be folded BEFORE the left-to-right D-fill so that
@@ -234,7 +234,7 @@ ibv_forward_one_row(int M, size_t k_stride,
  *
  * Writes BM_curr/BI_curr/BD_curr for k=0..M.  Tail k>M not touched.
  *
- * do_trunc (brief 171, Tgm end-anywhere): when set, the terminal injection at
+ * do_trunc (brief 26_0430-171, Tgm end-anywhere): when set, the terminal injection at
  * row L mirrors local exit -- every match state M_k may exit to E with score 0
  * (esc=0 in HMMER local mode), instead of the glocal forced exit from node M
  * (delete-cascade to D_M).  The delete cascade to D_M->E is kept (D_M->E is
@@ -395,7 +395,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
   else              { *ret_kmin = row_kmin; *ret_kmax = row_kmax; }
   if (ret_kargmax) *ret_kargmax = k_argmax;
 
-  /* Brief 140: enrich the per-row band using the argmax-k pin (k_argmax = i2k[i],
+  /* Brief 26_0430-140: enrich the per-row band using the argmax-k pin (k_argmax = i2k[i],
    * the IBV-Viterbi cell that emits residue i).  This follows the optimal path by
    * construction, unlike the Delta-cloud which admits noisy off-path cells.
    *   FIXED  : replace band with the fixed-width spine [k_argmax-W, k_argmax+W].
@@ -420,7 +420,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
 
 /* ibv_connectivity_guard -- bridge inter-row band gaps for FIXED/HYBRID modes.
  *
- * Brief 140a.  The narrow per-row FIXED/HYBRID bands (centered on the argmax-k
+ * Brief 26_0430-140a.  The narrow per-row FIXED/HYBRID bands (centered on the argmax-k
  * pin) can be DISCONNECTED between adjacent rows when the pin jumps -- e.g. a
  * long insert on the optimal path makes k_argmax[i] >> k_argmax[i-1], so
  * kmin[i] > kmax[i-1] + 1.  The downstream banded CP9 Forward/Backward
@@ -435,7 +435,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
  * with intra-row deletes shifting k upward only.  A valid entry into band[i]
  * exists iff [kmin[i-1], kmax[i-1]+1] intersects [kmin[i], kmax[i]], i.e.
  *     kmin[i] <= kmax[i-1] + 1   AND   kmax[i] >= kmin[i-1].
- * (The brief 140a sketch used kmin[i-1]-1 for the second test; that is too weak
+ * (The brief 26_0430-140a sketch used kmin[i-1]-1 for the second test; that is too weak
  *  by one -- kmax[i]==kmin[i-1]-1 still leaves no in-band predecessor.)
  *
  * The guard widens band[i] minimally to satisfy this for every i.  DELTA mode is
@@ -572,7 +572,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 
   if ((status = ibv_alloc_floats(k_stride, &through)) != eslOK) goto ERROR;
 
-  /* Brief 171: Tgm begin-anywhere vector.  begin_milli[k] = milli-bit log2 of
+  /* Brief 26_0430-171: Tgm begin-anywhere vector.  begin_milli[k] = milli-bit log2 of
    * the local entry probability into M_k (occ[k] / sum_i occ[i]*(M-i+1)), the
    * same occupancy-weighted local begin HMMER's p7_ProfileConfig(p7_LOCAL) sets
    * (and the vitband/pinbridge Tgm reference uses via cm_alndata.c:459-461).
@@ -692,7 +692,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
   if (L >= 1) { kmin[L] = 1; kmax[L] = M; }
   kmin[0] = 0; kmax[0] = 0;
 
-  /* Brief 140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
+  /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin, kmax);
 
@@ -798,21 +798,21 @@ typedef struct {
   size_t  k_stride;
   int     global_L;
   int     base_slab;
-  int     do_trunc;        /* brief 171: Tgm begin/end-anywhere semantics       */
-  const float *begin_milli;/* brief 171: Tgm begin vector (NULL unless do_trunc) */
+  int     do_trunc;        /* brief 26_0430-171: Tgm begin/end-anywhere semantics       */
+  const float *begin_milli;/* brief 26_0430-171: Tgm begin vector (NULL unless do_trunc) */
   const ESL_DSQ *dsq;
   int    *kmin;
   int    *kmax;
   int    *i2k;     /* argmax-k per row (brief 137); i2k[i] = Viterbi-trace cell. */
   float   thr;
-  int     ibv_mode;  /* brief 140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
-  int     ibv_width; /* brief 140: fixed-width pad W around argmax-k pin */
-  int     kband_pad; /* brief 172: k-band child-narrowing pad (do_kband path) */
+  int     ibv_mode;  /* brief 26_0430-140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
+  int     ibv_width; /* brief 26_0430-140: fixed-width pad W around argmax-k pin */
+  int     kband_pad; /* brief 26_0430-172: k-band child-narrowing pad (do_kband path) */
   int     wide_thresh; /* brief 173: route nodes with band width >= this to the
                         * SSE full-M primitives; narrower nodes use scalar _b.   */
 } IBV_DnC_Ctx;
 
-/* brief 171: begin vector for the forward call at absolute row `absrow`
+/* brief 26_0430-171: begin vector for the forward call at absolute row `absrow`
  * (non-NULL only at the global begin row 1 under Tgm). */
 static inline const float *
 ibv_brow(const IBV_DnC_Ctx *ctx, int absrow)
@@ -1002,7 +1002,7 @@ ibv_dnc_alloc(size_t n, float **ret_p)
 
 
 /* ---------------------------------------------------------------------------
- * Brief 172: k-banded scalar primitives + k-banded D&C  (the windowed-Viterbi
+ * Brief 26_0430-172: k-banded scalar primitives + k-banded D&C  (the windowed-Viterbi
  *            i2k speed lever)
  * ---------------------------------------------------------------------------
  *
@@ -1182,7 +1182,7 @@ ibv_through_b(int M, int k_lo, int k_hi, float thr,
  *
  * Exactness: the full-M SSE primitive computes a SUPERSET of the band
  * ([0,M] >= [k_lo,k_hi]).  For i2k -- the per-row EMITTING argmax -- the
- * monotone-k property (brief 172) guarantees the optimal path's cell at every
+ * monotone-k property (brief 26_0430-172) guarantees the optimal path's cell at every
  * row is interior to [k_lo,k_hi], and full-M Viterbi computes the true optimal
  * value at that cell, so argmax over [1,M] == argmax over [k_lo,k_hi] == the
  * path cell.  (A non-path cell's full-M through-score is <= the global optimum,
@@ -1458,7 +1458,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   }
   for (k = 0; k < (int) ks; k++) ctx.emit_table[K][k] = 0.0f;
 
-  /* Brief 171: Tgm begin-anywhere vector (see p7_Seq2BandsIBV). */
+  /* Brief 26_0430-171: Tgm begin-anywhere vector (see p7_Seq2BandsIBV). */
   if (do_trunc) {
     float *occ = NULL;
     double Z = 0.0;
@@ -1557,11 +1557,11 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.kmax     = kmax_arr;
   ctx.i2k      = i2k;
   ctx.thr      = thr;
-  ctx.do_trunc    = do_trunc;     /* brief 171 */
-  ctx.begin_milli = begin_milli;  /* brief 171 */
-  ctx.ibv_mode = ibv_mode;   /* brief 140 */
-  ctx.ibv_width= ibv_width;  /* brief 140 */
-  ctx.kband_pad = P7IBV_KPAD;  /* brief 172 */
+  ctx.do_trunc    = do_trunc;     /* brief 26_0430-171 */
+  ctx.begin_milli = begin_milli;  /* brief 26_0430-171 */
+  ctx.ibv_mode = ibv_mode;   /* brief 26_0430-140 */
+  ctx.ibv_width= ibv_width;  /* brief 26_0430-140 */
+  ctx.kband_pad = P7IBV_KPAD;  /* brief 26_0430-172 */
   { const char *kp = getenv("P7IBV_KBAND_PAD");
     if (kp && *kp) { int v = atoi(kp); if (v >= 0) ctx.kband_pad = v; } }
   /* Brief 173 Part B: route nodes whose band width >= wide_thresh to the SSE
@@ -1590,7 +1590,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if ((status = ibv_dnc_alloc(ks, &B_seed_I)) != eslOK) goto ERROR;
   if ((status = ibv_dnc_alloc(ks, &B_seed_D)) != eslOK) goto ERROR;
 
-  /* Run recursion.  Brief 172: with do_kband, band each node's streams to the
+  /* Run recursion.  Brief 26_0430-172: with do_kband, band each node's streams to the
    * monotone-k tube (exact for i2k; the windowed-Viterbi genome speed lever).
    * Top band is the full model [0,M] (begin/end anywhere). */
   if (do_kband)
@@ -1615,7 +1615,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   kmin_arr[0] = 0; kmax_arr[0] = 0;
   i2k[0] = 0;   /* B-state convention (brief 137): i2k[i]=argmax_k for i in [1,L]. */
 
-  /* Brief 140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
+  /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin_arr, kmax_arr);
 
@@ -1842,7 +1842,7 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
 
 
 /* ---------------------------------------------------------------------------
- * cm_ComputeP7WVNodePad -- brief 169 per-node pad calibration (F+B-halfwidth p95)
+ * cm_ComputeP7WVNodePad -- brief 26_0430-169 per-node pad calibration (F+B-halfwidth p95)
  * ---------------------------------------------------------------------------
  *
  * The windowed-Viterbi band uses a per-node pad calibrated as the <quantile>
@@ -1861,7 +1861,7 @@ p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
  * (cm_ComputeP7CMNodePad), which is the p99 of a *Viterbi-pin deficit* against
  * the embedded true alignment -- a much narrower quantity tuned for the
  * p7_Seq2BandsVit pin band.  Using cm->p7_cm_nodepad here regresses accuracy
- * (brief 169 spot-check: MISL -0.19, Bp1 -0.06 vs F+B); the wider F+B-halfwidth
+ * (brief 26_0430-169 spot-check: MISL -0.19, Bp1 -0.06 vs F+B); the wider F+B-halfwidth
  * pad reproduces F+B accuracy (the prototype's pn_p95 result).
  *
  * Caller owns the returned pad[0..M].  Align-time use: compute once per CM and
@@ -1886,7 +1886,7 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
   int      *hwn = NULL;   /* hw[k] count */
   int      *hwa = NULL;   /* hw[k] alloc */
   int      *pad = NULL;
-  /* brief 171: calibrate with the same begin/end semantics the align-time band
+  /* brief 26_0430-171: calibrate with the same begin/end semantics the align-time band
    * will use, so the F+B half-widths match the deployed deriver. */
   int       do_trunc = (cm->align_opts & CM_ALIGN_TRUNC) ? TRUE : FALSE;
 
@@ -1913,7 +1913,7 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
     snprintf(name, sizeof(name), "wv%d", s);
     if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &tr, &esq, &L)) != eslOK) goto ERROR;
 
-    /* Brief 172: the pad calibration measures the FULL-M delta-band half-width,
+    /* Brief 26_0430-172: the pad calibration measures the FULL-M delta-band half-width,
      * so it must NOT use the k-banded deriver (whose delta cloud is tube-clipped).
      * Use the flat deriver when its O(L*M) pool fits ~2 GB (small/viral emits),
      * else the memory-bounded UNbanded D&C (do_kband=FALSE) -- correct delta
@@ -1994,7 +1994,7 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
 
 
 /* ---------------------------------------------------------------------------
- * p7_Seq2BandsWV -- brief 169 windowed-Viterbi band deriver
+ * p7_Seq2BandsWV -- brief 26_0430-169 windowed-Viterbi band deriver
  * ---------------------------------------------------------------------------
  *
  * The windowed-Viterbi band (brief 168 prototype, GO verdict) is, by
@@ -2063,7 +2063,7 @@ p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
   {
     double flat_pool_bytes = 12.0 * (double)(L + 1) * (double)(M + 4);
     double FLAT_BUDGET = 2.0e9;
-    /* Brief 172: P7WV_FORCE_KBAND forces the k-banded D&C i2k path even when the
+    /* Brief 26_0430-172: P7WV_FORCE_KBAND forces the k-banded D&C i2k path even when the
      * flat pool would fit, so the banded kernel can be validated (exact i2k vs
      * the unbanded D&C oracle) on small/viral seqs via test_wviterbi --wv -c. */
     { const char *fk = getenv("P7WV_FORCE_KBAND"); if (fk && *fk && *fk != '0') FLAT_BUDGET = 0.0; }
@@ -2072,7 +2072,7 @@ p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                                P7IBV_MODE_DELTA, 0,
                                &i2k, &kmin_tmp, &kmax_tmp, &nc_tmp);
     else
-      /* Brief 172: genome scale -- k-banded D&C (do_kband=TRUE) restricts each
+      /* Brief 26_0430-172: genome scale -- k-banded D&C (do_kband=TRUE) restricts each
        * node's streams to the monotone-k tube, collapsing the unbanded D&C's
        * ~log L full-M sweeps to ~1-2 sweeps of work.  Exact for i2k. */
       status = p7_Seq2BandsIBV_dnc(cm, errbuf, dsq, L,
@@ -2090,7 +2090,7 @@ p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
    *     return the unpruned i2k to the caller. */
   ESL_ALLOC(i2k_band, sizeof(int) * (L + 1));
   memcpy(i2k_band, i2k, sizeof(int) * (L + 1));
-  /* brief 043: IBV path doesn't expose a tunable ramp alpha -- pass brief
+  /* brief 26_0628-043: IBV path doesn't expose a tunable ramp alpha -- pass brief
    * 042's validated default unconditionally. */
   if ((status = p7_pins2bands_nodepad(i2k_band, errbuf, L, M, nodepad, 0, 0.75,
                                       &kmin, &kmax, &ncells)) != eslOK)

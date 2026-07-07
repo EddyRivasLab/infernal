@@ -128,21 +128,21 @@ CreateCMShell(void)
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
   cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
-  cm->p7_use_kmeranchor = FALSE;         /* default: no k-mer best-window anchor (set by --p7kmeranchor, brief 026) */
-  cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 027) */
-  cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 043) */
-  cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 046) */
+  cm->p7_use_kmeranchor = FALSE;         /* default: no k-mer best-window anchor (set by --p7kmeranchor, brief 26_0628-026) */
+  cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 26_0628-027) */
+  cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 26_0628-042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 26_0628-043) */
+  cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
   cm->p7_kmerchain_mgate = 0;            /* default: disabled -- opt-in small-M gate (set by --p7kmerchain-mgate, brief 26_0628-047) */
   cm->p7_kmerchain_fallback_vit = FALSE; /* default: use --p7ibv as the kmer-gate fallback deriver (set by --p7kmerchain-fbvit, brief 26_0628-047) */
-  cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 120) */
+  cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 26_0430-120) */
   cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
-  cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 124) */
-  cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 124) */
-  cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 140, --p7ibv-mode) */
-  cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 140, --p7ibv-width) */
-  cm->p7_ibv_ckpt      = FALSE;          /* default: non-checkpointed Pass-2 CP9 F/B (--p7ibv-ckpt, brief 146) */
-  cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 169) */
-  cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 169) */
+  cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 26_0430-124) */
+  cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 26_0430-124) */
+  cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 26_0430-140, --p7ibv-mode) */
+  cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 26_0430-140, --p7ibv-width) */
+  cm->p7_ibv_ckpt      = FALSE;          /* default: non-checkpointed Pass-2 CP9 F/B (--p7ibv-ckpt, brief 26_0430-146) */
+  cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 26_0430-169) */
+  cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 26_0430-169) */
   cm->p7_wv_nodepad_M  = 0;
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 

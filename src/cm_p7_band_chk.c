@@ -1,6 +1,6 @@
 /* cm_p7_band_chk.c
  *
- * Checkpointed banded CP9 P7B Forward/Backward + band reduction (brief 146,
+ * Checkpointed banded CP9 P7B Forward/Backward + band reduction (brief 26_0430-146,
  * the 144-B path). Replaces the three ncells-sized banded CP9 P7B matrices
  * (cp9_ForwardP7B_OLD_WITH_EL + cp9_BackwardP7B + posterior pmx; the ~32 GB
  * wall at HSV-divergent) with a sqrt(L)-checkpointed, block-materialized
@@ -1200,7 +1200,7 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
 
 
 /*****************************************************************
- * FLOAT/TRUNCATED PATH (brief 150, Phase 2).
+ * FLOAT/TRUNCATED PATH (brief 26_0430-150, Phase 2).
  *
  * A parallel set of float-typed checkpointed kernels mirroring the int
  * (non-trunc) machinery above, but transcribed VERBATIM from the float
@@ -1222,7 +1222,7 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
  * accumulation + checkpoint storage end-to-end). The non-checkpointed
  * cp9_ForwardP7BF/cp9_BackwardP7BF (cm_p7_band.c) stay float; the structural
  * 1:1 correspondence with those float originals is preserved so they can be
- * diffed (only the cell type and the logsum changed). Brief 153 proved the
+ * diffed (only the cell type and the logsum changed). Brief 26_0430-153 proved the
  * genome-scale -g truncated band collapse is float32 accumulation roundoff in
  * this CP9 F/B (~-35 nats at HSV, ~-45 at MPXV); double drives the F/B gap to
  * ~0. p7_FLogsum is a float LUT returning float, so it cannot carry double
@@ -1230,7 +1230,7 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
  *****************************************************************/
 
 /* Exact double-precision log-sum (replaces the float p7_FLogsum LUT in the
- * checkpointed double-trunc kernels; brief 153/154). -inf-guarded. */
+ * checkpointed double-trunc kernels; brief 26_0430-153/154). -inf-guarded. */
 static inline double
 cp9_chk_dlogsum(double a, double b)
 {
@@ -1403,7 +1403,7 @@ cp9_chk_fwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
     }
   }
 
-  /* brief 134 BM-coverage supplementary pass (double-only; absent in int kernel).
+  /* brief 26_0430-134 BM-coverage supplementary pass (double-only; absent in int kernel).
    * Full row band [max(1,kmin[i]),kmax[i]] MINUS the [kn,kx] match range, adding
    * begin + EL-from-into-M (no in-band diagonal predecessor here). */
   if(INBAND(i-1, 0) && mp[0] != -eslINFINITY) {
@@ -1800,7 +1800,7 @@ typedef struct {
   int64_t ncells;  /* total stored cells */
   double *fmmx, *fimx, *fdmx, *felmx;   /* Forward checkpoint planes */
   double *bmmx, *bimx, *bdmx, *belmx;   /* Backward checkpoint planes */
-  double fsc;      /* brief 154 diag: forward total (erow at i==L), for P154_FBDUMP */
+  double fsc;      /* brief 26_0430-154 diag: forward total (erow at i==L), for P154_FBDUMP */
 } cp9chkF_t;
 
 static void
@@ -2238,7 +2238,7 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
 
   if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
   if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
-  /* brief 154 diag: double checkpointed CP9 F/B totals (cf. 153 ref fwd/bwd≈7993.144,
+  /* brief 26_0430-154 diag: double checkpointed CP9 F/B totals (cf. 153 ref fwd/bwd≈7993.144,
    * gap≈+0.00003; float ckpt path gave gap≈-1.687 at norovirus, ≈-35/-45 at HSV/MPXV). */
   if(getenv("P154_FBDUMP") != NULL)
     fprintf(stderr, "P154 FBDUMP L=%d M=%d fwd_d=%.6f bwd_d=%.6f gap_d=%.6f\n",
@@ -2346,7 +2346,7 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
   if(getenv("CP9_CKPTF_DEBUG") != NULL) {
     int *tmn,*tmx_m,*tin,*tix,*tdn,*tdx;
     CP9_FMX *fmx=NULL,*bmx=NULL,*pmx=NULL; float rsc; int kk, nmis=0;
-    /* brief 186: optional full CSV dump (every mismatch, not just the first
+    /* brief 26_0430-186: optional full CSV dump (every mismatch, not just the first
      * 20) to a file, so a follow-on can characterize the divergence shape
      * (uniform vs localized vs boundary-correlated) instead of eyeballing a
      * truncated stderr sample. Env-gated, inert unless CP9_CKPTFDBG_CSV is
@@ -2362,7 +2362,7 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
     fmx=CreateCP9FMatrix(1,M); bmx=CreateCP9FMatrix(1,M); pmx=CreateCP9FMatrix(1,M);
     cp9_ForwardP7BF (hmm, errbuf, fmx, dsq, L, kmin, kmax, &rsc);
     cp9_BackwardP7BF(hmm, errbuf, bmx, dsq, L, kmin, kmax, NULL);
-    /* brief 186: compare float-path total F/B scores (rsc = fwd total, bmx->mmx[0][0]
+    /* brief 26_0430-186: compare float-path total F/B scores (rsc = fwd total, bmx->mmx[0][0]
      * = bwd total, both accumulated via p7_FLogsum over L residues) against the
      * checkpointed double-path totals already in scope (s->fsc, sc) -- a direct
      * check of whether the float path's cumulative FLogsum drift over this L is
@@ -2400,10 +2400,10 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
 
 /* Function: cp9_FB2HMMBandsP7BF_chk_multi()
  *
- * Brief 167 (tau-ratchet single-pass): multi-threshold sibling of
+ * Brief 26_0430-167 (tau-ratchet single-pass): multi-threshold sibling of
  * cp9_FB2HMMBandsP7BF_chk. The checkpointed double CP9 F/B (FwdFill + BwdFill)
  * and the posterior re-materialization (cp9segF_PostRow) are tau/thresh-
- * independent (brief 166 Q3), so we run them ONCE and thread NS distinct
+ * independent (brief 26_0430-166 Q3), so we run them ONCE and thread NS distinct
  * tau-derived thresholds through the MIN/MAX sweeps simultaneously. For each
  * materialized posterior row (computed once) we apply the existing "> thresh[t]"
  * band-edge update for every step t. The per-(t,k) "if(!nset[t][k])"
@@ -2722,7 +2722,7 @@ cp9_PredictStartAndEndFromPoccF(double *pocc_arr, CP9Bands_t *cp9b, int i0, int 
 
 /* Function: cp9_FinishBandsFromPnPoccF_chk()
  *
- * Brief 167: the shared "band-finishing tail" extracted verbatim from
+ * Brief 26_0430-167: the shared "band-finishing tail" extracted verbatim from
  * cp9_FBMatrices2BandsP7BF_chk so the single-call path AND the tau-ratchet
  * single-pass driver (cp9_IterateSeq2BandsP7BF_chk_multi) run a BYTE-IDENTICAL
  * tail. Assumes cp9b->pn_{min,max}_{m,i,d} (1..L coords) and <pocc_arr> are
@@ -2754,7 +2754,7 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
   /* Step 2c: marginal candidates (trunc) or non-trunc valid arrays. */
   if(do_trunc) {
     cp9_PredictStartAndEndFromPoccF(pocc_arr, cp9b, i0, j0);
-    /* brief 149 (restored for the ckpt path in brief 162; mirrors
+    /* brief 26_0430-149 (restored for the ckpt path in brief 26_0430-162; mirrors
      * cm_p7_band.c:5937-5940): in glocal alignment the full (J-mode) parse must
      * always be geometrically available. The thresh1 escalation can retreat ep1
      * below clen (and push sp1 above 1) on models with a decaying posterior-
@@ -2782,7 +2782,7 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
 
   /* Step 3: HMM bands -> CM bands. */
   if(do_old_hmm2ij) {
-    /* brief 162: doing_search=FALSE (alignment-mode tight j-bands). */
+    /* brief 26_0430-162: doing_search=FALSE (alignment-mode tight j-bands). */
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
   }
   else {
@@ -2792,7 +2792,7 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
   if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
-    /* brief 185 (mirrors cm_p7_band.c's cp9_FBMatrices2BandsF, non-ckpt twin):
+    /* brief 26_0430-185 (mirrors cm_p7_band.c's cp9_FBMatrices2BandsF, non-ckpt twin):
      * the brief-149 sp1/ep1 floor above forces Jvalid[v] = TRUE for essentially
      * every state without widening the real per-state (j,d) bands computed by
      * ij2d_bands() just above, from the un-floored 1-tau threshold signal. On a
@@ -2801,9 +2801,9 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
      * alignment traceback can walk into and die on (cm_TrInsideAlignHB() "no
      * valid parsetree found"). Veto Jvalid[v] back to FALSE for any state whose
      * real band is empty at every j in its jband, via the hd_min()/hd_max()
-     * recompute-on-demand accessors (brief 157) -- never reintroduce flat
+     * recompute-on-demand accessors (brief 26_0430-157) -- never reintroduce flat
      * hdmin[v][]/hdmax[v][] reads here, they're gone. This is the production
-     * --p7ibv-ckpt path (brief 162), so this fix must land here too, not just
+     * --p7ibv-ckpt path (brief 26_0430-162), so this fix must land here too, not just
      * in the non-ckpt twin. */
     int v, jp, njp, found;
     for(v = 0; v < cp9b->cm_M; v++) {
@@ -2859,7 +2859,7 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
 
 /* Function: cp9_IterateSeq2BandsP7BF_chk_multi()
  *
- * Brief 167: single-pass replacement for the ckpt-truncated tau-ratchet loop
+ * Brief 26_0430-167: single-pass replacement for the ckpt-truncated tau-ratchet loop
  * in cp9_IterateSeq2BandsP7B (which recomputed the WHOLE checkpointed float F/B
  * on every step, up to ~26 steps). Two phases:
  *
@@ -2874,7 +2874,7 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
  *     F/B + MIN + MAX sweep (cp9_FB2HMMBandsP7BF_chk_multi) that evaluates all
  *     NS thresholds at once, then scan steps in order and break at the first
  *     that fits size_limit (NO binary search: size-vs-step is non-monotone via
- *     deck-validity flips, brief 166 Q4). Breaking at first fit leaves cp9b in
+ *     deck-validity flips, brief 26_0430-166 Q4). Breaking at first fit leaves cp9b in
  *     the selected step's state automatically (each step's tail fully rederives
  *     cp9b), so no separate "restore" is needed.
  *
@@ -2921,7 +2921,7 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
     int tau_lim = FALSE;
     int th1_lim = (do_trunc) ? FALSE : TRUE;
     int th2_lim = (do_trunc) ? FALSE : TRUE;
-    int cap = 64; /* safety bound; real worst case ~25 (brief 166 Q1) */
+    int cap = 64; /* safety bound; real worst case ~25 (brief 26_0430-166 Q1) */
     ESL_ALLOC(tau_grid, sizeof(double)*cap);
     ESL_ALLOC(t1_grid,  sizeof(double)*cap);
     ESL_ALLOC(t2_grid,  sizeof(double)*cap);
@@ -2963,7 +2963,7 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
                                              debug_level, do_pnmono, do_pnmono_print,
                                              pnmm, pnxm, pnmi, pnxi, pnmd, pnxd, pocc)) != eslOK) goto DONE;
 
-  /* ---- G3 determinism harness (brief 167): for every grid step, recompute the
+  /* ---- G3 determinism harness (brief 26_0430-167): for every grid step, recompute the
    * pn arrays + masked pocc the OLD single-call way (cp9_FB2HMMBandsP7BF_chk,
    * which re-runs its own F/B) and assert equality vs the multi-threshold
    * sweep's slot. Catches any accumulator-order divergence. cp9b->pn_* is used

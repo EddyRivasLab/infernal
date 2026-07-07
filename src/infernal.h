@@ -834,24 +834,24 @@ typedef struct cp9bands_s {
   int **hdmax;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = last position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
-  int *hdmin_mem;             /* actual memory for hdmin (DEPRECATED, brief 157: no longer allocated; d-bands recomputed on demand via hd_min()/hd_max(), kept NULL) */
-  int *hdmax_mem;             /* actual memory for hdmax (DEPRECATED, brief 157, kept NULL) */
+  int *hdmin_mem;             /* actual memory for hdmin (DEPRECATED, brief 26_0430-157: no longer allocated; d-bands recomputed on demand via hd_min()/hd_max(), kept NULL) */
+  int *hdmax_mem;             /* actual memory for hdmax (DEPRECATED, brief 26_0430-157, kept NULL) */
   int *hd_dn;                 /* [0..cm_M-1] per-state d-band floor used by hd_min()/hd_max() recompute:
 			       * E_st states store -1 (sentinel: hdmin=hdmax=0 for all j); all other states
 			       * store dn = do_trunc ? max(StateLeftDelta,StateRightDelta) : StateDelta (>=0).
-			       * Set by ij2d_bands(). Replaces the flat hdmin_mem/hdmax_mem cache (brief 157). */
+			       * Set by ij2d_bands(). Replaces the flat hdmin_mem/hdmax_mem cache (brief 26_0430-157). */
   int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* info on size of bands */
-  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 097 + 147) */
+  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 26_0316-097 + 147) */
   int64_t hd_alloced;         /* number of hd arrays currently alloc'ed (int64, see hd_needed) */
 
   double   tau;               /* tau used to calculate current bands */
 
 } CP9Bands_t;
 
-/* Recompute-on-demand accessors for the per-state d-band (brief 157).
+/* Recompute-on-demand accessors for the per-state d-band (brief 26_0430-157).
  *
  * These replace the formerly-materialized flat hdmin_mem/hdmax_mem arrays
  * (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale truncated).
@@ -1923,28 +1923,28 @@ typedef struct cm_s {
   int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 068);
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
-  int     p7_use_kmeranchor;   /* if TRUE, derive bands from a k-mer best-window anchor (--p7kmeranchor, brief 026) */
-  int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 027) */
-  double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 042); default 0.75 (--p7kmerchain-alpha, brief 043) */
-  int     p7_kmerchain_mink;   /* brief 046: if >0, gate kmeranchor/kmerchain (independent of the M-gate) when the
+  int     p7_use_kmeranchor;   /* if TRUE, derive bands from a k-mer best-window anchor (--p7kmeranchor, brief 26_0628-026) */
+  int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 26_0628-027) */
+  double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043) */
+  int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmeranchor/kmerchain (independent of the M-gate) when the
                                  * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
                                  * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
-                                 * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 046) */
+                                 * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 26_0628-046) */
   int     p7_kmerchain_mgate;  /* brief 26_0628-047: if >0, gate kmeranchor/kmerchain when M < this threshold (was a
-                                 * hardcoded, default-on M<4,000 constant under brief 045; now a real, OFF-BY-
+                                 * hardcoded, default-on M<4,000 constant under brief 26_0628-045; now a real, OFF-BY-
                                  * DEFAULT cmalign option -- --p7kmerchain-mgate <M>); default 0 (disabled) */
   int     p7_kmerchain_fallback_vit; /* brief 26_0628-047: if TRUE, revert the kmeranchor/kmerchain M-gate/N-gate/no-anchor
                                  * fallback to the old p7_Seq2BandsVit (single Viterbi-MAP-trace band) mechanism
                                  * instead of the new default (--p7ibv's D&C deriver) (--p7kmerchain-fbvit);
                                  * default FALSE (use --p7ibv fallback) */
-  int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 120) */
+  int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 26_0430-120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
-  int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 124)  */
+  int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 26_0430-124)  */
   int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
-  int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 140, --p7ibv-mode) */
-  int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 140, --p7ibv-width) */
-  int     p7_ibv_ckpt;         /* if TRUE, checkpointed banded CP9 P7B F/B in Pass 2 (--p7ibv-ckpt, brief 146/144-B) */
-  int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 169) */
+  int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 26_0430-140, --p7ibv-mode) */
+  int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 26_0430-140, --p7ibv-width) */
+  int     p7_ibv_ckpt;         /* if TRUE, checkpointed banded CP9 P7B F/B in Pass 2 (--p7ibv-ckpt, brief 26_0430-146/144-B) */
+  int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 26_0430-169) */
   int    *p7_wv_nodepad;       /* [0..M] WV per-node pad (F+B-halfwidth p95), computed align-time; NULL until set */
   int     p7_wv_nodepad_M;     /* length of p7_wv_nodepad (= fp7->M); 0 if not set */
 
@@ -2897,7 +2897,7 @@ extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 
 /* CM_PB_OM32: Infernal-side 32-bit striped emission table for the
- * --p7pinbridge SW prefilter scan (brief 094). Parallels HMMER's 16-bit
+ * --p7pinbridge SW prefilter scan (brief 26_0430-094). Parallels HMMER's 16-bit
  * P7_OPROFILE->rwv but with int32 lanes so the SW DP accumulation does not
  * saturate on highly-conserved / self-alignment-scale inputs (where the
  * 16-bit kernel pins everything at +32767, destroying score-based pin
@@ -2907,7 +2907,7 @@ extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_A
 typedef struct cm_pb_om32_s CM_PB_OM32;
 
 /* CM_P7_OM_HOLDER: reusable LOCAL p7 profile + optimized profile for the
- * --p7pinbridge SW prefilter scan (brief 090). The LOCAL config of cm->fp7
+ * --p7pinbridge SW prefilter scan (brief 26_0430-090). The LOCAL config of cm->fp7
  * depends only on the model (not the residues), so it can be built once per
  * worker thread / per block and reused across all sequences, with only a
  * per-sequence p7_oprofile_ReconfigLength(). This eliminates the per-sequence
@@ -2920,7 +2920,7 @@ typedef struct cm_pb_om32_s CM_PB_OM32;
 typedef struct cm_p7_om_holder_s {
   P7_PROFILE  *gm_local;  /* LOCAL config of cm->fp7 (Convert source only)    */
   P7_OPROFILE *om;        /* optimized LOCAL profile used by the SW scan      */
-  CM_PB_OM32  *om32;      /* 32-bit emission table for the 32-bit SW scan (brief 094) */
+  CM_PB_OM32  *om32;      /* 32-bit emission table for the 32-bit SW scan (brief 26_0430-094) */
   int          M;         /* model size the holder was built for (sanity)     */
   int          built;     /* TRUE once gm_local/om/om32 are populated         */
 } CM_P7_OM_HOLDER;
@@ -3375,13 +3375,13 @@ extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int add
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
-/* checkpointed banded CP9 P7B F/B (brief 146, cm_p7_band_chk.c) */
+/* checkpointed banded CP9 P7B F/B (brief 26_0430-146, cm_p7_band_chk.c) */
 extern int          cp9_FB2HMMBandsP7B_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
 extern int          cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
-/* checkpointed banded CP9 P7B float/truncated F/B (brief 150, Phase 2, cm_p7_band_chk.c) */
+/* checkpointed banded CP9 P7B float/truncated F/B (brief 26_0430-150, Phase 2, cm_p7_band_chk.c) */
 extern int          cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, double *pocc_arr);
 extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
-/* brief 167: tau-ratchet single-pass multi-threshold sibling + ckpt-trunc driver (cm_p7_band_chk.c) */
+/* brief 26_0430-167: tau-ratchet single-pass multi-threshold sibling + ckpt-trunc driver (cm_p7_band_chk.c) */
 extern int          cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double *p_thresh, int NS, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, int **pn_min_m_out, int **pn_max_m_out, int **pn_min_i_out, int **pn_max_i_out, int **pn_min_d_out, int **pn_max_d_out, double **pocc_out);
 extern int          cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, int *ret_nbump, float *ret_Mb);
 extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
@@ -3401,11 +3401,11 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* Brief 026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in). */
+/* Brief 26_0628-026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in). */
 extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* Brief 027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in). */
+/* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in). */
 extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* Brief 140: IBV band-derivation modes (enrich the per-row band using the
+/* Brief 26_0430-140: IBV band-derivation modes (enrich the per-row band using the
  * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
  * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */
 #define P7IBV_MODE_DELTA  0
@@ -3425,7 +3425,7 @@ extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *d
 extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
                                     const int *i2k, const int *kmin, const int *kmax, int ncells,
                                     P7_TRACE **ret_tr);
-/* Brief 169: windowed-Viterbi band = MAP-trace i2k +/- per-node pad. */
+/* Brief 26_0430-169: windowed-Viterbi band = MAP-trace i2k +/- per-node pad. */
 extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                                     int do_trunc,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);

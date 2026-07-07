@@ -1245,7 +1245,7 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
 /*****************************************************************
  * Checkpointed sqrt(M)-memory TRUNCATED HMM-banded OptAcc engine
  *
- * Brief 029: library port of the validated standalone driver
+ * Brief 26_0628-029: library port of the validated standalone driver
  *   ckpttr_drv.c (027) -- checkpointed truncated Inside + Outside + fused
  *   posterior + OptAcc max-DP + mode-aware traceback, for a bps=0 (pure
  *   MATL chain) global CM in the three marginal modes that can occur there:
@@ -1961,7 +1961,7 @@ cm_CheckptTrAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptTrAlignHB()
- * Incept:   Brief 029 (library port of driver 027 ckpttr_drv.c)
+ * Incept:   Brief 26_0628-029 (library port of driver 027 ckpttr_drv.c)
  *
  * Purpose:  Checkpointed (sqrt(M)-memory) HMM-banded optimal-accuracy
  *           TRUNCATED alignment for a global, pure-MATL-chain (bps=0) CM.
@@ -10455,7 +10455,7 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
   int     *imax  = cm->cp9b->imax;
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
-  CP9Bands_t *cp9b = cm->cp9b;  /* brief 157: needed by hd_min()/hd_max() */
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 

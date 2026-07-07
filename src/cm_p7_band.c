@@ -735,7 +735,7 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   }
 
   /* get number of cells if wanted.
-   * Brief 027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
+   * Brief 26_0628-027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
    * anchors -> wide bands) the true cell count reaches ~1e10, overflowing the
    * int32 accumulator and wrapping to <=0, which would spuriously trip the
    * caller's ncells==0 fallback. ret_ncells stays int (every caller uses it
@@ -780,10 +780,10 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  *                      Vit pins are monotone in (i,k); the dilation is
  *                      computed in O(L) with a sliding window over the
  *                      pinned positions in trace order. 0 = off (no-op).
- *           alpha    - brief 043: distance-scaled slack coefficient for the
- *                      interpolated-ramp inter-pin band (brief 042); see
+ *           alpha    - brief 26_0628-043: distance-scaled slack coefficient for the
+ *                      interpolated-ramp inter-pin band (brief 26_0628-042); see
  *                      RAMP_SLACK_ALPHA comment below. Callers that don't
- *                      expose a tunable knob should pass 0.75 (brief 042's
+ *                      expose a tunable knob should pass 0.75 (brief 26_0628-042's
  *                      validated default) to preserve prior behavior.
  *           ret_kmin - [0.i..L] = k, min node k for residue i
  *           ret_kmax - [0.i..L] = k, max node k for residue i
@@ -860,11 +860,11 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
     }
   }
 
-  /* Interpolated ramp (brief 042). The base scans + bridge block above give
+  /* Interpolated ramp (brief 26_0628-042). The base scans + bridge block above give
    * every residue in a gap between two consecutive pins the SAME flat band,
    * [prev_pin_k - pad, next_pin_k + pad] -- cost O(gap_len * gap_k) per gap,
    * quadratic when both are large (kmerchain's typical sparse-anchor output;
-   * see brief 041). Replace that flat band on interior rows of long gaps
+   * see brief 26_0628-041). Replace that flat band on interior rows of long gaps
    * with a band centered on the linear interpolation between the two
    * bracketing pins, widened only by nodepad (the same local-wiggle margin
    * used at a pin itself) -- not by the full model distance spanned by the
@@ -893,7 +893,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
           int gap_len  = ci - pi;
           int pad_here = ESL_MAX(nodepad[pk], nodepad[ck]);
           if (ck != pk && gap_len > 2 * pad_here) {
-            /* RAMP_SLACK_ALPHA: empirically bracketed (brief 042), not derived
+            /* RAMP_SLACK_ALPHA: empirically bracketed (brief 26_0628-042), not derived
              * from a correctness proof -- pure nodepad-width margin (alpha=0)
              * measurably WORSENED one real panel case (norovirus MT372469.1,
              * --p7band --p7kmerchain: bit score 1358.60 -> 1168.35, a true
@@ -907,7 +907,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
              * substantially versus the flat default (2.6M vs 4.7M on that same
              * gap -- alpha=0 gave 1.4M but wasn't safe). This is a tunable
              * correctness/speed tradeoff, not a proven-safe bound either --
-             * see brief 042's summary "Design reasoning" section. brief 043:
+             * see brief 26_0628-042's summary "Design reasoning" section. brief 26_0628-043:
              * alpha is now a caller-supplied parameter (default 0.75 preserved
              * at every call site; only --p7kmerchain's cmalign call site
              * exposes it as a runtime option, --p7kmerchain-alpha).
@@ -964,7 +964,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
   }
 
   /* get number of cells if wanted.
-   * Brief 027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
+   * Brief 26_0628-027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
    * anchors -> wide bands) the true cell count reaches ~1e10, overflowing the
    * int32 accumulator and wrapping to <=0, which would spuriously trip the
    * caller's ncells==0 fallback. ret_ncells stays int (every caller uses it
@@ -993,7 +993,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 }
 
 /*****************************************************************
- * Brief 026: k-mer best-window anchor guide-deriver.
+ * Brief 26_0628-026: k-mer best-window anchor guide-deriver.
  *
  * A blind (no-oracle) guide-derivation-layer addition against the EXISTING,
  * already-generic pin->band consumer chain. Finds the best-scoring k-mer window
@@ -1010,7 +1010,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * (HSV) -- single-window blind anchoring is expected to fail the big track.
  *****************************************************************/
 
-/* brief 045/047: small-M gate, shared by both kmeranchor and kmerchain.
+/* brief 26_0628-045/047: small-M gate, shared by both kmeranchor and kmerchain.
  * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
  * M=84-400): at this M range these divergent structural-RNA test families
  * have too little exact-match identity to the model's argmax consensus for
@@ -1018,9 +1018,9 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * whole model, outnumbered by coincidental short-k-mer collisions that
  * chain/cluster together and out-compete the lone true anchor. This is the
  * SAME mechanism brief 022 root-caused and gated for the cmsearch fast-anchor
- * path (norovirus's non-repeat coincidental-collision residual); brief 045
+ * path (norovirus's non-repeat coincidental-collision residual); brief 26_0628-045
  * ported brief 022's validated M<4,000 threshold here as a hardcoded,
- * default-on constant. Brief 047 replaced that with a real, user-facing,
+ * default-on constant. Brief 26_0628-047 replaced that with a real, user-facing,
  * OFF-BY-DEFAULT cmalign option (--p7kmerchain-mgate <M>, cm->p7_kmerchain_mgate,
  * 0=off) -- fires (M < threshold) only when the user opts in, same gating
  * logic as before. Below the threshold, both derivers immediately report
@@ -1036,12 +1036,12 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-encodable */
 #define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
 
-/* brief 046: per-query k>=mink zero-hits signal gate, shared by kmeranchor and
+/* brief 26_0628-046: per-query k>=mink zero-hits signal gate, shared by kmeranchor and
  * kmerchain. `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
  * (returns TRUE) iff mink>0 and every tier with k>=mink has zero hits anywhere
  * in the model for this query -- i.e. there is no exact-match content long
  * enough to carry real signal, independent of M. Disabled (mink<=0, default)
- * by construction returns FALSE. See brief 046 for the mechanism/rationale. */
+ * by construction returns FALSE. See brief 26_0628-046 for the mechanism/rationale. */
 static int
 kmer_ngate_fires(const int *nrawk, int mink)
 {
@@ -1113,7 +1113,7 @@ static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int
 }
 
 /* Function: p7_Seq2BandsKmerAnchor()
- * Date:     Brief 026, 2026-07-03
+ * Date:     Brief 26_0628-026, 2026-07-03
  *
  * Purpose:  Derive p7 bands from a k-mer best-window anchor instead of a full
  *           MSV/Viterbi pass. Blind diagonal-dominance window scoring over the
@@ -1128,7 +1128,7 @@ static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int
  *           ret_i2k    - RETURN: per-residue pin array (caller frees), NULL if none
  *           ret_kmin   - RETURN: per-residue kmin (caller frees), NULL if none
  *           ret_kmax   - RETURN: per-residue kmax (caller frees), NULL if none
- *           do_trunc   - brief 033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
+ *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
  *                        do_trunc argument for signature-shape consistency. Unused
  *                        internally: this deriver never runs a begin/end-anywhere
  *                        (Tgm) score DP the way p7_Seq2BandsWV/IBV do -- it only
@@ -1154,7 +1154,7 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
                        int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int status = eslOK;
-  (void) do_trunc; /* brief 033: no-op, see function header comment */
+  (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
   int M = cm->fp7->M;
   int K = cm->abc->K;
   int nbins = (M + KMW_BIN - 1) / KMW_BIN;
@@ -1165,16 +1165,16 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   kmw_kmer_t *idx    = NULL;      /* per-k target k-mer index */
   int        *i2k    = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
-  int         nrawk[KMW_NK];   /* brief 046: raw hit count per k-tier (N-gate input) */
+  int         nrawk[KMW_NK];   /* brief 26_0628-046: raw hit count per k-tier (N-gate input) */
   int b, ki, j, x;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    return eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
   }
   /* brief 26_0628-047: removed the old M<KMW_BIN=200 silent bail-out here (inherited
-   * from brief 026, unrelated to the M-gate/N-gate mechanisms above) -- it
+   * from brief 26_0628-026, unrelated to the M-gate/N-gate mechanisms above) -- it
    * pre-empted kmeranchor's k-mer seed collection on small models before
    * either gate got a chance to run, and was never validated as a correctness
    * mechanism itself. All small-M correctness protection now comes from the
@@ -1223,7 +1223,7 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
     free(idx); idx = NULL;
   }
 
-  /* brief 046: per-query k>=mink zero-hits signal gate (unvalidated, default
+  /* brief 26_0628-046: per-query k>=mink zero-hits signal gate (unvalidated, default
    * off -- see kmer_ngate_fires() header comment). Checked right after the raw
    * hit collection, independent of the M-gate above. */
   if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
@@ -1255,7 +1255,7 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
     if (take) { best_bin = b; best_on = on; best_ratio = ratio; best_center = center; }
   }
 
-  /* brief 045: dump every bin's candidate window (not just the winner), gated
+  /* brief 26_0628-045: dump every bin's candidate window (not just the winner), gated
    * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
    * 041's BRIEF041_CHAINDUMP / this notebook's own new BRIEF045_SEEDDUMP for
    * kmerchain above). Lets us see whether the bin containing the true region
@@ -1321,8 +1321,8 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
     for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
     nodepad = local_nodepad;
   }
-  /* brief 043: kmeranchor's single best-window anchor doesn't expose a tunable
-   * ramp alpha -- pass brief 042's validated default unconditionally. */
+  /* brief 26_0628-043: kmeranchor's single best-window anchor doesn't expose a tunable
+   * ramp alpha -- pass brief 26_0628-042's validated default unconditionally. */
   if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, 0.75, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
 
   *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
@@ -1347,10 +1347,10 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
 }
 
 /*****************************************************************
- * Brief 027: k-mer seed-and-chain (minimap2/BLAST-style) guide-deriver for
+ * Brief 26_0628-027: k-mer seed-and-chain (minimap2/BLAST-style) guide-deriver for
  * genome-scale (>40kb) anchoring.
  *
- * Where p7_Seq2BandsKmerAnchor (brief 026) picks the single best 200nt model
+ * Where p7_Seq2BandsKmerAnchor (brief 26_0628-026) picks the single best 200nt model
  * window and seeds only from it -- which at genome scale (a) is fooled by
  * repeat-driven false diagonals (HSV locks onto an internal repeat block) and
  * (b) cannot span a genome from one anchor (HSV 41% / MPXV 88% coverage) --
@@ -1360,7 +1360,7 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
  * elsewhere, so a standard colinear chaining DP structurally out-competes an
  * isolated repeat block with a chain that covers far more of the genome.
  *
- * Reuses brief 026's k-mer index infrastructure unchanged (kmw_encode /
+ * Reuses brief 26_0628-026's k-mer index infrastructure unchanged (kmw_encode /
  * kmw_kmer_cmp / kmw_lower_bound, k in {10,15,20,25,30}) and feeds the winning
  * chain's pins through the SAME unmodified p7_pins2bands_nodepad consumer.
  *****************************************************************/
@@ -1371,7 +1371,7 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
 #define KMC_MAX_DGAP  10000   /* max implied-indel (|diagonal diff|) on one link  */
 #define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
 #define KMC_MIN_ANCHOR 10     /* min merged exact-match length to keep an anchor  */
-                               /* brief 029: lowered 20->10 (=smallest indexed k) to */
+                               /* brief 26_0628-029: lowered 20->10 (=smallest indexed k) to */
                                /* admit far more anchors on sparse-anchor genomes    */
                                /* (MPXV: 56->79 chain anchors, avg_bw 1223->279.6,   */
                                /* peak RSS 12.95G->4.73G), zero accuracy cost.       */
@@ -1400,7 +1400,7 @@ static int kmc_seed_cmp(const void *a, const void *b) {
   return (x->j > y->j) - (x->j < y->j);
 }
 
-/* brief 035: temporary peak-RSS attribution instrumentation, gated by
+/* brief 26_0628-035: temporary peak-RSS attribution instrumentation, gated by
  * BRIEF035_MEMPOINT (mirrors P135B_FB_INSTRUMENT convention). Reads
  * /proc/self/status VmRSS. Revert before finishing if not worth keeping. */
 static long
@@ -1418,7 +1418,7 @@ brief035_rss_kb(void)
 }
 
 /* Function: p7_Seq2BandsKmerChain()
- * Date:     Brief 027, 2026-07-03
+ * Date:     Brief 26_0628-027, 2026-07-03
  *
  * Purpose:  Derive p7 bands from a genome-wide k-mer seed-and-chain instead of
  *           a single best window. Collect all k-mer seeds (model vs target),
@@ -1428,7 +1428,7 @@ brief035_rss_kb(void)
  *           p7_pins2bands_nodepad.
  *
  * Args:     cm, errbuf, dsq, L, nodepad  - as p7_Seq2BandsKmerAnchor()
- *           do_trunc   - brief 033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
+ *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
  *                        do_trunc argument for signature-shape consistency. Unused
  *                        internally, for the same reason documented in
  *                        p7_Seq2BandsKmerAnchor()'s header comment above: this
@@ -1447,7 +1447,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int status = eslOK;
-  (void) do_trunc; /* brief 033: no-op, see function header comment */
+  (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
   int M = cm->fp7->M;
   int K = cm->abc->K;
   ESL_DSQ    *cons  = NULL;         /* model consensus, digital, cons[1..M]   */
@@ -1467,7 +1467,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    return eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
   }
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)
@@ -1547,7 +1547,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
           L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, KMC_MIN_ANCHOR);
 
-  /* brief 046: per-query k>=mink zero-hits signal gate (unvalidated, default
+  /* brief 26_0628-046: per-query k>=mink zero-hits signal gate (unvalidated, default
    * off -- see kmer_ngate_fires() header comment). Checked right after the raw
    * hit collection/perk breakdown above, independent of the M-gate above. */
   if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
@@ -1556,7 +1556,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     status = eslOK; goto CLEANUP;
   }
 
-  /* brief 045: dump every pre-chain anchor (not just the winning chain), gated
+  /* brief 26_0628-045: dump every pre-chain anchor (not just the winning chain), gated
    * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
    * 041's BRIEF041_CHAINDUMP). Lets us see whether a given model region has
    * ANY candidate anchor at all, vs has one that the chaining DP rejected. */
@@ -1621,7 +1621,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   /* chain[0..nc-1] is end..start; reverse to start..end */
   for (i = 0; i < nc/2; i++) { int tmp = chain[i]; chain[i] = chain[nc-1-i]; chain[nc-1-i] = tmp; }
 
-  /* 5. chain diagnostics + HSV repeat-trap check (brief 027 central question) */
+  /* 5. chain diagnostics + HSV repeat-trap check (brief 26_0628-027 central question) */
   {
     int cs = chain[0], ce = chain[nc-1];
     int mlo = seeds[cs].j, mhi = seeds[ce].j + seeds[ce].k - 1;
@@ -1634,7 +1634,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] "
                     "repeat_anchors_in[%d,%d]=%d nlink=%ld\n",
             L, M, nc, best_sc, mlo, mhi, qlo, qhi, KMC_HSV_RLO, KMC_HSV_RHI, nrep, nlink);
-    /* brief 041 (ported from infernal-brief040-stagetime): per-anchor chain dump,
+    /* brief 26_0628-041 (ported from infernal-brief040-stagetime): per-anchor chain dump,
      * gated by BRIEF041_CHAINDUMP (silent no-op by default, mirrors
      * BRIEF035_MEMPOINT convention). */
     if (getenv("BRIEF041_CHAINDUMP") != NULL) {
@@ -1671,7 +1671,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     }
   }
 
-  /* report pin span (reach) -- directly comparable to brief 026's cover= */
+  /* report pin span (reach) -- directly comparable to brief 26_0628-026's cover= */
   {
     int npin = 0, tmin = L+1, tmax = 0;
     for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
@@ -1688,7 +1688,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
     nodepad = local_nodepad;
   }
-  /* brief 043: --p7kmerchain-alpha overrides brief 042's ramp-slack alpha
+  /* brief 26_0628-043: --p7kmerchain-alpha overrides brief 26_0628-042's ramp-slack alpha
    * (default 0.75, cm->p7_kmerchain_ramp_alpha initialized in cm.c). */
   if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, cm->p7_kmerchain_ramp_alpha, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
 
@@ -2857,14 +2857,14 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	}
       }
 
-      /* brief 134: BM (B->M_k) coverage fix per brief 130 phase 3.
+      /* brief 26_0430-134: BM (B->M_k) coverage fix per brief 26_0430-130 phase 3.
        * The match loop above fills only k in [kn,kx], clipped by the diagonal
        * MM-predecessor bound (kx=ESL_MIN(kmax[i],kmax[i-1]+1) at :1979).  The
        * begin transition B=(i-1,0)->M_k and the EL-from-into-M contributions do
        * not need that diagonal predecessor, but folding them inside the match
        * loop gates them on it.  When row 0 is pinned by IBV (kmax[0]=0), row 1
        * enters only M_1, dropping begin mass into M_2..M_M that cp9_BackwardP7BF
-       * counts over the full child band -> F<B asymmetry (brief 130).
+       * counts over the full child band -> F<B asymmetry (brief 26_0430-130).
        *
        * Fix: a dedicated pass over the full row band [max(1,kmin[i]),kmax[i]]
        * MINUS the [kn,kx] range already handled by the match loop (skip to avoid
@@ -3686,17 +3686,17 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cp9 is NULL (pass_idx %d).", pass_idx);
 
   if(do_trunc) {
-    /* brief 150 (144-B Phase 2): checkpointed banded CP9 float F/B for the
+    /* brief 26_0430-150 (144-B Phase 2): checkpointed banded CP9 float F/B for the
      * truncated path (--p7ibv-ckpt, or CP9_CKPT env). Byte-identical bands in
      * O(sqrt(L)*avg_bw) memory. Wired BEFORE the float matrices below are
      * allocated; the tau-ratchet recomputes the checkpointed float F/B each
      * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
-    /* brief 187 (2026-07-05): temporary, pragmatic reroute. The float non-ckpt
+    /* brief 26_0430-187 (2026-07-05): temporary, pragmatic reroute. The float non-ckpt
      * F/B below (cp9_ForwardP7BF/cp9_BackwardP7BF/cp9_FBMatrices2BandsF) was
-     * shown (briefs 185/186) to lose Fwd=Bwd consistency and collapse
+     * shown (briefs 26_0430-185/186) to lose Fwd=Bwd consistency and collapse
      * numerically on genuinely-truncated genome-scale sequences (L~147K,
      * ~15x past its documented L=10K validation bound), producing garbage
-     * per-node bands. The checkpointed double-precision twin (brief 154) is
+     * per-node bands. The checkpointed double-precision twin (brief 26_0430-154) is
      * already validated correct at both sub-genome and genome scale. Rather
      * than write a second, parallel double-precision non-checkpointed kernel
      * right now, we force ALL do_trunc traffic through the checkpointed
@@ -3707,9 +3707,9 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
      * now dead code for do_trunc pending a real double-precision
      * non-checkpointed rewrite (a wanted future item, out of scope here). */
     if(TRUE) {
-      /* brief 167 (tau-ratchet single-pass): the old while(1) loop recomputed the
+      /* brief 26_0430-167 (tau-ratchet single-pass): the old while(1) loop recomputed the
        * WHOLE checkpointed float F/B on every bump (up to ~26 passes). The F/B is
-       * tau/thresh-independent (brief 166 Q3), so the driver runs it ONCE: step 0
+       * tau/thresh-independent (brief 26_0430-166 Q3), so the driver runs it ONCE: step 0
        * via the single-call path (zero overhead for the common 0-bump case), and
        * if that doesn't fit, ONE multi-threshold F/B sweep over the whole ratchet
        * grid + scan-and-pick. Output is byte-identical to the old loop. */
@@ -3768,7 +3768,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
    * per-cell pruning in cp9_FB2HMMBands doesn't suffer the sum-then-threshold
    * accumulation problem, and we want zero changes to the int path here. */
 
-  /* brief 146 (144-B): checkpointed banded CP9 F/B (--p7ibv-ckpt, or CP9_CKPT
+  /* brief 26_0430-146 (144-B): checkpointed banded CP9 F/B (--p7ibv-ckpt, or CP9_CKPT
    * env for debugging). Holds O(sqrt(L)*avg_bw) memory instead of three ncells
    * matrices; bands are byte-identical. Each tau bump recomputes the
    * checkpointed F/B (no cached pmx) — bump count instrumented below. */
@@ -6786,7 +6786,7 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
     /* float path: do_renorm always FALSE. The point of the float DP is that
      * pocc[k] arrives at ~1.0 in glocal mode without the median heuristic. */
     cp9_PredictStartAndEndPositionsP7BF(pmx, cp9b, kmin, kmax, i0, j0);
-    /* brief 149: in glocal alignment the full (J-mode) parse must always be
+    /* brief 26_0430-149: in glocal alignment the full (J-mode) parse must always be
      * geometrically available. The thresh1 escalation in cp9_IterateSeq2BandsP7B
      * can retreat ep1 below clen (and, in principle, push sp1 above 1) on models
      * with a decaying posterior-occupancy tail -- e.g. pure-MATL VADR genome
@@ -6814,21 +6814,21 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   }
 
   if(do_old_hmm2ij) {
-    /* brief 148 (lands brief 082): pass doing_search=FALSE so cp9_HMM2ijBands_OLD applies the
+    /* brief 26_0430-148 (lands brief 26_0430-082): pass doing_search=FALSE so cp9_HMM2ijBands_OLD applies the
      * global-alignment ROOT_S span enforcement (hmmband.c). This float-truncated band path is
      * cmalign-only / do_trunc-only; without the pin the full J-mode parse is geometrically
      * excluded in -g mode -> cm_TrInsideAlignHB returns "no valid parsetree". */
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
   }
   else {
-    /* brief 148 (lands brief 082): doing_search=FALSE (see comment above). */
+    /* brief 26_0430-148 (lands brief 26_0430-082): doing_search=FALSE (see comment above). */
     if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
   if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
-    /* brief 185: brief 149's sp1/ep1 floor (above) forces Jvalid[v] = TRUE for
+    /* brief 26_0430-185: brief 26_0430-149's sp1/ep1 floor (above) forces Jvalid[v] = TRUE for
      * essentially every state so the glocal J-parse stays geometrically available
      * for models with a decaying-but-real occupancy tail (its target case, e.g.
      * NC_001959). It does not widen the real per-state (j,d) bands, computed just
@@ -6839,7 +6839,7 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
      * can walk into and die on (cm_TrInsideAlignHB() "no valid parsetree
      * found"). Veto Jvalid[v] back to FALSE for any state whose real band is
      * empty at every j in its jband, using the hd_min()/hd_max()
-     * recompute-on-demand accessors (brief 157) -- never reintroduce flat
+     * recompute-on-demand accessors (brief 26_0430-157) -- never reintroduce flat
      * hdmin[v][]/hdmax[v][] reads here, they're gone. */
     int v, jp, njp, found;
     for(v = 0; v < cp9b->cm_M; v++) {
@@ -7131,8 +7131,8 @@ p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p
 
   /* Step 4: Pins -> bands */
   if (nodepad != NULL) {
-    /* brief 043: Viterbi-trace path doesn't expose a tunable ramp alpha --
-     * pass brief 042's validated default unconditionally. */
+    /* brief 26_0628-043: Viterbi-trace path doesn't expose a tunable ramp alpha --
+     * pass brief 26_0628-042's validated default unconditionally. */
     if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, 0.75, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
   }
@@ -8307,10 +8307,10 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
 
 /*****************************************************************
- * Brief 016: sqrt(M)-row checkpointed banded F / B / Decoding / OA
+ * Brief 26_0526-016: sqrt(M)-row checkpointed banded F / B / Decoding / OA
  *
  * The banded Forward/Backward matrices (P7_GMXB bxf/bxb) are the
- * dominant per-thread memory term at genome scale (brief 014). This
+ * dominant per-thread memory term at genome scale (brief 26_0526-014). This
  * block reduces that term by sqrt(nrow)-checkpointing the row axis:
  * instead of storing all <nrow> banded rows of the Forward (and OA)
  * matrix, store ~sqrt(nrow) "seed" rows and recompute the inter-seed
@@ -8329,7 +8329,7 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
  * bits. The existing non-checkpointed functions are NOT modified.
  *****************************************************************/
 
-/* Brief 017: the resident posterior <pp> stores only M and I per cell,
+/* Brief 26_0526-017: the resident posterior <pp> stores only M and I per cell,
  * not the full p7G_NSCELLS=3 (M,I,D). pp_D is provably always 0 --
  * p7b_decode_row() set it to 0, the OA fill (p7b_oa_row) reads only
  * ppp[0]=M and ppp[1]=I, and the traceback reads pp only via PP_M/PP_I
@@ -8358,7 +8358,7 @@ p7b_pp_Create(P7_GBANDS *bnd)
   pp->dalloc = 0;
   pp->xalloc = 0;
 
-  ESL_ALLOC(pp->dp,  sizeof(float) * bnd->ncell * P7B_PP_NSCELLS); /* M,I only (brief 017) */
+  ESL_ALLOC(pp->dp,  sizeof(float) * bnd->ncell * P7B_PP_NSCELLS); /* M,I only (brief 26_0526-017) */
   ESL_ALLOC(pp->xmx, sizeof(float) * bnd->nrow  * p7G_NXCELLS);    /* ENJBC (0..4)        */
   pp->dalloc = bnd->ncell;
   pp->xalloc = bnd->nrow;
@@ -8433,7 +8433,7 @@ p7b_geo_Create(const P7_GBANDS *bnd, int M, int L)
       g->kb[r]    = kb;
       g->gap[r]   = i - prev_i - 1;     /* prev_i = 0 before first row */
       g->dpoff[r] = cum;
-      cum        += (int64_t) nc * P7B_PP_NSCELLS;   /* brief 017: dpoff indexes the compact 2-cell pp */
+      cum        += (int64_t) nc * P7B_PP_NSCELLS;   /* brief 26_0526-017: dpoff indexes the compact 2-cell pp */
       if (nc > g->maxnc) g->maxnc = nc;
       prev_i = i;
       r++;
@@ -8758,12 +8758,12 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, float fwdsc,
 
   for (k = kac; k <= kbc; k++) {
     int off  = (k - kac) * p7G_NSCELLS;     /* fdp/bdp: full 3-cell Forward/Backward rows */
-    int poff = (k - kac) * P7B_PP_NSCELLS;  /* brief 017: pp is compact 2-cell (M,I)      */
+    int poff = (k - kac) * P7B_PP_NSCELLS;  /* brief 26_0526-017: pp is compact 2-cell (M,I)      */
     pdp[poff] = expf(fdp[off] + bdp[off] - fwdsc);          /* M */
     denom += pdp[poff];
     if (k < M) { pdp[poff+1] = expf(fdp[off+1] + bdp[off+1] - fwdsc); denom += pdp[poff+1]; }  /* I */
     else         pdp[poff+1] = 0.0f;
-    /* pp_D dropped (brief 017): was always 0 and never read downstream */
+    /* pp_D dropped (brief 26_0526-017): was always 0 and never read downstream */
   }
 
   pxp[p7G_E] = 0.0f;
@@ -8884,7 +8884,7 @@ p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
 }
 
 /* Function: p7_GCheckptFBDecode_Banded()
- * Incept:   Brief 016
+ * Incept:   Brief 26_0526-016
  *
  * Purpose:  sqrt(nrow)-row checkpointed banded Forward + Backward +
  *           posterior decoding. Drop-in replacement for the
@@ -8989,7 +8989,7 @@ p7b_oa_row(const P7_PROFILE *gm, int M, float esc,
       *dpc++ = dc;
       dc = ESL_MAX(P7B_TSCDELTA(p7P_MD, k) * sc, P7B_TSCDELTA(p7P_DD, k) * dc);
 
-      ppp += P7B_PP_NSCELLS;   /* brief 017: pp is compact 2-cell (M,I) */
+      ppp += P7B_PP_NSCELLS;   /* brief 26_0526-017: pp is compact 2-cell (M,I) */
     }
 
   if (kbc2 < kbc) /* kbc==M unrolled */
@@ -9002,7 +9002,7 @@ p7b_oa_row(const P7_PROFILE *gm, int M, float esc,
       *dpc++ = -eslINFINITY;
       *dpc++ = dc;
       xE = ESL_MAX(xE, ESL_MAX(sc, dc));
-      ppp += P7B_PP_NSCELLS;   /* brief 017: pp is compact 2-cell (M,I) */
+      ppp += P7B_PP_NSCELLS;   /* brief 26_0526-017: pp is compact 2-cell (M,I) */
     }
 
   *o_xE = xE;
@@ -9187,7 +9187,7 @@ p7b_pp_dp(const P7B_GEO *g, const int *row_idx, const P7_GMXB *pp, int p, int k,
   r = row_idx[p];
   if (r < 0) return -eslINFINITY;
   if (k < g->ka[r] || k > g->kb[r]) return -eslINFINITY;
-  return pp->dp[ g->dpoff[r] + (int64_t)(k - g->ka[r]) * P7B_PP_NSCELLS + cell ];  /* brief 017: 2-cell pp; cell in {p7G_M=0, p7G_I=1} */
+  return pp->dp[ g->dpoff[r] + (int64_t)(k - g->ka[r]) * P7B_PP_NSCELLS + cell ];  /* brief 26_0526-017: 2-cell pp; cell in {p7G_M=0, p7G_I=1} */
 }
 
 static float
@@ -9390,7 +9390,7 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
 #undef P7B_TSCDELTA
 
 /* Function: p7_GCheckptOA_Banded()
- * Incept:   Brief 016
+ * Incept:   Brief 26_0526-016
  *
  * Purpose:  sqrt(nrow)-row checkpointed banded optimal-accuracy alignment.
  *           Drop-in replacement for the
@@ -10081,7 +10081,7 @@ cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile
 /* Pin: a (k,i) anchor with priority r (SW score in v5).
  * r widened to int16_t 2026-05-29 (brief-079 S7 pinbridge prototype)
  * to support 16-bit SSE SW scan without saturation at L<200.
- * r widened again to int32_t 2026-06-01 (brief 094) for the 32-bit SSE SW
+ * r widened again to int32_t 2026-06-01 (brief 26_0430-094) for the 32-bit SSE SW
  * scan: self-alignment-scale path scores exceed the int16 range (~1e7 at
  * dengue scale), which is exactly the saturation the 32-bit kernel removes.
  * Existing consumers cast r to int already, so the widening is transparent. */
@@ -10499,7 +10499,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
 
 
 /*****************************************************************
- * Brief 094 component knobs: env-gated defaults.
+ * Brief 26_0430-094 component knobs: env-gated defaults.
  *
  * Each of the three brief-094 mechanisms is gated behind an env var so it
  * can be A/B'd independently against the brief-091 baseline. The env var (if
@@ -10524,7 +10524,7 @@ p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P
  * WIDER bands (rmark4e summed CM matrix 4.1 -> 5.0 GB, LSU 847 -> 1804 MB),
  * with a small accuracy cost (rmark4e 0.99242 -> 0.99124, rmark4h 0.97887 ->
  * 0.97688). So the mechanisms are gated ON only for M >= PB_M32_MIN, which
- * keeps the small-M path byte-identical to brief 091 while capturing the
+ * keeps the small-M path byte-identical to brief 26_0430-091 while capturing the
  * large-M win. An explicitly-set env var overrides the gate at any M (for
  * A/B and power users). The 2900..10735 crossover is uncalibrated; 8000 is a
  * conservative default that cleanly separates Rfam-scale from viral-genome
@@ -10551,7 +10551,7 @@ pb_gate(const char *name, int compiled_default, int m_ok)
 }
 
 /*****************************************************************
- * CM_PB_OM32: Infernal-side 32-bit striped emission table (brief 094).
+ * CM_PB_OM32: Infernal-side 32-bit striped emission table (brief 26_0430-094).
  *
  * Mirrors the allocation/striping layout of HMMER's P7_OPROFILE->rwv
  * (impl_sse/p7_oprofile.c) but with int32 lanes (p7O_NQF = 4 lanes/vector)
@@ -10753,7 +10753,7 @@ pb_sw_scan_collect_pins(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int T,
 }
 
 /*****************************************************************
- * Runtime pin-emission mode selector (brief 101, 2026-06-02)
+ * Runtime pin-emission mode selector (brief 26_0430-101, 2026-06-02)
  *
  * PB_PIN_EMIT_MODE=trail (default): emit at trailing edge (i-1, k)
  *   when segment resets — production behavior from pinbridge-32bit.
@@ -10786,7 +10786,7 @@ static int pb_get_flush_enabled(void)
 }
 
 /*****************************************************************
- * 16-bit SSE SW scan (prototype 2026-05-29, brief 079 S7 follow-up)
+ * 16-bit SSE SW scan (prototype 2026-05-29, brief 26_0430-079 S7 follow-up)
  *
  * The 8-bit version above saturates at +127 for L<200 on conserved
  * targets like RF00010, destroying LSIS's chain-discrimination
@@ -10830,7 +10830,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
 
   __m128i zero = _mm_setzero_si128();
 
-  /* Brief 104 diagnostic: dump the full SW accumulator matrix curr[i][k].
+  /* Brief 26_0430-104 diagnostic: dump the full SW accumulator matrix curr[i][k].
    * PB_DUMP_SW_MX=<path> writes one TSV line per (i,k) cell: i  k  curr.
    * Dumped after the DP update for row i, before pin emission.
    * Use --cpu 1 so concurrent threads don't interleave lines.
@@ -10859,7 +10859,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
       curr[q] = newval;
     }
 
-    /* Brief 104 diagnostic: dump row i of the SW accumulator (curr[]),
+    /* Brief 26_0430-104 diagnostic: dump row i of the SW accumulator (curr[]),
      * unstriped to per-k order. */
     if (sw_dump_fp != NULL) {
       union { __m128i v; int16_t b[8]; } u_dump;
@@ -10996,7 +10996,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
 
   free(prev); free(curr); free(peak); free(peak_i); free(peak_prev); free(peak_i_prev);
 
-  if (sw_dump_fp != NULL) fclose(sw_dump_fp);   /* brief 104 SW matrix dump */
+  if (sw_dump_fp != NULL) fclose(sw_dump_fp);   /* brief 26_0430-104 SW matrix dump */
 
   *ret_pins  = pins;
   *ret_npins = npins;
@@ -11004,7 +11004,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
 }
 
 /*****************************************************************
- * 32-bit SSE SW scan (brief 094, 2026-06-01)
+ * 32-bit SSE SW scan (brief 26_0430-094, 2026-06-01)
  *
  * The 16-bit version above saturates the SW *accumulation* at +32767 on
  * highly-conserved / self-alignment-scale targets (e.g. dengue self-align,
@@ -11197,7 +11197,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
 }
 
 /*****************************************************************
- * Gap-aware LSIS gap costs (brief 089, 2026-05-29)
+ * Gap-aware LSIS gap costs (brief 26_0430-089, 2026-05-29)
  *
  * Plain score-sum LSIS chains pins to maximize the sum of SW pin
  * scores, ignoring the indel cost implied by the jump between two
@@ -11214,7 +11214,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
  * roundf(om->scale_w * sc) where sc is a nat-valued log-odds score
  * (p7P_MSC). The correct nats->pinbridge factor is therefore
  * om->scale_w itself (scale_w = 500/log2 already folds in the
- * nats->bits conversion). [Brief 089 suggested scale_w/log2; that
+ * nats->bits conversion). [Brief 26_0430-089 suggested scale_w/log2; that
  * double-counts the log2 and was corrected here, verified against
  * hmmer impl_sse/p7_oprofile.c wordify().]
  *
@@ -11223,7 +11223,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
  *****************************************************************/
 #define PB_GAP_UNIT_CAP 60000   /* max PB units for one transition penalty */
 
-/* Brief 091: cap the number of pins handed to the O(N^2) gap-aware LSIS.
+/* Brief 26_0430-091: cap the number of pins handed to the O(N^2) gap-aware LSIS.
  * Pins above the cap are pruned in score-descending order before LSIS.
  * 250 was selected from a K-sweep on LSU full (M=3400) + RF00010-frags +
  * SSU full / frags200: identical accuracy on RF00010-frags and on the 6
@@ -11366,7 +11366,7 @@ pb_gap_cost_closed_form(int i_p, int k_p, int i_q, int k_q, const PB_GapData *gd
   }
 }
 
-/* Mini-Viterbi gap cost (Option 3, brief 089, flag-gated). Exact banded
+/* Mini-Viterbi gap cost (Option 3, brief 26_0430-089, flag-gated). Exact banded
  * p7 Viterbi over the rectangle [i_p,k_p]..[i_q,k_q]: the best-scoring
  * M/I/D path from pin p's match to pin q's match, scoring intermediate
  * transitions (gm->tsc) and emissions (gm->rsc, gm->isc) in nats, then
@@ -11468,7 +11468,7 @@ static int pb_pin_cmp_lsis(const void *a, const void *b)
   return pb->k - pa->k;
 }
 
-/* (k asc, i asc) order for the limited-window LSIS (brief 094). A valid chain
+/* (k asc, i asc) order for the limited-window LSIS (brief 26_0430-094). A valid chain
  * edge q->p requires k_q < k_p, so with k ascending every predecessor is
  * processed before p, and predecessors within a model-position window of p
  * form a contiguous block ending just before p -- enabling an early break. */
@@ -11491,7 +11491,7 @@ static int pb_pin_cmp_r_desc(const void *a, const void *b)
   return pa->k - pb->k;
 }
 
-/* Attack 1 from brief 091: cap pin count at K by keeping top-K by score r.
+/* Attack 1 from brief 26_0430-091: cap pin count at K by keeping top-K by score r.
  * In-place: reorders <pins> and returns the new count via <ret_n_out>.
  * If K <= 0 or npins <= K, no-op.
  * O(N log N) (qsort); negligible vs. the O(N^2) LSIS it feeds. */
@@ -11505,7 +11505,7 @@ pb_prune_pins_topk(PB_Pin *pins, int npins, int K, int *ret_n_out)
 }
 
 /* Legacy gap-blind LSIS (Fenwick prefix-max). Retained for comparison
- * and as a fallback; superseded by pb_lsis_select_gap_aware (brief 089). */
+ * and as a fallback; superseded by pb_lsis_select_gap_aware (brief 26_0430-089). */
 static int
 pb_lsis_select_legacy(PB_Pin *pins_in, int npins_in, int M,
                PB_Pin **ret_sel, int *ret_n_sel)
@@ -11561,7 +11561,7 @@ pb_lsis_select_legacy(PB_Pin *pins_in, int npins_in, int M,
   return eslOK;
 }
 
-/* Gap-aware LSIS (brief 089, Option 2). O(N^2) DP that prices the indel
+/* Gap-aware LSIS (brief 26_0430-089, Option 2). O(N^2) DP that prices the indel
  * cost of each pin->pin jump via pb_gap_cost_closed_form(), so the
  * objective is sum(pin r) - sum(gap cost) rather than sum(pin r) alone.
  * This stops LSIS from splicing pins across incompatible diagonals over
@@ -11572,7 +11572,7 @@ pb_lsis_select_legacy(PB_Pin *pins_in, int npins_in, int M,
  * gap cost is the exact mini-Viterbi over the gap rectangle instead of
  * the closed-form estimate; gm/dsq are then required (NULL otherwise).
  *
- * Brief 094: when lsis_window > 0 the DP only considers predecessors within
+ * Brief 26_0430-094: when lsis_window > 0 the DP only considers predecessors within
  * <lsis_window> model positions of each pin, turning the O(N^2) inner loop
  * into O(N * window). This requires the (k asc, i asc) ordering so the
  * window is a contiguous, early-breakable block. When lsis_window <= 0 the
@@ -11607,7 +11607,7 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
   long n_gapcost = 0;   /* # of gap costs evaluated (PB_DEBUG_LSIS) */
   int best_dp = INT_MIN, best_idx = -1;
   if (lsis_window <= 0) {
-    /* Legacy full O(N^2) DP (brief 091), ascending q -> byte-identical. */
+    /* Legacy full O(N^2) DP (brief 26_0430-091), ascending q -> byte-identical. */
     for (int p = 0; p < npins_in; p++) {
       dp[p]     = (int) pins[p].r;   /* chain starting fresh at this pin */
       parent[p] = -1;
@@ -11630,7 +11630,7 @@ pb_lsis_select_gap_aware(PB_Pin *pins_in, int npins_in, int M,
       if (dp[p] > best_dp) { best_dp = dp[p]; best_idx = p; }
     }
   } else {
-    /* Limited-window DP (brief 094): (k asc, i asc) sort; scan predecessors
+    /* Limited-window DP (brief 26_0430-094): (k asc, i asc) sort; scan predecessors
      * backward and break once the model-position gap exceeds the window. */
     for (int p = 0; p < npins_in; p++) {
       dp[p]     = (int) pins[p].r;
@@ -11795,7 +11795,7 @@ p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
 }
 
 
-/* pb_load_pins_from_tsv(): Load a pin set from a TSV file (brief 106 PB_LOAD_PINS hook).
+/* pb_load_pins_from_tsv(): Load a pin set from a TSV file (brief 26_0430-106 PB_LOAD_PINS hook).
  * Format: whitespace-separated "i k r" per line; lines starting with '#' are skipped;
  * lines that don't parse as three integers (e.g. headers) are skipped silently.
  * Validates 1 <= i <= L and 1 <= k <= M; aborts with eslFAIL on out-of-bound pins.
@@ -11863,7 +11863,7 @@ pb_load_pins_from_tsv(const char *path, int M, int L, PB_Pin **ret_pins, int *re
  * Args:
  *   gm        - profile (configured GLOCAL or LOCAL by caller)
  *   om        - optimized profile (for SSE rbv match scores, LOCAL config)
- *   om32      - 32-bit emission table for the 32-bit SW scan (brief 094);
+ *   om32      - 32-bit emission table for the 32-bit SW scan (brief 26_0430-094);
  *               may be NULL (then the 16-bit scan is always used)
  *   gxb       - banded Viterbi DP matrix scratch (will be Reinit'd to bnd)
  *   bnd       - GBANDS scratch (will be reused)
@@ -11901,7 +11901,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   struct timespec ta, tb;
   double    sw_ms = 0, lsis_ms = 0, band_ms = 0, bvit_ms = 0, btrace_ms = 0;
 
-  /* Brief 094 component gates: ON by default only for M >= PB_M32_MIN (the
+  /* Brief 26_0430-094 component gates: ON by default only for M >= PB_M32_MIN (the
    * regime where 16-bit saturation blows up the band); an explicitly-set env
    * var overrides the M-gate at any M. */
   int       large_m     = (M >= pb_env_int("PB_M32_MIN", PB_M32_MIN_DEFAULT));
@@ -11912,9 +11912,9 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
    * scale_i == scale_w by construction, so T_i32 == T_w. */
   int       T_i32       = (om32 != NULL) ? (int)( (float)T_w * (om32->scale_i / om->scale_w) ) : T_w;
 
-  /* Step 1: SW scan -> raw pins. 32-bit (brief 094) eliminates the 16-bit
+  /* Step 1: SW scan -> raw pins. 32-bit (brief 26_0430-094) eliminates the 16-bit
    * accumulation saturation on conserved/self-align inputs; the legacy
-   * 16-bit SSE scan (brief 079 S7) is kept as the gate-off fallback. */
+   * 16-bit SSE scan (brief 26_0430-079 S7) is kept as the gate-off fallback. */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if (use_32bit) {
     if ((status = pb_sw_scan_collect_pins_i32(dsq, L, om32, T_i32, &raw_pins, &npins)) != eslOK) goto ERROR;
@@ -11924,7 +11924,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   clock_gettime(CLOCK_MONOTONIC, &tb);
   sw_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* PB_DUMP_PINS diagnostic (brief 099/101): append one TSV line per raw pin */
+  /* PB_DUMP_PINS diagnostic (brief 26_0430-099/101): append one TSV line per raw pin */
   {
     const char *dump_path = getenv("PB_DUMP_PINS");
     if (dump_path != NULL) {
@@ -11944,7 +11944,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
     }
   }
 
-  /* PB_LOAD_PINS hook (brief 106): replace SW kernel output with an offline-generated
+  /* PB_LOAD_PINS hook (brief 26_0430-106): replace SW kernel output with an offline-generated
    * pin set (TSV with "i k r" columns) so all downstream steps (LSIS, band-build,
    * CP9 F/B, CM DP) are identical across trail/peak/greedy variants. */
   {
@@ -11956,9 +11956,9 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
     }
   }
 
-  /* Step 1.5 (brief 091, Attack 1): Top-K pruning to cap LSIS input size.
+  /* Step 1.5 (brief 26_0430-091, Attack 1): Top-K pruning to cap LSIS input size.
    * Default K = PB_DEFAULT_TOPK; PB_TOPK env var overrides (0 = off).
-   * Brief 094: when PB_K_ADAPTIVE is on, K floors at PB_DEFAULT_TOPK and
+   * Brief 26_0430-094: when PB_K_ADAPTIVE is on, K floors at PB_DEFAULT_TOPK and
    * scales as L/(2*pad) (the band floor reached when K >= L/(2*pad)), so
    * large inputs get enough pins to span the full sequence rather than
    * concentrating in a tie-break window. PB_TOPK still overrides everything.
@@ -11973,9 +11973,9 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
     if (K > 0) (void) pb_prune_pins_topk(raw_pins, npins, K, &npins_lsis_in);
   }
 
-  /* Step 2: gap-aware LSIS pin selection (brief 089, Option 2).
+  /* Step 2: gap-aware LSIS pin selection (brief 26_0430-089, Option 2).
    * Precompute model-aware gap-cost tables once, then run the DP (full
-   * O(N^2), or O(N*window) when lsis_window > 0, brief 094). */
+   * O(N^2), or O(N*window) when lsis_window > 0, brief 26_0430-094). */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if ((status = pb_precompute_gap_data(gm, om, &gd)) != eslOK) goto ERROR;
   gd_ok = 1;
@@ -11985,13 +11985,13 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   clock_gettime(CLOCK_MONOTONIC, &tb);
   lsis_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* Per-seq pin-count diagnostic (brief 091).
+  /* Per-seq pin-count diagnostic (brief 26_0430-091).
    * npins_raw = pins from SW scan; npins_lsis_in = pins handed to LSIS (after
    * any pruning); nsel = chain length selected by LSIS. */
   fprintf(stderr, "#PB_NPINS M=%d L=%d npins_raw=%d npins_lsis_in=%d nsel=%d\n",
           M, L, npins, npins_lsis_in, nsel);
   fflush(stderr);
-  /* Brief 104 diagnostic: dump LSIS-selected pins to file.
+  /* Brief 26_0430-104 diagnostic: dump LSIS-selected pins to file.
    * PB_DUMP_LSIS_PINS=<path> writes TSV with header pin_order, i, k, r.
    * DIAGNOSTIC-ONLY: no effect on band building. */
   {
@@ -12010,7 +12010,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   }
 
   /* Optional: dump LSIS-selected chain when PB_DEBUG_LSIS is set in env.
-   * Used for gap-aware LSIS validation (brief 089). */
+   * Used for gap-aware LSIS validation (brief 26_0430-089). */
   if (getenv("PB_DEBUG_LSIS") != NULL) {
     int _dbg_p;
     long long _dbg_sum = 0;
@@ -12058,7 +12058,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
   clock_gettime(CLOCK_MONOTONIC, &tb);
   band_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* Band-size diagnostic (brief 094 validation; env-gated, uncommitted). */
+  /* Band-size diagnostic (brief 26_0430-094 validation; env-gated, uncommitted). */
   if (getenv("PB_BANDVIT_INPUT") != NULL)
     fprintf(stderr, "#PB_BANDVIT_INPUT L=%d M=%d bnd_nrow=%d bnd_ncell=%lld bnd_nseg=%d\n",
             L, M, bnd->nrow, (long long)bnd->ncell, bnd->nseg);
@@ -12117,7 +12117,7 @@ p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P
 
 /* cm_p7_om_holder_Init() / cm_p7_om_holder_Reset():
  * Lifecycle helpers for the reusable LOCAL p7 profile + OPROFILE used by
- * the --p7pinbridge SW scan (brief 090). Init zeroes the holder; the
+ * the --p7pinbridge SW scan (brief 26_0430-090). Init zeroes the holder; the
  * profile/OPROFILE are built lazily on the first pinbridge sequence inside
  * p7_Seq2BandsPinBridgeWrap(). Reset frees the built objects (no-op if never
  * built). One holder per worker thread; never share across threads.
@@ -12179,7 +12179,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   int          tpos;
   P7_PROFILE  *gm_local = NULL;
   P7_OPROFILE *om       = NULL;
-  CM_PB_OM32  *om32     = NULL;   /* 32-bit emission table for the 32-bit SW scan (brief 094) */
+  CM_PB_OM32  *om32     = NULL;   /* 32-bit emission table for the 32-bit SW scan (brief 26_0430-094) */
   int          own_om   = FALSE; /* TRUE if we built gm_local/om/om32 locally (no holder) */
   P7_GMXB     *gxb      = NULL;
   P7_GBANDS   *bnd      = NULL;
@@ -12191,7 +12191,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
   if (cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsPinBridgeWrap: cm->fp7 is NULL");
 
-  /* PB_LOAD_BAND hook (brief 117): replace the entire SW+LSIS+pb_build_band
+  /* PB_LOAD_BAND hook (brief 26_0430-117): replace the entire SW+LSIS+pb_build_band
    * pin-extraction pipeline with an offline-generated per-row band loaded
    * from a TSV file. Format: "i kmin kmax" per line, lines starting with
    * '#' are skipped. Rows i=1..L must be present; missing rows default to
@@ -12254,7 +12254,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
       if (om_holder->om == NULL) ESL_XFAIL(eslEMEM, errbuf, "p7_oprofile_Create failed");
       if ((status = p7_oprofile_Convert(om_holder->gm_local, om_holder->om)) != eslOK)
         ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
-      /* 32-bit emission table (brief 094): L-independent (emission scores
+      /* 32-bit emission table (brief 26_0430-094): L-independent (emission scores
        * only), so built once and reused across the block with no per-seq
        * reconfig. Built from the same LOCAL profile as om. */
       if ((status = cm_pb_om32_Create(M, cm->fp7->abc, &om_holder->om32)) != eslOK)
@@ -12285,7 +12285,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
       ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
     if ((status = p7_oprofile_ReconfigLength(om, L)) != eslOK)
       ESL_XFAIL(status, errbuf, "p7_oprofile_ReconfigLength failed");
-    /* 32-bit emission table (brief 094); freed with om/gm_local below. */
+    /* 32-bit emission table (brief 26_0430-094); freed with om/gm_local below. */
     if ((status = cm_pb_om32_Create(M, cm->fp7->abc, &om32)) != eslOK)
       ESL_XFAIL(status, errbuf, "cm_pb_om32_Create failed");
     if ((status = cm_pb_om32_Build(gm_local, om32)) != eslOK)
@@ -12321,7 +12321,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
     return eslOK;
   }
 
-  /* PB_DUMP_P7VIT_TRACE diagnostic (brief 103): dump the banded p7 Viterbi
+  /* PB_DUMP_P7VIT_TRACE diagnostic (brief 26_0430-103): dump the banded p7 Viterbi
    * trace (from p7_Seq2BandsPinBridge's banded traceback) to a TSV file.
    * Columns: tpos  state  i  k  residue_i (y/-) */
   { const char *_vit_path = getenv("PB_DUMP_P7VIT_TRACE");
@@ -12380,8 +12380,8 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   /* Step 4: pins -> bands (identical to p7_Seq2BandsVit) */
   clock_gettime(CLOCK_MONOTONIC, &ta);
   if (nodepad != NULL) {
-    /* brief 043: pinbridge path doesn't expose a tunable ramp alpha -- pass
-     * brief 042's validated default unconditionally. */
+    /* brief 26_0628-043: pinbridge path doesn't expose a tunable ramp alpha -- pass
+     * brief 26_0628-042's validated default unconditionally. */
     if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, 0.75, &kmin, &kmax, &ncells)) != eslOK)
       goto ERROR;
   } else {
@@ -12391,7 +12391,7 @@ p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   clock_gettime(CLOCK_MONOTONIC, &tb);
   pins2bands_ms = (tb.tv_sec - ta.tv_sec)*1000.0 + (tb.tv_nsec - ta.tv_nsec)/1e6;
 
-  /* PB_DUMP_BAND diagnostic (brief 103): dump final kmin/kmax band to file.
+  /* PB_DUMP_BAND diagnostic (brief 26_0430-103): dump final kmin/kmax band to file.
    * Env var PB_DUMP_BAND = path to output TSV. Columns: i, kmin[i], kmax[i].
    * This is the band returned to the caller (used for CP9 F/B posterior).
    * Appends to the file (so multiple sequences accumulate; use PB_DUMP_TAG

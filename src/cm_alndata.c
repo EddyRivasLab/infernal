@@ -209,7 +209,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   int           cp9b_valid;      /* passed to DispatchSqAlignment() */
   CM_P7_OM_HOLDER om_holder;     /* reusable LOCAL p7 profile/OPROFILE for the
 				  * --p7pinbridge SW scan, built once and reused
-				  * across this block (brief 090). Safe because
+				  * across this block (brief 26_0430-090). Safe because
 				  * this call owns the whole block. */
 
   ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, sq_block->count)); // avoid 0 malloc
@@ -282,7 +282,7 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *           w_tot      - stopwatch for timing total time per seq, can be NULL
  *           r          - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
  *           om_holder  - reusable LOCAL p7 profile/OPROFILE holder for the
- *                        --p7pinbridge SW scan (brief 090); built once per
+ *                        --p7pinbridge SW scan (brief 26_0430-090); built once per
  *                        worker/block and reused across sequences. Can be NULL
  *                        (then the pinbridge wrapper builds/frees its own per
  *                        call). MUST be per-thread (not shared across threads).
@@ -329,7 +329,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int do_p7band    = (cm->align_opts & CM_ALIGN_P7BANDED)  ? TRUE  : FALSE;
   int doing_search = FALSE;
-  /* Brief 120: IBV HMM-divergence fallback. Set when cm_TrAlignHB / cm_AlignHB
+  /* Brief 26_0430-120: IBV HMM-divergence fallback. Set when cm_TrAlignHB / cm_AlignHB
    * fails on IBV-derived bands and we've already rebuilt with vitband for
    * this sequence; prevents infinite retry.
    */
@@ -426,11 +426,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	/* TODO #9 mitigation: --p7band produces too-narrow k-envelopes for small-M
 	 * models (M < ~200), causing accuracy regression on rmark4e (Lacto-usp, atoC,
 	 * snoZ152, ar45, SNORA47). Fall back to unbanded CP9 F/B for small CMs; the
-	 * absolute wall savings from --p7band on tiny CMs is negligible. See brief 059. */
-#define P7BAND_MIN_M 0   /* was 200; gate was introduced in brief 062 (session 19) for
+	 * absolute wall savings from --p7band on tiny CMs is negligible. See brief 26_0430-059. */
+#define P7BAND_MIN_M 0   /* was 200; gate was introduced in brief 26_0430-062 (session 19) for
                             the pinbridge-era band-derivation path. The current F+B IBV
-                            (briefs 116-126) is a different algorithm; gate removed per
-                            brief 141. */
+                            (briefs 26_0430-116-126) is a different algorithm; gate removed per
+                            brief 26_0430-141. */
 	if(do_p7band && cm->fp7 != NULL && cm->fp7->M < P7BAND_MIN_M) {
 	  fprintf(stderr, "#P7BAND_SKIP M=%d reason=small_M_acc_gap (threshold=%d)\n",
 		  cm->fp7->M, P7BAND_MIN_M);
@@ -463,7 +463,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    p7_ProfileConfig(cm->fp7, bg_p7b, gm_p7b, sq->L, p7_GLOCAL);
 	  }
 	  /* gx_p7b (full O(M*L) p7 matrix) is allocated lazily only where the
-	   * unbanded p7_Seq2BandsVit path actually needs it (brief 094). The
+	   * unbanded p7_Seq2BandsVit path actually needs it (brief 26_0430-094). The
 	   * --p7pinbridge success path never touches it, so we avoid the eager
 	   * full-matrix alloc that (a) defeats pinbridge's large-M memory win and
 	   * (b) overflows int32 in p7_gmx_Create at M=L ~ 1.5e5 (e.g. HSV). */
@@ -493,16 +493,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  clock_gettime(CLOCK_MONOTONIC, &_ta_p7b);
 	  if (cm->p7_use_ibv) {
 	    _p7b_kind = "p7ibv";
-	    /* F+B direct-band band derivation (brief 120). Does NOT take gm/gx
+	    /* F+B direct-band band derivation (brief 26_0430-120). Does NOT take gm/gx
 	     * because it extracts transitions directly from cm->fp7. We still
 	     * built gm/gx above for the vitband fallback path.
 	     *
-	     * brief 124: with --p7ibv-mem, dispatch to the divide-and-conquer
+	     * brief 26_0430-124: with --p7ibv-mem, dispatch to the divide-and-conquer
 	     * O(M*logL) band deriver, byte-identical to the flat path but with
 	     * dramatically lower peak memory at large M/L.
 	     */
 	    if (cm->p7_ibv_wv) {
-	      /* Brief 169: windowed-Viterbi band = MAP-trace i2k +/- F+B-halfwidth
+	      /* Brief 26_0430-169: windowed-Viterbi band = MAP-trace i2k +/- F+B-halfwidth
 	       * pad (cm->p7_wv_nodepad, calibrated once at align-time setup). */
 	      _p7b_kind = "p7ibv-wv";
 	      int *wv_nodepad = NULL;
@@ -512,7 +512,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      ESL_ALLOC(wv_nodepad, sizeof(int) * (cm->fp7->M + 1));
 	      for (wk = 0; wk <= cm->fp7->M; wk++) wv_nodepad[wk] = cm->p7_wv_nodepad[wk] + cm->p7bpad;
 	      status = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, wv_nodepad,
-				      do_trunc, /* brief 171 */
+				      do_trunc, /* brief 26_0430-171 */
 				      &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	      free(wv_nodepad);
 	    } else if (cm->p7_ibv_mem) {
@@ -520,27 +520,27 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
 					   TRUE, /* do_boundary_widen: CM-side preserves current behavior */
-					   FALSE, /* brief 172: do_kband (unbanded; --p7ibv-mem keeps exact delta band) */
-					   do_trunc, /* brief 171 */
-					   cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
+					   FALSE, /* brief 26_0430-172: do_kband (unbanded; --p7ibv-mem keeps exact delta band) */
+					   do_trunc, /* brief 26_0430-171 */
+					   cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 26_0430-140 */
 					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    } else {
 	      status = p7_Seq2BandsIBV(cm, errbuf, sq->dsq, sq->L,
-				       cm->p7_ibv_delta, do_trunc, /* brief 171 */
-				       cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
+				       cm->p7_ibv_delta, do_trunc, /* brief 26_0430-171 */
+				       cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 26_0430-140 */
 				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
 	    /* No internal ncells==0 fallback here: IBV always produces a band.
 	     * Empty rows default to [1, M] inside the kernel.
 	     */
 	  } else if (cm->p7_use_kmeranchor) {
-	    /* Brief 026: k-mer best-window anchor. Blind diagonal-dominance guide
+	    /* Brief 26_0628-026: k-mer best-window anchor. Blind diagonal-dominance guide
 	     * deriver feeding the unmodified p7_pins2bands_nodepad. Opt-in. */
 	    _p7b_kind = "kmeranchor";
 	    status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->L, local_nodepad,
-	                                    do_trunc, /* brief 033 */
+	                                    do_trunc, /* brief 26_0628-033 */
 	                                    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	    /* ncells==0 => M-gate/N-gate fired, or no usable anchor. Brief 047:
+	    /* ncells==0 => M-gate/N-gate fired, or no usable anchor. Brief 26_0628-047:
 	     * default fallback is now --p7ibv's D&C deriver (this file's own
 	     * --p7ibv-mem branch above, same defaults/params), instead of a
 	     * Vit-trace band; --p7kmerchain-fbvit reverts to the old
@@ -572,14 +572,14 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      }
 	    }
 	  } else if (cm->p7_use_kmerchain) {
-	    /* Brief 027: genome-scale k-mer seed-and-chain. Collect all seeds
+	    /* Brief 26_0628-027: genome-scale k-mer seed-and-chain. Collect all seeds
 	     * genome-wide, chain by global colinearity, emit multi-segment pins
 	     * into the unmodified p7_pins2bands_nodepad. Opt-in. */
 	    _p7b_kind = "kmerchain";
 	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
-	                                   do_trunc, /* brief 033 */
+	                                   do_trunc, /* brief 26_0628-033 */
 	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 047:
+	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 26_0628-047:
 	     * default fallback is --p7ibv's D&C deriver, same as the kmeranchor
 	     * ncells==0 fallback above; --p7kmerchain-fbvit reverts to
 	     * the old p7_Seq2BandsVit fallback. */
@@ -638,7 +638,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	                    (_tb_p7b.tv_nsec - _ta_p7b.tv_nsec) / 1e9;
 	    fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f ncells=%d ibvmode=%d ibvwidth=%d ibvdelta=%d\n",
 	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s,
-	            p7_ncells, cm->p7_ibv_mode, cm->p7_ibv_width, cm->p7_ibv_delta); /* brief 140: ncells = band-size discriminator */
+	            p7_ncells, cm->p7_ibv_mode, cm->p7_ibv_width, cm->p7_ibv_delta); /* brief 26_0430-140: ncells = band-size discriminator */
 	  }
 
 	  /* Debug: report Viterbi band stats */
@@ -836,7 +836,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
 	CM_ALIGN_HB_RETRY:
 	  if(do_trunc) {
-		/* brief 126 merge: keep cd577024's #DBG-009 instrumentation, but route
+		/* brief 26_0430-126 merge: keep cd577024's #DBG-009 instrumentation, but route
 		 * SizeNeededHB failure to CM_ALIGN_HB_CHECK_FB (IBV vitband fallback)
 		 * instead of directly to ERROR, so the brief-120 IBV fallback stays live
 		 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR. */
@@ -881,9 +881,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	}
       }
     CM_ALIGN_HB_CHECK_FB:
-      /* Brief 120 IBV HMM-divergence fallback: cm_TrInsideAlignHB returns
+      /* Brief 26_0430-120 IBV HMM-divergence fallback: cm_TrInsideAlignHB returns
        * eslEAMBIGUOUS "no valid parsetree found" on the 3/14 brief-117 seqs
-       * where HMM-Viterbi disagrees with the CM's preferred parse (brief 117
+       * where HMM-Viterbi disagrees with the CM's preferred parse (brief 26_0430-117
        * §5). Re-derive bands using the unbanded p7_Seq2BandsVit path (PAD=20
        * around the p7-Viterbi trace) and retry the CM alignment once.
        */

@@ -1,4 +1,4 @@
-/* test_wviterbi.c -- brief 169 windowed-Viterbi band harness.
+/* test_wviterbi.c -- brief 26_0430-169 windowed-Viterbi band harness.
  *
  * The brief-169 windowed-Viterbi band is, by construction:
  *     band = (Viterbi MAP trace i2k)  +/- (per-node pad nodepad[k])
@@ -147,8 +147,8 @@ main(int argc, char **argv)
       /* (2) build the WV band from i2k + nodepad (i2k is pruned in place; copy) */
       ESL_ALLOC(i2k_wv, sizeof(int) * (L + 1));
       memcpy(i2k_wv, i2k, sizeof(int) * (L + 1));
-      /* brief 043: test harness doesn't expose a tunable ramp alpha -- pass
-       * brief 042's validated default unconditionally. */
+      /* brief 26_0628-043: test harness doesn't expose a tunable ramp alpha -- pass
+       * brief 26_0628-042's validated default unconditionally. */
       if ((status = p7_pins2bands_nodepad(i2k_wv, errbuf, L, M, nodepad, 0, 0.75,
                                           &kmin, &kmax, &nc)) != eslOK)
         p7_Fail("p7_pins2bands_nodepad failed on %s: %s", sq->name, errbuf);

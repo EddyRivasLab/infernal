@@ -58,16 +58,16 @@
 #define DEBUGSERIAL 0
 #define DEBUGMPI    0
 
-/* Brief 017 (Part A): scale-aware default for the IBV D&C base-case slab
+/* Brief 26_0526-017 (Part A): scale-aware default for the IBV D&C base-case slab
  * on the --hmm --p7ibv path. When the user has NOT set --p7ibv-base-slab,
  * the deriver otherwise picks the adaptive 256 MB-capped slab, which is
- * far above the memory knee at common scale (brief 015: base_slab 1024 for
- * norovirus, 372 for sars). Brief 015's sweep showed base_slab ~= 64 is the
+ * far above the memory knee at common scale (brief 26_0526-015: base_slab 1024 for
+ * norovirus, 372 for sars). Brief 26_0526-015's sweep showed base_slab ~= 64 is the
  * memory knee at common scale (norovirus 237->70 MB, sars 476->265 MB for
  * ~+0.4-1.6 s wall) AND is at/below the adaptive value at genome scale
  * (HSV adaptive ~72, and 64 is below the matrix peak so peak RSS is
  * unchanged there). A flat 64 default is therefore robust across scales.
- * The deriver's OUTPUT is byte-invariant to base_slab (brief 017 gate A1),
+ * The deriver's OUTPUT is byte-invariant to base_slab (brief 26_0526-017 gate A1),
  * so this is a silent memory-only default; an explicit --p7ibv-base-slab
  * overrides it. */
 #define HMM_P7IBV_KNEE_BASE_SLAB 64
@@ -89,7 +89,7 @@ typedef struct {
 				  */
   /* HMM-only alignment fields (--hmm mode, used by hmm_pipeline_thread) */
   P7_PROFILE       *gm;           /* thread-local p7 profile (NULL if not --hmm) */
-  P7_BG            *bg;           /* brief 182: thread-local null model, needed to re-run p7_ProfileConfig() per-seq under Tgm (NULL if not --hmm) */
+  P7_BG            *bg;           /* brief 26_0430-182: thread-local null model, needed to re-run p7_ProfileConfig() per-seq under Tgm (NULL if not --hmm) */
   P7_HMM           *hmm;          /* ptr to p7 HMM, shared read-only (NULL if not --hmm) */
   P7_GMX           *gx;           /* Viterbi DP matrix (NULL if not --hmm or unbanded-only) */
   P7_GMX           *gxf;          /* Forward matrix (NULL unless --hmm --hmmnoband) */
@@ -100,7 +100,7 @@ typedef struct {
   int               do_p7ibv;     /* TRUE for --hmm --p7ibv (banded OA via IBV deriver) */
   int               ibv_delta;    /* IBV Delta milli-bits (--p7ibv-delta) */
   int               ibv_base_slab;/* IBV D&C base-case slab; 0=auto (--p7ibv-base-slab) */
-  int               do_trunc;     /* brief 182: TRUE if CM_ALIGN_TRUNC set (drives Tgm gm config + IBV deriver do_trunc arg) */
+  int               do_trunc;     /* brief 26_0430-182: TRUE if CM_ALIGN_TRUNC set (drives Tgm gm config + IBV deriver do_trunc arg) */
 } WORKER_INFO;
 
 #define ACCOPTS      "--hbanded,--nonbanded,--p7band"         /* Exclusive choice for acceleration or not */
@@ -230,7 +230,7 @@ struct cfg_s {
   FILE            *rfp;         /* optional output for --regress alignment */
 };
 
-/* brief 035: temporary peak-RSS attribution instrumentation, gated by
+/* brief 26_0628-035: temporary peak-RSS attribution instrumentation, gated by
  * BRIEF035_MEMPOINT. Reads /proc/self/status VmRSS. Revert before finishing
  * if not worth keeping (duplicated from cm_p7_band.c's static copy). */
 static long
@@ -938,7 +938,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
    * CLI validation guarantees --p7ibv only reaches here in banded-OA mode.
    */
   int do_p7ibv     = (cm->p7_use_ibv && do_bandedoa)         ? TRUE : FALSE;
-  /* brief 182: mirror p7_ibv.c:1793's expression exactly -- the same test
+  /* brief 26_0430-182: mirror p7_ibv.c:1793's expression exactly -- the same test
    * used to calibrate p7bpad/node-pad at align-time. Drives both the Tgm
    * profile config (Part A) and the IBV deriver's do_trunc arg (Part B).
    */
@@ -951,9 +951,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
   extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
   extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 016 */
-  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 016 */
-  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 017: compact 2-cell resident pp */
+  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
+  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
+  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -1018,7 +1018,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].queue       = queue;
 	winfo[k].bg          = p7_bg_Create(hmm->abc);
 	winfo[k].gm          = p7_profile_Create(hmm->M, hmm->abc);
-	/* brief 182 Part A: Tgm (5'+3' truncation-aware local profile) when
+	/* brief 26_0430-182 Part A: Tgm (5'+3' truncation-aware local profile) when
 	 * do_trunc, mirroring cm_alndata.c:459-461's proven --p7band pattern.
 	 * Per-sequence length is set later by p7_ReconfigLength() (non-trunc)
 	 * or the Tgm-aware re-setup in hmm_pipeline_thread() (trunc). */
@@ -1039,13 +1039,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].do_p7ibv    = do_p7ibv;
 	winfo[k].do_trunc    = do_trunc;
 	winfo[k].ibv_delta   = esl_opt_GetInteger(go, "--p7ibv-delta");
-	/* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
+	/* brief 26_0526-017 Part A: default base_slab to the knee (memory-only; byte-invariant
 	 * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
 	winfo[k].ibv_base_slab = esl_opt_IsDefault(go, "--p7ibv-base-slab")
 	                         ? HMM_P7IBV_KNEE_BASE_SLAB
 	                         : esl_opt_GetInteger(go, "--p7ibv-base-slab");
 	/* CM only needed by the IBV/kmeranchor/kmerchain derivers (for cm->fp7);
-	 * else unused in --hmm mode. brief 032: kmeranchor/kmerchain also need it. */
+	 * else unused in --hmm mode. brief 26_0628-032: kmeranchor/kmerchain also need it. */
 	winfo[k].cm          = (do_p7ibv || cm->p7_use_kmeranchor || cm->p7_use_kmerchain) ? cm : NULL;
 	winfo[k].dataA       = NULL;
 	winfo[k].n           = 0;
@@ -1080,7 +1080,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
     else {
       /* Serial path: single profile and matrices */
       gm = p7_profile_Create(hmm->M, hmm->abc);
-      /* brief 182 Part A: Tgm when do_trunc (see winfo[k].gm comment above). */
+      /* brief 26_0430-182 Part A: Tgm when do_trunc (see winfo[k].gm comment above). */
       if (do_trunc) {
 	p7_ProfileConfig(hmm, bg, gm, 400, p7_LOCAL);
 	p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm, 400);
@@ -1094,7 +1094,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
       for (idx = 0; idx < nseq; idx++) {
 	ESL_SQ *sq = sqarr[idx];
 
-	/* brief 182 Part A: p7_ReconfigLength() unconditionally overwrites
+	/* brief 26_0430-182 Part A: p7_ReconfigLength() unconditionally overwrites
 	 * xsc[N/C/J][MOVE|LOOP], which would clobber the Tgm -eslINFINITY
 	 * N->N/C->C loop-disable set by p7_ProfileConfig5PrimeAnd3PrimeTrunc().
 	 * Re-run the Tgm setup per-sequence (sq->n) instead when do_trunc. */
@@ -1107,7 +1107,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
 	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
 	 * Skipped under --p7ibv: the full P7_GMX is never allocated.
-	 * brief 032: also skipped under kmeranchor/kmerchain -- like --p7ibv,
+	 * brief 26_0628-032: also skipped under kmeranchor/kmerchain -- like --p7ibv,
 	 * the full P7_GMX is only touched on the rare ncells==0 fallback, not
 	 * on the genome-scale success path this brief's memory story depends on. */
 	if (! do_p7ibv && ! cm->p7_use_kmeranchor && ! cm->p7_use_kmerchain) {
@@ -1153,32 +1153,32 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  P7_GMXB *bxf   = NULL;
 	  P7_GMXB *bxb   = NULL;
 	  P7_TRACE *vtr  = NULL;
-	  float    bwdsc = 0.;                                                    /* brief 135b: capture backward total */
-	  int      p7ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");        /* brief 135b */
-	  int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 135b widen override */
+	  float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
+	  int      p7ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");        /* brief 26_0430-135b */
+	  int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
 
 	  if (do_p7ibv) {
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
 	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
-	    /* brief 017 Part A: default base_slab to the knee (memory-only; byte-invariant
+	    /* brief 26_0526-017 Part A: default base_slab to the knee (memory-only; byte-invariant
 	     * per gate A1); honor an explicit --p7ibv-base-slab unchanged. */
 	    if ((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->n,
 					      p7ibv_delta,
 					      (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 					       ? HMM_P7IBV_KNEE_BASE_SLAB
 					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
-					      do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
-					      FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
-					      do_trunc, /* brief 182 Part B: was hardcoded FALSE; --hmm defaults to truncated (CM_ALIGN_TRUNC set unless --notrunc), so this must track it like p7_ibv.c:1793 */
-					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 140 */
+					      do_widen, /* brief 26_0430-135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					      FALSE,    /* brief 26_0430-172: do_kband (unbanded D&C on --hmm path) */
+					      do_trunc, /* brief 26_0430-182 Part B: was hardcoded FALSE; --hmm defaults to truncated (CM_ALIGN_TRUNC set unless --notrunc), so this must track it like p7_ibv.c:1793 */
+					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 26_0430-140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
 	  else {
-	    /* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
+	    /* brief 26_0628-032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
 	     * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
-	     * brief 038: do_trunc now threaded through, mirroring cm_alndata.c's
+	     * brief 26_0628-038: do_trunc now threaded through, mirroring cm_alndata.c's
 	     * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC). */
 	    int did_kmer = FALSE;
 	    int *local_nodepad = NULL;
@@ -1190,14 +1190,14 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if (cm->p7_use_kmeranchor) {
 	      did_kmer = TRUE;
 	      if ((status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->n, local_nodepad,
-						   do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
+						   do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
 						   &i2k, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	    else if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
-						  do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
+						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 						  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	    }
@@ -1276,11 +1276,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
 	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
-	    /* brief 016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
+	    /* brief 26_0526-016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
 	     * Default-on (byte-exact vs the full path at norovirus/dengue/
 	     * sars/HSV); set INFERNAL_HMM_CKPT_OFF to force the full path.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
-	     * is ever materialized (bxf is not allocated). brief 017: bxb uses
+	     * is ever materialized (bxf is not allocated). brief 26_0526-017: bxb uses
 	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
 	    bxb = p7b_pp_Create(bnd);
 	    if (getenv("BRIEF035_MEMPOINT") != NULL)
@@ -1418,7 +1418,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
   int status;
   int i;  /* counter over sequences */
   ESL_SQ  *sqp = NULL; /* ptr to a ESL_SQ, only used if there's an error */
-  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE (brief 090) */
+  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE (brief 26_0430-090) */
 
   /* allocate dataA */
   info->n = sq_block->count;
@@ -1548,7 +1548,7 @@ pipeline_thread(void *arg)
   char          errbuf[eslERRBUFSIZE];
   int           nalloc    = 0;
   int           allocsize = 1000;
-  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE, per worker thread (brief 090) */
+  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE, per worker thread (brief 26_0430-090) */
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
    * values in the floating point calculations, set the processor flag
@@ -1716,9 +1716,9 @@ hmm_pipeline_thread(void *arg)
   extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
   extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
   extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 016 */
-  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 016 */
-  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 017: compact 2-cell resident pp */
+  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
+  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
+  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -1736,7 +1736,7 @@ hmm_pipeline_thread(void *arg)
     int idx = sq->W;  /* sequence index, overloaded by hmm_thread_loop */
 
     /* Reconfigure profile for this sequence length.
-     * brief 182 Part A: p7_ReconfigLength() unconditionally overwrites
+     * brief 26_0430-182 Part A: p7_ReconfigLength() unconditionally overwrites
      * xsc[N/C/J][MOVE|LOOP], clobbering the Tgm N->N/C->C loop-disable;
      * re-run the Tgm setup per-sequence instead when do_trunc. */
     if (info->do_trunc) {
@@ -1748,7 +1748,7 @@ hmm_pipeline_thread(void *arg)
 
     /* preflight: check HMM matrix size vs --mxsize before GrowTo.
      * Skipped under --p7ibv: the full P7_GMX is never allocated.
-     * brief 032: also skipped under kmeranchor/kmerchain (see serial-path
+     * brief 26_0628-032: also skipped under kmeranchor/kmerchain (see serial-path
      * comment in hmm_alignment() for reasoning). */
     if (! info->do_p7ibv && ! (info->cm != NULL && (info->cm->p7_use_kmeranchor || info->cm->p7_use_kmerchain))) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
@@ -1792,9 +1792,9 @@ hmm_pipeline_thread(void *arg)
       P7_GMXB *bxf   = NULL;
       P7_GMXB *bxb   = NULL;
       P7_TRACE *vtr  = NULL;
-      float    bwdsc = 0.;                                                    /* brief 135b: capture backward total */
-      int      p7ibv_delta = info->ibv_delta;                                 /* brief 135b */
-      int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 135b widen override */
+      float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
+      int      p7ibv_delta = info->ibv_delta;                                 /* brief 26_0430-135b */
+      int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
 
       if (info->do_p7ibv) {
 	/* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
@@ -1802,17 +1802,17 @@ hmm_pipeline_thread(void *arg)
 	  cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  p7ibv_delta, info->ibv_base_slab,
-					  do_widen, /* brief 135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
-					  FALSE,    /* brief 172: do_kband (unbanded D&C on --hmm path) */
-					  info->do_trunc, /* brief 182 Part B: was hardcoded FALSE; track CM_ALIGN_TRUNC like p7_ibv.c:1793 */
-					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 140 */
+					  do_widen, /* brief 26_0430-135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					  FALSE,    /* brief 26_0430-172: do_kband (unbanded D&C on --hmm path) */
+					  info->do_trunc, /* brief 26_0430-182 Part B: was hardcoded FALSE; track CM_ALIGN_TRUNC like p7_ibv.c:1793 */
+					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 26_0430-140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }
       else {
-	/* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
+	/* brief 26_0628-032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
 	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
-	 * brief 038: do_trunc now threaded through, mirroring cm_alndata.c's
+	 * brief 26_0628-038: do_trunc now threaded through, mirroring cm_alndata.c's
 	 * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC). */
 	int did_kmer = FALSE;
 	int *local_nodepad = NULL;
@@ -1825,14 +1825,14 @@ hmm_pipeline_thread(void *arg)
 	if (info->cm != NULL && info->cm->p7_use_kmeranchor) {
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerAnchor(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
-					       info->do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
+					       info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
 					       &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
 	}
 	else if (info->cm != NULL && info->cm->p7_use_kmerchain) {
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerChain(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
-					      info->do_trunc, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
+					      info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	}
@@ -1902,7 +1902,7 @@ hmm_pipeline_thread(void *arg)
 	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
-	/* brief 036: port of brief 016's sqrt(nrow)-checkpointed F/B/Decode/OA/
+	/* brief 26_0628-036: port of brief 26_0526-016's sqrt(nrow)-checkpointed F/B/Decode/OA/
 	 * traceback into the threaded worker (mirrors hmm_alignment()'s serial-path
 	 * gate above; see cm_p7_band.c:8641/9146). bxb holds the resident posterior;
 	 * bxf is never allocated. */
@@ -2512,7 +2512,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int             mpibuf_size = 0;        /* size of the mpibuf                    */
   int             blocks_remain_in_file;  /* set to FALSE to break outer loop over blocks */
   int             seqs_remain_in_block;   /* set to FALSE to break inner loop over seqs  */
-  CM_P7_OM_HOLDER om_holder;              /* reusable --p7pinbridge LOCAL profile/OPROFILE, per MPI worker (brief 090) */
+  CM_P7_OM_HOLDER om_holder;              /* reusable --p7pinbridge LOCAL profile/OPROFILE, per MPI worker (brief 26_0430-090) */
 
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
   if(esl_opt_GetBoolean(go, "--sample")) mpi_failure("--sample does not work with in MPI mode (b/c results would not be exactly reproducible)");
@@ -2539,7 +2539,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     int         do_hmmvit_w    = (cm->align_opts & CM_ALIGN_P7HMMVIT)    ? TRUE : FALSE;
     int         do_hmmnoband_w = (cm->align_opts & CM_ALIGN_P7HMMNOBAND) ? TRUE : FALSE;
     int         do_bandedoa_w  = (! do_hmmvit_w && ! do_hmmnoband_w);
-    int         do_trunc_w     = (cm->align_opts & CM_ALIGN_TRUNC)       ? TRUE : FALSE; /* brief 182 Part A */
+    int         do_trunc_w     = (cm->align_opts & CM_ALIGN_TRUNC)       ? TRUE : FALSE; /* brief 26_0430-182 Part A */
     float       sc_w, fwdsc_w, oasc_w;
 
     /* banded functions declared in cm_p7_band.c */
@@ -2550,7 +2550,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
     extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
 
-    /* brief 182 Part A: Tgm when do_trunc_w (mirrors hmm_alignment()'s serial-path setup). */
+    /* brief 26_0430-182 Part A: Tgm when do_trunc_w (mirrors hmm_alignment()'s serial-path setup). */
     if (do_trunc_w) {
       p7_ProfileConfig(hmm_w, bg_w, gm_w, 400, p7_LOCAL);
       p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm_w, 400);
@@ -2570,7 +2570,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     while (dsq != NULL) {
       P7_TRACE *wtr = do_hmmvit_w ? p7_trace_Create() : p7_trace_CreateWithPP();
 
-      /* brief 182 Part A: re-run Tgm setup per-seq (p7_ReconfigLength() would
+      /* brief 26_0430-182 Part A: re-run Tgm setup per-seq (p7_ReconfigLength() would
        * clobber the Tgm N->N/C->C loop-disable; see hmm_pipeline_thread comment). */
       if (do_trunc_w) {
 	p7_ProfileConfig(hmm_w, bg_w, gm_w, L, p7_LOCAL);
@@ -2580,7 +2580,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* preflight: check HMM matrix size vs --mxsize before GrowTo.
-       * brief 032: skipped under kmeranchor/kmerchain -- the full P7_GMX is
+       * brief 26_0628-032: skipped under kmeranchor/kmerchain -- the full P7_GMX is
        * only touched on the rare ncells==0 fallback, not on the genome-scale
        * success path (see serial-path comment in hmm_alignment()). */
       if (! cm->p7_use_kmeranchor && ! cm->p7_use_kmerchain) {
@@ -2622,11 +2622,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	P7_TRACE *vtr_w = NULL;
 	int       tpos_w;
 
-	/* brief 032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
+	/* brief 26_0628-032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
 	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
-	 * brief 038: do_trunc now threaded through, mirroring cm_alndata.c's
+	 * brief 26_0628-038: do_trunc now threaded through, mirroring cm_alndata.c's
 	 * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC); do_trunc_w already
-	 * computed above (brief 182 Part A) for the Tgm setup in this same scope. */
+	 * computed above (brief 26_0430-182 Part A) for the Tgm setup in this same scope. */
 	int did_kmer_w = FALSE;
 	int *local_nodepad_w = NULL;
 	if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
@@ -2637,14 +2637,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	if (cm->p7_use_kmeranchor) {
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerAnchor(cm, errbuf, dsq, L, local_nodepad_w,
-				     do_trunc_w, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
+				     do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
 				     &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerAnchor() failed: %s", errbuf);
 	}
 	else if (cm->p7_use_kmerchain) {
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerChain(cm, errbuf, dsq, L, local_nodepad_w,
-				    do_trunc_w, /* brief 038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
+				    do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 				    &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerChain() failed: %s", errbuf);
 	}
@@ -3022,7 +3022,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
-  /* brief 032: --p7kmeranchor/--p7kmerchain only derive bands; they need an
+  /* brief 26_0628-032: --p7kmeranchor/--p7kmerchain only derive bands; they need an
    * anchor mode to use them: --p7band (CM-side) or --hmm (HMM-only banded OA),
    * same requirement as --p7ibv above.
    */
@@ -3031,9 +3031,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     puts("\nERROR: --p7kmeranchor/--p7kmerchain require --p7band or --hmm\n");
     goto ERROR;
   }
-  /* brief 038: --p7kmeranchor/--p7kmerchain no longer require --notrunc --
-   * do_trunc is now threaded through both the --p7band (brief 033) and
-   * --hmm (brief 038) call sites, mirroring cm_alndata.c's CM-mode dispatch. */
+  /* brief 26_0628-038: --p7kmeranchor/--p7kmerchain no longer require --notrunc --
+   * do_trunc is now threaded through both the --p7band (brief 26_0628-033) and
+   * --hmm (brief 26_0628-038) call sites, mirroring cm_alndata.c's CM-mode dispatch. */
   /* --hmm --p7kmeranchor/--p7kmerchain is the k-mer-banded-OA HMM sub-mode;
    * reject the other --hmm sub-modes (Viterbi-trace and unbanded full OA) in
    * combination with it, mirroring the --p7ibv incompatibility above.
@@ -3048,7 +3048,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       goto ERROR;
     }
   }
-  /* brief 046: --p7kmerchain-mink only means something if kmeranchor/kmerchain
+  /* brief 26_0628-046: --p7kmerchain-mink only means something if kmeranchor/kmerchain
    * is actually in use; not expressible as an esl_getopts "reqs" OR (either
    * flag suffices), so check manually, mirroring the --p7kmeranchor/--p7kmerchain
    * "requires --p7band or --hmm" check above. */
@@ -3277,8 +3277,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--p7ibv")) {
     cm->p7_use_ibv   = TRUE;
     cm->p7_ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");
-    cm->p7_ibv_width = esl_opt_GetInteger(go, "--p7ibv-width");  /* brief 140 */
-    {                                                            /* brief 140: parse --p7ibv-mode */
+    cm->p7_ibv_width = esl_opt_GetInteger(go, "--p7ibv-width");  /* brief 26_0430-140 */
+    {                                                            /* brief 26_0430-140: parse --p7ibv-mode */
       const char *ibvmode = esl_opt_GetString(go, "--p7ibv-mode");
       if      (strcmp(ibvmode, "delta")  == 0) cm->p7_ibv_mode = P7IBV_MODE_DELTA;
       else if (strcmp(ibvmode, "fixed")  == 0) cm->p7_ibv_mode = P7IBV_MODE_FIXED;
@@ -3290,12 +3290,12 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->p7_ibv_base_slab = esl_opt_GetInteger(go, "--p7ibv-base-slab");
       if(esl_opt_GetBoolean(go, "--p7ibv-ckpt")) cm->p7_ibv_ckpt = TRUE;
     }
-    if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 169 */
+    if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 26_0430-169 */
   }
-  if(esl_opt_GetBoolean(go, "--p7kmeranchor")) cm->p7_use_kmeranchor = TRUE;  /* brief 026 */
-  if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 027 */
-  cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 043; req="--p7kmerchain" so only meaningful there */
-  cm->p7_kmerchain_mink = esl_opt_GetInteger(go, "--p7kmerchain-mink");     /* brief 046; 0 = disabled (default) */
+  if(esl_opt_GetBoolean(go, "--p7kmeranchor")) cm->p7_use_kmeranchor = TRUE;  /* brief 26_0628-026 */
+  if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 26_0628-027 */
+  cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 26_0628-043; req="--p7kmerchain" so only meaningful there */
+  cm->p7_kmerchain_mink = esl_opt_GetInteger(go, "--p7kmerchain-mink");     /* brief 26_0628-046; 0 = disabled (default) */
   cm->p7_kmerchain_mgate = esl_opt_GetInteger(go, "--p7kmerchain-mgate");   /* brief 26_0628-047; 0 = disabled (default) */
   cm->p7_kmerchain_fallback_vit = esl_opt_GetBoolean(go, "--p7kmerchain-fbvit"); /* brief 26_0628-047; default FALSE (--p7ibv fallback) */
   if(esl_opt_GetBoolean(go, "--cykbands")) {
@@ -3314,7 +3314,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* configure */
   if((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
 
-  /* Brief 169: with --p7ibv-wv, calibrate the windowed-Viterbi per-node pad
+  /* Brief 26_0430-169: with --p7ibv-wv, calibrate the windowed-Viterbi per-node pad
    * (F+B-halfwidth quantile) ONCE per CM here -- single-threaded, after
    * cm_Configure populated cm->fp7 and before any worker threads spawn -- and
    * cache it on the CM (workers read it read-only).  This is the align-time
@@ -3322,7 +3322,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(cm->p7_ibv_wv) {
     int wk;
     if(cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "--p7ibv-wv requires cm->fp7 (ML p7 filter)");
-    /* Brief 172 Phase B (pad amortization): the genome WV pad calibration runs
+    /* Brief 26_0430-172 Phase B (pad amortization): the genome WV pad calibration runs
      * nsamp full-length deriver passes (prohibitive at genome). --p7wvpad-file
      * loads a once-computed pad (skip per-run calib); --p7wvpad-dump writes the
      * calibrated pad for reuse.  This is the pad-storage mechanism the brief
@@ -3346,7 +3346,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->p7_wv_nodepad_M = cm->fp7->M;
     } else if(! esl_opt_GetBoolean(go, "--p7wv-calib")) {
       /* Brief 173 Part A (DEFAULT): a constant band half-width of 30 ties the
-       * per-node calibrated p95 pad in aggregate (brief 174), so the default WV
+       * per-node calibrated p95 pad in aggregate (brief 26_0430-174), so the default WV
        * path skips Monte-Carlo calibration entirely -- the post-172 genome
        * dominator (~29-50 min cm_ComputeP7WVNodePad) vanishes.  Fill every node
        * with --p7wv-pad's value (index 0 = 0, matching the calibrator).  The

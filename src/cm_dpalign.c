@@ -842,7 +842,7 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
  * alignment, for NON-truncated, GLOBAL, bps=0 (pure left-emitting
  * MATL chain) CMs.
  *
- * Brief 028: library port of the validated standalone drivers
+ * Brief 26_0628-028: library port of the validated standalone drivers
  *   ckpt_drv.c   (022) -- checkpointed Inside + Outside + fused posterior
  *   ckptoa_drv.c (023) -- checkpointed OptAcc max-DP + checkpointed traceback
  *
@@ -1320,7 +1320,7 @@ cm_CheckptAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptAlignHB()
- * Incept:   Brief 028 (library port of drivers 022/023)
+ * Incept:   Brief 26_0628-028 (library port of drivers 022/023)
  *
  * Purpose:  Checkpointed (sqrt(M)-memory) HMM-banded optimal-accuracy
  *           alignment for a NON-truncated, GLOBAL, pure-MATL-chain CM.
@@ -4202,7 +4202,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   /* ptrs to cp9b info, for convenience */
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
-  CP9Bands_t *cp9b = cm->cp9b;  /* brief 157: needed by hd_min()/hd_max() */
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 
@@ -5138,7 +5138,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* ptrs to cp9b info, for convenience */
   int     *jmin  = cm->cp9b->jmin;
   int     *jmax  = cm->cp9b->jmax;
-  CP9Bands_t *cp9b = cm->cp9b;  /* brief 157: needed by hd_min()/hd_max() */
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 
@@ -5788,7 +5788,7 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
   /* ptrs to cp9b info, for convenience */
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
-  CP9Bands_t *cp9b = cm->cp9b;  /* brief 157: needed by hd_min()/hd_max() */
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 
@@ -6100,7 +6100,7 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
   int     *imax  = cm->cp9b->imax;
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
-  CP9Bands_t *cp9b = cm->cp9b;  /* brief 157: needed by hd_min()/hd_max() */
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
   
