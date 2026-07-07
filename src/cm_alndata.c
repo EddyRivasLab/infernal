@@ -540,14 +540,36 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->L, local_nodepad,
 	                                    do_trunc, /* brief 033 */
 	                                    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	    /* ncells==0 => no usable anchor; fall back to full unbanded Viterbi band
-	     * derivation (same shape as the pinbridge ncells==0 fallback below). */
+	    /* ncells==0 => M-gate/N-gate fired, or no usable anchor. Brief 047:
+	     * default fallback is now --p7ibv's D&C deriver (this file's own
+	     * --p7ibv-mem branch above, same defaults/params), instead of a
+	     * Vit-trace band; --p7kmerchain-fbvit reverts to the old
+	     * p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
-	      _p7b_kind = "kmeranchor->vitband";
-	      if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
-	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-	                               sq->dsq, sq->L, cm->p7bpad, local_nodepad,
-	                               0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	      if (cm->p7_kmerchain_fallback_vit) {
+		_p7b_kind = "kmeranchor->vitband";
+		if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+		status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+					 sq->dsq, sq->L, cm->p7bpad, local_nodepad,
+					 0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	      } else {
+		_p7b_kind = "kmeranchor->p7ibv";
+		status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
+					     cm->p7_ibv_delta, cm->p7_ibv_base_slab,
+					     TRUE,  /* do_boundary_widen: CM-side preserves current behavior, matches --p7ibv-mem branch above */
+					     FALSE, /* do_kband */
+					     do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
+					     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+		if (status == eslOK && p7_ncells == 0) {
+		  /* IBV is documented to always produce a band (line ~533 above);
+		   * this is a belt-and-suspenders safety net, not expected to fire. */
+		  _p7b_kind = "kmeranchor->p7ibv->vitband";
+		  if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+		  status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+					   sq->dsq, sq->L, cm->p7bpad, local_nodepad,
+					   0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+		}
+	      }
 	    }
 	  } else if (cm->p7_use_kmerchain) {
 	    /* Brief 027: genome-scale k-mer seed-and-chain. Collect all seeds
@@ -557,14 +579,31 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
 	                                   do_trunc, /* brief 033 */
 	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	    /* ncells==0 => no usable chain; fall back to full unbanded Viterbi band
-	     * derivation (same shape as the kmeranchor ncells==0 fallback above). */
+	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 047:
+	     * default fallback is --p7ibv's D&C deriver, same as the kmeranchor
+	     * ncells==0 fallback above; --p7kmerchain-fbvit reverts to
+	     * the old p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
-	      _p7b_kind = "kmerchain->vitband";
-	      if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
-	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-	                               sq->dsq, sq->L, cm->p7bpad, local_nodepad,
-	                               0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	      if (cm->p7_kmerchain_fallback_vit) {
+		_p7b_kind = "kmerchain->vitband";
+		if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+		status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+					 sq->dsq, sq->L, cm->p7bpad, local_nodepad,
+					 0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	      } else {
+		_p7b_kind = "kmerchain->p7ibv";
+		status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
+					     cm->p7_ibv_delta, cm->p7_ibv_base_slab,
+					     TRUE, FALSE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
+					     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+		if (status == eslOK && p7_ncells == 0) {
+		  _p7b_kind = "kmerchain->p7ibv->vitband";
+		  if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
+		  status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
+					   sq->dsq, sq->L, cm->p7bpad, local_nodepad,
+					   0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+		}
+	      }
 	    }
 	  } else if (cm->p7_use_pinbridge) {
 	    _p7b_kind = "pinbridge";
