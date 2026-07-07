@@ -1010,7 +1010,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * (HSV) -- single-window blind anchoring is expected to fail the big track.
  *****************************************************************/
 
-/* brief 045: small-M hard gate, shared by both kmeranchor and kmerchain.
+/* brief 045/047: small-M gate, shared by both kmeranchor and kmerchain.
  * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
  * M=84-400): at this M range these divergent structural-RNA test families
  * have too little exact-match identity to the model's argmax consensus for
@@ -1018,23 +1018,14 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * whole model, outnumbered by coincidental short-k-mer collisions that
  * chain/cluster together and out-compete the lone true anchor. This is the
  * SAME mechanism brief 022 root-caused and gated for the cmsearch fast-anchor
- * path (norovirus's non-repeat coincidental-collision residual); porting
- * brief 022's validated M<4,000 threshold here closes it for cmalign's
- * kmeranchor/kmerchain path too. Below this M, both derivers immediately
- * report "no anchor" (ret_ncells=0), and the caller falls back to the
- * existing, already-exercised unbanded p7 Viterbi/Forward path -- the same
- * fallback already taken whenever no k-mer anchor is found. */
-#define KMER_MGATE_MIN  4000
-
-/* brief 046: independent M-gate disable toggle, for controlled sweeps that need
- * to isolate the (unvalidated) k>=N zero-hits gate from the (already-validated)
- * M-gate -- e.g. "N-gate alone", "neither", "both" comparisons. Env-var, not a
- * cmalign CLI option: this is a sweep-harness knob, not a user-facing feature. */
-static int
-kmer_mgate_enabled(void)
-{
-  return (getenv("INFERNAL_KMER_MGATE_OFF") == NULL);
-}
+ * path (norovirus's non-repeat coincidental-collision residual); brief 045
+ * ported brief 022's validated M<4,000 threshold here as a hardcoded,
+ * default-on constant. Brief 047 replaced that with a real, user-facing,
+ * OFF-BY-DEFAULT cmalign option (--p7kmerchain-mgate <M>, cm->p7_kmerchain_mgate,
+ * 0=off) -- fires (M < threshold) only when the user opts in, same gating
+ * logic as before. Below the threshold, both derivers immediately report
+ * "no anchor" (ret_ncells=0), and the caller falls back per brief 047's new
+ * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
 
 #define KMW_BIN         200   /* model-window (bin) width, matches brief 023/025 B */
 #define KMW_TOL         15    /* diagonal-cluster tolerance (brief 023/025 TOL)    */
@@ -1178,11 +1169,16 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   int b, ki, j, x;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
-  if (M < KMER_MGATE_MIN && kmer_mgate_enabled()) {
-    fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, KMER_MGATE_MIN);
-    return eslOK;   /* brief 045 small-M gate; caller falls back to unbanded */
+  if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
+    fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
+    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 047's fallback mechanism */
   }
-  if (M < KMW_BIN) { return eslOK; }   /* too small to window-score; caller falls back */
+  /* brief 047: removed the old M<KMW_BIN=200 silent bail-out here (inherited
+   * from brief 026, unrelated to the M-gate/N-gate mechanisms above) -- it
+   * pre-empted kmeranchor's k-mer seed collection on small models before
+   * either gate got a chance to run, and was never validated as a correctness
+   * mechanism itself. All small-M correctness protection now comes from the
+   * opt-in --p7kmerchain-mgate/-mink gates above/below instead. */
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
 
   /* 1. model consensus (argmax match emission per node) */
@@ -1469,9 +1465,9 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int ki, j, x, i;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
-  if (M < KMER_MGATE_MIN && kmer_mgate_enabled()) {
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, KMER_MGATE_MIN);
-    return eslOK;   /* brief 045 small-M gate; caller falls back to unbanded */
+  if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
+    return eslOK;   /* brief 045/047 opt-in small-M gate; caller falls back per brief 047's fallback mechanism */
   }
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)
