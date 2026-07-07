@@ -1010,6 +1010,22 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * (HSV) -- single-window blind anchoring is expected to fail the big track.
  *****************************************************************/
 
+/* brief 045: small-M hard gate, shared by both kmeranchor and kmerchain.
+ * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
+ * M=84-400): at this M range these divergent structural-RNA test families
+ * have too little exact-match identity to the model's argmax consensus for
+ * k-mer seeding to work -- often 0-1 true k=10 matches exist anywhere in the
+ * whole model, outnumbered by coincidental short-k-mer collisions that
+ * chain/cluster together and out-compete the lone true anchor. This is the
+ * SAME mechanism brief 022 root-caused and gated for the cmsearch fast-anchor
+ * path (norovirus's non-repeat coincidental-collision residual); porting
+ * brief 022's validated M<4,000 threshold here closes it for cmalign's
+ * kmeranchor/kmerchain path too. Below this M, both derivers immediately
+ * report "no anchor" (ret_ncells=0), and the caller falls back to the
+ * existing, already-exercised unbanded p7 Viterbi/Forward path -- the same
+ * fallback already taken whenever no k-mer anchor is found. */
+#define KMER_MGATE_MIN  4000
+
 #define KMW_BIN         200   /* model-window (bin) width, matches brief 023/025 B */
 #define KMW_TOL         15    /* diagonal-cluster tolerance (brief 023/025 TOL)    */
 #define KMW_MIN_CORRECT 3     /* floor: min on-diagonal hits for a real window     */
@@ -1136,6 +1152,10 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   int b, ki, j, x;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
+  if (M < KMER_MGATE_MIN) {
+    fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, KMER_MGATE_MIN);
+    return eslOK;   /* brief 045 small-M gate; caller falls back to unbanded */
+  }
   if (M < KMW_BIN) { return eslOK; }   /* too small to window-score; caller falls back */
 
   /* 1. model consensus (argmax match emission per node) */
@@ -1413,6 +1433,10 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int ki, j, x, i;
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
+  if (M < KMER_MGATE_MIN) {
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, KMER_MGATE_MIN);
+    return eslOK;   /* brief 045 small-M gate; caller falls back to unbanded */
+  }
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)
     fprintf(stderr, "#MEMPOINT before_kmerchain L=%d M=%d rss_kb=%ld\n", L, M, brief035_rss_kb());
