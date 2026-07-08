@@ -1362,7 +1362,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
-  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated; must match cp9b->hd_needed (brief 26_0316-097 + 147) */
+  int64_t hd_needed; /* int64: cumulative band volume can exceed 2^31 at genome-scale truncated; must match cp9b->hd_needed (brief 26_0316-097 + 26_0430-147) */
   int j;
 
 

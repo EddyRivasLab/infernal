@@ -844,7 +844,7 @@ typedef struct cp9bands_s {
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* info on size of bands */
-  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 26_0316-097 + 147) */
+  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 26_0316-097 + 26_0430-147) */
   int64_t hd_alloced;         /* number of hd arrays currently alloc'ed (int64, see hd_needed) */
 
   double   tau;               /* tau used to calculate current bands */
@@ -1920,7 +1920,7 @@ typedef struct cm_s {
   int     p7_pinbridge_vit_gaps; /* if TRUE, use exact mini-Viterbi gap costs in gap-aware LSIS (--p7pinbridge-vitgaps); default FALSE (closed-form) */
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
-  int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 068);
+  int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 26_0430-068);
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
   int     p7_use_kmeranchor;   /* if TRUE, derive bands from a k-mer best-window anchor (--p7kmeranchor, brief 26_0628-026) */

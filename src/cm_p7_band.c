@@ -1005,7 +1005,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * do -- zero changes to the consumer. Gated behind --p7kmeranchor (opt-in).
  *
  * De-risked in Python first (notebook brief026_runs/, DERISK_FINDING.md):
- * reproduces brief 025's oracle best-window selection on small models (~93%
+ * reproduces brief 26_0628-025's oracle best-window selection on small models (~93%
  * exact bin), but is fooled by repeat-driven false diagonals at genome scale
  * (HSV) -- single-window blind anchoring is expected to fail the big track.
  *****************************************************************/
@@ -1017,9 +1017,9 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * k-mer seeding to work -- often 0-1 true k=10 matches exist anywhere in the
  * whole model, outnumbered by coincidental short-k-mer collisions that
  * chain/cluster together and out-compete the lone true anchor. This is the
- * SAME mechanism brief 022 root-caused and gated for the cmsearch fast-anchor
+ * SAME mechanism brief 26_0628-022 root-caused and gated for the cmsearch fast-anchor
  * path (norovirus's non-repeat coincidental-collision residual); brief 26_0628-045
- * ported brief 022's validated M<4,000 threshold here as a hardcoded,
+ * ported brief 26_0628-022's validated M<4,000 threshold here as a hardcoded,
  * default-on constant. Brief 26_0628-047 replaced that with a real, user-facing,
  * OFF-BY-DEFAULT cmalign option (--p7kmerchain-mgate <M>, cm->p7_kmerchain_mgate,
  * 0=off) -- fires (M < threshold) only when the user opts in, same gating
@@ -1027,8 +1027,8 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * "no anchor" (ret_ncells=0), and the caller falls back per brief 26_0628-047's new
  * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
 
-#define KMW_BIN         200   /* model-window (bin) width, matches brief 023/025 B */
-#define KMW_TOL         15    /* diagonal-cluster tolerance (brief 023/025 TOL)    */
+#define KMW_BIN         200   /* model-window (bin) width, matches brief 26_0628-023/26_0628-025 B */
+#define KMW_TOL         15    /* diagonal-cluster tolerance (brief 26_0628-023/26_0628-025 TOL)    */
 #define KMW_MIN_CORRECT 3     /* floor: min on-diagonal hits for a real window     */
 #define KMW_DRIFT       25    /* diagonal drift allowed when expanding outward     */
 #define KMW_EXP_FLOOR   2     /* min on-diagonal hits to accept an expansion bin   */
@@ -8241,7 +8241,7 @@ p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 	  float path[2];
 	  path[0] = t1b * GXB_XMX(gx, i, p7G_N);
 	  path[1] = t2b * GXB_XMX(gx, i, p7G_J);
-	  /* Brief 131: under a unihit profile (E->J == -inf, set by
+	  /* Brief 26_0430-131: under a unihit profile (E->J == -inf, set by
 	   * p7_ProfileConfig for UNILOCAL/UNIGLOCAL), the J state is
 	   * semantically unreachable, so B must enter from N. The OA fill
 	   * floors forbidden transitions at FLT_MIN rather than hard -inf, so
@@ -10774,7 +10774,7 @@ static int pb_get_emit_mode(void)
   return cached;
 }
 
-/* Brief 102: gate end-of-scan flush separately to isolate from peak-on-reset. */
+/* Brief 26_0430-102: gate end-of-scan flush separately to isolate from peak-on-reset. */
 static int pb_get_flush_enabled(void)
 {
   static int cached = -1;
@@ -10967,7 +10967,7 @@ pb_sw_scan_collect_pins_w(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, int 
   }
 
   /* End-of-scan flush (peak mode): emit for sticky segments still active at i=L */
-  /* Brief 102: flush is gated separately via PB_PIN_FLUSH to isolate from peak-on-reset. */
+  /* Brief 26_0430-102: flush is gated separately via PB_PIN_FLUSH to isolate from peak-on-reset. */
   if (pin_mode == PIN_MODE_PEAK && pb_get_flush_enabled()) {
     union { __m128i v; int16_t b[8]; } u_pk, u_pki, u_prev;
     for (q = 0; q < Q; q++) {
@@ -11162,7 +11162,7 @@ pb_sw_scan_collect_pins_i32(const ESL_DSQ *dsq, int L, const CM_PB_OM32 *om32, i
   }
 
   /* End-of-scan flush (peak mode): emit for sticky segments still active at i=L */
-  /* Brief 102: flush is gated separately via PB_PIN_FLUSH to isolate from peak-on-reset. */
+  /* Brief 26_0430-102: flush is gated separately via PB_PIN_FLUSH to isolate from peak-on-reset. */
   if (pin_mode == PIN_MODE_PEAK && pb_get_flush_enabled()) {
     union { __m128i v; int32_t b[4]; } u_pk, u_pki, u_prev;
     for (q = 0; q < Q; q++) {

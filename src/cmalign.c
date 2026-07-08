@@ -3345,7 +3345,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       if(padM != cm->fp7->M) ESL_FAIL(eslEINCOMPAT, errbuf, "--p7wvpad-file max index %d != fp7->M %d", padM, cm->fp7->M);
       cm->p7_wv_nodepad_M = cm->fp7->M;
     } else if(! esl_opt_GetBoolean(go, "--p7wv-calib")) {
-      /* Brief 173 Part A (DEFAULT): a constant band half-width of 30 ties the
+      /* Brief 26_0430-173 Part A (DEFAULT): a constant band half-width of 30 ties the
        * per-node calibrated p95 pad in aggregate (brief 26_0430-174), so the default WV
        * path skips Monte-Carlo calibration entirely -- the post-172 genome
        * dominator (~29-50 min cm_ComputeP7WVNodePad) vanishes.  Fill every node

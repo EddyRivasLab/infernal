@@ -1,4 +1,4 @@
-/* test_pins2trace.c -- brief 137 Phase 3a regression test.
+/* test_pins2trace.c -- brief 26_0430-137 Phase 3a regression test.
  *
  * For each sequence, compare:
  *   reference : p7_GViterbi -> p7_GTrace on the full (unbanded) profile

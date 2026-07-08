@@ -690,7 +690,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
 	  if(status != eslOK) {
 	    /* P7B bands too wide even at maxtau; fall back to standard cp9 band derivation */
-	    /* Brief 159: the standard fallback below builds a *non-banded* full CP9
+	    /* Brief 26_0430-159: the standard fallback below builds a *non-banded* full CP9
 	     * F/B matrix, (L+1)*(M+1) cells. At genome scale (M~L~2e5) that alone is
 	     * hundreds of GB, far over --mxsize, and unlike the CM DP matrix there is
 	     * no banding/tau lever to shrink the CP9 F/B. The p7-banded path already
