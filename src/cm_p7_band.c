@@ -7808,12 +7808,14 @@ p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
 	    {
 	      /* M posterior */
 	      *pp_dp = expf(*fwd_dp + *bck_dp - overall_sc);
+	      if (! isfinite(*pp_dp)) *pp_dp = 0.0f;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
 	      denom += *pp_dp;
 	      pp_dp++; fwd_dp++; bck_dp++;
 
 	      /* I posterior */
 	      if (k < M) {
 		*pp_dp = expf(*fwd_dp + *bck_dp - overall_sc);
+		if (! isfinite(*pp_dp)) *pp_dp = 0.0f;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
 		denom += *pp_dp;
 	      } else {
 		*pp_dp = 0.0f;
@@ -8760,8 +8762,13 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, float fwdsc,
     int off  = (k - kac) * p7G_NSCELLS;     /* fdp/bdp: full 3-cell Forward/Backward rows */
     int poff = (k - kac) * P7B_PP_NSCELLS;  /* brief 26_0526-017: pp is compact 2-cell (M,I)      */
     pdp[poff] = expf(fdp[off] + bdp[off] - fwdsc);          /* M */
+    if (! isfinite(pdp[poff])) pdp[poff] = 0.0f;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
     denom += pdp[poff];
-    if (k < M) { pdp[poff+1] = expf(fdp[off+1] + bdp[off+1] - fwdsc); denom += pdp[poff+1]; }  /* I */
+    if (k < M) {
+      pdp[poff+1] = expf(fdp[off+1] + bdp[off+1] - fwdsc);  /* I */
+      if (! isfinite(pdp[poff+1])) pdp[poff+1] = 0.0f;      /* guard NaN from -inf + inf */
+      denom += pdp[poff+1];
+    }
     else         pdp[poff+1] = 0.0f;
     /* pp_D dropped (brief 26_0526-017): was always 0 and never read downstream */
   }
@@ -9261,13 +9268,18 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
       switch (sprv) {
       case p7T_M:
         {
-          float path[4];
-          int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
-          path[0] = P7B_TSCDELTA(p7P_MM, k-1) * OA_M(i-1, k-1);
-          path[1] = P7B_TSCDELTA(p7P_IM, k-1) * OA_I(i-1, k-1);
-          path[2] = P7B_TSCDELTA(p7P_DM, k-1) * OA_D(i-1, k-1);
-          path[3] = P7B_TSCDELTA(p7P_BM, k-1) * OA_X(i-1, p7G_B);
-          scur = state[esl_vec_FArgMax(path, 4)];
+          if (k - 1 == 0) {
+            /* Node 0 has no M/D state: the only valid entry into M1 is B->M1. */
+            scur = p7T_B;
+          } else {
+            float path[4];
+            int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+            path[0] = P7B_TSCDELTA(p7P_MM, k-1) * OA_M(i-1, k-1);
+            path[1] = P7B_TSCDELTA(p7P_IM, k-1) * OA_I(i-1, k-1);
+            path[2] = P7B_TSCDELTA(p7P_DM, k-1) * OA_D(i-1, k-1);
+            path[3] = P7B_TSCDELTA(p7P_BM, k-1) * OA_X(i-1, p7G_B);
+            scur = state[esl_vec_FArgMax(path, 4)];
+          }
           k--; i--;
         }
         break;
