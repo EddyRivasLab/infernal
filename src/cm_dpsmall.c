@@ -8067,7 +8067,12 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j, i+1, i0,i1,j1,j0, &op_y)) {
-			if ((sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			/* brief 26_0610-075: yy2's J-plane cross-term is only a valid truncated
+			 * contribution if yy2's own node lies entirely within the observed
+			 * (non-truncated) sequence (cp9b->Jvalid[yy2]); mirrors brief 070's gate
+			 * on the analogous tr_inside_hb/tr_generic_splitter_hb candidates --
+			 * tr_vinside_hb's own J-transition candidates were not in 070's scope. */
+			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
 			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Lvalid[yy2] && (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
@@ -8084,7 +8089,8 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y)) {
-			if ((sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			/* brief 26_0610-075: same Jvalid[yy2] gate as the MP/ML/IL branch above. */
+			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
 			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Lvalid[yy2] && (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
@@ -8129,7 +8135,8 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j-1, i, i0,i1,j1,j0, &op_y)) {
-			if ((sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			/* brief 26_0610-075: R-mode mirror of the L-mode Jvalid[yy2] gate above. */
+			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
 			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Rvalid[yy2] && (sc = Ra[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
@@ -8146,7 +8153,8 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y)) {
-			if ((sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			/* brief 26_0610-075: same Jvalid[yy2] gate as the MP/MR/IR branch above. */
+			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
 			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Rvalid[yy2] && (sc = Ra[yy2][jp][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
@@ -8920,8 +8928,19 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	      int inw = hb_inband(cp9b, w, j-k, d-k, i0, j0, &dp_w);
 	      int iny = hb_inband(cp9b, y, j,   k,   i0, j0, &dp_y);
 	      if (! (inw && iny)) continue;
-	      /* all-J split */
-	      if ((sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
+	      /* all-J split.  brief 26_0610-075: this candidate combines v's own classical
+	       * Outside (beta[v]) with both children's classical Inside (alpha[w], alpha[y]) --
+	       * exactly the 3-participant classical/J cross-term 070 gated everywhere else in
+	       * this function, but 070's audit did not reach this specific (unmarked) candidate.
+	       * Without the gate, a B state whose own node structurally cannot be reached in
+	       * pure J mode (cp9b->Jvalid[v]==FALSE) can still win here purely because alpha[]/
+	       * beta[] are always filled (never masked to IMPOSSIBLE) regardless of Jvalid, and
+	       * best_sc starts at IMPOSSIBLE -- producing a (bkind,J) pin the downstream pinned
+	       * checkpoint posterior engine (pin_tr_inside_B) correctly refuses to allocate a
+	       * deck for, causing the NULL deref one layer downstream (mirrors 070's own
+	       * diagnosis of the analogous bug at its other sites). */
+	      if (cp9b->Jvalid[v] && cp9b->Jvalid[w] && cp9b->Jvalid[y] &&
+		  (sc = alpha[w][j-k][dp_w] + alpha[y][j][dp_y] + beta[v][j][dp_v]) > best_sc)
 		{ best_sc=sc; best_k=k; best_j=j; best_d=d; v_mode=TRMODE_J; w_mode=TRMODE_J; y_mode=TRMODE_J; }
 	      /* L: v in L; w=J, y=L  (k>0).  brief 26_0610-070: w's J-plane cross-term needs
 	       * cp9b->Jvalid[w] -- w's node must lie entirely within the observed
