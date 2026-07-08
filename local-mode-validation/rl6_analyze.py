@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Brief 068: compare --ckpt vs stock Stockholm alignments.
+"""Brief 26_0610-068: compare --ckpt vs stock Stockholm alignments.
 Degapped-residue identity (accuracy-neutral test) + avg-PP delta per sequence."""
 import sys, re
 

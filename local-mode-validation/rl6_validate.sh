@@ -1,5 +1,5 @@
 #!/bin/bash
-# Brief 068 (R-L.6) capstone validation: cmalign --ckpt in LOCAL (default) mode,
+# Brief 26_0610-068 (R-L.6) capstone validation: cmalign --ckpt in LOCAL (default) mode,
 # actual binary (not a driver), all four bps-class x truncation-mode combos.
 # Compares --ckpt vs stock (no --ckpt), same config.
 set -u

@@ -8,7 +8,7 @@
 #$ -l h_rt=86400
 #$ -l m_mem_free=64G
 #$ -m n
-# Brief 068 (R-L.6) HEADLINE: end-to-end total-RSS win through cmalign --ckpt in
+# Brief 26_0610-068 (R-L.6) HEADLINE: end-to-end total-RSS win through cmalign --ckpt in
 # LOCAL (default) mode at wide-band scale, mirroring 056's global CH479288 measurement
 # (global: stock 10555 MB -> ckpt 1406 MB = 7.5x).  Here: LOCAL config (no -g).
 

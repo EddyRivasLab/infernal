@@ -9,7 +9,7 @@
 #$ -l m_mem_free=64G
 #$ -l h_vmem=64G
 #$ -m n
-# Brief 068 (R-L.6) HEADLINE (genome scale): cmalign --ckpt vs stock in LOCAL
+# Brief 26_0610-068 (R-L.6) HEADLINE (genome scale): cmalign --ckpt vs stock in LOCAL
 # (default) mode on a genome-scale bps=0 VADR viral CM (calici NC_001959,
 # M=22966, clen=7654) aligning its own 7654 nt genome.  Per R-L.2b the sqrt(M)
 # CM-DP cube win here is ~27x; the default-truncated cube is the large one

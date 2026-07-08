@@ -1,11 +1,11 @@
-# R-L.2 — bps=0 non-trunc LOCAL: EL (local-end) in cm_CheckptAlignHB (brief 061)
+# R-L.2 — bps=0 non-trunc LOCAL: EL (local-end) in cm_CheckptAlignHB (brief 26_0610-061)
 
 First checkpointed engine to get EL — the **template** for R-L.3/4/5. All new EL
 code is gated on `CMH_LOCAL_END`; the global (`-g`) path is byte-identical to the
 pre-R-L.2 engine.
 
 ## What was built (cm_dpalign.c, gated on CMH_LOCAL_END)
-Per the brief-060 recipe:
+Per the brief-26_0610-060 recipe:
 - **Forward** (`ckpt_inside_deck`): on-the-fly `el_scA[d-sd]+endsc` base-case
   re-init. **No deck** (the fixed ramp; mirrors cm_InsideAlignHB:3576-3583).
 - **Outside** (`ckpt_outside_deck`): v->EL accumulation into a **banded** EL deck
