@@ -1156,8 +1156,26 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
 	  int      p7ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");        /* brief 26_0430-135b */
 	  int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
+	  /* brief 26_0628-061: optional 4-stage per-sequence timing for this --hmm-mode
+	   * banded-OA path, reusing brief 059's BRIEF059_STAGETIME env var and
+	   * #STAGETIME line format/semantics (059 instrumented DispatchSqAlignment()'s
+	   * separate --p7band CM-alignment path; this is the distinct --hmm-only
+	   * code path). Stage (a)/(b) reuse the same deriver-internal a/b split as
+	   * 059 (p7_Seq2BandsKmerChain/KmerAnchor's ret_a_s/ret_b_s out-params);
+	   * stage (c) = p7_kbands2gbands() (uniform band conversion for this mode,
+	   * unlike 059's cp9_IterateSeq2BandsP7B()); stage (d) = the HMM-only
+	   * alignment DP (checkpointed or non-checkpointed F/B/Decode/OA/traceback). */
+	  int             _st061_on   = (getenv("BRIEF059_STAGETIME") != NULL);
+	  struct timespec _st061_tab0, _st061_tab1, _st061_tc0, _st061_tc1, _st061_td0, _st061_td1;
+	  double          _st061_a_s = 0., _st061_b_s = 0., _st061_c_s = 0., _st061_d_s = 0., _st061_ab_s = 0.;
+	  int             _st061_ab_split = FALSE;
+	  int             _st061_used_p7ibv_fb = FALSE;
+	  const char     *_st061_kind = NULL;
+
+	  if (_st061_on) clock_gettime(CLOCK_MONOTONIC, &_st061_tab0);
 
 	  if (do_p7ibv) {
+	    if (_st061_on) _st061_kind = "p7ibv";
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
 	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
@@ -1189,17 +1207,23 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    }
 	    if (cm->p7_use_kmeranchor) {
 	      did_kmer = TRUE;
+	      if (_st061_on) _st061_kind = "kmeranchor";
 	      if ((status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						   do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-						   &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
+						   &i2k, &kmin, &kmax, &ncells,
+						   _st061_on ? &_st061_a_s : NULL, _st061_on ? &_st061_b_s : NULL)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
+	      if (_st061_on) _st061_ab_split = TRUE; /* brief 26_0628-061: provisional; cleared below if a fallback fires */
 	    }
 	    else if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
+	      if (_st061_on) _st061_kind = "kmerchain";
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
-						  &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
+						  &i2k, &kmin, &kmax, &ncells,
+						  _st061_on ? &_st061_a_s : NULL, _st061_on ? &_st061_b_s : NULL)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
+	      if (_st061_on) _st061_ab_split = TRUE; /* brief 26_0628-061: provisional; cleared below if a fallback fires */
 	    }
 	    if (local_nodepad) free(local_nodepad);
 
@@ -1220,6 +1244,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      int p7ibv_base_slab = (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 				      ? HMM_P7IBV_KNEE_BASE_SLAB
 				      : esl_opt_GetInteger(go, "--p7ibv-base-slab"));
+	      if (_st061_on) { _st061_ab_split = FALSE; _st061_used_p7ibv_fb = TRUE; /* a_s/b_s only cover the failed kmer attempt */
+	                       _st061_kind = cm->p7_use_kmeranchor ? "kmeranchor->p7ibv" : "kmerchain->p7ibv"; }
 	      if ((status = kmer_gate_p7ibv_fallback(cm, errbuf, sq->dsq, sq->n, do_trunc,
 						      cm->p7_ibv_delta, p7ibv_base_slab,
 						      &i2k, &kmin, &kmax, &ncells)) != eslOK)
@@ -1231,6 +1257,12 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	       * the old behavior; and the safety net when the --p7ibv fallback
 	       * above itself also found nothing usable (mirrors cm_alndata.c's
 	       * kmeranchor->vitband / kmerchain->vitband fallback shape). */
+	      if (_st061_on) {
+	        _st061_ab_split = FALSE;
+	        if (! did_kmer) _st061_kind = "vitband";
+	        else if (_st061_used_p7ibv_fb) _st061_kind = cm->p7_use_kmeranchor ? "kmeranchor->p7ibv->vitband" : "kmerchain->p7ibv->vitband";
+	        else _st061_kind = cm->p7_use_kmeranchor ? "kmeranchor->vitband" : "kmerchain->vitband";
+	      }
 	      vtr = p7_trace_Create();
 	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
 	      p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
@@ -1270,8 +1302,20 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 		cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	  }
+	  /* brief 26_0628-061: stage (a)/(b) derivation is complete (whichever branch
+	   * fired above); close out the combined-ab timer here before stage (c). */
+	  if (_st061_on) {
+	    clock_gettime(CLOCK_MONOTONIC, &_st061_tab1);
+	    _st061_ab_s = (_st061_tab1.tv_sec - _st061_tab0.tv_sec) + (_st061_tab1.tv_nsec - _st061_tab0.tv_nsec) / 1e9;
+	    clock_gettime(CLOCK_MONOTONIC, &_st061_tc0);
+	  }
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+	  if (_st061_on) {
+	    clock_gettime(CLOCK_MONOTONIC, &_st061_tc1);
+	    _st061_c_s = (_st061_tc1.tv_sec - _st061_tc0.tv_sec) + (_st061_tc1.tv_nsec - _st061_tc0.tv_nsec) / 1e9;
+	    clock_gettime(CLOCK_MONOTONIC, &_st061_td0);
+	  }
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
 	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
@@ -1312,6 +1356,26 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  p7_trace_Reuse(tr[idx]);
 	  if ((status = p7_GOATraceBanded(gm, bxb, bxf, tr[idx])) != eslOK)
 	    cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+	  }
+
+	  /* brief 26_0628-061: stage (d) alignment DP is complete (checkpointed or
+	   * non-checkpointed branch above); emit the per-sequence 4-stage line,
+	   * same #STAGETIME format/semantics as brief 059's --p7band path. */
+	  if (_st061_on) {
+	    clock_gettime(CLOCK_MONOTONIC, &_st061_td1);
+	    _st061_d_s = (_st061_td1.tv_sec - _st061_td0.tv_sec) + (_st061_td1.tv_nsec - _st061_td0.tv_nsec) / 1e9;
+	    if (_st061_kind != NULL) {
+	      if (_st061_ab_split)
+	        fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
+	                sq->name, (int)sq->n, hmm->M, _st061_kind,
+	                _st061_a_s, _st061_b_s, _st061_c_s, _st061_d_s,
+	                _st061_a_s + _st061_b_s + _st061_c_s + _st061_d_s);
+	      else
+	        fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s ab_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
+	                sq->name, (int)sq->n, hmm->M, _st061_kind,
+	                _st061_ab_s, _st061_c_s, _st061_d_s,
+	                _st061_ab_s + _st061_c_s + _st061_d_s);
+	    }
 	  }
 
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
