@@ -422,6 +422,19 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
     }
     else { /* use HMM bands */
+      /* brief 26_0628-059: declared here (this scope encloses BOTH the
+       * if(!cp9b_valid){...do_p7band derivation...} block below AND the later
+       * CP9-iterate/CYK-prepass/CM-alignment-DP code that follows it -- the
+       * latter runs even when cp9b_valid is TRUE, i.e. bands already computed
+       * by a prior call, so declaring inside if(!cp9b_valid) put these out of
+       * scope for the alignment-DP timing). _p7b_kind stays NULL unless the
+       * do_p7band branch actually runs, so the final #STAGETIME print (gated
+       * on _p7b_kind != NULL) only fires for the do_p7band derivers this brief
+       * targets (--p7ibv/--p7kmerchain/--p7kmeranchor). */
+      const char *_p7b_kind = NULL;
+      int    _st059_on = (getenv("BRIEF059_STAGETIME") != NULL);
+      double _st059_a_s = 0., _st059_b_s = 0., _st059_c_s = 0., _st059_d_s = 0., _st059_ab_total_s = 0.;
+      int    _st059_ab_split = FALSE;
       if(! cp9b_valid) {
 	/* TODO #9 mitigation: --p7band produces too-narrow k-envelopes for small-M
 	 * models (M < ~200), causing accuracy regression on rmark4e (Lacto-usp, atoC,
@@ -489,7 +502,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
 	   * without the tiny-M tail regressions. */
 	  struct timespec _ta_p7b, _tb_p7b;
-	  const char *_p7b_kind = NULL;
+	  /* _p7b_kind and the _st059_* stage-timing vars are declared up at the
+	   * enclosing if(! cp9b_valid) scope (brief 26_0628-059) so they stay in
+	   * scope through the shared CP9-iterate/CYK-prepass/CM-align-DP code below. */
 	  clock_gettime(CLOCK_MONOTONIC, &_ta_p7b);
 	  if (cm->p7_use_ibv) {
 	    _p7b_kind = "p7ibv";
@@ -539,13 +554,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    _p7b_kind = "kmeranchor";
 	    status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->L, local_nodepad,
 	                                    do_trunc, /* brief 26_0628-033 */
-	                                    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	                                    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
+	                                    _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL);
+	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
 	    /* ncells==0 => M-gate/N-gate fired, or no usable anchor. Brief 26_0628-047:
 	     * default fallback is now --p7ibv's D&C deriver (this file's own
 	     * --p7ibv-mem branch above, same defaults/params), instead of a
 	     * Vit-trace band; --p7kmerchain-fbvit reverts to the old
 	     * p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
+	      _st059_ab_split = FALSE; /* brief 26_0628-059: a_s/b_s only cover the failed kmeranchor attempt, not the fallback -- report combined ab_s instead */
 	      if (cm->p7_kmerchain_fallback_vit) {
 		_p7b_kind = "kmeranchor->vitband";
 		if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
@@ -578,12 +596,15 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    _p7b_kind = "kmerchain";
 	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
 	                                   do_trunc, /* brief 26_0628-033 */
-	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
+	                                   _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL);
+	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
 	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 26_0628-047:
 	     * default fallback is --p7ibv's D&C deriver, same as the kmeranchor
 	     * ncells==0 fallback above; --p7kmerchain-fbvit reverts to
 	     * the old p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
+	      _st059_ab_split = FALSE; /* brief 26_0628-059: a_s/b_s only cover the failed kmerchain attempt, not the fallback -- report combined ab_s instead */
 	      if (cm->p7_kmerchain_fallback_vit) {
 		_p7b_kind = "kmerchain->vitband";
 		if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
@@ -636,6 +657,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  {
 	    double _p7b_s = (_tb_p7b.tv_sec - _ta_p7b.tv_sec) +
 	                    (_tb_p7b.tv_nsec - _ta_p7b.tv_nsec) / 1e9;
+	    _st059_ab_total_s = _p7b_s; /* brief 26_0628-059: authoritative a+b total, robust across fallbacks */
 	    fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f ncells=%d ibvmode=%d ibvwidth=%d ibvdelta=%d\n",
 	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s,
 	            p7_ncells, cm->p7_ibv_mode, cm->p7_ibv_width, cm->p7_ibv_delta); /* brief 26_0430-140: ncells = band-size discriminator */
@@ -671,6 +693,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 					     cm->maxtau, 0, 0, NULL);
 	    clock_gettime(CLOCK_MONOTONIC, &_tb_cp9);
 	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
+	    _st059_c_s = _cp9_s; /* brief 26_0628-059: stage (c) band construction = HMM-band -> CM v/j-band conversion */
 	    fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
 	  }
 	  else {
@@ -946,9 +969,28 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       if (status != eslOK) goto ERROR;
       clock_gettime(CLOCK_MONOTONIC, &_tb_cm);
       double _cm_s = (_tb_cm.tv_sec - _ta_cm.tv_sec) + (_tb_cm.tv_nsec - _ta_cm.tv_nsec)/1e9;
+      _st059_d_s = _cm_s; /* brief 26_0628-059: stage (d) CM alignment DP itself */
       fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f%s\n",
               (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s,
               ibv_fallback_used ? " ibv_fallback=1" : "");
+      /* brief 26_0628-059: single per-sequence 4-stage timing line, gated by
+       * BRIEF059_STAGETIME (silent no-op by default). See the declaration
+       * comment above (near _ta_p7b) for the a_s/b_s vs ab_s convention.
+       * _p7b_kind != NULL guards against the do_xtau/plain-CP9 branches
+       * (this shared cm-align-DP code also runs for those, but they never
+       * went through a do_p7band deriver, so there's no method to report). */
+      if (_st059_on && _p7b_kind != NULL) {
+        if (_st059_ab_split)
+          fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
+                  sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,
+                  _st059_a_s, _st059_b_s, _st059_c_s, _st059_d_s,
+                  _st059_a_s + _st059_b_s + _st059_c_s + _st059_d_s);
+        else
+          fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s ab_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
+                  sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,
+                  _st059_ab_total_s, _st059_c_s, _st059_d_s,
+                  _st059_ab_total_s + _st059_c_s + _st059_d_s);
+      }
     }
   }
 

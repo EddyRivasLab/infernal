@@ -1151,7 +1151,8 @@ static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int
 int
 p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
                        int do_trunc,
-                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
+                       double *ret_a_s, double *ret_b_s)
 {
   int status = eslOK;
   (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
@@ -1167,11 +1168,18 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   int        *local_nodepad = NULL;
   int         nrawk[KMW_NK];   /* brief 26_0628-046: raw hit count per k-tier (N-gate input) */
   int b, ki, j, x;
+  /* brief 26_0628-059: optional stage a/b timing. _stageb_t unset (tv_sec=0) until
+   * we reach the bin-dominance selection section; if we bail out before then
+   * (M-gate/N-gate), all elapsed time is attributed to stage a. */
+  struct timespec _stagea_t0, _stageb_t0, _stage_texit;
+  int _stageb_t0_set = FALSE;
+  if (ret_a_s != NULL) clock_gettime(CLOCK_MONOTONIC, &_stagea_t0);
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    return eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
   /* brief 26_0628-047: removed the old M<KMW_BIN=200 silent bail-out here (inherited
    * from brief 26_0628-026, unrelated to the M-gate/N-gate mechanisms above) -- it
@@ -1235,6 +1243,7 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   /* 3. score each bin by diagonal-dominance; pick best (rank_bins semantics:
    *    qualifying bins (on>=floor) beat non-qualifying; among qualifying by
    *    (ratio desc, on desc)). */
+  if (ret_a_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stageb_t0); _stageb_t0_set = TRUE; }
   int best_bin = -1, best_on = 0, best_center = 0; double best_ratio = -1.0;
   int maxbinn = 0; for (b = 0; b < nbins; b++) if (binn[b] > maxbinn) maxbinn = binn[b];
   if (maxbinn > 0) ESL_ALLOC(dbuf, sizeof(int) * maxbinn);
@@ -1339,6 +1348,16 @@ p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad
   if (i2k)           free(i2k);
   if (kmin)          free(kmin);
   if (kmax)          free(kmax);
+  if (ret_a_s != NULL) {
+    clock_gettime(CLOCK_MONOTONIC, &_stage_texit);
+    if (_stageb_t0_set) {
+      *ret_a_s = (_stageb_t0.tv_sec - _stagea_t0.tv_sec) + (_stageb_t0.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
+      *ret_b_s = (_stage_texit.tv_sec - _stageb_t0.tv_sec) + (_stage_texit.tv_nsec - _stageb_t0.tv_nsec) / 1e9;
+    } else {
+      *ret_a_s = (_stage_texit.tv_sec - _stagea_t0.tv_sec) + (_stage_texit.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
+      *ret_b_s = 0.;
+    }
+  }
   return status;
 
  ERROR:
@@ -1444,7 +1463,8 @@ brief035_rss_kb(void)
 int
 p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
                       int do_trunc,
-                      int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+                      int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
+                      double *ret_a_s, double *ret_b_s)
 {
   int status = eslOK;
   (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
@@ -1463,11 +1483,20 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
   int ki, j, x, i;
+  /* brief 26_0628-059: optional stage a/b timing, same convention as
+   * p7_Seq2BandsKmerAnchor() above -- a = seed finding (raw hits + merge),
+   * b = colinear chaining DP + backtrack + pin emission. If we bail before
+   * reaching the chaining DP (M-gate/N-gate/no anchors), all elapsed time is
+   * attributed to stage a. */
+  struct timespec _stagea_t0, _stageb_t0, _stage_texit;
+  int _stageb_t0_set = FALSE;
+  if (ret_a_s != NULL) clock_gettime(CLOCK_MONOTONIC, &_stagea_t0);
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    return eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
   for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)
@@ -1583,6 +1612,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
    *    (minimap2-style). Lookback is bounded by KMC_MAX_QGAP (anchors sorted by
    *    t => break once exceeded) and by KMC_MAX_ITER predecessors examined, so
    *    the DP is O(N * min(W, MAX_ITER)). */
+  if (ret_a_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stageb_t0); _stageb_t0_set = TRUE; }
   qsort(seeds, nseed, sizeof(kmw_hit_t), kmc_seed_cmp);
   ESL_ALLOC(f,   sizeof(float) * nseed);
   ESL_ALLOC(pre, sizeof(int)   * nseed);
@@ -1709,6 +1739,16 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   if (kmax)          free(kmax);
   if (getenv("BRIEF035_MEMPOINT") != NULL)
     fprintf(stderr, "#MEMPOINT after_kmerchain_return L=%d rss_kb=%ld\n", L, brief035_rss_kb());
+  if (ret_a_s != NULL) {
+    clock_gettime(CLOCK_MONOTONIC, &_stage_texit);
+    if (_stageb_t0_set) {
+      *ret_a_s = (_stageb_t0.tv_sec - _stagea_t0.tv_sec) + (_stageb_t0.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
+      *ret_b_s = (_stage_texit.tv_sec - _stageb_t0.tv_sec) + (_stage_texit.tv_nsec - _stageb_t0.tv_nsec) / 1e9;
+    } else {
+      *ret_a_s = (_stage_texit.tv_sec - _stagea_t0.tv_sec) + (_stage_texit.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
+      *ret_b_s = 0.;
+    }
+  }
   return status;
 
  ERROR:

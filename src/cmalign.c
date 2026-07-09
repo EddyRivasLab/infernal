@@ -1191,14 +1191,14 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      did_kmer = TRUE;
 	      if ((status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						   do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-						   &i2k, &kmin, &kmax, &ncells)) != eslOK)
+						   &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	    else if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
-						  &i2k, &kmin, &kmax, &ncells)) != eslOK)
+						  &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	    if (local_nodepad) free(local_nodepad);
@@ -1826,14 +1826,14 @@ hmm_pipeline_thread(void *arg)
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerAnchor(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
 					       info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-					       &i2k, &kmin, &kmax, &ncells)) != eslOK)
+					       &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
 	}
 	else if (info->cm != NULL && info->cm->p7_use_kmerchain) {
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerChain(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
 					      info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
-					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
+					      &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	}
 	if (local_nodepad) free(local_nodepad);
@@ -2638,14 +2638,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerAnchor(cm, errbuf, dsq, L, local_nodepad_w,
 				     do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-				     &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
+				     &i2k_w, &kmin_w, &kmax_w, &ncells_w, NULL, NULL) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerAnchor() failed: %s", errbuf);
 	}
 	else if (cm->p7_use_kmerchain) {
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerChain(cm, errbuf, dsq, L, local_nodepad_w,
 				    do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
-				    &i2k_w, &kmin_w, &kmax_w, &ncells_w) != eslOK)
+				    &i2k_w, &kmin_w, &kmax_w, &ncells_w, NULL, NULL) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerChain() failed: %s", errbuf);
 	}
 	if (local_nodepad_w) free(local_nodepad_w);

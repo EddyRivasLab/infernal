@@ -3401,10 +3401,16 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* Brief 26_0628-026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in). */
-extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in). */
-extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* Brief 26_0628-026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in).
+ * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
+ * stage timing (seconds) -- a = raw-hit/bin collection, b = bin-dominance selection +
+ * pin emission + p7_pins2bands_nodepad. Only measured (clock_gettime) when non-NULL. */
+extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s);
+/* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
+ * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
+ * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining
+ * DP + backtrack + pin emission + p7_pins2bands_nodepad. Only measured when non-NULL. */
+extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s);
 /* Brief 26_0430-140: IBV band-derivation modes (enrich the per-row band using the
  * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
  * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */
