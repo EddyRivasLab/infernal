@@ -1316,6 +1316,16 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    _st061_c_s = (_st061_tc1.tv_sec - _st061_tc0.tv_sec) + (_st061_tc1.tv_nsec - _st061_tc0.tv_nsec) / 1e9;
 	    clock_gettime(CLOCK_MONOTONIC, &_st061_td0);
 	  }
+	  /* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
+	   * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md). bnd->ncell (total cells
+	   * inside the final band) and bnd->L/bnd->M are already set by
+	   * p7_kbands2gbands() as a side effect; env-gated, opt-in like the other
+	   * BRIEF0NN_* diagnostics in this thread. */
+	  if (getenv("BRIEF058_BANDCELLS") != NULL) {
+	    double outside_frac = 1.0 - (double) bnd->ncell / ((double) bnd->L * (double) bnd->M);
+	    fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
+		    bnd->L, bnd->M, (long) bnd->ncell, (long) bnd->L * (long) bnd->M, outside_frac);
+	  }
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
 	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
@@ -1962,6 +1972,13 @@ hmm_pipeline_thread(void *arg)
       }
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+      /* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
+       * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md); see serial-path site above. */
+      if (getenv("BRIEF058_BANDCELLS") != NULL) {
+	double outside_frac = 1.0 - (double) bnd->ncell / ((double) bnd->L * (double) bnd->M);
+	fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
+		bnd->L, bnd->M, (long) bnd->ncell, (long) bnd->L * (long) bnd->M, outside_frac);
+      }
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
@@ -2769,6 +2786,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  p7_pins2bands(i2k_w, errbuf, L, hmm_w->M, pad_w, &kmin_w, &kmax_w, &ncells_w);
 	}
 	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
+	/* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
+	 * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md); see serial-path site above. */
+	if (getenv("BRIEF058_BANDCELLS") != NULL) {
+	  double outside_frac = 1.0 - (double) bnd_w->ncell / ((double) bnd_w->L * (double) bnd_w->M);
+	  fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
+		  bnd_w->L, bnd_w->M, (long) bnd_w->ncell, (long) bnd_w->L * (long) bnd_w->M, outside_frac);
+	}
 	bxf_w = p7_gmxb_Create(bnd_w);
 	bxb_w = p7_gmxb_Create(bnd_w);
 
