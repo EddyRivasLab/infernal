@@ -2811,6 +2811,8 @@ extern int   cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, f
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
+/* brief 26_0610-078 R2: checkpointed, COMBINED-MODE (J/L/R/T) k*-DISCOVERING truncated CYK (no external kpin/preset mode); structured (bps>0), GLOBAL/non-truncated-local/no-EL only */
+extern int   cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int pass_idx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
 /* rung-4 (R4.2a, brief 26_0610-053): pinned truncated structured (bps>0) posterior */
 extern int   cm_PinTrPostAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);
 extern int   cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);

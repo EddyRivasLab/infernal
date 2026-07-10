@@ -3601,6 +3601,1015 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   return status;
 }
 
+/*****************************************************************
+ * Brief 26_0610-078 R2: checkpointed, COMBINED-MODE (J/L/R/T)
+ * bifurcation (k*)-DISCOVERING truncated CYK max-DP, structured (bps>0).
+ * GLOBAL/non-truncated-local/no-EL only (same scope decision as R1; see
+ * brief 078's summary "flagged for Eric" section).
+ *
+ * Replaces cm_alndata.c's do_trckpt_r4 ncand-loop (which calls
+ * TrCYKDivideAndConquerHB once per root-valid mode, brief 076's measured
+ * 6.6x-21.6x D&C penalty) with ONE combined sweep that resolves the mode
+ * AND discovers every bifurcation k* (pin), extending R1's k-search
+ * (cm_dpalign.c's ckpt_cyk_bsearch/cm_CheckptCYKAlignHB) to the
+ * truncated/marginal-mode-combined case.
+ *
+ * Skeleton: the non-B per-state recurrence and checkpointing/retention
+ * shape are transcribed from trckpt_tr_inside_deck/trckpt_tr_root_contrib
+ * (this file, ~1451-1782 -- the EXISTING bps=0 checkpointed truncated
+ * INSIDE engine), swapping FLogsum/sum for CYK/max (mirrors how
+ * cm_TrCYKInsideAlignHB's non-B recursion differs from cm_TrInsideAlignHB
+ * for the same case) and adding yshadow tracking (Inside doesn't need it,
+ * CYK traceback does).  The B_st k+mode-search (ckpt_trcyk_bcell) is
+ * transcribed verbatim from cm_TrCYKInsideAlignHB's B_st recursion
+ * (cm_dpalign_trunc.c ~6419-6598): main k-loop (J+J->J, J+L->L, R+J->R,
+ * R+L->T) plus the two k=0/k=d special-case loops (L-only, R-only).  Every
+ * mode-transition candidate is gated by the SAME cp9b->{J,L,R,T}valid
+ * checks the oracle uses (do_J_y/do_L_y/... computed identically) -- the
+ * 069/070/075 lesson (an unguarded classical-mode deck read winning a
+ * candidate scan by default) applied to this new k-search, not just
+ * inherited from the transcription source.
+ *
+ * Because B-state children (BEGL_S/BEGR_S) are chain roots and thus never
+ * freed (ckpt_is_trchain_root), no B-state kshadow/childmode is persisted --
+ * ckpt_trcyk_bcell is simply re-run at traceback time against the still-
+ * resident per-mode stores, exactly mirroring R1's principle.
+ *
+ * Traceback mode-transition decode rules (which child inherits which
+ * marginal mode across a B_st) are transcribed verbatim from the EXISTING
+ * production truncated traceback cm_tr_alignT_hb's B_st branch (this file,
+ * ~603-646): J stays J; L's right child is always L (left child mode
+ * varies, from ckpt_trcyk_bcell's Lchildmode); R's left child is always R
+ * (right child mode varies, from Rchildmode); T's left child is always R,
+ * right child always L.
+ *****************************************************************/
+
+/* is v a chain-root START state (survives from fill to traceback,
+ * permanently -- a parent B reads its child roots; the traceback
+ * block-recompute reads them too)?  Mirrors cm_dpalign.c's
+ * ckpt_is_chain_root() (duplicated here, file-static there too). */
+static int
+ckpt_is_trchain_root(CM_t *cm, int v)
+{
+  int s = cm->stid[v];
+  return (s == ROOT_S || s == BEGL_S || s == BEGR_S);
+}
+
+/* CYK deck v: mirrors trckpt_tr_inside_deck's checkpointing SHAPE (deck
+ * access via JA()/LA()/RA() cy-then-ck fallback macros, do_{J,L,R}_v/y
+ * gating, StateIsDetached, d>=2 USED_TRUNC_END boundary) but with
+ * cm_TrCYKInsideAlignHB's CYK/max recurrence (real tsc_v/esc_v/lmesc_v/
+ * rmesc_v, not posteriors) and yshadow tracking added (Jysh/Lysh/Rysh,
+ * yoffset+TRMODE_{J,L,R}_OFFSET encoding, NULL-able -- non-B states only,
+ * B states need no shadow, see file header comment).  Not called for B_st
+ * (caller uses ckpt_trcyk_bcell instead) or E_st (trivial, handled inline
+ * by the caller loop). */
+static void
+ckpt_trcyk_deck(TR_CKPT_CTX *cx, int v,
+                float ***Jba, float ***Lba, float ***Rba,
+                float ***Jck, float ***Lck, float ***Rck,
+                char **Jysh, char **Lysh, char **Rysh)
+{
+#define JA(vv) (Jba[vv] ? Jba[vv] : (Jck ? Jck[vv] : NULL))
+#define LA(vv) (Lba[vv] ? Lba[vv] : (Lck ? Lck[vv] : NULL))
+#define RA(vv) (Rba[vv] ? Rba[vv] : (Rck ? Rck[vv] : NULL))
+  CM_t *cm = cx->cm;
+  ESL_DSQ *dsq = cx->dsq;
+  int   *jmin = cx->jmin, *jmax = cx->jmax;
+  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  int   *Jv = cx->Jv, *Lv = cx->Lv, *Rv = cx->Rv;
+  int    fill_L = cx->fill_L, fill_R = cx->fill_R;
+  float **Jav = Jba[v];
+  float **Lav = Lba[v];
+  float **Rav = Rba[v];
+  float const *esc_v = cm->oesc[v];
+  float const *tsc_v = cm->tsc[v];
+  float const *lmesc_v = cm->lmesc[v];
+  float const *rmesc_v = cm->rmesc[v];
+  int sd  = StateDelta(cm->sttype[v]);
+  int sdr = StateRightDelta(cm->sttype[v]);
+  int sdl = StateLeftDelta(cm->sttype[v]);
+  int j, d, i, y, yoffset, jp_v, dp_v, jp_y, jp_y_sdr, dp_y, dp_y_sd, j_sdr;
+  int dp_y_sdr, dp_y_sdl;
+  int yvalidA[MAXCONNECT], yvalid_ct, yvalid_idx;
+  float sc;
+  int do_J_v = Jv[v], do_L_v = (Lv[v] && fill_L), do_R_v = (Rv[v] && fill_R);
+  int do_J_y, do_L_y, do_R_y;
+
+  if (do_J_v) trckpt_deck_init_impossible(cx, v, Jav);
+  if (do_L_v) trckpt_deck_init_impossible(cx, v, Lav);
+  if (do_R_v) trckpt_deck_init_impossible(cx, v, Rav);
+
+  if (StateIsDetached(cm, v)) return; /* leave IMPOSSIBLE */
+
+  if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      yvalid_ct = 0; j_sdr = j - sdr;
+      for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+        if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        i = j - d + 1;
+        dp_v = d - hdmin[v][jp_v];
+        if (do_J_v || do_L_v) {
+          for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+            yoffset = yvalidA[yvalid_idx];
+            y = cm->cfirst[v] + yoffset;
+            do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L);
+            if (do_J_y || do_L_y) {
+              jp_y_sdr = j - jmin[y] - sdr;
+              if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
+                dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+                if (do_J_v && do_J_y && (sc = JA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Jav[jp_v][dp_v]) {
+                  Jav[jp_v][dp_v] = sc; if (Jysh) Jysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+                }
+                if (do_L_v && do_L_y && (sc = LA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Lav[jp_v][dp_v]) {
+                  Lav[jp_v][dp_v] = sc; if (Lysh) Lysh[jp_v][dp_v] = (char) (yoffset + TRMODE_L_OFFSET);
+                }
+              }
+            }
+          }
+          if (do_J_v) { Jav[jp_v][dp_v] += esc_v[dsq[i]]; Jav[jp_v][dp_v] = ESL_MAX(Jav[jp_v][dp_v], IMPOSSIBLE); }
+          if (do_L_v) {
+            if (d >= 2) { Lav[jp_v][dp_v] += esc_v[dsq[i]]; }
+            else        { Lav[jp_v][dp_v] = esc_v[dsq[i]]; if (Lysh) Lysh[jp_v][dp_v] = (char) USED_TRUNC_END; }
+            Lav[jp_v][dp_v] = ESL_MAX(Lav[jp_v][dp_v], IMPOSSIBLE);
+          }
+          i--;
+        }
+        if (do_R_v) {
+          for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+            yoffset = yvalidA[yvalid_idx];
+            y = cm->cfirst[v] + yoffset;
+            do_R_y = (Rv[y] && fill_R); do_J_y = Jv[y];
+            if ((do_J_y || do_R_y) && (y != v)) {
+              jp_y_sdr = j - jmin[y] - sdr;
+              if ((d) >= hdmin[y][jp_y_sdr] && (d) <= hdmax[y][jp_y_sdr]) {
+                dp_y = d - hdmin[y][jp_y_sdr];
+                if (do_J_y && (sc = JA(y)[jp_y_sdr][dp_y] + tsc_v[yoffset]) > Rav[jp_v][dp_v]) {
+                  Rav[jp_v][dp_v] = sc; if (Rysh) Rysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+                }
+                if (do_R_y && (sc = RA(y)[jp_y_sdr][dp_y] + tsc_v[yoffset]) > Rav[jp_v][dp_v]) {
+                  Rav[jp_v][dp_v] = sc; if (Rysh) Rysh[jp_v][dp_v] = (char) (yoffset + TRMODE_R_OFFSET);
+                }
+              }
+            }
+          }
+          Rav[jp_v][dp_v] = ESL_MAX(Rav[jp_v][dp_v], IMPOSSIBLE);
+        }
+      }
+    }
+    return;
+  }
+
+  if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+    if (do_J_v || do_R_v) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        yvalid_ct = 0; j_sdr = j - sdr;
+        for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+          if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          dp_v = d - hdmin[v][jp_v];
+          for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+            yoffset = yvalidA[yvalid_idx];
+            y = cm->cfirst[v] + yoffset;
+            do_J_y = Jv[y]; do_R_y = (Rv[y] && fill_R);
+            if (do_J_y || do_R_y) {
+              jp_y_sdr = j - jmin[y] - sdr;
+              if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
+                dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+                if (do_J_v && do_J_y && (sc = JA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Jav[jp_v][dp_v]) {
+                  Jav[jp_v][dp_v] = sc; if (Jysh) Jysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+                }
+                if (do_R_v && do_R_y && (sc = RA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > Rav[jp_v][dp_v]) {
+                  Rav[jp_v][dp_v] = sc; if (Rysh) Rysh[jp_v][dp_v] = (char) (yoffset + TRMODE_R_OFFSET);
+                }
+              }
+            }
+          }
+          if (do_J_v) { Jav[jp_v][dp_v] += esc_v[dsq[j]]; Jav[jp_v][dp_v] = ESL_MAX(Jav[jp_v][dp_v], IMPOSSIBLE); }
+          if (do_R_v) {
+            if (d >= 2) { Rav[jp_v][dp_v] += esc_v[dsq[j]]; }
+            else        { Rav[jp_v][dp_v] = esc_v[dsq[j]]; if (Rysh) Rysh[jp_v][dp_v] = (char) USED_TRUNC_END; }
+            Rav[jp_v][dp_v] = ESL_MAX(Rav[jp_v][dp_v], IMPOSSIBLE);
+          }
+        }
+      }
+    }
+    if (do_L_v) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        yvalid_ct = 0;
+        for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+          if (j >= jmin[y] && j <= jmax[y]) yvalidA[yvalid_ct++] = yoffset;
+        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+          dp_v = d - hdmin[v][jp_v];
+          for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+            yoffset = yvalidA[yvalid_idx];
+            y = cm->cfirst[v] + yoffset;
+            do_L_y = (Lv[y] && fill_L); do_J_y = Jv[y];
+            if ((do_J_y || do_L_y) && (y != v)) {
+              jp_y = j - jmin[y];
+              if ((d) >= hdmin[y][jp_y] && (d) <= hdmax[y][jp_y]) {
+                dp_y = d - hdmin[y][jp_y];
+                if (do_J_y && (sc = JA(y)[jp_y][dp_y] + tsc_v[yoffset]) > Lav[jp_v][dp_v]) {
+                  Lav[jp_v][dp_v] = sc; if (Lysh) Lysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+                }
+                if (do_L_y && (sc = LA(y)[jp_y][dp_y] + tsc_v[yoffset]) > Lav[jp_v][dp_v]) {
+                  Lav[jp_v][dp_v] = sc; if (Lysh) Lysh[jp_v][dp_v] = (char) (yoffset + TRMODE_L_OFFSET);
+                }
+              }
+            }
+          }
+          Lav[jp_v][dp_v] = ESL_MAX(Lav[jp_v][dp_v], IMPOSSIBLE);
+        }
+      }
+    }
+    return;
+  }
+
+  if (cm->sttype[v] == MP_st) {
+    int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
+    float tsc;
+    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+      yoffset = y - cm->cfirst[v];
+      do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L); do_R_y = (Rv[y] && fill_R);
+      tsc = tsc_v[yoffset];
+      jn = ESL_MAX(jmin[v], jmin[y] + sdr);
+      jx = ESL_MIN(jmax[v], jmax[y] + sdr);
+      jpn = jn - jmin[v]; jpx = jx - jmin[v];
+      jp_y_sdr = jn - jmin[y] - sdr;
+      if ((do_J_v && do_J_y) || (do_R_v && (do_J_y || do_R_y))) {
+        for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+          if (do_J_v && do_J_y) {
+            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+            dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+            dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v];
+            dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+            for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++)
+              if ((sc = JA(y)[jp_y_sdr][dp_y_sd] + tsc) > Jav[jp_v][dp_v]) {
+                Jav[jp_v][dp_v] = sc; if (Jysh) Jysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+              }
+          }
+          if (do_R_v && (do_R_y || do_J_y)) {
+            dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sdr);
+            dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sdr);
+            dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v];
+            dp_y_sdr = dn - hdmin[y][jp_y_sdr] - sdr;
+            for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdr++) {
+              if (do_J_y && (sc = JA(y)[jp_y_sdr][dp_y_sdr] + tsc) > Rav[jp_v][dp_v]) {
+                Rav[jp_v][dp_v] = sc; if (Rysh) Rysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+              }
+              if (do_R_y && (sc = RA(y)[jp_y_sdr][dp_y_sdr] + tsc) > Rav[jp_v][dp_v]) {
+                Rav[jp_v][dp_v] = sc; if (Rysh) Rysh[jp_v][dp_v] = (char) (yoffset + TRMODE_R_OFFSET);
+              }
+            }
+          }
+        }
+      }
+      if (do_L_v && (do_L_y || do_J_y)) {
+        jn = ESL_MAX(jmin[v], jmin[y]);
+        jx = ESL_MIN(jmax[v], jmax[y]);
+        jpn = jn - jmin[v]; jpx = jx - jmin[v];
+        jp_y = jn - jmin[y];
+        for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++) {
+          dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y] + sdl);
+          dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y] + sdl);
+          dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v];
+          dp_y_sdl = dn - hdmin[y][jp_y] - sdl;
+          for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sdl++) {
+            if (do_J_y && (sc = JA(y)[jp_y][dp_y_sdl] + tsc) > Lav[jp_v][dp_v]) {
+              Lav[jp_v][dp_v] = sc; if (Lysh) Lysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+            }
+            if (do_L_y && (sc = LA(y)[jp_y][dp_y_sdl] + tsc) > Lav[jp_v][dp_v]) {
+              Lav[jp_v][dp_v] = sc; if (Lysh) Lysh[jp_v][dp_v] = (char) (yoffset + TRMODE_L_OFFSET);
+            }
+          }
+        }
+      }
+    }
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      i    = j - hdmin[v][jp_v] + 1;
+      for (d = hdmin[v][jp_v], dp_v = 0; d <= hdmax[v][jp_v]; d++, dp_v++) {
+        if (d >= 2) {
+          if (do_J_v) Jav[jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
+          if (do_L_v) Lav[jp_v][dp_v] += lmesc_v[dsq[i]];
+          if (do_R_v) Rav[jp_v][dp_v] += rmesc_v[dsq[j]];
+        } else {
+          if (do_J_v) { Jav[jp_v][dp_v] = IMPOSSIBLE; }
+          if (do_L_v) { Lav[jp_v][dp_v] = lmesc_v[dsq[i]]; if (Lysh) Lysh[jp_v][dp_v] = (char) USED_TRUNC_END; }
+          if (do_R_v) { Rav[jp_v][dp_v] = rmesc_v[dsq[j]]; if (Rysh) Rysh[jp_v][dp_v] = (char) USED_TRUNC_END; }
+        }
+        i--;
+      }
+    }
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+        if (do_J_v) Jav[jp_v][dp_v] = ESL_MAX(Jav[jp_v][dp_v], IMPOSSIBLE);
+        if (do_L_v) Lav[jp_v][dp_v] = ESL_MAX(Lav[jp_v][dp_v], IMPOSSIBLE);
+        if (do_R_v) Rav[jp_v][dp_v] = ESL_MAX(Rav[jp_v][dp_v], IMPOSSIBLE);
+      }
+    }
+    return;
+  }
+
+  /* D, S (not B, not E, not emitters) */
+  {
+    int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
+    float tsc;
+    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+      yoffset = y - cm->cfirst[v];
+      do_J_y = Jv[y]; do_L_y = (Lv[y] && fill_L); do_R_y = (Rv[y] && fill_R);
+      tsc = tsc_v[yoffset];
+      if ((do_J_v && do_J_y) || (do_L_v && do_L_y) || (do_R_v && do_R_y)) {
+        jn = ESL_MAX(jmin[v], jmin[y] + sdr);
+        jx = ESL_MIN(jmax[v], jmax[y] + sdr);
+        jpn = jn - jmin[v]; jpx = jx - jmin[v];
+        jp_y_sdr = jn - jmin[y] - sdr;
+        for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+          dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+          dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+          dpn = dn - hdmin[v][jp_v]; dpx = dx - hdmin[v][jp_v];
+          dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+          for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
+            if (do_J_v && do_J_y && (sc = JA(y)[jp_y_sdr][dp_y_sd] + tsc) > Jav[jp_v][dp_v]) {
+              Jav[jp_v][dp_v] = sc; if (Jysh) Jysh[jp_v][dp_v] = (char) (yoffset + TRMODE_J_OFFSET);
+            }
+            if (do_L_v && do_L_y && (sc = LA(y)[jp_y_sdr][dp_y_sd] + tsc) > Lav[jp_v][dp_v]) {
+              Lav[jp_v][dp_v] = sc; if (Lysh) Lysh[jp_v][dp_v] = (char) (yoffset + TRMODE_L_OFFSET);
+            }
+            if (do_R_v && do_R_y && (sc = RA(y)[jp_y_sdr][dp_y_sd] + tsc) > Rav[jp_v][dp_v]) {
+              Rav[jp_v][dp_v] = sc; if (Rysh) Rysh[jp_v][dp_v] = (char) (yoffset + TRMODE_R_OFFSET);
+            }
+            if (dp_v == dpn && dn == 0) {
+              if (do_L_v) Lav[jp_v][dp_v] = IMPOSSIBLE;
+              if (do_R_v) Rav[jp_v][dp_v] = IMPOSSIBLE;
+              if (cm->sttype[v] == S_st) {
+                if (do_L_v && Lysh) Lysh[jp_v][dp_v] = (char) USED_TRUNC_END;
+                if (do_R_v && Rysh) Rysh[jp_v][dp_v] = (char) USED_TRUNC_END;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+#undef JA
+#undef LA
+#undef RA
+}
+
+/* B_st combine for ONE cell (v,j,d): computes Jalpha/Lalpha/Ralpha/Talpha[v][j][d]
+ * by transcribing the SAME 3 branches cm_TrCYKInsideAlignHB's B_st recursion
+ * uses (cm_dpalign_trunc.c ~6436-6598): (1) the main k-loop combining
+ * J+J->J, J+L->L, R+J->R, R+L->T; (2) the k==0 L-only special case (right
+ * child empty); (3) the k==d R-only special case (left child empty).  Every
+ * combine is gated by the SAME do_{J,L,R}_y/do_{J,L,R}_z cp9b-validity
+ * flags the oracle computes (passed in by the caller) -- the 069/070/075
+ * lesson (never let an unguarded classical-mode deck read win a candidate
+ * scan by default) applied here, not just inherited via transcription.
+ *
+ * B-state children (y=BEGL_S, z=BEGR_S) are always chain roots -- always
+ * resident in JCY/LCY/RCY (no ck[] fallback needed, unlike non-B states).
+ *
+ * *ret_Lchildmode / *ret_Rchildmode: mode of the VARYING child (left for an
+ * L-target win, right for an R-target win) -- meaningless/unset for J/T
+ * (both children's modes are fixed for those targets, per the oracle). */
+static void
+ckpt_trcyk_bcell(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
+                  float ***JCY, float ***LCY, float ***RCY, float ***TCY,
+                  int v, int y, int z, int j, int d,
+                  int do_J_v, int do_L_v, int do_R_v, int do_T_v,
+                  int do_J_y, int do_L_y, int do_R_y,
+                  int do_J_z, int do_L_z, int do_R_z,
+                  float *ret_Jsc, int *ret_Jk,
+                  float *ret_Lsc, int *ret_Lk, char *ret_Lchildmode,
+                  float *ret_Rsc, int *ret_Rk, char *ret_Rchildmode,
+                  float *ret_Tsc, int *ret_Tk)
+{
+  float Jsc = IMPOSSIBLE, Lsc = IMPOSSIBLE, Rsc = IMPOSSIBLE, Tsc = IMPOSSIBLE;
+  int   Jk = -1, Lk = -1, Rk = -1, Tk = -1;
+  char  Lcm = TRMODE_UNKNOWN, Rcm = TRMODE_UNKNOWN;
+  float sc;
+
+  /* (1) main k-loop: j is v's/z's SHARED coordinate (z spans up to v's own j);
+   * y's own j-coordinate is j-k (varies with k), so y's band is enforced
+   * entirely through the kn/kx bounds below (jp_y=j-jmin[y] can legitimately
+   * be huge/negative here -- only j-k, not j itself, must land in y's band),
+   * EXACTLY mirroring cm_TrCYKInsideAlignHB's B_st main loop (only checks j
+   * against v's and z's bands, never y's, ~6435-6437).  A prior version of
+   * this function incorrectly also gated on j within y's OWN band, which
+   * silently zeroed the entire main k-loop whenever y's (left child, earlier
+   * sequence positions) band didn't overlap v's/z's (right-edge) j range --
+   * true by construction for essentially every real bifurcation. */
+  if (j >= jmin[z] && j <= jmax[z]) {
+    int jp_y = j - jmin[y], jp_z = j - jmin[z];
+    int kn = ESL_MAX(ESL_MAX(j-jmax[y], hdmin[z][jp_z]), 0);
+    int kx = ESL_MIN(jp_y, hdmax[z][jp_z]);
+    int k;
+    for (k = kn; k <= kx; k++) {
+      if ((k >= d - hdmax[y][jp_y-k]) && (k <= d - hdmin[y][jp_y-k])) {
+        int kp_z = k - hdmin[z][jp_z];
+        int dp_y = d - hdmin[y][jp_y-k];
+        if (do_J_v && do_J_y && do_J_z) {
+          sc = JCY[y][jp_y-k][dp_y-k] + JCY[z][jp_z][kp_z];
+          if (sc > Jsc) { Jsc = sc; Jk = k; }
+        }
+        if (do_L_v && do_J_y && do_L_z) {
+          sc = JCY[y][jp_y-k][dp_y-k] + LCY[z][jp_z][kp_z];
+          if (sc > Lsc) { Lsc = sc; Lk = k; Lcm = TRMODE_J; }
+        }
+        if (do_R_v && do_R_y && do_J_z) {
+          sc = RCY[y][jp_y-k][dp_y-k] + JCY[z][jp_z][kp_z];
+          if (sc > Rsc) { Rsc = sc; Rk = k; Rcm = TRMODE_J; }
+        }
+        if (k != 0 && k != d && do_T_v && do_R_y && do_L_z) {
+          sc = RCY[y][jp_y-k][dp_y-k] + LCY[z][jp_z][kp_z];
+          if (sc > Tsc) { Tsc = sc; Tk = k; }
+        }
+      }
+    }
+  }
+  /* (2) L-only special case (k==0, right child empty): j,d within v's AND y's bands */
+  if (do_L_v && (do_J_y || do_L_y) && j >= jmin[y] && j <= jmax[y]) {
+    int jp_y = j - jmin[y];
+    if (d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) {
+      int dp_y = d - hdmin[y][jp_y];
+      if (do_J_y && (sc = JCY[y][jp_y][dp_y]) > Lsc) { Lsc = sc; Lk = 0; Lcm = TRMODE_J; }
+      if (do_L_y && (sc = LCY[y][jp_y][dp_y]) > Lsc) { Lsc = sc; Lk = 0; Lcm = TRMODE_L; }
+    }
+  }
+  /* (3) R-only special case (k==d, left child empty): j,d within v's AND z's bands */
+  if (do_R_v && (do_J_z || do_R_z) && j >= jmin[z] && j <= jmax[z]) {
+    int jp_z = j - jmin[z];
+    if (d >= hdmin[z][jp_z] && d <= hdmax[z][jp_z]) {
+      int dp_z = d - hdmin[z][jp_z];
+      if (do_J_z && (sc = JCY[z][jp_z][dp_z]) > Rsc) { Rsc = sc; Rk = d; Rcm = TRMODE_J; }
+      if (do_R_z && (sc = RCY[z][jp_z][dp_z]) > Rsc) { Rsc = sc; Rk = d; Rcm = TRMODE_R; }
+    }
+  }
+
+  if (ret_Jsc) *ret_Jsc = Jsc; if (ret_Jk) *ret_Jk = Jk;
+  if (ret_Lsc) *ret_Lsc = Lsc; if (ret_Lk) *ret_Lk = Lk; if (ret_Lchildmode) *ret_Lchildmode = Lcm;
+  if (ret_Rsc) *ret_Rsc = Rsc; if (ret_Rk) *ret_Rk = Rk; if (ret_Rchildmode) *ret_Rchildmode = Rcm;
+  if (ret_Tsc) *ret_Tsc = Tsc; if (ret_Tk) *ret_Tk = Tk;
+}
+
+/* Fill B-state v's WHOLE deck (all valid (j,d)) via ckpt_trcyk_bcell.
+ * Children (y=BEGL_S, z=BEGR_S) are ALWAYS read from the GLOBAL retained
+ * store (JCYstore/LCYstore/RCYstore/TCYstore) -- they are chain roots
+ * (ckpt_is_trchain_root), permanently resident regardless of whether this
+ * call is the initial forward-sweep fill (Jout/Lout/Rout/Tout ==
+ * JCYstore[v]/... themselves) or a traceback block-recompute (Jout/Lout/
+ * Rout point into a block-local array instead) -- v's OWN deck is NOT a
+ * chain root and DOES get freed by the Delta-window scheme like any other
+ * non-chain-root state, so a later block-recompute needing v's output as
+ * some OTHER state's child input must re-derive it exactly this way. */
+static void
+ckpt_trcyk_bstate_filldeck(TR_CKPT_CTX *cx, int v,
+                            float ***JCYstore, float ***LCYstore, float ***RCYstore, float ***TCYstore,
+                            float **Jout, float **Lout, float **Rout, float **Tout)
+{
+  CM_t *cm = cx->cm;
+  int *jmin = cx->jmin, *jmax = cx->jmax;
+  int **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  int *Jv = cx->Jv, *Lv = cx->Lv, *Rv = cx->Rv, *Tv = cx->Tv;
+  int fill_L = cx->fill_L, fill_R = cx->fill_R, fill_T = cx->fill_T;
+  int yy = cm->cfirst[v], zz = cm->cnum[v];
+  int do_Jv = Jv[v], do_Lv = (Lv[v] && fill_L), do_Rv = (Rv[v] && fill_R);
+  /* T is never read as another state's "child" (only the ROOT-accumulate and
+   * a direct T-mode traceback visit to THIS B state ever need it, both of
+   * which read T fresh via ckpt_trcyk_bcell directly, not through this
+   * filldeck's stored output) -- callers that don't need it (e.g. the
+   * traceback block-recompute reload, which only needs J/L/R for OTHER
+   * states' child reads) pass Tout=NULL, so skip T entirely then. */
+  int do_Tv = (Tv[v] && fill_T && Tout != NULL);
+  int doJy = Jv[yy], doLy = (Lv[yy] && fill_L), doRy = (Rv[yy] && fill_R);
+  int doJz = Jv[zz], doLz = (Lv[zz] && fill_L), doRz = (Rv[zz] && fill_R);
+  int j, d, jp_v, dp_v;
+
+  if (do_Jv) trckpt_deck_init_impossible(cx, v, Jout);
+  if (do_Lv) trckpt_deck_init_impossible(cx, v, Lout);
+  if (do_Rv) trckpt_deck_init_impossible(cx, v, Rout);
+  if (do_Tv) trckpt_deck_init_impossible(cx, v, Tout);
+
+  for (j = jmin[v]; j <= jmax[v]; j++) {
+    jp_v = j - jmin[v];
+    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+      dp_v = d - hdmin[v][jp_v];
+      float Jsc, Lsc, Rsc, Tsc; int Jk, Lk, Rk, Tk; char lcm, rcm;
+      ckpt_trcyk_bcell(cm, jmin, jmax, hdmin, hdmax, JCYstore, LCYstore, RCYstore, TCYstore,
+                        v, yy, zz, j, d, do_Jv, do_Lv, do_Rv, do_Tv,
+                        doJy, doLy, doRy, doJz, doLz, doRz,
+                        do_Jv ? &Jsc : NULL, do_Jv ? &Jk : NULL,
+                        do_Lv ? &Lsc : NULL, do_Lv ? &Lk : NULL, do_Lv ? &lcm : NULL,
+                        do_Rv ? &Rsc : NULL, do_Rv ? &Rk : NULL, do_Rv ? &rcm : NULL,
+                        do_Tv ? &Tsc : NULL, do_Tv ? &Tk : NULL);
+      if (do_Jv) Jout[jp_v][dp_v] = Jsc;
+      if (do_Lv) Lout[jp_v][dp_v] = Lsc;
+      if (do_Rv) Rout[jp_v][dp_v] = Rsc;
+      if (do_Tv) Tout[jp_v][dp_v] = Tsc;
+    }
+  }
+}
+
+/* checkpointed fetch: block-recompute the CYK deck(s) + yshadow for v's
+ * block, reading children from the retained per-mode stores.  Mirrors
+ * cm_dpalign.c's ckpt_cyk_ysh_fetch, generalized to 3 shadow planes (J/L/R).
+ * B states within the block are recomputed too (ckpt_trcyk_bstate_filldeck,
+ * reading its own children from the GLOBAL store, never the block-local
+ * array) -- they are NOT chain roots and so DO get freed by the forward
+ * sweep's Delta-window like any other state; skipping them here would leave
+ * a non-B sibling's JA(B-child) read dangling on a freed/never-filled deck.
+ * E states are trivial (alpha=0) and also recomputed inline, for the same
+ * reason (a non-B ancestor could read an E-state child, though rare). */
+typedef struct {
+  TR_CKPT_CTX *cx; int M, B;
+  float ***JCYstore, ***LCYstore, ***RCYstore, ***TCYstore;
+  float ***tJa, ***tLa, ***tRa; char ***tJs, ***tLs, ***tRs;
+  int cur_blk, blk_lo, blk_hi;
+} ckpt_trcyk_ysh_ctx;
+
+static void
+ckpt_trcyk_ysh_reload(ckpt_trcyk_ysh_ctx *c, int v)
+{
+  int blk = v / c->B;
+  if (blk == c->cur_blk) return;
+  int w;
+  for (w = c->blk_lo; w <= c->blk_hi; w++) {
+    if (c->tJa[w]) { trckpt_deck_free(c->cx, w, c->tJa[w]); c->tJa[w] = NULL; }
+    if (c->tLa[w]) { trckpt_deck_free(c->cx, w, c->tLa[w]); c->tLa[w] = NULL; }
+    if (c->tRa[w]) { trckpt_deck_free(c->cx, w, c->tRa[w]); c->tRa[w] = NULL; }
+    if (c->tJs[w]) { trckpt_cdeck_free(c->cx, w, c->tJs[w]); c->tJs[w] = NULL; }
+    if (c->tLs[w]) { trckpt_cdeck_free(c->cx, w, c->tLs[w]); c->tLs[w] = NULL; }
+    if (c->tRs[w]) { trckpt_cdeck_free(c->cx, w, c->tRs[w]); c->tRs[w] = NULL; }
+  }
+  c->cur_blk = blk; c->blk_lo = blk * c->B; c->blk_hi = ESL_MIN((blk+1)*c->B - 1, c->M-1);
+  for (w = c->blk_hi; w >= c->blk_lo; w--) {
+    CM_t *cm = c->cx->cm;
+    /* chain-root (ROOT_S/BEGL_S/BEGR_S) alpha is already permanently resident
+     * in the global store, but its OWN yshadow (one step further down, into
+     * ITS child) was never persisted -- recompute uniformly like any other
+     * non-B state rather than special-casing; the small redundant alpha
+     * recompute for chain roots is harmless (same recurrence, same answer). */
+    int do_Jw = c->cx->Jv[w], do_Lw = (c->cx->Lv[w] && c->cx->fill_L), do_Rw = (c->cx->Rv[w] && c->cx->fill_R);
+    if (do_Jw) c->tJa[w] = trckpt_deck_alloc(c->cx, w);
+    if (do_Lw) c->tLa[w] = trckpt_deck_alloc(c->cx, w);
+    if (do_Rw) c->tRa[w] = trckpt_deck_alloc(c->cx, w);
+    if (cm->sttype[w] == E_st) {
+      int j, jp_v;
+      for (j = c->cx->jmin[w]; j <= c->cx->jmax[w]; j++) {
+        jp_v = j - c->cx->jmin[w];
+        if (do_Jw) c->tJa[w][jp_v][0] = 0.;
+        if (do_Lw) c->tLa[w][jp_v][0] = 0.;
+        if (do_Rw) c->tRa[w][jp_v][0] = 0.;
+      }
+    }
+    else if (cm->sttype[w] == B_st) {
+      ckpt_trcyk_bstate_filldeck(c->cx, w, c->JCYstore, c->LCYstore, c->RCYstore, c->TCYstore,
+                                  c->tJa[w], c->tLa[w], c->tRa[w], NULL);
+    }
+    else {
+      if (do_Jw) c->tJs[w] = trckpt_cdeck_alloc(c->cx, w);
+      if (do_Lw) c->tLs[w] = trckpt_cdeck_alloc(c->cx, w);
+      if (do_Rw) c->tRs[w] = trckpt_cdeck_alloc(c->cx, w);
+      ckpt_trcyk_deck(c->cx, w, c->tJa, c->tLa, c->tRa, c->JCYstore, c->LCYstore, c->RCYstore,
+                       c->tJs[w], c->tLs[w], c->tRs[w]);
+    }
+  }
+}
+
+static char
+ckpt_trcyk_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
+{
+  ckpt_trcyk_ysh_ctx *c = (ckpt_trcyk_ysh_ctx *) p;
+  ckpt_trcyk_ysh_reload(c, v);
+  char **Js = c->tJs[v];
+  char **Ls = c->tLs[v];
+  char **Rs = c->tRs[v];
+  if      (mode == TRMODE_J) return Js[jp_v][dp_v];
+  else if (mode == TRMODE_L) return Ls[jp_v][dp_v];
+  else if (mode == TRMODE_R) return Rs[jp_v][dp_v];
+  cm_Fail("ckpt_trcyk_ysh_fetch: bogus mode %d for non-B state v=%d", (int) mode, v);
+  return 0;
+}
+
+/* Checkpointed truncated CYK traceback.  Mirrors the EXISTING production
+ * truncated traceback cm_tr_alignT_hb's descent + bifurcation stack (this
+ * file, ~472-760) as closely as possible: the B_st mode-transition decode
+ * rules (~603-646), the mode-aware i/j update rules per state type
+ * (~710-738, transcribed verbatim -- e.g. an MR_st visited under
+ * TRMODE_L does NOT advance j, since the L-mode fill for IR/MR states is a
+ * pure pass-through with no emission added), the allow_S_trunc_end d==0
+ * band-edge special case for BEGL_S/BEGR_S (~557-591, genuinely reachable
+ * in GLOBAL truncated mode whenever a bifurcation's k lands at 0 or d and
+ * the corresponding start state's own band doesn't cover d==0 -- NOT
+ * exclusive to local config), and the USED_TRUNC_END routing (~741-752:
+ * no trace node inserted, v jumps to cm->M/EL and falls into the SAME
+ * pop-and-attach-right-child logic as E_st).  Differs only in: (a) a B_st's
+ * k and the VARYING child's mode come from ckpt_trcyk_bcell() (live search
+ * against the retained *CYstore decks) instead of a stored kshadow/Lkmode/
+ * Rkmode, and (b) R2 scope: no EL (USED_EL never appears -- CMH_LOCAL_END
+ * is off), no USED_TRUNC_BEGIN root-reduction table walk (handled by the
+ * caller, which passes in the already-resolved root entry mode). */
+static int
+ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
+                      float ***JCYstore, float ***LCYstore, float ***RCYstore, float ***TCYstore,
+                      int *jmin, int *jmax, int **hdmin, int **hdmax,
+                      char (*fetch)(void *ctx, int v, char mode, int jp_v, int dp_v),
+                      void *fctx, Parsetree_t **ret_tr)
+{
+  int status;
+  Parsetree_t *tr = NULL;
+  ESL_STACK *pda_i = NULL, *pda_c = NULL;
+  int v = 0, i = 1, j = L, d = L, k, y, yoffset, bifparent;
+  int jp_v = 0, dp_v = 0, allow_S_trunc_end;
+  char mode = resolved_mode, prvmode, nxtmode;
+  CP9Bands_t *cp9b = cm->cp9b;
+
+  tr = CreateParsetree(100);
+  if (tr == NULL) { status = eslEMEM; goto ERROR; }
+  tr->is_std = FALSE;
+  InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, mode);
+  pda_i = esl_stack_ICreate();
+  pda_c = esl_stack_CCreate();
+  if (pda_i == NULL || pda_c == NULL) { status = eslEMEM; goto ERROR; }
+
+  while (1) {
+    if ((cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) && d == 0 &&
+        ((mode == TRMODE_J && (! cp9b->Jvalid[v])) ||
+         (mode == TRMODE_L && (! cp9b->Lvalid[v])) ||
+         (mode == TRMODE_R && (! cp9b->Rvalid[v])) ||
+         (j < jmin[v] || j > jmax[v]) ||
+         (d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) {
+      allow_S_trunc_end = TRUE;
+    }
+    else if (cm->sttype[v] != EL_st) {
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+      allow_S_trunc_end = FALSE;
+    }
+    else allow_S_trunc_end = FALSE;
+
+    if (cm->sttype[v] == B_st) {
+      int yy = cm->cfirst[v], zz = cm->cnum[v];
+      char lchildmode = TRMODE_UNKNOWN, rchildmode = TRMODE_UNKNOWN;
+      float sc; int kk = -1;
+      int do_J_v=(mode==TRMODE_J), do_L_v=(mode==TRMODE_L), do_R_v=(mode==TRMODE_R), do_T_v=(mode==TRMODE_T);
+      ckpt_trcyk_bcell(cm, jmin, jmax, hdmin, hdmax, JCYstore, LCYstore, RCYstore, TCYstore,
+                        v, yy, zz, j, d,
+                        do_J_v, do_L_v, do_R_v, do_T_v,
+                        cp9b->Jvalid[yy], cp9b->Lvalid[yy], cp9b->Rvalid[yy],
+                        cp9b->Jvalid[zz], cp9b->Lvalid[zz], cp9b->Rvalid[zz],
+                        (mode==TRMODE_J)?&sc:NULL, (mode==TRMODE_J)?&kk:NULL,
+                        (mode==TRMODE_L)?&sc:NULL, (mode==TRMODE_L)?&kk:NULL, (mode==TRMODE_L)?&lchildmode:NULL,
+                        (mode==TRMODE_R)?&sc:NULL, (mode==TRMODE_R)?&kk:NULL, (mode==TRMODE_R)?&rchildmode:NULL,
+                        (mode==TRMODE_T)?&sc:NULL, (mode==TRMODE_T)?&kk:NULL);
+      if (kk < 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "ckpt_trcyk_traceback: B state v=%d mode=%d: no valid k (band inconsistency)", v, (int) mode);
+      k = kk;
+
+      prvmode = mode;
+      if      (mode == TRMODE_J) ; /* right child stays J */
+      else if (mode == TRMODE_L) mode = TRMODE_L; /* right child always L */
+      else if (mode == TRMODE_R) mode = rchildmode; /* right child mode varies */
+      else if (mode == TRMODE_T) mode = TRMODE_L; /* right child always L */
+
+      if ((status = esl_stack_CPush(pda_c, mode)) != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda_i, j))    != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda_i, k))    != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda_i, tr->n-1)) != eslOK) goto ERROR;
+
+      if      (prvmode == TRMODE_J) mode = TRMODE_J;
+      else if (prvmode == TRMODE_L) mode = lchildmode; /* left child mode varies */
+      else if (prvmode == TRMODE_R) mode = TRMODE_R; /* left child always R */
+      else if (prvmode == TRMODE_T) mode = TRMODE_R; /* left child always R */
+
+      j = j - k;
+      d = d - k;
+      i = j - d + 1;
+      y = yy;
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
+      v = y;
+    }
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      if (esl_stack_IPop(pda_i, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda_i, &d);
+      esl_stack_IPop(pda_i, &j);
+      esl_stack_CPop(pda_c, &mode);
+      v = tr->state[bifparent];
+      y = cm->cnum[v];
+      i = j - d + 1;
+      InsertTraceNodewithMode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y, mode);
+      v = y;
+    }
+    else if (v == 0) {
+      /* ROOT_S: all valid truncated alignments enter via a truncated begin --
+       * mirrors cm_TrCYKInsideAlignHB's unconditional Jyshadow[0]/Lyshadow[0]/
+       * Ryshadow[0][jp_0][Lp_0] = USED_TRUNC_BEGIN (this file, ~6663-6666) and
+       * cm_tr_alignT_hb's v==0 special case (~753-757) -- no real yshadow deck
+       * for v=0 is ever materialized here (ROOT_S is excluded from the main
+       * sweep, see the wrapper), so this is not a lookup, it is what the
+       * stored value would unconditionally be. */
+      InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b, mode);
+      v = b;
+      continue;
+    }
+    else {
+      if (allow_S_trunc_end) {
+        yoffset = USED_TRUNC_END; /* next mode irrelevant */
+      }
+      else {
+        char ysh = fetch(fctx, v, mode, jp_v, dp_v);
+        yoffset = (int) (unsigned char) ysh;
+      }
+      if (yoffset == USED_TRUNC_END) { nxtmode = mode; /* irrelevant, v is about to become EL */ }
+      else if (yoffset >= TRMODE_R_OFFSET) { nxtmode = TRMODE_R; yoffset -= TRMODE_R_OFFSET; }
+      else if (yoffset >= TRMODE_L_OFFSET) { nxtmode = TRMODE_L; yoffset -= TRMODE_L_OFFSET; }
+      else                                 { nxtmode = TRMODE_J; yoffset -= TRMODE_J_OFFSET; }
+
+      switch (cm->sttype[v]) {
+      case D_st: break;
+      case MP_st:
+        if (mode == TRMODE_J)          i++;
+        if (mode == TRMODE_L && d > 0) i++;
+        if (mode == TRMODE_J)          j--;
+        if (mode == TRMODE_R && d > 0) j--;
+        break;
+      case ML_st:
+        if (mode == TRMODE_J)          i++;
+        if (mode == TRMODE_L && d > 0) i++;
+        break;
+      case MR_st:
+        if (mode == TRMODE_J)          j--;
+        if (mode == TRMODE_R && d > 0) j--;
+        break;
+      case IL_st:
+        if (mode == TRMODE_J)          i++;
+        if (mode == TRMODE_L && d > 0) i++;
+        break;
+      case IR_st:
+        if (mode == TRMODE_J)          j--;
+        if (mode == TRMODE_R && d > 0) j--;
+        break;
+      case S_st: break;
+      default: ESL_XFAIL(eslEINVAL, errbuf, "ckpt_trcyk_traceback: bogus state type v=%d", v);
+      }
+      d = j - i + 1;
+
+      if (yoffset == USED_TRUNC_END) {
+        v = cm->M; /* act like EL: next iteration's E_st||EL_st branch pops the stack */
+      }
+      else {
+        mode = nxtmode;
+        y = cm->cfirst[v] + yoffset;
+        InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y, mode);
+        v = y;
+      }
+    }
+  }
+  esl_stack_Destroy(pda_i); esl_stack_Destroy(pda_c);
+  *ret_tr = tr;
+  return eslOK;
+
+ ERROR:
+  if (pda_i) esl_stack_Destroy(pda_i);
+  if (pda_c) esl_stack_Destroy(pda_c);
+  if (tr) FreeParsetree(tr);
+  return status;
+}
+
+/* Function: cm_CheckptTrCYKAlignHB()
+ * Incept:   Brief 26_0610-078 R2
+ *
+ * Purpose:  sqrt(M)-memory checkpointed, COMBINED-MODE (J/L/R/T) truncated
+ *           CYK max-DP, discovering its OWN marginal mode AND every
+ *           bifurcation k* (pin) (no externally-supplied kpin[]/preset mode,
+ *           unlike the rung-4 PINNED engines above) via ckpt_trcyk_bcell().
+ *           Structured (bps>0) only.  GLOBAL, no EL, no local begin (R2
+ *           scope; see this brief's summary "flagged for Eric" section for
+ *           why local support was deferred rather than attempted here).
+ *
+ *           Replaces cm_alndata.c's do_trckpt_r4 ncand-loop (which pays
+ *           TrCYKDivideAndConquerHB's D&C penalty once per root-valid mode,
+ *           brief 076's measured 6.6x-21.6x) with ONE combined sweep.
+ *
+ *           STEP CYK: checkpointed combined-mode CYK max-DP (descending
+ *                     sweep, J/L/R/T decks, chain-root retention identical
+ *                     to R1/rung-3's scheme) -> {J,L,R,T}CYstore = {chain
+ *                     roots} + {sqrt(M) seeds}, plus a running ROOT_S
+ *                     truncated-begin reduction (max over entry states v,
+ *                     mirrors cm_TrCYKInsideAlignHB's Jb/Lb/Rb/Tb).
+ *           STEP TB : traceback (ckpt_trcyk_traceback) with non-B yshadow
+ *                     block-recomputed on demand (ckpt_trcyk_ysh_fetch) and
+ *                     B-state k/child-mode found by re-running
+ *                     ckpt_trcyk_bcell against the still-resident stores.
+ *
+ * Returns:  <eslOK> on success; *ret_tr = discovered parsetree,
+ *           *ret_mode = resolved marginal mode, *ret_sc = CYK score.
+ */
+int
+cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                       int pass_idx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc)
+{
+  int      status;
+  TR_CKPT_CTX cx;
+  int      M = cm->M;
+  int      v, pty_idx;
+  float ***JCY = NULL, ***LCY = NULL, ***RCY = NULL, ***TCY = NULL;
+  float ***tJa = NULL, ***tLa = NULL, ***tRa = NULL;
+  char  ***tJs = NULL, ***tLs = NULL, ***tRs = NULL;
+  Parsetree_t *tr = NULL;
+  ckpt_trcyk_ysh_ctx fctx;
+
+  if (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))
+    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): R2 scope is GLOBAL only (no local begin/end)");
+  { int nb = 0; for (v = 0; v < M; v++) if (cm->sttype[v] == B_st) nb++;
+    if (nb < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): CM has no bifurcations (bps=0); use cm_CheckptTrAlignHB instead"); }
+  if (cm->trp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): cm->trp (truncation penalties) is NULL");
+  if ((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): bad pass_idx %d", pass_idx);
+
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.Jv = cm->cp9b->Jvalid; cx.Lv = cm->cp9b->Lvalid; cx.Rv = cm->cp9b->Rvalid; cx.Tv = cm->cp9b->Tvalid;
+  cx.g_pty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx] : cm->trp->g_ptyAA[pty_idx];
+  cx.preset_mode = TRMODE_UNKNOWN;
+  cx.fill_L = TRUE; cx.fill_R = TRUE; cx.fill_T = TRUE;
+  cx.bkind = NULL; cx.kpin = NULL; cx.bbmode = cx.blmode = cx.brmode = NULL;
+  cx.Jl_pp = cx.Ll_pp = cx.Jr_pp = cx.Rr_pp = NULL;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+  cx.have_el = FALSE; cx.el_selfsc = cm->el_selfsc; cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.Jeldmax = cx.Leldmax = cx.Reldmax = NULL;
+  cx.Jelbeta = cx.Lelbeta = cx.Relbeta = NULL;
+  cx.Jelalpha = cx.Lelalpha = cx.Relalpha = NULL;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): L outside ROOT_S d band");
+
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    /* max forward reach; B_st excluded (bifurcation children are chain
+     * roots, permanently retained -- not windowed by Delta), matching
+     * R1's cm_CheckptCYKAlignHB and rung-3/rung-4's own established scheme. */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  ESL_ALLOC(JCY, sizeof(float**) * M); ESL_ALLOC(LCY, sizeof(float**) * M);
+  ESL_ALLOC(RCY, sizeof(float**) * M); ESL_ALLOC(TCY, sizeof(float**) * M);
+  for (v = 0; v < M; v++) { JCY[v] = LCY[v] = RCY[v] = TCY[v] = NULL; }
+
+  /* ============================================================= */
+  /* STEP CYK: checkpointed combined-mode CYK max-DP -> roots + seeds      */
+  /* ============================================================= */
+  float J0 = IMPOSSIBLE, L0 = IMPOSSIBLE, R0 = IMPOSSIBLE, T0 = IMPOSSIBLE;
+  int   Jb = -1, Lb = -1, Rb = -1, Tb = -1;
+  for (v = M-1; v >= 1; v--) {
+    int do_Jv = cx.Jv[v], do_Lv = (cx.Lv[v] && cx.fill_L), do_Rv = (cx.Rv[v] && cx.fill_R), do_Tv = (cx.Tv[v] && cx.fill_T);
+    if (do_Jv) JCY[v] = trckpt_deck_alloc(&cx, v);
+    if (do_Lv) LCY[v] = trckpt_deck_alloc(&cx, v);
+    if (do_Rv) RCY[v] = trckpt_deck_alloc(&cx, v);
+    if (do_Tv) TCY[v] = trckpt_deck_alloc(&cx, v);
+
+    if (cm->sttype[v] == E_st) {
+      int j, jp_v;
+      for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
+        jp_v = j - cx.jmin[v];
+        if (do_Jv) JCY[v][jp_v][0] = 0.;
+        if (do_Lv) LCY[v][jp_v][0] = 0.;
+        if (do_Rv) RCY[v][jp_v][0] = 0.;
+      }
+    }
+    else if (cm->sttype[v] == B_st) {
+      ckpt_trcyk_bstate_filldeck(&cx, v, JCY, LCY, RCY, TCY, JCY[v], LCY[v], RCY[v], TCY[v]);
+    }
+    else {
+      ckpt_trcyk_deck(&cx, v, JCY, LCY, RCY, NULL, NULL, NULL, NULL, NULL, NULL);
+    }
+    /* ROOT_S truncated-begin reduction: max over all entry states v,
+     * mirrors cm_TrCYKInsideAlignHB ~6612-6659 (max, tracks the argmax
+     * entry state Jb/Lb/Rb/Tb -- CYK picks ONE best entry, unlike Inside's
+     * trckpt_tr_root_contrib which FLogsum-sums evidence over all of them). */
+    if (L >= cx.jmin[v] && L <= cx.jmax[v]) {
+      int jp_v = L - cx.jmin[v];
+      if (L >= cx.hdmin[v][jp_v] && L <= cx.hdmax[v][jp_v]) {
+        int Lp = L - cx.hdmin[v][jp_v];
+        float trp = cx.g_pty[v];
+        if (NOT_IMPOSSIBLE(trp)) {
+          float sc;
+          if (do_Jv && cx.Jv[0]) { sc = JCY[v][jp_v][Lp] + trp; if (sc > J0) { J0 = sc; Jb = v; } }
+          if (do_Lv && cx.Lv[0]) { sc = LCY[v][jp_v][Lp] + trp; if (sc > L0) { L0 = sc; Lb = v; } }
+          if (do_Rv && cx.Rv[0]) { sc = RCY[v][jp_v][Lp] + trp; if (sc > R0) { R0 = sc; Rb = v; } }
+          if (do_Tv && cx.Tv[0]) { sc = TCY[v][jp_v][Lp] + trp; if (sc > T0) { T0 = sc; Tb = v; } }
+        }
+      }
+    }
+
+    /* retention: free non-chain-root decks once Delta-stale, exactly R1's scheme */
+    int y = v + Delta;
+    if (y < M && ! ckpt_is_trchain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain checkpoint seed */ }
+      else {
+        if (JCY[y]) { trckpt_deck_free(&cx, y, JCY[y]); JCY[y] = NULL; }
+        if (LCY[y]) { trckpt_deck_free(&cx, y, LCY[y]); LCY[y] = NULL; }
+        if (RCY[y]) { trckpt_deck_free(&cx, y, RCY[y]); RCY[y] = NULL; }
+        if (TCY[y]) { trckpt_deck_free(&cx, y, TCY[y]); TCY[y] = NULL; }
+      }
+    }
+  }
+
+  /* resolve marginal mode: argmax over {J,L,R,T}0 (mirrors cm_TrCYKInsideAlignHB ~6689-6712) */
+  char mode = TRMODE_UNKNOWN; float sc = IMPOSSIBLE; int b = -1;
+  if (cx.Jv[0] && J0 > sc)               { sc = J0; mode = TRMODE_J; b = Jb; }
+  if (cx.fill_L && cx.Lv[0] && L0 > sc)  { sc = L0; mode = TRMODE_L; b = Lb; }
+  if (cx.fill_R && cx.Rv[0] && R0 > sc)  { sc = R0; mode = TRMODE_R; b = Rb; }
+  if (cx.fill_T && cx.Tv[0] && T0 > sc)  { sc = T0; mode = TRMODE_T; b = Tb; }
+  if (mode == TRMODE_UNKNOWN || b < 0) {
+    if (getenv("INFERNAL_CKPT_VERBOSE"))
+      fprintf(stderr, "#TRCKPT-DBG root-fail: J0=%.3f L0=%.3f R0=%.3f T0=%.3f Jv0=%d Lv0=%d Rv0=%d Tv0=%d Jb=%d Lb=%d Rb=%d Tb=%d\n",
+              J0, L0, R0, T0, cx.Jv[0], cx.Lv[0], cx.Rv[0], cx.Tv[0], Jb, Lb, Rb, Tb);
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): no root-valid truncation mode for L=%d", L);
+  }
+
+  /* ============================================================= */
+  /* STEP TB: traceback (block-recompute yshadow, live B-state k/mode search) */
+  /* ============================================================= */
+  ESL_ALLOC(tJa, sizeof(float**) * M); ESL_ALLOC(tLa, sizeof(float**) * M); ESL_ALLOC(tRa, sizeof(float**) * M);
+  ESL_ALLOC(tJs, sizeof(char**)  * M); ESL_ALLOC(tLs, sizeof(char**)  * M); ESL_ALLOC(tRs, sizeof(char**)  * M);
+  for (v = 0; v < M; v++) { tJa[v]=tLa[v]=tRa[v]=NULL; tJs[v]=tLs[v]=tRs[v]=NULL; }
+  fctx.cx = &cx; fctx.M = M; fctx.B = B;
+  fctx.JCYstore = JCY; fctx.LCYstore = LCY; fctx.RCYstore = RCY; fctx.TCYstore = TCY;
+  fctx.tJa = tJa; fctx.tLa = tLa; fctx.tRa = tRa; fctx.tJs = tJs; fctx.tLs = tLs; fctx.tRs = tRs;
+  fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
+
+  if ((status = ckpt_trcyk_traceback(cm, errbuf, L, mode, b, JCY, LCY, RCY, TCY,
+                                     cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                     ckpt_trcyk_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+
+  { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
+      if (tJa[w]) { trckpt_deck_free(&cx, w, tJa[w]); tJa[w] = NULL; }
+      if (tLa[w]) { trckpt_deck_free(&cx, w, tLa[w]); tLa[w] = NULL; }
+      if (tRa[w]) { trckpt_deck_free(&cx, w, tRa[w]); tRa[w] = NULL; }
+      if (tJs[w]) { trckpt_cdeck_free(&cx, w, tJs[w]); tJs[w] = NULL; }
+      if (tLs[w]) { trckpt_cdeck_free(&cx, w, tLs[w]); tLs[w] = NULL; }
+      if (tRs[w]) { trckpt_cdeck_free(&cx, w, tRs[w]); tRs[w] = NULL; } } }
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    int64_t full_cube_cells = 0; for (v = 0; v < M; v++) full_cube_cells += cx.deck_nc[v];
+    double full_mb = full_cube_cells * 4 * 3 / (1024.0*1024.0); /* J+L+R (T is B-state-only, negligible) */
+    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    fprintf(stderr, "# cm_CheckptTrCYKAlignHB (R2): M=%d L=%d B=%d mode=%c sc=%.5f  CYK-DP peak=%.2f Mb  full-cube(1x)=%.2f Mb  win~%.1fx\n",
+            M, L, B, MarginalMode(mode)[0], sc, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
+  }
+
+  for (v = 0; v < M; v++) {
+    if (JCY[v]) trckpt_deck_free(&cx, v, JCY[v]);
+    if (LCY[v]) trckpt_deck_free(&cx, v, LCY[v]);
+    if (RCY[v]) trckpt_deck_free(&cx, v, RCY[v]);
+    if (TCY[v]) trckpt_deck_free(&cx, v, TCY[v]);
+  }
+  free(JCY); free(LCY); free(RCY); free(TCY);
+  free(tJa); free(tLa); free(tRa); free(tJs); free(tLs); free(tRs);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_tr   != NULL) *ret_tr   = tr; else FreeParsetree(tr);
+  if (ret_mode != NULL) *ret_mode = mode;
+  if (ret_sc   != NULL) *ret_sc   = sc;
+  return eslOK;
+
+ ERROR:
+  if (JCY) { for (v = 0; v < M; v++) if (JCY[v]) trckpt_deck_free(&cx, v, JCY[v]); free(JCY); }
+  if (LCY) { for (v = 0; v < M; v++) if (LCY[v]) trckpt_deck_free(&cx, v, LCY[v]); free(LCY); }
+  if (RCY) { for (v = 0; v < M; v++) if (RCY[v]) trckpt_deck_free(&cx, v, RCY[v]); free(RCY); }
+  if (TCY) { for (v = 0; v < M; v++) if (TCY[v]) trckpt_deck_free(&cx, v, TCY[v]); free(TCY); }
+  if (tJa) { for (v = 0; v < M; v++) if (tJa[v]) trckpt_deck_free(&cx, v, tJa[v]); free(tJa); }
+  if (tLa) { for (v = 0; v < M; v++) if (tLa[v]) trckpt_deck_free(&cx, v, tLa[v]); free(tLa); }
+  if (tRa) { for (v = 0; v < M; v++) if (tRa[v]) trckpt_deck_free(&cx, v, tRa[v]); free(tRa); }
+  if (tJs) { for (v = 0; v < M; v++) if (tJs[v]) trckpt_cdeck_free(&cx, v, tJs[v]); free(tJs); }
+  if (tLs) { for (v = 0; v < M; v++) if (tLs[v]) trckpt_cdeck_free(&cx, v, tLs[v]); free(tLs); }
+  if (tRs) { for (v = 0; v < M; v++) if (tRs[v]) trckpt_cdeck_free(&cx, v, tRs[v]); free(tRs); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr) FreeParsetree(tr);
+  return status;
+}
+
 /* Function: cm_PinTrPostAlignHB()
  *           EPN 2026 [brief 26_0610-053, rung R4.2a]
  *
