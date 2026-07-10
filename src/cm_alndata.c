@@ -430,7 +430,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
        * scope for the alignment-DP timing). _p7b_kind stays NULL unless the
        * do_p7band branch actually runs, so the final #STAGETIME print (gated
        * on _p7b_kind != NULL) only fires for the do_p7band derivers this brief
-       * targets (--p7ibv/--p7kmerchain/--p7kmeranchor). */
+       * targets (--p7ibv/--p7kmerchain). */
       const char *_p7b_kind = NULL;
       int    _st059_on = (getenv("BRIEF059_STAGETIME") != NULL);
       double _st059_a_s = 0., _st059_b_s = 0., _st059_c_s = 0., _st059_d_s = 0., _st059_ab_total_s = 0.;
@@ -548,47 +548,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* No internal ncells==0 fallback here: IBV always produces a band.
 	     * Empty rows default to [1, M] inside the kernel.
 	     */
-	  } else if (cm->p7_use_kmeranchor) {
-	    /* Brief 26_0628-026: k-mer best-window anchor. Blind diagonal-dominance guide
-	     * deriver feeding the unmodified p7_pins2bands_nodepad. Opt-in. */
-	    _p7b_kind = "kmeranchor";
-	    status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->L, local_nodepad,
-	                                    do_trunc, /* brief 26_0628-033 */
-	                                    &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
-	                                    _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL);
-	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
-	    /* ncells==0 => M-gate/N-gate fired, or no usable anchor. Brief 26_0628-047:
-	     * default fallback is now --p7ibv's D&C deriver (this file's own
-	     * --p7ibv-mem branch above, same defaults/params), instead of a
-	     * Vit-trace band; --p7kmerchain-fbvit reverts to the old
-	     * p7_Seq2BandsVit fallback. */
-	    if (status == eslOK && p7_ncells == 0) {
-	      _st059_ab_split = FALSE; /* brief 26_0628-059: a_s/b_s only cover the failed kmeranchor attempt, not the fallback -- report combined ab_s instead */
-	      if (cm->p7_kmerchain_fallback_vit) {
-		_p7b_kind = "kmeranchor->vitband";
-		if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
-		status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-					 sq->dsq, sq->L, cm->p7bpad, local_nodepad,
-					 0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	      } else {
-		_p7b_kind = "kmeranchor->p7ibv";
-		status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
-					     cm->p7_ibv_delta, cm->p7_ibv_base_slab,
-					     TRUE,  /* do_boundary_widen: CM-side preserves current behavior, matches --p7ibv-mem branch above */
-					     FALSE, /* do_kband */
-					     do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
-					     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-		if (status == eslOK && p7_ncells == 0) {
-		  /* IBV is documented to always produce a band (line ~533 above);
-		   * this is a belt-and-suspenders safety net, not expected to fire. */
-		  _p7b_kind = "kmeranchor->p7ibv->vitband";
-		  if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
-		  status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-					   sq->dsq, sq->L, cm->p7bpad, local_nodepad,
-					   0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-		}
-	      }
-	    }
 	  } else if (cm->p7_use_kmerchain) {
 	    /* Brief 26_0628-027: genome-scale k-mer seed-and-chain. Collect all seeds
 	     * genome-wide, chain by global colinearity, emit multi-segment pins
@@ -600,8 +559,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	                                   _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL);
 	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
 	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 26_0628-047:
-	     * default fallback is --p7ibv's D&C deriver, same as the kmeranchor
-	     * ncells==0 fallback above; --p7kmerchain-fbvit reverts to
+	     * default fallback is now --p7ibv's D&C deriver (this file's own
+	     * --p7ibv-mem branch above, same defaults/params), instead of a
+	     * Vit-trace band; --p7kmerchain-fbvit reverts to
 	     * the old p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
 	      _st059_ab_split = FALSE; /* brief 26_0628-059: a_s/b_s only cover the failed kmerchain attempt, not the fallback -- report combined ab_s instead */
