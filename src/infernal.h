@@ -733,10 +733,41 @@ typedef struct cp9_mx_s {
   /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
   int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
   int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
-  int  ncells_allocated; /* number of cells allocated in matrix */
-  int  ncells_valid;     /* number of cells currently valid in the matrix */
+  int64_t ncells_allocated; /* number of cells allocated in matrix (int64: a non-banded genome-scale CP9 mx is (L+1)*(M+1) ~ 4e10 cells, overflows int32) */
+  int64_t ncells_valid;     /* number of cells currently valid in the matrix (int64, see ncells_allocated) */
 
 } CP9_MX;
+
+
+/* CP9_FMX: float-precision mirror of CP9_MX, used by the float-DP CP9
+ * F/B/Posterior path that drives truncated cmalign --p7band band derivation.
+ * The integer-log CP9 F/B accumulates ~3% per-cell precision drift on long
+ * sequences (~1.3% deficit per node-occupancy in glocal mode) that makes the
+ * pocc-based sp/ep predictor unreliable. The float path uses p7_FLogsum for
+ * log-space accumulation, which has ~0.0001 log per call error and is
+ * sufficient for L=10K accumulation. This struct is the exact analogue of
+ * CP9_MX with int*->float* throughout.
+ */
+typedef struct cp9_fmx_s {
+  float **mmx;                  /* match scores  [0.1..N][0..M] */
+  float **imx;                  /* insert scores [0.1..N][0..M] */
+  float **dmx;                  /* delete scores [0.1..N][0..M] */
+  float **elmx;                 /* end local scores [0.1..N][0..M] */
+  float  *erow;                 /* score for E state [0.1..N] */
+  /* Hidden ptrs where the real memory is kept */
+  float *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
+
+  int    M;             /* number of nodes in HMM this mx corresponds to, never changes */
+  int    rows;          /* generally L or 2, # of DP rows in seq dimension */
+  float  size_Mb;       /* current size of matrix in Megabytes */
+
+  /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
+  int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
+  int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
+  int64_t ncells_allocated; /* number of cells allocated in matrix (int64, see CP9_MX) */
+  int64_t ncells_valid;     /* number of cells currently valid in the matrix (int64, see CP9_MX) */
+
+} CP9_FMX;
 
 
 /*************************************************************************************
@@ -803,18 +834,56 @@ typedef struct cp9bands_s {
   int **hdmax;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = last position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
-  int *hdmin_mem;             /* actual memory for hdmin */
-  int *hdmax_mem;             /* actual memory for hdmax */
+  int *hdmin_mem;             /* actual memory for hdmin (DEPRECATED, brief 26_0430-157: no longer allocated; d-bands recomputed on demand via hd_min()/hd_max(), kept NULL) */
+  int *hdmax_mem;             /* actual memory for hdmax (DEPRECATED, brief 26_0430-157, kept NULL) */
+  int *hd_dn;                 /* [0..cm_M-1] per-state d-band floor used by hd_min()/hd_max() recompute:
+			       * E_st states store -1 (sentinel: hdmin=hdmax=0 for all j); all other states
+			       * store dn = do_trunc ? max(StateLeftDelta,StateRightDelta) : StateDelta (>=0).
+			       * Set by ij2d_bands(). Replaces the flat hdmin_mem/hdmax_mem cache (brief 26_0430-157). */
   int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* info on size of bands */
-  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: can exceed 2^31 for very large M*L, e.g. HSV M=152K L=150K) */
-  int64_t hd_alloced;         /* number of hd arrays currently alloc'ed */
+  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 26_0316-097 + 26_0430-147) */
+  int64_t hd_alloced;         /* number of hd arrays currently alloc'ed (int64, see hd_needed) */
 
   double   tau;               /* tau used to calculate current bands */
 
 } CP9Bands_t;
+
+/* Recompute-on-demand accessors for the per-state d-band (brief 26_0430-157).
+ *
+ * These replace the formerly-materialized flat hdmin_mem/hdmax_mem arrays
+ * (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale truncated).
+ * They reproduce ij2d_bands()'s formula EXACTLY and byte-for-byte:
+ *   E_st (hd_dn[v] == -1):  hdmin = hdmax = 0
+ *   else, for j = jp + jmin[v], hdx = j - imin[v] + 1, dn = hd_dn[v] (>=0):
+ *      if hdx <  dn :  hdmin = -1, hdmax = -2  (empty-band sentinel)
+ *      else         :  hdmin = max(j - imax[v] + 1, dn), hdmax = hdx
+ * jp is the offset index into v's j-band, i.e. j = jp + jmin[v], exactly as the
+ * old hdmin[v][jp]/hdmax[v][jp] indexing. Pure function of cp9b; O(1); correct
+ * for any CM topology including bifurcations (no neighbor/window reasoning). */
+static inline int
+hd_min(const CP9Bands_t *cp9b, int v, int jp)
+{
+  int dn = cp9b->hd_dn[v];
+  if (dn < 0) return 0;                       /* E_st sentinel */
+  int j   = jp + cp9b->jmin[v];
+  int hdx = j - cp9b->imin[v] + 1;
+  if (hdx < dn) return -1;
+  int hdn = j - cp9b->imax[v] + 1;
+  return (hdn > dn) ? hdn : dn;
+}
+static inline int
+hd_max(const CP9Bands_t *cp9b, int v, int jp)
+{
+  int dn = cp9b->hd_dn[v];
+  if (dn < 0) return 0;                       /* E_st sentinel */
+  int j   = jp + cp9b->jmin[v];
+  int hdx = j - cp9b->imin[v] + 1;
+  if (hdx < dn) return -2;
+  return hdx;
+}
 
 /*************************************************************************************
  * 13. CP9trace_t: traceback structure for CP9 HMMs. 
@@ -1103,6 +1172,7 @@ typedef struct cm_hb_mx_s {
   float ***dp;          /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
 
+  int omit_el_deck;     /* if TRUE, do not allocate alpha[cm->M] EL deck (Inside use only) */
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
 			 * matrix, which defines j, d, bands for each
 			 * state, only a reference, so don't free
@@ -1845,6 +1915,38 @@ typedef struct cm_s {
 
   double  tau;          /* tail loss probability for HMM target dependent banding             */
   double  maxtau;       /* maximum allowed tau value for HMM band tightening                  */
+  int     p7bpad;       /* p7 band pad for p7_Seq2BandsVit (CM_ALIGN_P7BANDED); default 10    */
+  int     p7_use_pinbridge; /* if TRUE, replace full p7_GViterbi with SW-pinbridge prefilter + banded p7 GViterbi (--p7pinbridge) */
+  int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
+  int     p7_pinbridge_vit_gaps; /* if TRUE, use exact mini-Viterbi gap costs in gap-aware LSIS (--p7pinbridge-vitgaps); default FALSE (closed-form) */
+  int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
+  int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
+  int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 26_0430-068);
+                                 * bands for unvisited states set empty so DP loops iterate zero cells     */
+  char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
+  int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 26_0628-027) */
+  double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043) */
+  int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmerchain (independent of the M-gate) when the
+                                 * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
+                                 * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
+                                 * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 26_0628-046) */
+  int     p7_kmerchain_mgate;  /* brief 26_0628-047: if >0, gate kmerchain when M < this threshold (was a
+                                 * hardcoded, default-on M<4,000 constant under brief 26_0628-045; now a real, OFF-BY-
+                                 * DEFAULT cmalign option -- --p7kmerchain-mgate <M>); default 0 (disabled) */
+  int     p7_kmerchain_fallback_vit; /* brief 26_0628-047: if TRUE, revert the kmerchain M-gate/N-gate/no-anchor
+                                 * fallback to the old p7_Seq2BandsVit (single Viterbi-MAP-trace band) mechanism
+                                 * instead of the new default (--p7ibv's D&C deriver) (--p7kmerchain-fbvit);
+                                 * default FALSE (use --p7ibv fallback) */
+  int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 26_0430-120) */
+  int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
+  int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 26_0430-124)  */
+  int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
+  int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 26_0430-140, --p7ibv-mode) */
+  int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 26_0430-140, --p7ibv-width) */
+  int     p7_ibv_ckpt;         /* if TRUE, checkpointed banded CP9 P7B F/B in Pass 2 (--p7ibv-ckpt, brief 26_0430-146/144-B) */
+  int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 26_0430-169) */
+  int    *p7_wv_nodepad;       /* [0..M] WV per-node pad (F+B-halfwidth p95), computed align-time; NULL until set */
+  int     p7_wv_nodepad_M;     /* length of p7_wv_nodepad (= fp7->M); 0 if not set */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -1924,12 +2026,16 @@ typedef struct cm_s {
   P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
 
-  /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7NodePad()
-   * at cmbuild time from the CM and stored in the CM file. Used by the F4/F5
-   * Viterbi banding pipeline in cm_pipeline.c. Indexed by HMM consensus position
-   * [0..fp7->M]; index 0 is a 1-based-indexing artifact (never read at search). */
-  int          *p7_nodepad;   /* [0..p7_nodepad_M] per-node pad array; NULL if not set */
-  int           p7_nodepad_M; /* length of p7_nodepad (= fp7->M); 0 if not set */
+  /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7CMNodePad()
+   * at cmbuild time from the CM and stored in the CM file. Indexed by HMM
+   * consensus position [0..fp7->M]; index 0 is a 1-based-indexing artifact
+   * (never read at search). Read by p7_pins2bands_nodepad (cm_p7_band.c) to
+   * widen the kmin/kmax envelope fed to CP9 F/B -- drives CM alignment
+   * accuracy. The CM_PIPELINE has a mirror field of the same name
+   * (pli->p7_cm_nodepad) that holds the per-pipeline-call working copy
+   * (loaded from this CM field, or from --p7nodepad-file). */
+  int          *p7_cm_nodepad;   /* [0..p7_cm_nodepad_M] per-node pad array; NULL if not set */
+  int           p7_cm_nodepad_M; /* length of p7_cm_nodepad (= fp7->M); 0 if not set */
 
   /* per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS). Computed by
    * cm_CalibrateFilterPvalCutoffs() at cmbuild time from N CM-emitted sequences.
@@ -1975,7 +2081,7 @@ typedef struct cm_s {
 #define CM_EMIT_NO_LOCAL_BEGINS (1<<21) /* emitted parsetrees will never have local begins */
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
-#define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_nodepad) are valid */
+#define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_cm_nodepad) are valid */
 #define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
 #define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
 #define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
@@ -2015,7 +2121,11 @@ typedef struct cm_s {
 #define CM_ALIGN_QDB           (1<<19) /* align with QDBs                          */
 #define CM_ALIGN_INSIDE        (1<<20) /* use Inside algorithm                     */
 #define CM_ALIGN_TRUNC         (1<<21) /* use truncated alignment algorithms       */
-#define CM_ALIGN_XTAU          (1<<22) /* multiply tau until banded mx size < limit*/ 
+#define CM_ALIGN_XTAU          (1<<22) /* multiply tau until banded mx size < limit*/
+#define CM_ALIGN_P7HMM         (1<<23) /* use p7 HMM only to align (no CM)         */
+#define CM_ALIGN_P7HMMVIT      (1<<24) /* w/P7HMM: Viterbi traces (no OA)          */
+#define CM_ALIGN_P7HMMNOBAND   (1<<25) /* w/P7HMM: unbanded OA (no Vit banding)    */
+#define CM_ALIGN_CHECKPT       (1<<26) /* use checkpointed sqrt(M)-mem HB OptAcc engines (truncated or non-trunc, global, MATL chain) */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
@@ -2321,8 +2431,8 @@ typedef struct cm_pipeline_s {
                                  * Used by p7pn_bands_to_cp9cm_bands to compute sp1/sp2/ep1/ep2
                                  * via cp9b->thresh1/thresh2 comparisons (mimicking cp9 path).  */
   int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
-  int          *p7_nodepad;     /* [0..M] per-node pad array, NULL if uniform pad */
-  int           p7_nodepad_M;   /* M used when p7_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
+  int          *p7_cm_nodepad;  /* [0..M] per-node pad array (mirror of cm->p7_cm_nodepad or loaded from --p7nodepad-file); NULL if uniform pad */
+  int           p7_cm_nodepad_M;/* M used when p7_cm_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
   char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
   int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7padplus, default 0)        */
   int           p7vit_hopback;  /* hop-back radius (in pinned-position trace order) for D1 dilation (--p7vit-hopback, default 0 = off) */
@@ -2845,18 +2955,55 @@ extern int   cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_
 extern int   cm_alignment_bpcov_acc_Finalize (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
 extern void  cm_alignment_bpcons_acc_Destroy (CM_BPCONS_ACC *acc);
 
+/* CM_PB_OM32: Infernal-side 32-bit striped emission table for the
+ * --p7pinbridge SW prefilter scan (brief 26_0430-094). Parallels HMMER's 16-bit
+ * P7_OPROFILE->rwv but with int32 lanes so the SW DP accumulation does not
+ * saturate on highly-conserved / self-alignment-scale inputs (where the
+ * 16-bit kernel pins everything at +32767, destroying score-based pin
+ * ranking). Opaque here (contains __m128i); full definition + Create/Build/
+ * Destroy live in cm_p7_band.c. We only READ from HMMER's P7_PROFILE to build
+ * it; HMMER itself is never modified. */
+typedef struct cm_pb_om32_s CM_PB_OM32;
+
+/* CM_P7_OM_HOLDER: reusable LOCAL p7 profile + optimized profile for the
+ * --p7pinbridge SW prefilter scan (brief 26_0430-090). The LOCAL config of cm->fp7
+ * depends only on the model (not the residues), so it can be built once per
+ * worker thread / per block and reused across all sequences, with only a
+ * per-sequence p7_oprofile_ReconfigLength(). This eliminates the per-sequence
+ * "om_build" cost (~40% of pinbridge band derivation at M=360).
+ *
+ * MUST NOT be shared across threads: p7_oprofile_ReconfigLength() mutates om,
+ * so each worker thread needs its own holder. Pass NULL to
+ * p7_Seq2BandsPinBridgeWrap() to get per-call build-and-free behavior (the
+ * single-sequence search/scan callers do this). */
+typedef struct cm_p7_om_holder_s {
+  P7_PROFILE  *gm_local;  /* LOCAL config of cm->fp7 (Convert source only)    */
+  P7_OPROFILE *om;        /* optimized LOCAL profile used by the SW scan      */
+  CM_PB_OM32  *om32;      /* 32-bit emission table for the 32-bit SW scan (brief 26_0430-094) */
+  int          M;         /* model size the holder was built for (sanity)     */
+  int          built;     /* TRUE once gm_local/om/om32 are populated         */
+} CM_P7_OM_HOLDER;
+
+extern void  cm_p7_om_holder_Init (CM_P7_OM_HOLDER *h);
+extern void  cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h);
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
-				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
+				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+				      CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
 extern int   cm_AlignSizeNeededHB (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotb, float *ret_totmb);
 extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_MX *mx,    CM_SHADOW_MX    *shmx, CM_MX    *post_mx, CM_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
+extern int   cm_CheckptAlignHB_Qualifies(CM_t *cm);
+extern int   cm_CheckptAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
+extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
+extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 extern int   cm_CYKInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_sc);
 extern int   cm_CYKInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_sc);
 extern int   cm_alignT_hb         (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, float *ret_sc_or_pp);
@@ -3262,11 +3409,20 @@ extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *e
 extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
 extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
+extern int          cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_PosteriorP7BF(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, int *kmin, int *kmax);
+extern int          cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
+extern void         cp9_PredictStartAndEndPositionsP7BF(CP9_FMX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
+extern int          cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
 extern int          cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
 extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, float *ret_Mb);
 extern void         pn_match_bands_enforce_monotone(int *pn_min_m, int *pn_max_m, int M, int L, int do_print, const char *ctx);
 extern int          p7bands_to_cp9bands      (CM_t *cm, char *errbuf, int *kmin, int *kmax, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, const float *pocc, int debug_level);
 extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, float thresh, int debug_level);
@@ -3274,17 +3430,69 @@ extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, floa
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, int do_pnmono, int do_pnmono_print);
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, const float *pocc, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
-extern int          cm_BandsFromParsetree_perstate(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, const int *per_state_pad, int strict_unvisited, CP9Bands_t *cp9b, int pass_idx, int debug);
+extern int          cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, const int *per_state_pad, int strict_unvisited, CP9Bands_t *cp9b, int pass_idx, int debug);
+extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpad);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
+/* checkpointed banded CP9 P7B F/B (brief 26_0430-146, cm_p7_band_chk.c) */
+extern int          cp9_FB2HMMBandsP7B_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+/* checkpointed banded CP9 P7B float/truncated F/B (brief 26_0430-150, Phase 2, cm_p7_band_chk.c) */
+extern int          cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, double *pocc_arr);
+extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+/* brief 26_0430-167: tau-ratchet single-pass multi-threshold sibling + ckpt-trunc driver (cm_p7_band_chk.c) */
+extern int          cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double *p_thresh, int NS, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, int **pn_min_m_out, int **pn_max_m_out, int **pn_min_i_out, int **pn_max_i_out, int **pn_min_d_out, int **pn_max_d_out, double **pocc_out);
+extern int          cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, int *ret_nbump, float *ret_Mb);
 extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          cm_ComputeP7NodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
+/* SW-pinbridge prefilter + banded p7 Viterbi: drop-in replacement for p7_Seq2BandsVit
+ * when cm->p7_use_pinbridge is TRUE. Same signature except no gx (allocates banded
+ * matrix internally) and no bg/bg arg (uses bg passed in). Other declarations
+ * (p7_GBandedViterbi, p7_GBandedTrace, p7_GBands_FromKminKmax, p7_Seq2BandsPinBridge)
+ * require p7_gmxb.h/p7_gbands.h types and are declared locally where used.  */
+extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
+                                              P7_BG *bg, P7_TRACE *p7_tr,
+                                              ESL_DSQ *dsq, int L, int pad, int *nodepad,
+                                              int hopback, int vitend,
+                                              CM_P7_OM_HOLDER *om_holder,
+                                              int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
+ * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
+ * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining
+ * DP + backtrack + pin emission + p7_pins2bands_nodepad. Only measured when non-NULL. */
+extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s);
+/* Brief 26_0430-140: IBV band-derivation modes (enrich the per-row band using the
+ * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
+ * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */
+#define P7IBV_MODE_DELTA  0
+#define P7IBV_MODE_FIXED  1
+#define P7IBV_MODE_HYBRID 2
+extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                                    int do_trunc,
+                                    int ibv_mode, int ibv_width,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+                                    int delta_milli, int base_slab,
+                                    int do_boundary_widen,
+                                    int do_kband,
+                                    int do_trunc,
+                                    int ibv_mode, int ibv_width,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
+                                    const int *i2k, const int *kmin, const int *kmax, int ncells,
+                                    P7_TRACE **ret_tr);
+/* Brief 26_0430-169: windowed-Viterbi band = MAP-trace i2k +/- per-node pad. */
+extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+                                    int do_trunc,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
+                                    double quantile, int delta_milli, int floorpad, int **ret_nodepad);
+extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
 /* from cm_filtercutoff.c */
 extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf);
@@ -3337,7 +3545,12 @@ extern int cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i
 		       int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc);
 extern int cp9_ViterbiBackward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			       int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc);
-extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+extern int cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+		    int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc);
+extern int cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+		     int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc);
+extern void cp9_PosteriorF(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *mx, int did_fwd_scan);
+extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
 		       int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
@@ -3365,6 +3578,13 @@ extern void    FreeCP9Matrix  (CP9_MX *mx);
 extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
 extern void    InitializeCP9Matrix(CP9_MX *mx);
 extern int     SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax);
+
+/* CP9_FMX (float-precision) matrix functions, from cp9_mx.c */
+extern CP9_FMX *CreateCP9FMatrix(int N, int M);
+extern void     FreeCP9FMatrix  (CP9_FMX *mx);
+extern int      GrowCP9FMatrix  (CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, float ***mmx, float ***imx, float ***dmx, float ***elmx, float **erow);
+extern void     InitializeCP9FMatrix(CP9_FMX *mx);
+extern int      SizeNeededCP9FMatrix(int N, int M, int *kmin, int *kmax);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
@@ -3459,8 +3679,7 @@ extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
 extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
-extern void         ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
-			       int **hdmin, int **hdmax, int do_trunc, int debug_level);
+extern void         ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level);
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
 

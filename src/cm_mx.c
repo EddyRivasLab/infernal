@@ -70,6 +70,7 @@ static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errb
 static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
 static int cm_tr_scan_mx_freefloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
 static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_hb_mx_SizeNeeded_ex    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int64_t *ret_ncells, float *ret_Mb);
 
 /*****************************************************************
  *   1. CM_MX data structure functions,
@@ -884,6 +885,7 @@ cm_hb_mx_Create(int M)
   mx->dp     = NULL;
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
+  mx->omit_el_deck = 0;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
    *          remember deck M is special, as it has no bands, we allocate
@@ -963,7 +965,8 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   float   Mb_needed;   /* required size of matrix, given the bands */
   float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
   int     have_el;
-  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  int     include_el = (! mx->omit_el_deck);
+  have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -971,7 +974,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
+  if((status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, include_el, &ncells, &Mb_needed)) != eslOK) return status;
   /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
   ESL_DPRINTF2(("#DEBUG: HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
@@ -1029,7 +1032,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   for(v = 0; v < mx->M; v++) { 
     for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
       mx->dp[v][jp] = mx->dp_mem + cur_size;
-      cur_size     += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      cur_size     += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     }
   }
   if(have_el) {
@@ -1097,8 +1100,8 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
     for (v = 0; v < mx->M; v++) {
       for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
+	for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	  d = dp + hd_min(mx->cp9b, v, jp);
 	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
 	}
 	fprintf(ofp, "\n");
@@ -1142,30 +1145,31 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
  * Returns:   <eslOK> on success
  *
  */
-int
-cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+static int
+cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el,
+                       int64_t *ret_ncells, float *ret_Mb)
 {
   int     v, jp;
   int64_t ncells;
   int     jbw;
   int     have_el;
   float   Mb_needed;
-  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
 
   /* contract check */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   ncells = 0;
-  Mb_needed = (float) 
-    (sizeof(CM_HB_MX) + 
+  Mb_needed = (float)
+    (sizeof(CM_HB_MX) +
      ((cp9b->cm_M+1) * sizeof(float **)) + /* mx->dp[] ptrs */
      ((cp9b->cm_M+1) * sizeof(int)));      /* mx->nrowsA */
 
-  for(v = 0; v < cp9b->cm_M; v++) { 
-    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+  for(v = 0; v < cp9b->cm_M; v++) {
+    jbw = cp9b->jmax[v] - cp9b->jmin[v];
     Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->dp[v][] ptrs */
-    for(jp = 0; jp <= jbw; jp++) 
-      ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    for(jp = 0; jp <= jbw; jp++)
+      ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
   }
   if(have_el) ncells += (int64_t) ( (int64_t) (L+2) * (int64_t) (L+1) * 0.5); /* space for EL deck */
 
@@ -1176,6 +1180,12 @@ cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *re
   if(ret_Mb     != NULL) *ret_Mb     = Mb_needed;
 
   return eslOK;
+}
+
+int
+cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+{
+  return cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, ret_ncells, ret_Mb);
 }
 
 /*****************************************************************
@@ -1557,25 +1567,25 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     if(mx->Jdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Jdp[v][jp] = mx->Jdp_mem + Jcur_size;
-	Jcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Jcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(mx->Ldp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Ldp[v][jp] = mx->Ldp_mem + Lcur_size;
-	Lcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Lcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(mx->Rdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Rdp[v][jp] = mx->Rdp_mem + Rcur_size;
-	Rcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Rcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(mx->Tdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Tdp[v][jp] = mx->Tdp_mem + Tcur_size;
-	Tcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Tcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
   }
@@ -1704,8 +1714,8 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
     for (v = 0; v < mx->M; v++) {
       for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
+	for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	  d = dp + hd_min(mx->cp9b, v, jp);
 	  if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
 	  if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
 	  if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
@@ -1782,25 +1792,25 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
     if(cp9b->Jvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Jdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Jncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Jncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(cp9b->Lvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Ldp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Lncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Lncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(cp9b->Rvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Rdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Rncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Rncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(cp9b->Tvalid[v]) {
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Tdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Tncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Tncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
   }
@@ -1830,6 +1840,15 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   if(ret_Rncells != NULL) *ret_Rncells = Rncells;
   if(ret_Tncells != NULL) *ret_Tncells = Tncells;
   if(ret_Mb      != NULL) *ret_Mb      = Mb_needed;
+
+  /* Brief 26_0430-157 G3 instrumentation: with the flat hd_arrays gone, this size gate
+   * is the first point that reaches genome scale. Print the truncated DP-matrix
+   * cell count + Mb (once per tau iteration; cheap) when CM157_SIZEGATE is set. */
+  if(getenv("CM157_SIZEGATE") != NULL) {
+    int64_t tot = Jncells + Lncells + Rncells + Tncells;
+    fprintf(stderr, "[CM157_SIZEGATE] tau=%.3g L=%d trDPcells: J=%" PRId64 " L=%" PRId64 " R=%" PRId64 " T=%" PRId64 " tot=%" PRId64 " Mb=%.1f\n",
+	    cm->tau, L, Jncells, Lncells, Rncells, Tncells, tot, Mb_needed);
+  }
 
   /*printf("in cm_tr_hb_mx_SizeNeeded() returning %.2f total Mb (EL: %.2f Mb)\n",
     Mb_needed, (sizeof(float) * (L+2) * (L+1) * 0.5) * 0.000001); */
@@ -3059,13 +3078,13 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
     if(cm->sttype[v] == B_st) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->kshadow[v][jp] = mx->kshadow_mem + k_cur_size;
-	k_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	k_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     else { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->yshadow[v][jp] = mx->yshadow_mem + y_cur_size;
-	y_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	y_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
   }
@@ -3136,8 +3155,8 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx, int print_mx)
       if(cm->sttype[v] == B_st) { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][jp][dp]);
 	  }
 	  fprintf(ofp, "\n");
@@ -3147,8 +3166,8 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx, int print_mx)
       else { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    fprintf(ofp, "yshad[v:%5d][j:%5d][d:%5d] %8c\n", v, j, d, mx->yshadow[v][jp][dp]);
 	  }
 	  fprintf(ofp, "\n");
@@ -3207,12 +3226,12 @@ cm_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *re
     if(cm->sttype[v] == B_st) { 
       Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->kshadow[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) 
-	k_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	k_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     }
     else { 
       Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->yshadow[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) 
-	y_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	y_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     }
   }
   Mb_needed += sizeof(char) * y_ncells; /* mx->yshadow_mem */
@@ -3716,19 +3735,19 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
       if(mx->Jyshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Jyshadow[v][jp] = mx->Jyshadow_mem + Jy_cur_size;
-	  Jy_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jy_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Lyshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Lyshadow[v][jp] = mx->Lyshadow_mem + Ly_cur_size;
-	  Ly_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ly_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Ryshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Ryshadow[v][jp] = mx->Ryshadow_mem + Ry_cur_size;
-	  Ry_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ry_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
@@ -3736,7 +3755,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
       if(mx->Jkshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Jkshadow[v][jp] = mx->Jkshadow_mem + Jk_cur_size;
-	  Jk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Lkshadow[v] != NULL) { 
@@ -3744,7 +3763,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Lkshadow[v][jp] = mx->Lkshadow_mem + Lk_cur_size;
 	  mx->Lkmode[v][jp]   = mx->Lkmode_mem   + Lk_cur_size;
-	  Lk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Lk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Rkshadow[v] != NULL) { 
@@ -3752,13 +3771,13 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Rkshadow[v][jp] = mx->Rkshadow_mem + Rk_cur_size;
 	  mx->Rkmode[v][jp]   = mx->Rkmode_mem   + Rk_cur_size;
-	  Rk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Rk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Tkshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Tkshadow[v][jp] = mx->Tkshadow_mem + Tk_cur_size;
-	  Tk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Tk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
@@ -3914,8 +3933,8 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode, 
       if(cm->sttype[v] == B_st) { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][jp][dp]);
 	    if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][jp][dp]);
 	    if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][jp][dp]);
@@ -3928,8 +3947,8 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode, 
       else { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][jp][dp]);
 	    if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][jp][dp]);
 	    if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][jp][dp]);
@@ -4008,27 +4027,27 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
       if(cp9b->Jvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->Jkshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Jk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Lvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1));  /* mx->Lkshadow[v][] ptrs */
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Lkmode[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Lk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Lk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Rvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1));  /* mx->Rkshadow[v][] ptrs */
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Rkmode[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Rk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Rk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Tvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->Tkshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Tk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Tk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
@@ -4036,19 +4055,19 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
       if(cp9b->Jvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Jyshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Jy_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jy_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Lvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Lyshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Ly_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ly_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Rvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Ryshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Ry_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ry_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }

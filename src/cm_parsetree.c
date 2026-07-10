@@ -3842,7 +3842,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   /* ensure a full alignment to ROOT_S (v==0) is possible */
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
@@ -3863,7 +3863,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
       y = cm->cfirst[v];
       z = cm->cnum[v];
       jp_z = j-jmin[z];
-      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+      k = kp_z + hd_min(cp9b, z, jp_z);  /* k = offset len of right fragment */
 
       /* Determine valid k values. This is complex, and
        * uncommented. It was taken from
@@ -3876,9 +3876,9 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
       if(j < jmin[v] || j > jmax[v])               ESL_FAIL(eslFAIL, errbuf, "cm_StochasticParsetreeHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
-      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_StochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
-      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      if(d < hd_min(cp9b, v, jp_v) || d > hd_max(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_StochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hd_min(cp9b, v, jp_v), hd_max(cp9b, v, jp_v));
+      kmin = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
+      kmax = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 
       cur_vec_size = d+1;
       esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE); /* only valid k's will be reset to a non-IMPOSSIBLE score */
@@ -3887,9 +3887,9 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
        * and choose a k. 
        */
       for(k = kmin; k <= kmax; k++) { 
-	if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	  kp_z       = k-hdmin[z][jp_z];
-	  dp_y       = d-hdmin[y][jp_y-k];
+	if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	  kp_z       = k-hd_min(cp9b, z, jp_z);
+	  dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	  pA[k]      = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
 	}
       }
@@ -3949,8 +3949,8 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	  y = cm->cfirst[v] + yoffset;
 	  if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { /* j-sdr is valid in y */
 	    jp_y_sdr = j - jmin[y] - sdr;
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { 
-	      dp_y_sd = d - hdmin[y][jp_y_sdr] - sd;
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { 
+	      dp_y_sd = d - hd_min(cp9b, y, jp_y_sdr) - sd;
 	      pA[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y_sdr][dp_y_sd];
 	    }
 	  }
@@ -3976,8 +3976,8 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
 	    if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	      jp_y = j - jmin[y];
-	      if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { 
-		dp_y = d - hdmin[y][jp_y];
+	      if(d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) { 
+		dp_y = d - hd_min(cp9b, y, jp_y);
 		pA[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y];   
 	      }
 	    }
@@ -4693,8 +4693,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   }
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
   parsetree_mode = preset_mode;
@@ -4753,8 +4753,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       /* check for errors */
       if(j > jmax[v])        ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), j: %d > jmax[%d] (%d)\n", j, v, jmax[v]);
       if(j < jmin[v])        ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), j: %d < jmin[%d] (%d)\n", j, v, jmin[v]);
-      if(d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d > hdmax[%d] (%d)\n", d, v, hdmax[v][jp_v]);
-      if(d < hdmin[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d < hdmin[%d] (%d)\n", d, v, hdmin[v][jp_v]);
+      if(d > hd_max(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d > hdmax[%d] (%d)\n", d, v, hd_max(cp9b, v, jp_v));
+      if(d < hd_min(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d < hdmin[%d] (%d)\n", d, v, hd_min(cp9b, v, jp_v));
       if(v_mode == TRMODE_J && (! cp9b->Jvalid[v]))  ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), mode is TRMODE_J for v: %d but cp9b->Jvalid[v] is FALSE", v);
       if(v_mode == TRMODE_L && (! cp9b->Lvalid[v]))  ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), mode is TRMODE_L for v: %d but cp9b->Lvalid[v] is FALSE", v);
       if(v_mode == TRMODE_R && (! cp9b->Rvalid[v]))  ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), mode is TRMODE_R for v: %d but cp9b->Rvalid[v] is FALSE", v);
@@ -4765,7 +4765,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       y = cm->cfirst[v];
       z = cm->cnum[v];
       jp_z = j-jmin[z];
-      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+      k = kp_z + hd_min(cp9b, z, jp_z);  /* k = offset len of right fragment */
 
       /* Determine valid k values, this is mode-independent. This is
        * complex, and uncommented. It was taken from
@@ -4778,9 +4778,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
       if(j < jmin[v] || j > jmax[v])               ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
-      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
-      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      if(d < hd_min(cp9b, v, jp_v) || d > hd_max(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hd_min(cp9b, v, jp_v), hd_max(cp9b, v, jp_v));
+      kmin = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
+      kmax = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 
       cur_vec_size = d+3;
       esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE); /* only valid k's will be reset to a non-IMPOSSIBLE score, d+1 and d+2 store special cases in L and R mode, remain invalid for J and T mode */
@@ -4794,9 +4794,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* v is J, y and z must be J mode also */
 	if(cp9b->Jvalid[y] && cp9b->Jvalid[z]) { 
 	  for(k = kmin; k <= kmax; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Jalpha[y][jp_y-k][dp_y-k] + Jalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_J;
@@ -4810,9 +4810,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* v is L, y will be J or L, z will be L */
 	if(filled_L && cp9b->Jvalid[y] && cp9b->Lvalid[z]) { 
 	  for(k = kmin; k <= kmax; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Jalpha[y][jp_y-k][dp_y-k] + Lalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_J;
@@ -4823,8 +4823,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* allow for the two special L cases, if they're valid */
 	if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	  jp_y = j-jmin[y];
-	  if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { /* d is valid in j, y */
-	    dp_y = d - hdmin[y][jp_y];
+	  if(d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) { /* d is valid in j, y */
+	    dp_y = d - hd_min(cp9b, y, jp_y);
 	    if(cp9b->Jvalid[y]) { 
 	      pA[d+1]      = Jalpha[y][jp_y][dp_y]; /* entire sequence is on left in J mode, k is 0 */
 	      kA[d+1]      = 0;
@@ -4844,9 +4844,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* v is R, y will be R, z will be J or R */
 	if(filled_R && cp9b->Rvalid[y] && cp9b->Jvalid[z]) { 
 	  for(k = kmin; k <= kmax; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Ralpha[y][jp_y-k][dp_y-k] + Jalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_R;
@@ -4857,8 +4857,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* allow for the two special R cases, if they're valid */
 	if(j >= jmin[z] && j <= jmax[z]) { 
 	  jp_z = j-jmin[z];
-	  if(d >= hdmin[z][jp_z] && d <= hdmax[z][jp_z]) { 
-	    dp_z = d - hdmin[z][jp_z];
+	  if(d >= hd_min(cp9b, z, jp_z) && d <= hd_max(cp9b, z, jp_z)) { 
+	    dp_z = d - hd_min(cp9b, z, jp_z);
 	    if(cp9b->Jvalid[z]) { 
 	      pA[d+1]      = Jalpha[z][jp_z][dp_z]; /* entire sequence is on right in J mode, k is d */
 	      kA[d+1]      = d;
@@ -4880,9 +4880,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  kn = ESL_MAX(kmin, 1);
 	  kx = ESL_MIN(kmax, d);
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Ralpha[y][jp_y-k][dp_y-k] + Lalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_R;
@@ -4952,8 +4952,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	for(y = 0; y < cm->M; y++) { 
 	  if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	    jp_y = j - jmin[y];
-	    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { 
-	      dp_y = d - hdmin[y][jp_y];
+	    if(d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) { 
+	      dp_y = d - hd_min(cp9b, y, jp_y);
 	      trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][y] : cm->trp->g_ptyAA[pty_idx][y];
 	      if(NOT_IMPOSSIBLE(trpenalty)) { 
 		if(            do_J && cp9b->Jvalid[y])   pA[y] = trpenalty + Jalpha[y][jp_y][dp_y];   
@@ -5047,8 +5047,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	    y = cm->cfirst[v] + yoffset;
 	    if((j-vms_sdr) >= jmin[y] && (j-vms_sdr) <= jmax[y]) { /* j-vms_sdr is valid in y */
 	      jp_y_vms_sdr = j - jmin[y] - vms_sdr;
-	      if((d-vms_sd) >= hdmin[y][jp_y_vms_sdr] && (d-vms_sd) <= hdmax[y][jp_y_vms_sdr]) { 
-		dp_y_vms_sd = d - hdmin[y][jp_y_vms_sdr] - vms_sd;
+	      if((d-vms_sd) >= hd_min(cp9b, y, jp_y_vms_sdr) && (d-vms_sd) <= hd_max(cp9b, y, jp_y_vms_sdr)) { 
+		dp_y_vms_sd = d - hd_min(cp9b, y, jp_y_vms_sdr) - vms_sd;
 		if(            do_J && cp9b->Jvalid[y]) JpA[yoffset] = cm->tsc[v][yoffset] + Jalpha[y][jp_y_vms_sdr][dp_y_vms_sd];
 		if(filled_L && do_L && cp9b->Lvalid[y]) LpA[yoffset] = cm->tsc[v][yoffset] + Lalpha[y][jp_y_vms_sdr][dp_y_vms_sd];
 		if(filled_R && do_R && cp9b->Rvalid[y]) RpA[yoffset] = cm->tsc[v][yoffset] + Ralpha[y][jp_y_vms_sdr][dp_y_vms_sd];

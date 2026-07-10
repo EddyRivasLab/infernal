@@ -121,6 +121,29 @@ CreateCMShell(void)
   cm->beta_W       = DEFAULT_BETA_W;     /* will be set when beta_W is read from cmfile */
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->maxtau       = DEFAULT_MAXTAU;     /* 0.1  the default max tau during HMM band tightening */
+  cm->p7bpad       = 10;                 /* default p7 band pad for p7_Seq2BandsVit */
+  cm->p7_use_pinbridge = FALSE;          /* default: full p7_GViterbi (set TRUE by --p7pinbridge) */
+  cm->p7_pinbridge_pad = 20;             /* SW-pinbridge prefilter band pad; brief recommends 20 */
+  cm->p7_pinbridge_vit_gaps = FALSE;     /* default: closed-form gap-aware LSIS (set TRUE by --p7pinbridge-vitgaps) */
+  cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
+  cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
+  cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
+  cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
+  cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 26_0628-027) */
+  cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 26_0628-042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 26_0628-043) */
+  cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
+  cm->p7_kmerchain_mgate = 0;            /* default: disabled -- opt-in small-M gate (set by --p7kmerchain-mgate, brief 26_0628-047) */
+  cm->p7_kmerchain_fallback_vit = FALSE; /* default: use --p7ibv as the kmer-gate fallback deriver (set by --p7kmerchain-fbvit, brief 26_0628-047) */
+  cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 26_0430-120) */
+  cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
+  cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 26_0430-124) */
+  cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 26_0430-124) */
+  cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 26_0430-140, --p7ibv-mode) */
+  cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 26_0430-140, --p7ibv-width) */
+  cm->p7_ibv_ckpt      = FALSE;          /* default: non-checkpointed Pass-2 CP9 F/B (--p7ibv-ckpt, brief 26_0430-146) */
+  cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 26_0430-169) */
+  cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 26_0430-169) */
+  cm->p7_wv_nodepad_M  = 0;
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -156,8 +179,8 @@ CreateCMShell(void)
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;
   cm->fp7          = NULL;
-  cm->p7_nodepad   = NULL;
-  cm->p7_nodepad_M = 0;
+  cm->p7_cm_nodepad   = NULL;
+  cm->p7_cm_nodepad_M = 0;
   cm->F1_pcutoff   = 0.0f;
   cm->F2_pcutoff   = 0.0f;
   cm->F3_pcutoff   = 0.0f;
@@ -499,7 +522,8 @@ FreeCM(CM_t *cm)
     p7_hmm_Destroy(cm->fp7);
     cm->fp7  = NULL;
   }
-  if(cm->p7_nodepad != NULL) { free(cm->p7_nodepad); cm->p7_nodepad = NULL; }
+  if(cm->p7_cm_nodepad != NULL) { free(cm->p7_cm_nodepad); cm->p7_cm_nodepad = NULL; }
+  if(cm->p7_wv_nodepad != NULL) { free(cm->p7_wv_nodepad); cm->p7_wv_nodepad = NULL; }
   if(cm->emap   != NULL) FreeEmitMap(cm->emap);
   if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
   if(cm->trp    != NULL) cm_tr_penalties_Destroy(cm->trp);
@@ -3244,6 +3268,35 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->iel_selfsc  = cm->iel_selfsc;
   new->tau         = cm->tau;
   new->maxtau      = cm->maxtau;
+  new->p7bpad           = cm->p7bpad;
+  new->p7_use_pinbridge = cm->p7_use_pinbridge;
+  new->p7_pinbridge_pad = cm->p7_pinbridge_pad;
+  new->p7_pinbridge_vit_gaps = cm->p7_pinbridge_vit_gaps;
+  new->p7_use_cykbands  = cm->p7_use_cykbands;
+  new->p7_cykbands_pad  = cm->p7_cykbands_pad;
+  new->p7_cykskip_unvisited = cm->p7_cykskip_unvisited;
+  new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
+  new->p7_use_kmerchain  = cm->p7_use_kmerchain;
+  new->p7_kmerchain_ramp_alpha = cm->p7_kmerchain_ramp_alpha;
+  new->p7_kmerchain_mink = cm->p7_kmerchain_mink;
+  new->p7_kmerchain_mgate = cm->p7_kmerchain_mgate;
+  new->p7_kmerchain_fallback_vit = cm->p7_kmerchain_fallback_vit;
+  new->p7_use_ibv       = cm->p7_use_ibv;
+  new->p7_ibv_delta     = cm->p7_ibv_delta;
+  new->p7_ibv_mem       = cm->p7_ibv_mem;
+  new->p7_ibv_base_slab = cm->p7_ibv_base_slab;
+  new->p7_ibv_mode      = cm->p7_ibv_mode;
+  new->p7_ibv_width     = cm->p7_ibv_width;
+  new->p7_ibv_ckpt      = cm->p7_ibv_ckpt;
+  new->p7_ibv_wv        = cm->p7_ibv_wv;
+  if(cm->p7_wv_nodepad != NULL) {
+    ESL_ALLOC(new->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
+    memcpy(new->p7_wv_nodepad, cm->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
+    new->p7_wv_nodepad_M = cm->p7_wv_nodepad_M;
+  } else {
+    new->p7_wv_nodepad   = NULL;
+    new->p7_wv_nodepad_M = 0;
+  }
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;
@@ -3329,10 +3382,10 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     if((new->fp7  = p7_hmm_Clone(cm->fp7))  == NULL) { status = eslEMEM; goto ERROR; }
     esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
   }
-  if(cm->p7_nodepad != NULL) {
-    ESL_ALLOC(new->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    memcpy(new->p7_nodepad, cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    new->p7_nodepad_M = cm->p7_nodepad_M;
+  if(cm->p7_cm_nodepad != NULL) {
+    ESL_ALLOC(new->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    memcpy(new->p7_cm_nodepad, cm->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    new->p7_cm_nodepad_M = cm->p7_cm_nodepad_M;
   }
   if(cm->flags & CMH_FILTER_PVAL_CUTOFFS) {
     new->F1_pcutoff = cm->F1_pcutoff;
@@ -3342,7 +3395,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
 
   /* CM HMM banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
-  if(cm->hb_mx     != NULL) new->hb_mx     = cm_hb_mx_Create(new->M);
+  if(cm->hb_mx     != NULL) { new->hb_mx     = cm_hb_mx_Create(new->M); new->hb_mx->omit_el_deck = cm->hb_mx->omit_el_deck; }
   if(cm->hb_omx    != NULL) new->hb_omx    = cm_hb_mx_Create(new->M);
   if(cm->hb_emx    != NULL) new->hb_emx    = cm_hb_emit_mx_Create(new);
   if(cm->hb_shmx   != NULL) new->hb_shmx   = cm_hb_shadow_mx_Create(new);

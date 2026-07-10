@@ -72,7 +72,8 @@ PROGS = cmalign\
 	p7bandsim\
 	test_phase2_features\
 	test_phase3_features\
-	test_phase4_predict
+	test_phase4_predict\
+	test_wviterbi
 
 # list of executable programs that get installed
 # cmcalibrate omitted from IPROGS (not installed by 'make install'): cmbuild's
@@ -155,8 +156,10 @@ OBJS  = cm.o\
 	cm_tophits.o\
 	cm_trunc.o\
 	cm_p7_band.o\
+	cm_p7_band_chk.o\
 	cm_filtercutoff.o\
 	cm_p7_domaindef.o\
+	p7_ibv.o\
 	cm_p7_modelconfig_trunc.o\
 	cm_p7_modelmaker.o\
 	cp9.o\

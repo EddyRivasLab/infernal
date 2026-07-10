@@ -1713,3 +1713,386 @@ main(int argc, char **argv)
   return 0;
 }
 #endif /*DEBUG_CP9_DP*/
+
+/*****************************************************************
+ * Float-precision CP9 F/B/Posterior path.
+ *
+ * Mechanical mirrors of cp9_Forward and cp9_Backward above. Used by the
+ * truncated cmalign --p7band band derivation path (via cp9_ForwardP7BF /
+ * cp9_BackwardP7BF / cp9_PosteriorP7BF; this unbanded triple is provided
+ * for parity / potential future callers and test fixtures).
+ *
+ * Differences from int versions:
+ *   - cells, transition/emission scores, scA[] are float in log space
+ *   - ILogsum -> p7_FLogsum
+ *   - -INFTY -> -eslINFINITY
+ *   - emission/transition ints from the cp9 model are read on the fly via
+ *     Scorify(...) per cell. No precomputed float tables in v1.
+ *****************************************************************/
+
+int
+cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+	     int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc)
+{
+  int          status;
+  int          j;           /*     actual   position in the subsequence                     */
+  int          jp;          /* j': relative position in the subsequence                     */
+  int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
+  int          k;           /* CP9 HMM node position                                        */
+  int          L;           /* j0-i0+1: subsequence length                                  */
+  float      **mmx;
+  float      **imx;
+  float      **dmx;
+  float      **elmx;
+  float       *erow;
+  float       *scA;         /* log-prob (seq from j0..jp | HMM) [0..jp..L]                  */
+  float        fsc;
+  float        best_sc;
+  float        best_pos;
+  int          nrows = 2;
+  int          c;
+  int          M;
+
+  if(cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardF, cp9 is NULL.\n");
+  if(dsq == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardF, dsq is NULL.");
+  if(mx == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardF, mx is NULL.\n");
+
+  best_sc     = -eslINFINITY;
+  best_pos    = -1;
+  L = j0-i0+1;
+  M = cp9->M;
+
+  int const *tsc = cp9->otsc;
+
+  if(be_efficient) nrows = 1;
+  else             nrows = L;
+  if((status = GrowCP9FMatrix(mx, errbuf, nrows, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+
+  ESL_ALLOC(scA, sizeof(float) * (j0-i0+2));
+
+  /* Initialization of the zero row. */
+  mmx[0][0] = 0.;
+  imx[0][0] = -eslINFINITY;
+  dmx[0][0] = -eslINFINITY;
+  elmx[0][0]= -eslINFINITY;
+  erow[0]   = -eslINFINITY;
+
+  float sc;
+  for (k = 1; k <= M; k++) {
+    mmx[0][k] = imx[0][k] = elmx[0][k] = -eslINFINITY;
+    sc = p7_FLogsum(p7_FLogsum(mmx[0][k-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+			       imx[0][k-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
+		    dmx[0][k-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
+    dmx[0][k] = sc;
+  }
+  erow[0]  = dmx[0][M] + Scorify(CP9TSC(cp9O_DM,M));
+  scA[0]   = erow[0];
+  fsc      = scA[0];
+  if(fsc > best_sc) { best_sc = fsc; best_pos = i0-1; }
+
+  for (j = i0; j <= j0; j++) {
+      int const *isc_i = cp9->isc[dsq[j]];
+      int const *msc_i = cp9->msc[dsq[j]];
+      float endsc      = -eslINFINITY;
+      float el_selfsc  = Scorify(cp9->el_selfsc);
+      float sc;
+
+      jp = j-i0+1;
+      cur = (j-i0+1);
+      prv = (j-i0);
+      if(be_efficient) { cur %= 2; prv %= 2; }
+
+      mmx[cur][0]  = (do_scan == TRUE) ? 0. : -eslINFINITY;
+      dmx[cur][0]  = -eslINFINITY;
+      elmx[cur][0] = -eslINFINITY;
+
+      sc = p7_FLogsum(p7_FLogsum(mmx[prv][0] + Scorify(CP9TSC(cp9O_MI,0)),
+				 imx[prv][0] + Scorify(CP9TSC(cp9O_II,0))),
+		      dmx[prv][0] + Scorify(CP9TSC(cp9O_DI,0)));
+      imx[cur][0] = sc + Scorify(isc_i[0]);
+
+      for (k = 1; k <= M; k++) {
+	  /* match */
+	  sc = p7_FLogsum(p7_FLogsum(mmx[prv][k-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
+				     imx[prv][k-1] + Scorify(CP9TSC(cp9O_IM,k-1))),
+			  p7_FLogsum(dmx[prv][k-1] + Scorify(CP9TSC(cp9O_DM,k-1)),
+				     mmx[prv][0]   + Scorify(CP9TSC(cp9O_BM,k))));
+	  for(c = 0; c < cp9->el_from_ct[k]; c++)
+	    sc = p7_FLogsum(sc, elmx[prv][cp9->el_from_idx[k][c]]);
+	  mmx[cur][k] = sc + Scorify(msc_i[k]);
+
+	  endsc = p7_FLogsum(endsc, mmx[cur][k] + Scorify(CP9TSC(cp9O_ME,k)));
+
+	  /* insert */
+	  sc = p7_FLogsum(p7_FLogsum(mmx[prv][k] + Scorify(CP9TSC(cp9O_MI,k)),
+				     imx[prv][k] + Scorify(CP9TSC(cp9O_II,k))),
+			  dmx[prv][k] + Scorify(CP9TSC(cp9O_DI,k)));
+	  imx[cur][k] = sc + Scorify(isc_i[k]);
+
+	  /* delete */
+	  sc = p7_FLogsum(p7_FLogsum(mmx[cur][k-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+				     imx[cur][k-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
+			  dmx[cur][k-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
+	  dmx[cur][k] = sc;
+
+	  /* el */
+	  sc = -eslINFINITY;
+	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+	    sc = p7_FLogsum(mmx[cur][k]  + Scorify(CP9TSC(cp9O_MEL,k)),
+			    elmx[prv][k] + el_selfsc);
+	  }
+	  elmx[cur][k] = sc;
+      }
+      endsc = p7_FLogsum(p7_FLogsum(endsc, dmx[cur][M] + Scorify(CP9TSC(cp9O_DM,M))),
+			 imx[cur][M] + Scorify(CP9TSC(cp9O_IM,M)));
+      for(c = 0; c < cp9->el_from_ct[M+1]; c++)
+	endsc = p7_FLogsum(endsc, elmx[cur][cp9->el_from_idx[M+1][c]]);
+
+      erow[cur] = endsc;
+      scA[jp]   = endsc;
+      fsc = endsc;
+      if(fsc > best_sc) { best_sc = fsc; best_pos = j; }
+  }
+
+  if(doing_align) {
+    best_sc  = scA[(j0-i0+1)];
+    best_pos = i0;
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
+}
+
+
+int
+cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+	      int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc)
+{
+  int          status;
+  int          i;
+  int          ip;
+  int          cur, prv;
+  int          k;
+  int          L;
+  float      **mmx;
+  float      **imx;
+  float      **dmx;
+  float      **elmx;
+  float       *erow;
+  float       *scA;
+  float        fsc;
+  float        best_sc;
+  float        best_pos;
+  int          nrows;
+  int          c;
+  int          M;
+
+  if(cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardF, cp9 is NULL.\n");
+  if(dsq == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardF, dsq is NULL.");
+  if(mx == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardF, mx is NULL.\n");
+
+  int const *tsc = cp9->otsc;
+
+  best_sc     = -eslINFINITY;
+  best_pos    = -1;
+  L = j0-i0+1;
+  M = cp9->M;
+
+  if(be_efficient) nrows = 1;
+  else             nrows = L;
+  if((status = GrowCP9FMatrix(mx, errbuf, nrows, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+
+  ESL_ALLOC(scA, sizeof(float) * (j0-i0+3));
+
+  if(be_efficient) cur = 0;
+  else cur = j0-i0+1;
+  ip = j0-i0+1;
+  i  = j0;
+
+  /* Init EL row */
+  for (k = 1; k <= cp9->M; k++) elmx[cur][k] = -eslINFINITY;
+  if(cp9->flags & CPLAN9_EL) {
+    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++)
+      elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.;
+  }
+
+  mmx[cur][cp9->M]  = 0. + p7_FLogsum(elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)),
+				      Scorify(CP9TSC(cp9O_ME,cp9->M)));
+  mmx[cur][cp9->M] += Scorify(cp9->msc[dsq[i]][cp9->M]);
+  imx[cur][cp9->M]  = 0. + Scorify(CP9TSC(cp9O_IM,cp9->M));
+  imx[cur][cp9->M] += Scorify(cp9->isc[dsq[i]][cp9->M]);
+  dmx[cur][cp9->M]  = Scorify(CP9TSC(cp9O_DM,cp9->M));
+
+  for (k = cp9->M-1; k >= 1; k--) {
+      mmx[cur][k]  = 0 + Scorify(CP9TSC(cp9O_ME,k));
+      mmx[cur][k]  = p7_FLogsum(mmx[cur][k], dmx[cur][k+1] + Scorify(CP9TSC(cp9O_MD,k)));
+      if(cp9->flags & CPLAN9_EL)
+	mmx[cur][k]  = p7_FLogsum(mmx[cur][k], elmx[cur][k] + Scorify(CP9TSC(cp9O_MEL,k)));
+      mmx[cur][k] += Scorify(cp9->msc[dsq[i]][k]);
+
+      imx[cur][k]  = dmx[cur][k+1] + Scorify(CP9TSC(cp9O_ID,k));
+      imx[cur][k] += Scorify(cp9->isc[dsq[i]][k]);
+
+      dmx[cur][k]  = dmx[cur][k+1] + Scorify(CP9TSC(cp9O_DD,k));
+  }
+
+  mmx[cur][0]  = dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0));
+  imx[cur][0]  = dmx[cur][1] + Scorify(CP9TSC(cp9O_ID,0));
+  imx[cur][0] += Scorify(cp9->isc[dsq[i]][0]);
+
+  dmx[cur][0]   = -eslINFINITY;
+  elmx[cur][0]  = -eslINFINITY;
+
+  scA[ip] = mmx[cur][0];
+  fsc = scA[ip];
+
+  /* Recursion */
+  for (i = j0-1; i >= i0; i--) {
+      ip = i-i0+1;
+      if(be_efficient) { cur = (j0-i)%2; prv = (j0-i+1)%2; }
+      else { cur = ip; prv = ip+1; }
+
+      for (k = 0; k <= cp9->M; k++) elmx[cur][k] = -eslINFINITY;
+
+      if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
+	elmx[cur][cp9->M] = elmx[cur][cp9->M] + Scorify(cp9->el_selfsc);
+
+      mmx[cur][cp9->M]  = imx[prv][cp9->M] + Scorify(CP9TSC(cp9O_MI,cp9->M));
+      mmx[cur][cp9->M] += Scorify(cp9->msc[dsq[i]][cp9->M]);
+
+      if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
+	mmx[cur][cp9->M] = p7_FLogsum(mmx[cur][cp9->M],
+				      elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)));
+
+      imx[cur][cp9->M]  = imx[prv][cp9->M] + Scorify(CP9TSC(cp9O_II,cp9->M));
+      imx[cur][cp9->M] += Scorify(cp9->isc[dsq[i]][cp9->M]);
+
+      dmx[cur][cp9->M]  = imx[prv][cp9->M] + Scorify(CP9TSC(cp9O_DI,cp9->M));
+
+      if(cp9->flags & CPLAN9_EL) {
+	for(c = 0; c < cp9->el_from_ct[cp9->M]; c++)
+	  elmx[cur][cp9->el_from_idx[cp9->M][c]] = p7_FLogsum(elmx[cur][cp9->el_from_idx[cp9->M][c]],
+							      mmx[prv][cp9->M]);
+      }
+
+      if(do_scan) {
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++)
+	      elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.;
+	  }
+	  mmx[cur][cp9->M]  = p7_FLogsum(mmx[cur][cp9->M],
+					 p7_FLogsum(elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)),
+						    Scorify(CP9TSC(cp9O_ME,cp9->M))));
+	  imx[cur][cp9->M]  = p7_FLogsum(imx[cur][cp9->M],
+					 (Scorify(CP9TSC(cp9O_IM,cp9->M)) + 0));
+	  dmx[cur][cp9->M]  = p7_FLogsum(dmx[cur][cp9->M],
+					 (Scorify(CP9TSC(cp9O_DM,cp9->M)) + 0));
+      }
+
+      for (k = cp9->M-1; k >= 1; k--) {
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[k]; c++)
+	      elmx[cur][cp9->el_from_idx[k][c]] = p7_FLogsum(elmx[cur][cp9->el_from_idx[k][c]],
+							     mmx[prv][k]);
+	  }
+
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	    elmx[cur][k] = p7_FLogsum(elmx[cur][k], elmx[prv][k] + Scorify(cp9->el_selfsc));
+
+	  mmx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_MM,k))),
+					       (imx[prv][k]   + Scorify(CP9TSC(cp9O_MI,k)))),
+				    (dmx[cur][k+1] + Scorify(CP9TSC(cp9O_MD,k))));
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	    mmx[cur][k] = p7_FLogsum(mmx[cur][k], elmx[cur][k] + Scorify(CP9TSC(cp9O_MEL,k)));
+	  mmx[cur][k] += Scorify(cp9->msc[dsq[i]][k]);
+
+	  imx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_IM,k))),
+					       (imx[prv][k]   + Scorify(CP9TSC(cp9O_II,k)))),
+				    (dmx[cur][k+1] + Scorify(CP9TSC(cp9O_ID,k))));
+	  imx[cur][k] += Scorify(cp9->isc[dsq[i]][k]);
+
+	  if(do_scan) {
+	    mmx[cur][k] = p7_FLogsum(mmx[cur][k],
+				     (Scorify(CP9TSC(cp9O_ME,k)) + 0));
+	  }
+	  dmx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_DM,k))),
+					       (imx[prv][k]   + Scorify(CP9TSC(cp9O_DI,k)))),
+				    (dmx[cur][k+1] + Scorify(CP9TSC(cp9O_DD,k))));
+      }
+      /* k == 0 */
+      imx[cur][0] = p7_FLogsum(p7_FLogsum((mmx[prv][1] + Scorify(CP9TSC(cp9O_IM,0))),
+					  (imx[prv][0] + Scorify(CP9TSC(cp9O_II,0)))),
+			       (dmx[cur][1] + Scorify(CP9TSC(cp9O_ID,k))));
+      imx[cur][0] += Scorify(cp9->isc[dsq[i]][k]);
+      dmx[cur][0]   = -eslINFINITY;
+      elmx[cur][0]  = -eslINFINITY;
+
+      mmx[cur][0] = -eslINFINITY;
+      for (k = cp9->M; k >= 1; k--)
+	mmx[cur][0] = p7_FLogsum(mmx[cur][0], (mmx[prv][k] + Scorify(CP9TSC(cp9O_BM,k))));
+      mmx[cur][0] = p7_FLogsum(mmx[cur][0], (imx[prv][0] + Scorify(CP9TSC(cp9O_MI,0))));
+      mmx[cur][0] = p7_FLogsum(mmx[cur][0], (dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0))));
+
+      scA[ip] = mmx[cur][0];
+      fsc = scA[ip];
+
+      if(fsc > best_sc) { best_sc = fsc; best_pos = i+1; }
+  }
+
+  /* Special case: ip == 0 */
+  ip = i-i0+1;
+  if(be_efficient) { cur = (j0-i)%2; prv = (j0-i+1)%2; }
+  else { cur = ip; prv = ip+1; }
+
+  for (k = 1; k <= cp9->M; k++) elmx[cur][k] = -eslINFINITY;
+
+  mmx[cur][cp9->M] = -eslINFINITY;
+  imx[cur][cp9->M] = -eslINFINITY;
+  elmx[cur][cp9->M]= -eslINFINITY;
+  dmx[cur][cp9->M]  = imx[prv][cp9->M] + Scorify(CP9TSC(cp9O_DI,cp9->M));
+  if(do_scan) {
+      dmx[cur][cp9->M] = p7_FLogsum(dmx[cur][cp9->M],
+				    (Scorify(CP9TSC(cp9O_DM,cp9->M)) + 0));
+  }
+  for (k = cp9->M-1; k >= 1; k--) {
+      mmx[cur][k] = -eslINFINITY;
+      imx[cur][k] = -eslINFINITY;
+      elmx[cur][k]= -eslINFINITY;
+      dmx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_DM,k))),
+					   (imx[prv][k]   + Scorify(CP9TSC(cp9O_DI,k)))),
+				(dmx[cur][k+1] + Scorify(CP9TSC(cp9O_DD,k))));
+  }
+
+  imx[cur][0] = -eslINFINITY;
+  dmx[cur][0]   = -eslINFINITY;
+  elmx[cur][0]  = -eslINFINITY;
+
+  mmx[cur][0] = -eslINFINITY;
+  for (k = cp9->M; k >= 1; k--)
+    mmx[cur][0] = p7_FLogsum(mmx[cur][0], (mmx[prv][k] + Scorify(CP9TSC(cp9O_BM,k))));
+  mmx[cur][0] = p7_FLogsum(mmx[cur][0], (imx[prv][0] + Scorify(CP9TSC(cp9O_MI,0))));
+  mmx[cur][0] = p7_FLogsum(mmx[cur][0], (dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0))));
+
+  scA[ip] = mmx[cur][0];
+  fsc = scA[ip];
+
+  if(fsc > best_sc) { best_sc = fsc; best_pos = i+1; }
+
+  if(doing_align) {
+    best_sc  = scA[0];
+    best_pos = i0;
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
+}
