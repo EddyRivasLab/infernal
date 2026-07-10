@@ -993,7 +993,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 }
 
 /* brief 26_0628-045/047: small-M gate for kmerchain (also gated the earlier
- * kmeranchor deriver before its removal by brief 26_0628-066).
+ * best-window-anchor deriver before its removal by brief 26_0628-066).
  * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
  * M=84-400): at this M range these divergent structural-RNA test families
  * have too little exact-match identity to the model's argmax consensus for
@@ -1020,7 +1020,7 @@ static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-en
 #define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
 
 /* brief 26_0628-046: per-query k>=mink zero-hits signal gate for kmerchain (also
- * gated the earlier kmeranchor deriver before its removal by brief 26_0628-066).
+ * gated the earlier best-window-anchor deriver before its removal by brief 26_0628-066).
  * `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
  * (returns TRUE) iff mink>0 and every tier with k>=mink has zero hits anywhere
  * in the model for this query -- i.e. there is no exact-match content long

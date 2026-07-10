@@ -3113,7 +3113,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   }
   /* brief 26_0628-046: --p7kmerchain-mink only means something if kmerchain
    * is actually in use; not expressible as an esl_getopts "reqs" (a plain
-   * "reqs":"--p7kmerchain" would suffice now that kmeranchor is gone, but this
+   * "reqs":"--p7kmerchain" would suffice now that the old best-window-anchor
+   * deriver is gone, but this
    * manual check is kept for consistency with the mgate/fbvit checks below),
    * mirroring the --p7kmerchain "requires --p7band or --hmm" check above. */
   if(esl_opt_IsOn(go, "--p7kmerchain-mink") && esl_opt_GetInteger(go, "--p7kmerchain-mink") > 0 &&
