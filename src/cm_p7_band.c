@@ -992,25 +992,8 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
   return status; /* NEVERREACHED */
 }
 
-/*****************************************************************
- * Brief 26_0628-026: k-mer best-window anchor guide-deriver.
- *
- * A blind (no-oracle) guide-derivation-layer addition against the EXISTING,
- * already-generic pin->band consumer chain. Finds the best-scoring k-mer window
- * across the full model consensus by diagonal-dominance (minimap2-style: within
- * a model window, hits on the dominant diagonal d = j - t are anchor-like,
- * off-diagonal hits are spurious), emits sparse i2k pins on that diagonal with
- * outward expansion (allowing the diagonal to drift with indels), and feeds them
- * through the UNMODIFIED p7_pins2bands_nodepad exactly as the MSV/Viterbi pins
- * do -- zero changes to the consumer. Gated behind --p7kmeranchor (opt-in).
- *
- * De-risked in Python first (notebook brief026_runs/, DERISK_FINDING.md):
- * reproduces brief 26_0628-025's oracle best-window selection on small models (~93%
- * exact bin), but is fooled by repeat-driven false diagonals at genome scale
- * (HSV) -- single-window blind anchoring is expected to fail the big track.
- *****************************************************************/
-
-/* brief 26_0628-045/047: small-M gate, shared by both kmeranchor and kmerchain.
+/* brief 26_0628-045/047: small-M gate for kmerchain (also gated the earlier
+ * kmeranchor deriver before its removal by brief 26_0628-066).
  * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
  * M=84-400): at this M range these divergent structural-RNA test families
  * have too little exact-match identity to the model's argmax consensus for
@@ -1023,7 +1006,7 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * default-on constant. Brief 26_0628-047 replaced that with a real, user-facing,
  * OFF-BY-DEFAULT cmalign option (--p7kmerchain-mgate <M>, cm->p7_kmerchain_mgate,
  * 0=off) -- fires (M < threshold) only when the user opts in, same gating
- * logic as before. Below the threshold, both derivers immediately report
+ * logic as before. Below the threshold, the deriver immediately reports
  * "no anchor" (ret_ncells=0), and the caller falls back per brief 26_0628-047's new
  * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
 
@@ -1036,8 +1019,9 @@ p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-encodable */
 #define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
 
-/* brief 26_0628-046: per-query k>=mink zero-hits signal gate, shared by kmeranchor and
- * kmerchain. `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
+/* brief 26_0628-046: per-query k>=mink zero-hits signal gate for kmerchain (also
+ * gated the earlier kmeranchor deriver before its removal by brief 26_0628-066).
+ * `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
  * (returns TRUE) iff mink>0 and every tier with k>=mink has zero hits anywhere
  * in the model for this query -- i.e. there is no exact-match content long
  * enough to carry real signal, independent of M. Disabled (mink<=0, default)
@@ -1058,11 +1042,6 @@ static int kmw_kmer_cmp(const void *a, const void *b) {
   uint64_t ca = ((const kmw_kmer_t *)a)->code, cb = ((const kmw_kmer_t *)b)->code;
   return (ca > cb) - (ca < cb);
 }
-static int kmw_int_cmp(const void *a, const void *b) {
-  int ia = *(const int *)a, ib = *(const int *)b;
-  return (ia > ib) - (ia < ib);
-}
-
 /* first index in sorted arr[0..n-1] whose code >= key */
 static int kmw_lower_bound(const kmw_kmer_t *arr, int n, uint64_t key) {
   int lo = 0, hi = n;
@@ -1083,305 +1062,25 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
   return code;
 }
 
-/* given sorted d[0..n-1], find the window of half-width `tol` covering the most
- * points; returns that count and (via *center) a representative diagonal. */
-static int kmw_dominant(const int *d, int n, int tol, int *center) {
-  int best_cnt = 0, best_c = (n>0 ? d[0] : 0), lo = 0, i;
-  for (i = 0; i < n; i++) {
-    while (d[i] - d[lo] > 2*tol) lo++;
-    if (i - lo + 1 > best_cnt) { best_cnt = i - lo + 1; best_c = d[(i+lo)/2]; }
-  }
-  if (center) *center = best_c;
-  return best_cnt;
-}
-
-/* Emit pins for all hits whose diagonal is within `tol` of `dcenter`. For a hit
- * (model j, target t, length k): pin i2k[t+o]=j+o for o=0..k-1, set only if
- * currently unpinned (keeps the pin set monotone/conflict-free on one diagonal).
- * Returns # positions newly pinned. */
-static int kmw_emit_bin(int *i2k, const kmw_hit_t *hits, int n, int dcenter, int tol, int L, int M) {
-  int i, o, npin = 0;
-  for (i = 0; i < n; i++) {
-    int d = hits[i].j - hits[i].t;
-    if (d < dcenter - tol || d > dcenter + tol) continue;
-    for (o = 0; o < hits[i].k; o++) {
-      int tt = hits[i].t + o, jj = hits[i].j + o;
-      if (tt >= 1 && tt <= L && jj >= 1 && jj <= M && i2k[tt] == -1) { i2k[tt] = jj; npin++; }
-    }
-  }
-  return npin;
-}
-
-/* Function: p7_Seq2BandsKmerAnchor()
- * Date:     Brief 26_0628-026, 2026-07-03
- *
- * Purpose:  Derive p7 bands from a k-mer best-window anchor instead of a full
- *           MSV/Viterbi pass. Blind diagonal-dominance window scoring over the
- *           model consensus, sparse-pin emission on the best diagonal with
- *           outward expansion, then the UNMODIFIED p7_pins2bands_nodepad.
- *
- * Args:     cm         - covariance model (uses cm->fp7 for consensus, cm->p7bpad)
- *           errbuf     - for error messages
- *           dsq        - digital target sequence, 1..L
- *           L          - length of dsq
- *           nodepad    - [0..M] per-node pad array, or NULL for uniform cm->p7bpad
- *           ret_i2k    - RETURN: per-residue pin array (caller frees), NULL if none
- *           ret_kmin   - RETURN: per-residue kmin (caller frees), NULL if none
- *           ret_kmax   - RETURN: per-residue kmax (caller frees), NULL if none
- *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
- *                        do_trunc argument for signature-shape consistency. Unused
- *                        internally: this deriver never runs a begin/end-anywhere
- *                        (Tgm) score DP the way p7_Seq2BandsWV/IBV do -- it only
- *                        does exact k-mer matching against the raw match-emission
- *                        consensus (cm->fp7->mat), with no transition/begin/end
- *                        probabilities involved. Boundary residues outside the
- *                        pinned span are already left fully open ([0,M] or [1,M])
- *                        by p7_pins2bands_nodepad's kn=0/kx=M initialization, so
- *                        there is no glocal-only "must start at node 1 / end at
- *                        node M" assumption to relax for truncation. (The existing,
- *                        pre-brief-033 p7_Seq2BandsVit -- this deriver's own
- *                        ncells==0 fallback -- has never taken do_trunc either, for
- *                        the same reason: pins-based band derivation is trunc-
- *                        agnostic; only score-based DP derivers need the flag.)
- *           ret_ncells - RETURN: total banded cells; 0 => no usable anchor, caller
- *                        should fall back to unbanded Forward (like pinbridge).
- *
- * Return:   eslOK on success (including the ncells=0 "no anchor" case).
- */
-int
-p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
-                       int do_trunc,
-                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
-                       double *ret_a_s, double *ret_b_s)
-{
-  int status = eslOK;
-  (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
-  int M = cm->fp7->M;
-  int K = cm->abc->K;
-  int nbins = (M + KMW_BIN - 1) / KMW_BIN;
-  ESL_DSQ    *cons   = NULL;      /* model consensus, digital, cons[1..M] */
-  kmw_hit_t **binhit = NULL;      /* [b] growable hit array per bin */
-  int        *binn   = NULL, *bincap = NULL;
-  int        *dbuf   = NULL;      /* scratch for per-bin diagonals */
-  kmw_kmer_t *idx    = NULL;      /* per-k target k-mer index */
-  int        *i2k    = NULL, *kmin = NULL, *kmax = NULL;
-  int        *local_nodepad = NULL;
-  int         nrawk[KMW_NK];   /* brief 26_0628-046: raw hit count per k-tier (N-gate input) */
-  int b, ki, j, x;
-  /* brief 26_0628-059: optional stage a/b timing. _stageb_t unset (tv_sec=0) until
-   * we reach the bin-dominance selection section; if we bail out before then
-   * (M-gate/N-gate), all elapsed time is attributed to stage a. */
-  struct timespec _stagea_t0, _stageb_t0, _stage_texit;
-  int _stageb_t0_set = FALSE;
-  if (ret_a_s != NULL) clock_gettime(CLOCK_MONOTONIC, &_stagea_t0);
-
-  *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
-  if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
-    fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
-    status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
-    goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
-  }
-  /* brief 26_0628-047: removed the old M<KMW_BIN=200 silent bail-out here (inherited
-   * from brief 26_0628-026, unrelated to the M-gate/N-gate mechanisms above) -- it
-   * pre-empted kmeranchor's k-mer seed collection on small models before
-   * either gate got a chance to run, and was never validated as a correctness
-   * mechanism itself. All small-M correctness protection now comes from the
-   * opt-in --p7kmerchain-mgate/-mink gates above/below instead. */
-  for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
-
-  /* 1. model consensus (argmax match emission per node) */
-  ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
-  cons[0] = eslDSQ_SENTINEL; cons[M+1] = eslDSQ_SENTINEL;
-  for (j = 1; j <= M; j++) {
-    int argmax = 0; float best = cm->fp7->mat[j][0];
-    for (x = 1; x < K; x++) if (cm->fp7->mat[j][x] > best) { best = cm->fp7->mat[j][x]; argmax = x; }
-    cons[j] = (ESL_DSQ) argmax;
-  }
-
-  /* 2. collect k-mer hits into per-bin arrays */
-  ESL_ALLOC(binhit, sizeof(kmw_hit_t *) * nbins);
-  ESL_ALLOC(binn,   sizeof(int)         * nbins);
-  ESL_ALLOC(bincap, sizeof(int)         * nbins);
-  for (b = 0; b < nbins; b++) { binhit[b] = NULL; binn[b] = 0; bincap[b] = 0; }
-
-  for (ki = 0; ki < KMW_NK; ki++) {
-    int k = kmw_kvals[ki], ntgt = 0, t, p;
-    if (k > M || k > L) continue;
-    ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
-    for (t = 1; t <= L - k + 1; t++) {
-      int ok; uint64_t code = kmw_encode(dsq, t, k, &ok);
-      if (ok) { idx[ntgt].code = code; idx[ntgt].pos = t; ntgt++; }
-    }
-    qsort(idx, ntgt, sizeof(kmw_kmer_t), kmw_kmer_cmp);
-    for (j = 1; j <= M - k + 1; j++) {
-      int ok; uint64_t code = kmw_encode(cons, j, k, &ok);
-      if (!ok) continue;
-      b = (j - 1) / KMW_BIN;
-      for (p = kmw_lower_bound(idx, ntgt, code); p < ntgt && idx[p].code == code; p++) {
-        if (binn[b] == bincap[b]) {
-          int newcap = bincap[b] ? bincap[b]*2 : 16;
-          void *tmp = realloc(binhit[b], sizeof(kmw_hit_t) * newcap);
-          if (tmp == NULL) { status = eslEMEM; goto ERROR; }
-          binhit[b] = tmp; bincap[b] = newcap;
-        }
-        binhit[b][binn[b]].j = j; binhit[b][binn[b]].t = idx[p].pos; binhit[b][binn[b]].k = k;
-        binn[b]++; nrawk[ki]++;
-      }
-    }
-    free(idx); idx = NULL;
-  }
-
-  /* brief 26_0628-046: per-query k>=mink zero-hits signal gate (unvalidated, default
-   * off -- see kmer_ngate_fires() header comment). Checked right after the raw
-   * hit collection, independent of the M-gate above. */
-  if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
-    fprintf(stderr, "#KMERANCHOR L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
-                    "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
-    status = eslOK; goto CLEANUP;
-  }
-
-  /* 3. score each bin by diagonal-dominance; pick best (rank_bins semantics:
-   *    qualifying bins (on>=floor) beat non-qualifying; among qualifying by
-   *    (ratio desc, on desc)). */
-  if (ret_a_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stageb_t0); _stageb_t0_set = TRUE; }
-  int best_bin = -1, best_on = 0, best_center = 0; double best_ratio = -1.0;
-  int maxbinn = 0; for (b = 0; b < nbins; b++) if (binn[b] > maxbinn) maxbinn = binn[b];
-  if (maxbinn > 0) ESL_ALLOC(dbuf, sizeof(int) * maxbinn);
-  for (b = 0; b < nbins; b++) {
-    int n = binn[b], center, i;
-    if (n == 0) continue;
-    for (i = 0; i < n; i++) dbuf[i] = binhit[b][i].j - binhit[b][i].t;
-    qsort(dbuf, n, sizeof(int), kmw_int_cmp);
-    int on = kmw_dominant(dbuf, n, KMW_TOL, &center);
-    double ratio = (double) on / (double) n;
-    int qual = (on >= KMW_MIN_CORRECT), best_qual = (best_on >= KMW_MIN_CORRECT), take = 0;
-    if (best_bin < 0)                 take = 1;
-    else if (qual && !best_qual)      take = 1;
-    else if (qual == best_qual) {
-      if (qual) take = (ratio > best_ratio + 1e-9 || (fabs(ratio-best_ratio) < 1e-9 && on > best_on));
-      else      take = (on > best_on);
-    }
-    if (take) { best_bin = b; best_on = on; best_ratio = ratio; best_center = center; }
-  }
-
-  /* brief 26_0628-045: dump every bin's candidate window (not just the winner), gated
-   * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
-   * 041's BRIEF041_CHAINDUMP / this notebook's own new BRIEF045_SEEDDUMP for
-   * kmerchain above). Lets us see whether the bin containing the true region
-   * had a qualifying window at all, vs simply lost the bin-vs-bin comparison. */
-  if (getenv("BRIEF045_SEEDDUMP") != NULL) {
-    for (b = 0; b < nbins; b++) {
-      int n = binn[b], center, i;
-      if (n == 0) { fprintf(stderr, "#KMERANCHOR_BIN L=%d M=%d bin=%d model_range=[%d,%d] n=0\n",
-                            L, M, b, b*KMW_BIN+1, ESL_MIN((b+1)*KMW_BIN, M)); continue; }
-      for (i = 0; i < n; i++) dbuf[i] = binhit[b][i].j - binhit[b][i].t;
-      qsort(dbuf, n, sizeof(int), kmw_int_cmp);
-      int on = kmw_dominant(dbuf, n, KMW_TOL, &center);
-      fprintf(stderr, "#KMERANCHOR_BIN L=%d M=%d bin=%d model_range=[%d,%d] n=%d diag=%d on=%d ratio=%.3f%s\n",
-              L, M, b, b*KMW_BIN+1, ESL_MIN((b+1)*KMW_BIN, M), n, center, on, (double) on / (double) n,
-              (b == best_bin ? " WINNER" : ""));
-    }
-  }
-
-  /* 4. no usable window: signal caller to fall back to unbanded */
-  if (best_bin < 0 || best_on < KMW_MIN_CORRECT) {
-    fprintf(stderr, "#KMERANCHOR L=%d M=%d best_bin=NONE (no window >= floor)\n", L, M);
-    status = eslOK; goto CLEANUP;
-  }
-  fprintf(stderr, "#KMERANCHOR L=%d M=%d best_bin=%d model_range=[%d,%d] diag=%d on=%d ratio=%.3f\n",
-          L, M, best_bin, best_bin*KMW_BIN+1, ESL_MIN((best_bin+1)*KMW_BIN, M), best_center, best_on, best_ratio);
-
-  /* 5. emit sparse pins on the best diagonal, expand outward with drift */
-  ESL_ALLOC(i2k, sizeof(int) * (L+1));
-  esl_vec_ISet(i2k, L+1, -1);
-  kmw_emit_bin(i2k, binhit[best_bin], binn[best_bin], best_center, KMW_TOL, L, M);
-  {
-    int dir;
-    for (dir = 0; dir < 2; dir++) {
-      int step = (dir == 0) ? +1 : -1, dcur = best_center;
-      for (b = best_bin + step; b >= 0 && b < nbins; b += step) {
-        int n = binn[b], i, m = 0, center2;
-        if (n == 0) break;
-        for (i = 0; i < n; i++) {
-          int d = binhit[b][i].j - binhit[b][i].t;
-          if (d >= dcur - KMW_DRIFT && d <= dcur + KMW_DRIFT) dbuf[m++] = d;
-        }
-        if (m == 0) break;
-        qsort(dbuf, m, sizeof(int), kmw_int_cmp);
-        if (kmw_dominant(dbuf, m, KMW_TOL, &center2) < KMW_EXP_FLOOR) break;
-        kmw_emit_bin(i2k, binhit[b], n, center2, KMW_TOL, L, M);
-        dcur = center2;
-      }
-    }
-  }
-
-  /* report pin span (reach) */
-  {
-    int npin = 0, tmin = L+1, tmax = 0, i;
-    for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
-    fprintf(stderr, "#KMERANCHOR L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
-            L, M, npin, (npin? tmin:0), tmax, (double) npin / (double) L);
-  }
-
-  /* 6. pins -> bands via the UNMODIFIED consumer */
-  if (nodepad == NULL) {
-    int k2;
-    ESL_ALLOC(local_nodepad, sizeof(int) * (M+1));
-    for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
-    nodepad = local_nodepad;
-  }
-  /* brief 26_0628-043: kmeranchor's single best-window anchor doesn't expose a tunable
-   * ramp alpha -- pass brief 26_0628-042's validated default unconditionally. */
-  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, 0.75, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
-
-  *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
-  i2k = kmin = kmax = NULL;   /* handed off to caller */
-
- CLEANUP:
-  if (idx)           free(idx);
-  if (dbuf)          free(dbuf);
-  if (binhit)        { for (b = 0; b < nbins; b++) if (binhit[b]) free(binhit[b]); free(binhit); }
-  if (binn)          free(binn);
-  if (bincap)        free(bincap);
-  if (cons)          free(cons);
-  if (local_nodepad) free(local_nodepad);
-  if (i2k)           free(i2k);
-  if (kmin)          free(kmin);
-  if (kmax)          free(kmax);
-  if (ret_a_s != NULL) {
-    clock_gettime(CLOCK_MONOTONIC, &_stage_texit);
-    if (_stageb_t0_set) {
-      *ret_a_s = (_stageb_t0.tv_sec - _stagea_t0.tv_sec) + (_stageb_t0.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
-      *ret_b_s = (_stage_texit.tv_sec - _stageb_t0.tv_sec) + (_stage_texit.tv_nsec - _stageb_t0.tv_nsec) / 1e9;
-    } else {
-      *ret_a_s = (_stage_texit.tv_sec - _stagea_t0.tv_sec) + (_stage_texit.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
-      *ret_b_s = 0.;
-    }
-  }
-  return status;
-
- ERROR:
-  if (errbuf != NULL) snprintf(errbuf, eslERRBUFSIZE, "p7_Seq2BandsKmerAnchor() memory error");
-  goto CLEANUP;
-}
-
 /*****************************************************************
  * Brief 26_0628-027: k-mer seed-and-chain (minimap2/BLAST-style) guide-deriver for
  * genome-scale (>40kb) anchoring.
  *
- * Where p7_Seq2BandsKmerAnchor (brief 26_0628-026) picks the single best 200nt model
- * window and seeds only from it -- which at genome scale (a) is fooled by
- * repeat-driven false diagonals (HSV locks onto an internal repeat block) and
- * (b) cannot span a genome from one anchor (HSV 41% / MPXV 88% coverage) --
- * this deriver collects ALL k-mer seeds genome-wide and chains them by GLOBAL
- * diagonal/colinearity consistency. A repeat block's seeds are internally
- * consistent with each other but NOT colinear with the sequence-spanning chain
- * elsewhere, so a standard colinear chaining DP structurally out-competes an
- * isolated repeat block with a chain that covers far more of the genome.
+ * An earlier deriver (brief 26_0628-026, removed by brief 26_0628-066) picked the
+ * single best 200nt model window and seeded only from it -- which at genome scale
+ * (a) is fooled by repeat-driven false diagonals (HSV locks onto an internal
+ * repeat block) and (b) cannot span a genome from one anchor (HSV 41% / MPXV 88%
+ * coverage). This deriver instead collects ALL k-mer seeds genome-wide and chains
+ * them by GLOBAL diagonal/colinearity consistency. A repeat block's seeds are
+ * internally consistent with each other but NOT colinear with the sequence-
+ * spanning chain elsewhere, so a standard colinear chaining DP structurally
+ * out-competes an isolated repeat block with a chain that covers far more of the
+ * genome.
  *
- * Reuses brief 26_0628-026's k-mer index infrastructure unchanged (kmw_encode /
- * kmw_kmer_cmp / kmw_lower_bound, k in {10,15,20,25,30}) and feeds the winning
- * chain's pins through the SAME unmodified p7_pins2bands_nodepad consumer.
+ * Reuses the k-mer index infrastructure from that earlier deriver unchanged
+ * (kmw_encode / kmw_kmer_cmp / kmw_lower_bound, k in {10,15,20,25,30}) and feeds
+ * the winning chain's pins through the SAME unmodified p7_pins2bands_nodepad
+ * consumer.
  *****************************************************************/
 
 /* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned) */
@@ -1446,14 +1145,17 @@ brief035_rss_kb(void)
  *           seeds as multi-segment sparse pins, then the UNMODIFIED
  *           p7_pins2bands_nodepad.
  *
- * Args:     cm, errbuf, dsq, L, nodepad  - as p7_Seq2BandsKmerAnchor()
+ * Args:     cm         - covariance model (uses cm->fp7 for consensus, cm->p7bpad)
+ *           errbuf     - for error messages
+ *           dsq        - digital target sequence, 1..L
+ *           L          - length of dsq
+ *           nodepad    - [0..M] per-node pad array, or NULL for uniform cm->p7bpad
  *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
  *                        do_trunc argument for signature-shape consistency. Unused
- *                        internally, for the same reason documented in
- *                        p7_Seq2BandsKmerAnchor()'s header comment above: this
- *                        deriver chains exact k-mer seeds against the raw
- *                        consensus, with no begin/end-anywhere (Tgm) score DP and
- *                        no glocal-only boundary assumption for do_trunc to relax.
+ *                        internally: this deriver chains exact k-mer seeds against
+ *                        the raw consensus, with no begin/end-anywhere (Tgm) score
+ *                        DP and no glocal-only boundary assumption for do_trunc to
+ *                        relax.
  *           ret_i2k/ret_kmin/ret_kmax    - RETURN band arrays (caller frees)
  *           ret_ncells - RETURN total banded cells (saturated int; 0 => no
  *                        usable chain, caller falls back to unbanded Viterbi).
@@ -1483,9 +1185,9 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
   int ki, j, x, i;
-  /* brief 26_0628-059: optional stage a/b timing, same convention as
-   * p7_Seq2BandsKmerAnchor() above -- a = seed finding (raw hits + merge),
-   * b = colinear chaining DP + backtrack + pin emission. If we bail before
+  /* brief 26_0628-059: optional stage a/b timing -- a = seed finding
+   * (raw hits + merge), b = colinear chaining DP + backtrack + pin emission.
+   * If we bail before
    * reaching the chaining DP (M-gate/N-gate/no anchors), all elapsed time is
    * attributed to stage a. */
   struct timespec _stagea_t0, _stageb_t0, _stage_texit;
