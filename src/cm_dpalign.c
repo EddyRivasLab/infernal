@@ -3142,6 +3142,444 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   return status;
 }
 
+/*****************************************************************
+ * Brief 26_0610-078 R1: checkpointed, bifurcation (k*)-DISCOVERING
+ * CYK max-DP, GLOBAL/non-truncated/no-EL/no-local-begin only.
+ *
+ * Small-scale proof of the core NEW piece brief 076 (design pass) grounded:
+ * a B_st combine that SEARCHES k on already-resident checkpoint decks,
+ * instead of reading a pre-supplied kpin[v] like ckpt_optacc_deck's B_st
+ * branch does.  Transcribes ckpt_optacc_deck's checkpointing SHAPE (deck
+ * alloc/free, chain-root retention via ckpt_is_chain_root, block-recompute
+ * traceback) but swaps the OA/FLogsum recurrence for cm_CYKInsideAlignHB's
+ * real max/+ recurrence (cm_dpalign.c's cm_CYKInsideAlignHB, ~3443-3835;
+ * B_st k-loop ~3736-3799, the transcription source for the search bounds
+ * below).  Because a B_st's children (y=BEGL_S, z=BEGR_S) are themselves
+ * always chain roots (ckpt_is_chain_root), their decks are NEVER freed --
+ * so unlike ckpt_optacc_deck (kpin supplied once, no kshadow stored), this
+ * engine doesn't need to persist a k* per B-state cell either: the same
+ * bounded search is deterministic and cheap to simply re-run at traceback
+ * time against the still-resident child decks (ckpt_cyk_bsearch(), shared
+ * by both the forward sweep and the traceback).
+ *
+ * R1 is scoped tight (076's own assessment: "arguably skippable... the
+ * exact mechanism is already proven in production, just not yet used for
+ * k-*discovery*") -- no EL, no local begin, GLOBAL only.  R2 (combined-mode
+ * TRUNCATED, J/L/R/T, full local support) is the actual rung-4 deliverable.
+ *****************************************************************/
+
+/* B_st k-search: given already-resident child CYK decks (via CY(), the same
+ * cy[]-then-ck[]-fallback pattern ckpt_optacc_deck's OA() macro uses),
+ * find k* maximizing cy[y][j-k][d-k] + cy[z][j][k] for state v's (j,d) cell.
+ * Bounds transcribed verbatim from cm_CYKInsideAlignHB's B_st loop
+ * (cm_dpalign.c ~3744-3797).  Shared by ckpt_cyk_deck (forward fill) and
+ * ckpt_cyk_traceback (B-state split) -- same search, re-run each time
+ * rather than storing a kshadow, since child decks are always resident. */
+static int
+ckpt_cyk_bsearch(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
+                  float ***cy, float ***ck, int v, int j, int d, float *ret_sc)
+{
+#define CY(vv) (cy[vv] ? cy[vv] : (ck ? ck[vv] : NULL))
+  int y = cm->cfirst[v], z = cm->cnum[v];
+  int jp_y = j - jmin[y], jp_z = j - jmin[z];
+  int kn = ESL_MAX(ESL_MAX(j-jmax[y], hdmin[z][jp_z]), 0);
+  int kx = ESL_MIN(jp_y, hdmax[z][jp_z]);
+  int k, kbest = -1; float scbest = IMPOSSIBLE, sc;
+  for (k = kn; k <= kx; k++) {
+    if ((k >= d - hdmax[y][jp_y-k]) && (k <= d - hdmin[y][jp_y-k])) {
+      int kp_z = k - hdmin[z][jp_z];
+      int dp_y = d - hdmin[y][jp_y-k];
+      if ((sc = CY(y)[jp_y-k][dp_y-k] + CY(z)[jp_z][kp_z]) > scbest) { scbest = sc; kbest = k; }
+    }
+  }
+  if (ret_sc) *ret_sc = scbest;
+  return kbest;
+#undef CY
+}
+
+/* CYK deck v: mirrors cm_CYKInsideAlignHB's per-cell recurrence VERBATIM for
+ * S/IL/IR/ML/MR/MP/D/E (real tsc_v[]+oesc_v[], not posteriors/FLogsum) --
+ * global only (no EL reinit, no local-begin reduction; R1's scope).  For
+ * B_st, calls ckpt_cyk_bsearch() instead of reading a pre-supplied kpin[v]
+ * -- the new piece.  Writes CYK-alpha into cy[v] and (if ysh != NULL,
+ * non-B states only) yshadow (yoffset, mirrors cm_CYKInsideAlignHB's
+ * yshadow -- NOT a kshadow; B-state k is re-derived, never stored). */
+static void
+ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
+{
+#define CY(vv) (cy[vv] ? cy[vv] : (ck ? ck[vv] : NULL))
+  CM_t *cm = cx->cm;
+  ESL_DSQ *dsq = cx->dsq;
+  int  *jmin = cx->jmin, *jmax = cx->jmax;
+  int **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  float **av = cy[v];
+  float const *esc_v = cm->oesc[v];
+  float const *tsc_v = cm->tsc[v];
+  int sd  = StateDelta(cm->sttype[v]);
+  int sdr = StateRightDelta(cm->sttype[v]);
+  int j, d, i, y, yoffset, jp_v, dp_v, jp_y_sdr, dp_y_sd, j_sdr;
+  int yvalidA[MAXCONNECT], yvalid_ct, yvalid_idx;
+  float sc;
+
+  ckpt_deck_init_impossible(cx, v, av);
+
+  if (cm->sttype[v] == E_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) { jp_v = j - jmin[v]; av[jp_v][0] = 0.; }
+    return;
+  }
+
+  if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      yvalid_ct = 0; j_sdr = j - sdr;
+      for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
+        if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        i = j - d + 1;
+        dp_v = d - hdmin[v][jp_v];
+        for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
+          yoffset = yvalidA[yvalid_idx];
+          y = cm->cfirst[v] + yoffset;
+          jp_y_sdr = j - jmin[y] - sdr;
+          if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
+            dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+            if ((sc = CY(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > av[jp_v][dp_v]) {
+              av[jp_v][dp_v] = sc;
+              if (ysh != NULL) ysh[jp_v][dp_v] = (char) yoffset;
+            }
+          }
+        }
+        av[jp_v][dp_v] += (cm->sttype[v] == IL_st) ? esc_v[dsq[i]] : esc_v[dsq[j]];
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+      }
+    }
+    return;
+  }
+  else if (cm->sttype[v] == B_st) {
+    int z = cm->cnum[v];
+    y = cm->cfirst[v];
+    int jnn = ESL_MAX(jmin[v], jmin[z]);
+    int jxx = ESL_MIN(jmax[v], jmax[z]);
+    for (j = jnn; j <= jxx; j++) {
+      jp_v = j - jmin[v];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        dp_v = d - hdmin[v][jp_v];
+        sc = IMPOSSIBLE;
+        if (ckpt_cyk_bsearch(cm, jmin, jmax, hdmin, hdmax, cy, ck, v, j, d, &sc) >= 0)
+          av[jp_v][dp_v] = sc;
+      }
+    }
+    return;
+  }
+  else { /* ML, MR, MP, D, S (non-self, non-B); E already returned */
+    int jn, jx, jpn, jpx, dn, dx, dpn, dpx;
+    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+      yoffset = y - cm->cfirst[v];
+      float tsc = tsc_v[yoffset];
+      jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+      jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+      jpn = jn - jmin[v];
+      jpx = jx - jmin[v];
+      jp_y_sdr = jn - jmin[y] - sdr;
+      for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+        dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+        dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+        dpn = dn - hdmin[v][jp_v];
+        dpx = dx - hdmin[v][jp_v];
+        dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+        for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
+          if ((sc = CY(y)[jp_y_sdr][dp_y_sd] + tsc) > av[jp_v][dp_v]) {
+            av[jp_v][dp_v] = sc;
+            if (ysh != NULL) ysh[jp_v][dp_v] = (char) yoffset;
+          }
+        }
+      }
+    }
+    switch (cm->sttype[v]) {
+    case ML_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v]; i = j - hdmin[v][jp_v] + 1;
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, i--)
+          av[jp_v][dp_v] += esc_v[dsq[i]];
+      }
+      break;
+    case MR_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          av[jp_v][dp_v] += esc_v[dsq[j]];
+      }
+      break;
+    case MP_st:
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v]; i = j - hdmin[v][jp_v] + 1;
+        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, i--)
+          av[jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
+      }
+      break;
+    default: break;
+    }
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
+    }
+    return;
+  }
+#undef CY
+}
+
+/* checkpointed fetch: block-recompute the CYK deck + yshadow for v's block,
+ * reading children from CYstore (retained chain roots + sqrt(M) seeds).
+ * Mirrors ckpt_ysh_fetch/ckpt_ysh_ctx (cm_dpalign.c ~2693-2718) verbatim,
+ * swapping ckpt_optacc_deck for ckpt_cyk_deck. */
+typedef struct {
+  CKPT_CTX *cx; int M, B;
+  float ***CYstore;
+  float ***tba; char ***tysh;
+  int cur_blk, blk_lo, blk_hi;
+} ckpt_cyk_ysh_ctx;
+static char
+ckpt_cyk_ysh_fetch(void *p, int v, int jp_v, int dp_v)
+{
+  ckpt_cyk_ysh_ctx *c = (ckpt_cyk_ysh_ctx *) p;
+  int blk = v / c->B;
+  if (blk != c->cur_blk) {
+    int w;
+    for (w = c->blk_lo; w <= c->blk_hi; w++) {
+      if (c->tba[w])  { ckpt_deck_free (c->cx, w, c->tba[w]);  c->tba[w]  = NULL; }
+      if (c->tysh[w]) { ckpt_cdeck_free(c->cx, w, c->tysh[w]); c->tysh[w] = NULL; }
+    }
+    c->cur_blk = blk; c->blk_lo = blk * c->B; c->blk_hi = ESL_MIN((blk+1)*c->B - 1, c->M-1);
+    for (w = c->blk_hi; w >= c->blk_lo; w--) {
+      c->tba[w]  = ckpt_deck_alloc(c->cx, w);
+      c->tysh[w] = (c->cx->cm->sttype[w] == B_st) ? NULL : ckpt_cdeck_alloc(c->cx, w);
+      ckpt_cyk_deck(c->cx, w, c->tba, c->CYstore, c->tysh[w]);
+    }
+  }
+  return c->tysh[v][jp_v][dp_v];
+}
+
+/* Checkpointed CYK traceback.  Mirrors ckpt_optacc_traceback's descent +
+ * bifurcation stack (cm_dpalign.c ~2724-2839) EXACTLY, except: (a) a B_st
+ * splits at a k found via ckpt_cyk_bsearch() (live search against the
+ * retained CYstore decks) instead of a pre-supplied kpin[v], and (b) no EL /
+ * USED_LOCAL_BEGIN handling (R1 scope: global, no local support). */
+static int
+ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
+                    int *jmin, int *jmax, int **hdmin, int **hdmax,
+                    ckpt_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
+{
+  int status;
+  Parsetree_t *tr  = NULL;
+  ESL_STACK   *pda = NULL;
+  int v = 0, i = 1, j = L, d = L, k, y, yoffset, bifparent;
+  int jp_v, dp_v;
+
+  tr = CreateParsetree(100);
+  if (tr == NULL) { status = eslEMEM; goto ERROR; }
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0);
+  pda = esl_stack_ICreate();
+  if (pda == NULL) { status = eslEMEM; goto ERROR; }
+
+  while (1) {
+    if (cm->sttype[v] != EL_st) {
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    }
+
+    if (cm->sttype[v] == B_st) {
+      k = ckpt_cyk_bsearch(cm, jmin, jmax, hdmin, hdmax, CYstore, NULL, v, j, d, NULL);
+      if (k < 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "ckpt_cyk_traceback: B state v=%d: no valid k (band inconsistency)", v);
+      if ((status = esl_stack_IPush(pda, j))       != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda, k))       != eslOK) goto ERROR;
+      if ((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
+      j = j - k;
+      d = d - k;
+      i = j - d + 1;
+      y = cm->cfirst[v];
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    }
+    else if (cm->sttype[v] == E_st) {
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;  /* traceback complete */
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];
+      y = cm->cnum[v];                       /* right START state */
+      i = j - d + 1;
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+      v = y;
+    }
+    else {
+      yoffset = fetch(fctx, v, jp_v, dp_v);
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default: ESL_XFAIL(eslEINVAL, errbuf, "ckpt_cyk_traceback: bogus state type v=%d", v);
+      }
+      d = j - i + 1;
+      y = cm->cfirst[v] + (int) yoffset;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    }
+  }
+  esl_stack_Destroy(pda);
+  *ret_tr = tr;
+  return eslOK;
+
+ ERROR:
+  if (pda) esl_stack_Destroy(pda);
+  if (tr)  FreeParsetree(tr);
+  return status;
+}
+
+/* Function: cm_CheckptCYKAlignHB()
+ * Incept:   Brief 26_0610-078 R1
+ *
+ * Purpose:  sqrt(M)-memory checkpointed CYK max-DP alignment, discovering
+ *           its OWN bifurcation k* pins (no externally-supplied kpin[], unlike
+ *           the rung-3 OA engines above) via ckpt_cyk_bsearch().  GLOBAL,
+ *           non-truncated, no EL, no local begin (R1 scope; R2 extends to
+ *           truncated/marginal-mode-combined + local).
+ *
+ *           STEP CYK: checkpointed CYK max-DP (descending sweep, identical
+ *                     retention scheme to cm_CheckptOptAccAlignHB's STEP OA)
+ *                     -> CYstore = {all chain roots} + {sqrt(M) seeds}.
+ *           STEP TB : traceback (ckpt_cyk_traceback) with yshadow
+ *                     block-recomputed on demand (ckpt_cyk_ysh_fetch) and
+ *                     B-state k found by re-running ckpt_cyk_bsearch against
+ *                     the still-resident CYstore chain-root decks.
+ *
+ *           Byte-exact vs CYKDivideAndConquerHB expected (both are exact CYK
+ *           argmax under the same HMM bands) modulo float-sum-order rounding
+ *           between D&C recombination and this engine's single-sweep fill --
+ *           this project's own established tolerance for that comparison
+ *           (hbdnc_drv.c) applies, not literal bitwise equality.
+ */
+int
+cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
+                     Parsetree_t **ret_tr, float *ret_sc)
+{
+  int      status;
+  CKPT_CTX cx;
+  int      M = cm->M;
+  int      v;
+  float  ***CYstore = NULL, ***tba = NULL;
+  char   ***tysh = NULL;
+  Parsetree_t *tr = NULL;
+  ckpt_cyk_ysh_ctx fctx;
+
+  if (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))
+    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): R1 scope is GLOBAL only (no local begin/end)");
+
+  memset(&cx, 0, sizeof(cx));
+  cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
+  cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
+  cx.imin = cm->cp9b->imin; cx.imax = cm->cp9b->imax;
+  cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  cx.cur_bytes = cx.peak_bytes = 0;
+  cx.kpin = NULL; cx.ifull = NULL;
+  cx.my_lpp = NULL; cx.my_rpp = NULL;
+  cx.deck_nc = NULL; cx.deck_njr = NULL;
+  cx.have_el = FALSE; cx.el_selfsc = cm->el_selfsc;
+  cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
+  cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  cx.have_local_begin = FALSE;
+  cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
+  cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
+
+  if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): L outside ROOT_S j band");
+  int jp_0 = L - cx.jmin[0];
+  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - cx.hdmin[0][jp_0];
+
+  ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
+    cx.deck_njr[v] = njr;
+    int64_t nc = 0; int jp;
+    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    cx.deck_nc[v] = nc;
+    /* max forward reach (child index - v) over non-E/non-B states, exactly as
+     * cm_CheckptOptAccAlignHB computes it (cm_dpalign.c ~3040-3045) -- B_st is
+     * excluded because bifurcation children (BEGL_S/BEGR_S) are chain roots,
+     * retained permanently regardless of index distance, not windowed by Delta. */
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
+      if (ymax - v > Delta) Delta = ymax - v;
+    }
+  }
+  int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
+
+  /* ============================================================= */
+  /* STEP CYK: checkpointed CYK max-DP -> roots + sqrt(M) CYK seeds */
+  /* ============================================================= */
+  ESL_ALLOC(CYstore, sizeof(float**) * M);
+  for (v = 0; v < M; v++) CYstore[v] = NULL;
+  for (v = M-1; v >= 0; v--) {
+    char **ysh = (cm->sttype[v] == B_st) ? NULL : ckpt_cdeck_alloc(&cx, v);
+    CYstore[v] = ckpt_deck_alloc(&cx, v);
+    ckpt_cyk_deck(&cx, v, CYstore, NULL, ysh);
+    if (ysh) ckpt_cdeck_free(&cx, v, ysh);
+    int y = v + Delta;
+    if (y < M && CYstore[y] != NULL && ! ckpt_is_chain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain checkpoint seed */ }
+      else { ckpt_deck_free(&cx, y, CYstore[y]); CYstore[y] = NULL; }
+    }
+  }
+  float sc = CYstore[0][jp_0][Lp_0];
+
+  /* ============================================================= */
+  /* STEP TB: traceback (block-recompute yshadow, live B-state k-search) */
+  /* ============================================================= */
+  ESL_ALLOC(tba,  sizeof(float**) * M);
+  ESL_ALLOC(tysh, sizeof(char**)  * M);
+  for (v = 0; v < M; v++) { tba[v] = NULL; tysh[v] = NULL; }
+  fctx.cx = &cx; fctx.M = M; fctx.B = B; fctx.CYstore = CYstore;
+  fctx.tba = tba; fctx.tysh = tysh;
+  fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
+
+  if ((status = ckpt_cyk_traceback(cm, errbuf, L, CYstore, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                   ckpt_cyk_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+
+  { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
+      if (tba[w])  { ckpt_deck_free (&cx, w, tba[w]);  tba[w]  = NULL; }
+      if (tysh[w]) { ckpt_cdeck_free(&cx, w, tysh[w]); tysh[w] = NULL; } } }
+
+  if (getenv("INFERNAL_CKPT_VERBOSE")) {
+    int64_t full_cube_cells = 0; for (v = 0; v < M; v++) full_cube_cells += cx.deck_nc[v];
+    double full_mb = full_cube_cells * 4 / (1024.0*1024.0);
+    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
+    fprintf(stderr, "# cm_CheckptCYKAlignHB (R1): M=%d L=%d B=%d sc=%.5f  CYK-DP peak=%.2f Mb  full-CYK-cube(1x)=%.2f Mb  win~%.1fx\n",
+            M, L, B, sc, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
+  }
+
+  for (v = 0; v < M; v++) if (CYstore[v]) ckpt_deck_free(&cx, v, CYstore[v]);
+  free(CYstore); free(tba); free(tysh);
+  free(cx.deck_nc); free(cx.deck_njr);
+
+  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  if (ret_sc != NULL) *ret_sc = sc;
+  return eslOK;
+
+ ERROR:
+  if (CYstore) { for (v = 0; v < M; v++) if (CYstore[v]) ckpt_deck_free(&cx, v, CYstore[v]); free(CYstore); }
+  if (tba)  { for (v = 0; v < M; v++) if (tba[v])  ckpt_deck_free(&cx, v, tba[v]);  free(tba); }
+  if (tysh) { for (v = 0; v < M; v++) if (tysh[v]) ckpt_cdeck_free(&cx, v, tysh[v]); free(tysh); }
+  if (cx.deck_nc)  free(cx.deck_nc);
+  if (cx.deck_njr) free(cx.deck_njr);
+  if (tr) FreeParsetree(tr);
+  return status;
+}
+
 /* Function: cm_CYKInsideAlign()
  * Date:     EPN, Sun Nov 18 19:37:39 2007
  *           

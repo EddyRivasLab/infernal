@@ -2806,6 +2806,8 @@ extern int   cm_PinPostAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, 
 extern int   cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc);
 extern int   cm_PinOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
 extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
+/* brief 26_0610-078 R1: checkpointed, k*-DISCOVERING CYK max-DP (no external kpin); GLOBAL/non-truncated/no-EL/no-local-begin only */
+extern int   cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, Parsetree_t **ret_tr, float *ret_sc);
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
