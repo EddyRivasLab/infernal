@@ -128,7 +128,6 @@ CreateCMShell(void)
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
   cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
-  cm->p7_use_kmeranchor = FALSE;         /* default: no k-mer best-window anchor (set by --p7kmeranchor, brief 26_0628-026) */
   cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 26_0628-027) */
   cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 26_0628-042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 26_0628-043) */
   cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
@@ -3129,7 +3128,6 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_cykbands_pad  = cm->p7_cykbands_pad;
   new->p7_cykskip_unvisited = cm->p7_cykskip_unvisited;
   new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
-  new->p7_use_kmeranchor = cm->p7_use_kmeranchor;
   new->p7_use_kmerchain  = cm->p7_use_kmerchain;
   new->p7_kmerchain_ramp_alpha = cm->p7_kmerchain_ramp_alpha;
   new->p7_kmerchain_mink = cm->p7_kmerchain_mink;

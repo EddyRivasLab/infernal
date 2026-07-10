@@ -1923,17 +1923,16 @@ typedef struct cm_s {
   int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 26_0430-068);
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
-  int     p7_use_kmeranchor;   /* if TRUE, derive bands from a k-mer best-window anchor (--p7kmeranchor, brief 26_0628-026) */
   int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 26_0628-027) */
   double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043) */
-  int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmeranchor/kmerchain (independent of the M-gate) when the
+  int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmerchain (independent of the M-gate) when the
                                  * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
                                  * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
                                  * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 26_0628-046) */
-  int     p7_kmerchain_mgate;  /* brief 26_0628-047: if >0, gate kmeranchor/kmerchain when M < this threshold (was a
+  int     p7_kmerchain_mgate;  /* brief 26_0628-047: if >0, gate kmerchain when M < this threshold (was a
                                  * hardcoded, default-on M<4,000 constant under brief 26_0628-045; now a real, OFF-BY-
                                  * DEFAULT cmalign option -- --p7kmerchain-mgate <M>); default 0 (disabled) */
-  int     p7_kmerchain_fallback_vit; /* brief 26_0628-047: if TRUE, revert the kmeranchor/kmerchain M-gate/N-gate/no-anchor
+  int     p7_kmerchain_fallback_vit; /* brief 26_0628-047: if TRUE, revert the kmerchain M-gate/N-gate/no-anchor
                                  * fallback to the old p7_Seq2BandsVit (single Viterbi-MAP-trace band) mechanism
                                  * instead of the new default (--p7ibv's D&C deriver) (--p7kmerchain-fbvit);
                                  * default FALSE (use --p7ibv fallback) */
@@ -3401,11 +3400,6 @@ extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE
                                               CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* Brief 26_0628-026: k-mer best-window anchor guide-deriver (--p7kmeranchor, opt-in).
- * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
- * stage timing (seconds) -- a = raw-hit/bin collection, b = bin-dominance selection +
- * pin emission + p7_pins2bands_nodepad. Only measured (clock_gettime) when non-NULL. */
-extern int          p7_Seq2BandsKmerAnchor(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s);
 /* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
  * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
  * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining
