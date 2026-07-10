@@ -236,7 +236,7 @@ int main(int argc, char **argv)
        * regression check for the EL/begin wiring, elalpha, and the
        * traceback USED_LOCAL_BEGIN fix.
        * SECONDARY (informational only, NOT gated): comparison to the free
-       * UNPINNED stock oracle. Per briefs 26_0610-019/020/032, bif-pinning is
+       * UNPINNED stock oracle. Per briefs 26_0610-019/26_0610-020/26_0610-032, bif-pinning is
        * accuracy-neutral but NOT always parse/score-faithful vs full
        * unpinned OptAcc (pinned Z is a subset-sum over only the CYK's
        * chosen bifurcation splits, so pinned Z <= unpinned Z always, and

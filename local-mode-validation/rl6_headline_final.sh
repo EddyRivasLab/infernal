@@ -9,7 +9,7 @@
 #$ -l m_mem_free=48G
 #$ -l h_vmem=48G
 #$ -m n
-# Brief 068 (R-L.6) HEADLINE (final): LOCAL-mode end-to-end total-RSS win where the
+# Brief 26_0610-068 (R-L.6) HEADLINE (final): LOCAL-mode end-to-end total-RSS win where the
 # CM-DP cube dominates.  Divergent caliciviruses aligned to calici-NC_001959.cm
 # (M=22966) resolve to marginal mode=L with genome-scale cubes (NC_006875 ~24 GB,
 # NC_008311 ~9 GB).  Default local truncated cmalign.  stock (full cube) vs

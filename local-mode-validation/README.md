@@ -1,4 +1,4 @@
-# R-L.1 — D&C CYK local-mode validation (brief 059)
+# R-L.1 — D&C CYK local-mode validation (brief 26_0610-059)
 
 Validation-only (NO engine edits). Confirms the D&C CYK **pin source**
 (`CYKDivideAndConquerHB` + its `*_hb` kernels) produces byte-exact parses in

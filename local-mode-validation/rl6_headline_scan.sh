@@ -9,7 +9,7 @@
 #$ -l m_mem_free=64G
 #$ -l h_vmem=64G
 #$ -m n
-# Brief 068 (R-L.6) HEADLINE search: find a genome-scale LOCAL case where the
+# Brief 26_0610-068 (R-L.6) HEADLINE search: find a genome-scale LOCAL case where the
 # CM-DP cube dominates total RSS (so the sqrt(M) win shows end-to-end), by
 # cross-aligning divergent caliciviruses to calici-NC_001959.cm (default local
 # truncated).  Phase 1: --ckpt scan of cube sizes (cheap, sqrt(M)).  Phase 2:
