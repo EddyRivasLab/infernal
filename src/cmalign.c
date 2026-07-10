@@ -156,11 +156,10 @@ static ESL_OPTIONS options[] = {
   { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp,--p7wv-pad", "brief172: load WV pad from <f> (skip per-run calib)",  3 },
   { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "brief173: constant WV band half-width (no calibration)",     3 },
   { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "brief173: opt back in to per-node WV pad calibration",       3 },
-  { "--p7kmeranchor",eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmerchain", "k-mer best-window anchor bands (--p7band/--hmm)",   3 },
-  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge,--p7kmeranchor", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
+  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
   { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain",                   NULL, "brief 043: kmerchain ramp-slack alpha [default 0.75]",       3 },
-  { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 046: gate kmeranchor/kmerchain if k>=<n> tier finds 0 hits [default 0=off]", 3 },
-  { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 26_0628-047: gate kmeranchor/kmerchain if M < <n> [default 0=off]",          3 },
+  { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 046: gate kmerchain if k>=<n> tier finds 0 hits [default 0=off]", 3 },
+  { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 26_0628-047: gate kmerchain if M < <n> [default 0=off]",          3 },
   { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL,        NULL,                     NULL, "brief 26_0628-047: gate fallback uses old Vit-trace band, not --p7ibv",           3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
   { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
@@ -251,14 +250,14 @@ static char usage[]  = "[-options] <cmfile> <seqfile>";
 static char banner[] = "align sequences to a CM";
 
 /* brief 26_0628-047: shared kmer-gate (M-gate/N-gate/no-anchor) fallback deriver,
- * used by all 3 kmeranchor/kmerchain call sites below (serial, threaded
+ * used by all 3 kmerchain call sites below (serial, threaded
  * worker, MPI worker) in place of the old hardcoded p7_Seq2BandsVit-shaped
  * fallback. Defaults to --p7ibv's D&C deriver (p7_Seq2BandsIBV_dnc), the
  * same entry point --hmm --p7ibv itself calls, with --p7ibv-mode/-width's
  * own CLI defaults (cm->p7_ibv_mode/width are guaranteed to still hold
- * their cm.c defaults here, since --p7ibv and --p7kmeranchor/--p7kmerchain
+ * their cm.c defaults here, since --p7ibv and --p7kmerchain
  * are mutually exclusive CLI options -- see the "reqs"/"incompat" fields on
- * the --p7kmeranchor/--p7kmerchain option lines).
+ * the --p7kmerchain option line).
  * ibv_delta/ibv_base_slab are passed in already resolved: ibv_base_slab to
  * the brief-017 memory knee, exactly as the --hmm --p7ibv call sites resolve
  * it (the caller may not have `go`, e.g. the threaded worker). ibv_delta is
@@ -268,7 +267,7 @@ static char banner[] = "align sequences to a CM";
  * SNORA16 (a higher-forward-score but structurally wrong HMM registration
  * only becomes reachable at wide deltas); cm->p7_ibv_delta is never
  * CLI-overridden here since --p7ibv-delta requires --p7ibv, which is
- * mutually exclusive with --p7kmeranchor/--p7kmerchain. Returns ncells=0
+ * mutually exclusive with --p7kmerchain. Returns ncells=0
  * (not a hard failure) if
  * cm->fp7 is unusable, mirroring the derivers' own ncells==0 "fall back
  * further" convention -- caller should still fall through to the old
@@ -1044,9 +1043,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].ibv_base_slab = esl_opt_IsDefault(go, "--p7ibv-base-slab")
 	                         ? HMM_P7IBV_KNEE_BASE_SLAB
 	                         : esl_opt_GetInteger(go, "--p7ibv-base-slab");
-	/* CM only needed by the IBV/kmeranchor/kmerchain derivers (for cm->fp7);
-	 * else unused in --hmm mode. brief 26_0628-032: kmeranchor/kmerchain also need it. */
-	winfo[k].cm          = (do_p7ibv || cm->p7_use_kmeranchor || cm->p7_use_kmerchain) ? cm : NULL;
+	/* CM only needed by the IBV/kmerchain derivers (for cm->fp7);
+	 * else unused in --hmm mode. brief 26_0628-032: kmerchain also needs it. */
+	winfo[k].cm          = (do_p7ibv || cm->p7_use_kmerchain) ? cm : NULL;
 	winfo[k].dataA       = NULL;
 	winfo[k].n           = 0;
 	winfo[k].mxsize      = esl_opt_GetReal(go, "--mxsize");
@@ -1107,10 +1106,10 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
 	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
 	 * Skipped under --p7ibv: the full P7_GMX is never allocated.
-	 * brief 26_0628-032: also skipped under kmeranchor/kmerchain -- like --p7ibv,
+	 * brief 26_0628-032: also skipped under kmerchain -- like --p7ibv,
 	 * the full P7_GMX is only touched on the rare ncells==0 fallback, not
 	 * on the genome-scale success path this brief's memory story depends on. */
-	if (! do_p7ibv && ! cm->p7_use_kmeranchor && ! cm->p7_use_kmerchain) {
+	if (! do_p7ibv && ! cm->p7_use_kmerchain) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
 	  int    nmat         = do_hmmnoband ? 2 : 1;
 	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -1161,7 +1160,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	   * #STAGETIME line format/semantics (059 instrumented DispatchSqAlignment()'s
 	   * separate --p7band CM-alignment path; this is the distinct --hmm-only
 	   * code path). Stage (a)/(b) reuse the same deriver-internal a/b split as
-	   * 059 (p7_Seq2BandsKmerChain/KmerAnchor's ret_a_s/ret_b_s out-params);
+	   * 059 (p7_Seq2BandsKmerChain's ret_a_s/ret_b_s out-params);
 	   * stage (c) = p7_kbands2gbands() (uniform band conversion for this mode,
 	   * unlike 059's cp9_IterateSeq2BandsP7B()); stage (d) = the HMM-only
 	   * alignment DP (checkpointed or non-checkpointed F/B/Decode/OA/traceback). */
@@ -1194,28 +1193,18 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
 	  }
 	  else {
-	    /* brief 26_0628-032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
-	     * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
+	    /* brief 26_0628-032: k-mer chain deriver, opt-in via --p7kmerchain
+	     * (mirrors cm_alndata.c's --p7band dispatch).
 	     * brief 26_0628-038: do_trunc now threaded through, mirroring cm_alndata.c's
 	     * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC). */
 	    int did_kmer = FALSE;
 	    int *local_nodepad = NULL;
-	    if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
+	    if (cm->p7_use_kmerchain && (cm->flags & CMH_P7NODEPAD)) {
 	      int k;
 	      ESL_ALLOC(local_nodepad, sizeof(int) * (hmm->M + 1));
 	      for (k = 0; k <= hmm->M; k++) local_nodepad[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
 	    }
-	    if (cm->p7_use_kmeranchor) {
-	      did_kmer = TRUE;
-	      if (_st061_on) _st061_kind = "kmeranchor";
-	      if ((status = p7_Seq2BandsKmerAnchor(cm, errbuf, sq->dsq, sq->n, local_nodepad,
-						   do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-						   &i2k, &kmin, &kmax, &ncells,
-						   _st061_on ? &_st061_a_s : NULL, _st061_on ? &_st061_b_s : NULL)) != eslOK)
-		cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
-	      if (_st061_on) _st061_ab_split = TRUE; /* brief 26_0628-061: provisional; cleared below if a fallback fires */
-	    }
-	    else if (cm->p7_use_kmerchain) {
+	    if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
 	      if (_st061_on) _st061_kind = "kmerchain";
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
@@ -1239,29 +1228,29 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	       * mir-2807 and slightly worse on SNORA16 (a different, higher-
 	       * scoring-but-wrong HMM registration only becomes reachable at wide
 	       * deltas). --p7ibv-delta can never be set here anyway (mutually
-	       * exclusive with --p7kmeranchor/--p7kmerchain), so this only
+	       * exclusive with --p7kmerchain), so this only
 	       * changes this fallback's own behavior. */
 	      int p7ibv_base_slab = (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 				      ? HMM_P7IBV_KNEE_BASE_SLAB
 				      : esl_opt_GetInteger(go, "--p7ibv-base-slab"));
 	      if (_st061_on) { _st061_ab_split = FALSE; _st061_used_p7ibv_fb = TRUE; /* a_s/b_s only cover the failed kmer attempt */
-	                       _st061_kind = cm->p7_use_kmeranchor ? "kmeranchor->p7ibv" : "kmerchain->p7ibv"; }
+	                       _st061_kind = "kmerchain->p7ibv"; }
 	      if ((status = kmer_gate_p7ibv_fallback(cm, errbuf, sq->dsq, sq->n, do_trunc,
 						      cm->p7_ibv_delta, p7ibv_base_slab,
 						      &i2k, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("kmer_gate_p7ibv_fallback() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	    if (! did_kmer || ncells == 0) {
-	      /* Default Mode-3 path (no kmer flag set); the kmeranchor/kmerchain
+	      /* Default Mode-3 path (no kmer flag set); the kmerchain
 	       * ncells==0 fallback when --p7kmerchain-fbvit reverts to
 	       * the old behavior; and the safety net when the --p7ibv fallback
 	       * above itself also found nothing usable (mirrors cm_alndata.c's
-	       * kmeranchor->vitband / kmerchain->vitband fallback shape). */
+	       * kmerchain->vitband fallback shape). */
 	      if (_st061_on) {
 	        _st061_ab_split = FALSE;
 	        if (! did_kmer) _st061_kind = "vitband";
-	        else if (_st061_used_p7ibv_fb) _st061_kind = cm->p7_use_kmeranchor ? "kmeranchor->p7ibv->vitband" : "kmerchain->p7ibv->vitband";
-	        else _st061_kind = cm->p7_use_kmeranchor ? "kmeranchor->vitband" : "kmerchain->vitband";
+	        else if (_st061_used_p7ibv_fb) _st061_kind = "kmerchain->p7ibv->vitband";
+	        else _st061_kind = "kmerchain->vitband";
 	      }
 	      vtr = p7_trace_Create();
 	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
@@ -1822,9 +1811,9 @@ hmm_pipeline_thread(void *arg)
 
     /* preflight: check HMM matrix size vs --mxsize before GrowTo.
      * Skipped under --p7ibv: the full P7_GMX is never allocated.
-     * brief 26_0628-032: also skipped under kmeranchor/kmerchain (see serial-path
+     * brief 26_0628-032: also skipped under kmerchain (see serial-path
      * comment in hmm_alignment() for reasoning). */
-    if (! info->do_p7ibv && ! (info->cm != NULL && (info->cm->p7_use_kmeranchor || info->cm->p7_use_kmerchain))) {
+    if (! info->do_p7ibv && ! (info->cm != NULL && info->cm->p7_use_kmerchain)) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
       int    nmat         = info->do_hmmnoband ? 2 : 1;
       double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -1884,26 +1873,19 @@ hmm_pipeline_thread(void *arg)
 	  cm_Fail("p7_Seq2BandsIBV_dnc() failed for sequence %s: %s", sq->name, errbuf);
       }
       else {
-	/* brief 26_0628-032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
-	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
+	/* brief 26_0628-032: k-mer chain deriver, opt-in via --p7kmerchain
+	 * (mirrors cm_alndata.c's --p7band dispatch).
 	 * brief 26_0628-038: do_trunc now threaded through, mirroring cm_alndata.c's
 	 * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC). */
 	int did_kmer = FALSE;
 	int *local_nodepad = NULL;
-	if (info->cm != NULL && (info->cm->p7_use_kmeranchor || info->cm->p7_use_kmerchain)
+	if (info->cm != NULL && info->cm->p7_use_kmerchain
 	    && (info->cm->flags & CMH_P7NODEPAD)) {
 	  int k;
 	  ESL_ALLOC(local_nodepad, sizeof(int) * (info->hmm->M + 1));
 	  for (k = 0; k <= info->hmm->M; k++) local_nodepad[k] = info->cm->p7_cm_nodepad[k] + info->cm->p7bpad;
 	}
-	if (info->cm != NULL && info->cm->p7_use_kmeranchor) {
-	  did_kmer = TRUE;
-	  if ((status = p7_Seq2BandsKmerAnchor(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
-					       info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-					       &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
-	    cm_Fail("p7_Seq2BandsKmerAnchor() failed for sequence %s: %s", sq->name, errbuf);
-	}
-	else if (info->cm != NULL && info->cm->p7_use_kmerchain) {
+	if (info->cm != NULL && info->cm->p7_use_kmerchain) {
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerChain(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
 					      info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
@@ -1925,11 +1907,11 @@ hmm_pipeline_thread(void *arg)
 	    cm_Fail("kmer_gate_p7ibv_fallback() failed for sequence %s: %s", sq->name, errbuf);
 	}
 	if (! did_kmer || ncells == 0) {
-	  /* Default banded-OA path (no kmer flag set); the kmeranchor/kmerchain
+	  /* Default banded-OA path (no kmer flag set); the kmerchain
 	   * ncells==0 fallback when --p7kmerchain-fbvit reverts to the
 	   * old behavior; and the safety net when the --p7ibv fallback above
 	   * itself also found nothing usable (mirrors cm_alndata.c's
-	   * kmeranchor->vitband / kmerchain->vitband fallback shape). */
+	   * kmerchain->vitband fallback shape). */
 	  vtr = p7_trace_Create();
 	  p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
 	  p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
@@ -2661,10 +2643,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* preflight: check HMM matrix size vs --mxsize before GrowTo.
-       * brief 26_0628-032: skipped under kmeranchor/kmerchain -- the full P7_GMX is
+       * brief 26_0628-032: skipped under kmerchain -- the full P7_GMX is
        * only touched on the rare ncells==0 fallback, not on the genome-scale
        * success path (see serial-path comment in hmm_alignment()). */
-      if (! cm->p7_use_kmeranchor && ! cm->p7_use_kmerchain) {
+      if (! cm->p7_use_kmerchain) {
 	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
 	int    nmat         = do_hmmnoband_w ? 2 : 1;
 	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -2703,26 +2685,19 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	P7_TRACE *vtr_w = NULL;
 	int       tpos_w;
 
-	/* brief 26_0628-032: k-mer anchor/chain deriver, opt-in via --p7kmeranchor/
-	 * --p7kmerchain (mirrors cm_alndata.c:536-566's --p7band dispatch).
+	/* brief 26_0628-032: k-mer chain deriver, opt-in via --p7kmerchain
+	 * (mirrors cm_alndata.c's --p7band dispatch).
 	 * brief 26_0628-038: do_trunc now threaded through, mirroring cm_alndata.c's
 	 * CM-mode dispatch (cm->align_opts & CM_ALIGN_TRUNC); do_trunc_w already
 	 * computed above (brief 26_0430-182 Part A) for the Tgm setup in this same scope. */
 	int did_kmer_w = FALSE;
 	int *local_nodepad_w = NULL;
-	if ((cm->p7_use_kmeranchor || cm->p7_use_kmerchain) && (cm->flags & CMH_P7NODEPAD)) {
+	if (cm->p7_use_kmerchain && (cm->flags & CMH_P7NODEPAD)) {
 	  int k;
 	  ESL_ALLOC(local_nodepad_w, sizeof(int) * (hmm_w->M + 1));
 	  for (k = 0; k <= hmm_w->M; k++) local_nodepad_w[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
 	}
-	if (cm->p7_use_kmeranchor) {
-	  did_kmer_w = TRUE;
-	  if (p7_Seq2BandsKmerAnchor(cm, errbuf, dsq, L, local_nodepad_w,
-				     do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:541 */
-				     &i2k_w, &kmin_w, &kmax_w, &ncells_w, NULL, NULL) != eslOK)
-	    mpi_failure("p7_Seq2BandsKmerAnchor() failed: %s", errbuf);
-	}
-	else if (cm->p7_use_kmerchain) {
+	if (cm->p7_use_kmerchain) {
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerChain(cm, errbuf, dsq, L, local_nodepad_w,
 				    do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
@@ -2746,11 +2721,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    mpi_failure("kmer_gate_p7ibv_fallback() failed: %s", errbuf);
 	}
 	if (! did_kmer_w || ncells_w == 0) {
-	  /* Default Viterbi-banded OA path (no kmer flag set); the kmeranchor/
-	   * kmerchain ncells==0 fallback when --p7kmerchain-fbvit
+	  /* Default Viterbi-banded OA path (no kmer flag set); the kmerchain
+	   * ncells==0 fallback when --p7kmerchain-fbvit
 	   * reverts to the old behavior; and the safety net when the --p7ibv
 	   * fallback above itself also found nothing usable (mirrors
-	   * cm_alndata.c's kmeranchor->vitband / kmerchain->vitband fallback
+	   * cm_alndata.c's kmerchain->vitband fallback
 	   * shape). */
 	  vtr_w = p7_trace_Create();
 	  p7_gmx_GrowTo(gx_w, hmm_w->M, L);
@@ -3110,52 +3085,53 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
-  /* brief 26_0628-032: --p7kmeranchor/--p7kmerchain only derive bands; they need an
+  /* brief 26_0628-032: --p7kmerchain only derives bands; it needs an
    * anchor mode to use them: --p7band (CM-side) or --hmm (HMM-only banded OA),
    * same requirement as --p7ibv above.
    */
-  if((esl_opt_GetBoolean(go, "--p7kmeranchor") || esl_opt_GetBoolean(go, "--p7kmerchain")) &&
+  if(esl_opt_GetBoolean(go, "--p7kmerchain") &&
      (! esl_opt_GetBoolean(go, "--p7band")) && (! esl_opt_GetBoolean(go, "--hmm"))) {
-    puts("\nERROR: --p7kmeranchor/--p7kmerchain require --p7band or --hmm\n");
+    puts("\nERROR: --p7kmerchain requires --p7band or --hmm\n");
     goto ERROR;
   }
-  /* brief 26_0628-038: --p7kmeranchor/--p7kmerchain no longer require --notrunc --
+  /* brief 26_0628-038: --p7kmerchain no longer requires --notrunc --
    * do_trunc is now threaded through both the --p7band (brief 26_0628-033) and
    * --hmm (brief 26_0628-038) call sites, mirroring cm_alndata.c's CM-mode dispatch. */
-  /* --hmm --p7kmeranchor/--p7kmerchain is the k-mer-banded-OA HMM sub-mode;
+  /* --hmm --p7kmerchain is the k-mer-banded-OA HMM sub-mode;
    * reject the other --hmm sub-modes (Viterbi-trace and unbanded full OA) in
    * combination with it, mirroring the --p7ibv incompatibility above.
    */
-  if(esl_opt_GetBoolean(go, "--hmm") && (esl_opt_GetBoolean(go, "--p7kmeranchor") || esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+  if(esl_opt_GetBoolean(go, "--hmm") && esl_opt_GetBoolean(go, "--p7kmerchain")) {
     if(esl_opt_GetBoolean(go, "--hmmvit")) {
-      puts("\nERROR: --hmmvit incompatible with --p7kmeranchor/--p7kmerchain (pins-to-trace not implemented yet)\n");
+      puts("\nERROR: --hmmvit incompatible with --p7kmerchain (pins-to-trace not implemented yet)\n");
       goto ERROR;
     }
     if(esl_opt_GetBoolean(go, "--hmmnoband")) {
-      puts("\nERROR: --hmmnoband incompatible with --p7kmeranchor/--p7kmerchain (--hmmnoband means no bands)\n");
+      puts("\nERROR: --hmmnoband incompatible with --p7kmerchain (--hmmnoband means no bands)\n");
       goto ERROR;
     }
   }
-  /* brief 26_0628-046: --p7kmerchain-mink only means something if kmeranchor/kmerchain
-   * is actually in use; not expressible as an esl_getopts "reqs" OR (either
-   * flag suffices), so check manually, mirroring the --p7kmeranchor/--p7kmerchain
-   * "requires --p7band or --hmm" check above. */
+  /* brief 26_0628-046: --p7kmerchain-mink only means something if kmerchain
+   * is actually in use; not expressible as an esl_getopts "reqs" (a plain
+   * "reqs":"--p7kmerchain" would suffice now that kmeranchor is gone, but this
+   * manual check is kept for consistency with the mgate/fbvit checks below),
+   * mirroring the --p7kmerchain "requires --p7band or --hmm" check above. */
   if(esl_opt_IsOn(go, "--p7kmerchain-mink") && esl_opt_GetInteger(go, "--p7kmerchain-mink") > 0 &&
-     (! esl_opt_GetBoolean(go, "--p7kmeranchor")) && (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
-    puts("\nERROR: --p7kmerchain-mink requires --p7kmeranchor or --p7kmerchain\n");
+     (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    puts("\nERROR: --p7kmerchain-mink requires --p7kmerchain\n");
     goto ERROR;
   }
   /* brief 26_0628-047: --p7kmerchain-mgate/-fallback-vit only mean something if
-   * kmeranchor/kmerchain is actually in use; same manual-check shape as
-   * --p7kmerchain-mink above (not expressible as esl_getopts "reqs" OR). */
+   * kmerchain is actually in use; same manual-check shape as
+   * --p7kmerchain-mink above. */
   if(esl_opt_IsOn(go, "--p7kmerchain-mgate") && esl_opt_GetInteger(go, "--p7kmerchain-mgate") > 0 &&
-     (! esl_opt_GetBoolean(go, "--p7kmeranchor")) && (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
-    puts("\nERROR: --p7kmerchain-mgate requires --p7kmeranchor or --p7kmerchain\n");
+     (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    puts("\nERROR: --p7kmerchain-mgate requires --p7kmerchain\n");
     goto ERROR;
   }
   if(esl_opt_GetBoolean(go, "--p7kmerchain-fbvit") &&
-     (! esl_opt_GetBoolean(go, "--p7kmeranchor")) && (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
-    puts("\nERROR: --p7kmerchain-fbvit requires --p7kmeranchor or --p7kmerchain\n");
+     (! esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    puts("\nERROR: --p7kmerchain-fbvit requires --p7kmerchain\n");
     goto ERROR;
   }
 
@@ -3380,7 +3356,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 26_0430-169 */
   }
-  if(esl_opt_GetBoolean(go, "--p7kmeranchor")) cm->p7_use_kmeranchor = TRUE;  /* brief 26_0628-026 */
   if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 26_0628-027 */
   cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 26_0628-043; req="--p7kmerchain" so only meaningful there */
   cm->p7_kmerchain_mink = esl_opt_GetInteger(go, "--p7kmerchain-mink");     /* brief 26_0628-046; 0 = disabled (default) */
