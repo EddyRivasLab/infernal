@@ -2946,37 +2946,56 @@ cm_CheckptTrAlignHB_Qualifies(CM_t *cm)
 }
 
 /* Function: cm_CheckptTrOptAccAlignHB_Qualifies()
- * Purpose:  Return TRUE iff <cm> is a STRUCTURED CM (>= 1 B/MP/MR) whose
- *           state set is the supported rung-4 surface (S/IL/IR/ML/MR/MP/D/E/B).
- *           These are the conditions under which the rung-4 TRUNCATED pipeline
- *           (cm_CheckptTrPostAlignHB + cm_CheckptTrOptAccAlignHB + the
- *           pinned-tree traceback) reproduces the stock cm_TrAlignHB OptAcc
- *           path's alignment (modulo the brief-26_0610-032 accuracy-neutral pin-B
- *           flips) across marginal modes J/L/R/T, with a sqrt(M) per-mode
- *           working set.  Local begins/ends are supported (R-L.5a/5b: the
- *           rung-4 engine consumes CMH_LOCAL_BEGIN/CMH_LOCAL_END), so this gate
- *           does NOT reject local CMs.  bps=0 CMs return FALSE here (they use
- *           the fused cm_CheckptTrAlignHB instead).
+ * Purpose:  Return TRUE iff <cm> has >= 1 BIFURCATION (B_st) and its state set
+ *           is the supported rung-4 surface (S/IL/IR/ML/MR/MP/D/E/B). These
+ *           are the conditions under which the rung-4 TRUNCATED pipeline
+ *           (cm_CheckptTrCYKAlignHB pass 1 + cm_CheckptTrPostAlignHB +
+ *           cm_CheckptTrOptAccAlignHB + the pinned-tree traceback) reproduces
+ *           the stock cm_TrAlignHB OptAcc path's alignment (modulo the
+ *           brief-26_0610-032 accuracy-neutral pin-B flips) across marginal
+ *           modes J/L/R/T, with a sqrt(M) per-mode working set. Local begins/
+ *           ends are supported (R-L.5a/5b: the rung-4 engine consumes
+ *           CMH_LOCAL_BEGIN/CMH_LOCAL_END), so this gate does NOT reject
+ *           local CMs. bps=0 CMs return FALSE here (they use the fused
+ *           cm_CheckptTrAlignHB instead).
+ *
+ *           Brief 26_0610-080 correction: originally required only >= 1 of
+ *           B/MP/MR (any base pair), not specifically a bifurcation. That
+ *           admitted CMs with bps>0 but bifs=0 (single-hairpin/multi-helix
+ *           structures with no branch point in the guide tree, e.g. rmark4's
+ *           mir-122: bps=18, bifs=0) into do_trckpt_r4 -- which then hard-fails
+ *           in cm_CheckptTrCYKAlignHB()'s own precondition check ("CM has no
+ *           bifurcations (bps=0); use cm_CheckptTrAlignHB instead", a check
+ *           that counts B_st specifically). The pre-080 ncand-loop dispatch
+ *           tolerated this (TrCYKDivideAndConquerHB degrades gracefully to a
+ *           bifurcation-free base case), but cm_CheckptTrCYKAlignHB's
+ *           chain-root checkpointing scheme is architecturally built around
+ *           bifurcation boundaries and was only ever validated (078/079) on
+ *           CMs with >= 1 real bifurcation (5S_rRNA bifs=1, tRNA bifs=2, LSU
+ *           bifs=71) -- never on a bifs=0-but-bps>0 shape. Tightening the gate
+ *           to bifs>=1 routes that shape to the always-correct stock
+ *           cm_TrAlignHB fallback instead (full-cube memory, no checkpointed
+ *           saving for this shape, but correct) -- found via an 84-family
+ *           rmark4 sample re-run (18/85 families hit this), not a hypothetical.
  *
  *           Deliberately SEPARATE from (and NOT delegating to)
  *           cm_CheckptTrAlignHB_Qualifies(), which delegates to the bps=0
- *           cm_CheckptAlignHB_Qualifies().  Relaxing that base gate to admit
+ *           cm_CheckptAlignHB_Qualifies(). Relaxing that base gate to admit
  *           B/MP/MR would mis-route truncated bps>0 --ckpt into the bps=0
- *           truncated engine; the separate gate routes structured truncated
+ *           truncated engine; the separate gate routes bifurcated truncated
  *           --ckpt to the rung-4 engine while leaving the bps=0 and
- *           non-truncated gates untouched.  Body mirrors the non-truncated
- *           cm_CheckptOptAccAlignHB_Qualifies(). */
+ *           non-truncated gates untouched. */
 int
 cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm)
 {
-  int v, has_bps = FALSE;
+  int v, has_bif = FALSE;
   for (v = 0; v < cm->M; v++) {
     int st = cm->sttype[v];
-    if (st == B_st || st == MP_st || st == MR_st) has_bps = TRUE;
+    if (st == B_st) has_bif = TRUE;
     if (! (st==S_st || st==IL_st || st==IR_st || st==ML_st || st==MR_st ||
            st==MP_st || st==D_st || st==E_st || st==B_st)) return FALSE;
   }
-  return has_bps;
+  return has_bif;
 }
 
 /* Function: cm_CheckptTrAlignHB()
