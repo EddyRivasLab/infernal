@@ -3700,6 +3700,53 @@ ckpt_trcyk_deck(TR_CKPT_CTX *cx, int v,
   if (do_L_v) trckpt_deck_init_impossible(cx, v, Lav);
   if (do_R_v) trckpt_deck_init_impossible(cx, v, Rav);
 
+  /* brief 26_0610-079 (R2-L): EL on-the-fly ramp -- mirrors trckpt_tr_inside_deck's
+   * R-L.3 EL reinit (this file, ~1489-1517) but MAX-DP: value = ramp directly (not
+   * an FLogsum accumulation base) and shadow tagged USED_EL so the transition loops
+   * below can override both value and shadow if a real child beats it (mirrors
+   * cm_TrCYKInsideAlignHB's HB EL reinit, ~6872-6926, which does the same comparison
+   * against a materialized EL deck at v=cm->M -- brief 060's "EL info is 1-D,
+   * on-the-fly ramp, FREE" finding lets us recompute the ramp value directly instead,
+   * exactly as the checkpointed Inside engine already does).  Placed BEFORE the
+   * per-state recurrence so a real child transition can beat (and shadow-overwrite)
+   * this EL default, never the reverse.  Gated on Xv[cx->M] (cp9b->{J,L,R}valid[cm->M],
+   * the EL pseudo-state's own band validity), matching the 079 gating discipline. */
+  if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    if (do_J_v && Jv[cx->M]) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        if (hdmin[v][jp_v] >= sd) { d = hdmin[v][jp_v]; dp_v = 0; }
+        else                      { d = sd; dp_v = sd - hdmin[v][jp_v]; }
+        for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+          Jav[jp_v][dp_v] = cx->el_selfsc * (d - sd) + cm->endsc[v];
+          if (Jysh) Jysh[jp_v][dp_v] = (char) USED_EL;
+        }
+      }
+    }
+    if (do_L_v && Lv[cx->M]) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        if (hdmin[v][jp_v] >= sdl) { d = hdmin[v][jp_v]; dp_v = 0; }
+        else                       { d = sdl; dp_v = sdl - hdmin[v][jp_v]; }
+        for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+          Lav[jp_v][dp_v] = cx->el_selfsc * (d - sdl) + cm->endsc[v];
+          if (Lysh) Lysh[jp_v][dp_v] = (char) USED_EL;
+        }
+      }
+    }
+    if (do_R_v && Rv[cx->M]) {
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+        jp_v = j - jmin[v];
+        if (hdmin[v][jp_v] >= sdr) { d = hdmin[v][jp_v]; dp_v = 0; }
+        else                       { d = sdr; dp_v = sdr - hdmin[v][jp_v]; }
+        for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
+          Rav[jp_v][dp_v] = cx->el_selfsc * (d - sdr) + cm->endsc[v];
+          if (Rysh) Rysh[jp_v][dp_v] = (char) USED_EL;
+        }
+      }
+    }
+  }
+
   if (StateIsDetached(cm, v)) return; /* leave IMPOSSIBLE */
 
   if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
@@ -4212,9 +4259,13 @@ ckpt_trcyk_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
  * pop-and-attach-right-child logic as E_st).  Differs only in: (a) a B_st's
  * k and the VARYING child's mode come from ckpt_trcyk_bcell() (live search
  * against the retained *CYstore decks) instead of a stored kshadow/Lkmode/
- * Rkmode, and (b) R2 scope: no EL (USED_EL never appears -- CMH_LOCAL_END
- * is off), no USED_TRUNC_BEGIN root-reduction table walk (handled by the
- * caller, which passes in the already-resolved root entry mode). */
+ * Rkmode, and (b) no USED_TRUNC_BEGIN root-reduction table walk (handled by
+ * the caller, which passes in the already-resolved root entry mode).  brief
+ * 26_0610-079 (R2-L): USED_EL is now a real, reachable yoffset (CMH_LOCAL_END
+ * on) -- handled identically to production (mirrors cm_tr_alignT_hb ~741-752
+ * and trckpt_tr_optacc_traceback ~5513-5514): a trace node IS inserted (into
+ * cm->M), unlike USED_TRUNC_END which inserts none, but both then jump v to
+ * cm->M and fall into the same pop-and-attach-right-child E_st/EL_st logic. */
 static int
 ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
                       float ***JCYstore, float ***LCYstore, float ***RCYstore, float ***TCYstore,
@@ -4326,6 +4377,7 @@ ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
         yoffset = (int) (unsigned char) ysh;
       }
       if (yoffset == USED_TRUNC_END) { nxtmode = mode; /* irrelevant, v is about to become EL */ }
+      else if (yoffset == USED_EL)   { nxtmode = mode; /* irrelevant, v is about to become EL */ }
       else if (yoffset >= TRMODE_R_OFFSET) { nxtmode = TRMODE_R; yoffset -= TRMODE_R_OFFSET; }
       else if (yoffset >= TRMODE_L_OFFSET) { nxtmode = TRMODE_L; yoffset -= TRMODE_L_OFFSET; }
       else                                 { nxtmode = TRMODE_J; yoffset -= TRMODE_J_OFFSET; }
@@ -4359,7 +4411,12 @@ ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
       }
       d = j - i + 1;
 
-      if (yoffset == USED_TRUNC_END) {
+      if (yoffset == USED_EL || yoffset == USED_TRUNC_END) {
+        /* brief 26_0610-079 (R2-L): a real local end -- unlike USED_TRUNC_END,
+         * this DOES need a trace node (mirrors cm_tr_alignT_hb ~741-751 and
+         * trckpt_tr_optacc_traceback ~5513-5514: USED_EL inserts a node into
+         * cm->M, USED_TRUNC_END does not). */
+        if (yoffset == USED_EL) InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M, mode);
         v = cm->M; /* act like EL: next iteration's E_st||EL_st branch pops the stack */
       }
       else {
@@ -4382,15 +4439,20 @@ ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
 }
 
 /* Function: cm_CheckptTrCYKAlignHB()
- * Incept:   Brief 26_0610-078 R2
+ * Incept:   Brief 26_0610-078 R2; local (EL + local begin) support added by
+ *           brief 26_0610-079 (R2-L).
  *
  * Purpose:  sqrt(M)-memory checkpointed, COMBINED-MODE (J/L/R/T) truncated
  *           CYK max-DP, discovering its OWN marginal mode AND every
  *           bifurcation k* (pin) (no externally-supplied kpin[]/preset mode,
  *           unlike the rung-4 PINNED engines above) via ckpt_trcyk_bcell().
- *           Structured (bps>0) only.  GLOBAL, no EL, no local begin (R2
- *           scope; see this brief's summary "flagged for Eric" section for
- *           why local support was deferred rather than attempted here).
+ *           Structured (bps>0) only.  Local-begin and EL (local end) are both
+ *           supported (R2-L): local-begin needed no new code (R2's ROOT_S
+ *           truncated-begin candidate scan already selects the local- vs
+ *           global-begin penalty table live off CMH_LOCAL_BEGIN, unconditionally
+ *           scanning every entry state); EL is a per-state on-the-fly ramp in
+ *           ckpt_trcyk_deck(), gated live off CMH_LOCAL_END, with matching
+ *           USED_EL traceback support in ckpt_trcyk_traceback().
  *
  *           Replaces cm_alndata.c's do_trckpt_r4 ncand-loop (which pays
  *           TrCYKDivideAndConquerHB's D&C penalty once per root-valid mode,
@@ -4424,8 +4486,6 @@ cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   Parsetree_t *tr = NULL;
   ckpt_trcyk_ysh_ctx fctx;
 
-  if (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): R2 scope is GLOBAL only (no local begin/end)");
   { int nb = 0; for (v = 0; v < M; v++) if (cm->sttype[v] == B_st) nb++;
     if (nb < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): CM has no bifurcations (bps=0); use cm_CheckptTrAlignHB instead"); }
   if (cm->trp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): cm->trp (truncation penalties) is NULL");
@@ -4443,7 +4503,11 @@ cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   cx.Jl_pp = cx.Ll_pp = cx.Jr_pp = cx.Rr_pp = NULL;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
-  cx.have_el = FALSE; cx.el_selfsc = cm->el_selfsc; cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
+  /* brief 26_0610-079 (R2-L): was hardcoded FALSE (R2 was GLOBAL-only); now
+   * live-wired like every other rung-4 checkpointed engine (mirror
+   * cm_CheckptTrPostAlignHB/cm_CheckptTrOptAccAlignHB's R-L.5a setup). */
+  cx.have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  cx.el_selfsc = cm->el_selfsc; cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
   cx.Jeldmax = cx.Leldmax = cx.Reldmax = NULL;
   cx.Jelbeta = cx.Lelbeta = cx.Relbeta = NULL;
   cx.Jelalpha = cx.Lelalpha = cx.Relalpha = NULL;
