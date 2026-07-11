@@ -500,39 +500,35 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 					   cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
 	}
 	else if(do_trckpt_r4) {
-	  /* Resolve the marginal mode + bifurcation pins from a sqrt(M) truncated D&C
-	   * CYK.  This is the only sqrt(M) way to resolve the mode for a STRUCTURED CM:
-	   * an unpinned sqrt(M) bifurcation Inside hits the brief-26_0610-017 2D-coupling wall
-	   * (which is exactly why the pinned approach exists).  Run D&C CYK once per
-	   * root-valid marginal mode; the argmax penalty-folded root score picks the
-	   * mode (each TrCYKDivideAndConquerHB() score == the oracle
-	   * cm_TrCYKInsideAlignHB()'s {J,L,R,T}alpha[0][L][L], so the argmax == stock's
-	   * CYK mode resolution), and that mode's parse supplies the (kind,k*,modes)
-	   * pins.  cmalign passes mode==TRMODE_UNKNOWN, so we cannot seed the D&C CYK
-	   * directly. */
+	  /* Resolve the marginal mode + bifurcation pins from a single sqrt(M)
+	   * combined-mode (J/L/R/T) checkpointed CYK sweep, cm_CheckptTrCYKAlignHB()
+	   * (brief 26_0610-080, R3; supersedes the old per-candidate-mode
+	   * TrCYKDivideAndConquerHB ncand-loop). This is the only sqrt(M) way to
+	   * resolve the mode for a STRUCTURED CM: an unpinned sqrt(M) bifurcation
+	   * Inside hits the brief-26_0610-017 2D-coupling wall (which is exactly why
+	   * the pinned approach exists). The engine's own argmax root-score
+	   * resolution == the oracle cm_TrCYKInsideAlignHB()'s
+	   * {J,L,R,T}alpha[0][L][L] argmax (validated byte-exact, briefs 078/079),
+	   * and the resolved mode's parse supplies the (kind,k*,modes) pins.
+	   * cmalign passes mode==TRMODE_UNKNOWN; the engine discovers its own mode. */
 	  int   *bkind = NULL, *kpin = NULL;
 	  char  *bbmode = NULL, *blmode = NULL, *brmode = NULL;
 	  Parsetree_t *tr_best = NULL;
 	  char   r4_mode = TRMODE_UNKNOWN;
 	  float  r4_cyk  = IMPOSSIBLE, r4_Z = 0.;
-	  char   cand[4]; int ncand = 0, m;
-	  if(cm->cp9b->Jvalid[0]) cand[ncand++] = TRMODE_J;
-	  if(cm->cp9b->Lvalid[0]) cand[ncand++] = TRMODE_L;
-	  if(cm->cp9b->Rvalid[0]) cand[ncand++] = TRMODE_R;
-	  if(cm->cp9b->Tvalid[0]) cand[ncand++] = TRMODE_T;
 	  ESL_ALLOC(bkind,  sizeof(int)  * cm->M);
 	  ESL_ALLOC(kpin,   sizeof(int)  * cm->M);
 	  ESL_ALLOC(bbmode, sizeof(char) * cm->M);
 	  ESL_ALLOC(blmode, sizeof(char) * cm->M);
 	  ESL_ALLOC(brmode, sizeof(char) * cm->M);
-	  for(m = 0; m < ncand; m++) {
-	    Parsetree_t *tr_m = NULL; char mm = TRMODE_UNKNOWN;
-	    float sc_m = TrCYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, pass_idx, cand[m], &mm, &tr_m, cm->cp9b);
-	    if(sc_m > r4_cyk) { r4_cyk = sc_m; r4_mode = cand[m]; if(tr_best) FreeParsetree(tr_best); tr_best = tr_m; }
-	    else if(tr_m) FreeParsetree(tr_m);
-	  }
-	  if(tr_best == NULL) { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode);
-	    ESL_XFAIL(eslEINCOMPAT, errbuf, "rung-4 --ckpt: no root-valid truncation mode for %s", sq->name); }
+	  /* brief 26_0610-080 (R3): single combined-mode (J/L/R/T) checkpointed CYK
+	   * sweep replaces the old per-candidate-mode TrCYKDivideAndConquerHB
+	   * ncand-loop (076's measured 6.6x-21.6x win); also resolves brief 079's
+	   * documented ncand-loop correctness bug (local-mode unreachable/too-high
+	   * score), since this engine does not go through tr_generic_splitter_hb's
+	   * local-begin dispatch. */
+	  if((status = cm_CheckptTrCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, pass_idx, &tr_best, &r4_mode, &r4_cyk)) != eslOK)
+	    { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode); goto ERROR; }
 	  rung4_trpins_from_cyk(cm, tr_best, bkind, kpin, bbmode, blmode, brmode);
 	  FreeParsetree(tr_best); tr_best = NULL;
 	  /* pass 2: checkpointed pinned truncated posterior -> emit_mx, then checkpointed
