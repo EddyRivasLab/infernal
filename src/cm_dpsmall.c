@@ -7328,7 +7328,17 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * injection; unconditional on local mode -- truncated begins always apply.)
        * L/R (brief 26_0610-049): inject into the 2-D marginal root cell (j0,W) -- the same
        * full-span corner as J (oracle cm_TrCYKOutsideAlignHB:6739-6741) -- for each
-       * {L,R}valid v. */
+       * {L,R}valid v.
+       *
+       * KNOWN BUG (brief 26_0610-081, unfixed, LOCAL-BEGIN only): this injected
+       * trpen, chained through the classical downward-propagation loop just below
+       * (for select intermediate wedge states, live-debugged to a single-residue
+       * MATR node) produces a beta[v] used by tr_generic_splitter_hb's split-loop
+       * that is NOT achievable under any valid parse (confirmed vs the trusted
+       * oracle: Jalpha[v][L][L] disagreed by ~44 bits on a repro case). See the
+       * TrCYKDivideAndConquerHB() docstring above for the full writeup; do not
+       * "fix" by simply disabling this block -- that regresses other, legitimate
+       * wedge-entry candidates (confirmed experimentally). */
       if (vroot == 0 && i0 == 1 && j0 == L &&
 	  (jmin[v] <= j0 && jmax[v] >= j0)
 	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)) {
@@ -9104,6 +9114,33 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           <ret_tr>. The returned score includes the (penalty-folded) truncated
  *           begin so it equals the oracle cm_TrCYKInsideAlignHB()'s
  *           {J,L,R,T}alpha[0][L][L] byte-for-byte for the chosen mode.
+ *
+ * KNOWN BUG (brief 26_0610-081, unfixed): in LOCAL config (CMH_LOCAL_BEGIN),
+ * this function can return an unreachable, too-high score -- e.g. a tRNA case
+ * reports 29.4 bits when the trusted monolithic oracle cm_TrAlignHB() (forced
+ * to the same preset_mode) proves the true optimum is 6.5 bits. Root-caused to
+ * tr_outside_hb()'s "TRUNCATED-BEGIN injection" (~line 7332 below: injects
+ * tr_trpenalty(v) into beta[v][j0][W] for every v when vroot==0) combined with
+ * its own immediately-following classical downward-propagation loop: chaining
+ * an injected entry-penalty through select intermediate wedge states (verified
+ * live via gdb: entering at a single-residue MATR node backed by
+ * Jalpha[v][L][L] = -17.48 per the oracle) inflates tr_generic_splitter_hb's
+ * "all-J split" (beta[v]-based) candidate to a value the traceback's own
+ * ParsetreeScore() confirms is self-consistent but not actually achievable
+ * under any valid parse. A blanket removal of the injection is NOT the fix --
+ * confirmed experimentally that it also breaks LEGITIMATE wedge-entry
+ * candidates (e.g. the same tRNA case's forced-J optimum, 6.5 bits at entry
+ * state v=12, silently regresses to -26.4 once the injection is disabled).
+ * -g (global, CMH_LOCAL_BEGIN off) is unaffected -- global's tr_outside_hb
+ * calls never reach this injection (gated on CMH_LOCAL_BEGIN's trpenalty table
+ * only being finite in local config in the failing pattern found so far).
+ * DO NOT use this function (or its callers tr_generic_splitter_hb /
+ * tr_wedge_splitter_hb, both of which share this same tr_outside_hb) as a
+ * local-mode validation oracle without independently cross-checking against
+ * cm_TrAlignHB()/cm_TrCYKInsideAlignHB() -- see subagent-summaries/
+ * 079_2026-07-11_ckpt-trcyk-r2L-local-build_summary.md and
+ * 081_2026-07-11_trcyk-dnc-local-begin-bug-investigation_summary.md in the
+ * 26_0610 notebook dir for the full repro/investigation.
  */
 float
 TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx,
