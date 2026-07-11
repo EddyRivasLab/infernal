@@ -3161,11 +3161,18 @@ extract_c2_score_genomic(CM_t *cm, double *feats)
  * On return, subtree_l[i] / subtree_r[i] are the left/right bounds of the
  * subtree rooted at node i (None → -1 in C).
  *
+ * ret_rank_lookup/ret_rank_ncols: optional (may both be NULL). When
+ * use_consensus_rank=1 and ret_rank_lookup is non-NULL, the internally-built
+ * alignment-col -> consensus-rank lookup array is handed back to the caller
+ * (caller must free it) instead of being freed here, so callers that also
+ * need the rank map (e.g. extract_frag_score) don't have to rebuild it.
+ *
  * Returns eslOK on success, eslEMEM on allocation failure.
  */
 static int
 build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
-                         int *subtree_l, int *subtree_r, int *parent)
+                         int *subtree_l, int *subtree_r, int *parent,
+                         int **ret_rank_lookup, int *ret_rank_ncols)
 {
   int   n_nodes = cm->nodes;
   int   i, nd;
@@ -3399,7 +3406,8 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
 
   free(stk);
   free(dfs_order);
-  if (rank_lookup) free(rank_lookup);
+  if (ret_rank_lookup) { *ret_rank_lookup = rank_lookup; *ret_rank_ncols = rank_ncols; }
+  else if (rank_lookup) free(rank_lookup);
   if (unique_col)  free(unique_col);
   return eslOK;
 
@@ -3452,19 +3460,20 @@ summarize_distribution(double *p_L, int N,
  * Port of Python topo_fraglen_v2(parsed, include_end=False, rich=False, prefix="noend_").
  * Computes 4 features: noend_mean_L, noend_var_L, noend_KL_to_unif, noend_p_full_length.
  *
- * Uses build_node_subtree_spans(use_consensus_rank=1) so that NOSS CMs
- * (whose MATL alignment-columns can exceed clen) get properly ranked.
+ * subtree_l/subtree_r/parent are the caller-computed
+ * build_node_subtree_spans(cm, use_consensus_rank=1, ...) result (shared
+ * across several extract_* functions — see cm_FastCalibrate_ExtractFeatures),
+ * so NOSS CMs (whose MATL alignment-columns can exceed clen) get properly
+ * ranked, matching prior per-call behavior.
  *
  * Degenerate case (n_begin == 0 or N <= 1): sets all 4 features to NaN.
  */
 static int
-extract_topo_noend_basic(CM_t *cm, double *feats)
+extract_topo_noend_basic(CM_t *cm, double *feats,
+                         const int *subtree_l, const int *subtree_r)
 {
   int     N      = cm->clen;
   double  pbegin = (double) cm->pbegin;
-  int    *subtree_l = NULL;
-  int    *subtree_r = NULL;
-  int    *parent    = NULL;
   double *p_L       = NULL;
   int     status;
   int     nd, L;
@@ -3478,14 +3487,7 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
     return eslOK;
   }
 
-  ESL_ALLOC(subtree_l, sizeof(int) * cm->nodes);
-  ESL_ALLOC(subtree_r, sizeof(int) * cm->nodes);
-  ESL_ALLOC(parent,    sizeof(int) * cm->nodes);
-  ESL_ALLOC(p_L,       sizeof(double) * (N + 2));
-
-  status = build_node_subtree_spans(cm, /*use_consensus_rank=*/1,
-                                    subtree_l, subtree_r, parent);
-  if (status != eslOK) goto ERROR;
+  ESL_ALLOC(p_L, sizeof(double) * (N + 2));
 
   /* Collect valid local-begin candidates: MATP/MATR/MATL/BIF nodes
    * with both subtree_l and subtree_r defined and within [1..N].
@@ -3518,7 +3520,7 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
-    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    free(cands); free(p_L);
     return eslOK;
   }
 
@@ -3548,7 +3550,7 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
-    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    free(cands); free(p_L);
     return eslOK;
   }
   for (L = 1; L <= N; L++) p_L[L] /= mass;
@@ -3564,18 +3566,12 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
   }
 
   free(cands);
-  free(subtree_l);
-  free(subtree_r);
-  free(parent);
   free(p_L);
   return eslOK;
 
  ERROR:
-  if (cands)     free(cands);
-  if (subtree_l) free(subtree_l);
-  if (subtree_r) free(subtree_r);
-  if (parent)    free(parent);
-  if (p_L)       free(p_L);
+  if (cands) free(cands);
+  if (p_L)   free(p_L);
   return eslEMEM;
 }
 
@@ -3621,7 +3617,8 @@ extract_c1_old(CM_t *cm, double *feats)
   ESL_ALLOC(p_L,       sizeof(double) * (N + 2));
 
   status = build_node_subtree_spans(cm, /*use_consensus_rank=*/0,
-                                    subtree_l, subtree_r, parent);
+                                    subtree_l, subtree_r, parent,
+                                    /*ret_rank_lookup=*/NULL, /*ret_rank_ncols=*/NULL);
   if (status != eslOK) goto ERROR;
 
   /* Collect candidates: all non-(ROOT/END) nodes with both l,r defined
@@ -3781,7 +3778,7 @@ np_percentile_linear(const double *sorted, int n, double p)
  * (NOT sequence order — matches Python which concatenates ml_log then mp_log.)
  */
 static int
-extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
+extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
 {
   int    nd, v, a, ab, i;
   int    n_sing = 0, n_pair = 0, n_all;
@@ -3789,13 +3786,10 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
   double *sing_ic  = NULL;
   double *pair_ic  = NULL;
   double *all_ic   = NULL;
-  int    *dfs_order = NULL;
   int    n_alloc   = cm->nodes + 1;
 
   ESL_ALLOC(sing_ic,  sizeof(double) * n_alloc);
   ESL_ALLOC(pair_ic,  sizeof(double) * n_alloc);
-  ESL_ALLOC(dfs_order, sizeof(int)   * cm->nodes);
-  build_dfs_order(cm, dfs_order);
 
   /* Collect ICs in DFS pre-order matching Python's file-reading order.
    * IC computed from quantized log-odds (3 dp) to match Python _singlet_ic/_pair_ic. */
@@ -3972,14 +3966,12 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
   free(sing_ic);
   free(pair_ic);
   free(all_ic);
-  free(dfs_order);
   return eslOK;
 
  ERROR:
-  if (sing_ic)   free(sing_ic);
-  if (pair_ic)   free(pair_ic);
-  if (all_ic)    free(all_ic);
-  if (dfs_order) free(dfs_order);
+  if (sing_ic) free(sing_ic);
+  if (pair_ic) free(pair_ic);
+  if (all_ic)  free(all_ic);
   return eslEMEM;
 }
 
@@ -3997,8 +3989,8 @@ typedef struct { int nd; int l; int r; } fcbeg_t;
 
 static int
 count_valid_ends_in_subtree(int nd_v, int l_v, int r_v,
-                            CM_t *cm, int *subtree_l, int *subtree_r,
-                            int *has_end_neighbor,
+                            CM_t *cm, const int *subtree_l, const int *subtree_r,
+                            const int *has_end_neighbor,
                             fcend_t *ret_ends)
 {
   int nd_j, K_v = 0;
@@ -4033,15 +4025,13 @@ count_valid_ends_in_subtree(int nd_v, int l_v, int r_v,
  *   3. Rich distribution statistics (skewness, kurtosis, quantiles)
  */
 static int
-extract_withend_rich(CM_t *cm, double *feats)
+extract_withend_rich(CM_t *cm, double *feats,
+                     const int *dfs_order,
+                     const int *subtree_l, const int *subtree_r)
 {
   int     N      = cm->clen;
   double  pbegin = (double) cm->pbegin;
   double  pend   = (double) cm->pend;
-  int    *subtree_l       = NULL;
-  int    *subtree_r       = NULL;
-  int    *parent          = NULL;
-  int    *dfs_order       = NULL;
   int    *has_end_neighbor = NULL;
   double *p_L             = NULL;
   fcend_t *ends_buf       = NULL;  /* reusable buffer for count_valid_ends */
@@ -4067,21 +4057,12 @@ extract_withend_rich(CM_t *cm, double *feats)
   }
   if (N <= 1) return eslOK;
 
-  ESL_ALLOC(subtree_l,        sizeof(int)     * cm->nodes);
-  ESL_ALLOC(subtree_r,        sizeof(int)     * cm->nodes);
-  ESL_ALLOC(parent,           sizeof(int)     * cm->nodes);
-  ESL_ALLOC(dfs_order,        sizeof(int)     * cm->nodes);
   ESL_ALLOC(has_end_neighbor, sizeof(int)     * cm->nodes);
   ESL_ALLOC(p_L,              sizeof(double)  * (N + 2));
   ESL_ALLOC(ends_buf,         sizeof(fcend_t) * cm->nodes);
   ESL_ALLOC(begins,           sizeof(fcbeg_t) * cm->nodes);
 
-  /* Build subtree spans (use_consensus_rank=1 to handle noss CMs) */
-  status = build_node_subtree_spans(cm, 1, subtree_l, subtree_r, parent);
-  if (status != eslOK) goto ERROR;
-
-  /* Build DFS order and has_end_neighbor */
-  build_dfs_order(cm, dfs_order);
+  /* Build has_end_neighbor from the shared DFS order */
   memset(has_end_neighbor, 0, sizeof(int) * cm->nodes);
   {
     int i, nd;
@@ -4197,10 +4178,6 @@ extract_withend_rich(CM_t *cm, double *feats)
   }
 
  DONE:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (p_L)              free(p_L);
   if (ends_buf)         free(ends_buf);
@@ -4208,10 +4185,6 @@ extract_withend_rich(CM_t *cm, double *feats)
   return eslOK;
 
  ERROR:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (p_L)              free(p_L);
   if (ends_buf)         free(ends_buf);
@@ -4235,15 +4208,14 @@ extract_withend_rich(CM_t *cm, double *feats)
  *   4. Aggregate: score mean, var, per_pos_mean, p90, cov(S,L).
  */
 static int
-extract_frag_score(CM_t *cm, double *feats)
+extract_frag_score(CM_t *cm, double *feats,
+                   const int *dfs_order,
+                   const int *subtree_l, const int *subtree_r,
+                   const int *rank_lookup, int rank_ncols)
 {
   int     N      = cm->clen;
   double  pbegin = (double) cm->pbegin;
   double  pend   = (double) cm->pend;
-  int    *subtree_l       = NULL;
-  int    *subtree_r       = NULL;
-  int    *parent          = NULL;
-  int    *dfs_order       = NULL;
   int    *has_end_neighbor = NULL;
   double *ic_col          = NULL;
   double *cum_ic          = NULL;
@@ -4254,11 +4226,6 @@ extract_frag_score(CM_t *cm, double *feats)
   /* records: (P, S, L) triples */
   double *rec_P = NULL, *rec_S = NULL, *rec_L = NULL;
   int     n_rec = 0, rec_alloc;
-  /* rank lookup for ic_col building */
-  int    *rank_lookup     = NULL;
-  int     rank_ncols      = 0;
-  int    *unique_col      = NULL;
-  int     n_unique        = 0;
   int     nd, v, a, ab, i, status;
   double  nan = 0.0 / 0.0;
 
@@ -4271,10 +4238,6 @@ extract_frag_score(CM_t *cm, double *feats)
 
   if (N <= 1) return eslOK;
 
-  ESL_ALLOC(subtree_l,        sizeof(int)    * cm->nodes);
-  ESL_ALLOC(subtree_r,        sizeof(int)    * cm->nodes);
-  ESL_ALLOC(parent,           sizeof(int)    * cm->nodes);
-  ESL_ALLOC(dfs_order,        sizeof(int)    * cm->nodes);
   ESL_ALLOC(has_end_neighbor, sizeof(int)    * cm->nodes);
   ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
   ESL_ALLOC(cum_ic,           sizeof(double) * (N + 2));
@@ -4283,55 +4246,6 @@ extract_frag_score(CM_t *cm, double *feats)
   ESL_ALLOC(rec_P, sizeof(double) * rec_alloc);
   ESL_ALLOC(rec_S, sizeof(double) * rec_alloc);
   ESL_ALLOC(rec_L, sizeof(double) * rec_alloc);
-
-  /* Build subtree spans */
-  status = build_node_subtree_spans(cm, 1, subtree_l, subtree_r, parent);
-  if (status != eslOK) goto ERROR;
-
-  /* Build rank_lookup (same as in build_node_subtree_spans for consensus_rank=1) */
-  {
-    int n_alloc_u = cm->nodes * 2 + 2;
-    ESL_ALLOC(unique_col, sizeof(int) * n_alloc_u);
-    for (nd = 0; nd < cm->nodes; nd++) {
-      int has_lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd);
-      int has_rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
-      if (!has_lpos && !has_rpos) continue;
-      if (has_lpos) {
-        int lp = cm->emap->lpos[nd];
-        int acol = (lp >= 1 && lp <= N) ? cm->map[lp] : 0;
-        if (acol > 0) {
-          int dup = 0, j;
-          for (j = 0; j < n_unique; j++) if (unique_col[j] == acol) { dup=1; break; }
-          if (!dup) {
-            if (n_unique >= n_alloc_u) { n_alloc_u *= 2; ESL_REALLOC(unique_col, sizeof(int)*n_alloc_u); }
-            unique_col[n_unique++] = acol;
-          }
-        }
-      }
-      if (has_rpos) {
-        int rp = cm->emap->rpos[nd];
-        int acol = (rp >= 1 && rp <= N) ? cm->map[rp] : 0;
-        if (acol > 0) {
-          int dup = 0, j;
-          for (j = 0; j < n_unique; j++) if (unique_col[j] == acol) { dup=1; break; }
-          if (!dup) {
-            if (n_unique >= n_alloc_u) { n_alloc_u *= 2; ESL_REALLOC(unique_col, sizeof(int)*n_alloc_u); }
-            unique_col[n_unique++] = acol;
-          }
-        }
-      }
-    }
-    /* Sort unique_col ascending */
-    { int j, tmp;
-      for (i = 1; i < n_unique; i++) { tmp=unique_col[i]; for(j=i-1; j>=0&&unique_col[j]>tmp; j--) unique_col[j+1]=unique_col[j]; unique_col[j+1]=tmp; }
-    }
-    /* Build rank_lookup */
-    rank_ncols = (n_unique > 0) ? unique_col[n_unique-1] + 1 : 1;
-    ESL_ALLOC(rank_lookup, sizeof(int) * rank_ncols);
-    for (i = 0; i < rank_ncols; i++) rank_lookup[i] = -1;
-    for (i = 0; i < n_unique; i++) rank_lookup[unique_col[i]] = i + 1;
-    free(unique_col); unique_col = NULL;
-  }
 
 #define RANK(acol) ((acol) > 0 && (acol) < rank_ncols ? rank_lookup[(acol)] : -1)
 
@@ -4377,7 +4291,6 @@ extract_frag_score(CM_t *cm, double *feats)
     }
   }
 #undef RANK
-  free(rank_lookup); rank_lookup = NULL;
 
   /* Build cumulative IC: cum_ic[k] = sum ic_col[1..k] */
   cum_ic[0] = 0.0;
@@ -4386,8 +4299,7 @@ extract_frag_score(CM_t *cm, double *feats)
   /* range_ic(l, r) = sum of ic_col[l..r] */
 #define RANGE_IC(l, r) (((l)<1?(l)=1:0), ((r)>N?(r)=N:0), ((r)<(l)?0.0:(cum_ic[(r)]-cum_ic[(l)-1])))
 
-  /* Build DFS order and has_end_neighbor */
-  build_dfs_order(cm, dfs_order);
+  /* Build has_end_neighbor from the shared DFS order */
   memset(has_end_neighbor, 0, sizeof(int) * cm->nodes);
   {
     int nd2;
@@ -4538,10 +4450,6 @@ extract_frag_score(CM_t *cm, double *feats)
   }
 
  DONE:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (ic_col)           free(ic_col);
   if (cum_ic)           free(cum_ic);
@@ -4549,16 +4457,10 @@ extract_frag_score(CM_t *cm, double *feats)
   if (rec_P)            free(rec_P);
   if (rec_S)            free(rec_S);
   if (rec_L)            free(rec_L);
-  if (rank_lookup)      free(rank_lookup);
-  if (unique_col)       free(unique_col);
   if (begins)           free(begins);
   return eslOK;
 
  ERROR:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (ic_col)           free(ic_col);
   if (cum_ic)           free(cum_ic);
@@ -4566,8 +4468,6 @@ extract_frag_score(CM_t *cm, double *feats)
   if (rec_P)            free(rec_P);
   if (rec_S)            free(rec_S);
   if (rec_L)            free(rec_L);
-  if (rank_lookup)      free(rank_lookup);
-  if (unique_col)       free(unique_col);
   if (begins)           free(begins);
   return eslEMEM;
 }
@@ -4709,19 +4609,51 @@ int
 cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
 {
   int status;
+  /* Shared scratch: dfs_order (DFS pre-order by cm->nodemap) and the
+   * use_consensus_rank=1 subtree-span/consensus-rank-map result, both of
+   * which depend only on the CM's static tree structure. Computed once here
+   * and threaded into the extract_* functions that used to each recompute
+   * them from scratch via O(nodes^2) insertion sort / dedup scan (brief
+   * 26_0422-089). extract_c1_old's use_consensus_rank=0 call is unrelated
+   * (different data) and keeps its own private, unshared call. */
+  int *dfs_order   = NULL;
+  int *subtree_l   = NULL;
+  int *subtree_r   = NULL;
+  int *parent      = NULL;
+  int *rank_lookup = NULL;
+  int  rank_ncols  = 0;
 
   if ((status = extract_clen(cm, feats))              != eslOK) return status;
   if ((status = extract_effn(cm, feats))              != eslOK) return status;
   if ((status = extract_noss_fraglen(cm, feats))      != eslOK) return status;
   if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
   if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
-  if ((status = extract_topo_noend_basic(cm, feats))  != eslOK) return status;
-  if ((status = extract_c1_old(cm, feats))            != eslOK) return status;
+
+  ESL_ALLOC(dfs_order, sizeof(int) * cm->nodes);
+  build_dfs_order(cm, dfs_order);
+
+  ESL_ALLOC(subtree_l, sizeof(int) * cm->nodes);
+  ESL_ALLOC(subtree_r, sizeof(int) * cm->nodes);
+  ESL_ALLOC(parent,    sizeof(int) * cm->nodes);
+  if ((status = build_node_subtree_spans(cm, /*use_consensus_rank=*/1,
+                                         subtree_l, subtree_r, parent,
+                                         &rank_lookup, &rank_ncols)) != eslOK)
+    goto ERROR;
+
+  if ((status = extract_topo_noend_basic(cm, feats, subtree_l, subtree_r)) != eslOK) goto ERROR;
+  if ((status = extract_c1_old(cm, feats))            != eslOK) goto ERROR;
   /* Phase 5: v5.5 feature widening */
-  if ((status = extract_bulk_ic_and_spatial(cm, feats)) != eslOK) return status;
-  if ((status = extract_withend_rich(cm, feats))        != eslOK) return status;
-  if ((status = extract_frag_score(cm, feats))          != eslOK) return status;
-  if ((status = extract_composition(cm, feats))         != eslOK) return status;
+  if ((status = extract_bulk_ic_and_spatial(cm, feats, dfs_order)) != eslOK) goto ERROR;
+  if ((status = extract_withend_rich(cm, feats, dfs_order, subtree_l, subtree_r)) != eslOK) goto ERROR;
+  if ((status = extract_frag_score(cm, feats, dfs_order, subtree_l, subtree_r,
+                                   rank_lookup, rank_ncols))        != eslOK) goto ERROR;
+  if ((status = extract_composition(cm, feats))         != eslOK) goto ERROR;
+
+  free(dfs_order);
+  free(subtree_l);
+  free(subtree_r);
+  free(parent);
+  free(rank_lookup);
 
   /* Debug: dump feature vector if FASTCAL_FEAT_DUMP env var is set.
    * Format: one line per CM, tab-separated feature values prefixed by CM name.
@@ -4742,6 +4674,14 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   }
 
   return eslOK;
+
+ ERROR:
+  if (dfs_order)   free(dfs_order);
+  if (subtree_l)   free(subtree_l);
+  if (subtree_r)   free(subtree_r);
+  if (parent)      free(parent);
+  if (rank_lookup) free(rank_lookup);
+  return status;
 }
 
 
