@@ -433,7 +433,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
        * targets (--p7ibv/--p7kmerchain). */
       const char *_p7b_kind = NULL;
       int    _st059_on = (getenv("BRIEF059_STAGETIME") != NULL);
-      double _st059_a_s = 0., _st059_b_s = 0., _st059_c_s = 0., _st059_d_s = 0., _st059_ab_total_s = 0.;
+      double _st059_a_s = 0., _st059_b_s = 0., _st059_bd_s = 0., _st059_c_s = 0., _st059_d_s = 0., _st059_ab_total_s = 0.;
       int    _st059_ab_split = FALSE;
       if(! cp9b_valid) {
 	/* TODO #9 mitigation: --p7band produces too-narrow k-envelopes for small-M
@@ -556,7 +556,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
 	                                   do_trunc, /* brief 26_0628-033 */
 	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
-	                                   _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL);
+	                                   _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL,
+	                                   _st059_on ? &_st059_bd_s : NULL);
 	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
 	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 26_0628-047:
 	     * default fallback is now --p7ibv's D&C deriver (this file's own
@@ -941,10 +942,15 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
        * went through a do_p7band deriver, so there's no method to report). */
       if (_st059_on && _p7b_kind != NULL) {
         if (_st059_ab_split)
-          fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
+          /* 2026-07-11 (brief 190 follow-up): bd_s = converting the winning
+           * kmerchain chain's pins into HMM bands (p7_pins2bands_nodepad),
+           * split out of what was previously folded into b_s. bd_s is 0 (and
+           * meaningless) for non-kmerchain methods (p7ibv/p7ibv-wv/etc.),
+           * which don't route through p7_Seq2BandsKmerChain at all. */
+          fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f bd_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
                   sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,
-                  _st059_a_s, _st059_b_s, _st059_c_s, _st059_d_s,
-                  _st059_a_s + _st059_b_s + _st059_c_s + _st059_d_s);
+                  _st059_a_s, _st059_b_s, _st059_bd_s, _st059_c_s, _st059_d_s,
+                  _st059_a_s + _st059_b_s + _st059_bd_s + _st059_c_s + _st059_d_s);
         else
           fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s ab_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
                   sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,

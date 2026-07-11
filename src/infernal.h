@@ -3465,7 +3465,7 @@ extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, 
  * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
  * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining
  * DP + backtrack + pin emission + p7_pins2bands_nodepad. Only measured when non-NULL. */
-extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s);
+extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s, double *ret_bd_s);
 /* Brief 26_0430-140: IBV band-derivation modes (enrich the per-row band using the
  * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
  * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */

@@ -1168,7 +1168,7 @@ int
 p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
                       int do_trunc,
                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
-                      double *ret_a_s, double *ret_b_s)
+                      double *ret_a_s, double *ret_b_s, double *ret_bd_s)
 {
   int status = eslOK;
   (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
@@ -1187,13 +1187,16 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
   int ki, j, x, i;
-  /* brief 26_0628-059: optional stage a/b timing -- a = seed finding
-   * (raw hits + merge), b = colinear chaining DP + backtrack + pin emission.
-   * If we bail before
-   * reaching the chaining DP (M-gate/N-gate/no anchors), all elapsed time is
-   * attributed to stage a. */
-  struct timespec _stagea_t0, _stageb_t0, _stage_texit;
-  int _stageb_t0_set = FALSE;
+  /* brief 26_0628-059 (extended 2026-07-11, brief 190 follow-up): optional
+   * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
+   * chaining DP + backtrack + pin emission, bd = converting the winning
+   * chain's pins into HMM bands (the p7_pins2bands_nodepad call). If we bail
+   * before reaching the chaining DP (M-gate/N-gate/no anchors), all elapsed
+   * time is attributed to stage a. If we reach the chaining DP but bail
+   * before pins2bands (alloc failure), the remainder is attributed to b and
+   * bd is 0. */
+  struct timespec _stagea_t0, _stageb_t0, _stagebd_t0, _stage_texit;
+  int _stageb_t0_set = FALSE, _stagebd_t0_set = FALSE;
   if (ret_a_s != NULL) clock_gettime(CLOCK_MONOTONIC, &_stagea_t0);
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
@@ -1416,6 +1419,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   }
 
   /* 7. pins -> bands via the UNMODIFIED consumer */
+  if (ret_bd_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stagebd_t0); _stagebd_t0_set = TRUE; }
   if (nodepad == NULL) {
     int k2;
     ESL_ALLOC(local_nodepad, sizeof(int) * (M+1));
@@ -1445,12 +1449,19 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     fprintf(stderr, "#MEMPOINT after_kmerchain_return L=%d rss_kb=%ld\n", L, brief035_rss_kb());
   if (ret_a_s != NULL) {
     clock_gettime(CLOCK_MONOTONIC, &_stage_texit);
-    if (_stageb_t0_set) {
+    if (_stagebd_t0_set) {
+      *ret_a_s  = (_stageb_t0.tv_sec  - _stagea_t0.tv_sec)  + (_stageb_t0.tv_nsec  - _stagea_t0.tv_nsec)  / 1e9;
+      *ret_b_s  = (_stagebd_t0.tv_sec - _stageb_t0.tv_sec)  + (_stagebd_t0.tv_nsec - _stageb_t0.tv_nsec)  / 1e9;
+      if (ret_bd_s != NULL)
+        *ret_bd_s = (_stage_texit.tv_sec - _stagebd_t0.tv_sec) + (_stage_texit.tv_nsec - _stagebd_t0.tv_nsec) / 1e9;
+    } else if (_stageb_t0_set) {
       *ret_a_s = (_stageb_t0.tv_sec - _stagea_t0.tv_sec) + (_stageb_t0.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
       *ret_b_s = (_stage_texit.tv_sec - _stageb_t0.tv_sec) + (_stage_texit.tv_nsec - _stageb_t0.tv_nsec) / 1e9;
+      if (ret_bd_s != NULL) *ret_bd_s = 0.;
     } else {
       *ret_a_s = (_stage_texit.tv_sec - _stagea_t0.tv_sec) + (_stage_texit.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
       *ret_b_s = 0.;
+      if (ret_bd_s != NULL) *ret_bd_s = 0.;
     }
   }
   return status;

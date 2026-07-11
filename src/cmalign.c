@@ -1220,7 +1220,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 						  &i2k, &kmin, &kmax, &ncells,
-						  _st061_on ? &_st061_a_s : NULL, _st061_on ? &_st061_b_s : NULL)) != eslOK)
+						  _st061_on ? &_st061_a_s : NULL, _st061_on ? &_st061_b_s : NULL,
+						  NULL)) != eslOK) /* 2026-07-11 (brief 190 follow-up): bd split not wired for this --hmm path, out of scope */
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	      if (_st061_on) _st061_ab_split = TRUE; /* brief 26_0628-061: provisional; cleared below if a fallback fires */
 	    }
@@ -1899,7 +1900,7 @@ hmm_pipeline_thread(void *arg)
 	  did_kmer = TRUE;
 	  if ((status = p7_Seq2BandsKmerChain(info->cm, errbuf, sq->dsq, sq->n, local_nodepad,
 					      info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
-					      &i2k, &kmin, &kmax, &ncells, NULL, NULL)) != eslOK)
+					      &i2k, &kmin, &kmax, &ncells, NULL, NULL, NULL)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	}
 	if (local_nodepad) free(local_nodepad);
@@ -2711,7 +2712,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  did_kmer_w = TRUE;
 	  if (p7_Seq2BandsKmerChain(cm, errbuf, dsq, L, local_nodepad_w,
 				    do_trunc_w, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
-				    &i2k_w, &kmin_w, &kmax_w, &ncells_w, NULL, NULL) != eslOK)
+				    &i2k_w, &kmin_w, &kmax_w, &ncells_w, NULL, NULL, NULL) != eslOK)
 	    mpi_failure("p7_Seq2BandsKmerChain() failed: %s", errbuf);
 	}
 	if (local_nodepad_w) free(local_nodepad_w);
