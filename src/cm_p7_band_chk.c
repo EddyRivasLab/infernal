@@ -1229,54 +1229,57 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
  * precision; cp9_chk_dlogsum (exact log1p/exp, double-valued) replaces it.
  *****************************************************************/
 
-/* Brief 26_0430-193: env-gated double-precision LUT logsum, an A/B replacement
- * for the exact cp9_chk_dlogsum transcendental below. Mirrors p7_FLogsum's float
- * LUT (hmmer/src/logsum.c) but double-valued with a widened range: double eps
- * (2.2e-16) pushes the "just return max" cutoff from float's 15.7 nats to ~36-37
- * nats. Tests the brief 26_0430-153/154 hypothesis that logsum *discretization*
- * error was NOT the source of the genome-scale float32 collapse (float32 storage
- * accumulation was), so a double LUT should match the exact double path's
- * precision at a fraction of the per-call cost (~5-10 cy lookup vs ~200-300 cy
- * transcendental). Enabled by CP9_DLOGSUM_LUT=1; CP9_DLOGSUM_SCALE (resolution,
- * default 1000 → 0.001-nat buckets) and CP9_DLOGSUM_CUTOFF (range in nats,
- * default 36.7) tune the table for the Task 1 precision sweep. Table is built
- * once via a load-time constructor (single-threaded, before cmalign spawns
- * workers) so the hot path reads a fully-initialized read-only table. */
-static double *cp9_dlogsum_tbl    = NULL;
-static double  cp9_dlogsum_scale  = 1000.0;
-static double  cp9_dlogsum_cutoff = 36.7;
-static int     cp9_dlogsum_use    = 0;
+/* Brief 26_0430-193: double-precision LUT logsum, the production replacement for
+ * the exact log1p/exp transcendental in the checkpointed-truncated CP9 F/B.
+ * Mirrors p7_FLogsum's float LUT (hmmer/src/logsum.c) but double-valued with a
+ * widened range: double eps (2.2e-16) pushes the "just return max" cutoff from
+ * float's 15.7 nats to CP9_DLOGSUM_CUTOFF (36.7 nats). Rests on the brief
+ * 26_0430-153/154 finding that logsum *discretization* error was never the source
+ * of the genome-scale float32 collapse (float32 *storage* accumulation was); the
+ * matrix storage stays double (brief 154), only the per-call transcendental is
+ * replaced by an ~5-10 cy table lookup. Validated in brief 26_0430-193 Task 1:
+ * byte-identical alignments to the exact path at genome scale (HSV L=146678, MPXV
+ * L=197226) and dengue/SARS kmerchain; the only divergence is within-noise low-PP
+ * near-tie tipping (norovirus kmerchain, ~4/30 seqs, alignment structure preserved).
+ * Task 2: 2.3-2.65x on stage c (cp9_IterateSeq2BandsP7B), 2.2-2.3x end-to-end for
+ * compute-bound kmerchain dengue/SARS. Chosen config = brief's candidate A
+ * (SCALE=1000 → 0.001-nat buckets, CUTOFF=36.7 → ~296 KB L2-resident table; the
+ * finer 10x table was measurably slower with no accuracy benefit at genome scale).
+ *
+ * CP9_DLOGSUM_EXACT=1 restores the exact log1p/exp transcendental (debug/regression
+ * escape hatch). Table built once via a load-time constructor (single-threaded,
+ * before cmalign spawns workers) so the hot path reads a read-only table. */
+#define CP9_DLOGSUM_SCALE  1000.0
+#define CP9_DLOGSUM_CUTOFF 36.7
+#define CP9_DLOGSUM_TBLN   36702    /* (int)(CUTOFF*SCALE)+2 = 36700+2 */
+static double  cp9_dlogsum_tbl[CP9_DLOGSUM_TBLN];
+static int     cp9_dlogsum_exact = 0;   /* set by CP9_DLOGSUM_EXACT=1 */
 
 __attribute__((constructor)) static void
 cp9_chk_dlogsum_lut_init(void)
 {
   char *s;
-  if((s = getenv("CP9_DLOGSUM_LUT")) == NULL || atoi(s) == 0) { cp9_dlogsum_use = 0; return; }
-  cp9_dlogsum_use = 1;
-  if((s = getenv("CP9_DLOGSUM_SCALE"))  != NULL) cp9_dlogsum_scale  = atof(s);
-  if((s = getenv("CP9_DLOGSUM_CUTOFF")) != NULL) cp9_dlogsum_cutoff = atof(s);
-  int n = (int)(cp9_dlogsum_cutoff * cp9_dlogsum_scale) + 2, i;
-  cp9_dlogsum_tbl = malloc(sizeof(double) * n);
-  for(i = 0; i < n; i++) cp9_dlogsum_tbl[i] = log1p(exp((double) -i / cp9_dlogsum_scale));
+  int i;
+  for(i = 0; i < CP9_DLOGSUM_TBLN; i++) cp9_dlogsum_tbl[i] = log1p(exp((double) -i / CP9_DLOGSUM_SCALE));
+  if((s = getenv("CP9_DLOGSUM_EXACT")) != NULL && atoi(s) != 0) cp9_dlogsum_exact = 1;
 }
 
-/* Exact double-precision log-sum (replaces the float p7_FLogsum LUT in the
- * checkpointed double-trunc kernels; brief 26_0430-153/154). -inf-guarded.
- * Brief 26_0430-193: when CP9_DLOGSUM_LUT=1, uses the double LUT above instead
- * of the exact log1p/exp (numerically identical when the env var is unset). */
+/* Double-precision log-sum for the checkpointed double-trunc CP9 F/B kernels
+ * (brief 26_0430-153/154/193). -inf-guarded. LUT by default; exact transcendental
+ * under CP9_DLOGSUM_EXACT=1. */
 static inline double
 cp9_chk_dlogsum(double a, double b)
 {
   if(a == -eslINFINITY) return b;
   if(b == -eslINFINITY) return a;
-  if(cp9_dlogsum_use) {
-    const double max = (a > b) ? a : b;
-    const double min = (a > b) ? b : a;
-    return ((max - min) >= cp9_dlogsum_cutoff) ? max
-           : max + cp9_dlogsum_tbl[(int)((max - min) * cp9_dlogsum_scale)];
+  if(cp9_dlogsum_exact) {
+    if(a > b) return a + log1p(exp(b - a));
+    else      return b + log1p(exp(a - b));
   }
-  if(a > b) return a + log1p(exp(b - a));
-  else      return b + log1p(exp(a - b));
+  const double max = (a > b) ? a : b;
+  const double min = (a > b) ? b : a;
+  return ((max - min) >= CP9_DLOGSUM_CUTOFF) ? max
+         : max + cp9_dlogsum_tbl[(int)((max - min) * CP9_DLOGSUM_SCALE)];
 }
 
 /* CP9_DMX: file-local double mirror of CP9_FMX, used ONLY by the env-gated
