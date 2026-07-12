@@ -1229,13 +1229,52 @@ cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP
  * precision; cp9_chk_dlogsum (exact log1p/exp, double-valued) replaces it.
  *****************************************************************/
 
+/* Brief 26_0430-193: env-gated double-precision LUT logsum, an A/B replacement
+ * for the exact cp9_chk_dlogsum transcendental below. Mirrors p7_FLogsum's float
+ * LUT (hmmer/src/logsum.c) but double-valued with a widened range: double eps
+ * (2.2e-16) pushes the "just return max" cutoff from float's 15.7 nats to ~36-37
+ * nats. Tests the brief 26_0430-153/154 hypothesis that logsum *discretization*
+ * error was NOT the source of the genome-scale float32 collapse (float32 storage
+ * accumulation was), so a double LUT should match the exact double path's
+ * precision at a fraction of the per-call cost (~5-10 cy lookup vs ~200-300 cy
+ * transcendental). Enabled by CP9_DLOGSUM_LUT=1; CP9_DLOGSUM_SCALE (resolution,
+ * default 1000 → 0.001-nat buckets) and CP9_DLOGSUM_CUTOFF (range in nats,
+ * default 36.7) tune the table for the Task 1 precision sweep. Table is built
+ * once via a load-time constructor (single-threaded, before cmalign spawns
+ * workers) so the hot path reads a fully-initialized read-only table. */
+static double *cp9_dlogsum_tbl    = NULL;
+static double  cp9_dlogsum_scale  = 1000.0;
+static double  cp9_dlogsum_cutoff = 36.7;
+static int     cp9_dlogsum_use    = 0;
+
+__attribute__((constructor)) static void
+cp9_chk_dlogsum_lut_init(void)
+{
+  char *s;
+  if((s = getenv("CP9_DLOGSUM_LUT")) == NULL || atoi(s) == 0) { cp9_dlogsum_use = 0; return; }
+  cp9_dlogsum_use = 1;
+  if((s = getenv("CP9_DLOGSUM_SCALE"))  != NULL) cp9_dlogsum_scale  = atof(s);
+  if((s = getenv("CP9_DLOGSUM_CUTOFF")) != NULL) cp9_dlogsum_cutoff = atof(s);
+  int n = (int)(cp9_dlogsum_cutoff * cp9_dlogsum_scale) + 2, i;
+  cp9_dlogsum_tbl = malloc(sizeof(double) * n);
+  for(i = 0; i < n; i++) cp9_dlogsum_tbl[i] = log1p(exp((double) -i / cp9_dlogsum_scale));
+}
+
 /* Exact double-precision log-sum (replaces the float p7_FLogsum LUT in the
- * checkpointed double-trunc kernels; brief 26_0430-153/154). -inf-guarded. */
+ * checkpointed double-trunc kernels; brief 26_0430-153/154). -inf-guarded.
+ * Brief 26_0430-193: when CP9_DLOGSUM_LUT=1, uses the double LUT above instead
+ * of the exact log1p/exp (numerically identical when the env var is unset). */
 static inline double
 cp9_chk_dlogsum(double a, double b)
 {
   if(a == -eslINFINITY) return b;
   if(b == -eslINFINITY) return a;
+  if(cp9_dlogsum_use) {
+    const double max = (a > b) ? a : b;
+    const double min = (a > b) ? b : a;
+    return ((max - min) >= cp9_dlogsum_cutoff) ? max
+           : max + cp9_dlogsum_tbl[(int)((max - min) * cp9_dlogsum_scale)];
+  }
   if(a > b) return a + log1p(exp(b - a));
   else      return b + log1p(exp(a - b));
 }
@@ -2463,6 +2502,13 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
 
   if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
   if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
+  /* brief 26_0430-193: same F/B total dump as P154_FBDUMP (single-threshold path,
+   * line ~2243), replicated here in the MULTI (tau-ratchet) band-extraction path so
+   * genome-scale runs that take this path still report the F/B gap for the LUT-vs-exact
+   * precision comparison. Same env var, so only one dump fires per sequence. */
+  if(getenv("P154_FBDUMP") != NULL)
+    fprintf(stderr, "P154 FBDUMP L=%d M=%d fwd_d=%.6f bwd_d=%.6f gap_d=%.6f\n",
+            L, M, s->fsc, sc, s->fsc - sc);
   if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* === MIN sweep: ascending i (0..L). Streams pocc_raw once. === */
