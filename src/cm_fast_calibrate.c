@@ -2707,30 +2707,25 @@ extract_effn(CM_t *cm, double *feats)
 }
 
 
-/* extract_noss_fraglen()
- * Port of Python fraglen_features(clen, pbegin, pend) from fast_cmcalibrate.py.
- *
- * Computes: mean_L_noss, var_L_noss, KL_noss_to_unif, p_full_length.
- *
- * The fragment length distribution model:
- *   - entry probs: p_entry[1] = 1 - pbegin (full-length, no local begin)
- *                  p_entry[i] = pbegin / (N-1) for i in [2, N]
- *   - exit rate:   r = pend / (N-1)
- *   - p_L[L] = sum over all entry points i: p_entry[i] * reach_to_length_L
- *     where reach *= (1 - r) at each step, exit_here = reach * (r if j<N else 1)
- *   - p_full_length = p_entry[1] * (1 - r)^(N-1)
+
+/* extract_noss_fraglen_fast()
+ * O(N) reformulation of extract_noss_fraglen()'s O(N^2) p_L[] double loop.
+ * p_L[L] = (1-r)^(L-1) * ( r * PE_prefix[N-L] + p_entry[N-L+1] ), where
+ * PE_prefix[k] = sum_{i=1}^{k} p_entry[i] (a one-time O(N) prefix sum).
+ * See brief 26_0422-090 for the derivation.
  */
 static int
-extract_noss_fraglen(CM_t *cm, double *feats)
+extract_noss_fraglen_fast(CM_t *cm, double *feats)
 {
   int    N       = cm->clen;
   double pbegin  = (double) cm->pbegin;
   double pend    = (double) cm->pend;
   double r, total_P, mean_L, var_L, kl, p_full;
-  double *p_entry = NULL;
-  double *p_L     = NULL;
-  int     i, j, L;
-  double  reach, exit_here;
+  double *p_entry   = NULL;
+  double *PE_prefix = NULL;
+  double *p_L       = NULL;
+  int     i, L;
+  double  decay;
   int     status;
 
   if (N <= 1) {
@@ -2743,8 +2738,9 @@ extract_noss_fraglen(CM_t *cm, double *feats)
 
   r = pend / (double)(N - 1);
 
-  ESL_ALLOC(p_entry, sizeof(double) * (N + 1));
-  ESL_ALLOC(p_L,     sizeof(double) * (N + 1));
+  ESL_ALLOC(p_entry,   sizeof(double) * (N + 1));
+  ESL_ALLOC(PE_prefix, sizeof(double) * (N + 1));
+  ESL_ALLOC(p_L,       sizeof(double) * (N + 1));
 
   /* Entry probabilities */
   p_entry[0] = 0.0;
@@ -2752,18 +2748,15 @@ extract_noss_fraglen(CM_t *cm, double *feats)
   for (i = 2; i <= N; i++)
     p_entry[i] = pbegin / (double)(N - 1);
 
-  /* Fragment length probabilities */
-  for (L = 0; L <= N; L++) p_L[L] = 0.0;
+  PE_prefix[0] = 0.0;
+  for (i = 1; i <= N; i++)
+    PE_prefix[i] = PE_prefix[i - 1] + p_entry[i];
 
-  for (i = 1; i <= N; i++) {
-    if (p_entry[i] == 0.0) continue;
-    reach = 1.0;
-    for (j = i; j <= N; j++) {
-      exit_here = reach * ((j < N) ? r : 1.0);
-      L = j - i + 1;
-      p_L[L] += p_entry[i] * exit_here;
-      reach *= (1.0 - r);
-    }
+  p_L[0] = 0.0;
+  decay = 1.0;
+  for (L = 1; L <= N; L++) {
+    p_L[L] = decay * (r * PE_prefix[N - L] + p_entry[N - L + 1]);
+    decay *= (1.0 - r);
   }
 
   /* Normalize (should already sum to 1.0 but be safe) */
@@ -2803,12 +2796,14 @@ extract_noss_fraglen(CM_t *cm, double *feats)
   feats[FAST_CAL_FEAT_p_full_length]    = p_full;
 
   free(p_entry);
+  free(PE_prefix);
   free(p_L);
   return eslOK;
 
  ERROR:
-  if (p_entry) free(p_entry);
-  if (p_L)     free(p_L);
+  if (p_entry)   free(p_entry);
+  if (PE_prefix) free(PE_prefix);
+  if (p_L)       free(p_L);
   return eslEMEM;
 }
 
@@ -3671,7 +3666,7 @@ extract_c1_old(CM_t *cm, double *feats)
     /* Fallback to noss-style fraglen */
     double tmp_feats[FAST_CAL_NFEAT_PHASE2];
     int    fstatus;
-    fstatus = extract_noss_fraglen(cm, tmp_feats);
+    fstatus = extract_noss_fraglen_fast(cm, tmp_feats);
     feats[FAST_CAL_FEAT_mean_L_str]    = tmp_feats[FAST_CAL_FEAT_mean_L_noss];
     feats[FAST_CAL_FEAT_var_L_str]     = tmp_feats[FAST_CAL_FEAT_var_L_noss];
     feats[FAST_CAL_FEAT_KL_str_to_unif] = tmp_feats[FAST_CAL_FEAT_KL_noss_to_unif];
@@ -4647,7 +4642,7 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
 
   if ((status = extract_clen(cm, feats))              != eslOK) return status;
   if ((status = extract_effn(cm, feats))              != eslOK) return status;
-  if ((status = extract_noss_fraglen(cm, feats))      != eslOK) return status;
+  if ((status = extract_noss_fraglen_fast(cm, feats)) != eslOK) return status;
   if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
   if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
 
