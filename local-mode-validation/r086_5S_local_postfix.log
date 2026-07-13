@@ -1,0 +1,3 @@
+# CM=5S_rRNA M=369 bifs=1 mode=local tau=1e-07 LOCAL_BEGIN=1 LOCAL_END=1
+# FAIL seq=5S_rRNA-sample4_3ptr L=55 loop_mode=Left or_mode=Left sc_loop=11.936117 sc_oracle=11.936117 dev=0.000e+00 ParsetreeCompare=DIFFER nodes_loop=47 nodes_or=46
+# SUMMARY: n=300 pass=299 fail=1 maxdev=2.289e-05 VERDICT=FAIL
