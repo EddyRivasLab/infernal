@@ -3751,6 +3751,19 @@ build_dfs_order(CM_t *cm, int *dfs_order)
 }
 
 
+/* cmp_double()
+ * qsort() comparator for arrays of double, ascending order.
+ */
+static int
+cmp_double(const void *a, const void *b)
+{
+  double da = *(const double *) a;
+  double db = *(const double *) b;
+  if (da < db) return -1;
+  if (da > db) return 1;
+  return 0;
+}
+
 /* np_median()
  * Median of a sorted array matching NumPy np.median behavior:
  * odd n  → middle element; even n → average of two middle elements.
@@ -3850,6 +3863,14 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
   memcpy(all_ic,          sing_ic, n_sing * sizeof(double));
   memcpy(all_ic + n_sing, pair_ic, n_pair * sizeof(double));
 
+  /* Single sorted copy of all_ic, shared by Family A's p10/p50/p90 lookups
+   * and Family B's median/p25 lookups below (both previously sorted their
+   * own private copy of the same array). */
+  double *sorted = NULL;
+  ESL_ALLOC(sorted, sizeof(double) * n_all);
+  memcpy(sorted, all_ic, n_all * sizeof(double));
+  qsort(sorted, n_all, sizeof(double), cmp_double);
+
   /* --- Family A: bulk IC statistics --- */
   {
     double mean = 0.0, var = 0.0, skew = 0.0, sd;
@@ -3865,18 +3886,6 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
     sd    = sqrt(var > 1e-30 ? var : 1e-30);
     skew  = (sd > 1e-15) ? skew / (sd * sd * sd) : 0.0;
 
-    /* p10, p50, p90 via sorted copy */
-    double *sorted = NULL;
-    ESL_ALLOC(sorted, sizeof(double) * n_all);
-    memcpy(sorted, all_ic, n_all * sizeof(double));
-    {
-      int j; double tmp;
-      for (i = 1; i < n_all; i++) {
-        tmp = sorted[i];
-        for (j = i-1; j >= 0 && sorted[j] > tmp; j--) sorted[j+1] = sorted[j];
-        sorted[j+1] = tmp;
-      }
-    }
     {
       int idx10 = (int)(0.10 * n_all); if (idx10 >= n_all) idx10 = n_all-1;
       int idx50 = (int)(0.50 * n_all); if (idx50 >= n_all) idx50 = n_all-1;
@@ -3895,7 +3904,6 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
       feats[FAST_CAL_FEAT_ic_mean_singlet] = (n_sing > 0) ? mean_sing / (double) n_sing : 0.0/0.0;
       feats[FAST_CAL_FEAT_ic_mean_pair]    = (n_pair > 0) ? mean_pair_v / (double) n_pair : 0.0;
     }
-    free(sorted);
   }
 
   /* --- Family E: state-type ratios --- */
@@ -3911,21 +3919,9 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
     feats[FAST_CAL_FEAT_ic_autocorr_lag5]       = nan;
     feats[FAST_CAL_FEAT_max_consecutive_low_ic] = nan;
   } else {
-    /* Compute median and p25 via sorted copy */
-    double *sorted2 = NULL;
-    ESL_ALLOC(sorted2, sizeof(double) * n_all);
-    memcpy(sorted2, all_ic, n_all * sizeof(double));
-    {
-      int j; double tmp;
-      for (i = 1; i < n_all; i++) {
-        tmp = sorted2[i];
-        for (j = i-1; j >= 0 && sorted2[j] > tmp; j--) sorted2[j+1] = sorted2[j];
-        sorted2[j+1] = tmp;
-      }
-    }
-    double median_ic = np_median(sorted2, n_all);
-    double p25_ic    = np_percentile_linear(sorted2, n_all, 25.0);
-    free(sorted2);
+    /* median/p25 via the sorted copy built once above, shared with Family A */
+    double median_ic = np_median(sorted, n_all);
+    double p25_ic    = np_percentile_linear(sorted, n_all, 25.0);
 
     /* ic_spatial_entropy: Shannon entropy of normalized IC profile */
     double ic_sum = 0.0;
@@ -3983,12 +3979,14 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
   free(sing_ic);
   free(pair_ic);
   free(all_ic);
+  free(sorted);
   return eslOK;
 
  ERROR:
   if (sing_ic) free(sing_ic);
   if (pair_ic) free(pair_ic);
   if (all_ic)  free(all_ic);
+  if (sorted)  free(sorted);
   return eslEMEM;
 }
 
