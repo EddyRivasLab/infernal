@@ -43,6 +43,7 @@
 #include "esl_buffer.h"
 #include "esl_gumbel.h"
 #include "esl_json.h"
+#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "infernal.h"
@@ -4520,9 +4521,30 @@ extract_composition(CM_t *cm, double *feats)
 }
 
 
+/* stage_timing_log()
+ * Append one "CM\t<name>\tSTAGE\t<stage>\t<seconds>" line to <path>, used by
+ * the FASTCAL_STAGE_TIMING instrumentation in cm_FastCalibrate_ExtractFeatures()
+ * (brief 26_0422-092). File opened in append mode, same pattern as the
+ * FASTCAL_FEAT_DUMP dump below.
+ */
+static void
+stage_timing_log(const char *path, const char *cm_name, const char *stage, double seconds)
+{
+  FILE *fp = fopen(path, "a");
+  if (fp == NULL) return;
+  fprintf(fp, "CM\t%s\tSTAGE\t%s\t%.6f\n", cm_name ? cm_name : "unknown", stage, seconds);
+  fclose(fp);
+}
+
 /* cm_FastCalibrate_ExtractFeatures()
  * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all 69 features).
  * Returns eslOK on success, eslFAIL/eslEMEM on error.
+ *
+ * Stage timing: if FASTCAL_STAGE_TIMING=<path> is set in the environment,
+ * per-stage wall-clock time (shared scratch build + each extract_* call) is
+ * appended to <path> (brief 26_0422-092). When unset, stage_w stays NULL and
+ * no esl_stopwatch call is ever made — zero added cost, same pattern as the
+ * pre-existing FASTCAL_FEAT_DUMP gate below.
  */
 int
 cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
@@ -4542,12 +4564,40 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   int *rank_lookup = NULL;
   int  rank_ncols  = 0;
 
-  if ((status = extract_clen(cm, feats))              != eslOK) return status;
-  if ((status = extract_effn(cm, feats))              != eslOK) return status;
-  if ((status = extract_noss_fraglen_fast(cm, feats)) != eslOK) return status;
-  if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
-  if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
+  const char     *stage_timing_path = getenv("FASTCAL_STAGE_TIMING");
+  ESL_STOPWATCH  *stage_w = (stage_timing_path != NULL) ? esl_stopwatch_Create() : NULL;
 
+#define STAGE_BEGIN() do { if (stage_w != NULL) esl_stopwatch_Start(stage_w); } while (0)
+#define STAGE_END(stagename) \
+  do { \
+    if (stage_w != NULL) { \
+      esl_stopwatch_Stop(stage_w); \
+      stage_timing_log(stage_timing_path, cm->name, (stagename), stage_w->elapsed); \
+    } \
+  } while (0)
+#define STAGE_CLEANUP() do { if (stage_w != NULL) esl_stopwatch_Destroy(stage_w); } while (0)
+
+  STAGE_BEGIN();
+  if ((status = extract_clen(cm, feats))              != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_clen");
+
+  STAGE_BEGIN();
+  if ((status = extract_effn(cm, feats))              != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_effn");
+
+  STAGE_BEGIN();
+  if ((status = extract_noss_fraglen_fast(cm, feats)) != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_noss_fraglen_fast");
+
+  STAGE_BEGIN();
+  if ((status = extract_str_struct(cm, feats))        != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_str_struct");
+
+  STAGE_BEGIN();
+  if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_c2_score_genomic");
+
+  STAGE_BEGIN();
   ESL_ALLOC(dfs_order, sizeof(int) * cm->nodes);
   build_dfs_order(cm, dfs_order);
 
@@ -4558,15 +4608,38 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
                                          subtree_l, subtree_r, parent,
                                          &rank_lookup, &rank_ncols)) != eslOK)
     goto ERROR;
+  STAGE_END("scratch_build");
 
+  STAGE_BEGIN();
   if ((status = extract_topo_noend_basic(cm, feats, subtree_l, subtree_r)) != eslOK) goto ERROR;
+  STAGE_END("extract_topo_noend_basic");
+
+  STAGE_BEGIN();
   if ((status = extract_c1_old(cm, feats))            != eslOK) goto ERROR;
+  STAGE_END("extract_c1_old");
+
   /* Phase 5: v5.5 feature widening */
+  STAGE_BEGIN();
   if ((status = extract_bulk_ic_and_spatial(cm, feats, dfs_order)) != eslOK) goto ERROR;
+  STAGE_END("extract_bulk_ic_and_spatial");
+
+  STAGE_BEGIN();
   if ((status = extract_withend_rich(cm, feats, dfs_order, subtree_l, subtree_r)) != eslOK) goto ERROR;
+  STAGE_END("extract_withend_rich");
+
+  STAGE_BEGIN();
   if ((status = extract_frag_score(cm, feats, dfs_order, subtree_l, subtree_r,
                                    rank_lookup, rank_ncols))        != eslOK) goto ERROR;
+  STAGE_END("extract_frag_score");
+
+  STAGE_BEGIN();
   if ((status = extract_composition(cm, feats))         != eslOK) goto ERROR;
+  STAGE_END("extract_composition");
+
+  STAGE_CLEANUP();
+#undef STAGE_BEGIN
+#undef STAGE_END
+#undef STAGE_CLEANUP
 
   free(dfs_order);
   free(subtree_l);
@@ -4595,6 +4668,7 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   return eslOK;
 
  ERROR:
+  if (stage_w)     esl_stopwatch_Destroy(stage_w);
   if (dfs_order)   free(dfs_order);
   if (subtree_l)   free(subtree_l);
   if (subtree_r)   free(subtree_r);
