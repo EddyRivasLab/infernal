@@ -7330,15 +7330,15 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * full-span corner as J (oracle cm_TrCYKOutsideAlignHB:6739-6741) -- for each
        * {L,R}valid v.
        *
-       * KNOWN BUG (brief 26_0610-081, unfixed, LOCAL-BEGIN only): this injected
-       * trpen, chained through the classical downward-propagation loop just below
-       * (for select intermediate wedge states, live-debugged to a single-residue
-       * MATR node) produces a beta[v] used by tr_generic_splitter_hb's split-loop
-       * that is NOT achievable under any valid parse (confirmed vs the trusted
-       * oracle: Jalpha[v][L][L] disagreed by ~44 bits on a repro case). See the
-       * TrCYKDivideAndConquerHB() docstring above for the full writeup; do not
-       * "fix" by simply disabling this block -- that regresses other, legitimate
-       * wedge-entry candidates (confirmed experimentally). */
+       * The injection itself is correct (byte-exact vs the oracle's own
+       * beta[v][j0][W]=trpen; brief 26_0610-086). The 081-reported LOCAL-BEGIN
+       * inflation was NOT here: it was the downward-propagation loop just below
+       * chaining this trpen THROUGH a non-J-valid (cp9b->Jvalid[v]==FALSE) wedge
+       * state (the injection was already Jvalid-gated, but the J-plane
+       * propagation was not) -- fixed in brief 26_0610-086 by the do_J_v gate
+       * below (and its traceback twin in tr_vinside_hb). Do NOT "fix" by simply
+       * disabling this injection -- that regresses legitimate wedge-entry
+       * candidates (081 confirmed experimentally). */
       if (vroot == 0 && i0 == 1 && j0 == L &&
 	  (jmin[v] <= j0 && jmax[v] >= j0)
 	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)) {
@@ -7360,6 +7360,17 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	  {
 	    int dp_v = d - hdmin[v][jp_v];
 	    int dp_y;
+	    /* brief 26_0610-086: gate the pure-J outside propagation on cp9b->Jvalid[v],
+	     * mirroring the do_L_v/do_R_v gates below (and the Jvalid[v] gates already
+	     * present on this block's marginal->J cross-terms + the truncated-begin
+	     * injection above). Without it, beta[v]'s J-plane is filled for a state v
+	     * whose node structurally cannot appear in a pure-J parse (cp9b->Jvalid[v]
+	     * ==FALSE), letting a truncated-begin penalty propagate a chain of (good)
+	     * emissions THROUGH that non-J-valid state -- inflating tr_generic_splitter_hb's
+	     * "all-J split" (beta[v]-based) candidate to an unreachable score. The oracle
+	     * (cm_TrCYKInsideAlignHB/cm_TrCYKOutsideAlignHB) never allocates a J deck for
+	     * a !Jvalid state, so its beta stays IMPOSSIBLE; do_J_v reproduces that mask. */
+	    int do_J_v = cp9b->Jvalid[v];
 	    int do_L_v = fill_L && cp9b->Lvalid[v];
 	    int do_R_v = fill_R && cp9b->Rvalid[v];
 	    i = j-d+1;
@@ -7380,7 +7391,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		    escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
 		    escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
-		  if (hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
+		  if (do_J_v && hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
 		    (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		}
@@ -7412,7 +7423,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		  else
 		    escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  if (hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y)) {
-		    if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		    if (do_J_v && (sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		      beta[v][j][dp_v] = sc;
 		    if (do_L_v && NOT_IMPOSSIBLE(betaL[y][j][dp_y]) &&
 		      (sc = betaL[y][j][dp_y] + cm->tsc[y][voffset] + escore) > betaL[v][j][dp_v])
@@ -7438,7 +7449,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		  else
 		    escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 		  if (hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y)) {
-		    if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		    if (do_J_v && (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		      beta[v][j][dp_v] = sc;
 		    if (do_R_v && NOT_IMPOSSIBLE(betaR[y][j+1][dp_y]) &&
 		      (sc = betaR[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > betaR[v][j][dp_v])
@@ -7459,7 +7470,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	      case E_st:
 	      case D_st:
 		if (! hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) continue;
-		if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
+		if (do_J_v && (sc = beta[y][j][dp_y] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		if (do_L_v && NOT_IMPOSSIBLE(betaL[y][j][dp_y]) &&
 		  (sc = betaL[y][j][dp_y] + cm->tsc[y][voffset]) > betaL[v][j][dp_v])
@@ -7945,7 +7956,21 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	    op = i - ilo;
 	    y  = cm->cfirst[v];
 
-	    if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) {
+	    /* brief 26_0610-086: mask the pure-J plane for a state v whose node
+	     * structurally cannot appear in a pure-J parse (cp9b->Jvalid[v]==FALSE).
+	     * The oracle (cm_TrCYKInsideAlignHB) never allocates a J deck for such a
+	     * state, so it can be neither a J entry nor a J pass-through; here a[v] is
+	     * read directly by v's parent's J recurrence (ungated), so an unmasked a[v]
+	     * would let a truncated-begin J parse route THROUGH the non-J-valid state,
+	     * reconstructing the same unreachable good-emission wedge the tr_outside_hb
+	     * fix eliminates from the SCORE (this is its traceback twin). Mirrors the
+	     * brief 26_0610-075 Jvalid[yy2] gate already on the L/R marginal cross-terms
+	     * below, which the pure-J plane was missing. */
+	    if (! cp9b->Jvalid[v]) {
+	      a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	    }
+	    else if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) {
 	      if (vji_inband(cp9b, y, j, i, i0,i1,j1,j0, &op_y))
 		a[v][jp][op] = a[y][jp][op_y] + cm->tsc[v][0];
 	      else a[v][jp][op] = IMPOSSIBLE;
@@ -9115,32 +9140,33 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           begin so it equals the oracle cm_TrCYKInsideAlignHB()'s
  *           {J,L,R,T}alpha[0][L][L] byte-for-byte for the chosen mode.
  *
- * KNOWN BUG (brief 26_0610-081, unfixed): in LOCAL config (CMH_LOCAL_BEGIN),
- * this function can return an unreachable, too-high score -- e.g. a tRNA case
- * reports 29.4 bits when the trusted monolithic oracle cm_TrAlignHB() (forced
- * to the same preset_mode) proves the true optimum is 6.5 bits. Root-caused to
- * tr_outside_hb()'s "TRUNCATED-BEGIN injection" (~line 7332 below: injects
- * tr_trpenalty(v) into beta[v][j0][W] for every v when vroot==0) combined with
- * its own immediately-following classical downward-propagation loop: chaining
- * an injected entry-penalty through select intermediate wedge states (verified
- * live via gdb: entering at a single-residue MATR node backed by
- * Jalpha[v][L][L] = -17.48 per the oracle) inflates tr_generic_splitter_hb's
- * "all-J split" (beta[v]-based) candidate to a value the traceback's own
- * ParsetreeScore() confirms is self-consistent but not actually achievable
- * under any valid parse. A blanket removal of the injection is NOT the fix --
- * confirmed experimentally that it also breaks LEGITIMATE wedge-entry
- * candidates (e.g. the same tRNA case's forced-J optimum, 6.5 bits at entry
- * state v=12, silently regresses to -26.4 once the injection is disabled).
- * -g (global, CMH_LOCAL_BEGIN off) is unaffected -- global's tr_outside_hb
- * calls never reach this injection (gated on CMH_LOCAL_BEGIN's trpenalty table
- * only being finite in local config in the failing pattern found so far).
- * DO NOT use this function (or its callers tr_generic_splitter_hb /
- * tr_wedge_splitter_hb, both of which share this same tr_outside_hb) as a
- * local-mode validation oracle without independently cross-checking against
- * cm_TrAlignHB()/cm_TrCYKInsideAlignHB() -- see subagent-summaries/
- * 079_2026-07-11_ckpt-trcyk-r2L-local-build_summary.md and
- * 081_2026-07-11_trcyk-dnc-local-begin-bug-investigation_summary.md in the
- * 26_0610 notebook dir for the full repro/investigation.
+ * LOCAL-BEGIN inflation bug (brief 26_0610-081 root-caused; FIXED brief 26_0610-086):
+ * in LOCAL config (CMH_LOCAL_BEGIN) this function previously could return an
+ * unreachable, too-high score -- e.g. a tRNA case reported 29.4 bits (forced J)
+ * when the trusted oracle cm_TrAlignHB() proves the true forced-J optimum is 6.5
+ * bits. Root cause (081, confirmed live via gdb; 086, confirmed vs the oracle's
+ * own cm_TrCYKOutsideAlignHB beta): tr_outside_hb()'s pure-J outside propagation
+ * (and its traceback twin, tr_vinside_hb's pure-J recurrence) was NOT gated on
+ * cp9b->Jvalid[v] -- unlike the truncated-begin injection, the marginal->J
+ * cross-terms (brief 070), and the L/R planes, which all already were. So a
+ * truncated-begin penalty could chain a run of (good) emissions THROUGH a state
+ * whose node structurally cannot appear in a pure-J parse (Jvalid[v]==FALSE; the
+ * oracle never even allocates its J deck), inflating tr_generic_splitter_hb's
+ * "all-J split" (beta[v]-based) candidate. Concretely, for the tRNA repro the
+ * oracle's own beta[54][69][60] = -22.23 (duality: +28.75 inside = 6.52) but the
+ * ungated D&C propagated +0.66 -- exactly the ~23-bit inflation. The fix is the
+ * do_J_v = cp9b->Jvalid[v] gate on the four pure-J beta[v] writes in
+ * tr_outside_hb (~line 7363) plus the Jvalid[v] mask on tr_vinside_hb's pure-J
+ * plane. Validated byte-exact vs the oracle (argmax ncand-loop) across a
+ * 1000-seq tRNA local panel + 5S + a bps=0 matl300 panel; global (-g) unaffected
+ * (Jvalid all-TRUE there -> the gate is a no-op). NOTE (081/086): a blanket
+ * removal of the injection is NOT the fix -- it regresses legitimate wedge-entry
+ * candidates (e.g. the same case's forced-J optimum, 6.5 bits at entry state
+ * v=12). See subagent-summaries/081_2026-07-11_* and 086_2026-07-13_* in the
+ * 26_0610 notebook dir. (Separately, forcing a NON-optimal preset_mode can still
+ * "leak" the J winner via the all-J-split candidate not being gated on
+ * r_allow_J -- a pre-existing, out-of-086-scope issue that does not affect the
+ * argmax ncand-loop production/fallback path.)
  */
 float
 TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx,
