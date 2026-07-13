@@ -6,25 +6,28 @@
  * Phase 3: topo_fraglen_v2 (noend basic) + C1_OLD legacy, 7 more features.
  * cm_FastCalibrate() is a stub returning eslFAIL (real prediction: Phase 4).
  *
- * JSON layout (two schemas):
- *   v4.1 (STR tiny/small/medlarge):
- *     modes[mode]["STR"][bucket]   → ridge {alpha, loo_mse, coef_z, feature_mean, feature_std, target_mean, n_train}
- *                                    features list is at top-level schema["STR_features"]
- *   v4.2 (STR large/huge, NOSS tiny/small/medlarge):
- *     lambda[bucket][mode]         → ridge {features, feature_mean, feature_std, coef_z, target_mean, alpha, loo_mse}
- *     mu_extrap[bucket][mode]      → ridge (same)
- *     mu_orig[bucket][mode]        → ridge (same)
+ * Model loading (see load_models()): v5.5 flat-schema JSONs (v55_{bucket}_
+ * models.json + v55_K_{bucket}_models.json) are the live source for STR
+ * lambda/mu_extrap/K, all 5 buckets; v55_noss_hybrid_production.json (brief
+ * 46) is the live source for all NOSS targets. The legacy v4.1/v4.2 STR
+ * lambda+K JSONs and production_models_v42_noss/production_mu_models_v42_noss/
+ * v4x_K_ridge_noss were removed (brief 26_0422-091 and brief 46 respectively)
+ * as dead code — v5.5 always wins those slots first.
  *
- * Model mapping:
- *   production_models_v41.json        → g_models.str_lambda    [0..2][*]   (buckets tiny/small/medlarge)
- *   production_mu_models_v41.json     → g_models.str_mu_extrap [0..2][*]
- *                                     → g_models.str_mu_orig   [0..2][*]
- *   production_models_v42_largehuge   → g_models.str_lambda    [3..4][*]   (buckets large/huge)
- *   production_mu_models_v42_largehuge→ g_models.str_mu_extrap [3..4][*]
- *                                     → g_models.str_mu_orig   [3..4][*]
- *   production_models_v42_noss        → g_models.noss_lambda   [0..2][*]
- *   production_mu_models_v42_noss     → g_models.noss_mu_extrap[0..2][*]
- *                                     → g_models.noss_mu_orig  [0..2][*]
+ * Two legacy v4.1/v4.2 JSONs remain embedded and ARE still live:
+ *   production_mu_models_v41.json      → g_models.str_mu_orig [0..2][*]  (tiny/small/medlarge)
+ *   production_mu_models_v42_largehuge → g_models.str_mu_orig [3..4][*]  (large/huge)
+ * v5.5 never loads a "mu_orig" target, so these two remain the sole source
+ * of str_mu_orig, which feeds SetExpInfo()'s mu_orig argument directly.
+ * (Their mu_extrap targets are themselves dead — v5.5 fills mu_extrap too —
+ * but mu_orig and mu_extrap share one JSON file per legacy schema, so the
+ * file as a whole stays embedded; see parse_v41_mu()/parse_v42().)
+ *
+ * v4.1 layout (mu file): modes[mode]["STR"][bucket]["mu_extrap"|"mu_orig"]
+ *   → ridge {alpha, loo_mse, coef_z, feature_mean, feature_std, target_mean, n_train}
+ *   features list is at top-level schema["STR_features"]
+ * v4.2 layout (mu file): mu_extrap[bucket][mode], mu_orig[bucket][mode]
+ *   → ridge {features, feature_mean, feature_std, coef_z, target_mean, alpha, loo_mse}
  *
  * See: CPORT_SPEC.md §3-5.
  */
@@ -518,29 +521,32 @@ parse_ridge_from_obj(ESL_JSON *pi, ESL_BUFFER *bf, int obj_idx,
 
 
 /* =========================================================================
- * v4.1 JSON schema parser (STR lambda and STR mu)
+ * v4.1 JSON schema parser (STR mu_orig only)
  *
- * v4.1 layout:
+ * v4.1 layout (mu file):
  *   { "schema": { "STR_features": [...], "NOSS_features": [...] },
  *     "modes": {
  *       "ECMLC": {
- *         "STR": { "tiny": {ridge}, "small": {ridge}, "medlarge": {ridge}, ... },
- *         "NOSS": {ridge}               <- for lambda file: single ridge (not bucketed)
- *                                       <- for mu file: { "mu_extrap": {ridge}, "mu_orig": {ridge} }
+ *         "STR": { "tiny": { "mu_extrap": {ridge}, "mu_orig": {ridge} }, "small": {...}, ... },
+ *         "NOSS": { "mu_extrap": {ridge}, "mu_orig": {ridge} }
  *       }, ...
  *     }
  *   }
  *
- * For lambda file (is_mu=0): parse modes[mode]["STR"][bucket] → str_lambda[bk][mode]
- * For mu file    (is_mu=1): parse modes[mode]["STR"][bucket]["mu_extrap"] and ["mu_orig"]
+ * Parses modes[mode]["STR"][bucket]["mu_extrap"] and ["mu_orig"].
+ *
+ * brief 26_0422-091: the v4.1 lambda file and this file's mu_extrap target
+ * are dead code (v5.5 STR lambda/mu_extrap load first in load_models() and
+ * fill every (bucket,mode) slot before this runs) — the lambda-file call and
+ * its branch here were removed. Only mu_orig is still live: v5.5 never loads
+ * a "mu_orig" target, so this remains the sole source of str_mu_orig.
  *
  * Note: v4.1 NOSS ridges are superseded by v4.2 NOSS; we skip them.
  */
 static int
-parse_v41(ESL_JSON *pi, ESL_BUFFER *bf, int is_mu,
-          FastCalRidge str_lambda[][N_MODES],
-          FastCalRidge str_mu_extrap[][N_MODES],
-          FastCalRidge str_mu_orig[][N_MODES])
+parse_v41_mu(ESL_JSON *pi, ESL_BUFFER *bf,
+             FastCalRidge str_mu_extrap[][N_MODES],
+             FastCalRidge str_mu_orig[][N_MODES])
 {
   static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
   static const char *bucket_names[] = {"tiny","small","medlarge","medlarge_local",NULL};
@@ -549,7 +555,6 @@ parse_v41(ESL_JSON *pi, ESL_BUFFER *bf, int is_mu,
   int status;
   int root_idx  = 0;  /* root is always tok[0], an OBJECT */
   int schema_idx, str_feat_arr, modes_idx;
-  int mode_idx;
   int m, bi;
 
   /* Parse schema.STR_features → get the global feature list */
@@ -582,29 +587,19 @@ parse_v41(ESL_JSON *pi, ESL_BUFFER *bf, int is_mu,
           int bk_obj = json_find_key(pi, bf, str_obj, bucket_names[bi]);
           if (bk_obj < 0) continue;  /* bucket not present for this mode */
 
-          if (!is_mu)
+          /* bk_obj has sub-keys "mu_extrap" and "mu_orig" */
+          int me_obj = json_find_key(pi, bf, bk_obj, "mu_extrap");
+          int mo_obj = json_find_key(pi, bf, bk_obj, "mu_orig");
+
+          if (me_obj >= 0 && str_mu_extrap[bk][m].nfeat == 0)
             {
-              /* Lambda file: bk_obj IS the ridge object */
-              if (str_lambda[bk][m].nfeat > 0) continue; /* already filled by earlier alias */
-              status = parse_ridge_from_obj(pi, bf, bk_obj, str_fnames, str_nfeat, &str_lambda[bk][m]);
+              status = parse_ridge_from_obj(pi, bf, me_obj, str_fnames, str_nfeat, &str_mu_extrap[bk][m]);
               if (status != eslOK) goto CLEANUP;
             }
-          else
+          if (mo_obj >= 0 && str_mu_orig[bk][m].nfeat == 0)
             {
-              /* Mu file: bk_obj has sub-keys "mu_extrap" and "mu_orig" */
-              int me_obj = json_find_key(pi, bf, bk_obj, "mu_extrap");
-              int mo_obj = json_find_key(pi, bf, bk_obj, "mu_orig");
-
-              if (me_obj >= 0 && str_mu_extrap[bk][m].nfeat == 0)
-                {
-                  status = parse_ridge_from_obj(pi, bf, me_obj, str_fnames, str_nfeat, &str_mu_extrap[bk][m]);
-                  if (status != eslOK) goto CLEANUP;
-                }
-              if (mo_obj >= 0 && str_mu_orig[bk][m].nfeat == 0)
-                {
-                  status = parse_ridge_from_obj(pi, bf, mo_obj, str_fnames, str_nfeat, &str_mu_orig[bk][m]);
-                  if (status != eslOK) goto CLEANUP;
-                }
+              status = parse_ridge_from_obj(pi, bf, mo_obj, str_fnames, str_nfeat, &str_mu_orig[bk][m]);
+              if (status != eslOK) goto CLEANUP;
             }
         }
     }
@@ -695,15 +690,17 @@ parse_v42_target(ESL_JSON *pi, ESL_BUFFER *bf,
 }
 
 
+/* brief 26_0422-091: dropped the dest_lambda parameter and its call to
+ * parse_v42_target("lambda", ...) — v5.5 STR lambda loads first in
+ * load_models() and fills large/huge too, so that target was always dead
+ * at this call's only site (the v4.2 STR lambda file itself was removed). */
 static int
 parse_v42(ESL_JSON *pi, ESL_BUFFER *bf,
-          FastCalRidge dest_lambda[][N_MODES],
           FastCalRidge dest_mu_extrap[][N_MODES],
           FastCalRidge dest_mu_orig[][N_MODES])
 {
   int status;
 
-  if (dest_lambda    && (status = parse_v42_target(pi, bf, "lambda",    dest_lambda))    != eslOK) return status;
   if (dest_mu_extrap && (status = parse_v42_target(pi, bf, "mu_extrap", dest_mu_extrap)) != eslOK) return status;
   if (dest_mu_orig   && (status = parse_v42_target(pi, bf, "mu_orig",   dest_mu_orig))   != eslOK) return status;
   return eslOK;
@@ -714,7 +711,8 @@ parse_v42(ESL_JSON *pi, ESL_BUFFER *bf,
  * parse_K_ridge_inline()
  *   Parse a single K-ridge object that has an inline "feature_names" array
  *   (v4.x→ridge convention; the array may be empty for intercept-only ridges).
- *   Used by parse_v4x_K_ridge_target.
+ *   Used by parse_v55_flat() below (brief 26_0422-091: the other caller,
+ *   parse_v4x_K_ridge(), was removed as dead code).
  */
 static int
 parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *r)
@@ -739,63 +737,8 @@ parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *
 }
 
 
-/* =========================================================================
- * parse_v4x_K_ridge()
- *   Parse a v4.x→ridge K JSON (schema v4x_K_ridge_v1) into the K-ridge slots.
- *
- *   Schema:
- *     { "schema": "v4x_K_ridge_v1",
- *       "K_glocal_clen": { "<bucket>": { "ECMGC": <ridge>, "ECMGI": <ridge> } },
- *       "K_local":       { "<bucket>": { "ECMLC": <ridge>, "ECMLI": <ridge> } } }
- *
- *   Populates dest[BUCKET][MODE] for whichever modes appear.
- *   Both top-level groups (K_glocal_clen, K_local) populate the same dest array
- *   — the mode index distinguishes glocal vs local.
- */
-static int
-parse_v4x_K_ridge(ESL_JSON *pi, ESL_BUFFER *bf, FastCalRidge dest[][N_MODES])
-{
-  static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
-  static const struct { const char *name; int idx; } bucket_map[] = {
-    {"tiny",     BUCKET_TINY     },
-    {"small",    BUCKET_SMALL    },
-    {"medlarge", BUCKET_MEDLARGE },
-    {"large",    BUCKET_LARGE    },
-    {"huge",     BUCKET_HUGE     },
-    {NULL, 0}
-  };
-  static const char *group_keys[] = {"K_glocal_clen", "K_local", NULL};
-  int gi;
-  int status;
-  int root_idx = 0;
-
-  for (gi = 0; group_keys[gi] != NULL; gi++)
-    {
-      int group_obj = json_find_key(pi, bf, root_idx, group_keys[gi]);
-      if (group_obj < 0) continue;
-      if (pi->tok[group_obj].type != eslJSON_OBJECT) return eslFAIL;
-
-      int bi;
-      for (bi = 0; bucket_map[bi].name != NULL; bi++)
-        {
-          int bk     = bucket_map[bi].idx;
-          int bk_obj = json_find_key(pi, bf, group_obj, bucket_map[bi].name);
-          if (bk_obj < 0) continue;
-
-          int m;
-          for (m = 0; m < N_MODES; m++)
-            {
-              int ridge_obj = json_find_key(pi, bf, bk_obj, mode_names[m]);
-              if (ridge_obj < 0) continue;
-              if (dest[bk][m].defined) continue;   /* don't overwrite */
-
-              status = parse_K_ridge_inline(pi, bf, ridge_obj, &dest[bk][m]);
-              if (status != eslOK) return status;
-            }
-        }
-    }
-  return eslOK;
-}
+/* parse_v4x_K_ridge() — REMOVED (brief 26_0422-091). Parsed v4x_K_ridge_str.json,
+ * which was dead: v5.5 STR K loads first in load_models() for all 5 buckets. */
 
 
 /* =========================================================================
@@ -1178,7 +1121,9 @@ load_models(void)
   if (g_models.loaded) return eslOK;
 
   /* v5.5 tiny bucket: lambda + mu_extrap (STR only).
-   * Loaded BEFORE v4.1 so parse_v41() skips tiny/small (nfeat > 0 check). */
+   * Loaded BEFORE the v4.1 mu file so parse_v41_mu() skips the now-dead
+   * mu_extrap target for tiny/small (nfeat > 0 check); only mu_orig survives
+   * there — see the top-of-file doc comment. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1196,7 +1141,8 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* v5.5 tiny K (STR). Loaded before v4.x K; parse_v4x_K_ridge skips defined slots. */
+  /* v5.5 tiny K (STR). v4.x K loading (parse_v4x_K_ridge) was removed
+   * (brief 26_0422-091) — this v5.5 K load was already the sole live source. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1348,24 +1294,12 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* 1. v4.1 STR lambda (tiny/small/medlarge) */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_production_models_v41_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_production_models_v41_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v41(pi, bf, /*is_mu=*/0,
-                       g_models.str_lambda, g_models.str_mu_extrap, g_models.str_mu_orig);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
-
-  /* 2. v4.1 STR mu (tiny/small/medlarge) */
+  /* 2. v4.1 STR mu_orig (tiny/small/medlarge).
+   * brief 26_0422-091: the v4.1 lambda file and this file's mu_extrap target
+   * are dead (v5.5 STR lambda/mu_extrap load first, above, and fill every
+   * (bucket,mode) slot for tiny/small/medlarge). Only mu_orig survives: v5.5
+   * never loads a "mu_orig" target, so this file remains the sole source of
+   * g_models.str_mu_orig[0..2][*], which feeds SetExpInfo()'s mu_orig arg. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1375,30 +1309,16 @@ load_models(void)
            &bf)) != eslOK) return status;
     if ((status = esl_json_Parse(bf, &pi)) != eslOK)
       { esl_buffer_Close(bf); return status; }
-    status = parse_v41(pi, bf, /*is_mu=*/1,
-                       g_models.str_lambda, g_models.str_mu_extrap, g_models.str_mu_orig);
+    status = parse_v41_mu(pi, bf, g_models.str_mu_extrap, g_models.str_mu_orig);
     esl_json_Destroy(pi);
     esl_buffer_Close(bf);
     if (status != eslOK) return status;
   }
 
-  /* 3. v4.2 STR lambda (large/huge) */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_production_models_v42_largehuge_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_production_models_v42_largehuge_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v42(pi, bf, g_models.str_lambda, NULL, NULL);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
-
-  /* 4. v4.2 STR mu (large/huge) */
+  /* 4. v4.2 STR mu_orig (large/huge). brief 26_0422-091: the v4.2 lambda file
+   * is dead (v5.5 STR lambda loads first, above, for large/huge too); this
+   * file's mu_extrap target is likewise dead, but mu_orig survives for the
+   * same reason as the v4.1 mu file above — see that comment. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1408,7 +1328,7 @@ load_models(void)
            &bf)) != eslOK) return status;
     if ((status = esl_json_Parse(bf, &pi)) != eslOK)
       { esl_buffer_Close(bf); return status; }
-    status = parse_v42(pi, bf, NULL, g_models.str_mu_extrap, g_models.str_mu_orig);
+    status = parse_v42(pi, bf, g_models.str_mu_extrap, g_models.str_mu_orig);
     esl_json_Destroy(pi);
     esl_buffer_Close(bf);
     if (status != eslOK) return status;
@@ -1434,24 +1354,8 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* 7. v4.x→ridge K (STR, all 5 buckets × 4 modes).
-   * Glocal modes: log_clen power-law ridge with y_transform=exp.
-   * Local  modes: 0-feature intercept-only ridge (constant per bucket).
-   */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_v4x_K_ridge_str_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_v4x_K_ridge_str_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v4x_K_ridge(pi, bf, g_models.str_K);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
+  /* 7. v4.x→ridge K (STR) — REMOVED (brief 26_0422-091). v5.5 STR K loads
+   * first, above, for all 5 buckets × 4 modes, so this loader never won. */
 
   /* 8. v4.x→ridge K (NOSS) — REMOVED (brief 46). NOSS K is now loaded
    * from the hybrid JSON in step 5+6 above. */
