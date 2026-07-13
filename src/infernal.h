@@ -2421,6 +2421,10 @@ typedef struct cm_pipeline_s {
   int      p7pn_M;              /* HMM length for stored entries (0 = not yet set) */
   int64_t *p7pn_es;             /* [0..p7pn_nenv-1] absolute envelope start */
   int64_t *p7pn_ee;             /* [0..p7pn_nenv-1] absolute envelope stop */
+  int     *p7pn_pass;           /* [0..p7pn_nenv-1] cur_pass_idx active when this entry was stored
+                                 * (brief 26_0316-033): (start,stop) alone is not a unique key --
+                                 * short queries reprocess the same envelope across up to 4 truncation
+                                 * passes, so dispatch-time lookup must also match the pass. */
   int     *p7pn_min_m;          /* flat [e*(M+1)+k] match min, 1..L relative */
   int     *p7pn_max_m;          /* flat [e*(M+1)+k] match max */
   int     *p7pn_min_i;          /* flat [e*(M+1)+k] insert min */

@@ -230,6 +230,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->p7pn_M          = 0;
   pli->p7pn_es         = NULL;
   pli->p7pn_ee         = NULL;
+  pli->p7pn_pass       = NULL;
   pli->p7pn_min_m      = NULL;
   pli->p7pn_max_m      = NULL;
   pli->p7pn_min_i      = NULL;
@@ -981,6 +982,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7bnd)     p7_gbands_Destroy(pli->p7bnd);
   if (pli->p7pn_es)    free(pli->p7pn_es);
   if (pli->p7pn_ee)    free(pli->p7pn_ee);
+  if (pli->p7pn_pass)  free(pli->p7pn_pass);
   if (pli->p7pn_min_m) free(pli->p7pn_min_m);
   if (pli->p7pn_max_m) free(pli->p7pn_max_m);
   if (pli->p7pn_min_i) free(pli->p7pn_min_i);
@@ -4606,6 +4608,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	if(pn_M != pli->p7pn_M && pli->p7pn_M != 0) {
 	  free(pli->p7pn_es);    pli->p7pn_es    = NULL;
 	  free(pli->p7pn_ee);    pli->p7pn_ee    = NULL;
+	  free(pli->p7pn_pass);  pli->p7pn_pass  = NULL;
 	  free(pli->p7pn_min_m); pli->p7pn_min_m = NULL;
 	  free(pli->p7pn_max_m); pli->p7pn_max_m = NULL;
 	  free(pli->p7pn_min_i); pli->p7pn_min_i = NULL;
@@ -4622,6 +4625,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  pn_new_alloc = ESL_MAX(pli->p7pn_nenv_alloc * 2, 8);
 	  ESL_REALLOC(pli->p7pn_es,    sizeof(int64_t) * pn_new_alloc);
 	  ESL_REALLOC(pli->p7pn_ee,    sizeof(int64_t) * pn_new_alloc);
+	  ESL_REALLOC(pli->p7pn_pass,  sizeof(int)     * pn_new_alloc);
 	  ESL_REALLOC(pli->p7pn_min_m, sizeof(int) * pn_new_alloc * (pn_M+1));
 	  ESL_REALLOC(pli->p7pn_max_m, sizeof(int) * pn_new_alloc * (pn_M+1));
 	  ESL_REALLOC(pli->p7pn_min_i, sizeof(int) * pn_new_alloc * (pn_M+1));
@@ -4632,8 +4636,9 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  pli->p7pn_nenv_alloc = pn_new_alloc;
 	}
 	{ int pn_e = pli->p7pn_nenv;
-	  pli->p7pn_es[pn_e] = es[nenv];
-	  pli->p7pn_ee[pn_e] = ee[nenv];
+	  pli->p7pn_es[pn_e]   = es[nenv];
+	  pli->p7pn_ee[pn_e]   = ee[nenv];
+	  pli->p7pn_pass[pn_e] = pli->cur_pass_idx;
 	  if (pli->p7post_tau > 0.0f) {
 	    p7banded_post_to_pn_bands_tau(pli->gxfb, pli->gxbb, pli->p7_fwdsc,
 					  pli->p7bnd, pli->p7_window_start, pn_M,
@@ -5808,7 +5813,8 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     if(!do_hbanded_done && pli->do_p7post_cp9b && pli->p7pn_nenv > 0) {
       int pn_x;
       for(pn_x = 0; pn_x < pli->p7pn_nenv; pn_x++)
-	if(pli->p7pn_es[pn_x] == start && pli->p7pn_ee[pn_x] == stop) break;
+	if(pli->p7pn_es[pn_x] == start && pli->p7pn_ee[pn_x] == stop &&
+	   pli->p7pn_pass[pn_x] == pli->cur_pass_idx) break;
       if(pn_x < pli->p7pn_nenv) {
 	int envL = (int)(stop - start + 1);
 	int pn_M = pli->p7pn_M;
