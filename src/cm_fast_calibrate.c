@@ -2937,25 +2937,27 @@ extract_str_struct(CM_t *cm, double *feats)
 }
 
 
-/* exact_score_aggregates()
- * Port of Python _exact_score_aggregates(means, vars_, N, pbegin, pend).
- *
- * Computes 8 aggregate statistics from per-position score mean/variance arrays.
- * Uses the same entry/exit model as fraglen_features.
+/* exact_score_aggregates_fast()
+ * O(N) reformulation of exact_score_aggregates(): the O(N^2) double loop
+ * (i, j) is replaced by a backward pass building 6 running accumulators
+ * RS0/RSm/RSm2/RSv/RSj/RSjm[i] = sum_{j=i}^{N} (1-r)^(j-i} * exitw(j) * h(j)
+ * for the 6 choices of h, followed by an O(N) forward pass over i that
+ * reconstructs the same 6 scalar sums the old code accumulated directly.
+ * See brief 26_0422-090 for the derivation.
  */
 static void
-exact_score_aggregates(double *means, double *vars_, int N,
-                       double pbegin, double pend,
-                       double *ret_mean_node_mean, double *ret_mean_node_var,
-                       double *ret_ES_full,        double *ret_VarS_full,
-                       double *ret_mean_ES,        double *ret_var_ES,
-                       double *ret_mean_VarS,      double *ret_cov_L_ES)
+exact_score_aggregates_fast(double *means, double *vars_, int N,
+                            double pbegin, double pend,
+                            double *ret_mean_node_mean, double *ret_mean_node_var,
+                            double *ret_ES_full,        double *ret_VarS_full,
+                            double *ret_mean_ES,        double *ret_var_ES,
+                            double *ret_mean_VarS,      double *ret_cov_L_ES)
 {
-  /* Cumulative sums: cs_m[k] = sum means[0..k-1], cs_v[k] = sum vars_[0..k-1] */
   double *cs_m  = NULL;
   double *cs_v  = NULL;
   double *p_entry = NULL;
-  int i, j;
+  double *RS0 = NULL, *RSm = NULL, *RSm2 = NULL, *RSv = NULL, *RSj = NULL, *RSjm = NULL;
+  int i;
   double r;
   double total_P, E_ES, E_ES2, E_VarS, E_L, E_L_ES;
   double mean_ES, var_ES, mean_VarS, mean_L_w, cov_L_ES;
@@ -2963,8 +2965,14 @@ exact_score_aggregates(double *means, double *vars_, int N,
   cs_m    = (double *) malloc((N + 1) * sizeof(double));
   cs_v    = (double *) malloc((N + 1) * sizeof(double));
   p_entry = (double *) malloc((N + 1) * sizeof(double));
+  RS0     = (double *) malloc((N + 1) * sizeof(double));
+  RSm     = (double *) malloc((N + 1) * sizeof(double));
+  RSm2    = (double *) malloc((N + 1) * sizeof(double));
+  RSv     = (double *) malloc((N + 1) * sizeof(double));
+  RSj     = (double *) malloc((N + 1) * sizeof(double));
+  RSjm    = (double *) malloc((N + 1) * sizeof(double));
 
-  if (!cs_m || !cs_v || !p_entry) goto ERROR;
+  if (!cs_m || !cs_v || !p_entry || !RS0 || !RSm || !RSm2 || !RSv || !RSj || !RSjm) goto ERROR;
 
   cs_m[0] = 0.0; cs_v[0] = 0.0;
   for (i = 0; i < N; i++) {
@@ -2979,29 +2987,36 @@ exact_score_aggregates(double *means, double *vars_, int N,
 
   r = pend / (double)(N > 1 ? (N - 1) : 1);
 
+  if (N >= 1) {
+    RS0[N]  = 1.0;
+    RSm[N]  = cs_m[N];
+    RSm2[N] = cs_m[N] * cs_m[N];
+    RSv[N]  = cs_v[N];
+    RSj[N]  = (double) N;
+    RSjm[N] = (double) N * cs_m[N];
+
+    for (i = N - 1; i >= 1; i--) {
+      RS0[i]  = (1.0 - r) * RS0[i + 1]  + r * 1.0;
+      RSm[i]  = (1.0 - r) * RSm[i + 1]  + r * cs_m[i];
+      RSm2[i] = (1.0 - r) * RSm2[i + 1] + r * cs_m[i] * cs_m[i];
+      RSv[i]  = (1.0 - r) * RSv[i + 1]  + r * cs_v[i];
+      RSj[i]  = (1.0 - r) * RSj[i + 1]  + r * (double) i;
+      RSjm[i] = (1.0 - r) * RSjm[i + 1] + r * (double) i * cs_m[i];
+    }
+  }
+
   total_P = 0.0;
   E_ES = E_ES2 = E_VarS = E_L = E_L_ES = 0.0;
 
   for (i = 1; i <= N; i++) {
     double p_e = p_entry[i];
     if (p_e == 0.0) continue;
-    double reach = 1.0;
-    for (j = i; j <= N; j++) {
-      double w = p_e * reach * ((j < N) ? r : 1.0);
-      /* Fragment [i-1, j-1] in 0-based positions: sum of means[i-1..j-1]
-       * cs_m is 1-indexed prefix sums: cs_m[j] - cs_m[i-1]
-       */
-      double E_S_frag   = cs_m[j] - cs_m[i - 1];
-      double Var_S_frag = cs_v[j] - cs_v[i - 1];
-      double L          = (double)(j - i + 1);
-      total_P += w;
-      E_ES    += w * E_S_frag;
-      E_ES2   += w * E_S_frag * E_S_frag;
-      E_VarS  += w * Var_S_frag;
-      E_L     += w * L;
-      E_L_ES  += w * L * E_S_frag;
-      reach *= (1.0 - r);
-    }
+    total_P += p_e * RS0[i];
+    E_ES    += p_e * (RSm[i]  - cs_m[i - 1] * RS0[i]);
+    E_ES2   += p_e * (RSm2[i] - 2.0 * cs_m[i - 1] * RSm[i] + cs_m[i - 1] * cs_m[i - 1] * RS0[i]);
+    E_VarS  += p_e * (RSv[i]  - cs_v[i - 1] * RS0[i]);
+    E_L     += p_e * (RSj[i]  - (double)(i - 1) * RS0[i]);
+    E_L_ES  += p_e * (RSjm[i] - (double)(i - 1) * RSm[i] - cs_m[i - 1] * RSj[i] + (double)(i - 1) * cs_m[i - 1] * RS0[i]);
   }
 
   if (total_P > 0.0) {
@@ -3029,12 +3044,19 @@ exact_score_aggregates(double *means, double *vars_, int N,
   *ret_cov_L_ES     = cov_L_ES;
 
   free(cs_m); free(cs_v); free(p_entry);
+  free(RS0); free(RSm); free(RSm2); free(RSv); free(RSj); free(RSjm);
   return;
 
  ERROR:
   if (cs_m)    free(cs_m);
   if (cs_v)    free(cs_v);
   if (p_entry) free(p_entry);
+  if (RS0)  free(RS0);
+  if (RSm)  free(RSm);
+  if (RSm2) free(RSm2);
+  if (RSv)  free(RSv);
+  if (RSj)  free(RSj);
+  if (RSjm) free(RSjm);
   /* Return zeros on allocation failure */
   *ret_mean_node_mean = *ret_mean_node_var = *ret_ES_full = *ret_VarS_full = 0.0;
   *ret_mean_ES = *ret_var_ES = *ret_mean_VarS = *ret_cov_L_ES = 0.0;
@@ -3116,7 +3138,7 @@ extract_c2_score_genomic(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_cov_L_ES_g]       = 0.0;
   } else {
     double mn_mean, mn_var, es_full, vars_full, m_es, v_es, m_vars, c_l_es;
-    exact_score_aggregates(means, vars_, n_ml, pbegin, pend,
+    exact_score_aggregates_fast(means, vars_, n_ml, pbegin, pend,
                            &mn_mean, &mn_var, &es_full, &vars_full,
                            &m_es, &v_es, &m_vars, &c_l_es);
     feats[FAST_CAL_FEAT_mean_node_mean_g] = mn_mean;
