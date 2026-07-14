@@ -8986,14 +8986,22 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 	    /* J */
 	    if ((sc = alpha[v][j][dp_v] + beta[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_J; c_mode=TRMODE_J; }
-	    /* L: parent v in L, child J / child L */
-	    if (haveL && (sc = alpha[v][j][dp_v] + betaL[v][j][dp_v]) > best_sc)
-	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_J; }
+	    /* L: parent v in L, child L (plane-consistent).  brief 26_0610-093: the
+	     * former mismatched candidate (alpha[v]+betaL[v], p_mode=L/c_mode=J) is
+	     * REMOVED. In a linear wedge stretch a state v carries a single mode, so its
+	     * inside*outside product is meaningful only plane-consistently (Lalpha[v]+
+	     * betaL[v] for v-in-L; alpha[v]+beta[v] for v-in-J). A marginal->J truncation
+	     * conversion needs no mismatched split: at-or-below v it is already inside
+	     * Lalpha[v] (tr_inside_hb ML/IL own-mode L<-J term), and above v it is already
+	     * inside beta[v] (tr_outside_hb feeds the child J-plane from an L/R-mode parent,
+	     * e.g. :7495/:7530/:7556). alpha[v]+betaL[v] pairs a J-inside subtree with an
+	     * L-outside path -- no single-mode parse -- so it can only over-score (betaL[v]
+	     * drops right-side emission mass beta[v] keeps) and its c_mode=J routing rebuilds
+	     * v's subtree in J -> the sample9 4-node phantom (092 root-caused this). */
 	    if (haveL && cp9b->Lvalid[v] && (sc = Lalpha[v][j][dp_v] + betaL[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_L; }
-	    /* R: parent v in R, child J / child R */
-	    if (haveR && (sc = alpha[v][j][dp_v] + betaR[v][j][dp_v]) > best_sc)
-	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_J; }
+	    /* R: parent v in R, child R (plane-consistent; R mirror -- the mismatched
+	     * alpha[v]+betaR[v] candidate is REMOVED for the same reason, brief 26_0610-093). */
 	    if (haveR && cp9b->Rvalid[v] && (sc = Ralpha[v][j][dp_v] + betaR[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_R; }
 	  }
