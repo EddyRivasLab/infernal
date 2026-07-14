@@ -6833,7 +6833,11 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j, d-sdl, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the MP L<-J cross-term on cp9b->Jvalid[yy2]
+		       * (oracle cm_TrCYKInsideAlignHB MP L-recursion, do_J_y). Same phantom-J
+		       * over-score as the ML/IL and IR/MR cross fixes -- fires for structured
+		       * (MATP) subtrees in L mode. */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Lvalid[yy2] && (sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
@@ -6853,7 +6857,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j-sdr, d-sdr, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the MP R<-J cross-term on cp9b->Jvalid[yy2]
+		       * (oracle MP R-recursion, do_J_y). R-mirror of the MP L fix above. */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Rvalid[yy2] && (sc = Ralpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
@@ -6930,7 +6936,14 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j, d, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the R<-J cross-term (R-mode left-emitter
+		       * converts to a joint child) on cp9b->Jvalid[yy2], matching the trusted
+		       * oracle cm_TrCYKInsideAlignHB ML/IL R-recursion (cm_dpalign_trunc.c:7091,
+		       * do_J_y). Without it the D&C's always-filled J deck alpha[yy2] for a
+		       * !Jvalid child fabricates a phantom R->J conversion, over-scoring Ralpha[v]
+		       * at off-optimal cells -> the structured-case generic-splitter score
+		       * inflation (parse still correct; the traceback ignores the phantom). */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Rvalid[yy2] && (sc = Ralpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
@@ -7001,7 +7014,10 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j, d, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the L<-J cross-term on cp9b->Jvalid[yy2] (the
+		       * R-mirror of the ML/IL R-plane fix above; oracle IR/MR L-recursion
+		       * cm_dpalign_trunc.c:7216, do_J_y). Same phantom-J-child inflation. */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Lvalid[yy2] && (sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
