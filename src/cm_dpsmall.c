@@ -7165,6 +7165,20 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           where Tbeta[v][L][L]=trpenalty with no T recurrence.
  *           NOTE: marginal local-end (Lbeta/Rbeta at deck M) is NOT yet built;
  *           valid only for CMH_LOCAL_END==off (global) -- see brief 26_0610-049 summary.
+ *           brief 26_0610-088 CONFIRMED this unbuilt marginal-EL is the root cause of
+ *           the 2/1800 matl300 L-mode undershoots 086 flagged (sample5_3ptr,
+ *           sample9_5ptr): a truncated L(/R) parse whose optimum terminates via EL is
+ *           unrepresentable in the wedge/generic splitters, so they fall back to the
+ *           J-plane EL deck (beta[cm->M]) or a mode-converting split and undershoot.
+ *           PROOF (sample5_3ptr): the hypothetical L-plane EL feed betaL[420][j][d+1] +
+ *           endsc[420] + el_selfsc*d + esc = -6.18375, byte-exact vs the oracle forced-L
+ *           optimum -6.183784; the J-plane EL cand the code actually uses maxes at
+ *           -43.68. FIX (deferred, own brief): build betaL[cm->M]/betaR[cm->M] mirroring
+ *           the J EL feed below but with per-mode marginal emission (sdl/sdr, cf. the
+ *           monolithic Lelbeta/Relbeta in cm_dpalign_trunc.c), add L/R EL candidates in
+ *           tr_wedge_splitter_hb/tr_generic_splitter_hb (p_mode=L/R), route the best_v=-1
+ *           EL traceback through the mode-aware tr_v_splitter_hb->tr_vinsideT_hb (already
+ *           EL+mode aware), and fix the deck-M free note below.
  */
 static void
 tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
