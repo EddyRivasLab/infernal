@@ -1296,9 +1296,12 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
 	    msa->ss_cons[matmap[cpos]] = '.';
 	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
 	  } else {
-	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];	
+	    msa->ss_cons[matmap[cpos]] = con->cstr[cpos-1];
 	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
 	  }
+	  /* Feature B: overlay canonical pseudoknot letter (truncation orphans removed below) */
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[cpos]))
+	    msa->ss_cons[matmap[cpos]] = cm->pknot[cpos];
 	}
       if (maxins[cpos] > 0) 
 	for (apos = imap[cpos]; apos < imap[cpos] + maxins[cpos]; apos++)
@@ -1317,6 +1320,8 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+  /* Feature B: drop any pseudoknot letter whose partner column was truncated/absent */
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(msa->ss_cons, alen);
 
   /* If we only want the match columns, shorten the alignment
    * by getting rid of the inserts. (Alternatively we could probably

@@ -225,6 +225,26 @@ that the most compute-intensive programs in Infernal 1.1
 (\prog{cmcalibrate}, \prog{cmsearch}, \prog{cmscan} and
 \prog{cmalign}) support multicore parallelization using threads.
 
+\subsection{Differences between Infernal 1.2 and 1.1x}
+
+The most important change in version 1.2 is that \prog{cmbuild} now
+calibrates E-value statistical parameters automatically, using a fast
+analytical predictor, instead of requiring a separate
+\prog{cmcalibrate} run. A CM produced by \prog{cmbuild} is therefore
+immediately ready for \prog{cmsearch} and \prog{cmscan}, for the
+default CM construction case (section~\ref{section:cmbuild-autocal}).
+\prog{cmcalibrate} remains available as a fallback, both for the small
+number of non-default construction options that the predictor doesn't
+cover and for users who want true simulated E-value statistics; see
+the tutorial (section~\ref{section:tutorial}) and
+section~\ref{section:calibration-limitations} for details, including
+known accuracy limitations of the predicted E-values for
+\prog{--nonull3} searches of large or glocal-mode models. The CM file
+also now stores, by default, both a null3-on and a null3-off E-value
+parameter set, so \prog{cmsearch --nonull3} and \prog{cmscan
+--nonull3} work directly off of a CM without any additional
+calibration step of their own.
+
 \subsection{How to learn more about CMs and profile HMMs}
 
 Section~\ref{section:cmbuild} of this guide may be a good place to

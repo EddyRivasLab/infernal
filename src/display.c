@@ -26,7 +26,7 @@
 #include "infernal.h"
 
 static int *createMultifurcationOrderChart(CM_t *cm);
-static int  bp_is_canonical(char lseq, char rseq);
+/* bp_is_canonical() is now extern, shared from cm_alidisplay.c (see infernal.h). */
 static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
 
 /* Function:  CreateFancyAli()
@@ -1329,71 +1329,4 @@ GetDate(char *errbuf, char **ret_date)
   return status; 
 }
 
-
-/* Function: bp_is_canonical
- * Date:     EPN, Wed Oct 14 06:17:27 2009
- *
- * Purpose:  Determine if two residues form a canonical base pair or not.
- *           Works for RNA or DNA (because for some reason cmsearch allows
- *           the user to format output as DNA (with --dna)).
- *
- * Returns:  TRUE if:
- *           lseq  rseq
- *           ----  ----
- *            A     U
- *            U     A
- *            C     G
- *            G     C
- *            G     U
- *            U     G
- *            A     T
- *            T     A
- *            G     T
- *            T     G
- *            Else, return FALSE.
- */
-int 
-bp_is_canonical(char lseq, char rseq)
-{
-  switch (toupper(lseq)) { 
-  case 'A':
-    switch (toupper(rseq)) { 
-    case 'U': return TRUE; break;
-    case 'T': return TRUE; break;
-    default: break;
-    }
-    break;
-  case 'C':
-    switch (toupper(rseq)) { 
-    case 'G': return TRUE; break;
-    default: break;
-    }
-    break;
-  case 'G':
-    switch (toupper(rseq)) { 
-    case 'C': return TRUE; break;
-    case 'U': return TRUE; break;
-    case 'T': return TRUE; break;
-    default: break;
-    }
-    break;
-  case 'U':
-    switch (toupper(rseq)) { 
-    case 'A': return TRUE; break;
-    case 'G': return TRUE; break;
-    default: break;
-    }
-    break;
-  case 'T':
-    switch (toupper(rseq)) { 
-    case 'A': return TRUE; break;
-    case 'G': return TRUE; break;
-    default: break;
-    }
-    break;
-  default: break;
-  }
-
-  return FALSE;
-}
 

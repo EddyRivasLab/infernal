@@ -69,6 +69,7 @@ CreateCMShell(void)
   cm->desc      = NULL;
   cm->rf        = NULL;
   cm->consensus = NULL;
+  cm->pknot     = NULL;
   cm->map       = NULL;
   cm->checksum  = 0;
 				/* null model information */
@@ -120,6 +121,29 @@ CreateCMShell(void)
   cm->beta_W       = DEFAULT_BETA_W;     /* will be set when beta_W is read from cmfile */
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->maxtau       = DEFAULT_MAXTAU;     /* 0.1  the default max tau during HMM band tightening */
+  cm->p7bpad       = 10;                 /* default p7 band pad for p7_Seq2BandsVit */
+  cm->p7_use_pinbridge = FALSE;          /* default: full p7_GViterbi (set TRUE by --p7pinbridge) */
+  cm->p7_pinbridge_pad = 20;             /* SW-pinbridge prefilter band pad; brief recommends 20 */
+  cm->p7_pinbridge_vit_gaps = FALSE;     /* default: closed-form gap-aware LSIS (set TRUE by --p7pinbridge-vitgaps) */
+  cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
+  cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
+  cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
+  cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
+  cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 26_0628-027) */
+  cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 26_0628-042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 26_0628-043) */
+  cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
+  cm->p7_kmerchain_mgate = 0;            /* default: disabled -- opt-in small-M gate (set by --p7kmerchain-mgate, brief 26_0628-047) */
+  cm->p7_kmerchain_fallback_vit = FALSE; /* default: use --p7ibv as the kmer-gate fallback deriver (set by --p7kmerchain-fbvit, brief 26_0628-047) */
+  cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 26_0430-120) */
+  cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
+  cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 26_0430-124) */
+  cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 26_0430-124) */
+  cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 26_0430-140, --p7ibv-mode) */
+  cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 26_0430-140, --p7ibv-width) */
+  cm->p7_ibv_ckpt      = FALSE;          /* default: non-checkpointed Pass-2 CP9 F/B (--p7ibv-ckpt, brief 26_0430-146) */
+  cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 26_0430-169) */
+  cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 26_0430-169) */
+  cm->p7_wv_nodepad_M  = 0;
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -130,6 +154,7 @@ CreateCMShell(void)
   cm->cp9map       = NULL;
   cm->root_trans   = NULL;
   cm->expA         = NULL;
+  cm->expA_nonull3 = NULL;
   cm->smx          = NULL;
   cm->trsmx        = NULL;
   cm->hb_mx        = NULL;
@@ -154,8 +179,8 @@ CreateCMShell(void)
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;
   cm->fp7          = NULL;
-  cm->p7_nodepad   = NULL;
-  cm->p7_nodepad_M = 0;
+  cm->p7_cm_nodepad   = NULL;
+  cm->p7_cm_nodepad_M = 0;
   cm->F1_pcutoff   = 0.0f;
   cm->F2_pcutoff   = 0.0f;
   cm->F3_pcutoff   = 0.0f;
@@ -297,6 +322,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   /* Optional allocation, status flag dependent */
   if (cm->flags & CMH_RF)    ESL_ALLOC(cm->rf,          (cm->clen+2) * sizeof(char));
   if (cm->flags & CMH_CONS)  ESL_ALLOC(cm->consensus,   (cm->clen+2) * sizeof(char));
+  if (cm->flags & CMH_PKNOT) ESL_ALLOC(cm->pknot,       (cm->clen+2) * sizeof(char));
   if (cm->flags & CMH_MAP)   ESL_ALLOC(cm->map,         (cm->clen+1) * sizeof(int));
 
   return;
@@ -394,6 +420,7 @@ FreeCM(CM_t *cm)
   if (cm->desc      != NULL) free(cm->desc);
   if (cm->rf        != NULL) free(cm->rf);
   if (cm->consensus != NULL) free(cm->consensus);
+  if (cm->pknot     != NULL) free(cm->pknot);
   if (cm->map       != NULL) free(cm->map);
   if (cm->null      != NULL) free(cm->null);
 
@@ -473,14 +500,20 @@ FreeCM(CM_t *cm)
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   
-  if(cm->expA != NULL) { 
+  if(cm->expA != NULL) {
     for(i = 0; i < EXP_NMODES;  i++) {
       free(cm->expA[i]);
     }
     free(cm->expA);
   }
+  if(cm->expA_nonull3 != NULL) {
+    for(i = 0; i < EXP_NMODES;  i++) {
+      free(cm->expA_nonull3[i]);
+    }
+    free(cm->expA_nonull3);
+  }
 
-  if(cm->mlp7 != NULL) { 
+  if(cm->mlp7 != NULL) {
     p7_hmm_Destroy(cm->mlp7); 
     if(cm->fp7 == cm->mlp7) cm->fp7 = NULL;
     cm->mlp7 = NULL; 
@@ -489,7 +522,8 @@ FreeCM(CM_t *cm)
     p7_hmm_Destroy(cm->fp7);
     cm->fp7  = NULL;
   }
-  if(cm->p7_nodepad != NULL) { free(cm->p7_nodepad); cm->p7_nodepad = NULL; }
+  if(cm->p7_cm_nodepad != NULL) { free(cm->p7_cm_nodepad); cm->p7_cm_nodepad = NULL; }
+  if(cm->p7_wv_nodepad != NULL) { free(cm->p7_wv_nodepad); cm->p7_wv_nodepad = NULL; }
   if(cm->emap   != NULL) FreeEmitMap(cm->emap);
   if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
   if(cm->trp    != NULL) cm_tr_penalties_Destroy(cm->trp);
@@ -1847,7 +1881,8 @@ CMRebalance(CM_t *cm, char *errbuf, CM_t **ret_new_cm)
   if((status = esl_strdup(cm->desc,      -1, &(new->desc)))      != eslOK) goto ERROR;
   if((status = esl_strdup(cm->rf,        -1, &(new->rf)))        != eslOK) goto ERROR;
   if((status = esl_strdup(cm->consensus, -1, &(new->consensus))) != eslOK) goto ERROR;
-  if(cm->map != NULL) { 
+  if((status = esl_strdup(cm->pknot,     -1, &(new->pknot)))     != eslOK) goto ERROR;
+  if(cm->map != NULL) {
     ESL_ALLOC(new->map, sizeof(int) * (cm->clen+1));
     esl_vec_ICopy(cm->map, cm->clen+1, new->map);
   }
@@ -2742,6 +2777,142 @@ cm_SetConsensus(CM_t *cm, CMConsensus_t *cons, ESL_SQ *sq)
   return status;
 }
 
+/* Function:  cm_pknot_FixBrokenString()
+ * Synopsis:  Drop truncation-orphaned pseudoknot letters from an emitted structure string.
+ *
+ * Purpose:   Feature B (pseudoknot passthrough). Given a WUSS-like consensus
+ *            structure string <ss> (0-based, length <n>) that has had pseudoknot
+ *            letters overlaid onto it, set to '.' any pseudoknot letter whose
+ *            matching partner letter is absent from <ss> -- e.g. one half of a
+ *            pseudoknot stem was truncated away in a hit, or removed by a column
+ *            downselect. Pseudoknots are matching-letter pairs (A..a, B..b, ...),
+ *            paired with the same nested pushdown discipline that <esl_wuss2ct()>
+ *            uses, so multi-bp stems with partial truncation are handled
+ *            correctly (innermost pairs match first).
+ *
+ *            Only the pseudoknot letters are touched; nested brackets (<>()[]{}
+ *            etc.) are ignored, so this never repartitions or relabels the
+ *            structure the way feeding output back through <esl_ct2wuss()> would.
+ *            It is therefore safe to run on a possibly-unbalanced (truncated)
+ *            output structure line, which <esl_wuss2ct()> itself would reject.
+ *
+ * Returns:   <eslOK> on success; <ss> may be modified in place.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_pknot_FixBrokenString(char *ss, int n)
+{
+  int   status;
+  int   i, c, idx;
+  int  *sp    = NULL;        /* sp[idx]    = depth of stack for letter idx (A-Z)   */
+  int **stack = NULL;        /* stack[idx] = positions of unmatched opens, letter idx */
+
+  /* quick exit if there are no pseudoknot letters at all */
+  for (i = 0; i < n; i++) if (isalpha((int) ss[i])) break;
+  if (i == n) return eslOK;
+
+  ESL_ALLOC(sp,    sizeof(int)   * 26);
+  ESL_ALLOC(stack, sizeof(int *) * 26);
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < n; i++) {
+    c = (int) ss[i];
+    if      (isupper(c)) { idx = c - 'A'; if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (n+1)); stack[idx][sp[idx]++] = i; }
+    else if (islower(c)) { idx = c - 'a'; if (sp[idx] > 0) sp[idx]--; else ss[i] = '.'; }  /* matched close: pop & keep; else orphan */
+  }
+  /* any opens still on a stack never found a partner -> orphans */
+  for (idx = 0; idx < 26; idx++)
+    for (i = 0; i < sp[idx]; i++) ss[ stack[idx][i] ] = '.';
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  free(stack); free(sp);
+  return eslOK;
+
+ ERROR:
+  if (stack != NULL) { for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]); free(stack); }
+  if (sp != NULL) free(sp);
+  return status;
+}
+
+/* Function:  cm_pknot_MarkOrphansTrunc()
+ * Synopsis:  Keep truncation/coverage-orphaned pseudoknot letters, mark them '?' on ncline.
+ *
+ * Purpose:   Sibling of <cm_pknot_FixBrokenString()>, used ONLY at cmsearch/cmscan's
+ *            per-hit alidisplay construction (<cm_alidisplay_Create()>). Given a
+ *            WUSS-like consensus structure string <ss> (0-based, length <n>) that
+ *            has had pseudoknot letters overlaid onto it, and the parallel <nc>
+ *            (ncline) buffer of the same length, find any pseudoknot letter whose
+ *            matching partner letter is absent from <ss> -- its partner may be
+ *            missing because this hit was truncated, or simply because an ordinary
+ *            local alignment doesn't span both halves of the pknot stem. Either way,
+ *            the fact that the partner isn't present in THIS hit's displayed
+ *            alignment is exact, pure string bookkeeping -- no truncation-boundary
+ *            guessing is involved.
+ *
+ *            Unlike <cm_pknot_FixBrokenString()>, which erases an orphan letter to
+ *            '.', this function KEEPS <ss[i]> unchanged and instead marks the
+ *            parallel position <nc[i]> with '?' (the same glyph used for nested
+ *            truncated base pairs elsewhere in ncline), so the pknot identity
+ *            survives on the CS line with an honest "can't assess, partner missing"
+ *            annotation on the PS line, instead of being silently dropped to a plain
+ *            singlet mark.
+ *
+ *            Uses the identical per-letter pushdown discipline as
+ *            <cm_pknot_FixBrokenString()> (A..a, B..b, ... stacks), so multi-bp
+ *            stems with partial coverage are handled correctly (innermost pairs
+ *            match first). <nc[i]> is only written if it is currently blank (' '),
+ *            a defensive guard mirroring the <ESL_DASSERT1> discipline in
+ *            <annotate_pknot_pairs()> -- pknot columns are disjoint ML/MR singlets
+ *            from nested MATP columns by construction, so this should always hold.
+ *
+ *            Does NOT modify <cm_pknot_FixBrokenString()> itself; that function's
+ *            other call sites (column downselect / MSA-construction paths) are
+ *            untouched by this new sibling.
+ *
+ * Returns:   <eslOK> on success; <ss> is left untouched, <nc> may be modified in place.
+ *
+ * Throws:    <eslEMEM> on allocation failure.
+ */
+int
+cm_pknot_MarkOrphansTrunc(char *ss, char *nc, int n)
+{
+  int   status;
+  int   i, c, idx;
+  int  *sp    = NULL;        /* sp[idx]    = depth of stack for letter idx (A-Z)   */
+  int **stack = NULL;        /* stack[idx] = positions of unmatched opens, letter idx */
+
+  /* quick exit if there are no pseudoknot letters at all */
+  for (i = 0; i < n; i++) if (isalpha((int) ss[i])) break;
+  if (i == n) return eslOK;
+
+  ESL_ALLOC(sp,    sizeof(int)   * 26);
+  ESL_ALLOC(stack, sizeof(int *) * 26);
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < n; i++) {
+    c = (int) ss[i];
+    if      (isupper(c)) { idx = c - 'A'; if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (n+1)); stack[idx][sp[idx]++] = i; }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) sp[idx]--;                                /* matched close: pop, ss/nc untouched */
+      else             { if (nc[i] == ' ') nc[i] = '?'; }        /* orphan close: keep ss[i], mark nc[i] */
+    }
+  }
+  /* any opens still on a stack never found a partner -> orphans */
+  for (idx = 0; idx < 26; idx++)
+    for (i = 0; i < sp[idx]; i++) { int zo = stack[idx][i]; if (nc[zo] == ' ') nc[zo] = '?'; }
+
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  free(stack); free(sp);
+  return eslOK;
+
+ ERROR:
+  if (stack != NULL) { for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]); free(stack); }
+  if (sp != NULL) free(sp);
+  return status;
+}
+
 /* Function: cm_AppendComlog()
  * Synopsis: Concatenate and append command line to the command line log.
  * 
@@ -3068,7 +3239,8 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if (cm->desc      != NULL) { if (esl_strdup(cm->desc,      -1, &(new->desc))      != eslOK) { status = eslEMEM; goto ERROR;} }
   if (cm->rf        != NULL) { if (esl_strdup(cm->rf,        -1, &(new->rf))        != eslOK) { status = eslEMEM; goto ERROR;} }
   if (cm->consensus != NULL) { if (esl_strdup(cm->consensus, -1, &(new->consensus)) != eslOK) { status = eslEMEM; goto ERROR;} }
-  if(cm->map != NULL) { 
+  if (cm->pknot     != NULL) { if (esl_strdup(cm->pknot,     -1, &(new->pknot))     != eslOK) { status = eslEMEM; goto ERROR;} }
+  if(cm->map != NULL) {
     ESL_ALLOC(new->map, sizeof(int) * (new->clen+1));
     esl_vec_ICopy(cm->map, (new->clen+1), new->map);
   }
@@ -3096,6 +3268,35 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->iel_selfsc  = cm->iel_selfsc;
   new->tau         = cm->tau;
   new->maxtau      = cm->maxtau;
+  new->p7bpad           = cm->p7bpad;
+  new->p7_use_pinbridge = cm->p7_use_pinbridge;
+  new->p7_pinbridge_pad = cm->p7_pinbridge_pad;
+  new->p7_pinbridge_vit_gaps = cm->p7_pinbridge_vit_gaps;
+  new->p7_use_cykbands  = cm->p7_use_cykbands;
+  new->p7_cykbands_pad  = cm->p7_cykbands_pad;
+  new->p7_cykskip_unvisited = cm->p7_cykskip_unvisited;
+  new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
+  new->p7_use_kmerchain  = cm->p7_use_kmerchain;
+  new->p7_kmerchain_ramp_alpha = cm->p7_kmerchain_ramp_alpha;
+  new->p7_kmerchain_mink = cm->p7_kmerchain_mink;
+  new->p7_kmerchain_mgate = cm->p7_kmerchain_mgate;
+  new->p7_kmerchain_fallback_vit = cm->p7_kmerchain_fallback_vit;
+  new->p7_use_ibv       = cm->p7_use_ibv;
+  new->p7_ibv_delta     = cm->p7_ibv_delta;
+  new->p7_ibv_mem       = cm->p7_ibv_mem;
+  new->p7_ibv_base_slab = cm->p7_ibv_base_slab;
+  new->p7_ibv_mode      = cm->p7_ibv_mode;
+  new->p7_ibv_width     = cm->p7_ibv_width;
+  new->p7_ibv_ckpt      = cm->p7_ibv_ckpt;
+  new->p7_ibv_wv        = cm->p7_ibv_wv;
+  if(cm->p7_wv_nodepad != NULL) {
+    ESL_ALLOC(new->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
+    memcpy(new->p7_wv_nodepad, cm->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
+    new->p7_wv_nodepad_M = cm->p7_wv_nodepad_M;
+  } else {
+    new->p7_wv_nodepad   = NULL;
+    new->p7_wv_nodepad_M = 0;
+  }
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;
@@ -3181,10 +3382,10 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     if((new->fp7  = p7_hmm_Clone(cm->fp7))  == NULL) { status = eslEMEM; goto ERROR; }
     esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
   }
-  if(cm->p7_nodepad != NULL) {
-    ESL_ALLOC(new->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    memcpy(new->p7_nodepad, cm->p7_nodepad, sizeof(int) * (cm->p7_nodepad_M + 1));
-    new->p7_nodepad_M = cm->p7_nodepad_M;
+  if(cm->p7_cm_nodepad != NULL) {
+    ESL_ALLOC(new->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    memcpy(new->p7_cm_nodepad, cm->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
+    new->p7_cm_nodepad_M = cm->p7_cm_nodepad_M;
   }
   if(cm->flags & CMH_FILTER_PVAL_CUTOFFS) {
     new->F1_pcutoff = cm->F1_pcutoff;
@@ -3194,7 +3395,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
 
 
   /* CM HMM banded DP matrices, don't clone these, just make new ones (these grow to fit a target sequence) */
-  if(cm->hb_mx     != NULL) new->hb_mx     = cm_hb_mx_Create(new->M);
+  if(cm->hb_mx     != NULL) { new->hb_mx     = cm_hb_mx_Create(new->M); new->hb_mx->omit_el_deck = cm->hb_mx->omit_el_deck; }
   if(cm->hb_omx    != NULL) new->hb_omx    = cm_hb_mx_Create(new->M);
   if(cm->hb_emx    != NULL) new->hb_emx    = cm_hb_emit_mx_Create(new);
   if(cm->hb_shmx   != NULL) new->hb_shmx   = cm_hb_shadow_mx_Create(new);
@@ -3220,11 +3421,20 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   if(cm->trsmx != NULL) { if((status = cm_tr_scan_mx_Create(new, errbuf, cm->trsmx->floats_valid, cm->trsmx->ints_valid, &(new->trsmx))) != eslOK) goto ERROR; }
 
   /* expA */
-  if(cm->expA != NULL) { 
+  if(cm->expA != NULL) {
     ESL_ALLOC(new->expA, sizeof(ExpInfo_t *) * EXP_NMODES);
-    for(i = 0; i < EXP_NMODES; i++) { 
+    for(i = 0; i < EXP_NMODES; i++) {
       new->expA[i] = CreateExpInfo();
       CopyExpInfo(cm->expA[i], new->expA[i]);
+    }
+  }
+
+  /* expA_nonull3 (null3-off stats; parallel to expA) */
+  if(cm->expA_nonull3 != NULL) {
+    ESL_ALLOC(new->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for(i = 0; i < EXP_NMODES; i++) {
+      new->expA_nonull3[i] = CreateExpInfo();
+      CopyExpInfo(cm->expA_nonull3[i], new->expA_nonull3[i]);
     }
   }
 
@@ -3311,6 +3521,7 @@ cm_Sizeof(CM_t *cm)
   if(cm->desc       != NULL) bytes += sizeof(char)  * (strlen(cm->desc) + 2);
   if(cm->rf         != NULL) bytes += sizeof(char)  * (strlen(cm->rf) + 2);
   if(cm->consensus  != NULL) bytes += sizeof(char)  * (strlen(cm->consensus) + 2);
+  if(cm->pknot      != NULL) bytes += sizeof(char)  * (strlen(cm->pknot) + 2);
   if(cm->map        != NULL) bytes += sizeof(int)   * (cm->clen+1);
   if(cm->root_trans != NULL) bytes += sizeof(float) * (cm->cnum[0]);
 
@@ -3372,7 +3583,13 @@ cm_Sizeof(CM_t *cm)
   if(cm->trsmx != NULL) bytes += (1000000. * cm->trsmx->size_Mb);
 
   /* expA */
-  if(cm->expA != NULL) { 
+  if(cm->expA != NULL) {
+    bytes += sizeof(ExpInfo_t *) * EXP_NMODES;
+    bytes += sizeof(ExpInfo_t)   * EXP_NMODES;
+  }
+
+  /* expA_nonull3 */
+  if(cm->expA_nonull3 != NULL) {
     bytes += sizeof(ExpInfo_t *) * EXP_NMODES;
     bytes += sizeof(ExpInfo_t)   * EXP_NMODES;
   }

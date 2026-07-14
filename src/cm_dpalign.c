@@ -63,6 +63,7 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+#include <time.h>
 
 #include "easel.h"
 #include "esl_sqio.h"
@@ -272,7 +273,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
   int       bifparent;          /* B_st parent */
   int       b;                  /* local begin state */
   int       jp_v;               /* j-jmin[v] for current j, and current v */
-  int       dp_v;               /* d-hdmin[v][jp_v] for current j, current v, current d*/
+  int       dp_v;               /* d-hd_min(cp9b, v, jp_v) for current j, current v, current d*/
   int       allow_S_local_end;  /* set to true to allow d==0 BEGL_S and BEGR_S local ends if(do_optacc) */
 
   /* pointers to cp9b data for convenience */
@@ -299,7 +300,7 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
     /* special case for HMM banded optimal accuracy, explained below, after the crazy if */
     if(do_optacc && d == 0 && (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) && 
        ((j < jmin[v]             || j > jmax[v]) ||              /* j is outside v's j band */
-	(d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) { /* j is within v's j band, but d is outside j's d band */
+	(d < hd_min(cp9b, v, j-jmin[v]) || d > hd_max(cp9b, v, j-jmin[v])))) { /* j is within v's j band, but d is outside j's d band */
       /* special case: doing optimal accuracy and v is a BEGL_S or
        * BEGR_S and d is 0 and j is outside v's j band or j is within
        * the band but d is outside j's d band.  We allow this case
@@ -327,12 +328,12 @@ cm_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int 
     }
     else if (cm->sttype[v] != EL_st) { /* normal case, determine jp_v, dp_v, j, d offset values given bands */
       jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
+      dp_v = d - hd_min(cp9b, v, jp_v);
       allow_S_local_end = FALSE;
       assert(j >= jmin[v]        && j <= jmax[v]);
-      assert(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]);
+      assert(d >= hd_min(cp9b, v, jp_v) && d <= hd_max(cp9b, v, jp_v));
       ESL_DASSERT1((j >= jmin[v]        && j <= jmax[v]));
-      ESL_DASSERT1((d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]));
+      ESL_DASSERT1((d >= hd_min(cp9b, v, jp_v) && d <= hd_max(cp9b, v, jp_v)));
     }
 
     if (cm->sttype[v] == B_st) {
@@ -487,7 +488,10 @@ cm_AlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sampl
   if (ret_shmxmb != NULL) *ret_shmxmb  = shmxmb;
   if (ret_totmb  != NULL) *ret_totmb   = totmb;
 
-  if(totmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "non-banded standard alignment mxes need %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", totmb, (float) size_limit);
+  if(totmb > size_limit) {
+    int recommended_mxsize = (int)(ceil(totmb / 1024.0) * 1024.0);
+    ESL_FAIL(eslERANGE, errbuf, "non-banded alignment mxes need %.2f Mb > %.2f Mb limit. Use --mxsize %d, --maxtau or --tau.", totmb, (float) size_limit, recommended_mxsize);
+  }
 
   return eslOK;
 }
@@ -580,7 +584,10 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   printf("#DEBUG: \t limit:   %.2f\n", size_limit);
 #endif
 
-  if(cmtotmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded std DP mxes need %.1f>%.1f Mb limit (HMM mxes need an extra %.1f Mb).\nUse --mxsize, --maxtau or --tau.", cmtotmb, (float) size_limit, cp9mxmb);
+  if(cmtotmb > size_limit) {
+    int recommended_mxsize = (int)(ceil(cmtotmb / 1024.0) * 1024.0);
+    ESL_FAIL(eslERANGE, errbuf, "HMM-banded DP mxes need %.1f>%.1f Mb limit (HMM mxes need extra %.1f Mb). Use --mxsize %d.", cmtotmb, (float) size_limit, cp9mxmb, recommended_mxsize);
+  }
 
   return eslOK;
 }
@@ -761,29 +768,57 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
 
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L); */
 
+  /* Sub-stage timing instrumentation.
+   * Outputs "#CM_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr.
+   */
+  struct timespec _ta_sub, _tb_sub;
+#define CM_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_sub)
+#define CM_ALIGN_SUBSTAGE_END(tag) do { \
+    clock_gettime(CLOCK_MONOTONIC, &_tb_sub); \
+    double _ss = (_tb_sub.tv_sec - _ta_sub.tv_sec) + (_tb_sub.tv_nsec - _ta_sub.tv_nsec)/1e9; \
+    fprintf(stderr, "#CM_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
+            (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
+    fflush(stderr); \
+  } while(0)
+
   /* if do_post:   fill Inside, Outside, Posterior matrices, in that order.
    * if do_sample: fill Inside and sample from it.
    */
-  if(do_post || do_sample) { 
+  if(do_post || do_sample) {
+    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_InsideAlignHB (cm, errbuf, dsq, L, size_limit, mx, &ins_sc)) != eslOK) return status;
-    if(do_sample) { 
-      if((status = cm_StochasticParsetreeHB(cm, errbuf, dsq, L, mx, r, &tr, &sc)) != eslOK) return status; 
+    CM_ALIGN_SUBSTAGE_END("inside");
+    if(do_sample) {
+      CM_ALIGN_SUBSTAGE_START();
+      if((status = cm_StochasticParsetreeHB(cm, errbuf, dsq, L, mx, r, &tr, &sc)) != eslOK) return status;
+      CM_ALIGN_SUBSTAGE_END("sample_trace");
     }
     if(do_post) { /* Inside was called above, now do Outside, then Posterior */
+      CM_ALIGN_SUBSTAGE_START();
       if((status = cm_OutsideAlignHB(cm, errbuf, dsq, L, size_limit, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! (cm->flags & CMH_LOCAL_END))), post_mx, mx, NULL)) != eslOK) return status;
+      CM_ALIGN_SUBSTAGE_END("outside");
       /* Note: we can only check the posteriors in cm_OutsideAlignHB() if local begin/ends are off */
-      if((status = cm_PosteriorHB       (cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
-      if((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, post_mx, emit_mx, (cm->align_opts & CM_ALIGN_CHECKINOUT))) != eslOK) return status;   
+      CM_ALIGN_SUBSTAGE_START();
+      if((status = cm_PosteriorHB       (cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;
+      if((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, post_mx, emit_mx, (cm->align_opts & CM_ALIGN_CHECKINOUT))) != eslOK) return status;
+      CM_ALIGN_SUBSTAGE_END("posterior");
     }
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
+    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_alignT_hb(cm, errbuf, dsq, L, size_limit, do_optacc, mx, shmx, emit_mx, &tr, (do_optacc) ? NULL : &sc)) != eslOK) return status;
+    CM_ALIGN_SUBSTAGE_END("traceback");
   }
 
   if(have_ppstr || do_optacc) {
+    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
+    CM_ALIGN_SUBSTAGE_END("postcode");
   }
+
+#undef CM_ALIGN_SUBSTAGE_START
+#undef CM_ALIGN_SUBSTAGE_END
 
   /* Uncomment to dump emit map and parse tree */
   /* CMEmitMap_t *emap;
@@ -880,10 +915,11 @@ ckpt_deck_alloc(CKPT_CTX *cx, int v)
   float  *mem = malloc(sizeof(float)  * (nc  > 0 ? nc  : 1));
   int64_t off = 0;
   int     jp;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (row == NULL || mem == NULL) cm_Fail("ckpt_deck_alloc OOM v=%d", v);
   row[0] = mem; /* ensure row[0]==mem even when njr==0 (so free(row[0]) is valid) */
   for (jp = 0; jp < njr; jp++) {
-    int w = cx->hdmax[v][jp] - cx->hdmin[v][jp] + 1;
+    int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     row[jp] = mem + off;
     if (w < 0) w = 0;
     off += w;
@@ -915,10 +951,11 @@ ckpt_cdeck_alloc(CKPT_CTX *cx, int v)
   char   *mem = malloc(sizeof(char)  * (nc  > 0 ? nc  : 1));
   int64_t off = 0;
   int     jp;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (row == NULL || mem == NULL) cm_Fail("ckpt_cdeck_alloc OOM v=%d", v);
   row[0] = mem;
   for (jp = 0; jp < njr; jp++) {
-    int w = cx->hdmax[v][jp] - cx->hdmin[v][jp] + 1;
+    int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     row[jp] = mem + off;
     if (w < 0) w = 0;
     off += w;
@@ -954,6 +991,7 @@ static void
 ckpt_el_compute_dmax(CKPT_CTX *cx)
 {
   CM_t *cm = cx->cm;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   int   L  = cx->L, M = cx->M;
   int   v, jp, r;
   for (r = 0; r <= L; r++) cx->eldmax[r] = -1;
@@ -966,7 +1004,7 @@ ckpt_el_compute_dmax(CKPT_CTX *cx)
       int j_band = cx->jmin[v] + jp;   /* v's own j */
       r = j_band - sdr;                /* EL-row */
       if (r < 0 || r > L) continue;
-      int dmax_here = cx->hdmax[v][jp] - sd;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
       if (dmax_here > r)        dmax_here = r;   /* d <= j on the EL diagonal */
       if (dmax_here > cx->eldmax[r]) cx->eldmax[r] = dmax_here;
     }
@@ -1039,11 +1077,12 @@ ckpt_apply_begin_fwd(CKPT_CTX *cx, int v, float **av)
 {
   CM_t *cm = cx->cm;
   int   L  = cx->L;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (! cx->have_local_begin) return;
   if (v == 0) {
     if (! cx->fwd_begin_applied) {
       int jp_0 = L - cx->jmin[0];
-      int Lp_0 = L - cx->hdmin[0][jp_0];
+      int Lp_0 = L - hd_min(cp9b, 0, jp_0);
       if (NOT_IMPOSSIBLE(cx->bsc_fwd)) av[jp_0][Lp_0] = FLogsum(av[jp_0][Lp_0], cx->bsc_fwd);
       cx->fwd_begin_applied = TRUE;
     }
@@ -1052,8 +1091,8 @@ ckpt_apply_begin_fwd(CKPT_CTX *cx, int v, float **av)
   if (cx->fwd_begin_applied) return; /* Step B/TB re-materialization: already folded, skip */
   if (NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= cx->jmin[v] && L <= cx->jmax[v]) {
     int jp_v = L - cx->jmin[v];
-    if (L >= cx->hdmin[v][jp_v] && L <= cx->hdmax[v][jp_v]) {
-      int Lp = L - cx->hdmin[v][jp_v];
+    if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+      int Lp = L - hd_min(cp9b, v, jp_v);
       cx->bsc_fwd = FLogsum(cx->bsc_fwd, av[jp_v][Lp] + cm->beginsc[v]);
     }
   }
@@ -1073,17 +1112,18 @@ ckpt_apply_begin_oa(CKPT_CTX *cx, int v, float **av, char **ysh)
 {
   CM_t *cm = cx->cm;
   int   L  = cx->L;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (! cx->have_local_begin) return;
   if (NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= cx->jmin[v] && L <= cx->jmax[v]) {
     int jp_v = L - cx->jmin[v];
-    if (L >= cx->hdmin[v][jp_v] && L <= cx->hdmax[v][jp_v]) {
-      int Lp = L - cx->hdmin[v][jp_v];
+    if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+      int Lp = L - hd_min(cp9b, v, jp_v);
       if (av[jp_v][Lp] > cx->begin_bsc) { cx->begin_bsc = av[jp_v][Lp]; cx->begin_b = v; }
     }
   }
   if (v == 0 && NOT_IMPOSSIBLE(cx->begin_bsc)) {
     int jp_0 = L - cx->jmin[0];
-    int Lp_0 = L - cx->hdmin[0][jp_0];
+    int Lp_0 = L - hd_min(cp9b, 0, jp_0);
     av[jp_0][Lp_0] = cx->begin_bsc;
     if (ysh != NULL) ysh[jp_0][Lp_0] = (char) USED_LOCAL_BEGIN;
   }
@@ -1106,18 +1146,19 @@ ckpt_apply_begin_cyk(CKPT_CTX *cx, int v, float **av, char **ysh)
 {
   CM_t *cm = cx->cm;
   int   L  = cx->L;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   if (! cx->have_local_begin) return;
   if (NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= cx->jmin[v] && L <= cx->jmax[v]) {
     int jp_v = L - cx->jmin[v];
-    if (L >= cx->hdmin[v][jp_v] && L <= cx->hdmax[v][jp_v]) {
-      int Lp = L - cx->hdmin[v][jp_v];
+    if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+      int Lp = L - hd_min(cp9b, v, jp_v);
       float cand = av[jp_v][Lp] + cm->beginsc[v];
       if (cand > cx->begin_bsc) { cx->begin_bsc = cand; cx->begin_b = v; }
     }
   }
   if (v == 0 && NOT_IMPOSSIBLE(cx->begin_bsc)) {
     int jp_0 = L - cx->jmin[0];
-    int Lp_0 = L - cx->hdmin[0][jp_0];
+    int Lp_0 = L - hd_min(cp9b, 0, jp_0);
     if (cx->begin_bsc > av[jp_0][Lp_0]) {   /* CONDITIONAL override (CYK), unlike OA's unconditional */
       av[jp_0][Lp_0] = cx->begin_bsc;
       if (ysh != NULL) ysh[jp_0][Lp_0] = (char) USED_LOCAL_BEGIN;
@@ -1134,7 +1175,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
   CM_t *cm = cx->cm;
   ESL_DSQ *dsq = cx->dsq;
   int   *jmin = cx->jmin, *jmax = cx->jmax;
-  int  **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   float **av = ba[v];
   float const *esc_v = cm->oesc[v];
   float const *tsc_v = cm->tsc[v];
@@ -1153,7 +1194,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
   if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++)
+      for (dp_v = 0, d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); dp_v++, d++)
         av[jp_v][dp_v] = cx->el_selfsc * (d - sd) + cm->endsc[v];
     }
   }
@@ -1169,15 +1210,15 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
       yvalid_ct = 0; j_sdr = j - sdr;
       for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
         if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
         i = j - d + 1;
-        dp_v = d - hdmin[v][jp_v];
+        dp_v = d - hd_min(cp9b, v, jp_v);
         for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
           yoffset = yvalidA[yvalid_idx];
           y = cm->cfirst[v] + yoffset;
           jp_y_sdr = j - jmin[y] - sdr;
-          if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-            dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
             av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], IA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
           }
         }
@@ -1194,14 +1235,14 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
       yvalid_ct = 0; j_sdr = j - sdr;
       for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
         if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-        dp_v = d - hdmin[v][jp_v];
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        dp_v = d - hd_min(cp9b, v, jp_v);
         for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
           yoffset = yvalidA[yvalid_idx];
           y = cm->cfirst[v] + yoffset;
           jp_y_sdr = j - jmin[y] - sdr;
-          if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-            dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
             av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], IA(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
           }
         }
@@ -1223,11 +1264,11 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
       jp_v = j - jmin[v];
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
-      kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
       kn = ESL_MAX(kn, 0);
-      kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-        dp_v = d - hdmin[v][jp_v];
+      kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        dp_v = d - hd_min(cp9b, v, jp_v);
         /* R-L.4b (065): if CYK's pin walk never visited this B state (kpinned<0)
          * AND more than one k in [kn,kx] actually satisfies the per-cell band
          * constraint below for THIS (j,d), do NOT fall back to an unrestricted
@@ -1252,7 +1293,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
         } else {
           int uniq_k = -1, n_valid = 0;
           for (k = kn; k <= kx; k++) {
-            if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+            if ((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
               n_valid++; uniq_k = k;
               if (n_valid > 1) break;
             }
@@ -1261,9 +1302,9 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
           klo = khi = uniq_k;
         }
         for (k = klo; k <= khi; k++) {
-          if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
-            kp_z = k-hdmin[z][jp_z];
-            dp_y = d-hdmin[y][jp_y-k];
+          if ((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
+            kp_z = k-hd_min(cp9b, z, jp_z);
+            dp_y = d-hd_min(cp9b, y, jp_y-k);
             av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], IA(y)[jp_y-k][dp_y - k] + IA(z)[jp_z][kp_z]);
           }
         }
@@ -1284,11 +1325,11 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
       jpx = jx - jmin[v];
       jp_y_sdr = jn - jmin[y] - sdr;
       for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-        dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-        dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-        dpn = dn - hdmin[v][jp_v];
-        dpx = dx - hdmin[v][jp_v];
-        dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+        dpn = dn - hd_min(cp9b, v, jp_v);
+        dpx = dx - hd_min(cp9b, v, jp_v);
+        dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
         for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
           av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], (IA(y)[jp_y_sdr][dp_y_sd] + tsc));
         }
@@ -1298,23 +1339,23 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
     case ML_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        i = j - hdmin[v][jp_v] + 1;
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        i = j - hd_min(cp9b, v, jp_v) + 1;
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
           av[jp_v][dp_v] += esc_v[dsq[i--]];
       }
       break;
     case MR_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
           av[jp_v][dp_v] += esc_v[dsq[j]];
       }
       break;
     case MP_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        i = j - hdmin[v][jp_v] + 1;
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        i = j - hd_min(cp9b, v, jp_v) + 1;
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
           av[jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
       }
       break;
@@ -1322,7 +1363,7 @@ ckpt_inside_deck(CKPT_CTX *cx, int v, float ***ba, float ***ck)
     }
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+      for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
     }
     (void) jn; (void) jx; (void) jpn; (void) jpx; (void) dn; (void) dx; (void) dpn; (void) dpx;
@@ -1342,7 +1383,7 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
   ESL_DSQ *dsq = cx->dsq;
   int   L = cx->L;
   int  *jmin = cx->jmin, *jmax = cx->jmax;
-  int **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   float **bv = bb[v];
   float **esc_vAA_y;
   int j, d, i, y, voffset, jp_v, jp_y, dp_v, dp_y, sd, sdr, emitmode, jn, jx, dn, dx;
@@ -1362,8 +1403,8 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
    * whatever's already there) reproduces the oracle byte-for-byte. */
   if (cx->have_local_begin && NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= jmin[v] && L <= jmax[v]) {
     jp_v = L - jmin[v];
-    if (L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) {
-      int Lp = L - hdmin[v][jp_v];
+    if (L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) {
+      int Lp = L - hd_min(cp9b, v, jp_v);
       bv[jp_v][Lp] = cm->beginsc[v];
     }
   }
@@ -1379,16 +1420,16 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
       y = yB; z = cm->cnum[yB];                     /* z = right (BEGR) sibling */
       for (j = jmax[v]; j >= jmin[v]; j--) {
         jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
-        for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
-          dp_v = d - hdmin[v][jp_v];
+        for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
+          dp_v = d - hd_min(cp9b, v, jp_v);
           kmin = ESL_MAX(jmin[y], jmin[z]) - j;
           kmax = ESL_MIN(jmax[y], jmax[z]) - j;
           if (kpinned >= 0) { if (kpinned < kmin || kpinned > kmax) continue; kmin = kmax = kpinned; }
           for (k = kmin; k <= kmax; k++) {
-            if (k < (hdmin[y][jp_y+k] - d) || k > (hdmax[y][jp_y+k] - d)) continue;
-            if (k < (hdmin[z][jp_z+k])     || k > (hdmax[z][jp_z+k]))     continue;
-            kp_z = k-hdmin[z][jp_z+k];
-            dp_y = d-hdmin[y][jp_y+k];
+            if (k < (hd_min(cp9b, y, jp_y+k) - d) || k > (hd_max(cp9b, y, jp_y+k) - d)) continue;
+            if (k < (hd_min(cp9b, z, jp_z+k))     || k > (hd_max(cp9b, z, jp_z+k)))     continue;
+            kp_z = k-hd_min(cp9b, z, jp_z+k);
+            dp_y = d-hd_min(cp9b, y, jp_y+k);
             bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y+k][dp_y+k] + alpha[z][jp_z+k][kp_z]));
           }
         }
@@ -1400,16 +1441,16 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
       jx = ESL_MIN(jmax[v], jmax[y]);
       for (j = jx; j >= jn; j--) {
         jp_v = j - jmin[v]; jp_y = j - jmin[y]; jp_z = j - jmin[z];
-        dn = ESL_MAX(hdmin[v][jp_v], j-jmax[z]);
-        dx = ESL_MIN(hdmax[v][jp_v], jp_z);
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), j-jmax[z]);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), jp_z);
         for (d = dx; d >= dn; d--) {
-          dp_v = d - hdmin[v][jp_v];
+          dp_v = d - hd_min(cp9b, v, jp_v);
           if (kpinned >= 0 && d != kpinned) continue;   /* BEGR own-d == right-frag length */
-          kmin = ESL_MAX((hdmin[y][jp_y]-d), (hdmin[z][jp_z-d]));
-          kmax = ESL_MIN((hdmax[y][jp_y]-d), (hdmax[z][jp_z-d]));
+          kmin = ESL_MAX((hd_min(cp9b, y, jp_y)-d), (hd_min(cp9b, z, jp_z-d)));
+          kmax = ESL_MIN((hd_max(cp9b, y, jp_y)-d), (hd_max(cp9b, z, jp_z-d)));
           for (k = kmin; k <= kmax; k++) {
-            kp_z = k-hdmin[z][jp_z-d];
-            dp_y = d-hdmin[y][jp_y];
+            kp_z = k-hd_min(cp9b, z, jp_z-d);
+            dp_y = d-hd_min(cp9b, y, jp_y);
             bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y][dp_y+k] + alpha[z][jp_z-d][kp_z]));
           }
         }
@@ -1421,9 +1462,9 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
   if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
     for (j = jmax[v]; j >= jmin[v]; j--) {
       jp_v = j - jmin[v];
-      for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
+      for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
         i = j - d + 1;
-        dp_v = d - hdmin[v][jp_v];
+        dp_v = d - hd_min(cp9b, v, jp_v);
         for (y = cm->plast[v]; y > cm->plast[v] - cm->pnum[v]; y--) {
           voffset = v - cm->cfirst[y];
           switch (cm->sttype[y]) {
@@ -1431,8 +1472,8 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
             if (j == L || d == j) continue;
             if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue;
             jp_y = j - jmin[y];
-            if ((d+2) < hdmin[y][(jp_y+1)] || (d+2) > hdmax[y][(jp_y+1)]) continue;
-            dp_y = d - hdmin[y][jp_y+1];
+            if ((d+2) < hd_min(cp9b, y, (jp_y+1)) || (d+2) > hd_max(cp9b, y, (jp_y+1))) continue;
+            dp_y = d - hd_min(cp9b, y, jp_y+1);
             escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
             bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y+1][dp_y+2] + cm->tsc[y][voffset] + escore));
             break;
@@ -1441,8 +1482,8 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
             if (d == j) continue;
             if (j < jmin[y] || j > jmax[y]) continue;
             jp_y = j - jmin[y];
-            if ((d+1) < hdmin[y][jp_y] || (d+1) > hdmax[y][jp_y]) continue;
-            dp_y = d - hdmin[y][jp_y];
+            if ((d+1) < hd_min(cp9b, y, jp_y) || (d+1) > hd_max(cp9b, y, jp_y)) continue;
+            dp_y = d - hd_min(cp9b, y, jp_y);
             escore = cm->oesc[y][dsq[i-1]];
             bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y][dp_y+1] + cm->tsc[y][voffset] + escore));
             break;
@@ -1451,8 +1492,8 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
             if (j == L) continue;
             if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue;
             jp_y = j - jmin[y];
-            if ((d+1) < hdmin[y][(jp_y+1)] || (d+1) > hdmax[y][(jp_y+1)]) continue;
-            dp_y = d - hdmin[y][(jp_y+1)];
+            if ((d+1) < hd_min(cp9b, y, (jp_y+1)) || (d+1) > hd_max(cp9b, y, (jp_y+1))) continue;
+            dp_y = d - hd_min(cp9b, y, (jp_y+1));
             escore = cm->oesc[y][dsq[j+1]];
             bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y+1][dp_y+1] + cm->tsc[y][voffset] + escore));
             break;
@@ -1461,8 +1502,8 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
           case D_st:
             if (j < jmin[y] || j > jmax[y]) continue;
             jp_y = j - jmin[y];
-            if (d < hdmin[y][jp_y] || d > hdmax[y][jp_y]) continue;
-            dp_y = d - hdmin[y][jp_y];
+            if (d < hd_min(cp9b, y, jp_y) || d > hd_max(cp9b, y, jp_y)) continue;
+            dp_y = d - hd_min(cp9b, y, jp_y);
             bv[jp_v][dp_v] = FLogsum(bv[jp_v][dp_v], (bb[y][jp_y][dp_y] + cm->tsc[y][voffset]));
             break;
           }
@@ -1483,10 +1524,10 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
       for (j = jx; j >= jn; j--) {
         jp_v = j - jmin[v];
         jp_y = j - jmin[y];
-        dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y + sdr] - sd);
-        dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y + sdr] - sd);
-        dp_v = dx - hdmin[v][jp_v];
-        dp_y = dx - hdmin[y][jp_y + sdr];
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y + sdr) - sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y + sdr) - sd);
+        dp_v = dx - hd_min(cp9b, v, jp_v);
+        dp_y = dx - hd_min(cp9b, y, jp_y + sdr);
         i    = j - dx + 1;
         switch (emitmode) {
         case EMITPAIR: /* rung-3: MP parent (pair emission) */
@@ -1531,10 +1572,10 @@ ckpt_outside_deck(CKPT_CTX *cx, int v, float ***bb, int jp_0, int Lp_0)
     int jx2 = jmax[v] - sdr_v;
     for (j = jn2; j <= jx2; j++) {
       jp_v = j - jmin[v];
-      dn   = hdmin[v][jp_v + sdr_v] - sd_v;
-      dx   = hdmax[v][jp_v + sdr_v] - sd_v;
+      dn   = hd_min(cp9b, v, jp_v + sdr_v) - sd_v;
+      dx   = hd_max(cp9b, v, jp_v + sdr_v) - sd_v;
       i    = j - dn + 1;
-      dp_v = dn - hdmin[v][jp_v + sdr_v];
+      dp_v = dn - hd_min(cp9b, v, jp_v + sdr_v);
       switch (emm) {
       case EMITPAIR:
         for (d = dn; d <= dx; d++, dp_v++, i--) {
@@ -1574,7 +1615,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
 #define OA(vv) (oa[vv] ? oa[vv] : (ck ? ck[vv] : NULL))
   CM_t *cm = cx->cm;
   int  *jmin = cx->jmin, *jmax = cx->jmax, *imin = cx->imin;
-  int **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   float **av = oa[v];
   int sd  = StateDelta(cm->sttype[v]);
   int sdr = StateRightDelta(cm->sttype[v]);
@@ -1601,12 +1642,12 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
     if (cx->have_el && cx->el_endsc > cx->el_esc[v]) yoff = (int) USED_EL;
     for (j = ESL_MAX(sd, jmin[v]); j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      if (hdmin[v][jp_v] <= hdmax[v][jp_v]) {
+      if (hd_min(cp9b, v, jp_v) <= hd_max(cp9b, v, jp_v)) {
         if ((j - sdr) >= jmin[yy] && (j - sdr) <= jmax[yy]) {
           int jp_y = j - sdr - jmin[yy];
-          if (sd >= hdmin[v][jp_v] && sd <= hdmax[v][jp_v] &&
-              0  >= hdmin[yy][jp_y] && 0 <= hdmax[yy][jp_y]) {
-            dp_v = sd - hdmin[v][jp_v];
+          if (sd >= hd_min(cp9b, v, jp_v) && sd <= hd_max(cp9b, v, jp_v) &&
+              0  >= hd_min(cp9b, yy, jp_y) && 0 <= hd_max(cp9b, yy, jp_y)) {
+            dp_v = sd - hd_min(cp9b, v, jp_v);
             ysh[jp_v][dp_v] = (char) yoff;
           }
         }
@@ -1621,8 +1662,8 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
   if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-        dp_v = d - hdmin[v][jp_v];
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        dp_v = d - hd_min(cp9b, v, jp_v);
         av[jp_v][dp_v] = cx->elalpha[j-sdr][d-sd];  /* ysh remains USED_EL */
       }
     }
@@ -1634,16 +1675,16 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
       yvalid_ct = 0; j_sdr = j - sdr;
       for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
         if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
-      i = j - hdmin[v][jp_v] + 1;
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, i--) {
+      i = j - hd_min(cp9b, v, jp_v) + 1;
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++, i--) {
         ip_v = i - imin[v];
-        dp_v = d - hdmin[v][jp_v];
+        dp_v = d - hd_min(cp9b, v, jp_v);
         for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
           yoffset = yvalidA[yvalid_idx];
           y = cm->cfirst[v] + yoffset;
           jp_y_sdr = j - jmin[y] - sdr;
-          if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-            dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
             if ((sc = OA(y)[jp_y_sdr][dp_y_sd]) > av[jp_v][dp_v]) {
               av[jp_v][dp_v] = sc;
               if (ysh != NULL) ysh[jp_v][dp_v] = (char) yoffset;
@@ -1671,11 +1712,11 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
       jp_v = j - jmin[v];
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
-      kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
       kn = ESL_MAX(kn, 0);
-      kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-        dp_v = d - hdmin[v][jp_v];
+      kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        dp_v = d - hd_min(cp9b, v, jp_v);
         /* R-L.4b (065): if CYK's pin walk never visited this B state (kpinned<0)
          * AND more than one k satisfies the per-cell band constraint below for
          * THIS (j,d), do NOT fall back to an unrestricted full split-search --
@@ -1695,7 +1736,7 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
         } else {
           int uniq_k = -1, n_valid = 0;
           for (k = kn; k <= kx; k++) {
-            if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+            if ((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
               n_valid++; uniq_k = k;
               if (n_valid > 1) break;
             }
@@ -1704,9 +1745,9 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
           klo = khi = uniq_k;
         }
         for (k = klo; k <= khi; k++) {
-          if ((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
-            kp_z = k-hdmin[z][jp_z];
-            dp_y = d-hdmin[y][jp_y-k];
+          if ((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
+            kp_z = k-hd_min(cp9b, z, jp_z);
+            dp_y = d-hd_min(cp9b, y, jp_y-k);
             jp_y_minus_k = jp_y-k;
             dp_y_minus_k = dp_y-k;
             /* OA: accumulate (logsum) the posterior of both subtrees; record k
@@ -1735,11 +1776,11 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
       jpx = jx - jmin[v];
       jp_y_sdr = jn - jmin[y] - sdr;
       for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-        dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-        dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-        dpn = dn - hdmin[v][jp_v];
-        dpx = dx - hdmin[v][jp_v];
-        dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+        dpn = dn - hd_min(cp9b, v, jp_v);
+        dpx = dx - hd_min(cp9b, v, jp_v);
+        dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
         for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
           if ((sc = OA(y)[jp_y_sdr][dp_y_sd]) > av[jp_v][dp_v]) {
             av[jp_v][dp_v] = sc;
@@ -1752,25 +1793,25 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
     case ML_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        i = j - hdmin[v][jp_v] + 1;
+        i = j - hd_min(cp9b, v, jp_v) + 1;
         ip_v = i - imin[v];
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--)
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, ip_v--)
           av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_lpp[v][ip_v]);
       }
       break;
     case MR_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
           av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], cx->my_rpp[v][jp_v]);
       }
       break;
     case MP_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        i = j - hdmin[v][jp_v] + 1;
+        i = j - hd_min(cp9b, v, jp_v) + 1;
         ip_v = i - imin[v];
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--)
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, ip_v--)
           av[jp_v][dp_v] = FLogsum(av[jp_v][dp_v], FLogsum(cx->my_lpp[v][ip_v], cx->my_rpp[v][jp_v]));
       }
       break;
@@ -1778,15 +1819,15 @@ ckpt_optacc_deck(CKPT_CTX *cx, int v, float ***oa, float ***ck, char **ysh)
     }
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+      for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
     }
     if ((! cx->have_el) && sd > 0 && ysh != NULL) { /* emitters only (ML here); local: EL kept */
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        d = ESL_MAX(sd+1, hdmin[v][jp_v]);
-        dp_v = d - hdmin[v][jp_v];
-        for (; d <= hdmax[v][jp_v]; d++, dp_v++)
+        d = ESL_MAX(sd+1, hd_min(cp9b, v, jp_v));
+        dp_v = d - hd_min(cp9b, v, jp_v);
+        for (; d <= hd_max(cp9b, v, jp_v); d++, dp_v++)
           if (ysh[jp_v][dp_v] == (char) USED_EL) av[jp_v][dp_v] = IMPOSSIBLE;
       }
     }
@@ -1920,6 +1961,7 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   cx.jmin  = cm->cp9b->jmin;  cx.jmax  = cm->cp9b->jmax;
   cx.imin  = cm->cp9b->imin;  cx.imax  = cm->cp9b->imax;
   cx.hdmin = cm->cp9b->hdmin; cx.hdmax = cm->cp9b->hdmax;
+  CP9Bands_t *cp9b = cm->cp9b;
   cx.cur_bytes = cx.peak_bytes = 0;
   cx.deck_nc = NULL; cx.deck_njr = NULL; /* set below */
   cx.kpin = NULL; cx.ifull = NULL;       /* bps=0 path: no bifurcations */
@@ -1935,8 +1977,8 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* ROOT_S band sanity */
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S d band");
-  int Lp_0 = L - cx.hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* deck geometry + child/parent reach */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
@@ -1948,7 +1990,7 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     cx.deck_njr[v] = njr;
     int64_t nc = 0;
     int jp;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
     full_cube_cells += nc;
     if (cm->sttype[v] != E_st) {
@@ -2022,8 +2064,8 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v];
           int d;
-          for (d = cx.hdmin[v][jp]; d <= cx.hdmax[v][jp]; d++) {
-            int dp = d - cx.hdmin[v][jp];
+          for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
             int i = j - d + 1;
             float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
             int ip = i - cx.imin[v];
@@ -2037,8 +2079,8 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
           int jp = j - cx.jmin[v];
           int d;
           emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt;
-          for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) {
-            int dp = d - cx.hdmin[v][jp];
+          for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
             float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
             emit_mx->r_pp[v][jp] = FLogsum(emit_mx->r_pp[v][jp], postcell);
           }
@@ -2156,7 +2198,7 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
           ckpt_optacc_deck(&cx, w, tba, OAstore, tysh[w]);
         }
       }
-      int jp_v = j - cx.jmin[v], dp_v = d - cx.hdmin[v][jp_v];
+      int jp_v = j - cx.jmin[v], dp_v = d - hd_min(cp9b, v, jp_v);
       int yoffset = tysh[v][jp_v][dp_v];
       switch (cm->sttype[v]) {
       case D_st:            break;
@@ -2278,6 +2320,7 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      v, jp;
   CM_HB_MX *imx = NULL, *omx = NULL;
 
+  CP9Bands_t *cp9b = cm->cp9b;
   memset(&cx, 0, sizeof(cx));
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
@@ -2298,8 +2341,8 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinPostAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinPostAlignHB(): L outside ROOT_S d band");
-  int Lp_0 = L - cx.hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinPostAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* deck geometry (used by ckpt_deck_init_impossible inside the deck helpers) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
@@ -2308,7 +2351,7 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
     cx.deck_njr[v] = njr;
     int64_t nc = 0;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
   }
 
@@ -2445,6 +2488,7 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   float    Z_ckpt = 0.;
   float ***Astore = NULL, ***ba = NULL, ***bb = NULL;
 
+  CP9Bands_t *cp9b = cm->cp9b;
   memset(&cx, 0, sizeof(cx));
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): emit_mx is NULL");
 
@@ -2467,8 +2511,8 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S d band");
-  int Lp_0 = L - cx.hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptPostAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* deck geometry + linear child/parent reach (B-aware) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
@@ -2479,7 +2523,7 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
     cx.deck_njr[v] = njr;
     int64_t nc = 0; int jp;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
     full_cube_cells += nc;
     if (ckpt_is_chain_root(cm, v)) root_cells   += nc;
@@ -2552,8 +2596,8 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
         int j;
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v]; int d;
-          for (d = cx.hdmin[v][jp]; d <= cx.hdmax[v][jp]; d++) {
-            int dp = d - cx.hdmin[v][jp];
+          for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
             int i  = j - d + 1;
             int ip = i - cx.imin[v];
             float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
@@ -2566,8 +2610,8 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v]; int d;
           emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt; /* peel d=hdmin */
-          for (d = cx.hdmin[v][jp]+1; d <= cx.hdmax[v][jp]; d++) {
-            int dp = d - cx.hdmin[v][jp];
+          for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
+            int dp = d - hd_min(cp9b, v, jp);
             float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
             emit_mx->r_pp[v][jp] = FLogsum(emit_mx->r_pp[v][jp], postcell);
           }
@@ -2759,7 +2803,7 @@ ckpt_ysh_fetch(void *p, int v, int jp_v, int dp_v)
  * every B is pinned by the CYK parse). */
 static int
 ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
-                      int *jmin, int *jmax, int **hdmin, int **hdmax,
+                      int *jmin, int *jmax, CP9Bands_t *cp9b,
                       ckpt_ysh_fetch_fn fetch, void *fctx, int begin_b, Parsetree_t **ret_tr)
 {
   int status;
@@ -2779,12 +2823,12 @@ ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
      * START subtree whose cell is outside the bands -> route to USED_EL. */
     if (d == 0 && (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) &&
         ((j < jmin[v] || j > jmax[v]) ||
-         (d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) {
+         (d < hd_min(cp9b, v, j-jmin[v]) || d > hd_max(cp9b, v, j-jmin[v])))) {
       allow_S_local_end = TRUE;
     }
     else if (cm->sttype[v] != EL_st) {
       jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
+      dp_v = d - hd_min(cp9b, v, jp_v);
       allow_S_local_end = FALSE;
     }
 
@@ -2802,11 +2846,11 @@ ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
         int zz = cm->cnum[v], yy = cm->cfirst[v];
         if (j >= jmin[yy] && j <= jmax[yy] && j >= jmin[zz] && j <= jmax[zz]) {
           int jp_yy = j - jmin[yy], jp_zz = j - jmin[zz];
-          int kn2 = ESL_MAX(ESL_MAX(j - jmax[yy], hdmin[zz][jp_zz]), 0);
-          int kx2 = ESL_MIN(jp_yy, hdmax[zz][jp_zz]);
+          int kn2 = ESL_MAX(ESL_MAX(j - jmax[yy], hd_min(cp9b, zz, jp_zz)), 0);
+          int kx2 = ESL_MIN(jp_yy, hd_max(cp9b, zz, jp_zz));
           int kk, uniq_k = -1, n_valid = 0;
           for (kk = kn2; kk <= kx2; kk++) {
-            if ((kk >= d - hdmax[yy][jp_yy-kk]) && (kk <= d - hdmin[yy][jp_yy-kk])) {
+            if ((kk >= d - hd_max(cp9b, yy, jp_yy-kk)) && (kk <= d - hd_min(cp9b, yy, jp_yy-kk))) {
               n_valid++; uniq_k = kk;
               if (n_valid > 1) break;
             }
@@ -2901,6 +2945,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): emit_mx is NULL");
 
+  CP9Bands_t *cp9b = cm->cp9b;
   memset(&cx, 0, sizeof(cx));
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
@@ -2921,8 +2966,8 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): L outside ROOT_S d band");
-  int Lp_0 = L - cx.hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_PinOptAccAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
@@ -2930,7 +2975,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
     cx.deck_njr[v] = njr;
     int64_t nc = 0;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
   }
 
@@ -2968,7 +3013,7 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 
   /* pinned-tree traceback (full-storage yshadow fetch) */
   fctx.ysh = ysh;
-  if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+  if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cp9b,
                                       pin_ysh_fetch, &fctx, cx.begin_b, &tr)) != eslOK) goto ERROR;
 
   /* per-residue PP string + avg PP from the emit matrix */
@@ -3042,6 +3087,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   float    avgpp  = 0., pp = 0.;
   ckpt_ysh_ctx fctx;
 
+  CP9Bands_t *cp9b = cm->cp9b;
   memset(&cx, 0, sizeof(cx));
   if (emit_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): emit_mx is NULL");
 
@@ -3064,8 +3110,8 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): L outside ROOT_S d band");
-  int Lp_0 = L - cx.hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptOptAccAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* deck geometry + B-aware linear child reach (037/038 Delta-fix) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
@@ -3076,7 +3122,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
     cx.deck_njr[v] = njr;
     int64_t nc = 0; int jp;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
     full_cube_cells += nc;
     if (ckpt_is_chain_root(cm, v)) root_cells += nc;
@@ -3132,7 +3178,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   fctx.tba = tba; fctx.tysh = tysh;
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
-  if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+  if ((status = ckpt_optacc_traceback(cm, errbuf, L, kpin, cx.jmin, cx.jmax, cp9b,
                                       ckpt_ysh_fetch, &fctx, cx.begin_b, &tr)) != eslOK) goto ERROR;
 
   /* free the loaded traceback block */
@@ -3212,19 +3258,19 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
  * ckpt_cyk_traceback (B-state split) -- same search, re-run each time
  * rather than storing a kshadow, since child decks are always resident. */
 static int
-ckpt_cyk_bsearch(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
+ckpt_cyk_bsearch(CM_t *cm, int *jmin, int *jmax, CP9Bands_t *cp9b,
                   float ***cy, float ***ck, int v, int j, int d, float *ret_sc)
 {
 #define CY(vv) (cy[vv] ? cy[vv] : (ck ? ck[vv] : NULL))
   int y = cm->cfirst[v], z = cm->cnum[v];
   int jp_y = j - jmin[y], jp_z = j - jmin[z];
-  int kn = ESL_MAX(ESL_MAX(j-jmax[y], hdmin[z][jp_z]), 0);
-  int kx = ESL_MIN(jp_y, hdmax[z][jp_z]);
+  int kn = ESL_MAX(ESL_MAX(j-jmax[y], hd_min(cp9b, z, jp_z)), 0);
+  int kx = ESL_MIN(jp_y, hd_max(cp9b, z, jp_z));
   int k, kbest = -1; float scbest = IMPOSSIBLE, sc;
   for (k = kn; k <= kx; k++) {
-    if ((k >= d - hdmax[y][jp_y-k]) && (k <= d - hdmin[y][jp_y-k])) {
-      int kp_z = k - hdmin[z][jp_z];
-      int dp_y = d - hdmin[y][jp_y-k];
+    if ((k >= d - hd_max(cp9b, y, jp_y-k)) && (k <= d - hd_min(cp9b, y, jp_y-k))) {
+      int kp_z = k - hd_min(cp9b, z, jp_z);
+      int dp_y = d - hd_min(cp9b, y, jp_y-k);
       if ((sc = CY(y)[jp_y-k][dp_y-k] + CY(z)[jp_z][kp_z]) > scbest) { scbest = sc; kbest = k; }
     }
   }
@@ -3247,7 +3293,7 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
   CM_t *cm = cx->cm;
   ESL_DSQ *dsq = cx->dsq;
   int  *jmin = cx->jmin, *jmax = cx->jmax;
-  int **hdmin = cx->hdmin, **hdmax = cx->hdmax;
+  CP9Bands_t *cp9b = cx->cm->cp9b;
   float **av = cy[v];
   float const *esc_v = cm->oesc[v];
   float const *tsc_v = cm->tsc[v];
@@ -3276,7 +3322,7 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
   if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++)
+      for (dp_v = 0, d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); dp_v++, d++)
         if (d >= sd) av[jp_v][dp_v] = cx->el_selfsc * (d - sd) + cm->endsc[v];
     }
   }
@@ -3293,15 +3339,15 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
       yvalid_ct = 0; j_sdr = j - sdr;
       for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
         if ((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
         i = j - d + 1;
-        dp_v = d - hdmin[v][jp_v];
+        dp_v = d - hd_min(cp9b, v, jp_v);
         for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
           yoffset = yvalidA[yvalid_idx];
           y = cm->cfirst[v] + yoffset;
           jp_y_sdr = j - jmin[y] - sdr;
-          if ((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-            dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+          if ((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+            dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
             if ((sc = CY(y)[jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > av[jp_v][dp_v]) {
               av[jp_v][dp_v] = sc;
               if (ysh != NULL) ysh[jp_v][dp_v] = (char) yoffset;
@@ -3322,10 +3368,10 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
     int jxx = ESL_MIN(jmax[v], jmax[z]);
     for (j = jnn; j <= jxx; j++) {
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-        dp_v = d - hdmin[v][jp_v];
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+        dp_v = d - hd_min(cp9b, v, jp_v);
         sc = IMPOSSIBLE;
-        if (ckpt_cyk_bsearch(cm, jmin, jmax, hdmin, hdmax, cy, ck, v, j, d, &sc) >= 0)
+        if (ckpt_cyk_bsearch(cm, jmin, jmax, cp9b, cy, ck, v, j, d, &sc) >= 0)
           av[jp_v][dp_v] = sc;
       }
     }
@@ -3343,11 +3389,11 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
       jpx = jx - jmin[v];
       jp_y_sdr = jn - jmin[y] - sdr;
       for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-        dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-        dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-        dpn = dn - hdmin[v][jp_v];
-        dpx = dx - hdmin[v][jp_v];
-        dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+        dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+        dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+        dpn = dn - hd_min(cp9b, v, jp_v);
+        dpx = dx - hd_min(cp9b, v, jp_v);
+        dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
         for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
           if ((sc = CY(y)[jp_y_sdr][dp_y_sd] + tsc) > av[jp_v][dp_v]) {
             av[jp_v][dp_v] = sc;
@@ -3359,22 +3405,22 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
     switch (cm->sttype[v]) {
     case ML_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
-        jp_v = j - jmin[v]; i = j - hdmin[v][jp_v] + 1;
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, i--)
+        jp_v = j - jmin[v]; i = j - hd_min(cp9b, v, jp_v) + 1;
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, i--)
           av[jp_v][dp_v] += esc_v[dsq[i]];
       }
       break;
     case MR_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j - jmin[v];
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
           av[jp_v][dp_v] += esc_v[dsq[j]];
       }
       break;
     case MP_st:
       for (j = jmin[v]; j <= jmax[v]; j++) {
-        jp_v = j - jmin[v]; i = j - hdmin[v][jp_v] + 1;
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, i--)
+        jp_v = j - jmin[v]; i = j - hd_min(cp9b, v, jp_v) + 1;
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, i--)
           av[jp_v][dp_v] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
       }
       break;
@@ -3382,7 +3428,7 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
     }
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+      for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
     }
     ckpt_apply_begin_cyk(cx, v, av, ysh);
@@ -3434,7 +3480,7 @@ ckpt_cyk_ysh_fetch(void *p, int v, int jp_v, int dp_v)
  * the CYK oracle never uses it and neither must this engine. */
 static int
 ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
-                    int *jmin, int *jmax, int **hdmin, int **hdmax,
+                    int *jmin, int *jmax, CP9Bands_t *cp9b,
                     ckpt_ysh_fetch_fn fetch, void *fctx, int begin_b, Parsetree_t **ret_tr)
 {
   int status;
@@ -3452,11 +3498,11 @@ ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
   while (1) {
     if (cm->sttype[v] != EL_st) {
       jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
+      dp_v = d - hd_min(cp9b, v, jp_v);
     }
 
     if (cm->sttype[v] == B_st) {
-      k = ckpt_cyk_bsearch(cm, jmin, jmax, hdmin, hdmax, CYstore, NULL, v, j, d, NULL);
+      k = ckpt_cyk_bsearch(cm, jmin, jmax, cp9b, CYstore, NULL, v, j, d, NULL);
       if (k < 0) ESL_XFAIL(eslEINCOMPAT, errbuf, "ckpt_cyk_traceback: B state v=%d: no valid k (band inconsistency)", v);
       if ((status = esl_stack_IPush(pda, j))       != eslOK) goto ERROR;
       if ((status = esl_stack_IPush(pda, k))       != eslOK) goto ERROR;
@@ -3560,6 +3606,7 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
    * cm_AlignHB(do_optacc=FALSE) across 5S/RNaseP/hairpin(bifs=0) in both
    * configs, incl. genuine internal local-begin entries on fragment seqs. */
 
+  CP9Bands_t *cp9b = cm->cp9b;
   memset(&cx, 0, sizeof(cx));
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
   cx.jmin = cm->cp9b->jmin; cx.jmax = cm->cp9b->jmax;
@@ -3581,8 +3628,8 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): L outside ROOT_S j band");
   int jp_0 = L - cx.jmin[0];
-  if (cx.hdmin[0][jp_0] > L || cx.hdmax[0][jp_0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): L outside ROOT_S d band");
-  int Lp_0 = L - cx.hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): L outside ROOT_S d band");
+  int Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
@@ -3591,7 +3638,7 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
     cx.deck_njr[v] = njr;
     int64_t nc = 0; int jp;
-    for (jp = 0; jp < njr; jp++) { int w = cx.hdmax[v][jp]-cx.hdmin[v][jp]+1; if (w>0) nc += w; }
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
     /* max forward reach (child index - v) over non-E/non-B states, exactly as
      * cm_CheckptOptAccAlignHB computes it (cm_dpalign.c ~3040-3045) -- B_st is
@@ -3632,7 +3679,7 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   fctx.tba = tba; fctx.tysh = tysh;
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
-  if ((status = ckpt_cyk_traceback(cm, errbuf, L, CYstore, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+  if ((status = ckpt_cyk_traceback(cm, errbuf, L, CYstore, cx.jmin, cx.jmax, cp9b,
                                    ckpt_cyk_ysh_fetch, &fctx, cx.begin_b, &tr)) != eslOK) goto ERROR;
 
   { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
@@ -4016,9 +4063,9 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* grow the matrices based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo       (cm,   mx, errbuf, cp9b, L, size_limit)) != eslOK) return status;
@@ -4040,17 +4087,10 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
   /* for B states, shadow matrix holds k, length of right fragment, this will be overwritten */
   if(shmx->k_ncells_valid > 0) esl_vec_ISet(shmx->kshadow_mem, shmx->k_ncells_valid, 0);
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
-   * Note: we could optimize by skipping this step and using el_scA[d] to
-   * initialize ELs for each state in the first step of the main recursion
-   * below. We fill in the EL deck here for completeness and so that
-   * a check of this alpha matrix with a CYKOutside matrix will pass.
+  /* EL deck optimization: we skip filling alpha[cm->M] here because
+   * alpha[cm->M][j][d] == el_scA[d] always and we substitute el_scA[d]
+   * directly at the read sites in the main recursion below.
    */
-  if(cm->flags & CMH_LOCAL_END) { 
-    for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) alpha[cm->M][j][d] = el_scA[d];
-    }
-  }
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) {
@@ -4065,21 +4105,17 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
-	if(hdmin[v][jp_v] >= sd) { 
-	  d    = hdmin[v][jp_v];
+	if(hd_min(cp9b, v, jp_v) >= sd) { 
+	  d    = hd_min(cp9b, v, jp_v);
 	  dp_v = 0;
 	}
 	else { 
 	  d    = sd;
-	  dp_v = sd - hdmin[v][jp_v];
+	  dp_v = sd - hd_min(cp9b, v, jp_v);
 	}
-	for (; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	  if(d >= sd) { 
-	    alpha[v][jp_v][dp_v] = alpha[cm->M][j][d-sd] + cm->endsc[v];
-	    /* If we optimize by skipping the filling of the 
-	     * EL deck the above line would become: 
-	     * 'alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];' 
-	     */
+	for (; d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
+	  if(d >= sd) {
+	    alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
 	  }
 	}
       }
@@ -4089,8 +4125,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
     if(cm->sttype[v] == E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j-jmin[v];
-	ESL_DASSERT1((hdmin[v][jp_v] == 0));
-	ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	ESL_DASSERT1((hd_min(cp9b, v, jp_v) == 0));
+	ESL_DASSERT1((hd_max(cp9b, v, jp_v) == 0));
 	alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
       }
     }
@@ -4109,18 +4145,18 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
 	  i = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v])
 		{
 		  alpha[v][jp_v][dp_v] = sc; 
@@ -4148,17 +4184,17 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v])
 		{
 		  alpha[v][jp_v][dp_v] = sc; 
@@ -4206,15 +4242,15 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	 * d <= hdmax[y][jp_y_sdr]+sd (follows from (d-sd <= hdmax[y][jp_y_sdr]))
 	 * this reduces to two ESL_MAX calls
 	 */
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-	  dpn     = dn - hdmin[v][jp_v];
-	  dpx     = dx - hdmin[v][jp_v];
-	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+	  dpn     = dn - hd_min(cp9b, v, jp_v);
+	  dpx     = dx - hd_min(cp9b, v, jp_v);
+	  dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
 	  	  
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
-	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	    if((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc) > alpha[v][jp_v][dp_v]) {
 	      alpha[v][jp_v][dp_v] = sc;
 	      yshadow[v][jp_v][dp_v]    = yoffset;
@@ -4227,23 +4263,23 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
       case ML_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
 	}
 	break;
       case MR_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
 	}
 	break;
       case MP_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	}
       default:
@@ -4252,7 +4288,7 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
-	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
     }
@@ -4271,13 +4307,13 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
-	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
         kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
         /* kn satisfies inequalities (1) and (3) (listed below)*/	
-	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	      
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 6 inequalities (some may be redundant):
@@ -4299,7 +4335,7 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	   * for these within the next for loop.
 	   */
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
 	      /* for current k, all 6 inequalities have been satisified 
 	       * so we know the cells corresponding to the platonic 
 	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
@@ -4308,8 +4344,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
 	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
 	       * and alpha[z][jp_z][k-hdmin[jp_z]];
 	       */
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
+	      kp_z = k-hd_min(cp9b, z, jp_z);
+	      dp_y = d-hd_min(cp9b, y, jp_y-k);
 
 	      if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) 
 		  > alpha[v][jp_v][dp_v]) { 
@@ -4326,8 +4362,8 @@ cm_CYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_lim
     if(cm->flags & CMH_LOCAL_BEGIN) { 
       if(L >= jmin[v] && L <= jmax[v]) { 
 	jp_v = L - jmin[v];
-	Lp   = L - hdmin[v][jp_v];
-	if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) { 
+	Lp   = L - hd_min(cp9b, v, jp_v);
+	if(L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) { 
 	/* If we get here alpha[v][jp_v][Lp] is a valid cell
 	 * in the banded alpha matrix, corresponding to 
 	 * alpha[v][L][L] in the platonic matrix.
@@ -4686,9 +4722,9 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_InsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_InsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_InsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* grow the matrix based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, L, size_limit)) != eslOK) return status;
@@ -4707,17 +4743,10 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
-   * Note: we could optimize by skipping this step and using el_scA[d] to
-   * initialize ELs for each state in the first step of the main recursion
-   * below. We fill in the EL deck here for completeness and so that
-   * a check of this alpha matrix with a CYKOutside matrix will pass.
+  /* EL deck optimization: skip filling alpha[cm->M]. The main recursion
+   * uses el_scA[d-sd] directly at read sites (see ~line 1873). The
+   * PosteriorHB function uses el_scA[d] directly instead of alpha[cm->M][j][d].
    */
-  if(cm->flags & CMH_LOCAL_END) { 
-    for (j = 0; j <= L; j++) {
-      for (d = 0;  d <= j; d++) alpha[cm->M][j][d] = el_scA[d];
-    }
-  }
 
   /* Main recursion  */
   for (v = cm->M-1; v >= 0; v--) {
@@ -4733,7 +4762,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	ESL_DASSERT1((j >= 0 && j <= L));
 	jp_v  = j - jmin[v];
-	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) 
+	for (dp_v = 0, d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); dp_v++, d++) 
 	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
       }
     }
@@ -4743,8 +4772,8 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     if(cm->sttype[v] == E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j-jmin[v];
-	ESL_DASSERT1((hdmin[v][jp_v] == 0));
-	ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	ESL_DASSERT1((hd_min(cp9b, v, jp_v) == 0));
+	ESL_DASSERT1((hd_max(cp9b, v, jp_v) == 0));
 	alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
 	/* rest of deck remains IMPOSSIBLE */
       }
@@ -4764,18 +4793,18 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
 	  i = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
 	    }
 	  }
@@ -4799,17 +4828,17 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
 	    }
 	  }
@@ -4838,15 +4867,15 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
 	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	  
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-	  dpn     = dn - hdmin[v][jp_v];
-	  dpx     = dx - hdmin[v][jp_v];
-	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+	  dpn     = dn - hd_min(cp9b, v, jp_v);
+	  dpx     = dx - hd_min(cp9b, v, jp_v);
+	  dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
 	  
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
-	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y_sdr][dp_y_sd] + tsc));;
 	  }
 	}
@@ -4856,23 +4885,23 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       case ML_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
 	}
 	break;
       case MR_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
 	}
 	break;
       case MP_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	  }
       default: /* no emission */
@@ -4882,7 +4911,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	ESL_DASSERT1((j >= 0 && j <= L));
 	jp_v  = j - jmin[v];
-	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
     }
@@ -4902,13 +4931,13 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
-	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
         kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
-	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	      
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 6 inequalities (some may be redundant):
@@ -4930,7 +4959,7 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	   * for these within the next for loop.
 	   */
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
 	      /* for current k, all 6 inequalities have been satisified 
 	       * so we know the cells corresponding to the platonic 
 	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
@@ -4939,8 +4968,8 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
 	       * and alpha[z][jp_z][k-hdmin[jp_z]];
 	       */
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
+	      kp_z = k-hd_min(cp9b, z, jp_z);
+	      dp_y = d-hd_min(cp9b, y, jp_y-k);
 
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]); 
 	    }
@@ -4954,8 +4983,8 @@ cm_InsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
        NOT_IMPOSSIBLE(cm->beginsc[v])) { 
       if(L >= jmin[v] && L <= jmax[v]) { 
 	jp_v = L - jmin[v];
-	Lp   = L - hdmin[v][jp_v];
-	if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) { 
+	Lp   = L - hd_min(cp9b, v, jp_v);
+	if(L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) { 
 	  /* If we get here alpha[v][jp_v][Lp] is a valid cell
 	   * in the banded alpha matrix, corresponding to 
 	   * alpha[v][L][L] in the platonic matrix.
@@ -5430,9 +5459,9 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_OptAccAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_OptAccAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_OptAccAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* grow the matrices based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo       (cm, mx,   errbuf, cp9b, L, size_limit)) != eslOK) return status;
@@ -5476,8 +5505,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
 	/* copy values from saved EL deck */
-	for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];
+	for(d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);
 	  alpha[v][jp_v][dp_v] = alpha[cm->M][j-sdr][d-sd];
 	  /* yshadow[v][jp_v][dp_v] remains USED_EL */
 	}
@@ -5500,23 +5529,23 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
 	
-	i = j - hdmin[v][jp_v] + 1;
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, i--) { /* for each valid d for v, j */
+	i = j - hd_min(cp9b, v, jp_v) + 1;
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++, i--) { /* for each valid d for v, j */
 	  /*printf("v: %4d j: %4d (%4d..%4d) d: %4d (%4d..%4d) i: %4d (%4d..%4d)\n", 
-	    v, j, jmin[v], jmax[v], d, hdmin[v][jp_v], hdmax[v][jp_v], i, imin[v], imax[v]);*/
+	    v, j, jmin[v], jmax[v], d, hd_min(cp9b, v, jp_v), hd_max(cp9b, v, jp_v), i, imin[v], imax[v]);*/
 	  assert(i >= imin[v] && i <= imax[v]);
 	  ESL_DASSERT1((i >= imin[v] && i <= imax[v]));
 	  ip_v = i - imin[v];         /* i index for state v in emit_mx->l_pp */
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v])
 		{
 		  alpha[v][jp_v][dp_v] = sc; 
@@ -5555,15 +5584,15 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	  ESL_DASSERT1((jp_v     >= 0 && jp_v     <= (jmax[v]-jmin[v])));
 	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	  
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-	  dpn     = dn - hdmin[v][jp_v];
-	  dpx     = dx - hdmin[v][jp_v];
-	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+	  dpn     = dn - hd_min(cp9b, v, jp_v);
+	  dpx     = dx - hd_min(cp9b, v, jp_v);
+	  dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
 	  	  
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
-	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	    if((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v]) {
 	      alpha[v][jp_v][dp_v] = sc;
 	      yshadow[v][jp_v][dp_v] = yoffset;
@@ -5576,11 +5605,11 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       case ML_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
-	  i    = j - hdmin[v][jp_v] + 1;
+	  i    = j - hd_min(cp9b, v, jp_v) + 1;
 	  ip_v = i - imin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--) { 
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, ip_v--) { 
 	    /*printf("v: %4d j: %4d (%4d..%4d) d: %4d (%4d..%4d) i: %4d (%4d..%4d)\n", 
-	      v, j, jmin[v], jmax[v], d, hdmin[v][jp_v], hdmax[v][jp_v], i, imin[v], imax[v]);*/
+	      v, j, jmin[v], jmax[v], d, hd_min(cp9b, v, jp_v), hd_max(cp9b, v, jp_v), i, imin[v], imax[v]);*/
 	    assert(ip_v >= 0 && ip_v <= (imax[v] - imin[v]));
 	    ESL_DASSERT1((ip_v >= 0 && ip_v <= (imax[v] - imin[v])));
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], l_pp[v][ip_v]);
@@ -5590,7 +5619,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       case MR_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) { 
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++) { 
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], r_pp[v][jp_v]);
 	  }
 	}
@@ -5598,9 +5627,9 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       case MP_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
-	  i    = j - hdmin[v][jp_v] + 1;
+	  i    = j - hd_min(cp9b, v, jp_v) + 1;
 	  ip_v = i - imin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++, ip_v--) {
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++, ip_v--) {
 	    assert(ip_v >= 0 && ip_v <= (imax[v] - imin[v]));
 	    ESL_DASSERT1((ip_v >= 0 && ip_v <= (imax[v] - imin[v])));
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], FLogsum(l_pp[v][ip_v], r_pp[v][jp_v])); 
@@ -5613,7 +5642,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j - jmin[v];
-	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
       /* special case if local ends are off: explicitly disallow transitions to EL that require EL emissions 
@@ -5622,9 +5651,9 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       if(! have_el && sd > 0) { /* this is only necessary for emitters (MP, ML, MR in this context) */
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j - jmin[v];
-	  d = ESL_MAX(sd+1, hdmin[v][jp_v]);
-	  dp_v = d - hdmin[v][jp_v];
-	  for (; d <= hdmax[v][jp_v]; d++) { 
+	  d = ESL_MAX(sd+1, hd_min(cp9b, v, jp_v));
+	  dp_v = d - hd_min(cp9b, v, jp_v);
+	  for (; d <= hd_max(cp9b, v, jp_v); d++) { 
 	    if(yshadow[v][jp_v][dp_v] == USED_EL) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	    dp_v++;
 	  }
@@ -5646,13 +5675,13 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
-	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
         kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
-	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	      
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 6 inequalities (some may be redundant):
@@ -5674,7 +5703,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	   * for these within the next for loop.
 	   */
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
 	      /* for current k, all 6 inequalities have been satisified 
 	       * so we know the cells corresponding to the platonic 
 	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
@@ -5683,8 +5712,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
 	       * and alpha[z][jp_z][k-hdmin[jp_z]];
 	       */
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
+	      kp_z = k-hd_min(cp9b, z, jp_z);
+	      dp_y = d-hd_min(cp9b, y, jp_y-k);
 	      jp_y_minus_k = jp_y-k;
 	      dp_y_minus_k = dp_y-k;
 
@@ -5743,8 +5772,8 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
     if((cm->flags & CMH_LOCAL_BEGIN) && (NOT_IMPOSSIBLE(cm->beginsc[v]))) {
       if(L >= jmin[v] && L <= jmax[v]) { 
 	jp_v = L - jmin[v];
-	Lp   = L - hdmin[v][jp_v];
-	if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v]) { 
+	Lp   = L - hd_min(cp9b, v, jp_v);
+	if(L >= hd_min(cp9b, v, jp_v) && L <= hd_max(cp9b, v, jp_v)) { 
 	/* If we get here alpha[v][jp_v][Wp] is a valid cell
 	 * in the banded alpha matrix, corresponding to 
 	 * alpha[v][j0][W] in the platonic matrix.
@@ -6278,6 +6307,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   /* ptrs to cp9b info, for convenience */
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 
@@ -6294,9 +6324,9 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   if (jmin[0] > L || jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
   jp_0 = L - jmin[0];
-  if (hdmin[0][jp_0] > L || hdmax[0][jp_0] < L) 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hdmin[0][jp_0], hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
   /* set the offset banded cell corresponding to beta[0][L][L] to 0., all parses must end there */
   beta[0][jp_0][Lp_0] = 0.;
 
@@ -6306,8 +6336,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
 	if((L >= jmin[v]) && (L <= jmax[v])) {
 	  jp_v = L - jmin[v];
-	  if((L >= hdmin[v][jp_v]) && L <= hdmax[v][jp_v]) {
-	    Lp = L - hdmin[v][jp_v];
+	  if((L >= hd_min(cp9b, v, jp_v)) && L <= hd_max(cp9b, v, jp_v)) {
+	    Lp = L - hd_min(cp9b, v, jp_v);
 	    beta[v][jp_v][Lp] = cm->beginsc[v];
 	  }
 	}
@@ -6327,8 +6357,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	i = j-d+1;
-	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
-	  dp_v = d - hdmin[v][jp_v];
+	for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 8 inequalities (some may be redundant):
 	   * NOTE: these are different from those in Inside() (for one thing, v and y
@@ -6355,9 +6385,9 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	  /* RHS of inequalities 5-8 are dependent on k, so we check
 	   * for these within the next for loop. */
 	  for(k = kmin; k <= kmax; k++) {
-	    if(k < (hdmin[y][jp_y+k] - d) || k > (hdmax[y][jp_y+k] - d)) continue; 
+	    if(k < (hd_min(cp9b, y, jp_y+k) - d) || k > (hd_max(cp9b, y, jp_y+k) - d)) continue; 
 	    /* above line continues if inequality 5 or 6 is violated */
-	    if(k < (hdmin[z][jp_z+k])     || k > (hdmax[z][jp_z+k]))     continue; 
+	    if(k < (hd_min(cp9b, z, jp_z+k))     || k > (hd_max(cp9b, z, jp_z+k)))     continue; 
 	    /* above line continues if inequality 7 or 8 is violated */
 		  
 	    /* if we get here for current k, all 8 inequalities have been satisified 
@@ -6368,8 +6398,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	     * beta[y][jp_y+k][d-hdmin[y][jp_y+k]+k],
 	     * and alpha[z][jp_z][k-hdmin[z][jp_z+k]];
 	     */
-	    kp_z = k-hdmin[z][jp_z+k];
-	    dp_y = d-hdmin[y][jp_y+k];
+	    kp_z = k-hd_min(cp9b, z, jp_z+k);
+	    dp_y = d-hd_min(cp9b, y, jp_y+k);
 	    beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y+k][dp_y+k] + alpha[z][jp_z+k][kp_z]));
 	  }
 	}
@@ -6387,11 +6417,11 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	jp_z = j - jmin[z];
 	i = j-d+1;
 
-	dn = ESL_MAX(hdmin[v][jp_v], j-jmax[z]);
-	dx = ESL_MIN(hdmax[v][jp_v], jp_z);
+	dn = ESL_MAX(hd_min(cp9b, v, jp_v), j-jmax[z]);
+	dx = ESL_MIN(hd_max(cp9b, v, jp_v), jp_z);
 	/* above makes sure that j,d are valid for state z: (jmin[z] + d) >= j >= (jmax[z] + d) */
 	for (d = dx; d >= dn; d--) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 4 inequalities (some may be redundant):
 	   * NOTE: these are different from those in Inside() (for one thing, v and y
@@ -6406,8 +6436,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	   *     3 and 4 guarantee k is within z's j=(j-d) d band
 	   *
 	   */
-	  kmin = ESL_MAX((hdmin[y][jp_y]-d), (hdmin[z][jp_z-d]));
-	  kmax = ESL_MIN((hdmax[y][jp_y]-d), (hdmax[z][jp_z-d]));
+	  kmin = ESL_MAX((hd_min(cp9b, y, jp_y)-d), (hd_min(cp9b, z, jp_z-d)));
+	  kmax = ESL_MIN((hd_max(cp9b, y, jp_y)-d), (hd_max(cp9b, z, jp_z-d)));
 	  /* kmin and kmax satisfy inequalities (1-4) */
 	  for(k = kmin; k <= kmax; k++) { 
 	    /* for current k, all 4 inequalities have been satisified 
@@ -6418,8 +6448,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	     * beta[y][jp_y+k][d-hdmin[y][jp_y]+k],
 	     * and alpha[z][jp_z-d][k-hdmin[z][jp_z-d]];
 	     */
-	    kp_z = k-hdmin[z][jp_z-d];
-	    dp_y = d-hdmin[y][jp_y];
+	    kp_z = k-hd_min(cp9b, z, jp_z-d);
+	    dp_y = d-hd_min(cp9b, y, jp_y);
 	    beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+k] 
 								+ alpha[z][jp_z-d][kp_z]));
 	  }
@@ -6435,9 +6465,9 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       for (j = jmax[v]; j >= jmin[v]; j--) {
 	ESL_DASSERT1((j >= 0 && j <= L));
 	jp_v = j - jmin[v];
-	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
+	for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
 	  i = j-d+1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	  
 	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
@@ -6448,11 +6478,11 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	      if (j == L || d == j) continue; /* boundary condition */
 	      if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if ((d+2) < hdmin[y][(jp_y+1)] || (d+2) > hdmax[y][(jp_y+1)]) continue; /* enforces d is valid for state y */
+	      if ((d+2) < hd_min(cp9b, y, (jp_y+1)) || (d+2) > hd_max(cp9b, y, (jp_y+1))) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y+1][dp_y+2] is a valid alpha cell
 	       * corresponding to alpha[y][j+1][d+2] in the platonic matrix.
 		   */
-	      dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, jp_y+1);  /* d index for state y */
 	      escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 								  + cm->tsc[y][voffset] + escore));
@@ -6463,11 +6493,11 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	      if (d == j) continue;	/* boundary condition (note when j=0, d=0)*/
 	      if (j < jmin[y] || j > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if ((d+1) < hdmin[y][jp_y] || (d+1) > hdmax[y][jp_y]) continue; /* enforces d is valid for state y */
+	      if ((d+1) < hd_min(cp9b, y, jp_y) || (d+1) > hd_max(cp9b, y, jp_y)) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y][dp_y+1] is a valid alpha cell
 	       * corresponding to alpha[y][j][d+1] in the platonic matrix.
 	       */
-	      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, jp_y);  /* d index for state y */
 	      escore = esc_vAA[y][dsq[i-1]];
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 								  + cm->tsc[y][voffset] + escore));
@@ -6478,11 +6508,11 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	      if (j == L) continue;
 	      if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if ((d+1) < hdmin[y][(jp_y+1)] || (d+1) > hdmax[y][(jp_y+1)]) continue; /* enforces d is valid for state y */
+	      if ((d+1) < hd_min(cp9b, y, (jp_y+1)) || (d+1) > hd_max(cp9b, y, (jp_y+1))) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y+1][dp_y+1] is a valid alpha cell
 	       * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
 	       */
-	      dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, (jp_y+1));  /* d index for state y */
 	      escore = esc_vAA[y][dsq[j+1]];
 	      /*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
@@ -6494,11 +6524,11 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	    case D_st:
 	      if (j < jmin[y] || j > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if (d < hdmin[y][jp_y] || d > hdmax[y][jp_y]) continue; /* enforces d is valid for state y */
+	      if (d < hd_min(cp9b, y, jp_y) || d > hd_max(cp9b, y, jp_y)) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y][dp_y] is a valid alpha cell
 	       * corresponding to alpha[y][j][d] in the platonic matrix.
 	       */
-	      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, jp_y);  /* d index for state y */
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->tsc[y][voffset])); 
 	      break;
 	    } /* end of switch(cm->sttype[y] */  
@@ -6528,18 +6558,18 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	  ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[y]));
 	  
 	  /* determine min d (dn) and max d (dx) that are valid for v and y and j */
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y + sdr] - sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y + sdr] - sd);
-	  dp_v = dx - hdmin[v][jp_v];
-	  dp_y = dx - hdmin[y][jp_y + sdr];
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y + sdr) - sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y + sdr) - sd);
+	  dp_v = dx - hd_min(cp9b, v, jp_v);
+	  dp_y = dx - hd_min(cp9b, y, jp_y + sdr);
 	  i    = j-dx+1;
 	  
 	  /* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
 	  switch(emitmode) { 
 	  case EMITPAIR:  /* MP_st */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset] + escore));
@@ -6547,8 +6577,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	    break;
 	  case EMITLEFT:  /* ML_st, IL_st */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      escore = esc_vAA[y][dsq[i-1]];
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset] + escore));
@@ -6557,16 +6587,16 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
 	  case EMITRIGHT:  /* MR_st, IR_st */
 	    escore = esc_vAA[y][dsq[j+1]]; /* not dependent on i */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset] + escore));
 	    }
 	    break;
 	  case EMITNONE:  /* D_st, S_st, E_st*/
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      beta[v][jp_v][dp_v] = ESL_MAX(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset]));
 	    }
@@ -6587,10 +6617,10 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       jx = jmax[v] - sdr;
       for (j = jn; j <= jx; j++) {
 	jp_v =  j - jmin[v];
-	dn   = hdmin[v][jp_v + sdr] - sd;
-	dx   = hdmax[v][jp_v + sdr] - sd;
+	dn   = hd_min(cp9b, v, jp_v + sdr) - sd;
+	dx   = hd_max(cp9b, v, jp_v + sdr) - sd;
 	i    = j-dn+1;                     /* we'll decrement this in for (d... loops inside switch below */
-	dp_v = dn - hdmin[v][jp_v + sdr];  /* we'll increment this in for (d... loops inside switch below */
+	dp_v = dn - hd_min(cp9b, v, jp_v + sdr);  /* we'll increment this in for (d... loops inside switch below */
 
 	switch (emitmode) {
 	case EMITPAIR:
@@ -6701,10 +6731,10 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       jx = (v == cm->M) ? L : jmax[v];
       for(j = jn; j <= jx; j++) { 
 	jp_v = (v == cm->M) ? j : j - jmin[v];
-	dn   = (v == cm->M) ? 0 : hdmin[v][jp_v];
-	dx   = (v == cm->M) ? j : hdmax[v][jp_v];
+	dn   = (v == cm->M) ? 0 : hd_min(cp9b, v, jp_v);
+	dx   = (v == cm->M) ? j : hd_max(cp9b, v, jp_v);
 	for(d = dn; d <= dx; d++) { 
-	  dp_v = (v == cm->M) ? d : d - hdmin[v][jp_v];
+	  dp_v = (v == cm->M) ? d : d - hd_min(cp9b, v, jp_v);
 	  sc  = (alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v]) - alpha[0][jp_0][Lp_0];
 	  if(sc > tol) { 
 	    printf("Check 1 failure: v: %4d j: %4d d: %4d (%.4f + %.4f) %.4f > %.4f\n", 
@@ -6753,8 +6783,8 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++) { 
 	for (j = jmin[v]; j <= jmax[v]; j++) {
 	  jp_v = j - jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	  for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	    dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	    sc = ESL_MAX(sc, (alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v]));
 	  }
 	}
@@ -6792,7 +6822,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
     v = cm->M-1;
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      assert(hdmin[v][jp_v] == 0);
+      assert(hd_min(cp9b, v, jp_v) == 0);
       sc = ESL_MAX(sc, (beta[v][jp_v][0]));
       /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
     }
@@ -7202,14 +7232,17 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   int      dn, dx;             /* current minimum/maximum d allowed */
   int      jp_0;               /* L offset in ROOT_S's (v==0) j band */
   int      Lp_0;               /* L offset in ROOT_S's (v==0) d band */
+  int     *d_max_written   = NULL; /* [0..L]: max d of write RANGE written to beta[cm->M][j][d]; -1 if no write */
+  int     *d_max_nonimpos  = NULL; /* [0..L]: max d where written value is actually non-IMPOSSIBLE; -1 if none */
 
   /* the DP matrices */
   float ***beta  = mx->dp;     /* pointer to the Oustide DP mx */
   float ***alpha = ins_mx->dp; /* pointer to the Inside DP mx (already calc'ed and passed in) */
 
   /* ptrs to cp9b info, for convenience */
-  int     *jmin  = cm->cp9b->jmin;  
+  int     *jmin  = cm->cp9b->jmin;
   int     *jmax  = cm->cp9b->jmax;
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 
@@ -7222,24 +7255,32 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
 
+  /* allocate and initialize d_max_written/d_max_nonimpos for the sparse EL self-transition */
+  if (cm->flags & CMH_LOCAL_END) {
+    ESL_ALLOC(d_max_written,  sizeof(int) * (L+1));
+    ESL_ALLOC(d_max_nonimpos, sizeof(int) * (L+1));
+    esl_vec_ISet(d_max_written,  L+1, -1);
+    esl_vec_ISet(d_max_nonimpos, L+1, -1);
+  }
+
   /* ensure a full alignment to ROOT_S (v==0) is allowed by the bands */
   if (jmin[0] > L || jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, jmin[0], jmax[0]);
   jp_0 = L - jmin[0];
-  if (hdmin[0][jp_0] > L || hdmax[0][jp_0] < L) 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hdmin[0][jp_0], hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L)
+    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
   /* set the offset banded cell corresponding to beta[0][L][L] to 0., all parses must end there */
   beta[0][jp_0][Lp_0] = 0.;
 
   /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. */
   if (cm->flags & CMH_LOCAL_BEGIN) {
-    for (v = 1; v < cm->M; v++) { 
+    for (v = 1; v < cm->M; v++) {
       if(NOT_IMPOSSIBLE(cm->beginsc[v])) {
 	if((L >= jmin[v]) && (L <= jmax[v])) {
 	  jp_v = L - jmin[v];
-	  if((L >= hdmin[v][jp_v]) && L <= hdmax[v][jp_v]) {
-	    Lp = L - hdmin[v][jp_v];
+	  if((L >= hd_min(cp9b, v, jp_v)) && L <= hd_max(cp9b, v, jp_v)) {
+	    Lp = L - hd_min(cp9b, v, jp_v);
 	    beta[v][jp_v][Lp] = cm->beginsc[v];
 	  }
 	}
@@ -7259,8 +7300,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
 	i = j-d+1;
-	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
-	  dp_v = d - hdmin[v][jp_v];
+	for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 8 inequalities (some may be redundant):
 	   * NOTE: these are different from those in Inside() (for one thing, v and y
@@ -7287,9 +7328,9 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  /* RHS of inequalities 5-8 are dependent on k, so we check
 	   * for these within the next for loop. */
 	  for(k = kmin; k <= kmax; k++) {
-	    if(k < (hdmin[y][jp_y+k] - d) || k > (hdmax[y][jp_y+k] - d)) continue; 
+	    if(k < (hd_min(cp9b, y, jp_y+k) - d) || k > (hd_max(cp9b, y, jp_y+k) - d)) continue; 
 	    /* above line continues if inequality 5 or 6 is violated */
-	    if(k < (hdmin[z][jp_z+k])     || k > (hdmax[z][jp_z+k]))     continue; 
+	    if(k < (hd_min(cp9b, z, jp_z+k))     || k > (hd_max(cp9b, z, jp_z+k)))     continue; 
 	    /* above line continues if inequality 7 or 8 is violated */
 		  
 	    /* if we get here for current k, all 8 inequalities have been satisified 
@@ -7300,8 +7341,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	     * beta[y][jp_y+k][d-hdmin[y][jp_y+k]+k],
 	     * and alpha[z][jp_z][k-hdmin[z][jp_z+k]];
 	     */
-	    kp_z = k-hdmin[z][jp_z+k];
-	    dp_y = d-hdmin[y][jp_y+k];
+	    kp_z = k-hd_min(cp9b, z, jp_z+k);
+	    dp_y = d-hd_min(cp9b, y, jp_y+k);
 	    beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+k][dp_y+k] + alpha[z][jp_z+k][kp_z]));
 	  }
 	}
@@ -7319,11 +7360,11 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	jp_z = j - jmin[z];
 	i = j-d+1;
 
-	dn = ESL_MAX(hdmin[v][jp_v], j-jmax[z]);
-	dx = ESL_MIN(hdmax[v][jp_v], jp_z);
+	dn = ESL_MAX(hd_min(cp9b, v, jp_v), j-jmax[z]);
+	dx = ESL_MIN(hd_max(cp9b, v, jp_v), jp_z);
 	/* above makes sure that j,d are valid for state z: (jmin[z] + d) >= j >= (jmax[z] + d) */
 	for (d = dx; d >= dn; d--) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 4 inequalities (some may be redundant):
 	   * NOTE: these are different from those in Inside() (for one thing, v and y
@@ -7338,8 +7379,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	   *     3 and 4 guarantee k is within z's j=(j-d) d band
 	   *
 	   */
-	  kmin = ESL_MAX((hdmin[y][jp_y]-d), (hdmin[z][jp_z-d]));
-	  kmax = ESL_MIN((hdmax[y][jp_y]-d), (hdmax[z][jp_z-d]));
+	  kmin = ESL_MAX((hd_min(cp9b, y, jp_y)-d), (hd_min(cp9b, z, jp_z-d)));
+	  kmax = ESL_MIN((hd_max(cp9b, y, jp_y)-d), (hd_max(cp9b, z, jp_z-d)));
 	  /* kmin and kmax satisfy inequalities (1-4) */
 	  for(k = kmin; k <= kmax; k++) { 
 	    /* for current k, all 4 inequalities have been satisified 
@@ -7350,8 +7391,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	     * beta[y][jp_y+k][d-hdmin[y][jp_y]+k],
 	     * and alpha[z][jp_z-d][k-hdmin[z][jp_z-d]];
 	     */
-	    kp_z = k-hdmin[z][jp_z-d];
-	    dp_y = d-hdmin[y][jp_y];
+	    kp_z = k-hd_min(cp9b, z, jp_z-d);
+	    dp_y = d-hd_min(cp9b, y, jp_y);
 	    beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+k] 
 								+ alpha[z][jp_z-d][kp_z]));
 	  }
@@ -7367,9 +7408,9 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
       for (j = jmax[v]; j >= jmin[v]; j--) {
 	ESL_DASSERT1((j >= 0 && j <= L));
 	jp_v = j - jmin[v];
-	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
+	for (d = hd_max(cp9b, v, jp_v); d >= hd_min(cp9b, v, jp_v); d--) {
 	  i = j-d+1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	  
 	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
@@ -7380,11 +7421,11 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	      if (j == L || d == j) continue; /* boundary condition */
 	      if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if ((d+2) < hdmin[y][(jp_y+1)] || (d+2) > hdmax[y][(jp_y+1)]) continue; /* enforces d is valid for state y */
+	      if ((d+2) < hd_min(cp9b, y, (jp_y+1)) || (d+2) > hd_max(cp9b, y, (jp_y+1))) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y+1][dp_y+2] is a valid alpha cell
 	       * corresponding to alpha[y][j+1][d+2] in the platonic matrix.
 		   */
-	      dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, jp_y+1);  /* d index for state y */
 	      escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 								  + cm->tsc[y][voffset] + escore));
@@ -7395,11 +7436,11 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	      if (d == j) continue;	/* boundary condition (note when j=0, d=0)*/
 	      if (j < jmin[y] || j > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if ((d+1) < hdmin[y][jp_y] || (d+1) > hdmax[y][jp_y]) continue; /* enforces d is valid for state y */
+	      if ((d+1) < hd_min(cp9b, y, jp_y) || (d+1) > hd_max(cp9b, y, jp_y)) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y][dp_y+1] is a valid alpha cell
 	       * corresponding to alpha[y][j][d+1] in the platonic matrix.
 	       */
-	      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, jp_y);  /* d index for state y */
 	      escore = esc_vAA[y][dsq[i-1]];
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 								  + cm->tsc[y][voffset] + escore));
@@ -7410,11 +7451,11 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	      if (j == L) continue;
 	      if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if ((d+1) < hdmin[y][(jp_y+1)] || (d+1) > hdmax[y][(jp_y+1)]) continue; /* enforces d is valid for state y */
+	      if ((d+1) < hd_min(cp9b, y, (jp_y+1)) || (d+1) > hd_max(cp9b, y, (jp_y+1))) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y+1][dp_y+1] is a valid alpha cell
 	       * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
 	       */
-	      dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, (jp_y+1));  /* d index for state y */
 	      escore = esc_vAA[y][dsq[j+1]];
 	      /*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
@@ -7426,11 +7467,11 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	    case D_st:
 	      if (j < jmin[y] || j > jmax[y]) continue; /* enforces j is valid for state y */
 	      jp_y = j - jmin[y];
-	      if (d < hdmin[y][jp_y] || d > hdmax[y][jp_y]) continue; /* enforces d is valid for state y */
+	      if (d < hd_min(cp9b, y, jp_y) || d > hd_max(cp9b, y, jp_y)) continue; /* enforces d is valid for state y */
 	      /* if we get here alpha[y][jp_y][dp_y] is a valid alpha cell
 	       * corresponding to alpha[y][j][d] in the platonic matrix.
 	       */
-	      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
+	      dp_y = d - hd_min(cp9b, y, jp_y);  /* d index for state y */
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->tsc[y][voffset])); 
 	      break;
 	    } /* end of switch(cm->sttype[y] */  
@@ -7460,18 +7501,18 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[y]));
 	  
 	  /* determine min d (dn) and max d (dx) that are valid for v and y and j */
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y + sdr] - sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y + sdr] - sd);
-	  dp_v = dx - hdmin[v][jp_v];
-	  dp_y = dx - hdmin[y][jp_y + sdr];
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y + sdr) - sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y + sdr) - sd);
+	  dp_v = dx - hd_min(cp9b, v, jp_v);
+	  dp_y = dx - hd_min(cp9b, y, jp_y + sdr);
 	  i    = j-dx+1;
 	  
 	  /* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
 	  switch(emitmode) { 
 	  case EMITPAIR:  /* MP_st */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset] + escore));
@@ -7479,8 +7520,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	    break;
 	  case EMITLEFT:  /* ML_st, IL_st */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      escore = esc_vAA[y][dsq[i-1]];
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset] + escore));
@@ -7489,16 +7530,16 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  case EMITRIGHT:  /* MR_st, IR_st */
 	    escore = esc_vAA[y][dsq[j+1]]; /* not dependent on i */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset] + escore));
 	    }
 	    break;
 	  case EMITNONE:  /* D_st, S_st, E_st*/
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
+	      ESL_DASSERT1((  d       >= hd_min(cp9b, v, jp_v)        &&   d       <= hd_max(cp9b, v, jp_v)));
+	      ESL_DASSERT1((((d + sd) >= hd_min(cp9b, y, jp_y + sdr)) && ((d + sd) <= hd_max(cp9b, y, jp_y + sdr))));
 	      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
 								  + cm->tsc[y][voffset]));
 	    }
@@ -7519,10 +7560,10 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
       jx = jmax[v] - sdr;
       for (j = jn; j <= jx; j++) {
 	jp_v =  j - jmin[v];
-	dn   = hdmin[v][jp_v + sdr] - sd;
-	dx   = hdmax[v][jp_v + sdr] - sd;
+	dn   = hd_min(cp9b, v, jp_v + sdr) - sd;
+	dx   = hd_max(cp9b, v, jp_v + sdr) - sd;
 	i    = j-dn+1;                     /* we'll decrement this in for (d... loops inside switch below */
-	dp_v = dn - hdmin[v][jp_v + sdr];  /* we'll increment this in for (d... loops inside switch below */
+	dp_v = dn - hd_min(cp9b, v, jp_v + sdr);  /* we'll increment this in for (d... loops inside switch below */
 
 	switch (emitmode) {
 	case EMITPAIR:
@@ -7554,18 +7595,92 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	  }
 	  break;
 	}
+	/* update d_max_written for the sparse self-transition */
+	if (dx >= dn && dx > d_max_written[j]) d_max_written[j] = dx;
+	/* update d_max_nonimpos: highest d with actual non-IMPOSSIBLE write for this j */
+	if (dx >= dn) {
+	  int d_tmp;
+	  int d_lo = (dn >= 0) ? dn : 0;
+	  for (d_tmp = dx; d_tmp >= d_lo; d_tmp--) {
+	    if (NOT_IMPOSSIBLE(beta[cm->M][j][d_tmp])) {
+	      if (d_tmp > d_max_nonimpos[j]) d_max_nonimpos[j] = d_tmp;
+	      break;
+	    }
+	  }
+	}
       }
     }
   } /* end loop over decks v. */
 
-  /* Deal with last step needed for local alignment 
+  /* Deal with last step needed for local alignment
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   * Sparse optimization: skip j values where d_max_nonimpos[j] < 0 (no non-IMPOSSIBLE
+   * EL writes at j; all self-transitions would be IMPOSSIBLE → no-op). For j values
+   * with non-IMPOSSIBLE writes, start the d-sweep at d_max_nonimpos[j]-1 instead of
+   * j-1: cells at d > d_max_nonimpos[j] are IMPOSSIBLE and propagate nothing.
    */
   if (cm->flags & CMH_LOCAL_END) {
-    for (j = L; j > 0; j--) { /* careful w/ boundary here */
-      for (d = j-1; d >= 0; d--) /* careful w/ boundary here */
-	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+    if (getenv("EL_DMAX_DIAG")) {
+      int n_written_j = 0, d_max_total = 0, d_max_max = 0;
+      int n_nonimpos_j = 0, d_ni_total = 0, d_ni_max = 0;
+      for (j = 0; j <= L; j++) {
+        if (d_max_written[j] >= 0) {
+          n_written_j++;
+          d_max_total += d_max_written[j];
+          if (d_max_written[j] > d_max_max) d_max_max = d_max_written[j];
+        }
+        if (d_max_nonimpos[j] >= 0) {
+          n_nonimpos_j++;
+          d_ni_total += d_max_nonimpos[j];
+          if (d_max_nonimpos[j] > d_ni_max) d_ni_max = d_max_nonimpos[j];
+        }
+      }
+      fprintf(stderr, "#EL_DMAX    M=%d L=%d n_written_j=%d avg_dmax_written=%.1f max_dmax_written=%d\n",
+              cm->M, L, n_written_j, n_written_j>0 ? (double)d_max_total/n_written_j : 0.0, d_max_max);
+      fprintf(stderr, "#EL_NONIMPOS M=%d L=%d n_nonimpos_j=%d avg_dmax_nonimpos=%.1f max_dmax_nonimpos=%d\n",
+              cm->M, L, n_nonimpos_j, n_nonimpos_j>0 ? (double)d_ni_total/n_nonimpos_j : 0.0, d_ni_max);
+      fflush(stderr);
     }
+    /* DEBUG: verify d_max_nonimpos is correct before using it */
+    if (getenv("EL_DMAX_VERIFY")) {
+      for (j = 0; j <= L; j++) {
+        int true_dmax = -1;
+        for (d = j; d >= 0; d--) {
+          if (NOT_IMPOSSIBLE(beta[cm->M][j][d])) { true_dmax = d; break; }
+        }
+        if (true_dmax != d_max_nonimpos[j]) {
+          fprintf(stderr, "BUG: j=%d d_max_nonimpos=%d true_dmax=%d\n",
+                  j, d_max_nonimpos[j], true_dmax);
+          fflush(stderr);
+        }
+      }
+    }
+    /* run the REFERENCE sweep (d_max_written) and save beta copy for comparison */
+    if (getenv("EL_SWEEP_COMPARE")) {
+      /* reference sweep */
+      for (j = L; j > 0; j--) {
+        if (d_max_written[j] < 0) continue;
+        for (d = d_max_written[j] - 1; d >= 0; d--)
+          beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+      }
+    } else {
+      for (j = L; j > 0; j--) {
+        if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
+        if (d_max_nonimpos[j] < 0) {
+          /* all writes were IMPOSSIBLE; self-transition has no effect; skip */
+          continue;
+        }
+        /* sweep from d_max_nonimpos[j]-1 downward: the step at d_max_nonimpos[j] is always a
+         * no-op (beta[j][d_max_nonimpos[j]+1] is IMPOSSIBLE), so skip it and start one below.
+         * This also avoids a potential out-of-bounds access when d_max_nonimpos[j] == j. */
+        for (d = d_max_nonimpos[j] - 1; d >= 0; d--)
+          beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+      }
+    }
+    free(d_max_written);
+    d_max_written = NULL;
+    free(d_max_nonimpos);
+    d_max_nonimpos = NULL;
   }
 
   if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
@@ -7585,8 +7700,8 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
       for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++) { 
 	for (j = jmin[v]; j <= jmax[v]; j++) {
 	  jp_v = j - jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	  for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	    dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	    sc = FLogsum(sc, (alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v]));
 	    /*printf("node %d | adding alpha beta: v: %d | jp_v: %d | dp_v: %d| j: %d | d: %d\n", n, v, jp_v, dp_v, j, d);
 	      printf("\talpha: %f | beta: %f\n", alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
@@ -7626,7 +7741,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     v = cm->M-1;
     for (j = jmin[v]; j <= jmax[v]; j++) {
       jp_v = j - jmin[v];
-      assert(hdmin[v][jp_v] == 0);
+      assert(hd_min(cp9b, v, jp_v) == 0);
       sc = FLogsum(sc, (beta[v][jp_v][0]));
       /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
     }
@@ -7648,9 +7763,14 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   if (ret_sc != NULL) *ret_sc = sc;
   return eslOK;
-}  
 
-/* Function: cm_Posterior() 
+ ERROR:
+  if (d_max_written)  free(d_max_written);
+  if (d_max_nonimpos) free(d_max_nonimpos);
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+/* Function: cm_Posterior()
  * Date:     EPN, Mon Nov 19 09:02:12 2007
  * Note:     based on Ian Holmes' P7EmitterPosterior() from HMMER's 2.x postprob.c
  *           Renamed from CMPosterior() [EPN, Wed Sep 14 06:15:22 2011].
@@ -7772,6 +7892,7 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
   /* ptrs to cp9b info, for convenience */
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
 
@@ -7779,9 +7900,9 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
   if (cm->cp9b->jmin[0] > L || cm->cp9b->jmax[0] < L)
     ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cm->cp9b->jmin[0], cm->cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cm->cp9b->hdmin[0][jp_0] > L || cm->cp9b->hdmax[0][jp_0] < L) 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cm->cp9b->hdmin[0][jp_0], cm->cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cm->cp9b, 0, jp_0) > L || hd_max(cm->cp9b, 0, jp_0) < L) 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_CYKInsideAlignHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cm->cp9b, 0, jp_0), hd_max(cm->cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   sc = alpha[0][jp_0][Lp_0];
 
@@ -7795,29 +7916,40 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
     if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
   }
 
-  /* If local ends are on, start with the EL state (cm->M), otherwise
-   * M deck is not valid. Note: there are no bands on the EL state 
+  /* If local ends are on, fill the EL state (cm->M) posterior deck.
+   * EL optimization: alpha[cm->M][j][d] == el_scA[d] always, so use
+   * el_scA[d] directly instead of reading the Inside EL deck
+   * (which was not filled, per Changes 1+2).
    */
-  if (cm->flags & CMH_LOCAL_END) { 
-    for(j = 0; j <= L; j++) {
-      for (d = 0; d <= j; d++) { 
-	post[cm->M][j][d] = alpha[cm->M][j][d] + beta[cm->M][j][d] - sc;
+  if (cm->flags & CMH_LOCAL_END) {
+    float *el_scA_post;
+    ESL_ALLOC(el_scA_post, sizeof(float) * (L+1));
+    for (d = 0; d <= L; d++) el_scA_post[d] = cm->el_selfsc * d;
+    for (j = 0; j <= L; j++) {
+      if (!NOT_IMPOSSIBLE(beta[cm->M][j][0])) continue; /* j-skip: all beta IMPOSSIBLE, post stays IMPOSSIBLE */
+      for (d = 0; d <= j; d++) {
+	if (!NOT_IMPOSSIBLE(beta[cm->M][j][d])) break; /* contiguous strip: IMPOSSIBLE means done for this j */
+	post[cm->M][j][d] = el_scA_post[d] + beta[cm->M][j][d] - sc;
       }
     }
+    free(el_scA_post);
   }
-  
+
   for (v = (cm->M-1); v >= 0; v--) {
     for (j = jmin[v]; j <= jmax[v]; j++) {
       ESL_DASSERT1((j >= 0 && j <= L));
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	dp_v = d - hdmin[v][jp_v];
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	dp_v = d - hd_min(cp9b, v, jp_v);
 	post[v][jp_v][dp_v] = alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v] - sc;
 	/*printf("v: %3d | jp_v: %3d | dp_v: %3d | alpha: %5.2f | beta: %5.2f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
-      }  
+      }
     }
   }
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Function: cm_EmitterPosterior()
@@ -8072,6 +8204,7 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
   int     *imax  = cm->cp9b->imax;
   int     *jmin  = cm->cp9b->jmin;  
   int     *jmax  = cm->cp9b->jmax;
+  CP9Bands_t *cp9b = cm->cp9b;  /* brief 26_0430-157: needed by hd_min()/hd_max() */
   int    **hdmin = cm->cp9b->hdmin;
   int    **hdmax = cm->cp9b->hdmax;
   
@@ -8090,8 +8223,8 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
     if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
       for(j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j - jmin[v];
-	for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
-	  dp_v = d-hdmin[v][jp_v];
+	for(d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { 
+	  dp_v = d-hd_min(cp9b, v, jp_v);
 	  i    = j-d+1;
 	  assert(i >= imin[v] && i <= imax[v]);
 	  ip_v = i - imin[v];
@@ -8104,8 +8237,8 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
 	jp_v = j - jmin[v];
 	/* Peel first d: assign directly (avoids FLogsum(IMPOSSIBLE, x) == x) */
 	emit_mx->r_pp[v][jp_v] = post->dp[v][jp_v][0];
-	for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d-hdmin[v][jp_v];
+	for(d = hd_min(cp9b, v, jp_v)+1; d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d-hd_min(cp9b, v, jp_v);
 	  emit_mx->r_pp[v][jp_v] = FLogsum(emit_mx->r_pp[v][jp_v], post->dp[v][jp_v][dp_v]);
 	}
       }
@@ -8667,12 +8800,12 @@ cm_InitializeOptAccShadowDZeroHB(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, char 
 	}
 	for(j = ESL_MAX(sd, jmin[v]); j <= jmax[v]; j++) { 
 	  jp_v = j-jmin[v];
-	  if(hdmin[v][jp_v] <= hdmax[v][jp_v]) { /* at least one valid d exists for this v and j */
+	  if(hd_min(cp9b, v, jp_v) <= hd_max(cp9b, v, jp_v)) { /* at least one valid d exists for this v and j */
 	    if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { /* j-sdr is valid for state y */
 	      jp_y = j - sdr - jmin[y]; 
-	      if(sd >= hdmin[v][jp_v] && sd <= hdmax[v][jp_v] && /* d==sd is valid for state v and end posn j */
-		 0  >= hdmin[y][jp_y] &&  0 <= hdmax[y][jp_y]) { /* d==0  is valid for state y and end posn j-sdr */
-		dp_v = sd - hdmin[v][jp_v];
+	      if(sd >= hd_min(cp9b, v, jp_v) && sd <= hd_max(cp9b, v, jp_v) && /* d==sd is valid for state v and end posn j */
+		 0  >= hd_min(cp9b, y, jp_y) &&  0 <= hd_max(cp9b, y, jp_y)) { /* d==0  is valid for state y and end posn j-sdr */
+		dp_v = sd - hd_min(cp9b, v, jp_v);
 		yshadow[v][jp_v][dp_v] = yoffset;
 	      }
 	    }

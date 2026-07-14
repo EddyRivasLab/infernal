@@ -210,7 +210,9 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
    * the truncated alignment matrices. 
    */
   cm->hb_mx    = cm_hb_mx_Create(cm->M);
+  /* omit_el_deck defaults to 0; callers (e.g., cmsearch pipeline) set it before dispatch */
   cm->hb_omx   = cm_hb_mx_Create(cm->M);
+  /* hb_omx keeps EL deck: beta[cm->M] is needed for Outside/Posterior */
   cm->hb_emx   = cm_hb_emit_mx_Create(cm);
   cm->hb_shmx  = cm_hb_shadow_mx_Create(cm);
   if(cm->config_opts & CM_CONFIG_TRUNC) { 

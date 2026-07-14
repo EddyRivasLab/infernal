@@ -1,6 +1,7 @@
 #! /usr/bin/perl
 
-# Test the INFERNAL1/b CM file format and --p7pad-* options of cmbuild
+# Test the INFERNAL1/d (calibrated cmbuild) and INFERNAL1/b (cmconvert
+# of legacy v1a) CM file formats and --p7pad-* options of cmbuild
 # and cmconvert. Regression-covers the c09285c8 pass-2 rewind dispatch
 # fix (cmcalibrate rereads v1b output) via a separate sqc entry in
 # dev_testsuite.sqc at level 2; this script covers the ASCII-format
@@ -45,27 +46,30 @@ for my $suffix ("default.cm", "nopad.cm",
 }
 
 ######################################################################
-# Subtest 1: Default cmbuild (with pad) produces INFERNAL1/b with pads.
+# Subtest 1: Default cmbuild (with pad) produces INFERNAL1/d with pads.
+# (Default cmbuild now stores a null3-OFF E-value set via the fastcal
+# store-both path, so the CM carries CMH_EXPTAIL_NONULL3_STATS and is
+# written as INFERNAL1/d, not 1/b -- see cm_file.c write-format gate.)
 ######################################################################
 `$builddir/src/cmbuild --wnone -F --p7pad-N 50 --p7pad-seed 42 $tmppfx.default.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (default) failed\n"; }
 
 my $first = first_line("$tmppfx.default.cm");
-if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 1: default cmbuild first line is '$first', expected to start with 'INFERNAL1/b'\n"; }
+if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 1: default cmbuild first line is '$first', expected to start with 'INFERNAL1/d'\n"; }
 if (! file_has_header("$tmppfx.default.cm", "P7NODEPAD", "yes")) { die "FAIL: subtest 1: default cmbuild output missing 'P7NODEPAD yes'\n"; }
 
 ######################################################################
 # Subtest 2: --no-p7pad suppresses pad computation.
-# First line is still INFERNAL1/b (format tag is independent of
-# whether pads are populated), header says 'P7NODEPAD no', and the
-# first MATL node line trails with '- -' (both dashes) rather than
-# '<int> -'.
+# First line is INFERNAL1/d (format tag is independent of whether pads
+# are populated; default cmbuild still stores the null3-OFF E-value set,
+# so the CM is 1/d), header says 'P7NODEPAD no', and the first MATL node
+# line trails with '- -' (both dashes) rather than '<int> -'.
 ######################################################################
 `$builddir/src/cmbuild --wnone -F --no-p7pad $tmppfx.nopad.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild --no-p7pad failed\n"; }
 
 $first = first_line("$tmppfx.nopad.cm");
-if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 2: --no-p7pad first line is '$first', expected to start with 'INFERNAL1/b'\n"; }
+if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 2: --no-p7pad first line is '$first', expected to start with 'INFERNAL1/d'\n"; }
 if (! file_has_header("$tmppfx.nopad.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 2: --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 # Inspect the first MATL node line: last two whitespace fields must be '- -'.
@@ -74,20 +78,24 @@ if (! defined $matl_nopad) { die "FAIL: subtest 2: no MATL node line found in $t
 my @f_nopad = split /\s+/, $matl_nopad;
 # leading empty element from leading whitespace?
 shift @f_nopad if $f_nopad[0] eq "";
-if (scalar(@f_nopad) != 12) { die "FAIL: subtest 2: MATL line should have 12 whitespace fields, got " . scalar(@f_nopad) . ": '$matl_nopad'\n"; }
+# INFERNAL1/d node lines carry 14 whitespace fields: the 12 base 1/b
+# columns plus two trailing consensus-pseudoknot annotation columns
+# (idx 12,13). The left/right p7 pad fields remain at idx 10,11.
+if (scalar(@f_nopad) != 14) { die "FAIL: subtest 2: MATL line should have 14 whitespace fields, got " . scalar(@f_nopad) . ": '$matl_nopad'\n"; }
 if ($f_nopad[10] ne "-" || $f_nopad[11] ne "-") {
     die "FAIL: subtest 2: --no-p7pad MATL last two fields should be '- -', got '$f_nopad[10]' '$f_nopad[11]'\n";
 }
 
 ######################################################################
-# Subtest 3: With pads, MATL node lines have 12 fields; for MATL
-# (left-only match) the last two fields are <int> followed by '-'.
+# Subtest 3: With pads, MATL node lines have 14 fields (12 base 1/b
+# columns + 2 trailing 1/d pknot columns); for MATL (left-only match)
+# the pad fields at idx 10,11 are <int> followed by '-'.
 ######################################################################
 my $matl_pad = first_matl_line("$tmppfx.default.cm");
 if (! defined $matl_pad) { die "FAIL: subtest 3: no MATL node line found in $tmppfx.default.cm\n"; }
 my @f_pad = split /\s+/, $matl_pad;
 shift @f_pad if $f_pad[0] eq "";
-if (scalar(@f_pad) != 12) { die "FAIL: subtest 3: MATL line should have 12 whitespace fields, got " . scalar(@f_pad) . ": '$matl_pad'\n"; }
+if (scalar(@f_pad) != 14) { die "FAIL: subtest 3: MATL line should have 14 whitespace fields, got " . scalar(@f_pad) . ": '$matl_pad'\n"; }
 if ($f_pad[10] !~ /^\d+$/) { die "FAIL: subtest 3: MATL 11th field (left pad) should be integer, got '$f_pad[10]'\n"; }
 if ($f_pad[11] ne "-")     { die "FAIL: subtest 3: MATL 12th field (right pad) should be '-' for MATL, got '$f_pad[11]'\n"; }
 

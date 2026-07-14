@@ -3303,7 +3303,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
   W = j0-i0+1;
   /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 "d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hd_max(cp9b, 0, (j-jmin[0])))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 "d)", j, hd_max(cp9b, 0, (j-jmin[0])), j0-i0+1);
   }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
@@ -3370,7 +3370,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
-	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	for (dp_v = 0, d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
 	  dp = ESL_MAX(d-sd, 0);
 	  alpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
 	}
@@ -3381,8 +3381,8 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
     if(cm->sttype[v] == E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j-jmin[v];
-	ESL_DASSERT1((hdmin[v][jp_v] == 0));
-	ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	ESL_DASSERT1((hd_min(cp9b, v, jp_v) == 0));
+	ESL_DASSERT1((hd_max(cp9b, v, jp_v) == 0));
 	alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
       }
     }
@@ -3400,18 +3400,18 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
 	  i = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
 	    }
 	  }
@@ -3434,17 +3434,17 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
 	    }
 	  }
@@ -3487,15 +3487,15 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	   * d <= hdmax[y][jp_y_sdr]+sd (follows from (d-sd <= hdmax[y][jp_y_sdr]))
 	   * this reduces to two ESL_MAX calls
 	   */
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-	  dpn     = dn - hdmin[v][jp_v];
-	  dpx     = dx - hdmin[v][jp_v];
-	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+	  dpn     = dn - hd_min(cp9b, v, jp_v);
+	  dpx     = dx - hd_min(cp9b, v, jp_v);
+	  dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
 	  	  
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
-	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	    alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc);
 	  }
 	}
@@ -3505,23 +3505,23 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
       case ML_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
 	}
 	break;
       case MR_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
 	}
 	break;
       case MP_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    {
 	      /*if(i < i0 || j > j0) { 
 		printf("dsq[i:%d]: %d\n", i, dsq[i]);
@@ -3538,7 +3538,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
-	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
     }
@@ -3557,13 +3557,13 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
-	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
         kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
-	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	      
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 6 inequalities (some may be redundant):
@@ -3585,7 +3585,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	   * for these within the next for loop.
 	   */
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
 	      /* for current k, all 6 inequalities have been satisified 
 	       * so we know the cells corresponding to the platonic 
 	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
@@ -3594,8 +3594,8 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
 	       * and alpha[z][jp_z][k-hdmin[jp_z]];
 	       */
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
+	      kp_z = k-hd_min(cp9b, z, jp_z);
+	      dp_y = d-hd_min(cp9b, y, jp_y-k);
 	      alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]);
 	    }
 	  }
@@ -3640,11 +3640,11 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
 	  assert(cm->sttype[v] != BEGL_S); /* local begins into BEGL_S are impossible */
 	  jp_y = j - jmin[y];
 	  
-	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-	  dpn  = dn - hdmin[v][jp_v];
-	  dpx  = dx - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
+	  dn   = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y));
+	  dx   = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y));
+	  dpn  = dn - hd_min(cp9b, v, jp_v);
+	  dpx  = dx - hd_min(cp9b, v, jp_v);
+	  dp_y = dn - hd_min(cp9b, y, jp_y);
 	  d    = dn;
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) { 
 	    sc = alpha[y][jp_y][dp_y] + cm->beginsc[y];
@@ -3663,9 +3663,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
      * (if necessary)
      */
     dpn = 0;
-    dpx = hdmax[v][jp_v] - hdmin[v][jp_v];
+    dpx = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v);
     for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-      d         = dp_v + hdmin[v][jp_v];
+      d         = dp_v + hd_min(cp9b, v, jp_v);
       bestsc[d] = alpha[0][jp_v][dp_v];
       vsc_root  = ESL_MAX(vsc_root, alpha[0][jp_v][dp_v]);
     }
@@ -3674,7 +3674,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
       j = jp_v + jmin[v];
       for(dp_v = dpn; dp_v <= dpx; dp_v++) {
 	if(alpha[0][jp_v][dp_v] >= env_cutoff) { 
-	  d = dp_v + hdmin[v][jp_v];
+	  d = dp_v + hd_min(cp9b, v, jp_v);
 	  i = j - d + 1;
 	  envi = ESL_MIN(envi, i);
 	  envj = ESL_MAX(envj, j);
@@ -3684,10 +3684,10 @@ FastCYKScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DSQ *d
     
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hd_min(cp9b, 0, jp_v), hd_max(cp9b, 0, jp_v), bestsc, bestr, NULL, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hd_min(cp9b, 0, jp_v), hd_max(cp9b, 0, jp_v), bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {' */
 
@@ -3833,7 +3833,7 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
 
   W = j0-i0+1;
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB_shmx(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 "d)", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hd_max(cp9b, 0, (j-jmin[0])))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB_shmx(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 "d)", j, hd_max(cp9b, 0, (j-jmin[0])), j0-i0+1);
   }
 
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -3888,7 +3888,7 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v  = j - jmin[v];
-        for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+        for (dp_v = 0, d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
           dp = ESL_MAX(d-sd, 0);
           alpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
           /* yshadow already USED_EL from init */
@@ -3899,8 +3899,8 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
     if(cm->sttype[v] == E_st) {
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v = j-jmin[v];
-        ESL_DASSERT1((hdmin[v][jp_v] == 0));
-        ESL_DASSERT1((hdmax[v][jp_v] == 0));
+        ESL_DASSERT1((hd_min(cp9b, v, jp_v) == 0));
+        ESL_DASSERT1((hd_max(cp9b, v, jp_v) == 0));
         alpha[v][jp_v][0] = 0.;
       }
     }
@@ -3912,16 +3912,16 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
         for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
           if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
 
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
           i = j - d + 1;
-          dp_v = d - hdmin[v][jp_v];
+          dp_v = d - hd_min(cp9b, v, jp_v);
           for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
             yoffset = yvalidA[yvalid_idx];
             y = cm->cfirst[v] + yoffset;
             jp_y_sdr = j - jmin[y] - sdr;
 
-            if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-              dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+            if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+              dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
               if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v]) {
                 alpha[v][jp_v][dp_v]   = sc;
                 yshadow[v][jp_v][dp_v] = yoffset;
@@ -3941,15 +3941,15 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
         for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++)
           if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset;
 
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-          dp_v = d - hdmin[v][jp_v];
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+          dp_v = d - hd_min(cp9b, v, jp_v);
           for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) {
             yoffset = yvalidA[yvalid_idx];
             y = cm->cfirst[v] + yoffset;
             jp_y_sdr = j - jmin[y] - sdr;
 
-            if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) {
-              dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+            if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) {
+              dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
               if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v]) {
                 alpha[v][jp_v][dp_v]   = sc;
                 yshadow[v][jp_v][dp_v] = yoffset;
@@ -3973,11 +3973,11 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
         jp_y_sdr = jn - jmin[y] - sdr;
 
         for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-          dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-          dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-          dpn     = dn - hdmin[v][jp_v];
-          dpx     = dx - hdmin[v][jp_v];
-          dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+          dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+          dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+          dpn     = dn - hd_min(cp9b, v, jp_v);
+          dpx     = dx - hd_min(cp9b, v, jp_v);
+          dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
 
           for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) {
             if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc) > alpha[v][jp_v][dp_v]) {
@@ -3991,23 +3991,23 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
       case ML_st:
         for (j = jmin[v]; j <= jmax[v]; j++) {
           jp_v  = j - jmin[v];
-          i     = j - hdmin[v][jp_v] + 1;
-          for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          i     = j - hd_min(cp9b, v, jp_v) + 1;
+          for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
             alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
         }
         break;
       case MR_st:
         for (j = jmin[v]; j <= jmax[v]; j++) {
           jp_v  = j - jmin[v];
-          for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
             alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
         }
         break;
       case MP_st:
         for (j = jmin[v]; j <= jmax[v]; j++) {
           jp_v  = j - jmin[v];
-          i     = j - hdmin[v][jp_v] + 1;
-          for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+          i     = j - hd_min(cp9b, v, jp_v) + 1;
+          for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
             alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
         }
       default:
@@ -4015,7 +4015,7 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
       }
       for (j = jmin[v]; j <= jmax[v]; j++) {
         jp_v  = j - jmin[v];
-        for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+        for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
           alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
     }
@@ -4028,15 +4028,15 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
         jp_v = j - jmin[v];
         jp_y = j - jmin[y];
         jp_z = j - jmin[z];
-        kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+        kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
         kn = ESL_MAX(kn, 0);
-        kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-          dp_v = d - hdmin[v][jp_v];
+        kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+          dp_v = d - hd_min(cp9b, v, jp_v);
           for(k = kn; k <= kx; k++) {
-            if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
-              kp_z = k-hdmin[z][jp_z];
-              dp_y = d-hdmin[y][jp_y-k];
+            if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
+              kp_z = k-hd_min(cp9b, z, jp_z);
+              dp_y = d-hd_min(cp9b, y, jp_y-k);
               if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) > alpha[v][jp_v][dp_v]) {
                 alpha[v][jp_v][dp_v]   = sc;
                 kshadow[v][jp_v][dp_v] = k;
@@ -4072,11 +4072,11 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
         if(NOT_IMPOSSIBLE(cm->beginsc[y]) && (j >= jmin[y] && j <= jmax[y])) {
           assert(cm->sttype[v] != BEGL_S);
           jp_y = j - jmin[y];
-          dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-          dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-          dpn  = dn - hdmin[v][jp_v];
-          dpx  = dx - hdmin[v][jp_v];
-          dp_y = dn - hdmin[y][jp_y];
+          dn   = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y));
+          dx   = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y));
+          dpn  = dn - hd_min(cp9b, v, jp_v);
+          dpx  = dx - hd_min(cp9b, v, jp_v);
+          dp_y = dn - hd_min(cp9b, y, jp_y);
           d    = dn;
           for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) {
             sc = alpha[y][jp_y][dp_y] + cm->beginsc[y];
@@ -4091,9 +4091,9 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
     }
 
     dpn = 0;
-    dpx = hdmax[v][jp_v] - hdmin[v][jp_v];
+    dpx = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v);
     for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-      d         = dp_v + hdmin[v][jp_v];
+      d         = dp_v + hd_min(cp9b, v, jp_v);
       bestsc[d] = alpha[0][jp_v][dp_v];
       vsc_root  = ESL_MAX(vsc_root, alpha[0][jp_v][dp_v]);
       if(alpha[0][jp_v][dp_v] > best_overall_sc) {
@@ -4107,7 +4107,7 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
       j = jp_v + jmin[v];
       for(dp_v = dpn; dp_v <= dpx; dp_v++) {
         if(alpha[0][jp_v][dp_v] >= env_cutoff) {
-          d = dp_v + hdmin[v][jp_v];
+          d = dp_v + hd_min(cp9b, v, jp_v);
           i = j - d + 1;
           envi = ESL_MIN(envi, i);
           envj = ESL_MAX(envj, j);
@@ -4116,10 +4116,10 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
     }
 
     if(gamma != NULL) {
-      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hd_min(cp9b, 0, jp_v), hd_max(cp9b, 0, jp_v), bestsc, bestr, NULL, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) {
-      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hd_min(cp9b, 0, jp_v), hd_max(cp9b, 0, jp_v), bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   }
 
@@ -4194,7 +4194,7 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
       while(1) {
         if(cm->sttype[v] == B_st) {
           jp_v = j - jmin[v];
-          dp_v = d - hdmin[v][jp_v];
+          dp_v = d - hd_min(cp9b, v, jp_v);
           k = kshadow[v][jp_v][dp_v];
 
           if((status = esl_stack_IPush(pda, j)) != eslOK)       { FreeParsetree(tr); tr = NULL; goto TR_DONE; }
@@ -4220,7 +4220,7 @@ FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx,
         }
         else {
           jp_v = j - jmin[v];
-          dp_v = d - hdmin[v][jp_v];
+          dp_v = d - hd_min(cp9b, v, jp_v);
           yoffset = yshadow[v][jp_v][dp_v];
           switch (cm->sttype[v]) {
           case D_st:            break;
@@ -4361,7 +4361,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
   W = j0-i0+1;
   /* make sure our bands won't allow a hit bigger than W (this could be modified to only execute in debugging mode) */
   for(j = jmin[0]; j <= jmax[0]; j++) {
-    if(W < (hdmax[0][(j-jmin[0])])) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 ")", j, hdmax[0][(j-jmin[0])], j0-i0+1);
+    if(W < (hd_max(cp9b, 0, (j-jmin[0])))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "FastCYKScanHB(), band allows a hit (j:%d hdmax[0][j]:%d) greater than j0-i0+1 (%" PRId64 ")", j, hd_max(cp9b, 0, (j-jmin[0])), j0-i0+1);
   }
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
@@ -4428,7 +4428,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
-	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	for (dp_v = 0, d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
 	  dp = ESL_MAX(d-sd, 0);
 	  alpha[v][jp_v][dp_v] = el_scA[dp] + cm->endsc[v];
 	}
@@ -4439,8 +4439,8 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
     if(cm->sttype[v] == E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v = j-jmin[v];
-	ESL_DASSERT1((hdmin[v][jp_v] == 0));
-	ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	ESL_DASSERT1((hd_min(cp9b, v, jp_v) == 0));
+	ESL_DASSERT1((hd_max(cp9b, v, jp_v) == 0));
 	alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
       }
     }
@@ -4458,18 +4458,18 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
 	  i = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
 	    }
 	  }
@@ -4492,17 +4492,17 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
 	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
 	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) { /* for each valid d for v, j */
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha */
 	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
 	    yoffset = yvalidA[yvalid_idx];
 	    y = cm->cfirst[v] + yoffset;
 	    jp_y_sdr = j - jmin[y] - sdr;
 	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hd_min(cp9b, y, jp_y_sdr);
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
 	    }
 	  }
@@ -4531,15 +4531,15 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
 	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	  
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-	  dpn     = dn - hdmin[v][jp_v];
-	  dpx     = dx - hdmin[v][jp_v];
-	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	  dn = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y_sdr) + sd);
+	  dx = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y_sdr) + sd);
+	  dpn     = dn - hd_min(cp9b, v, jp_v);
+	  dpx     = dx - hd_min(cp9b, v, jp_v);
+	  dp_y_sd = dn - hd_min(cp9b, y, jp_y_sdr) - sd;
 	  	  
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
-	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hd_max(cp9b, v, jp_v)     - hd_min(cp9b, v, jp_v))));
+	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hd_max(cp9b, y, jp_y_sdr) - hd_min(cp9b, y, jp_y_sdr))));
 	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc);
 	  }
 	}
@@ -4549,23 +4549,23 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
       case ML_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
 	}
 	break;
       case MR_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
 	}
 	break;
       case MP_st:
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  i     = j - hd_min(cp9b, v, jp_v) + 1;
+	  for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	}
 	break;
@@ -4575,7 +4575,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
 	jp_v  = j - jmin[v];
-	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	for (dp_v = 0; dp_v <= (hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v)); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
       }
     }
@@ -4594,13 +4594,13 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
-	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	kn = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
         kn = ESL_MAX(kn, 0); /* kn must be non-negative, added with fix to bug i36 */
 	/* kn satisfies inequalities (1) and (3) (listed below)*/	
-	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	kx = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 	/* kn satisfies inequalities (2) and (4) (listed below)*/	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  dp_v = d - hd_min(cp9b, v, jp_v);  /* d index for state v in alpha w/mem eff bands */
 	      
 	  /* Find the first k value that implies a valid cell in the y and z decks.
 	   * This k must satisfy the following 6 inequalities (some may be redundant):
@@ -4622,7 +4622,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	   * for these within the next for loop.
 	   */
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) {
 	      /* for current k, all 6 inequalities have been satisified 
 	       * so we know the cells corresponding to the platonic 
 	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
@@ -4631,8 +4631,8 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
 	       * and alpha[z][jp_z][k-hdmin[jp_z]];
 	       */
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
+	      kp_z = k-hd_min(cp9b, z, jp_z);
+	      dp_y = d-hd_min(cp9b, y, jp_y-k);
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]);
 	    }
 	  }
@@ -4678,11 +4678,11 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 	if(NOT_IMPOSSIBLE(cm->beginsc[y]) && (j >= jmin[y] && j <= jmax[y])) {
 	  assert(cm->sttype[v] != BEGL_S); /* local begins into BEGL_S are impossible */
 	  jp_y = j - jmin[y];
-	  dn   = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
-	  dx   = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
-	  dpn  = dn - hdmin[v][jp_v];
-	  dpx  = dx - hdmin[v][jp_v];
-	  dp_y = dn - hdmin[y][jp_y];
+	  dn   = ESL_MAX(hd_min(cp9b, v, jp_v), hd_min(cp9b, y, jp_y));
+	  dx   = ESL_MIN(hd_max(cp9b, v, jp_v), hd_max(cp9b, y, jp_y));
+	  dpn  = dn - hd_min(cp9b, v, jp_v);
+	  dpx  = dx - hd_min(cp9b, v, jp_v);
+	  dp_y = dn - hd_min(cp9b, y, jp_y);
 	  d    = dn;
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) {
 	    /*alpha[0][jp_v][dp_v] = FLogsum(alpha[0][jp_v][dp_v], alpha[y][jp_y][dp_y] + cm->beginsc[y]);*/
@@ -4701,9 +4701,9 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
      * (if necessary)
      */
     dpn = 0;
-    dpx = hdmax[v][jp_v] - hdmin[v][jp_v];
+    dpx = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v);
     for(dp_v = dpn; dp_v <= dpx; dp_v++) {
-      d         = dp_v + hdmin[v][jp_v];
+      d         = dp_v + hd_min(cp9b, v, jp_v);
       bestsc[d] = alpha[0][jp_v][dp_v];
       vsc_root  = ESL_MAX(vsc_root, alpha[0][jp_v][dp_v]);
     }
@@ -4712,7 +4712,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
       j = jp_v + jmin[v];
       for(dp_v = dpn; dp_v <= dpx; dp_v++) {
 	if(alpha[0][jp_v][dp_v] >= env_cutoff) { 
-	  d = dp_v + hdmin[v][jp_v];
+	  d = dp_v + hd_min(cp9b, v, jp_v);
 	  i = j - d + 1;
 	  envi = ESL_MIN(envi, i);
 	  envj = ESL_MAX(envj, j);
@@ -4722,10 +4722,10 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX *mx, float size_limit, ESL_DS
 
     /* if necessary, report all hits with valid d for this j, either to gamma or tmp_hitlist */
     if(gamma != NULL) { 
-      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMx  (cm, errbuf, PLI_PASS_STD_ANY, gamma, j, hd_min(cp9b, 0, jp_v), hd_max(cp9b, 0, jp_v), bestsc, bestr, NULL, W, act)) != eslOK) return status;
     }
     if(tmp_hitlist != NULL) { 
-      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hdmin[0][jp_v], hdmax[0][jp_v], bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
+      if((status = ReportHitsGreedily(cm, errbuf, PLI_PASS_STD_ANY,        j, hd_min(cp9b, 0, jp_v), hd_max(cp9b, 0, jp_v), bestsc, bestr, NULL, W, act, i0, j0, cutoff, tmp_hitlist)) != eslOK) return status;
     }
   } /* end of 'for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {' */
 

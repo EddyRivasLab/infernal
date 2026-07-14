@@ -234,6 +234,22 @@ back to either a default uniform pad or a sidecar pad file supplied via
 \prog{--p7nodepad-file}. \textbf{Optional}; assumed to be no if not
 present.
 
+\item [\emprog{PKNOT <s>}] Consensus pseudoknot annotation flag;
+\prog{<s>} is either \prog{no} or \prog{yes} (case insensitive). Only
+present in \prog{INFERNAL1/d} format and later. If \prog{yes}, the
+pseudoknot fields on each \prog{MATP}/\prog{MATL}/\prog{MATR} node line
+(see below) are valid and record the pseudoknot stem label(s) --
+letters \prog{a-z}/\prog{A-Z}, following the same convention as the
+\prog{\#=GC SS\_cons} pseudoknot annotation in Stockholm alignments
+(WUSS notation, described later in this section) -- that Infernal's
+own nested CM structure
+cannot represent but that were present in the input alignment's
+consensus structure. This lets pseudoknot annotation be carried through
+losslessly from alignment to CM to any output alignment produced by
+\prog{cmalign}, even though the pseudoknotted base pairs themselves are
+never part of the model's scoring. \textbf{Optional}; assumed to be no
+if not present.
+
 \item [\emprog{DATE <s>}] Date the model was constructed; \prog{<s>}
 is a free text date string.  This field is only used for logging
 purposes. \textbf{Optional.}
@@ -377,13 +393,19 @@ found by searches during preparation of the Rfam database.
   in local mode. This line, along with the next three, with tags
   \prog{ECMGC}, \prog{ECMLI}, and \prog{ECMGI}, must either all be
   present or none of them must be present. If present, the model is
-  considered calibrated for E-value statistics. These lines will not
-  be present in a model after it is created by \prog{cmbuild} but will
-  be added by the \prog{cmcalibrate} program.  \prog{<f1>} and
+  considered calibrated for E-value statistics. As of Infernal 1.2,
+  \prog{cmbuild} normally writes these lines itself, having computed
+  them with its built-in analytical predictor
+  (section~\ref{section:cmbuild-autocal}); the exception is a CM built
+  with one of the guarded non-default construction options
+  (\prog{--pbegin}/\prog{--pebegin}/\prog{--pend}/\prog{--pfend}/\prog{--null}),
+  for which \prog{cmbuild} omits these lines and \prog{cmcalibrate}
+  must be run separately to add them. \prog{<f1>} and
   \prog{<f2>} are $\lambda$ and $\tau$, the slope and location
   parameters for exponential tails for local CYK scores. $\lambda$
-  values must be positive. The remaining values were computed in
-  \prog{cmcalibrate} during model calibration: \prog{<f3>} is a
+  values must be positive. The remaining values were computed during
+  model calibration (whether by \prog{cmbuild} or \prog{cmcalibrate}):
+  \prog{<f3>} is a
   different $\tau$ value computed for the full histogram of all hits;
   \prog{<d1>} is the database size in residues; \prog{<d2>} is the
   total number of non-overlapping hits of any score found; \prog{<f4>}
@@ -404,6 +426,54 @@ found by searches during preparation of the Rfam database.
   parameters analogous to those described above in the \prog{ECMLC}
   line, except that these pertain to CM Inside scores in glocal mode.
 
+\item [\emprog{NONULL3\_LC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters needed for E-value calculations for the CM CYK algorithm
+  in local mode \emph{when the null3 composition-bias correction is
+  turned off} (the \prog{--nonull3} option to \prog{cmsearch} and
+  \prog{cmscan}). The fields are exactly analogous to those of the
+  \prog{ECMLC} line above, but they calibrate the null3-off score
+  distribution rather than the default null3-on one. This line, along
+  with the next three, with tags \prog{NONULL3\_GC}, \prog{NONULL3\_LI},
+  and \prog{NONULL3\_GI}, must either all be present or none of them
+  must be present. As of Infernal 1.2, \prog{cmbuild} writes this
+  null3-off set by default alongside the default \prog{ECMxx} set (the
+  ``store-both'' scheme described in
+  section~\ref{section:calibration-limitations}), so a normally-built
+  CM has both. They remain formally \textbf{optional}, however: a
+  model that has only the \prog{ECMxx} lines (the default null3-on
+  set) -- for example an older CM, or one produced by
+  \prog{cmcalibrate} without \prog{--nonull3} -- is still fully
+  calibrated, and a \prog{--nonull3} search of such a model falls back
+  to the null3-on parameters with a warning. When present, the
+  null3-off set is used in place of the \prog{ECMxx} set only when
+  \prog{--nonull3} is in effect; the default (null3-on) search path is
+  unaffected. The tags deliberately do not begin with \prog{ECM} so
+  that parsers of older Infernal versions silently skip them. In the
+  \textbf{binary} CM file format the same four parameter sets are
+  written as an optional block immediately following the \prog{ECMxx}
+  (EXPTAIL) block; presence of this block, or of consensus pseudoknot
+  annotation (\prog{PKNOT}, described above), advances the binary
+  save-file magic number to the \prog{INFERNAL1/d} code (\prog{v1d};
+  the ASCII format identifier is unchanged). An older Infernal binary
+  cleanly rejects a \prog{v1d} binary file rather than misreading it;
+  binary files without either addition keep their previous magic
+  number and remain readable by older versions. (An intermediate
+  \prog{v1c} binary magic was used only transiently in development and
+  is not a supported format; a current Infernal rejects it and asks
+  for the CM to be rebuilt as \prog{INFERNAL1/d}.)
+
+\item [\emprog{NONULL3\_GC <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM CYK scores in
+  glocal mode.
+
+\item [\emprog{NONULL3\_LI <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM Inside scores in
+  local mode.
+
+\item [\emprog{NONULL3\_GI <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM Inside scores in
+  glocal mode.
+
 \item [\emprog{CM}] Flags the start of the main model
 section. \textbf{Mandatory.}
 
@@ -420,8 +490,11 @@ state lines, one each for each state within the node.
 \begin{sreitems}{\textbf{State line}}
 
 \item [\textbf{Node line}] Each node line begins with 45 spaces, and
-  includes ten fields (twelve fields if \prog{P7NODEPAD yes} is set in
-  the header — the two additional fields appear at the end of the line).
+  includes ten fields in \prog{INFERNAL1/a} format, twelve fields in
+  \prog{INFERNAL1/b} format and later (adding the \prog{P7NODEPAD}
+  pair), and fourteen fields in \prog{INFERNAL1/d} format and later
+  (further adding the \prog{PKNOT} pair). Additional fields always
+  appear at the end of the line, in the order described below.
 
   The first field is always a \prog{[} character.
 
@@ -483,8 +556,21 @@ state lines, one each for each state within the node.
   first field will be '-' and the second field will be the pad width.
   If the node is any other type (ROOT, BIF, BEGL, BEGR, END), both
   fields will be '-'. If \prog{P7NODEPAD} is \prog{no} or absent, these
-  two fields are omitted entirely from the node line (ten fields
-  total).
+  two fields are omitted entirely from the node line.
+
+  In \prog{INFERNAL1/d} format and later, a further two fields follow
+  for the \prog{PKNOT} consensus pseudoknot annotation (present on the
+  node line whether or not \prog{PKNOT} is \prog{yes} in the header, in
+  the same way as the \prog{RF} fields above). If \prog{PKNOT} is
+  \prog{yes} and the node is a MATP node, both fields are pseudoknot
+  stem-label characters (or \prog{.}/\prog{-} if this pair is not part
+  of an annotated pseudoknot), for the left and right halves of the
+  match pair, respectively. If the node is a MATL node, the first
+  field is the stem-label character (or \prog{.}/\prog{-}) and the
+  second is \prog{-}; if the node is a MATR node, the first field is
+  \prog{-} and the second is the stem-label character (or
+  \prog{.}/\prog{-}). For any other node type, or if \prog{PKNOT} is
+  \prog{no} or absent, both fields are \prog{-}.
 
   Each node line is followed by 1 to 6 state
   lines depending on the node type. ROOT, MATL, and MATR node lines
@@ -955,28 +1041,28 @@ pseudoknots are not annotated in this example.}
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
   (1) !   2.2e-20   58.0   0.0  cm        1      367 []           4         399 + .. 0.77    no 0.49
 
-                    v                          v      v                                  vv         vvvvv    vvvv vv NC
+                    v                          v      v                                  vv         vvvvv    vvvv vv PS
                     {{{{{{{{{{{{{{{{{{,<<<<<<<<<______>>>>>>>>>,,,,,,,,,,,,,[[[[.--------[[[[[~~~~~~<<<<<____>>>>->( CS
   RNaseP_bact_a   1 cgagccggccgggcggucGCgcccccccuuaaaagggggggcGAGGAAAGUCCGGgCUcC.AcAGGgCAggguG*[15]*cggggGugAccccAgG 104
                        ::CG::CGGG:::UCGC::C:::: U      ::::G::GAGGAAAGUCC  GCUC  AC G GC   G:G               +++C + 
        M13175.1   4 CUUAACGUUCGGGUAAUCGCUGCAGAUCU---UGAAUCUGUAGAGGAAAGUCCAUGCUCGcACGGUGCU--GAG*[96]*---------UAUCCUU 175
                     **************************974...4579**********************98788777776..555...8...........3444468 PP
 
-                                                                                           v   vv        vvvv        NC
+                                                                                           v   vv        vvvv        PS
                     (---(((((,,,,,,,,,,,,<<<<<<<<<<<____>>>>>>>>>-->>,,,,,,~~~~~~,,)))--))))]]]]].]]]],,,<<<<-----   CS
   RNaseP_bact_a 105 GAaAGugCcACAGAAAaaAgACCgCccgccccuuaaggggcggGcAAGGGUGAAA*[43]*uagGcAAaCCCCaccc.GgAGCAAggccAAAUA   234
                     GAAAGU:CCACAG +A  A+ :C   :::C:: +AA::G:::     G:GUG AA        GG:AAACC C:C +  GAG AA  C+AA U 
        M13175.1 176 GAAAGUGCCACAGUGACGAAGUC---UCACUAGAAAUGGUGA-----GAGUGGAA*[ 1]*GCGGUAAACCCCUCGAgCGAGAAACCCAAAUUU   256
                     99*****************8866...4455558888555444.....66999987...6..99********97665577899888765444332   PP
 
-                          vvvv                                                                                       NC
+                          vvvv                                                                                       PS
                     ~~~~~~>>>>,,,,,,<<<<<<.<<____>>>>>>>>,,,,,,,,,,}}}}}}}---------------........................--- CS
   RNaseP_bact_a 235 *[39]*ggccGCUuGAGccggc.cgGuAAcggccggCCuAGAugAAUgaccgcccucuuguuaaauuuu........................aAC 338
                               G     :::: : C:G AA:G: :::: UAGAU++AUGA:::CC  CU + UA  +  U                        AAC
        M13175.1 257 *[32]*----GAG---AGAAGGaCAG-AAUGCUUUCUGUAGAUAGAUGAUUGCCGCCUGAGUACGAGGUgaugagccguuugcaguacgauggAAC 370
                     ...3......222...2222221222.335555566699****************9998888888888899999********************** PP
 
-                                            v     NC
+                                            v     PS
                     -------------}-}}}}}}}}}}:::: CS
   RNaseP_bact_a 339 AGAAcCCGGCUUAcaggccggcucgucuu 367
                     A AAC  GGCUUACAG::CG::    C+ 

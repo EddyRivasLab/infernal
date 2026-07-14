@@ -263,34 +263,52 @@ to be human-interpretable. You can treat \otext{.cm} files as compiled
 models of your RNA alignment. The Infernal ASCII save file format is
 defined in Section~\ref{section:formats}.
 
-\subsubsection{Step 2: calibrate the model with cmcalibrate}
+As of Infernal 1.2, \prog{cmbuild} also calibrates the E-value
+statistical parameters that \prog{cmsearch} and \prog{cmscan} need in
+order to report E-values (expectation values), using a fast analytical
+predictor in place of the older \prog{cmcalibrate} Monte Carlo
+simulation (section~\ref{section:cmbuild-autocal}). That means
+\otext{tRNA5.cm} is already calibrated and search-ready right now --
+there's no separate calibration step to run. You can skip ahead to
+Step 2 below and search with it directly.
 
-The next step is to ``calibrate'' the model. This step must be
-performed prior to using your model for database searches with
-\prog{cmsearch} or \prog{cmscan}. In this step, statistical parameters
-necessary for reporting E-values (expectation values) are estimated
-and stored in the CM file. When \prog{cmsearch} or \prog{cmscan} is
-later used for a database search and a hit with score $x$ is found,
-the E-value of that hit is the number of hits expected to score $x$ or
-more just by chance (given the size of the search you're performing).
+\subsubsection{Optional: \prog{cmcalibrate} as an accuracy fallback}
 
-\emph{Importantly, if you're not going to use a model for database
-search, there is no need to calibrate it.} For example, if you are
-only going to use a model to create structurally annotated multiple
-alignments of a large family like small subunit ribosomal RNA, don't
-waste time calibrating it. \prog{cmsearch} and \prog{cmscan} are the
-only Infernal programs that use E-values, so if you're not going to
-use them then don't calibrate your model.
+Since calibration now happens automatically inside \prog{cmbuild},
+most users will never need to run \prog{cmcalibrate} at all. It's
+still part of Infernal, though, and it's worth knowing when you'd
+reach for it:
 
-Unfortunately, CM calibration takes a long time because fairly long
-random sequences must be searched to determine the expected
-distribution of hit scores against nonhomologous sequences, and none
-of the search acceleration heuristics described in
-section~\ref{section:pipeline} can be used because they rely on
-primary sequence similarity which is absent in random sequence.
+\begin{itemize}
+\item Your CM was built with one of the non-default construction
+  options that \prog{cmbuild} can't analytically calibrate
+  (\prog{--pbegin}, \prog{--pebegin}, \prog{--pend}, \prog{--pfend}, or
+  \prog{--null}). \prog{cmbuild} will warn you and write the CM
+  without any E-value statistics in this case; run \prog{cmcalibrate}
+  (or \prog{cmcalibrate --nonull3} if you also plan to search with
+  \prog{--nonull3}) on it before searching.
+\item You plan to search large or glocal-mode models with
+  \prog{--nonull3} and need accurate E-values for that combination
+  (section~\ref{section:calibration-limitations} explains why the
+  predicted \prog{--nonull3} values can be unreliable in that regime).
+\item You simply want true simulated E-value statistics instead of the
+  analytical prediction, for example to independently check the
+  predicted values.
+\end{itemize}
 
-The amount of time required for calibration varies widely, but
-depends mainly on the size of the RNA family being modeled.
+\emph{If you're not going to use a model for database search, there's
+no need to calibrate it at all}, whether by \prog{cmbuild}'s automatic
+calibration or by \prog{cmcalibrate}. \prog{cmsearch} and
+\prog{cmscan} are the only Infernal programs that use E-values.
+
+In the cases above, \prog{cmcalibrate} works exactly as it always has:
+it estimates statistical parameters by searching fairly long random
+sequences to determine the expected distribution of hit scores against
+nonhomologous sequences, and none of the search acceleration heuristics
+described in section~\ref{section:pipeline} can be used, because they
+rely on primary sequence similarity which is absent in random
+sequence. As a result \prog{cmcalibrate} can take a long time,
+depending mainly on the size of the RNA family being modeled.
 So you can know what kind of a wait you're in for, the
 \prog{cmcalibrate} has a \otext{--forecast} option which reports an
 estimate of the running time. To get an estimate for the tRNA model, do:
@@ -331,16 +349,16 @@ section). Using 4 CPUs, \prog{cmcalibrate}
 estimates the time required for calibration on the machine I'm using
 at about three and a half minutes.
 
-Feel free to perform the calibration yourself if you'd like (with the
-command \otext{cmcalibrate tRNA5.cm}). However, we've included the file
-\otext{tRNA5.c.cm}, an already calibrated version of \otext{tRNA5.cm},
-for you to use if you don't want to wait. To use this calibrated
-model, copy over the \otext{tRNA5.cm} file you just made with the
-calibrated version:
- 
-\user{cp tutorial/tRNA5.c.cm tRNA5.cm}\\
- 
-\subsubsection{Step 3: search a sequence database with cmsearch}
+This particular tRNA model is small enough that its
+\prog{cmbuild}-predicted E-values are already accurate
+(section~\ref{section:calibration-limitations}), so there's no need to
+actually run \prog{cmcalibrate} on it -- this is purely to illustrate
+what the fallback path looks like when you do need it, e.g. for one of
+the large or non-default models discussed above. \otext{tRNA5.cm} as
+produced by \prog{cmbuild} in Step 1 is already calibrated and
+search-ready, so we'll use it as-is below.
+
+\subsubsection{Step 2: search a sequence database with cmsearch}
 
 You can now use your tRNA model to search for tRNA homologs in a
 database. The file \otext{mrum-genome.fa} is the genome sequence of the
@@ -581,7 +599,7 @@ alignment with the maximal summed posterior probability of all
 aligned residues. Take a look at the alignment for hit number 43:
 
 \begin{sreoutput}
-                                 v         v                                                            NC
+                                 v         v                                                            PS
                      (((((((,,<<<<______.._>>>>,<<<<<_______>>>>>,,,........,,<<<<<_______>>>>>))))))): CS
         tRNA5      1 gCcggcAUAGcgcAgUGGu..AgcgCgccagccUgucAagcuggAGg........UCCgggGUUCGAUUCcccGUgccgGca 72    
                      :::G:CAUAGCG AG GGU  A CGCG:CAG:CU +++A:CUG: G+        UC:GGGGUUCGA UCCCC:UG:C:::A
@@ -609,18 +627,57 @@ characters mark single stranded residues external to any secondary
 structure. Insertions relative to this consensus are annotated by a
 \otext{.} character.
 
-The line above the \otext{CS} line ends with \otext{NC} and marks
-negative scoring non-canonical basepairs in the alignment with a
-\otext{v} character. All other positions of the alignment will be
+The line above the \otext{CS} line ends with \otext{PS} (``pair
+status'') and marks the status of basepairs in the alignment. For
+\emph{nested} basepairs (those annotated with \otext{<>}, \otext{()},
+\otext{[]}, or \otext{\{\}} on the \otext{CS} line) it marks negative
+scoring non-canonical basepairs with a \otext{v} character. All other
+positions of the alignment will be
 blank\footnote{For anyone trying to parse this output, this means it
 is possible for this line to be completely blank except for the
-\otext{NC} trailer.} More specifically, the following ten types of
-basepairs which are assigned a negative score by the model at their
-alignment positions will be marked with a \otext{v}: \otext{A:A},
+\otext{PS} trailer.} More specifically, the following ten types of
+nested basepairs which are assigned a negative score by the model at
+their alignment positions will be marked with a \otext{v}: \otext{A:A},
 \otext{A:C}, \otext{A:G}, \otext{C:A}, \otext{C:C}, \otext{C:U},
-\otext{G:A}, \otext{G:G}, \otext{U:U}, and \otext{U:C}. The \otext{NC}
+\otext{G:A}, \otext{G:G}, \otext{U:U}, and \otext{U:C}.
+
+For \emph{pseudoknotted} basepairs (those annotated with matching
+upper/lower case letters \otext{Aa}, \otext{Bb}, etc. on the
+\otext{CS} line), the \otext{PS} line instead uses a three-state
+scheme, marking \emph{both} ends of each pseudoknot pair with one of:
+\otext{=} (maintained: the observed pair is canonical and matches the
+consensus pair), \otext{\$} (covarying: the observed pair is canonical
+but differs from the consensus pair --- strong positive evidence of a
+real pseudoknot), or \otext{x} (broken: the observed pair is
+non-canonical, or one of its two columns is deleted). Note the
+asymmetry: nested pairs receive only the negative-only \otext{v}
+markup, while pseudoknot pairs receive the full positive-and-negative
+\otext{=}/\otext{\$}/\otext{x} scheme. (Pseudoknot columns are single
+stranded with respect to the nested structure, so the two markups never
+collide on the same column.)
+
+Sometimes a hit's displayed alignment contains only one half of a
+pseudoknot pair --- its partner may have been truncated out of the
+hit, or the hit's local alignment may simply not have extended far
+enough to cover it. Either way, the pair's status can't be assessed
+from this hit alone, so the surviving half keeps its pseudoknot letter
+on the \otext{CS} line and is marked with \otext{?} on the \otext{PS}
+line, instead of being silently dropped to a plain single-stranded
+mark. For example:
+\begin{sreoutput}
+                      ????                              PS
+                 <<<<<AAAA____________________>>>>> CS
+     small_pk  1 GGGGGGGGGAAAAAAAAAAAAAAAAAAAACCCCC 34
+                 GGGGGGGGGAAAAAAAAAAAAAAAAAAAACCCCC
+  localorphan  1 GGGGGGGGGAAAAAAAAAAAAAAAAAAAACCCCC 34
+\end{sreoutput}
+Here the \otext{aaaa} half of the \otext{Aa} pseudoknot pair isn't in
+this hit's displayed alignment at all, so the surviving \otext{AAAA}
+half is marked \otext{?} rather than \otext{=}/\otext{\$}/\otext{x}.
+
+The \otext{PS}
 annotation makes it easy to quickly identify suspicious basepairs in
-a hit. Importantly, the \otext{NC} annotation will only be present in
+a hit. Importantly, the \otext{PS} annotation will only be present in
 CM hit alignments (``mdl'' column reads ``cm'') and will be absent in
 HMM hit alignments (``mdl'' column reads ``hmm'') because basepairs
 are not scored by an HMM.
@@ -637,9 +694,9 @@ possible pair according to the consensus, both residues are shown in
 upper case; if a pair has a score of $\geq 0$, both residues are
 annotated by : characters (indicating an acceptable compensatory
 basepair); else, there is a space, indicating that a negative
-contribution of this pair to the alignment score. Note that the 
-\otext{NC} line will only mark a subset of these negative scoring
-pairs with a \otext{v}, as discussed above.
+contribution of this pair to the alignment score. Note that the
+\otext{PS} line will only mark a subset of these negative scoring
+nested pairs with a \otext{v}, as discussed above.
 For a single-stranded consensus residue, if the observed residue is
 the highest scoring possibility, the residue is shown in upper case;
 if the observed residue has a score of $\geq 0$, a \otext{+} character
@@ -668,7 +725,7 @@ be entirely contained within a single block.  If your model was built
 with the \otext{--hand} option in \prog{cmbuild}, then an additional
 line will be included in each block, with RF annotation.  If the model
 used for the alignment was an HMM (the ``mdl'' column reads ``hmm'')
-then the \otext{NC} line will be absent from each alignment
+then the \otext{PS} line will be absent from each alignment
 block. We'll see example of all three of these cases later in the
 tutorial. Finally, the \otext{PP} line will be absent if
 \prog{cmsearch} has determined that calculating posterior
@@ -1015,14 +1072,14 @@ three hits are the hit alignments. These are constructed and annotated
 the same as in \prog{cmsearch}. The 5S alignment is:
 
 \begin{widesreoutput}
-                             v               v       v         v         v             v            v                NC
+                             v               v       v         v         v             v            v                PS
                      (((((((((,,,,<<-<<<<<---<<--<<<<<<_______>>-->>>>-->>---->>>>>-->><<<-<<----<-<<-----<<____>>-- CS
          5S_rRNA   1 ccuggcggcCAUAgcggggcggAaacACccGauCCCAUCCCGaACuCggAAguUAAGcgcccuagcgccgggguAGuAcuggGgUGgGuGAcCaC 95 
                      CCUGGC:G C UAGCG:GG:GG   CACC:GA CCCAU CCG ACUC:GAAG  AA+C:CC:UAGC CCG::G  G:A: G+G  GGGU  CC C
   AAGA01015927.1  59 CCUGGCGGCCGUAGCGCGGUGGUCCCACCUGACCCCAUGCCGAACUCAGAAGUGAAACGCCGUAGCGCCGAUG--GUAGUGUG--GGGUCUCCCC 149
                      *************************************************************************..********..********** PP
 
-                        v         v v          NC
+                        v         v v          PS
                      --->>->->>->>>,))))))))): CS
          5S_rRNA  96 cUGggAaaccagguCgccgccaggc 120
                       UG :A:A::AGG   C:GCCAGGC
@@ -1100,14 +1157,14 @@ Hit alignments:
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
   (1) !   6.6e-09   29.9   0.0  cm       31      190 ~]         934         832 - ~. 0.92    5' 0.48
 
-                                 ???              v           v      v    v                                     ???? NC
+                                 ???              v           v      v    v                                     ???? PS
                      ~~~~~~______>>>,,,,,(((,,,<.<<<<_______>>>>>,,<<<____>>>,<<<---<<<<~~~~~~>>>>---->>>,,,,)))]]]] CS
        Cobalamin   1 <[30]*agucggggguuAAaaGGGAAc.ccGGUGcaAauCCgggGCuGcCCCCgCaACUGUAAgcGg*[61]*cCgcgAGCCAGGAGACCuGCCg 173
                            + + G     + AA: GGAA: : GGUG AAAUCC ::+C:G CCC  C:ACUGUAA:C:        :G:+AG+CAG A AC :  C 
   AAFY01022046.1 934 <[ 0]*GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCACUGUAACCAG*[ 4]*UUGGAAGUCAG-AUACUCUUCU 849
                      ......44455677788899******9899***********************************96...7..69*********.9********* PP
 
-                     ??                NC
+                     ??                PS
                      ]]::::::::::::::: CS
        Cobalamin 174 ucaaaaauaguaucacc 190
                        +AA +  G+A+C+ C
@@ -1149,7 +1206,7 @@ to the same model on page~\pageref{cmalign-cobalamin}, which shows all
 model and sequence positions.
 
 Truncated hit alignments also contain different annotation in the
-\otext{NC} lines. Instead of only containing blank spaces or \otext{v}
+\otext{PS} lines. Instead of only containing blank spaces or \otext{v}
 characters indicating negative scoring noncanonical basepairs,
 \otext{?} characters are used to denote basepairs for which the other
 half is missing due to the truncation. For example, the second
@@ -1490,7 +1547,104 @@ in the case of local end insertions. Because the same insert state
 might correspond to more than one column, the probability on an insert
 residue is \emph{not} the probability that it belongs in that
 particular column; again, where there's a choice of column for
-inserted residues, that choice is arbitrary. 
+inserted residues, that choice is arbitrary.
+
+\subsubsection{Optional structure-status annotation: \texttt{--bpstatus}, \texttt{--bpcons}, and \texttt{--bpcov}}
+\label{section:cmalign-bpstatus}
+By default \prog{cmalign} does not annotate base-pair quality. Three optional
+flags add it, all off by default (so default output is unchanged):
+
+\begin{sreitems}{\emprog{--bpstatus}}
+\item[\emprog{--bpstatus}]
+  adds one combined per-sequence \otext{\#=GR <seq> PS} line to each aligned
+  sequence. Marks are placed on consensus (match) columns only and use the same
+  scheme as the \prog{cmsearch}/\prog{cmscan} \otext{PS} line (see
+  section~\ref{section:formats} and the \prog{cmsearch} tutorial above):
+  \emph{nested} pairs are marked \otext{v} (a negative-scoring non-canonical or
+  half-present pair); \emph{pseudoknot} pairs are marked \otext{=} (maintained),
+  \otext{\$} (covarying), or \otext{x} (broken); and a pair of \emph{either} kind
+  is marked \otext{?} when one half is truncated away. The same line additionally carries the
+  substitution marks \otext{:} (a consistent, non-negative-scoring base-pair
+  substitution) and \otext{+} (a positive-scoring single-residue substitution).
+  This combined line is a fusion of the \prog{cmsearch} match line and pair-status
+  line; the two are merged because their marks fall on disjoint columns, with one
+  exception: a pseudoknot column is a single-residue state that can be both a
+  \otext{+} substitution and a \otext{=}/\otext{\$}/\otext{x} pseudoknot pair, and
+  there the pseudoknot pair status wins.
+
+  Every column that does not carry a mark holds a \emph{non-blank} placeholder, so
+  the line is dense and can be re-read by standard Stockholm parsers: \otext{.} at
+  an insert column, \otext{\~{}} at a missing/local-end column, \otext{-} at a
+  deletion, and \otext{\_} at an unmarked consensus residue. \otext{--bpstatus}
+  adds one line per sequence.
+
+  The \otext{?} truncated-half mark requires \prog{--miss} (which renders a
+  truncated flank as missing data \otext{\~{}}); without it a truncated flank is
+  written with deletions, so a pair straddling the boundary is marked \otext{v}
+  (nested) or \otext{x} (pseudoknot) instead. Under \prog{--sub} the marks stay
+  relative to the full-CM consensus (a partial-span sub-CM only changes which
+  residues are present), and consensus columns outside a fragment's span carry the
+  \otext{-} no-residue placeholder rather than a spurious mark.
+\item[\emprog{--bpcons}]
+  adds a single \otext{\#=GC bp\_cons} line: for each base pair (nested and
+  pseudoknot), the fraction of sequences whose two aligned residues form a
+  canonical WC/GU pair, written at both paired columns as a single digit using
+  the same \otext{0}--\otext{9}/\otext{*} bucketing as the \otext{PP} lines
+  (\otext{*} $\approx 1.0$, \otext{0} $\approx 0.0$). A \otext{.} is written at all
+  other columns (including pairs where fewer than two sequences have a residue
+  present at both columns), so the line is dense. This is a \emph{descriptive}
+  measure of how well each pair is preserved across the family; it is not a
+  statistical test of covariation (it does not distinguish an invariant pair from
+  a covarying one, and is noisy for small numbers of sequences or pairs with many
+  gaps). For a proper statistical covariation analysis use a dedicated tool such
+  as R-scape.
+\item[\emprog{--bpcov}]
+  adds a single \otext{\#=GC bp\_cov} line: a per-pair \emph{covariation} digit
+  that complements the \otext{--bpcons} conservation digit. For each base pair
+  (nested and pseudoknot) it computes the absolute mutual information (MI, in
+  bits) of the two columns' standard-nucleotide composition over a $4\times4$
+  joint count table (a sequence contributes only when both of its aligned
+  residues are standard nucleotides A/C/G/U), and writes
+  \otext{EncodePostProb(MI$/1.5$ bits)} at both paired columns: a single
+  \otext{0}--\otext{9}/\otext{*} digit on the same scale as \otext{bp\_cons}
+  (\otext{*} for the strongest covariation, MI $\gtrsim 1.4$ bits), \otext{.}
+  elsewhere. Because MI is bounded by the columns' entropy, a near-invariant pair
+  automatically reads a low digit, so no special ``no-power'' symbol is needed.
+  Like \otext{bp\_cons} this is a \emph{transparent, descriptive hint}, not a
+  substitute for the rigorous covariation statistics of a tool such as R-scape.
+  \otext{--bpcov} is independent of \otext{--bpcons} (give either, both, or
+  neither).
+\end{sreitems}
+
+Reading \otext{bp\_cons} and \otext{bp\_cov} together separates two distinct
+properties of a pair --- how well it is \emph{conserved} versus how much it
+\emph{covaries}. A pair with a high \otext{bp\_cons} but a low \otext{bp\_cov}
+is well conserved but shows no covariation power; a pair high on both is a
+canonical pair whose two columns also vary in a correlated way. For example,
+aligning sequences to a pseudoknotted model (here the PK-HAV test model, which
+carries a nested stem and an \otext{A}/\otext{a} pseudoknot stem) gives:
+
+\begin{sreoutput}
+#=GC SS_cons   .:<<<<<<<<<<______.__.._AAAA.AAA~~~...>>>>>>>>>>.:::::::.::a:aa.a:aaa:
+#=GC RF        .UUAAACAAAucUUCUUA.AA..AUUUC.UGA~~~...ggUUUGUUUA.UUUuuuu.UAUUCA.GUAAAU
+#=GC bp_cons   ..9**9*9**79............6778.887......97**9*9**9...........7.88.8.776.
+#=GC bp_cov    ..5576456546............1011.000......6456546755...........0.00.1.101.
+\end{sreoutput}
+
+The nested stem (\otext{<<<<}\,\ldots\,\otext{>>>>}) is both well conserved
+(\otext{bp\_cons} \otext{9}/\otext{*}) and moderately covarying (\otext{bp\_cov}
+\otext{4}--\otext{7}); the pseudoknot columns (\otext{AAAA}\,\ldots\,\otext{aaa})
+are conserved (\otext{bp\_cons} \otext{6}--\otext{8}) but show little covariation
+in this small sample (\otext{bp\_cov} \otext{0}--\otext{1}).
+
+All of the \otext{\#=GR PS}, \otext{\#=GC bp\_cons}, and \otext{\#=GC bp\_cov}
+lines are emitted on the common in-memory alignment path and on the low-memory,
+multi-block path (\otext{--small}, or an input too large to fit in one block).
+The two \otext{\#=GC} family lines span all sequences, so on the multi-block path
+their per-pair counts (canonical counts for \otext{bp\_cons}, joint nucleotide
+tables for \otext{bp\_cov}) are accumulated block by block and each line is
+written once after the final merge; because the counts are additive over the
+sequences, the resulting digits are identical to those of the single-block path.
 
 \subsubsection{cmalign assumes sequences may be truncated}
 \prog{cmalign} assumes that input sequences may be truncated and uses
@@ -1726,7 +1880,7 @@ at the first alignment:
 
 First, note that the \otext{mdl} field reads \otext{hmm} instead of
 \otext{cm}. Also, because HMMs do not model basepairs, there is no
-\otext{NC} annotation pointing out negative scoring noncanonical
+\otext{PS} annotation pointing out negative scoring noncanonical
 basepairs.
 
 If you were to look at more hits you may notice that HMM hits are
@@ -1916,7 +2070,7 @@ alignment for hit number 46 as an illustrative example:
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
  (46) !   1.6e-09   43.2   0.0  cm        1       74 []      995344      995263 - .. 0.90    no 0.49
 
-                                 v          v                                                            NC
+                                 v          v                                                            PS
                      (((((((,,<<<<________._>>>>,<<<<<_______>>>>>,,,........,,<<<<<_______>>>>>))))))): CS
    tRNA5-hand      1 gCcggcaUAGcgcAgUUGGuu.AgcgCgccagccUgucAagcuggAGg........UCCgggGUUCGAUUCcccGugccgGca 74    
                      :::G:CAUAGCG AG  GGU+ A CGCG:CAG:CU +++A:CUG: G+        UC:GGGGUUCGA UCCCC:UG:C:::A
@@ -2080,6 +2234,10 @@ annotated as fragments.
 \subsection{Parallelizing calibration of large models by splitting
   into partitions}
 
+This section describes running \prog{cmcalibrate} itself, which is
+relevant when you're in one of the fallback situations described
+above -- most commonly, wanting accurate \prog{--nonull3} E-values on
+a large or glocal-mode model (section~\ref{section:calibration-limitations}).
 For large models, like small and large subunit ribosomal RNA (SSU and
 LSU rRNA) models, the \prog{cmcalibrate} step can be extremely slow
 and require a large amount of memory. Parallelization with

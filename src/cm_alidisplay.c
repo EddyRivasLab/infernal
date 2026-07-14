@@ -23,8 +23,26 @@
 
 #include "infernal.h"
 
-static int   bp_is_canonical(char lseq, char rseq);
 static float post_code_to_avg_pp(char postcode);
+/* bp_is_canonical(), cm_bp_match_marks(), cm_bp_nc_mark(), cm_singlet_mark()
+ * and annotate_pknot_pairs_str() are now extern (declared in infernal.h) so the
+ * cmalign per-seq annotation path can share the exact same classification rules.
+ */
+
+/* Pseudoknot pair-status (PS line) glyphs.
+ * The NC base-pair-quality line is relabeled "PS" (Pair Status) on all CM hits.
+ * For pseudoknot pairs (singlet ML/MR columns, disjoint from the MATP columns
+ * that carry the nested 'v'/'?' markup) we overlay one of these three marks at
+ * both ends of each complete pknot pair. Gathered here so they are easy to
+ * change in one place. See annotate_pknot_pairs_str().
+ *   Note the documented asymmetry: nested base pairs still get negative-only
+ *   markup ('v' broken nested, '?' truncated); only pknot pairs get the full
+ *   positive+negative (=/$/x) scheme. */
+#define PS_PKNOT_MAINT   '='   /* pknot pair maintained: WC/GU and observed pair == consensus pair          */
+#define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
+#define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
+#define PS_NESTED_TRUNC  '?'   /* truncated half: pair partner is missing-data ('~'), pair can't be evaluated */
+/* MM_SUBPAIR / MM_SUBSINGLET glyphs are defined in infernal.h (shared with cmalign). */
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
@@ -449,6 +467,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  do_left = TRUE;
 	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
 	  lstr   = cm->cmcons->cstr[lc];
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[lc+1])) lstr = cm->pknot[lc+1]; /* Feature B pknot overlay */
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cm->cmcons->cseq[lc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
 	    lseq = cm->abc->sym[symi];
@@ -463,6 +482,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  do_right = TRUE;
 	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
 	  rstr   = cm->cmcons->cstr[rc];
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[rc+1])) rstr = cm->pknot[rc+1]; /* Feature B pknot overlay */
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cm->cmcons->cseq[rc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
 	    rseq = cm->abc->sym[symj];
@@ -480,50 +500,31 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
       lmid = rmid = ' ';
       lnnc = rnnc = ' ';
       if (cm->sttype[v] == MP_st) {
-	if (mode == TRMODE_L) { 
+	if (mode == TRMODE_L) {
 	  if(lseq == toupper(lcons)) lmid = lseq;
 	  lnnc = '?';
 	}
-	else if (mode == TRMODE_R) { 
+	else if (mode == TRMODE_R) {
 	  if(rseq == toupper(rcons)) rmid = rseq;
 	  rnnc = '?';
 	}
-	else if (mode == TRMODE_J) { 
-	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
-	  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { 
-	    lmid = lseq; 
-	    rmid = rseq; 
-	  }
-	  else if (tmpsc >= 0) { 
-	    lmid = rmid = ':';
-	  }
-	  /* determine lnnc, rnnc for optional negative scoring
-	   * non-canonical annotation, they are 'v' if lseq and rseq
-	   * are a negative scoring non-canonical (not a
-	   * AU,UA,GC,CG,GU,UG) pair. 
-	   */
-	  if (tmpsc < 0 && (! bp_is_canonical(lseq, rseq))) {
-	    lnnc = rnnc = 'v';
-	  }
+	else if (mode == TRMODE_J) {
+	  /* shared classification: identity-letter / ':' (consistent sub) for the
+	   * mline, and 'v' (negative non-canonical) for the ncline. */
+	  char clmid, crmid;  /* lmid/rmid are int here; helper takes char* */
+	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
+	  cm_bp_match_marks(lseq, rseq, lcons, rcons, tmpsc, &clmid, &crmid);
+	  lmid = clmid; rmid = crmid;
+	  lnnc = rnnc = cm_bp_nc_mark(lseq, rseq, tmpsc);
 	}
-      } 
+      }
       else if ((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) &&
-	       (mode == TRMODE_J || mode == TRMODE_L)) { 
-	if (lseq == toupper(lcons)) { 
-	  lmid = lseq; 
-	}
-	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0) { 
-	  lmid = '+';
-	}
-      } 
-      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && 
+	       (mode == TRMODE_J || mode == TRMODE_L)) {
+	lmid = cm_singlet_mark(lseq, lcons, esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]));
+      }
+      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) &&
 	       (mode == TRMODE_J || mode == TRMODE_R)) {
-	if (rseq == toupper(rcons)) {
-	  rmid = rseq;
-	}
-	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0) {
-	  rmid = '+';
-	}
+	rmid = cm_singlet_mark(rseq, rcons, esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]));
       }
       if((cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) && mode == TRMODE_J) { 
 	lnnc = rnnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
@@ -604,10 +605,18 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
+  /* Feature B: keep any pseudoknot letter on the CS line whose partner isn't present in this
+   * hit's displayed alignment (truncated away, or simply not spanned by local coverage), and
+   * mark it '?' on ncline instead of erasing it to '.'. */
+  if (cm->flags & CMH_PKNOT) cm_pknot_MarkOrphansTrunc(ad->csline, ad->ncline, ad->N);
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
-  if(ppstr != NULL)  ad->ppline[ad->N] = '\0'; 
+  if(ppstr != NULL)  ad->ppline[ad->N] = '\0';
+  /* PS line: overlay pseudoknot pair-status marks (=/$/x) onto ncline. Done
+   * here (after FixBrokenString fixed csline and the lines are NUL-terminated)
+   * so the marks are baked into ncline before serialization. */
+  if (cm->flags & CMH_PKNOT) annotate_pknot_pairs_str(ad->csline, ad->aseq, ad->model, ad->ncline, ad->N);
   ad->sqfrom      = tr->emitl[0] + seqoffset-1;
   ad->sqto        = tr->emitr[0] + seqoffset-1;
   ad->cfrom_emit  = cfrom_emit;
@@ -1062,6 +1071,200 @@ bp_is_canonical(char lseq, char rseq)
   return FALSE;
 }
 
+/* Function: cm_bp_match_marks()
+ *
+ * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
+ *           consensus base pair for the "match" (mline / #=GR MM) line.
+ *           Given the two observed residues <lseq>,<rseq> (uppercase), the two
+ *           consensus residues <lcons>,<rcons>, and the model pair-emission
+ *           score <pairsc> = DegeneratePairScore() for the observed pair:
+ *             - both residues == consensus  -> identity letters (lseq, rseq)
+ *             - else pairsc >= 0            -> ':' at both ends (consistent sub)
+ *             - else                        -> ' ' at both ends
+ *           Mirrors the inline logic that used to live in cm_alidisplay_Create().
+ *           cmsearch prints the identity letters; cmalign's sparse MM keeps only
+ *           the ':' marks (it blanks identity letters).
+ */
+void
+cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, char *ret_lmid, char *ret_rmid)
+{
+  char lmid = ' ';
+  char rmid = ' ';
+  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { lmid = lseq; rmid = rseq; }
+  else if (pairsc >= 0)                                 { lmid = rmid = MM_SUBPAIR; }
+  if (ret_lmid != NULL) *ret_lmid = lmid;
+  if (ret_rmid != NULL) *ret_rmid = rmid;
+  return;
+}
+
+/* Function: cm_bp_nc_mark()
+ *
+ * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
+ *           consensus base pair for the negative-non-canonical "PS" (ncline)
+ *           mark: returns 'v' iff the observed pair scores negative AND is not a
+ *           canonical WC/GU pair; ' ' otherwise. (The 'v' for half-present pairs
+ *           and the '?' for truncated pairs are state/gap-pattern based and set
+ *           by the caller, not here.)
+ */
+char
+cm_bp_nc_mark(char lseq, char rseq, float pairsc)
+{
+  if (pairsc < 0 && (! bp_is_canonical(lseq, rseq))) return 'v';
+  return ' ';
+}
+
+/* Function: cm_singlet_mark()
+ *
+ * Purpose:  Shared classification of an emitted singlet residue for the mline /
+ *           #=GR MM line, given the observed residue <seq> (uppercase), the
+ *           consensus residue <cons>, and the model average singlet-emission
+ *           score <avgsc> = esl_abc_FAvgScore():
+ *             - seq == consensus -> identity letter (seq)
+ *             - else avgsc > 0   -> '+'  (positive substitution)
+ *             - else             -> ' '
+ *           cmsearch prints the identity letter; cmalign's sparse MM keeps only
+ *           the '+' marks.
+ */
+char
+cm_singlet_mark(char seq, char cons, float avgsc)
+{
+  if (seq == toupper(cons)) return seq;
+  else if (avgsc > 0)       return MM_SUBSINGLET;
+  return ' ';
+}
+
+/* Function: annotate_pknot_pairs_str()
+ *
+ * Purpose:  Overlay pseudoknot pair-status marks (=/$/x) onto the <out> line
+ *           (the "PS" line for cmsearch alidisplay, or a per-seq #=GR PS line
+ *           for cmalign), at both ends of each complete pknot pair. Generalized
+ *           from the old annotate_pknot_pairs(ad): operates on plain strings so
+ *           both the alidisplay path (ss=csline, aseq, model=consensus residues,
+ *           out=ncline) and the cmalign path (ss=msa->ss_cons, aseq=msa->aseq[i],
+ *           model=consensus-residue string, out=per-seq PS) share one rule.
+ *
+ *           Requires that <ss> has already had incomplete pknot pairs resolved,
+ *           so that only complete pairs still carry their (upper/lower) letters.
+ *           The two callers use different upstream functions for this, and that
+ *           difference is exactly what keeps their orphan-handling independent:
+ *             - cmsearch/cmscan (ss=ad->csline): cm_pknot_MarkOrphansTrunc() runs
+ *               first (cm_alidisplay_Create()) -- it KEEPS an orphan letter (partner
+ *               missing, whether from truncation or ordinary local-alignment
+ *               coverage) and marks its <out> (ncline) position '?' directly.
+ *               By the time this function's pushdown scan reaches that letter, it
+ *               is an unmatched open or an orphan close (sp[idx]==0); either way
+ *               the scan below simply never triggers its matched-close branch for
+ *               it, so it can't collide with -- or overwrite -- the '?' already
+ *               written by MarkOrphansTrunc.
+ *             - cmalign (ss=msa->ss_cons): cm_pknot_FixBrokenString() runs first
+ *               (cm_alignment_annotate_status()) -- it ERASES an orphan letter to
+ *               '.', so it never reaches this function's isupper()/islower() tests
+ *               at all. cmalign does NOT get orphan '?' marking (a deliberate
+ *               scope boundary, not a gap to close here).
+ *           Walk <ss> with the SAME per-letter pushdown discipline that
+ *           cm_pknot_FixBrokenString()/cm_pknot_MarkOrphansTrunc()/esl_wuss2ct()
+ *           use, recovering each complete pknot base pair (z_open, z_close), and
+ *           classify it from the observed residues <aseq> vs the consensus
+ *           residues <model>:
+ *             - missing-data ('~') on either side -> '?' on the PRESENT half only
+ *                                                    (truncated half; see note below)
+ *             - gap ('-') on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
+ *             - canonical AND observed pair == consensus pair           -> PS_PKNOT_MAINT
+ *             - canonical AND observed pair != consensus pair           -> PS_PKNOT_COVARY
+ *           The =/$/x mark is written at BOTH ends, into <out>; the '?' truncated
+ *           mark is written only at the present (non-'~') end (mirroring the nested
+ *           MATP mode-L/R rule). The '~' branch is cmalign-only: cmsearch's
+ *           cm_pknot_MarkOrphansTrunc() never leaves a '~' on ad->csline (it only
+ *           ever sees the real observed residue or a pknot letter, never missing-
+ *           data), so cmsearch never presents a '~'-bearing pknot pair here
+ *           (cmsearch output is unchanged). Pknot columns are ML/MR singlets,
+ *           disjoint from the MATP columns that carry the nested 'v'/'?' markup,
+ *           so the overlay only ever writes onto blank <out> positions; we
+ *           assert/skip defensively if not.
+ *
+ * Returns:  (void) On malloc failure for an internal stack, silently leaves the
+ *           remaining pairs unmarked (annotation is cosmetic; never fatal).
+ */
+void
+annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N)
+{
+  int   sp[26];        /* stack pointers, one per pknot letter A-Z / a-z */
+  int  *stack[26];     /* per-letter stacks of open display positions     */
+  int   i, c, idx;
+
+  if (ss == NULL || aseq == NULL || model == NULL || out == NULL) return;
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < N; i++) {
+    c = (int) ss[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (N + 1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {              /* matched close: recover the pair (z_open, z_close) */
+        int  zo = stack[idx][--sp[idx]];
+        int  zc = i;
+        char ol = aseq[zo],  orr = aseq[zc];
+        char ml = model[zo], mr  = model[zc];
+        /* pknot columns are singlets, disjoint from nested-pair MATP columns,
+         * so out must be blank here by construction. ESL_DASSERT1 catches a
+         * violation in debug builds; the runtime guard below additionally
+         * makes a release-build violation degrade to "this pair's mark is
+         * silently skipped" rather than "silently clobber whatever mark (e.g.
+         * a nested v/?) was already at this position" -- a future regression
+         * that breaks the disjointness invariant should lose a pknot mark,
+         * not corrupt an unrelated one. (review-012 ROBUSTNESS finding.) */
+        ESL_DASSERT1((out[zo] == ' ' && out[zc] == ' '));
+        if (out[zo] != ' ' || out[zc] != ' ') continue;
+        if (ol == '~' || orr == '~') {
+          /* One (or both) halves truncated away (missing-data '~'): the pair
+           * CANNOT be evaluated -- it is not "broken" (we don't know the absent
+           * residue), so it must not become 'x'. Mark the PRESENT (residue) half
+           * '?' -- the same truncated-half glyph the nested MATP path emits in
+           * mode L/R -- and leave the '~' half unmarked so its placeholder
+           * survives. A '-' (deletion) half here is NOT present, so it stays a
+           * placeholder too (matches the nested rule: only a present half is
+           * marked).
+           *   cmsearch never reaches this branch: its collapsed per-hit display
+           * has no missing-data '~' placeholder concept at all (truncated flanks
+           * are represented via the "*[N]*" collapse, not a per-column char), so
+           * <aseq> can never contain '~' on the cmsearch call path regardless of
+           * which upstream orphan-handling function ran (see this function's
+           * header comment). It only fires on cmalign's full-width per-seq
+           * alignment, where the partner column physically exists (another
+           * sequence spans it) but THIS sequence's residue there is missing.
+           * Hence cmsearch output is byte-identical across this change. */
+          if (isalpha((int) ol))  out[zo] = PS_NESTED_TRUNC;
+          if (isalpha((int) orr)) out[zc] = PS_NESTED_TRUNC;
+        }
+        else {
+          char mark;
+          if      (ol == '-' || orr == '-' || ! bp_is_canonical(ol, orr))     mark = PS_PKNOT_BROKEN;
+          else if (toupper(ol) == toupper(ml) && toupper(orr) == toupper(mr)) mark = PS_PKNOT_MAINT;
+          else                                                                mark = PS_PKNOT_COVARY;
+          out[zo] = mark;
+          out[zc] = mark;
+        }
+      }
+      /* sp[idx]==0 here is an orphan close (its partner absent from this hit's
+       * display) -- not a matched pair, nothing to do here on either caller's
+       * path. On cmsearch's path cm_pknot_MarkOrphansTrunc() already marked
+       * this ncline position '?' and left ss[i] as-is (the orphan letter is
+       * still visible but this scan's matched-close branch never fires for
+       * it). On cmalign's path cm_pknot_FixBrokenString() already erased ss[i]
+       * to '.' (no orphan '?' marking there, see function header), so this
+       * branch is unreachable for cmalign orphans (islower('.') is false). */
+    }
+  }
+
+ DONE:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  return;
+}
+
 /*---------------- end, alidisplay object -----------------------*/
 
 
@@ -1235,7 +1438,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       if (ad->sqfrom < ad->sqto) { i2 = i1+ni-1; }
       else                       { i2 = i1-ni+1; }
 
-      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sPS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); } /* "PS" = Pair Status; was "NC" */
       strncpy(buf, ad->csline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sCS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, "");
       strncpy(buf, ad->model+pos,  cur_aliwidth); fprintf(fp, "  %*s %*d %s %*s%-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, aliwidth-cur_aliwidth, "", coordwidth, k2);
       strncpy(buf, ad->mline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s\n", namewidth+coordwidth+1, " ", buf);
@@ -1315,9 +1518,10 @@ cm_alidisplay_Is3PTruncOnly(const CM_ALIDISPLAY *ad)
  * Returns:   informative string
  */
 char *
-cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad) 
+cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
 {
-  if     (ad->hmmonly)                      return "-";
+  if     (ad == NULL)                       return "-";
+  else if(ad->hmmonly)                      return "-";
   else if(cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
   else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
   else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
@@ -1382,10 +1586,18 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   /*cm_alidisplay_Dump(stdout, ad);*/
 
   upos = 0;
-  for(apos = 0; apos < msa->alen; apos++) { 
-    msa->ss_cons[apos] = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? cm->cmcons->cstr[upos++] : '.'; 
+  for(apos = 0; apos < msa->alen; apos++) {
+    if (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') {
+      char ch = cm->cmcons->cstr[upos];
+      /* Feature B: overlay canonical pseudoknot letter (truncation orphans removed below) */
+      if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[upos+1])) ch = cm->pknot[upos+1];
+      msa->ss_cons[apos] = ch;
+      upos++;
+    }
+    else msa->ss_cons[apos] = '.';
   }
   msa->ss_cons[msa->alen] = '\0';
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(msa->ss_cons, msa->alen);
   if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_Backconvert() failed to create temporary msa");
   
   esl_msa_FormatSeqName(msa, 0, "%s/%ld-%ld", ad->sqname, ad->sqfrom, ad->sqto);

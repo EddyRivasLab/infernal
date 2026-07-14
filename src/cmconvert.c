@@ -33,7 +33,7 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             1 },
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            1 },
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        1 },
-  /*  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output legacy 1.x file formats by name, such as '1/a'",     1 },*/
+  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output format: 1/a, 1/b, or 1/c (default: 1/c)",            1 },
   /* options for controlling p7 per-node band pad computation */
   { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,              NULL, "skip p7 per-node band pad computation",          2 },
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
@@ -56,8 +56,7 @@ main(int argc, char **argv)
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = NULL;
-  /*char          *outfmt  = esl_opt_GetString(go, "--outfmt");*/
-  int            fmtcode = -1;	/* -1 = write the current default format */
+  int            fmtcode = -1;	/* -1 = write the current default format (INFERNAL1/d); set by --outfmt */
   int            status;
   char           errbuf[eslERRBUFSIZE];
 
@@ -89,12 +88,20 @@ main(int argc, char **argv)
     }
   cmfile = esl_opt_GetArg(go, 1);
 
-  /* In the future, when we have another 1.1+ format besides '1/a' put this back in:
-   * if (outfmt != NULL) {
-   * if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
-   * else    cm_Fail("No such 1.x output format code %s.\n", outfmt);
-   * }
+  /* --outfmt <s>: choose the 1.x output format for -a/-b. Default (NULL) writes
+   * the current default format (fmtcode -1 = INFERNAL1/d). 1/a and 1/b predate the
+   * consensus pseudoknot annotation, so writing to them drops pknots (handled below).
+   * 1/c is a retired ambiguous dev format and cannot be selected.
    */
+  {
+    char *outfmt = esl_opt_GetString(go, "--outfmt");
+    if (outfmt != NULL) {
+      if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
+      else if (strcmp(outfmt, "1/b") == 0) fmtcode = CM_FILE_1b;
+      else if (strcmp(outfmt, "1/d") == 0) fmtcode = CM_FILE_1d;
+      else    cm_Fail("No such output format code %s (try 1/a, 1/b, or 1/d).\n", outfmt);
+    }
+  }
 
   status = cm_file_Open(cmfile, NULL, TRUE, &cmfp, errbuf); /* TRUE says: allow CM file to be in v1.0 --> v1.0.2 format */
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
@@ -127,7 +134,7 @@ main(int argc, char **argv)
           ! esl_opt_GetBoolean(go, "--fhmm"))
         {
           if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
-          /* cm_ComputeP7NodePad needs cm->cp9map. For inputs that skipped
+          /* cm_ComputeP7CMNodePad needs cm->cp9map. For inputs that skipped
            * configure_model() (v1/a, v1/b), cp9map is NULL — build just
            * the map cheaply rather than running full cm_Configure.
            */
@@ -143,7 +150,7 @@ main(int argc, char **argv)
 #endif
             if (pad_ncpu > esl_opt_GetInteger(go, "--p7pad-N")) pad_ncpu = esl_opt_GetInteger(go, "--p7pad-N");
             ESL_RANDOMNESS *pad_r = esl_randomness_Create((uint32_t) esl_opt_GetInteger(go, "--p7pad-seed"));
-            if ((status = cm_ComputeP7NodePad(cm, pad_r,
+            if ((status = cm_ComputeP7CMNodePad(cm, pad_r,
                                               esl_opt_GetInteger(go, "--p7pad-N"),
                                               esl_opt_GetReal   (go, "--p7pad-q"),
                                               pad_ncpu,
@@ -162,6 +169,22 @@ main(int argc, char **argv)
       else {
 	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
       }
+
+      /* Feature B: the consensus pseudoknot annotation only exists in INFERNAL1/d.
+       * Converting to an older format that predates it (1/a, 1/b via --outfmt, or the
+       * legacy v0.7-v1.0.2 -1 format) drops the pknots. For -a/-b targeting 1/a or 1/b
+       * we must actually clear CMH_PKNOT and free cm->pknot, because the binary pknot
+       * block is flag-gated (not format-gated) and would otherwise be emitted; for the
+       * -1 legacy writer cm_file_Write1p0ASCII() ignores cm->pknot, so a warning suffices. */
+      if ((cm->flags & CMH_PKNOT) && (esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b")) &&
+          (fmtcode == CM_FILE_1a || fmtcode == CM_FILE_1b)) {
+        fprintf(stderr, "# WARNING: dropping pseudoknot annotation from CM %s: the INFERNAL1/%s format cannot store it.\n",
+                cm->name, (fmtcode == CM_FILE_1a) ? "a" : "b");
+        cm->flags &= ~CMH_PKNOT;
+        if (cm->pknot != NULL) { free(cm->pknot); cm->pknot = NULL; }
+      }
+      if ((cm->flags & CMH_PKNOT) && esl_opt_GetBoolean(go, "-1") == TRUE)
+        fprintf(stderr, "# WARNING: dropping pseudoknot annotation from CM %s: the v0.7-v1.0.2 (-1) format cannot store it.\n", cm->name);
 
       if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
       else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);

@@ -560,6 +560,45 @@ transition counts in these states are \emph{ignored} by the
 construction procedure -- they are set to zero before the transition
 probability parameters for these states are determined.
 
+\subsubsection{Automatic E-value calibration}
+\label{section:cmbuild-autocal}
+
+As of Infernal 1.2, \prog{cmbuild} calibrates the E-value statistical
+parameters needed by \prog{cmsearch} and \prog{cmscan} automatically,
+using an analytical predictor (\prog{cm\_FastCalibrate}) in place of
+running \prog{cmcalibrate}'s Monte Carlo simulation. This means the CM
+file that \prog{cmbuild} writes is, by default, already search-ready:
+there is no longer a separate calibration step in the standard
+build-then-search workflow (see the tutorial,
+section~\ref{section:tutorial}, and
+section~\ref{section:calibration-limitations} for the accuracy of the
+predicted E-values and their known limitations).
+
+Models built with entropy weighting turned down or off
+(\prog{--ere <x>} or \prog{--enone}, described above) are calibrated
+correctly: \prog{cmbuild} dispatches these to an entropy-aware variant
+of the predictor that accounts for the resulting change in model
+information content.
+
+Automatic calibration depends on the CM having been constructed with
+\prog{cmbuild}'s default local begin/end probabilities and null model.
+If any of \prog{--pbegin}, \prog{--pebegin}, \prog{--pend},
+\prog{--pfend}, or \prog{--null} are used, the predictor's training
+does not cover the resulting model, so \prog{cmbuild} skips automatic
+calibration entirely and writes the CM with no E-value statistics,
+along with a warning. Such a CM cannot be used with \prog{cmsearch} or
+\prog{cmscan} until it is calibrated the classic way, by running
+\prog{cmcalibrate} (add \prog{--nonull3} too if you intend to search
+with \prog{--nonull3}) before searching.
+
+\prog{cmcalibrate} itself is not obsolete: besides the guarded
+construction options above, it remains the right tool whenever you
+need calibration numbers derived from actual simulated searches
+rather than the analytical prediction -- for example, to get accurate
+\prog{--nonull3} E-values on large or glocal-mode models (see
+section~\ref{section:calibration-limitations}), or simply because you
+want to independently verify the predicted values.
+
 \subsubsection{Naming the model}
 
 Each CM gets a name. Stockholm format allows the alignment to have a
