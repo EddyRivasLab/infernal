@@ -6894,18 +6894,23 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		else
 		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* L marginal: IL/ML emit left; child uses (y,j,d-sd) like J. */
+		/* L marginal: IL/ML emit left; child uses (y,j,d-sd). brief 26_0610-092:
+		 * an L-mode LEFT-emitter transits ONLY to its child's L-plane, NEVER to the
+		 * child's J-plane -- matching the trusted oracle cm_TrCYKInsideAlignHB ML/IL
+		 * L-recursion (cm_dpalign_trunc.c:7050-7054, which gates on do_L_y only and
+		 * has no Jalpha[y] term). The prior extra alpha[yy2] (J-child) term was an
+		 * inside-begin inflation: where a child is not Lvalid (or Jalpha[y]>Lalpha[y]),
+		 * it fabricated an L-parse via a joint child, over-scoring the L-begin scan
+		 * (contrast the MP L-plane and the ML/IL R-plane below, where the oracle DOES
+		 * read the J child -- that asymmetry is exactly the marginal-mode rule). */
 		if (do_L_v) {
 		  int dp_yo;
 		  Lalpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d - sdl));
 		  if (ret_shadow != NULL) Lyshad[j][dp_v] = USED_EL;
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
-		    if (hb_inband(cp9b, yy2, j, d-sd, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
-			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
-		      }
-		      if (cp9b->Lvalid[yy2] && (sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
+		    if (cp9b->Lvalid[yy2] && hb_inband(cp9b, yy2, j, d-sd, i0, j0, &dp_yo)) {
+		      if ((sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_L_OFFSET;
 		      }
 		    }
@@ -6963,18 +6968,20 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		else
 		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* R marginal: IR/MR emit right; child uses (y,j-sdr,d-sd) like J. */
+		/* R marginal: IR/MR emit right; child uses (y,j-sdr,d-sd). brief 26_0610-092:
+		 * symmetric to the ML/IL L-plane fix above -- an R-mode RIGHT-emitter transits
+		 * ONLY to its child's R-plane, NEVER the J-plane (oracle cm_TrCYKInsideAlignHB
+		 * IR/MR R-recursion, cm_dpalign_trunc.c:7096-7100, gates do_R_y only). The prior
+		 * extra alpha[yy2] (J-child) term was the R-mode mirror of the inside-begin
+		 * inflation. */
 		if (do_R_v) {
 		  int dp_yo;
 		  Ralpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d - sdr));
 		  if (ret_shadow != NULL) Ryshad[j][dp_v] = USED_EL;
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
-		    if (hb_inband(cp9b, yy2, j-sdr, d-sd, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
-			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
-		      }
-		      if (cp9b->Rvalid[yy2] && (sc = Ralpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
+		    if (cp9b->Rvalid[yy2] && hb_inband(cp9b, yy2, j-sdr, d-sd, i0, j0, &dp_yo)) {
+		      if ((sc = Ralpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_R_OFFSET;
 		      }
 		    }
@@ -8303,12 +8310,15 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j, i+1, i0,i1,j1,j0, &op_y)) {
-			/* brief 26_0610-075: yy2's J-plane cross-term is only a valid truncated
-			 * contribution if yy2's own node lies entirely within the observed
-			 * (non-truncated) sequence (cp9b->Jvalid[yy2]); mirrors brief 070's gate
-			 * on the analogous tr_inside_hb/tr_generic_splitter_hb candidates --
-			 * tr_vinside_hb's own J-transition candidates were not in 070's scope. */
-			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			/* brief 26_0610-092: only an MP L-plane transits to the child's J-plane;
+			 * a plain LEFT-emitter (ML/IL) in L mode transits ONLY to the child's
+			 * L-plane (oracle cm_TrCYKInsideAlignHB ML/IL L-recursion,
+			 * cm_dpalign_trunc.c:7050-7054). The prior unconditional J-child term was
+			 * the tr_vinside_hb copy of the inside-begin inflation this brief fixes in
+			 * tr_inside_hb -- it is what made the byte-exact-score traceback still
+			 * reconstruct an ML->EL phantom. (brief 26_0610-075's Jvalid[yy2] gate stays
+			 * for the MP case.) */
+			if (styp == MP_st && cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
 			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Lvalid[yy2] && (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
@@ -8371,8 +8381,10 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j-1, i, i0,i1,j1,j0, &op_y)) {
-			/* brief 26_0610-075: R-mode mirror of the L-mode Jvalid[yy2] gate above. */
-			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			/* brief 26_0610-092: R-mode mirror -- only an MP R-plane transits to the
+			 * child's J-plane; a plain RIGHT-emitter (MR/IR) in R mode transits ONLY to
+			 * the child's R-plane (oracle IR/MR R-recursion, cm_dpalign_trunc.c:7158-7162). */
+			if (styp == MP_st && cp9b->Jvalid[yy2] && (sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
 			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Rvalid[yy2] && (sc = Ra[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
