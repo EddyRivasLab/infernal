@@ -1,0 +1,25 @@
+# CM=matl300 M=904 bifs=0 mode=local tau=1e-07 LOCAL_BEGIN=1 LOCAL_END=1
+# FAIL seq=matl300-sample4_full L=301 loop_mode=Joint or_mode=Joint sc_loop=-6.877859 sc_oracle=-6.877886 dev=2.670e-05 ParsetreeCompare=DIFFER nodes_loop=310 nodes_or=310
+# FAIL seq=matl300-sample4_3ptr L=165 loop_mode=Left or_mode=Left sc_loop=-18.731701 sc_oracle=-18.731712 dev=1.144e-05 ParsetreeCompare=DIFFER nodes_loop=172 nodes_or=172
+# FAIL seq=matl300-sample5_full L=344 loop_mode=Joint or_mode=Joint sc_loop=-15.105718 sc_oracle=-15.105708 dev=9.537e-06 ParsetreeCompare=DIFFER nodes_loop=347 nodes_or=347
+# FAIL seq=matl300-sample5_3ptr L=189 loop_mode=Joint or_mode=Left sc_loop=-6.183755 sc_oracle=-6.183784 dev=2.861e-05 ParsetreeCompare=DIFFER nodes_loop=153 nodes_or=153
+# FAIL seq=matl300-sample9_5ptr L=180 loop_mode=Left or_mode=Left sc_loop=-29.002302 sc_oracle=-29.010447 dev=8.144e-03 ParsetreeCompare=DIFFER nodes_loop=53 nodes_or=102
+# FAIL seq=matl300-sample11_full L=321 loop_mode=Joint or_mode=Joint sc_loop=17.943245 sc_oracle=17.943308 dev=6.294e-05 ParsetreeCompare=DIFFER nodes_loop=324 nodes_or=324
+# FAIL seq=matl300-sample13_full L=315 loop_mode=Joint or_mode=Joint sc_loop=4.608233 sc_oracle=4.608244 dev=1.049e-05 ParsetreeCompare=DIFFER nodes_loop=322 nodes_or=322
+# FAIL seq=matl300-sample22_full L=308 loop_mode=Left or_mode=Left sc_loop=-16.641443 sc_oracle=-16.641514 dev=7.057e-05 ParsetreeCompare=DIFFER nodes_loop=320 nodes_or=320
+# FAIL seq=matl300-sample24_full L=291 loop_mode=Joint or_mode=Joint sc_loop=4.905668 sc_oracle=4.905690 dev=2.193e-05 ParsetreeCompare=DIFFER nodes_loop=298 nodes_or=298
+# FAIL seq=matl300-sample24_3ptr L=160 loop_mode=Left or_mode=Left sc_loop=-10.207705 sc_oracle=-10.207705 dev=0.000e+00 ParsetreeCompare=DIFFER nodes_loop=166 nodes_or=165
+# FAIL seq=matl300-sample25_5ptr L=177 loop_mode=Left or_mode=Left sc_loop=-16.917648 sc_oracle=-16.917683 dev=3.433e-05 ParsetreeCompare=DIFFER nodes_loop=186 nodes_or=188
+# FAIL seq=matl300-sample26_full L=306 loop_mode=Joint or_mode=Joint sc_loop=-23.759409 sc_oracle=-23.759506 dev=9.727e-05 ParsetreeCompare=DIFFER nodes_loop=316 nodes_or=316
+# FAIL seq=matl300-sample27_3ptr L=165 loop_mode=Left or_mode=Left sc_loop=-10.012709 sc_oracle=-10.012759 dev=5.054e-05 ParsetreeCompare=DIFFER nodes_loop=172 nodes_or=173
+# FAIL seq=matl300-sample31_5ptr L=176 loop_mode=Joint or_mode=Joint sc_loop=-11.354807 sc_oracle=-11.354806 dev=9.537e-07 ParsetreeCompare=DIFFER nodes_loop=186 nodes_or=186
+# FAIL seq=matl300-sample31_3ptr L=176 loop_mode=Left or_mode=Left sc_loop=0.166866 sc_oracle=0.166861 dev=5.722e-06 ParsetreeCompare=DIFFER nodes_loop=181 nodes_or=181
+# FAIL seq=matl300-sample32_full L=303 loop_mode=Left or_mode=Left sc_loop=13.351828 sc_oracle=13.351862 dev=3.433e-05 ParsetreeCompare=DIFFER nodes_loop=312 nodes_or=312
+# FAIL seq=matl300-sample32_5ptr L=167 loop_mode=Left or_mode=Left sc_loop=-21.679380 sc_oracle=-21.679455 dev=7.439e-05 ParsetreeCompare=DIFFER nodes_loop=173 nodes_or=173
+# FAIL seq=matl300-sample36_full L=306 loop_mode=Left or_mode=Left sc_loop=-2.089890 sc_oracle=-2.089898 dev=8.583e-06 ParsetreeCompare=DIFFER nodes_loop=316 nodes_or=316
+# FAIL seq=matl300-sample40_5ptr L=156 loop_mode=Left or_mode=Left sc_loop=4.008462 sc_oracle=4.008465 dev=2.861e-06 ParsetreeCompare=DIFFER nodes_loop=161 nodes_or=161
+# FAIL seq=matl300-sample41_full L=320 loop_mode=Joint or_mode=Joint sc_loop=16.915934 sc_oracle=16.915972 dev=3.815e-05 ParsetreeCompare=DIFFER nodes_loop=324 nodes_or=324
+# FAIL seq=matl300-sample44_3ptr L=167 loop_mode=Left or_mode=Left sc_loop=5.030482 sc_oracle=5.030502 dev=2.003e-05 ParsetreeCompare=DIFFER nodes_loop=176 nodes_or=177
+# FAIL seq=matl300-sample49_full L=315 loop_mode=Joint or_mode=Joint sc_loop=12.669263 sc_oracle=12.669315 dev=5.245e-05 ParsetreeCompare=DIFFER nodes_loop=323 nodes_or=323
+# FAIL seq=matl300-sample49_5ptr L=174 loop_mode=Joint or_mode=Joint sc_loop=1.232000 sc_oracle=1.232000 dev=0.000e+00 ParsetreeCompare=DIFFER nodes_loop=180 nodes_or=180
+# FAIL seq=matl300-sample50_5ptr L=164 loop_mode=Left or_mode=Left 

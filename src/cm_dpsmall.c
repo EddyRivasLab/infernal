@@ -6833,7 +6833,11 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j, d-sdl, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the MP L<-J cross-term on cp9b->Jvalid[yy2]
+		       * (oracle cm_TrCYKInsideAlignHB MP L-recursion, do_J_y). Same phantom-J
+		       * over-score as the ML/IL and IR/MR cross fixes -- fires for structured
+		       * (MATP) subtrees in L mode. */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Lvalid[yy2] && (sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
@@ -6853,7 +6857,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j-sdr, d-sdr, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the MP R<-J cross-term on cp9b->Jvalid[yy2]
+		       * (oracle MP R-recursion, do_J_y). R-mirror of the MP L fix above. */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Rvalid[yy2] && (sc = Ralpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
@@ -6894,18 +6900,23 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		else
 		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* L marginal: IL/ML emit left; child uses (y,j,d-sd) like J. */
+		/* L marginal: IL/ML emit left; child uses (y,j,d-sd). brief 26_0610-092:
+		 * an L-mode LEFT-emitter transits ONLY to its child's L-plane, NEVER to the
+		 * child's J-plane -- matching the trusted oracle cm_TrCYKInsideAlignHB ML/IL
+		 * L-recursion (cm_dpalign_trunc.c:7050-7054, which gates on do_L_y only and
+		 * has no Jalpha[y] term). The prior extra alpha[yy2] (J-child) term was an
+		 * inside-begin inflation: where a child is not Lvalid (or Jalpha[y]>Lalpha[y]),
+		 * it fabricated an L-parse via a joint child, over-scoring the L-begin scan
+		 * (contrast the MP L-plane and the ML/IL R-plane below, where the oracle DOES
+		 * read the J child -- that asymmetry is exactly the marginal-mode rule). */
 		if (do_L_v) {
 		  int dp_yo;
 		  Lalpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d - sdl));
 		  if (ret_shadow != NULL) Lyshad[j][dp_v] = USED_EL;
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
-		    if (hb_inband(cp9b, yy2, j, d-sd, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
-			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
-		      }
-		      if (cp9b->Lvalid[yy2] && (sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
+		    if (cp9b->Lvalid[yy2] && hb_inband(cp9b, yy2, j, d-sd, i0, j0, &dp_yo)) {
+		      if ((sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_L_OFFSET;
 		      }
 		    }
@@ -6925,7 +6936,14 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = Ryoffset0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j, d, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the R<-J cross-term (R-mode left-emitter
+		       * converts to a joint child) on cp9b->Jvalid[yy2], matching the trusted
+		       * oracle cm_TrCYKInsideAlignHB ML/IL R-recursion (cm_dpalign_trunc.c:7091,
+		       * do_J_y). Without it the D&C's always-filled J deck alpha[yy2] for a
+		       * !Jvalid child fabricates a phantom R->J conversion, over-scoring Ralpha[v]
+		       * at off-optimal cells -> the structured-case generic-splitter score
+		       * inflation (parse still correct; the traceback ignores the phantom). */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Rvalid[yy2] && (sc = Ralpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
@@ -6963,18 +6981,20 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		else
 		  alpha[v][j][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
-		/* R marginal: IR/MR emit right; child uses (y,j-sdr,d-sd) like J. */
+		/* R marginal: IR/MR emit right; child uses (y,j-sdr,d-sd). brief 26_0610-092:
+		 * symmetric to the ML/IL L-plane fix above -- an R-mode RIGHT-emitter transits
+		 * ONLY to its child's R-plane, NEVER the J-plane (oracle cm_TrCYKInsideAlignHB
+		 * IR/MR R-recursion, cm_dpalign_trunc.c:7096-7100, gates do_R_y only). The prior
+		 * extra alpha[yy2] (J-child) term was the R-mode mirror of the inside-begin
+		 * inflation. */
 		if (do_R_v) {
 		  int dp_yo;
 		  Ralpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d - sdr));
 		  if (ret_shadow != NULL) Ryshad[j][dp_v] = USED_EL;
 		  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
-		    if (hb_inband(cp9b, yy2, j-sdr, d-sd, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
-			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
-		      }
-		      if (cp9b->Rvalid[yy2] && (sc = Ralpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
+		    if (cp9b->Rvalid[yy2] && hb_inband(cp9b, yy2, j-sdr, d-sd, i0, j0, &dp_yo)) {
+		      if ((sc = Ralpha[yy2][j-sdr][dp_yo] + cm->tsc[v][yoffset]) > Ralpha[v][j][dp_v]) {
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_R_OFFSET;
 		      }
 		    }
@@ -6994,7 +7014,10 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  for (yoffset = Lyoffset0; yoffset < cm->cnum[v]; yoffset++) {
 		    int yy2 = cm->cfirst[v] + yoffset;
 		    if (hb_inband(cp9b, yy2, j, d, i0, j0, &dp_yo)) {
-		      if ((sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
+		      /* brief 26_0610-093: gate the L<-J cross-term on cp9b->Jvalid[yy2] (the
+		       * R-mirror of the ML/IL R-plane fix above; oracle IR/MR L-recursion
+		       * cm_dpalign_trunc.c:7216, do_J_y). Same phantom-J-child inflation. */
+		      if (cp9b->Jvalid[yy2] && (sc = alpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
 			Lalpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Lyshad[j][dp_v] = yoffset + TRMODE_J_OFFSET;
 		      }
 		      if (cp9b->Lvalid[yy2] && (sc = Lalpha[yy2][j][dp_yo] + cm->tsc[v][yoffset]) > Lalpha[v][j][dp_v]) {
@@ -7163,8 +7186,20 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           outside here: its only "outside" is the begin scalar at a B's full-span
  *           cell (handled in the splitter), matching oracle cm_TrCYKOutsideAlignHB
  *           where Tbeta[v][L][L]=trpenalty with no T recurrence.
- *           NOTE: marginal local-end (Lbeta/Rbeta at deck M) is NOT yet built;
- *           valid only for CMH_LOCAL_END==off (global) -- see brief 26_0610-049 summary.
+ *           MARGINAL LOCAL-END (Lbeta/Rbeta at deck M): brief 26_0610-090 BUILT it
+ *           (was the brief 26_0610-049 deferral; brief 26_0610-088 root-caused the 2/1800
+ *           matl300 L-mode undershoots 086 flagged as this gap). betaL[cm->M]/betaR[cm->M]
+ *           are now allocated/seeded/propagated below with per-mode marginal emission
+ *           transcribed cell-for-cell from the monolithic Lelbeta/Relbeta
+ *           (cm_dpalign_trunc.c:2152-2226) + inline el_selfsc*d to match the J feed; the
+ *           wedge/generic splitters carry L/R EL candidates, and the best_v=-1 EL
+ *           traceback routes through tr_v_splitter_hb->tr_vinsideT_hb in the winning
+ *           parent mode (already EL+mode aware). RESULT: sample5_3ptr now byte-exact vs
+ *           the oracle (153-node parse; the brief-088 proof betaL[420][j][d+1]+endsc[420]+
+ *           el_selfsc*d+esc = -6.18375 is exactly what this deck now supplies). NOTE:
+ *           sample9_5ptr is NOT this gap -- it is a separate PRE-EXISTING inside-begin
+ *           inflation (D&C inside-L[606]=-13.436 vs oracle Ldp[606]=-15.175), unchanged
+ *           by this fix (own follow-on brief). Valid for CMH_LOCAL_END on and off.
  */
 static void
 tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
@@ -7257,6 +7292,19 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
       j = i0-1+jp;
       for (d = 0; d <= jp; d++) beta[cm->M][j][d] = IMPOSSIBLE;
     }
+    /* brief 26_0610-090: marginal L/R local-end (EL) outside decks. Full (non-banded)
+     * vjd decks like the J EL deck, indexed [j][d] directly. Built only when the
+     * corresponding marginal plane is requested (fill_L/fill_R). Closes the brief
+     * 26_0610-049 deferral (marginal Lbeta/Rbeta at deck M never built) that brief
+     * 26_0610-088 root-caused as the truncated-L EL-terminus undershoot. */
+    if (fill_L) {
+      betaL[cm->M] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= W; jp++) { j = i0-1+jp; for (d = 0; d <= jp; d++) betaL[cm->M][j][d] = IMPOSSIBLE; }
+    }
+    if (fill_R) {
+      betaR[cm->M] = alloc_vjd_deck(L, i0, j0);
+      for (jp = 0; jp <= W; jp++) { j = i0-1+jp; for (d = 0; d <= jp; d++) betaR[cm->M][j][d] = IMPOSSIBLE; }
+    }
     if (vroot != 0 && NOT_IMPOSSIBLE(cm->endsc[vroot])) {
       switch (cm->sttype[vroot]) {
       case MP_st:
@@ -7296,6 +7344,66 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
       case B_st:
       default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
       }
+      /* brief 26_0610-090: marginal vroot EL seeds -- mathematically the L/R EL
+       * propagate feed (below) applied to vroot at its full-span root cell
+       * (betaL/betaR[vroot][j0][W]=0, seeded above), which the propagate loop
+       * (v=w2+1..vend) skips for vroot. Per-mode marginal emission, derived by the
+       * same rule as the propagate: L emits only the LEFT residue (MP->lmesc, ML/IL
+       * ->esc), gated to the L boundary j==j0 (full span); R emits only the RIGHT
+       * residue (MP->rmesc, MR/IR->esc), gated to the R boundary i==i0 (full span).
+       * MR/IR in L (and ML/IL in R) emit nothing (their residue is truncated away). */
+      if (fill_L && cp9b->Lvalid[vroot]) {
+	switch (cm->sttype[vroot]) {
+	case MP_st:
+	  if (W < 1) break;
+	  betaL[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + cm->lmesc[vroot][dsq[i0]];
+	  if (betaL[cm->M][j0][W-1] < IMPOSSIBLE) betaL[cm->M][j0][W-1] = IMPOSSIBLE;
+	  break;
+	case ML_st:
+	case IL_st:
+	  if (W < 1) break;
+	  if (dsq[i0] < cm->abc->K) escore = cm->esc[vroot][(int) dsq[i0]];
+	  else                      escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[vroot]);
+	  betaL[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
+	  if (betaL[cm->M][j0][W-1] < IMPOSSIBLE) betaL[cm->M][j0][W-1] = IMPOSSIBLE;
+	  break;
+	case MR_st:
+	case IR_st:
+	case S_st:
+	case D_st:
+	  betaL[cm->M][j0][W] = cm->endsc[vroot] + (cm->el_selfsc * W);
+	  if (betaL[cm->M][j0][W] < IMPOSSIBLE) betaL[cm->M][j0][W] = IMPOSSIBLE;
+	  break;
+	case B_st:
+	default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
+	}
+      }
+      if (fill_R && cp9b->Rvalid[vroot]) {
+	switch (cm->sttype[vroot]) {
+	case MP_st:
+	  if (W < 1) break;
+	  betaR[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + cm->rmesc[vroot][dsq[j0]];
+	  if (betaR[cm->M][j0-1][W-1] < IMPOSSIBLE) betaR[cm->M][j0-1][W-1] = IMPOSSIBLE;
+	  break;
+	case MR_st:
+	case IR_st:
+	  if (W < 1) break;
+	  if (dsq[j0] < cm->abc->K) escore = cm->esc[vroot][(int) dsq[j0]];
+	  else                      escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[vroot]);
+	  betaR[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
+	  if (betaR[cm->M][j0-1][W-1] < IMPOSSIBLE) betaR[cm->M][j0-1][W-1] = IMPOSSIBLE;
+	  break;
+	case ML_st:
+	case IL_st:
+	case S_st:
+	case D_st:
+	  betaR[cm->M][j0][W] = cm->endsc[vroot] + (cm->el_selfsc * W);
+	  if (betaR[cm->M][j0][W] < IMPOSSIBLE) betaR[cm->M][j0][W] = IMPOSSIBLE;
+	  break;
+	case B_st:
+	default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
+	}
+      }
     }
   }
 
@@ -7328,7 +7436,17 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * injection; unconditional on local mode -- truncated begins always apply.)
        * L/R (brief 26_0610-049): inject into the 2-D marginal root cell (j0,W) -- the same
        * full-span corner as J (oracle cm_TrCYKOutsideAlignHB:6739-6741) -- for each
-       * {L,R}valid v. */
+       * {L,R}valid v.
+       *
+       * The injection itself is correct (byte-exact vs the oracle's own
+       * beta[v][j0][W]=trpen; brief 26_0610-086). The 081-reported LOCAL-BEGIN
+       * inflation was NOT here: it was the downward-propagation loop just below
+       * chaining this trpen THROUGH a non-J-valid (cp9b->Jvalid[v]==FALSE) wedge
+       * state (the injection was already Jvalid-gated, but the J-plane
+       * propagation was not) -- fixed in brief 26_0610-086 by the do_J_v gate
+       * below (and its traceback twin in tr_vinside_hb). Do NOT "fix" by simply
+       * disabling this injection -- that regresses legitimate wedge-entry
+       * candidates (081 confirmed experimentally). */
       if (vroot == 0 && i0 == 1 && j0 == L &&
 	  (jmin[v] <= j0 && jmax[v] >= j0)
 	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)) {
@@ -7350,6 +7468,17 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	  {
 	    int dp_v = d - hdmin[v][jp_v];
 	    int dp_y;
+	    /* brief 26_0610-086: gate the pure-J outside propagation on cp9b->Jvalid[v],
+	     * mirroring the do_L_v/do_R_v gates below (and the Jvalid[v] gates already
+	     * present on this block's marginal->J cross-terms + the truncated-begin
+	     * injection above). Without it, beta[v]'s J-plane is filled for a state v
+	     * whose node structurally cannot appear in a pure-J parse (cp9b->Jvalid[v]
+	     * ==FALSE), letting a truncated-begin penalty propagate a chain of (good)
+	     * emissions THROUGH that non-J-valid state -- inflating tr_generic_splitter_hb's
+	     * "all-J split" (beta[v]-based) candidate to an unreachable score. The oracle
+	     * (cm_TrCYKInsideAlignHB/cm_TrCYKOutsideAlignHB) never allocates a J deck for
+	     * a !Jvalid state, so its beta stays IMPOSSIBLE; do_J_v reproduces that mask. */
+	    int do_J_v = cp9b->Jvalid[v];
 	    int do_L_v = fill_L && cp9b->Lvalid[v];
 	    int do_R_v = fill_R && cp9b->Rvalid[v];
 	    i = j-d+1;
@@ -7370,7 +7499,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		    escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
 		    escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
-		  if (hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
+		  if (do_J_v && hb_inband(cp9b, y, j+1, d+2, i0, j0, &dp_y) &&
 		    (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		}
@@ -7402,7 +7531,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		  else
 		    escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
 		  if (hb_inband(cp9b, y, j, d+1, i0, j0, &dp_y)) {
-		    if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		    if (do_J_v && (sc = beta[y][j][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		      beta[v][j][dp_v] = sc;
 		    if (do_L_v && NOT_IMPOSSIBLE(betaL[y][j][dp_y]) &&
 		      (sc = betaL[y][j][dp_y] + cm->tsc[y][voffset] + escore) > betaL[v][j][dp_v])
@@ -7428,7 +7557,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 		  else
 		    escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 		  if (hb_inband(cp9b, y, j+1, d+1, i0, j0, &dp_y)) {
-		    if ((sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
+		    if (do_J_v && (sc = beta[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > beta[v][j][dp_v])
 		      beta[v][j][dp_v] = sc;
 		    if (do_R_v && NOT_IMPOSSIBLE(betaR[y][j+1][dp_y]) &&
 		      (sc = betaR[y][j+1][dp_y] + cm->tsc[y][voffset] + escore) > betaR[v][j][dp_v])
@@ -7449,7 +7578,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	      case E_st:
 	      case D_st:
 		if (! hb_inband(cp9b, y, j, d, i0, j0, &dp_y)) continue;
-		if ((sc = beta[y][j][dp_y] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
+		if (do_J_v && (sc = beta[y][j][dp_y] + cm->tsc[y][voffset]) > beta[v][j][dp_v])
 		  beta[v][j][dp_v] = sc;
 		if (do_L_v && NOT_IMPOSSIBLE(betaL[y][j][dp_y]) &&
 		  (sc = betaL[y][j][dp_y] + cm->tsc[y][voffset]) > betaL[v][j][dp_v])
@@ -7548,6 +7677,117 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	}
       }
 
+      /* brief 26_0610-090: L-marginal v->EL feed into betaL[cm->M]. Transcribed
+       * from the trusted monolithic Lelbeta recurrence (cm_dpalign_trunc.c:2152-2188,
+       * itself cm_TrOutsideAlignHB's v->EL block) into the D&C's own (j,d)/hb_inband
+       * frame, with el_selfsc*d applied INLINE (matching the J feed above; the
+       * monolithic defers this self-loop fold). L mode is right-truncated: a
+       * left-emitting parent (MP/ML/IL) emits only its LEFT residue and feeds betaL[v]
+       * at (j,d+1); a right-emitting parent (MR/IR) emits nothing and feeds betaL[v]
+       * at (j,d) gated to the L boundary j==j0; MP also carries j==j0. brief 26_0610-088
+       * proved the MP-absent left-emitting case byte-exact. */
+      if (fill_L && cp9b->Lvalid[v] && NOT_IMPOSSIBLE(cm->endsc[v])) {
+	int dp_v;
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    {
+	      i = j-d+1;
+	      switch (cm->sttype[v]) {
+	      case MP_st:
+		if (j != j0 || d == jp) continue;
+		if (! hb_inband(cp9b, v, j, d+1, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaL[v][j][dp_v])) continue;
+		if ((sc = betaL[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + cm->lmesc[v][dsq[i-1]]) > betaL[cm->M][j][d])
+		  betaL[cm->M][j][d] = sc;
+		break;
+	      case ML_st:
+	      case IL_st:
+		if (d == jp) continue;
+		if (! hb_inband(cp9b, v, j, d+1, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaL[v][j][dp_v])) continue;
+		if (dsq[i-1] < cm->abc->K) escore = cm->esc[v][(int) dsq[i-1]];
+		else                       escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
+		if ((sc = betaL[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + escore) > betaL[cm->M][j][d])
+		  betaL[cm->M][j][d] = sc;
+		break;
+	      case MR_st:
+	      case IR_st:
+		if (j != j0) continue;
+		if (! hb_inband(cp9b, v, j, d, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaL[v][j][dp_v])) continue;
+		if ((sc = betaL[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d)) > betaL[cm->M][j][d])
+		  betaL[cm->M][j][d] = sc;
+		break;
+	      case S_st:
+	      case D_st:
+	      case E_st:
+		if (! hb_inband(cp9b, v, j, d, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaL[v][j][dp_v])) continue;
+		if ((sc = betaL[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d)) > betaL[cm->M][j][d])
+		  betaL[cm->M][j][d] = sc;
+		break;
+	      case B_st:
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	      }
+	    }
+	}
+      }
+
+      /* brief 26_0610-090: R-marginal v->EL feed into betaR[cm->M]. Transcribed from
+       * the trusted monolithic Relbeta recurrence (cm_dpalign_trunc.c:2190-2226).
+       * R mode is left-truncated: a right-emitting parent (MP/MR/IR) emits only its
+       * RIGHT residue and feeds betaR[v] at (j+1,d+1); a left-emitting parent (ML/IL)
+       * emits nothing and feeds betaR[v] at (j,d) gated to the R boundary i==i0; MP
+       * also carries i==i0. */
+      if (fill_R && cp9b->Rvalid[v] && NOT_IMPOSSIBLE(cm->endsc[v])) {
+	int dp_v;
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    {
+	      i = j-d+1;
+	      switch (cm->sttype[v]) {
+	      case MP_st:
+		if (i != i0 || j == j0) continue;
+		if (! hb_inband(cp9b, v, j+1, d+1, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaR[v][j+1][dp_v])) continue;
+		if ((sc = betaR[v][j+1][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + cm->rmesc[v][dsq[j+1]]) > betaR[cm->M][j][d])
+		  betaR[cm->M][j][d] = sc;
+		break;
+	      case ML_st:
+	      case IL_st:
+		if (i != i0) continue;
+		if (! hb_inband(cp9b, v, j, d, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaR[v][j][dp_v])) continue;
+		if ((sc = betaR[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d)) > betaR[cm->M][j][d])
+		  betaR[cm->M][j][d] = sc;
+		break;
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		if (! hb_inband(cp9b, v, j+1, d+1, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaR[v][j+1][dp_v])) continue;
+		if (dsq[j+1] < cm->abc->K) escore = cm->esc[v][(int) dsq[j+1]];
+		else                       escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
+		if ((sc = betaR[v][j+1][dp_v] + cm->endsc[v] + (cm->el_selfsc * d) + escore) > betaR[cm->M][j][d])
+		  betaR[cm->M][j][d] = sc;
+		break;
+	      case S_st:
+	      case D_st:
+	      case E_st:
+		if (! hb_inband(cp9b, v, j, d, i0, j0, &dp_v)) continue;
+		if (! NOT_IMPOSSIBLE(betaR[v][j][dp_v])) continue;
+		if ((sc = betaR[v][j][dp_v] + cm->endsc[v] + (cm->el_selfsc * d)) > betaR[cm->M][j][d])
+		  betaR[cm->M][j][d] = sc;
+		break;
+	      case B_st:
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	      }
+	    }
+	}
+      }
+
       if (! do_full) {
 	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	  touch[y]--;
@@ -7570,16 +7810,21 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     free(beta);
   } else *ret_beta = beta;
 
-  /* L/R marginal 2-D banded decks (brief 26_0610-049): return them (splitter reads them)
-   * or free everything. NOTE: deck M (EL) is not allocated for L/R yet, so use the
-   * vjd-deck free over [w1..vend], not free_banded_hb_vjd_matrix (which touches M). */
+  /* L/R marginal 2-D banded decks (brief 26_0610-049): return them (splitter reads them,
+   * and frees via free_banded_hb_vjd_matrix which handles the full deck M) or free
+   * everything here. brief 26_0610-090: deck M (EL) is now allocated for L/R too (full
+   * vjd deck), so the internal-free path must also free betaL[cm->M]/betaR[cm->M]. */
   if (fill_L) {
     if (ret_betaL != NULL) *ret_betaL = betaL;
-    else { for (v = w1; v <= vend; v++) if (betaL[v] != NULL) { free_banded_hb_vjd_deck(betaL[v], i0, j0, v, cp9b); betaL[v] = NULL; } free(betaL); }
+    else { for (v = w1; v <= vend; v++) if (betaL[v] != NULL) { free_banded_hb_vjd_deck(betaL[v], i0, j0, v, cp9b); betaL[v] = NULL; }
+           if ((cm->flags & CMH_LOCAL_END) && betaL[cm->M] != NULL) { free_vjd_deck(betaL[cm->M], i0, j0); betaL[cm->M] = NULL; }
+           free(betaL); }
   }
   if (fill_R) {
     if (ret_betaR != NULL) *ret_betaR = betaR;
-    else { for (v = w1; v <= vend; v++) if (betaR[v] != NULL) { free_banded_hb_vjd_deck(betaR[v], i0, j0, v, cp9b); betaR[v] = NULL; } free(betaR); }
+    else { for (v = w1; v <= vend; v++) if (betaR[v] != NULL) { free_banded_hb_vjd_deck(betaR[v], i0, j0, v, cp9b); betaR[v] = NULL; }
+           if ((cm->flags & CMH_LOCAL_END) && betaR[cm->M] != NULL) { free_vjd_deck(betaR[cm->M], i0, j0); betaR[cm->M] = NULL; }
+           free(betaR); }
   }
 
   if (ret_dpool == NULL) deckpool_free(dpool);
@@ -7935,7 +8180,21 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 	    op = i - ilo;
 	    y  = cm->cfirst[v];
 
-	    if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) {
+	    /* brief 26_0610-086: mask the pure-J plane for a state v whose node
+	     * structurally cannot appear in a pure-J parse (cp9b->Jvalid[v]==FALSE).
+	     * The oracle (cm_TrCYKInsideAlignHB) never allocates a J deck for such a
+	     * state, so it can be neither a J entry nor a J pass-through; here a[v] is
+	     * read directly by v's parent's J recurrence (ungated), so an unmasked a[v]
+	     * would let a truncated-begin J parse route THROUGH the non-J-valid state,
+	     * reconstructing the same unreachable good-emission wedge the tr_outside_hb
+	     * fix eliminates from the SCORE (this is its traceback twin). Mirrors the
+	     * brief 26_0610-075 Jvalid[yy2] gate already on the L/R marginal cross-terms
+	     * below, which the pure-J plane was missing. */
+	    if (! cp9b->Jvalid[v]) {
+	      a[v][jp][op] = IMPOSSIBLE;
+	      if (ret_shadow != NULL) shadow[v][jp][op] = USED_EL;
+	    }
+	    else if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) {
 	      if (vji_inband(cp9b, y, j, i, i0,i1,j1,j0, &op_y))
 		a[v][jp][op] = a[y][jp][op_y] + cm->tsc[v][0];
 	      else a[v][jp][op] = IMPOSSIBLE;
@@ -8067,12 +8326,15 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j, i+1, i0,i1,j1,j0, &op_y)) {
-			/* brief 26_0610-075: yy2's J-plane cross-term is only a valid truncated
-			 * contribution if yy2's own node lies entirely within the observed
-			 * (non-truncated) sequence (cp9b->Jvalid[yy2]); mirrors brief 070's gate
-			 * on the analogous tr_inside_hb/tr_generic_splitter_hb candidates --
-			 * tr_vinside_hb's own J-transition candidates were not in 070's scope. */
-			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
+			/* brief 26_0610-092: only an MP L-plane transits to the child's J-plane;
+			 * a plain LEFT-emitter (ML/IL) in L mode transits ONLY to the child's
+			 * L-plane (oracle cm_TrCYKInsideAlignHB ML/IL L-recursion,
+			 * cm_dpalign_trunc.c:7050-7054). The prior unconditional J-child term was
+			 * the tr_vinside_hb copy of the inside-begin inflation this brief fixes in
+			 * tr_inside_hb -- it is what made the byte-exact-score traceback still
+			 * reconstruct an ML->EL phantom. (brief 26_0610-075's Jvalid[yy2] gate stays
+			 * for the MP case.) */
+			if (styp == MP_st && cp9b->Jvalid[yy2] && (sc = a[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
 			  La[v][jp][op] = sc; if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) yoffset; Lmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Lvalid[yy2] && (sc = La[yy2][jp][op_y] + cm->tsc[v][yoffset]) > La[v][jp][op]) {
@@ -8135,8 +8397,10 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (vji_inband(cp9b, yy2, j-1, i, i0,i1,j1,j0, &op_y)) {
-			/* brief 26_0610-075: R-mode mirror of the L-mode Jvalid[yy2] gate above. */
-			if (cp9b->Jvalid[yy2] && (sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
+			/* brief 26_0610-092: R-mode mirror -- only an MP R-plane transits to the
+			 * child's J-plane; a plain RIGHT-emitter (MR/IR) in R mode transits ONLY to
+			 * the child's R-plane (oracle IR/MR R-recursion, cm_dpalign_trunc.c:7158-7162). */
+			if (styp == MP_st && cp9b->Jvalid[yy2] && (sc = a[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
 			  Ra[v][jp][op] = sc; if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) yoffset; Rmode[v][jp][op] = TRMODE_J; }
 			}
 			if (cp9b->Rvalid[yy2] && (sc = Ra[yy2][jp-1][op_y] + cm->tsc[v][yoffset]) > Ra[v][jp][op]) {
@@ -8738,14 +9002,22 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 	    /* J */
 	    if ((sc = alpha[v][j][dp_v] + beta[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_J; c_mode=TRMODE_J; }
-	    /* L: parent v in L, child J / child L */
-	    if (haveL && (sc = alpha[v][j][dp_v] + betaL[v][j][dp_v]) > best_sc)
-	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_J; }
+	    /* L: parent v in L, child L (plane-consistent).  brief 26_0610-093: the
+	     * former mismatched candidate (alpha[v]+betaL[v], p_mode=L/c_mode=J) is
+	     * REMOVED. In a linear wedge stretch a state v carries a single mode, so its
+	     * inside*outside product is meaningful only plane-consistently (Lalpha[v]+
+	     * betaL[v] for v-in-L; alpha[v]+beta[v] for v-in-J). A marginal->J truncation
+	     * conversion needs no mismatched split: at-or-below v it is already inside
+	     * Lalpha[v] (tr_inside_hb ML/IL own-mode L<-J term), and above v it is already
+	     * inside beta[v] (tr_outside_hb feeds the child J-plane from an L/R-mode parent,
+	     * e.g. :7495/:7530/:7556). alpha[v]+betaL[v] pairs a J-inside subtree with an
+	     * L-outside path -- no single-mode parse -- so it can only over-score (betaL[v]
+	     * drops right-side emission mass beta[v] keeps) and its c_mode=J routing rebuilds
+	     * v's subtree in J -> the sample9 4-node phantom (092 root-caused this). */
 	    if (haveL && cp9b->Lvalid[v] && (sc = Lalpha[v][j][dp_v] + betaL[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_L; c_mode=TRMODE_L; }
-	    /* R: parent v in R, child J / child R */
-	    if (haveR && (sc = alpha[v][j][dp_v] + betaR[v][j][dp_v]) > best_sc)
-	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_J; }
+	    /* R: parent v in R, child R (plane-consistent; R mirror -- the mismatched
+	     * alpha[v]+betaR[v] candidate is REMOVED for the same reason, brief 26_0610-093). */
 	    if (haveR && cp9b->Rvalid[v] && (sc = Ralpha[v][j][dp_v] + betaR[v][j][dp_v]) > best_sc)
 	      { best_sc=sc; best_v=v; best_d=d; best_j=j; p_mode=TRMODE_R; c_mode=TRMODE_R; }
 	  }
@@ -8760,6 +9032,28 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
 	    best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_J; c_mode = TRMODE_T;
 	  }
       }
+    /* brief 26_0610-090: L/R marginal EL candidates (parent v in L/R descends to EL,
+     * child empty). betaL/betaR[cm->M] now built above. best_v=-1 with p_mode=L/R;
+     * traceback routes through tr_v_splitter_hb (parent-mode) -> tr_vinsideT_hb, which
+     * already reconstructs the marginal EL leaf (USED_EL in the active mode). */
+    if (fill_L)
+      for (jp = 0; jp <= W; jp++)
+	{
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    if ((sc = betaL[cm->M][j][d]) > best_sc) {
+	      best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_L; c_mode = TRMODE_T;
+	    }
+	}
+    if (fill_R)
+      for (jp = 0; jp <= W; jp++)
+	{
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    if ((sc = betaR[cm->M][j][d]) > best_sc) {
+	      best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_R; c_mode = TRMODE_T;
+	    }
+	}
   }
 
   if (r==0) {
@@ -8780,9 +9074,13 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   /* TRUNCATED infeasibility guard: nothing in-band beat IMPOSSIBLE. */
   if (best_v == -99) return best_sc;
 
-  if (best_v == -1) {           /* EL (parent J to EL, child empty) */
+  if (best_v == -1) {           /* EL (parent p_mode to EL, child empty) */
+    /* brief 26_0610-090: route in the winning parent mode. z_allow=p_mode mirrors the
+     * -3 marginal-terminus routing; for p_mode==J this is (TRUE,FALSE,FALSE) -- exactly
+     * the prior J-only behavior, so no J regression. */
     tr_v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE,
-		     r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE, cp9b);
+		     r_allow_J, r_allow_L, r_allow_R,
+		     (p_mode==TRMODE_J), (p_mode==TRMODE_L), (p_mode==TRMODE_R), cp9b);
     return best_sc;
   }
   if (best_v == -2) {           /* inside begin (parent empty), child local hit */
@@ -9005,6 +9303,31 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    v_mode = TRMODE_J; w_mode = TRMODE_T; y_mode = TRMODE_T;
 	  }
       }
+    /* brief 26_0610-090: L/R marginal EL candidates (parent v in L/R descends to EL,
+     * child empty). Gated on r_allow_L/r_allow_R -- NOT fill_L/fill_R (which are also
+     * ON for T, since T needs the L+R planes for its combine): an L/R EL terminus is
+     * only a valid winner in an actual L/R solve, never in a T solve (whose optimum is
+     * the bifurcation begin). This keeps J and T solves byte-identical. */
+    if (r_allow_L)
+      for (jp = 0; jp <= W; jp++)
+	{
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    if ((sc = betaL[cm->M][j][d]) > best_sc) {
+	      best_sc = sc; best_k = -1; best_j = j; best_d = d;
+	      v_mode = TRMODE_L; w_mode = TRMODE_T; y_mode = TRMODE_T;
+	    }
+	}
+    if (r_allow_R)
+      for (jp = 0; jp <= W; jp++)
+	{
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++)
+	    if ((sc = betaR[cm->M][j][d]) > best_sc) {
+	      best_sc = sc; best_k = -1; best_j = j; best_d = d;
+	      v_mode = TRMODE_R; w_mode = TRMODE_T; y_mode = TRMODE_T;
+	    }
+	}
   }
 
   if (r == 0) {
@@ -9024,8 +9347,11 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if (best_k == -99) return best_sc;
 
   if (best_k == -1) {
+    /* brief 26_0610-090: route in the winning parent mode v_mode (z_allow=v_mode).
+     * For v_mode==J this is (TRUE,FALSE,FALSE) -- exactly the prior J-only behavior. */
     tr_v_splitter_hb(cm, dsq, L, tr, r, v, i0, best_j-best_d+1, best_j, j0, TRUE,
-		     r_allow_J, r_allow_L, r_allow_R, TRUE, FALSE, FALSE, cp9b);
+		     r_allow_J, r_allow_L, r_allow_R,
+		     (v_mode==TRMODE_J), (v_mode==TRMODE_L), (v_mode==TRMODE_R), cp9b);
     return best_sc;
   }
   if (best_k == -2) {
@@ -9104,6 +9430,34 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           <ret_tr>. The returned score includes the (penalty-folded) truncated
  *           begin so it equals the oracle cm_TrCYKInsideAlignHB()'s
  *           {J,L,R,T}alpha[0][L][L] byte-for-byte for the chosen mode.
+ *
+ * LOCAL-BEGIN inflation bug (brief 26_0610-081 root-caused; FIXED brief 26_0610-086):
+ * in LOCAL config (CMH_LOCAL_BEGIN) this function previously could return an
+ * unreachable, too-high score -- e.g. a tRNA case reported 29.4 bits (forced J)
+ * when the trusted oracle cm_TrAlignHB() proves the true forced-J optimum is 6.5
+ * bits. Root cause (081, confirmed live via gdb; 086, confirmed vs the oracle's
+ * own cm_TrCYKOutsideAlignHB beta): tr_outside_hb()'s pure-J outside propagation
+ * (and its traceback twin, tr_vinside_hb's pure-J recurrence) was NOT gated on
+ * cp9b->Jvalid[v] -- unlike the truncated-begin injection, the marginal->J
+ * cross-terms (brief 070), and the L/R planes, which all already were. So a
+ * truncated-begin penalty could chain a run of (good) emissions THROUGH a state
+ * whose node structurally cannot appear in a pure-J parse (Jvalid[v]==FALSE; the
+ * oracle never even allocates its J deck), inflating tr_generic_splitter_hb's
+ * "all-J split" (beta[v]-based) candidate. Concretely, for the tRNA repro the
+ * oracle's own beta[54][69][60] = -22.23 (duality: +28.75 inside = 6.52) but the
+ * ungated D&C propagated +0.66 -- exactly the ~23-bit inflation. The fix is the
+ * do_J_v = cp9b->Jvalid[v] gate on the four pure-J beta[v] writes in
+ * tr_outside_hb (~line 7363) plus the Jvalid[v] mask on tr_vinside_hb's pure-J
+ * plane. Validated byte-exact vs the oracle (argmax ncand-loop) across a
+ * 1000-seq tRNA local panel + 5S + a bps=0 matl300 panel; global (-g) unaffected
+ * (Jvalid all-TRUE there -> the gate is a no-op). NOTE (081/086): a blanket
+ * removal of the injection is NOT the fix -- it regresses legitimate wedge-entry
+ * candidates (e.g. the same case's forced-J optimum, 6.5 bits at entry state
+ * v=12). See subagent-summaries/081_2026-07-11_* and 086_2026-07-13_* in the
+ * 26_0610 notebook dir. (Separately, forcing a NON-optimal preset_mode can still
+ * "leak" the J winner via the all-J-split candidate not being gated on
+ * r_allow_J -- a pre-existing, out-of-086-scope issue that does not affect the
+ * argmax ncand-loop production/fallback path.)
  */
 float
 TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx,
