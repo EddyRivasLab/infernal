@@ -4370,8 +4370,8 @@ hb_inband(CP9Bands_t *cp9b, int v, int j, int d, int i0, int j0, int *ret_dp)
   if (j < i0-1 || j > j0)                       return 0; /* outside this subproblem deck */
   if (j < cp9b->jmin[v] || j > cp9b->jmax[v])   return 0; /* outside v's j-band            */
   jp_v = j - cp9b->jmin[v];
-  if (d < cp9b->hdmin[v][jp_v] || d > cp9b->hdmax[v][jp_v]) return 0; /* outside d-band     */
-  *ret_dp = d - cp9b->hdmin[v][jp_v];
+  if (d < hd_min(cp9b, v, jp_v) || d > hd_max(cp9b, v, jp_v)) return 0; /* outside d-band     */
+  *ret_dp = d - hd_min(cp9b, v, jp_v);
   return 1;
 }
 
@@ -4386,7 +4386,7 @@ banded_hb_vjd_deck_bytes(int i0, int j0, int v, CP9Bands_t *cp9b)
   jhi = ESL_MIN(j0,   cp9b->jmax[v]);
   for (j = jlo; j <= jhi; j++) {
     jp_v = j - cp9b->jmin[v];
-    w = cp9b->hdmax[v][jp_v] - cp9b->hdmin[v][jp_v] + 1;
+    w = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v) + 1;
     if (w > 0) tot += (double) sizeof(float) * (double) w;
   }
   return tot;
@@ -4404,7 +4404,7 @@ alloc_banded_hb_vjd_deck(int L, int i0, int j0, int v, CP9Bands_t *cp9b)
   jhi = ESL_MIN(j0,   cp9b->jmax[v]);
   for (j = jlo; j <= jhi; j++) {
     jp_v = j - cp9b->jmin[v];
-    w = cp9b->hdmax[v][jp_v] - cp9b->hdmin[v][jp_v] + 1;
+    w = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v) + 1;
     if (w > 0) ESL_ALLOC(a[j], sizeof(float) * w);
     else       a[j] = NULL;
   }
@@ -4443,7 +4443,7 @@ alloc_banded_hb_vjd_yshadow_deck(int L, int i0, int j0, int v, CP9Bands_t *cp9b)
   { double nb = 0.0;
   for (j = jlo; j <= jhi; j++) {
     jp_v = j - cp9b->jmin[v];
-    w = cp9b->hdmax[v][jp_v] - cp9b->hdmin[v][jp_v] + 1;
+    w = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v) + 1;
     if (w > 0) { ESL_ALLOC(a[j], sizeof(char) * w); nb += (double) w * sizeof(char); }
     else       a[j] = NULL;
   }
@@ -4467,7 +4467,7 @@ alloc_banded_hb_vjd_kshadow_deck(int L, int i0, int j0, int v, CP9Bands_t *cp9b)
   { double nb = 0.0;
   for (j = jlo; j <= jhi; j++) {
     jp_v = j - cp9b->jmin[v];
-    w = cp9b->hdmax[v][jp_v] - cp9b->hdmin[v][jp_v] + 1;
+    w = hd_max(cp9b, v, jp_v) - hd_min(cp9b, v, jp_v) + 1;
     if (w > 0) { ESL_ALLOC(a[j], sizeof(int) * w); nb += (double) w * sizeof(int); }
     else       a[j] = NULL;
   }
@@ -4532,8 +4532,8 @@ vji_inband(CP9Bands_t *cp9b, int v, int j, int i, int i0, int i1, int j1, int j0
   if (i < i0 || i > i1)                         return 0; /* outside V-problem i-range */
   jpb = j - cp9b->jmin[v];
   d   = j - i + 1;
-  if (d < cp9b->hdmin[v][jpb] || d > cp9b->hdmax[v][jpb]) return 0; /* outside d-band  */
-  ilo = j - cp9b->hdmax[v][jpb] + 1;            /* smallest in-band i (before clamp)   */
+  if (d < hd_min(cp9b, v, jpb) || d > hd_max(cp9b, v, jpb)) return 0; /* outside d-band  */
+  ilo = j - hd_max(cp9b, v, jpb) + 1;            /* smallest in-band i (before clamp)   */
   if (ilo < i0) ilo = i0;
   *ret_ip = i - ilo;
   return 1;
@@ -4548,8 +4548,8 @@ banded_hb_vji_deck_bytes(int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b
   double tot = 0.;
   for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
     jpb = j - cp9b->jmin[v];
-    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
     w   = ihi - ilo + 1;
     if (w > 0) tot += (double) sizeof(float) * (double) w;
   }
@@ -4569,8 +4569,8 @@ alloc_banded_hb_vji_deck(int i0, int i1, int j1, int j0, int v, CP9Bands_t *cp9b
   for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
     jp  = j - j1;
     jpb = j - cp9b->jmin[v];
-    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
     w   = ihi - ilo + 1;
     if (w > 0) ESL_ALLOC(a[jp], sizeof(float) * w);  /* w>0 guaranteed by guard        */
     else       a[jp] = NULL;
@@ -4609,8 +4609,8 @@ alloc_banded_hb_vji_shadow_deck(int i0, int i1, int j1, int j0, int v, CP9Bands_
   for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
     jp  = j - j1;
     jpb = j - cp9b->jmin[v];
-    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
     w   = ihi - ilo + 1;
     if (w > 0) { ESL_ALLOC(a[jp], sizeof(char) * w); nb += (double) w * sizeof(char); }
     else       a[jp] = NULL;
@@ -4630,8 +4630,8 @@ banded_hb_vji_init_impossible(float **a, int i0, int i1, int j1, int j0, int v, 
   for (j = ESL_MAX(j1, cp9b->jmin[v]); j <= ESL_MIN(j0, cp9b->jmax[v]); j++) {
     jp  = j - j1;
     jpb = j - cp9b->jmin[v];
-    ilo = j - cp9b->hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-    ihi = j - cp9b->hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+    ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+    ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
     for (i = ilo; i <= ihi; i++) a[jp][i - ilo] = IMPOSSIBLE;
   }
 }
@@ -4725,9 +4725,9 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     {
       jp   = j - (i0-1);
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	{
-	  int dp_v = d - hdmin[v][jp_v];           /* beta[v] offset (v,j,d in band) */
+	  int dp_v = d - hd_min(cp9b, v, jp_v);           /* beta[v] offset (v,j,d in band) */
 	  for (k = 0; k <= d; k++)
 	    {
 	      int dp_w, dp_y; /* the w (at j-k,d-k) and y (at j,k) child cells must
@@ -4852,9 +4852,9 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
       {
 	jp   = j - (i0-1);
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	  {
-	    int dp_v = d - hdmin[v][jp_v];          /* v,j,d in band by loop bounds */
+	    int dp_v = d - hd_min(cp9b, v, jp_v);          /* v,j,d in band by loop bounds */
 	    if ((sc = alpha[v][j][dp_v] + beta[v][j][dp_v]) > best_sc)
 	      {
 		best_sc = sc;
@@ -4893,8 +4893,8 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
         int na=0, nb=0, jj, dd; int ajlo=99999,ajhi=-1,bjlo=99999,bjhi=-1; int both=0;
         for (jj=ESL_MAX(i0-1,jmin[vv]); jj<=ESL_MIN(j0,jmax[vv]); jj++) {
           int jpv=jj-jmin[vv], jpp=jj-(i0-1);
-          for (dd=hdmin[vv][jpv]; dd<=hdmax[vv][jpv] && dd<=jpp; dd++) {
-            int ddp=dd-hdmin[vv][jpv];
+          for (dd=hd_min(cp9b, vv, jpv); dd<=hd_max(cp9b, vv, jpv) && dd<=jpp; dd++) {
+            int ddp=dd-hd_min(cp9b, vv, jpv);
             int va=NOT_IMPOSSIBLE(alpha[vv][jj][ddp]), vb=NOT_IMPOSSIBLE(beta[vv][jj][ddp]);
             if(va){na++; if(jj<ajlo)ajlo=jj; if(jj>ajhi)ajhi=jj;}
             if(vb){nb++; if(jj<bjlo)bjlo=jj; if(jj>bjhi)bjhi=jj;}
@@ -4903,12 +4903,12 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
         fprintf(stderr, "##   v=%d type=%d jband[%d..%d]: alpha-valid=%d(j%d..%d) beta-valid=%d(j%d..%d) both=%d\n",
                 vv, cm->sttype[vv], jmin[vv], jmax[vv], na,ajlo,ajhi, nb,bjlo,bjhi, both);
         { int jj2=j0, jpv=jj2-jmin[vv], jpp=jj2-(i0-1); int adlo=99999,adhi=-1,bdlo=99999,bdhi=-1;
-          for (dd=hdmin[vv][jpv]; dd<=hdmax[vv][jpv] && dd<=jpp; dd++) {
-            int ddp=dd-hdmin[vv][jpv];
+          for (dd=hd_min(cp9b, vv, jpv); dd<=hd_max(cp9b, vv, jpv) && dd<=jpp; dd++) {
+            int ddp=dd-hd_min(cp9b, vv, jpv);
             if(NOT_IMPOSSIBLE(alpha[vv][jj2][ddp])){if(dd<adlo)adlo=dd;if(dd>adhi)adhi=dd;}
             if(NOT_IMPOSSIBLE(beta[vv][jj2][ddp])){if(dd<bdlo)bdlo=dd;if(dd>bdhi)bdhi=dd;} }
           fprintf(stderr, "##      @j=j0=%d band-d[%d..%d](cap jp=%d): alpha-d[%d..%d] beta-d[%d..%d]\n",
-                  jj2, hdmin[vv][jpv], hdmax[vv][jpv], jpp, adlo,adhi, bdlo,bdhi); } } }
+                  jj2, hd_min(cp9b, vv, jpv), hd_max(cp9b, vv, jpv), jpp, adlo,adhi, bdlo,bdhi); } } }
     cm_Fail("wedge_splitter_hb: band-infeasible subproblem (see stderr dump)");
   }
 #endif
@@ -5023,8 +5023,8 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
        * (Out-of-band cells don't exist; cross-state reads treat them as such.) */
       for (j = jn; j <= jx; j++) {
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
-	  alpha[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++)
+	  alpha[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE;
       }
 
       if (cm->sttype[v] == E_st)
@@ -5038,9 +5038,9 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -5068,19 +5068,19 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 	    jp_v = j - jmin[v];
 	    jp_y = j - jmin[yy];
 	    jp_z = j - jmin[zz];
-	    kn = ESL_MAX(j - jmax[yy], hdmin[zz][jp_z]);
+	    kn = ESL_MAX(j - jmax[yy], hd_min(cp9b, zz, jp_z));
 	    kn = ESL_MAX(kn, 0);
-	    kx = ESL_MIN(jp_y, hdmax[zz][jp_z]);      /* jp_y == j - jmin[yy] */
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    kx = ESL_MIN(jp_y, hd_max(cp9b, zz, jp_z));      /* jp_y == j - jmin[yy] */
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		for (k = kn; k <= kx; k++)
-		  if ((k >= d - hdmax[yy][jp_y-k]) && (k <= d - hdmin[yy][jp_y-k]))
+		  if ((k >= d - hd_max(cp9b, yy, jp_y-k)) && (k <= d - hd_min(cp9b, yy, jp_y-k)))
 		    {
 		      /* children in-band by the kn/kx + guard construction: offset directly.
 		       * yy cell (j-k,d-k): row index in yy's band is jp_y-k. zz cell (j,k). */
-		      int dp_yk = (d-k) - hdmin[yy][jp_y-k];
-		      int dp_zk =  k    - hdmin[zz][jp_z];
+		      int dp_yk = (d-k) - hd_min(cp9b, yy, jp_y-k);
+		      int dp_zk =  k    - hd_min(cp9b, zz, jp_z);
 		      if ((sc = alpha[yy][j-k][dp_yk] + alpha[zz][j][dp_zk]) > alpha[v][j][dp_v]) {
 			alpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) kshad[j][dp_v] = k;
@@ -5095,9 +5095,9 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -5124,9 +5124,9 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -5153,9 +5153,9 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -5290,7 +5290,7 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
     beta[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
     for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) beta[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE;
     }
   }
   { int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) beta[vroot][j0][dpr] = 0; }
@@ -5362,14 +5362,14 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
       /* banded IMPOSSIBLE init (every allocated in-band cell) */
       for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) beta[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE;
       }
 
       /* local begin into v, if the (j0,W) cell is in v's band */
       if ((vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	  && (jmin[v] <= j0 && jmax[v] >= j0)
-	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W))
-	beta[v][j0][W - hdmin[v][j0-jmin[v]]] = cm->beginsc[v];
+	  && (hd_min(cp9b, v, j0-jmin[v]) <= W && hd_max(cp9b, v, j0-jmin[v]) >= W))
+	beta[v][j0][W - hd_min(cp9b, v, j0-jmin[v])] = cm->beginsc[v];
 
       /* main recursion: only v's in-band (j,d) cells.
        * j and d are iterated in DECREASING order: insert (IL/IR) self-transitions
@@ -5380,9 +5380,9 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
       for (j = jx; j >= jn; j--) {
 	jp   = j - (i0-1);
 	jp_v = j - jmin[v];
-	for (d = ESL_MIN(hdmax[v][jp_v], jp); d >= hdmin[v][jp_v]; d--)
+	for (d = ESL_MIN(hd_max(cp9b, v, jp_v), jp); d >= hd_min(cp9b, v, jp_v); d--)
 	  {
-	    int dp_v = d - hdmin[v][jp_v];   /* v,j,d in band by loop bounds */
+	    int dp_v = d - hd_min(cp9b, v, jp_v);   /* v,j,d in band by loop bounds */
 	    int dp_y;                        /* parent cell offset (when in-band) */
 	    i = j-d+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
@@ -5561,7 +5561,7 @@ insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   while (1) {
     if (cm->sttype[v] == B_st) {
       /* shadow decks are banded: (v,j,d) is on the optimal path, hence in-band */
-      k = ((int **) shadow[v])[j][d - cp9b->hdmin[v][j - cp9b->jmin[v]]];
+      k = ((int **) shadow[v])[j][d - hd_min(cp9b, v, j - cp9b->jmin[v])];
       if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
       if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
       if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
@@ -5581,7 +5581,7 @@ insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
       v = y;
     } else {
-      yoffset = ((char **) shadow[v])[j][d - cp9b->hdmin[v][j - cp9b->jmin[v]]];
+      yoffset = ((char **) shadow[v])[j][d - hd_min(cp9b, v, j - cp9b->jmin[v])];
       switch (cm->sttype[v]) {
       case D_st:            break;
       case MP_st: i++; j--; break;
@@ -5773,8 +5773,8 @@ vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
       for (j = ESL_MAX(j1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
 	jp  = j - j1;
 	jpb = j - jmin[v];
-	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
 	/* i DECREASING (matches exact vinside): IL self-transitions read child
 	 * (j,i+1), so the larger-i cell must be computed first. */
 	for (i = ihi; i >= ilo; i--)
@@ -6011,8 +6011,8 @@ voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
       for (j = ESL_MIN(j0, jmax[v]); j >= ESL_MAX(j1, jmin[v]); j--) {
 	jp  = j - j1;
 	jpb = j - jmin[v];
-	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
 	for (i = ilo; i <= ihi; i++) {
 	  op = i - ilo;
 	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
@@ -6609,8 +6609,8 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
       for (j = jn; j <= jx; j++) {
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  int dpi = d - hdmin[v][jp_v];
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
+	  int dpi = d - hd_min(cp9b, v, jp_v);
 	  alpha[v][j][dpi] = IMPOSSIBLE;
 	  if (fill_L) Lalpha[v][j][dpi] = IMPOSSIBLE;
 	  if (fill_R) Ralpha[v][j][dpi] = IMPOSSIBLE;
@@ -6646,9 +6646,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -6700,17 +6700,17 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	    jp_v = j - jmin[v];
 	    jp_y = j - jmin[yy];
 	    jp_z = j - jmin[zz];
-	    kn = ESL_MAX(j - jmax[yy], hdmin[zz][jp_z]);
+	    kn = ESL_MAX(j - jmax[yy], hd_min(cp9b, zz, jp_z));
 	    kn = ESL_MAX(kn, 0);
-	    kx = ESL_MIN(jp_y, hdmax[zz][jp_z]);
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    kx = ESL_MIN(jp_y, hd_max(cp9b, zz, jp_z));
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		for (k = kn; k <= kx; k++)
-		  if ((k >= d - hdmax[yy][jp_y-k]) && (k <= d - hdmin[yy][jp_y-k]))
+		  if ((k >= d - hd_max(cp9b, yy, jp_y-k)) && (k <= d - hd_min(cp9b, yy, jp_y-k)))
 		    {
-		      int dp_yk = (d-k) - hdmin[yy][jp_y-k];
-		      int dp_zk =  k    - hdmin[zz][jp_z];
+		      int dp_yk = (d-k) - hd_min(cp9b, yy, jp_y-k);
+		      int dp_zk =  k    - hd_min(cp9b, zz, jp_z);
 		      if ((sc = alpha[yy][j-k][dp_yk] + alpha[zz][j][dp_zk]) > alpha[v][j][dp_v]) {
 			alpha[v][j][dp_v] = sc;
 			if (ret_shadow != NULL) kshad[j][dp_v] = k;
@@ -6752,11 +6752,11 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	    int jxx = ESL_MIN(jmax[v], jmax[yy]);
 	    for (j = ESL_MAX(i0-1, jnn); j <= ESL_MIN(j0, jxx); j++) {
 	      int jpp = j - (i0-1);
-	      int dnn = ESL_MAX(hdmin[v][j-jmin[v]], hdmin[yy][j-jmin[yy]]);
-	      int dxx = ESL_MIN(hdmax[v][j-jmin[v]], hdmax[yy][j-jmin[yy]]);
+	      int dnn = ESL_MAX(hd_min(cp9b, v, j-jmin[v]), hd_min(cp9b, yy, j-jmin[yy]));
+	      int dxx = ESL_MIN(hd_max(cp9b, v, j-jmin[v]), hd_max(cp9b, yy, j-jmin[yy]));
 	      for (d = dnn; d <= dxx && d <= jpp; d++) {
-		int dp_v = d - hdmin[v][j-jmin[v]];
-		int dp_y = d - hdmin[yy][j-jmin[yy]];
+		int dp_v = d - hd_min(cp9b, v, j-jmin[v]);
+		int dp_y = d - hd_min(cp9b, yy, j-jmin[yy]);
 		/* brief 26_0610-070: yy's J-plane is only a valid contribution here if yy's own
 		 * node lies entirely within the observed sequence (cp9b->Jvalid[yy]). */
 		if (cp9b->Jvalid[yy] && (sc = alpha[yy][j][dp_y]) > Lalpha[v][j][dp_v]) {
@@ -6776,11 +6776,11 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	    int jxx = ESL_MIN(jmax[v], jmax[zz]);
 	    for (j = ESL_MAX(i0-1, jnn); j <= ESL_MIN(j0, jxx); j++) {
 	      int jpp = j - (i0-1);
-	      int dnn = ESL_MAX(hdmin[v][j-jmin[v]], hdmin[zz][j-jmin[zz]]);
-	      int dxx = ESL_MIN(hdmax[v][j-jmin[v]], hdmax[zz][j-jmin[zz]]);
+	      int dnn = ESL_MAX(hd_min(cp9b, v, j-jmin[v]), hd_min(cp9b, zz, j-jmin[zz]));
+	      int dxx = ESL_MIN(hd_max(cp9b, v, j-jmin[v]), hd_max(cp9b, zz, j-jmin[zz]));
 	      for (d = dnn; d <= dxx && d <= jpp; d++) {
-		int dp_v = d - hdmin[v][j-jmin[v]];
-		int dp_z = d - hdmin[zz][j-jmin[zz]];
+		int dp_v = d - hd_min(cp9b, v, j-jmin[v]);
+		int dp_z = d - hd_min(cp9b, zz, j-jmin[zz]);
 		/* brief 26_0610-070: zz's J-plane is only a valid contribution here if zz's own
 		 * node lies entirely within the observed sequence (cp9b->Jvalid[zz]).
 		 * Without this gate, a RIGHT_FULL bifurcation can pull in zz's plain
@@ -6804,9 +6804,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -6879,9 +6879,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -6961,9 +6961,9 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	  for (j = jn; j <= jx; j++) {
 	    jp   = j - (i0-1);
 	    jp_v = j - jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	    for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	      {
-		int dp_v = d - hdmin[v][jp_v];
+		int dp_v = d - hd_min(cp9b, v, jp_v);
 		y = cm->cfirst[v];
 		alpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
 		if (ret_shadow != NULL) yshad[j][dp_v] = USED_EL;
@@ -7263,14 +7263,14 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     beta[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
     for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) beta[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE;
     }
     if (fill_L) { betaL[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
       for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaL[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) betaL[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE; } }
     if (fill_R) { betaR[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
       for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
-        for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaR[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
+        for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) betaR[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE; } }
   }
   /* TRUNCATED: omit the normal root seed (beta[0][j0][W]=0) when vroot==0 -- in
    * truncated mode there is no normal ROOT_S descent. For interior subproblems
@@ -7421,14 +7421,14 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 
       for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) beta[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE;
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) beta[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE;
       }
       if (fill_L) { betaL[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
 	for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaL[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
+	  for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) betaL[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE; } }
       if (fill_R) { betaR[v] = alloc_banded_hb_vjd_deck(L, i0, j0, v, cp9b);
 	for (j = ESL_MAX(i0-1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) { jp_v = j - jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) betaR[v][j][d - hdmin[v][jp_v]] = IMPOSSIBLE; } }
+	  for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) betaR[v][j][d - hd_min(cp9b, v, jp_v)] = IMPOSSIBLE; } }
 
       /* TRUNCATED-BEGIN injection: at the top (vroot==0, full span i0=1,j0=L) any
        * Jvalid state v may be entered via a truncated begin with penalty
@@ -7449,8 +7449,8 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * candidates (081 confirmed experimentally). */
       if (vroot == 0 && i0 == 1 && j0 == L &&
 	  (jmin[v] <= j0 && jmax[v] >= j0)
-	  && (hdmin[v][j0-jmin[v]] <= W && hdmax[v][j0-jmin[v]] >= W)) {
-	int dpW = W - hdmin[v][j0-jmin[v]];
+	  && (hd_min(cp9b, v, j0-jmin[v]) <= W && hd_max(cp9b, v, j0-jmin[v]) >= W)) {
+	int dpW = W - hd_min(cp9b, v, j0-jmin[v]);
 	float trpen = tr_trpenalty(cm, v);
 	if (NOT_IMPOSSIBLE(trpen)) {
 	  if (cp9b->Jvalid[v]            && trpen > beta[v][j0][dpW])  beta[v][j0][dpW]  = trpen;
@@ -7464,9 +7464,9 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
       for (j = jx; j >= jn; j--) {
 	jp   = j - (i0-1);
 	jp_v = j - jmin[v];
-	for (d = ESL_MIN(hdmax[v][jp_v], jp); d >= hdmin[v][jp_v]; d--)
+	for (d = ESL_MIN(hd_max(cp9b, v, jp_v), jp); d >= hd_min(cp9b, v, jp_v); d--)
 	  {
-	    int dp_v = d - hdmin[v][jp_v];
+	    int dp_v = d - hd_min(cp9b, v, jp_v);
 	    int dp_y;
 	    /* brief 26_0610-086: gate the pure-J outside propagation on cp9b->Jvalid[v],
 	     * mirroring the do_L_v/do_R_v gates below (and the Jvalid[v] gates already
@@ -7898,7 +7898,7 @@ tr_insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (cm->sttype[v] == EL_st) { oob = 0; }
     else {
       oob = (j < jmin[v] || j > jmax[v]);
-      if (!oob) { jp_v = j - jmin[v]; oob = (d < hdmin[v][jp_v] || d > hdmax[v][jp_v]); if (!oob) dp_v = d - hdmin[v][jp_v]; }
+      if (!oob) { jp_v = j - jmin[v]; oob = (d < hd_min(cp9b, v, jp_v) || d > hd_max(cp9b, v, jp_v)); if (!oob) dp_v = d - hd_min(cp9b, v, jp_v); }
     }
 
     if (cm->sttype[v] == B_st) {
@@ -8172,8 +8172,8 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
       for (j = ESL_MAX(j1, jmin[v]); j <= ESL_MIN(j0, jmax[v]); j++) {
 	jp  = j - j1;
 	jpb = j - jmin[v];
-	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
 	for (i = ihi; i >= ilo; i--)
 	  {
 	    int d = j - i + 1;
@@ -8604,8 +8604,8 @@ tr_voutside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
       for (j = ESL_MIN(j0, jmax[v]); j >= ESL_MAX(j1, jmin[v]); j--) {
 	jp  = j - j1;
 	jpb = j - jmin[v];
-	ilo = j - hdmax[v][jpb] + 1;  if (ilo < i0) ilo = i0;
-	ihi = j - hdmin[v][jpb] + 1;  if (ihi > i1) ihi = i1;
+	ilo = j - hd_max(cp9b, v, jpb) + 1;  if (ilo < i0) ilo = i0;
+	ihi = j - hd_min(cp9b, v, jpb) + 1;  if (ihi > i1) ihi = i1;
 	for (i = ilo; i <= ihi; i++) {
 	  op = i - ilo;
 	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
@@ -8994,9 +8994,9 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
       {
 	jp   = j - (i0-1);
 	jp_v = j - jmin[v];
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+	for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	  {
-	    int dp_v = d - hdmin[v][jp_v];
+	    int dp_v = d - hd_min(cp9b, v, jp_v);
 	    int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][j][dp_v]);
 	    int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j][dp_v]);
 	    /* J */
@@ -9205,9 +9205,9 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     {
       jp   = j - (i0-1);
       jp_v = j - jmin[v];
-      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v] && d <= jp; d++)
+      for (d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v) && d <= jp; d++)
 	{
-	  int dp_v = d - hdmin[v][jp_v];
+	  int dp_v = d - hd_min(cp9b, v, jp_v);
 	  int haveL = fill_L && NOT_IMPOSSIBLE(betaL[v][j][dp_v]);
 	  int haveR = fill_R && NOT_IMPOSSIBLE(betaR[v][j][dp_v]);
 	  /* T (brief 26_0610-051): the only T "outside" is the begin scalar at the B's

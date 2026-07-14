@@ -4321,7 +4321,7 @@ ckpt_trcyk_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
 static int
 ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
                       float ***JCYstore, float ***LCYstore, float ***RCYstore, float ***TCYstore,
-                      int *jmin, int *jmax, int **hdmin, int **hdmax,
+                      int *jmin, int *jmax,
                       char (*fetch)(void *ctx, int v, char mode, int jp_v, int dp_v),
                       void *fctx, Parsetree_t **ret_tr)
 {
@@ -4347,7 +4347,7 @@ ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
          (mode == TRMODE_L && (! cp9b->Lvalid[v])) ||
          (mode == TRMODE_R && (! cp9b->Rvalid[v])) ||
          (j < jmin[v] || j > jmax[v]) ||
-         (d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) {
+         (d < hd_min(cp9b, v, j-jmin[v]) || d > hd_max(cp9b, v, j-jmin[v])))) {
       allow_S_trunc_end = TRUE;
     }
     else if (cm->sttype[v] != EL_st) {
@@ -4676,7 +4676,7 @@ cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
   if ((status = ckpt_trcyk_traceback(cm, errbuf, L, mode, b, JCY, LCY, RCY, TCY,
-                                     cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                     cx.jmin, cx.jmax,
                                      ckpt_trcyk_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
 
   { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
@@ -5516,7 +5516,7 @@ tr_ckpt_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
 static int
 trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int b, int pass_idx,
                            int *bkind, int *kpin, char *blmode, char *brmode,
-                           int *jmin, int *jmax, int **hdmin, int **hdmax,
+                           int *jmin, int *jmax,
                            tr_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
 {
   int status;
@@ -5545,7 +5545,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
          (mode == TRMODE_L && (! cp9b->Lvalid[v])) ||
          (mode == TRMODE_R && (! cp9b->Rvalid[v])) ||
          (j < jmin[v]             || j > jmax[v]) ||
-         (d < hdmin[v][j-jmin[v]] || d > hdmax[v][j-jmin[v]]))) {
+         (d < hd_min(cp9b, v, j-jmin[v]) || d > hd_max(cp9b, v, j-jmin[v])))) {
       if ((cm->stid[v] == BEGL_S && mode == TRMODE_R) || (cm->stid[v] == BEGR_S && mode == TRMODE_L))
         allow_S_trunc_end = TRUE;
       else
@@ -5824,7 +5824,7 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
 
   fctx.Jsh = Jsh; fctx.Lsh = Lsh; fctx.Rsh = Rsh;
   if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, pass_idx, bkind, kpin, blmode, brmode,
-                                           cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                           cx.jmin, cx.jmax,
                                            tr_pin_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
 
   if ((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
@@ -6091,7 +6091,7 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
   if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, pass_idx, bkind, kpin, blmode, brmode,
-                                           cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
+                                           cx.jmin, cx.jmax,
                                            tr_ckpt_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
 
   { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
