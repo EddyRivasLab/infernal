@@ -578,9 +578,12 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  Parsetree_t *tr_cyk = NULL;
 	  float   r3_Z   = 0.;
 	  ESL_ALLOC(kpin, sizeof(int) * cm->M);
-	  /* pass 1: HMM-banded CYK parse -> k* pins (cm_alignT_hb does the CYK fill) */
-	  if((status = cm_alignT_hb(cm, errbuf, sq->dsq, sq->L, mxsize, FALSE, cm->hb_mx, cm->hb_shmx,
-				    NULL, &tr_cyk, NULL)) != eslOK) { free(kpin); goto ERROR; }
+	  /* pass 1: HMM-banded CYK parse -> k* pins.  Brief 26_0610-084: use the
+	   * checkpointed sqrt(M)-memory CYK engine (cm_CheckptCYKAlignHB, R1-L)
+	   * instead of the full-matrix cm_alignT_hb/cm_CYKInsideAlignHB, closing the
+	   * pass-1 memory floor (briefs 26_0610-040/041) so the whole rung-3
+	   * pipeline is checkpointed.  Same generic Parsetree_t -> rung3_kpin_from_cyk. */
+	  if((status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr_cyk, NULL)) != eslOK) { free(kpin); goto ERROR; }
 	  rung3_kpin_from_cyk(cm, tr_cyk, kpin);
 	  FreeParsetree(tr_cyk); tr_cyk = NULL;
 	  /* pass 2: checkpointed pinned posterior + checkpointed pinned OptAcc + traceback */

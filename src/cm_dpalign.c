@@ -1089,6 +1089,42 @@ ckpt_apply_begin_oa(CKPT_CTX *cx, int v, float **av, char **ysh)
   }
 }
 
+/* Brief 26_0610-084 (R1-L) local-begin, CYK half: mirrors ckpt_apply_begin_oa
+ * but for the CYK MAX recurrence, transcribing cm_CYKInsideAlignHB's own
+ * local-begin block (cm_dpalign.c:4241-4272).  Two differences vs the OA half:
+ *   (a) the running max tracks alpha[v][L][L] + cm->beginsc[v] (CYK adds the
+ *       0->b begin transition score; OA is posterior-mass and adds nothing), and
+ *   (b) the ROOT_S override is CONDITIONAL (only if the best begin beats the
+ *       root's own non-begin score), exactly as cm_CYKInsideAlignHB's
+ *       "if (bsc > alpha[0][jp_0][Lp_0])" -- OA overrides unconditionally
+ *       because its ROOT_S recursion never adds a transition score.
+ * Like the OA half, a running MAX is idempotent under re-comparison, so Step TB's
+ * block recompute of deck 0 re-derives the same (begin_b, begin_bsc) from the
+ * still-persisted cx fields and reapplies the identical override to tysh[0]. */
+static void
+ckpt_apply_begin_cyk(CKPT_CTX *cx, int v, float **av, char **ysh)
+{
+  CM_t *cm = cx->cm;
+  int   L  = cx->L;
+  if (! cx->have_local_begin) return;
+  if (NOT_IMPOSSIBLE(cm->beginsc[v]) && L >= cx->jmin[v] && L <= cx->jmax[v]) {
+    int jp_v = L - cx->jmin[v];
+    if (L >= cx->hdmin[v][jp_v] && L <= cx->hdmax[v][jp_v]) {
+      int Lp = L - cx->hdmin[v][jp_v];
+      float cand = av[jp_v][Lp] + cm->beginsc[v];
+      if (cand > cx->begin_bsc) { cx->begin_bsc = cand; cx->begin_b = v; }
+    }
+  }
+  if (v == 0 && NOT_IMPOSSIBLE(cx->begin_bsc)) {
+    int jp_0 = L - cx->jmin[0];
+    int Lp_0 = L - cx->hdmin[0][jp_0];
+    if (cx->begin_bsc > av[jp_0][Lp_0]) {   /* CONDITIONAL override (CYK), unlike OA's unconditional */
+      av[jp_0][Lp_0] = cx->begin_bsc;
+      if (ysh != NULL) ysh[jp_0][Lp_0] = (char) USED_LOCAL_BEGIN;
+    }
+  }
+}
+
 /* Inside deck v: mirrors cm_InsideAlignHB for S/IL/IR/ML/D/E, global mode.
  * Reads children from ba[] (in-block decks) or ck[] (checkpoint seeds). */
 static void
@@ -3223,8 +3259,31 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
 
   ckpt_deck_init_impossible(cx, v, av);
 
+  /* R1-L (084) EL: yshadow default = USED_EL, so any cell the child recurrence
+   * never overwrites traces back to the local end (mirrors cm_CYKInsideAlignHB
+   * :3954).  Gated on have_el to leave the validated GLOBAL path byte-identical
+   * (global never sets/reads a USED_EL shadow). */
+  if (cx->have_el && ysh != NULL && cx->deck_nc[v] > 0)
+    memset(ysh[0], (int) ((char) USED_EL), (size_t) cx->deck_nc[v]);
+
+  /* R1-L (084) EL: re-init this state's CYK deck if a local end from v is
+   * allowed.  Forward EL score is the FIXED ramp el_selfsc*(d-sd) plus the
+   * v->EL transition cm->endsc[v] (mirrors cm_CYKInsideAlignHB:3980-4001; this
+   * closed form equals that function's el_scA[d-sd]+endsc[v] for d>=sd, with no
+   * alpha[cm->M] EL deck read).  Placed before the per-state recurrence so the
+   * child max compares against, and emissions add onto, this EL base -- exactly
+   * as stock CYK.  yshadow stays USED_EL wherever EL wins. */
+  if (cx->have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      jp_v = j - jmin[v];
+      for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++)
+        if (d >= sd) av[jp_v][dp_v] = cx->el_selfsc * (d - sd) + cm->endsc[v];
+    }
+  }
+
   if (cm->sttype[v] == E_st) {
     for (j = jmin[v]; j <= jmax[v]; j++) { jp_v = j - jmin[v]; av[jp_v][0] = 0.; }
+    ckpt_apply_begin_cyk(cx, v, av, ysh);
     return;
   }
 
@@ -3253,6 +3312,7 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
       }
     }
+    ckpt_apply_begin_cyk(cx, v, av, ysh);
     return;
   }
   else if (cm->sttype[v] == B_st) {
@@ -3269,6 +3329,7 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
           av[jp_v][dp_v] = sc;
       }
     }
+    ckpt_apply_begin_cyk(cx, v, av, ysh);
     return;
   }
   else { /* ML, MR, MP, D, S (non-self, non-B); E already returned */
@@ -3324,6 +3385,7 @@ ckpt_cyk_deck(CKPT_CTX *cx, int v, float ***cy, float ***ck, char **ysh)
       for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
         av[jp_v][dp_v] = ESL_MAX(av[jp_v][dp_v], IMPOSSIBLE);
     }
+    ckpt_apply_begin_cyk(cx, v, av, ysh);
     return;
   }
 #undef CY
@@ -3361,14 +3423,19 @@ ckpt_cyk_ysh_fetch(void *p, int v, int jp_v, int dp_v)
 }
 
 /* Checkpointed CYK traceback.  Mirrors ckpt_optacc_traceback's descent +
- * bifurcation stack (cm_dpalign.c ~2724-2839) EXACTLY, except: (a) a B_st
- * splits at a k found via ckpt_cyk_bsearch() (live search against the
- * retained CYstore decks) instead of a pre-supplied kpin[v], and (b) no EL /
- * USED_LOCAL_BEGIN handling (R1 scope: global, no local support). */
+ * bifurcation stack (cm_dpalign.c ~2724-2839), except a B_st splits at a k
+ * found via ckpt_cyk_bsearch() (live search against the retained CYstore
+ * decks) instead of a pre-supplied kpin[v].  Brief 26_0610-084 (R1-L) adds
+ * EL (USED_EL -> descend to cm->M) and local-begin (USED_LOCAL_BEGIN ->
+ * descend to begin_b) handling, transcribed from cm_alignT_hb's own CYK
+ * (do_optacc=FALSE) traceback (cm_dpalign.c:374-411).  NOTE: unlike
+ * ckpt_optacc_traceback, there is NO d==0 BEGL_S/BEGR_S "allow_S_local_end"
+ * special case -- that case is gated on do_optacc in cm_alignT_hb (:300), so
+ * the CYK oracle never uses it and neither must this engine. */
 static int
 ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
                     int *jmin, int *jmax, int **hdmin, int **hdmax,
-                    ckpt_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
+                    ckpt_ysh_fetch_fn fetch, void *fctx, int begin_b, Parsetree_t **ret_tr)
 {
   int status;
   Parsetree_t *tr  = NULL;
@@ -3401,7 +3468,7 @@ ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
       InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
       v = y;
     }
-    else if (cm->sttype[v] == E_st) {
+    else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
       if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;  /* traceback complete */
       esl_stack_IPop(pda, &d);
       esl_stack_IPop(pda, &j);
@@ -3424,9 +3491,19 @@ ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
       default: ESL_XFAIL(eslEINVAL, errbuf, "ckpt_cyk_traceback: bogus state type v=%d", v);
       }
       d = j - i + 1;
-      y = cm->cfirst[v] + (int) yoffset;
-      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
-      v = y;
+      if (yoffset == (char) USED_EL) {              /* R1-L (084): local end */
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+        v = cm->M;
+      }
+      else if (yoffset == (char) USED_LOCAL_BEGIN) { /* R1-L (084): local begin, once, from ROOT_S */
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, begin_b);
+        v = begin_b;
+      }
+      else {
+        y = cm->cfirst[v] + (int) yoffset;
+        InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+        v = y;
+      }
     }
   }
   esl_stack_Destroy(pda);
@@ -3444,9 +3521,12 @@ ckpt_cyk_traceback(CM_t *cm, char *errbuf, int L, float ***CYstore,
  *
  * Purpose:  sqrt(M)-memory checkpointed CYK max-DP alignment, discovering
  *           its OWN bifurcation k* pins (no externally-supplied kpin[], unlike
- *           the rung-3 OA engines above) via ckpt_cyk_bsearch().  GLOBAL,
- *           non-truncated, no EL, no local begin (R1 scope; R2 extends to
- *           truncated/marginal-mode-combined + local).
+ *           the rung-3 OA engines above) via ckpt_cyk_bsearch().  Non-truncated;
+ *           GLOBAL or LOCAL (EL + local begin).  Brief 26_0610-084 (R1-L) added
+ *           local support (transcribed from cm_CheckptOptAccAlignHB's own
+ *           have_el/have_local_begin plumbing + cm_CYKInsideAlignHB's CYK-
+ *           specific EL/local-begin semantics), so cm_CheckptCYKAlignHB now
+ *           serves as do_checkpt_r3's pass-1 in both configs.
  *
  *           STEP CYK: checkpointed CYK max-DP (descending sweep, identical
  *                     retention scheme to cm_CheckptOptAccAlignHB's STEP OA)
@@ -3475,8 +3555,10 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   Parsetree_t *tr = NULL;
   ckpt_cyk_ysh_ctx fctx;
 
-  if (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptCYKAlignHB(): R1 scope is GLOBAL only (no local begin/end)");
+  /* Brief 26_0610-084 (R1-L): the brief-078 global-only fail-fast gate is
+   * removed -- local (EL + local begin) is now validated byte-exact vs
+   * cm_AlignHB(do_optacc=FALSE) across 5S/RNaseP/hairpin(bifs=0) in both
+   * configs, incl. genuine internal local-begin entries on fragment seqs. */
 
   memset(&cx, 0, sizeof(cx));
   cx.cm = cm; cx.dsq = dsq; cx.L = L; cx.M = M;
@@ -3487,10 +3569,13 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   cx.kpin = NULL; cx.ifull = NULL;
   cx.my_lpp = NULL; cx.my_rpp = NULL;
   cx.deck_nc = NULL; cx.deck_njr = NULL;
-  cx.have_el = FALSE; cx.el_selfsc = cm->el_selfsc;
+  /* R1-L (084): CYK local support.  Unlike the OA half, CYK EL is the closed-form
+   * ramp el_selfsc*(d-sd)+endsc[v] (no elalpha/eldmax/el_esc decks needed -- see
+   * ckpt_cyk_deck), so only have_el/el_selfsc + have_local_begin are consumed. */
+  cx.have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE; cx.el_selfsc = cm->el_selfsc;
   cx.eldmax = NULL; cx.elbeta = NULL; cx.elalpha = NULL;
   cx.el_esc = NULL; cx.el_endsc = IMPOSSIBLE;
-  cx.have_local_begin = FALSE;
+  cx.have_local_begin = (cm->flags & CMH_LOCAL_BEGIN) ? TRUE : FALSE;
   cx.bsc_fwd = IMPOSSIBLE; cx.fwd_begin_applied = FALSE;
   cx.begin_bsc = IMPOSSIBLE; cx.begin_b = -1;
 
@@ -3548,7 +3633,7 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
   if ((status = ckpt_cyk_traceback(cm, errbuf, L, CYstore, cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
-                                   ckpt_cyk_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+                                   ckpt_cyk_ysh_fetch, &fctx, cx.begin_b, &tr)) != eslOK) goto ERROR;
 
   { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
       if (tba[w])  { ckpt_deck_free (&cx, w, tba[w]);  tba[w]  = NULL; }
