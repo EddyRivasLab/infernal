@@ -5494,6 +5494,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
 
   tr = CreateParsetree(100);
   if (tr == NULL) { status = eslEMEM; goto ERROR; }
+  tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, preset_mode);
   pda_i = esl_stack_ICreate();
   pda_c = esl_stack_CCreate();
