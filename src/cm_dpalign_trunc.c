@@ -5478,7 +5478,7 @@ tr_ckpt_ysh_fetch(void *p, int v, char mode, int jp_v, int dp_v)
  * yshadow obtained via <fetch>.  GLOBAL, do_optacc.  pin-B obviates the
  * OA-voutside: a B reads only kpin[v] + the pinned child modes (030 Q3.3). */
 static int
-trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int b,
+trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int b, int pass_idx,
                            int *bkind, int *kpin, char *blmode, char *brmode,
                            int *jmin, int *jmax, int **hdmin, int **hdmax,
                            tr_ysh_fetch_fn fetch, void *fctx, Parsetree_t **ret_tr)
@@ -5495,6 +5495,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
   tr = CreateParsetree(100);
   if (tr == NULL) { status = eslEMEM; goto ERROR; }
   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
+  tr->pass_idx = pass_idx; /* brief 26_0610-089: sibling tracebacks also set pass_idx alongside is_std; was missing here, stuck at CreateParsetree()'s PLI_PASS_STD_ANY default */
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, preset_mode);
   pda_i = esl_stack_ICreate();
   pda_c = esl_stack_CCreate();
@@ -5785,7 +5786,7 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
     pp = sreEXP2(best) / (float) L; }
 
   fctx.Jsh = Jsh; fctx.Lsh = Lsh; fctx.Rsh = Rsh;
-  if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, bkind, kpin, blmode, brmode,
+  if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, pass_idx, bkind, kpin, blmode, brmode,
                                            cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
                                            tr_pin_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
 
@@ -6051,7 +6052,7 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
   fctx.tJa = tJa; fctx.tLa = tLa; fctx.tRa = tRa; fctx.tJs = tJs; fctx.tLs = tLs; fctx.tRs = tRs;
   fctx.cur_blk = -1; fctx.blk_lo = 0; fctx.blk_hi = -1;
 
-  if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, bkind, kpin, blmode, brmode,
+  if ((status = trckpt_tr_optacc_traceback(cm, errbuf, L, preset_mode, b, pass_idx, bkind, kpin, blmode, brmode,
                                            cx.jmin, cx.jmax, cx.hdmin, cx.hdmax,
                                            tr_ckpt_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
 
