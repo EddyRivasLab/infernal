@@ -6670,6 +6670,22 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		    if (do_R_v) { Ralpha[v][j][dp_v] = IMPOSSIBLE; if (ret_shadow != NULL && cm->sttype[v] == S_st) Ryshad[j][dp_v] = USED_TRUNC_END; }
 		  } else {
 		    int dp_yo;
+		    /* brief 26_0610-096: marginal EL for a D/S state (d>0). Mirrors the J-plane
+		     * EL init at the top of this D/S branch (6653) and the emitting-state
+		     * marginal EL below, and the oracle's state-type-INDEPENDENT EL reinit
+		     * (cm_TrCYKInsideAlignHB ~7011-7069). Without it, the root-split candidate
+		     * scoring (which reads Ralpha[BEGL]) cannot credit a BEGL_S->EL R-mode
+		     * terminus, so on CsrB-sample13_5ptr it picked a suboptimal split (the
+		     * wedge-level OUTSIDE betaR[cm->M] found the EL, but the INSIDE used for
+		     * split selection did not -> a 0.73-bit inside/outside inconsistency).
+		     * sdl==sdr==0 for D/S; endsc[v]==IMPOSSIBLE for non-EL states leaves the
+		     * cell effectively IMPOSSIBLE (clamped below), so this is a no-op there.
+		     * Gated on Lvalid[cm->M]/Rvalid[cm->M] EXACTLY as the oracle (7031/7048):
+		     * the marginal EL *deck* must be valid for this mode, else no marginal EL
+		     * (omitting this gate over-credited a phantom L-EL on ar45-sample26_p60,
+		     * flipping its resolved mode L->R for a 0.6-bit-worse parse). */
+		    if (do_L_v && cp9b->Lvalid[cm->M]) { Lalpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d - sdl)); if (ret_shadow != NULL) Lyshad[j][dp_v] = USED_EL; }
+		    if (do_R_v && cp9b->Rvalid[cm->M]) { Ralpha[v][j][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d - sdr)); if (ret_shadow != NULL) Ryshad[j][dp_v] = USED_EL; }
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (do_L_v && cp9b->Lvalid[yy2] && hb_inband(cp9b, yy2, j, d, i0, j0, &dp_yo) &&
@@ -6681,6 +6697,8 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 			Ralpha[v][j][dp_v] = sc; if (ret_shadow != NULL) Ryshad[j][dp_v] = yoffset + TRMODE_R_OFFSET;
 		      }
 		    }
+		    if (do_L_v && Lalpha[v][j][dp_v] < IMPOSSIBLE) Lalpha[v][j][dp_v] = IMPOSSIBLE;
+		    if (do_R_v && Ralpha[v][j][dp_v] < IMPOSSIBLE) Ralpha[v][j][dp_v] = IMPOSSIBLE;
 		  }
 		}
 	      }
@@ -8304,6 +8322,12 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		  } else {
 		    La[v][jp][op] = IMPOSSIBLE;
 		    if (ret_shadow != NULL) { Lsh[v][jp][op] = (char) 0; Lmode[v][jp][op] = TRMODE_L; }
+		    /* brief 26_0610-096: marginal EL for a D/S state (d>0), L mirror of the R
+		     * fix below -- see the full rationale there. sdl==0 for D/S. */
+		    if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
+		      La[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - sdl));
+		      if (ret_shadow != NULL) Lsh[v][jp][op] = USED_EL;
+		    }
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (cp9b->Lvalid[yy2] && vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y) &&
@@ -8375,6 +8399,18 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 		  } else {
 		    Ra[v][jp][op] = IMPOSSIBLE;
 		    if (ret_shadow != NULL) { Rsh[v][jp][op] = (char) 0; Rmode[v][jp][op] = TRMODE_R; }
+		    /* brief 26_0610-096: marginal EL for a D/S state (d>0). The oracle's EL
+		     * reinit (cm_TrCYKInsideAlignHB ~7011-7069) is state-type-INDEPENDENT --
+		     * every state with a valid endsc[v] seeds its L/R (and J) decks with the
+		     * local-end score before the recurrence. This D/S branch was the one place
+		     * that omitted it (the emitting-state branch below already does it), so an
+		     * R-mode BEGL_S->EL terminus was scorable in the outside (betaR[cm->M]) but
+		     * NOT reconstructable in the inside -> the CsrB-sample13_5ptr NULL-deref.
+		     * sdr==0 for D/S, so this matches Ralpha[cm->M][j][d]+endsc[v] = el*d+endsc. */
+		    if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
+		      Ra[v][jp][op] = cm->endsc[v] + (cm->el_selfsc * (d - sdr));
+		      if (ret_shadow != NULL) Rsh[v][jp][op] = USED_EL;
+		    }
 		    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 		      int yy2 = cm->cfirst[v] + yoffset;
 		      if (cp9b->Rvalid[yy2] && vji_inband(cp9b, yy2, j, i, i0,i1,j1,j0, &op_y) &&
@@ -9024,6 +9060,9 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
       }
 
   if (cm->flags & CMH_LOCAL_END) {
+    /* J EL terminus, NOT gated on r_allow_J (brief 26_0610-096 -- the mirror of the
+     * tr_generic_splitter_hb note: a J EL terminus is a legal winner in any mode; the
+     * sample13 fix lives in tr_vinside_hb's D/S marginal-EL reconstruction, not a gate). */
     for (jp = 0; jp <= W; jp++)
       {
 	j = i0-1+jp;
@@ -9294,6 +9333,15 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     }
 
   if (cm->flags & CMH_LOCAL_END) {
+    /* J EL terminus (classical beta[cm->M]). brief 26_0610-096: this candidate is NOT
+     * gated on r_allow_J -- a J-mode EL terminus is a legitimate winner even in an
+     * L/R solve (the oracle's bulk-init USED_EL admits it in every mode; ar45-sample26_p60
+     * L-solve's true optimum uses exactly this candidate). An earlier 096 draft gated it
+     * on r_allow_J to keep the CsrB-sample13_5ptr V-problem's dispatch mode consistent,
+     * but that dropped ar45-sample26_p60 by 0.6 bits (flipped L->R). The real sample13
+     * fix is the D/S marginal-EL reconstruction in tr_vinside_hb (see there): the R-mode
+     * traceback terminates at the BEGL_S->EL leaf regardless of which (tied) EL candidate
+     * won here, so no gate is needed and none is correct. */
     for (jp = 0; jp <= W; jp++)
       {
 	j = i0-1+jp;
