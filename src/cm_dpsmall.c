@@ -7643,9 +7643,35 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	}
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	int dp_v;
-	for (jp = 0; jp <= W; jp++) {
-	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	/* brief 26_0610-101: band-limit the v->EL feed to v's OWN banded footprint.
+	 * The old loop swept the full 0..W x 0..jp triangle (O(W^2)) for EVERY state v
+	 * with a local end -- the dominant cost of local-mode D&C at genome scale
+	 * (~88-98% of all EL-deck work, brief 26_0610-099/100/101). But a cell (j,d) can
+	 * only update beta[cm->M] when v's read cell -- shifted by the per-type (elsj,elsd)
+	 * below -- is IN v's band; every out-of-band read hit `!hb_inband -> continue`
+	 * and did nothing. So we iterate ONLY v's band rows (elJ = read row) and their
+	 * shifted d-range. The body (switch, hb_inband guard, boundary gates, all index
+	 * math) is BYTE-IDENTICAL to the old sweep; the tighter bounds are a provable
+	 * superset of the old update set, so the result is byte-exact (Task C). Read-cell
+	 * shifts: MP=(j+1,d+2) ML/IL=(j,d+1) MR/IR=(j+1,d+1) S/D/E=(j,d). */
+	int elsj = 0, elsd = 0, elJ, elJlo, elJhi;
+	switch (cm->sttype[v]) {
+	case MP_st:                       elsj = 1; elsd = 2; break;
+	case ML_st: case IL_st:           elsj = 0; elsd = 1; break;
+	case MR_st: case IR_st:           elsj = 1; elsd = 1; break;
+	case S_st:  case D_st: case E_st: elsj = 0; elsd = 0; break;
+	case B_st:
+	default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	}
+	elJlo = ESL_MAX(i0-1, jmin[v]); elJhi = ESL_MIN(j0, jmax[v]);
+	for (elJ = elJlo; elJ <= elJhi; elJ++) {
+	  int eljpv = elJ - jmin[v], eldlo, eldhi;
+	  j  = elJ - elsj;
+	  jp = j - (i0-1);
+	  if (jp < 0) continue;
+	  eldlo = hd_min(cp9b, v, eljpv) - elsd; if (eldlo < 0)  eldlo = 0;
+	  eldhi = hd_max(cp9b, v, eljpv) - elsd; if (eldhi > jp) eldhi = jp;
+	  for (d = eldlo; d <= eldhi; d++)
 	    {
 	      i = j-d+1;
 	      switch (cm->sttype[v]) {
@@ -7706,9 +7732,27 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * proved the MP-absent left-emitting case byte-exact. */
       if (fill_L && cp9b->Lvalid[v] && NOT_IMPOSSIBLE(cm->endsc[v])) {
 	int dp_v;
-	for (jp = 0; jp <= W; jp++) {
-	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	/* brief 26_0610-101: band-limit the L-marginal v->EL feed (see the J-feed note
+	 * above). Byte-identical body; read-cell shifts here: MP=(j,d+1) ML/IL=(j,d+1)
+	 * MR/IR=(j,d) S/D/E=(j,d). */
+	int elsj = 0, elsd = 0, elJ, elJlo, elJhi;
+	switch (cm->sttype[v]) {
+	case MP_st:                       elsj = 0; elsd = 1; break;
+	case ML_st: case IL_st:           elsj = 0; elsd = 1; break;
+	case MR_st: case IR_st:           elsj = 0; elsd = 0; break;
+	case S_st:  case D_st: case E_st: elsj = 0; elsd = 0; break;
+	case B_st:
+	default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	}
+	elJlo = ESL_MAX(i0-1, jmin[v]); elJhi = ESL_MIN(j0, jmax[v]);
+	for (elJ = elJlo; elJ <= elJhi; elJ++) {
+	  int eljpv = elJ - jmin[v], eldlo, eldhi;
+	  j  = elJ - elsj;
+	  jp = j - (i0-1);
+	  if (jp < 0) continue;
+	  eldlo = hd_min(cp9b, v, eljpv) - elsd; if (eldlo < 0)  eldlo = 0;
+	  eldhi = hd_max(cp9b, v, eljpv) - elsd; if (eldhi > jp) eldhi = jp;
+	  for (d = eldlo; d <= eldhi; d++)
 	    {
 	      i = j-d+1;
 	      switch (cm->sttype[v]) {
@@ -7760,9 +7804,27 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
        * also carries i==i0. */
       if (fill_R && cp9b->Rvalid[v] && NOT_IMPOSSIBLE(cm->endsc[v])) {
 	int dp_v;
-	for (jp = 0; jp <= W; jp++) {
-	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	/* brief 26_0610-101: band-limit the R-marginal v->EL feed (see the J-feed note
+	 * above). Byte-identical body; read-cell shifts here: MP=(j+1,d+1) ML/IL=(j,d)
+	 * MR/IR=(j+1,d+1) S/D/E=(j,d). */
+	int elsj = 0, elsd = 0, elJ, elJlo, elJhi;
+	switch (cm->sttype[v]) {
+	case MP_st:                       elsj = 1; elsd = 1; break;
+	case ML_st: case IL_st:           elsj = 0; elsd = 0; break;
+	case MR_st: case IR_st:           elsj = 1; elsd = 1; break;
+	case S_st:  case D_st: case E_st: elsj = 0; elsd = 0; break;
+	case B_st:
+	default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	}
+	elJlo = ESL_MAX(i0-1, jmin[v]); elJhi = ESL_MIN(j0, jmax[v]);
+	for (elJ = elJlo; elJ <= elJhi; elJ++) {
+	  int eljpv = elJ - jmin[v], eldlo, eldhi;
+	  j  = elJ - elsj;
+	  jp = j - (i0-1);
+	  if (jp < 0) continue;
+	  eldlo = hd_min(cp9b, v, eljpv) - elsd; if (eldlo < 0)  eldlo = 0;
+	  eldhi = hd_max(cp9b, v, eljpv) - elsd; if (eldhi > jp) eldhi = jp;
+	  for (d = eldlo; d <= eldhi; d++)
 	    {
 	      i = j-d+1;
 	      switch (cm->sttype[v]) {
