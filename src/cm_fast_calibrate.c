@@ -3669,6 +3669,22 @@ cmp_double(const void *a, const void *b)
   return 0;
 }
 
+/* SP_PAIR, cmp_sp_pair()
+ * qsort() comparator for (S, P) pairs, ascending by S.
+ * Used to sort frag_score records by S while keeping each S's
+ * paired P (probability mass) alongside it.
+ */
+typedef struct { double s, p; } SP_PAIR;
+static int
+cmp_sp_pair(const void *a, const void *b)
+{
+  double sa = ((const SP_PAIR *) a)->s;
+  double sb = ((const SP_PAIR *) b)->s;
+  if (sa < sb) return -1;
+  if (sa > sb) return 1;
+  return 0;
+}
+
 /* np_median()
  * Median of a sorted array matching NumPy np.median behavior:
  * odd n  → middle element; even n → average of two middle elements.
@@ -4347,25 +4363,19 @@ extract_frag_score(CM_t *cm, double *feats,
 
     /* P90 of S: sort records by S, find weighted 90th percentile */
     {
-      /* Simple insertion sort of (S, P) pairs */
-      double *sS = NULL; double *sP = NULL;
-      ESL_ALLOC(sS, sizeof(double)*n_rec); ESL_ALLOC(sP, sizeof(double)*n_rec);
-      memcpy(sS, rec_S, n_rec*sizeof(double));
-      memcpy(sP, rec_P, n_rec*sizeof(double));
-      { int j; double tmp_s, tmp_p;
-        for (i=1; i<n_rec; i++) {
-          tmp_s=sS[i]; tmp_p=sP[i];
-          for (j=i-1; j>=0&&sS[j]>tmp_s; j--) { sS[j+1]=sS[j]; sP[j+1]=sP[j]; }
-          sS[j+1]=tmp_s; sP[j+1]=tmp_p;
-        }
-      }
-      double cum_p = 0.0; double p90 = sS[n_rec-1];
+      /* Sort (S, P) pairs by S via qsort(), O(n_rec log n_rec) */
+      SP_PAIR *sp = NULL;
+      ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
+      for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
+      qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
+
+      double cum_p = 0.0; double p90 = sp[n_rec-1].s;
       for (i = 0; i < n_rec; i++) {
-        cum_p += sP[i];
-        if (cum_p >= 0.90) { p90 = sS[i]; break; }
+        cum_p += sp[i].p;
+        if (cum_p >= 0.90) { p90 = sp[i].s; break; }
       }
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
-      free(sS); free(sP);
+      free(sp);
     }
   }
 
