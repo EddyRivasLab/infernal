@@ -5566,9 +5566,24 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
          * LEFT_FULL/RIGHT_FULL alternate, so no mode-cross-product ambiguity
          * for this plane).  Purely a band-geometry re-check (mirrors rung-3's
          * 065 ckpt_optacc_traceback fix): no deck/value lookup needed, since
-         * the deck computed the SAME unique k the SAME way. */
+         * the deck computed the SAME unique k the SAME way.
+         *
+         * brief-26_0610-095: the outer guard must match the deck's fill
+         * (pin_tr_optacc_B kind==0, ~2865) EXACTLY -- the fill intersects only
+         * v's and z's (RIGHT child's) j-bands; the LEFT child y is reached at
+         * j-k, not j, and the [kn2,kx2] k-window (kn2 >= j-jmax[yy],
+         * kx2 <= j-jmin[yy]) already forces j-kk in [jmin[yy],jmax[yy]] for
+         * every kk it visits, so hd_min/hd_max(yy, jp_yy-kk) is always in
+         * bounds.  The old guard ALSO required the B state's own j in yy's
+         * band, which is wrong: a bifurcation whose left child ends far short
+         * of j (here yy band=[56,56] while j=113, split k=57 -> left ends at
+         * 56) is perfectly legal and IS filled by the deck, but the spurious
+         * guard skipped its re-derivation -> false "B state not pinned".  With
+         * tight kmerchain-derived bands (brief 094's ar45-sample26_full) this
+         * geometry is common; CP9/direct-p7ibv bands were wide enough that
+         * j happened to fall in yy's band too, hiding the bug until now. */
         int zz = cm->cnum[v], yy = cm->cfirst[v];
-        if (j >= jmin[yy] && j <= jmax[yy] && j >= jmin[zz] && j <= jmax[zz]) {
+        if (j >= jmin[zz] && j <= jmax[zz]) {
           int jp_yy = j - jmin[yy], jp_zz = j - jmin[zz];
           int kn2 = ESL_MAX(ESL_MAX(j - jmax[yy], hd_min(cp9b, zz, jp_zz)), 0);
           int kx2 = ESL_MIN(jp_yy, hd_max(cp9b, zz, jp_zz));
