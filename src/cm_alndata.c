@@ -1010,12 +1010,30 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  Parsetree_t *tr_cyk = NULL;
 	  float   r3_Z   = 0.;
 	  ESL_ALLOC(kpin, sizeof(int) * cm->M);
-	  /* pass 1: HMM-banded CYK parse -> k* pins.  Brief 26_0610-084: use the
-	   * checkpointed sqrt(M)-memory CYK engine (cm_CheckptCYKAlignHB, R1-L)
-	   * instead of the full-matrix cm_alignT_hb/cm_CYKInsideAlignHB, closing the
-	   * pass-1 memory floor (briefs 26_0610-040/041) so the whole rung-3
-	   * pipeline is checkpointed.  Same generic Parsetree_t -> rung3_kpin_from_cyk. */
-	  status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr_cyk, NULL);
+	  /* pass 1: HMM-banded CYK parse -> k* pins.  brief 26_0610-098: rung-3
+	   * runtime engine selector, UNIFIED with rung-4's (same INFERNAL_CKPT_FORCE_DNC
+	   * env var -- one meaning, "use D&C", at every rung it applies to).
+	   * Default (unset/0) = the checkpointed sqrt(M)-memory CYK engine
+	   * (cm_CheckptCYKAlignHB, brief 26_0610-084 R1-L), which closed the pass-1
+	   * memory floor (briefs 26_0610-040/041) so the whole rung-3 pipeline is
+	   * checkpointed.  Set INFERNAL_CKPT_FORCE_DNC to force the D&C alternative
+	   * CYKDivideAndConquerHB (brief 26_0610-041/098) -- a smaller-footprint
+	   * fallback that carries the CP9 bands down a divide-and-conquer recursion.
+	   * Both engines produce the SAME exact-CYK parse (single-optimum max-DP), so
+	   * both feed the identical pass-2 checkpointed pinned posterior + OptAcc +
+	   * traceback below via the same generic Parsetree_t -> rung3_kpin_from_cyk;
+	   * only pass-1 k*-pin resolution differs. */
+	  int    use_dnc_r3 = (getenv("INFERNAL_CKPT_FORCE_DNC") != NULL) ? TRUE : FALSE;
+	  if(use_dnc_r3) {
+	    /* CYKDivideAndConquerHB() has no status/errbuf return -- it cm_Fail()s
+	     * internally on its trust-but-verify root-state checks -- so a returned
+	     * tr is always valid; treat as eslOK. */
+	    (void) CYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr_cyk, cm->cp9b);
+	    status = eslOK;
+	  }
+	  else {
+	    status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr_cyk, NULL);
+	  }
 	  if(status == eslOK) {
 	    rung3_kpin_from_cyk(cm, tr_cyk, kpin);
 	    FreeParsetree(tr_cyk); tr_cyk = NULL;
@@ -1029,7 +1047,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  free(kpin);
 	  if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
 	  if(getenv("INFERNAL_CKPT_VERBOSE"))
-	    fprintf(stderr, "# rung-3 checkpointed structured OptAcc engaged: M=%d L=%d (%s, non-truncated, bps>0)\n", cm->M, (int) sq->L,
+	    fprintf(stderr, "# rung-3 checkpointed structured OptAcc engaged: M=%d L=%d engine=%s (%s, non-truncated, bps>0)\n", cm->M, (int) sq->L,
+		    use_dnc_r3 ? "dnc" : "ckpt",
 		    (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 	}
 	else {
