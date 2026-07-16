@@ -2844,7 +2844,19 @@ ckpt_optacc_traceback(CM_t *cm, char *errbuf, int L, int *kpin,
          * [kn,kx] itself spans many values).  Re-derive it the same way the
          * deck did rather than failing. */
         int zz = cm->cnum[v], yy = cm->cfirst[v];
-        if (j >= jmin[yy] && j <= jmax[yy] && j >= jmin[zz] && j <= jmax[zz]) {
+        /* Guard EXACTLY mirrors the forward fill's B-combine j-range
+         * (ckpt_optacc_deck ~1709-1711: j runs over [max(jmin[v],jmin[z]),
+         * min(jmax[v],jmax[z])]).  The BEGL child yy=cfirst[v] is evaluated at
+         * column j-k, NOT j, so its j-band must NOT gate this cell -- only v's
+         * own band (satisfied: we reached v at this j) and the BEGR child
+         * zz=cnum[v]'s band do.  brief 26_0610-107: an earlier form of this
+         * guard also required j in yy's band, which wrongly skipped right-heavy
+         * splits where the left fragment ends well before j (so j>jmax[yy]) --
+         * e.g. LSU_rRNA_eukarya AC215351.2 in local mode, v=3760 j=2481 d=23:
+         * k*=23 is uniquely band-forced (the forward fill filled the cell with
+         * it), but jmax[yy]=2458<j so the old guard skipped re-derivation and
+         * the traceback hard-failed "B state not pinned". */
+        if (j >= jmin[v] && j <= jmax[v] && j >= jmin[zz] && j <= jmax[zz]) {
           int jp_yy = j - jmin[yy], jp_zz = j - jmin[zz];
           int kn2 = ESL_MAX(ESL_MAX(j - jmax[yy], hd_min(cp9b, zz, jp_zz)), 0);
           int kx2 = ESL_MIN(jp_yy, hd_max(cp9b, zz, jp_zz));
