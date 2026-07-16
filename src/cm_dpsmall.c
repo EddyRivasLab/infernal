@@ -5438,12 +5438,43 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
       /* v->EL local end transitions (EL = deck M, full/unbanded). The beta[v]
        * source is banded: read it through hb_inband (out-of-band -> IMPOSSIBLE,
-       * skip). beta[cm->M] is a full deck, so its [j][d] index is unoffset. */
+       * skip). beta[cm->M] is a full deck, so its [j][d] index is unoffset.
+       *
+       * brief 26_0610-106: band-limit the v->EL feed to v's OWN banded footprint,
+       * porting brief 26_0610-101's fix (tr_outside_hb's J-feed) to this
+       * non-truncated sibling. The old loop swept the full 0..W x 0..jp triangle
+       * (O(W^2)) for EVERY state v with a local end -- confirmed by measurement
+       * (Task A) to be 99.94% of all EL-deck work here, the dominant cost of
+       * local-mode D&C at genome scale. But a cell (j,d) can only update
+       * beta[cm->M] when v's read cell -- shifted by the per-type (elsj,elsd)
+       * below -- is IN v's band; every out-of-band read hit `!hb_inband ->
+       * continue` and did nothing. So iterate ONLY v's band rows (elJ = read
+       * row) and their shifted d-range. The body (switch, hb_inband guard,
+       * boundary gates, all index math) is BYTE-IDENTICAL to the old sweep; the
+       * tighter bounds are a provable superset of the old update set, so the
+       * result is byte-exact. Read-cell shifts (identical to 101's J-feed
+       * table, since this is the same J-only recursion): MP=(j+1,d+2)
+       * ML/IL=(j,d+1) MR/IR=(j+1,d+1) S/D/E=(j,d). */
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	int dp_v;
-	for (jp = 0; jp <= W; jp++) {
-	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	int elsj = 0, elsd = 0, elJ, elJlo, elJhi;
+	switch (cm->sttype[v]) {
+	case MP_st:                       elsj = 1; elsd = 2; break;
+	case ML_st: case IL_st:           elsj = 0; elsd = 1; break;
+	case MR_st: case IR_st:           elsj = 1; elsd = 1; break;
+	case S_st:  case D_st: case E_st: elsj = 0; elsd = 0; break;
+	case B_st:
+	default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
+	}
+	elJlo = ESL_MAX(i0-1, jmin[v]); elJhi = ESL_MIN(j0, jmax[v]);
+	for (elJ = elJlo; elJ <= elJhi; elJ++) {
+	  int eljpv = elJ - jmin[v], eldlo, eldhi;
+	  j  = elJ - elsj;
+	  jp = j - (i0-1);
+	  if (jp < 0) continue;
+	  eldlo = hd_min(cp9b, v, eljpv) - elsd; if (eldlo < 0)  eldlo = 0;
+	  eldhi = hd_max(cp9b, v, eljpv) - elsd; if (eldhi > jp) eldhi = jp;
+	  for (d = eldlo; d <= eldhi; d++)
 	    {
 	      i = j-d+1;
 	      switch (cm->sttype[v]) {
