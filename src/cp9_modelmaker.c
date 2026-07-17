@@ -2935,7 +2935,7 @@ CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm)
    * topology HandModelmaker() derives from them matters, since we
    * overwrite all probabilities below.
    */
-  bufsize = 64 + (3 * (M+1)) + 128;
+  bufsize = 64 + (4 * (M+1)) + 128; /* seqline is embedded twice (seq1, seq2) plus rfline, ssline once each: 4 (M+1)-sized fields, not 3 (brief 26_0629-025) */
   ESL_ALLOC(buf, sizeof(char) * bufsize);
   {
     int pos = 0;
