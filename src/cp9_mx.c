@@ -184,6 +184,21 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   do_reallocate = (ncells_needed <= mx->ncells_allocated) ? FALSE : TRUE;
   do_grow_rows  = (N > mx->rows) ? TRUE : FALSE;
 
+  /* brief 26_0628-071: the per-row pointers must also be rebuilt whenever the
+   * cell layout changes between banded (variable per-row strides) and
+   * non-banded (uniform M+1 stride) mode, even if neither the cell array nor
+   * the row-pointer array needs to grow. mx->kmin is non-NULL iff the previous
+   * Grow left the matrix in banded layout; a non-banded call that reuses a
+   * prior banded allocation (fits in existing cells+rows, so do_reallocate and
+   * do_grow_rows are both FALSE) would otherwise keep the stale narrow banded
+   * row pointers and index mmx[i][k] (k up to M) far outside each row. That was
+   * the cross-sequence SIGSEGV (large M) / 4.56TB band blowup (small M) under
+   * -g --notrunc --p7band --p7kmerchain: the p7-banded CP9 F/B leaves cm->cp9_mx
+   * /cm->cp9_bmx banded, then the non-banded cp9_Seq2Bands fallback reuses them.
+   * (Reading mx->kmin's value here is safe: it is only tested for NULL-ness,
+   * never dereferenced, so a caller-freed kmin pointer is harmless.) */
+  int prev_banded = (mx->kmin != NULL) ? TRUE : FALSE;
+
   /* Row pointer arrays (mmx, imx, dmx, elmx, erow) need N+1 entries.
    * Cell arrays (*_mem) need ncells_needed entries.
    * In banded mode, a longer sequence can need fewer cells than a
@@ -221,13 +236,13 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
     mx->size_Mb /= 1000000.;
   }
 
-  if(do_banded || do_reallocate || do_grow_rows) { /* rearrange pointers */
+  if(do_banded || do_reallocate || do_grow_rows || prev_banded) { /* rearrange pointers */
     mx->mmx[0]  = mx->mmx_mem;
     mx->imx[0]  = mx->imx_mem;
     mx->dmx[0]  = mx->dmx_mem;
     mx->elmx[0] = mx->elmx_mem;
 
-    if(do_banded) { 
+    if(do_banded) {
       cur_ncells = kmax[0] - kmin[0] + 1;
       for (i = 1; i <= N; i++) {
 	mx->mmx[i] = mx->mmx[0] + cur_ncells;
@@ -429,6 +444,10 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
   do_reallocate = (ncells_needed <= mx->ncells_allocated) ? FALSE : TRUE;
   do_grow_rows  = (N > mx->rows) ? TRUE : FALSE;
 
+  /* brief 26_0628-071: rebuild row pointers on a banded<->non-banded layout
+   * change even when nothing grows; see the twin fix in GrowCP9Matrix(). */
+  int prev_banded = (mx->kmin != NULL) ? TRUE : FALSE;
+
   if(do_grow_rows) {
     ESL_RALLOC(mx->mmx,  p, sizeof(float *) * (N+1));
     ESL_RALLOC(mx->imx,  p, sizeof(float *) * (N+1));
@@ -460,7 +479,7 @@ GrowCP9FMatrix(CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, fl
     mx->size_Mb /= 1000000.;
   }
 
-  if(do_banded || do_reallocate || do_grow_rows) {
+  if(do_banded || do_reallocate || do_grow_rows || prev_banded) {
     mx->mmx[0]  = mx->mmx_mem;
     mx->imx[0]  = mx->imx_mem;
     mx->dmx[0]  = mx->dmx_mem;
