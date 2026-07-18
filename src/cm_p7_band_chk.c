@@ -2827,6 +2827,76 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
     esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
     esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
     esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
+    /* brief 26_0430-201: do_trunc has an analogous 5'/3'-coverage-gap escape
+     * hatch built from cp9_PredictStartAndEndFromPoccF's Lmarg/Rmarg marginal
+     * candidates (immediately above); !do_trunc has none. When kmerchain (or
+     * any p7-banded deriver) leaves a leading/trailing/internal run of HMM
+     * nodes with literally zero posterior evidence (pn_min_{m,i,d}[k] == -1
+     * at every substate -- e.g. an unpinned, unanchored model region), the
+     * downstream cp9_HMM2ijBands() "brutal hack" (hmmband.c, gated on
+     * hmm_is_localized && cm_is_fully_localized) only ever widens CM node 1
+     * (or its BIF descendants) to guarantee >=1 valid parse; it does not, and
+     * structurally cannot, bridge an interior run of dead nodes elsewhere in
+     * the tree. A dead run collapses the model's normal left-to-right MATL/
+     * MATR/MATP chain (each node's (i,j) band is a mandatory gateway for
+     * every downstream node's reachability), leaving only the degenerate
+     * local-begin+EL escape at node 1 as the sole valid parse -- silently
+     * discarding a real, correctly-banded parse elsewhere in the tree
+     * (confirmed by direct trace on the brief-201 dengue LC436672.1/
+     * OR029744.1 reproducers: consensus columns 1-18 were entirely
+     * unreachable while columns 19+ carried a normal, tight, correct band).
+     * Fix at the source: for a locally-configured CM (matching the brutal
+     * hack's own gating condition), widen any such zero-evidence node
+     * instead of leaving it as an unreachable sentinel, so
+     * cp9_HMM2ijBands()'s ordinary (non-hack) traversal keeps the whole
+     * model chain navigable and CYK/Inside remains free to find the real,
+     * higher-scoring parse. Bound each dead node by its NEAREST VALID
+     * NEIGHBORS on either side (not the full i0..j0 span): an unbounded
+     * i0..j0 open range for every dead node also over-widens any trailing
+     * dead run (e.g. beyond the last kmerchain-pinned column), which let
+     * CYK extend the alignment past the model's real, evidence-backed
+     * endpoint (empirically: cm-to jumped from the correct ~10539 all the
+     * way to cm_M=10723, the literal last column, when tested with a full
+     * i0..j0 widening). Bounding by nearest-neighbor evidence keeps the
+     * widened region's admissible (i,j) span consistent with where the
+     * model actually has data, matching the legacy (pre-double-ckpt) int
+     * F/B kernel's band shape much more closely. do_trunc is untouched
+     * (separate branch above); this changes ONLY inputs to the
+     * non-truncated (!do_trunc) path, so cp9_HMM2ijBands() and every other
+     * caller of the shared pn_* arrays outside this function are
+     * unaffected. */
+    if(cm->flags & CMH_LOCAL_BEGIN) {
+      int k;
+      int hmm_M = cp9b->hmm_M;
+      int *lb, *ub;
+      lb = malloc(sizeof(int) * (hmm_M+1));
+      ub = malloc(sizeof(int) * (hmm_M+1));
+      if(lb == NULL || ub == NULL) ESL_FAIL(eslEMEM, errbuf, "cp9_FinishBandsFromPnPoccF_chk: OOM allocating dead-node bound arrays");
+      /* left-to-right sweep: lb[k] = nearest valid pn_min_m to the left of (or at) k, else i0 */
+      {
+        int cur = i0;
+        for(k = 0; k <= hmm_M; k++) {
+          if(cp9b->pn_min_m[k] != -1) cur = cp9b->pn_min_m[k];
+          lb[k] = cur;
+        }
+      }
+      /* right-to-left sweep: ub[k] = nearest valid pn_max_m to the right of (or at) k, else j0 */
+      {
+        int cur = j0;
+        for(k = hmm_M; k >= 0; k--) {
+          if(cp9b->pn_max_m[k] != -1) cur = cp9b->pn_max_m[k];
+          ub[k] = cur;
+        }
+      }
+      for(k = 0; k <= hmm_M; k++) {
+        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+          cp9b->pn_min_m[k] = cp9b->pn_min_i[k] = cp9b->pn_min_d[k] = lb[k];
+          cp9b->pn_max_m[k] = cp9b->pn_max_i[k] = cp9b->pn_max_d[k] = ub[k];
+        }
+      }
+      free(lb);
+      free(ub);
+    }
   }
 
   /* Step 3: HMM bands -> CM bands. */
