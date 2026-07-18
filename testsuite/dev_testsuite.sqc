@@ -66,6 +66,7 @@
 1 exercise  itest/pknot             !testsuite/itest13-pknot.pl!             @@ !! %OUTFILES%
 1 exercise  itest/bpannot          !testsuite/itest14-cmalign-bpannot.pl!   @@ !! %OUTFILES%
 1 exercise  itest/psline-wrap       !testsuite/itest15-pknot-psline-wrap.pl! @@ !! %OUTFILES%
+1 exercise  itest/pkshift-recover   !testsuite/itest17-pknot-shift-recoverable.pl! @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@
 
 ################################################################
