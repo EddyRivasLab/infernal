@@ -3413,7 +3413,6 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   int      thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
   int      thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
   CP9_t   *cp9 = NULL;
-  CP9_MX  *pmx  = NULL; /* int  pmx, used by !do_trunc path */
   CP9_FMX *fmx_f = NULL, *bmx_f = NULL, *pmx_f = NULL; /* float matrices, used by do_trunc path */
   float    sc;
 
@@ -3519,77 +3518,38 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     return eslOK;
   }
 
-  /* Non-truncated path: keep the existing int CP9 F/B. The int F/B's tau-based
-   * per-cell pruning in cp9_FB2HMMBands doesn't suffer the sum-then-threshold
-   * accumulation problem, and we want zero changes to the int path here. */
-
-  /* brief 26_0430-146 (144-B): checkpointed banded CP9 F/B (--p7ibv-ckpt, or CP9_CKPT
-   * env for debugging). Holds O(sqrt(L)*avg_bw) memory instead of three ncells
-   * matrices; bands are byte-identical. Each tau bump recomputes the
-   * checkpointed F/B (no cached pmx) — bump count instrumented below. */
-  if(cm->p7_ibv_ckpt || getenv("CP9_CKPT") != NULL) {
+  /* Non-truncated path (brief 26_0628-073 diagnosis, brief 26_0628-074 fix):
+   * route band derivation through the SAME double-precision checkpointed CP9
+   * F/B that the do_trunc path uses (cp9_IterateSeq2BandsP7BF_chk_multi),
+   * regardless of do_trunc. The legacy int CP9 F/B (cp9_ForwardP7B_OLD_WITH_EL
+   * / cp9_BackwardP7B / cp9_FBMatrices2BandsP7B) computed diffuse posterior
+   * occupancies for low-bp-density models, producing cp9b bands up to ~7500x
+   * wider than this kernel on the identical p7 input (norovirus: 170M vs 22.5K
+   * hd_needed) and a 20-3800x --notrunc slowdown (briefs 26_0628-072/26_0628-073).
+   * The double-ckpt kernel honors tau exactly as --trunc mode already does;
+   * banded parses then score slightly lower (brief 26_0628-073 measured -0.16 to
+   * -0.89 bits, alignment span preserved, no clipping) -- the correct, expected
+   * consequence of banding, signed off in brief 26_0628-074.
+   *
+   * Both the int-ckpt escape hatch (--p7ibv-ckpt / CP9_CKPT) and the default int
+   * path are removed here; like do_trunc, this path now ignores --p7ibv-ckpt /
+   * CP9_CKPT (the double-ckpt kernel is itself checkpointed, so their
+   * O(sqrt(L)*avg_bw) memory goal is still met). The int helper functions stay
+   * defined -- cp9_IterateSeq2BandsP7BF_chk_multi calls cp9_ForwardP7B_OLD_WITH_EL
+   * / cp9_BackwardP7B internally. */
+  {
     int nbump = 0;
-    while(1) {
-      if((status = cp9_FBMatrices2BandsP7B_chk(cm, errbuf, cp9, dsq, cm->cp9b,
-                                               kmin, kmax, L, i0, j0, pass_idx, 0,
-                                               do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
-      if(doing_search) {
-        if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR;
-      }
-      else {
-        status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
-        if(status != eslOK && status != eslERANGE) goto ERROR;
-      }
-      if(hbmx_Mb < size_limit)                                  break;
-      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
-      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
-      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
-      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
-      nbump++;
-    }
-    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPT_TAU L=%d tau_bumps=%d (each bump recomputes the checkpointed F/B)\n", L, nbump);
+    status = cp9_IterateSeq2BandsP7BF_chk_multi(cm, errbuf, cp9, dsq, L, kmin, kmax, i0, j0,
+                                                pass_idx, size_limit, doing_search, do_sample,
+                                                do_post, maxtau, do_pnmono, do_pnmono_print,
+                                                &nbump, &hbmx_Mb);
+    if(status != eslOK && status != eslERANGE) goto ERROR;
+    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPTF_TAU L=%d tau_bumps=%d (non-truncated; one checkpointed double F/B)\n", L, nbump);
     if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-    if(hbmx_Mb > size_limit) return eslERANGE;
-    return eslOK;
+    return status;
   }
-
-  /* Phase 1: P7-banded CP9 Forward + Backward — run once, cache across iterations. */
-  if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, cm->cp9_mx, dsq, L, kmin, kmax, &sc)) != eslOK) goto ERROR;
-  if((status = cp9_BackwardP7B(cp9, errbuf, cm->cp9_bmx, dsq, L, kmin, kmax, NULL)) != eslOK) goto ERROR;
-
-  /* Allocate a separate pmx so FB2HMMBandsP7B doesn't clobber bmx across iterations. */
-  if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
-    ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating local pmx");
-
-  /* Phase 2: iterate tau/thresh until matrix fits. */
-  while(1) {
-    if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b,
-					 kmin, kmax, L, i0, j0, pass_idx, 0, do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
-    if(doing_search) {
-      if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
-      else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
-    }
-    else {
-      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
-      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
-      if(status != eslOK && status != eslERANGE) goto ERROR;
-    }
-
-    if(hbmx_Mb < size_limit)                                  break;
-    if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
-
-    if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
-    if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
-    if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
-  }
-
-  FreeCP9Matrix(pmx);
-  if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-  if(hbmx_Mb > size_limit) return eslERANGE;
-  return eslOK;
 
  ERROR:
-  if(pmx)   FreeCP9Matrix(pmx);
   if(fmx_f) FreeCP9FMatrix(fmx_f);
   if(bmx_f) FreeCP9FMatrix(bmx_f);
   if(pmx_f) FreeCP9FMatrix(pmx_f);
