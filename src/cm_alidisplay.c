@@ -42,7 +42,17 @@ static float post_code_to_avg_pp(char postcode);
 #define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
 #define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
 #define PS_NESTED_TRUNC  '?'   /* truncated half: pair partner is missing-data ('~'), pair can't be evaluated */
+#define PS_PKNOT_SHIFT_RECOVERABLE 'o' /* pknot pair broken, BUT a per-stem register shift would restore WC/GU pairing to it (alert only; see cm_pknot_MarkShiftRecoverable()) */
 /* MM_SUBPAIR / MM_SUBSINGLET glyphs are defined in infernal.h (shared with cmalign). */
+
+/* Parameters for the register-shift-recoverable overlay (cm_pknot_MarkShiftRecoverable()).
+ * These reproduce brief 013's slip_metric.py defaults verbatim (test-013/slip_metric.py):
+ *   K:    scan gapless-space open-side shifts k = -K..+K.
+ *   T_LO: a stem is a candidate only if its in-register WC count slidWC(0) <= T_LO.
+ *   T_hi: computed per stem as E-1 (E = # complete pknot pairs in the stem); the winning
+ *         shift must reach slidWC(k) >= T_hi. Not a #define because it depends on E. */
+#define PKNOT_SHIFT_K     3
+#define PKNOT_SHIFT_T_LO  2
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
@@ -617,6 +627,11 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
    * here (after FixBrokenString fixed csline and the lines are NUL-terminated)
    * so the marks are baked into ncline before serialization. */
   if (cm->flags & CMH_PKNOT) annotate_pknot_pairs_str(ad->csline, ad->aseq, ad->model, ad->ncline, ad->N);
+  /* Alert-only overlay: for each broken ('x') pknot pair, mark it 'o' instead if a
+   * per-stem register shift would restore WC/GU pairing to it. Runs after the =/$/x
+   * classification above (needs the final marks to know which positions are 'x').
+   * Never changes the reported alignment; cmsearch/cmscan only (not cmalign). */
+  if (cm->flags & CMH_PKNOT) cm_pknot_MarkShiftRecoverable(ad->csline, ad->aseq, ad->ncline, ad->N);
   ad->sqfrom      = tr->emitl[0] + seqoffset-1;
   ad->sqto        = tr->emitr[0] + seqoffset-1;
   ad->cfrom_emit  = cfrom_emit;
@@ -1262,6 +1277,201 @@ annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, ch
 
  DONE:
   for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  return;
+}
+
+/* ascending-integer comparator for qsort() (used by cm_pknot_MarkShiftRecoverable) */
+static int
+cmp_int_incr(const void *a, const void *b)
+{
+  int ia = *(const int *) a;
+  int ib = *(const int *) b;
+  return (ia < ib) ? -1 : (ia > ib) ? 1 : 0;
+}
+
+/* Function:  cm_pknot_MarkShiftRecoverable()
+ * Synopsis:  Overlay 'o' on broken pknot pairs that a register shift would restore to WC/GU.
+ *
+ * Purpose:   Post-hoc, ALERT-ONLY annotation pass over an already-produced
+ *            cmsearch/cmscan hit's PS line. For each pseudoknot pair currently
+ *            marked broken (PS_PKNOT_BROKEN, 'x') by annotate_pknot_pairs_str(),
+ *            test whether a single per-STEM uniform register shift of the stem's
+ *            5' (open) side would restore canonical Watson-Crick / GU wobble
+ *            pairing to it. If so, change that pair's 'x' mark to
+ *            PS_PKNOT_SHIFT_RECOVERABLE ('o') at BOTH ends, in place. Nothing
+ *            else is touched: this never re-scores, re-aligns, or changes what
+ *            cmsearch reports as its best alignment -- it is purely a "there is a
+ *            nearby alternate registration a human might want to look at" hint.
+ *
+ *            The check is brief 013's slidWC(k) metric (test-013/slip_metric.py),
+ *            ported here verbatim rather than re-derived:
+ *              - RES = gapless, uppercased residue string of the hit; pref[i] =
+ *                number of residue chars [A-Za-z] strictly before display column i
+ *                (= the 0-based index into RES of the residue AT column i). A raw
+ *                column-index shift would be WRONG when inserts/gaps intervene;
+ *                the shift is done in gapless (RES) space via pref[].
+ *              - Complete pknot pairs are recovered per stem letter with the same
+ *                per-letter pushdown discipline as annotate_pknot_pairs_str() /
+ *                cm_pknot_MarkOrphansTrunc(); antiparallel pairing pairs the i-th
+ *                ascending open column with the i-th descending close column.
+ *              - slidWC(k) shifts the OPEN side by k gapless residues (k = -K..+K,
+ *                K = PKNOT_SHIFT_K), keeps the close side in register, and counts
+ *                canonical pairs (bp_is_canonical(), whose WC/GU set is identical
+ *                to slip_metric.py's is_wc, DNA T equivalents included).
+ *              - A stem qualifies (RECOVER-SLIP) exactly on brief 013's thresholds:
+ *                slidWC(0) is not already >= T_hi (else MAINTAINED), slidWC(0) <=
+ *                T_LO, and the best k!=0 reaches slidWC(k) >= T_hi, where
+ *                T_hi = E-1 (E = # complete pairs in the stem). Tie among winning
+ *                k is broken toward the most-negative k (matches slip_metric.py's
+ *                Python max() first-wins iteration).
+ *              - Only the individual currently-'x' pairs that actually flip to WC
+ *                under the winning shift become 'o' -- NOT a blanket mark on every
+ *                x in a recovering stem (brief 027: 5 of stem B's 7 x's flip under
+ *                k=-1, not all 7). Pairs already =/$ are never touched, even if the
+ *                winning shift would "break" them.
+ *
+ *            Pseudoknot pairs ONLY: the mechanism argument (pknot columns are
+ *            scored as independent singlets with no pair-emission term, so nothing
+ *            in the CM rewards a WC-friendlier registration) is specific to pknot
+ *            columns. Nested MATP pairs already have a joint pair-emission score,
+ *            so their register is actively optimized and this blind spot does not
+ *            exist -- nested 'v'/'?' marks and MATP columns are never touched.
+ *            cmsearch/cmscan only; cmalign's per-seq PS line is out of scope.
+ *
+ *            Must run AFTER cm_pknot_MarkOrphansTrunc() and
+ *            annotate_pknot_pairs_str(): it needs the final =/$/x classification
+ *            already written into <out> to know which positions are candidates.
+ *
+ * Args:      ss   - consensus structure string (csline), pknot letters overlaid,
+ *                   0-based, length N.
+ *            aseq - the hit's aligned residue string (aseq), length N.
+ *            out  - the PS line (ncline) to overlay 'o' onto, length N. Only
+ *                   positions currently holding PS_PKNOT_BROKEN are ever changed.
+ *            N    - common length of ss/aseq/out.
+ *
+ * Returns:   (void). On malloc failure for an internal buffer, silently leaves the
+ *            remaining pairs unmarked (annotation is cosmetic; never fatal).
+ */
+void
+cm_pknot_MarkShiftRecoverable(const char *ss, const char *aseq, char *out, int N)
+{
+  int   sp[26];          /* per-letter stack pointers                                */
+  int  *stack[26];       /* per-letter stacks of unmatched open display columns      */
+  int  *Lcol[26];        /* per-letter open  display columns of complete pknot pairs */
+  int  *Rcol[26];        /* per-letter close display columns of complete pknot pairs */
+  int   npair[26];       /* per-letter complete-pair count (== E for that stem)      */
+  int  *pref = NULL;     /* pref[i] = # residue chars [A-Za-z] in aseq[0..i-1]        */
+  char *res  = NULL;     /* gapless, uppercased residue string of the hit            */
+  int   nres = 0;
+  int   i, c, idx, k;
+
+  if (ss == NULL || aseq == NULL || out == NULL) return;
+  for (idx = 0; idx < 26; idx++) { sp[idx]=0; stack[idx]=NULL; Lcol[idx]=NULL; Rcol[idx]=NULL; npair[idx]=0; }
+
+  /* Build RES and the gapless prefix-count map pref[] (slip_metric.py gapless()/
+   * ridx_map()). pref[i] is the # of residue chars before column i, i.e. the
+   * 0-based index into RES of the residue at column i. */
+  if ((pref = malloc(sizeof(int)  * (N + 1))) == NULL) goto DONE;
+  if ((res  = malloc(sizeof(char) * (N + 1))) == NULL) goto DONE;
+  pref[0] = 0;
+  for (i = 0; i < N; i++) {
+    if (isalpha((int) aseq[i])) res[nres++] = (char) toupper((int) aseq[i]);
+    pref[i+1] = nres;
+  }
+
+  /* Recover every complete pknot pair (z_open, z_close), grouped by stem letter,
+   * with the SAME per-letter pushdown discipline as annotate_pknot_pairs_str(). */
+  for (i = 0; i < N; i++) {
+    c = (int) ss[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (N+1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {                                   /* matched close: recover pair */
+        int zo = stack[idx][--sp[idx]];
+        if (Lcol[idx] == NULL && (Lcol[idx] = malloc(sizeof(int) * (N+1))) == NULL) goto DONE;
+        if (Rcol[idx] == NULL && (Rcol[idx] = malloc(sizeof(int) * (N+1))) == NULL) goto DONE;
+        Lcol[idx][npair[idx]] = zo;
+        Rcol[idx][npair[idx]] = i;
+        npair[idx]++;
+      }
+      /* sp[idx]==0: orphan close, not a complete pair -- nothing to recover. */
+    }
+  }
+
+  /* Process each stem (letter) independently: a per-STEM uniform register shift,
+   * never per-pair (brief 013 measured and rejected per-pair checks as too noisy). */
+  for (idx = 0; idx < 26; idx++) {
+    int E = npair[idx];
+    int T_hi, s0, bestk, bestv, anyx;
+    if (E == 0) continue;
+
+    /* candidate only if the stem currently carries at least one broken ('x') pair;
+     * a stem already fully =/$ has nothing to flag. */
+    anyx = FALSE;
+    for (i = 0; i < E; i++)
+      if (out[Lcol[idx][i]] == PS_PKNOT_BROKEN || out[Rcol[idx][i]] == PS_PKNOT_BROKEN) { anyx = TRUE; break; }
+    if (! anyx) continue;
+
+    /* antiparallel pairing (slip_metric.py): sort opens ascending, closes ascending,
+     * pair Lcol[i] with Rcol[E-1-i] (leftmost open with rightmost close). */
+    qsort(Lcol[idx], (size_t) E, sizeof(int), cmp_int_incr);
+    qsort(Rcol[idx], (size_t) E, sizeof(int), cmp_int_incr);
+
+    /* slidWC(k), k = -K..+K: shift the OPEN (5') side k gapless residues, keep the
+     * close (3') side in register, count canonical WC/GU pairs. Track s0 = slidWC(0)
+     * and the best k!=0 (bestv/bestk), ties broken toward the most-negative k
+     * (matches slip_metric.py's Python max() first-wins iteration order). */
+    s0 = 0; bestk = 0; bestv = -1;
+    for (k = -PKNOT_SHIFT_K; k <= PKNOT_SHIFT_K; k++) {
+      int cnt = 0;
+      for (i = 0; i < E; i++) {
+        int  lcol = Lcol[idx][i];
+        int  rcol = Rcol[idx][E-1-i];
+        int  jl   = pref[lcol] + k;
+        int  jr   = pref[rcol];
+        char lr   = (jl >= 0 && jl < nres) ? res[jl] : '\0';
+        char rr   = (jr >= 0 && jr < nres) ? res[jr] : '\0';
+        if (lr && rr && bp_is_canonical(lr, rr)) cnt++;
+      }
+      if      (k == 0)      s0 = cnt;
+      else if (cnt > bestv) { bestv = cnt; bestk = k; }
+    }
+
+    /* brief 013 classifier (verbatim): RECOVER-SLIP iff slidWC(0) is not already
+     * >= T_hi (else MAINTAINED), slidWC(0) <= T_LO, and the best shift reaches
+     * T_hi. T_hi = E-1. */
+    T_hi = E - 1;
+    if (! (s0 < T_hi && s0 <= PKNOT_SHIFT_T_LO && bestv >= T_hi)) continue;
+
+    /* Overlay 'o' only on the currently-'x' pairs that actually flip to WC/GU under
+     * the winning shift bestk -- not a blanket mark on the whole stem. Guard: only a
+     * position currently holding PS_PKNOT_BROKEN is ever overwritten. */
+    for (i = 0; i < E; i++) {
+      int  lcol = Lcol[idx][i];
+      int  rcol = Rcol[idx][E-1-i];
+      int  jl   = pref[lcol] + bestk;
+      int  jr   = pref[rcol];
+      char lr   = (jl >= 0 && jl < nres) ? res[jl] : '\0';
+      char rr   = (jr >= 0 && jr < nres) ? res[jr] : '\0';
+      if (lr && rr && bp_is_canonical(lr, rr)) {
+        if (out[lcol] == PS_PKNOT_BROKEN) out[lcol] = PS_PKNOT_SHIFT_RECOVERABLE;
+        if (out[rcol] == PS_PKNOT_BROKEN) out[rcol] = PS_PKNOT_SHIFT_RECOVERABLE;
+      }
+    }
+  }
+
+ DONE:
+  for (idx = 0; idx < 26; idx++) {
+    if (stack[idx] != NULL) free(stack[idx]);
+    if (Lcol[idx]  != NULL) free(Lcol[idx]);
+    if (Rcol[idx]  != NULL) free(Rcol[idx]);
+  }
+  if (pref != NULL) free(pref);
+  if (res  != NULL) free(res);
   return;
 }
 
