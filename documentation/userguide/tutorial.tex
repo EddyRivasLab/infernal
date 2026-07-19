@@ -656,6 +656,43 @@ markup, while pseudoknot pairs receive the full positive-and-negative
 stranded with respect to the nested structure, so the two markups never
 collide on the same column.)
 
+A broken (\otext{x}) pseudoknot pair is additionally re-marked with an
+\otext{o} character (at \emph{both} ends) when a single, uniform register
+shift of the whole stem --- sliding its 5' half by a few residues ---
+would restore canonical Watson-Crick/GU pairing to it. This is a purely
+post-hoc \emph{alert}, not a correction: \prog{cmsearch} does not, and can
+not, re-align the hit based on it. Pseudoknot-stem columns are scored as
+independent single-stranded positions with no pair-emission (covariation)
+term, so nothing in the model's scoring function rewards choosing the
+Watson-Crick-friendlier registration over the one the aligner happened to
+pick --- there is no principled basis on which the tool could prefer it. The
+reported alignment is therefore left exactly as \prog{cmsearch} produced it;
+the \otext{o} merely flags that an indel-aware human (or a downstream
+re-analysis) might find a better-paired alternate registration nearby, most
+commonly because of a small insertion or deletion adjacent to the stem. The
+check is applied per stem, not per pair, and only re-marks the individual
+\otext{x} pairs that actually become canonical under the stem's winning
+shift; already-canonical (\otext{=}/\otext{\$}) pairs are never touched. Only
+pseudoknot pairs are ever marked \otext{o}: nested basepairs are modeled with
+a real joint pair-emission score, so their register is already actively
+optimized by the aligner and no analogous blind spot exists. For example, in
+a real tmRNA hit (\emph{Firmicutes bacterium} CAG:272, GenBank
+\otext{FR891194.1}), one 7-basepair pseudoknot stem has five broken pairs
+that all become canonical under a 1-nucleotide shift of the stem's 5' half
+(there is a 1-nt deletion just 5' of the stem, so the alignment could equally
+have absorbed that gap one column later):
+\begin{sreoutput}
+     PS    $oo=ooov                      ooo=oo$
+     CS  __BBBBBBB>>>>>>>>-->>>>>>,,,,,,,bbbbbbb,,
+     RF  uuGCCuguugggcugggaaggggcGUCAuaaaagcgGGaUa
+     SQ  G-UACUGCGGCUCCGGA-AUGAGCGUCAUCAAGCAGUGAAC
+\end{sreoutput}
+Here the five \otext{o} marks on each side (the \otext{Bb} stem) flag the
+five broken pairs a 1-nt register shift would repair; the one \otext{\$}
+(covarying) and one \otext{=} (maintained) pair of the same stem are left
+unchanged, and broken pairs in the hit's other pseudoknot stems that have
+\emph{no} recovering shift keep their plain \otext{x} mark.
+
 Sometimes a hit's displayed alignment contains only one half of a
 pseudoknot pair --- its partner may have been truncated out of the
 hit, or the hit's local alignment may simply not have extended far

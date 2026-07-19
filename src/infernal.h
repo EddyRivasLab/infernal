@@ -2927,6 +2927,7 @@ extern void           cm_bp_match_marks(char lseq, char rseq, char lcons, char r
 extern char           cm_bp_nc_mark(char lseq, char rseq, float pairsc);
 extern char           cm_singlet_mark(char seq, char cons, float avgsc);
 extern void           annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N);
+extern void           cm_pknot_MarkShiftRecoverable(const char *ss, const char *aseq, char *out, int N);
 
 /* from cm_parsetree.c : post-hoc cmalign structure-status annotation */
 extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq, int do_famcons, int do_famcov);
