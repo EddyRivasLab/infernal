@@ -917,6 +917,13 @@ ckpt_deck_alloc(CKPT_CTX *cx, int v)
   int     jp;
   CP9Bands_t *cp9b = cx->cm->cp9b;
   if (row == NULL || mem == NULL) cm_Fail("ckpt_deck_alloc OOM v=%d", v);
+  /* brief 26_0610-111: a fully-empty deck (nc==0, all d-bands empty across v's
+   * j-band) still mallocs a 1-cell guard, but ckpt_deck_init_impossible() FSets
+   * nothing (it guards on deck_nc>0), leaving that cell as malloc garbage.  Any
+   * reader that peels [jp][0] on an empty row (e.g. the r_pp d=hdmin peel) would
+   * read uninitialized memory.  Seed it to IMPOSSIBLE so an empty deck reads like
+   * stock's IMPOSSIBLE-initialized HB matrix. */
+  if (nc <= 0) mem[0] = IMPOSSIBLE;
   row[0] = mem; /* ensure row[0]==mem even when njr==0 (so free(row[0]) is valid) */
   for (jp = 0; jp < njr; jp++) {
     int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
@@ -2078,6 +2085,13 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v];
           int d;
+          /* brief 26_0610-111: same empty-d-band guard as cm_CheckptPostAlignHB's
+           * r_pp peel -- an empty row's [jp][0] is uninitialized/aliased garbage,
+           * whereas stock's cm_EmitterPosteriorHB reads IMPOSSIBLE.  (Fix (A) in
+           * ckpt_deck_alloc already seeds the fully-empty deck_nc==0 guard cell; this
+           * additionally covers an empty row inside a non-empty deck, whose shared
+           * row pointer aliases an adjacent row's live storage.) */
+          if (hd_max(cp9b, v, jp) < hd_min(cp9b, v, jp)) { emit_mx->r_pp[v][jp] = IMPOSSIBLE; continue; }
           emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt;
           for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
             int dp = d - hd_min(cp9b, v, jp);
@@ -2609,6 +2623,14 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
         int j;
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v]; int d;
+          /* brief 26_0610-111: skip rows with an empty d-band (hdmax < hdmin).  The
+           * d=hdmin peel below reads [jp][0] unconditionally; for an empty row that
+           * cell is either the never-initialized 1-cell guard alloc of a fully-empty
+           * (deck_nc==0) deck, or an adjacent row's storage aliased in via the shared
+           * row pointer -- both are uninitialized/garbage here, whereas stock's
+           * cm_EmitterPosteriorHB reads IMPOSSIBLE (its whole HB matrix is FSet to
+           * IMPOSSIBLE).  Emit IMPOSSIBLE to match stock byte-for-byte. */
+          if (hd_max(cp9b, v, jp) < hd_min(cp9b, v, jp)) { emit_mx->r_pp[v][jp] = IMPOSSIBLE; continue; }
           emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt; /* peel d=hdmin */
           for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
             int dp = d - hd_min(cp9b, v, jp);
