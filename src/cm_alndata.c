@@ -727,38 +727,64 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  fprintf(stderr, "#T215 seq=%s WARN pernode requested but CM lacks P7NODEPAD; NO tightening applied\n", sq->name);
 		} else {
 		  int  *wv_i2k = NULL, *wv_kmin = NULL, *wv_kmax = NULL, *zero_pad = NULL;
-		  int   wv_ncells = 0, k215, i215, status215, M215 = cm->fp7->M;
+		  int  *i2k_c  = NULL, *nodepad215 = NULL, *b1_kmin = NULL, *b1_kmax = NULL;
+		  int   wv_ncells = 0, b1_ncells = 0, k215, i215, status215, M215 = cm->fp7->M;
 		  ESL_ALLOC(zero_pad, sizeof(int) * (M215 + 1));
 		  for(k215 = 0; k215 <= M215; k215++) zero_pad[k215] = 0;
+		  /* (2) exact Viterbi MAP trace i2k (unbounded; Phase B replaces this
+		   *     with a band-bounded kernel -- cost irrelevant to the accuracy gate). */
 		  status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
 					     &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);
 		  if(status215 == eslOK) {
-		    long km_totw = 0, tight_totw = 0;
+		    /* (2b) CLAMP each pinned i2k[i] into kmerchain's [kmin,kmax] (mimics a
+		     *      band-bounded Viterbi -- the bounded MAP pin lies in bands_0). */
+		    ESL_ALLOC(i2k_c, sizeof(int) * (sq->L + 1));
+		    for(i215 = 0; i215 <= sq->L; i215++) {
+		      int kk = wv_i2k[i215];
+		      if(i215 == 0 || kk == -1) { i2k_c[i215] = kk; continue; }
+		      if(kk < p7_kmin[i215]) kk = p7_kmin[i215];
+		      else if(kk > p7_kmax[i215]) kk = p7_kmax[i215];
+		      i2k_c[i215] = kk;
+		    }
+		    /* (3) bands_1 = i2k +/- N via the PRODUCTION pin->band converter (yields a
+		     *     monotone, connected, DP-valid band -- do NOT hand-roll this). */
+		    ESL_ALLOC(nodepad215, sizeof(int) * (M215 + 1));
+		    for(k215 = 0; k215 <= M215; k215++)
+		      nodepad215[k215] = p215_pernode ? (cm->p7_cm_nodepad[k215] + cm->p7bpad) : p215_N;
+		    status215 = p7_pins2bands_nodepad(i2k_c, errbuf, sq->L, M215, nodepad215,
+						      0, cm->p7_kmerchain_ramp_alpha,
+						      &b1_kmin, &b1_kmax, &b1_ncells);
+		  }
+		  if(status215 == eslOK && b1_kmin != NULL) {
+		    /* (4) bands_2 = per-row min(bands_0, bands_1). max()/min() of two monotone
+		     *     bands stays monotone; a disjoint row (rare) falls back to kmerchain. */
+		    long km_totw = 0, tight_totw = 0; int n_empty = 0;
 		    ESL_ALLOC(tight_kmin, sizeof(int) * (sq->L + 1));
 		    ESL_ALLOC(tight_kmax, sizeof(int) * (sq->L + 1));
+		    tight_kmin[0] = p7_kmin[0]; tight_kmax[0] = p7_kmax[0];
 		    for(i215 = 1; i215 <= sq->L; i215++) {
 		      int a = p7_kmin[i215], b = p7_kmax[i215];
-		      int kk = wv_i2k[i215];
-		      km_totw += (b - a + 1);
-		      if(kk < 1) { tight_kmin[i215] = a; tight_kmax[i215] = b; tight_totw += (b - a + 1); continue; }
-		      if(kk < a) kk = a; else if(kk > b) kk = b;   /* clamp i2k into kmerchain band */
-		      int Nrow = p215_pernode ? (cm->p7_cm_nodepad[kk] + cm->p7bpad) : p215_N;
-		      int c = kk - Nrow; if(c < a) c = a;          /* bands_2 = min(bands_0, i2k+/-N) */
-		      int d = kk + Nrow; if(d > b) d = b;
-		      tight_kmin[i215] = c; tight_kmax[i215] = d;
-		      tight_totw += (d - c + 1);
+		      int lo = ESL_MAX(a, b1_kmin[i215]);
+		      int hi = ESL_MIN(b, b1_kmax[i215]);
+		      if(hi < lo) { lo = a; hi = b; n_empty++; }  /* disjoint -> kmerchain fallback */
+		      tight_kmin[i215] = lo; tight_kmax[i215] = hi;
+		      km_totw += (b - a + 1); tight_totw += (hi - lo + 1);
 		    }
 		    t_kmin = tight_kmin; t_kmax = tight_kmax;
-		    fprintf(stderr, "#T215 seq=%s M=%d L=%d mode=%s N=%d km_totw=%ld tight_totw=%ld ratio=%.4f\n",
+		    fprintf(stderr, "#T215 seq=%s M=%d L=%d mode=%s N=%d km_totw=%ld tight_totw=%ld ratio=%.4f n_empty=%d\n",
 			    sq->name, M215, (int)sq->L, p215_pernode ? "pernode" : "const", p215_N,
-			    km_totw, tight_totw, km_totw > 0 ? (double)tight_totw/(double)km_totw : 1.0);
+			    km_totw, tight_totw, km_totw > 0 ? (double)tight_totw/(double)km_totw : 1.0, n_empty);
 		  } else {
-		    fprintf(stderr, "#T215 seq=%s WV_FAILED status=%d; NO tightening applied\n", sq->name, status215);
+		    fprintf(stderr, "#T215 seq=%s WV/pins2bands_FAILED status=%d; NO tightening applied\n", sq->name, status215);
 		  }
-		  if(zero_pad) free(zero_pad);
-		  if(wv_i2k)   free(wv_i2k);
-		  if(wv_kmin)  free(wv_kmin);
-		  if(wv_kmax)  free(wv_kmax);
+		  if(zero_pad)    free(zero_pad);
+		  if(wv_i2k)      free(wv_i2k);
+		  if(wv_kmin)     free(wv_kmin);
+		  if(wv_kmax)     free(wv_kmax);
+		  if(i2k_c)       free(i2k_c);
+		  if(nodepad215)  free(nodepad215);
+		  if(b1_kmin)     free(b1_kmin);
+		  if(b1_kmax)     free(b1_kmax);
 		}
 	      }
 	    }
