@@ -699,10 +699,73 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  }
 
 	  if(status == eslOK && p7_ncells > 0) {
+	    /* Brief 26_0430-215 Phase A: OPTIONAL kmerchain-band TIGHTENING via a
+	     * Viterbi MAP trace, wired into the REAL path (feeds bands_2 into
+	     * cp9_IterateSeq2BandsP7B so it propagates to the final alignment).
+	     * Env-gated: P215_TIGHTEN_N=<n> (constant half-width) or
+	     * P215_TIGHTEN_PERNODE=1 (the CM's stored per-node pad). When NEITHER
+	     * is set, t_kmin/t_kmax alias p7_kmin/p7_kmax => byte-identical to
+	     * production. Phase A reuses the existing (unbounded, full-model)
+	     * p7_Seq2BandsWV purely to obtain the Viterbi MAP trace i2k; each i2k[i]
+	     * is CLAMPED into kmerchain's [p7_kmin,p7_kmax] (exactly mimicking a
+	     * band-bounded Viterbi on the rows where they'd differ), so bands_1 =
+	     * i2k +/- N always overlaps bands_0 and the row-wise min (bands_2) is
+	     * never empty -- no disjoint-row fallback needed (see brief 214 addendum).
+	     * Cost of this WV call is IRRELEVANT here (Phase B builds the real
+	     * bounded kernel); Phase A is the accuracy gate only. */
+	    int   *t_kmin = p7_kmin, *t_kmax = p7_kmax;   /* default: untightened alias */
+	    int   *tight_kmin = NULL, *tight_kmax = NULL;
+	    {
+	      int         p215_pernode = 0, p215_N = -1;
+	      const char *e_pn = getenv("P215_TIGHTEN_PERNODE");
+	      const char *e_n  = getenv("P215_TIGHTEN_N");
+	      if(e_pn != NULL && atoi(e_pn) != 0) p215_pernode = 1;
+	      if(e_n  != NULL)                     p215_N       = atoi(e_n);
+	      int have_pernode = (cm->flags & CMH_P7NODEPAD) && cm->p7_cm_nodepad != NULL;
+	      if(cm->p7_use_kmerchain && (p215_pernode || p215_N >= 0)) {
+		if(p215_pernode && !have_pernode) {
+		  fprintf(stderr, "#T215 seq=%s WARN pernode requested but CM lacks P7NODEPAD; NO tightening applied\n", sq->name);
+		} else {
+		  int  *wv_i2k = NULL, *wv_kmin = NULL, *wv_kmax = NULL, *zero_pad = NULL;
+		  int   wv_ncells = 0, k215, i215, status215, M215 = cm->fp7->M;
+		  ESL_ALLOC(zero_pad, sizeof(int) * (M215 + 1));
+		  for(k215 = 0; k215 <= M215; k215++) zero_pad[k215] = 0;
+		  status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
+					     &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);
+		  if(status215 == eslOK) {
+		    long km_totw = 0, tight_totw = 0;
+		    ESL_ALLOC(tight_kmin, sizeof(int) * (sq->L + 1));
+		    ESL_ALLOC(tight_kmax, sizeof(int) * (sq->L + 1));
+		    for(i215 = 1; i215 <= sq->L; i215++) {
+		      int a = p7_kmin[i215], b = p7_kmax[i215];
+		      int kk = wv_i2k[i215];
+		      km_totw += (b - a + 1);
+		      if(kk < 1) { tight_kmin[i215] = a; tight_kmax[i215] = b; tight_totw += (b - a + 1); continue; }
+		      if(kk < a) kk = a; else if(kk > b) kk = b;   /* clamp i2k into kmerchain band */
+		      int Nrow = p215_pernode ? (cm->p7_cm_nodepad[kk] + cm->p7bpad) : p215_N;
+		      int c = kk - Nrow; if(c < a) c = a;          /* bands_2 = min(bands_0, i2k+/-N) */
+		      int d = kk + Nrow; if(d > b) d = b;
+		      tight_kmin[i215] = c; tight_kmax[i215] = d;
+		      tight_totw += (d - c + 1);
+		    }
+		    t_kmin = tight_kmin; t_kmax = tight_kmax;
+		    fprintf(stderr, "#T215 seq=%s M=%d L=%d mode=%s N=%d km_totw=%ld tight_totw=%ld ratio=%.4f\n",
+			    sq->name, M215, (int)sq->L, p215_pernode ? "pernode" : "const", p215_N,
+			    km_totw, tight_totw, km_totw > 0 ? (double)tight_totw/(double)km_totw : 1.0);
+		  } else {
+		    fprintf(stderr, "#T215 seq=%s WV_FAILED status=%d; NO tightening applied\n", sq->name, status215);
+		  }
+		  if(zero_pad) free(zero_pad);
+		  if(wv_i2k)   free(wv_i2k);
+		  if(wv_kmin)  free(wv_kmin);
+		  if(wv_kmax)  free(wv_kmax);
+		}
+	      }
+	    }
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
 	    struct timespec _ta_cp9, _tb_cp9;
 	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
-	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
+	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, t_kmin, t_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
 					     cm->maxtau, 0, 0, NULL);
@@ -710,6 +773,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
 	    _st059_c_s = _cp9_s; /* brief 26_0628-059: stage (c) band construction = HMM-band -> CM v/j-band conversion */
 	    fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
+	    if(tight_kmin) free(tight_kmin);
+	    if(tight_kmax) free(tight_kmax);
 	  }
 	  else {
 	    /* Viterbi found no path or error; fall back to standard cp9 bands */
