@@ -3439,6 +3439,18 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   }
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cp9 is NULL (pass_idx %d).", pass_idx);
 
+  /* Brief 26_0430-215: env-gated DIRECT p7->cp9 band inversion, bypassing the
+   * numerically-fragile CP9 F/B posterior (which collapses ALL per-node bands
+   * to -1 on a tight band -- see brief 187 comment below). Mirrors the robust
+   * HMM-path band conversion (p7_kbands2gbands). Uses p7bands_to_cp9bands with
+   * pocc=NULL (extent-based). Test path for whether a tightened band can drive
+   * a valid CM alignment without the F/B collapse. */
+  if(getenv("P215_DIRECT") != NULL) {
+    status = p7bands_to_cp9bands(cm, errbuf, kmin, kmax, L, cm->cp9b, i0, j0, pass_idx, NULL, 0);
+    if(ret_Mb != NULL) *ret_Mb = 0.;
+    return status;
+  }
+
   if(do_trunc) {
     /* brief 26_0430-150 (144-B Phase 2): checkpointed banded CP9 float F/B for the
      * truncated path (--p7ibv-ckpt, or CP9_CKPT env). Byte-identical bands in

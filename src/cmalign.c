@@ -1309,6 +1309,62 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    _st061_ab_s = (_st061_tab1.tv_sec - _st061_tab0.tv_sec) + (_st061_tab1.tv_nsec - _st061_tab0.tv_nsec) / 1e9;
 	    clock_gettime(CLOCK_MONOTONIC, &_st061_tc0);
 	  }
+	  /* Brief 26_0430-215: OPTIONAL band tightening, IDENTICAL to cm_alndata.c's
+	   * CM-path tightening, but fed to the ROBUST HMM banded-OA engine below
+	   * instead of cp9_IterateSeq2BandsP7B. Purpose: prove that the SAME tightened
+	   * band that SIGABRTs the CM path still admits a valid begin->end alignment
+	   * here (=> the CM crash is a bug, not an impossibility). Env-gated
+	   * (P215_TIGHTEN_N / P215_TIGHTEN_PERNODE); unset => kmin/kmax untouched. */
+	  if (cm->p7_use_kmerchain && ncells > 0 &&
+	      (getenv("P215_TIGHTEN_N") != NULL || getenv("P215_TIGHTEN_PERNODE") != NULL)) {
+	    int   p215_pernode = (getenv("P215_TIGHTEN_PERNODE") != NULL && atoi(getenv("P215_TIGHTEN_PERNODE")) != 0);
+	    int   p215_N       = (getenv("P215_TIGHTEN_N") != NULL) ? atoi(getenv("P215_TIGHTEN_N")) : -1;
+	    int   have_pernode = (cm->flags & CMH_P7NODEPAD) && cm->p7_cm_nodepad != NULL;
+	    if (!(p215_pernode && !have_pernode)) {
+	      int *wv_i2k = NULL, *wv_kmin = NULL, *wv_kmax = NULL, *zero_pad = NULL;
+	      int *i2k_c = NULL, *nodepad215 = NULL, *b1_kmin = NULL, *b1_kmax = NULL;
+	      int  wv_nc = 0, b1_nc = 0, kk215, ii215, st215, M215 = hmm->M;
+	      ESL_ALLOC(zero_pad, sizeof(int) * (M215 + 1));
+	      for (kk215 = 0; kk215 <= M215; kk215++) zero_pad[kk215] = 0;
+	      st215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->n, zero_pad, do_trunc,
+				     &wv_i2k, &wv_kmin, &wv_kmax, &wv_nc);
+	      if (st215 == eslOK) {
+		ESL_ALLOC(i2k_c, sizeof(int) * (sq->n + 1));
+		for (ii215 = 0; ii215 <= sq->n; ii215++) {
+		  int kv = wv_i2k[ii215];
+		  if (ii215 == 0 || kv == -1) { i2k_c[ii215] = kv; continue; }
+		  if (kv < kmin[ii215]) kv = kmin[ii215]; else if (kv > kmax[ii215]) kv = kmax[ii215];
+		  i2k_c[ii215] = kv;
+		}
+		ESL_ALLOC(nodepad215, sizeof(int) * (M215 + 1));
+		for (kk215 = 0; kk215 <= M215; kk215++)
+		  nodepad215[kk215] = p215_pernode ? (cm->p7_cm_nodepad[kk215] + cm->p7bpad) : p215_N;
+		st215 = p7_pins2bands_nodepad(i2k_c, errbuf, sq->n, M215, nodepad215, 0,
+					      cm->p7_kmerchain_ramp_alpha, &b1_kmin, &b1_kmax, &b1_nc);
+	      }
+	      if (st215 == eslOK && b1_kmin != NULL) {
+		long km_totw = 0, t_totw = 0; int n_empty = 0;
+		for (ii215 = 1; ii215 <= sq->n; ii215++) {
+		  int a = kmin[ii215], b = kmax[ii215];
+		  int lo = ESL_MAX(a, b1_kmin[ii215]), hi = ESL_MIN(b, b1_kmax[ii215]);
+		  if (hi < lo) { lo = a; hi = b; n_empty++; }
+		  km_totw += (b - a + 1); t_totw += (hi - lo + 1);
+		  kmin[ii215] = lo; kmax[ii215] = hi;   /* tighten in place */
+		}
+		fprintf(stderr, "#T215H seq=%s M=%d L=%d mode=%s N=%d km_totw=%ld tight_totw=%ld ratio=%.4f n_empty=%d\n",
+			sq->name, M215, (int) sq->n, p215_pernode ? "pernode" : "const", p215_N,
+			km_totw, t_totw, km_totw > 0 ? (double) t_totw / (double) km_totw : 1.0, n_empty);
+	      }
+	      if (zero_pad)   free(zero_pad);
+	      if (wv_i2k)     free(wv_i2k);
+	      if (wv_kmin)    free(wv_kmin);
+	      if (wv_kmax)    free(wv_kmax);
+	      if (i2k_c)      free(i2k_c);
+	      if (nodepad215) free(nodepad215);
+	      if (b1_kmin)    free(b1_kmin);
+	      if (b1_kmax)    free(b1_kmax);
+	    }
+	  }
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 	  if (_st061_on) {
