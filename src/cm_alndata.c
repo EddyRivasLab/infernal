@@ -729,12 +729,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  int  *wv_i2k = NULL, *wv_kmin = NULL, *wv_kmax = NULL, *zero_pad = NULL;
 		  int  *i2k_c  = NULL, *nodepad215 = NULL, *b1_kmin = NULL, *b1_kmax = NULL;
 		  int   wv_ncells = 0, b1_ncells = 0, k215, i215, status215, M215 = cm->fp7->M;
+		  struct timespec _twv0, _twv1;
 		  ESL_ALLOC(zero_pad, sizeof(int) * (M215 + 1));
 		  for(k215 = 0; k215 <= M215; k215++) zero_pad[k215] = 0;
 		  /* (2) exact Viterbi MAP trace i2k (unbounded; Phase B replaces this
 		   *     with a band-bounded kernel -- cost irrelevant to the accuracy gate). */
+		  clock_gettime(CLOCK_MONOTONIC, &_twv0);
 		  status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
 					     &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);
+		  clock_gettime(CLOCK_MONOTONIC, &_twv1);
+		  fprintf(stderr, "#T215_WVTIME seq=%s M=%d L=%d wv_s=%.6f\n", sq->name, M215, (int)sq->L,
+			  (_twv1.tv_sec - _twv0.tv_sec) + (_twv1.tv_nsec - _twv0.tv_nsec)/1e9);
 		  if(status215 == eslOK) {
 		    /* (2b) CLAMP each pinned i2k[i] into kmerchain's [kmin,kmax] (mimics a
 		     *      band-bounded Viterbi -- the bounded MAP pin lies in bands_0). */
@@ -759,14 +764,21 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		    /* (4) bands_2 = per-row min(bands_0, bands_1). max()/min() of two monotone
 		     *     bands stays monotone; a disjoint row (rare) falls back to kmerchain. */
 		    long km_totw = 0, tight_totw = 0; int n_empty = 0;
+		    int p215_pure = (getenv("P215_PURE") != NULL);  /* brief 215: pure Viterbi band (no kmerchain intersection) */
 		    ESL_ALLOC(tight_kmin, sizeof(int) * (sq->L + 1));
 		    ESL_ALLOC(tight_kmax, sizeof(int) * (sq->L + 1));
-		    tight_kmin[0] = p7_kmin[0]; tight_kmax[0] = p7_kmax[0];
+		    tight_kmin[0] = p215_pure ? b1_kmin[0] : p7_kmin[0];
+		    tight_kmax[0] = p215_pure ? b1_kmax[0] : p7_kmax[0];
 		    for(i215 = 1; i215 <= sq->L; i215++) {
 		      int a = p7_kmin[i215], b = p7_kmax[i215];
-		      int lo = ESL_MAX(a, b1_kmin[i215]);
-		      int hi = ESL_MIN(b, b1_kmax[i215]);
-		      if(hi < lo) { lo = a; hi = b; n_empty++; }  /* disjoint -> kmerchain fallback */
+		      int lo, hi;
+		      if(p215_pure) {                               /* Eric's proposal: pure Viterbi+/-N band -> CP9 F/B */
+			lo = b1_kmin[i215]; hi = b1_kmax[i215];
+		      } else {                                      /* bands_2 = min(bands_0, bands_1) */
+			lo = ESL_MAX(a, b1_kmin[i215]);
+			hi = ESL_MIN(b, b1_kmax[i215]);
+			if(hi < lo) { lo = a; hi = b; n_empty++; }  /* disjoint -> kmerchain fallback */
+		      }
 		      tight_kmin[i215] = lo; tight_kmax[i215] = hi;
 		      km_totw += (b - a + 1); tight_totw += (hi - lo + 1);
 		    }
