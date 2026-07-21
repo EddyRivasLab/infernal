@@ -734,11 +734,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  for(k215 = 0; k215 <= M215; k215++) zero_pad[k215] = 0;
 		  /* (2) exact Viterbi MAP trace i2k (unbounded; Phase B replaces this
 		   *     with a band-bounded kernel -- cost irrelevant to the accuracy gate). */
+		  int p215_bounded = (getenv("P215_BOUNDED") != NULL);  /* brief 215 Phase B: Viterbi bounded to kmerchain band */
 		  clock_gettime(CLOCK_MONOTONIC, &_twv0);
-		  status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
-					     &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);
+		  if(p215_bounded)
+		    status215 = p7_Seq2BandsIBV_extband(cm, errbuf, sq->dsq, sq->L, do_trunc,
+							p7_kmin, p7_kmax, &wv_i2k);  /* O(L*bandwidth) */
+		  else
+		    status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
+					       &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);  /* unbounded O(L*M) */
 		  clock_gettime(CLOCK_MONOTONIC, &_twv1);
-		  fprintf(stderr, "#T215_WVTIME seq=%s M=%d L=%d wv_s=%.6f\n", sq->name, M215, (int)sq->L,
+		  fprintf(stderr, "#T215_WVTIME seq=%s M=%d L=%d bounded=%d wv_s=%.6f\n", sq->name, M215, (int)sq->L, p215_bounded,
 			  (_twv1.tv_sec - _twv0.tv_sec) + (_twv1.tv_nsec - _twv0.tv_nsec)/1e9);
 		  if(status215 == eslOK) {
 		    /* (2b) CLAMP each pinned i2k[i] into kmerchain's [kmin,kmax] (mimics a

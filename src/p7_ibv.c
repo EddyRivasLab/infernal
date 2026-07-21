@@ -767,6 +767,199 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 }
 
 
+/* Function: p7_Seq2BandsIBV_extband()
+ * Incept:   brief 26_0430-215 (2026-07-21)
+ *
+ * Purpose:  Flat banded Viterbi MAP-trace deriver, BOUNDED per row to an
+ *           external band [ext_kmin[i], ext_kmax[i]] (kmerchain's band).
+ *           Returns ONLY the argmax-k MAP trace i2k (the tightening rebuilds
+ *           the band from i2k +/- N). Cost O(L * bandwidth) instead of the
+ *           unbounded O(L*M) -- the whole point of brief 215's Phase B.
+ *
+ *           Correctness: forward and backward use FULL O(L*k_stride) pools
+ *           initialized to NEG_INF; only the band cells are written, so any
+ *           out-of-band read returns NEG_INF (this is why the shared
+ *           ibv_fwd_row_b / ibv_bwd_row_b primitives -- whose (k-1)>=k_lo /
+ *           (k+1)<=k_hi guards use the CURRENT row's band and would clip valid
+ *           predecessors from the adjacent row's band -- are NOT reused; the
+ *           row recursions are inlined here without those guards). Rows 1 and L
+ *           are computed full-width to keep the begin (row-0 glocal D-cascade /
+ *           trunc begin_milli) and end anchors exact, mirroring the unbounded
+ *           deriver's kmin[1]/kmin[L]=[1,M] forcing.
+ *
+ *           i2k[i] = argmax over k in [ext_kmin[i],ext_kmax[i]] of the EMITTING
+ *           through-score max(FM[i][k]+BM[i][k], FI[i][k]+BI[i][k]) -- identical
+ *           semantics to ibv_through_scan's k_argmax (delete cells excluded).
+ */
+int
+p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+                        int do_trunc, const int *ext_kmin, const int *ext_kmax,
+                        int **ret_i2k)
+{
+  int      status;
+  P7_HMM  *hmm = NULL;
+  int      M, K, i, k;
+  size_t   k_stride, pool_cells;
+  float   *MM_t=NULL,*MI_t=NULL,*MD_t=NULL,*IM_t=NULL,*II_t=NULL,*DM_t=NULL,*DD_t=NULL;
+  float   *emit_pool=NULL; float **emit_table=NULL; float *begin_milli=NULL;
+  float   *FM=NULL,*FI=NULL,*FD=NULL,*BM=NULL,*BI=NULL,*BD=NULL;
+  int     *i2k=NULL;
+
+  if (cm == NULL || cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband: cm->fp7 is NULL");
+  hmm = cm->fp7; M = hmm->M; K = hmm->abc->K;
+  if (L < 1 || M < 1) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband: bad L=%d M=%d", L, M);
+  if (ext_kmin == NULL || ext_kmax == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband: ext band is NULL");
+
+  k_stride   = ((size_t)(M + 4) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
+  pool_cells = (size_t)(L + 1) * k_stride;
+
+  if ((status = ibv_alloc_floats(k_stride, &MM_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &MI_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &MD_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &IM_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &II_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &DM_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &DD_t)) != eslOK) goto ERROR;
+  for (k = 0; k <= M; k++) {
+    MM_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_MM]); MI_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_MI]);
+    MD_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_MD]); IM_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_IM]);
+    II_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_II]); DM_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_DM]);
+    DD_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_DD]);
+  }
+  for (k = M + 1; k < (int) k_stride; k++) { MM_t[k]=MI_t[k]=MD_t[k]=IM_t[k]=II_t[k]=DM_t[k]=DD_t[k]=P7IBV_NEG_INF; }
+
+  if ((status = ibv_alloc_floats((size_t)(K + 1) * k_stride, &emit_pool)) != eslOK) goto ERROR;
+  ESL_ALLOC(emit_table, sizeof(float *) * (K + 1));
+  for (int xt = 0; xt <= K; xt++) emit_table[xt] = emit_pool + (size_t) xt * k_stride;
+  for (int xt = 0; xt < K; xt++) {
+    float *row = emit_table[xt];
+    for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
+    for (k = M + 1; k < (int) k_stride; k++) row[k] = P7IBV_NEG_INF;
+  }
+  for (k = 0; k < (int) k_stride; k++) emit_table[K][k] = 0.0f;
+
+  if (do_trunc) {
+    float *occ = NULL; double Z = 0.0;
+    ESL_ALLOC(occ, sizeof(float) * (M + 1));
+    if ((status = p7_hmm_CalculateOccupancy(hmm, occ, NULL)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 1; k <= M; k++) Z += (double) occ[k] * (double) (M - k + 1);
+    if ((status = ibv_alloc_floats(k_stride, &begin_milli)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 0; k < (int) k_stride; k++) begin_milli[k] = P7IBV_NEG_INF;
+    for (k = 1; k <= M; k++) { double b=(Z>0.0&&occ[k]>0.0)?(double)occ[k]/Z:0.0; begin_milli[k]=(b>0.0)?(float)(P7IBV_INTSCALE*(log(b)/M_LN2)):P7IBV_NEG_INF; }
+    free(occ);
+  }
+
+  if ((status = ibv_alloc_floats(pool_cells, &FM)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(pool_cells, &FI)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(pool_cells, &FD)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(pool_cells, &BM)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(pool_cells, &BI)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(pool_cells, &BD)) != eslOK) goto ERROR;
+  for (size_t c = 0; c < pool_cells; c++) { FM[c]=FI[c]=FD[c]=BM[c]=BI[c]=BD[c]=P7IBV_NEG_INF; }
+
+#define FMr(r) (FM + (size_t)(r) * k_stride)
+#define FIr(r) (FI + (size_t)(r) * k_stride)
+#define FDr(r) (FD + (size_t)(r) * k_stride)
+#define BMr(r) (BM + (size_t)(r) * k_stride)
+#define BIr(r) (BI + (size_t)(r) * k_stride)
+#define BDr(r) (BD + (size_t)(r) * k_stride)
+#define BAND_LO(r) (((r) <= 1 || (r) >= L) ? 1 : ESL_MAX(1, ext_kmin[r]))
+#define BAND_HI(r) (((r) <= 1 || (r) >= L) ? M : ESL_MIN(M, ext_kmax[r]))
+
+  /* Row 0 forward (glocal begin: M_0 + D-cascade, full width). */
+  if (! do_trunc) {
+    float *fm0=FMr(0), *fd0=FDr(0);
+    fm0[0]=0.0f;
+    for (k=1;k<=M;k++){ float a=fm0[k-1]+MD_t[k-1]; float b=fd0[k-1]+DD_t[k-1]; fd0[k]=(a>b)?a:b; }
+  }
+  /* Forward rows, banded. */
+  for (i = 1; i <= L; i++) {
+    int lo=BAND_LO(i), hi=BAND_HI(i);
+    int xt=((int)dsq[i]>=0 && (int)dsq[i]<K)?(int)dsq[i]:K;
+    const float *er=emit_table[xt];
+    const float *bm1=(do_trunc && i==1)?begin_milli:NULL;
+    float *fmp=FMr(i-1),*fip=FIr(i-1),*fdp=FDr(i-1);
+    float *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i);
+    for (k=lo;k<=hi;k++){
+      float a=fmp[k]+MI_t[k], b=fip[k]+II_t[k]; float cI=(a>b)?a:b;
+      float cM=P7IBV_NEG_INF;
+      if (k>=1){ float m=fmp[k-1]+MM_t[k-1]; float bb=fip[k-1]+IM_t[k-1]; if(bb>m)m=bb; float c=fdp[k-1]+DM_t[k-1]; if(c>m)m=c; cM=m+er[k]; }
+      if (bm1 && k>=1){ float bc=bm1[k]+er[k]; if(bc>cM)cM=bc; }
+      fmc[k]=cM; fic[k]=cI;
+    }
+    for (k=lo;k<=hi;k++){
+      if (k>=1){ float a=fmc[k-1]+MD_t[k-1]; float b=fdc[k-1]+DD_t[k-1]; fdc[k]=(a>b)?a:b; }
+    }
+  }
+
+  /* Backward row L terminal (full width). */
+  { float *bm=BMr(L),*bi=BIr(L),*bd=BDr(L);
+    if (do_trunc){
+      for (k=1;k<=M;k++){ bm[k]=0.0f; bi[k]=P7IBV_NEG_INF; }
+      for (k=M;k>=1;k--){ if(k==M) bd[k]=0.0f; else bd[k]=DD_t[k]+bd[k+1]; }
+    } else {
+      for (k=M;k>=1;k--){
+        if (k==M){ bm[k]=0.0f; bi[k]=0.0f; bd[k]=0.0f; }
+        else { float bv=bd[k+1]; bm[k]=MD_t[k]+bv; bd[k]=DD_t[k]+bv; bi[k]=P7IBV_NEG_INF; }
+      }
+    }
+  }
+  /* Backward rows L-1..0, banded (rows 0,1 full width). */
+  for (i=L-1;i>=0;i--){
+    int lo=BAND_LO(i), hi=BAND_HI(i);
+    int xtn=((int)dsq[i+1]>=0 && (int)dsq[i+1]<K)?(int)dsq[i+1]:K;
+    const float *ern=emit_table[xtn];
+    float *bmn=BMr(i+1),*bin=BIr(i+1);
+    float *bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
+    for (k=hi;k>=lo;k--){
+      float bv_m=(k+1<=M)?(bmn[k+1]+ern[k+1]):P7IBV_NEG_INF;
+      float bv_d=(k+1<=M)?bdc[k+1]:P7IBV_NEG_INF;
+      float a=DM_t[k]+bv_m, b=DD_t[k]+bv_d; bdc[k]=(a>b)?a:b;
+    }
+    for (k=lo;k<=hi;k++){
+      float cM=P7IBV_NEG_INF,cI=P7IBV_NEG_INF;
+      if (k+1<=M){ float bv_m=bmn[k+1]+ern[k+1]; float a=MM_t[k]+bv_m; if(a>cM)cM=a; float b=IM_t[k]+bv_m; if(b>cI)cI=b; }
+      { float bv_i=bin[k]; float a=MI_t[k]+bv_i; if(a>cM)cM=a; float b=II_t[k]+bv_i; if(b>cI)cI=b; }
+      if (k+1<=M){ float bv_d=bdc[k+1]; float a=MD_t[k]+bv_d; if(a>cM)cM=a; }
+      bmc[k]=cM; bic[k]=cI;
+    }
+  }
+
+  /* i2k: emitting argmax within the band. */
+  ESL_ALLOC(i2k, sizeof(int)*(L+1));
+  esl_vec_ISet(i2k, L+1, -1);
+  for (i=1;i<=L;i++){
+    int lo=BAND_LO(i), hi=BAND_HI(i);
+    float best=P7IBV_NEG_INF; int ka=-1;
+    float *fmc=FMr(i),*fic=FIr(i),*bmc=BMr(i),*bic=BIr(i);
+    for (k=lo;k<=hi;k++){
+      float te=fmc[k]+bmc[k]; { float ti=fic[k]+bic[k]; if(ti>te)te=ti; }
+      if (te>=P7IBV_HALF_NEG_INF && te>best){ best=te; ka=k; }
+    }
+    i2k[i]=ka;
+  }
+  *ret_i2k=i2k; i2k=NULL;
+  status=eslOK;
+
+#undef FMr
+#undef FIr
+#undef FDr
+#undef BMr
+#undef BIr
+#undef BDr
+#undef BAND_LO
+#undef BAND_HI
+ ERROR:
+  if (MM_t) free(MM_t); if (MI_t) free(MI_t); if (MD_t) free(MD_t);
+  if (IM_t) free(IM_t); if (II_t) free(II_t); if (DM_t) free(DM_t); if (DD_t) free(DD_t);
+  if (emit_pool) free(emit_pool); if (emit_table) free(emit_table); if (begin_milli) free(begin_milli);
+  if (FM) free(FM); if (FI) free(FI); if (FD) free(FD);
+  if (BM) free(BM); if (BI) free(BI); if (BD) free(BD);
+  if (i2k) free(i2k);
+  return status;
+}
+
+
 /* ---------------------------------------------------------------------------
  * C2: D&C band deriver -- p7_Seq2BandsIBV_dnc
  * ---------------------------------------------------------------------------
