@@ -735,16 +735,41 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  /* (2) exact Viterbi MAP trace i2k (unbounded; Phase B replaces this
 		   *     with a band-bounded kernel -- cost irrelevant to the accuracy gate). */
 		  int p215_bounded = (getenv("P215_BOUNDED") != NULL);  /* brief 215 Phase B: Viterbi bounded to kmerchain band */
+		  /* brief 26_0430-216 Phase 3: the compact O(L*bandwidth)-storage kernel is now
+		   * the default under P215_BOUNDED (validated byte-identical i2k vs the flat
+		   * oracle on tRNA/5S/RNaseP/SSU/LSU/norovirus/dengue, both do_trunc branches,
+		   * 273 sequences, 0 mismatches -- see brief 216 summary).  P216_FLAT=1 is an
+		   * escape hatch back to the O(L*M) flat oracle (diagnostic/rollback only; it
+		   * OOMs or is impractically slow at genome scale, e.g. sarscov2 M~30kb).
+		   * P216_VALIDATE=1 runs BOTH kernels and diffs i2k (bring-up / spot-check). */
+		  int p216_flat     = (getenv("P216_FLAT")     != NULL);
+		  int p216_validate = (getenv("P216_VALIDATE") != NULL);
 		  clock_gettime(CLOCK_MONOTONIC, &_twv0);
-		  if(p215_bounded)
+		  if(p215_bounded && p216_flat)
 		    status215 = p7_Seq2BandsIBV_extband(cm, errbuf, sq->dsq, sq->L, do_trunc,
-							p7_kmin, p7_kmax, &wv_i2k);  /* O(L*bandwidth) */
+							p7_kmin, p7_kmax, &wv_i2k);  /* O(L*M) flat oracle (rollback) */
+		  else if(p215_bounded)
+		    status215 = p7_Seq2BandsIBV_extband_compact(cm, errbuf, sq->dsq, sq->L, do_trunc,
+							p7_kmin, p7_kmax, &wv_i2k);  /* O(L*bandwidth), compact storage */
 		  else
 		    status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
 					       &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);  /* unbounded O(L*M) */
 		  clock_gettime(CLOCK_MONOTONIC, &_twv1);
 		  fprintf(stderr, "#T215_WVTIME seq=%s M=%d L=%d bounded=%d wv_s=%.6f\n", sq->name, M215, (int)sq->L, p215_bounded,
 			  (_twv1.tv_sec - _twv0.tv_sec) + (_twv1.tv_nsec - _twv0.tv_nsec)/1e9);
+		  if(status215 == eslOK && p215_bounded && p216_validate) {
+		    int  *oracle_i2k = NULL;
+		    int   ostat = p7_Seq2BandsIBV_extband(cm, errbuf, sq->dsq, sq->L, do_trunc, p7_kmin, p7_kmax, &oracle_i2k);
+		    if(ostat == eslOK) {
+		      int ndiff = 0, i216;
+		      for(i216 = 0; i216 <= sq->L; i216++) if(oracle_i2k[i216] != wv_i2k[i216]) ndiff++;
+		      fprintf(stderr, "#P216_VALIDATE seq=%s L=%d ndiff=%d %s\n", sq->name, (int)sq->L, ndiff,
+			      ndiff == 0 ? "MATCH" : "MISMATCH");
+		      free(oracle_i2k);
+		    } else {
+		      fprintf(stderr, "#P216_VALIDATE seq=%s ORACLE_FAILED status=%d\n", sq->name, ostat);
+		    }
+		  }
 		  if(status215 == eslOK) {
 		    /* (2b) CLAMP each pinned i2k[i] into kmerchain's [kmin,kmax] (mimics a
 		     *      band-bounded Viterbi -- the bounded MAP pin lies in bands_0). */
