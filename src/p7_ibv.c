@@ -961,6 +961,329 @@ p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
 
 
 /* ---------------------------------------------------------------------------
+ * brief 26_0430-216: compact O(L*bandwidth) storage version of
+ * p7_Seq2BandsIBV_extband() -- must return byte-identical i2k (the oracle
+ * above is the correctness reference).
+ * ---------------------------------------------------------------------------
+ *
+ * The oracle's full O(L*k_stride) pools give every out-of-band read an
+ * implicit NEG_INF for free (the pool is bulk NEG_INF-initialized once, and
+ * only [ext_kmin[i],ext_kmax[i]] of each row is ever written afterward).
+ * Compact storage keeps only the written cells, so every read of a
+ * neighboring row -- or of the same row's just-written prefix, for the
+ * delete left-to-right fill -- must instead be an EXPLICIT bounds check
+ * against that row's own recorded [lo,hi] (ibv_compact_rd()).  This
+ * reproduces the exact same value (real cell or NEG_INF) the oracle's
+ * pool-read would have given, so the recursion is bit-for-bit identical;
+ * only the storage discipline changes.  This is why the k-banded D&C's
+ * ibv_fwd_row_b/ibv_bwd_row_b are NOT reused here (per brief 215's warning):
+ * those guard against the CURRENT row's own [k_lo,k_hi], which is only sound
+ * under the D&C's monotone-k invariant -- not for an arbitrary external band.
+ *
+ * Forward keeps all L rows compactly in one ragged arena (the i2k pass needs
+ * FM[i]/FI[i] paired with BM[i]/BI[i]).  Backward uses 2 rolling row buffers
+ * sized to the widest row seen (rows 1/L are always full [1,M], so that's the
+ * practical bound) and computes i2k during the backward sweep as it goes --
+ * mirroring the memory-lean 2-row technique of the older p7_Seq2BandsIBV()
+ * (not this file's extband(), which uses a separate full-pool third pass).
+ *
+ * Row 0 (forward only, glocal begin) is a one-off, not part of the ragged
+ * arena: FM(0)[k]=0 only at k=0 (NEG_INF elsewhere -- never written past k=0
+ * in the oracle either), FD(0)[k] is the real D-cascade for k=1..M (NEG_INF
+ * at k=0), FI(0)[k] is NEG_INF everywhere (never written by the oracle).
+ * do_trunc leaves row 0 entirely NEG_INF (begins enter via begin_milli at row
+ * 1 instead), matching the oracle's "row 0 all NEG_INF" trunc comment.
+ */
+static inline float
+ibv_compact_rd(const float *arr, int lo, int hi, int k)
+{
+  return (k < lo || k > hi) ? P7IBV_NEG_INF : arr[k - lo];
+}
+
+static inline void
+ibv_compact_band(int i, int L, int M, const int *ext_kmin, const int *ext_kmax, int *ret_lo, int *ret_hi)
+{
+  if (i <= 1 || i >= L) { *ret_lo = 1; *ret_hi = M; }
+  else {
+    int lo = ext_kmin[i]; if (lo < 1) lo = 1;
+    int hi = ext_kmax[i]; if (hi > M) hi = M;
+    *ret_lo = lo; *ret_hi = hi;
+  }
+}
+
+static inline float
+ibv_compact_row0_fm(int do_trunc, int k)
+{
+  return (!do_trunc && k == 0) ? 0.0f : P7IBV_NEG_INF;
+}
+
+static inline float
+ibv_compact_row0_fd(int do_trunc, int k, const float *fd0)
+{
+  return (!do_trunc && k >= 1) ? fd0[k - 1] : P7IBV_NEG_INF;
+}
+
+int
+p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+                                int do_trunc, const int *ext_kmin, const int *ext_kmax,
+                                int **ret_i2k)
+{
+  int      status;
+  P7_HMM  *hmm = NULL;
+  int      M, K, i, k;
+  size_t   k_stride;
+  float   *MM_t=NULL,*MI_t=NULL,*MD_t=NULL,*IM_t=NULL,*II_t=NULL,*DM_t=NULL,*DD_t=NULL;
+  float   *emit_pool=NULL; float **emit_table=NULL; float *begin_milli=NULL;
+  float   *fd0 = NULL;                       /* forward row-0 D-cascade: fd0[k-1] = FD(0)[k], k=1..M */
+  int     *rlo=NULL, *rhi=NULL;              /* per-row [lo,hi]: fwd uses i=1..L, bwd uses i=0..L */
+  size_t  *fbase=NULL;                       /* forward ragged-arena row offsets, i=1..L */
+  float   *FMc=NULL, *FIc=NULL, *FDc=NULL;   /* forward ragged arena (all L rows, compact) */
+  float   *BM_a=NULL,*BM_b=NULL,*BI_a=NULL,*BI_b=NULL,*BD_a=NULL,*BD_b=NULL; /* backward 2-row rolling */
+  int     *i2k=NULL;
+  size_t   total_fwd, max_bw;
+
+  if (cm == NULL || cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband_compact: cm->fp7 is NULL");
+  hmm = cm->fp7; M = hmm->M; K = hmm->abc->K;
+  if (L < 1 || M < 1) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband_compact: bad L=%d M=%d", L, M);
+  if (ext_kmin == NULL || ext_kmax == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband_compact: ext band is NULL");
+
+  k_stride = ((size_t)(M + 4) + (P7IBV_K_ALIGN - 1)) & ~(size_t)(P7IBV_K_ALIGN - 1);
+
+  if ((status = ibv_alloc_floats(k_stride, &MM_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &MI_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &MD_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &IM_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &II_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &DM_t)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(k_stride, &DD_t)) != eslOK) goto ERROR;
+  for (k = 0; k <= M; k++) {
+    MM_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_MM]); MI_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_MI]);
+    MD_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_MD]); IM_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_IM]);
+    II_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_II]); DM_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_DM]);
+    DD_t[k]=p7ibv_lod_milli(hmm->t[k][p7H_DD]);
+  }
+  for (k = M + 1; k < (int) k_stride; k++) { MM_t[k]=MI_t[k]=MD_t[k]=IM_t[k]=II_t[k]=DM_t[k]=DD_t[k]=P7IBV_NEG_INF; }
+
+  if ((status = ibv_alloc_floats((size_t)(K + 1) * k_stride, &emit_pool)) != eslOK) goto ERROR;
+  ESL_ALLOC(emit_table, sizeof(float *) * (K + 1));
+  for (int xt = 0; xt <= K; xt++) emit_table[xt] = emit_pool + (size_t) xt * k_stride;
+  for (int xt = 0; xt < K; xt++) {
+    float *row = emit_table[xt];
+    for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
+    for (k = M + 1; k < (int) k_stride; k++) row[k] = P7IBV_NEG_INF;
+  }
+  for (k = 0; k < (int) k_stride; k++) emit_table[K][k] = 0.0f;
+
+  if (do_trunc) {
+    float *occ = NULL; double Z = 0.0;
+    ESL_ALLOC(occ, sizeof(float) * (M + 1));
+    if ((status = p7_hmm_CalculateOccupancy(hmm, occ, NULL)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 1; k <= M; k++) Z += (double) occ[k] * (double) (M - k + 1);
+    if ((status = ibv_alloc_floats(k_stride, &begin_milli)) != eslOK) { free(occ); goto ERROR; }
+    for (k = 0; k < (int) k_stride; k++) begin_milli[k] = P7IBV_NEG_INF;
+    for (k = 1; k <= M; k++) { double b=(Z>0.0&&occ[k]>0.0)?(double)occ[k]/Z:0.0; begin_milli[k]=(b>0.0)?(float)(P7IBV_INTSCALE*(log(b)/M_LN2)):P7IBV_NEG_INF; }
+    free(occ);
+  } else {
+    /* row-0 D-cascade: fd0[k-1] holds FD(0)[k] for k=1..M.  FM(0)[k-1] is 0
+     * only when k-1==0 (the B-state), else NEG_INF -- so the recursion below
+     * needs no running fm value, only the k-1==0 special case. */
+    float fd_prev;
+    ESL_ALLOC(fd0, sizeof(float) * M);
+    fd_prev = P7IBV_NEG_INF;   /* FD(0)[0], never touched by the oracle either */
+    for (k = 1; k <= M; k++) {
+      float a = ibv_compact_row0_fm(do_trunc, k - 1) + MD_t[k - 1];
+      float b = fd_prev + DD_t[k - 1];
+      float v = (a > b) ? a : b;
+      fd0[k - 1] = v;
+      fd_prev = v;
+    }
+  }
+
+  /* Shared per-row [lo,hi]: i=1..L used by forward, i=0..L used by backward. */
+  ESL_ALLOC(rlo, sizeof(int) * (L + 1));
+  ESL_ALLOC(rhi, sizeof(int) * (L + 1));
+  ESL_ALLOC(fbase, sizeof(size_t) * (L + 1));
+  total_fwd = 0; max_bw = 0;
+  for (i = 0; i <= L; i++) {
+    int bw_i;
+    ibv_compact_band(i, L, M, ext_kmin, ext_kmax, &rlo[i], &rhi[i]);
+    bw_i = rhi[i] - rlo[i] + 1; if (bw_i < 0) bw_i = 0;   /* defensive: an empty external band shouldn't occur */
+    if ((size_t) bw_i > max_bw) max_bw = (size_t) bw_i;
+    if (i >= 1) { fbase[i] = total_fwd; total_fwd += (size_t) bw_i; }
+  }
+
+  if ((status = ibv_alloc_floats(total_fwd, &FMc)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(total_fwd, &FIc)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(total_fwd, &FDc)) != eslOK) goto ERROR;
+
+  /* Forward rows 1..L, banded; row 0 handled via the row0_* helpers above. */
+  for (i = 1; i <= L; i++) {
+    int   lo = rlo[i], hi = rhi[i];
+    float *fmc = FMc + fbase[i], *fic = FIc + fbase[i], *fdc = FDc + fbase[i];
+    int   xt = ((int) dsq[i] >= 0 && (int) dsq[i] < K) ? (int) dsq[i] : K;
+    const float *er  = emit_table[xt];
+    const float *bm1 = (do_trunc && i == 1) ? begin_milli : NULL;
+    int   prev_is_row0 = (i == 1);
+    int   lo_p = 0, hi_p = 0;
+    float *fmp = NULL, *fip = NULL, *fdp = NULL;
+    if (!prev_is_row0) { lo_p = rlo[i-1]; hi_p = rhi[i-1]; fmp = FMc + fbase[i-1]; fip = FIc + fbase[i-1]; fdp = FDc + fbase[i-1]; }
+
+    for (k = lo; k <= hi; k++) {
+      float fmp_k, fip_k, a, b, cI, cM;
+      if (prev_is_row0) { fmp_k = ibv_compact_row0_fm(do_trunc, k); fip_k = P7IBV_NEG_INF; }
+      else              { fmp_k = ibv_compact_rd(fmp, lo_p, hi_p, k); fip_k = ibv_compact_rd(fip, lo_p, hi_p, k); }
+      a = fmp_k + MI_t[k]; b = fip_k + II_t[k];
+      cI = (a > b) ? a : b;
+      cM = P7IBV_NEG_INF;
+      if (k >= 1) {
+        float fmp_km1, fip_km1, fdp_km1, m, bb, c;
+        if (prev_is_row0) {
+          fmp_km1 = ibv_compact_row0_fm(do_trunc, k - 1);
+          fip_km1 = P7IBV_NEG_INF;
+          fdp_km1 = ibv_compact_row0_fd(do_trunc, k - 1, fd0);
+        } else {
+          fmp_km1 = ibv_compact_rd(fmp, lo_p, hi_p, k - 1);
+          fip_km1 = ibv_compact_rd(fip, lo_p, hi_p, k - 1);
+          fdp_km1 = ibv_compact_rd(fdp, lo_p, hi_p, k - 1);
+        }
+        m  = fmp_km1 + MM_t[k - 1];
+        bb = fip_km1 + IM_t[k - 1]; if (bb > m) m = bb;
+        c  = fdp_km1 + DM_t[k - 1]; if (c > m) m = c;
+        cM = m + er[k];
+        if (bm1 != NULL) { float bc = bm1[k] + er[k]; if (bc > cM) cM = bc; }
+      }
+      fmc[k - lo] = cM; fic[k - lo] = cI;
+    }
+    for (k = lo; k <= hi; k++) {
+      if (k >= 1) {   /* lo>=1 always for i>=1, so this always fires (matches oracle, no else) */
+        float fmc_km1 = ibv_compact_rd(fmc, lo, hi, k - 1);
+        float fdc_km1 = ibv_compact_rd(fdc, lo, hi, k - 1);
+        float a = fmc_km1 + MD_t[k - 1], b = fdc_km1 + DD_t[k - 1];
+        fdc[k - lo] = (a > b) ? a : b;
+      }
+    }
+  }
+
+  /* Backward, 2-row rolling compact buffers sized to the widest row (rows
+   * 0/1/L are always full [1,M], so max_bw == M in practice). */
+  if ((status = ibv_alloc_floats(max_bw, &BM_a)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(max_bw, &BM_b)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(max_bw, &BI_a)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(max_bw, &BI_b)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(max_bw, &BD_a)) != eslOK) goto ERROR;
+  if ((status = ibv_alloc_floats(max_bw, &BD_b)) != eslOK) goto ERROR;
+
+  ESL_ALLOC(i2k, sizeof(int) * (L + 1));
+  esl_vec_ISet(i2k, L + 1, -1);
+
+  {
+    float *B_M_prev = BM_a, *B_I_prev = BI_a, *B_D_prev = BD_a;
+    float *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
+    int    lo_prev, hi_prev;
+
+    /* Row L: terminal injection (full width [1,M]). */
+    {
+      int lo = rlo[L], hi = rhi[L];
+      if (do_trunc) {
+        for (k = lo; k <= hi; k++) { B_M_prev[k - lo] = 0.0f; B_I_prev[k - lo] = P7IBV_NEG_INF; }
+        for (k = hi; k >= lo; k--) {
+          if (k == M) B_D_prev[k - lo] = 0.0f;
+          else        B_D_prev[k - lo] = DD_t[k] + B_D_prev[k + 1 - lo];
+        }
+      } else {
+        for (k = hi; k >= lo; k--) {
+          if (k == M) { B_M_prev[k - lo] = 0.0f; B_I_prev[k - lo] = 0.0f; B_D_prev[k - lo] = 0.0f; }
+          else {
+            float bv = B_D_prev[k + 1 - lo];
+            B_M_prev[k - lo] = MD_t[k] + bv;
+            B_D_prev[k - lo] = DD_t[k] + bv;
+            B_I_prev[k - lo] = P7IBV_NEG_INF;
+          }
+        }
+      }
+      lo_prev = lo; hi_prev = hi;
+    }
+
+    /* i2k[L] using forward row L + the terminal backward row just computed. */
+    {
+      int lo = rlo[L], hi = rhi[L];
+      float *fmc = FMc + fbase[L], *fic = FIc + fbase[L];
+      float best = P7IBV_NEG_INF; int ka = -1;
+      for (k = lo; k <= hi; k++) {
+        float te = fmc[k - lo] + B_M_prev[k - lo];
+        float ti = fic[k - lo] + B_I_prev[k - lo]; if (ti > te) te = ti;
+        if (te >= P7IBV_HALF_NEG_INF && te > best) { best = te; ka = k; }
+      }
+      i2k[L] = ka;
+    }
+
+    for (i = L - 1; i >= 0; i--) {
+      int lo = rlo[i], hi = rhi[i];
+      int xtn = ((int) dsq[i+1] >= 0 && (int) dsq[i+1] < K) ? (int) dsq[i+1] : K;
+      const float *ern = emit_table[xtn];
+
+      for (k = hi; k >= lo; k--) {
+        float bv_m = (k + 1 >= lo_prev && k + 1 <= hi_prev) ? (B_M_prev[k + 1 - lo_prev] + ern[k + 1]) : P7IBV_NEG_INF;
+        float bv_d = (k + 1 <= hi) ? B_D_curr[k + 1 - lo] : P7IBV_NEG_INF;
+        float a = DM_t[k] + bv_m, b = DD_t[k] + bv_d;
+        B_D_curr[k - lo] = (a > b) ? a : b;
+      }
+      for (k = lo; k <= hi; k++) {
+        float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+        if (k + 1 >= lo_prev && k + 1 <= hi_prev) {
+          float bv_m = B_M_prev[k + 1 - lo_prev] + ern[k + 1];
+          float a = MM_t[k] + bv_m; if (a > cM) cM = a;
+          float b = IM_t[k] + bv_m; if (b > cI) cI = b;
+        }
+        {
+          float bv_i = (k >= lo_prev && k <= hi_prev) ? B_I_prev[k - lo_prev] : P7IBV_NEG_INF;
+          float a = MI_t[k] + bv_i; if (a > cM) cM = a;
+          float b = II_t[k] + bv_i; if (b > cI) cI = b;
+        }
+        if (k + 1 <= hi) {
+          float bv_d = B_D_curr[k + 1 - lo];
+          float a = MD_t[k] + bv_d; if (a > cM) cM = a;
+        }
+        B_M_curr[k - lo] = cM; B_I_curr[k - lo] = cI;
+      }
+
+      if (i >= 1) {
+        float *fmc = FMc + fbase[i], *fic = FIc + fbase[i];
+        float best = P7IBV_NEG_INF; int ka = -1;
+        for (k = lo; k <= hi; k++) {
+          float te = fmc[k - lo] + B_M_curr[k - lo];
+          float ti = fic[k - lo] + B_I_curr[k - lo]; if (ti > te) te = ti;
+          if (te >= P7IBV_HALF_NEG_INF && te > best) { best = te; ka = k; }
+        }
+        i2k[i] = ka;
+      }
+
+      { float *t; t = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t; }
+      { float *t; t = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t; }
+      { float *t; t = B_D_prev; B_D_prev = B_D_curr; B_D_curr = t; }
+      lo_prev = lo; hi_prev = hi;
+    }
+  }
+
+  *ret_i2k = i2k; i2k = NULL;
+  status = eslOK;
+
+ ERROR:
+  if (MM_t) free(MM_t); if (MI_t) free(MI_t); if (MD_t) free(MD_t);
+  if (IM_t) free(IM_t); if (II_t) free(II_t); if (DM_t) free(DM_t); if (DD_t) free(DD_t);
+  if (emit_pool) free(emit_pool); if (emit_table) free(emit_table); if (begin_milli) free(begin_milli);
+  if (fd0) free(fd0);
+  if (rlo) free(rlo); if (rhi) free(rhi); if (fbase) free(fbase);
+  if (FMc) free(FMc); if (FIc) free(FIc); if (FDc) free(FDc);
+  if (BM_a) free(BM_a); if (BM_b) free(BM_b);
+  if (BI_a) free(BI_a); if (BI_b) free(BI_b);
+  if (BD_a) free(BD_a); if (BD_b) free(BD_b);
+  if (i2k) free(i2k);
+  return status;
+}
+
+
+/* ---------------------------------------------------------------------------
  * C2: D&C band deriver -- p7_Seq2BandsIBV_dnc
  * ---------------------------------------------------------------------------
  *
