@@ -783,9 +783,18 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		    }
 		    /* (3) bands_1 = i2k +/- N via the PRODUCTION pin->band converter (yields a
 		     *     monotone, connected, DP-valid band -- do NOT hand-roll this). */
-		    ESL_ALLOC(nodepad215, sizeof(int) * (M215 + 1));
-		    for(k215 = 0; k215 <= M215; k215++)
-		      nodepad215[k215] = p215_pernode ? (cm->p7_cm_nodepad[k215] + cm->p7bpad) : p215_N;
+		    /* brief 26_0430-219: P215_TIGHTEN_PADPLUS=<n> overrides the +cm->p7bpad
+		     * (--p7padplus) offset added to the calibrated per-node pad; default is
+		     * cm->p7bpad (== what brief 218 tested). Set =0 for "raw pernode" (bare
+		     * calibrated pad, no padplus) to disentangle the per-node SHAPE from the
+		     * uniform +p7bpad offset -- the brief 218 pernode-vs-constant-N confound. */
+		    {
+		      const char *e_pp215 = getenv("P215_TIGHTEN_PADPLUS");
+		      int p215_padplus = (e_pp215 != NULL) ? atoi(e_pp215) : cm->p7bpad;
+		      ESL_ALLOC(nodepad215, sizeof(int) * (M215 + 1));
+		      for(k215 = 0; k215 <= M215; k215++)
+			nodepad215[k215] = p215_pernode ? (cm->p7_cm_nodepad[k215] + p215_padplus) : p215_N;
+		    }
 		    status215 = p7_pins2bands_nodepad(i2k_c, errbuf, sq->L, M215, nodepad215,
 						      0, cm->p7_kmerchain_ramp_alpha,
 						      &b1_kmin, &b1_kmax, &b1_ncells);
