@@ -6486,15 +6486,21 @@ mxest_tr_ckpt_oa_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, in
  *
  * Args:     cm, errbuf, L  - usual
  *           preset_mode    - TRMODE_J/L/R/T (which mode this alignment pass resolves to)
+ *           cp9_kmin,cp9_kmax - brief 26_0430-226: the k-bands the CALLER's own
+ *                         CP9 band-derivation pass actually used, [0..1..L], or
+ *                         NULL/NULL if unbanded cp9_Seq2Bands() -- see
+ *                         cm_CheckptAlignSizeNeededHB()'s (cm_dpalign.c) fuller
+ *                         comment on why this can't be assumed by this function.
  *           ret_ckptdpmb   - RETURN: peak checkpointed CM-DP working-set Mb
  *           ret_emxmb      - RETURN: emit_mx (CM_TR_HB_EMIT_MX) size, Mb
- *           ret_cp9mxmb    - RETURN: CP9 fwd+bck matrices, Mb
+ *           ret_cp9mxmb    - RETURN: CP9 fwd+bck matrices, Mb, for the band
+ *                         representation cp9_kmin/cp9_kmax describe
  *           ret_totmb      - RETURN: sum of the above
  *
  * Returns:  <eslOK> on success; <eslEINCOMPAT> if cm->cp9b is NULL or preset_mode is invalid.
  */
 int
-cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode,
+cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, int *cp9_kmin, int *cp9_kmax,
                               float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb)
 {
   int status;
@@ -6530,13 +6536,12 @@ cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode,
     peak_bytes += (int64_t)planes * el_nc * sizeof(float);
   }
 
-  /* brief 26_0430-226: see cm_CheckptAlignSizeNeededHB()'s (cm_dpalign.c) comment
-   * at its own cp9mxmb assignment -- same caveat applies here: correct for the
-   * unbanded cp9_Seq2Bands() path, not for genome-scale production's cheaper
-   * p7-banded/IBV band derivation. Use ckptdpmb+emxmb, not totmb, in that case. */
+  /* brief 26_0430-226: cp9mxmb now reflects whichever band representation the
+   * caller actually used -- see cm_CheckptAlignSizeNeededHB()'s (cm_dpalign.c)
+   * fuller comment on cp9_kmin/cp9_kmax. */
   float emxmb = 0., cp9mxmb = 0.;
   if ((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, NULL, NULL, &emxmb)) != eslOK) goto ERROR;
-  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, NULL, NULL);
+  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, cp9_kmin, cp9_kmax);
   cp9mxmb += cp9mxmb;
 
   float ckptdpmb = (float) (peak_bytes / 1000000.);

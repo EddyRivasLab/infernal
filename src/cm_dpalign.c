@@ -4121,18 +4121,34 @@ mxest_ckpt_oa_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int *
  * Args:     cm          - the CM (cm->cp9b must already be filled for L)
  *           errbuf      - char buffer for reporting errors
  *           L           - length of the target sequence
+ *           cp9_kmin,cp9_kmax - the k-bands (if any) the CALLER's own CP9
+ *                         band-derivation pass actually used, [0..1..L],
+ *                         or NULL/NULL if it ran the unbanded cp9_Seq2Bands().
+ *                         Brief 26_0430-226: this function cannot know which
+ *                         band-derivation path the caller took (unbanded
+ *                         cp9_Seq2Bands() vs. the cheaper p7-banded/IBV-
+ *                         checkpointed pipeline used by production at genome
+ *                         scale) -- forwarded verbatim to SizeNeededCP9Matrix()
+ *                         so ret_cp9mxmb reflects whichever one actually ran,
+ *                         instead of silently assuming unbanded. Passing the
+ *                         wrong (or no) bands here previously made totmb
+ *                         wildly wrong (~28 GB vs a real few-MB CM-DP working
+ *                         set) at genome scale, since a genome-scale unbanded
+ *                         CP9 matrix is enormous and a caller on the cheap
+ *                         path never pays it.
  *           ret_ckptdpmb - RETURN: peak checkpointed CM-DP working-set Mb
  *                          (bps>0: max over the CYK/Post/OptAcc passes)
  *           ret_emxmb   - RETURN: emit_mx size, Mb (same formula stock uses)
- *           ret_cp9mxmb - RETURN: CP9 fwd+bck matrices, Mb (same as stock;
- *                         these run BEFORE the CM-DP engine to derive bands,
- *                         but by --mxsize convention are counted alongside)
+ *           ret_cp9mxmb - RETURN: CP9 fwd+bck matrices, Mb, for the band
+ *                         representation cp9_kmin/cp9_kmax describe (0 cost
+ *                         difference from before iff caller passes NULL/NULL,
+ *                         matching the old unconditional-unbanded behavior)
  *           ret_totmb   - RETURN: ckptdpmb + emxmb + cp9mxmb
  *
  * Returns:  <eslOK> on success; <eslEINCOMPAT> if cm->cp9b is NULL.
  */
 int
-cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L,
+cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, int *cp9_kmin, int *cp9_kmax,
                             float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb)
 {
   int status;
@@ -4158,19 +4174,12 @@ cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L,
     peak_bytes = ESL_MAX(cyk_peak, ESL_MAX(post_peak, oa_peak));
   }
 
-  /* brief 26_0430-226: cp9mxmb (below) is verified CORRECT for what it
-   * claims -- it exactly matches cp9_mx.c's cm->cp9_mx/cp9_bmx allocation
-   * formula, i.e. the real cost IF bands were derived via the unbanded
-   * cp9_Seq2Bands() path. It is NOT a general genome-scale band-derivation
-   * cost: production cmalign at genome scale derives bands via the cheaper
-   * p7-banded/IBV-checkpointed pipeline instead, for which this term does
-   * not apply and dwarfs ckptdpmb+emxmb if added to totmb regardless (e.g.
-   * ~28 GB vs a real ~8 MB CM-DP working set on a genome-scale CM). Callers
-   * that did NOT derive bands via cp9_Seq2Bands() should use ckptdpmb+emxmb,
-   * not totmb, for an --mxsize-style decision. */
+  /* brief 26_0430-226: cp9mxmb now reflects whichever band representation the
+   * caller actually used (cp9_kmin/cp9_kmax, NULL/NULL for unbanded) instead
+   * of unconditionally assuming the unbanded cp9_Seq2Bands() path. */
   float emxmb = 0., cp9mxmb = 0.;
   if ((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, NULL, NULL, &emxmb)) != eslOK) goto ERROR;
-  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, NULL, NULL);
+  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, cp9_kmin, cp9_kmax);
   cp9mxmb += cp9mxmb; /* fwd + bck, mirrors cm_AlignSizeNeededHB:564-565 */
 
   float ckptdpmb = (float) (peak_bytes / 1000000.);

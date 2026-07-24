@@ -102,7 +102,9 @@ int main(int argc, char **argv)
 
     /* ---- non-truncated --ckpt: predicted vs measured ---- */
     float ckptdpmb=0., emxmb=0., cp9mxmb=0., totmb=0.;
-    if ((status = cm_CheckptAlignSizeNeededHB(cm, errbuf, L, &ckptdpmb, &emxmb, &cp9mxmb, &totmb)) != eslOK)
+    /* this driver derives bands via unbanded cp9_Seq2Bands() above -- pass
+     * NULL/NULL (brief 26_0430-226) so cp9mxmb reflects that unbanded cost. */
+    if ((status = cm_CheckptAlignSizeNeededHB(cm, errbuf, L, NULL, NULL, &ckptdpmb, &emxmb, &cp9mxmb, &totmb)) != eslOK)
       cm_Fail("cm_CheckptAlignSizeNeededHB: %s", errbuf);
     printf("PREDICT ckpt notrunc: ckptdpMb=%.4f emxMb=%.4f cp9mxMb=%.4f totMb=%.4f\n", ckptdpmb, emxmb, cp9mxmb, totmb);
     fflush(stdout);
@@ -153,7 +155,7 @@ int main(int argc, char **argv)
       int fill_L, fill_R, fill_T;
       cm_TrFillFromMode(TRMODE_J, &fill_L, &fill_R, &fill_T);
       float tckptdpmb=0., temxmb=0., tcp9mxmb=0., ttotmb=0.;
-      if ((status = cm_CheckptTrAlignSizeNeededHB(cm, errbuf, L, TRMODE_J, &tckptdpmb, &temxmb, &tcp9mxmb, &ttotmb)) != eslOK)
+      if ((status = cm_CheckptTrAlignSizeNeededHB(cm, errbuf, L, TRMODE_J, NULL, NULL, &tckptdpmb, &temxmb, &tcp9mxmb, &ttotmb)) != eslOK)
         cm_Fail("cm_CheckptTrAlignSizeNeededHB: %s", errbuf);
       printf("PREDICT ckpt trunc(J): ckptdpMb=%.4f emxMb=%.4f cp9mxMb=%.4f totMb=%.4f\n", tckptdpmb, temxmb, tcp9mxmb, ttotmb);
       fflush(stdout);
