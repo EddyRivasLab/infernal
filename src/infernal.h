@@ -3015,6 +3015,8 @@ extern int   cm_PinOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L
 extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
 /* brief 26_0610-078 R1: checkpointed, k*-DISCOVERING CYK max-DP (no external kpin); GLOBAL/non-truncated/no-EL/no-local-begin only */
 extern int   cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, Parsetree_t **ret_tr, float *ret_sc);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) peak-memory estimator for the --ckpt engine family */
+extern int   cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb);
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -3050,6 +3052,8 @@ extern char  Fscore2postcode(float sc);
 /* from cm_dpalign_trunc.c */
 extern int  cm_TrAlignSizeNeeded    (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
 extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotmb, float *ret_totmb);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) peak-memory estimator for the --ckpt engine family, truncated */
+extern int  cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb);
 
 extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -3104,6 +3108,11 @@ extern void  CYKDeckTrackReset(void);   /* brief 26_0610-007: D&C live-deck high
 extern double CYKDeckTrackMaxMb(void);
 extern double CYKDeckTrackVjdAtPeakMb(void); /* brief 26_0610-008: class-1 banded-vjd bytes at peak */
 extern double CYKDeckTrackVjiAtPeakMb(void); /* brief 26_0610-008: class-2 (V-problem) vji bytes at peak */
+extern void   CYKShadowTrackReset(void);   /* brief 26_0610-050: shadow-deck high-water (largest single leaf) */
+extern double CYKShadowTrackMaxMb(void);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) UPPER-BOUND peak-memory estimators for the D&C engine */
+extern int    cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *ret_shmb, float *ret_totmb);
+extern int    cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float *ret_vjdmb, float *ret_shmb, float *ret_totmb);
 extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
