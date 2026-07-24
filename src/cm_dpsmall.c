@@ -548,8 +548,28 @@ CYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Pars
       sc =  cm->beginsc[r];
     }
 
+  /* brief 26_0430-225: DNC_MEM_VERBOSE ground-truth peak-memory diagnostic,
+   * mirroring INFERNAL_CKPT_VERBOSE's (cm_dpalign.c) env-gated fprintf style.
+   * Reuses the existing (previously dormant -- no caller anywhere before this
+   * brief) high-water-mark instrumentation built for brief 26_0610-007/008/050
+   * (CYKDeckTrackReset/MaxMb/VjdAtPeakMb/VjiAtPeakMb + the shadow tracker
+   * above): that infrastructure already accounts every live banded-vjd deck,
+   * class-2 (V-problem) vji deck, and shadow deck byte-for-byte at alloc/free
+   * time, so no new byte-counting is added here -- just the env gate + report. */
+  int dnc_mem_verbose = (getenv("DNC_MEM_VERBOSE") != NULL) ? TRUE : FALSE;
+  if (dnc_mem_verbose) { CYKDeckTrackReset(); CYKShadowTrackReset(); }
+
   /* Start the banded divide and conquer recursion. */
   sc += generic_splitter_hb(cm, dsq, L, tr, r, z, i0, j0, cp9b);
+
+  if (dnc_mem_verbose) {
+    double peak_mb = CYKDeckTrackMaxMb();  /* NOTE: this call also sets cyk_dnc_track = FALSE */
+    double vjd_mb  = CYKDeckTrackVjdAtPeakMb();
+    double vji_mb  = CYKDeckTrackVjiAtPeakMb();
+    double shad_mb = CYKShadowTrackMaxMb();
+    fprintf(stderr, "# CYKDivideAndConquerHB (D&C) engaged: M=%d L=%d sc=%.5f  DnC-DP peak=%.2f Mb (vjd=%.2f Mb vji=%.2f Mb)  shadow-peak=%.2f Mb\n",
+            cm->M, L, sc, peak_mb, vjd_mb, vji_mb, shad_mb);
+  }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   ESL_DPRINTF1(("#DEBUG: returning from CYKDivideAndConquerHB() sc : %f\n", sc));
@@ -9641,7 +9661,25 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
    * standard split landing on the same marginal-end cell (oracle forces the
    * marginal-end at d<2). T is OFF (R4.4c). Driver-only entry (rung-3/4 not yet in
    * the cmalign dispatch on this branch). */
+  /* brief 26_0430-225: DNC_MEM_VERBOSE ground-truth peak-memory diagnostic,
+   * truncated D&C entry -- same reused CYKDeckTrack + CYKShadowTrack
+   * instrumentation as CYKDivideAndConquerHB() above (that infra already
+   * covers this trunc code path too: tr_inside_hb/tr_outside_hb/
+   * tr_generic_splitter_hb allocate via the same alloc_banded_hb_vjd_deck-
+   * family calls, already instrumented). */
+  int dnc_mem_verbose = (getenv("DNC_MEM_VERBOSE") != NULL) ? TRUE : FALSE;
+  if (dnc_mem_verbose) { CYKDeckTrackReset(); CYKShadowTrackReset(); }
+
   sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, r_allow_T, cp9b);
+
+  if (dnc_mem_verbose) {
+    double peak_mb = CYKDeckTrackMaxMb();
+    double vjd_mb  = CYKDeckTrackVjdAtPeakMb();
+    double vji_mb  = CYKDeckTrackVjiAtPeakMb();
+    double shad_mb = CYKShadowTrackMaxMb();
+    fprintf(stderr, "# TrCYKDivideAndConquerHB (D&C, trunc) engaged: M=%d L=%d mode=%c sc=%.5f  DnC-DP peak=%.2f Mb (vjd=%.2f Mb vji=%.2f Mb)  shadow-peak=%.2f Mb\n",
+            cm->M, L, preset_mode, sc, peak_mb, vjd_mb, vji_mb, shad_mb);
+  }
 
   /* the truncated-begin entry state is the first state attached below ROOT_S */
   b = (tr->n > 1) ? tr->state[1] : 0;
@@ -9650,6 +9688,197 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   if (ret_mode != NULL) *ret_mode = preset_mode;
   if (ret_tr   != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
+}
+
+/*****************************************************************
+ * Brief 26_0430-225: cm_DnCAlignSizeNeededHB() / cm_TrDnCAlignSizeNeededHB()
+ * -- pre-alignment memory estimators for the HMM-banded divide-and-conquer
+ * engine (CYKDivideAndConquerHB() / TrCYKDivideAndConquerHB()).
+ *
+ * UNLIKE the --ckpt estimators (cm_dpalign.c / cm_dpalign_trunc.c), this is
+ * NOT an exact structural replay: D&C's actual recursion tree shape is
+ * DATA-DEPENDENT.  generic_splitter_hb() (cm_dpsmall.c:4656-4799) picks its
+ * split point (best_j/best_k) by DP SCORE at each bifurcation
+ * (cm_dpsmall.c:4721-4746) -- which residues end up left vs. right of a
+ * given bifurcation, and therefore how big each recursive child's banded
+ * sub-matrix (alpha[w..wend] + alpha[y..yend], restricted to the chosen
+ * i0..j0 subrange) actually is, cannot be known without running the DP.
+ * So this function computes a data-INDEPENDENT UPPER BOUND instead: for
+ * EVERY bifurcation state v in the CM, the byte cost if its two children's
+ * node ranges were each allocated over the FULL sequence range [1,L] (the
+ * real recursion always uses some SUBRANGE of [1,L] for any nested call,
+ * so this is >= the true cost for that bifurcation); take the max over all
+ * bifurcations.  This is the right kind of estimate for an --mxsize gate
+ * (which must not under-promise), but is expected to overestimate,
+ * possibly by a lot, on deeply unbalanced trees -- brief 226's job is to
+ * measure the actual overestimation factor via DNC_MEM_VERBOSE.
+ *
+ * KNOWN GAP (verified, not assumed -- flagged for brief 226): beta[v] (the
+ * bifurcation-state Outside deck, cm_dpsmall.c:4719/4737) is allocated by
+ * outside_hb() and is NEVER FREED anywhere in generic_splitter_hb() (grep-
+ * confirmed: only `alpha` gets a free_banded_hb_vjd_matrix() call, at
+ * cm_dpsmall.c:4769; `beta` has no matching free in the function body).
+ * This means beta[v] decks accumulate, unfreed, across EVERY bifurcation
+ * visited over the WHOLE recursion -- not just the single widest live
+ * sub-problem this estimator bounds.  For a CM with many bifurcations
+ * (e.g. an rRNA model), the true peak measured by DNC_MEM_VERBOSE could
+ * exceed this bound by O(#bifurcations-visited x avg-beta-deck-size),
+ * which is NOT captured below (beta[v] is a single-state deck, individually
+ * small, but the accumulation is unbounded across a long alignment run).
+ * This is an existing property of CYKDivideAndConquerHB()/
+ * generic_splitter_hb() uncovered while writing this estimator, not
+ * something this brief introduces or fixes -- out of scope to fix here,
+ * but the self-check below directly tests whether it matters in practice.
+ *
+ * Also NOT modeled: the class-2 "V-problem" (wedge) contribution
+ * (v_splitter()'s EXACT unbanded triangular decks, tracked separately by
+ * the existing cyk_dnc_vji_bytes counter) -- computing its size requires
+ * modeling insideT_size()'s RAMLIMIT cutoff and the V-problem's own d-range,
+ * which this estimator does not attempt.  DNC_MEM_VERBOSE's vji=... report
+ * captures it in the ground truth; this estimator's vjd-only bound may
+ * therefore UNDERESTIMATE on CMs/sequences where the V-problem dominates.
+ *****************************************************************/
+
+/* sum of nc(v) = per-(v,jp) hd band-width, v in [lo..hi], full L bands
+ * (same per-cell formula cm_hb_mx_SizeNeeded_ex uses, cm_mx.c:1149-1183). */
+static int64_t
+mxest_dnc_range_nc(CP9Bands_t *cp9b, int lo, int hi)
+{
+  int v, jp;
+  int64_t nc = 0;
+  for (v = lo; v <= hi; v++) {
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1; if (njr < 0) njr = 0;
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1; if (w > 0) nc += w; }
+  }
+  return nc;
+}
+
+/* Function: cm_DnCAlignSizeNeededHB()
+ * Incept:   Brief 26_0430-225
+ *
+ * Purpose:  Predict an UPPER BOUND (not an exact prediction -- see the file
+ *           header above) on the peak Mb CYKDivideAndConquerHB() will need
+ *           to align a length-<L> sequence to <cm> under its current
+ *           cm->cp9b bands, without running any alignment.
+ *
+ * Args:     cm, errbuf, L - usual
+ *           ret_vjdmb - RETURN: bound on class-1 (banded vjd alpha+beta) peak Mb
+ *           ret_shmb  - RETURN: bound on shadow-deck (yshadow/kshadow) Mb at that same peak
+ *           ret_totmb - RETURN: ret_vjdmb + ret_shmb
+ *
+ * Returns:  <eslOK> on success; <eslEINCOMPAT> if cm->cp9b is NULL.
+ */
+int
+cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *ret_shmb, float *ret_totmb)
+{
+  int status;
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_DnCAlignSizeNeededHB(): cm->cp9b is NULL");
+  CP9Bands_t *cp9b = cm->cp9b;
+  int v, w, y, wend, yend;
+  int64_t best_vjd_nc = 0, best_sh_bytes = 0;
+
+  int has_bif = FALSE;
+  for (v = 0; v < cm->M; v++) {
+    if (cm->sttype[v] != B_st) continue;
+    has_bif = TRUE;
+    w = cm->cfirst[v]; y = cm->cnum[v];
+    if (w < y) { wend = y-1; yend = cm->M-1; } else { yend = w-1; wend = cm->M-1; }
+    /* NOTE: wend/yend above use cm->M-1 as a safe (over-)estimate of each
+     * subtree's true end state (CMSubtreeFindEnd(cm,w)/(cm,y) would be
+     * tighter, but the wider range is still a valid upper bound and avoids
+     * a second full state-array walk per bifurcation). */
+    int64_t nc_w = mxest_dnc_range_nc(cp9b, w, ESL_MIN(wend, CMSubtreeFindEnd(cm, w)));
+    int64_t nc_y = mxest_dnc_range_nc(cp9b, y, ESL_MIN(yend, CMSubtreeFindEnd(cm, y)));
+    int64_t nc_v = mxest_dnc_range_nc(cp9b, v, v); /* beta[v]: single-state deck */
+    int64_t vjd_nc = nc_w + nc_y + nc_v;
+    if (vjd_nc > best_vjd_nc) {
+      best_vjd_nc = vjd_nc;
+      /* shadow cost at this same split: yshadow (char) for every non-B state
+       * in [w..wend]+[y..yend], kshadow (int) for any B states among them
+       * (alloc_banded_hb_vjd_yshadow_deck/kshadow_deck, cm_dpsmall.c:4433-4479) */
+      int64_t sh_bytes = 0, vv;
+      int wend_t = ESL_MIN(wend, CMSubtreeFindEnd(cm, w)), yend_t = ESL_MIN(yend, CMSubtreeFindEnd(cm, y));
+      for (vv = w; vv <= wend_t; vv++) sh_bytes += mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      for (vv = y; vv <= yend_t; vv++) sh_bytes += mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      best_sh_bytes = sh_bytes;
+    }
+  }
+  if (! has_bif) {
+    /* no bifurcations: D&C never splits the node range, so its peak equals
+     * the ordinary full (non-checkpointed) banded matrix -- same formula
+     * cm_hb_mx_SizeNeeded() uses (cm_mx.c:1149-1183). */
+    best_vjd_nc = mxest_dnc_range_nc(cp9b, 0, cm->M-1);
+    best_sh_bytes = mxest_dnc_range_nc(cp9b, 0, cm->M-1) * sizeof(char);
+  }
+
+  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.);
+  float shmb  = (float) (best_sh_bytes / 1000000.);
+  if (ret_vjdmb != NULL) *ret_vjdmb = vjdmb;
+  if (ret_shmb  != NULL) *ret_shmb  = shmb;
+  if (ret_totmb != NULL) *ret_totmb = vjdmb + shmb;
+  return eslOK;
+}
+
+/* Function: cm_TrDnCAlignSizeNeededHB()
+ * Incept:   Brief 26_0430-225
+ *
+ * Purpose:  Truncated analogue of cm_DnCAlignSizeNeededHB(), for
+ *           TrCYKDivideAndConquerHB() / tr_generic_splitter_hb().  Same
+ *           upper-bound strategy, J/L/R-tripled per bifurcation child
+ *           exactly as tr_generic_splitter_hb() allocates alpha+Lalpha+
+ *           Ralpha together (cm_dpsmall.c:9305-9312: tr_inside_hb() with
+ *           lr1.ret_planes=TRUE returns all three requested planes at
+ *           once for the SAME [w..wend]/[y..yend] node range).  <preset_mode>
+ *           selects fill_L/fill_R exactly as cm_TrFillFromMode() does.
+ *
+ * Args:     cm, errbuf, L, preset_mode - usual (preset_mode: TRMODE_J/L/R/T)
+ *           ret_vjdmb, ret_shmb, ret_totmb - as cm_DnCAlignSizeNeededHB()
+ *
+ * Returns:  <eslOK> on success; <eslEINCOMPAT>/other on bad preset_mode or NULL cp9b.
+ */
+int
+cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float *ret_vjdmb, float *ret_shmb, float *ret_totmb)
+{
+  int status;
+  int fill_L, fill_R, fill_T;
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrDnCAlignSizeNeededHB(): cm->cp9b is NULL");
+  if ((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK)
+    ESL_FAIL(status, errbuf, "cm_TrDnCAlignSizeNeededHB(): bad preset_mode");
+  CP9Bands_t *cp9b = cm->cp9b;
+  int planes = 1 + (fill_L?1:0) + (fill_R?1:0); /* J always; L/R per mode -- cm_dpsmall.c:9264 */
+  int v, w, y, wend, yend;
+  int64_t best_vjd_nc = 0, best_sh_bytes = 0;
+
+  int has_bif = FALSE;
+  for (v = 0; v < cm->M; v++) {
+    if (cm->sttype[v] != B_st) continue;
+    has_bif = TRUE;
+    w = cm->cfirst[v]; y = cm->cnum[v];
+    if (w < y) { wend = y-1; yend = cm->M-1; } else { yend = w-1; wend = cm->M-1; }
+    int wend_t = ESL_MIN(wend, CMSubtreeFindEnd(cm, w)), yend_t = ESL_MIN(yend, CMSubtreeFindEnd(cm, y));
+    int64_t nc_w = mxest_dnc_range_nc(cp9b, w, wend_t);
+    int64_t nc_y = mxest_dnc_range_nc(cp9b, y, yend_t);
+    int64_t nc_v = mxest_dnc_range_nc(cp9b, v, v);
+    int64_t vjd_nc = (int64_t)planes * (nc_w + nc_y) + nc_v; /* beta[v] (J-only 1-D outside) not tripled */
+    if (vjd_nc > best_vjd_nc) {
+      best_vjd_nc = vjd_nc;
+      int64_t sh_bytes = 0, vv;
+      for (vv = w; vv <= wend_t; vv++) sh_bytes += (int64_t)planes * mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      for (vv = y; vv <= yend_t; vv++) sh_bytes += (int64_t)planes * mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      best_sh_bytes = sh_bytes;
+    }
+  }
+  if (! has_bif) {
+    best_vjd_nc = (int64_t)planes * mxest_dnc_range_nc(cp9b, 0, cm->M-1);
+    best_sh_bytes = (int64_t)planes * mxest_dnc_range_nc(cp9b, 0, cm->M-1) * sizeof(char);
+  }
+
+  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.);
+  float shmb  = (float) (best_sh_bytes / 1000000.);
+  if (ret_vjdmb != NULL) *ret_vjdmb = vjdmb;
+  if (ret_shmb  != NULL) *ret_shmb  = shmb;
+  if (ret_totmb != NULL) *ret_totmb = vjdmb + shmb;
+  return eslOK;
 }
 
 /* Function: vsplitter_b()
