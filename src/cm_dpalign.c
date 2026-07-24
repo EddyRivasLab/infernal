@@ -4158,6 +4158,16 @@ cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L,
     peak_bytes = ESL_MAX(cyk_peak, ESL_MAX(post_peak, oa_peak));
   }
 
+  /* brief 26_0430-226: cp9mxmb (below) is verified CORRECT for what it
+   * claims -- it exactly matches cp9_mx.c's cm->cp9_mx/cp9_bmx allocation
+   * formula, i.e. the real cost IF bands were derived via the unbanded
+   * cp9_Seq2Bands() path. It is NOT a general genome-scale band-derivation
+   * cost: production cmalign at genome scale derives bands via the cheaper
+   * p7-banded/IBV-checkpointed pipeline instead, for which this term does
+   * not apply and dwarfs ckptdpmb+emxmb if added to totmb regardless (e.g.
+   * ~28 GB vs a real ~8 MB CM-DP working set on a genome-scale CM). Callers
+   * that did NOT derive bands via cp9_Seq2Bands() should use ckptdpmb+emxmb,
+   * not totmb, for an --mxsize-style decision. */
   float emxmb = 0., cp9mxmb = 0.;
   if ((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, NULL, NULL, &emxmb)) != eslOK) goto ERROR;
   cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, NULL, NULL);

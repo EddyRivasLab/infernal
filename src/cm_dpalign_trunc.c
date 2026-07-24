@@ -6235,6 +6235,52 @@ mxest_tr_modes(CM_t *cm, CP9Bands_t *cp9b, int v, int fill_L, int fill_R)
   return modes;
 }
 
+/* brief 26_0430-226: banded EL-deck cell count, duplicated from cm_dpalign.c's
+ * mxest_el_nc() (static there, not shared across translation units -- same
+ * duplicated-per-file convention this file already follows for mxest_shb_
+ * and mxest_tr_deck_nc rather than mxest_deck_nc). The non-trunc --ckpt estimator
+ * already models this banded EL cost via mxest_el_nc(); this file's trunc
+ * estimator never did (brief 225's own flagged, scoped-out gap; confirmed as
+ * the dominant cause of the trunc-local under-estimate found in brief 226's
+ * validation -- present in every trunc-local bps>0 family tested, absent in
+ * trunc-global for the same CMs/sequences where CMH_LOCAL_END is off).
+ * Modeled once per mode-plane (J/L/R), added as a conservative peak-additive
+ * term below rather than precisely interleaved into each pass's alloc/free
+ * timeline (that would need a full read of cm_CheckptTr{CYK,OptAcc}AlignHB's
+ * EL handling, which brief 225 explicitly did NOT do -- grep-confirmed
+ * structural parity only). Being additive-not-interleaved makes this a safe
+ * upper bound, not a byte-exact replay. */
+static int64_t
+mxest_tr_el_nc(CM_t *cm, CP9Bands_t *cp9b, int L, int *deck_njr)
+{
+  int   status;
+  int   v, jp, r;
+  int  *eldmax = NULL;
+  int64_t nc = 0;
+  ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    for (jp = 0; jp < deck_njr[v]; jp++) {
+      int j_band = cp9b->jmin[v] + jp;
+      r = j_band - sdr;
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
+      if (dmax_here > r) dmax_here = r;
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+  for (r = 0; r <= L; r++) if (eldmax[r] >= 0) nc += (eldmax[r]+1);
+  free(eldmax);
+  return nc;
+ ERROR:
+  if (eldmax) free(eldmax);
+  cm_Fail("mxest_tr_el_nc(): memory allocation error");
+  return 0;
+}
+
 /* bps=0 (pure MATL chain), replays cm_CheckptTrAlignHB() -- same STEP A/B/
  * OA/TB shape as the non-trunc bps=0 engine, J/L/R-tripled per mxest_tr_modes.
  * Grep-confirmed structural parity with cm_CheckptTrPostAlignHB (which this
@@ -6474,7 +6520,20 @@ cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode,
     int64_t oa_peak   = mxest_tr_ckpt_oa_r3_peak  (cm, cp9b, L, deck_nc, fill_L, fill_R);
     peak_bytes = ESL_MAX(cyk_peak, ESL_MAX(post_peak, oa_peak));
   }
+  /* brief 26_0430-226: EL decks (banded, one per active J/L/R plane) were
+   * never modeled here at all -- see mxest_tr_el_nc()'s comment above. Added
+   * as a conservative peak-additive term (safe upper bound), not interleaved
+   * into the per-pass alloc/free timeline above. */
+  if (cm->flags & CMH_LOCAL_END) {
+    int planes = (fill_L?1:0) + (fill_R?1:0) + 1; /* J always live */
+    int64_t el_nc = mxest_tr_el_nc(cm, cp9b, L, deck_njr);
+    peak_bytes += (int64_t)planes * el_nc * sizeof(float);
+  }
 
+  /* brief 26_0430-226: see cm_CheckptAlignSizeNeededHB()'s (cm_dpalign.c) comment
+   * at its own cp9mxmb assignment -- same caveat applies here: correct for the
+   * unbanded cp9_Seq2Bands() path, not for genome-scale production's cheaper
+   * p7-banded/IBV band derivation. Use ckptdpmb+emxmb, not totmb, in that case. */
   float emxmb = 0., cp9mxmb = 0.;
   if ((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, NULL, NULL, &emxmb)) != eslOK) goto ERROR;
   cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, NULL, NULL);

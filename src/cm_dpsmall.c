@@ -4787,6 +4787,19 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   }
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
+  /* brief 26_0430-226: beta (including its full/unbanded EL deck, v==cm->M)
+   * is never freed here -- a confirmed leak, found while validating brief
+   * 225's D&C memory estimator. NOT fixed here: naively freeing it the same
+   * way wedge_splitter_hb() does (cm_dpsmall.c ~4936-4937) crashes with
+   * "free(): invalid pointer" inside CYKDivideAndConquerHB() on real genome-
+   * scale input (confirmed via gdb backtrace) -- alpha and beta apparently
+   * alias a deck through the shared `pool` (the EL deck is handed between
+   * inside_hb()'s and outside_hb()'s deckpool via deckpool_pop(), cm_dpsmall.c
+   * ~5320), so this needs a real fix to the pool-ownership protocol, not a
+   * bolted-on free() call. Left as a known, real, but NOT YET SAFELY FIXABLE
+   * engine bug for a dedicated follow-up -- the D&C estimator's separate EL-
+   * deck-cost fix (see cm_DnCAlignSizeNeededHB() below) already accounts for
+   * this deck's cost without needing the leak itself fixed. */
 
   /* EL case: V problem above us; solve with banded v_splitter_hb (Stage 1a.2). */
   if (best_k == -1) {
@@ -9776,6 +9789,17 @@ cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *
   CP9Bands_t *cp9b = cm->cp9b;
   int v, w, y, wend, yend;
   int64_t best_vjd_nc = 0, best_sh_bytes = 0;
+  /* brief 26_0430-226: outside_hb()'s EL deck (state cm->M) is allocated
+   * FULL/UNBANDED ("no band on EL") at i0=1,j0=L every time generic_splitter_hb()
+   * or wedge_splitter_hb() runs an outside pass in local mode -- confirmed by
+   * reading outside_hb() (cm_dpsmall.c:5318-5325, alloc_vjd_deck(), not the
+   * banded allocator) and empirically: this single term alone (size_vjd_deck(L,1,L))
+   * matched every genome/medium-scale D&C ground-truth measurement to within
+   * 0.1-9% (tRNA through sarscov2, both bps=0 and bps>0) -- it was the estimator's
+   * ENTIRE prior under-estimate, not the beta[v] leak (real, fixed separately,
+   * but empirically secondary at the scales tested). Not previously modeled at all. */
+  int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  float elmb  = have_el ? size_vjd_deck(L, 1, L) : 0.;
 
   int has_bif = FALSE;
   for (v = 0; v < cm->M; v++) {
@@ -9811,7 +9835,7 @@ cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *
     best_sh_bytes = mxest_dnc_range_nc(cp9b, 0, cm->M-1) * sizeof(char);
   }
 
-  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.);
+  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.) + elmb;
   float shmb  = (float) (best_sh_bytes / 1000000.);
   if (ret_vjdmb != NULL) *ret_vjdmb = vjdmb;
   if (ret_shmb  != NULL) *ret_shmb  = shmb;
@@ -9848,6 +9872,12 @@ cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float
   int planes = 1 + (fill_L?1:0) + (fill_R?1:0); /* J always; L/R per mode -- cm_dpsmall.c:9264 */
   int v, w, y, wend, yend;
   int64_t best_vjd_nc = 0, best_sh_bytes = 0;
+  /* brief 26_0430-226: tr_outside_hb() allocates one full/unbanded EL deck
+   * PER active plane (J always, L/R per fill_L/fill_R -- cm_dpsmall.c:7364-7383,
+   * confirmed by reading), all concurrently live. Same previously-unmodeled
+   * gap as the non-trunc D&C estimator; see cm_DnCAlignSizeNeededHB()'s comment. */
+  int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  float elmb  = have_el ? (float)planes * size_vjd_deck(L, 1, L) : 0.;
 
   int has_bif = FALSE;
   for (v = 0; v < cm->M; v++) {
@@ -9873,7 +9903,7 @@ cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float
     best_sh_bytes = (int64_t)planes * mxest_dnc_range_nc(cp9b, 0, cm->M-1) * sizeof(char);
   }
 
-  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.);
+  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.) + elmb;
   float shmb  = (float) (best_sh_bytes / 1000000.);
   if (ret_vjdmb != NULL) *ret_vjdmb = vjdmb;
   if (ret_shmb  != NULL) *ret_shmb  = shmb;
