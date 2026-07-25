@@ -10083,6 +10083,69 @@ mxest_dnc_range_nc(CP9Bands_t *cp9b, int lo, int hi)
   return nc;
 }
 
+/* Brief 26_0430-228: banded upper bound on outside_hb()'s single EL deck
+ * (state cm->M), replacing the pre-227 full-triangle size_vjd_deck(L,1,L)
+ * term now that outside_hb_el_dmax()/alloc_el_banded_vjd_deck() (cm_dpsmall.c
+ * :5329/5375, brief 227) band the real engine's EL allocation to eldmax[]
+ * rows.  Calling outside_hb_el_dmax() with (vroot=0,vend=cm->M-1,i0=1,j0=L)
+ * -- the same (vroot,vend,i0,j0) CYKDivideAndConquerHB()'s top-level call
+ * uses (cm_dpsmall.c:544-566: z=cm->M-1, i0/j0 passed straight through,
+ * r defaults to 0) and also the widest possible sub-problem span -- gives a
+ * per-row eldmax[] that safely bounds every narrower recursive sub-call's
+ * eldmax too: a smaller vroot..vend main-loop range only removes v's that
+ * can contribute to eldmax[j], and a narrower [i0,j0] only shrinks
+ * jp = j-(i0-1), and both changes can only lower eldhi, never raise it. So
+ * this single data-independent call gives a safe upper bound, using the
+ * exact per-row cost function the real allocator uses (sum over eldmax[r]>=0
+ * rows of (eldmax[r]+1) floats). */
+static float
+mxest_dnc_el_mb(CM_t *cm, int L, CP9Bands_t *cp9b)
+{
+  int      status;
+  int     *eldmax = NULL;
+  int      r;
+  int64_t  nfloats = 0;
+  ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+  outside_hb_el_dmax(cm, L, 0, cm->M-1, 1, L, cp9b, eldmax);
+  for (r = 0; r <= L; r++) if (eldmax[r] >= 0) nfloats += (int64_t) (eldmax[r]+1);
+  free(eldmax);
+  return (float) (nfloats * sizeof(float) / 1000000.);
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.; /* never reached */
+}
+
+/* Truncated analogue of mxest_dnc_el_mb(), for tr_outside_hb()'s up-to-three
+ * concurrently-live EL decks (J always; L/R per fill_L/fill_R, mirroring
+ * tr_outside_hb()'s per-plane allocation at cm_dpsmall.c ~7617-7636).  Each
+ * plane's eldmax[] is computed independently by tr_outside_hb_el_dmax() with
+ * the same (vroot=0,vend=cm->M-1,i0=1,j0=L) top-level/widest-span argument
+ * as mxest_dnc_el_mb() uses, for the same reason (a safe upper bound over
+ * every narrower recursive sub-call). */
+static float
+mxest_dnc_tr_el_mb(CM_t *cm, int L, CP9Bands_t *cp9b, int fill_L, int fill_R)
+{
+  int      status;
+  int     *eldmax = NULL;
+  int      r, plane;
+  int64_t  nfloats;
+  float    totmb = 0.;
+  ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+  for (plane = 0; plane <= 2; plane++) {
+    if (plane == 1 && ! fill_L) continue;
+    if (plane == 2 && ! fill_R) continue;
+    tr_outside_hb_el_dmax(cm, L, 0, cm->M-1, 1, L, plane, cp9b, eldmax);
+    nfloats = 0;
+    for (r = 0; r <= L; r++) if (eldmax[r] >= 0) nfloats += (int64_t) (eldmax[r]+1);
+    totmb += (float) (nfloats * sizeof(float) / 1000000.);
+  }
+  free(eldmax);
+  return totmb;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.; /* never reached */
+}
+
 /* Function: cm_DnCAlignSizeNeededHB()
  * Incept:   Brief 26_0430-225
  *
@@ -10106,17 +10169,13 @@ cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *
   CP9Bands_t *cp9b = cm->cp9b;
   int v, w, y, wend, yend;
   int64_t best_vjd_nc = 0, best_sh_bytes = 0;
-  /* brief 26_0430-226: outside_hb()'s EL deck (state cm->M) is allocated
-   * FULL/UNBANDED ("no band on EL") at i0=1,j0=L every time generic_splitter_hb()
-   * or wedge_splitter_hb() runs an outside pass in local mode -- confirmed by
-   * reading outside_hb() (cm_dpsmall.c:5318-5325, alloc_vjd_deck(), not the
-   * banded allocator) and empirically: this single term alone (size_vjd_deck(L,1,L))
-   * matched every genome/medium-scale D&C ground-truth measurement to within
-   * 0.1-9% (tRNA through sarscov2, both bps=0 and bps>0) -- it was the estimator's
-   * ENTIRE prior under-estimate, not the beta[v] leak (real, fixed separately,
-   * but empirically secondary at the scales tested). Not previously modeled at all. */
+  /* brief 26_0430-228: outside_hb()'s EL deck (state cm->M) is now BANDED
+   * (brief 227: outside_hb_el_dmax()/alloc_el_banded_vjd_deck(), cm_dpsmall.c
+   * :5329/5375) rather than the old full-triangle alloc_vjd_deck() this
+   * comment used to describe -- see mxest_dnc_el_mb() above for the banded
+   * upper-bound replacement (was size_vjd_deck(L,1,L) pre-228). */
   int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
-  float elmb  = have_el ? size_vjd_deck(L, 1, L) : 0.;
+  float elmb  = have_el ? mxest_dnc_el_mb(cm, L, cp9b) : 0.;
 
   int has_bif = FALSE;
   for (v = 0; v < cm->M; v++) {
@@ -10189,12 +10248,15 @@ cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float
   int planes = 1 + (fill_L?1:0) + (fill_R?1:0); /* J always; L/R per mode -- cm_dpsmall.c:9264 */
   int v, w, y, wend, yend;
   int64_t best_vjd_nc = 0, best_sh_bytes = 0;
-  /* brief 26_0430-226: tr_outside_hb() allocates one full/unbanded EL deck
-   * PER active plane (J always, L/R per fill_L/fill_R -- cm_dpsmall.c:7364-7383,
-   * confirmed by reading), all concurrently live. Same previously-unmodeled
-   * gap as the non-trunc D&C estimator; see cm_DnCAlignSizeNeededHB()'s comment. */
+  /* brief 26_0430-228: tr_outside_hb() now allocates one BANDED EL deck per
+   * active plane (J always, L/R per fill_L/fill_R -- brief 227:
+   * tr_outside_hb_el_dmax()/alloc_el_banded_vjd_deck(), cm_dpsmall.c
+   * :5443/7617-7636) rather than the old full-triangle decks this comment
+   * used to describe -- see mxest_dnc_tr_el_mb() above for the banded
+   * upper-bound replacement (was (float)planes * size_vjd_deck(L,1,L)
+   * pre-228). */
   int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
-  float elmb  = have_el ? (float)planes * size_vjd_deck(L, 1, L) : 0.;
+  float elmb  = have_el ? mxest_dnc_tr_el_mb(cm, L, cp9b, fill_L, fill_R) : 0.;
 
   int has_bif = FALSE;
   for (v = 0; v < cm->M; v++) {
