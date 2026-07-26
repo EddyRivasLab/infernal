@@ -270,15 +270,52 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
 	pdf += gamma[v][n];
       }
     }
-    else if (v != 0) { 
+    else if (v != 0) {
       /* not a B_st, not the ROOT_S state (only way out of ROOT_S is via a local begin) */
+      int self_yoffset = -1; /* set if state v has a self-transition (e.g. IL->IL, IR->IR) */
       pdf = 0.;
       dv = StateDelta(cm->sttype[v]);
-      for (n = dv; n <= Z; n++) { 
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) { 
-	  y = cm->cfirst[v] + yoffset;
-	  gamma[v][n] += t_copy[v][yoffset] * gamma[y][n-dv];
+      /* Loop nesting is (yoffset outer, n inner) rather than (n outer,
+       * yoffset inner), with the self-transition (if any) handled in
+       * its own final pass. This is necessary, not just a vectorization
+       * nicety: insert states (IL_st/IR_st) have self-loop transitions
+       * (cm->cfirst[v]+yoffset == v for one yoffset), so gamma[v][n]
+       * depends on gamma[v][n-dv] computed earlier in the SAME state's
+       * loop. Naively reordering to (yoffset outer, n inner) without
+       * isolating the self-transition breaks that recurrence (confirmed:
+       * caused "Z got insanely large" build failures on mev1/sarscov2
+       * during development). The fix: accumulate all non-self children's
+       * contributions first (order among each other doesn't matter, safe
+       * to vectorize), then fold in the self-transition last via an
+       * explicit sequential scan over n, which reproduces the same
+       * recurrence relation as the original code (verified by induction:
+       * at each n the self-fold reads gamma[v][n-dv], which by that point
+       * already holds the fully-accumulated value, exactly as the
+       * original n-outer loop would have left it after processing n-dv).
+       * Note this changes the floating-point summation order for states
+       * with a self-transition (self term is now added last, not first),
+       * so results are not guaranteed bit-identical to the original for
+       * those states -- validate downstream QDB values empirically.
+       * brief 26_0719-021.
+       */
+      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	y = cm->cfirst[v] + yoffset;
+	if (y == v) { self_yoffset = yoffset; continue; }
+	double tval          = (double) t_copy[v][yoffset];
+	double *gamma_v      = gamma[v];
+	double *gamma_y      = gamma[y];
+	for (n = dv; n <= Z; n++) {
+	  gamma_v[n] += tval * gamma_y[n-dv];
 	}
+      }
+      if (self_yoffset != -1) {
+	double aself    = (double) t_copy[v][self_yoffset];
+	double *gamma_v = gamma[v];
+	for (n = dv; n <= Z; n++) {
+	  gamma_v[n] += aself * gamma_v[n-dv];
+	}
+      }
+      for (n = dv; n <= Z; n++) {
 	pdf += gamma[v][n];
       }
     }
