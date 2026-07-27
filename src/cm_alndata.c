@@ -223,28 +223,40 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
    * intrinsically bounded rather than merely capped. */
   {
     int     v;
-    int64_t n_empty_intersect = 0;
+    int64_t n_cp9_sentinel = 0;  /* CP9 baseline itself already unreachable (imin>imax or jmin>jmax)
+                                  * for this state -- the expected, harmless common case for a
+                                  * low-coverage sequence (most states never got CP9-posterior
+                                  * support to begin with; see cp9_HMM2ijBands's -1/-2 sentinel
+                                  * convention, hmmband.c). Intersection is trivially "empty"
+                                  * here only because the baseline was already empty; falling
+                                  * back to it just re-applies that same (zero-cost) sentinel. */
+    int64_t n_real_empty    = 0; /* CP9 baseline had real (non-sentinel) support but the CYK band
+                                  * missed it entirely -- the accuracy-risk edge case brief 238
+                                  * explicitly asks to guard against. Should be rare/never for a
+                                  * genuinely visited state; investigate if this is ever nonzero. */
     for(v = 0; v < M; v++) {
+      int cp9_is_sentinel = (s_imin[v] > s_imax[v] || s_jmin[v] > s_jmax[v]);
       int ni_min = ESL_MAX(cm->cp9b->imin[v], s_imin[v]);
       int ni_max = ESL_MIN(cm->cp9b->imax[v], s_imax[v]);
       int nj_min = ESL_MAX(cm->cp9b->jmin[v], s_jmin[v]);
       int nj_max = ESL_MIN(cm->cp9b->jmax[v], s_jmax[v]);
       if(ni_min > ni_max || nj_min > nj_max) {
-        /* Empty intersection (should not happen for a visited state whose
-         * own parse residues lie within its own posterior support; guard
-         * against it anyway per brief 238's safety requirement -- never let
-         * a state go silently unreachable here). Fall back to the CP9
-         * (pre-tighten) band for this state alone. */
+        /* Empty intersection. Never leave a state silently unreachable here
+         * (brief 238's safety requirement) -- fall back to the CP9
+         * (pre-tighten) band for this state alone, whatever it is
+         * (sentinel or real). */
         ni_min = s_imin[v]; ni_max = s_imax[v];
         nj_min = s_jmin[v]; nj_max = s_jmax[v];
-        n_empty_intersect++;
+        if(cp9_is_sentinel) n_cp9_sentinel++;
+        else                n_real_empty++;
       }
       cm->cp9b->imin[v] = ni_min; cm->cp9b->imax[v] = ni_max;
       cm->cp9b->jmin[v] = nj_min; cm->cp9b->jmax[v] = nj_max;
     }
-    if(n_empty_intersect > 0 && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
-      fprintf(stderr, "#CKPT_CYKBANDS never-loosen: %" PRId64 " state(s) had an empty CYK/CP9 intersection, fell back to CP9 band (M=%d L=%d)\n",
-              n_empty_intersect, cm->M, L);
+    if((n_cp9_sentinel > 0 || n_real_empty > 0) && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
+      fprintf(stderr, "#CKPT_CYKBANDS never-loosen: %" PRId64 " state(s) CP9-sentinel (expected, zero-cost) + "
+              "%" PRId64 " state(s) real-empty-intersection (accuracy-risk fallback) (M=%d L=%d)\n",
+              n_cp9_sentinel, n_real_empty, cm->M, L);
     /* hd_dn[v] is a pure function of state type + do_trunc (ij2d_bands), not of
      * band width, so it is unaffected by the intersection above and does not
      * strictly need recomputing -- but call both to stay in lockstep with
