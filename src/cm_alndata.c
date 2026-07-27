@@ -79,6 +79,105 @@ rung4_trpins_from_cyk(CM_t *cm, Parsetree_t *tr,
   }
 }
 
+/* brief 26_0430-234: total d-band cell count across all CM states -- a proxy for
+ * pass-2's HB DP work.  Mirrors the inline band-area loop the --cykbands pre-pass
+ * uses (cm_alndata.c ~L940), factored out so the CKPT_CYKBANDS piggyback can
+ * report the pre/post-tighten reduction with identical methodology to brief 233. */
+static double
+ckpt_cykbands_cellcount(CM_t *cm)
+{
+  CP9Bands_t *cp9b = cm->cp9b;
+  double cells = 0.;
+  int v, jp;
+  for(v = 0; v < cm->M; v++)
+    for(jp = 0; jp <= cp9b->jmax[v] - cp9b->jmin[v]; jp++)
+      if(hd_min(cp9b, v, jp) <= hd_max(cp9b, v, jp))
+        cells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
+  return cells;
+}
+
+/* brief 26_0430-234: piggyback spatial band tightening on --ckpt's OWN pass-1
+ * CYK/D&C parsetree (<tr>), before it is freed, to shrink pass-2's Inside/Outside/
+ * Posterior/OptAcc band area at ZERO extra CYK cost -- the parse was going to be
+ * computed and discarded anyway (only its bifurcation k* pins are used today).
+ * This is NOT the separate --cykbands mechanism (which runs its own extra, full-
+ * memory, non-checkpointed CYK pre-pass, defeating --ckpt's whole point); this
+ * reuses the checkpointed pass-1 tree already in hand.  Off by default; opt-in
+ * diagnostic env var CKPT_CYKBANDS (pad override via CKPT_CYKBANDS_PAD).
+ *
+ * <preserve_valid> TRUE for the truncated rung-4 path.  cm_BandsFromCYKParsetree's
+ * do_trunc branch declares truncated bands "not supported" and clobbers
+ * cp9b->{J,L,R,T}valid to J-only, which would break rung-4 pass-2's per-mode
+ * validity gating (cm_CheckptTr{Post,OptAcc}AlignHB skip cells on
+ * mode==TRMODE_L && !Lvalid[v], etc).  BUT ij2d_bands recomputes the on-demand
+ * hd_dn[] d-band floor from do_trunc + state type ONLY -- never from the valid
+ * flags -- so the tightened spatial i/j/hd bands ARE correct for truncated mode;
+ * only the mode-validity is wrong.  We therefore save cp9b's validity across the
+ * call and restore it: spatial bands tighten, the resolved r4_mode stays valid.
+ * For the non-truncated rung-3 path (preserve_valid FALSE) the non-trunc branch's
+ * Jvalid-all-TRUE / L,R,Tvalid-FALSE already matches rung-3's expected validity,
+ * so no save/restore is needed.
+ *
+ * Correctness of pins vs bands: the bifurcation k* pins were just extracted from
+ * the SAME <tr>.  Every pinned B state is a VISITED state, so its tightened
+ * band is [visited emitl/emitr] +/- pad and necessarily contains the pinned
+ * cell.  Unvisited B states carry no pin (kpin=-1), so the phantom-wide-band
+ * inheritance (project_cykbands_h5_cache_verdict) can only widen an unpinned
+ * state -- it can never exclude a pin.  No pin/band conflict is possible.
+ *
+ * Returns eslOK (bands tightened, *ret_orig/*ret_tight set to pre/post d-cell
+ * counts) or a failure status (validity restored, bands left as cm_Bands... left
+ * them). */
+static int
+ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_idx,
+                      int preserve_valid, double *ret_orig, double *ret_tight)
+{
+  int    status;
+  int    nv  = cm->M + 1;
+  int   *Jv = NULL, *Lv = NULL, *Rv = NULL, *Tv = NULL;
+  int    pad = cm->p7_cykbands_pad;             /* default 5 (cm.c); shared with --cykbands */
+  const char *pad_env = getenv("CKPT_CYKBANDS_PAD");
+  double orig, tight;
+  if(pad_env != NULL) pad = atoi(pad_env);
+
+  orig = ckpt_cykbands_cellcount(cm);
+
+  if(preserve_valid) {
+    ESL_ALLOC(Jv, sizeof(int)*nv); ESL_ALLOC(Lv, sizeof(int)*nv);
+    ESL_ALLOC(Rv, sizeof(int)*nv); ESL_ALLOC(Tv, sizeof(int)*nv);
+    memcpy(Jv, cm->cp9b->Jvalid, sizeof(int)*nv);
+    memcpy(Lv, cm->cp9b->Lvalid, sizeof(int)*nv);
+    memcpy(Rv, cm->cp9b->Rvalid, sizeof(int)*nv);
+    memcpy(Tv, cm->cp9b->Tvalid, sizeof(int)*nv);
+  }
+
+  status = cm_BandsFromCYKParsetree(cm, errbuf, tr, 1, L, pad, NULL, FALSE,
+                                    cm->cp9b, pass_idx, 0);
+
+  if(preserve_valid) {
+    memcpy(cm->cp9b->Jvalid, Jv, sizeof(int)*nv);
+    memcpy(cm->cp9b->Lvalid, Lv, sizeof(int)*nv);
+    memcpy(cm->cp9b->Rvalid, Rv, sizeof(int)*nv);
+    memcpy(cm->cp9b->Tvalid, Tv, sizeof(int)*nv);
+    free(Jv); free(Lv); free(Rv); free(Tv);
+    Jv = Lv = Rv = Tv = NULL;
+  }
+
+  if(status != eslOK) return status;
+
+  tight = ckpt_cykbands_cellcount(cm);
+  if(ret_orig)  *ret_orig  = orig;
+  if(ret_tight) *ret_tight = tight;
+  return eslOK;
+
+ ERROR:
+  if(Jv) free(Jv);
+  if(Lv) free(Lv);
+  if(Rv) free(Rv);
+  if(Tv) free(Tv);
+  return status;
+}
+
 /*****************************************************************
  * 1. The CM_ALNDATA object
  *****************************************************************/
@@ -1098,6 +1197,21 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  }
 		  if(status != eslOK) { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode); goto CM_ALIGN_HB_CHECK_FB; }
 		  rung4_trpins_from_cyk(cm, tr_best, bkind, kpin, bbmode, blmode, brmode);
+		  /* brief 26_0430-234: opt-in CKPT_CYKBANDS -- tighten pass-2 bands from
+		   * this same (truncated) pass-1 CYK tree before freeing it.  preserve_valid
+		   * TRUE: cm_BandsFromCYKParsetree clobbers marginal validity to J-only in
+		   * do_trunc mode; save/restore keeps the resolved r4_mode valid (see helper
+		   * doc). Only spatial i/j/hd bands tighten. */
+		  if(getenv("CKPT_CYKBANDS") != NULL) {
+		    double _oc = 0., _tc = 0.;
+		    if(ckpt_cykbands_tighten(cm, errbuf, tr_best, (int) sq->L, pass_idx,
+					     TRUE/*preserve_valid*/, &_oc, &_tc) == eslOK &&
+		       (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
+		      fprintf(stderr, "#CKPT_CYKBANDS rung=4 M=%d L=%d mode=%c band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
+			      cm->M, (int) sq->L,
+			      (r4_mode==TRMODE_J)?'J':(r4_mode==TRMODE_L)?'L':(r4_mode==TRMODE_R)?'R':'T',
+			      (_oc > 0. ? _tc/_oc : 1.0), _oc, _tc);
+		  }
 		  FreeParsetree(tr_best); tr_best = NULL;
 		  /* pass 2: checkpointed pinned truncated posterior -> emit_mx, then checkpointed
 		   * pinned truncated OptAcc + pinned-tree traceback -> parsetree + PP.  sc = the
@@ -1195,6 +1309,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    }
 	    if(status == eslOK) {
 	      rung3_kpin_from_cyk(cm, tr_cyk, kpin);
+	      /* brief 26_0430-234: opt-in CKPT_CYKBANDS -- tighten pass-2 bands from
+	       * this same (non-truncated) pass-1 CYK tree before freeing it. No
+	       * valid-flag save/restore needed (rung-3 is non-truncated). */
+	      if(getenv("CKPT_CYKBANDS") != NULL) {
+		double _oc = 0., _tc = 0.;
+		if(ckpt_cykbands_tighten(cm, errbuf, tr_cyk, (int) sq->L, pass_idx,
+					 FALSE/*preserve_valid*/, &_oc, &_tc) == eslOK &&
+		   (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
+		  fprintf(stderr, "#CKPT_CYKBANDS rung=3 M=%d L=%d band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
+			  cm->M, (int) sq->L, (_oc > 0. ? _tc/_oc : 1.0), _oc, _tc);
+	      }
 	      FreeParsetree(tr_cyk); tr_cyk = NULL;
 	    }
 	  }
