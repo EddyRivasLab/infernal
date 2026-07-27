@@ -125,22 +125,60 @@ ckpt_cykbands_cellcount(CM_t *cm)
  * inheritance (project_cykbands_h5_cache_verdict) can only widen an unpinned
  * state -- it can never exclude a pin.  No pin/band conflict is possible.
  *
- * Returns eslOK (bands tightened, *ret_orig/*ret_tight set to pre/post d-cell
- * counts) or a failure status (validity restored, bands left as cm_Bands... left
+ * brief 26_0430-237: for a low-coverage sequence (most of a large CM's states
+ * unvisited by the pass-1 CYK parse) the unvisited-state full-envelope fallback
+ * in cm_BandsFromCYKParsetree can INFLATE the band area by 30x-40000x (O(L^2)
+ * d-cells per fallback state), producing a hundreds-of-billions-of-cell pass-2
+ * matrix that hangs or OOM-kills the process. Guard: after tightening, if the
+ * cell count exceeds <maxratio> x the untightened baseline (default 3.0, env
+ * CKPT_CYKBANDS_MAXRATIO), REVERT to the snapshotted untightened --ckpt bands.
+ *
+ * Returns eslOK (bands tightened, or reverted-to-untightened if the guard fired;
+ * *ret_orig/*ret_tight set to pre/post d-cell counts, *ret_tight == *ret_orig on
+ * revert) or a failure status (validity restored, bands left as cm_Bands... left
  * them). */
 static int
 ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_idx,
                       int preserve_valid, double *ret_orig, double *ret_tight)
 {
   int    status;
+  int    M   = cm->M;
   int    nv  = cm->M + 1;
   int   *Jv = NULL, *Lv = NULL, *Rv = NULL, *Tv = NULL;
+  /* brief 26_0430-237: snapshot of the pre-tighten (untightened --ckpt) spatial
+   * bands, so a low-coverage sequence whose CYK-parsetree tightening would BLOW
+   * UP the band area -- most of a large CM's states unvisited, each falling back
+   * to the full [i0..j0] envelope, contributing O(L^2) d-cells apiece -- can be
+   * safely REVERTED to the untightened bands rather than committing pass-2 to an
+   * unbounded (hundreds-of-billions-of-cell) DP matrix (hang / OOM). */
+  int   *s_imin=NULL, *s_imax=NULL, *s_jmin=NULL, *s_jmax=NULL, *s_hddn=NULL;
+  int64_t s_hd_needed = 0, s_hd_alloced = 0;
   int    pad = cm->p7_cykbands_pad;             /* default 5 (cm.c); shared with --cykbands */
   const char *pad_env = getenv("CKPT_CYKBANDS_PAD");
-  double orig, tight;
+  /* brief 26_0430-237: revert the tightening for this sequence if it inflates the
+   * band-cell count beyond <maxratio> x the untightened --ckpt baseline. The
+   * legitimate widening ever observed (visited-state pad expansion) topped out at
+   * 2.24x (5S_rRNA, pad=8; brief 236); the low-coverage fallback blowup produces
+   * ratios of 30x-40000x (brief 237). Default 3.0 cleanly separates the two;
+   * override with CKPT_CYKBANDS_MAXRATIO (<=0 disables the guard). */
+  double orig, tight, maxratio = 3.0;
+  const char *mr_env = getenv("CKPT_CYKBANDS_MAXRATIO");
   if(pad_env != NULL) pad = atoi(pad_env);
+  if(mr_env  != NULL) maxratio = atof(mr_env);
 
   orig = ckpt_cykbands_cellcount(cm);
+
+  /* snapshot untightened spatial bands (+ derived hd_dn / hd_needed) for revert */
+  ESL_ALLOC(s_imin, sizeof(int)*M); ESL_ALLOC(s_imax, sizeof(int)*M);
+  ESL_ALLOC(s_jmin, sizeof(int)*M); ESL_ALLOC(s_jmax, sizeof(int)*M);
+  ESL_ALLOC(s_hddn, sizeof(int)*M);
+  memcpy(s_imin, cm->cp9b->imin,  sizeof(int)*M);
+  memcpy(s_imax, cm->cp9b->imax,  sizeof(int)*M);
+  memcpy(s_jmin, cm->cp9b->jmin,  sizeof(int)*M);
+  memcpy(s_jmax, cm->cp9b->jmax,  sizeof(int)*M);
+  memcpy(s_hddn, cm->cp9b->hd_dn, sizeof(int)*M);
+  s_hd_needed  = cm->cp9b->hd_needed;
+  s_hd_alloced = cm->cp9b->hd_alloced;
 
   if(preserve_valid) {
     ESL_ALLOC(Jv, sizeof(int)*nv); ESL_ALLOC(Lv, sizeof(int)*nv);
@@ -163,9 +201,29 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
     Jv = Lv = Rv = Tv = NULL;
   }
 
-  if(status != eslOK) return status;
+  if(status != eslOK) goto ERROR;
 
   tight = ckpt_cykbands_cellcount(cm);
+
+  /* brief 26_0430-237: blowup guard -- if tightening inflated the band area past
+   * the ratio cap, revert to the untightened --ckpt bands. Safe: this one
+   * sequence simply forgoes the CKPT_CYKBANDS speedup and aligns with exactly the
+   * bands it would have used with CKPT_CYKBANDS off (no accuracy change vs off). */
+  if(maxratio > 0. && orig > 0. && tight > maxratio * orig) {
+    memcpy(cm->cp9b->imin,  s_imin, sizeof(int)*M);
+    memcpy(cm->cp9b->imax,  s_imax, sizeof(int)*M);
+    memcpy(cm->cp9b->jmin,  s_jmin, sizeof(int)*M);
+    memcpy(cm->cp9b->jmax,  s_jmax, sizeof(int)*M);
+    memcpy(cm->cp9b->hd_dn, s_hddn, sizeof(int)*M);
+    cm->cp9b->hd_needed  = s_hd_needed;
+    cm->cp9b->hd_alloced = s_hd_alloced;
+    if(getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE"))
+      fprintf(stderr, "#CKPT_CYKBANDS blowup-guard REVERTED: tight/orig=%.1f > %.1f, kept untightened bands (M=%d L=%d)\n",
+              tight/orig, maxratio, cm->M, L);
+    tight = orig;   /* effective (post-revert) cell count */
+  }
+
+  free(s_imin); free(s_imax); free(s_jmin); free(s_jmax); free(s_hddn);
   if(ret_orig)  *ret_orig  = orig;
   if(ret_tight) *ret_tight = tight;
   return eslOK;
@@ -175,6 +233,11 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
   if(Lv) free(Lv);
   if(Rv) free(Rv);
   if(Tv) free(Tv);
+  if(s_imin) free(s_imin);
+  if(s_imax) free(s_imax);
+  if(s_jmin) free(s_jmin);
+  if(s_jmax) free(s_jmax);
+  if(s_hddn) free(s_hddn);
   return status;
 }
 
