@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <inttypes.h>
 
 #include "easel.h"
 
@@ -202,6 +203,56 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
   }
 
   if(status != eslOK) goto ERROR;
+
+  /* brief 26_0430-238: NEVER-LOOSEN -- intersect the just-computed CYK-tightened
+   * spatial bands with the snapshotted untightened (CP9-posterior) bands, per
+   * state. The CYK tightening is supposed to only ever SHRINK a state's band;
+   * for a state unvisited by the pass-1 CYK parse (common in local mode for a
+   * low-coverage/fragment sequence -- most of a large CM's states) the
+   * full-envelope fallback above instead EXPANDS it past the CP9 baseline
+   * (project_cykbands_h5_cache_verdict / brief 237's measured 94K->190M-cell
+   * blowup on the LSU fragment repro). Intersecting bounds the result to
+   * [never worse than the untightened --ckpt baseline]: unvisited states'
+   * full-envelope CYK band always contains the CP9 band, so the intersection
+   * collapses back to exactly the CP9 band (safe, unchanged cost, and -- per
+   * brief 235 -- still covers every state OptAcc/MEA might diverge into);
+   * visited states' CYK band already sits inside (or pad-widens slightly past)
+   * the CP9 band, so the intersection preserves the brief 234/236 tightening
+   * win. This makes brief 237's revert-on-blowup ratio cap a pure backstop
+   * that should no longer fire on real data -- the mechanism is now
+   * intrinsically bounded rather than merely capped. */
+  {
+    int     v;
+    int64_t n_empty_intersect = 0;
+    for(v = 0; v < M; v++) {
+      int ni_min = ESL_MAX(cm->cp9b->imin[v], s_imin[v]);
+      int ni_max = ESL_MIN(cm->cp9b->imax[v], s_imax[v]);
+      int nj_min = ESL_MAX(cm->cp9b->jmin[v], s_jmin[v]);
+      int nj_max = ESL_MIN(cm->cp9b->jmax[v], s_jmax[v]);
+      if(ni_min > ni_max || nj_min > nj_max) {
+        /* Empty intersection (should not happen for a visited state whose
+         * own parse residues lie within its own posterior support; guard
+         * against it anyway per brief 238's safety requirement -- never let
+         * a state go silently unreachable here). Fall back to the CP9
+         * (pre-tighten) band for this state alone. */
+        ni_min = s_imin[v]; ni_max = s_imax[v];
+        nj_min = s_jmin[v]; nj_max = s_jmax[v];
+        n_empty_intersect++;
+      }
+      cm->cp9b->imin[v] = ni_min; cm->cp9b->imax[v] = ni_max;
+      cm->cp9b->jmin[v] = nj_min; cm->cp9b->jmax[v] = nj_max;
+    }
+    if(n_empty_intersect > 0 && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
+      fprintf(stderr, "#CKPT_CYKBANDS never-loosen: %" PRId64 " state(s) had an empty CYK/CP9 intersection, fell back to CP9 band (M=%d L=%d)\n",
+              n_empty_intersect, cm->M, L);
+    /* hd_dn[v] is a pure function of state type + do_trunc (ij2d_bands), not of
+     * band width, so it is unaffected by the intersection above and does not
+     * strictly need recomputing -- but call both to stay in lockstep with
+     * cm_BandsFromCYKParsetree's own post-band-fill sequence and keep
+     * hd_needed (diagnostic) consistent with the now-narrower jmin/jmax. */
+    if((status = cp9_GrowHDBands(cm->cp9b, errbuf)) != eslOK) goto ERROR;
+    ij2d_bands(cm, cm->cp9b, cm_pli_PassAllowsTruncation(pass_idx), 0);
+  }
 
   tight = ckpt_cykbands_cellcount(cm);
 
