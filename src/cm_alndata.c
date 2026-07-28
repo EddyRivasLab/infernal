@@ -97,56 +97,47 @@ ckpt_cykbands_cellcount(CM_t *cm)
   return cells;
 }
 
-/* brief 26_0430-234: piggyback spatial band tightening on --ckpt's OWN pass-1
- * CYK/D&C parsetree (<tr>), before it is freed, to shrink pass-2's Inside/Outside/
- * Posterior/OptAcc band area at ZERO extra CYK cost -- the parse was going to be
- * computed and discarded anyway (only its bifurcation k* pins are used today).
- * This is NOT the separate --cykbands mechanism (which runs its own extra, full-
- * memory, non-checkpointed CYK pre-pass, defeating --ckpt's whole point); this
- * reuses the checkpointed pass-1 tree already in hand.  Off by default; opt-in
- * diagnostic env var CKPT_CYKBANDS (pad override via CKPT_CYKBANDS_PAD).
+/* brief 26_0430-243: env-agnostic, diagnostic-neutral CORE of the CYK-band
+ * tightening + never-loosen bounding, factored out of ckpt_cykbands_tighten()
+ * (below) so the standalone --cykbands path can share the *exact same* bounded
+ * mechanism.  Before this, --cykbands called cm_BandsFromCYKParsetree() raw --
+ * no baseline snapshot, no never-loosen intersection, no bounded hd-recompute --
+ * so the unvisited-state full-envelope fallback (project_cykbands_h5_cache_verdict)
+ * could inflate the pass-2 matrix without bound and outright fail at genome scale
+ * (brief 26_0430-242: band_area_ratio up to 145924x, 343 GB matrix, 4 dengue
+ * cells ESL_XFAIL'd).  The CKPT_CYKBANDS path never blew up because it already
+ * had the never-loosen bounding (brief 26_0430-238); this helper hands that same
+ * bounding to --cykbands.
  *
- * <preserve_valid> TRUE for the truncated rung-4 path.  cm_BandsFromCYKParsetree's
- * do_trunc branch declares truncated bands "not supported" and clobbers
- * cp9b->{J,L,R,T}valid to J-only, which would break rung-4 pass-2's per-mode
- * validity gating (cm_CheckptTr{Post,OptAcc}AlignHB skip cells on
- * mode==TRMODE_L && !Lvalid[v], etc).  BUT ij2d_bands recomputes the on-demand
- * hd_dn[] d-band floor from do_trunc + state type ONLY -- never from the valid
- * flags -- so the tightened spatial i/j/hd bands ARE correct for truncated mode;
- * only the mode-validity is wrong.  We therefore save cp9b's validity across the
- * call and restore it: spatial bands tighten, the resolved r4_mode stays valid.
- * For the non-truncated rung-3 path (preserve_valid FALSE) the non-trunc branch's
- * Jvalid-all-TRUE / L,R,Tvalid-FALSE already matches rung-3's expected validity,
- * so no save/restore is needed.
+ * <pad> and <maxratio> are plain arguments -- this core reads NO env vars.  The
+ * CKPT_CYKBANDS_PAD / CKPT_CYKBANDS_MAXRATIO overrides are applied ONLY by the
+ * ckpt_cykbands_tighten() wrapper; the --cykbands caller passes cm->p7_cykbands_pad
+ * (from --cykpad) and a plain constant backstop, so --cykbands is NOT overridable
+ * by the CKPT_* env vars (brief 26_0430-243 constraint 1).  Diagnostic counts are
+ * returned via out-params (this core emits NO fprintf); each caller prints its
+ * own labeled message.  All band-mutation semantics are otherwise identical to
+ * the pre-refactor ckpt_cykbands_tighten() -- see that wrapper's doc comment for
+ * the never-loosen / preserve_valid / blowup-guard rationale.
  *
- * Correctness of pins vs bands: the bifurcation k* pins were just extracted from
- * the SAME <tr>.  Every pinned B state is a VISITED state, so its tightened
- * band is [visited emitl/emitr] +/- pad and necessarily contains the pinned
- * cell.  Unvisited B states carry no pin (kpin=-1), so the phantom-wide-band
- * inheritance (project_cykbands_h5_cache_verdict) can only widen an unpinned
- * state -- it can never exclude a pin.  No pin/band conflict is possible.
+ * <ret_n_sentinel>/<ret_n_real_empty>: never-loosen empty-intersection counts
+ *   (CP9 baseline already empty vs real accuracy-risk empty; brief 26_0430-238).
+ * <ret_revert_ratio>: 0.0 if the blowup-guard did not fire; else the
+ *   (pre-revert tight)/orig ratio that triggered the revert-to-baseline.
  *
- * brief 26_0430-237: for a low-coverage sequence (most of a large CM's states
- * unvisited by the pass-1 CYK parse) the unvisited-state full-envelope fallback
- * in cm_BandsFromCYKParsetree can INFLATE the band area by 30x-40000x (O(L^2)
- * d-cells per fallback state), producing a hundreds-of-billions-of-cell pass-2
- * matrix that hangs or OOM-kills the process. Guard: after tightening, if the
- * cell count exceeds <maxratio> x the untightened baseline (default 3.0, env
- * CKPT_CYKBANDS_MAXRATIO), REVERT to the snapshotted untightened --ckpt bands.
- *
- * Returns eslOK (bands tightened, or reverted-to-untightened if the guard fired;
- * *ret_orig/*ret_tight set to pre/post d-cell counts, *ret_tight == *ret_orig on
- * revert) or a failure status (validity restored, bands left as cm_Bands... left
- * them). */
+ * Returns eslOK (bands tightened, or reverted-to-baseline if the guard fired) or
+ * a failure status (validity restored, snapshots freed). */
 static int
-ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_idx,
-                      int preserve_valid, double *ret_orig, double *ret_tight)
+cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_idx,
+                         int preserve_valid, int pad, double maxratio,
+                         double *ret_orig, double *ret_tight,
+                         int64_t *ret_n_sentinel, int64_t *ret_n_real_empty,
+                         double *ret_revert_ratio)
 {
   int    status;
   int    M   = cm->M;
   int    nv  = cm->M + 1;
   int   *Jv = NULL, *Lv = NULL, *Rv = NULL, *Tv = NULL;
-  /* brief 26_0430-237: snapshot of the pre-tighten (untightened --ckpt) spatial
+  /* brief 26_0430-237: snapshot of the pre-tighten (untightened baseline) spatial
    * bands, so a low-coverage sequence whose CYK-parsetree tightening would BLOW
    * UP the band area -- most of a large CM's states unvisited, each falling back
    * to the full [i0..j0] envelope, contributing O(L^2) d-cells apiece -- can be
@@ -154,18 +145,8 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
    * unbounded (hundreds-of-billions-of-cell) DP matrix (hang / OOM). */
   int   *s_imin=NULL, *s_imax=NULL, *s_jmin=NULL, *s_jmax=NULL, *s_hddn=NULL;
   int64_t s_hd_needed = 0, s_hd_alloced = 0;
-  int    pad = cm->p7_cykbands_pad;             /* default 5 (cm.c); shared with --cykbands */
-  const char *pad_env = getenv("CKPT_CYKBANDS_PAD");
-  /* brief 26_0430-237: revert the tightening for this sequence if it inflates the
-   * band-cell count beyond <maxratio> x the untightened --ckpt baseline. The
-   * legitimate widening ever observed (visited-state pad expansion) topped out at
-   * 2.24x (5S_rRNA, pad=8; brief 236); the low-coverage fallback blowup produces
-   * ratios of 30x-40000x (brief 237). Default 3.0 cleanly separates the two;
-   * override with CKPT_CYKBANDS_MAXRATIO (<=0 disables the guard). */
-  double orig, tight, maxratio = 3.0;
-  const char *mr_env = getenv("CKPT_CYKBANDS_MAXRATIO");
-  if(pad_env != NULL) pad = atoi(pad_env);
-  if(mr_env  != NULL) maxratio = atof(mr_env);
+  int64_t n_cp9_sentinel = 0, n_real_empty = 0;
+  double  orig, tight, revert_ratio = 0.;
 
   orig = ckpt_cykbands_cellcount(cm);
 
@@ -212,7 +193,7 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
    * full-envelope fallback above instead EXPANDS it past the CP9 baseline
    * (project_cykbands_h5_cache_verdict / brief 237's measured 94K->190M-cell
    * blowup on the LSU fragment repro). Intersecting bounds the result to
-   * [never worse than the untightened --ckpt baseline]: unvisited states'
+   * [never worse than the untightened baseline]: unvisited states'
    * full-envelope CYK band always contains the CP9 band, so the intersection
    * collapses back to exactly the CP9 band (safe, unchanged cost, and -- per
    * brief 235 -- still covers every state OptAcc/MEA might diverge into);
@@ -223,17 +204,6 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
    * intrinsically bounded rather than merely capped. */
   {
     int     v;
-    int64_t n_cp9_sentinel = 0;  /* CP9 baseline itself already unreachable (imin>imax or jmin>jmax)
-                                  * for this state -- the expected, harmless common case for a
-                                  * low-coverage sequence (most states never got CP9-posterior
-                                  * support to begin with; see cp9_HMM2ijBands's -1/-2 sentinel
-                                  * convention, hmmband.c). Intersection is trivially "empty"
-                                  * here only because the baseline was already empty; falling
-                                  * back to it just re-applies that same (zero-cost) sentinel. */
-    int64_t n_real_empty    = 0; /* CP9 baseline had real (non-sentinel) support but the CYK band
-                                  * missed it entirely -- the accuracy-risk edge case brief 238
-                                  * explicitly asks to guard against. Should be rare/never for a
-                                  * genuinely visited state; investigate if this is ever nonzero. */
     for(v = 0; v < M; v++) {
       int cp9_is_sentinel = (s_imin[v] > s_imax[v] || s_jmin[v] > s_jmax[v]);
       int ni_min = ESL_MAX(cm->cp9b->imin[v], s_imin[v]);
@@ -247,16 +217,12 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
          * (sentinel or real). */
         ni_min = s_imin[v]; ni_max = s_imax[v];
         nj_min = s_jmin[v]; nj_max = s_jmax[v];
-        if(cp9_is_sentinel) n_cp9_sentinel++;
-        else                n_real_empty++;
+        if(cp9_is_sentinel) n_cp9_sentinel++;   /* CP9 baseline itself already unreachable (expected, harmless) */
+        else                n_real_empty++;     /* real accuracy-risk empty (brief 238; should be rare/never) */
       }
       cm->cp9b->imin[v] = ni_min; cm->cp9b->imax[v] = ni_max;
       cm->cp9b->jmin[v] = nj_min; cm->cp9b->jmax[v] = nj_max;
     }
-    if((n_cp9_sentinel > 0 || n_real_empty > 0) && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
-      fprintf(stderr, "#CKPT_CYKBANDS never-loosen: %" PRId64 " state(s) CP9-sentinel (expected, zero-cost) + "
-              "%" PRId64 " state(s) real-empty-intersection (accuracy-risk fallback) (M=%d L=%d)\n",
-              n_cp9_sentinel, n_real_empty, cm->M, L);
     /* hd_dn[v] is a pure function of state type + do_trunc (ij2d_bands), not of
      * band width, so it is unaffected by the intersection above and does not
      * strictly need recomputing -- but call both to stay in lockstep with
@@ -269,9 +235,11 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
   tight = ckpt_cykbands_cellcount(cm);
 
   /* brief 26_0430-237: blowup guard -- if tightening inflated the band area past
-   * the ratio cap, revert to the untightened --ckpt bands. Safe: this one
-   * sequence simply forgoes the CKPT_CYKBANDS speedup and aligns with exactly the
-   * bands it would have used with CKPT_CYKBANDS off (no accuracy change vs off). */
+   * the ratio cap, revert to the untightened baseline bands. Safe: this one
+   * sequence simply forgoes the CYK-tightening speedup and aligns with exactly
+   * the bands it would have used with tightening off (no accuracy change vs off).
+   * With the never-loosen intersection above this is a pure backstop that should
+   * no longer fire on real data. */
   if(maxratio > 0. && orig > 0. && tight > maxratio * orig) {
     memcpy(cm->cp9b->imin,  s_imin, sizeof(int)*M);
     memcpy(cm->cp9b->imax,  s_imax, sizeof(int)*M);
@@ -280,15 +248,16 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
     memcpy(cm->cp9b->hd_dn, s_hddn, sizeof(int)*M);
     cm->cp9b->hd_needed  = s_hd_needed;
     cm->cp9b->hd_alloced = s_hd_alloced;
-    if(getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE"))
-      fprintf(stderr, "#CKPT_CYKBANDS blowup-guard REVERTED: tight/orig=%.1f > %.1f, kept untightened bands (M=%d L=%d)\n",
-              tight/orig, maxratio, cm->M, L);
+    revert_ratio = tight / orig;
     tight = orig;   /* effective (post-revert) cell count */
   }
 
   free(s_imin); free(s_imax); free(s_jmin); free(s_jmax); free(s_hddn);
-  if(ret_orig)  *ret_orig  = orig;
-  if(ret_tight) *ret_tight = tight;
+  if(ret_orig)         *ret_orig         = orig;
+  if(ret_tight)        *ret_tight        = tight;
+  if(ret_n_sentinel)   *ret_n_sentinel   = n_cp9_sentinel;
+  if(ret_n_real_empty) *ret_n_real_empty = n_real_empty;
+  if(ret_revert_ratio) *ret_revert_ratio = revert_ratio;
   return eslOK;
 
  ERROR:
@@ -302,6 +271,82 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
   if(s_jmax) free(s_jmax);
   if(s_hddn) free(s_hddn);
   return status;
+}
+
+/* brief 26_0430-234: piggyback spatial band tightening on --ckpt's OWN pass-1
+ * CYK/D&C parsetree (<tr>), before it is freed, to shrink pass-2's Inside/Outside/
+ * Posterior/OptAcc band area at ZERO extra CYK cost -- the parse was going to be
+ * computed and discarded anyway (only its bifurcation k* pins are used today).
+ * This is NOT the separate --cykbands mechanism (which runs its own extra, full-
+ * memory, non-checkpointed CYK pre-pass, defeating --ckpt's whole point); this
+ * reuses the checkpointed pass-1 tree already in hand.  Off by default; opt-in
+ * diagnostic env var CKPT_CYKBANDS (pad override via CKPT_CYKBANDS_PAD).
+ *
+ * <preserve_valid> TRUE for the truncated rung-4 path.  cm_BandsFromCYKParsetree's
+ * do_trunc branch declares truncated bands "not supported" and clobbers
+ * cp9b->{J,L,R,T}valid to J-only, which would break rung-4 pass-2's per-mode
+ * validity gating (cm_CheckptTr{Post,OptAcc}AlignHB skip cells on
+ * mode==TRMODE_L && !Lvalid[v], etc).  BUT ij2d_bands recomputes the on-demand
+ * hd_dn[] d-band floor from do_trunc + state type ONLY -- never from the valid
+ * flags -- so the tightened spatial i/j/hd bands ARE correct for truncated mode;
+ * only the mode-validity is wrong.  We therefore save cp9b's validity across the
+ * call and restore it: spatial bands tighten, the resolved r4_mode stays valid.
+ * For the non-truncated rung-3 path (preserve_valid FALSE) the non-trunc branch's
+ * Jvalid-all-TRUE / L,R,Tvalid-FALSE already matches rung-3's expected validity,
+ * so no save/restore is needed.
+ *
+ * Correctness of pins vs bands: the bifurcation k* pins were just extracted from
+ * the SAME <tr>.  Every pinned B state is a VISITED state, so its tightened
+ * band is [visited emitl/emitr] +/- pad and necessarily contains the pinned
+ * cell.  Unvisited B states carry no pin (kpin=-1), so the phantom-wide-band
+ * inheritance (project_cykbands_h5_cache_verdict) can only widen an unpinned
+ * state -- it can never exclude a pin.  No pin/band conflict is possible.
+ *
+ * brief 26_0430-237: for a low-coverage sequence (most of a large CM's states
+ * unvisited by the pass-1 CYK parse) the unvisited-state full-envelope fallback
+ * in cm_BandsFromCYKParsetree can INFLATE the band area by 30x-40000x (O(L^2)
+ * d-cells per fallback state), producing a hundreds-of-billions-of-cell pass-2
+ * matrix that hangs or OOM-kills the process. Guard: after tightening, if the
+ * cell count exceeds <maxratio> x the untightened baseline (default 3.0, env
+ * CKPT_CYKBANDS_MAXRATIO), REVERT to the snapshotted untightened --ckpt bands.
+ *
+ * Returns eslOK (bands tightened, or reverted-to-untightened if the guard fired;
+ * *ret_orig/*ret_tight set to pre/post d-cell counts, *ret_tight == *ret_orig on
+ * revert) or a failure status (validity restored, bands left as cm_Bands... left
+ * them). */
+static int
+ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_idx,
+                      int preserve_valid, double *ret_orig, double *ret_tight)
+{
+  int         status;
+  int         pad      = cm->p7_cykbands_pad;   /* default 5 (cm.c); shared with --cykbands */
+  double      maxratio = 3.0;                   /* brief 26_0430-237: revert if band-cells > maxratio x
+                                                 * untightened baseline. Legit widening tops out ~2.24x
+                                                 * (5S_rRNA pad=8, brief 236); low-coverage blowup is
+                                                 * 30x-40000x (brief 237); 3.0 cleanly separates them.
+                                                 * With never-loosen this is a pure backstop. */
+  const char *pad_env  = getenv("CKPT_CYKBANDS_PAD");
+  const char *mr_env   = getenv("CKPT_CYKBANDS_MAXRATIO"); /* <=0 disables the guard */
+  int64_t     n_cp9_sentinel = 0, n_real_empty = 0;
+  double      revert_ratio   = 0.;
+
+  /* CKPT_CYKBANDS-only env overrides (the shared core is env-agnostic; brief 26_0430-243). */
+  if(pad_env != NULL) pad      = atoi(pad_env);
+  if(mr_env  != NULL) maxratio = atof(mr_env);
+
+  status = cykbands_tighten_bounded(cm, errbuf, tr, L, pass_idx, preserve_valid,
+                                    pad, maxratio, ret_orig, ret_tight,
+                                    &n_cp9_sentinel, &n_real_empty, &revert_ratio);
+  if(status != eslOK) return status;
+
+  if((n_cp9_sentinel > 0 || n_real_empty > 0) && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
+    fprintf(stderr, "#CKPT_CYKBANDS never-loosen: %" PRId64 " state(s) CP9-sentinel (expected, zero-cost) + "
+            "%" PRId64 " state(s) real-empty-intersection (accuracy-risk fallback) (M=%d L=%d)\n",
+            n_cp9_sentinel, n_real_empty, cm->M, L);
+  if(revert_ratio > 0. && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
+    fprintf(stderr, "#CKPT_CYKBANDS blowup-guard REVERTED: tight/orig=%.1f > %.1f, kept untightened bands (M=%d L=%d)\n",
+            revert_ratio, maxratio, cm->M, L);
+  return eslOK;
 }
 
 /*****************************************************************
@@ -1192,18 +1237,35 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 
 	double _tight_cells = _orig_cells;
 	if(_cyk_ok) {
-	  /* Per-state pad was archived 2026-05-19 (see cm_CYKPerstatePadCompute
-	   * doc comment for failure analysis). Production uses uniform pad. */
-	  if(cm_BandsFromCYKParsetree(cm, errbuf, _cyk_tr,
-				      1, sq->L, cm->p7_cykbands_pad, NULL, FALSE,
-				      cm->cp9b, pass_idx, 0) == eslOK) {
-	    _tight_cells = 0.;
-	    CP9Bands_t *_cp9b = cm->cp9b;
-	    int _v, _jp;
-	    for(_v = 0; _v < cm->M; _v++)
-	      for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
-		if(hd_min(_cp9b, _v, _jp) <= hd_max(_cp9b, _v, _jp))
-		  _tight_cells += hd_max(_cp9b, _v, _jp) - hd_min(_cp9b, _v, _jp) + 1;
+	  /* brief 26_0430-243: tighten via the SHARED bounded helper
+	   * (cykbands_tighten_bounded: baseline snapshot + never-loosen intersection
+	   * + bounded hd-recompute + backstop) -- the EXACT mechanism CKPT_CYKBANDS
+	   * uses (brief 26_0430-238).  This replaces the old raw cm_BandsFromCYKParsetree()
+	   * call, whose unvisited-state full-envelope fallback could inflate the pass-2
+	   * band area WITHOUT BOUND and outright fail at genome scale (brief 26_0430-242:
+	   * band_area_ratio up to 145924x -> 343 GB matrix -> 4 dengue cells ESL_XFAIL'd).
+	   * The intersection bounds every state's i/j band to the pre-tighten CP9/kmerchain
+	   * baseline that cm->cp9b holds right here, so the result is bounded-by-construction.
+	   *   pad      = cm->p7_cykbands_pad (from --cykpad); NOT CKPT_CYKBANDS_PAD.
+	   *   maxratio = 3.0 plain-constant backstop; NOT CKPT_CYKBANDS_MAXRATIO -- the
+	   *              --cykbands path must not read the CKPT_* env vars (constraint 1).
+	   *              With never-loosen this backstop should never fire.
+	   *   preserve_valid = do_trunc: cm_BandsFromCYKParsetree clobbers marginal
+	   *              validity to J-only in truncated mode, which pass-2's cm_TrAlignHB
+	   *              needs intact (constraint 3; this also fixes a latent validity bug
+	   *              in the old raw-call trunc path).
+	   * Per-state pad was archived 2026-05-19 (see cm_CYKPerstatePadCompute doc
+	   * comment for failure analysis). Production uses uniform pad. */
+	  double  _oc = 0., _tc = 0., _rr = 0.;
+	  int64_t _ns = 0, _nre = 0;
+	  if(cykbands_tighten_bounded(cm, errbuf, _cyk_tr, (int) sq->L, pass_idx,
+				      do_trunc/*preserve_valid*/, cm->p7_cykbands_pad, 3.0/*maxratio backstop*/,
+				      &_oc, &_tc, &_ns, &_nre, &_rr) == eslOK) {
+	    _tight_cells = _tc;
+	    if((_ns > 0 || _nre > 0 || _rr > 0.) && getenv("CYKBANDS_VERBOSE"))
+	      fprintf(stderr, "#CYKBANDS never-loosen: %" PRId64 " state(s) CP9-sentinel + %" PRId64
+		      " state(s) real-empty%s (M=%d L=%d)\n",
+		      _ns, _nre, (_rr > 0. ? " + blowup-guard REVERTED" : ""), cm->M, (int) sq->L);
 	  }
 	  FreeParsetree(_cyk_tr);
 	}
