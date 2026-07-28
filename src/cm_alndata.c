@@ -252,6 +252,46 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
     tight = orig;   /* effective (post-revert) cell count */
   }
 
+  /* brief 26_0430-243 VALIDATION instrumentation (env-gated, diagnostic-only,
+   * zero effect on bands/output -- Gate 0 byte-identity is preserved).
+   * CYKBANDS_SUBSET_CHECK: assert the never-loosen bounded-by-construction
+   *   invariant -- every state's final i/j band must be a SUBSET of the
+   *   pre-tighten baseline snapshot (imin>=base, imax<=base, jmin>=base,
+   *   jmax<=base). Counts + prints any violation (should be exactly 0).
+   * CYKBANDS_DUMP_TIGHT=<file>: dump per-state final tightened band AND the
+   *   baseline snapshot band, so the fixed --cykbands path and the CKPT_CYKBANDS
+   *   path (both call this helper) can be diffed for cross-path band equivalence. */
+  if(getenv("CYKBANDS_SUBSET_CHECK") != NULL) {
+    int v, nviol = 0;
+    for(v = 0; v < M; v++) {
+      if(cm->cp9b->imin[v] < s_imin[v] || cm->cp9b->imax[v] > s_imax[v] ||
+         cm->cp9b->jmin[v] < s_jmin[v] || cm->cp9b->jmax[v] > s_jmax[v]) {
+        nviol++;
+        if(nviol <= 10)
+          fprintf(stderr, "#CYKBANDS_SUBSET VIOLATION v=%d tight[%d,%d][%d,%d] base[%d,%d][%d,%d]\n",
+                  v, cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v],
+                  s_imin[v], s_imax[v], s_jmin[v], s_jmax[v]);
+      }
+    }
+    fprintf(stderr, "#CYKBANDS_SUBSET_CHECK M=%d L=%d violations=%d (0 == bounded-by-construction OK)\n",
+            cm->M, L, nviol);
+  }
+  {
+    const char *df = getenv("CYKBANDS_DUMP_TIGHT");
+    if(df != NULL) {
+      FILE *fp = fopen(df, "w");
+      if(fp != NULL) {
+        int v;
+        fprintf(fp, "v\ttimin\ttimax\ttjmin\ttjmax\tbimin\tbimax\tbjmin\tbjmax\n");
+        for(v = 0; v < M; v++)
+          fprintf(fp, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", v,
+                  cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v],
+                  s_imin[v], s_imax[v], s_jmin[v], s_jmax[v]);
+        fclose(fp);
+      }
+    }
+  }
+
   free(s_imin); free(s_imax); free(s_jmin); free(s_jmax); free(s_hddn);
   if(ret_orig)         *ret_orig         = orig;
   if(ret_tight)        *ret_tight        = tight;
