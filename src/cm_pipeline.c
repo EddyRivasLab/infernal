@@ -39,8 +39,8 @@ extern int p7_kbands2gbands    (int *i2k, int *kmin, int *kmax, int L, int M, P7
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
 extern int p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 
-static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin);
-static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, 
+static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int **ret_wnmerged, int *ret_nwin);
+static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int *wnmerged, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm,
             P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, float **ret_eb, P7_ALIDISPLAY ***ret_ead, int *ret_nenv);
 static int  pli_cyk_env_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *p7es, int64_t *p7ee, float *p7eb, float *p7_evparam, int np7env, CM_t **opt_cm, int64_t **ret_es, int64_t **ret_ee, int *ret_nenv);
 static int  pli_cyk_seq_filter     (CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **opt_cm, int64_t **ret_ws, int64_t **ret_we, int *ret_nwin);
@@ -1607,6 +1607,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   int64_t        *ws = NULL;      /* [0..i..nwin-1] window start positions, filled by pli_p7_filter() */
   int64_t        *we = NULL;      /* [0..i..nwin-1] window end   positions, filled by pli_p7_filter() */
   float          *wb = NULL;      /* [0..i..nwin-1] window bit scores, filled by pli_p7_filter, relevant only if pli->do_trm_F3 is TRUE */
+  int            *wnmerged = NULL; /* [0..i..nwin-1] # pre-merge windows collapsed into each window, filled by pli_p7_filter (issue #50) */
   int            *np7envA =NULL;  /* [0..p..NPLI_PASSES] number of envelopes surviving MSV & Vit & lFwd & gFwd & EnvDef, filled by pli_p7_env_def() */
   int64_t        **p7esAA = NULL; /* [0..p..NPLI_PASSES][0..i..np7env-1] window start positions, filled by pli_p7_env_def() */
   int64_t        **p7eeAA = NULL; /* [0..p..NPLI_PASSES][0..i..np7env-1] window end   positions, filled by pli_p7_env_def() */
@@ -1905,7 +1906,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
       printf("#DEBUG:\n#DEBUG: HMM ONLY PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-      if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) return status;
+      if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &wnmerged, &nwin)) != eslOK) return status;
       if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
       prv_ntophits = hitlist->N;
 
@@ -1983,7 +1984,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 	  /* Normal F1-F3 filtering */
 	  { ESL_STOPWATCH *w_f1f3 = esl_stopwatch_Create();
 	    esl_stopwatch_Start(w_f1f3);
-	    if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &nwin)) != eslOK) { esl_stopwatch_Destroy(w_f1f3); return status; }
+	    if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &wnmerged, &nwin)) != eslOK) { esl_stopwatch_Destroy(w_f1f3); return status; }
 	    esl_stopwatch_Stop(w_f1f3);
 	    pli->stg_time_F1F3 += w_f1f3->elapsed;
 	    esl_stopwatch_Destroy(w_f1f3);
@@ -2010,7 +2011,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
         }
         */
         
-        if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(p7eadAAA[p]), &(np7envA[p]))) != eslOK) return status;
+        if((status = pli_p7_env_def(pli, om, bg, p7_evparam, sq2search, ws, we, wnmerged, nwin, opt_hmm, opt_gm, opt_Rgm, opt_Lgm, opt_Tgm, &(p7esAA[p]), &(p7eeAA[p]), &(p7ebAA[p]), &(p7eadAAA[p]), &(np7envA[p]))) != eslOK) return status;
 
         if(pli->do_trm_F5) {
 
@@ -2029,9 +2030,10 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
         }
       } /* end of if(pli->do_edef) */         
     } /* end of 'else' entered if p != PLI_PASS_HMM_ONLY_ANY */
-    if(ws    != NULL) { free(ws);    ws   = NULL; }
-    if(we    != NULL) { free(we);    we   = NULL; }
-    if(wb    != NULL) { free(wb);    wb   = NULL; }
+    if(ws       != NULL) { free(ws);       ws       = NULL; }
+    if(we       != NULL) { free(we);       we       = NULL; }
+    if(wb       != NULL) { free(wb);       wb       = NULL; }
+    if(wnmerged != NULL) { free(wnmerged); wnmerged = NULL; } /* issue #50 */
     nwin = 0;
   } /* end of 'for(p = PLI_PASS_STD_ANY; p <= PLI_NPASSES; p++)', first loop over pipeline passes */
 
@@ -3331,7 +3333,7 @@ pli_build_nodepad(CM_PIPELINE *pli, CM_t *cm)
  * Xref:      J4/25.
  */
 int
-pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int *ret_nwin)
+pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int **ret_wnmerged, int *ret_nwin)
 {
   int               status;
   float             mfsc, vfsc, fwdsc; /* filter scores          */
@@ -3355,6 +3357,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   int64_t          *new_ws = NULL;     /* used when copying/modifying ws */
   int64_t          *new_we = NULL;     /* used when copying/modifying we */
   float            *new_wb = NULL;     /* used when copying/modifying wb */
+  int              *new_nmerged = NULL;/* [0..nsurv_fwd-1] # of overlapping windows merged into each output window (issue #50) */
   int               nsurv_fwd;         /* number of windows that survive fwd filter */
   ESL_DSQ          *subdsq;            /* a ptr to the first position of a window */
   int               have_rest;         /* do we have the full <om> read in? */
@@ -3684,24 +3687,33 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
     /* we could have overlapping windows, merge those that do overlap */
     ESL_ALLOC(useme, sizeof(int) * nsurv_fwd);
     esl_vec_ISet(useme, nsurv_fwd, FALSE);
+    /* issue #50: track, per surviving output window, how many overlapping
+     * pre-merge windows were collapsed into it. A count >= 2 flags a window
+     * that provably may contain >1 distinct hit; pli_p7_env_def() routes such
+     * windows through the unbanded (multihit-capable) glocal envelope
+     * definition, since the vitband/msvband banded multihit domaindef can miss
+     * the weaker of two closely-spaced hits (see issue #50 / brief 26_0718-039). */
+    ESL_ALLOC(new_nmerged, sizeof(int) * nsurv_fwd);
     i2 = 0;
-    for(i = 0, i2 = 0; i < nsurv_fwd; i++) { 
+    for(i = 0, i2 = 0; i < nsurv_fwd; i++) {
       useme[i] = TRUE;
       i2 = i+1;
-      while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) { 
+      while((i2 < nsurv_fwd) && ((new_we[i]+1) >= (new_ws[i2]))) {
 	useme[i2] = FALSE;
 	new_we[i] = new_we[i2]; /* merged i with i2, rewrite end for i */
         new_wb[i] = ESL_MAX(new_wb[i], new_wb[i2]); /* keep higher score */
 	i2++;
       }
+      new_nmerged[i] = i2 - i; /* issue #50: # windows merged into output i (>=1) */
       i = i2-1;
     }
     i2 = 0;
-    for(i = 0; i < nsurv_fwd; i++) { 
-      if(useme[i]) { 
+    for(i = 0; i < nsurv_fwd; i++) {
+      if(useme[i]) {
 	new_ws[i2] = new_ws[i];
 	new_we[i2] = new_we[i];
         new_wb[i2] = new_wb[i];
+        new_nmerged[i2] = new_nmerged[i]; /* issue #50: compact in place alongside ws/we/wb */
 	i2++;
       }
     }
@@ -3732,11 +3744,13 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
   *ret_ws   = ws;
   *ret_we   = we;
   *ret_wb   = wb;
+  *ret_wnmerged = new_nmerged; /* issue #50: NULL if nsurv_fwd==0 (never allocated) */
   *ret_nwin = nsurv_fwd;
 
   return eslOK;
 
  ERROR:
+  if(new_nmerged != NULL) free(new_nmerged);
   ESL_EXCEPTION(eslEMEM, "Error allocating memory for hit list in pipeline\n");
 
 }
@@ -3778,7 +3792,7 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
  *            <eslESYS> on failure of system call when reading HMM
  */
 int
-pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int nwin, 
+pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int *wnmerged, int nwin, 
          P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, int64_t **ret_es, int64_t **ret_ee, float **ret_eb, P7_ALIDISPLAY ***ret_ead, int *ret_nenv)
 {
   int              status;                     
@@ -3909,7 +3923,15 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   Tgm = *opt_Tgm;
   
   for (i = 0; i < nwin; i++) {
-#if eslDEBUGLEVEL >= 2    
+    /* issue #50 (brief 26_0718-039): a window that pli_p7_filter() formed by
+     * merging >=2 overlapping pre-merge windows may contain >1 distinct hit.
+     * The vitband/msvband banded multihit domaindef can give the weaker of two
+     * closely-spaced hits ~zero posterior mass and drop it, so for such merged
+     * windows we force the unbanded (multihit-capable) glocal envelope def in
+     * the standard (use_gm) pass below. wnmerged==NULL means "no merge info"
+     * (e.g. hmmonly/full-seq paths) and is treated as unmerged. */
+    int win_is_merged = (wnmerged != NULL && wnmerged[i] >= 2) ? TRUE : FALSE;
+#if eslDEBUGLEVEL >= 2
     printf("#DEBUG: p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
     /* if we require first or final residue, and don't have it, then
@@ -4224,7 +4246,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       }
       else if(use_gm) { /* normal case, not looking for truncated hits */
 	p7_ReconfigLength(gm, wlen);
-	if(pli->do_msvband && opt_hmm != NULL && *opt_hmm != NULL) {
+	if((! win_is_merged) && pli->do_msvband && opt_hmm != NULL && *opt_hmm != NULL) {
 	  /* --msvband: derive MSV bands, then run banded Forward */
 	  {
 	    int    k;
@@ -4284,8 +4306,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
 	  }
-	} else if(pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
+	} else if((! win_is_merged) && pli->do_vitband && opt_hmm != NULL && *opt_hmm != NULL) {
 	  /* --vitband: derive Viterbi bands then run banded Forward.
+	   * (issue #50: skipped for merged windows -> falls through to unbanded
+	   * Forward below, so the F5 unbanded multihit domaindef can run.)
 	   * For GLOCAL (default): gm is already in GLOCAL mode — no reconfiguration needed.
 	   * For LOCAL (--vitblocal): temporarily configure LOCAL, then restore to GLOCAL.
 	   */
@@ -4472,10 +4496,16 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	/*printf("Lbcksc: %.4f\n", bcksc);*/
       }
       else { /* normal case, not looking for truncated hits */
-	if((pli->do_msvband || pli->do_vitband) && pli->gxfb != NULL && pli->band_kmin != NULL) {
+	if((! win_is_merged) && (pli->do_msvband || pli->do_vitband) && pli->gxfb != NULL && pli->band_kmin != NULL) {
 	  /* --msvband/--vitband: banded F5 with multihit domaindef.
 	   * Uses banded Forward xmx for domain decoding, then
 	   * banded rescore for each domain using sub-bands.
+	   * issue #50: for merged windows win_is_merged is TRUE, so we fall to
+	   * the unbanded standard multihit domaindef below (which correctly
+	   * resolves >1 closely-spaced hit); those envelopes then get per-
+	   * envelope CYK bands re-derived at dispatch time (cm_pipeline.c CYK
+	   * stage falls back to per-envelope vitband when no pn-band precompute
+	   * exists).
 	   */
 	  if(pli->gxbb) { p7_gmxb_Destroy(pli->gxbb); pli->gxbb = NULL; }
 	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
@@ -4599,8 +4629,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
        * At CYK dispatch time, all windows have been processed and pli->gxfb/gxbb/p7bnd
-       * would only reflect the last window; storing per-envelope here fixes that. */
-      if(pli->do_p7post_cp9b && pli->gxfb != NULL && pli->gxbb != NULL && pli->p7bnd != NULL) {
+       * would only reflect the last window; storing per-envelope here fixes that.
+       * issue #50: skip for merged windows (win_is_merged) — those ran unbanded, so
+       * gxfb/gxbb/p7bnd don't correspond to this window; leaving no pn-band precompute
+       * makes the CYK dispatch re-derive per-envelope vitband bands (each envelope is a
+       * single resolved hit there, so vitband is correct for it). */
+      if((! win_is_merged) && pli->do_p7post_cp9b && pli->gxfb != NULL && pli->gxbb != NULL && pli->p7bnd != NULL) {
 	int pn_M    = pli->p7bnd->M;
 	int pn_envL = (int)(ee[nenv] - es[nenv] + 1);
 	int pn_new_alloc;
