@@ -1039,6 +1039,13 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  int  *wv_i2k = NULL, *wv_kmin = NULL, *wv_kmax = NULL, *zero_pad = NULL;
 		  int  *i2k_c  = NULL, *nodepad215 = NULL, *b1_kmin = NULL, *b1_kmax = NULL;
 		  int   wv_ncells = 0, b1_ncells = 0, k215, i215, status215, M215 = cm->fp7->M;
+		  /* brief 26_0430-248: P248_CLOUD=1 replaces the pin+/-N band with the
+		   * extband kernel's delta-CLOUD band (robust to the truncation-mode-flip
+		   * collapse; see brief 247/248).  Cloud delta (milli-bits) via
+		   * P248_CLOUD_DELTA, default = cm->p7_ibv_delta (--p7ibv-delta, 20 bits). */
+		  int   p248_cloud = (getenv("P248_CLOUD") != NULL);
+		  int  *wv_cloud_kmin = NULL, *wv_cloud_kmax = NULL;
+		  int   p248_delta = (getenv("P248_CLOUD_DELTA") != NULL) ? atoi(getenv("P248_CLOUD_DELTA")) : cm->p7_ibv_delta;
 		  struct timespec _twv0, _twv1;
 		  ESL_ALLOC(zero_pad, sizeof(int) * (M215 + 1));
 		  for(k215 = 0; k215 <= M215; k215++) zero_pad[k215] = 0;
@@ -1057,10 +1064,14 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  clock_gettime(CLOCK_MONOTONIC, &_twv0);
 		  if(p215_bounded && p216_flat)
 		    status215 = p7_Seq2BandsIBV_extband(cm, errbuf, sq->dsq, sq->L, do_trunc,
-							p7_kmin, p7_kmax, &wv_i2k);  /* O(L*M) flat oracle (rollback) */
+							p7_kmin, p7_kmax, p248_delta, &wv_i2k,
+							p248_cloud ? &wv_cloud_kmin : NULL,
+							p248_cloud ? &wv_cloud_kmax : NULL);  /* O(L*M) flat oracle (rollback) */
 		  else if(p215_bounded)
 		    status215 = p7_Seq2BandsIBV_extband_compact(cm, errbuf, sq->dsq, sq->L, do_trunc,
-							p7_kmin, p7_kmax, &wv_i2k);  /* O(L*bandwidth), compact storage */
+							p7_kmin, p7_kmax, p248_delta, &wv_i2k,
+							p248_cloud ? &wv_cloud_kmin : NULL,
+							p248_cloud ? &wv_cloud_kmax : NULL);  /* O(L*bandwidth), compact storage */
 		  else
 		    status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
 					       &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);  /* unbounded O(L*M) */
@@ -1069,7 +1080,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 			  (_twv1.tv_sec - _twv0.tv_sec) + (_twv1.tv_nsec - _twv0.tv_nsec)/1e9);
 		  if(status215 == eslOK && p215_bounded && p216_validate) {
 		    int  *oracle_i2k = NULL;
-		    int   ostat = p7_Seq2BandsIBV_extband(cm, errbuf, sq->dsq, sq->L, do_trunc, p7_kmin, p7_kmax, &oracle_i2k);
+		    int   ostat = p7_Seq2BandsIBV_extband(cm, errbuf, sq->dsq, sq->L, do_trunc, p7_kmin, p7_kmax, p248_delta, &oracle_i2k, NULL, NULL);
 		    if(ostat == eslOK) {
 		      int ndiff = 0, i216;
 		      for(i216 = 0; i216 <= sq->L; i216++) if(oracle_i2k[i216] != wv_i2k[i216]) ndiff++;
@@ -1080,7 +1091,22 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		      fprintf(stderr, "#P216_VALIDATE seq=%s ORACLE_FAILED status=%d\n", sq->name, ostat);
 		    }
 		  }
-		  if(status215 == eslOK) {
+		  if(status215 == eslOK && p248_cloud && wv_cloud_kmin != NULL && wv_cloud_kmax != NULL) {
+		    /* brief 26_0430-248: bands_2 = the extband kernel's delta-CLOUD band
+		     * directly (already bounded to bands_0 by the kernel, so ⊆ bands_0 --
+		     * a genuine tightening).  Replaces the fragile pin+/-N band that
+		     * collapses under the M>L truncation-mode flip (brief 247). */
+		    long km_totw = 0, cloud_totw = 0;
+		    ESL_ALLOC(tight_kmin, sizeof(int) * (sq->L + 1));
+		    ESL_ALLOC(tight_kmax, sizeof(int) * (sq->L + 1));
+		    for(i215 = 0; i215 <= sq->L; i215++) { tight_kmin[i215] = wv_cloud_kmin[i215]; tight_kmax[i215] = wv_cloud_kmax[i215]; }
+		    for(i215 = 1; i215 <= sq->L; i215++) { km_totw += (p7_kmax[i215]-p7_kmin[i215]+1); cloud_totw += (tight_kmax[i215]-tight_kmin[i215]+1); }
+		    t_kmin = tight_kmin; t_kmax = tight_kmax;
+		    fprintf(stderr, "#T248_CLOUD seq=%s M=%d L=%d delta=%d km_totw=%ld cloud_totw=%ld ratio=%.4f\n",
+			    sq->name, M215, (int)sq->L, p248_delta, km_totw, cloud_totw,
+			    km_totw > 0 ? (double)cloud_totw/(double)km_totw : 1.0);
+		  }
+		  if(status215 == eslOK && !p248_cloud) {
 		    /* (2b) CLAMP each pinned i2k[i] into kmerchain's [kmin,kmax] (mimics a
 		     *      band-bounded Viterbi -- the bounded MAP pin lies in bands_0). */
 		    ESL_ALLOC(i2k_c, sizeof(int) * (sq->L + 1));
@@ -1146,6 +1172,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  if(nodepad215)  free(nodepad215);
 		  if(b1_kmin)     free(b1_kmin);
 		  if(b1_kmax)     free(b1_kmax);
+		  if(wv_cloud_kmin) free(wv_cloud_kmin);
+		  if(wv_cloud_kmax) free(wv_cloud_kmax);
 		}
 	      }
 	    }

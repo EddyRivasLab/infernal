@@ -3517,14 +3517,16 @@ extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, i
 extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                                     int do_trunc,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* brief 26_0430-248: optional delta-CLOUD band outputs (ret_kmin/ret_kmax); pass
+ * NULL for those (and delta_milli ignored) to get the original pin-only behavior. */
 extern int          p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                    int **ret_i2k);
+                                    int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 /* brief 26_0430-216: compact O(L*bandwidth) storage version of the above (same semantics,
  * same signature); i2k must match p7_Seq2BandsIBV_extband() byte-for-byte. */
 extern int          p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                    int **ret_i2k);
+                                    int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
                                     double quantile, int delta_milli, int floorpad, int **ret_nodepad);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
