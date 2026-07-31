@@ -930,7 +930,34 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * the old p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
 	      _st059_ab_split = FALSE; /* brief 26_0628-059: a_s/b_s only cover the failed kmerchain attempt, not the fallback -- report combined ab_s instead */
-	      if (cm->p7_kmerchain_fallback_vit) {
+	      /* brief 26_0430-256: BLANKET native-CP9-banding fallback on chain=NONE
+	       * (zero k-mer anchors). ENV-gated, DEFAULT OFF -- when
+	       * P7KMERCHAIN_NATIVE_FALLBACK is set in the environment, do NOT fall
+	       * back to the p7ibv deriver. chain=NONE means the p7 model found zero
+	       * signal, so falling back to *another* p7 deriver (p7ibv at the narrow
+	       * struct-default delta) compounds the same band-coverage blind spot
+	       * (brief 26_0430-255: a p7-IBV coverage failure -- the CM prefers the
+	       * correct register in 60/62, the band just excludes it). Instead we
+	       * leave p7_ncells==0 so the p7-band->cp9b conversion just below is
+	       * skipped; that block's `else { status = eslERANGE; }` then routes
+	       * this sequence into the standard native cp9_Seq2Bands fallback
+	       * (~line 1209 below) -- the identical CP9 HMM banding that plain,
+	       * non-p7band cmalign (R_native) uses. Measured to Pareto-dominate the
+	       * p7ibv fallback over the whole 3281-seq zero-anchor population
+	       * (brief 26_0430-255 addendum: 62/62 collapse-seqs recover, 0 regress).
+	       * Env-var name/style mirrors this project's other experimental toggles
+	       * (CKPT_CYKBANDS, P215_*). */
+	      if (getenv("P7KMERCHAIN_NATIVE_FALLBACK") != NULL) {
+		_p7b_kind = "kmerchain->native";
+		/* one-line firing diagnostic so tests can count native-fallback
+		 * invocations directly (the authoritative counter; the cosmetic
+		 * "#P7BAND ... FAILED" line below just reflects p7_ncells==0). */
+		fprintf(stderr, "#NATIVE_FALLBACK seq=%s L=%d M=%d\n",
+			sq->name, (int)sq->L, cm->fp7 ? cm->fp7->M : 0);
+		/* status stays eslOK, p7_ncells stays 0 -> falls through to the
+		 * native cp9_Seq2Bands fallback below. Do nothing else here. */
+	      }
+	      else if (cm->p7_kmerchain_fallback_vit) {
 		_p7b_kind = "kmerchain->vitband";
 		if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
 		status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
