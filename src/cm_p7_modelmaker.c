@@ -836,13 +836,6 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
       tau_sum += xv[k] + log(p_k) / lambda;
     }
     *ret_tau = tau_sum / (double) ntop;
-
-    if (getenv("CM_GFTAU_DEBUG") != NULL) {   /* gate 2 verification hook (brief 26_0719-046) */
-      int j;
-      fprintf(stderr, "# CM_GFTAU_DEBUG N=%d lambda=%.10g sorted_xv=", N, lambda);
-      for (j = 0; j < N; j++) fprintf(stderr, " %.10g", xv[j]);
-      fprintf(stderr, " tau=%.10g\n", *ret_tau);
-    }
   }
 
   free(xv);
