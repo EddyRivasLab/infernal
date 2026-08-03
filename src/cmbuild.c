@@ -125,7 +125,7 @@ static ESL_OPTIONS options[] = {
   { "--EmN",     eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local MSV calibration",    7 },
   { "--EvN",     eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Vit calibration",    7 },
   { "--ElfN",    eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Fwd calibration",    7 },
-  { "--EgfN",    eslARG_INT,     "50", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 glocal Fwd calibration",   7 },
+  { "--EgfN",    eslARG_INT,      "4", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 glocal Fwd calibration",   7 },
   /* below are only shown with --devhelp */
   { "--Elftp",   eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 local fwd exp tail to <f> fraction of scoring dist",   107 },
   { "--Egftp",   eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 glocal fwd exp tail to <f> fraction of scoring dist",  107 },
