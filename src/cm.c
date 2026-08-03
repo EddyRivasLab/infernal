@@ -134,6 +134,7 @@ CreateCMShell(void)
   cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
   cm->p7_kmerchain_mgate = 0;            /* default: disabled -- opt-in small-M gate (set by --p7kmerchain-mgate, brief 26_0628-047) */
   cm->p7_kmerchain_fallback_vit = FALSE; /* default: use --p7ibv as the kmer-gate fallback deriver (set by --p7kmerchain-fbvit, brief 26_0628-047) */
+  cm->p7_kmerchain_fallback_ibv = FALSE; /* default: use native CP9 banding as the kmer-gate chain=NONE fallback (set by --p7kmerchain-fbibv, brief 26_0430-260) */
   cm->p7_use_ibv       = FALSE;          /* default: no F+B direct-band (set by --p7ibv, brief 26_0430-120) */
   cm->p7_ibv_delta     = 3000;           /* default IBV Delta = 3000 milli-bits = 3 bits */
   cm->p7_ibv_mem       = FALSE;          /* default: flat IBV; D&C deriver enabled by --p7ibv-mem (brief 26_0430-124) */
@@ -3281,6 +3282,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_kmerchain_mink = cm->p7_kmerchain_mink;
   new->p7_kmerchain_mgate = cm->p7_kmerchain_mgate;
   new->p7_kmerchain_fallback_vit = cm->p7_kmerchain_fallback_vit;
+  new->p7_kmerchain_fallback_ibv = cm->p7_kmerchain_fallback_ibv;
   new->p7_use_ibv       = cm->p7_use_ibv;
   new->p7_ibv_delta     = cm->p7_ibv_delta;
   new->p7_ibv_mem       = cm->p7_ibv_mem;
