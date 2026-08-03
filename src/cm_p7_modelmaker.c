@@ -440,7 +440,13 @@ cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *
 #define ROWMX(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
 #define ROWXM(row,s)   ((row)[(M+1) * p7G_NSCELLS + (s)])
 
-  p7_FLogsumInit();
+  /* NOTE (brief 26_0719-046): the p7_FLogsum() lookup table must already be
+   * initialized by the caller (cm_p7_Tau() does this once in the main thread).
+   * We do NOT call p7_FLogsumInit() here: it rewrites a global static table,
+   * and doing so per-call would race with concurrent p7_FLogsum() reads in the
+   * threaded (--cpu>0) calibration path, making scores (and thus GFMU)
+   * nondeterministic across thread counts and run-to-run.
+   */
 
   ESL_ALLOC(mem, sizeof(float) * 2 * rowsize);
   prev = mem;
@@ -640,7 +646,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 
   ESL_DSQ *dsq     = NULL;
   double  *xv      = NULL;
-  float    sc, fsc, nullsc;
+  float    fsc, nullsc;
   int      status;
   int      i;
   int do_generic;
@@ -650,6 +656,14 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   do_generic = (gm != NULL) ? TRUE : FALSE;
 
   ESL_ALLOC(xv,  sizeof(double)  * N);
+
+  /* Initialize the global p7_FLogsum() lookup table ONCE, here in the main
+   * thread, before any worker scores a sequence (brief 26_0719-046). The
+   * per-call init previously inside cm_p7_GForwardScoreOnly() raced with
+   * concurrent reads under --cpu>0 and made GFMU nondeterministic. It writes
+   * the same deterministic values every time, so a single up-front init makes
+   * the threaded and serial scoring paths bit-identical. */
+  p7_FLogsumInit();
 
   if(do_generic) p7_ReconfigLength(gm, L);
   else           p7_oprofile_ReconfigLength(om, L);
@@ -789,8 +803,10 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 	    if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
 	  }
 	  if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
-	  sc = (fsc - nullsc) / eslCONST_LOG2;
-	  xv[i] = sc;
+	  /* keep full double precision (match the threaded worker exactly, no
+	   * intermediate float rounding) so serial and threaded xv[] -- and thus
+	   * GFMU -- are bit-identical across --cpu (brief 26_0719-046). */
+	  xv[i] = (double)((fsc - nullsc) / eslCONST_LOG2);
 	}
 
       free(dsq); dsq = NULL;
