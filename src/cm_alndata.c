@@ -1053,11 +1053,24 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    int   *t_kmin = p7_kmin, *t_kmax = p7_kmax;   /* default: untightened alias */
 	    int   *tight_kmin = NULL, *tight_kmax = NULL;
 	    {
+	      /* brief 26_0430-262: --p7vittighten/--p7vitcloud take precedence over the
+	       * P215/P216/P248 getenv() family when used (cm->p215_mode != P215_MODE_OFF);
+	       * else fall back to reading the env vars exactly as before (byte-identical
+	       * default behavior -- gate G3). The CLI flags cover only the two
+	       * genome-validated combos (constant-N pin, and cloud); PERNODE/PADPLUS/
+	       * FLAT/VALIDATE stay env-only diagnostics regardless of flag usage. */
+	      int         p215_cli_pin   = (cm->p215_mode == P215_MODE_PIN);
+	      int         p215_cli_cloud = (cm->p215_mode == P215_MODE_CLOUD);
+	      int         p215_cli_used  = (p215_cli_pin || p215_cli_cloud);
 	      int         p215_pernode = 0, p215_N = -1;
-	      const char *e_pn = getenv("P215_TIGHTEN_PERNODE");
-	      const char *e_n  = getenv("P215_TIGHTEN_N");
-	      if(e_pn != NULL && atoi(e_pn) != 0) p215_pernode = 1;
-	      if(e_n  != NULL)                     p215_N       = atoi(e_n);
+	      if(p215_cli_used) {
+		p215_N = p215_cli_pin ? cm->p215_tighten_n : 20; /* cloud: any N>=0 enters this scope; unused once p248_cloud fires below */
+	      } else {
+		const char *e_pn = getenv("P215_TIGHTEN_PERNODE");
+		const char *e_n  = getenv("P215_TIGHTEN_N");
+		if(e_pn != NULL && atoi(e_pn) != 0) p215_pernode = 1;
+		if(e_n  != NULL)                     p215_N       = atoi(e_n);
+	      }
 	      int have_pernode = (cm->flags & CMH_P7NODEPAD) && cm->p7_cm_nodepad != NULL;
 	      if(cm->p7_use_kmerchain && (p215_pernode || p215_N >= 0)) {
 		if(p215_pernode && !have_pernode) {
@@ -1070,15 +1083,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		   * extband kernel's delta-CLOUD band (robust to the truncation-mode-flip
 		   * collapse; see brief 247/248).  Cloud delta (milli-bits) via
 		   * P248_CLOUD_DELTA, default = cm->p7_ibv_delta (--p7ibv-delta, 20 bits). */
-		  int   p248_cloud = (getenv("P248_CLOUD") != NULL);
+		  int   p248_cloud = p215_cli_used ? p215_cli_cloud : (getenv("P248_CLOUD") != NULL);
 		  int  *wv_cloud_kmin = NULL, *wv_cloud_kmax = NULL;
-		  int   p248_delta = (getenv("P248_CLOUD_DELTA") != NULL) ? atoi(getenv("P248_CLOUD_DELTA")) : cm->p7_ibv_delta;
+		  int   p248_delta = p215_cli_used
+		    ? (p215_cli_cloud ? cm->p215_cloud_delta : cm->p7_ibv_delta)
+		    : ((getenv("P248_CLOUD_DELTA") != NULL) ? atoi(getenv("P248_CLOUD_DELTA")) : cm->p7_ibv_delta);
 		  struct timespec _twv0, _twv1;
 		  ESL_ALLOC(zero_pad, sizeof(int) * (M215 + 1));
 		  for(k215 = 0; k215 <= M215; k215++) zero_pad[k215] = 0;
 		  /* (2) exact Viterbi MAP trace i2k (unbounded; Phase B replaces this
 		   *     with a band-bounded kernel -- cost irrelevant to the accuracy gate). */
-		  int p215_bounded = (getenv("P215_BOUNDED") != NULL);  /* brief 215 Phase B: Viterbi bounded to kmerchain band */
+		  int p215_bounded = p215_cli_used ? 1 : (getenv("P215_BOUNDED") != NULL);  /* brief 215 Phase B: Viterbi bounded to kmerchain band; both CLI combos require it */
 		  /* brief 26_0430-216 Phase 3: the compact O(L*bandwidth)-storage kernel is now
 		   * the default under P215_BOUNDED (validated byte-identical i2k vs the flat
 		   * oracle on tRNA/5S/RNaseP/SSU/LSU/norovirus/dengue, both do_trunc branches,
@@ -1166,7 +1181,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		    /* (4) bands_2 = per-row min(bands_0, bands_1). max()/min() of two monotone
 		     *     bands stays monotone; a disjoint row (rare) falls back to kmerchain. */
 		    long km_totw = 0, tight_totw = 0; int n_empty = 0;
-		    int p215_pure = (getenv("P215_PURE") != NULL);  /* brief 215: pure Viterbi band (no kmerchain intersection) */
+		    int p215_pure = p215_cli_used ? p215_cli_pin : (getenv("P215_PURE") != NULL);  /* brief 215: pure Viterbi band (no kmerchain intersection); --p7vittighten implies it, --p7vitcloud doesn't reach this branch */
 		    ESL_ALLOC(tight_kmin, sizeof(int) * (sq->L + 1));
 		    ESL_ALLOC(tight_kmax, sizeof(int) * (sq->L + 1));
 		    tight_kmin[0] = p215_pure ? b1_kmin[0] : p7_kmin[0];

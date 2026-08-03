@@ -144,6 +144,10 @@ CreateCMShell(void)
   cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 26_0430-169) */
   cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 26_0430-169) */
   cm->p7_wv_nodepad_M  = 0;
+  cm->p215_mode        = P215_MODE_OFF;  /* default: off; P215 env family stays the fallback control
+                                           * (set by --p7vittighten/--p7vitcloud, brief 26_0430-262) */
+  cm->p215_tighten_n   = -1;             /* set by --p7vittighten <n> */
+  cm->p215_cloud_delta = -1;             /* set by --p7vitcloud <n> */
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -3297,6 +3301,9 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     new->p7_wv_nodepad   = NULL;
     new->p7_wv_nodepad_M = 0;
   }
+  new->p215_mode        = cm->p215_mode;
+  new->p215_tighten_n   = cm->p215_tighten_n;
+  new->p215_cloud_delta = cm->p215_cloud_delta;
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;
