@@ -234,14 +234,18 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
  * from two model features -- log(clen) and the mean per-column relative
  * entropy (bits) of the match emissions vs a uniform background -- instead
  * of being reused from the local Forward lambda. The coefficients are a
- * z-scored OLS power-law fit (natural log/exp) from this project's
- * brief042_run/task042_results.json "lambda_predictor" (tailp=0.015 ground
- * truth; panel test R^2=0.947, median relerr 6.2%). See
+ * z-scored OLS linear fit (natural log/exp), refit on a pooled 961-family
+ * training set (panel+rmark3+rmark4h; brief 26_0719-048
+ * "A_linear_shipped_form", brief048_run/task048_structural_refit.json;
+ * tailp=0.015 ground truth). This removes the small-clen sign-flip bias
+ * present in the original brief042_run/task042_results.json fit while
+ * keeping the same 2-feature linear functional form (held-out
+ * clan-grouped-CV small-clen relerr ~7%). See
  * scripts/build_task041_lowN_tau_estimator.py:162-205.
  */
-static const double gfcalib_feat_mu[2] = { 6.592356023867451,   0.4575079109258378  };
-static const double gfcalib_feat_sd[2] = { 1.402639726392907,   0.25471770480022177 };
-static const double gfcalib_coef[3]    = { -1.2308028401770237, -0.4786690794761658, -0.17086058908205226 };
+static const double gfcalib_feat_mu[2] = { 5.122778752634902,   0.563808909603519    };
+static const double gfcalib_feat_sd[2] = { 1.1439863326718058,  0.22486045266173885  };
+static const double gfcalib_coef[3]    = { -0.8456700841380054, -0.38250763372448826, -0.20323961217897243 };
 
 /* mean_relentropy_bits()
  * Mean over the M match columns of the relative entropy (bits) of the match
