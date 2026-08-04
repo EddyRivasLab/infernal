@@ -2135,6 +2135,7 @@ typedef struct cm_s {
 #define CM_ALIGN_P7HMMVIT      (1<<24) /* w/P7HMM: Viterbi traces (no OA)          */
 #define CM_ALIGN_P7HMMNOBAND   (1<<25) /* w/P7HMM: unbanded OA (no Vit banding)    */
 #define CM_ALIGN_CHECKPT       (1<<26) /* use checkpointed sqrt(M)-mem HB OptAcc engines (truncated or non-trunc, local or global, bps=0 or bps>0) */
+#define CM_ALIGN_MXESC         (1<<27) /* brief 26_0430-269: --mxsize auto-escalation: pick engine (free-OA/ckpt-OA/CYK-floor) by est. memory vs --mxsize */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
