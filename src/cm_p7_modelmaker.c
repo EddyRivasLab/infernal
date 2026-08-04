@@ -228,11 +228,73 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
   return status;
 }
 
+/* Cheap glocal-Forward lambda predictor (brief 26_0719-046).
+ *
+ * The glocal Forward E-value slope (GFLAMBDA) is predicted in closed form
+ * from two model features -- log(clen) and the mean per-column relative
+ * entropy (bits) of the match emissions vs a uniform background -- instead
+ * of being reused from the local Forward lambda. The coefficients are a
+ * z-scored OLS linear fit (natural log/exp), refit on a pooled 961-family
+ * training set (panel+rmark3+rmark4h; brief 26_0719-048
+ * "A_linear_shipped_form", brief048_run/task048_structural_refit.json;
+ * tailp=0.015 ground truth). This removes the small-clen sign-flip bias
+ * present in the original brief042_run/task042_results.json fit while
+ * keeping the same 2-feature linear functional form (held-out
+ * clan-grouped-CV small-clen relerr ~7%). See
+ * scripts/build_task041_lowN_tau_estimator.py:162-205.
+ */
+static const double gfcalib_feat_mu[2] = { 5.122778752634902,   0.563808909603519    };
+static const double gfcalib_feat_sd[2] = { 1.1439863326718058,  0.22486045266173885  };
+static const double gfcalib_coef[3]    = { -0.8456700841380054, -0.38250763372448826, -0.20323961217897243 };
+
+/* mean_relentropy_bits()
+ * Mean over the M match columns of the relative entropy (bits) of the match
+ * emission distribution vs a uniform 1/K background. Matches the training
+ * feature exactly (scripts/extract_p7_features.py:42,86-91): uniform 1/K
+ * background (0.25 for RNA), per-column renormalize for fp roundoff, skip
+ * p<=0 terms. brief 26_0719-046.
+ */
+static double
+mean_relentropy_bits(const P7_HMM *hmm)
+{
+  int    k, a;
+  int    K  = hmm->abc->K;
+  double bg = 1.0 / (double) K;   /* uniform background, matches training (not bg->f) */
+  double sum_H = 0.;
+
+  for (k = 1; k <= hmm->M; k++) {
+    double s = 0.;
+    double h = 0.;
+    for (a = 0; a < K; a++) s += hmm->mat[k][a];
+    if (s <= 0.) continue;
+    for (a = 0; a < K; a++) {
+      double p = hmm->mat[k][a] / s;    /* renormalize (fp roundoff), as in training */
+      if (p > 0.) h += p * (log(p / bg) / eslCONST_LOG2);  /* log2 */
+    }
+    sum_H += h;
+  }
+  return sum_H / (double) hmm->M;
+}
+
+/* predict_glocal_lambda()
+ * Closed-form glocal Forward lambda predictor (brief 26_0719-046, formula 2a).
+ * clen = hmm->M; mean_H from mean_relentropy_bits().
+ */
+static double
+predict_glocal_lambda(int clen, double mean_H)
+{
+  double x0 = log((double) clen);   /* natural log */
+  double x1 = mean_H;
+  double z0 = (x0 - gfcalib_feat_mu[0]) / gfcalib_feat_sd[0];
+  double z1 = (x1 - gfcalib_feat_mu[1]) / gfcalib_feat_sd[1];
+  return exp(gfcalib_coef[0] + gfcalib_coef[1] * z0 + gfcalib_coef[2] * z1);
+}
+
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
- * 
- * Purpose:  Calibrate a p7 HMM for local MSV, Viterbi, Forward and 
- *           also glocal Forward. 
+ *
+ * Purpose:  Calibrate a p7 HMM for local MSV, Viterbi, Forward and
+ *           also glocal Forward.
  * 
  * Args:     hmm       - the hmm
  *           errbuf    - for error messages
@@ -299,10 +361,19 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   hmm->evparam[p7_FLAMBDA] = lambda;
   hmm->flags              |= p7H_STATS;
 
-  /* finally, determine Glocal Forward stats */
-  if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
-  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, lambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
-  gflambda = lambda;
+  /* finally, determine Glocal Forward stats (brief 26_0719-046).
+   * GFLAMBDA is predicted in closed form from (clen, mean_H) -- NOT reused
+   * from the local Forward lambda -- and GFMU (tau) is estimated by the
+   * known-lambda top-half order-statistic estimator inside cm_p7_Tau() using
+   * that predicted lambda. EgfT (tailp) is unused on this path; the tailp
+   * choice (0.015) is baked into the trained lambda predictor.
+   */
+  {
+    double mean_H = mean_relentropy_bits(hmm);
+    gflambda = predict_glocal_lambda(hmm->M, mean_H);
+  }
+  if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
+  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
 
   esl_randomness_Destroy(r); 
   p7_bg_Destroy(bg);         
@@ -373,7 +444,13 @@ cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *
 #define ROWMX(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
 #define ROWXM(row,s)   ((row)[(M+1) * p7G_NSCELLS + (s)])
 
-  p7_FLogsumInit();
+  /* NOTE (brief 26_0719-046): the p7_FLogsum() lookup table must already be
+   * initialized by the caller (cm_p7_Tau() does this once in the main thread).
+   * We do NOT call p7_FLogsumInit() here: it rewrites a global static table,
+   * and doing so per-call would race with concurrent p7_FLogsum() reads in the
+   * threaded (--cpu>0) calibration path, making scores (and thus GFMU)
+   * nondeterministic across thread counts and run-to-run.
+   */
 
   ESL_ALLOC(mem, sizeof(float) * 2 * rowsize);
   prev = mem;
@@ -573,8 +650,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 
   ESL_DSQ *dsq     = NULL;
   double  *xv      = NULL;
-  float    sc, fsc, nullsc;
-  double   gmu, glam;
+  float    fsc, nullsc;
   int      status;
   int      i;
   int do_generic;
@@ -584,6 +660,14 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   do_generic = (gm != NULL) ? TRUE : FALSE;
 
   ESL_ALLOC(xv,  sizeof(double)  * N);
+
+  /* Initialize the global p7_FLogsum() lookup table ONCE, here in the main
+   * thread, before any worker scores a sequence (brief 26_0719-046). The
+   * per-call init previously inside cm_p7_GForwardScoreOnly() raced with
+   * concurrent reads under --cpu>0 and made GFMU nondeterministic. It writes
+   * the same deterministic values every time, so a single up-front init makes
+   * the threaded and serial scoring paths bit-identical. */
+  p7_FLogsumInit();
 
   if(do_generic) p7_ReconfigLength(gm, L);
   else           p7_oprofile_ReconfigLength(om, L);
@@ -723,21 +807,40 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 	    if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
 	  }
 	  if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
-	  sc = (fsc - nullsc) / eslCONST_LOG2;
-	  xv[i] = sc;
+	  /* keep full double precision (match the threaded worker exactly, no
+	   * intermediate float rounding) so serial and threaded xv[] -- and thus
+	   * GFMU -- are bit-identical across --cpu (brief 26_0719-046). */
+	  xv[i] = (double)((fsc - nullsc) / eslCONST_LOG2);
 	}
 
       free(dsq); dsq = NULL;
       if (ox != NULL) { p7_omx_Destroy(ox); ox = NULL; }
     }
 
-  if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
-  /* Explanation of the eqn below: first find the x at which the Gumbel tail
-   * mass is predicted to be equal to tailp. Then back up from that x
-   * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-   * instead of tailp.
+  /* known-lambda top-half order-statistic tau estimator (brief 26_0719-046,
+   * formula 2b). Given the N sampled bit scores and the *predicted* glocal
+   * lambda passed in <lambda>, sort ascending and use the distribution-free
+   * order-statistic identity E[S(X_(k))] = (N-k+1)/(N+1) under an exponential
+   * tail S(x)=exp(-lambda*(x-tau)):
+   *     tau_hat_(k) = X_(k) + log((N-k+1)/(N+1)) / lambda
+   * then average the anchors from the top half (k = N/2+1 .. N, integer floor;
+   * matches Python tau_k[N//2:]). The sort makes the result independent of the
+   * threaded worker merge order, so (tau,lambda) is byte-identical across --cpu.
+   * <tailp> (EgfT) is intentionally UNUSED here -- the tailp choice is baked
+   * into the predicted lambda; see scripts/build_task041_lowN_tau_estimator.py:217-238.
    */
-  *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
+  esl_vec_DSortIncreasing(xv, N);
+  {
+    double tau_sum = 0.;
+    int    kstart  = N / 2;              /* 0-based start of top half == 1-based k=N/2+1 */
+    int    ntop    = N - kstart;
+    int    k;
+    for (k = kstart; k < N; k++) {       /* k is 0-based rank */
+      double p_k = (double) (N - k) / (double) (N + 1);   /* (N-(k+1)+1)/(N+1) */
+      tau_sum += xv[k] + log(p_k) / lambda;
+    }
+    *ret_tau = tau_sum / (double) ntop;
+  }
 
   free(xv);
   return eslOK;
