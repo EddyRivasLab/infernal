@@ -1117,13 +1117,15 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	}
 
 	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
-	 * brief 26_0430-266: scoped to --hmmvit/--hmmnoband only -- they genuinely
-	 * allocate an O(M*L) P7_GMX. do_bandedoa (--p7ibv, --p7kmerchain, and the
-	 * plain Viterbi-trace band) is O(banded cells); it gets its own post-band
-	 * preflight below, sized from the actual band once derived (this pre-band
-	 * full-matrix formula massively over-estimated it -- the bug this brief
-	 * fixes). */
-	if (do_hmmvit || do_hmmnoband) {
+	 * brief 26_0430-266 + 26_0430-268 (fix): the full O(M*L) P7_GMX is allocated by
+	 * --hmmvit, --hmmnoband, AND bare do_bandedoa (the plain Viterbi-trace band, no
+	 * deriver) -- the latter runs a full p7_GViterbi below. Only --p7ibv/--p7kmerchain
+	 * skip the full matrix (their derivers avoid it); they are covered by the post-band
+	 * preflight instead. 266 wrongly scoped this to --hmmvit/--hmmnoband only, which let
+	 * bare --hmm silently OOM at genome scale (0803 measured HSV/MPXV cgroup-kills); 268
+	 * restores the abort for the bare path (bare --hmm is the reference, not production
+	 * -- use a deriver at genome scale). */
+	if (do_hmmvit || do_hmmnoband || (do_bandedoa && ! do_p7ibv && ! cm->p7_use_kmerchain)) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
 	  int    nmat         = do_hmmnoband ? 2 : 1;
 	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -1906,7 +1908,9 @@ hmm_pipeline_thread(void *arg)
      * brief 26_0430-266: scoped to --hmmvit/--hmmnoband only -- see serial-path
      * comment in hmm_alignment() for reasoning. do_bandedoa gets its own
      * post-band preflight below. */
-    if (info->do_hmmvit || info->do_hmmnoband) {
+    /* brief 26_0430-268: also fire for bare do_bandedoa (no deriver) -- it runs a
+     * full O(M*L) p7_GViterbi; --p7ibv/--p7kmerchain skip it (post-band preflight). */
+    if (info->do_hmmvit || info->do_hmmnoband || (! info->do_hmmvit && ! info->do_hmmnoband && ! info->do_p7ibv && ! (info->cm != NULL && info->cm->p7_use_kmerchain))) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
       int    nmat         = info->do_hmmnoband ? 2 : 1;
       double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -2757,7 +2761,9 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
        * post-band preflight below (this MPI worker's do_bandedoa_w path is
        * always the non-checkpointed banded engine -- no --p7ibv/checkpointed
        * support here). */
-      if (do_hmmvit_w || do_hmmnoband_w) {
+      /* brief 26_0430-268: also fire for bare do_bandedoa_w (no kmerchain) -- it runs
+       * a full O(M*L) p7_GViterbi (this MPI worker has no --p7ibv support). */
+      if (do_hmmvit_w || do_hmmnoband_w || (do_bandedoa_w && ! cm->p7_use_kmerchain)) {
 	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
 	int    nmat         = do_hmmnoband_w ? 2 : 1;
 	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
