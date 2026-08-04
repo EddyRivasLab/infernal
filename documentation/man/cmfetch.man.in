@@ -125,8 +125,12 @@ By default, the CM is printed to standard output in Infernal-1.1 format.
 
 .TP
 .B -h
-Help; print a brief reminder of command line usage and all available
-options.
+Help: print a brief reminder of command line usage and available
+options, and exit.
+
+.TP
+.B \-\-version
+Show version information: print the program name and Infernal version, and exit.
 
 .TP
 .B -f

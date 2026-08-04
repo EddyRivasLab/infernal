@@ -2871,7 +2871,7 @@ extern int   IntDigits(int i);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
-extern ESL_GETOPTS *cm_CreateDefaultApp(ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
+extern ESL_GETOPTS *cm_CreateDefaultApp(char *progname, ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
 extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
 extern float **FCalcOptimizedEmitScores      (CM_t *cm);
@@ -3606,6 +3606,7 @@ extern int   MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, 
 extern int   sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 					  float psi_vs_phi_threshold, int debug_level);
 extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
+extern int   CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm);
 
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);

@@ -115,7 +115,8 @@ typedef struct {
 
 static ESL_OPTIONS options[] = {
   /* name                   type       default env          range    toggles         reqs         incomp  help  docgroup*/
-  { "-h",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show brief help on version and usage",               1 },
+  { "-h",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show brief help and exit",                           1 },
+  { "--version",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show version info and exit",                         1 },
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
   { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
   /* options controlling the alignment algorithm */
@@ -3095,44 +3096,51 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   int          infmt   = eslSQFILE_UNKNOWN;
   int          outfmt  = eslMSAFILE_STOCKHOLM;
 
-  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
-  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf); goto ERROR; }
- 
-  /* help format: */
-  if (esl_opt_GetBoolean(go, "-h")) { 
-    cm_banner(stdout, argv[0], banner);
-    esl_usage(stdout, argv[0], usage);
-    puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-    puts("\nOptions controlling alignment algorithm:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-    puts("\nOptions controlling speed and memory requirements:");
-    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-    puts("\nOptional output files:");
-    esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-    puts("\nOther options:");
-    esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
-    puts("\nSequence input formats:   FASTA, GenBank");
-    puts("Alignment output formats: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
-    exit(0);
-  } 
+  if ((go = esl_getopts_Create(options))     == NULL)     esl_fatal("Internal failure creating options object");
+  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { esl_fprintf(stderr, "Failed to process environment: %s\n", go->errbuf);  goto ERROR; } // ERROR block here puts additional useful
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; } // user-directed cmdline usage stuff to stderr
+  if (esl_opt_VerifyConfig(go)               != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; }
 
-  if (esl_opt_ArgNumber(go)                 != 2)     { puts("Incorrect number of command line arguments.");      goto ERROR; }
-  if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { puts("Failed to get <cmfile> argument on command line");  goto ERROR; }
-  if ((*ret_sqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line"); goto ERROR; }
+  // "brief" help format:
+  if (esl_opt_GetBoolean(go, "-h"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
 
-  if (strcmp(*ret_cmfile, "-") == 0 && strcmp(*ret_sqfile, "-") == 0) { 
-    puts("\nERROR: Either <cmfile> or <seqfile> may be '-' (to read from stdin), but not both.\n");
+      cm_banner(stdout, "cmalign", banner);  // use progname not argv[0]: versioning, not invocation
+      esl_usage(stdout, argv[0], usage);     // whereas this is invocation
+
+      esl_printf("\nBasic options:\n");                                     esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
+      esl_printf("\nOptions controlling alignment algorithm:\n");           esl_opt_DisplayHelp(stdout, go, 2, 2, 100);
+      esl_printf("\nOptions controlling speed and memory requirements:\n"); esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
+      esl_printf("\nOptional output files:\n");                             esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
+      esl_printf("\nOther options:\n");                                     esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
+      esl_printf("\nSequence input formats:   FASTA, GenBank\n");
+      esl_printf("Alignment output formats: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
+      exit(0);
+    }
+
+  // versioning info
+  if (esl_opt_GetBoolean(go, "--version"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+      esl_printf("%s %s\n", "cmalign", INFERNAL_VERSION);  // use progname here: versioning, not invocation
+      exit(0);
+    }
+
+  if (esl_opt_ArgNumber(go)                 != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");      goto ERROR; }
+  if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { esl_fprintf(stderr, "Failed to get <cmfile> argument on command line.\n");  goto ERROR; }
+  if ((*ret_sqfile = esl_opt_GetArg(go, 2)) == NULL)  { esl_fprintf(stderr, "Failed to get <seqfile> argument on command line.\n"); goto ERROR; }
+
+  if (strcmp(*ret_cmfile, "-") == 0 && strcmp(*ret_sqfile, "-") == 0) {
+    esl_fprintf(stderr, "\nERROR: Either <cmfile> or <seqfile> may be '-' (to read from stdin), but not both.\n");
     goto ERROR;
   }
 
   /* If caller declared an input format, decode it */
   if (esl_opt_IsOn(go, "--informat")) {
     infmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
-    if (infmt == eslSQFILE_UNKNOWN) { 
-      printf("\nERROR: %s is not a recognized input sequence file format\n\n", esl_opt_GetString(go, "--informat"));
+    if (infmt == eslSQFILE_UNKNOWN) {
+      esl_fprintf(stderr, "\nERROR: %s is not a recognized input sequence file format\n\n", esl_opt_GetString(go, "--informat"));
       goto ERROR;
     }
   }
@@ -3140,7 +3148,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   /* Determine output alignment file format */
   outfmt = esl_msafile_EncodeFormat(esl_opt_GetString(go, "--outformat"));
   if (outfmt == eslMSAFILE_UNKNOWN) {
-    printf("\nERROR: %s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
+    esl_fprintf(stderr, "\nERROR: %s is not a recognized output MSA file format\n\n", esl_opt_GetString(go, "--outformat"));
     goto ERROR;
   }
 
@@ -3153,7 +3161,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_GetBoolean(go, "--sample")) { 
     if((! esl_opt_IsUsed(go, "--cpu")) || 
        (  esl_opt_IsUsed(go, "--cpu") && (esl_opt_GetInteger(go, "--cpu") != 0))) { 
-      puts("\nERROR: --sample requires --cpu 0\n");
+      esl_fprintf(stderr, "\nERROR: --sample requires --cpu 0\n");
       goto ERROR;
     }
   }
@@ -3163,7 +3171,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    * on number of workers (each of which needs its own (separately seeded) RNG)
    */
   if (esl_opt_GetBoolean(go, "--sample") && esl_opt_IsUsed(go, "--mpi")) {
-    puts("\nERROR: --sample is incompatible with --mpi\n");
+    esl_fprintf(stderr, "\nERROR: --sample is incompatible with --mpi\n");
     goto ERROR;
   }	
 #endif /* HAVE_MPI */  
@@ -3172,7 +3180,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    * because if neither is used, scores are not output.
    */
   if (esl_opt_GetBoolean(go, "--verbose") && (! esl_opt_IsUsed(go, "-o")) && (! esl_opt_IsUsed(go, "--sfile"))) {
-    puts("\nERROR: --verbose only makes sense in combination with -o or --sfile\n");
+    esl_fprintf(stderr, "\nERROR: --verbose only makes sense in combination with -o or --sfile\n");
     goto ERROR;
   }	
 
@@ -3185,7 +3193,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    */
   if(esl_opt_IsUsed(go, "--small")) {
     if((! esl_opt_IsUsed(go, "--cyk")) || (! esl_opt_IsUsed(go, "--noprob")) || (! esl_opt_IsUsed(go, "--nonbanded")) || (! esl_opt_IsUsed(go, "--notrunc"))) {
-      puts("Failed to parse command line: Option --small requires --cyk, --noprob, --nonbanded, --notrunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --small requires --cyk, --noprob, --nonbanded, --notrunc\n");
       goto ERROR;
     }
   }
@@ -3268,12 +3276,12 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 
   return;
   
- ERROR:  /* all errors handled here are user errors, so be polite.  */
-  esl_usage(stdout, argv[0], usage);
-  puts("\nwhere basic options are:");
-  esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-  printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
-  exit(1);  
+ ERROR:  // all errors handled here are user errors, so be polite.
+  esl_usage(stderr, argv[0], usage);   // use argv[0] because this is about invocation, not version
+  esl_fprintf(stderr, "\nwhere basic options are:\n");
+  esl_opt_DisplayHelp(stderr, go, 1, 2, 100);     // 1= group; 2 = indentation; 100=textwidth
+  esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
+  exit(1);
 }
 
 /* output_header(): 

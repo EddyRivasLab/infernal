@@ -24,6 +24,7 @@
 
 #include "easel.h"
 #include "esl_msa.h"
+#include "esl_msafile.h"
 #include "esl_random.h"
 #include "esl_stats.h"
 #include "esl_vectorops.h"
@@ -2849,4 +2850,297 @@ CPlan9InitEL(CP9_t *cp9, CM_t *cm)
 
  ERROR:
   cm_Fail("Memory allocation error.");
+}
+
+/* Function: CP9_2_CM()
+ * Incept:   EPN-assisted, 2026
+ *
+ * Purpose:  Given a CM <cm> with a valid, globally-configured
+ *           <cm->cp9> (built by build_cp9_hmm(), no local begin/end/EL),
+ *           construct and return a brand new, independently allocated
+ *           CM_t that represents <cm->cp9> as an unstructured CM: a
+ *           linear chain of M MATL nodes (M = cp9->M), with no MATP,
+ *           BEGL, BEGR, or BIF nodes at all. Each MATL node's ML/D/IL
+ *           states get their emission/transition probabilities copied
+ *           directly from the corresponding CP9 node, using the exact
+ *           CM<->CP9 state correspondence documented in
+ *           cm2hmm_trans_probs_cp9() and cm2hmm_special_trans_cp9()
+ *           above (this function is the reverse of those).
+ *
+ *           Scope (v1): only the CPLAN9_HASPROB, non-local case is
+ *           supported. <cp9> must not have CPLAN9_LOCAL_BEGIN,
+ *           CPLAN9_LOCAL_END or CPLAN9_EL raised (build_cp9_hmm()'s
+ *           output before any cp9_sw_config()/cp9_EL_local_ends_config()
+ *           call satisfies this). The returned CM is left in global
+ *           mode (no CMH_LOCAL_BEGIN/CMH_LOCAL_END); local alignment
+ *           configuration is left to the caller/downstream tools (e.g.
+ *           cmalign's normal command-line options), same as for any
+ *           other CM file.
+ *
+ *           To get the CM's node/state bookkeeping (cfirst/cnum/stid/
+ *           ndidx/etc.) right without re-deriving Infernal's state
+ *           numbering conventions by hand, we build the topology using
+ *           the existing, well-tested HandModelmaker() on a synthetic,
+ *           fully-unstructured (no base pairs) alignment of length
+ *           cp9->M; HandModelmaker() always resolves an unpaired column
+ *           to a MATL node (see its 'i is unpaired' case), so this
+ *           reliably yields the plain MATL chain we want. We then
+ *           overwrite every meaningful emission/transition probability
+ *           in that shell CM with the corresponding CP9 value, based on
+ *           each state's role (identified generically via cm->stid/
+ *           cm->ndidx/cm->cfirst/cm->cnum, not by assuming a fixed
+ *           transition-slot order).
+ *
+ * Args:     cm     - the CM whose cp9 (cm->cp9) we're converting
+ *           errbuf - for error messages
+ *           ret_cm - RETURN: the new, independently-allocated linear CM
+ *
+ * Returns:  eslOK on success, <ret_cm> points to the new CM.
+ *           eslEINVAL on contract violation (errbuf filled).
+ *           eslEMEM on allocation failure.
+ *           eslFAIL on other internal error (errbuf filled).
+ */
+#define ROOT_IR_EPS 1e-6
+int
+CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm)
+{
+  int status;
+  CP9_t *cp9 = cm->cp9;
+  int M, K;
+  ESL_ALPHABET *abc_nc;
+  char *buf = NULL;
+  int bufsize;
+  ESL_MSAFILE *afp = NULL;
+  ESL_MSA *msa = NULL;
+  Parsetree_t *gtr = NULL;
+  CM_t *newcm = NULL;
+  int v, a, i, k, nd, dest, destnd;
+  int cnum;
+  float prob;
+  char *name = NULL;
+
+  if (cp9 == NULL)                        ESL_FAIL(eslEINVAL, errbuf, "CP9_2_CM(): cm->cp9 is NULL");
+  if (! (cp9->flags & CPLAN9_HASPROB))     ESL_FAIL(eslEINVAL, errbuf, "CP9_2_CM(): cm->cp9 does not have valid probabilities (CPLAN9_HASPROB down)");
+  if (cp9->flags & CPLAN9_LOCAL_BEGIN)     ESL_FAIL(eslEINVAL, errbuf, "CP9_2_CM(): cm->cp9 has local begins on, only global-mode cp9s are supported (v1 scope limitation)");
+  if (cp9->flags & CPLAN9_LOCAL_END)       ESL_FAIL(eslEINVAL, errbuf, "CP9_2_CM(): cm->cp9 has local ends on, only global-mode cp9s are supported (v1 scope limitation)");
+  if (cp9->flags & CPLAN9_EL)              ESL_FAIL(eslEINVAL, errbuf, "CP9_2_CM(): cm->cp9 has EL local ends on, only global-mode cp9s are supported (v1 scope limitation)");
+
+  M = cp9->M;
+  K = cm->abc->K;
+  abc_nc = (ESL_ALPHABET *) cm->abc;
+
+  /* Build a synthetic, fully-unstructured (SS_cons all '.') digital MSA
+   * of alen == M, with an RF line forcing all M columns to be match
+   * columns. The actual residues/RF symbols are placeholders; only the
+   * topology HandModelmaker() derives from them matters, since we
+   * overwrite all probabilities below.
+   */
+  bufsize = 64 + (4 * (M+1)) + 128; /* seqline is embedded twice (seq1, seq2) plus rfline, ssline once each: 4 (M+1)-sized fields, not 3 (brief 26_0629-025) */
+  ESL_ALLOC(buf, sizeof(char) * bufsize);
+  {
+    int pos = 0;
+    char *seqline, *rfline, *ssline;
+    ESL_ALLOC(seqline, sizeof(char) * (M+1));
+    ESL_ALLOC(rfline,  sizeof(char) * (M+1));
+    ESL_ALLOC(ssline,  sizeof(char) * (M+1));
+    for (k = 0; k < M; k++) {
+      seqline[k] = abc_nc->sym[0];
+      rfline[k]  = 'x';
+      ssline[k]  = '.';
+    }
+    seqline[M] = rfline[M] = ssline[M] = '\0';
+    pos += snprintf(buf+pos, bufsize-pos, "# STOCKHOLM 1.0\nseq1  %s\nseq2  %s\n#=GC RF  %s\n#=GC SS_cons  %s\n//\n",
+                     seqline, seqline, rfline, ssline);
+    free(seqline); free(rfline); free(ssline);
+    if (pos >= bufsize) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CP9_2_CM(): internal buffer size miscalculation");
+  }
+
+  if ((status = esl_msafile_OpenMem(&abc_nc, buf, -1, eslMSAFILE_STOCKHOLM, NULL, &afp)) != eslOK)
+    ESL_FAIL(status, errbuf, "CP9_2_CM(): unable to open synthetic alignment buffer");
+  if ((status = esl_msafile_Read(afp, &msa)) != eslOK)
+    ESL_FAIL(status, errbuf, "CP9_2_CM(): unable to parse synthetic alignment");
+  esl_msafile_Close(afp);
+  free(buf);
+
+  if ((status = HandModelmaker(msa, errbuf, TRUE, FALSE, FALSE, 0.5, &newcm, &gtr)) != eslOK) {
+    esl_msa_Destroy(msa);
+    return status; /* errbuf already filled by HandModelmaker */
+  }
+  esl_msa_Destroy(msa);
+  FreeParsetree(gtr);
+
+  if (newcm->clen != M) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CP9_2_CM(): internal error, synthetic CM clen (%d) != cp9->M (%d)", newcm->clen, M);
+  if (CMCountNodetype(newcm, MATP_nd) != 0 || CMCountNodetype(newcm, BIF_nd) != 0 ||
+      CMCountNodetype(newcm, MATR_nd) != 0 || CMCountNodetype(newcm, BEGL_nd) != 0 || CMCountNodetype(newcm, BEGR_nd) != 0)
+    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CP9_2_CM(): internal error, synthetic CM topology is not a pure MATL chain");
+
+  /* Overwrite emission/transition probabilities state-by-state, based on
+   * each state's role, determined generically from stid/ndidx/cfirst/cnum
+   * (not from an assumed fixed transition-slot ordering).
+   */
+  for (v = 0; v < newcm->M; v++) {
+    nd  = newcm->ndidx[v];
+    cnum = newcm->cnum[v];
+
+    if (newcm->ndtype[nd] == ROOT_nd) {
+      /* zero the emission row first (D-like non-emitters and untouched ROOT_IR keep whatever's there for IR) */
+      if (newcm->stid[v] == ROOT_S || newcm->stid[v] == ROOT_IL)
+        esl_vec_FSet(newcm->e[v], K*K, 0.);
+
+      if (newcm->stid[v] == ROOT_S) {
+        /* ROOT_IR is not modeled by the (linear, left-to-right) CP9 at all.
+         * We'd like it to be unreachable (prob 0 in from ROOT_S/ROOT_IL),
+         * but Infernal's internal state-occupancy sanity check
+         * (cm_ExpectedStateOccupancy(), used e.g. during QDB calculation)
+         * fails loudly if ANY non-"detached insert" state has exactly 0
+         * expected occupancy -- and ROOT_IR doesn't qualify as a
+         * "detached insert" in Infernal's sense (that idiom is reserved
+         * for an insert state immediately preceding an END_E). So instead
+         * of 0, we give ROOT_IR a tiny (ROOT_IR_EPS) but nonzero incoming
+         * probability from both ROOT_S and ROOT_IL, shrinking the 3 "real"
+         * CP9-derived probabilities proportionally so each row still sums
+         * to exactly 1. This perturbs the model's real scores by a
+         * negligible, arbitrarily-small amount while keeping it
+         * structurally well-formed.
+         */
+        for (a = 0; a < cnum; a++) {
+          dest   = newcm->cfirst[v] + a;
+          destnd = newcm->ndidx[dest];
+          if      (destnd == 0 && newcm->stid[dest] == ROOT_IL) prob = cp9->t[0][CTMI]   * (1. - ROOT_IR_EPS);
+          else if (destnd == 0 && newcm->stid[dest] == ROOT_IR) prob = ROOT_IR_EPS;
+          else if (destnd == 1 && newcm->stid[dest] == MATL_ML) prob = cp9->begin[1]     * (1. - ROOT_IR_EPS);
+          else if (destnd == 1 && newcm->stid[dest] == MATL_D)  prob = cp9->t[0][CTMD]   * (1. - ROOT_IR_EPS);
+          else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CP9_2_CM(): unexpected ROOT_S child state topology");
+          newcm->t[v][a] = prob;
+        }
+      }
+      else if (newcm->stid[v] == ROOT_IL) {
+        for (i = 0; i < K; i++) newcm->e[v][i] = cp9->ins[0][i];
+        for (a = 0; a < cnum; a++) {
+          dest   = newcm->cfirst[v] + a;
+          destnd = newcm->ndidx[dest];
+          if      (destnd == 0 && newcm->stid[dest] == ROOT_IL) prob = cp9->t[0][CTII]   * (1. - ROOT_IR_EPS);
+          else if (destnd == 0 && newcm->stid[dest] == ROOT_IR) prob = ROOT_IR_EPS;
+          else if (destnd == 1 && newcm->stid[dest] == MATL_ML) prob = cp9->t[0][CTIM]   * (1. - ROOT_IR_EPS);
+          else if (destnd == 1 && newcm->stid[dest] == MATL_D)  prob = cp9->t[0][CTID]   * (1. - ROOT_IR_EPS);
+          else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CP9_2_CM(): unexpected ROOT_IL child state topology");
+          newcm->t[v][a] = prob;
+        }
+      }
+      /* ROOT_IR itself: HandModelmaker() only accumulates raw observed
+       * counts (no prior/pseudocounts), so with an all-match synthetic
+       * training alignment ROOT_IR sees zero counts and its own
+       * emission/transition rows come back as all-zero, which fails CM
+       * pvector validation (rows must sum to ~1). Since it's (almost)
+       * never visited, set it to something valid (uniform).
+       */
+      else if (newcm->stid[v] == ROOT_IR) {
+        esl_vec_FSet(newcm->e[v], K*K, 0.);
+        for (i = 0; i < K; i++) newcm->e[v][i] = 1. / (float) K;
+        for (a = 0; a < cnum; a++) newcm->t[v][a] = 1. / (float) cnum;
+      }
+    }
+    else if (newcm->ndtype[nd] == MATL_nd) {
+      k = nd; /* MATL node index == CP9/consensus position, 1..M */
+      esl_vec_FSet(newcm->e[v], K*K, 0.);
+
+      if (newcm->stid[v] == MATL_ML) for (i = 0; i < K; i++) newcm->e[v][i] = cp9->mat[k][i];
+      if (newcm->stid[v] == MATL_IL) for (i = 0; i < K; i++) newcm->e[v][i] = cp9->ins[k][i];
+      /* MATL_D: non-emitting, leave zeroed */
+
+      for (a = 0; a < cnum; a++) {
+        dest   = newcm->cfirst[v] + a;
+        destnd = newcm->ndidx[dest];
+        if (destnd == k && newcm->stid[dest] == MATL_IL) {
+          /* self-loop / same-node insert target */
+          if      (newcm->stid[v] == MATL_ML) prob = cp9->t[k][CTMI];
+          else if (newcm->stid[v] == MATL_IL) prob = cp9->t[k][CTII];
+          else                                 prob = cp9->t[k][CTDI]; /* MATL_D */
+        }
+        else if (k < M && destnd == k+1 && newcm->stid[dest] == MATL_ML) {
+          if      (newcm->stid[v] == MATL_ML) prob = cp9->t[k][CTMM];
+          else if (newcm->stid[v] == MATL_IL) prob = cp9->t[k][CTIM];
+          else                                 prob = cp9->t[k][CTDM];
+        }
+        else if (k < M && destnd == k+1 && newcm->stid[dest] == MATL_D) {
+          if      (newcm->stid[v] == MATL_ML) prob = cp9->t[k][CTMD];
+          else if (newcm->stid[v] == MATL_IL) prob = cp9->t[k][CTID];
+          else                                 prob = cp9->t[k][CTDD];
+        }
+        else if (k == M && newcm->stid[dest] == END_E) {
+          if      (newcm->stid[v] == MATL_ML) prob = cp9->end[M];
+          else if (newcm->stid[v] == MATL_IL) prob = cp9->t[M][CTIM];
+          else                                 prob = cp9->t[M][CTDM];
+        }
+        else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CP9_2_CM(): unexpected MATL node %d child state topology", k);
+        newcm->t[v][a] = prob;
+      }
+    }
+    /* END_nd: E state, non-emitting, no outgoing transitions (cnum == 0), nothing to do */
+  }
+
+  /* Provenance: name/accession/description, "-cp9ascm" suffix on the name.
+   * (rf/consensus/map are not carried over in this v1; cm_Configure()
+   * below derives its own consensus string for the new linear model.)
+   */
+  if (cm->name != NULL) {
+    ESL_ALLOC(name, sizeof(char) * (strlen(cm->name) + strlen("-cp9ascm") + 1));
+    sprintf(name, "%s-cp9ascm", cm->name);
+    cm_SetName(newcm, name);
+    free(name);
+  }
+  else cm_SetName(newcm, "cp9ascm");
+  if (cm->acc  != NULL) cm_SetAccession (newcm, cm->acc);
+  if (cm->desc != NULL) cm_SetDescription(newcm, cm->desc);
+  /* nseq/eff_nseq: this CM's probabilities didn't come from counting
+   * training sequences (they're copied from cm->cp9 directly), but the
+   * CM file format requires nseq >= 1, so inherit the source CM's
+   * training set size for provenance rather than leaving it at 0. */
+  newcm->nseq     = ESL_MAX(1, cm->nseq);
+  newcm->eff_nseq = ESL_MAX(1., cm->eff_nseq);
+
+  newcm->config_opts |= CM_CONFIG_QDB;
+  if ((status = cm_Configure(newcm, errbuf, -1)) != eslOK) { FreeCM(newcm); return status; }
+  /* cm_Configure() builds newcm->cmcons but does not itself set
+   * newcm->consensus/newcm->rf from it (cf. cmconvert.c's own
+   * configure_model(), which does this same extra step after
+   * cm_Configure() for the same reason: cm_file_WriteASCII() expects
+   * cm->consensus/cm->rf to be non-NULL). */
+  if ((status = cm_SetConsensus(newcm, newcm->cmcons, NULL)) != eslOK) { FreeCM(newcm); ESL_FAIL(status, errbuf, "CP9_2_CM(): failed to calculate consensus sequence"); }
+
+  /* The v1.1 CM file format unconditionally requires a filter p7 HMM
+   * (CMH_FP7 "should always be true" per cm_file.c) -- cm_file_Read()
+   * fails without an EFP7GF line. cm_Configure() already built
+   * newcm->mlp7 (via cm_cp9_to_p7()); calibrate it and (as there's no
+   * separately-built filter HMM here) reuse it as the filter HMM too,
+   * same as cmconvert.c's configure_model() already does for CM_FILE_1
+   * / --mlhmm conversions (see cmbuild.c::build_and_calibrate_p7_filter()
+   * for the origin of these default calibration lengths/counts). */
+  {
+    int    lmsvL, lvitL, lfwdL, gfwdL;
+    int    lmsvN, lvitN, lfwdN, gfwdN;
+    float  lftailp, gftailp;
+    double fil_gfmu, fil_gflambda;
+
+    lmsvL = lvitL = 200;
+    lfwdL = 100;
+    gfwdL = ESL_MAX(100, 2.*newcm->clen);
+    lmsvN = lvitN = lfwdN = gfwdN = 200;
+    lftailp = 0.055;
+    gftailp = 0.065;
+    if ((status = cm_p7_Calibrate(newcm->mlp7, errbuf,
+                                   lmsvL, lvitL, lfwdL, gfwdL,
+                                   lmsvN, lvitN, lfwdN, gfwdN,
+                                   lftailp, gftailp, 42, 0,
+                                   &fil_gfmu, &fil_gflambda)) != eslOK) { FreeCM(newcm); return status; }
+    if ((status = cm_SetFilterHMM(newcm, newcm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) { FreeCM(newcm); ESL_FAIL(status, errbuf, "CP9_2_CM(): unable to set the HMM filter for the CM"); }
+  }
+
+  *ret_cm = newcm;
+  return eslOK;
+
+ ERROR:
+  if (buf != NULL) free(buf);
+  if (newcm != NULL) FreeCM(newcm);
+  ESL_FAIL(eslEMEM, errbuf, "CP9_2_CM(): memory allocation error");
 }

@@ -22,18 +22,20 @@
 
 #include "infernal.h"
 
-#define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm"
+#define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm,--cp9ascm"
 
 static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help on version and usage",                             0 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help and exit",                                         0 },
+  { "--version", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show version info and exit",                                       0 },
   { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               1 },
   { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward compatible Infernal v0.7-->v1.0.2 ASCII format",   1 },
   { "-o",        eslARG_OUTFILE,FALSE, NULL, NULL,      NULL,       NULL,       NULL, "save CM file to file <f>, not stdout",                             1 },
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            1 },
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        1 },
-  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm", "choose output format: 1/a, 1/b, or 1/c (default: 1/c)",            1 },
+  { "--cp9ascm", eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output CM's ML CP9 HMM as an unstructured (linear MATL-chain) CM", 1 },
+  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "choose output format: 1/a, 1/b, or 1/c (default: 1/c)",            1 },
   /* options for controlling p7 per-node band pad computation */
   { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,              NULL, "skip p7 per-node band pad computation",          2 },
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
@@ -79,6 +81,12 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
       exit(0);
     }
+  if (esl_opt_GetBoolean(go, "--version"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+      esl_printf("%s %s\n", "cmconvert", INFERNAL_VERSION);
+      exit(0);
+    }
   if (esl_opt_ArgNumber(go) != 1)
     {
       puts("Incorrect number of command line arguments.");
@@ -116,22 +124,27 @@ main(int argc, char **argv)
 
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
-      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm")) {
+      CM_t *cp9cm = NULL;
+
+      if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm") || esl_opt_GetBoolean(go, "--cp9ascm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
 	 * (cm->dmin, cm->dmax), cm->W, cm->consensus. These are
 	 * calculated during model configuration. If --mlhmm, we
 	 * need E-value params for the ML p7 HMM, we calc those
-	 * in configure_model().
+	 * in configure_model(). If --cp9ascm, we need cm->cp9 to be
+	 * built (globally, i.e. without CM_CONFIG_LOCAL), which
+	 * configure_model() also does as a side effect of cm_Configure().
 	 */
 	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
       }
 
       /* Compute p7 per-node band pads and embed in CM, unless --no-p7pad or output
-       * format doesn't support them (-1, --mlhmm, --fhmm). */
+       * format doesn't support them (-1, --mlhmm, --fhmm, --cp9ascm). */
       if (! esl_opt_GetBoolean(go, "--no-p7pad")  &&
           ! esl_opt_GetBoolean(go, "-1")           &&
           ! esl_opt_GetBoolean(go, "--mlhmm")      &&
-          ! esl_opt_GetBoolean(go, "--fhmm"))
+          ! esl_opt_GetBoolean(go, "--fhmm")       &&
+          ! esl_opt_GetBoolean(go, "--cp9ascm"))
         {
           if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
           /* cm_ComputeP7CMNodePad needs cm->cp9map. For inputs that skipped
@@ -159,12 +172,19 @@ main(int argc, char **argv)
           }
         }
 
+      if (esl_opt_GetBoolean(go, "--cp9ascm")) {
+	if ((status = CP9_2_CM(cm, errbuf, &cp9cm)) != eslOK) cm_Fail(errbuf);
+      }
+
       /* append command line info to the appropriate comlog */
       if (esl_opt_GetBoolean(go, "--mlhmm")) {
 	if((status = p7_hmm_AppendComlog (cm->mlp7, go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
       }
       else if (esl_opt_GetBoolean(go, "--fhmm")) {
 	if((status = p7_hmm_AppendComlog (cm->fp7,  go->argc, go->argv)) != eslOK) cm_Fail("Failed to record command log");
+      }
+      else if (esl_opt_GetBoolean(go, "--cp9ascm")) {
+	if((status = cm_AppendComlog (cp9cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
       }
       else {
 	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
@@ -191,7 +211,9 @@ main(int argc, char **argv)
       else if (esl_opt_GetBoolean(go, "-1")       == TRUE) cm_file_Write1p0ASCII(ofp, cm);
       else if (esl_opt_GetBoolean(go, "--mlhmm")  == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->mlp7); /* -1 = write the current default format */
       else if (esl_opt_GetBoolean(go, "--fhmm")   == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->fp7);  /* -1 = write the current default format */
+      else if (esl_opt_GetBoolean(go, "--cp9ascm")== TRUE) cm_file_WriteASCII(ofp, -1, cp9cm);        /* -1 = write the current default format */
 
+      if (cp9cm != NULL) FreeCM(cp9cm);
       FreeCM(cm);
     }
   if      (status == eslEFORMAT)   cm_Fail("bad file format in CM file %s\n%s",             cmfile, cmfp->errbuf);

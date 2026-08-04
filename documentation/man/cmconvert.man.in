@@ -33,8 +33,12 @@ rather than a file.
 
 .TP
 .B -h
-Help; print a brief reminder of command line usage and all available
-options.
+Help: print a brief reminder of command line usage and available
+options, and exit.
+
+.TP
+.B \-\-version
+Show version information: print the program name and Infernal version, and exit.
 
 .TP 
 .B -a
@@ -64,15 +68,35 @@ as similar as possible to the CM, without modeling secondary
 structure. This option could be useful for comparative studies of
 Infernal and HMMER3.
 
-.TP 
+.TP
 .B --fhmm
 Do not output a CM file. Instead, output the filter p7 HMM
-for each CM in 
+for each CM in
 .B <cmfile>
 in HMMER3 ASCII text format.
 
+.TP
+.B --cp9ascm
+Do not output the original CM. Instead, output an unstructured CM
+(a linear chain of MATL nodes, with no base pairs) built from each
+CM's ML CP9 HMM
+.B ( cm->cp9 ),
+in Infernal ASCII text format. Unlike
+.B --mlhmm
+and
+.B --fhmm ,
+which output the p7/HMMER3-format HMMs associated with the CM, this
+option outputs the CM Plan 9 HMM itself, represented as a CM, so
+that it can be aligned or searched against with
+.B cmalign
+or
+.B cmsearch
+like any other (unstructured) CM. Only CMs configured in global mode
+are currently supported (this is the default state of a freshly-read
+CM file).
 
-.SH SEE ALSO 
+
+.SH SEE ALSO
 
 See 
 .B infernal(1)

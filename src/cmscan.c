@@ -125,10 +125,11 @@ typedef struct {
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles   reqs   incomp              help                                                      docgroup*/
-  { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help on version and usage",                         1 },
-  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmmonly",     "configure CM for glocal alignment [default: local]",           1 },
+  { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help and exit",                                      1 },
+  { "--version",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show version info and exit",                                    1 },
+  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmmonly",     "configure CM for glocal alignment [default: local]",            1 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set search space size in *Mb* to <x> for E-value calculations", 1 },
-  { "--devhelp",    eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "show list of otherwise hidden developer/expert options",       1 },
+  { "--devhelp",    eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "show list of otherwise hidden developer/expert options",        1 },
   /* Control of output */
   { "-o",           eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "direct output to file <f>, not stdout",                        2 },
   { "--tblout",     eslARG_OUTFILE, NULL, NULL, NULL,    NULL,  NULL,  NULL,            "save parseable table of hits to file <s>",                     2 },
@@ -2061,86 +2062,76 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 static void
 process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile)
 {
-  ESL_GETOPTS *go     = NULL;
-  char        *devmsg = "*";
-  int          do_dev = FALSE; /* set to TRUE if --devhelp used */
+  ESL_GETOPTS *go        = NULL;
+  int          do_dev    = FALSE;   // set to TRUE if --devhelp used
+  char         devnote[] = " (*)";  // footnote asterisk appended to help sections that expand with --devhelp
 
-  if ((go = esl_getopts_Create(options))     == NULL)     cm_Fail("Internal failure creating options object");
-  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { printf("Failed to process environment: %s\n", go->errbuf); goto ERROR; }
-  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf);  goto ERROR; }
-  if (esl_opt_VerifyConfig(go)               != eslOK)  { printf("Failed to parse command line: %s\n", go->errbuf);  goto ERROR; }
- 
-  /* help format: */
+  if ((go = esl_getopts_Create(options))     == NULL)     esl_fatal("Internal failure creating options object");
+  if (esl_opt_ProcessEnvironment(go)         != eslOK)  { esl_fprintf(stderr, "Failed to process environment: %s\n", go->errbuf);  goto ERROR; } // ERROR block here puts additional useful
+  if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; } // user-directed cmdline usage stuff to stderr
+  if (esl_opt_VerifyConfig(go)               != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; }
+
+  // "brief" help format:
   do_dev = esl_opt_GetBoolean(go, "--devhelp") ? TRUE : FALSE;
-  if (esl_opt_GetBoolean(go, "-h") || do_dev) { 
-    cm_banner(stdout, argv[0], banner);
-    esl_usage(stdout, argv[0], usage);
+  if (do_dev || esl_opt_GetBoolean(go, "-h"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h (or --devhelp) alone");
 
-    puts("\nBasic options:");
-    esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
+      cm_banner(stdout, "cmscan", banner);  // use progname not argv[0]: versioning, not invocation
+      esl_usage(stdout, argv[0], usage);    // whereas this is invocation
 
-    puts("\nOptions directing output:");
-    esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      esl_printf("\nBasic options:\n");                                                      esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
+      esl_printf("\nOptions directing output:\n");                                           esl_opt_DisplayHelp(stdout, go, 2, 2, 100);
+      esl_printf("\nOptions controlling reporting thresholds:");                             esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
+      esl_printf("\nOptions controlling inclusion (significance) thresholds:\n");            esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
+      esl_printf("\nOptions controlling model-specific reporting thresholds:\n");            esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
+      esl_printf("\nOptions controlling acceleration heuristics:%s\n", do_dev ? "":devnote); esl_opt_DisplayHelp(stdout, go, 6, 2, 100);
 
-    puts("\nOptions controlling reporting thresholds:");
-    esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      if (do_dev) {
+        esl_printf("\nOptions for precise control of the CM filter pipeline:\n");                           esl_opt_DisplayHelp(stdout, go, 101, 2, 100);
+        esl_printf("\nOptions controlling the HMM-only filter pipeline (run for models w/0 basepairs):\n"); esl_opt_DisplayHelp(stdout, go, 102, 2, 100);
+        esl_printf("\nOptions for precise control of HMM envelope definition:\n");                          esl_opt_DisplayHelp(stdout, go, 103, 2, 100);
+        esl_printf("\nOptions for precise control of the CYK filter stage:\n");                             esl_opt_DisplayHelp(stdout, go, 104, 2, 100);
+        esl_printf("\nOptions for precise control of the final stage:\n");                                  esl_opt_DisplayHelp(stdout, go, 105, 2, 100);
+        esl_printf("\nOptions for terminating after individual pipeline stages:\n");                        esl_opt_DisplayHelp(stdout, go, 106, 2, 100);
+        esl_printf("\nOptions for timing pipeline stages:\n");                                              esl_opt_DisplayHelp(stdout, go, 107, 2, 100);
+      }
 
-    puts("\nOptions controlling inclusion (significance) thresholds:");
-    esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-
-    puts("\nOptions controlling model-specific reporting thresholds:");
-    esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
-
-    printf("\nOptions controlling acceleration heuristics%s:\n", do_dev ? "" : devmsg);
-    esl_opt_DisplayHelp(stdout, go, 6, 2, 100);
-    if(do_dev) { 
-      puts("\nOptions for precise control of the CM filter pipeline:");
-      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-      puts("\nOptions controlling the HMM-only filter pipeline (run for models w/0 basepairs):");
-      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
-      puts("\nOptions for precise control of HMM envelope definition:");
-      esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
-      puts("\nOptions for precise control of the CYK filter stage:");
-      esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
-      puts("\nOptions for precise control of the final stage:");
-      esl_opt_DisplayHelp(stdout, go, 105, 2, 80);
-      puts("\nOptions for terminating after individual pipeline stages:");
-      esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
-      puts("\nOptions for timing pipeline stages:");
-      esl_opt_DisplayHelp(stdout, go, 107, 2, 80);
+      esl_printf("\nOther options%s:\n", do_dev ? "" : devnote); esl_opt_DisplayHelp(stdout, go, 7, 2, 100);
+      if (do_dev) {
+        esl_printf("\nOther expert options%s:\n");               esl_opt_DisplayHelp(stdout, go, 108, 2, 100);
+      } else
+        esl_printf("\n(*) Use --devhelp to show additional expert options.");
+      exit(0);
     }
 
-    printf("\nOther options%s:\n", do_dev ? "" : devmsg);
-    esl_opt_DisplayHelp(stdout, go, 7, 2, 80); 
-    if(do_dev) { 
-      printf("\nOther expert options%s:\n", do_dev ? "" : devmsg);
-      esl_opt_DisplayHelp(stdout, go, 108, 2, 80);
+  // versioning info
+  if (esl_opt_GetBoolean(go, "--version"))
+    {
+      if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+      esl_printf("%s %s\n", "cmscan", INFERNAL_VERSION);  // use progname here: versioning, not invocation
+      exit(0);
     }
-    else { 
-      puts("\n*Use --devhelp to show additional expert options.");
-    }
-    exit(0);
-  }
 
-  if (esl_opt_ArgNumber(go)                  != 2)     { puts("Incorrect number of command line arguments.");     goto ERROR; }
-  if ((*ret_cmfile = esl_opt_GetArg(go, 1))  == NULL)  { puts("Failed to get <cmdb> argument on command line"); goto ERROR; }
-  if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { puts("Failed to get <seqfile> argument on command line");  goto ERROR; }
-  
+  if (esl_opt_ArgNumber(go)                  != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");       goto ERROR; }
+  if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL)  { esl_fprintf(stderr, "Failed to get <cmdb> argument on command line.\n");    goto ERROR; }
+  if ((*ret_seqfile = esl_opt_GetArg(go, 2)) == NULL)  { esl_fprintf(stderr, "Failed to get <seqfile> argument on command line.\n"); goto ERROR; }
+
   /* Validate any attempted use of stdin streams */
-  if (strcmp(*ret_cmfile, "-") == 0) { puts("cmscan cannot read <cm database> from stdin stream, because it must have cmpress'ed auxfiles"); goto ERROR; }
+  if (strcmp(*ret_cmfile, "-") == 0) { esl_fprintf(stderr, "cmscan cannot read <cm database> from stdin stream, because it must have cmpress'ed auxfiles\n"); goto ERROR; }
 
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
 
   /* --beta only makes sense with --qdb, --nohmm or --max */
   if (esl_opt_IsUsed(go, "--beta") && (! esl_opt_GetBoolean(go, "--qdb")) && 
       (! esl_opt_GetBoolean(go, "--nohmm")) && (! esl_opt_GetBoolean(go, "--max"))) { 
-    puts("Failed to parse command line: --beta only makes sense in combination with --qdb, --nohmm or --max");
+    esl_fprintf(stderr, "Failed to parse command line: --beta only makes sense in combination with --qdb, --nohmm or --max\n");
     goto ERROR;
   }    
 
   /* --fbeta only makes sense with --fqdb or --nohmm */
   if (esl_opt_IsUsed(go, "--fbeta") && (! esl_opt_GetBoolean(go, "--fqdb")) && (! esl_opt_GetBoolean(go, "--nohmm"))) { 
-    puts("Failed to parse command line: --fbeta only makes sense in combination with --fqdb or --nohmm");
+    esl_fprintf(stderr, "Failed to parse command line: --fbeta only makes sense in combination with --fqdb or --nohmm\n");
     goto ERROR;
   }    
 
@@ -2154,19 +2145,19 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       (esl_opt_GetBoolean(go, "--qdb") && esl_opt_GetBoolean(go, "--fqdb"))) {     
     if(esl_opt_IsUsed(go, "--beta") && esl_opt_IsUsed(go, "--fbeta")) { 
       if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	puts("Failed to parse command line: with --nohmm --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
+	esl_fprintf(stderr, "Failed to parse command line: with --nohmm --fbeta <x1> --beta <x2>, <x1> must be >= <x2>\n");
 	goto ERROR;
       }
     }
-    else if(esl_opt_IsUsed(go, "--beta")) { 
-      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	printf("Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
+    else if(esl_opt_IsUsed(go, "--beta")) {
+      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) {
+	esl_fprintf(stderr, "Failed to parse command line: with --nohmm --beta <x> (not in combination with --fbeta), <x> must be <= %g\n", esl_opt_GetReal(go, "--fbeta"));
 	goto ERROR;
       }
     }
-    else if(esl_opt_IsUsed(go, "--fbeta")) { 
-      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) { 
-	printf("Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
+    else if(esl_opt_IsUsed(go, "--fbeta")) {
+      if((esl_opt_GetReal(go, "--beta") - esl_opt_GetReal(go, "--fbeta")) > 1E-20) {
+	esl_fprintf(stderr, "Failed to parse command line: with --nohmm --fbeta <x> (not in combination with --beta), <x> must be >= %g\n", esl_opt_GetReal(go, "--beta"));
 	goto ERROR;
       }
     }
@@ -2178,26 +2169,26 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    */
   if(esl_opt_IsUsed(go, "--clanin")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      puts("Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2"); 
+      esl_fprintf(stderr, "Failed to parse command line: with --clanin, the additional option of --fmt <n> is required with <n> == 2\n");
       goto ERROR;  
     }
   }
   if(esl_opt_IsUsed(go, "--oclan")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      puts("Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2"); 
+      esl_fprintf(stderr, "Failed to parse command line: with --oclan, the additional option of --fmt <n> is required with <n> == 2\n");
       goto ERROR;  
     }
   }
   if(esl_opt_IsUsed(go, "--oskip")) { 
     if((! esl_opt_IsUsed(go, "--fmt")) || (esl_opt_GetInteger(go, "--fmt") != 2)) { 
-      puts("Failed to parse command line: with --oskip, the additional option of --fmt <n> is required with <n> == 2"); 
+      esl_fprintf(stderr, "Failed to parse command line: with --oskip, the additional option of --fmt <n> is required with <n> == 2\n");
       goto ERROR;  
     }
   }
 
   /* --fmt 3 doesn't make sense with --trmF3 */
   if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
-    puts("--fmt 3 doesn't make sense in combination with --trmF3");
+    esl_fprintf(stderr, "--fmt 3 doesn't make sense in combination with --trmF3\n");
     goto ERROR;
   }
 
@@ -2209,186 +2200,186 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
    * laboriously check for all incompatible options of that type here.
    */
   if(esl_opt_IsUsed(go, "--max")) { 
-    if(esl_opt_IsUsed(go, "--nohmm"))      { puts("Failed to parse command line: Option --max is incompatible with option --nohmm");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--mid"))        { puts("Failed to parse command line: Option --max is incompatible with option --mid");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))       { puts("Failed to parse command line: Option --max is incompatible with option --rfam");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))         { puts("Failed to parse command line: Option --max is incompatible with option --FZ");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF1"))       { puts("Failed to parse command line: Option --max is incompatible with option --noF1");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2"))       { puts("Failed to parse command line: Option --max is incompatible with option --noF2");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3"))       { puts("Failed to parse command line: Option --max is incompatible with option --noF3");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF4"))       { puts("Failed to parse command line: Option --max is incompatible with option --noF4");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF6"))       { puts("Failed to parse command line: Option --max is incompatible with option --noF6");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF1b"))      { puts("Failed to parse command line: Option --max is incompatible with option --doF1b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2b"))      { puts("Failed to parse command line: Option --max is incompatible with option --noF2b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3b"))      { puts("Failed to parse command line: Option --max is incompatible with option --noF3b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF4b"))      { puts("Failed to parse command line: Option --max is incompatible with option --noF4b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF5b"))      { puts("Failed to parse command line: Option --max is incompatible with option --doF5b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1"))         { puts("Failed to parse command line: Option --max is incompatible with option --F1");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1b"))        { puts("Failed to parse command line: Option --max is incompatible with option --F1b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2"))         { puts("Failed to parse command line: Option --max is incompatible with option --F2");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2b"))        { puts("Failed to parse command line: Option --max is incompatible with option --F2b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F3"))         { puts("Failed to parse command line: Option --max is incompatible with option --F3");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F3b"))        { puts("Failed to parse command line: Option --max is incompatible with option --F3b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F4"))         { puts("Failed to parse command line: Option --max is incompatible with option --F4");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F4b"))        { puts("Failed to parse command line: Option --max is incompatible with option --F4b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F5"))         { puts("Failed to parse command line: Option --max is incompatible with option --F5");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F6"))         { puts("Failed to parse command line: Option --max is incompatible with option --F6");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--ftau"))       { puts("Failed to parse command line: Option --max is incompatible with option --ftau");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fsums"))      { puts("Failed to parse command line: Option --max is incompatible with option --fsums");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fqdb"))       { puts("Failed to parse command line: Option --max is incompatible with option --fqdb");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fbeta"))      { puts("Failed to parse command line: Option --max is incompatible with option --fbeta");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fnonbanded")) { puts("Failed to parse command line: Option --max is incompatible with option --fnonbanded"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nocykenv"))   { puts("Failed to parse command line: Option --max is incompatible with option --nocykenv");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--cykenvx"))    { puts("Failed to parse command line: Option --max is incompatible with option --cykenvx");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--tau"))        { puts("Failed to parse command line: Option --max is incompatible with option --tau");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--sums"))       { puts("Failed to parse command line: Option --max is incompatible with option --sums");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --max is incompatible with option --nonbanded");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rt1"))        { puts("Failed to parse command line: Option --max is incompatible with option --rt1");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rt2"))        { puts("Failed to parse command line: Option --max is incompatible with option --rt2");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rt3"))        { puts("Failed to parse command line: Option --max is incompatible with option --rt3");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --max is incompatible with option --ns");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --max is incompatible with option --maxtau");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --anytrunc");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --max is incompatible with option --inttrunc");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --max is incompatible with option --onlytrunc");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --5trunc");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --max is incompatible with option --3trunc");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --max is incompatible with option --onepass");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--olonepass"))  { puts("Failed to parse command line: Option --max is incompatible with option --olonepass");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noiter"))     { puts("Failed to parse command line: Option --max is incompatible with option --noiter");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --nohmm\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--mid"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --mid\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --rfam\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --FZ\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF1\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF2\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF3\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF4\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF6"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF6\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --doF1b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF2b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF3b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noF4b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF5b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --doF5b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F1\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F1b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F2\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F2b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F3\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F3b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F4\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F4b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F5"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F5\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F6"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --F6\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--ftau"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --ftau\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fsums"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --fsums\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fqdb"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --fqdb\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fbeta"))      { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --fbeta\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fnonbanded")) { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --fnonbanded\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nocykenv"))   { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --nocykenv\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cykenvx"))    { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --cykenvx\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--tau"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --tau\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--sums"))       { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --sums\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nonbanded"))  { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --nonbanded\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rt1"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --rt1\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rt2"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --rt2\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rt3"))        { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --rt3\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--ns"))         { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --ns\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--maxtau"))     { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --maxtau\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--anytrunc"))   { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --anytrunc\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --inttrunc\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --onlytrunc\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--5trunc"))     { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --5trunc\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--3trunc"))     { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --3trunc\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onepass"))    { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --onepass\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--olonepass"))  { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --olonepass\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noiter"))     { esl_fprintf(stderr, "Failed to parse command line: Option --max is incompatible with option --noiter\n");     goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--nohmm")) { 
-    if(esl_opt_IsUsed(go, "--max"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --max");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--mid"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --mid");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --rfam");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --FZ");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF1"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF1");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF2");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF3");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF4"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF4");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF1b"))      { puts("Failed to parse command line: Option --nohmm is incompatible with option --doF1b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2b"))      { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF2b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3b"))      { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF3b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF4b"))      { puts("Failed to parse command line: Option --nohmm is incompatible with option --noF4b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF5b"))      { puts("Failed to parse command line: Option --nohmm is incompatible with option --doF5b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --F1");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1b"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --F1b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --F2");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2b"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --F2b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F3"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --F3");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F3b"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --F3b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F4"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --F4");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F4b"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --F4b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F5"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --F5");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--ftau"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --ftau");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fsums"))      { puts("Failed to parse command line: Option --nohmm is incompatible with option --fsums");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--tau"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --tau");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--sums"))       { puts("Failed to parse command line: Option --nohmm is incompatible with option --sums");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rt1"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --rt1");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rt2"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --rt2");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rt3"))        { puts("Failed to parse command line: Option --nohmm is incompatible with option --rt3");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--ns"))         { puts("Failed to parse command line: Option --nohmm is incompatible with option --ns");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --maxtau");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --anytrunc");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --nohmm is incompatible with option --inttrunc");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --onlytrunc");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --5trunc");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --3trunc");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --nohmm is incompatible with option --onepass");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--olonepass"))  { puts("Failed to parse command line: Option --nohmm is incompatible with option --olonepass");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noiter"))     { puts("Failed to parse command line: Option --nohmm is incompatible with option --noiter");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --max\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--mid"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --mid\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --rfam\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --FZ\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF1\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF2\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF3\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF4\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --doF1b\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF2b\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF3b\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noF4b\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF5b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --doF5b\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F1\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F1b\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F2\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F2b\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F3\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F3b\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F4\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F4b\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F5"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --F5\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--ftau"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --ftau\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fsums"))      { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --fsums\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--tau"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --tau\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--sums"))       { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --sums\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rt1"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --rt1\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rt2"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --rt2\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rt3"))        { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --rt3\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--ns"))         { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --ns\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--maxtau"))     { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --maxtau\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--anytrunc"))   { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --anytrunc\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --inttrunc\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --onlytrunc\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--5trunc"))     { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --5trunc\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--3trunc"))     { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --3trunc\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onepass"))    { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --onepass\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--olonepass"))  { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --olonepass\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noiter"))     { esl_fprintf(stderr, "Failed to parse command line: Option --nohmm is incompatible with option --noiter\n");    goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--mid")) { 
-    if(esl_opt_IsUsed(go, "--max"))      { puts("Failed to parse command line: Option --mid is incompatible with option --max");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm"))    { puts("Failed to parse command line: Option --mid is incompatible with option --nohmm"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))     { puts("Failed to parse command line: Option --mid is incompatible with option --rfam");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))       { puts("Failed to parse command line: Option --mid is incompatible with option --FZ");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF1"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF1");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF2");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3"))     { puts("Failed to parse command line: Option --mid is incompatible with option --noF3");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF1b"))    { puts("Failed to parse command line: Option --mid is incompatible with option --doF1b"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2b"))    { puts("Failed to parse command line: Option --mid is incompatible with option --noF2b"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1"))       { puts("Failed to parse command line: Option --mid is incompatible with option --F1");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1b"))      { puts("Failed to parse command line: Option --mid is incompatible with option --F1b");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2"))       { puts("Failed to parse command line: Option --mid is incompatible with option --F2");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2b"))      { puts("Failed to parse command line: Option --mid is incompatible with option --F2b");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))      { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --max\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))    { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --nohmm\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))     { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --rfam\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))       { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --FZ\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))     { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --noF1\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))     { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --noF2\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))     { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --noF3\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))    { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --doF1b\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))    { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --noF2b\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))       { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --F1\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --F1b\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))       { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --F2\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --mid is incompatible with option --F2b\n");   goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--default")) { 
-    if(esl_opt_IsUsed(go, "--max"))   { puts("Failed to parse command line: Option --default is incompatible with option --max");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm")) { puts("Failed to parse command line: Option --default is incompatible with option --nohmm"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))  { puts("Failed to parse command line: Option --default is incompatible with option --rfam");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))    { puts("Failed to parse command line: Option --default is incompatible with option --FZ");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))   { esl_fprintf(stderr, "Failed to parse command line: Option --default is incompatible with option --max\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm")) { esl_fprintf(stderr, "Failed to parse command line: Option --default is incompatible with option --nohmm\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))  { esl_fprintf(stderr, "Failed to parse command line: Option --default is incompatible with option --rfam\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))    { esl_fprintf(stderr, "Failed to parse command line: Option --default is incompatible with option --FZ\n");    goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--rfam")) { 
-    if(esl_opt_IsUsed(go, "--max"))     { puts("Failed to parse command line: Option --rfam is incompatible with option --max");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm"))   { puts("Failed to parse command line: Option --rfam is incompatible with option --nohmm");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--default")) { puts("Failed to parse command line: Option --rfam is incompatible with option --default"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))      { puts("Failed to parse command line: Option --rfam is incompatible with option --FZ");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))     { esl_fprintf(stderr, "Failed to parse command line: Option --rfam is incompatible with option --max\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))   { esl_fprintf(stderr, "Failed to parse command line: Option --rfam is incompatible with option --nohmm\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--default")) { esl_fprintf(stderr, "Failed to parse command line: Option --rfam is incompatible with option --default\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))      { esl_fprintf(stderr, "Failed to parse command line: Option --rfam is incompatible with option --FZ\n");      goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--FZ")) { 
-    if(esl_opt_IsUsed(go, "--max"))     { puts("Failed to parse command line: Option --FZ is incompatible with option --max");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm"))   { puts("Failed to parse command line: Option --FZ is incompatible with option --nohmm");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--default")) { puts("Failed to parse command line: Option --FZ is incompatible with option --default"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))    { puts("Failed to parse command line: Option --FZ is incompatible with option --rfam");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))     { esl_fprintf(stderr, "Failed to parse command line: Option --FZ is incompatible with option --max\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))   { esl_fprintf(stderr, "Failed to parse command line: Option --FZ is incompatible with option --nohmm\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--default")) { esl_fprintf(stderr, "Failed to parse command line: Option --FZ is incompatible with option --default\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))    { esl_fprintf(stderr, "Failed to parse command line: Option --FZ is incompatible with option --rfam\n");    goto ERROR; }
   }
   if(esl_opt_IsUsed(go, "--hmmonly")) { 
-    if(esl_opt_IsUsed(go, "--max"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --max");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmm"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nohmm");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--mid"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --mid");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--rfam"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --rfam");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--FZ"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --FZ");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF1"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF1");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF2");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF3");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF4"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF4");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF6"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF6");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF1b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --doF1b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF2b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF2b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF3b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF3b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noF4b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noF4b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--doF5b"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --doF5b");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F1");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F1b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F1b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F2");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F2b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F2b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F3"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F3");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F3b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F3b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F4"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F4");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F4b"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F4b");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F5"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F5");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--F6"))         { puts("Failed to parse command line: Option --hmmonly is incompatible with option --F6");         goto ERROR; }
-    if(esl_opt_IsUsed(go, "--ftau"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --ftau");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fsums"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fsums");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fqdb"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fqdb");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fbeta"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fbeta");      goto ERROR; }
-    if(esl_opt_IsUsed(go, "--fnonbanded")) { puts("Failed to parse command line: Option --hmmonly is incompatible with option --fnonbanded"); goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nocykenv"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nocykenv");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--cykenvx"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cykenvx");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--tau"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --tau");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--sums"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --sums");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--qdb"))        { puts("Failed to parse command line: Option --hmmonly is incompatible with option --qdb");        goto ERROR; }
-    if(esl_opt_IsUsed(go, "--beta"))       { puts("Failed to parse command line: Option --hmmonly is incompatible with option --beta");       goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nonbanded"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--maxtau"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --maxtau");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--anytrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--inttrunc"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --inttrunc");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--onlytrunc"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onlytrunc");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--5trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --5trunc");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--3trunc"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --3trunc");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--onepass"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --onepass");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--olonepass"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --olonepass");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--noiter"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --noiter");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--mxsize"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --mxsize");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--smxsize"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --smxsize");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nonull3"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nonull3");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nohmmonly"))  { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nohmmonly");  goto ERROR; }
-    if(esl_opt_IsUsed(go, "--timeF4"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --timeF4");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--timeF5"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --timeF5");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--timeF6"))     { puts("Failed to parse command line: Option --hmmonly is incompatible with option --timeF6");     goto ERROR; }
-    if(esl_opt_IsUsed(go, "--nogreedy"))   { puts("Failed to parse command line: Option --hmmonly is incompatible with option --nogreedy");   goto ERROR; }
-    if(esl_opt_IsUsed(go, "--cp9noel"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cp9noel");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--cp9gloc"))    { puts("Failed to parse command line: Option --hmmonly is incompatible with option --cp9gloc");    goto ERROR; }
-    if(esl_opt_IsUsed(go, "--null2"))      { puts("Failed to parse command line: Option --hmmonly is incompatible with option --null2");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--max"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --max\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmm"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --nohmm\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--mid"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --mid\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--rfam"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --rfam\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--FZ"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --FZ\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF1"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF1\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF2\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF3\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF4\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF6"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF6\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF1b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --doF1b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF2b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF2b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF3b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF3b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noF4b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noF4b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--doF5b"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --doF5b\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F1\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F1b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F1b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F2\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F2b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F2b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F3\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F3b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F3b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F4\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F4b"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F4b\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F5"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F5\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--F6"))         { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --F6\n");         goto ERROR; }
+    if(esl_opt_IsUsed(go, "--ftau"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --ftau\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fsums"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --fsums\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fqdb"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --fqdb\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fbeta"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --fbeta\n");      goto ERROR; }
+    if(esl_opt_IsUsed(go, "--fnonbanded")) { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --fnonbanded\n"); goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nocykenv"))   { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --nocykenv\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cykenvx"))    { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --cykenvx\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--tau"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --tau\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--sums"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --sums\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--qdb"))        { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --qdb\n");        goto ERROR; }
+    if(esl_opt_IsUsed(go, "--beta"))       { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --beta\n");       goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nonbanded"))  { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --nonbanded\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--maxtau"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --maxtau\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--anytrunc"))   { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --anytrunc\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--inttrunc"))   { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --inttrunc\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onlytrunc"))  { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --onlytrunc\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--5trunc"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --5trunc\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--3trunc"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --3trunc\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--onepass"))    { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --onepass\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--olonepass"))  { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --olonepass\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--noiter"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --noiter\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--mxsize"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --mxsize\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--smxsize"))    { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --smxsize\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nonull3"))    { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --nonull3\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nohmmonly"))  { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --nohmmonly\n");  goto ERROR; }
+    if(esl_opt_IsUsed(go, "--timeF4"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --timeF4\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--timeF5"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --timeF5\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--timeF6"))     { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --timeF6\n");     goto ERROR; }
+    if(esl_opt_IsUsed(go, "--nogreedy"))   { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --nogreedy\n");   goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cp9noel"))    { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --cp9noel\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--cp9gloc"))    { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --cp9gloc\n");    goto ERROR; }
+    if(esl_opt_IsUsed(go, "--null2"))      { esl_fprintf(stderr, "Failed to parse command line: Option --hmmonly is incompatible with option --null2\n");      goto ERROR; }
   }
 
   /* more incompatible combinations, listed here instead of within option definitions because the string of incompatible options is longer than errbuf */
@@ -2397,43 +2388,43 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define THRESHOPTS  "-E,-T,--incE,--incT,--cut_ga,--cut_nc,--cut_tc"
   if(esl_opt_IsUsed(go, "-E")) { 
     if((esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
-      puts("Failed to parse command line: Option -E is incompatible with -T,--cut_ga,--cut_nc,--cut_tc");
+      esl_fprintf(stderr, "Failed to parse command line: Option -E is incompatible with -T,--cut_ga,--cut_nc,--cut_tc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "-T")) { 
     if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
-      puts("Failed to parse command line: Option -T is incompatible with -E,--cut_ga,--cut_nc,--cut_tc");
+      esl_fprintf(stderr, "Failed to parse command line: Option -T is incompatible with -E,--cut_ga,--cut_nc,--cut_tc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--incE")) { 
     if((esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
-      puts("Failed to parse command line: Option --incE is incompatible with --incT,--cut_ga,--cut_nc,--cut_tc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --incE is incompatible with --incT,--cut_ga,--cut_nc,--cut_tc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--incT")) { 
     if((esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
-      puts("Failed to parse command line: Option --incT is incompatible with --incE,--cut_ga,--cut_nc,--cut_tc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --incT is incompatible with --incE,--cut_ga,--cut_nc,--cut_tc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--cut_ga")) { 
     if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_nc")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
-      puts("Failed to parse command line: Option --cut_ga is incompatible with -E,-T,--incE,--incT,--cut_nc,--cut_tc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --cut_ga is incompatible with -E,-T,--incE,--incT,--cut_nc,--cut_tc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--cut_nc")) { 
     if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_tc"))) { 
-      puts("Failed to parse command line: Option --cut_nc is incompatible with -E,-T,--incE,--incT,--cut_ga,--cut_tc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --cut_nc is incompatible with -E,-T,--incE,--incT,--cut_ga,--cut_tc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--cut_tc")) { 
     if((esl_opt_IsUsed(go, "-E")) || (esl_opt_IsUsed(go, "-T")) || (esl_opt_IsUsed(go, "--incE")) || (esl_opt_IsUsed(go, "--incT")) || (esl_opt_IsUsed(go, "--cut_ga")) || (esl_opt_IsUsed(go, "--cut_nc"))) { 
-      puts("Failed to parse command line: Option --cut_tc is incompatible with -E,-T,--incE,--incT,--cut_ga,--cut_nc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --cut_tc is incompatible with -E,-T,--incE,--incT,--cut_ga,--cut_nc\n");
       goto ERROR; 
     }
   }
@@ -2442,37 +2433,37 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define NOTRUNCOPTS "--anytrunc,--onlytrunc,--5trunc,--3trunc"
   if(esl_opt_IsUsed(go, "--notrunc")) { 
     if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --notrunc is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --notrunc is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--anytrunc")) { 
     if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --anytrunc is incompatible with -g,--notrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --anytrunc is incompatible with -g,--notrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "-g")) { 
     if((esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option -g is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option -g is incompatible with --anytrunc,--inttrunc,--onlytrunc,--5trunc,--3trunc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--onlytrunc")) { 
     if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--5trunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --onlytrunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--5trunc,--3trunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --onlytrunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--5trunc,--3trunc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--5trunc")) { 
     if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--3trunc"))) { 
-      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--3trunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--3trunc\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--3trunc")) { 
     if((esl_opt_IsUsed(go, "-g")) || (esl_opt_IsUsed(go, "--anytrunc")) || (esl_opt_IsUsed(go, "--inttrunc")) || (esl_opt_IsUsed(go, "--notrunc")) || (esl_opt_IsUsed(go, "--onlytrunc")) || (esl_opt_IsUsed(go, "--5trunc"))) { 
-      puts("Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--5trunc");
+      esl_fprintf(stderr, "Failed to parse command line: Option --5trunc is incompatible with -g,--anytrunc,--inttrunc,--notrunc,--onlytrunc,--5trunc\n");
       goto ERROR; 
     }
   }
@@ -2481,61 +2472,61 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define ICWTRMF3  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
   if(esl_opt_IsUsed(go, "--timeF1")) { 
     if((esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      puts("Failed to parse command line: Option --timeF1 is incompatible with --timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --timeF1 is incompatible with --timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--timeF2")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      puts("Failed to parse command line: Option --timeF2 is incompatible with --timeF1,--timeF3,--timeF4,--timeF5,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --timeF2 is incompatible with --timeF1,--timeF3,--timeF4,--timeF5,--timeF6\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--timeF3")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      puts("Failed to parse command line: Option --timeF2 is incompatible with --timeF1,--timeF2,--timeF4,--timeF5,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --timeF2 is incompatible with --timeF1,--timeF2,--timeF4,--timeF5,--timeF6\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--timeF4")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      puts("Failed to parse command line: Option --timeF4 is incompatible with --timeF1,--timeF2,--timeF3,--timeF5,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --timeF4 is incompatible with --timeF1,--timeF2,--timeF3,--timeF5,--timeF6\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--timeF5")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      puts("Failed to parse command line: Option --timeF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --timeF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF6\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--timeF6")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5"))) { 
-      puts("Failed to parse command line: Option --timeF6 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5");
+      esl_fprintf(stderr, "Failed to parse command line: Option --timeF6 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5\n");
       goto ERROR; 
     }
   }
   if(esl_opt_IsUsed(go, "--trmF3")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      puts("Failed to parse command line: Option --trmF3 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --trmF3 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
       goto ERROR; 
     }
     if(esl_opt_IsUsed(go, "--trmF5")) {
-      puts("Failed to parse command line: Option --trmF3 is incompatible with --trmF5");
+      esl_fprintf(stderr, "Failed to parse command line: Option --trmF3 is incompatible with --trmF5\n");
       goto ERROR;
     }
   }
   if(esl_opt_IsUsed(go, "--trmF5")) {
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) {
-      puts("Failed to parse command line: Option --trmF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6");
+      esl_fprintf(stderr, "Failed to parse command line: Option --trmF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
       goto ERROR;
     }
     if(esl_opt_IsUsed(go, "--hmmonly")) {
-      puts("Failed to parse command line: Option --trmF5 is incompatible with --hmmonly");
+      esl_fprintf(stderr, "Failed to parse command line: Option --trmF5 is incompatible with --hmmonly\n");
       goto ERROR;
     }
     if(esl_opt_IsUsed(go, "--nohmm") || esl_opt_IsUsed(go, "--max")) {
-      puts("Failed to parse command line: Option --trmF5 requires Stage 5 envelope definition and is incompatible with --nohmm and --max");
+      esl_fprintf(stderr, "Failed to parse command line: Option --trmF5 requires Stage 5 envelope definition and is incompatible with --nohmm and --max\n");
       goto ERROR;
     }
   }
@@ -2543,7 +2534,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define ICWHMMMAX  "--hmmF1,--hmmF2,--hmmF3,--hmmnobias" 
   if(esl_opt_IsUsed(go, "--hmmmax")) { 
     if((esl_opt_IsUsed(go, "--hmmF1")) || (esl_opt_IsUsed(go, "--hmmF2")) || (esl_opt_IsUsed(go, "--hmmF3")) || (esl_opt_IsUsed(go, "--hmmnobias"))) { 
-      puts("Failed to parse command line: Option --hmmmax is incompatible with --hmmF1,--hmmF2,--hmmF3,--hmmnobias");
+      esl_fprintf(stderr, "Failed to parse command line: Option --hmmmax is incompatible with --hmmF1,--hmmF2,--hmmF3,--hmmnobias\n");
       goto ERROR; 
     }
   }
@@ -2551,7 +2542,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define ICWFNONBANDED  "--ftau,--fsums,--fqdb,--fbeta"
   if(esl_opt_IsUsed(go, "--fnonbanded")) { 
     if((esl_opt_IsUsed(go, "--ftau")) || (esl_opt_IsUsed(go, "--fsums")) || (esl_opt_IsUsed(go, "--fqdb")) || (esl_opt_IsUsed(go, "--fbeta"))) { 
-      puts("Failed to parse command line: Option --fnonbanded is incompatible with --ftau,--fsums,--fqdb,--fbeta");
+      esl_fprintf(stderr, "Failed to parse command line: Option --fnonbanded is incompatible with --ftau,--fsums,--fqdb,--fbeta\n");
       goto ERROR; 
     }
   }
@@ -2559,7 +2550,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define ICWNONBANDED  "--tau,--sums,--qdb,--beta"
   if(esl_opt_IsUsed(go, "--nonbanded")) { 
     if((esl_opt_IsUsed(go, "--tau")) || (esl_opt_IsUsed(go, "--sums")) || (esl_opt_IsUsed(go, "--qdb")) || (esl_opt_IsUsed(go, "--beta"))) { 
-      puts("Failed to parse command line: Option --nonbanded is incompatible with --tau,--sums,--qdb,--beta");
+      esl_fprintf(stderr, "Failed to parse command line: Option --nonbanded is incompatible with --tau,--sums,--qdb,--beta\n");
       goto ERROR; 
     }
   }
@@ -2567,7 +2558,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   // #define ICWOLONEPASS  "--nohmm,--qdb,--fqdb,--onepass"
   if(esl_opt_IsUsed(go, "--olonepass")) { 
     if((esl_opt_IsUsed(go, "--nohmm")) || (esl_opt_IsUsed(go, "--qdb")) || (esl_opt_IsUsed(go, "--fqdb")) || (esl_opt_IsUsed(go, "--onepass"))) { 
-      puts("Failed to parse command line: Option --olonepass is incompatible with --nohmm,--qdb,--fqdb,--onepass");
+      esl_fprintf(stderr, "Failed to parse command line: Option --olonepass is incompatible with --nohmm,--qdb,--fqdb,--onepass\n");
       goto ERROR; 
     }
   }
@@ -2575,12 +2566,12 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   *ret_go = go;
   return;
   
- ERROR:  /* all errors handled here are user errors, so be polite.  */
-  esl_usage(stdout, argv[0], usage);
-  puts("\nwhere basic options are:");
-  esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1= group; 2 = indentation; 80=textwidth*/
-  printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
-  exit(1);  
+ ERROR:  // all errors handled here are user errors, so be polite.
+  esl_usage(stderr, argv[0], usage);   // use argv[0] because this is about invocation, not version
+  esl_fprintf(stderr, "\nwhere basic options are:\n");
+  esl_opt_DisplayHelp(stderr, go, 1, 2, 100);     // 1= group; 2 = indentation; 100=textwidth
+  esl_fprintf(stderr, "\nTo see more help on available options, do %s -h\n\n", argv[0]);
+  exit(1);
 }
 
 static int

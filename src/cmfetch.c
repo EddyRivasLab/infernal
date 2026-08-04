@@ -40,20 +40,21 @@ cmdline_failure(char *argv0, char *format, ...)
 }
 
 static void
-cmdline_help(char *argv0, ESL_GETOPTS *go) 
+cmdline_help(char *argv0, ESL_GETOPTS *go)
 {
-  esl_banner(stdout, argv0, banner);
-  esl_usage (stdout, argv0, usage1);
+  cm_banner (stdout, "cmfetch", banner);  // use progname not argv0: versioning, not invocation
+  esl_usage (stdout, argv0, usage1);      // whereas these are invocation
   esl_usage (stdout, argv0, usage2);
   esl_usage (stdout, argv0, usage3);
-  puts("\n where options are:");
-  esl_opt_DisplayHelp(stdout, go, 0, 2, 80);
+  esl_printf("\n where options are:\n");
+  esl_opt_DisplayHelp(stdout, go, 0, 2, 100);
   exit(0);
 }
 
 static ESL_OPTIONS options[] = {
   /* name       type        default env   range togs  reqs  incomp      help                                                   docgroup */
-  { "-h",       eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,          "help; show brief info on version and usage",        0 },
+  { "-h",       eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,          "show brief help and exit",                          0 },
+  { "--version",eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL,          "show version info and exit",                        0 },
   { "-f",       eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL,"--index",      "second cmdline arg is a file of names to retrieve", 0 },
   { "-o",       eslARG_OUTFILE,FALSE,NULL, NULL, NULL, NULL,"-O,--index",   "output CM to file <f> instead of stdout",          0 },
   { "-O",       eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL,"-o,-f,--index","output CM to file named <key>",                    0 },
@@ -83,8 +84,13 @@ main(int argc, char **argv)
   go = esl_getopts_Create(options);
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK) cmdline_failure(argv[0], "Failed to parse command line: %s\n", go->errbuf);
   if (esl_opt_VerifyConfig(go)               != eslOK) cmdline_failure(argv[0], "Error in configuration: %s\n",       go->errbuf);
+  if (esl_opt_GetBoolean(go, "--version")) {
+    if (argc != 2) esl_fatal("Incorrect usage: to get version info, use --version alone");
+    esl_printf("%s %s\n", "cmfetch", INFERNAL_VERSION);  // use progname here: versioning, not invocation
+    exit(0);
+  }
   if (esl_opt_GetBoolean(go, "-h") )                   cmdline_help   (argv[0], go);
-  if (esl_opt_ArgNumber(go) < 1)                       cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");        
+  if (esl_opt_ArgNumber(go) < 1)                       cmdline_failure(argv[0], "Incorrect number of command line arguments.\n");
 
   
   /* Check arguments. Consider three modes separately.
