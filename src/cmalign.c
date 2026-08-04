@@ -160,7 +160,8 @@ static ESL_OPTIONS options[] = {
   { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain",                   NULL, "brief 043: kmerchain ramp-slack alpha [default 0.75]",       3 },
   { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 046: gate kmerchain if k>=<n> tier finds 0 hits [default 0=off]", 3 },
   { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "brief 26_0628-047: gate kmerchain if M < <n> [default 0=off]",          3 },
-  { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL,        NULL,                     NULL, "brief 26_0628-047: gate fallback uses old Vit-trace band, not --p7ibv",           3 },
+  { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbibv", "brief 26_0628-047: gate fallback uses old Vit-trace band, not native CP9",           3 },
+  { "--p7kmerchain-fbibv", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbvit", "brief 26_0430-260: kmerchain chain=NONE fallback uses --p7ibv D&C bands, not native CP9", 3 },
   { "--p7vittighten", eslARG_INT,       NULL, NULL,      "n>=0",       NULL, "--p7kmerchain",    "--p7vitcloud", "P215 pin: Viterbi band +/-<n> (experimental)",  3 },
   { "--p7vitcloud",   eslARG_INT,       NULL, NULL,      "n>=0",       NULL, "--p7kmerchain", "--p7vittighten", "P215 cloud: delta-cloud band <n> mbits",        3 },
   { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
@@ -3442,6 +3443,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->p215_mode        = P215_MODE_CLOUD;
     cm->p215_cloud_delta = esl_opt_GetInteger(go, "--p7vitcloud");
   }
+  cm->p7_kmerchain_fallback_ibv = esl_opt_GetBoolean(go, "--p7kmerchain-fbibv"); /* brief 26_0430-260; default FALSE (native CP9 fallback) */
   if(esl_opt_GetBoolean(go, "--cykbands")) {
     cm->p7_use_cykbands = TRUE;
     cm->p7_cykbands_pad = esl_opt_GetInteger(go, "--cykpad");
