@@ -692,6 +692,19 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int do_p7band    = (cm->align_opts & CM_ALIGN_P7BANDED)  ? TRUE  : FALSE;
+  /* brief 26_0430-269: --mxsize auto-escalation. When enabled (default, CM_ALIGN_MXESC
+   * set, cleared by --no-mxesc) AND the user did NOT force an engine, pick the cheapest
+   * engine whose estimated CM-DP peak fits --mxsize: tier (a) standard free-OptAcc,
+   * else (b) checkpointed sqrt(M) pinned-OptAcc, else (c) the CYK floor (D&C).  Applies
+   * only to the HB free-OptAcc path (--ckpt/--small/--nonbanded/--sample/--sub each keep
+   * their own engine).  See the tier-selection block just before the HB align dispatch. */
+  int do_mxesc     = ((cm->align_opts & CM_ALIGN_MXESC)    &&
+                      (! (cm->align_opts & CM_ALIGN_CHECKPT)) &&
+                      do_optacc && (! do_sample) && (! do_small) &&
+                      (! do_nonbanded) && (! do_qdb) && (! do_sub)) ? TRUE : FALSE;
+  int mxesc_tier   = 0;    /* 0=none/not-decided, 'a'/'b'/'c' once decided (per seq) */
+  int eff_checkpt  = (cm->align_opts & CM_ALIGN_CHECKPT) ? TRUE : FALSE; /* effective ckpt engine choice; do_mxesc may raise it per seq */
+  int p7b_iterate_ran = FALSE; /* TRUE once cp9_IterateSeq2BandsP7B() ran for this seq (bands valid even on eslERANGE) */
   int doing_search = FALSE;
   /* Brief 26_0430-120: IBV HMM-divergence fallback. Set when cm_TrAlignHB / cm_AlignHB
    * fails on IBV-derived bands and we've already rebuilt with vitband for
@@ -1220,6 +1233,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
 	    struct timespec _ta_cp9, _tb_cp9;
 	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
+	    p7b_iterate_ran = TRUE; /* brief 26_0430-269: bands stay validly populated even if this returns eslERANGE (maxtau-capped) */
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, t_kmin, t_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
@@ -1261,17 +1275,35 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * p7band fallback, so plain non-p7band cmalign is unaffected (its CP9 F/B
 	     * is intentionally not mxsize-gated, matching cm_*AlignSizeNeededHB). */
 	    float cp9fb_Mb = 2.0 * (float) SizeNeededCP9Matrix(sq->L, cm->cp9->M, NULL, NULL);
-	    if(cp9fb_Mb > mxsize)
-	      ESL_XFAIL(eslERANGE, errbuf,
+	    if(cp9fb_Mb > mxsize) {
+	      /* brief 26_0430-269: this is the genome-scale abort the framework replaces --
+	       * the p7-banded matrix didn't fit --mxsize even at maxtau, and the standard
+	       * non-banded CP9 F/B fallback below is itself too big. Pre-269 this ESL_XFAILs.
+	       * Under do_mxesc, if the p7-banded iterate actually ran it left fully-valid
+	       * (wide, maxtau) bands in cm->cp9b (cp9_IterateSeq2BandsP7BF_chk_multi leaves the
+	       * final all-capped step populated); KEEP them and let the per-seq engine
+	       * escalation (tier b/c, below) carry the memory instead of aborting. When the
+	       * fallback WOULD fit (cp9fb_Mb <= mxsize, sub-genome), we skip this and re-derive
+	       * tighter standard bands exactly as pre-269 -- so the framework is a strict
+	       * superset of the old behavior, differing only where the old path aborted. */
+	      if(do_mxesc && p7b_iterate_ran) {
+	        errbuf[0] = '\0';
+	        status = eslOK; /* keep the wide p7-banded bands; skip the standard fallback */
+	      }
+	      else
+	        ESL_XFAIL(eslERANGE, errbuf,
 			"non-banded CP9 F/B band derivation needs %.1f > %.1f Mb limit.\nUse --mxsize, --maxtau or --tau (this seq needs a p7-banded/--ckpt path).",
 			cp9fb_Mb, (float) mxsize);
-	    if(do_xtau) {
-	      if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1,
-						cm->maxtau, NULL)) != eslOK) goto ERROR;
 	    }
-	    else {
-	      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq,
+	    if(status != eslOK) { /* fallback re-derivation (only when cp9fb_Mb <= mxsize, or !do_mxesc kept status=eslERANGE) */
+	      if(do_xtau) {
+	        if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1,
+						cm->maxtau, NULL)) != eslOK) goto ERROR;
+	      }
+	      else {
+	        if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq,
 					 1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	      }
 	    }
 	  }
 	}
@@ -1410,23 +1442,111 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  struct timespec _ta_cm, _tb_cm;
 	  clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
 	CM_ALIGN_HB_RETRY:
+	  /* brief 26_0430-269: --mxsize engine auto-escalation. Bands (cm->cp9b) are now
+	   * derived (possibly maxtau-wide). Pick the cheapest engine whose estimated CM-DP
+	   * peak fits --mxsize, per-sequence: (a) standard free-OptAcc, (b) checkpointed
+	   * sqrt(M) pinned-OptAcc, (c) checkpointed CYK floor. The comparison quantity is the CM DP
+	   * matrices only (excludes the CP9 F/B), matching stock --mxsize semantics
+	   * (cm_AlignSizeNeededHB:587 compares cmtotmb, not totmb). Estimators are
+	   * safe-overestimates (briefs 225/226), so a "fits" verdict never under-provisions. */
+	  if(do_mxesc) {
+	    float est_std_cm = 0., est_std_tot = 0.;
+	    char  est_trmode = (mode == TRMODE_J || mode == TRMODE_L ||
+	                        mode == TRMODE_R || mode == TRMODE_T) ? mode : TRMODE_T; /* max-plane => safe over-estimate for the trunc ckpt/D&C estimators */
+	    int   ckpt_avail = do_trunc
+	                       ? (cm_CheckptTrAlignHB_Qualifies(cm) || cm_CheckptTrOptAccAlignHB_Qualifies(cm))
+	                       : (cm_CheckptAlignHB_Qualifies(cm)   || cm_CheckptOptAccAlignHB_Qualifies(cm));
+	    float ck_dp = 0., ck_em = 0., ck_cp9 = 0., ck_tot = 0., ck_cmmb = 0.;
+
+	    /* tier (a): standard free-OptAcc. The estimator's own cmtotmb-vs-mxsize test
+	     * (returns eslERANGE if over) is exactly the gate cm_AlignHB()/cm_TrAlignHB()
+	     * apply internally, so eslOK here guarantees the tier-(a) engine won't abort. */
+	    if(do_trunc) status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	                                                 NULL, NULL, NULL, NULL, &est_std_cm, &est_std_tot);
+	    else         status = cm_AlignSizeNeededHB  (cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	                                                 NULL, NULL, NULL, NULL, &est_std_cm, &est_std_tot);
+	    if(status != eslOK && status != eslERANGE) goto ERROR;
+	    if(status == eslOK) { mxesc_tier = 'a'; eff_checkpt = FALSE; mb_tot = est_std_tot; }
+	    else {
+	      errbuf[0] = '\0'; /* clear the eslERANGE message; tier (a) simply doesn't fit */
+	      /* tier (b): checkpointed sqrt(M) pinned-OptAcc. CM-DP budget = ckptdpmb+emxmb
+	       * (excludes cp9mxmb; the ckpt engine's only mxsize gate is its emit_mx, which
+	       * this includes). Requires a ckpt engine to exist for this (cm,mode). */
+	      if(do_trunc) status = cm_CheckptTrAlignSizeNeededHB(cm, errbuf, sq->L, est_trmode, NULL, NULL,
+	                                                          &ck_dp, &ck_em, &ck_cp9, &ck_tot);
+	      else         status = cm_CheckptAlignSizeNeededHB  (cm, errbuf, sq->L, NULL, NULL,
+	                                                          &ck_dp, &ck_em, &ck_cp9, &ck_tot);
+	      if(status != eslOK) goto ERROR;
+	      ck_cmmb = ck_dp + ck_em;
+	      if(ckpt_avail && ck_cmmb <= mxsize) { mxesc_tier = 'b'; eff_checkpt = TRUE; mb_tot = ck_cmmb; }
+	      else {
+	        /* tier (c): checkpointed CYK floor. cm_CheckptCYKAlignHB / cm_CheckptTrCYKAlignHB
+	         * run the sqrt(M) CYK pass ONLY (no Outside, no emit_mx), so their CM-DP budget
+	         * is ck_dp alone -- genuinely below tier (b)'s ck_dp+ck_em, and reachable exactly
+	         * when the emit_mx/Outside is what overflowed tier (b). (The D&C estimator is a
+	         * deliberate loose upper bound, brief 225, that runs LARGER than ck_cmmb, so a
+	         * D&C-gated floor is never reachable below tier (b) -- ckpt-CYK is the real one.)
+	         * ck_dp = max(cyk,post,oa) peaks, a safe over-estimate of the CYK-only peak. */
+	        mxesc_tier = 'c'; eff_checkpt = FALSE; mb_tot = ck_dp;
+	      }
+	    }
+	    fprintf(stderr, "#MXESC seq=%s L=%d M=%d trunc=%d tier=%c est_std=%.1f est_ckpt=%.1f est_cyk=%.1f mxsize=%.1f ckpt_avail=%d\n",
+	            sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : cm->clen), do_trunc, mxesc_tier,
+	            est_std_cm, ck_cmmb, ck_dp, (float)mxsize, ckpt_avail);
+
+	    if(mxesc_tier == 'c') {
+	      /* The ckpt-CYK engines resolve B_st pins, so they need bifurcation structure.
+	       * A bps=0 chain or structured-no-bif CM has no CYK floor below ckpt-OptAcc
+	       * (ck_dp already reflects its single OA/Post peak), so fail cleanly there. */
+	      int has_bif269 = (CMCountStatetype(cm, B_st) > 0);
+	      if((! has_bif269) || ck_dp > mxsize) {
+	        ESL_XFAIL(eslERANGE, errbuf,
+	                  "no alignment engine fits --mxsize %.0f Mb for %s (L=%d): free-OptAcc %.0f Mb, ckpt-OptAcc %.0f Mb, ckpt-CYK floor %.0f Mb%s. Raise --mxsize (or use --small).",
+	                  (float)mxsize, sq->name, (int)sq->L, est_std_cm, ck_cmmb, ck_dp,
+	                  has_bif269 ? "" : " (no bifurcation: no CYK floor below ckpt-OptAcc)");
+	      }
+	      /* Run the checkpointed CYK floor -> CYK parsetree; ppstr stays NULL
+	       * (Parsetrees2Alignment() tolerates a per-seq NULL PP under global do_post,
+	       * cm_parsetree.c:1055). */
+	      if(do_trunc) {
+	        char c_mode = TRMODE_UNKNOWN; float c_cyk = 0.;
+	        status = cm_CheckptTrCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, pass_idx, &tr, &c_mode, &c_cyk);
+	        if(status != eslOK) goto ERROR;
+	        sc = c_cyk; (void) c_mode;
+	      }
+	      else {
+	        status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr, &sc);
+	        if(status != eslOK) goto ERROR;
+	      }
+	      if(getenv("INFERNAL_CKPT_VERBOSE"))
+	        fprintf(stderr, "# mxesc tier (c) ckpt-CYK floor engaged: M=%d L=%d trunc=%d (%s)\n",
+	                (cm->fp7 ? cm->fp7->M : cm->clen), (int)sq->L, do_trunc,
+	                (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
+	      goto MXESC_ALN_DONE;
+	    }
+	  }
 	  if(do_trunc) {
 		/* brief 26_0430-126 merge: keep cd577024's #DBG-009 instrumentation, but route
 		 * SizeNeededHB failure to CM_ALIGN_HB_CHECK_FB (IBV vitband fallback)
 		 * instead of directly to ERROR, so the brief-120 IBV fallback stays live
-		 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR. */
-		status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+		 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR.
+		 * brief 26_0430-269: under do_mxesc the tier selector above already validated
+		 * the chosen engine's fit and set mb_tot, so skip this eslERANGE size-gate
+		 * (for tier b it would spuriously fail on the full-matrix estimate). */
+		if(! do_mxesc) {
+		  status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
-		fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
+		  fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
 			status, mb_tot, (float) mxsize, do_post, errbuf);
-		if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+		  if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+		}
 		/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
 		 * (CM_ALIGN_CHECKPT) for the pure-MATL-chain (bps=0) OptAcc case it
 		 * supports (marginal modes J/L/R, T absent), in either local (default) or
 		 * global (-g) config; stock cm_TrAlignHB() otherwise (byte-identical
 		 * output, but full-cube memory). On failure fall through to
 		 * CM_ALIGN_HB_CHECK_FB (IBV vitband fallback), not ERROR. */
-		int do_trckpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+		int do_trckpt = (eff_checkpt && do_optacc && (! do_sample) &&
 				 cm_CheckptTrAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 		/* rung-4 checkpointed STRUCTURED (bps>0) TRUNCATED OptAcc pipeline: engaged
 		 * by --ckpt for structured CMs in truncated mode (local or global).  Truncated
@@ -1435,7 +1555,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		 * bps=0 cm_CheckptAlignHB_Qualifies) is NOT relaxed: bps=0 truncated stays on
 		 * cm_CheckptTrAlignHB; structured truncated --ckpt routes here; structured
 		 * truncated WITHOUT --ckpt falls back to stock cm_TrAlignHB. */
-		int do_trckpt_r4 = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+		int do_trckpt_r4 = (eff_checkpt && do_optacc && (! do_sample) &&
 				    (! do_trckpt) && cm_CheckptTrOptAccAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 		if(do_trckpt) {
 		  status = cm_CheckptTrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
@@ -1534,14 +1654,18 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		}
       }
       else {
-	if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	/* brief 26_0430-269: skip this eslERANGE size-gate under do_mxesc (tier selector
+	 * already validated the chosen engine's fit and set mb_tot). */
+	if(! do_mxesc) {
+	  if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+	}
 	/* checkpointed sqrt(M)-memory OptAcc path: engaged by --ckpt (CM_ALIGN_CHECKPT)
 	 * only for the non-truncated, pure-MATL-chain OptAcc case it supports (local
 	 * or global config); stock cm_AlignHB() otherwise (byte-identical output, but
 	 * full-cube memory). On failure fall through to CM_ALIGN_HB_CHECK_FB (IBV
 	 * vitband fallback), not ERROR. */
-	int do_checkpt = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+	int do_checkpt = (eff_checkpt && do_optacc && (! do_sample) &&
 			  cm_CheckptAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 	/* rung-3 checkpointed STRUCTURED (bps>0) OptAcc pipeline: engaged by --ckpt
 	 * for non-truncated structured CMs (local or global).  Pass 1 checkpointed
@@ -1551,7 +1675,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	 * (truncated bps>0 falls back to the rung-4 branch above).  No engine
 	 * selector here (brief 26_0610-094 scope: rung-4 only) -- carried through
 	 * unchanged from ckpt-trcyk-impl. */
-	int do_checkpt_r3 = ((cm->align_opts & CM_ALIGN_CHECKPT) && do_optacc && (! do_sample) &&
+	int do_checkpt_r3 = (eff_checkpt && do_optacc && (! do_sample) &&
 			     (! do_checkpt) && cm_CheckptOptAccAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 	if(do_checkpt) {
 	  status = cm_CheckptAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, cm->hb_emx,
@@ -1734,6 +1858,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       }
     }
   }
+
+ MXESC_ALN_DONE: /* brief 26_0430-269: tier-(c) D&C-CYK floor lands here, skipping the free/ckpt OptAcc engine dispatch */
 
   if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
     mb_tot += orig_cm->cp9_mx->size_Mb;
