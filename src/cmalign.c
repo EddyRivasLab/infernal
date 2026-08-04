@@ -963,6 +963,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
   extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
+  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes);                        /* brief 26_0430-266: post-band do_bandedoa mem preflight */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -1115,11 +1116,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	}
 
 	/* preflight: check HMM matrix size vs --mxsize before GrowTo.
-	 * Skipped under --p7ibv: the full P7_GMX is never allocated.
-	 * brief 26_0628-032: also skipped under kmerchain -- like --p7ibv,
-	 * the full P7_GMX is only touched on the rare ncells==0 fallback, not
-	 * on the genome-scale success path this brief's memory story depends on. */
-	if (! do_p7ibv && ! cm->p7_use_kmerchain) {
+	 * brief 26_0430-266: scoped to --hmmvit/--hmmnoband only -- they genuinely
+	 * allocate an O(M*L) P7_GMX. do_bandedoa (--p7ibv, --p7kmerchain, and the
+	 * plain Viterbi-trace band) is O(banded cells); it gets its own post-band
+	 * preflight below, sized from the actual band once derived (this pre-band
+	 * full-matrix formula massively over-estimated it -- the bug this brief
+	 * fixes). */
+	if (do_hmmvit || do_hmmnoband) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
 	  int    nmat         = do_hmmnoband ? 2 : 1;
 	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -1367,6 +1370,27 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  }
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+
+	  /* brief 26_0430-266: post-band do_bandedoa preflight. The pre-band
+	   * full-matrix check above is scoped to --hmmvit/--hmmnoband only (they
+	   * genuinely allocate an O(M*L) P7_GMX); do_bandedoa's engines (checkpointed
+	   * or not) are O(banded cells), known only now that <bnd> exists. Applies
+	   * uniformly regardless of how bnd was derived (--p7ibv, --p7kmerchain, or
+	   * the plain Viterbi-trace band) since all of them converge on the same
+	   * ckpt/non-ckpt dispatch below. */
+	  {
+	    int    do_ckpt_pf     = (getenv("INFERNAL_HMM_CKPT_OFF") == NULL);
+	    double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
+	    p7_CheckptBandedOAMemNeeded(bnd, do_ckpt_pf, &needed_bytes_pf);
+	    needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
+	    mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
+	    if (needed_mb_pf > mxsize_limit_pf) {
+	      int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
+	      cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
+		      needed_mb_pf, mxsize_limit_pf, recommended_mxsize_pf);
+	    }
+	  }
+
 	  if (_st061_on) {
 	    clock_gettime(CLOCK_MONOTONIC, &_st061_tc1);
 	    _st061_c_s = (_st061_tc1.tv_sec - _st061_tc0.tv_sec) + (_st061_tc1.tv_nsec - _st061_tc0.tv_nsec) / 1e9;
@@ -1849,6 +1873,7 @@ hmm_pipeline_thread(void *arg)
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
   extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
+  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes);                        /* brief 26_0430-266: post-band do_bandedoa mem preflight */
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -1877,10 +1902,10 @@ hmm_pipeline_thread(void *arg)
     }
 
     /* preflight: check HMM matrix size vs --mxsize before GrowTo.
-     * Skipped under --p7ibv: the full P7_GMX is never allocated.
-     * brief 26_0628-032: also skipped under kmerchain (see serial-path
-     * comment in hmm_alignment() for reasoning). */
-    if (! info->do_p7ibv && ! (info->cm != NULL && info->cm->p7_use_kmerchain)) {
+     * brief 26_0430-266: scoped to --hmmvit/--hmmnoband only -- see serial-path
+     * comment in hmm_alignment() for reasoning. do_bandedoa gets its own
+     * post-band preflight below. */
+    if (info->do_hmmvit || info->do_hmmnoband) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
       int    nmat         = info->do_hmmnoband ? 2 : 1;
       double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -2021,6 +2046,21 @@ hmm_pipeline_thread(void *arg)
       }
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
+
+      /* brief 26_0430-266: post-band do_bandedoa preflight (see serial-path
+       * site above for full reasoning). */
+      {
+	int    do_ckpt_pf = (getenv("INFERNAL_HMM_CKPT_OFF") == NULL);
+	double needed_bytes_pf, needed_mb_pf;
+	p7_CheckptBandedOAMemNeeded(bnd, do_ckpt_pf, &needed_bytes_pf);
+	needed_mb_pf = needed_bytes_pf / (1024.0 * 1024.0);
+	if (needed_mb_pf > (double) info->mxsize) {
+	  int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
+	  cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
+		  needed_mb_pf, (double) info->mxsize, recommended_mxsize_pf);
+	}
+      }
+
       /* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
        * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md); see serial-path site above. */
       if (getenv("BRIEF058_BANDCELLS") != NULL) {
@@ -2679,6 +2719,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
     extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
     extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+    extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes); /* brief 26_0430-266 */
 
     /* brief 26_0430-182 Part A: Tgm when do_trunc_w (mirrors hmm_alignment()'s serial-path setup). */
     if (do_trunc_w) {
@@ -2710,10 +2751,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* preflight: check HMM matrix size vs --mxsize before GrowTo.
-       * brief 26_0628-032: skipped under kmerchain -- the full P7_GMX is
-       * only touched on the rare ncells==0 fallback, not on the genome-scale
-       * success path (see serial-path comment in hmm_alignment()). */
-      if (! cm->p7_use_kmerchain) {
+       * brief 26_0430-266: scoped to --hmmvit/--hmmnoband only -- see serial-path
+       * comment in hmm_alignment() for reasoning. do_bandedoa_w gets its own
+       * post-band preflight below (this MPI worker's do_bandedoa_w path is
+       * always the non-checkpointed banded engine -- no --p7ibv/checkpointed
+       * support here). */
+      if (do_hmmvit_w || do_hmmnoband_w) {
 	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
 	int    nmat         = do_hmmnoband_w ? 2 : 1;
 	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
@@ -2828,6 +2871,22 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  p7_pins2bands(i2k_w, errbuf, L, hmm_w->M, pad_w, &kmin_w, &kmax_w, &ncells_w);
 	}
 	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
+
+	/* brief 26_0430-266: post-band do_bandedoa_w preflight (see serial-path
+	 * site above for full reasoning). This worker path is always the
+	 * non-checkpointed banded engine (2 x p7_gmxb_Create below), so do_ckpt=FALSE. */
+	{
+	  double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
+	  p7_CheckptBandedOAMemNeeded(bnd_w, FALSE, &needed_bytes_pf);
+	  needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
+	  mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
+	  if (needed_mb_pf > mxsize_limit_pf) {
+	    int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
+	    mpi_failure("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
+			needed_mb_pf, mxsize_limit_pf, recommended_mxsize_pf);
+	  }
+	}
+
 	/* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
 	 * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md); see serial-path site above. */
 	if (getenv("BRIEF058_BANDCELLS") != NULL) {

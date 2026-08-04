@@ -8098,6 +8098,72 @@ p7b_pp_Create(P7_GBANDS *bnd)
   return NULL;
 }
 
+/* Function: p7_CheckptBandedOAMemNeeded()
+ * Incept:   brief 26_0430-266
+ *
+ * Purpose:  Estimate the bytes actually allocated by the --hmm do_bandedoa
+ *           (Mode 3, Viterbi-banded optimal accuracy) engine for banded
+ *           region <bnd>, WITHOUT allocating anything. Two sub-cases:
+ *
+ *             do_ckpt=TRUE  (default, INFERNAL_HMM_CKPT_OFF unset):
+ *               the sqrt(nrow)-checkpointed engine -- p7b_pp_Create(bnd)'s
+ *               resident 2-cell posterior + p7_GCheckptFBDecode_Banded()'s
+ *               O(sqrt(nrow)) working set (p7b_forward_seeds()'s <=nblk
+ *               seed[].dp row copies, p7b_backdecode()'s blkbuf (B rows)
+ *               and bbuf0/bbuf1 (1 row each)). B and nblk mirror
+ *               p7b_geo_Create()'s own derivation (B ~ round(sqrt(nrow)),
+ *               nblk = ceil(nrow/B)); maxnc (widest row) is scanned from
+ *               <bnd> directly since B/nblk/maxnc depend only on bnd, not
+ *               on M/L/gm the way the full P7B_GEO struct does.
+ *
+ *             do_ckpt=FALSE (INFERNAL_HMM_CKPT_OFF set):
+ *               the non-checkpointed engine -- 2 x p7_gmxb_Create(bnd),
+ *               each a full banded dp (p7G_NSCELLS-wide) + xmx
+ *               (p7G_NXCELLS-wide) allocation.
+ *
+ *           Both are O(banded cells), not O(M*L) -- this is the fix for
+ *           the --hmm preflight over-estimating do_bandedoa's footprint
+ *           with the full-matrix formula meant for --hmmvit/--hmmnoband.
+ *
+ * Args:     bnd      - the derived band (bnd->ncell, bnd->nrow, bnd->kmem set)
+ *           do_ckpt  - TRUE for the checkpointed engine, FALSE for non-ckpt
+ *           ret_bytes- RETURN: estimated peak bytes
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes)
+{
+  int    *kp = bnd->kmem;
+  int     nrow = bnd->nrow;
+  int     maxnc = 0, r, ka, kb, nc;
+  int     B, nblk;
+  double  bytes;
+
+  for (r = 0; r < nrow; r++) {
+    ka = *kp++; kb = *kp++;
+    nc = kb - ka + 1;
+    if (nc > maxnc) maxnc = nc;
+  }
+
+  if (do_ckpt) {
+    B    = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
+    if (B < 1) B = 1;
+    nblk = (nrow + B - 1) / B;
+
+    bytes  = (double) sizeof(float) * ((double) bnd->ncell * P7B_PP_NSCELLS
+					+ (double) bnd->nrow  * p7G_NXCELLS);
+    bytes += (double) sizeof(float) * p7G_NSCELLS * (double) maxnc * (double) (nblk + B + 2);
+  }
+  else {
+    bytes = 2.0 * (double) sizeof(float) * ((double) bnd->ncell * p7G_NSCELLS
+					     + (double) bnd->nrow  * p7G_NXCELLS);
+  }
+
+  if (ret_bytes) *ret_bytes = bytes;
+  return eslOK;
+}
+
 /* Per-call banded-row geometry, derived once from a P7_GBANDS. */
 typedef struct {
   int      nrow;     /* number of banded rows                         */
