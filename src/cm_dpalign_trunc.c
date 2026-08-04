@@ -6172,6 +6172,395 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
   return status;
 }
 
+/*****************************************************************
+ * Brief 26_0430-225: cm_CheckptTrAlignSizeNeededHB() -- pre-alignment
+ * memory estimator for the --ckpt engine family, TRUNCATED (rung-4).
+ *
+ * Same structural-replay strategy as cm_CheckptAlignSizeNeededHB()
+ * (cm_dpalign.c), applied to the trunc engine family in this file.  The
+ * only structural difference: each CM state v can carry up to THREE
+ * simultaneously-live planes (J always if Jvalid[v]; L if Lvalid[v] &&
+ * fill_L; R if Rvalid[v] && fill_R -- cm_dpalign_trunc.c:5081-5083), plus
+ * a B-state-only T plane that's always computed-then-immediately-freed
+ * (cm_dpalign_trunc.c:5107-5127's TAtmp, contributes only a transient
+ * one-state charge, never part of the retained working set).  fill_L/
+ * fill_R/fill_T come from cm_TrFillFromMode(preset_mode, ...), so unlike
+ * the non-trunc estimator this one takes preset_mode as an input (the
+ * real engines do too -- there is no mode-independent trunc estimate).
+ *
+ * bps>0 (has bifurcations) dispatch mirrors do_trckpt_r4 in cm_alndata.c
+ * (~1038-1044): THREE sequential passes -- cm_CheckptTrCYKAlignHB() (pass
+ * 1, k*-discovery), cm_CheckptTrPostAlignHB() (pass 2, posterior),
+ * cm_CheckptTrOptAccAlignHB() (pass 3, OptAcc) -- each pass's arrays fully
+ * freed before the next starts, so the true peak is the MAX over passes,
+ * not their sum.  bps=0 (do_trckpt, cm_CheckptTrAlignHB) replays that
+ * single combined-pass function directly.
+ *
+ * NOTE (scoped assumption, flagged for brief 226): the CYK-trunc and
+ * OptAcc-trunc passes' retention rule (roots never freed via an is_root
+ * guard + Delta-window seeds + block-recompute TB) was confirmed
+ * structurally identical to the Post-trunc pass (which this file reads in
+ * full: cm_dpalign_trunc.c:5074-5266) via a targeted grep of their STEP
+ * headers (is_root guards at cm_dpalign_trunc.c:5132/6083, Delta/B setup
+ * at 4574-4589/5982-5997, block TB at 4676-4682/6106-6112) -- NOT via an
+ * independent full read of every line in those two functions the way
+ * Post-trunc was.  If the self-check below shows CYK-trunc or OA-trunc
+ * off by >2x, re-derive from a full read of cm_dpalign_trunc.c:4527-4900
+ * (CYK) / 5910-6300 (OA) rather than trusting this transcription.
+ *****************************************************************/
+
+typedef struct { int64_t cur, peak; } MXEST_SHB;
+static void mxest_shb_alloc(MXEST_SHB *s, int64_t nc, size_t elemsz) { if (nc<0) nc=0; s->cur += nc*(int64_t)elemsz; if (s->cur > s->peak) s->peak = s->cur; }
+static void mxest_shb_free (MXEST_SHB *s, int64_t nc, size_t elemsz) { if (nc<0) nc=0; s->cur -= nc*(int64_t)elemsz; }
+
+static void
+mxest_tr_deck_nc(CM_t *cm, CP9Bands_t *cp9b, int64_t *deck_nc, int *deck_njr)
+{
+  int v, jp;
+  for (v = 0; v < cm->M; v++) {
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1; if (njr < 0) njr = 0;
+    deck_njr[v] = njr;
+    int64_t nc = 0;
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1; if (w > 0) nc += w; }
+    deck_nc[v] = nc;
+  }
+}
+
+/* how many of {J,L,R} are live planes for state v under this mode -- mirrors
+ * cm_dpalign_trunc.c:5081-5083 exactly (T excluded: transient only). */
+static int
+mxest_tr_modes(CM_t *cm, CP9Bands_t *cp9b, int v, int fill_L, int fill_R)
+{
+  int modes = (cp9b->Jvalid[v] ? 1 : 0) + ((cp9b->Lvalid[v] && fill_L) ? 1 : 0) + ((cp9b->Rvalid[v] && fill_R) ? 1 : 0);
+  return modes;
+}
+
+/* brief 26_0430-226: banded EL-deck cell count, duplicated from cm_dpalign.c's
+ * mxest_el_nc() (static there, not shared across translation units -- same
+ * duplicated-per-file convention this file already follows for mxest_shb_
+ * and mxest_tr_deck_nc rather than mxest_deck_nc). The non-trunc --ckpt estimator
+ * already models this banded EL cost via mxest_el_nc(); this file's trunc
+ * estimator never did (brief 225's own flagged, scoped-out gap; confirmed as
+ * the dominant cause of the trunc-local under-estimate found in brief 226's
+ * validation -- present in every trunc-local bps>0 family tested, absent in
+ * trunc-global for the same CMs/sequences where CMH_LOCAL_END is off).
+ * Modeled once per mode-plane (J/L/R), added as a conservative peak-additive
+ * term below rather than precisely interleaved into each pass's alloc/free
+ * timeline (that would need a full read of cm_CheckptTr{CYK,OptAcc}AlignHB's
+ * EL handling, which brief 225 explicitly did NOT do -- grep-confirmed
+ * structural parity only). Being additive-not-interleaved makes this a safe
+ * upper bound, not a byte-exact replay. */
+static int64_t
+mxest_tr_el_nc(CM_t *cm, CP9Bands_t *cp9b, int L, int *deck_njr)
+{
+  int   status;
+  int   v, jp, r;
+  int  *eldmax = NULL;
+  int64_t nc = 0;
+  ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    for (jp = 0; jp < deck_njr[v]; jp++) {
+      int j_band = cp9b->jmin[v] + jp;
+      r = j_band - sdr;
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
+      if (dmax_here > r) dmax_here = r;
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+  for (r = 0; r <= L; r++) if (eldmax[r] >= 0) nc += (eldmax[r]+1);
+  free(eldmax);
+  return nc;
+ ERROR:
+  if (eldmax) free(eldmax);
+  cm_Fail("mxest_tr_el_nc(): memory allocation error");
+  return 0;
+}
+
+/* bps=0 (pure MATL chain), replays cm_CheckptTrAlignHB() -- same STEP A/B/
+ * OA/TB shape as the non-trunc bps=0 engine, J/L/R-tripled per mxest_tr_modes.
+ * Grep-confirmed structural parity with cm_CheckptTrPostAlignHB (which this
+ * file DOES read in full) rather than an independent full read of
+ * cm_CheckptTrAlignHB itself (cm_dpalign_trunc.c:3079-2974ish) -- same
+ * scoped-assumption caveat as the file header above. */
+static int64_t
+mxest_tr_ckpt_bps0_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int fill_L, int fill_R)
+{
+  int M = cm->M, v, k;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v;
+    }
+    if (cm->pnum[v] > 0 && cm->stid[v] != BEGL_S && cm->stid[v] != BEGR_S) {
+      int ymin_par = cm->plast[v]-cm->pnum[v]+1; if (v-ymin_par > Delta_p) Delta_p = v-ymin_par;
+    }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *aliveA = calloc(M, 1), *aliveBa = calloc(M, 1), *aliveBb = calloc(M, 1), *aliveOA = calloc(M, 1);
+
+  for (v = M-1; v >= 0; v--) {
+    int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+    aliveA[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && aliveA[y] && cm->stid[y] != ROOT_S && cm->stid[y] != BEGL_S && cm->stid[y] != BEGR_S) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { int ym = mxest_tr_modes(cm, cp9b, y, fill_L, fill_R); aliveA[y] = 0; mxest_shb_free(&sh, (int64_t)ym * deck_nc[y], sizeof(float)); }
+    }
+  }
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k*B, hi = ESL_MIN((k+1)*B-1, M-1);
+    for (v = hi; v >= lo; v--) { int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R); aliveBa[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float)); }
+    for (v = lo; v <= hi; v++) {
+      int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+      aliveBb[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+      aliveBa[v] = 0; mxest_shb_free(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+      int old = v - Delta_p - 1;
+      if (old >= 0 && aliveBb[old]) { int om = mxest_tr_modes(cm, cp9b, old, fill_L, fill_R); aliveBb[old] = 0; mxest_shb_free(&sh, (int64_t)om * deck_nc[old], sizeof(float)); }
+    }
+  }
+  for (v = 0; v < M; v++) if (aliveBb[v]) { int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R); aliveBb[v] = 0; mxest_shb_free(&sh, (int64_t)modes * deck_nc[v], sizeof(float)); }
+
+  for (v = M-1; v >= 0; v--) {
+    int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+    mxest_shb_alloc(&sh, deck_nc[v], sizeof(char)); mxest_shb_free(&sh, deck_nc[v], sizeof(char)); /* transient ysh */
+    aliveOA[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && aliveOA[y] && cm->stid[y] != ROOT_S && cm->stid[y] != BEGL_S && cm->stid[y] != BEGR_S) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { int ym = mxest_tr_modes(cm, cp9b, y, fill_L, fill_R); aliveOA[y] = 0; mxest_shb_free(&sh, (int64_t)ym * deck_nc[y], sizeof(float)); }
+    }
+  }
+  { int64_t worst_blk_nc = 0; int lo, hi, w;
+    for (lo = 0; lo < M; lo += B) { hi = ESL_MIN(lo+B-1, M-1); int64_t blk_nc = 0;
+      for (w = lo; w <= hi; w++) blk_nc += (int64_t) mxest_tr_modes(cm, cp9b, w, fill_L, fill_R) * deck_nc[w];
+      if (blk_nc > worst_blk_nc) worst_blk_nc = blk_nc; }
+    mxest_shb_alloc(&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+    mxest_shb_free (&sh, worst_blk_nc, sizeof(float) + sizeof(char)); }
+
+  free(aliveA); free(aliveBa); free(aliveBb); free(aliveOA);
+  return sh.peak;
+}
+
+/* bps>0 pass 1 (CYK-trunc, k*-discovery): roots-never-freed + Delta window +
+ * block TB, J/L/R-tripled.  See file-header caveat re: grep- vs full-read-
+ * confirmed structure. */
+static int64_t
+mxest_tr_ckpt_cyk_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int fill_L, int fill_R)
+{
+  int M = cm->M, v;
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) { int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v; }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *alive = calloc(M, 1);
+  for (v = M-1; v >= 0; v--) {
+    int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+    if (cm->sttype[v] != B_st) { mxest_shb_alloc(&sh, deck_nc[v], sizeof(char)); mxest_shb_free(&sh, deck_nc[v], sizeof(char)); }
+    alive[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && alive[y] && cm->stid[y] != ROOT_S && cm->stid[y] != BEGL_S && cm->stid[y] != BEGR_S) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { int ym = mxest_tr_modes(cm, cp9b, y, fill_L, fill_R); alive[y] = 0; mxest_shb_free(&sh, (int64_t)ym * deck_nc[y], sizeof(float)); }
+    }
+  }
+  { int64_t worst_blk_nc = 0; int lo, hi, w;
+    for (lo = 0; lo < M; lo += B) { hi = ESL_MIN(lo+B-1, M-1); int64_t blk_nc = 0;
+      for (w = lo; w <= hi; w++) blk_nc += (int64_t) mxest_tr_modes(cm, cp9b, w, fill_L, fill_R) * deck_nc[w];
+      if (blk_nc > worst_blk_nc) worst_blk_nc = blk_nc; }
+    mxest_shb_alloc(&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+    mxest_shb_free (&sh, worst_blk_nc, sizeof(float) + sizeof(char)); }
+  free(alive);
+  return sh.peak;
+}
+
+/* bps>0 pass 2 (Post-trunc): fully read (cm_dpalign_trunc.c:5074-5266),
+ * including bounded co-floor reclaim (5251-5265). */
+static int64_t
+mxest_tr_ckpt_post_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int fill_L, int fill_R)
+{
+  int M = cm->M, v, k;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) { int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v; }
+    if (cm->pnum[v] > 0 && cm->stid[v] != BEGL_S && cm->stid[v] != BEGR_S) { int ymin_par = cm->plast[v]-cm->pnum[v]+1; if (v-ymin_par > Delta_p) Delta_p = v-ymin_par; }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *aliveA = calloc(M, 1), *aliveBa = calloc(M, 1), *aliveBb = calloc(M, 1);
+
+  /* STEP A: 5104-5140 (T computed at B states, freed immediately: 5127) */
+  for (v = M-1; v >= 1; v--) {
+    int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+    aliveA[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+    if (cm->sttype[v] == B_st) { mxest_shb_alloc(&sh, deck_nc[v], sizeof(float)); mxest_shb_free(&sh, deck_nc[v], sizeof(float)); } /* TAtmp */
+    int y = v + Delta;
+    if (y < M) {
+      int is_root = (cm->stid[y]==ROOT_S || cm->stid[y]==BEGL_S || cm->stid[y]==BEGR_S);
+      if (! is_root && aliveA[y]) {
+        if ((y % B) < Delta) { /* retain */ }
+        else { int ym = mxest_tr_modes(cm, cp9b, y, fill_L, fill_R); aliveA[y] = 0; mxest_shb_free(&sh, (int64_t)ym * deck_nc[y], sizeof(float)); }
+      }
+    }
+  }
+
+  /* STEP B: 5183-5270 */
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k*B, hi = ESL_MIN((k+1)*B-1, M-1);
+    for (v = hi; v >= lo; v--) { if (v==0) continue; int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R); aliveBa[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float)); }
+    for (v = lo; v <= hi; v++) {
+      if (v==0) continue;
+      int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+      aliveBb[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+      aliveBa[v] = 0; mxest_shb_free(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+      int old = v - Delta_p - 1;
+      if (old >= 0 && cm->sttype[old] != B_st && aliveBb[old]) { int om = mxest_tr_modes(cm, cp9b, old, fill_L, fill_R); aliveBb[old] = 0; mxest_shb_free(&sh, (int64_t)om * deck_nc[old], sizeof(float)); }
+      if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) {
+        int yB = cm->plast[v]; int begl = cm->cfirst[yB], begr = cm->cnum[yB];
+        int second = (begl > begr) ? begl : begr;
+        if (v == second) {
+          if (aliveBb[yB])  { int m = mxest_tr_modes(cm, cp9b, yB,   fill_L, fill_R); aliveBb[yB]  = 0; mxest_shb_free(&sh, (int64_t)m * deck_nc[yB],   sizeof(float)); }
+          if (aliveA[begl]) { int m = mxest_tr_modes(cm, cp9b, begl, fill_L, fill_R); aliveA[begl] = 0; mxest_shb_free(&sh, (int64_t)m * deck_nc[begl], sizeof(float)); }
+          if (aliveA[begr]) { int m = mxest_tr_modes(cm, cp9b, begr, fill_L, fill_R); aliveA[begr] = 0; mxest_shb_free(&sh, (int64_t)m * deck_nc[begr], sizeof(float)); }
+        }
+      }
+    }
+  }
+  for (v = 0; v < M; v++) if (aliveBb[v]) { int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R); aliveBb[v] = 0; mxest_shb_free(&sh, (int64_t)modes * deck_nc[v], sizeof(float)); }
+
+  free(aliveA); free(aliveBa); free(aliveBb);
+  return sh.peak;
+}
+
+/* bps>0 pass 3 (OptAcc-trunc): roots-never-freed + Delta window + block TB.
+ * See file-header caveat re: grep- vs full-read-confirmed structure. */
+static int64_t
+mxest_tr_ckpt_oa_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int fill_L, int fill_R)
+{
+  int M = cm->M, v;
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) { int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v; }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *alive = calloc(M, 1);
+  for (v = M-1; v >= 0; v--) {
+    int modes = mxest_tr_modes(cm, cp9b, v, fill_L, fill_R);
+    if (cm->sttype[v] != B_st) { mxest_shb_alloc(&sh, deck_nc[v], sizeof(char)); mxest_shb_free(&sh, deck_nc[v], sizeof(char)); }
+    alive[v] = 1; mxest_shb_alloc(&sh, (int64_t)modes * deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && alive[y] && cm->stid[y] != ROOT_S && cm->stid[y] != BEGL_S && cm->stid[y] != BEGR_S) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { int ym = mxest_tr_modes(cm, cp9b, y, fill_L, fill_R); alive[y] = 0; mxest_shb_free(&sh, (int64_t)ym * deck_nc[y], sizeof(float)); }
+    }
+  }
+  { int64_t worst_blk_nc = 0; int lo, hi, w;
+    for (lo = 0; lo < M; lo += B) { hi = ESL_MIN(lo+B-1, M-1); int64_t blk_nc = 0;
+      for (w = lo; w <= hi; w++) blk_nc += (int64_t) mxest_tr_modes(cm, cp9b, w, fill_L, fill_R) * deck_nc[w];
+      if (blk_nc > worst_blk_nc) worst_blk_nc = blk_nc; }
+    mxest_shb_alloc(&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+    mxest_shb_free (&sh, worst_blk_nc, sizeof(float) + sizeof(char)); }
+  free(alive);
+  return sh.peak;
+}
+
+/* Function: cm_CheckptTrAlignSizeNeededHB()
+ * Incept:   Brief 26_0430-225
+ *
+ * Purpose:  Truncated analogue of cm_CheckptAlignSizeNeededHB() (see that
+ *           function's header, cm_dpalign.c, for the general strategy).
+ *           <preset_mode> (TRMODE_J/L/R/T) selects which marginal planes
+ *           are live, exactly as it does for the real engines
+ *           (cm_TrFillFromMode()).
+ *
+ * Args:     cm, errbuf, L  - usual
+ *           preset_mode    - TRMODE_J/L/R/T (which mode this alignment pass resolves to)
+ *           cp9_kmin,cp9_kmax - brief 26_0430-226: the k-bands the CALLER's own
+ *                         CP9 band-derivation pass actually used, [0..1..L], or
+ *                         NULL/NULL if unbanded cp9_Seq2Bands() -- see
+ *                         cm_CheckptAlignSizeNeededHB()'s (cm_dpalign.c) fuller
+ *                         comment on why this can't be assumed by this function.
+ *           ret_ckptdpmb   - RETURN: peak checkpointed CM-DP working-set Mb
+ *           ret_emxmb      - RETURN: emit_mx (CM_TR_HB_EMIT_MX) size, Mb
+ *           ret_cp9mxmb    - RETURN: CP9 fwd+bck matrices, Mb, for the band
+ *                         representation cp9_kmin/cp9_kmax describe
+ *           ret_totmb      - RETURN: sum of the above
+ *
+ * Returns:  <eslOK> on success; <eslEINCOMPAT> if cm->cp9b is NULL or preset_mode is invalid.
+ */
+int
+cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, int *cp9_kmin, int *cp9_kmax,
+                              float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb)
+{
+  int status;
+  int fill_L, fill_R, fill_T;
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignSizeNeededHB(): cm->cp9b is NULL");
+  if ((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK)
+    ESL_FAIL(status, errbuf, "cm_CheckptTrAlignSizeNeededHB(): bad preset_mode");
+  CP9Bands_t *cp9b = cm->cp9b;
+  int M = cm->M;
+  int has_bif = (CMCountStatetype(cm, B_st) > 0) ? TRUE : FALSE;
+
+  int64_t *deck_nc = NULL; int *deck_njr = NULL;
+  ESL_ALLOC(deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(deck_njr, sizeof(int)     * M);
+  mxest_tr_deck_nc(cm, cp9b, deck_nc, deck_njr);
+
+  int64_t peak_bytes;
+  if (! has_bif) {
+    peak_bytes = mxest_tr_ckpt_bps0_peak(cm, cp9b, L, deck_nc, fill_L, fill_R);
+  } else {
+    int64_t cyk_peak  = mxest_tr_ckpt_cyk_r3_peak (cm, cp9b, L, deck_nc, fill_L, fill_R);
+    int64_t post_peak = mxest_tr_ckpt_post_r3_peak(cm, cp9b, L, deck_nc, fill_L, fill_R);
+    int64_t oa_peak   = mxest_tr_ckpt_oa_r3_peak  (cm, cp9b, L, deck_nc, fill_L, fill_R);
+    peak_bytes = ESL_MAX(cyk_peak, ESL_MAX(post_peak, oa_peak));
+  }
+  /* brief 26_0430-226: EL decks (banded, one per active J/L/R plane) were
+   * never modeled here at all -- see mxest_tr_el_nc()'s comment above. Added
+   * as a conservative peak-additive term (safe upper bound), not interleaved
+   * into the per-pass alloc/free timeline above. */
+  if (cm->flags & CMH_LOCAL_END) {
+    int planes = (fill_L?1:0) + (fill_R?1:0) + 1; /* J always live */
+    int64_t el_nc = mxest_tr_el_nc(cm, cp9b, L, deck_njr);
+    peak_bytes += (int64_t)planes * el_nc * sizeof(float);
+  }
+
+  /* brief 26_0430-226: cp9mxmb now reflects whichever band representation the
+   * caller actually used -- see cm_CheckptAlignSizeNeededHB()'s (cm_dpalign.c)
+   * fuller comment on cp9_kmin/cp9_kmax. */
+  float emxmb = 0., cp9mxmb = 0.;
+  if ((status = cm_tr_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, NULL, NULL, &emxmb)) != eslOK) goto ERROR;
+  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, cp9_kmin, cp9_kmax);
+  cp9mxmb += cp9mxmb;
+
+  float ckptdpmb = (float) (peak_bytes / 1000000.);
+  float totmb = ckptdpmb + emxmb + cp9mxmb;
+
+  if (ret_ckptdpmb != NULL) *ret_ckptdpmb = ckptdpmb;
+  if (ret_emxmb    != NULL) *ret_emxmb    = emxmb;
+  if (ret_cp9mxmb  != NULL) *ret_cp9mxmb  = cp9mxmb;
+  if (ret_totmb    != NULL) *ret_totmb    = totmb;
+
+  free(deck_nc); free(deck_njr);
+  return eslOK;
+
+ ERROR:
+  if (deck_nc)  free(deck_nc);
+  if (deck_njr) free(deck_njr);
+  return status;
+}
+
 /* Function: cm_TrCYKInsideAlign()
  * based on cm_CYKInsideAlign()
  *

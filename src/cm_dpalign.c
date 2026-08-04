@@ -3746,6 +3746,459 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   return status;
 }
 
+/*****************************************************************
+ * Brief 26_0430-225: cm_CheckptAlignSizeNeededHB() -- pre-alignment
+ * memory estimator for the --ckpt (checkpointed) engine family, non-
+ * truncated.
+ *
+ * Purpose: predict the checkpointed engine's peak CM-DP byte footprint
+ * WITHOUT running any alignment or touching dsq/scores -- a structural
+ * replay of the real engine's deck alloc/free schedule.  The schedule of
+ * which decks are simultaneously live is determined entirely by CM
+ * topology (cfirst/cnum/pnum/plast/stid, via Delta/Delta_p/B) and band
+ * SHAPE (cm->cp9b's per-(v,j) hd_min/hd_max widths, same per-cell sums
+ * the cm_hb_mx_SizeNeeded family already uses) -- never by sequence
+ * content or DP scores.  So replaying the exact alloc()/free() call
+ * sequence with pure byte-counting (no malloc, no float math) reproduces
+ * the real engine's cx.peak_bytes/cx.peak_bytes bit-for-bit, gated only by
+ * whether every alloc/free call site below has been faithfully
+ * transcribed from the source it mirrors (cited per block).
+ *
+ * Dispatch: bps=0 (pure MATL chain, no bifurcations) replays
+ * cm_CheckptAlignHB() (cm_dpalign.c:1938-2289) in a single pass.  bps>0
+ * (structured) replays the THREE-PASS rung-3 pipeline actually used by
+ * production (cm_alndata.c do_checkpt_r3: cm_CheckptCYKAlignHB() then
+ * cm_CheckptPostAlignHB() then cm_CheckptOptAccAlignHB(), run
+ * SEQUENTIALLY -- each pass's arrays are fully freed before the next pass
+ * starts, per cm_alndata.c:1194/1203/1205) and returns the MAX of the
+ * three passes' peaks (that is the true --mxsize-relevant peak over the
+ * whole 3-pass pipeline, since only one pass's memory is ever live at
+ * once).
+ *
+ * Does NOT model INFERNAL_CKPT_FORCE_DNC (D&C as the r3 CYK pass-1
+ * engine): when that knob is set, pass-1's own footprint is
+ * cm_DnCAlignSizeNeededHB()'s estimate instead of this function's CYK-pass
+ * component; pass-2/pass-3 (Post/OptAcc) are unaffected either way since
+ * they only consume pass-1's *output* (bkind/kpin scalars, negligible
+ * size), not its live decks -- confirmed by cm_CheckptPostAlignHB's/
+ * cm_CheckptOptAccAlignHB's own alloc code never touching CYstore/pass-1
+ * state (cm_dpalign.c:2494-2762, 3108-3259).
+ *****************************************************************/
+
+/* running byte counter, mirrors CKPT_CTX's cur_bytes/peak_bytes pair but
+ * with no actual deck malloc -- just nc*elemsize bookkeeping. */
+typedef struct { int64_t cur, peak; } MXEST_SHB;
+static void mxest_shb_alloc(MXEST_SHB *s, int64_t nc, size_t elemsz) { if (nc<0) nc=0; s->cur += nc*(int64_t)elemsz; if (s->cur > s->peak) s->peak = s->cur; }
+static void mxest_shb_free (MXEST_SHB *s, int64_t nc, size_t elemsz) { if (nc<0) nc=0; s->cur -= nc*(int64_t)elemsz; }
+
+/* per-v cell counts (same per-(v,jp) hd_min/hd_max sum as cm_hb_mx_SizeNeeded_ex,
+ * cm_mx.c:1149-1183), computed once and shared by every simulator below. */
+static void
+mxest_deck_nc(CM_t *cm, CP9Bands_t *cp9b, int64_t *deck_nc, int *deck_njr)
+{
+  int v, jp;
+  for (v = 0; v < cm->M; v++) {
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1; if (njr < 0) njr = 0;
+    deck_njr[v] = njr;
+    int64_t nc = 0;
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1; if (w > 0) nc += w; }
+    deck_nc[v] = nc;
+  }
+}
+
+/* banded EL-deck cell count: sum(eldmax[j]+1) over rows any local-end state
+ * reaches, mirrors ckpt_el_compute_dmax (cm_dpalign.c:998-1018) + the
+ * ckpt_el_deck_alloc accounting loop (cm_dpalign.c:1023-1038). */
+static int64_t
+mxest_el_nc(CM_t *cm, CP9Bands_t *cp9b, int L, int *deck_njr)
+{
+  int   status;
+  int   v, jp, r;
+  int  *eldmax = NULL;
+  int64_t nc = 0;
+  ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    for (jp = 0; jp < deck_njr[v]; jp++) {
+      int j_band = cp9b->jmin[v] + jp;
+      r = j_band - sdr;
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
+      if (dmax_here > r) dmax_here = r;
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+  for (r = 0; r <= L; r++) if (eldmax[r] >= 0) nc += (eldmax[r]+1);
+  free(eldmax);
+  return nc;
+ ERROR:
+  if (eldmax) free(eldmax);
+  cm_Fail("mxest_el_nc(): memory allocation error");
+  return 0;
+}
+
+/* bps=0 (pure MATL chain): replays cm_CheckptAlignHB() STEP A/B/OA/TB
+ * (cm_dpalign.c:2027-2260) call-for-call.  kpin doesn't affect ANY alloc/
+ * free call (cm_CheckptAlignHB doesn't even take one) so it never enters
+ * the byte count -- confirmed no ckpt_deck_alloc/free calls inside
+ * ckpt_inside_deck/ckpt_outside_deck/ckpt_optacc_deck bodies themselves
+ * (cm_dpalign.c:1179-1850): those functions only WRITE into decks the
+ * caller already allocated. */
+static int64_t
+mxest_ckpt_bps0_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int *deck_njr)
+{
+  int M = cm->M, v, k;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st) { int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v; }
+    if (cm->pnum[v] > 0)       { int ymin_par = cm->plast[v]-cm->pnum[v]+1; if (v-ymin_par > Delta_p) Delta_p = v-ymin_par; }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+  int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  int64_t el_nc = have_el ? mxest_el_nc(cm, cp9b, L, deck_njr) : 0;
+
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *aliveA  = calloc(M, 1);  /* Astore[v] != NULL ? */
+  char *aliveBa = calloc(M, 1);  /* ba[v]     != NULL ? */
+  char *aliveBb = calloc(M, 1);  /* bb[v]     != NULL ? */
+  char *aliveOA = calloc(M, 1);  /* OAstore[v]!= NULL ? */
+
+  /* STEP A: cm_dpalign.c:2027-2038 */
+  for (v = M-1; v >= 0; v--) {
+    aliveA[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && aliveA[y]) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { aliveA[y] = 0; mxest_shb_free(&sh, deck_nc[y], sizeof(float)); }
+    }
+  }
+
+  /* STEP B: cm_dpalign.c:2050-2108 (elbeta persists the whole block sweep) */
+  if (have_el) mxest_shb_alloc(&sh, el_nc, sizeof(float));
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k*B, hi = ESL_MIN((k+1)*B-1, M-1);
+    for (v = hi; v >= lo; v--) { aliveBa[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float)); }
+    for (v = lo; v <= hi; v++) {
+      aliveBb[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+      aliveBa[v] = 0; mxest_shb_free(&sh, deck_nc[v], sizeof(float));
+      int old = v - Delta_p - 1;
+      if (old >= 0 && aliveBb[old]) { aliveBb[old] = 0; mxest_shb_free(&sh, deck_nc[old], sizeof(float)); }
+    }
+  }
+  for (v = 0; v < M; v++) if (aliveBb[v]) { aliveBb[v] = 0; mxest_shb_free(&sh, deck_nc[v], sizeof(float)); }
+  if (have_el) mxest_shb_free(&sh, el_nc, sizeof(float));  /* elbeta freed (cm_dpalign.c:2133) ... */
+  if (have_el) mxest_shb_alloc(&sh, el_nc, sizeof(float)); /* ... elalpha allocated (2162), same footprint, persists through OA+TB */
+
+  /* STEP OA: cm_dpalign.c:2175-2187 (+ transient ysh cdeck, alloc'd/freed same iter) */
+  for (v = M-1; v >= 0; v--) {
+    mxest_shb_alloc(&sh, deck_nc[v], sizeof(char));   /* ysh: alloc then free below, same v */
+    aliveOA[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+    mxest_shb_free(&sh, deck_nc[v], sizeof(char));
+    int y = v + Delta;
+    if (y < M && aliveOA[y]) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { aliveOA[y] = 0; mxest_shb_free(&sh, deck_nc[y], sizeof(float)); }
+    }
+  }
+
+  /* STEP TB: cm_dpalign.c:2192-2238, block-recompute (tba+tysh), one block
+   * (<= B decks) live at a time -- freed on the NEXT block boundary crossed
+   * (cm_dpalign.c:2205-2213), not eagerly, so the true traceback path
+   * (which block(s) it touches) is DATA-DEPENDENT (follows the actual
+   * best parse via yshadow, cm_dpalign.c:2216/2232) and not something this
+   * band-only estimator can know.  Bound it instead: since exactly one
+   * block is ever live at once, the true TB contribution is <= the
+   * heaviest single block's (tba+tysh) footprint; add that as a
+   * conservative one-block charge (a real upper bound, possibly loose if
+   * the true path never actually visits the heaviest block). */
+  {
+    int64_t worst_blk_nc = 0;
+    int lo, hi, w;
+    for (lo = 0; lo < M; lo += B) {
+      hi = ESL_MIN(lo+B-1, M-1);
+      int64_t blk_nc = 0;
+      for (w = lo; w <= hi; w++) blk_nc += deck_nc[w];
+      if (blk_nc > worst_blk_nc) worst_blk_nc = blk_nc;
+    }
+    mxest_shb_alloc(&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+    mxest_shb_free (&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+  }
+  if (have_el) mxest_shb_free(&sh, el_nc, sizeof(float));
+
+  free(aliveA); free(aliveBa); free(aliveBb); free(aliveOA);
+  return sh.peak;
+}
+
+
+static int
+mxest_is_chain_root(CM_t *cm, int v)
+{
+  int s = cm->stid[v];
+  return (s == ROOT_S || s == BEGL_S || s == BEGR_S);
+}
+
+/* bps>0 pass 1: replays cm_CheckptCYKAlignHB() STEP CYK + STEP TB
+ * (cm_dpalign.c:3679-3730).  Chain-root decks (BEGL_S/BEGR_S/ROOT_S) are
+ * NEVER freed by the linear Delta rule (their B_st parent needs them at an
+ * arbitrary later v) -- accounted by root_nc below, added once as a
+ * constant floor rather than simulated via the free-skip (equivalent
+ * result, simpler code: skip the free whenever y is a chain root, exactly
+ * mirroring line 3691's "&& ! ckpt_is_chain_root(cm, y)" guard). */
+static int64_t
+mxest_ckpt_cyk_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int *deck_njr, int have_el)
+{
+  int M = cm->M, v;
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v;
+    }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *aliveCY = calloc(M, 1);
+
+  /* STEP CYK: cm_dpalign.c:3679-3691 (transient cdeck: alloc'd, freed same v; B_st gets none) */
+  for (v = M-1; v >= 0; v--) {
+    if (cm->sttype[v] != B_st) { mxest_shb_alloc(&sh, deck_nc[v], sizeof(char)); mxest_shb_free(&sh, deck_nc[v], sizeof(char)); }
+    aliveCY[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && aliveCY[y] && ! mxest_is_chain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { aliveCY[y] = 0; mxest_shb_free(&sh, deck_nc[y], sizeof(float)); }
+    }
+  }
+
+  /* STEP TB: same one-block-live-at-a-time bound as the bps=0 case
+   * (cm_dpalign.c:3720-3730), on top of whatever CYstore retains
+   * (roots + seeds, still resident: CYstore isn't freed until the whole
+   * function returns, cm_dpalign.c:3736). */
+  {
+    int64_t worst_blk_nc = 0; int lo, hi, w;
+    for (lo = 0; lo < M; lo += B) {
+      hi = ESL_MIN(lo+B-1, M-1);
+      int64_t blk_nc = 0; for (w = lo; w <= hi; w++) blk_nc += deck_nc[w];
+      if (blk_nc > worst_blk_nc) worst_blk_nc = blk_nc;
+    }
+    mxest_shb_alloc(&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+    mxest_shb_free (&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+  }
+
+  free(aliveCY);
+  return sh.peak;
+}
+
+/* bps>0 pass 2: replays cm_CheckptPostAlignHB() STEP A + STEP B
+ * (cm_dpalign.c:2565-2666), including the bounded co-floor reclaim (2648-
+ * 2663) and B-aware Delta/Delta_p (B_st edges excluded, 2545-2554). */
+static int64_t
+mxest_ckpt_post_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int *deck_njr, int have_el, int64_t el_nc)
+{
+  int M = cm->M, v, k;
+  int Delta = 0, Delta_p = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v;
+    }
+    if (cm->pnum[v] > 0 && cm->stid[v] != BEGL_S && cm->stid[v] != BEGR_S) {
+      int ymin_par = cm->plast[v]-cm->pnum[v]+1; if (v-ymin_par > Delta_p) Delta_p = v-ymin_par;
+    }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *aliveA  = calloc(M, 1);
+  char *aliveBa = calloc(M, 1);
+  char *aliveBb = calloc(M, 1);
+
+  /* STEP A: cm_dpalign.c:2570-2578 (roots never freed) */
+  for (v = M-1; v >= 0; v--) {
+    aliveA[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && aliveA[y] && ! mxest_is_chain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { aliveA[y] = 0; mxest_shb_free(&sh, deck_nc[y], sizeof(float)); }
+    }
+  }
+
+  /* STEP B: cm_dpalign.c:2589-2666, ifull=Astore is a free alias (no extra
+   * bytes); elbeta persists the whole block sweep. */
+  if (have_el) mxest_shb_alloc(&sh, el_nc, sizeof(float));
+  int nblocks = (M + B - 1) / B;
+  for (k = 0; k < nblocks; k++) {
+    int lo = k*B, hi = ESL_MIN((k+1)*B-1, M-1);
+    for (v = hi; v >= lo; v--) { aliveBa[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float)); }
+    for (v = lo; v <= hi; v++) {
+      aliveBb[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+      aliveBa[v] = 0; mxest_shb_free(&sh, deck_nc[v], sizeof(float));
+      int old = v - Delta_p - 1;
+      if (old >= 0 && aliveBb[old] && cm->sttype[old] != B_st) { aliveBb[old] = 0; mxest_shb_free(&sh, deck_nc[old], sizeof(float)); }
+      /* bounded co-floor reclaim: cm_dpalign.c:2648-2663 */
+      if (cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) {
+        int yB = cm->plast[v];
+        int begl = cm->cfirst[yB], begr = cm->cnum[yB];
+        int second = (begl > begr) ? begl : begr;
+        if (v == second) {
+          if (aliveBb[yB]) { aliveBb[yB] = 0; mxest_shb_free(&sh, deck_nc[yB], sizeof(float)); }
+          if (aliveA[begl]) { aliveA[begl] = 0; mxest_shb_free(&sh, deck_nc[begl], sizeof(float)); }
+          if (aliveA[begr]) { aliveA[begr] = 0; mxest_shb_free(&sh, deck_nc[begr], sizeof(float)); }
+        }
+      }
+    }
+  }
+  for (v = 0; v < M; v++) if (aliveBb[v]) { aliveBb[v] = 0; mxest_shb_free(&sh, deck_nc[v], sizeof(float)); }
+  if (have_el) mxest_shb_free(&sh, el_nc, sizeof(float));
+
+  free(aliveA); free(aliveBa); free(aliveBb);
+  return sh.peak;
+}
+
+/* bps>0 pass 3: replays cm_CheckptOptAccAlignHB() STEP OA + STEP TB
+ * (cm_dpalign.c:3190-3221).  kpin (like pass CYK/pass bps=0) never
+ * affects an alloc/free call, only VALUES written into already-allocated
+ * cells (ckpt_optacc_deck's B_st branch just narrows which k it reads,
+ * cm_dpalign.c:1711-1762) -- confirmed, so kpin is correctly omitted from
+ * this signature. */
+static int64_t
+mxest_ckpt_oa_r3_peak(CM_t *cm, CP9Bands_t *cp9b, int L, int64_t *deck_nc, int *deck_njr, int have_el, int64_t el_nc)
+{
+  int M = cm->M, v;
+  int Delta = 0;
+  for (v = 0; v < M; v++) {
+    if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
+      int ymax = cm->cfirst[v]+cm->cnum[v]-1; if (ymax-v > Delta) Delta = ymax-v;
+    }
+  }
+  int B = (int)(sqrt((double)M)+0.5); if (B < 1) B = 1;
+
+  MXEST_SHB sh; sh.cur = sh.peak = 0;
+  char *aliveOA = calloc(M, 1);
+
+  if (have_el) mxest_shb_alloc(&sh, el_nc, sizeof(float));  /* elalpha, persists whole function */
+
+  /* STEP OA: cm_dpalign.c:3190-3202 */
+  for (v = M-1; v >= 0; v--) {
+    if (cm->sttype[v] != B_st) { mxest_shb_alloc(&sh, deck_nc[v], sizeof(char)); mxest_shb_free(&sh, deck_nc[v], sizeof(char)); }
+    aliveOA[v] = 1; mxest_shb_alloc(&sh, deck_nc[v], sizeof(float));
+    int y = v + Delta;
+    if (y < M && aliveOA[y] && ! mxest_is_chain_root(cm, y)) {
+      if ((y % B) < Delta) { /* retain */ }
+      else { aliveOA[y] = 0; mxest_shb_free(&sh, deck_nc[y], sizeof(float)); }
+    }
+  }
+
+  /* STEP TB: cm_dpalign.c:3206-3221, same one-block bound */
+  {
+    int64_t worst_blk_nc = 0; int lo, hi, w;
+    for (lo = 0; lo < M; lo += B) {
+      hi = ESL_MIN(lo+B-1, M-1);
+      int64_t blk_nc = 0; for (w = lo; w <= hi; w++) blk_nc += deck_nc[w];
+      if (blk_nc > worst_blk_nc) worst_blk_nc = blk_nc;
+    }
+    mxest_shb_alloc(&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+    mxest_shb_free (&sh, worst_blk_nc, sizeof(float) + sizeof(char));
+  }
+
+  free(aliveOA);
+  return sh.peak;
+}
+
+/* Function: cm_CheckptAlignSizeNeededHB()
+ * Incept:   Brief 26_0430-225
+ *
+ * Purpose:  Predict, WITHOUT running any alignment, the peak Mb the
+ *           checkpointed (--ckpt) engine will need to align a length-<L>
+ *           sequence to <cm> under its current cm->cp9b bands.  Mirrors
+ *           cm_AlignSizeNeededHB()'s per-component-breakdown-plus-total
+ *           style (cm_dpalign.c:527-530).  Dispatches on bps=0 (pure MATL
+ *           chain) vs bps>0 (structured, has bifurcations) automatically.
+ *
+ * Args:     cm          - the CM (cm->cp9b must already be filled for L)
+ *           errbuf      - char buffer for reporting errors
+ *           L           - length of the target sequence
+ *           cp9_kmin,cp9_kmax - the k-bands (if any) the CALLER's own CP9
+ *                         band-derivation pass actually used, [0..1..L],
+ *                         or NULL/NULL if it ran the unbanded cp9_Seq2Bands().
+ *                         Brief 26_0430-226: this function cannot know which
+ *                         band-derivation path the caller took (unbanded
+ *                         cp9_Seq2Bands() vs. the cheaper p7-banded/IBV-
+ *                         checkpointed pipeline used by production at genome
+ *                         scale) -- forwarded verbatim to SizeNeededCP9Matrix()
+ *                         so ret_cp9mxmb reflects whichever one actually ran,
+ *                         instead of silently assuming unbanded. Passing the
+ *                         wrong (or no) bands here previously made totmb
+ *                         wildly wrong (~28 GB vs a real few-MB CM-DP working
+ *                         set) at genome scale, since a genome-scale unbanded
+ *                         CP9 matrix is enormous and a caller on the cheap
+ *                         path never pays it.
+ *           ret_ckptdpmb - RETURN: peak checkpointed CM-DP working-set Mb
+ *                          (bps>0: max over the CYK/Post/OptAcc passes)
+ *           ret_emxmb   - RETURN: emit_mx size, Mb (same formula stock uses)
+ *           ret_cp9mxmb - RETURN: CP9 fwd+bck matrices, Mb, for the band
+ *                         representation cp9_kmin/cp9_kmax describe (0 cost
+ *                         difference from before iff caller passes NULL/NULL,
+ *                         matching the old unconditional-unbanded behavior)
+ *           ret_totmb   - RETURN: ckptdpmb + emxmb + cp9mxmb
+ *
+ * Returns:  <eslOK> on success; <eslEINCOMPAT> if cm->cp9b is NULL.
+ */
+int
+cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, int *cp9_kmin, int *cp9_kmax,
+                            float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb)
+{
+  int status;
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptAlignSizeNeededHB(): cm->cp9b is NULL");
+  CP9Bands_t *cp9b = cm->cp9b;
+  int M = cm->M;
+  int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  int has_bif = (CMCountStatetype(cm, B_st) > 0) ? TRUE : FALSE;
+
+  int64_t *deck_nc = NULL; int *deck_njr = NULL;
+  ESL_ALLOC(deck_nc,  sizeof(int64_t) * M);
+  ESL_ALLOC(deck_njr, sizeof(int)     * M);
+  mxest_deck_nc(cm, cp9b, deck_nc, deck_njr);
+  int64_t el_nc = have_el ? mxest_el_nc(cm, cp9b, L, deck_njr) : 0;
+
+  int64_t peak_bytes;
+  if (! has_bif) {
+    peak_bytes = mxest_ckpt_bps0_peak(cm, cp9b, L, deck_nc, deck_njr);
+  } else {
+    int64_t cyk_peak  = mxest_ckpt_cyk_r3_peak (cm, cp9b, L, deck_nc, deck_njr, have_el);
+    int64_t post_peak = mxest_ckpt_post_r3_peak(cm, cp9b, L, deck_nc, deck_njr, have_el, el_nc);
+    int64_t oa_peak   = mxest_ckpt_oa_r3_peak  (cm, cp9b, L, deck_nc, deck_njr, have_el, el_nc);
+    peak_bytes = ESL_MAX(cyk_peak, ESL_MAX(post_peak, oa_peak));
+  }
+
+  /* brief 26_0430-226: cp9mxmb now reflects whichever band representation the
+   * caller actually used (cp9_kmin/cp9_kmax, NULL/NULL for unbanded) instead
+   * of unconditionally assuming the unbanded cp9_Seq2Bands() path. */
+  float emxmb = 0., cp9mxmb = 0.;
+  if ((status = cm_hb_emit_mx_SizeNeeded(cm, errbuf, cp9b, L, NULL, NULL, &emxmb)) != eslOK) goto ERROR;
+  cp9mxmb = SizeNeededCP9Matrix(L, cm->cp9->M, cp9_kmin, cp9_kmax);
+  cp9mxmb += cp9mxmb; /* fwd + bck, mirrors cm_AlignSizeNeededHB:564-565 */
+
+  float ckptdpmb = (float) (peak_bytes / 1000000.);
+  float totmb = ckptdpmb + emxmb + cp9mxmb;
+
+  if (ret_ckptdpmb != NULL) *ret_ckptdpmb = ckptdpmb;
+  if (ret_emxmb    != NULL) *ret_emxmb    = emxmb;
+  if (ret_cp9mxmb  != NULL) *ret_cp9mxmb  = cp9mxmb;
+  if (ret_totmb    != NULL) *ret_totmb    = totmb;
+
+  free(deck_nc); free(deck_njr);
+  return eslOK;
+
+ ERROR:
+  if (deck_nc)  free(deck_nc);
+  if (deck_njr) free(deck_njr);
+  return status;
+}
+
 /* Function: cm_CYKInsideAlign()
  * Date:     EPN, Sun Nov 18 19:37:39 2007
  *           

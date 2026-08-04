@@ -250,7 +250,10 @@ static float inside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
 static void  outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 			int do_full, float ***beta, float ****ret_beta,
 			struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-			CP9Bands_t *cp9b);
+			CP9Bands_t *cp9b, int **ret_eldmax);
+/* brief 26_0430-227: banded EL (local-end) outside deck helpers (defined below,
+ * near outside_hb); free_el_banded_vjd_deck is used by the splitters above it. */
+static void  free_el_banded_vjd_deck(float **a, int i, int j, int *eldmax);
 static float insideT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b);
 /* Stage 1a.2 (brief 26_0610-009): banded V-problem (class-2 vji) engines. */
@@ -548,8 +551,28 @@ CYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Pars
       sc =  cm->beginsc[r];
     }
 
+  /* brief 26_0430-225: DNC_MEM_VERBOSE ground-truth peak-memory diagnostic,
+   * mirroring INFERNAL_CKPT_VERBOSE's (cm_dpalign.c) env-gated fprintf style.
+   * Reuses the existing (previously dormant -- no caller anywhere before this
+   * brief) high-water-mark instrumentation built for brief 26_0610-007/008/050
+   * (CYKDeckTrackReset/MaxMb/VjdAtPeakMb/VjiAtPeakMb + the shadow tracker
+   * above): that infrastructure already accounts every live banded-vjd deck,
+   * class-2 (V-problem) vji deck, and shadow deck byte-for-byte at alloc/free
+   * time, so no new byte-counting is added here -- just the env gate + report. */
+  int dnc_mem_verbose = (getenv("DNC_MEM_VERBOSE") != NULL) ? TRUE : FALSE;
+  if (dnc_mem_verbose) { CYKDeckTrackReset(); CYKShadowTrackReset(); }
+
   /* Start the banded divide and conquer recursion. */
   sc += generic_splitter_hb(cm, dsq, L, tr, r, z, i0, j0, cp9b);
+
+  if (dnc_mem_verbose) {
+    double peak_mb = CYKDeckTrackMaxMb();  /* NOTE: this call also sets cyk_dnc_track = FALSE */
+    double vjd_mb  = CYKDeckTrackVjdAtPeakMb();
+    double vji_mb  = CYKDeckTrackVjiAtPeakMb();
+    double shad_mb = CYKShadowTrackMaxMb();
+    fprintf(stderr, "# CYKDivideAndConquerHB (D&C) engaged: M=%d L=%d sc=%.5f  DnC-DP peak=%.2f Mb (vjd=%.2f Mb vji=%.2f Mb)  shadow-peak=%.2f Mb\n",
+            cm->M, L, sc, peak_mb, vjd_mb, vji_mb, shad_mb);
+  }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   ESL_DPRINTF1(("#DEBUG: returning from CYKDivideAndConquerHB() sc : %f\n", sc));
@@ -4668,6 +4691,7 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 {
   float ***alpha;
   float ***beta;
+  int     *eldmax = NULL;	/* brief 26_0430-227: banded EL deck per-row d-band edges */
   struct deckpool_s *pool;
   int      v,w,y;		/* state indices */
   int      wend, yend;		/* indices for end of subgraphs rooted at w,y */
@@ -4716,7 +4740,7 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	    (r==0), &b1, &b1_sc, cp9b);
   inside_hb(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT, alpha, &alpha, pool, &pool, NULL,
 	    (r==0), &b2, &b2_sc, cp9b);
-  outside_hb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL, cp9b);
+  outside_hb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL, cp9b, &eldmax);
 
   /* Find the optimal split at the B, within v's bands. */
   W = j0-i0+1;
@@ -4745,12 +4769,18 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	}
     }
 
-  /* Local alignment only: maybe we're better off in EL? (no band on EL) */
+  /* Local alignment only: maybe we're better off in EL?  brief 26_0430-227: the
+   * EL deck beta[cm->M] is now banded (row j holds d=0..eldmax[j]); cells above
+   * eldmax[j] were IMPOSSIBLE in the old full deck, so clamping the read to
+   * eldmax[j] leaves best_sc byte-identical.  eldmax[j]<0 => empty (NULL) row. */
   if (cm->flags & CMH_LOCAL_END) {
     for (jp = 0; jp <= W; jp++)
       {
+	int dhi;
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++)
+	if (eldmax[j] < 0) continue;
+	dhi = ESL_MIN(jp, eldmax[j]);
+	for (d = 0; d <= dhi; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
 	    best_k  = -1;
@@ -4766,7 +4796,23 @@ generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (b2_sc > best_sc) { best_sc = b2_sc; best_k = -3; best_j = j0; best_d = W; }
   }
 
+  /* brief 26_0430-227: here outside_hb() was handed the inside `alpha` deck-
+   * array as its working beta array (the call above passes `alpha` as the beta
+   * INPUT arg), so the returned `beta` IS `alpha` -- the SAME float*** pointer,
+   * with the EL deck stored in the shared alpha[cm->M]==beta[cm->M] slot.  So
+   * `beta` must NOT be freed separately (that double-frees; this is exactly what
+   * made brief 26_0430-226's attempted "beta leak" fix crash -- there was never
+   * a separate beta array to leak, only the EL deck, which the alpha free below
+   * already reclaimed).  Free the banded EL deck explicitly first (eldmax-driven
+   * width + correct cyk_dnc_track accounting, vs the full-triangle free_vjd_deck
+   * that free_banded_hb_vjd_matrix's v==cm->M branch would use), NULL the shared
+   * slot, then free the shared array once. */
+  if ((cm->flags & CMH_LOCAL_END) && beta[cm->M] != NULL) {
+    free_el_banded_vjd_deck(beta[cm->M], i0, j0, eldmax);
+    beta[cm->M] = NULL;      /* == alpha[cm->M]: alpha's matrix-free then skips it */
+  }
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
+  free(eldmax); eldmax = NULL;
 
   /* EL case: V problem above us; solve with banded v_splitter_hb (Stage 1a.2). */
   if (best_k == -1) {
@@ -4810,6 +4856,7 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
 {
   float ***alpha;
   float ***beta;
+  int     *eldmax = NULL;	/* brief 26_0430-227: banded EL deck per-row d-band edges */
   struct deckpool_s *pool;
   float sc;
   float best_sc;
@@ -4842,7 +4889,7 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
   inside_hb(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
 	    NULL, &alpha, NULL, &pool, NULL,
 	    (r==0), &b, &bsc, cp9b);
-  outside_hb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL, cp9b);
+  outside_hb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, NULL, &beta, pool, NULL, cp9b, &eldmax);
 
   /* 4. Find the optimal split at the split set, within each v's bands. */
   W = j0-i0+1;
@@ -4865,12 +4912,17 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
 	  }
       }
 
-  /* Local ends: maybe better in EL? (no band on EL) */
+  /* Local ends: maybe better in EL?  brief 26_0430-227: EL deck now banded on
+   * the upper d-edge (eldmax[j]); cells above were IMPOSSIBLE, so clamping the
+   * read to eldmax[j] is byte-identical.  eldmax[j]<0 => empty (NULL) row. */
   if (cm->flags & CMH_LOCAL_END) {
     for (jp = 0; jp <= W; jp++)
       {
+	int dhi;
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++)
+	if (eldmax[j] < 0) continue;
+	dhi = ESL_MIN(jp, eldmax[j]);
+	for (d = 0; d <= dhi; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
 	    best_v  = -1;
@@ -4914,7 +4966,15 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
 #endif
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
+  /* brief 26_0430-227: free the banded EL deck explicitly (eldmax-driven width,
+   * not the full-triangle free_vjd_deck that free_banded_hb_vjd_matrix assumes
+   * for v==cm->M), then the rest of beta. */
+  if ((cm->flags & CMH_LOCAL_END) && beta[cm->M] != NULL) {
+    free_el_banded_vjd_deck(beta[cm->M], i0, j0, eldmax);
+    beta[cm->M] = NULL;
+  }
   free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
+  free(eldmax); eldmax = NULL;
 
   if (best_v == -1) {
     v_splitter_hb(cm, dsq, L, tr, r, w, i0, best_j-best_d+1, best_j, j0, TRUE, cp9b);
@@ -5238,6 +5298,202 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
   return 0.; /* never reached */
 }
 
+/*****************************************************************
+ * brief 26_0430-227: banded local-end (EL) outside deck for the HMM-banded D&C.
+ *
+ * outside_hb()/tr_outside_hb() store the EL state (cm->M) outside scores in a
+ * vjd deck that stock allocates as a FULL O(L^2/2) lower triangle every call
+ * (alloc_vjd_deck()), regardless of the CP9 bands.  At genome scale this single
+ * deck IS the D&C memory peak (brief 26_0430-226: sarscov2 ~1763 Mb, ~all of it
+ * this deck).  But brief 26_0610-106 already proved that every write to
+ * beta[cm->M][j][d] lands in a per-v-band-derived region (the v->EL feed
+ * iterates only v's own banded footprint, shifted by the per-type (elsj=sdr,
+ * elsd=sd) offset).  So the storage above the per-row upper d-edge is provably
+ * IMPOSSIBLE and can be dropped -- exactly what cm_dpalign.c's checkpointed
+ * engine already does (ckpt_el_compute_dmax / ckpt_el_deck_alloc, R-L.2).
+ *
+ * Here we mirror that, adapted to D&C's per-sub-call [i0,j0] window: an eldmax[]
+ * array (absolute row j, -1 == empty row) bounds the deck; row j stores only
+ * d=0..eldmax[j].  Unlike stock's EL deck this one is NEVER pooled (deckpool
+ * reuse assumes a uniform full-triangle size; a band-dependent size would hand
+ * back a wrong-sized deck) -- it is always freshly allocated and freed by its
+ * owner, which also removes the aliasing that made the beta leak in
+ * generic_splitter_hb() unsafe to free (see brief 26_0430-226 note there).
+ *****************************************************************/
+
+/* Allocate a banded EL vjd deck: (L+1) row pointers (rows outside [i-1..j] and
+ * rows with eldmax<0 are NULL), row r holding eldmax[r]+1 floats.  Cells are
+ * left uninitialized here (caller IMPOSSIBLE-inits its own band, mirroring the
+ * stock init loop).  Accounts banded bytes in the cyk_dnc_track high-water. */
+static float **
+alloc_el_banded_vjd_deck(int L, int i, int j, int *eldmax)
+{
+  int     status;
+  float **a;
+  int     r;
+  double  nb = 0.;
+  ESL_ALLOC(a, sizeof(float *) * (L+1));
+  for (r = 0;   r <= L; r++) a[r] = NULL;
+  for (r = i-1; r <= j; r++) {
+    if (eldmax[r] < 0) continue;
+    ESL_ALLOC(a[r], sizeof(float) * (eldmax[r]+1));
+    nb += (double) (eldmax[r]+1) * sizeof(float);
+  }
+  if (cyk_dnc_track) { cyk_dnc_cur_bytes += nb; cyk_dnc_note(); }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+/* Free a banded EL vjd deck.  <eldmax> (may be NULL) is used only to subtract
+ * the banded byte count from the cyk_dnc_track high-water; it MUST be the same
+ * array passed to alloc_el_banded_vjd_deck() so alloc/free stay balanced. */
+static void
+free_el_banded_vjd_deck(float **a, int i, int j, int *eldmax)
+{
+  int r;
+  if (a == NULL) return;
+  if (cyk_dnc_track && eldmax != NULL) {
+    double nb = 0.;
+    for (r = i-1; r <= j; r++) if (eldmax[r] >= 0) nb += (double) (eldmax[r]+1) * sizeof(float);
+    cyk_dnc_cur_bytes -= nb;
+  }
+  for (r = i-1; r <= j; r++) if (a[r] != NULL) free(a[r]);
+  free(a);
+}
+
+/* Compute eldmax[0..L] (absolute row j; -1 = empty) for outside_hb()'s EL deck
+ * over sub-problem (vroot..vend, [i0,j0]).  eldmax[j] is a provable superset of
+ * the max d ever WRITTEN to beta[cm->M][j][.], = the union of:
+ *   (a) vroot's boundary v->EL unroll   (cm_dpsmall.c ~5340-5379), and
+ *   (b) each main-loop state v's banded v->EL feed (~5491-5558),
+ * using the SAME per-type (elsj=sdr, elsd=sd) read-cell shifts that feed uses.
+ * The extra per-cell `continue` guards inside the feed only REMOVE writes, so
+ * bounding by the feed's d-loop maximum (eldhi, itself already clamped to jp)
+ * is a safe upper bound.  Mirrors ckpt_el_compute_dmax() but is per-sub-call. */
+static void
+outside_hb_el_dmax(CM_t *cm, int L, int vroot, int vend, int i0, int j0,
+		   CP9Bands_t *cp9b, int *eldmax)
+{
+  int *jmin = cp9b->jmin;
+  int *jmax = cp9b->jmax;
+  int  v, elJ, r;
+  int  W = j0 - i0 + 1;
+  int  w1, w2;
+
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+
+  /* (a) vroot boundary v->EL unroll */
+  if (NOT_IMPOSSIBLE(cm->endsc[vroot])) {
+    switch (cm->sttype[vroot]) {
+    case MP_st:             if (W >= 2 && W-2 > eldmax[j0-1]) eldmax[j0-1] = W-2; break;
+    case ML_st: case IL_st: if (W >= 1 && W-1 > eldmax[j0])   eldmax[j0]   = W-1; break;
+    case MR_st: case IR_st: if (W >= 1 && W-1 > eldmax[j0-1]) eldmax[j0-1] = W-1; break;
+    case S_st:  case D_st:  if (W   > eldmax[j0]) eldmax[j0] = W;   break;
+    default: break;
+    }
+  }
+
+  /* (b) main-loop states' banded v->EL feed.  The main loop is v = w2+1..vend,
+   * where w1/w2 delimit vroot's split set (copied from outside_hb ~5315-5320). */
+  w1 = cm->nodemap[cm->ndidx[vroot]];
+  if (cm->sttype[vroot] == B_st) w2 = w1;
+  else                           w2 = cm->cfirst[w1]-1;
+  for (v = w2+1; v <= vend; v++) {
+    int elsj = 0, elsd = 0, elJlo, elJhi;
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    switch (cm->sttype[v]) {
+    case MP_st:                       elsj = 1; elsd = 2; break;
+    case ML_st: case IL_st:           elsj = 0; elsd = 1; break;
+    case MR_st: case IR_st:           elsj = 1; elsd = 1; break;
+    case S_st:  case D_st: case E_st: elsj = 0; elsd = 0; break;
+    default: continue;
+    }
+    elJlo = ESL_MAX(i0-1, jmin[v]);
+    elJhi = ESL_MIN(j0,   jmax[v]);
+    for (elJ = elJlo; elJ <= elJhi; elJ++) {
+      int eljpv = elJ - jmin[v];
+      int j     = elJ - elsj;
+      int jp    = j - (i0-1);
+      int eldhi, eldlo;
+      if (jp < 0) continue;
+      eldhi = hd_max(cp9b, v, eljpv) - elsd; if (eldhi > jp) eldhi = jp;
+      eldlo = hd_min(cp9b, v, eljpv) - elsd; if (eldlo < 0)  eldlo = 0;
+      if (eldhi < eldlo) continue;                 /* feed d-loop empty: no write */
+      if (eldhi > eldmax[j]) eldmax[j] = eldhi;
+    }
+  }
+}
+
+/* brief 26_0430-227: eldmax[0..L] for tr_outside_hb()'s three EL decks
+ * (plane 0=J beta[cm->M], 1=L betaL[cm->M], 2=R betaR[cm->M]).  Same per-sub-call
+ * structure as outside_hb_el_dmax(), with per-plane v->EL feed shifts (elsj,elsd)
+ * and per-plane feed gating (L feed only Lvalid[v], R feed only Rvalid[v]) that
+ * mirror the feed loops at cm_dpsmall.c ~7891 (J) / ~7972 (L) / ~8044 (R).  The
+ * vroot boundary v->EL seeds touch only rows j0 and j0-1, and are covered
+ * CONSERVATIVELY (full width on those two rows) when the boundary is active for
+ * this plane -- a safe superset (a v-feed write at row j0/j0-1 also has d<=jp, so
+ * full width on those two rows dominates every write there; the whole O(L^2) win
+ * lives in the interior v-feed rows).  Boundary is inactive when vroot==0 (the
+ * truncated-begin top-level call), so the biggest deck stays precisely banded.
+ * This helper is deterministic in (cm,cp9b,vroot,vend,i0,j0,plane), so the
+ * writer (tr_outside_hb) and the reader (tr_*_splitter_hb) recompute the SAME
+ * eldmax independently -- no need to thread it through the signature. */
+static void
+tr_outside_hb_el_dmax(CM_t *cm, int L, int vroot, int vend, int i0, int j0,
+		      int plane, CP9Bands_t *cp9b, int *eldmax)
+{
+  int *jmin = cp9b->jmin;
+  int *jmax = cp9b->jmax;
+  int  v, elJ, r;
+  int  W = j0 - i0 + 1;
+  int  w1, w2;
+
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+
+  /* (a) vroot boundary v->EL seeds (rows j0, j0-1 only), conservative */
+  if (vroot != 0 && NOT_IMPOSSIBLE(cm->endsc[vroot])) {
+    int active = (plane == 0) ||
+                 (plane == 1 && cp9b->Lvalid[vroot]) ||
+                 (plane == 2 && cp9b->Rvalid[vroot]);
+    if (active) {
+      if (W   > eldmax[j0])   eldmax[j0]   = W;      /* boundary d up to W   (S/D) */
+      if (j0-1 >= 0 && W-1 > eldmax[j0-1]) eldmax[j0-1] = W-1;  /* d up to W-1     */
+    }
+  }
+
+  /* (b) main-loop states' banded v->EL feed, per-plane */
+  w1 = cm->nodemap[cm->ndidx[vroot]];
+  if (cm->sttype[vroot] == B_st) w2 = w1;
+  else                           w2 = cm->cfirst[w1]-1;
+  for (v = w2+1; v <= vend; v++) {
+    int elsj = 0, elsd = 0, elJlo, elJhi;
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    if (plane == 1 && ! cp9b->Lvalid[v]) continue;   /* L feed gated on Lvalid[v] */
+    if (plane == 2 && ! cp9b->Rvalid[v]) continue;   /* R feed gated on Rvalid[v] */
+    switch (cm->sttype[v]) {
+    case MP_st:             if (plane==0) { elsj=1; elsd=2; } else if (plane==1) { elsj=0; elsd=1; } else { elsj=1; elsd=1; } break;
+    case ML_st: case IL_st: if (plane==0) { elsj=0; elsd=1; } else if (plane==1) { elsj=0; elsd=1; } else { elsj=0; elsd=0; } break;
+    case MR_st: case IR_st: if (plane==0) { elsj=1; elsd=1; } else if (plane==1) { elsj=0; elsd=0; } else { elsj=1; elsd=1; } break;
+    case S_st:  case D_st: case E_st: elsj = 0; elsd = 0; break;
+    default: continue;
+    }
+    elJlo = ESL_MAX(i0-1, jmin[v]);
+    elJhi = ESL_MIN(j0,   jmax[v]);
+    for (elJ = elJlo; elJ <= elJhi; elJ++) {
+      int eljpv = elJ - jmin[v];
+      int j     = elJ - elsj;
+      int jp    = j - (i0-1);
+      int eldhi, eldlo;
+      if (jp < 0) continue;
+      eldhi = hd_max(cp9b, v, eljpv) - elsd; if (eldhi > jp) eldhi = jp;
+      eldlo = hd_min(cp9b, v, eljpv) - elsd; if (eldlo < 0)  eldlo = 0;
+      if (eldhi < eldlo) continue;
+      if (eldhi > eldmax[j]) eldmax[j] = eldhi;
+    }
+  }
+}
+
 /* Function: outside_hb()
  *           EPN 2026 [brief 26_0610-007]
  *
@@ -5251,9 +5507,11 @@ inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 static void
 outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	   int do_full, float ***beta, float ****ret_beta,
-	   struct deckpool_s *dpool, struct deckpool_s **ret_dpool, CP9Bands_t *cp9b)
+	   struct deckpool_s *dpool, struct deckpool_s **ret_dpool, CP9Bands_t *cp9b,
+	   int **ret_eldmax)
 {
   int      status;
+  int     *eldmax = NULL;       /* brief 26_0430-227: per-row upper d-edge of the banded EL deck */
   int      v,y;			/* indices for states */
   int      j,d,i;		/* indices in sequence dimensions */
   float    sc;			/* a temporary variable holding a score */
@@ -5295,13 +5553,19 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   }
   { int dpr; if (hb_inband(cp9b, vroot, j0, W, i0, j0, &dpr)) beta[vroot][j0][dpr] = 0; }
 
-  /* Initialize the EL deck at M, if local ends. */
+  /* Initialize the EL deck at M, if local ends.  brief 26_0430-227: allocate it
+   * BANDED on the upper d-edge (eldmax[j]) instead of as a full O(W^2) triangle,
+   * and never pool it (a band-dependent size is incompatible with the shared
+   * deckpool's uniform-size reuse).  Only the banded (d=0..eldmax[j]) cells are
+   * IMPOSSIBLE-inited; cells above eldmax[j] are provably never written/read. */
   if (cm->flags & CMH_LOCAL_END) {
-    if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    outside_hb_el_dmax(cm, L, vroot, vend, i0, j0, cp9b, eldmax);
+    beta[cm->M] = alloc_el_banded_vjd_deck(L, i0, j0, eldmax);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
-      for (d = 0; d <= jp; d++) beta[cm->M][j][d] = IMPOSSIBLE;
+      if (eldmax[j] < 0) continue;
+      for (d = 0; d <= eldmax[j]; d++) beta[cm->M][j][d] = IMPOSSIBLE;
     }
     /* vroot -> EL boundary unroll (no band on EL). */
     if (NOT_IMPOSSIBLE(cm->endsc[vroot])) {
@@ -5536,11 +5800,19 @@ outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
     for (v = w1; v <= vend; v++)
       if (beta[v] != NULL) { free_banded_hb_vjd_deck(beta[v], i0, j0, v, cp9b); beta[v] = NULL; }
     if (cm->flags & CMH_LOCAL_END) {
-      free_vjd_deck(beta[cm->M], i0, j0);   /* EL deck is full, unbanded */
+      free_el_banded_vjd_deck(beta[cm->M], i0, j0, eldmax);   /* brief 26_0430-227: banded EL deck */
       beta[cm->M] = NULL;
     }
     free(beta);
+    free(eldmax); eldmax = NULL;   /* deck freed; nothing left for eldmax to describe */
   } else *ret_beta = beta;
+
+  /* brief 26_0430-227: hand the banded EL deck's per-row d-band edges to the
+   * caller (it owns the deck when ret_beta!=NULL, and needs eldmax to clamp its
+   * beta[cm->M] reads and to free the deck).  If the caller took the deck but
+   * doesn't want eldmax, or there is no EL deck, free/pass NULL as appropriate. */
+  if (ret_eldmax != NULL) *ret_eldmax = eldmax;
+  else                    free(eldmax);
 
   /* The deckpool holds no banded decks (we never pool them); just dispose of it. */
   if (ret_dpool == NULL) deckpool_free(dpool);
@@ -7279,6 +7551,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
+  int     *eldmaxJ = NULL, *eldmaxL = NULL, *eldmaxR = NULL;  /* brief 26_0430-227: banded EL d-band edges (J/L/R) */
 
   W = j0-i0+1;
   if (dpool == NULL) dpool = deckpool_create();
@@ -7335,24 +7608,33 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   }
 
   if (cm->flags & CMH_LOCAL_END) {
-    if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    /* brief 26_0430-227: allocate the three EL decks (J/L/R) BANDED on the upper
+     * d-edge (eldmax*[j]) instead of full O(W^2) triangles, and never pool them
+     * (band-dependent size is incompatible with the shared deckpool).  Only the
+     * banded (d=0..eldmax*[j]) cells are IMPOSSIBLE-inited.  The three eldmax
+     * arrays are recomputed (deterministically) by the splitter readers below. */
+    ESL_ALLOC(eldmaxJ, sizeof(int) * (L+1));
+    tr_outside_hb_el_dmax(cm, L, vroot, vend, i0, j0, 0, cp9b, eldmaxJ);
+    beta[cm->M] = alloc_el_banded_vjd_deck(L, i0, j0, eldmaxJ);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
-      for (d = 0; d <= jp; d++) beta[cm->M][j][d] = IMPOSSIBLE;
+      if (eldmaxJ[j] < 0) continue;
+      for (d = 0; d <= eldmaxJ[j]; d++) beta[cm->M][j][d] = IMPOSSIBLE;
     }
-    /* brief 26_0610-090: marginal L/R local-end (EL) outside decks. Full (non-banded)
-     * vjd decks like the J EL deck, indexed [j][d] directly. Built only when the
-     * corresponding marginal plane is requested (fill_L/fill_R). Closes the brief
-     * 26_0610-049 deferral (marginal Lbeta/Rbeta at deck M never built) that brief
-     * 26_0610-088 root-caused as the truncated-L EL-terminus undershoot. */
+    /* brief 26_0610-090: marginal L/R local-end (EL) outside decks, now banded
+     * (brief 26_0430-227).  Built only when the corresponding marginal plane is
+     * requested (fill_L/fill_R). */
     if (fill_L) {
-      betaL[cm->M] = alloc_vjd_deck(L, i0, j0);
-      for (jp = 0; jp <= W; jp++) { j = i0-1+jp; for (d = 0; d <= jp; d++) betaL[cm->M][j][d] = IMPOSSIBLE; }
+      ESL_ALLOC(eldmaxL, sizeof(int) * (L+1));
+      tr_outside_hb_el_dmax(cm, L, vroot, vend, i0, j0, 1, cp9b, eldmaxL);
+      betaL[cm->M] = alloc_el_banded_vjd_deck(L, i0, j0, eldmaxL);
+      for (jp = 0; jp <= W; jp++) { j = i0-1+jp; if (eldmaxL[j] < 0) continue; for (d = 0; d <= eldmaxL[j]; d++) betaL[cm->M][j][d] = IMPOSSIBLE; }
     }
     if (fill_R) {
-      betaR[cm->M] = alloc_vjd_deck(L, i0, j0);
-      for (jp = 0; jp <= W; jp++) { j = i0-1+jp; for (d = 0; d <= jp; d++) betaR[cm->M][j][d] = IMPOSSIBLE; }
+      ESL_ALLOC(eldmaxR, sizeof(int) * (L+1));
+      tr_outside_hb_el_dmax(cm, L, vroot, vend, i0, j0, 2, cp9b, eldmaxR);
+      betaR[cm->M] = alloc_el_banded_vjd_deck(L, i0, j0, eldmaxR);
+      for (jp = 0; jp <= W; jp++) { j = i0-1+jp; if (eldmaxR[j] < 0) continue; for (d = 0; d <= eldmaxR[j]; d++) betaR[cm->M][j][d] = IMPOSSIBLE; }
     }
     if (vroot != 0 && NOT_IMPOSSIBLE(cm->endsc[vroot])) {
       switch (cm->sttype[vroot]) {
@@ -7915,32 +8197,33 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
     for (v = w1; v <= vend; v++)
       if (beta[v] != NULL) { free_banded_hb_vjd_deck(beta[v], i0, j0, v, cp9b); beta[v] = NULL; }
     if (cm->flags & CMH_LOCAL_END) {
-      free_vjd_deck(beta[cm->M], i0, j0);
+      free_el_banded_vjd_deck(beta[cm->M], i0, j0, eldmaxJ);   /* brief 26_0430-227: banded EL deck */
       beta[cm->M] = NULL;
     }
     free(beta);
   } else *ret_beta = beta;
 
   /* L/R marginal 2-D banded decks (brief 26_0610-049): return them (splitter reads them,
-   * and frees via free_banded_hb_vjd_matrix which handles the full deck M) or free
-   * everything here. brief 26_0610-090: deck M (EL) is now allocated for L/R too (full
-   * vjd deck), so the internal-free path must also free betaL[cm->M]/betaR[cm->M]. */
+   * and frees via free_banded_hb_vjd_matrix which handles the deck M) or free
+   * everything here. brief 26_0610-090: deck M (EL) is now allocated for L/R too;
+   * brief 26_0430-227: banded (free with free_el_banded_vjd_deck). */
   if (fill_L) {
     if (ret_betaL != NULL) *ret_betaL = betaL;
     else { for (v = w1; v <= vend; v++) if (betaL[v] != NULL) { free_banded_hb_vjd_deck(betaL[v], i0, j0, v, cp9b); betaL[v] = NULL; }
-           if ((cm->flags & CMH_LOCAL_END) && betaL[cm->M] != NULL) { free_vjd_deck(betaL[cm->M], i0, j0); betaL[cm->M] = NULL; }
+           if ((cm->flags & CMH_LOCAL_END) && betaL[cm->M] != NULL) { free_el_banded_vjd_deck(betaL[cm->M], i0, j0, eldmaxL); betaL[cm->M] = NULL; }
            free(betaL); }
   }
   if (fill_R) {
     if (ret_betaR != NULL) *ret_betaR = betaR;
     else { for (v = w1; v <= vend; v++) if (betaR[v] != NULL) { free_banded_hb_vjd_deck(betaR[v], i0, j0, v, cp9b); betaR[v] = NULL; }
-           if ((cm->flags & CMH_LOCAL_END) && betaR[cm->M] != NULL) { free_vjd_deck(betaR[cm->M], i0, j0); betaR[cm->M] = NULL; }
+           if ((cm->flags & CMH_LOCAL_END) && betaR[cm->M] != NULL) { free_el_banded_vjd_deck(betaR[cm->M], i0, j0, eldmaxR); betaR[cm->M] = NULL; }
            free(betaR); }
   }
 
   if (ret_dpool == NULL) deckpool_free(dpool);
   else                   *ret_dpool = dpool;
   free(touch);
+  free(eldmaxJ); free(eldmaxL); free(eldmaxR);   /* brief 26_0430-227: NULL-safe */
   if (ret_bsc   != NULL) *ret_bsc   = b_sc;
   if (ret_bv    != NULL) *ret_bv    = b_v;
   if (ret_bj    != NULL) *ret_bj    = b_j;
@@ -9088,6 +9371,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   int  *jmax  = cp9b->jmax;
   int **hdmin = cp9b->hdmin;
   int **hdmax = cp9b->hdmax;
+  int  *eldmaxJ = NULL, *eldmaxL = NULL, *eldmaxR = NULL;  /* brief 26_0430-227: banded EL d-band edges (recomputed) */
 
   if (cm->ndidx[z] == cm->ndidx[r] + 1 ||
       insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
@@ -9108,6 +9392,17 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
   tr_outside_hb(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT, fill_L, fill_R,
 		NULL, &beta, NULL, &betaL, NULL, &betaR, NULL, NULL,
 		&boutsc, &boutv, &boutj, &boutmode, cp9b);
+
+  /* brief 26_0430-227: recompute the banded EL decks' per-row d-band edges (same
+   * vroot=r/vend=y that tr_outside_hb used) to clamp the EL-terminus reads below
+   * and free the banded decks; the helper is deterministic so this matches the
+   * writer's allocation exactly. */
+  if (cm->flags & CMH_LOCAL_END) {
+    if ((eldmaxJ = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("brief 26_0430-227: eldmaxJ OOM");
+    tr_outside_hb_el_dmax(cm, L, r, y, i0, j0, 0, cp9b, eldmaxJ);
+    if (fill_L) { if ((eldmaxL = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxL OOM"); tr_outside_hb_el_dmax(cm, L, r, y, i0, j0, 1, cp9b, eldmaxL); }
+    if (fill_R) { if ((eldmaxR = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxR OOM"); tr_outside_hb_el_dmax(cm, L, r, y, i0, j0, 2, cp9b, eldmaxR); }
+  }
 
   /* best inside begin (child local hit), across J/L/R */
   binsc = binJsc; binv = binJ; binmode = TRMODE_J;
@@ -9156,10 +9451,16 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
     /* J EL terminus, NOT gated on r_allow_J (brief 26_0610-096 -- the mirror of the
      * tr_generic_splitter_hb note: a J EL terminus is a legal winner in any mode; the
      * sample13 fix lives in tr_vinside_hb's D/S marginal-EL reconstruction, not a gate). */
+    /* brief 26_0430-227: EL decks are banded (row j: d=0..eldmax*[j], NULL rows
+     * where eldmax*[j]<0); clamp the read to eldmax*[j] (cells above were
+     * IMPOSSIBLE, so best_sc is byte-identical). */
     for (jp = 0; jp <= W; jp++)
       {
+	int dhi;
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++)
+	if (eldmaxJ[j] < 0) continue;
+	dhi = ESL_MIN(jp, eldmaxJ[j]);
+	for (d = 0; d <= dhi; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_J; c_mode = TRMODE_T;
 	  }
@@ -9171,8 +9472,11 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
     if (fill_L)
       for (jp = 0; jp <= W; jp++)
 	{
+	  int dhi;
 	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	  if (eldmaxL[j] < 0) continue;
+	  dhi = ESL_MIN(jp, eldmaxL[j]);
+	  for (d = 0; d <= dhi; d++)
 	    if ((sc = betaL[cm->M][j][d]) > best_sc) {
 	      best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_L; c_mode = TRMODE_T;
 	    }
@@ -9180,8 +9484,11 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
     if (fill_R)
       for (jp = 0; jp <= W; jp++)
 	{
+	  int dhi;
 	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	  if (eldmaxR[j] < 0) continue;
+	  dhi = ESL_MIN(jp, eldmaxR[j]);
+	  for (d = 0; d <= dhi; d++)
 	    if ((sc = betaR[cm->M][j][d]) > best_sc) {
 	      best_sc = sc; best_v = -1; best_j = j; best_d = d; p_mode = TRMODE_R; c_mode = TRMODE_T;
 	    }
@@ -9198,10 +9505,20 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
    * (else the wedge below emits spurious all-delete-to-end nodes -- brief 26_0610-050). */
   if (boutsc >= best_sc) { best_sc = boutsc; best_v = -3; best_j = boutj; best_d = 1; p_mode = boutmode; c_mode = TRMODE_T; }
 
+  /* brief 26_0430-227: free the three banded EL decks explicitly (eldmax-driven
+   * width + correct cyk_dnc accounting) before the generic matrix free, then the
+   * rest.  betaL/betaR here are fresh arrays (tr_outside_hb got NULL inputs), so
+   * unlike outside_hb's generic caller there is no alpha aliasing to avoid. */
+  if (cm->flags & CMH_LOCAL_END) {
+    if (beta[cm->M]  != NULL) { free_el_banded_vjd_deck(beta[cm->M],  i0, j0, eldmaxJ); beta[cm->M]  = NULL; }
+    if (fill_L && betaL[cm->M] != NULL) { free_el_banded_vjd_deck(betaL[cm->M], i0, j0, eldmaxL); betaL[cm->M] = NULL; }
+    if (fill_R && betaR[cm->M] != NULL) { free_el_banded_vjd_deck(betaR[cm->M], i0, j0, eldmaxR); betaR[cm->M] = NULL; }
+  }
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
   free_banded_hb_vjd_matrix(beta,  cm, i0, j0, cp9b);
   if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaL, cm, i0, j0, cp9b); }
   if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaR, cm, i0, j0, cp9b); }
+  free(eldmaxJ); free(eldmaxL); free(eldmaxR);
 
   /* TRUNCATED infeasibility guard: nothing in-band beat IMPOSSIBLE. */
   if (best_v == -99) return best_sc;
@@ -9282,6 +9599,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
+  int     *eldmaxJ = NULL, *eldmaxL = NULL, *eldmaxR = NULL;  /* brief 26_0430-227: banded EL d-band edges (recomputed) */
 
   if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
     sc = tr_insideT_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), r_allow_J, r_allow_L, r_allow_R, r_allow_T, cp9b);
@@ -9317,6 +9635,16 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   tr_outside_hb(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, fill_L, fill_R,
 		alpha, &beta, NULL, &betaL, NULL, &betaR, NULL, NULL,
 		&b3_sc, &b3_v, &b3_j, &b3_mode, cp9b);
+
+  /* brief 26_0430-227: recompute the banded EL decks' per-row d-band edges (same
+   * vroot=r/vend=v tr_outside_hb used) to clamp the EL-terminus reads and free the
+   * banded decks; deterministic helper, so it matches the writer's allocation. */
+  if (cm->flags & CMH_LOCAL_END) {
+    if ((eldmaxJ = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("brief 26_0430-227: eldmaxJ OOM");
+    tr_outside_hb_el_dmax(cm, L, r, v, i0, j0, 0, cp9b, eldmaxJ);
+    if (fill_L) { if ((eldmaxL = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxL OOM"); tr_outside_hb_el_dmax(cm, L, r, v, i0, j0, 1, cp9b, eldmaxL); }
+    if (fill_R) { if ((eldmaxR = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxR OOM"); tr_outside_hb_el_dmax(cm, L, r, v, i0, j0, 2, cp9b, eldmaxR); }
+  }
 
   /* best inside begin per child subtree (across J/L/R/T). A T begin targets a
    * deeper bifurcation inside the subtree (brief 26_0610-051); it competes with J/L/R. */
@@ -9435,10 +9763,14 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
      * fix is the D/S marginal-EL reconstruction in tr_vinside_hb (see there): the R-mode
      * traceback terminates at the BEGL_S->EL leaf regardless of which (tied) EL candidate
      * won here, so no gate is needed and none is correct. */
+    /* brief 26_0430-227: EL decks banded; clamp reads to eldmax*[j] (byte-identical). */
     for (jp = 0; jp <= W; jp++)
       {
+	int dhi;
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++)
+	if (eldmaxJ[j] < 0) continue;
+	dhi = ESL_MIN(jp, eldmaxJ[j]);
+	for (d = 0; d <= dhi; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc; best_k = -1; best_j = j; best_d = d;
 	    v_mode = TRMODE_J; w_mode = TRMODE_T; y_mode = TRMODE_T;
@@ -9452,8 +9784,11 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (r_allow_L)
       for (jp = 0; jp <= W; jp++)
 	{
+	  int dhi;
 	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	  if (eldmaxL[j] < 0) continue;
+	  dhi = ESL_MIN(jp, eldmaxL[j]);
+	  for (d = 0; d <= dhi; d++)
 	    if ((sc = betaL[cm->M][j][d]) > best_sc) {
 	      best_sc = sc; best_k = -1; best_j = j; best_d = d;
 	      v_mode = TRMODE_L; w_mode = TRMODE_T; y_mode = TRMODE_T;
@@ -9462,8 +9797,11 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     if (r_allow_R)
       for (jp = 0; jp <= W; jp++)
 	{
+	  int dhi;
 	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++)
+	  if (eldmaxR[j] < 0) continue;
+	  dhi = ESL_MIN(jp, eldmaxR[j]);
+	  for (d = 0; d <= dhi; d++)
 	    if ((sc = betaR[cm->M][j][d]) > best_sc) {
 	      best_sc = sc; best_k = -1; best_j = j; best_d = d;
 	      v_mode = TRMODE_R; w_mode = TRMODE_T; y_mode = TRMODE_T;
@@ -9479,9 +9817,21 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * the parent r..v region marginally and never reaches the bifurcation. */
   if (b3_sc > best_sc) { best_sc = b3_sc; best_k = -4; best_j = b3_j; v_mode = b3_mode; }
 
+  /* brief 26_0430-227: free the banded EL decks explicitly (eldmax-driven width +
+   * correct cyk_dnc accounting).  beta IS alpha here (tr_outside_hb reused the
+   * inside alpha array in place, cf. the J-feed call above), so the J EL deck
+   * lives in the shared alpha[cm->M]==beta[cm->M] slot -- free it there, NULL the
+   * slot, and never free beta separately (that would double-free alpha).
+   * betaL/betaR are fresh arrays (NULL inputs), freed normally. */
+  if (cm->flags & CMH_LOCAL_END) {
+    if (beta[cm->M] != NULL) { free_el_banded_vjd_deck(beta[cm->M], i0, j0, eldmaxJ); beta[cm->M] = NULL; }  /* == alpha[cm->M] */
+    if (fill_L && betaL[cm->M] != NULL) { free_el_banded_vjd_deck(betaL[cm->M], i0, j0, eldmaxL); betaL[cm->M] = NULL; }
+    if (fill_R && betaR[cm->M] != NULL) { free_el_banded_vjd_deck(betaR[cm->M], i0, j0, eldmaxR); betaR[cm->M] = NULL; }
+  }
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
   if (fill_L) { free_banded_hb_vjd_matrix(Lalpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaL, cm, i0, j0, cp9b); }
   if (fill_R) { free_banded_hb_vjd_matrix(Ralpha, cm, i0, j0, cp9b); free_banded_hb_vjd_matrix(betaR, cm, i0, j0, cp9b); }
+  free(eldmaxJ); free(eldmaxL); free(eldmaxR);
 
   /* TRUNCATED infeasibility guard: no in-band split/EL/begin/terminus beat
    * IMPOSSIBLE -> no valid parse under the bands; return cleanly (no garbage recurse). */
@@ -9641,7 +9991,25 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
    * standard split landing on the same marginal-end cell (oracle forces the
    * marginal-end at d<2). T is OFF (R4.4c). Driver-only entry (rung-3/4 not yet in
    * the cmalign dispatch on this branch). */
+  /* brief 26_0430-225: DNC_MEM_VERBOSE ground-truth peak-memory diagnostic,
+   * truncated D&C entry -- same reused CYKDeckTrack + CYKShadowTrack
+   * instrumentation as CYKDivideAndConquerHB() above (that infra already
+   * covers this trunc code path too: tr_inside_hb/tr_outside_hb/
+   * tr_generic_splitter_hb allocate via the same alloc_banded_hb_vjd_deck-
+   * family calls, already instrumented). */
+  int dnc_mem_verbose = (getenv("DNC_MEM_VERBOSE") != NULL) ? TRUE : FALSE;
+  if (dnc_mem_verbose) { CYKDeckTrackReset(); CYKShadowTrackReset(); }
+
   sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, r_allow_T, cp9b);
+
+  if (dnc_mem_verbose) {
+    double peak_mb = CYKDeckTrackMaxMb();
+    double vjd_mb  = CYKDeckTrackVjdAtPeakMb();
+    double vji_mb  = CYKDeckTrackVjiAtPeakMb();
+    double shad_mb = CYKShadowTrackMaxMb();
+    fprintf(stderr, "# TrCYKDivideAndConquerHB (D&C, trunc) engaged: M=%d L=%d mode=%c sc=%.5f  DnC-DP peak=%.2f Mb (vjd=%.2f Mb vji=%.2f Mb)  shadow-peak=%.2f Mb\n",
+            cm->M, L, preset_mode, sc, peak_mb, vjd_mb, vji_mb, shad_mb);
+  }
 
   /* the truncated-begin entry state is the first state attached below ROOT_S */
   b = (tr->n > 1) ? tr->state[1] : 0;
@@ -9650,6 +10018,214 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
   if (ret_mode != NULL) *ret_mode = preset_mode;
   if (ret_tr   != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
+}
+
+/*****************************************************************
+ * Brief 26_0430-225: cm_DnCAlignSizeNeededHB() / cm_TrDnCAlignSizeNeededHB()
+ * -- pre-alignment memory estimators for the HMM-banded divide-and-conquer
+ * engine (CYKDivideAndConquerHB() / TrCYKDivideAndConquerHB()).
+ *
+ * UNLIKE the --ckpt estimators (cm_dpalign.c / cm_dpalign_trunc.c), this is
+ * NOT an exact structural replay: D&C's actual recursion tree shape is
+ * DATA-DEPENDENT.  generic_splitter_hb() (cm_dpsmall.c:4656-4799) picks its
+ * split point (best_j/best_k) by DP SCORE at each bifurcation
+ * (cm_dpsmall.c:4721-4746) -- which residues end up left vs. right of a
+ * given bifurcation, and therefore how big each recursive child's banded
+ * sub-matrix (alpha[w..wend] + alpha[y..yend], restricted to the chosen
+ * i0..j0 subrange) actually is, cannot be known without running the DP.
+ * So this function computes a data-INDEPENDENT UPPER BOUND instead: for
+ * EVERY bifurcation state v in the CM, the byte cost if its two children's
+ * node ranges were each allocated over the FULL sequence range [1,L] (the
+ * real recursion always uses some SUBRANGE of [1,L] for any nested call,
+ * so this is >= the true cost for that bifurcation); take the max over all
+ * bifurcations.  This is the right kind of estimate for an --mxsize gate
+ * (which must not under-promise), but is expected to overestimate,
+ * possibly by a lot, on deeply unbalanced trees -- brief 226's job is to
+ * measure the actual overestimation factor via DNC_MEM_VERBOSE.
+ *
+ * KNOWN GAP (verified, not assumed -- flagged for brief 226): beta[v] (the
+ * bifurcation-state Outside deck, cm_dpsmall.c:4719/4737) is allocated by
+ * outside_hb() and is NEVER FREED anywhere in generic_splitter_hb() (grep-
+ * confirmed: only `alpha` gets a free_banded_hb_vjd_matrix() call, at
+ * cm_dpsmall.c:4769; `beta` has no matching free in the function body).
+ * This means beta[v] decks accumulate, unfreed, across EVERY bifurcation
+ * visited over the WHOLE recursion -- not just the single widest live
+ * sub-problem this estimator bounds.  For a CM with many bifurcations
+ * (e.g. an rRNA model), the true peak measured by DNC_MEM_VERBOSE could
+ * exceed this bound by O(#bifurcations-visited x avg-beta-deck-size),
+ * which is NOT captured below (beta[v] is a single-state deck, individually
+ * small, but the accumulation is unbounded across a long alignment run).
+ * This is an existing property of CYKDivideAndConquerHB()/
+ * generic_splitter_hb() uncovered while writing this estimator, not
+ * something this brief introduces or fixes -- out of scope to fix here,
+ * but the self-check below directly tests whether it matters in practice.
+ *
+ * Also NOT modeled: the class-2 "V-problem" (wedge) contribution
+ * (v_splitter()'s EXACT unbanded triangular decks, tracked separately by
+ * the existing cyk_dnc_vji_bytes counter) -- computing its size requires
+ * modeling insideT_size()'s RAMLIMIT cutoff and the V-problem's own d-range,
+ * which this estimator does not attempt.  DNC_MEM_VERBOSE's vji=... report
+ * captures it in the ground truth; this estimator's vjd-only bound may
+ * therefore UNDERESTIMATE on CMs/sequences where the V-problem dominates.
+ *****************************************************************/
+
+/* sum of nc(v) = per-(v,jp) hd band-width, v in [lo..hi], full L bands
+ * (same per-cell formula cm_hb_mx_SizeNeeded_ex uses, cm_mx.c:1149-1183). */
+static int64_t
+mxest_dnc_range_nc(CP9Bands_t *cp9b, int lo, int hi)
+{
+  int v, jp;
+  int64_t nc = 0;
+  for (v = lo; v <= hi; v++) {
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1; if (njr < 0) njr = 0;
+    for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1; if (w > 0) nc += w; }
+  }
+  return nc;
+}
+
+/* Function: cm_DnCAlignSizeNeededHB()
+ * Incept:   Brief 26_0430-225
+ *
+ * Purpose:  Predict an UPPER BOUND (not an exact prediction -- see the file
+ *           header above) on the peak Mb CYKDivideAndConquerHB() will need
+ *           to align a length-<L> sequence to <cm> under its current
+ *           cm->cp9b bands, without running any alignment.
+ *
+ * Args:     cm, errbuf, L - usual
+ *           ret_vjdmb - RETURN: bound on class-1 (banded vjd alpha+beta) peak Mb
+ *           ret_shmb  - RETURN: bound on shadow-deck (yshadow/kshadow) Mb at that same peak
+ *           ret_totmb - RETURN: ret_vjdmb + ret_shmb
+ *
+ * Returns:  <eslOK> on success; <eslEINCOMPAT> if cm->cp9b is NULL.
+ */
+int
+cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *ret_shmb, float *ret_totmb)
+{
+  int status;
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_DnCAlignSizeNeededHB(): cm->cp9b is NULL");
+  CP9Bands_t *cp9b = cm->cp9b;
+  int v, w, y, wend, yend;
+  int64_t best_vjd_nc = 0, best_sh_bytes = 0;
+  /* brief 26_0430-226: outside_hb()'s EL deck (state cm->M) is allocated
+   * FULL/UNBANDED ("no band on EL") at i0=1,j0=L every time generic_splitter_hb()
+   * or wedge_splitter_hb() runs an outside pass in local mode -- confirmed by
+   * reading outside_hb() (cm_dpsmall.c:5318-5325, alloc_vjd_deck(), not the
+   * banded allocator) and empirically: this single term alone (size_vjd_deck(L,1,L))
+   * matched every genome/medium-scale D&C ground-truth measurement to within
+   * 0.1-9% (tRNA through sarscov2, both bps=0 and bps>0) -- it was the estimator's
+   * ENTIRE prior under-estimate, not the beta[v] leak (real, fixed separately,
+   * but empirically secondary at the scales tested). Not previously modeled at all. */
+  int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  float elmb  = have_el ? size_vjd_deck(L, 1, L) : 0.;
+
+  int has_bif = FALSE;
+  for (v = 0; v < cm->M; v++) {
+    if (cm->sttype[v] != B_st) continue;
+    has_bif = TRUE;
+    w = cm->cfirst[v]; y = cm->cnum[v];
+    if (w < y) { wend = y-1; yend = cm->M-1; } else { yend = w-1; wend = cm->M-1; }
+    /* NOTE: wend/yend above use cm->M-1 as a safe (over-)estimate of each
+     * subtree's true end state (CMSubtreeFindEnd(cm,w)/(cm,y) would be
+     * tighter, but the wider range is still a valid upper bound and avoids
+     * a second full state-array walk per bifurcation). */
+    int64_t nc_w = mxest_dnc_range_nc(cp9b, w, ESL_MIN(wend, CMSubtreeFindEnd(cm, w)));
+    int64_t nc_y = mxest_dnc_range_nc(cp9b, y, ESL_MIN(yend, CMSubtreeFindEnd(cm, y)));
+    int64_t nc_v = mxest_dnc_range_nc(cp9b, v, v); /* beta[v]: single-state deck */
+    int64_t vjd_nc = nc_w + nc_y + nc_v;
+    if (vjd_nc > best_vjd_nc) {
+      best_vjd_nc = vjd_nc;
+      /* shadow cost at this same split: yshadow (char) for every non-B state
+       * in [w..wend]+[y..yend], kshadow (int) for any B states among them
+       * (alloc_banded_hb_vjd_yshadow_deck/kshadow_deck, cm_dpsmall.c:4433-4479) */
+      int64_t sh_bytes = 0, vv;
+      int wend_t = ESL_MIN(wend, CMSubtreeFindEnd(cm, w)), yend_t = ESL_MIN(yend, CMSubtreeFindEnd(cm, y));
+      for (vv = w; vv <= wend_t; vv++) sh_bytes += mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      for (vv = y; vv <= yend_t; vv++) sh_bytes += mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      best_sh_bytes = sh_bytes;
+    }
+  }
+  if (! has_bif) {
+    /* no bifurcations: D&C never splits the node range, so its peak equals
+     * the ordinary full (non-checkpointed) banded matrix -- same formula
+     * cm_hb_mx_SizeNeeded() uses (cm_mx.c:1149-1183). */
+    best_vjd_nc = mxest_dnc_range_nc(cp9b, 0, cm->M-1);
+    best_sh_bytes = mxest_dnc_range_nc(cp9b, 0, cm->M-1) * sizeof(char);
+  }
+
+  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.) + elmb;
+  float shmb  = (float) (best_sh_bytes / 1000000.);
+  if (ret_vjdmb != NULL) *ret_vjdmb = vjdmb;
+  if (ret_shmb  != NULL) *ret_shmb  = shmb;
+  if (ret_totmb != NULL) *ret_totmb = vjdmb + shmb;
+  return eslOK;
+}
+
+/* Function: cm_TrDnCAlignSizeNeededHB()
+ * Incept:   Brief 26_0430-225
+ *
+ * Purpose:  Truncated analogue of cm_DnCAlignSizeNeededHB(), for
+ *           TrCYKDivideAndConquerHB() / tr_generic_splitter_hb().  Same
+ *           upper-bound strategy, J/L/R-tripled per bifurcation child
+ *           exactly as tr_generic_splitter_hb() allocates alpha+Lalpha+
+ *           Ralpha together (cm_dpsmall.c:9305-9312: tr_inside_hb() with
+ *           lr1.ret_planes=TRUE returns all three requested planes at
+ *           once for the SAME [w..wend]/[y..yend] node range).  <preset_mode>
+ *           selects fill_L/fill_R exactly as cm_TrFillFromMode() does.
+ *
+ * Args:     cm, errbuf, L, preset_mode - usual (preset_mode: TRMODE_J/L/R/T)
+ *           ret_vjdmb, ret_shmb, ret_totmb - as cm_DnCAlignSizeNeededHB()
+ *
+ * Returns:  <eslOK> on success; <eslEINCOMPAT>/other on bad preset_mode or NULL cp9b.
+ */
+int
+cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float *ret_vjdmb, float *ret_shmb, float *ret_totmb)
+{
+  int status;
+  int fill_L, fill_R, fill_T;
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrDnCAlignSizeNeededHB(): cm->cp9b is NULL");
+  if ((status = cm_TrFillFromMode(preset_mode, &fill_L, &fill_R, &fill_T)) != eslOK)
+    ESL_FAIL(status, errbuf, "cm_TrDnCAlignSizeNeededHB(): bad preset_mode");
+  CP9Bands_t *cp9b = cm->cp9b;
+  int planes = 1 + (fill_L?1:0) + (fill_R?1:0); /* J always; L/R per mode -- cm_dpsmall.c:9264 */
+  int v, w, y, wend, yend;
+  int64_t best_vjd_nc = 0, best_sh_bytes = 0;
+  /* brief 26_0430-226: tr_outside_hb() allocates one full/unbanded EL deck
+   * PER active plane (J always, L/R per fill_L/fill_R -- cm_dpsmall.c:7364-7383,
+   * confirmed by reading), all concurrently live. Same previously-unmodeled
+   * gap as the non-trunc D&C estimator; see cm_DnCAlignSizeNeededHB()'s comment. */
+  int have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  float elmb  = have_el ? (float)planes * size_vjd_deck(L, 1, L) : 0.;
+
+  int has_bif = FALSE;
+  for (v = 0; v < cm->M; v++) {
+    if (cm->sttype[v] != B_st) continue;
+    has_bif = TRUE;
+    w = cm->cfirst[v]; y = cm->cnum[v];
+    if (w < y) { wend = y-1; yend = cm->M-1; } else { yend = w-1; wend = cm->M-1; }
+    int wend_t = ESL_MIN(wend, CMSubtreeFindEnd(cm, w)), yend_t = ESL_MIN(yend, CMSubtreeFindEnd(cm, y));
+    int64_t nc_w = mxest_dnc_range_nc(cp9b, w, wend_t);
+    int64_t nc_y = mxest_dnc_range_nc(cp9b, y, yend_t);
+    int64_t nc_v = mxest_dnc_range_nc(cp9b, v, v);
+    int64_t vjd_nc = (int64_t)planes * (nc_w + nc_y) + nc_v; /* beta[v] (J-only 1-D outside) not tripled */
+    if (vjd_nc > best_vjd_nc) {
+      best_vjd_nc = vjd_nc;
+      int64_t sh_bytes = 0, vv;
+      for (vv = w; vv <= wend_t; vv++) sh_bytes += (int64_t)planes * mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      for (vv = y; vv <= yend_t; vv++) sh_bytes += (int64_t)planes * mxest_dnc_range_nc(cp9b, vv, vv) * (cm->sttype[vv] == B_st ? sizeof(int) : sizeof(char));
+      best_sh_bytes = sh_bytes;
+    }
+  }
+  if (! has_bif) {
+    best_vjd_nc = (int64_t)planes * mxest_dnc_range_nc(cp9b, 0, cm->M-1);
+    best_sh_bytes = (int64_t)planes * mxest_dnc_range_nc(cp9b, 0, cm->M-1) * sizeof(char);
+  }
+
+  float vjdmb = (float) (best_vjd_nc * sizeof(float) / 1000000.) + elmb;
+  float shmb  = (float) (best_sh_bytes / 1000000.);
+  if (ret_vjdmb != NULL) *ret_vjdmb = vjdmb;
+  if (ret_shmb  != NULL) *ret_shmb  = shmb;
+  if (ret_totmb != NULL) *ret_totmb = vjdmb + shmb;
+  return eslOK;
 }
 
 /* Function: vsplitter_b()
