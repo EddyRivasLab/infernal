@@ -1631,7 +1631,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		   * TRUE: cm_BandsFromCYKParsetree clobbers marginal validity to J-only in
 		   * do_trunc mode; save/restore keeps the resolved r4_mode valid (see helper
 		   * doc). Only spatial i/j/hd bands tighten. */
-		  if(getenv("CKPT_CYKBANDS") != NULL) {
+		  /* brief 26_0430-271 item 2: --ckpt-cykbands promotes this env-only diagnostic
+		   * to a real CLI flag; the env var is still honored as a sweep override. */
+		  if((getenv("CKPT_CYKBANDS") != NULL) || (cm->align_opts & CM_ALIGN_CKPT_CYKBANDS)) {
 		    double _oc = 0., _tc = 0.;
 		    if(ckpt_cykbands_tighten(cm, errbuf, tr_best, (int) sq->L, pass_idx,
 					     TRUE/*preserve_valid*/, &_oc, &_tc) == eslOK &&
@@ -1745,7 +1747,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      /* brief 26_0430-234: opt-in CKPT_CYKBANDS -- tighten pass-2 bands from
 	       * this same (non-truncated) pass-1 CYK tree before freeing it. No
 	       * valid-flag save/restore needed (rung-3 is non-truncated). */
-	      if(getenv("CKPT_CYKBANDS") != NULL) {
+	      /* brief 26_0430-271 item 2: --ckpt-cykbands promotes this env-only diagnostic
+	       * to a real CLI flag; the env var is still honored as a sweep override. */
+	      if((getenv("CKPT_CYKBANDS") != NULL) || (cm->align_opts & CM_ALIGN_CKPT_CYKBANDS)) {
 		double _oc = 0., _tc = 0.;
 		if(ckpt_cykbands_tighten(cm, errbuf, tr_cyk, (int) sq->L, pass_idx,
 					 FALSE/*preserve_valid*/, &_oc, &_tc) == eslOK &&

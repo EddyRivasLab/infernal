@@ -3032,6 +3032,17 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
   if(ret_nbump != NULL) *ret_nbump = 0;
   if(hbmx_Mb < size_limit) { if(ret_Mb != NULL) *ret_Mb = hbmx_Mb; return eslOK; }
 
+  /* brief 26_0430-271 item 1: --mxesc-fixedtau (CM_ALIGN_MXESC_FIXEDTAU) skips the
+   * ratchet grid below entirely -- step 0's (current tau/thresh) bands are already
+   * populated in cp9b, so the caller (cp9_IterateSeq2BandsP7B, via DispatchSqAlignment)
+   * keeps valid-but-wide bands and lets mxesc per-seq engine escalation (tier b/c)
+   * carry the memory instead of band-tightening. Byte-identical to the pre-271
+   * ratchet when the flag is unset (the default). */
+  if(cm->align_opts & CM_ALIGN_MXESC_FIXEDTAU) {
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    return eslERANGE;
+  }
+
   /* ---- Build the remaining ratchet grid (steps 1..NS), mirroring the bump
    * logic in cp9_IterateSeq2BandsP7B exactly (tau*=2 cap maxtau; thresh1 +=
    * DELTA cap MAX; thresh2 -= DELTA floor MIN; for do_trunc all three move). ---- */
