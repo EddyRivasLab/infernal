@@ -1445,7 +1445,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  /* brief 26_0430-269: --mxsize engine auto-escalation. Bands (cm->cp9b) are now
 	   * derived (possibly maxtau-wide). Pick the cheapest engine whose estimated CM-DP
 	   * peak fits --mxsize, per-sequence: (a) standard free-OptAcc, (b) checkpointed
-	   * sqrt(M) pinned-OptAcc, (c) checkpointed CYK floor. The comparison quantity is the CM DP
+	   * sqrt(M) pinned-OptAcc, (c) HMM-banded D&C-CYK floor. The comparison quantity is the CM DP
 	   * matrices only (excludes the CP9 F/B), matching stock --mxsize semantics
 	   * (cm_AlignSizeNeededHB:587 compares cmtotmb, not totmb). Estimators are
 	   * safe-overestimates (briefs 225/226), so a "fits" verdict never under-provisions. */
@@ -1457,6 +1457,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	                       ? (cm_CheckptTrAlignHB_Qualifies(cm) || cm_CheckptTrOptAccAlignHB_Qualifies(cm))
 	                       : (cm_CheckptAlignHB_Qualifies(cm)   || cm_CheckptOptAccAlignHB_Qualifies(cm));
 	    float ck_dp = 0., ck_em = 0., ck_cp9 = 0., ck_tot = 0., ck_cmmb = 0.;
+	    float dnc_vjd = 0., dnc_sh = 0., dnc_tot = 0.;
 
 	    /* tier (a): standard free-OptAcc. The estimator's own cmtotmb-vs-mxsize test
 	     * (returns eslERANGE if over) is exactly the gate cm_AlignHB()/cm_TrAlignHB()
@@ -1480,46 +1481,58 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      ck_cmmb = ck_dp + ck_em;
 	      if(ckpt_avail && ck_cmmb <= mxsize) { mxesc_tier = 'b'; eff_checkpt = TRUE; mb_tot = ck_cmmb; }
 	      else {
-	        /* tier (c): checkpointed CYK floor. cm_CheckptCYKAlignHB / cm_CheckptTrCYKAlignHB
-	         * run the sqrt(M) CYK pass ONLY (no Outside, no emit_mx), so their CM-DP budget
-	         * is ck_dp alone -- genuinely below tier (b)'s ck_dp+ck_em, and reachable exactly
-	         * when the emit_mx/Outside is what overflowed tier (b). (The D&C estimator is a
-	         * deliberate loose upper bound, brief 225, that runs LARGER than ck_cmmb, so a
-	         * D&C-gated floor is never reachable below tier (b) -- ckpt-CYK is the real one.)
-	         * ck_dp = max(cyk,post,oa) peaks, a safe over-estimate of the CYK-only peak. */
-	        mxesc_tier = 'c'; eff_checkpt = FALSE; mb_tot = ck_dp;
+	        /* tier (c): D&C-CYK floor (CYK parse, no PP). Real HMM-banded D&C peak is small
+	         * post-brief-227 (banded EL deck), and brief 228's banded-EL estimator (cherry-
+	         * picked onto this base) tracks it tightly at genome scale -- where tier (c)
+	         * actually fires (tier b handles everything smaller). cm_[Tr]DnCAlignSizeNeededHB
+	         * is a safe over-estimate; the truncated estimate uses est_trmode (max planes) as
+	         * a conservative upper bound over the per-mode D&C runs the engine will do.
+	         * CYKDivideAndConquerHB / TrCYKDivideAndConquerHB handle every CM type (bifurcated
+	         * or bps=0), so no bifurcation gate is needed. */
+	        if(do_trunc) status = cm_TrDnCAlignSizeNeededHB(cm, errbuf, sq->L, est_trmode, &dnc_vjd, &dnc_sh, &dnc_tot);
+	        else         status = cm_DnCAlignSizeNeededHB  (cm, errbuf, sq->L, &dnc_vjd, &dnc_sh, &dnc_tot);
+	        if(status != eslOK) goto ERROR;
+	        mxesc_tier = 'c'; eff_checkpt = FALSE; mb_tot = dnc_tot;
 	      }
 	    }
-	    fprintf(stderr, "#MXESC seq=%s L=%d M=%d trunc=%d tier=%c est_std=%.1f est_ckpt=%.1f est_cyk=%.1f mxsize=%.1f ckpt_avail=%d\n",
+	    fprintf(stderr, "#MXESC seq=%s L=%d M=%d trunc=%d tier=%c est_std=%.1f est_ckpt=%.1f est_dnc=%.1f mxsize=%.1f ckpt_avail=%d\n",
 	            sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : cm->clen), do_trunc, mxesc_tier,
-	            est_std_cm, ck_cmmb, ck_dp, (float)mxsize, ckpt_avail);
+	            est_std_cm, ck_cmmb, dnc_tot, (float)mxsize, ckpt_avail);
 
 	    if(mxesc_tier == 'c') {
-	      /* The ckpt-CYK engines resolve B_st pins, so they need bifurcation structure.
-	       * A bps=0 chain or structured-no-bif CM has no CYK floor below ckpt-OptAcc
-	       * (ck_dp already reflects its single OA/Post peak), so fail cleanly there. */
-	      int has_bif269 = (CMCountStatetype(cm, B_st) > 0);
-	      if((! has_bif269) || ck_dp > mxsize) {
+	      /* If even the D&C-CYK floor exceeds --mxsize, no engine fits: fail cleanly. */
+	      if(mb_tot > mxsize) {
 	        ESL_XFAIL(eslERANGE, errbuf,
-	                  "no alignment engine fits --mxsize %.0f Mb for %s (L=%d): free-OptAcc %.0f Mb, ckpt-OptAcc %.0f Mb, ckpt-CYK floor %.0f Mb%s. Raise --mxsize (or use --small).",
-	                  (float)mxsize, sq->name, (int)sq->L, est_std_cm, ck_cmmb, ck_dp,
-	                  has_bif269 ? "" : " (no bifurcation: no CYK floor below ckpt-OptAcc)");
+	                  "no alignment engine fits --mxsize %.0f Mb for %s (L=%d): free-OptAcc %.0f Mb, ckpt-OptAcc %.0f Mb, D&C-CYK floor %.0f Mb. Raise --mxsize (or use --small).",
+	                  (float)mxsize, sq->name, (int)sq->L, est_std_cm, ck_cmmb, dnc_tot);
 	      }
-	      /* Run the checkpointed CYK floor -> CYK parsetree; ppstr stays NULL
+	      /* Run the HMM-banded D&C-CYK floor -> CYK parsetree; ppstr stays NULL
 	       * (Parsetrees2Alignment() tolerates a per-seq NULL PP under global do_post,
-	       * cm_parsetree.c:1055). */
+	       * cm_parsetree.c:1055). Truncated: pick the argmax over root-valid marginal modes
+	       * (the rung-4 D&C pattern); each TrCYKDivideAndConquerHB run is a single-mode D&C
+	       * whose peak is bounded by the est_trmode (all-plane) estimate above. */
 	      if(do_trunc) {
-	        char c_mode = TRMODE_UNKNOWN; float c_cyk = 0.;
-	        status = cm_CheckptTrCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, pass_idx, &tr, &c_mode, &c_cyk);
-	        if(status != eslOK) goto ERROR;
-	        sc = c_cyk; (void) c_mode;
+	        char cand[4]; int ncand = 0, mm269;
+	        Parsetree_t *tr_best = NULL; char c_mode = TRMODE_UNKNOWN; float c_cyk = IMPOSSIBLE;
+	        if(cm->cp9b->Jvalid[0]) cand[ncand++] = TRMODE_J;
+	        if(cm->cp9b->Lvalid[0]) cand[ncand++] = TRMODE_L;
+	        if(cm->cp9b->Rvalid[0]) cand[ncand++] = TRMODE_R;
+	        if(cm->cp9b->Tvalid[0]) cand[ncand++] = TRMODE_T;
+	        for(mm269 = 0; mm269 < ncand; mm269++) {
+	          Parsetree_t *tr_m = NULL; char rm = TRMODE_UNKNOWN;
+	          float sc_m = TrCYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, pass_idx, cand[mm269], &rm, &tr_m, cm->cp9b);
+	          if(sc_m > c_cyk) { c_cyk = sc_m; c_mode = cand[mm269]; if(tr_best) FreeParsetree(tr_best); tr_best = tr_m; }
+	          else if(tr_m) FreeParsetree(tr_m);
+	        }
+	        if(tr_best == NULL) ESL_XFAIL(eslEINCOMPAT, errbuf, "mxesc tier (c): no root-valid truncation mode for %s", sq->name);
+	        tr = tr_best; sc = c_cyk; (void) c_mode;
 	      }
 	      else {
-	        status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr, &sc);
-	        if(status != eslOK) goto ERROR;
+	        /* CYKDivideAndConquerHB() cm_Fail()s internally on error; a returned tr is valid. */
+	        sc = CYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr, cm->cp9b);
 	      }
 	      if(getenv("INFERNAL_CKPT_VERBOSE"))
-	        fprintf(stderr, "# mxesc tier (c) ckpt-CYK floor engaged: M=%d L=%d trunc=%d (%s)\n",
+	        fprintf(stderr, "# mxesc tier (c) D&C-CYK floor engaged: M=%d L=%d trunc=%d (%s)\n",
 	                (cm->fp7 ? cm->fp7->M : cm->clen), (int)sq->L, do_trunc,
 	                (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 	      goto MXESC_ALN_DONE;
