@@ -127,6 +127,7 @@ CreateCMShell(void)
   cm->p7_pinbridge_vit_gaps = FALSE;     /* default: closed-form gap-aware LSIS (set TRUE by --p7pinbridge-vitgaps) */
   cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
+  cm->p7_cykbands_no_dnc = FALSE;        /* default: size-conditional D&C-CYK fallback ON (brief 26_0430-273; set TRUE by --no-cykbands-dnc) */
   cm->p7_cykskip_unvisited = FALSE;      /* default: don't skip unvisited states (set TRUE by --cykskip-unvisited) */
   cm->p7_dump_bands_file = NULL;         /* default: no band dump (set by --dump-bands) */
   cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 26_0628-027) */
@@ -3279,6 +3280,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_pinbridge_vit_gaps = cm->p7_pinbridge_vit_gaps;
   new->p7_use_cykbands  = cm->p7_use_cykbands;
   new->p7_cykbands_pad  = cm->p7_cykbands_pad;
+  new->p7_cykbands_no_dnc = cm->p7_cykbands_no_dnc;
   new->p7_cykskip_unvisited = cm->p7_cykskip_unvisited;
   new->p7_dump_bands_file = cm->p7_dump_bands_file; /* shared pointer; not freed by clone */
   new->p7_use_kmerchain  = cm->p7_use_kmerchain;

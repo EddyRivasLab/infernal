@@ -1921,6 +1921,10 @@ typedef struct cm_s {
   int     p7_pinbridge_vit_gaps; /* if TRUE, use exact mini-Viterbi gap costs in gap-aware LSIS (--p7pinbridge-vitgaps); default FALSE (closed-form) */
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
+  int     p7_cykbands_no_dnc; /* if TRUE, disable the size-conditional D&C-CYK fallback for the standalone
+                                * --cykbands pre-pass (brief 26_0430-273); legacy behavior: pre-pass always
+                                * uses the banded full-matrix CYK engine and silently skips tightening if it
+                                * doesn't fit --mxsize. Default FALSE (fallback ON). (--no-cykbands-dnc) */
   int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 26_0430-068);
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
