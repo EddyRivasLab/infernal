@@ -794,7 +794,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
 int
 p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                         int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                        int **ret_i2k)
+                        int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax)
 {
   int      status;
   P7_HMM  *hmm = NULL;
@@ -804,6 +804,7 @@ p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   float   *emit_pool=NULL; float **emit_table=NULL; float *begin_milli=NULL;
   float   *FM=NULL,*FI=NULL,*FD=NULL,*BM=NULL,*BI=NULL,*BD=NULL;
   int     *i2k=NULL;
+  int     *cl_kmin=NULL, *cl_kmax=NULL;   /* brief 26_0430-248: optional delta-cloud band */
 
   if (cm == NULL || cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband: cm->fp7 is NULL");
   hmm = cm->fp7; M = hmm->M; K = hmm->abc->K;
@@ -938,6 +939,45 @@ p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     }
     i2k[i]=ka;
   }
+
+  /* brief 26_0430-248: emit the delta-CLOUD band [cl_kmin,cl_kmax] per row when
+   * the caller asks for it (ret_kmin/ret_kmax non-NULL).  Semantics match
+   * ibv_through_scan's band: threshold the FULL through-score (incl. delete
+   * cells) at max-delta_milli.  Since every full path traverses every row, the
+   * per-row max == the global optimum, so per-row thresholding == the standard
+   * optimal-delta Viterbi band -- no separate global pass needed.  DELTA-style
+   * bands are connected by construction; the connectivity guard is applied
+   * defensively (it can only widen).  Pin-only callers (ret_kmin==NULL) pay
+   * nothing. */
+  if (ret_kmin != NULL && ret_kmax != NULL) {
+    ESL_ALLOC(cl_kmin, sizeof(int)*(L+1));
+    ESL_ALLOC(cl_kmax, sizeof(int)*(L+1));
+    cl_kmin[0] = 0; cl_kmax[0] = 0;
+    for (i=1;i<=L;i++){
+      int lo=BAND_LO(i), hi=BAND_HI(i);
+      float *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i),*bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
+      float rowmax=P7IBV_NEG_INF;
+      for (k=lo;k<=hi;k++){
+        float tm=fmc[k]+bmc[k], ti=fic[k]+bic[k], td=fdc[k]+bdc[k];
+        float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+        if (t>rowmax) rowmax=t;
+      }
+      float thr=rowmax-(float)delta_milli;
+      int rkmin=-1, rkmax=-1;
+      for (k=lo;k<=hi;k++){
+        float tm=fmc[k]+bmc[k], ti=fic[k]+bic[k], td=fdc[k]+bdc[k];
+        float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+        if (t>=thr && t>=P7IBV_HALF_NEG_INF){ if(rkmin<0)rkmin=k; rkmax=k; }
+      }
+      if (rkmin<0){ cl_kmin[i]=lo; cl_kmax[i]=hi; }  /* empty row -> full bounded width */
+      else        { cl_kmin[i]=rkmin; cl_kmax[i]=rkmax; }
+    }
+    /* pass P7IBV_MODE_FIXED (not DELTA) to force the guard to actually run */
+    ibv_connectivity_guard(L, M, P7IBV_MODE_FIXED, cl_kmin, cl_kmax);
+    *ret_kmin=cl_kmin; cl_kmin=NULL;
+    *ret_kmax=cl_kmax; cl_kmax=NULL;
+  }
+
   *ret_i2k=i2k; i2k=NULL;
   status=eslOK;
 
@@ -956,6 +996,7 @@ p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if (FM) free(FM); if (FI) free(FI); if (FD) free(FD);
   if (BM) free(BM); if (BI) free(BI); if (BD) free(BD);
   if (i2k) free(i2k);
+  if (cl_kmin) free(cl_kmin); if (cl_kmax) free(cl_kmax);
   return status;
 }
 
@@ -1026,7 +1067,7 @@ ibv_compact_row0_fd(int do_trunc, int k, const float *fd0)
 int
 p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                 int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                int **ret_i2k)
+                                int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax)
 {
   int      status;
   P7_HMM  *hmm = NULL;
@@ -1040,6 +1081,8 @@ p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int 
   float   *FMc=NULL, *FIc=NULL, *FDc=NULL;   /* forward ragged arena (all L rows, compact) */
   float   *BM_a=NULL,*BM_b=NULL,*BI_a=NULL,*BI_b=NULL,*BD_a=NULL,*BD_b=NULL; /* backward 2-row rolling */
   int     *i2k=NULL;
+  int     *cl_kmin=NULL, *cl_kmax=NULL;      /* brief 26_0430-248: optional delta-cloud band */
+  int      want_cloud;
   size_t   total_fwd, max_bw;
 
   if (cm == NULL || cm->fp7 == NULL) ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV_extband_compact: cm->fp7 is NULL");
@@ -1176,6 +1219,17 @@ p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int 
   ESL_ALLOC(i2k, sizeof(int) * (L + 1));
   esl_vec_ISet(i2k, L + 1, -1);
 
+  /* brief 26_0430-248: optional delta-cloud band, computed in the backward sweep
+   * below (same semantics as the flat oracle: full through-score threshold at
+   * per-row-max - delta_milli == optimal - delta_milli). */
+  want_cloud = (ret_kmin != NULL && ret_kmax != NULL);
+  if (want_cloud) {
+    ESL_ALLOC(cl_kmin, sizeof(int) * (L + 1));
+    ESL_ALLOC(cl_kmax, sizeof(int) * (L + 1));
+    cl_kmin[0] = 0; cl_kmax[0] = 0;
+    for (i = 1; i <= L; i++) { cl_kmin[i] = rlo[i]; cl_kmax[i] = rhi[i]; }  /* default: full bounded row */
+  }
+
   {
     float *B_M_prev = BM_a, *B_I_prev = BI_a, *B_D_prev = BD_a;
     float *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
@@ -1215,6 +1269,21 @@ p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int 
         if (te >= P7IBV_HALF_NEG_INF && te > best) { best = te; ka = k; }
       }
       i2k[L] = ka;
+      if (want_cloud) {   /* delta-cloud band for row L (full through-score) */
+        float *fdc = FDc + fbase[L];
+        float rowmax = P7IBV_NEG_INF; int rkmin = -1, rkmax = -1;
+        for (k = lo; k <= hi; k++) {
+          float tm=fmc[k-lo]+B_M_prev[k-lo], ti=fic[k-lo]+B_I_prev[k-lo], td=fdc[k-lo]+B_D_prev[k-lo];
+          float t=tm; if(ti>t)t=ti; if(td>t)t=td; if (t>rowmax) rowmax=t;
+        }
+        float thr = rowmax - (float) delta_milli;
+        for (k = lo; k <= hi; k++) {
+          float tm=fmc[k-lo]+B_M_prev[k-lo], ti=fic[k-lo]+B_I_prev[k-lo], td=fdc[k-lo]+B_D_prev[k-lo];
+          float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+          if (t>=thr && t>=P7IBV_HALF_NEG_INF){ if(rkmin<0)rkmin=k; rkmax=k; }
+        }
+        if (rkmin>=0){ cl_kmin[L]=rkmin; cl_kmax[L]=rkmax; }
+      }
     }
 
     for (i = L - 1; i >= 0; i--) {
@@ -1256,6 +1325,21 @@ p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int 
           if (te >= P7IBV_HALF_NEG_INF && te > best) { best = te; ka = k; }
         }
         i2k[i] = ka;
+        if (want_cloud) {   /* delta-cloud band for row i (full through-score, current-row backward) */
+          float *fdc = FDc + fbase[i];
+          float rowmax = P7IBV_NEG_INF; int rkmin = -1, rkmax = -1;
+          for (k = lo; k <= hi; k++) {
+            float tm=fmc[k-lo]+B_M_curr[k-lo], ti=fic[k-lo]+B_I_curr[k-lo], td=fdc[k-lo]+B_D_curr[k-lo];
+            float t=tm; if(ti>t)t=ti; if(td>t)t=td; if (t>rowmax) rowmax=t;
+          }
+          float thr = rowmax - (float) delta_milli;
+          for (k = lo; k <= hi; k++) {
+            float tm=fmc[k-lo]+B_M_curr[k-lo], ti=fic[k-lo]+B_I_curr[k-lo], td=fdc[k-lo]+B_D_curr[k-lo];
+            float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+            if (t>=thr && t>=P7IBV_HALF_NEG_INF){ if(rkmin<0)rkmin=k; rkmax=k; }
+          }
+          if (rkmin>=0){ cl_kmin[i]=rkmin; cl_kmax[i]=rkmax; }
+        }
       }
 
       { float *t; t = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t; }
@@ -1265,6 +1349,12 @@ p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int 
     }
   }
 
+  if (want_cloud) {
+    /* pass P7IBV_MODE_FIXED (not DELTA) to force the guard to actually run */
+    ibv_connectivity_guard(L, M, P7IBV_MODE_FIXED, cl_kmin, cl_kmax);
+    *ret_kmin = cl_kmin; cl_kmin = NULL;
+    *ret_kmax = cl_kmax; cl_kmax = NULL;
+  }
   *ret_i2k = i2k; i2k = NULL;
   status = eslOK;
 
@@ -1272,6 +1362,7 @@ p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int 
   if (MM_t) free(MM_t); if (MI_t) free(MI_t); if (MD_t) free(MD_t);
   if (IM_t) free(IM_t); if (II_t) free(II_t); if (DM_t) free(DM_t); if (DD_t) free(DD_t);
   if (emit_pool) free(emit_pool); if (emit_table) free(emit_table); if (begin_milli) free(begin_milli);
+  if (cl_kmin) free(cl_kmin); if (cl_kmax) free(cl_kmax);
   if (fd0) free(fd0);
   if (rlo) free(rlo); if (rhi) free(rhi); if (fbase) free(fbase);
   if (FMc) free(FMc); if (FIc) free(FIc); if (FDc) free(FDc);

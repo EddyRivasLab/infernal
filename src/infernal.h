@@ -1937,6 +1937,10 @@ typedef struct cm_s {
                                  * fallback to the old p7_Seq2BandsVit (single Viterbi-MAP-trace band) mechanism
                                  * instead of the new default (--p7ibv's D&C deriver) (--p7kmerchain-fbvit);
                                  * default FALSE (use --p7ibv fallback) */
+  int     p7_kmerchain_fallback_ibv; /* brief 26_0430-260: if TRUE, revert the kmerchain chain=NONE fallback to
+                                 * the --p7ibv D&C deriver (the prior shipped default, brief 26_0628-047) instead
+                                 * of native CP9 HMM banding, which is now the default (brief 26_0430-256/260)
+                                 * (--p7kmerchain-fbibv); default FALSE (use native CP9 fallback) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 26_0430-120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
   int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 26_0430-124)  */
@@ -1947,6 +1951,11 @@ typedef struct cm_s {
   int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 26_0430-169) */
   int    *p7_wv_nodepad;       /* [0..M] WV per-node pad (F+B-halfwidth p95), computed align-time; NULL until set */
   int     p7_wv_nodepad_M;     /* length of p7_wv_nodepad (= fp7->M); 0 if not set */
+  int     p215_mode;           /* P215 Viterbi-tighten CLI mode: P215_MODE_{OFF,PIN,CLOUD}; set by
+                                 * --p7vittighten/--p7vitcloud (brief 26_0430-262); default OFF, in which
+                                 * case the P215/P216/P248 env-var family (cm_alndata.c) is read as before */
+  int     p215_tighten_n;      /* pin half-width N when p215_mode==P215_MODE_PIN (--p7vittighten <n>) */
+  int     p215_cloud_delta;    /* cloud delta (milli-bits) when p215_mode==P215_MODE_CLOUD (--p7vitcloud <n>) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -2126,6 +2135,7 @@ typedef struct cm_s {
 #define CM_ALIGN_P7HMMVIT      (1<<24) /* w/P7HMM: Viterbi traces (no OA)          */
 #define CM_ALIGN_P7HMMNOBAND   (1<<25) /* w/P7HMM: unbanded OA (no Vit banding)    */
 #define CM_ALIGN_CHECKPT       (1<<26) /* use checkpointed sqrt(M)-mem HB OptAcc engines (truncated or non-trunc, local or global, bps=0 or bps>0) */
+#define CM_ALIGN_MXESC         (1<<27) /* brief 26_0430-269: --mxsize auto-escalation: pick engine (free-OA/ckpt-OA/CYK-floor) by est. memory vs --mxsize */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
@@ -3015,6 +3025,8 @@ extern int   cm_PinOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L
 extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
 /* brief 26_0610-078 R1: checkpointed, k*-DISCOVERING CYK max-DP (no external kpin); GLOBAL/non-truncated/no-EL/no-local-begin only */
 extern int   cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, Parsetree_t **ret_tr, float *ret_sc);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) peak-memory estimator for the --ckpt engine family */
+extern int   cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, int *cp9_kmin, int *cp9_kmax, float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb);
 extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
 extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -3050,6 +3062,8 @@ extern char  Fscore2postcode(float sc);
 /* from cm_dpalign_trunc.c */
 extern int  cm_TrAlignSizeNeeded    (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
 extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotmb, float *ret_totmb);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) peak-memory estimator for the --ckpt engine family, truncated */
+extern int  cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, int *cp9_kmin, int *cp9_kmax, float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb);
 
 extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -3104,6 +3118,11 @@ extern void  CYKDeckTrackReset(void);   /* brief 26_0610-007: D&C live-deck high
 extern double CYKDeckTrackMaxMb(void);
 extern double CYKDeckTrackVjdAtPeakMb(void); /* brief 26_0610-008: class-1 banded-vjd bytes at peak */
 extern double CYKDeckTrackVjiAtPeakMb(void); /* brief 26_0610-008: class-2 (V-problem) vji bytes at peak */
+extern void   CYKShadowTrackReset(void);   /* brief 26_0610-050: shadow-deck high-water (largest single leaf) */
+extern double CYKShadowTrackMaxMb(void);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) UPPER-BOUND peak-memory estimators for the D&C engine */
+extern int    cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *ret_shmb, float *ret_totmb);
+extern int    cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float *ret_vjdmb, float *ret_shmb, float *ret_totmb);
 extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
@@ -3499,6 +3518,11 @@ extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, 
 #define P7IBV_MODE_DELTA  0
 #define P7IBV_MODE_FIXED  1
 #define P7IBV_MODE_HYBRID 2
+/* Brief 26_0430-262: P215 Viterbi-band-tightening CLI mode (--p7vittighten/--p7vitcloud).
+ * OFF (default) leaves the P215/P216/P248 getenv() family (cm_alndata.c) as the sole control. */
+#define P215_MODE_OFF     0
+#define P215_MODE_PIN     1
+#define P215_MODE_CLOUD   2
 extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
                                     int do_trunc,
                                     int ibv_mode, int ibv_width,
@@ -3517,14 +3541,16 @@ extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, i
 extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                                     int do_trunc,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+/* brief 26_0430-248: optional delta-CLOUD band outputs (ret_kmin/ret_kmax); pass
+ * NULL for those (and delta_milli ignored) to get the original pin-only behavior. */
 extern int          p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                    int **ret_i2k);
+                                    int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 /* brief 26_0430-216: compact O(L*bandwidth) storage version of the above (same semantics,
  * same signature); i2k must match p7_Seq2BandsIBV_extband() byte-for-byte. */
 extern int          p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                    int **ret_i2k);
+                                    int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
                                     double quantile, int delta_milli, int floorpad, int **ret_nodepad);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
