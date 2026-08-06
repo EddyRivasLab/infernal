@@ -1187,6 +1187,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
   int ki, j, x, i;
+  int min_anchor;                   /* brief 26_0628-078: KMC_MIN_ANCHOR or env override */
   /* brief 26_0628-059 (extended 2026-07-11, brief 190 follow-up): optional
    * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
    * chaining DP + backtrack + pin emission, bd = converting the winning
@@ -1256,6 +1257,17 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
    * (diagonal, tlo); an anchor extends while the next interval on the same
    * diagonal overlaps or abuts (tlo <= cur_thi + 1). Keep anchors of length
    * >= KMC_MIN_ANCHOR to drop isolated short (mostly spurious) matches. */
+  /* brief 26_0628-078: optional source-level raise of the anchor-admission
+   * floor (env KMC_ANCHOR_FLOOR, unset => compiled KMC_MIN_ANCHOR=10). Tests
+   * whether requiring a longer exact match to be an anchor AT ALL beats the
+   * per-link KMC_MIN_OPEN floor: it suppresses the same chance-collision
+   * anchors, but unlike the per-link floor it also removes them as
+   * same-diagonal extension pins, which is where 26_0628-029's MPXV band-width
+   * win came from. */
+  {
+    char *afl_env = getenv("KMC_ANCHOR_FLOOR");
+    min_anchor = (afl_env != NULL && atoi(afl_env) > 0) ? atoi(afl_env) : KMC_MIN_ANCHOR;
+  }
   if (nival > 0) {
     qsort(ival, nival, sizeof(kmc_ival_t), kmc_ival_cmp);
     int r = 0;
@@ -1267,7 +1279,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
         s++;
       }
       int len = thi - tlo + 1;
-      if (len >= KMC_MIN_ANCHOR) {
+      if (len >= min_anchor) {
         if (nseed == seedcap) {
           int newcap = seedcap ? seedcap*2 : 4096;
           void *tmp = realloc(seeds, sizeof(kmw_hit_t) * newcap);
@@ -1281,7 +1293,7 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
     }
   }
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
-          L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, KMC_MIN_ANCHOR);
+          L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, min_anchor);
 
   /* brief 26_0628-046: per-query k>=mink zero-hits signal gate (unvalidated, default
    * off -- see kmer_ngate_fires() header comment). Checked right after the raw
@@ -1326,6 +1338,37 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
   int   best_end = 0;
   float best_sc  = -1.0;
   long   nlink    = 0;   /* DP work counter (instrumentation) */
+  /* brief 26_0628-078: soft, env-gated gap-cost knobs on the colinear-chaining
+   * DP link cost below. All no-ops when unset (gapc arithmetic is then
+   * bit-identical to the pre-078 expression).
+   *
+   *   KMC_GAP_OPEN=<x>   affine "cost to open a new diagonal": a constant x
+   *                      charged once per dgap>0 link, so a chance anchor of
+   *                      length k only pays for itself when k > x -- but a
+   *                      short anchor may still open a diagonal when the
+   *                      alternative is far worse, so legitimate excursions
+   *                      (and their pins) are never lost outright. (An affine
+   *                      gap cost; the existing terms are the extension part.)
+   *   KMC_SPAN_LOG=<c>   span-aware term c*log2(max(qgap,rgap)) per dgap>0
+   *                      link -- the gap cost otherwise ignores absolute span
+   *                      entirely, which is what makes two cheap hops beat one
+   *                      real jump (26_0430's peer message, section 2).
+   *   KMC_AVGK_OVERRIDE / KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
+   *                      re-tune the three existing gap-cost constants; the
+   *                      compiled defaults were never tuned for wrong-diagonal
+   *                      suppression (KMC_AVGK=15 no longer "represents" the
+   *                      effective seed length, which is 10 since 26_0628-029). */
+  char  *gopen_env = getenv("KMC_GAP_OPEN");
+  char  *spanl_env = getenv("KMC_SPAN_LOG");
+  char  *avgk_env  = getenv("KMC_AVGK_OVERRIDE");
+  char  *glin_env  = getenv("KMC_GAP_LIN_OVERRIDE");
+  char  *glog_env  = getenv("KMC_GAP_LOG_OVERRIDE");
+  double gap_open  = (gopen_env != NULL) ? atof(gopen_env) : 0.0;
+  double span_log  = (spanl_env != NULL) ? atof(spanl_env) : 0.0;
+  double avgk      = (avgk_env  != NULL) ? atof(avgk_env)  : KMC_AVGK;
+  double glin      = (glin_env  != NULL) ? atof(glin_env)  : KMC_GAP_LIN;
+  double glog      = (glog_env  != NULL) ? atof(glog_env)  : KMC_GAP_LOG;
+  int    span_on   = (spanl_env != NULL && span_log != 0.0);
   for (i = 0; i < nseed; i++) {
     int   ti = seeds[i].t, ji = seeds[i].j, di = ji - ti;
     float fi = (float) seeds[i].k;   /* base weight = chain-start contribution */
@@ -1343,7 +1386,8 @@ p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
       nlink++;
       int   mn    = qgap < rgap ? qgap : rgap;
       int   match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted */
-      float gapc  = (dgap > 0) ? (KMC_GAP_LIN*KMC_AVGK*(double)dgap + KMC_GAP_LOG*log2((double)dgap)) : 0.0;
+      float gapc  = (dgap > 0) ? (gap_open + glin*avgk*(double)dgap + glog*log2((double)dgap)
+                                  + (span_on ? span_log*log2((double)(qgap > rgap ? qgap : rgap)) : 0.0)) : 0.0;
       float sc    = f[jj] + (float) match - gapc;
       if (sc > fi) { fi = sc; pi = jj; }
     }
