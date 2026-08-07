@@ -3132,6 +3132,7 @@ CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm)
                                    lmsvL, lvitL, lfwdL, gfwdL,
                                    lmsvN, lvitN, lfwdN, gfwdN,
                                    lftailp, gftailp, 42, 0,
+                                   newcm->eff_nseq,   /* CM's eff_nseq: a glocal Fwd (tau,lambda) predictor feature; merge-integration fix for the new cm_p7_Calibrate() signature (brief 26_0719-054) */
                                    &fil_gfmu, &fil_gflambda)) != eslOK) { FreeCM(newcm); return status; }
     if ((status = cm_SetFilterHMM(newcm, newcm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) { FreeCM(newcm); ESL_FAIL(status, errbuf, "CP9_2_CM(): unable to set the HMM filter for the CM"); }
   }

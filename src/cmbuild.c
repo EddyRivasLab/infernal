@@ -2819,6 +2819,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 				 gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
 				 esl_opt_GetInteger(go, "--Eseed"),           /* RNG seed for calibration */
 				 ncpus,
+				 cm->eff_nseq,                               /* the CM's eff_nseq -- a glocal Fwd (tau,lambda) feature; NOT fhmm->eff_nseq, see cm_p7_Calibrate() (brief 26_0719-054) */
 				 &agfmu, &agflambda))
        != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
   }
