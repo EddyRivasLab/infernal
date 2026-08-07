@@ -8103,36 +8103,65 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *
  * Purpose:  Estimate the bytes actually allocated by the --hmm do_bandedoa
  *           (Mode 3, Viterbi-banded optimal accuracy) engine for banded
- *           region <bnd>, WITHOUT allocating anything. Two sub-cases:
+ *           region <bnd>, WITHOUT allocating anything. Three sub-cases,
+ *           selected by <ckpt_mode> (brief 26_0628-081 added the third):
  *
- *             do_ckpt=TRUE  (default, INFERNAL_HMM_CKPT_OFF unset):
- *               the sqrt(nrow)-checkpointed engine -- p7b_pp_Create(bnd)'s
+ *             P7B_OAMEM_NOCKPT (0) (INFERNAL_HMM_CKPT_OFF set):
+ *               the non-checkpointed engine -- 2 x p7_gmxb_Create(bnd),
+ *               each a full banded dp (p7G_NSCELLS-wide) + xmx
+ *               (p7G_NXCELLS-wide) allocation.  O(ncell).
+ *
+ *             P7B_OAMEM_CKPT (1) (the usual engine: this is what the
+ *             caller picks whenever its estimate fits in --mxsize, and
+ *             what INFERNAL_HMM_PPCKPT_OFF forces unconditionally):
+ *               the singly-checkpointed engine -- p7b_pp_Create(bnd)'s
  *               resident 2-cell posterior + p7_GCheckptFBDecode_Banded()'s
  *               O(sqrt(nrow)) working set (p7b_forward_seeds()'s <=nblk
  *               seed[].dp row copies, p7b_backdecode()'s blkbuf (B rows)
- *               and bbuf0/bbuf1 (1 row each)). B and nblk mirror
- *               p7b_geo_Create()'s own derivation (B ~ round(sqrt(nrow)),
- *               nblk = ceil(nrow/B)); maxnc (widest row) is scanned from
- *               <bnd> directly since B/nblk/maxnc depend only on bnd, not
- *               on M/L/gm the way the full P7B_GEO struct does.
+ *               and bbuf0/bbuf1 (1 row each)).  Still O(ncell), because
+ *               of the resident posterior.
  *
- *             do_ckpt=FALSE (INFERNAL_HMM_CKPT_OFF set):
- *               the non-checkpointed engine -- 2 x p7_gmxb_Create(bnd),
- *               each a full banded dp (p7G_NSCELLS-wide) + xmx
- *               (p7G_NXCELLS-wide) allocation.
+ *             P7B_OAMEM_CKPTPP (2) (the fallback the caller drops to when
+ *             mode 1 would not fit in --mxsize; INFERNAL_HMM_PPCKPT_ON
+ *             forces it):
+ *               the DOUBLE-checkpointed engine, p7_GCheckptFBDecodeOA_Banded().
+ *               No resident posterior at all: three ~nblk-entry seed
+ *               arrays (Forward, Backward, OA) plus a handful of
+ *               one-block (<=B+2 row) buffers -- the F, B and pp block
+ *               buffers and the OA traceback window.  O(sqrt(nrow)*maxnc)
+ *               in the DP term, plus O(nrow) for the P7B_GEO row tables
+ *               and O(L) for the traceback's row_idx.  NOTE this term is
+ *               independent of bnd->ncell: it is bounded by
+ *               O(sqrt(nrow)*M) no matter how wide the band gets.
  *
- *           Both are O(banded cells), not O(M*L) -- this is the fix for
- *           the --hmm preflight over-estimating do_bandedoa's footprint
- *           with the full-matrix formula meant for --hmmvit/--hmmnoband.
+ *           B and nblk mirror p7b_geo_Create()'s own derivation
+ *           (B ~ round(sqrt(nrow)), nblk = ceil(nrow/B)); maxnc (widest
+ *           row) is scanned from <bnd> directly since B/nblk/maxnc depend
+ *           only on bnd, not on M/L/gm the way the full P7B_GEO struct does.
  *
- * Args:     bnd      - the derived band (bnd->ncell, bnd->nrow, bnd->kmem set)
- *           do_ckpt  - TRUE for the checkpointed engine, FALSE for non-ckpt
- *           ret_bytes- RETURN: estimated peak bytes
+ *           None of the three is O(M*L) -- that was the point of brief
+ *           26_0430-266, fixing the --hmm preflight's over-estimate of
+ *           do_bandedoa with the full-matrix formula meant for
+ *           --hmmvit/--hmmnoband.  Modes 0 and 1 are still O(ncell)
+ *           though, which is what mode 2 removes.
+ *
+ *           Note: the mode 0/1 estimates omit the O(nrow) P7B_GEO row
+ *           tables (dominated by their O(ncell) term); they are left
+ *           exactly as brief 26_0430-266 wrote them so this change
+ *           cannot perturb an existing --mxsize decision.  Mode 2 counts
+ *           them, since with the O(ncell) term gone they are no longer
+ *           negligible.
+ *
+ * Args:     bnd       - the derived band (bnd->ncell, bnd->nrow, bnd->kmem set)
+ *           ckpt_mode - P7B_OAMEM_NOCKPT | P7B_OAMEM_CKPT | P7B_OAMEM_CKPTPP.
+ *                       (Historically an int flag do_ckpt; FALSE/TRUE still
+ *                       mean modes 0/1, so old callers keep their meaning.)
+ *           ret_bytes - RETURN: estimated peak bytes
  *
  * Returns:  eslOK on success.
  */
 int
-p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes)
+p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes)
 {
   int    *kp = bnd->kmem;
   int     nrow = bnd->nrow;
@@ -8146,11 +8175,29 @@ p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes
     if (nc > maxnc) maxnc = nc;
   }
 
-  if (do_ckpt) {
-    B    = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
-    if (B < 1) B = 1;
-    nblk = (nrow + B - 1) / B;
+  B    = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
+  if (B < 1) B = 1;
+  nblk = (nrow + B - 1) / B;
 
+  if (ckpt_mode == P7B_OAMEM_CKPTPP) {
+    /* brief 26_0628-081: no O(ncell) term at all.
+     *   3 seed arrays (F, B, OA):   3 * nblk  * maxnc * p7G_NSCELLS floats
+     *   F + B block buffers:        2 * (B+2) * maxnc * p7G_NSCELLS floats
+     *   pp block buffer:                (B+2) * maxnc * P7B_PP_NSCELLS floats
+     *   OA traceback window:            (B+2) * maxnc * p7G_NSCELLS floats
+     *   pp + OA block specials:       2*(B+2) * p7G_NXCELLS floats
+     *   P7B_GEO row tables:           nrow * (4 ints + 1 int64)
+     *   traceback row_idx:            (L+1) ints
+     */
+    double nr = (double) (B + 2);
+    bytes  = (double) sizeof(float) * (double) maxnc *
+             ( p7G_NSCELLS   * (3.0 * (double) nblk + 3.0 * nr)
+             + P7B_PP_NSCELLS * nr );
+    bytes += (double) sizeof(float)   * p7G_NXCELLS * 2.0 * nr;
+    bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;
+    bytes += (double) sizeof(int) * ((double) bnd->L + 1.0);
+  }
+  else if (ckpt_mode == P7B_OAMEM_CKPT) {
     bytes  = (double) sizeof(float) * ((double) bnd->ncell * P7B_PP_NSCELLS
 					+ (double) bnd->nrow  * p7G_NXCELLS);
     bytes += (double) sizeof(float) * p7G_NSCELLS * (double) maxnc * (double) (nblk + B + 2);
@@ -8534,20 +8581,25 @@ p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, float esc,
   *xC_io = xC; *xJ_io = xJ; *xN_io = xN; *xE_io = xE; *xB_io = xB;
 }
 
-/* p7b_decode_row(): fold one row's posterior into <pp>.  Verbatim copy
- * of the per-row body of p7_GDecodingBanded() (expf + per-row denom
- * normalization + NaN guards). */
+/* p7b_decode_row(): fold one row's posterior into the caller's output
+ * row buffers.  Verbatim copy of the per-row body of
+ * p7_GDecodingBanded() (expf + per-row denom normalization + NaN
+ * guards).
+ *
+ * brief 26_0628-081: the destination is now passed as explicit row
+ * pointers <pdp>/<pxp> rather than (pp, r).  The resident-pp caller
+ * passes pp->dp + g->dpoff[r] / pp->xmx + r*p7G_NXCELLS -- identical to
+ * what this function used to compute itself; the double-checkpointed
+ * caller passes a one-block posterior buffer.  No arithmetic changed. */
 static void
 p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, float fwdsc,
-               int r, int kac, int kbc,
+               int kac, int kbc,
                const float *fdp, const float *bdp,
                float bck_xN, float bck_xJ, float bck_xC,
                float fwd_xN_prev, float fwd_xJ_prev, float fwd_xC_prev,
-               P7_GMXB *pp)
+               float *pdp, float *pxp)
 {
   int    M = g->M;
-  float *pdp = pp->dp  + g->dpoff[r];
-  float *pxp = pp->xmx + (int64_t) r * p7G_NXCELLS;
   float  denom = 0.0f;
   int    k;
 
@@ -8662,8 +8714,9 @@ p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
             fwd_xC_prev += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
           }
 
-          p7b_decode_row(g, gm, fwdsc, r, kac, kbc, blkbuf + roff[r-lo], bcur,
-                         xN, xJ, xC, fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev, pp);
+          p7b_decode_row(g, gm, fwdsc, kac, kbc, blkbuf + roff[r-lo], bcur,
+                         xN, xJ, xC, fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev,
+                         pp->dp + g->dpoff[r], pp->xmx + (int64_t) r * p7G_NXCELLS);
 
           dpn = bcur; kan = kac; kbn = kbc; bnext = bcur;
         }
@@ -8682,6 +8735,348 @@ p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
   if (bbuf1)  free(bbuf1);
   return status;
 }
+
+/*****************************************************************
+ * brief 26_0628-081: DOUBLE-CHECKPOINTING the Backward pass, so the
+ * posterior <pp> never has to be resident.
+ *
+ * 26_0526-016/017 checkpointed the *compute* of this engine (F, B,
+ * Decode and the OA fill all run out of ~sqrt(nrow) seed rows), but one
+ * O(bnd->ncell) matrix survived: the resident posterior that
+ * p7b_backdecode() fills and that the OA pass + traceback consume.  It
+ * had to be resident because of a DIRECTION CONFLICT -- pp rows are
+ * produced by Backward in DESCENDING row order, and consumed by OA in
+ * ASCENDING row order.
+ *
+ * The fix mirrors what the Forward pass already does for itself:
+ * checkpoint Backward too.  A second seed array (P7B_BSEED) stores the
+ * Backward state ENTERING each block from above; a block's Backward
+ * rows are then recomputed on demand into an O(B*maxnc) buffer, the pp
+ * rows for that block are formed on the fly, and OA consumes them
+ * ascending.  The traceback recomputes the same per-block pp window
+ * alongside the OA window it already recomputed.
+ *
+ * Resident term drops from O(ncell) to O(sqrt(nrow)*maxnc); the cost is
+ * two extra O(ncell) recompute passes (one Backward stream to lay the
+ * seeds, plus per-block F+B recompute during OA/traceback).
+ *
+ * Byte-exact discipline, same as 26_0526-016: no per-cell arithmetic is
+ * touched.  A Backward block resumed from a seed replays exactly the
+ * same p7b_bwd_row() calls, on exactly the same float inputs, in
+ * exactly the same order, as the uninterrupted stream would have -- so
+ * the recomputed pp rows are bit-identical to the resident ones, and
+ * everything downstream is bit-identical too.  The legacy resident-pp
+ * path is left fully intact and reachable via INFERNAL_HMM_PPCKPT_OFF.
+ *****************************************************************/
+
+/* A Backward checkpoint seed: the Backward state ENTERING block <b>
+ * from above, i.e. the state just after row (hi_b + 1) was processed.
+ * For the last block there is no row above, so the seed is the Backward
+ * initial state (dp == NULL).
+ *
+ * Note that <dp> doubles as the stored copy of row (hi_b+1)'s Backward
+ * row, which the traceback's B+1-row window needs verbatim (see
+ * p7b_bwd_block()).  xB is not carried: p7b_bwd_row() recomputes it
+ * from scratch every row and never reads an incoming value.
+ */
+typedef struct {
+  float  *dp;              /* copy of row (hi_b+1)'s Backward dp cells, or NULL */
+  int     ka, kb;          /* that row's band (kan,kbn for the row below)       */
+  float   xC, xJ, xN, xE;  /* carried specials AFTER that row                   */
+  int     valid;
+} P7B_BSEED;
+
+/* p7b_backward_seeds(): STEP B1.  Stream banded Backward once (2 rows
+ * live, no posterior formed, no Forward needed), storing the entering
+ * state for each block.  Descending-row mirror of p7b_forward_seeds().
+ */
+static int
+p7b_backward_seeds(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+                   P7B_BSEED *bseed)
+{
+  int      status;
+  int      M = g->M, L = g->L, B = g->B;
+  float    esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  float   *bbuf0 = NULL, *bbuf1 = NULL, *bnext = NULL, *bcur;
+  const float *dpn = NULL;
+  int      kan = M+1, kbn = M+1;
+  float    xC, xJ, xN, xE, xB;
+  int      r;
+
+  ESL_ALLOC(bbuf0, sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(bbuf1, sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+
+  /* init backward specials (mirror p7b_backdecode / p7_GBackwardBanded init) */
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ = xB = xN = -eslINFINITY;
+
+  /* the topmost block enters from the Backward initial state.  (nblk==0
+   * only when the band has no rows at all, in which case the loop below
+   * is empty too and there is no block to seed.) */
+  if (g->nblk > 0) {
+    bseed[g->nblk-1].dp = NULL;
+    bseed[g->nblk-1].ka = M+1;  bseed[g->nblk-1].kb = M+1;
+    bseed[g->nblk-1].xC = xC;   bseed[g->nblk-1].xJ = xJ;
+    bseed[g->nblk-1].xN = xN;   bseed[g->nblk-1].xE = xE;
+    bseed[g->nblk-1].valid = 1;
+  }
+
+  for (r = g->nrow - 1; r >= 0; r--)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      int   top = (r == g->nrow - 1) || (g->gap[r+1] > 0);
+      const float *use_dpn = dpn;
+      int   use_kan = kan, use_kbn = kbn;
+
+      if (top) {
+        int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
+        if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
+                             xE  = p7_FLogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
+      }
+
+      bcur = (bnext == bbuf0) ? bbuf1 : bbuf0;
+      p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, use_dpn, use_kan, use_kbn,
+                  &xC, &xJ, &xN, &xE, &xB, bcur);
+
+      /* snapshot a seed if row r is the first row of a block: it is then
+       * the row just above block (r/B - 1)'s last row. */
+      if (r > 0 && (r % B) == 0) {
+        int b = r / B - 1, nc = kbc - kac + 1;
+        ESL_ALLOC(bseed[b].dp, sizeof(float) * nc * p7G_NSCELLS);
+        memcpy(bseed[b].dp, bcur, sizeof(float) * nc * p7G_NSCELLS);
+        bseed[b].ka = kac; bseed[b].kb = kbc;
+        bseed[b].xC = xC;  bseed[b].xJ = xJ; bseed[b].xN = xN; bseed[b].xE = xE;
+        bseed[b].valid = 1;
+      }
+
+      dpn = bcur; kan = kac; kbn = kbc; bnext = bcur;
+    }
+
+  free(bbuf0); free(bbuf1);
+  return eslOK;
+
+ ERROR:
+  if (bbuf0) free(bbuf0);
+  if (bbuf1) free(bbuf1);
+  return status;
+}
+
+/* p7b_bwd_block(): recompute Backward rows [lo..hi] of block <b> from
+ * bseed[b], into a packed block buffer (offsets in <roff>), plus the
+ * per-row carried specials AFTER each row (bxN/bxJ/bxC) that
+ * p7b_decode_row() wants.  Descending-row mirror of p7b_fwd_block().
+ *
+ * <lo> is always b*B.  <hi> may be hi_b (= the block's last row) or
+ * hi_b+1 (the traceback window's +1 overlap row).  In the latter case
+ * that extra row IS the seed row, so it is copied verbatim from
+ * bseed[b].dp rather than recomputed -- which is also what makes it
+ * bit-identical rather than merely equal.
+ */
+static void
+p7b_bwd_block(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+              const P7B_BSEED *bseed, int b, int lo, int hi,
+              float *blkbuf, int64_t *roff, float *bxN, float *bxJ, float *bxC)
+{
+  int      M = g->M, L = g->L;
+  float    esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  float    xC, xJ, xN, xE, xB = -eslINFINITY;
+  const float *dpn;
+  int      kan, kbn;
+  int      r, rstart;
+  int      hib = ESL_MIN((b+1) * g->B - 1, g->nrow - 1);
+  int64_t  cum = 0;
+
+  for (r = lo; r <= hi; r++) {
+    roff[r-lo] = cum;
+    cum += (int64_t)(g->kb[r] - g->ka[r] + 1) * p7G_NSCELLS;
+  }
+
+  xC  = bseed[b].xC; xJ = bseed[b].xJ; xN = bseed[b].xN; xE = bseed[b].xE;
+  dpn = bseed[b].dp; kan = bseed[b].ka; kbn = bseed[b].kb;
+
+  rstart = hi;
+  if (hi > hib) {   /* the +1 overlap row is exactly the seed row */
+    int nc = g->kb[hi] - g->ka[hi] + 1;
+    memcpy(blkbuf + roff[hi-lo], bseed[b].dp, sizeof(float) * nc * p7G_NSCELLS);
+    bxN[hi-lo] = xN; bxJ[hi-lo] = xJ; bxC[hi-lo] = xC;
+    rstart = hib;
+  }
+
+  for (r = rstart; r >= lo; r--)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      int   top = (r == g->nrow - 1) || (g->gap[r+1] > 0);
+      const float *use_dpn = dpn;
+      int   use_kan = kan, use_kbn = kbn;
+      float *bcur = blkbuf + roff[r-lo];
+
+      if (top) {
+        int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
+        if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
+                             xE  = p7_FLogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
+      }
+
+      p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, use_dpn, use_kan, use_kbn,
+                  &xC, &xJ, &xN, &xE, &xB, bcur);
+
+      bxN[r-lo] = xN; bxJ[r-lo] = xJ; bxC[r-lo] = xC;
+      dpn = bcur; kan = kac; kbn = kbc;
+    }
+}
+
+/* A posterior-row source for the OA pass and traceback: either the
+ * legacy resident matrix (<pp> non-NULL) or a recomputed one-block
+ * window (<pp> NULL, rows [lo..hi] held in <ppblk>/<ppxmx>). */
+typedef struct {
+  const P7_GMXB *pp;       /* legacy resident pp, or NULL             */
+  const float   *ppblk;    /* window mode: packed pp rows             */
+  const int64_t *pproff;   /* window mode: per-row offsets into ppblk */
+  const float   *ppxmx;    /* window mode: per-row specials           */
+  int            lo, hi;   /* window mode: rows held                  */
+} P7B_PPVIEW;
+
+static const float *
+p7b_ppview_dp(const P7B_PPVIEW *v, const P7B_GEO *g, int r)
+{
+  return (v->pp != NULL) ? v->pp->dp + g->dpoff[r]
+                         : v->ppblk  + v->pproff[r - v->lo];
+}
+
+static const float *
+p7b_ppview_xp(const P7B_PPVIEW *v, const P7B_GEO *g, int r)
+{
+  return (v->pp != NULL) ? v->pp->xmx + (int64_t) r * p7G_NXCELLS
+                         : v->ppxmx   + (int64_t)(r - v->lo) * p7G_NXCELLS;
+}
+
+/* Scratch for recomputing one block's posterior rows on demand.  Every
+ * buffer here is O(B*maxnc) or smaller -- this struct is what replaces
+ * the O(ncell) resident pp. */
+typedef struct {
+  const ESL_DSQ   *dsq;
+  const P7B_FSEED *fseed;   /* Forward  seeds (from p7b_forward_seeds)  */
+  const P7B_BSEED *bseed;   /* Backward seeds (from p7b_backward_seeds) */
+  float            fwdsc;
+  int              nr;      /* rows a block window can hold (B+2)       */
+  float   *fblk;  int64_t *froff;  float *fxN, *fxJ, *fxC;
+  float   *bblk;  int64_t *broff;  float *bxN, *bxJ, *bxC;
+  float   *ppblk; int64_t *pproff; float *ppxmx;
+} P7B_PPWORK;
+
+static void
+p7b_ppwork_Destroy(P7B_PPWORK *w)
+{
+  if (w == NULL) return;
+  if (w->fblk)   free(w->fblk);
+  if (w->froff)  free(w->froff);
+  if (w->fxN)    free(w->fxN);
+  if (w->fxJ)    free(w->fxJ);
+  if (w->fxC)    free(w->fxC);
+  if (w->bblk)   free(w->bblk);
+  if (w->broff)  free(w->broff);
+  if (w->bxN)    free(w->bxN);
+  if (w->bxJ)    free(w->bxJ);
+  if (w->bxC)    free(w->bxC);
+  if (w->ppblk)  free(w->ppblk);
+  if (w->pproff) free(w->pproff);
+  if (w->ppxmx)  free(w->ppxmx);
+  free(w);
+}
+
+static P7B_PPWORK *
+p7b_ppwork_Create(const ESL_DSQ *dsq, const P7B_GEO *g,
+                  const P7B_FSEED *fseed, const P7B_BSEED *bseed, float fwdsc)
+{
+  P7B_PPWORK *w = NULL;
+  int         status;
+  int         nr = g->B + 2;   /* block (B rows) + traceback's +1 overlap row + slack */
+
+  ESL_ALLOC(w, sizeof(P7B_PPWORK));
+  w->fblk = w->fxN = w->fxJ = w->fxC = NULL;
+  w->bblk = w->bxN = w->bxJ = w->bxC = NULL;
+  w->ppblk = w->ppxmx = NULL;
+  w->froff = w->broff = w->pproff = NULL;
+  w->dsq = dsq; w->fseed = fseed; w->bseed = bseed; w->fwdsc = fwdsc; w->nr = nr;
+
+  ESL_ALLOC(w->fblk,   sizeof(float)   * ((int64_t) nr * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(w->froff,  sizeof(int64_t) * nr);
+  ESL_ALLOC(w->fxN,    sizeof(float)   * nr);
+  ESL_ALLOC(w->fxJ,    sizeof(float)   * nr);
+  ESL_ALLOC(w->fxC,    sizeof(float)   * nr);
+  ESL_ALLOC(w->bblk,   sizeof(float)   * ((int64_t) nr * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(w->broff,  sizeof(int64_t) * nr);
+  ESL_ALLOC(w->bxN,    sizeof(float)   * nr);
+  ESL_ALLOC(w->bxJ,    sizeof(float)   * nr);
+  ESL_ALLOC(w->bxC,    sizeof(float)   * nr);
+  ESL_ALLOC(w->ppblk,  sizeof(float)   * ((int64_t) nr * g->maxnc * P7B_PP_NSCELLS + 1));
+  ESL_ALLOC(w->pproff, sizeof(int64_t) * nr);
+  ESL_ALLOC(w->ppxmx,  sizeof(float)   * ((int64_t) nr * p7G_NXCELLS));
+  return w;
+
+ ERROR:
+  p7b_ppwork_Destroy(w);
+  return NULL;
+}
+
+/* p7b_ppwork_fill(): recompute the posterior rows [lo..hi] of block <b>
+ * -- Forward block from fseed[b], Backward block from bseed[b], then
+ * p7b_decode_row() per row -- and point <view> at them.
+ *
+ * The per-row inputs handed to p7b_decode_row() are assembled exactly
+ * as p7b_backdecode() assembles them (same seed-vs-fx seam at r==lo,
+ * same gap[] adjustment of the Forward specials), so the rows produced
+ * here are bit-identical to the resident ones.
+ */
+static void
+p7b_ppwork_fill(P7B_PPWORK *w, const P7_PROFILE *gm, const P7B_GEO *g,
+                int b, int lo, int hi, P7B_PPVIEW *view)
+{
+  float   s_xN, s_xJ, s_xC;
+  int     r;
+  int64_t cum = 0;
+
+  p7b_fwd_block(w->dsq, gm, g, w->fseed, b, lo, hi, w->fblk, w->froff,
+                w->fxN, w->fxJ, w->fxC, &s_xN, &s_xJ, &s_xC);
+  p7b_bwd_block(w->dsq, gm, g, w->bseed, b, lo, hi, w->bblk, w->broff,
+                w->bxN, w->bxJ, w->bxC);
+
+  for (r = lo; r <= hi; r++)
+    {
+      int   kac = g->ka[r], kbc = g->kb[r];
+      float fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+
+      w->pproff[r-lo] = cum;
+
+      if (r == lo) { fwd_xN_prev = s_xN; fwd_xJ_prev = s_xJ; fwd_xC_prev = s_xC; }
+      else         { fwd_xN_prev = w->fxN[r-1-lo]; fwd_xJ_prev = w->fxJ[r-1-lo]; fwd_xC_prev = w->fxC[r-1-lo]; }
+      if (g->gap[r] > 0) {
+        fwd_xN_prev += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+        fwd_xJ_prev += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+        fwd_xC_prev += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+      }
+
+      p7b_decode_row(g, gm, w->fwdsc, kac, kbc,
+                     w->fblk + w->froff[r-lo], w->bblk + w->broff[r-lo],
+                     w->bxN[r-lo], w->bxJ[r-lo], w->bxC[r-lo],
+                     fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev,
+                     w->ppblk + cum, w->ppxmx + (int64_t)(r-lo) * p7G_NXCELLS);
+
+      cum += (int64_t)(kbc - kac + 1) * P7B_PP_NSCELLS;
+    }
+
+  view->pp     = NULL;
+  view->ppblk  = w->ppblk;
+  view->pproff = w->pproff;
+  view->ppxmx  = w->ppxmx;
+  view->lo     = lo;
+  view->hi     = hi;
+}
+
 
 /* Function: p7_GCheckptFBDecode_Banded()
  * Incept:   Brief 26_0526-016
@@ -8833,10 +9228,17 @@ p7b_oa_seg_start(const P7_PROFILE *gm, float *xN, float *xJ, float *xC, float *x
 }
 
 /* p7b_oa_seeds(): STEP OA.  Stream banded OA forward once, store the
- * entering state per block, return the OA score. */
+ * entering state per block, return the OA score.
+ *
+ * brief 26_0628-081: the posterior is read through <view>.  When <ppw>
+ * is NULL, <view> is the legacy resident pp and nothing else changes.
+ * When <ppw> is non-NULL the resident pp does not exist: at each block
+ * boundary the block's pp rows are recomputed into <ppw>'s O(B*maxnc)
+ * buffer and <view> is repointed at them.  The row loop, its order, and
+ * the per-row arithmetic are untouched either way. */
 static int
-p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
-             P7B_FSEED *seed, float *ret_oasc)
+p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, P7B_PPVIEW *view,
+             P7B_PPWORK *ppw, P7B_FSEED *seed, float *ret_oasc)
 {
   int    status;
   int    M = g->M, B = g->B;
@@ -8854,8 +9256,13 @@ p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
       int   kac = g->ka[r], kbc = g->kb[r];
       const float *dpp;
       int   seg_start = (g->gap[r] > 0) || (r == 0);
-      const float *pp_dp = pp->dp  + g->dpoff[r];
-      const float *pp_xp = pp->xmx + (int64_t) r * p7G_NXCELLS;
+      const float *pp_dp, *pp_xp;
+
+      if (ppw != NULL && (r % B) == 0)   /* r starts block r/B: refill the pp window */
+        p7b_ppwork_fill(ppw, gm, g, r / B, r, ESL_MIN(r + B - 1, g->nrow - 1), view);
+
+      pp_dp = p7b_ppview_dp(view, g, r);
+      pp_xp = p7b_ppview_xp(view, g, r);
 
       cur = (prev == buf0) ? buf1 : buf0;
 
@@ -8893,7 +9300,7 @@ p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
  * caller buffers, producing BOTH dp (oadp, packed, offsets in oaoff)
  * and xmx (oaxmx, p7G_NXCELLS per row).  Used by the traceback window. */
 static void
-p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
+p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
                    const P7B_FSEED *seed, int b, int lo, int hi,
                    float *oadp, int64_t *oaoff, float *oaxmx)
 {
@@ -8915,8 +9322,8 @@ p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
       float *xpc = oaxmx + (int64_t)(r - lo) * p7G_NXCELLS;
       const float *dpp;
       int   seg_start = (g->gap[r] > 0) || (r == 0);
-      const float *pp_dp = pp->dp  + g->dpoff[r];
-      const float *pp_xp = pp->xmx + (int64_t) r * p7G_NXCELLS;
+      const float *pp_dp = p7b_ppview_dp(view, g, r);
+      const float *pp_xp = p7b_ppview_xp(view, g, r);
 
       if (seg_start) { p7b_oa_seg_start(gm, &xN, &xJ, &xC, &xB, (g->gap[r] > 0)); dpp = NULL; }
       else           { dpp = (r == lo) ? seed[b].dp : (oadp + oaoff[r-1-lo]); }
@@ -8932,12 +9339,19 @@ p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
     }
 }
 
-/* On-demand recomputed OA window for the checkpointed traceback. */
+/* On-demand recomputed OA window for the checkpointed traceback.
+ * brief 26_0628-081: when <ppw> is non-NULL the same window also holds
+ * the block's recomputed posterior rows (in <view>), so the traceback's
+ * PP_* accessors no longer need a resident pp either.  The window is
+ * B+1 rows -- one full block plus the +1 overlap row -- which is what
+ * lets the (i-1, i) row pairs in the C/J cases resolve without
+ * thrashing (see the accessor-ordering comment in p7b_oa_trace). */
 typedef struct {
   const P7B_GEO    *g;
   const int        *row_idx;
   const P7_PROFILE *gm;
-  const P7_GMXB    *pp;
+  P7B_PPVIEW        view;
+  P7B_PPWORK       *ppw;      /* NULL => view.pp is the resident pp */
   const P7B_FSEED  *seed;
   int     B, nrow;
   float  *oadp;  int64_t *oaoff;  float *oaxmx;
@@ -8951,7 +9365,9 @@ p7b_oawin_ensure(P7B_OAWIN *w, int r)
     int b = r / w->B;
     w->wlo = b * w->B;
     w->whi = ESL_MIN((b+1) * w->B, w->nrow - 1);
-    p7b_oa_fill_region(w->gm, w->g, w->pp, w->seed, b, w->wlo, w->whi, w->oadp, w->oaoff, w->oaxmx);
+    if (w->ppw != NULL)   /* recompute this block's posterior rows first: OA reads them */
+      p7b_ppwork_fill(w->ppw, w->gm, w->g, b, w->wlo, w->whi, &w->view);
+    p7b_oa_fill_region(w->gm, w->g, &w->view, w->seed, b, w->wlo, w->whi, w->oadp, w->oaoff, w->oaxmx);
   }
 }
 
@@ -8979,41 +9395,53 @@ p7b_oawin_x(P7B_OAWIN *w, int p, int s)
   return w->oaxmx[ (int64_t)(r - w->wlo) * p7G_NXCELLS + s ];
 }
 
+/* brief 26_0628-081: pp is read through the same window as OA.  With a
+ * resident pp (w->ppw == NULL) no ensure() is needed and none is done,
+ * so the legacy path's recompute count is unchanged. */
 static float
-p7b_pp_dp(const P7B_GEO *g, const int *row_idx, const P7_GMXB *pp, int p, int k, int cell)
+p7b_pp_dp(P7B_OAWIN *w, int p, int k, int cell)
 {
+  const P7B_GEO *g = w->g;
   int r;
   if (p < 0 || p > g->L) return -eslINFINITY;
-  r = row_idx[p];
+  r = w->row_idx[p];
   if (r < 0) return -eslINFINITY;
   if (k < g->ka[r] || k > g->kb[r]) return -eslINFINITY;
-  return pp->dp[ g->dpoff[r] + (int64_t)(k - g->ka[r]) * P7B_PP_NSCELLS + cell ];  /* brief 26_0526-017: 2-cell pp; cell in {p7G_M=0, p7G_I=1} */
+  if (w->ppw != NULL) p7b_oawin_ensure(w, r);
+  /* brief 26_0526-017: 2-cell pp; cell in {p7G_M=0, p7G_I=1} */
+  return p7b_ppview_dp(&w->view, g, r)[ (int64_t)(k - g->ka[r]) * P7B_PP_NSCELLS + cell ];
 }
 
 static float
-p7b_pp_x(const P7B_GEO *g, const int *row_idx, const P7_GMXB *pp, int p, int s)
+p7b_pp_x(P7B_OAWIN *w, int p, int s)
 {
+  const P7B_GEO *g = w->g;
   int r;
   if (p == 0) return ((s == p7G_N || s == p7G_B) ? 0.0f : -eslINFINITY);
   if (p < 0 || p > g->L) return -eslINFINITY;
-  r = row_idx[p];
+  r = w->row_idx[p];
   if (r < 0) return -eslINFINITY;
-  return pp->xmx[ (int64_t)r * p7G_NXCELLS + s ];
+  if (w->ppw != NULL) p7b_oawin_ensure(w, r);
+  return p7b_ppview_xp(&w->view, g, r)[s];
 }
 
 /* p7b_oa_trace(): STEP TB.  Byte-exact reproduction of p7_GOATraceBanded,
  * but the OA matrix is accessed through an on-demand recomputed window
- * (one block + 1 overlap row) instead of a full resident matrix.  The
- * posterior <pp> stays fully resident. */
+ * (one block + 1 overlap row) instead of a full resident matrix.
+ *
+ * brief 26_0628-081: when <ppw> is non-NULL, the posterior is windowed
+ * the same way (recomputed per block from the F/B seeds) instead of
+ * being fully resident; when <ppw> is NULL, <view> carries the legacy
+ * resident pp and behaviour is unchanged. */
 static int
-p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
-             const P7B_FSEED *seed, P7_TRACE *tr)
+p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
+             P7B_PPWORK *ppw, const P7B_FSEED *seed, P7_TRACE *tr)
 {
   float const *tsc = gm->tsc;
   int     M = g->M, L = g->L, B = g->B, nrow = g->nrow;
   int     status;
 
-  /* pp random-access lookup (full, resident) */
+  /* pp lookup: resident (legacy) or windowed (ckpt-pp) */
   int    *row_idx = NULL;   /* seq pos -> banded row r (-1 outside) */
   int     i, k, r;
 
@@ -9035,7 +9463,7 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
   ESL_ALLOC(oaoff, sizeof(int64_t) * win_cap);
   ESL_ALLOC(oaxmx, sizeof(float)   * ((int64_t) win_cap * p7G_NXCELLS));
 
-  w.g = g; w.row_idx = row_idx; w.gm = gm; w.pp = pp; w.seed = seed;
+  w.g = g; w.row_idx = row_idx; w.gm = gm; w.view = *view; w.ppw = ppw; w.seed = seed;
   w.B = B; w.nrow = nrow; w.oadp = oadp; w.oaoff = oaoff; w.oaxmx = oaxmx;
   w.wlo = -1; w.whi = -2;
 
@@ -9047,9 +9475,9 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
 #define OA_I(p,kk) p7b_oawin_dp(&w, (p), (kk), p7G_I)
 #define OA_D(p,kk) p7b_oawin_dp(&w, (p), (kk), p7G_D)
 #define OA_X(p,ss) p7b_oawin_x(&w, (p), (ss))
-#define PP_M(p,kk) p7b_pp_dp(g, row_idx, pp, (p), (kk), p7G_M)
-#define PP_I(p,kk) p7b_pp_dp(g, row_idx, pp, (p), (kk), p7G_I)
-#define PP_X(p,ss) p7b_pp_x(g, row_idx, pp, (p), (ss))
+#define PP_M(p,kk) p7b_pp_dp(&w, (p), (kk), p7G_M)
+#define PP_I(p,kk) p7b_pp_dp(&w, (p), (kk), p7G_I)
+#define PP_X(p,ss) p7b_pp_x(&w, (p), (ss))
 
   i = L; k = 0;
   if ((status = p7_trace_AppendWithPP(tr, p7T_T, k, i, 0.0)) != eslOK) goto ERROR;
@@ -9216,11 +9644,12 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7_GMXB *pp,
 int
 p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc)
 {
-  int        status;
-  P7B_GEO   *g = NULL;
-  P7B_FSEED *seed = NULL;
-  float      oasc = 0.;
-  int        b;
+  int         status;
+  P7B_GEO    *g = NULL;
+  P7B_FSEED  *seed = NULL;
+  P7B_PPVIEW  view;
+  float       oasc = 0.;
+  int         b;
 
   g = p7b_geo_Create(pp->bnd, gm->M, pp->bnd->L);
   if (g == NULL) { status = eslEMEM; goto ERROR; }
@@ -9228,8 +9657,12 @@ p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret
   ESL_ALLOC(seed, sizeof(P7B_FSEED) * (g->nblk > 0 ? g->nblk : 1));
   for (b = 0; b < g->nblk; b++) { seed[b].dp = NULL; seed[b].valid = 0; }
 
-  if ((status = p7b_oa_seeds(gm, g, pp, seed, &oasc)) != eslOK) goto ERROR;
-  if ((status = p7b_oa_trace(gm, g, pp, seed, tr))    != eslOK) goto ERROR;
+  /* resident-pp view (brief 26_0628-081): ppw==NULL selects the legacy path */
+  view.pp = pp; view.ppblk = NULL; view.pproff = NULL; view.ppxmx = NULL;
+  view.lo = 0;  view.hi = g->nrow - 1;
+
+  if ((status = p7b_oa_seeds(gm, g, &view, NULL, seed, &oasc)) != eslOK) goto ERROR;
+  if ((status = p7b_oa_trace(gm, g, &view, NULL, seed, tr))    != eslOK) goto ERROR;
 
   for (b = 0; b < g->nblk; b++) if (seed[b].dp) free(seed[b].dp);
   free(seed);
@@ -9240,6 +9673,106 @@ p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret
  ERROR:
   if (seed) { for (b = 0; b < (g ? g->nblk : 0); b++) if (seed[b].dp) free(seed[b].dp); free(seed); }
   if (g) p7b_geo_Destroy(g);
+  return status;
+}
+
+/* Function: p7_GCheckptFBDecodeOA_Banded()
+ * Incept:   brief 26_0628-081
+ *
+ * Purpose:  Fully checkpointed banded Forward/Backward/Decode/optimal-
+ *           accuracy/traceback -- the DOUBLE-checkpointed engine.  Drop-in
+ *           replacement for the
+ *               p7b_pp_Create + p7_GCheckptFBDecode_Banded + p7_GCheckptOA_Banded
+ *           sequence, producing a bit-identical Forward score, OA score
+ *           and OA trace (alignment + posterior annotation), but never
+ *           allocating the O(bnd->ncell) resident posterior that that
+ *           sequence needs.
+ *
+ *           Passes, in order:
+ *             A  p7b_forward_seeds()  -- stream Forward,  lay ~sqrt(nrow) F seeds
+ *             B1 p7b_backward_seeds() -- stream Backward, lay ~sqrt(nrow) B seeds
+ *             OA p7b_oa_seeds()       -- per block: recompute F and B rows from
+ *                                        their seeds, form that block's pp rows,
+ *                                        run OA over them ascending, lay OA seeds
+ *             TB p7b_oa_trace()       -- traceback over an on-demand recomputed
+ *                                        (pp + OA) block window
+ *
+ *           Peak resident DP term: O(sqrt(nrow) * maxnc) -- three seed
+ *           arrays plus a handful of one-block buffers.  Cost: two extra
+ *           O(ncell) recompute passes relative to the resident-pp engine.
+ *
+ * Args:     dsq       - digital sequence 1..L
+ *           L         - sequence length
+ *           gm        - profile
+ *           bnd       - the band (caller keeps ownership)
+ *           tr        - RESULT: OA trace (caller-provided; Reuse'd by caller)
+ *           ret_fwdsc - RETURN: Forward score in nats
+ *           ret_oasc  - RETURN: OA score
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+                             P7_GBANDS *bnd, P7_TRACE *tr,
+                             float *ret_fwdsc, float *ret_oasc)
+{
+  int         status;
+  P7B_GEO    *g      = NULL;
+  P7B_FSEED  *fseed  = NULL;
+  P7B_BSEED  *bseed  = NULL;
+  P7B_FSEED  *oaseed = NULL;
+  P7B_PPWORK *ppw    = NULL;
+  P7B_PPVIEW  view;
+  float       fwdsc = 0., oasc = 0.;
+  int         b;
+
+  g = p7b_geo_Create(bnd, gm->M, L);
+  if (g == NULL) { status = eslEMEM; goto ERROR; }
+
+  ESL_ALLOC(fseed,  sizeof(P7B_FSEED) * (g->nblk > 0 ? g->nblk : 1));
+  ESL_ALLOC(bseed,  sizeof(P7B_BSEED) * (g->nblk > 0 ? g->nblk : 1));
+  ESL_ALLOC(oaseed, sizeof(P7B_FSEED) * (g->nblk > 0 ? g->nblk : 1));
+  for (b = 0; b < g->nblk; b++) { fseed[b].dp  = NULL; fseed[b].valid  = 0; }
+  for (b = 0; b < g->nblk; b++) { bseed[b].dp  = NULL; bseed[b].valid  = 0; }
+  for (b = 0; b < g->nblk; b++) { oaseed[b].dp = NULL; oaseed[b].valid = 0; }
+
+  if ((status = p7b_forward_seeds (dsq, gm, g, fseed, &fwdsc)) != eslOK) goto ERROR;
+  if ((status = p7b_backward_seeds(dsq, gm, g, bseed))         != eslOK) goto ERROR;
+
+  ppw = p7b_ppwork_Create(dsq, g, fseed, bseed, fwdsc);
+  if (ppw == NULL) { status = eslEMEM; goto ERROR; }
+
+  view.pp = NULL; view.ppblk = NULL; view.pproff = NULL; view.ppxmx = NULL;
+  view.lo = 0; view.hi = -1;
+
+  if ((status = p7b_oa_seeds(gm, g, &view, ppw, oaseed, &oasc))  != eslOK) goto ERROR;
+  if ((status = p7b_oa_trace(gm, g, &view, ppw, oaseed, tr))     != eslOK) goto ERROR;
+
+  if (getenv("INFERNAL_CKPT_VERBOSE"))
+    fprintf(stderr, "# p7_GCheckptFBDecodeOA_Banded: M=%d L=%d nrow=%d B=%d nblk=%d maxnc=%d fwdsc=%.6f oasc=%.6f\n",
+            gm->M, L, g->nrow, g->B, g->nblk, g->maxnc, fwdsc, oasc);
+
+  for (b = 0; b < g->nblk; b++) { if (fseed[b].dp)  free(fseed[b].dp);
+                                  if (bseed[b].dp)  free(bseed[b].dp);
+                                  if (oaseed[b].dp) free(oaseed[b].dp); }
+  free(fseed); free(bseed); free(oaseed);
+  p7b_ppwork_Destroy(ppw);
+  p7b_geo_Destroy(g);
+  if (ret_fwdsc) *ret_fwdsc = fwdsc;
+  if (ret_oasc)  *ret_oasc  = oasc;
+  return eslOK;
+
+ ERROR:
+  for (b = 0; b < (g ? g->nblk : 0); b++) {
+    if (fseed  && fseed[b].dp)  free(fseed[b].dp);
+    if (bseed  && bseed[b].dp)  free(bseed[b].dp);
+    if (oaseed && oaseed[b].dp) free(oaseed[b].dp);
+  }
+  if (fseed)  free(fseed);
+  if (bseed)  free(bseed);
+  if (oaseed) free(oaseed);
+  if (ppw)    p7b_ppwork_Destroy(ppw);
+  if (g)      p7b_geo_Destroy(g);
   return status;
 }
 

@@ -1043,7 +1043,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
   extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes);                        /* brief 26_0430-266: post-band do_bandedoa mem preflight */
+  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+  extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                          P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -1243,6 +1245,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  int     *kmax  = NULL;
 	  int      ncells = 0;
 	  int      pad   = 30;
+	  int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
 	  P7_GBANDS *bnd = NULL;
 	  P7_GMXB *bxf   = NULL;
 	  P7_GMXB *bxb   = NULL;
@@ -1461,16 +1464,48 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	   * the plain Viterbi-trace band) since all of them converge on the same
 	   * ckpt/non-ckpt dispatch below. */
 	  {
-	    int    do_ckpt_pf     = (getenv("INFERNAL_HMM_CKPT_OFF") == NULL);
-	    double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
-	    p7_CheckptBandedOAMemNeeded(bnd, do_ckpt_pf, &needed_bytes_pf);
-	    needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
+	    /* brief 26_0628-081: three engines now, not two, and the preflight is
+	     * what CHOOSES between the two checkpointed ones -- so it always models
+	     * the engine that actually runs.
+	     *
+	     * Policy: keep the O(ncell) RESIDENT posterior while it fits in
+	     * --mxsize, because it is the faster engine (the double-checkpointed
+	     * one pays ~1.6-2.0x in the OA stage for two extra O(ncell) recompute
+	     * passes).  Only when the resident posterior would blow the budget do
+	     * we drop to the double-checkpointed engine, whose DP term is
+	     * O(sqrt(nrow)*maxnc) and does not depend on ncell at all.  Net effect:
+	     * bands that used to abort here now run, and bands that already fit are
+	     * completely unaffected -- same engine, same speed, same bytes.
+	     * Output is byte-identical either way, so this is purely a
+	     * memory/wall-clock tradeoff, never an accuracy one.
+	     *
+	     * Overrides (both test only for PRESENCE, so `env VAR= cmalign ...`
+	     * with an empty value still counts as set):
+	     *   INFERNAL_HMM_CKPT_OFF    - non-checkpointed engine (as before)
+	     *   INFERNAL_HMM_PPCKPT_OFF  - never double-checkpoint (pre-081 behaviour:
+	     *                              resident pp, and abort if it won't fit)
+	     *   INFERNAL_HMM_PPCKPT_ON   - always double-checkpoint (validation)
+	     */
+	    double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf, ckpt_bytes_pf;
 	    mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
+	    if      (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ckpt_mode = P7B_OAMEM_NOCKPT;
+	    else if (getenv("INFERNAL_HMM_PPCKPT_ON")  != NULL) ckpt_mode = P7B_OAMEM_CKPTPP;
+	    else if (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ckpt_mode = P7B_OAMEM_CKPT;
+	    else {
+	      p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
+	      ckpt_mode = (ckpt_bytes_pf / (1024.0 * 1024.0) <= mxsize_limit_pf)
+	                  ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
+	    }
+	    p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode, &needed_bytes_pf);
+	    needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	    if (needed_mb_pf > mxsize_limit_pf) {
 	      int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
 	      cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
 		      needed_mb_pf, mxsize_limit_pf, recommended_mxsize_pf);
 	    }
+	    if (getenv("INFERNAL_CKPT_VERBOSE"))
+	      fprintf(stderr, "# hmm-OA engine: mode=%d (0=nockpt 1=ckpt 2=ckptpp) needed=%.2f Mb mxsize=%.2f Mb ncell=%ld\n",
+		      ckpt_mode, needed_mb_pf, mxsize_limit_pf, (long) bnd->ncell);
 	  }
 
 	  if (_st061_on) {
@@ -1491,10 +1526,24 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
 	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
+	  if (ckpt_mode == P7B_OAMEM_CKPTPP) {
+	    /* brief 26_0628-081: DOUBLE-checkpointed engine.  Same sqrt(nrow)
+	     * checkpointing as 26_0526-016 below, plus a checkpointed Backward
+	     * pass so the O(bnd->ncell) resident posterior is gone too: nothing
+	     * O(ncell) is allocated anywhere in this branch (bxf and bxb both stay
+	     * NULL).  Byte-identical to the resident-posterior branch; selected by
+	     * the preflight above only when the resident posterior would not fit
+	     * in --mxsize (or forced with INFERNAL_HMM_PPCKPT_ON). */
+	    if (getenv("BRIEF035_MEMPOINT") != NULL)
+	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
+	    p7_trace_Reuse(tr[idx]);
+	    if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, gm, bnd, tr[idx], &fwdsc, &oasc)) != eslOK)
+	      cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
+	  }
+	  else if (ckpt_mode == P7B_OAMEM_CKPT) {
 	    /* brief 26_0526-016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
-	     * Default-on (byte-exact vs the full path at norovirus/dengue/
-	     * sars/HSV); set INFERNAL_HMM_CKPT_OFF to force the full path.
+	     * Byte-exact vs the full path at norovirus/dengue/sars/HSV; set
+	     * INFERNAL_HMM_CKPT_OFF to force the full path.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
 	     * is ever materialized (bxf is not allocated). brief 26_0526-017: bxb uses
 	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
@@ -1955,7 +2004,9 @@ hmm_pipeline_thread(void *arg)
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
   extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes);                        /* brief 26_0430-266: post-band do_bandedoa mem preflight */
+  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+  extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                          P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -2027,6 +2078,7 @@ hmm_pipeline_thread(void *arg)
       int     *kmax  = NULL;
       int      ncells = 0;
       int      pad   = 30;
+      int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
       P7_GBANDS *bnd = NULL;
       P7_GMXB *bxf   = NULL;
       P7_GMXB *bxb   = NULL;
@@ -2134,15 +2186,27 @@ hmm_pipeline_thread(void *arg)
       /* brief 26_0430-266: post-band do_bandedoa preflight (see serial-path
        * site above for full reasoning). */
       {
-	int    do_ckpt_pf = (getenv("INFERNAL_HMM_CKPT_OFF") == NULL);
-	double needed_bytes_pf, needed_mb_pf;
-	p7_CheckptBandedOAMemNeeded(bnd, do_ckpt_pf, &needed_bytes_pf);
+	/* brief 26_0628-081: mirrors the serial site's size-conditional engine
+	 * choice exactly (see there for the policy and the env overrides). */
+	double needed_bytes_pf, needed_mb_pf, ckpt_bytes_pf;
+	if      (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ckpt_mode = P7B_OAMEM_NOCKPT;
+	else if (getenv("INFERNAL_HMM_PPCKPT_ON")  != NULL) ckpt_mode = P7B_OAMEM_CKPTPP;
+	else if (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ckpt_mode = P7B_OAMEM_CKPT;
+	else {
+	  p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
+	  ckpt_mode = (ckpt_bytes_pf / (1024.0 * 1024.0) <= (double) info->mxsize)
+	              ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
+	}
+	p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode, &needed_bytes_pf);
 	needed_mb_pf = needed_bytes_pf / (1024.0 * 1024.0);
 	if (needed_mb_pf > (double) info->mxsize) {
 	  int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
 	  cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
 		  needed_mb_pf, (double) info->mxsize, recommended_mxsize_pf);
 	}
+	if (getenv("INFERNAL_CKPT_VERBOSE"))
+	  fprintf(stderr, "# hmm-OA engine: mode=%d (0=nockpt 1=ckpt 2=ckptpp) needed=%.2f Mb mxsize=%.2f Mb ncell=%ld\n",
+		  ckpt_mode, needed_mb_pf, (double) info->mxsize, (long) bnd->ncell);
       }
 
       /* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
@@ -2155,11 +2219,20 @@ hmm_pipeline_thread(void *arg)
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-      if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
+      if (ckpt_mode == P7B_OAMEM_CKPTPP) {
+	/* brief 26_0628-081: DOUBLE-checkpointed engine; mirrors the serial-path
+	 * gate in hmm_alignment().  Nothing O(bnd->ncell) is allocated in this
+	 * branch (bxf and bxb both stay NULL). */
+	if (getenv("BRIEF035_MEMPOINT") != NULL)
+	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
+	p7_trace_Reuse(info->hmm_tr[idx]);
+	if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, info->gm, bnd, info->hmm_tr[idx], &fwdsc, &oasc)) != eslOK)
+	  cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
+      }
+      else if (ckpt_mode == P7B_OAMEM_CKPT) {
 	/* brief 26_0628-036: port of brief 26_0526-016's sqrt(nrow)-checkpointed F/B/Decode/OA/
 	 * traceback into the threaded worker (mirrors hmm_alignment()'s serial-path
-	 * gate above; see cm_p7_band.c:8641/9146). bxb holds the resident posterior;
-	 * bxf is never allocated. */
+	 * gate above). bxb holds the resident posterior; bxf is never allocated. */
 	bxb = p7b_pp_Create(bnd);
 	if (getenv("BRIEF035_MEMPOINT") != NULL)
 	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
@@ -2968,10 +3041,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* brief 26_0430-266: post-band do_bandedoa_w preflight (see serial-path
 	 * site above for full reasoning). This worker path is always the
-	 * non-checkpointed banded engine (2 x p7_gmxb_Create below), so do_ckpt=FALSE. */
+	 * non-checkpointed banded engine (2 x p7_gmxb_Create below), so
+	 * P7B_OAMEM_NOCKPT (== the old do_ckpt=FALSE). The MPI worker has never
+	 * used either checkpointed engine, so brief 26_0628-081 leaves it alone. */
 	{
 	  double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
-	  p7_CheckptBandedOAMemNeeded(bnd_w, FALSE, &needed_bytes_pf);
+	  p7_CheckptBandedOAMemNeeded(bnd_w, P7B_OAMEM_NOCKPT, &needed_bytes_pf);
 	  needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	  mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
 	  if (needed_mb_pf > mxsize_limit_pf) {

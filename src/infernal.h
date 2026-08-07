@@ -3570,6 +3570,17 @@ extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos,
 /* p7_kbands2gbands() declared locally in files that use it - requires p7_gbands.h */
 /* p7_GBackwardBanded() declared locally in files that use it - requires p7_gmxb.h */
 
+/* <ckpt_mode> selector for p7_CheckptBandedOAMemNeeded() (cm_p7_band.c):
+ * which --hmm do_bandedoa engine the byte estimate should model.  The
+ * function itself is declared locally where it is used (its P7_GBANDS arg
+ * requires p7_gbands.h), but these mode constants have no header
+ * dependency, so they live here rather than being duplicated per caller.
+ * Values 0/1 are the historical FALSE/TRUE do_ckpt flag. */
+#define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: 2 x full banded gmxb;  O(ncell)      */
+#define P7B_OAMEM_CKPT    1   /* ckpt F/B/OA + RESIDENT posterior;        O(ncell)      */
+#define P7B_OAMEM_CKPTPP  2   /* + double-checkpointed posterior (brief 26_0628-081):
+                               * O(sqrt(nrow)*maxnc) -- the default engine             */
+
 /* from cm_p7_domaindef.c */
 extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
               P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
