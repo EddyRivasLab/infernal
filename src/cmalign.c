@@ -514,11 +514,24 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  *
  * If the loaded CM has 0 basepairs and the user requested no explicit
  * alignment mode, force the memory-minimal production HMM path
- * (--hmm --p7ibv --p7ibv-delta 1000) by setting those options in <go> as
- * if given on the command line, then emit a one-line note to stderr. The
- * resulting run is byte-identical to that explicit invocation. --nohmm
- * forces the historical CM-DP default; bps>0 CMs are never touched.
+ * (--hmm --p7ibv [--p7ibv-delta 1000]) by setting those options in <go>
+ * as if given on the command line, then emit a one-line note to stderr.
+ *
+ * brief 26_0526-013 FOLLOW-UP (2026-08-07): the --p7ibv-delta 1000 tight
+ * band was validated ONLY at genome scale (norovirus M=7567 through MPXV
+ * M=197209, briefs 135c/023/026). 26_0803's brief 002 directly measured it
+ * as accuracy-UNSAFE at small M -- a real VADR flu model (M=890, also
+ * bps=0) diverges materially from unbanded --hmm (58% of PP chars differ,
+ * one sample only 78% residue-identical). So the tight delta is now
+ * SIZE-CONDITIONAL: only forced above cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM
+ * (our smallest validated M, rounded down to 4000 for a clear/documented
+ * threshold). At or below that, --p7ibv-delta is left untouched (CLI
+ * default 20000 -- wide, and the config 26_0803 independently confirmed
+ * safe at flu scale). This is a correctness fix, not a new feature --
+ * bps>0 CMs are still never touched; --nohmm still forces the historical
+ * CM-DP default.
  */
+#define CM_AUTOSWITCH_TIGHT_DELTA_MINM 4000
 static void
 maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
 {
@@ -533,7 +546,7 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
   autoswitch_force_opt(go, "--hmm", NULL);
   if (! esl_opt_GetBoolean(go, "--p7ibv"))
     autoswitch_force_opt(go, "--p7ibv", NULL);
-  if (esl_opt_IsDefault(go, "--p7ibv-delta"))
+  if (esl_opt_IsDefault(go, "--p7ibv-delta") && cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM)
     autoswitch_force_opt(go, "--p7ibv-delta", "1000");
 
   fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
