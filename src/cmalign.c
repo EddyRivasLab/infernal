@@ -1043,7 +1043,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
   extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes);                        /* brief 26_0430-266: post-band do_bandedoa mem preflight */
+  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+  extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                          P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
 
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
@@ -1461,9 +1463,18 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	   * the plain Viterbi-trace band) since all of them converge on the same
 	   * ckpt/non-ckpt dispatch below. */
 	  {
-	    int    do_ckpt_pf     = (getenv("INFERNAL_HMM_CKPT_OFF") == NULL);
+	    /* brief 26_0628-081: three engines now, not two.  Mode selection is a
+	     * single decision made here and reused verbatim by the dispatch below,
+	     * so the preflight always models the engine that actually runs.  Both
+	     * gates test only for PRESENCE of the env var, so
+	     * `env INFERNAL_HMM_PPCKPT_OFF= cmalign ...` (empty string) still selects
+	     * the legacy resident-posterior path -- unset the variable to get the
+	     * default double-checkpointed engine back. */
+	    int    ckpt_mode_pf   = (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ? P7B_OAMEM_NOCKPT
+	                          : (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ? P7B_OAMEM_CKPT
+	                          :                                              P7B_OAMEM_CKPTPP;
 	    double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
-	    p7_CheckptBandedOAMemNeeded(bnd, do_ckpt_pf, &needed_bytes_pf);
+	    p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode_pf, &needed_bytes_pf);
 	    needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	    mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
 	    if (needed_mb_pf > mxsize_limit_pf) {
@@ -1491,10 +1502,23 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
 	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
+	  if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL && getenv("INFERNAL_HMM_PPCKPT_OFF") == NULL) {
+	    /* brief 26_0628-081: DOUBLE-checkpointed engine -- default.  Same
+	     * sqrt(nrow) checkpointing as 26_0526-016 below, plus a checkpointed
+	     * Backward pass so the O(bnd->ncell) resident posterior is gone too:
+	     * nothing O(ncell) is allocated anywhere in this branch (bxf and bxb
+	     * both stay NULL).  Byte-identical to the resident-posterior branch;
+	     * set INFERNAL_HMM_PPCKPT_OFF to fall back to it. */
+	    if (getenv("BRIEF035_MEMPOINT") != NULL)
+	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
+	    p7_trace_Reuse(tr[idx]);
+	    if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, gm, bnd, tr[idx], &fwdsc, &oasc)) != eslOK)
+	      cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
+	  }
+	  else if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
 	    /* brief 26_0526-016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
-	     * Default-on (byte-exact vs the full path at norovirus/dengue/
-	     * sars/HSV); set INFERNAL_HMM_CKPT_OFF to force the full path.
+	     * Byte-exact vs the full path at norovirus/dengue/sars/HSV; set
+	     * INFERNAL_HMM_CKPT_OFF to force the full path.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
 	     * is ever materialized (bxf is not allocated). brief 26_0526-017: bxb uses
 	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
@@ -1955,7 +1979,9 @@ hmm_pipeline_thread(void *arg)
   extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
   extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
   extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes);                        /* brief 26_0430-266: post-band do_bandedoa mem preflight */
+  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+  extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                          P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
 
 #ifdef HAVE_FLUSH_ZERO_MODE
   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -2134,9 +2160,12 @@ hmm_pipeline_thread(void *arg)
       /* brief 26_0430-266: post-band do_bandedoa preflight (see serial-path
        * site above for full reasoning). */
       {
-	int    do_ckpt_pf = (getenv("INFERNAL_HMM_CKPT_OFF") == NULL);
+	/* brief 26_0628-081: mirrors the serial site's three-way mode selection. */
+	int    ckpt_mode_pf = (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ? P7B_OAMEM_NOCKPT
+	                    : (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ? P7B_OAMEM_CKPT
+	                    :                                              P7B_OAMEM_CKPTPP;
 	double needed_bytes_pf, needed_mb_pf;
-	p7_CheckptBandedOAMemNeeded(bnd, do_ckpt_pf, &needed_bytes_pf);
+	p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode_pf, &needed_bytes_pf);
 	needed_mb_pf = needed_bytes_pf / (1024.0 * 1024.0);
 	if (needed_mb_pf > (double) info->mxsize) {
 	  int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
@@ -2155,11 +2184,20 @@ hmm_pipeline_thread(void *arg)
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-      if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
+      if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL && getenv("INFERNAL_HMM_PPCKPT_OFF") == NULL) {
+	/* brief 26_0628-081: DOUBLE-checkpointed engine -- default; mirrors the
+	 * serial-path gate in hmm_alignment().  Nothing O(bnd->ncell) is
+	 * allocated in this branch (bxf and bxb both stay NULL). */
+	if (getenv("BRIEF035_MEMPOINT") != NULL)
+	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
+	p7_trace_Reuse(info->hmm_tr[idx]);
+	if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, info->gm, bnd, info->hmm_tr[idx], &fwdsc, &oasc)) != eslOK)
+	  cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
+      }
+      else if (getenv("INFERNAL_HMM_CKPT_OFF") == NULL) {
 	/* brief 26_0628-036: port of brief 26_0526-016's sqrt(nrow)-checkpointed F/B/Decode/OA/
 	 * traceback into the threaded worker (mirrors hmm_alignment()'s serial-path
-	 * gate above; see cm_p7_band.c:8641/9146). bxb holds the resident posterior;
-	 * bxf is never allocated. */
+	 * gate above). bxb holds the resident posterior; bxf is never allocated. */
 	bxb = p7b_pp_Create(bnd);
 	if (getenv("BRIEF035_MEMPOINT") != NULL)
 	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
@@ -2968,10 +3006,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* brief 26_0430-266: post-band do_bandedoa_w preflight (see serial-path
 	 * site above for full reasoning). This worker path is always the
-	 * non-checkpointed banded engine (2 x p7_gmxb_Create below), so do_ckpt=FALSE. */
+	 * non-checkpointed banded engine (2 x p7_gmxb_Create below), so
+	 * P7B_OAMEM_NOCKPT (== the old do_ckpt=FALSE). The MPI worker has never
+	 * used either checkpointed engine, so brief 26_0628-081 leaves it alone. */
 	{
 	  double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
-	  p7_CheckptBandedOAMemNeeded(bnd_w, FALSE, &needed_bytes_pf);
+	  p7_CheckptBandedOAMemNeeded(bnd_w, P7B_OAMEM_NOCKPT, &needed_bytes_pf);
 	  needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	  mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
 	  if (needed_mb_pf > mxsize_limit_pf) {
