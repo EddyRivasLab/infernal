@@ -174,7 +174,7 @@ static ESL_OPTIONS options[] = {
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 3 },
   { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 3 },
-  { "--mxesc-fixedtau", eslARG_NONE,    FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded,--sample,--cyk", "mxesc Phase2 item1: skip p7-banded tau-ratchet, let engine escalation carry memory", 3 },
+  { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 3 },
   { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "mxesc Phase2 item2: tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 3 },
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
@@ -3417,7 +3417,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--nonbanded")) {  fprintf(ofp, "# using HMM bands for acceleration:            no\n"); }
   if (esl_opt_IsUsed(go, "--small"))     {  fprintf(ofp, "# small memory D&C alignment algorithm:        on\n"); }
   if (esl_opt_IsUsed(go, "--no-mxesc"))  {  fprintf(ofp, "# --mxsize engine auto-escalation:             off\n"); }
-  if (esl_opt_IsUsed(go, "--mxesc-fixedtau")) { fprintf(ofp, "# mxesc Phase2 item1 fixed-tau (no p7-band ratchet): on\n"); }
+  if (esl_opt_IsUsed(go, "--no-mxesc-fixedtau")) { fprintf(ofp, "# mxesc fixed-tau (no p7-band ratchet):        off (ratchet restored)\n"); }
   if (esl_opt_IsUsed(go, "--ckpt-cykbands"))  { fprintf(ofp, "# mxesc Phase2 item2 --ckpt-tier CYK-band tightening: on\n"); }
 
   if (esl_opt_IsUsed(go, "--sfile"))     {  fprintf(ofp, "# saving alignment score info to file:         %s\n", esl_opt_GetString(go, "--sfile")); }
@@ -3550,8 +3550,34 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * out (restore pre-269 error-on-overflow behavior). Only the HB free-OptAcc path
    * acts on it (DispatchSqAlignment() gates out --ckpt/--small/--nonbanded/--sample/--sub). */
   if(! esl_opt_GetBoolean(go, "--no-mxesc")) cm->align_opts |= CM_ALIGN_MXESC;
-  /* brief 26_0430-271: Phase2 items, both default OFF (Phase-1-identical baseline). */
-  if(  esl_opt_GetBoolean(go, "--mxesc-fixedtau")) cm->align_opts |= CM_ALIGN_MXESC_FIXEDTAU;
+  /* brief 26_0430-271 item 1: fixed-tau is now the DEFAULT inside the mxesc
+   * framework path; --no-mxesc-fixedtau restores the p7-banded CP9 F/B
+   * tau/thresh ratchet.  Measured (26_0430-271, full rmark4h+4e = 1441
+   * families + a 5-virus genome panel): zero accuracy movement at Rfam scale
+   * (0/1441 families escalate at the default --mxsize, so the path is never
+   * reached there), and at true genome scale a 2.0-5.9x wall reduction,
+   * 10-15% lower peak RSS, and consistently POSITIVE bit-score deltas.
+   *
+   * ⚠ KNOWN-OUTSTANDING: 26_0430-271 recommended a SECOND independent
+   * genome-scale confirmation (different virus/sequence set) before this flip,
+   * because the result contradicted that brief's own hypothesised adverse
+   * direction.  That confirmation has NOT been run; the flip was made on the
+   * single measured panel by explicit decision.  26_0430-274 Phase A carries
+   * it as a named deliverable -- if it fails to reproduce, revert this default.
+   *
+   * The condition below deliberately reproduces the option's ORIGINAL
+   * incompatibility scope (--ckpt/--small/--nonbanded/--sample/--cyk).  Those
+   * engines bypass mxesc entirely and fixed-tau was never measured under them,
+   * so default-ON must NOT silently extend into them. */
+  if(! esl_opt_GetBoolean(go, "--no-mxesc-fixedtau") &&
+     ! esl_opt_GetBoolean(go, "--no-mxesc")          &&
+     ! esl_opt_GetBoolean(go, "--ckpt")              &&
+     ! esl_opt_GetBoolean(go, "--small")             &&
+     ! esl_opt_GetBoolean(go, "--nonbanded")         &&
+     ! esl_opt_GetBoolean(go, "--sample")            &&
+     ! esl_opt_GetBoolean(go, "--cyk"))
+    cm->align_opts |= CM_ALIGN_MXESC_FIXEDTAU;
+  /* brief 26_0430-271 item 2: still default OFF (weak/inconsistent benefit). */
   if(  esl_opt_GetBoolean(go, "--ckpt-cykbands"))  cm->align_opts |= CM_ALIGN_CKPT_CYKBANDS;
   if((! esl_opt_GetBoolean(go, "--fixedtau")) &&
      (  esl_opt_GetBoolean(go, "--hbanded"))) { 

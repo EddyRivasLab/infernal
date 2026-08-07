@@ -2140,7 +2140,7 @@ typedef struct cm_s {
 #define CM_ALIGN_P7HMMNOBAND   (1<<25) /* w/P7HMM: unbanded OA (no Vit banding)    */
 #define CM_ALIGN_CHECKPT       (1<<26) /* use checkpointed sqrt(M)-mem HB OptAcc engines (truncated or non-trunc, local or global, bps=0 or bps>0) */
 #define CM_ALIGN_MXESC         (1<<27) /* brief 26_0430-269: --mxsize auto-escalation: pick engine (free-OA/ckpt-OA/CYK-floor) by est. memory vs --mxsize */
-#define CM_ALIGN_MXESC_FIXEDTAU (1<<28) /* brief 26_0430-271 item 1: skip the p7-banded CP9 F/B tau/thresh ratchet (cp9_IterateSeq2BandsP7BF_chk_multi); let mxesc tier escalation, not band-tightening, carry memory */
+#define CM_ALIGN_MXESC_FIXEDTAU (1<<28) /* brief 26_0430-271 item 1: skip the p7-banded CP9 F/B tau/thresh ratchet (cp9_IterateSeq2BandsP7BF_chk_multi); let mxesc tier escalation, not band-tightening, carry memory. DEFAULT ON inside the mxesc path as of 2026-08-07; --no-mxesc-fixedtau restores the ratchet. NOT set under --ckpt/--small/--nonbanded/--sample/--cyk (never measured there) */
 #define CM_ALIGN_CKPT_CYKBANDS (1<<29) /* brief 26_0430-271 item 2: CLI-controlled equivalent of the CKPT_CYKBANDS env var (opt-in pass-1-CYK-parsetree band tightening in the --ckpt engine tier); env var still honored as an override */
 
 /* search options, cm->search_opts */
