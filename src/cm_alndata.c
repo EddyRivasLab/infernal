@@ -1357,7 +1357,96 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	float        _cyk_sc  = 0.;
 	int          _cyk_ok  = FALSE;
 
-	if(do_trunc) {
+	/* brief 26_0430-273: size-conditional D&C-CYK fallback for the standalone --cykbands
+	 * pre-pass. Legacy behavior (still exactly what runs under --no-cykbands-dnc): always
+	 * use the HMM-banded FULL-MATRIX CYK engine (cm_TrAlignHB/cm_alignT_hb); if it doesn't
+	 * fit mxsize those functions return eslERANGE (not cm_Fail()) so _cyk_ok simply stays
+	 * FALSE and tightening is silently skipped -- no crash, but also no tightening, at
+	 * whatever genome scale the banded full matrix stops fitting.
+	 * New default: estimate the full-matrix cost first (cm_[Tr]AlignSizeNeededHB, the
+	 * same estimator + mxsize semantics briefs 225/226/269 already use for the main
+	 * alignment engine); if it doesn't fit, fall back to HMM-banded D&C-CYK
+	 * (CYKDivideAndConquerHB/TrCYKDivideAndConquerHB), gated on the D&C estimate
+	 * (cm_[Tr]DnCAlignSizeNeededHB, brief 228's banded-EL version, already on this base).
+	 * If even the D&C estimate doesn't fit, this degrades exactly like the legacy path:
+	 * _cyk_ok stays FALSE, original bands kept, no crash. Budget = full mxsize for both
+	 * tiers: the pre-pass matrix is transient (allocated, consumed for the parsetree,
+	 * freed before the main Inside/Outside/OA/Posterior alignment), so it is never
+	 * concurrent with the main alignment's own matrices -- sequential, not additive. */
+	char  _cykpp_engine  = 'f'; /* 'f' = full-matrix (tier a), 'd' = D&C (tier b), 'x' = neither fits */
+	float _cykpp_est_std = 0., _cykpp_est_dnc = 0.;
+	int   _cykpp_use_dnc = FALSE;
+
+	if(cm->p7_cykbands_no_dnc) {
+	  _cykpp_engine = 'f'; /* legacy: always attempt the full-matrix engine below */
+	}
+	else if(getenv("CYKPP_FORCE_DNC") != NULL) {
+	  /* brief 26_0430-273 gate (a): force the D&C engine regardless of the estimate, so
+	   * the choice can be isolated from --mxsize (which also drives the SEPARATE mxesc
+	   * tier selector for the main alignment, brief 26_0430-269, a few hundred lines
+	   * above this block in the same function) -- debug/gate-only, not for production use. */
+	  _cykpp_engine = 'd'; _cykpp_use_dnc = TRUE;
+	}
+	else {
+	  int _cykpp_status;
+	  if(do_trunc) _cykpp_status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, FALSE/*do_sample*/, FALSE/*do_post*/,
+	                                                      NULL, NULL, NULL, NULL, &_cykpp_est_std, NULL);
+	  else         _cykpp_status = cm_AlignSizeNeededHB  (cm, errbuf, sq->L, mxsize, FALSE/*do_sample*/, FALSE/*do_post*/,
+	                                                      NULL, NULL, NULL, NULL, &_cykpp_est_std, NULL);
+	  if(_cykpp_status == eslOK) {
+	    _cykpp_engine = 'f';
+	  }
+	  else {
+	    errbuf[0] = '\0'; /* clear the eslERANGE message; tier (a) simply doesn't fit */
+	    float _cykpp_dnc_vjd = 0., _cykpp_dnc_sh = 0.;
+	    int _cykpp_dnc_status;
+	    if(do_trunc) {
+	      /* estimator is ignorant of the per-mode ncand loop below; TRMODE_T requests all
+	       * three (J+L+R) planes, the safe upper bound over whichever single mode the
+	       * ncand loop actually runs (same conservative choice mxesc tier (c) makes). */
+	      _cykpp_dnc_status = cm_TrDnCAlignSizeNeededHB(cm, errbuf, sq->L, TRMODE_T, &_cykpp_dnc_vjd, &_cykpp_dnc_sh, &_cykpp_est_dnc);
+	    }
+	    else {
+	      _cykpp_dnc_status = cm_DnCAlignSizeNeededHB(cm, errbuf, sq->L, &_cykpp_dnc_vjd, &_cykpp_dnc_sh, &_cykpp_est_dnc);
+	    }
+	    if(_cykpp_dnc_status != eslOK) goto ERROR;
+	    if(_cykpp_est_dnc <= mxsize) { _cykpp_engine = 'd'; _cykpp_use_dnc = TRUE; }
+	    else                         { _cykpp_engine = 'x'; }
+	  }
+	}
+
+	fprintf(stderr, "#CYKPP_ENGINE seq=%s L=%d M=%d trunc=%d engine=%c est_std=%.1f est_dnc=%.1f mxsize=%.1f\n",
+	        sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : cm->clen), do_trunc, _cykpp_engine,
+	        _cykpp_est_std, _cykpp_est_dnc, (float)mxsize);
+
+	if(_cykpp_use_dnc) {
+	  /* HMM-banded D&C-CYK floor: CYKDivideAndConquerHB()/TrCYKDivideAndConquerHB()
+	   * handle every CM type (bifurcated or bps=0), same engines/pattern as the main
+	   * alignment's mxesc tier (c) (brief 26_0430-269) just above in this same function.
+	   * CYKDivideAndConquerHB() has no status/errbuf return -- it cm_Fail()s internally
+	   * on error, so a returned tr is always valid; _cyk_ok is unconditionally TRUE. */
+	  if(do_trunc) {
+	    char cand[4]; int ncand = 0, _m273;
+	    Parsetree_t *tr_best = NULL; float c_cyk = IMPOSSIBLE;
+	    if(cm->cp9b->Jvalid[0]) cand[ncand++] = TRMODE_J;
+	    if(cm->cp9b->Lvalid[0]) cand[ncand++] = TRMODE_L;
+	    if(cm->cp9b->Rvalid[0]) cand[ncand++] = TRMODE_R;
+	    if(cm->cp9b->Tvalid[0]) cand[ncand++] = TRMODE_T;
+	    for(_m273 = 0; _m273 < ncand; _m273++) {
+	      Parsetree_t *tr_m = NULL; char rm = TRMODE_UNKNOWN;
+	      float sc_m = TrCYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, pass_idx, cand[_m273], &rm, &tr_m, cm->cp9b);
+	      if(sc_m > c_cyk) { c_cyk = sc_m; if(tr_best) FreeParsetree(tr_best); tr_best = tr_m; }
+	      else if(tr_m) FreeParsetree(tr_m);
+	    }
+	    if(tr_best != NULL) { _cyk_tr = tr_best; _cyk_sc = c_cyk; _cyk_ok = TRUE; }
+	    /* else: no root-valid truncation mode -- degrade gracefully, _cyk_ok stays FALSE */
+	  }
+	  else {
+	    _cyk_sc = CYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, &_cyk_tr, cm->cp9b);
+	    _cyk_ok = TRUE;
+	  }
+	}
+	else if(do_trunc) {
 	  char _cyk_mode = TRMODE_UNKNOWN;
 	  float _cyk_avgpp = 0.;
 	  if(cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize,
