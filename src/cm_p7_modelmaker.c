@@ -281,6 +281,34 @@ static const double gfcalib_coef[5]    = {
   -0.06810158052837548   /* z3 */
 };
 
+/* Learned tau shrinkage correction (briefs 26_0719-053/26_0719-055, deployed
+ * by brief 26_0719-054). Applied on top of the all-order-statistic raw tau
+ * returned by cm_p7_Tau(); see gfcalib_shrink_tau() below for the formula and
+ * the exact parametrization. Source of truth:
+ * brief055_run/shrinkage_spec_combined.json -> spec_all, fit by
+ * scripts/fit_task055_shrinkage_combined.py on the combined
+ * {1097 multi-seq + 64 nseq=1} pool.
+ */
+static const double gfcalib_shrink_mu[4] = {
+   5.109825312361632,    /* log(clen)                */
+   0.5437359378271508,   /* mean_H                   */
+   1.1712644136150876,   /* log(min(eff_nseq, 20))   */
+ -10.058235004116202     /* tau_raw * lambda         */
+};
+static const double gfcalib_shrink_sd[4] = {
+   1.0783021543068307,
+   0.21815714303833725,
+   0.9871147041905497,
+  10.076412813149693
+};
+static const double gfcalib_shrink_coef[5] = {
+   1.092634838132801,    /* intercept */
+  -0.3867448779584632,   /* z0 */
+  -0.2187994840669399,   /* z1 */
+  -0.19904086095964266,  /* z2 */
+  -0.5429849757828361    /* z3 */
+};
+
 /* mean_relentropy_bits()
  * Mean over the M match columns of the relative entropy (bits) of the match
  * emission distribution vs a uniform 1/K background. Matches the training
@@ -359,6 +387,45 @@ predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
                              + gfcalib_coef[3] * z2 + gfcalib_coef[4] * z3);
 }
 
+/* gfcalib_shrink_tau()
+ * Learned shrinkage correction applied to the raw all-order-statistic tau
+ * returned by cm_p7_Tau() (briefs 26_0719-053/26_0719-055, deployed by brief
+ * 26_0719-054).
+ *
+ * The raw all-order average is the *worst* unshrunk estimator of the family
+ * tried in brief 26_0719-041, but the best once shrunk: averaging all N
+ * anchors minimizes variance, and the learned correction removes the bias
+ * that averaging the low-rank anchors introduces. The last feature
+ * (tau_raw*lambda) is what does the shrinking -- it partly replaces the noisy
+ * N=4 sample estimate with a deterministic feature-based one.
+ *
+ * Parametrization matches scripts/fit_task055_shrinkage_combined.py exactly:
+ * the OLS target there is d = lambda*(tau_gt - tau_raw) (a dimensionless
+ * quantity), so the predicted d_hat must be divided by lambda to get a
+ * correction in bits before adding it to tau_raw (fit script line 178,
+ * `te_raw + apply_ols(spec, Xs) / lam`). Getting that factor of lambda wrong
+ * is the easy mistake here; gate 2 of brief 26_0719-054 checks it.
+ *
+ * Deterministic in (features, sorted sample), so GFMU stays byte-identical
+ * across --cpu.
+ */
+static double
+gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, double eff_nseq)
+{
+  double x0 = log((double) clen);
+  double x1 = mean_H;
+  double x2 = gfcalib_effn_feature(eff_nseq);
+  double x3 = tau_raw * lambda;
+  double z0 = (x0 - gfcalib_shrink_mu[0]) / gfcalib_shrink_sd[0];
+  double z1 = (x1 - gfcalib_shrink_mu[1]) / gfcalib_shrink_sd[1];
+  double z2 = (x2 - gfcalib_shrink_mu[2]) / gfcalib_shrink_sd[2];
+  double z3 = (x3 - gfcalib_shrink_mu[3]) / gfcalib_shrink_sd[3];
+  double d_hat = gfcalib_shrink_coef[0] + gfcalib_shrink_coef[1] * z0
+                                        + gfcalib_shrink_coef[2] * z1
+                                        + gfcalib_shrink_coef[3] * z2
+                                        + gfcalib_shrink_coef[4] * z3;
+  return tau_raw + d_hat / lambda;    /* d_hat is in units of lambda*bits */
+}
 
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
@@ -439,10 +506,16 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
    * deployed by brief 26_0719-054).
    *
    * GFLAMBDA is predicted in closed form from (clen, mean_H, mean_H^2,
-   * eff_nseq) -- NOT reused from the local Forward lambda -- and GFMU (tau) is
-   * estimated inside cm_p7_Tau() using that predicted lambda. EgfT (tailp) is
+   * eff_nseq) -- NOT reused from the local Forward lambda. GFMU (tau) is then
+   * the all-order-statistic average returned by cm_p7_Tau() at the predicted
+   * lambda, plus a learned shrinkage correction applied here. EgfT (tailp) is
    * unused on this path; the tailp choice (0.015) is baked into the trained
    * lambda predictor.
+   *
+   * The shrinkage is applied here rather than inside cm_p7_Tau() so that all
+   * the feature machinery lives in one place and cm_p7_Tau() keeps its
+   * signature: everything the correction needs (clen, mean_H, eff_nseq, the
+   * predicted lambda) is already in hand at this point.
    *
    * NOTE on <eff_nseq>: this is the *CM's* eff_nseq, passed in by the caller,
    * NOT hmm->eff_nseq. Those are genuinely different numbers -- on cmbuild's
@@ -456,9 +529,12 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
    */
   {
     double mean_H  = mean_relentropy_bits(hmm);
+    double tau_raw;
+
     gflambda = predict_glocal_lambda(hmm->M, mean_H, eff_nseq);
     if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
-    if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+    if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &tau_raw)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, eff_nseq);
   }
 
   esl_randomness_Destroy(r); 
@@ -723,7 +799,11 @@ cm_p7_tau_thread_worker(void *arg)
  *            lambda : expected slope of the exponential tail (from p7_Lambda())
  *            tailp  : tail mass from which we will extrapolate mu
  *            ncpus  : number of CPUs for threaded glocal Fwd (0=serial)
- *            ret_tau : RETURN: estimate for the Forward tau (base of exponential tail)
+ *            ret_tau : RETURN: estimate for the Forward tau (base of
+ *                      exponential tail). On the glocal path this is the RAW
+ *                      all-order-statistic tau -- the caller is expected to
+ *                      apply gfcalib_shrink_tau() to it to get the final
+ *                      GFMU. See brief 26_0719-054.
  *
  * Returns:   <eslOK> on success, and <*ret_tau> is the tau estimate.
  *
@@ -903,31 +983,37 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
       if (ox != NULL) { p7_omx_Destroy(ox); ox = NULL; }
     }
 
-  /* known-lambda top-half order-statistic tau estimator (brief 26_0719-046,
-   * formula 2b). Given the N sampled bit scores and the *predicted* glocal
-   * lambda passed in <lambda>, sort ascending and use the distribution-free
-   * order-statistic identity E[S(X_(k))] = (N-k+1)/(N+1) under an exponential
-   * tail S(x)=exp(-lambda*(x-tau)):
+  /* known-lambda all-order-statistic tau estimator (briefs 26_0719-041/
+   * 26_0719-053, deployed by brief 26_0719-054; replaces the top-half
+   * estimator of brief 26_0719-046). Given the N sampled bit scores and the
+   * *predicted* glocal lambda passed in <lambda>, sort ascending and use the
+   * distribution-free order-statistic identity E[S(X_(k))] = (N-k+1)/(N+1)
+   * under an exponential tail S(x)=exp(-lambda*(x-tau)):
    *     tau_hat_(k) = X_(k) + log((N-k+1)/(N+1)) / lambda
-   * then average the anchors from the top half (k = N/2+1 .. N, integer floor;
-   * matches Python tau_k[N//2:]). The sort makes the result independent of the
-   * threaded worker merge order, so (tau,lambda) is byte-identical across --cpu.
-   * <tailp> (EgfT) is intentionally UNUSED here -- the tailp choice is baked
-   * into the predicted lambda; see scripts/build_task041_lowN_tau_estimator.py:217-238.
+   * then average the anchors over ALL k = 1..N (brief 26_0719-041's
+   * "known_allavg"; matches Python tau_k.mean()).
+   *
+   * On its own this is the *worst* raw estimator of the family -- averaging
+   * in the low-rank anchors is biased -- but it has the lowest variance, and
+   * it is the best of the family once the caller applies the learned
+   * shrinkage correction that removes that bias (gfcalib_shrink_tau()). So
+   * what this function returns is a raw tau, not the final GFMU.
+   *
+   * The sort makes the result independent of the threaded worker merge order,
+   * so (tau,lambda) is byte-identical across --cpu. <tailp> (EgfT) is
+   * intentionally UNUSED here -- the tailp choice is baked into the predicted
+   * lambda.
    */
   esl_vec_DSortIncreasing(xv, N);
   {
     double tau_sum = 0.;
-    int    kstart  = N / 2;              /* 0-based start of top half == 1-based k=N/2+1 */
-    int    ntop    = N - kstart;
     int    k;
-    for (k = kstart; k < N; k++) {       /* k is 0-based rank */
+    for (k = 0; k < N; k++) {            /* k is 0-based rank */
       double p_k = (double) (N - k) / (double) (N + 1);   /* (N-(k+1)+1)/(N+1) */
       tau_sum += xv[k] + log(p_k) / lambda;
     }
-    *ret_tau = tau_sum / (double) ntop;
+    *ret_tau = tau_sum / (double) N;
   }
-
 
   free(xv);
   return eslOK;
