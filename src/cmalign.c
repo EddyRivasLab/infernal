@@ -174,6 +174,8 @@ static ESL_OPTIONS options[] = {
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
   { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 3 },
   { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 3 },
+  { "--mxesc-fixedtau", eslARG_NONE,    FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded,--sample,--cyk", "mxesc Phase2 item1: skip p7-banded tau-ratchet, let engine escalation carry memory", 3 },
+  { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "mxesc Phase2 item2: tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 3 },
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
@@ -3415,6 +3417,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--nonbanded")) {  fprintf(ofp, "# using HMM bands for acceleration:            no\n"); }
   if (esl_opt_IsUsed(go, "--small"))     {  fprintf(ofp, "# small memory D&C alignment algorithm:        on\n"); }
   if (esl_opt_IsUsed(go, "--no-mxesc"))  {  fprintf(ofp, "# --mxsize engine auto-escalation:             off\n"); }
+  if (esl_opt_IsUsed(go, "--mxesc-fixedtau")) { fprintf(ofp, "# mxesc Phase2 item1 fixed-tau (no p7-band ratchet): on\n"); }
+  if (esl_opt_IsUsed(go, "--ckpt-cykbands"))  { fprintf(ofp, "# mxesc Phase2 item2 --ckpt-tier CYK-band tightening: on\n"); }
 
   if (esl_opt_IsUsed(go, "--sfile"))     {  fprintf(ofp, "# saving alignment score info to file:         %s\n", esl_opt_GetString(go, "--sfile")); }
   if (esl_opt_IsUsed(go, "--tfile"))     {  fprintf(ofp, "# saving parsetrees to file:                   %s\n", esl_opt_GetString(go, "--tfile")); }
@@ -3546,6 +3550,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * out (restore pre-269 error-on-overflow behavior). Only the HB free-OptAcc path
    * acts on it (DispatchSqAlignment() gates out --ckpt/--small/--nonbanded/--sample/--sub). */
   if(! esl_opt_GetBoolean(go, "--no-mxesc")) cm->align_opts |= CM_ALIGN_MXESC;
+  /* brief 26_0430-271: Phase2 items, both default OFF (Phase-1-identical baseline). */
+  if(  esl_opt_GetBoolean(go, "--mxesc-fixedtau")) cm->align_opts |= CM_ALIGN_MXESC_FIXEDTAU;
+  if(  esl_opt_GetBoolean(go, "--ckpt-cykbands"))  cm->align_opts |= CM_ALIGN_CKPT_CYKBANDS;
   if((! esl_opt_GetBoolean(go, "--fixedtau")) &&
      (  esl_opt_GetBoolean(go, "--hbanded"))) { 
     cm->align_opts |= CM_ALIGN_XTAU;
