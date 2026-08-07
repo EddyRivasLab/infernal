@@ -8111,7 +8111,9 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *               each a full banded dp (p7G_NSCELLS-wide) + xmx
  *               (p7G_NXCELLS-wide) allocation.  O(ncell).
  *
- *             P7B_OAMEM_CKPT (1) (INFERNAL_HMM_PPCKPT_OFF set):
+ *             P7B_OAMEM_CKPT (1) (the usual engine: this is what the
+ *             caller picks whenever its estimate fits in --mxsize, and
+ *             what INFERNAL_HMM_PPCKPT_OFF forces unconditionally):
  *               the singly-checkpointed engine -- p7b_pp_Create(bnd)'s
  *               resident 2-cell posterior + p7_GCheckptFBDecode_Banded()'s
  *               O(sqrt(nrow)) working set (p7b_forward_seeds()'s <=nblk
@@ -8119,14 +8121,18 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *               and bbuf0/bbuf1 (1 row each)).  Still O(ncell), because
  *               of the resident posterior.
  *
- *             P7B_OAMEM_CKPTPP (2) (default: neither env var set):
+ *             P7B_OAMEM_CKPTPP (2) (the fallback the caller drops to when
+ *             mode 1 would not fit in --mxsize; INFERNAL_HMM_PPCKPT_ON
+ *             forces it):
  *               the DOUBLE-checkpointed engine, p7_GCheckptFBDecodeOA_Banded().
  *               No resident posterior at all: three ~nblk-entry seed
  *               arrays (Forward, Backward, OA) plus a handful of
  *               one-block (<=B+2 row) buffers -- the F, B and pp block
  *               buffers and the OA traceback window.  O(sqrt(nrow)*maxnc)
  *               in the DP term, plus O(nrow) for the P7B_GEO row tables
- *               and O(L) for the traceback's row_idx.
+ *               and O(L) for the traceback's row_idx.  NOTE this term is
+ *               independent of bnd->ncell: it is bounded by
+ *               O(sqrt(nrow)*M) no matter how wide the band gets.
  *
  *           B and nblk mirror p7b_geo_Create()'s own derivation
  *           (B ~ round(sqrt(nrow)), nblk = ceil(nrow/B)); maxnc (widest
@@ -8805,12 +8811,16 @@ p7b_backward_seeds(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
   xE = xC + gm->xsc[p7P_E][p7P_MOVE];
   xJ = xB = xN = -eslINFINITY;
 
-  /* the topmost block enters from the Backward initial state */
-  bseed[g->nblk-1].dp = NULL;
-  bseed[g->nblk-1].ka = M+1;  bseed[g->nblk-1].kb = M+1;
-  bseed[g->nblk-1].xC = xC;   bseed[g->nblk-1].xJ = xJ;
-  bseed[g->nblk-1].xN = xN;   bseed[g->nblk-1].xE = xE;
-  bseed[g->nblk-1].valid = 1;
+  /* the topmost block enters from the Backward initial state.  (nblk==0
+   * only when the band has no rows at all, in which case the loop below
+   * is empty too and there is no block to seed.) */
+  if (g->nblk > 0) {
+    bseed[g->nblk-1].dp = NULL;
+    bseed[g->nblk-1].ka = M+1;  bseed[g->nblk-1].kb = M+1;
+    bseed[g->nblk-1].xC = xC;   bseed[g->nblk-1].xJ = xJ;
+    bseed[g->nblk-1].xN = xN;   bseed[g->nblk-1].xE = xE;
+    bseed[g->nblk-1].valid = 1;
+  }
 
   for (r = g->nrow - 1; r >= 0; r--)
     {
