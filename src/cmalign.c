@@ -3646,12 +3646,18 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * reached there), and at true genome scale a 2.0-5.9x wall reduction,
    * 10-15% lower peak RSS, and consistently POSITIVE bit-score deltas.
    *
-   * ⚠ KNOWN-OUTSTANDING: 26_0430-271 recommended a SECOND independent
-   * genome-scale confirmation (different virus/sequence set) before this flip,
-   * because the result contradicted that brief's own hypothesised adverse
-   * direction.  That confirmation has NOT been run; the flip was made on the
-   * single measured panel by explicit decision.  26_0430-274 Phase A carries
-   * it as a named deliverable -- if it fails to reproduce, revert this default.
+   * INDEPENDENTLY CONFIRMED by brief 26_0430-275 on an 18-sequence / 5-model
+   * panel whose accessions do not overlap 271's: wall and RSS both reproduced
+   * (ratchet-restored control 1.41-2.28x slower, 10.4-13.9% more RSS), every
+   * bit-score delta >= 0, Rfam output byte-identical.
+   *
+   * ** AND THE EFFECT IS A CATEGORY LARGER THAN 271 REPORTED.  On 3 of 5
+   * independent MPXV genomes the ratchet-restored control produces a
+   * CATASTROPHICALLY COLLAPSED alignment -- cm span drops to ~4800 of ~197209
+   * columns (2.4% of the model) with a strongly negative bit score, where
+   * fixed-tau aligns the full genome correctly.  At MPXV genome scale the
+   * ratchet path is not merely slower, it is WRONG.  Do not "restore the old
+   * default" without reading 26_0430-275 first. **
    *
    * The condition below deliberately reproduces the option's ORIGINAL
    * incompatibility scope (--ckpt/--small/--nonbanded/--sample/--cyk).  Those
