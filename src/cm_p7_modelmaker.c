@@ -228,24 +228,58 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
   return status;
 }
 
-/* Cheap glocal-Forward lambda predictor (brief 26_0719-046).
+/* Cheap glocal-Forward lambda predictor (briefs 26_0719-053/26_0719-055,
+ * deployed by brief 26_0719-054; supersedes the 2-feature 046/048/049 form).
  *
  * The glocal Forward E-value slope (GFLAMBDA) is predicted in closed form
- * from two model features -- log(clen) and the mean per-column relative
- * entropy (bits) of the match emissions vs a uniform background -- instead
- * of being reused from the local Forward lambda. The coefficients are a
- * z-scored OLS linear fit (natural log/exp), refit on a pooled 961-family
- * training set (panel+rmark3+rmark4h; brief 26_0719-048
- * "A_linear_shipped_form", brief048_run/task048_structural_refit.json;
- * tailp=0.015 ground truth). This removes the small-clen sign-flip bias
- * present in the original brief042_run/task042_results.json fit while
- * keeping the same 2-feature linear functional form (held-out
- * clan-grouped-CV small-clen relerr ~7%). See
- * scripts/build_task041_lowN_tau_estimator.py:162-205.
+ * from four model features instead of being reused from the local Forward
+ * lambda:
+ *     z0 = log(clen)                    z1 = mean_H
+ *     z2 = mean_H^2                     z3 = log(min(eff_nseq, 20))
+ * where mean_H is the mean per-column relative entropy (bits) of the match
+ * emissions vs a uniform background (mean_relentropy_bits()) and eff_nseq is
+ * the *CM's* effective sequence count (see the note in cm_p7_Calibrate()).
+ * The coefficients are a z-scored OLS linear fit in log space (natural
+ * log/exp), refit by brief 26_0719-055 on the combined pool of brief
+ * 26_0719-053's 1053 held-out-validated multi-sequence families plus 64 real
+ * nseq=1 models. Source of truth:
+ * brief055_run/lambda_refit_nseq1.json -> results.H_mandatory.spec.
+ *
+ * Why this form: lambda error is depth-amplified (tau error is not), so
+ * lambda accuracy dominates the deep tail where the real user-facing
+ * `cmsearch --trmF5` E-values live. Adding mean_H^2 and the eff_nseq term
+ * takes the held-out deep-tail (P=1e-8) median error to 0.354 log10 units
+ * (2.3x) at only N=4 samples -- better than the old 2-feature form at
+ * --EgfN 50. The 055 refit additionally brings the single-sequence (nseq=1)
+ * class to population parity (5.4x -> 2.3x) at no cost to the multi-seq
+ * population. mean_H^2 is quadratic in a *bounded* feature (not in clen), so
+ * it does not blow up on extrapolation at large clen: brief 053 gate D
+ * measured the large-clen filter-safety envelope IMPROVING, max|dS*|
+ * 11.83 -> 10.78 bits.
+ *
+ * Kept as a clean swappable static const block: mu/sd are the training-set
+ * feature means/sds, coef[0] is the intercept and coef[1..4] multiply
+ * z0..z3 in order.
  */
-static const double gfcalib_feat_mu[2] = { 5.122778752634902,   0.563808909603519    };
-static const double gfcalib_feat_sd[2] = { 1.1439863326718058,  0.22486045266173885  };
-static const double gfcalib_coef[3]    = { -0.8456700841380054, -0.38250763372448826, -0.20323961217897243 };
+static const double gfcalib_feat_mu[4] = {
+  4.77095051518072,     /* log(clen)                */
+  0.5804811877658898,   /* mean_H                   */
+  0.3882958223057928,   /* mean_H^2                 */
+  0.90508110760581      /* log(min(eff_nseq, 20))   */
+};
+static const double gfcalib_feat_sd[4] = {
+  0.7059490720195424,
+  0.22657760912255817,
+  0.335344075259694,
+  0.7676273070778664
+};
+static const double gfcalib_coef[5]    = {
+  -0.725985532232747,    /* intercept */
+  -0.2118010089398733,   /* z0 */
+  -0.39601282842140223,  /* z1 */
+   0.2423273564376488,   /* z2 */
+  -0.06810158052837548   /* z3 */
+};
 
 /* mean_relentropy_bits()
  * Mean over the M match columns of the relative entropy (bits) of the match
@@ -276,19 +310,55 @@ mean_relentropy_bits(const P7_HMM *hmm)
   return sum_H / (double) hmm->M;
 }
 
-/* predict_glocal_lambda()
- * Closed-form glocal Forward lambda predictor (brief 26_0719-046, formula 2a).
- * clen = hmm->M; mean_H from mean_relentropy_bits().
+/* gfcalib_effn_feature()
+ * The eff_nseq feature shared by the lambda predictor and the tau shrinkage:
+ * log(min(eff_nseq, 20)) -- exactly as fit
+ * (scripts/fit_task055_shrinkage_combined.py::corr_features/lam_features_H).
+ *
+ * The 20.0 cap is part of the fitted form: real SEEDs saturate around
+ * eff_nseq 3-17, the training pool has little support above 20 (one model sits
+ * at 10000), so the cap keeps a deep alignment from extrapolating off the fit.
+ *
+ * There is deliberately NO floor at 1.0. Entropy weighting routinely produces
+ * eff_nseq < 1 -- 51/1097 of the brief-053 multi-seq training pool (min 0.30)
+ * and 20/64 of the brief-055 nseq=1 pool (min 0.72) -- and the fit consumed
+ * those raw values. Flooring at 1 would silently make the deployed code
+ * disagree with the fitted formula on a real minority of models. The only
+ * guard is a tiny epsilon against a nonpositive eff_nseq (log domain error);
+ * it is unreachable for a real CM, and gate 0 of brief 26_0719-054 checks
+ * eff_nseq > 0 at the call site. brief 26_0719-054.
  */
 static double
-predict_glocal_lambda(int clen, double mean_H)
+gfcalib_effn_feature(double eff_nseq)
 {
-  double x0 = log((double) clen);   /* natural log */
+  double e = eff_nseq;
+  if (e < 1e-3) e = 1e-3;    /* log-domain guard only; unreachable for a real CM */
+  if (e > 20.0) e = 20.0;
+  return log(e);
+}
+
+/* predict_glocal_lambda()
+ * Closed-form glocal Forward lambda predictor, 5-feature form
+ * (briefs 26_0719-053/26_0719-055, deployed by brief 26_0719-054):
+ *     lambda = exp(c0 + c1*z0 + c2*z1 + c3*z2 + c4*z3)
+ * clen = hmm->M; mean_H from mean_relentropy_bits(); eff_nseq is the CM's
+ * effective sequence count.
+ */
+static double
+predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
+{
+  double x0 = log((double) clen);           /* natural log            */
   double x1 = mean_H;
+  double x2 = mean_H * mean_H;
+  double x3 = gfcalib_effn_feature(eff_nseq);
   double z0 = (x0 - gfcalib_feat_mu[0]) / gfcalib_feat_sd[0];
   double z1 = (x1 - gfcalib_feat_mu[1]) / gfcalib_feat_sd[1];
-  return exp(gfcalib_coef[0] + gfcalib_coef[1] * z0 + gfcalib_coef[2] * z1);
+  double z2 = (x2 - gfcalib_feat_mu[2]) / gfcalib_feat_sd[2];
+  double z3 = (x3 - gfcalib_feat_mu[3]) / gfcalib_feat_sd[3];
+  return exp(gfcalib_coef[0] + gfcalib_coef[1] * z0 + gfcalib_coef[2] * z1
+                             + gfcalib_coef[3] * z2 + gfcalib_coef[4] * z3);
 }
+
 
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
@@ -310,6 +380,10 @@ predict_glocal_lambda(int clen, double mean_H)
  *           EgfT      - fraction of tail mass to fit for glocal Fwd
  *           seed      - RNG seed for calibration (0=one-time arbitrary)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
+ *           eff_nseq  - the CM's effective sequence count (cm->eff_nseq); a
+ *                       feature of both glocal Fwd (tau,lambda) predictors.
+ *                       Passed in rather than read off <hmm>: see the note at
+ *                       the glocal block below.
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *
@@ -323,7 +397,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
 		int ElmL, int ElvL, int ElfL, int EgfL,
 		int ElmN, int ElvN, int ElfN, int EgfN,
 		double ElfT, double EgfT,
-		int seed, int ncpus,
+		int seed, int ncpus, double eff_nseq,
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -361,19 +435,31 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   hmm->evparam[p7_FLAMBDA] = lambda;
   hmm->flags              |= p7H_STATS;
 
-  /* finally, determine Glocal Forward stats (brief 26_0719-046).
-   * GFLAMBDA is predicted in closed form from (clen, mean_H) -- NOT reused
-   * from the local Forward lambda -- and GFMU (tau) is estimated by the
-   * known-lambda top-half order-statistic estimator inside cm_p7_Tau() using
-   * that predicted lambda. EgfT (tailp) is unused on this path; the tailp
-   * choice (0.015) is baked into the trained lambda predictor.
+  /* finally, determine Glocal Forward stats (briefs 26_0719-053/26_0719-055,
+   * deployed by brief 26_0719-054).
+   *
+   * GFLAMBDA is predicted in closed form from (clen, mean_H, mean_H^2,
+   * eff_nseq) -- NOT reused from the local Forward lambda -- and GFMU (tau) is
+   * estimated inside cm_p7_Tau() using that predicted lambda. EgfT (tailp) is
+   * unused on this path; the tailp choice (0.015) is baked into the trained
+   * lambda predictor.
+   *
+   * NOTE on <eff_nseq>: this is the *CM's* eff_nseq, passed in by the caller,
+   * NOT hmm->eff_nseq. Those are genuinely different numbers -- on cmbuild's
+   * default path the filter HMM's eff_nseq comes from a temporary CM built to
+   * match the filter HMM's relative-entropy target (cmbuild.c
+   * ::build_and_calibrate_p7_filter()), and it can differ from the CM's own
+   * eff_nseq by more than 2x (e.g. Rfam 6C: CM 2.398 vs filter HMM 5.552).
+   * Both predictors were trained against the EFFN on the CM header line
+   * (scripts/build_task053_pool_effnseq.py, scripts/build_task055_singleseq_panel.py),
+   * so reading hmm->eff_nseq here would silently feed them the wrong feature.
    */
   {
-    double mean_H = mean_relentropy_bits(hmm);
-    gflambda = predict_glocal_lambda(hmm->M, mean_H);
+    double mean_H  = mean_relentropy_bits(hmm);
+    gflambda = predict_glocal_lambda(hmm->M, mean_H, eff_nseq);
+    if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
+    if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
   }
-  if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
-  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
 
   esl_randomness_Destroy(r); 
   p7_bg_Destroy(bg);         
@@ -841,6 +927,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
     }
     *ret_tau = tau_sum / (double) ntop;
   }
+
 
   free(xv);
   return eslOK;
