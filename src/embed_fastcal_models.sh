@@ -20,6 +20,15 @@
 #           v5.5 feature pool as C0 (brief-073 ablation: ere-axis feats redundant
 #           and dropped), so no new C feature computation. 104 deployed cells;
 #           huge-glocal STR + NOSS medlarge/large/huge fall back to C0.
+# brief 26_0422-091: removed production_models_v41.json, production_models_
+#           v42_largehuge.json, and v4x_K_ridge_str.json from the embed array.
+#           All three are dead — v5.5 STR lambda/K load first and fill every
+#           slot via skip-if-already-filled guards, so the v4.1/v4.2/K-ridge
+#           lambda+K loaders never win. production_mu_models_v41.json and
+#           production_mu_models_v42_largehuge.json are KEPT: v5.5 never loads
+#           "mu_orig" (only "lambda"/"mu_extrap"), so those two files remain
+#           the sole live source of g_models.str_mu_orig[bucket][mode], which
+#           feeds SetExpInfo()'s mu_orig argument directly.
 
 set -e
 
@@ -38,11 +47,8 @@ JSONS=(
   "${JSON_DIR}/v55_K_large_models.json"
   "${JSON_DIR}/v55_huge_models.json"
   "${JSON_DIR}/v55_K_huge_models.json"
-  "${JSON_DIR}/production_models_v41.json"
   "${JSON_DIR}/production_mu_models_v41.json"
-  "${JSON_DIR}/production_models_v42_largehuge.json"
   "${JSON_DIR}/production_mu_models_v42_largehuge.json"
-  "${JSON_DIR}/v4x_K_ridge_str.json"
   "${JSON_DIR}/v55_noss_hybrid_production.json"
   "${JSON_DIR}/v55_atrich_tiny_models.json"
   "${JSON_DIR}/v55_atrich_small_models.json"

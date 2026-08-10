@@ -6,25 +6,28 @@
  * Phase 3: topo_fraglen_v2 (noend basic) + C1_OLD legacy, 7 more features.
  * cm_FastCalibrate() is a stub returning eslFAIL (real prediction: Phase 4).
  *
- * JSON layout (two schemas):
- *   v4.1 (STR tiny/small/medlarge):
- *     modes[mode]["STR"][bucket]   → ridge {alpha, loo_mse, coef_z, feature_mean, feature_std, target_mean, n_train}
- *                                    features list is at top-level schema["STR_features"]
- *   v4.2 (STR large/huge, NOSS tiny/small/medlarge):
- *     lambda[bucket][mode]         → ridge {features, feature_mean, feature_std, coef_z, target_mean, alpha, loo_mse}
- *     mu_extrap[bucket][mode]      → ridge (same)
- *     mu_orig[bucket][mode]        → ridge (same)
+ * Model loading (see load_models()): v5.5 flat-schema JSONs (v55_{bucket}_
+ * models.json + v55_K_{bucket}_models.json) are the live source for STR
+ * lambda/mu_extrap/K, all 5 buckets; v55_noss_hybrid_production.json (brief
+ * 46) is the live source for all NOSS targets. The legacy v4.1/v4.2 STR
+ * lambda+K JSONs and production_models_v42_noss/production_mu_models_v42_noss/
+ * v4x_K_ridge_noss were removed (brief 26_0422-091 and brief 46 respectively)
+ * as dead code — v5.5 always wins those slots first.
  *
- * Model mapping:
- *   production_models_v41.json        → g_models.str_lambda    [0..2][*]   (buckets tiny/small/medlarge)
- *   production_mu_models_v41.json     → g_models.str_mu_extrap [0..2][*]
- *                                     → g_models.str_mu_orig   [0..2][*]
- *   production_models_v42_largehuge   → g_models.str_lambda    [3..4][*]   (buckets large/huge)
- *   production_mu_models_v42_largehuge→ g_models.str_mu_extrap [3..4][*]
- *                                     → g_models.str_mu_orig   [3..4][*]
- *   production_models_v42_noss        → g_models.noss_lambda   [0..2][*]
- *   production_mu_models_v42_noss     → g_models.noss_mu_extrap[0..2][*]
- *                                     → g_models.noss_mu_orig  [0..2][*]
+ * Two legacy v4.1/v4.2 JSONs remain embedded and ARE still live:
+ *   production_mu_models_v41.json      → g_models.str_mu_orig [0..2][*]  (tiny/small/medlarge)
+ *   production_mu_models_v42_largehuge → g_models.str_mu_orig [3..4][*]  (large/huge)
+ * v5.5 never loads a "mu_orig" target, so these two remain the sole source
+ * of str_mu_orig, which feeds SetExpInfo()'s mu_orig argument directly.
+ * (Their mu_extrap targets are themselves dead — v5.5 fills mu_extrap too —
+ * but mu_orig and mu_extrap share one JSON file per legacy schema, so the
+ * file as a whole stays embedded; see parse_v41_mu()/parse_v42().)
+ *
+ * v4.1 layout (mu file): modes[mode]["STR"][bucket]["mu_extrap"|"mu_orig"]
+ *   → ridge {alpha, loo_mse, coef_z, feature_mean, feature_std, target_mean, n_train}
+ *   features list is at top-level schema["STR_features"]
+ * v4.2 layout (mu file): mu_extrap[bucket][mode], mu_orig[bucket][mode]
+ *   → ridge {features, feature_mean, feature_std, coef_z, target_mean, alpha, loo_mse}
  *
  * See: CPORT_SPEC.md §3-5.
  */
@@ -40,6 +43,7 @@
 #include "esl_buffer.h"
 #include "esl_gumbel.h"
 #include "esl_json.h"
+#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "infernal.h"
@@ -518,29 +522,32 @@ parse_ridge_from_obj(ESL_JSON *pi, ESL_BUFFER *bf, int obj_idx,
 
 
 /* =========================================================================
- * v4.1 JSON schema parser (STR lambda and STR mu)
+ * v4.1 JSON schema parser (STR mu_orig only)
  *
- * v4.1 layout:
+ * v4.1 layout (mu file):
  *   { "schema": { "STR_features": [...], "NOSS_features": [...] },
  *     "modes": {
  *       "ECMLC": {
- *         "STR": { "tiny": {ridge}, "small": {ridge}, "medlarge": {ridge}, ... },
- *         "NOSS": {ridge}               <- for lambda file: single ridge (not bucketed)
- *                                       <- for mu file: { "mu_extrap": {ridge}, "mu_orig": {ridge} }
+ *         "STR": { "tiny": { "mu_extrap": {ridge}, "mu_orig": {ridge} }, "small": {...}, ... },
+ *         "NOSS": { "mu_extrap": {ridge}, "mu_orig": {ridge} }
  *       }, ...
  *     }
  *   }
  *
- * For lambda file (is_mu=0): parse modes[mode]["STR"][bucket] → str_lambda[bk][mode]
- * For mu file    (is_mu=1): parse modes[mode]["STR"][bucket]["mu_extrap"] and ["mu_orig"]
+ * Parses modes[mode]["STR"][bucket]["mu_extrap"] and ["mu_orig"].
+ *
+ * brief 26_0422-091: the v4.1 lambda file and this file's mu_extrap target
+ * are dead code (v5.5 STR lambda/mu_extrap load first in load_models() and
+ * fill every (bucket,mode) slot before this runs) — the lambda-file call and
+ * its branch here were removed. Only mu_orig is still live: v5.5 never loads
+ * a "mu_orig" target, so this remains the sole source of str_mu_orig.
  *
  * Note: v4.1 NOSS ridges are superseded by v4.2 NOSS; we skip them.
  */
 static int
-parse_v41(ESL_JSON *pi, ESL_BUFFER *bf, int is_mu,
-          FastCalRidge str_lambda[][N_MODES],
-          FastCalRidge str_mu_extrap[][N_MODES],
-          FastCalRidge str_mu_orig[][N_MODES])
+parse_v41_mu(ESL_JSON *pi, ESL_BUFFER *bf,
+             FastCalRidge str_mu_extrap[][N_MODES],
+             FastCalRidge str_mu_orig[][N_MODES])
 {
   static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
   static const char *bucket_names[] = {"tiny","small","medlarge","medlarge_local",NULL};
@@ -549,7 +556,6 @@ parse_v41(ESL_JSON *pi, ESL_BUFFER *bf, int is_mu,
   int status;
   int root_idx  = 0;  /* root is always tok[0], an OBJECT */
   int schema_idx, str_feat_arr, modes_idx;
-  int mode_idx;
   int m, bi;
 
   /* Parse schema.STR_features → get the global feature list */
@@ -582,29 +588,19 @@ parse_v41(ESL_JSON *pi, ESL_BUFFER *bf, int is_mu,
           int bk_obj = json_find_key(pi, bf, str_obj, bucket_names[bi]);
           if (bk_obj < 0) continue;  /* bucket not present for this mode */
 
-          if (!is_mu)
+          /* bk_obj has sub-keys "mu_extrap" and "mu_orig" */
+          int me_obj = json_find_key(pi, bf, bk_obj, "mu_extrap");
+          int mo_obj = json_find_key(pi, bf, bk_obj, "mu_orig");
+
+          if (me_obj >= 0 && str_mu_extrap[bk][m].nfeat == 0)
             {
-              /* Lambda file: bk_obj IS the ridge object */
-              if (str_lambda[bk][m].nfeat > 0) continue; /* already filled by earlier alias */
-              status = parse_ridge_from_obj(pi, bf, bk_obj, str_fnames, str_nfeat, &str_lambda[bk][m]);
+              status = parse_ridge_from_obj(pi, bf, me_obj, str_fnames, str_nfeat, &str_mu_extrap[bk][m]);
               if (status != eslOK) goto CLEANUP;
             }
-          else
+          if (mo_obj >= 0 && str_mu_orig[bk][m].nfeat == 0)
             {
-              /* Mu file: bk_obj has sub-keys "mu_extrap" and "mu_orig" */
-              int me_obj = json_find_key(pi, bf, bk_obj, "mu_extrap");
-              int mo_obj = json_find_key(pi, bf, bk_obj, "mu_orig");
-
-              if (me_obj >= 0 && str_mu_extrap[bk][m].nfeat == 0)
-                {
-                  status = parse_ridge_from_obj(pi, bf, me_obj, str_fnames, str_nfeat, &str_mu_extrap[bk][m]);
-                  if (status != eslOK) goto CLEANUP;
-                }
-              if (mo_obj >= 0 && str_mu_orig[bk][m].nfeat == 0)
-                {
-                  status = parse_ridge_from_obj(pi, bf, mo_obj, str_fnames, str_nfeat, &str_mu_orig[bk][m]);
-                  if (status != eslOK) goto CLEANUP;
-                }
+              status = parse_ridge_from_obj(pi, bf, mo_obj, str_fnames, str_nfeat, &str_mu_orig[bk][m]);
+              if (status != eslOK) goto CLEANUP;
             }
         }
     }
@@ -695,15 +691,17 @@ parse_v42_target(ESL_JSON *pi, ESL_BUFFER *bf,
 }
 
 
+/* brief 26_0422-091: dropped the dest_lambda parameter and its call to
+ * parse_v42_target("lambda", ...) — v5.5 STR lambda loads first in
+ * load_models() and fills large/huge too, so that target was always dead
+ * at this call's only site (the v4.2 STR lambda file itself was removed). */
 static int
 parse_v42(ESL_JSON *pi, ESL_BUFFER *bf,
-          FastCalRidge dest_lambda[][N_MODES],
           FastCalRidge dest_mu_extrap[][N_MODES],
           FastCalRidge dest_mu_orig[][N_MODES])
 {
   int status;
 
-  if (dest_lambda    && (status = parse_v42_target(pi, bf, "lambda",    dest_lambda))    != eslOK) return status;
   if (dest_mu_extrap && (status = parse_v42_target(pi, bf, "mu_extrap", dest_mu_extrap)) != eslOK) return status;
   if (dest_mu_orig   && (status = parse_v42_target(pi, bf, "mu_orig",   dest_mu_orig))   != eslOK) return status;
   return eslOK;
@@ -714,7 +712,8 @@ parse_v42(ESL_JSON *pi, ESL_BUFFER *bf,
  * parse_K_ridge_inline()
  *   Parse a single K-ridge object that has an inline "feature_names" array
  *   (v4.x→ridge convention; the array may be empty for intercept-only ridges).
- *   Used by parse_v4x_K_ridge_target.
+ *   Used by parse_v55_flat() below (brief 26_0422-091: the other caller,
+ *   parse_v4x_K_ridge(), was removed as dead code).
  */
 static int
 parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *r)
@@ -739,63 +738,8 @@ parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *
 }
 
 
-/* =========================================================================
- * parse_v4x_K_ridge()
- *   Parse a v4.x→ridge K JSON (schema v4x_K_ridge_v1) into the K-ridge slots.
- *
- *   Schema:
- *     { "schema": "v4x_K_ridge_v1",
- *       "K_glocal_clen": { "<bucket>": { "ECMGC": <ridge>, "ECMGI": <ridge> } },
- *       "K_local":       { "<bucket>": { "ECMLC": <ridge>, "ECMLI": <ridge> } } }
- *
- *   Populates dest[BUCKET][MODE] for whichever modes appear.
- *   Both top-level groups (K_glocal_clen, K_local) populate the same dest array
- *   — the mode index distinguishes glocal vs local.
- */
-static int
-parse_v4x_K_ridge(ESL_JSON *pi, ESL_BUFFER *bf, FastCalRidge dest[][N_MODES])
-{
-  static const char *mode_names[N_MODES] = {"ECMLC","ECMLI","ECMGC","ECMGI"};
-  static const struct { const char *name; int idx; } bucket_map[] = {
-    {"tiny",     BUCKET_TINY     },
-    {"small",    BUCKET_SMALL    },
-    {"medlarge", BUCKET_MEDLARGE },
-    {"large",    BUCKET_LARGE    },
-    {"huge",     BUCKET_HUGE     },
-    {NULL, 0}
-  };
-  static const char *group_keys[] = {"K_glocal_clen", "K_local", NULL};
-  int gi;
-  int status;
-  int root_idx = 0;
-
-  for (gi = 0; group_keys[gi] != NULL; gi++)
-    {
-      int group_obj = json_find_key(pi, bf, root_idx, group_keys[gi]);
-      if (group_obj < 0) continue;
-      if (pi->tok[group_obj].type != eslJSON_OBJECT) return eslFAIL;
-
-      int bi;
-      for (bi = 0; bucket_map[bi].name != NULL; bi++)
-        {
-          int bk     = bucket_map[bi].idx;
-          int bk_obj = json_find_key(pi, bf, group_obj, bucket_map[bi].name);
-          if (bk_obj < 0) continue;
-
-          int m;
-          for (m = 0; m < N_MODES; m++)
-            {
-              int ridge_obj = json_find_key(pi, bf, bk_obj, mode_names[m]);
-              if (ridge_obj < 0) continue;
-              if (dest[bk][m].defined) continue;   /* don't overwrite */
-
-              status = parse_K_ridge_inline(pi, bf, ridge_obj, &dest[bk][m]);
-              if (status != eslOK) return status;
-            }
-        }
-    }
-  return eslOK;
-}
+/* parse_v4x_K_ridge() — REMOVED (brief 26_0422-091). Parsed v4x_K_ridge_str.json,
+ * which was dead: v5.5 STR K loads first in load_models() for all 5 buckets. */
 
 
 /* =========================================================================
@@ -1178,7 +1122,9 @@ load_models(void)
   if (g_models.loaded) return eslOK;
 
   /* v5.5 tiny bucket: lambda + mu_extrap (STR only).
-   * Loaded BEFORE v4.1 so parse_v41() skips tiny/small (nfeat > 0 check). */
+   * Loaded BEFORE the v4.1 mu file so parse_v41_mu() skips the now-dead
+   * mu_extrap target for tiny/small (nfeat > 0 check); only mu_orig survives
+   * there — see the top-of-file doc comment. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1196,7 +1142,8 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* v5.5 tiny K (STR). Loaded before v4.x K; parse_v4x_K_ridge skips defined slots. */
+  /* v5.5 tiny K (STR). v4.x K loading (parse_v4x_K_ridge) was removed
+   * (brief 26_0422-091) — this v5.5 K load was already the sole live source. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1348,24 +1295,12 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* 1. v4.1 STR lambda (tiny/small/medlarge) */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_production_models_v41_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_production_models_v41_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v41(pi, bf, /*is_mu=*/0,
-                       g_models.str_lambda, g_models.str_mu_extrap, g_models.str_mu_orig);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
-
-  /* 2. v4.1 STR mu (tiny/small/medlarge) */
+  /* 2. v4.1 STR mu_orig (tiny/small/medlarge).
+   * brief 26_0422-091: the v4.1 lambda file and this file's mu_extrap target
+   * are dead (v5.5 STR lambda/mu_extrap load first, above, and fill every
+   * (bucket,mode) slot for tiny/small/medlarge). Only mu_orig survives: v5.5
+   * never loads a "mu_orig" target, so this file remains the sole source of
+   * g_models.str_mu_orig[0..2][*], which feeds SetExpInfo()'s mu_orig arg. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1375,30 +1310,16 @@ load_models(void)
            &bf)) != eslOK) return status;
     if ((status = esl_json_Parse(bf, &pi)) != eslOK)
       { esl_buffer_Close(bf); return status; }
-    status = parse_v41(pi, bf, /*is_mu=*/1,
-                       g_models.str_lambda, g_models.str_mu_extrap, g_models.str_mu_orig);
+    status = parse_v41_mu(pi, bf, g_models.str_mu_extrap, g_models.str_mu_orig);
     esl_json_Destroy(pi);
     esl_buffer_Close(bf);
     if (status != eslOK) return status;
   }
 
-  /* 3. v4.2 STR lambda (large/huge) */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_production_models_v42_largehuge_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_production_models_v42_largehuge_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v42(pi, bf, g_models.str_lambda, NULL, NULL);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
-
-  /* 4. v4.2 STR mu (large/huge) */
+  /* 4. v4.2 STR mu_orig (large/huge). brief 26_0422-091: the v4.2 lambda file
+   * is dead (v5.5 STR lambda loads first, above, for large/huge too); this
+   * file's mu_extrap target is likewise dead, but mu_orig survives for the
+   * same reason as the v4.1 mu file above — see that comment. */
   {
     ESL_BUFFER *bf = NULL;
     ESL_JSON   *pi = NULL;
@@ -1408,7 +1329,7 @@ load_models(void)
            &bf)) != eslOK) return status;
     if ((status = esl_json_Parse(bf, &pi)) != eslOK)
       { esl_buffer_Close(bf); return status; }
-    status = parse_v42(pi, bf, NULL, g_models.str_mu_extrap, g_models.str_mu_orig);
+    status = parse_v42(pi, bf, g_models.str_mu_extrap, g_models.str_mu_orig);
     esl_json_Destroy(pi);
     esl_buffer_Close(bf);
     if (status != eslOK) return status;
@@ -1434,24 +1355,8 @@ load_models(void)
     if (status != eslOK) return status;
   }
 
-  /* 7. v4.x→ridge K (STR, all 5 buckets × 4 modes).
-   * Glocal modes: log_clen power-law ridge with y_transform=exp.
-   * Local  modes: 0-feature intercept-only ridge (constant per bucket).
-   */
-  {
-    ESL_BUFFER *bf = NULL;
-    ESL_JSON   *pi = NULL;
-    if ((status = esl_buffer_OpenMem(
-           (const char *)__cm_fast_calibrate_data_v4x_K_ridge_str_json,
-           (esl_pos_t)  __cm_fast_calibrate_data_v4x_K_ridge_str_json_len,
-           &bf)) != eslOK) return status;
-    if ((status = esl_json_Parse(bf, &pi)) != eslOK)
-      { esl_buffer_Close(bf); return status; }
-    status = parse_v4x_K_ridge(pi, bf, g_models.str_K);
-    esl_json_Destroy(pi);
-    esl_buffer_Close(bf);
-    if (status != eslOK) return status;
-  }
+  /* 7. v4.x→ridge K (STR) — REMOVED (brief 26_0422-091). v5.5 STR K loads
+   * first, above, for all 5 buckets × 4 modes, so this loader never won. */
 
   /* 8. v4.x→ridge K (NOSS) — REMOVED (brief 46). NOSS K is now loaded
    * from the hybrid JSON in step 5+6 above. */
@@ -2707,30 +2612,25 @@ extract_effn(CM_t *cm, double *feats)
 }
 
 
-/* extract_noss_fraglen()
- * Port of Python fraglen_features(clen, pbegin, pend) from fast_cmcalibrate.py.
- *
- * Computes: mean_L_noss, var_L_noss, KL_noss_to_unif, p_full_length.
- *
- * The fragment length distribution model:
- *   - entry probs: p_entry[1] = 1 - pbegin (full-length, no local begin)
- *                  p_entry[i] = pbegin / (N-1) for i in [2, N]
- *   - exit rate:   r = pend / (N-1)
- *   - p_L[L] = sum over all entry points i: p_entry[i] * reach_to_length_L
- *     where reach *= (1 - r) at each step, exit_here = reach * (r if j<N else 1)
- *   - p_full_length = p_entry[1] * (1 - r)^(N-1)
+
+/* extract_noss_fraglen_fast()
+ * O(N) reformulation of extract_noss_fraglen()'s O(N^2) p_L[] double loop.
+ * p_L[L] = (1-r)^(L-1) * ( r * PE_prefix[N-L] + p_entry[N-L+1] ), where
+ * PE_prefix[k] = sum_{i=1}^{k} p_entry[i] (a one-time O(N) prefix sum).
+ * See brief 26_0422-090 for the derivation.
  */
 static int
-extract_noss_fraglen(CM_t *cm, double *feats)
+extract_noss_fraglen_fast(CM_t *cm, double *feats)
 {
   int    N       = cm->clen;
   double pbegin  = (double) cm->pbegin;
   double pend    = (double) cm->pend;
   double r, total_P, mean_L, var_L, kl, p_full;
-  double *p_entry = NULL;
-  double *p_L     = NULL;
-  int     i, j, L;
-  double  reach, exit_here;
+  double *p_entry   = NULL;
+  double *PE_prefix = NULL;
+  double *p_L       = NULL;
+  int     i, L;
+  double  decay;
   int     status;
 
   if (N <= 1) {
@@ -2743,8 +2643,9 @@ extract_noss_fraglen(CM_t *cm, double *feats)
 
   r = pend / (double)(N - 1);
 
-  ESL_ALLOC(p_entry, sizeof(double) * (N + 1));
-  ESL_ALLOC(p_L,     sizeof(double) * (N + 1));
+  ESL_ALLOC(p_entry,   sizeof(double) * (N + 1));
+  ESL_ALLOC(PE_prefix, sizeof(double) * (N + 1));
+  ESL_ALLOC(p_L,       sizeof(double) * (N + 1));
 
   /* Entry probabilities */
   p_entry[0] = 0.0;
@@ -2752,18 +2653,15 @@ extract_noss_fraglen(CM_t *cm, double *feats)
   for (i = 2; i <= N; i++)
     p_entry[i] = pbegin / (double)(N - 1);
 
-  /* Fragment length probabilities */
-  for (L = 0; L <= N; L++) p_L[L] = 0.0;
+  PE_prefix[0] = 0.0;
+  for (i = 1; i <= N; i++)
+    PE_prefix[i] = PE_prefix[i - 1] + p_entry[i];
 
-  for (i = 1; i <= N; i++) {
-    if (p_entry[i] == 0.0) continue;
-    reach = 1.0;
-    for (j = i; j <= N; j++) {
-      exit_here = reach * ((j < N) ? r : 1.0);
-      L = j - i + 1;
-      p_L[L] += p_entry[i] * exit_here;
-      reach *= (1.0 - r);
-    }
+  p_L[0] = 0.0;
+  decay = 1.0;
+  for (L = 1; L <= N; L++) {
+    p_L[L] = decay * (r * PE_prefix[N - L] + p_entry[N - L + 1]);
+    decay *= (1.0 - r);
   }
 
   /* Normalize (should already sum to 1.0 but be safe) */
@@ -2803,12 +2701,14 @@ extract_noss_fraglen(CM_t *cm, double *feats)
   feats[FAST_CAL_FEAT_p_full_length]    = p_full;
 
   free(p_entry);
+  free(PE_prefix);
   free(p_L);
   return eslOK;
 
  ERROR:
-  if (p_entry) free(p_entry);
-  if (p_L)     free(p_L);
+  if (p_entry)   free(p_entry);
+  if (PE_prefix) free(PE_prefix);
+  if (p_L)       free(p_L);
   return eslEMEM;
 }
 
@@ -2937,25 +2837,27 @@ extract_str_struct(CM_t *cm, double *feats)
 }
 
 
-/* exact_score_aggregates()
- * Port of Python _exact_score_aggregates(means, vars_, N, pbegin, pend).
- *
- * Computes 8 aggregate statistics from per-position score mean/variance arrays.
- * Uses the same entry/exit model as fraglen_features.
+/* exact_score_aggregates_fast()
+ * O(N) reformulation of exact_score_aggregates(): the O(N^2) double loop
+ * (i, j) is replaced by a backward pass building 6 running accumulators
+ * RS0/RSm/RSm2/RSv/RSj/RSjm[i] = sum_{j=i}^{N} (1-r)^(j-i} * exitw(j) * h(j)
+ * for the 6 choices of h, followed by an O(N) forward pass over i that
+ * reconstructs the same 6 scalar sums the old code accumulated directly.
+ * See brief 26_0422-090 for the derivation.
  */
 static void
-exact_score_aggregates(double *means, double *vars_, int N,
-                       double pbegin, double pend,
-                       double *ret_mean_node_mean, double *ret_mean_node_var,
-                       double *ret_ES_full,        double *ret_VarS_full,
-                       double *ret_mean_ES,        double *ret_var_ES,
-                       double *ret_mean_VarS,      double *ret_cov_L_ES)
+exact_score_aggregates_fast(double *means, double *vars_, int N,
+                            double pbegin, double pend,
+                            double *ret_mean_node_mean, double *ret_mean_node_var,
+                            double *ret_ES_full,        double *ret_VarS_full,
+                            double *ret_mean_ES,        double *ret_var_ES,
+                            double *ret_mean_VarS,      double *ret_cov_L_ES)
 {
-  /* Cumulative sums: cs_m[k] = sum means[0..k-1], cs_v[k] = sum vars_[0..k-1] */
   double *cs_m  = NULL;
   double *cs_v  = NULL;
   double *p_entry = NULL;
-  int i, j;
+  double *RS0 = NULL, *RSm = NULL, *RSm2 = NULL, *RSv = NULL, *RSj = NULL, *RSjm = NULL;
+  int i;
   double r;
   double total_P, E_ES, E_ES2, E_VarS, E_L, E_L_ES;
   double mean_ES, var_ES, mean_VarS, mean_L_w, cov_L_ES;
@@ -2963,8 +2865,14 @@ exact_score_aggregates(double *means, double *vars_, int N,
   cs_m    = (double *) malloc((N + 1) * sizeof(double));
   cs_v    = (double *) malloc((N + 1) * sizeof(double));
   p_entry = (double *) malloc((N + 1) * sizeof(double));
+  RS0     = (double *) malloc((N + 1) * sizeof(double));
+  RSm     = (double *) malloc((N + 1) * sizeof(double));
+  RSm2    = (double *) malloc((N + 1) * sizeof(double));
+  RSv     = (double *) malloc((N + 1) * sizeof(double));
+  RSj     = (double *) malloc((N + 1) * sizeof(double));
+  RSjm    = (double *) malloc((N + 1) * sizeof(double));
 
-  if (!cs_m || !cs_v || !p_entry) goto ERROR;
+  if (!cs_m || !cs_v || !p_entry || !RS0 || !RSm || !RSm2 || !RSv || !RSj || !RSjm) goto ERROR;
 
   cs_m[0] = 0.0; cs_v[0] = 0.0;
   for (i = 0; i < N; i++) {
@@ -2979,29 +2887,36 @@ exact_score_aggregates(double *means, double *vars_, int N,
 
   r = pend / (double)(N > 1 ? (N - 1) : 1);
 
+  if (N >= 1) {
+    RS0[N]  = 1.0;
+    RSm[N]  = cs_m[N];
+    RSm2[N] = cs_m[N] * cs_m[N];
+    RSv[N]  = cs_v[N];
+    RSj[N]  = (double) N;
+    RSjm[N] = (double) N * cs_m[N];
+
+    for (i = N - 1; i >= 1; i--) {
+      RS0[i]  = (1.0 - r) * RS0[i + 1]  + r * 1.0;
+      RSm[i]  = (1.0 - r) * RSm[i + 1]  + r * cs_m[i];
+      RSm2[i] = (1.0 - r) * RSm2[i + 1] + r * cs_m[i] * cs_m[i];
+      RSv[i]  = (1.0 - r) * RSv[i + 1]  + r * cs_v[i];
+      RSj[i]  = (1.0 - r) * RSj[i + 1]  + r * (double) i;
+      RSjm[i] = (1.0 - r) * RSjm[i + 1] + r * (double) i * cs_m[i];
+    }
+  }
+
   total_P = 0.0;
   E_ES = E_ES2 = E_VarS = E_L = E_L_ES = 0.0;
 
   for (i = 1; i <= N; i++) {
     double p_e = p_entry[i];
     if (p_e == 0.0) continue;
-    double reach = 1.0;
-    for (j = i; j <= N; j++) {
-      double w = p_e * reach * ((j < N) ? r : 1.0);
-      /* Fragment [i-1, j-1] in 0-based positions: sum of means[i-1..j-1]
-       * cs_m is 1-indexed prefix sums: cs_m[j] - cs_m[i-1]
-       */
-      double E_S_frag   = cs_m[j] - cs_m[i - 1];
-      double Var_S_frag = cs_v[j] - cs_v[i - 1];
-      double L          = (double)(j - i + 1);
-      total_P += w;
-      E_ES    += w * E_S_frag;
-      E_ES2   += w * E_S_frag * E_S_frag;
-      E_VarS  += w * Var_S_frag;
-      E_L     += w * L;
-      E_L_ES  += w * L * E_S_frag;
-      reach *= (1.0 - r);
-    }
+    total_P += p_e * RS0[i];
+    E_ES    += p_e * (RSm[i]  - cs_m[i - 1] * RS0[i]);
+    E_ES2   += p_e * (RSm2[i] - 2.0 * cs_m[i - 1] * RSm[i] + cs_m[i - 1] * cs_m[i - 1] * RS0[i]);
+    E_VarS  += p_e * (RSv[i]  - cs_v[i - 1] * RS0[i]);
+    E_L     += p_e * (RSj[i]  - (double)(i - 1) * RS0[i]);
+    E_L_ES  += p_e * (RSjm[i] - (double)(i - 1) * RSm[i] - cs_m[i - 1] * RSj[i] + (double)(i - 1) * cs_m[i - 1] * RS0[i]);
   }
 
   if (total_P > 0.0) {
@@ -3029,12 +2944,19 @@ exact_score_aggregates(double *means, double *vars_, int N,
   *ret_cov_L_ES     = cov_L_ES;
 
   free(cs_m); free(cs_v); free(p_entry);
+  free(RS0); free(RSm); free(RSm2); free(RSv); free(RSj); free(RSjm);
   return;
 
  ERROR:
   if (cs_m)    free(cs_m);
   if (cs_v)    free(cs_v);
   if (p_entry) free(p_entry);
+  if (RS0)  free(RS0);
+  if (RSm)  free(RSm);
+  if (RSm2) free(RSm2);
+  if (RSv)  free(RSv);
+  if (RSj)  free(RSj);
+  if (RSjm) free(RSjm);
   /* Return zeros on allocation failure */
   *ret_mean_node_mean = *ret_mean_node_var = *ret_ES_full = *ret_VarS_full = 0.0;
   *ret_mean_ES = *ret_var_ES = *ret_mean_VarS = *ret_cov_L_ES = 0.0;
@@ -3116,7 +3038,7 @@ extract_c2_score_genomic(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_cov_L_ES_g]       = 0.0;
   } else {
     double mn_mean, mn_var, es_full, vars_full, m_es, v_es, m_vars, c_l_es;
-    exact_score_aggregates(means, vars_, n_ml, pbegin, pend,
+    exact_score_aggregates_fast(means, vars_, n_ml, pbegin, pend,
                            &mn_mean, &mn_var, &es_full, &vars_full,
                            &m_es, &v_es, &m_vars, &c_l_es);
     feats[FAST_CAL_FEAT_mean_node_mean_g] = mn_mean;
@@ -3161,11 +3083,18 @@ extract_c2_score_genomic(CM_t *cm, double *feats)
  * On return, subtree_l[i] / subtree_r[i] are the left/right bounds of the
  * subtree rooted at node i (None → -1 in C).
  *
+ * ret_rank_lookup/ret_rank_ncols: optional (may both be NULL). When
+ * use_consensus_rank=1 and ret_rank_lookup is non-NULL, the internally-built
+ * alignment-col -> consensus-rank lookup array is handed back to the caller
+ * (caller must free it) instead of being freed here, so callers that also
+ * need the rank map (e.g. extract_frag_score) don't have to rebuild it.
+ *
  * Returns eslOK on success, eslEMEM on allocation failure.
  */
 static int
 build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
-                         int *subtree_l, int *subtree_r, int *parent)
+                         int *subtree_l, int *subtree_r, int *parent,
+                         int **ret_rank_lookup, int *ret_rank_ncols)
 {
   int   n_nodes = cm->nodes;
   int   i, nd;
@@ -3399,7 +3328,8 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
 
   free(stk);
   free(dfs_order);
-  if (rank_lookup) free(rank_lookup);
+  if (ret_rank_lookup) { *ret_rank_lookup = rank_lookup; *ret_rank_ncols = rank_ncols; }
+  else if (rank_lookup) free(rank_lookup);
   if (unique_col)  free(unique_col);
   return eslOK;
 
@@ -3452,19 +3382,20 @@ summarize_distribution(double *p_L, int N,
  * Port of Python topo_fraglen_v2(parsed, include_end=False, rich=False, prefix="noend_").
  * Computes 4 features: noend_mean_L, noend_var_L, noend_KL_to_unif, noend_p_full_length.
  *
- * Uses build_node_subtree_spans(use_consensus_rank=1) so that NOSS CMs
- * (whose MATL alignment-columns can exceed clen) get properly ranked.
+ * subtree_l/subtree_r/parent are the caller-computed
+ * build_node_subtree_spans(cm, use_consensus_rank=1, ...) result (shared
+ * across several extract_* functions — see cm_FastCalibrate_ExtractFeatures),
+ * so NOSS CMs (whose MATL alignment-columns can exceed clen) get properly
+ * ranked, matching prior per-call behavior.
  *
  * Degenerate case (n_begin == 0 or N <= 1): sets all 4 features to NaN.
  */
 static int
-extract_topo_noend_basic(CM_t *cm, double *feats)
+extract_topo_noend_basic(CM_t *cm, double *feats,
+                         const int *subtree_l, const int *subtree_r)
 {
   int     N      = cm->clen;
   double  pbegin = (double) cm->pbegin;
-  int    *subtree_l = NULL;
-  int    *subtree_r = NULL;
-  int    *parent    = NULL;
   double *p_L       = NULL;
   int     status;
   int     nd, L;
@@ -3478,14 +3409,7 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
     return eslOK;
   }
 
-  ESL_ALLOC(subtree_l, sizeof(int) * cm->nodes);
-  ESL_ALLOC(subtree_r, sizeof(int) * cm->nodes);
-  ESL_ALLOC(parent,    sizeof(int) * cm->nodes);
-  ESL_ALLOC(p_L,       sizeof(double) * (N + 2));
-
-  status = build_node_subtree_spans(cm, /*use_consensus_rank=*/1,
-                                    subtree_l, subtree_r, parent);
-  if (status != eslOK) goto ERROR;
+  ESL_ALLOC(p_L, sizeof(double) * (N + 2));
 
   /* Collect valid local-begin candidates: MATP/MATR/MATL/BIF nodes
    * with both subtree_l and subtree_r defined and within [1..N].
@@ -3518,7 +3442,7 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
-    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    free(cands); free(p_L);
     return eslOK;
   }
 
@@ -3548,7 +3472,7 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_noend_var_L]         = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_KL_to_unif]    = 0.0 / 0.0;
     feats[FAST_CAL_FEAT_noend_p_full_length] = 0.0 / 0.0;
-    free(cands); free(subtree_l); free(subtree_r); free(parent); free(p_L);
+    free(cands); free(p_L);
     return eslOK;
   }
   for (L = 1; L <= N; L++) p_L[L] /= mass;
@@ -3564,18 +3488,12 @@ extract_topo_noend_basic(CM_t *cm, double *feats)
   }
 
   free(cands);
-  free(subtree_l);
-  free(subtree_r);
-  free(parent);
   free(p_L);
   return eslOK;
 
  ERROR:
-  if (cands)     free(cands);
-  if (subtree_l) free(subtree_l);
-  if (subtree_r) free(subtree_r);
-  if (parent)    free(parent);
-  if (p_L)       free(p_L);
+  if (cands) free(cands);
+  if (p_L)   free(p_L);
   return eslEMEM;
 }
 
@@ -3621,7 +3539,8 @@ extract_c1_old(CM_t *cm, double *feats)
   ESL_ALLOC(p_L,       sizeof(double) * (N + 2));
 
   status = build_node_subtree_spans(cm, /*use_consensus_rank=*/0,
-                                    subtree_l, subtree_r, parent);
+                                    subtree_l, subtree_r, parent,
+                                    /*ret_rank_lookup=*/NULL, /*ret_rank_ncols=*/NULL);
   if (status != eslOK) goto ERROR;
 
   /* Collect candidates: all non-(ROOT/END) nodes with both l,r defined
@@ -3652,7 +3571,7 @@ extract_c1_old(CM_t *cm, double *feats)
     /* Fallback to noss-style fraglen */
     double tmp_feats[FAST_CAL_NFEAT_PHASE2];
     int    fstatus;
-    fstatus = extract_noss_fraglen(cm, tmp_feats);
+    fstatus = extract_noss_fraglen_fast(cm, tmp_feats);
     feats[FAST_CAL_FEAT_mean_L_str]    = tmp_feats[FAST_CAL_FEAT_mean_L_noss];
     feats[FAST_CAL_FEAT_var_L_str]     = tmp_feats[FAST_CAL_FEAT_var_L_noss];
     feats[FAST_CAL_FEAT_KL_str_to_unif] = tmp_feats[FAST_CAL_FEAT_KL_noss_to_unif];
@@ -3737,6 +3656,35 @@ build_dfs_order(CM_t *cm, int *dfs_order)
 }
 
 
+/* cmp_double()
+ * qsort() comparator for arrays of double, ascending order.
+ */
+static int
+cmp_double(const void *a, const void *b)
+{
+  double da = *(const double *) a;
+  double db = *(const double *) b;
+  if (da < db) return -1;
+  if (da > db) return 1;
+  return 0;
+}
+
+/* SP_PAIR, cmp_sp_pair()
+ * qsort() comparator for (S, P) pairs, ascending by S.
+ * Used to sort frag_score records by S while keeping each S's
+ * paired P (probability mass) alongside it.
+ */
+typedef struct { double s, p; } SP_PAIR;
+static int
+cmp_sp_pair(const void *a, const void *b)
+{
+  double sa = ((const SP_PAIR *) a)->s;
+  double sb = ((const SP_PAIR *) b)->s;
+  if (sa < sb) return -1;
+  if (sa > sb) return 1;
+  return 0;
+}
+
 /* np_median()
  * Median of a sorted array matching NumPy np.median behavior:
  * odd n  → middle element; even n → average of two middle elements.
@@ -3781,7 +3729,7 @@ np_percentile_linear(const double *sorted, int n, double p)
  * (NOT sequence order — matches Python which concatenates ml_log then mp_log.)
  */
 static int
-extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
+extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
 {
   int    nd, v, a, ab, i;
   int    n_sing = 0, n_pair = 0, n_all;
@@ -3789,13 +3737,10 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
   double *sing_ic  = NULL;
   double *pair_ic  = NULL;
   double *all_ic   = NULL;
-  int    *dfs_order = NULL;
   int    n_alloc   = cm->nodes + 1;
 
   ESL_ALLOC(sing_ic,  sizeof(double) * n_alloc);
   ESL_ALLOC(pair_ic,  sizeof(double) * n_alloc);
-  ESL_ALLOC(dfs_order, sizeof(int)   * cm->nodes);
-  build_dfs_order(cm, dfs_order);
 
   /* Collect ICs in DFS pre-order matching Python's file-reading order.
    * IC computed from quantized log-odds (3 dp) to match Python _singlet_ic/_pair_ic. */
@@ -3839,6 +3784,14 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
   memcpy(all_ic,          sing_ic, n_sing * sizeof(double));
   memcpy(all_ic + n_sing, pair_ic, n_pair * sizeof(double));
 
+  /* Single sorted copy of all_ic, shared by Family A's p10/p50/p90 lookups
+   * and Family B's median/p25 lookups below (both previously sorted their
+   * own private copy of the same array). */
+  double *sorted = NULL;
+  ESL_ALLOC(sorted, sizeof(double) * n_all);
+  memcpy(sorted, all_ic, n_all * sizeof(double));
+  qsort(sorted, n_all, sizeof(double), cmp_double);
+
   /* --- Family A: bulk IC statistics --- */
   {
     double mean = 0.0, var = 0.0, skew = 0.0, sd;
@@ -3854,18 +3807,6 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
     sd    = sqrt(var > 1e-30 ? var : 1e-30);
     skew  = (sd > 1e-15) ? skew / (sd * sd * sd) : 0.0;
 
-    /* p10, p50, p90 via sorted copy */
-    double *sorted = NULL;
-    ESL_ALLOC(sorted, sizeof(double) * n_all);
-    memcpy(sorted, all_ic, n_all * sizeof(double));
-    {
-      int j; double tmp;
-      for (i = 1; i < n_all; i++) {
-        tmp = sorted[i];
-        for (j = i-1; j >= 0 && sorted[j] > tmp; j--) sorted[j+1] = sorted[j];
-        sorted[j+1] = tmp;
-      }
-    }
     {
       int idx10 = (int)(0.10 * n_all); if (idx10 >= n_all) idx10 = n_all-1;
       int idx50 = (int)(0.50 * n_all); if (idx50 >= n_all) idx50 = n_all-1;
@@ -3884,7 +3825,6 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
       feats[FAST_CAL_FEAT_ic_mean_singlet] = (n_sing > 0) ? mean_sing / (double) n_sing : 0.0/0.0;
       feats[FAST_CAL_FEAT_ic_mean_pair]    = (n_pair > 0) ? mean_pair_v / (double) n_pair : 0.0;
     }
-    free(sorted);
   }
 
   /* --- Family E: state-type ratios --- */
@@ -3900,21 +3840,9 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
     feats[FAST_CAL_FEAT_ic_autocorr_lag5]       = nan;
     feats[FAST_CAL_FEAT_max_consecutive_low_ic] = nan;
   } else {
-    /* Compute median and p25 via sorted copy */
-    double *sorted2 = NULL;
-    ESL_ALLOC(sorted2, sizeof(double) * n_all);
-    memcpy(sorted2, all_ic, n_all * sizeof(double));
-    {
-      int j; double tmp;
-      for (i = 1; i < n_all; i++) {
-        tmp = sorted2[i];
-        for (j = i-1; j >= 0 && sorted2[j] > tmp; j--) sorted2[j+1] = sorted2[j];
-        sorted2[j+1] = tmp;
-      }
-    }
-    double median_ic = np_median(sorted2, n_all);
-    double p25_ic    = np_percentile_linear(sorted2, n_all, 25.0);
-    free(sorted2);
+    /* median/p25 via the sorted copy built once above, shared with Family A */
+    double median_ic = np_median(sorted, n_all);
+    double p25_ic    = np_percentile_linear(sorted, n_all, 25.0);
 
     /* ic_spatial_entropy: Shannon entropy of normalized IC profile */
     double ic_sum = 0.0;
@@ -3972,14 +3900,14 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats)
   free(sing_ic);
   free(pair_ic);
   free(all_ic);
-  free(dfs_order);
+  free(sorted);
   return eslOK;
 
  ERROR:
-  if (sing_ic)   free(sing_ic);
-  if (pair_ic)   free(pair_ic);
-  if (all_ic)    free(all_ic);
-  if (dfs_order) free(dfs_order);
+  if (sing_ic) free(sing_ic);
+  if (pair_ic) free(pair_ic);
+  if (all_ic)  free(all_ic);
+  if (sorted)  free(sorted);
   return eslEMEM;
 }
 
@@ -3997,8 +3925,8 @@ typedef struct { int nd; int l; int r; } fcbeg_t;
 
 static int
 count_valid_ends_in_subtree(int nd_v, int l_v, int r_v,
-                            CM_t *cm, int *subtree_l, int *subtree_r,
-                            int *has_end_neighbor,
+                            CM_t *cm, const int *subtree_l, const int *subtree_r,
+                            const int *has_end_neighbor,
                             fcend_t *ret_ends)
 {
   int nd_j, K_v = 0;
@@ -4033,15 +3961,13 @@ count_valid_ends_in_subtree(int nd_v, int l_v, int r_v,
  *   3. Rich distribution statistics (skewness, kurtosis, quantiles)
  */
 static int
-extract_withend_rich(CM_t *cm, double *feats)
+extract_withend_rich(CM_t *cm, double *feats,
+                     const int *dfs_order,
+                     const int *subtree_l, const int *subtree_r)
 {
   int     N      = cm->clen;
   double  pbegin = (double) cm->pbegin;
   double  pend   = (double) cm->pend;
-  int    *subtree_l       = NULL;
-  int    *subtree_r       = NULL;
-  int    *parent          = NULL;
-  int    *dfs_order       = NULL;
   int    *has_end_neighbor = NULL;
   double *p_L             = NULL;
   fcend_t *ends_buf       = NULL;  /* reusable buffer for count_valid_ends */
@@ -4067,21 +3993,12 @@ extract_withend_rich(CM_t *cm, double *feats)
   }
   if (N <= 1) return eslOK;
 
-  ESL_ALLOC(subtree_l,        sizeof(int)     * cm->nodes);
-  ESL_ALLOC(subtree_r,        sizeof(int)     * cm->nodes);
-  ESL_ALLOC(parent,           sizeof(int)     * cm->nodes);
-  ESL_ALLOC(dfs_order,        sizeof(int)     * cm->nodes);
   ESL_ALLOC(has_end_neighbor, sizeof(int)     * cm->nodes);
   ESL_ALLOC(p_L,              sizeof(double)  * (N + 2));
   ESL_ALLOC(ends_buf,         sizeof(fcend_t) * cm->nodes);
   ESL_ALLOC(begins,           sizeof(fcbeg_t) * cm->nodes);
 
-  /* Build subtree spans (use_consensus_rank=1 to handle noss CMs) */
-  status = build_node_subtree_spans(cm, 1, subtree_l, subtree_r, parent);
-  if (status != eslOK) goto ERROR;
-
-  /* Build DFS order and has_end_neighbor */
-  build_dfs_order(cm, dfs_order);
+  /* Build has_end_neighbor from the shared DFS order */
   memset(has_end_neighbor, 0, sizeof(int) * cm->nodes);
   {
     int i, nd;
@@ -4197,10 +4114,6 @@ extract_withend_rich(CM_t *cm, double *feats)
   }
 
  DONE:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (p_L)              free(p_L);
   if (ends_buf)         free(ends_buf);
@@ -4208,10 +4121,6 @@ extract_withend_rich(CM_t *cm, double *feats)
   return eslOK;
 
  ERROR:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (p_L)              free(p_L);
   if (ends_buf)         free(ends_buf);
@@ -4235,15 +4144,14 @@ extract_withend_rich(CM_t *cm, double *feats)
  *   4. Aggregate: score mean, var, per_pos_mean, p90, cov(S,L).
  */
 static int
-extract_frag_score(CM_t *cm, double *feats)
+extract_frag_score(CM_t *cm, double *feats,
+                   const int *dfs_order,
+                   const int *subtree_l, const int *subtree_r,
+                   const int *rank_lookup, int rank_ncols)
 {
   int     N      = cm->clen;
   double  pbegin = (double) cm->pbegin;
   double  pend   = (double) cm->pend;
-  int    *subtree_l       = NULL;
-  int    *subtree_r       = NULL;
-  int    *parent          = NULL;
-  int    *dfs_order       = NULL;
   int    *has_end_neighbor = NULL;
   double *ic_col          = NULL;
   double *cum_ic          = NULL;
@@ -4254,11 +4162,6 @@ extract_frag_score(CM_t *cm, double *feats)
   /* records: (P, S, L) triples */
   double *rec_P = NULL, *rec_S = NULL, *rec_L = NULL;
   int     n_rec = 0, rec_alloc;
-  /* rank lookup for ic_col building */
-  int    *rank_lookup     = NULL;
-  int     rank_ncols      = 0;
-  int    *unique_col      = NULL;
-  int     n_unique        = 0;
   int     nd, v, a, ab, i, status;
   double  nan = 0.0 / 0.0;
 
@@ -4271,10 +4174,6 @@ extract_frag_score(CM_t *cm, double *feats)
 
   if (N <= 1) return eslOK;
 
-  ESL_ALLOC(subtree_l,        sizeof(int)    * cm->nodes);
-  ESL_ALLOC(subtree_r,        sizeof(int)    * cm->nodes);
-  ESL_ALLOC(parent,           sizeof(int)    * cm->nodes);
-  ESL_ALLOC(dfs_order,        sizeof(int)    * cm->nodes);
   ESL_ALLOC(has_end_neighbor, sizeof(int)    * cm->nodes);
   ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
   ESL_ALLOC(cum_ic,           sizeof(double) * (N + 2));
@@ -4283,55 +4182,6 @@ extract_frag_score(CM_t *cm, double *feats)
   ESL_ALLOC(rec_P, sizeof(double) * rec_alloc);
   ESL_ALLOC(rec_S, sizeof(double) * rec_alloc);
   ESL_ALLOC(rec_L, sizeof(double) * rec_alloc);
-
-  /* Build subtree spans */
-  status = build_node_subtree_spans(cm, 1, subtree_l, subtree_r, parent);
-  if (status != eslOK) goto ERROR;
-
-  /* Build rank_lookup (same as in build_node_subtree_spans for consensus_rank=1) */
-  {
-    int n_alloc_u = cm->nodes * 2 + 2;
-    ESL_ALLOC(unique_col, sizeof(int) * n_alloc_u);
-    for (nd = 0; nd < cm->nodes; nd++) {
-      int has_lpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd);
-      int has_rpos = (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
-      if (!has_lpos && !has_rpos) continue;
-      if (has_lpos) {
-        int lp = cm->emap->lpos[nd];
-        int acol = (lp >= 1 && lp <= N) ? cm->map[lp] : 0;
-        if (acol > 0) {
-          int dup = 0, j;
-          for (j = 0; j < n_unique; j++) if (unique_col[j] == acol) { dup=1; break; }
-          if (!dup) {
-            if (n_unique >= n_alloc_u) { n_alloc_u *= 2; ESL_REALLOC(unique_col, sizeof(int)*n_alloc_u); }
-            unique_col[n_unique++] = acol;
-          }
-        }
-      }
-      if (has_rpos) {
-        int rp = cm->emap->rpos[nd];
-        int acol = (rp >= 1 && rp <= N) ? cm->map[rp] : 0;
-        if (acol > 0) {
-          int dup = 0, j;
-          for (j = 0; j < n_unique; j++) if (unique_col[j] == acol) { dup=1; break; }
-          if (!dup) {
-            if (n_unique >= n_alloc_u) { n_alloc_u *= 2; ESL_REALLOC(unique_col, sizeof(int)*n_alloc_u); }
-            unique_col[n_unique++] = acol;
-          }
-        }
-      }
-    }
-    /* Sort unique_col ascending */
-    { int j, tmp;
-      for (i = 1; i < n_unique; i++) { tmp=unique_col[i]; for(j=i-1; j>=0&&unique_col[j]>tmp; j--) unique_col[j+1]=unique_col[j]; unique_col[j+1]=tmp; }
-    }
-    /* Build rank_lookup */
-    rank_ncols = (n_unique > 0) ? unique_col[n_unique-1] + 1 : 1;
-    ESL_ALLOC(rank_lookup, sizeof(int) * rank_ncols);
-    for (i = 0; i < rank_ncols; i++) rank_lookup[i] = -1;
-    for (i = 0; i < n_unique; i++) rank_lookup[unique_col[i]] = i + 1;
-    free(unique_col); unique_col = NULL;
-  }
 
 #define RANK(acol) ((acol) > 0 && (acol) < rank_ncols ? rank_lookup[(acol)] : -1)
 
@@ -4377,7 +4227,6 @@ extract_frag_score(CM_t *cm, double *feats)
     }
   }
 #undef RANK
-  free(rank_lookup); rank_lookup = NULL;
 
   /* Build cumulative IC: cum_ic[k] = sum ic_col[1..k] */
   cum_ic[0] = 0.0;
@@ -4386,8 +4235,7 @@ extract_frag_score(CM_t *cm, double *feats)
   /* range_ic(l, r) = sum of ic_col[l..r] */
 #define RANGE_IC(l, r) (((l)<1?(l)=1:0), ((r)>N?(r)=N:0), ((r)<(l)?0.0:(cum_ic[(r)]-cum_ic[(l)-1])))
 
-  /* Build DFS order and has_end_neighbor */
-  build_dfs_order(cm, dfs_order);
+  /* Build has_end_neighbor from the shared DFS order */
   memset(has_end_neighbor, 0, sizeof(int) * cm->nodes);
   {
     int nd2;
@@ -4515,33 +4363,23 @@ extract_frag_score(CM_t *cm, double *feats)
 
     /* P90 of S: sort records by S, find weighted 90th percentile */
     {
-      /* Simple insertion sort of (S, P) pairs */
-      double *sS = NULL; double *sP = NULL;
-      ESL_ALLOC(sS, sizeof(double)*n_rec); ESL_ALLOC(sP, sizeof(double)*n_rec);
-      memcpy(sS, rec_S, n_rec*sizeof(double));
-      memcpy(sP, rec_P, n_rec*sizeof(double));
-      { int j; double tmp_s, tmp_p;
-        for (i=1; i<n_rec; i++) {
-          tmp_s=sS[i]; tmp_p=sP[i];
-          for (j=i-1; j>=0&&sS[j]>tmp_s; j--) { sS[j+1]=sS[j]; sP[j+1]=sP[j]; }
-          sS[j+1]=tmp_s; sP[j+1]=tmp_p;
-        }
-      }
-      double cum_p = 0.0; double p90 = sS[n_rec-1];
+      /* Sort (S, P) pairs by S via qsort(), O(n_rec log n_rec) */
+      SP_PAIR *sp = NULL;
+      ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
+      for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
+      qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
+
+      double cum_p = 0.0; double p90 = sp[n_rec-1].s;
       for (i = 0; i < n_rec; i++) {
-        cum_p += sP[i];
-        if (cum_p >= 0.90) { p90 = sS[i]; break; }
+        cum_p += sp[i].p;
+        if (cum_p >= 0.90) { p90 = sp[i].s; break; }
       }
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
-      free(sS); free(sP);
+      free(sp);
     }
   }
 
  DONE:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (ic_col)           free(ic_col);
   if (cum_ic)           free(cum_ic);
@@ -4549,16 +4387,10 @@ extract_frag_score(CM_t *cm, double *feats)
   if (rec_P)            free(rec_P);
   if (rec_S)            free(rec_S);
   if (rec_L)            free(rec_L);
-  if (rank_lookup)      free(rank_lookup);
-  if (unique_col)       free(unique_col);
   if (begins)           free(begins);
   return eslOK;
 
  ERROR:
-  if (subtree_l)        free(subtree_l);
-  if (subtree_r)        free(subtree_r);
-  if (parent)           free(parent);
-  if (dfs_order)        free(dfs_order);
   if (has_end_neighbor) free(has_end_neighbor);
   if (ic_col)           free(ic_col);
   if (cum_ic)           free(cum_ic);
@@ -4566,8 +4398,6 @@ extract_frag_score(CM_t *cm, double *feats)
   if (rec_P)            free(rec_P);
   if (rec_S)            free(rec_S);
   if (rec_L)            free(rec_L);
-  if (rank_lookup)      free(rank_lookup);
-  if (unique_col)       free(unique_col);
   if (begins)           free(begins);
   return eslEMEM;
 }
@@ -4701,27 +4531,131 @@ extract_composition(CM_t *cm, double *feats)
 }
 
 
+/* stage_timing_log()
+ * Append one "CM\t<name>\tSTAGE\t<stage>\t<seconds>" line to <path>, used by
+ * the FASTCAL_STAGE_TIMING instrumentation in cm_FastCalibrate_ExtractFeatures()
+ * (brief 26_0422-092). File opened in append mode, same pattern as the
+ * FASTCAL_FEAT_DUMP dump below.
+ */
+static void
+stage_timing_log(const char *path, const char *cm_name, const char *stage, double seconds)
+{
+  FILE *fp = fopen(path, "a");
+  if (fp == NULL) return;
+  fprintf(fp, "CM\t%s\tSTAGE\t%s\t%.6f\n", cm_name ? cm_name : "unknown", stage, seconds);
+  fclose(fp);
+}
+
 /* cm_FastCalibrate_ExtractFeatures()
  * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all 69 features).
  * Returns eslOK on success, eslFAIL/eslEMEM on error.
+ *
+ * Stage timing: if FASTCAL_STAGE_TIMING=<path> is set in the environment,
+ * per-stage wall-clock time (shared scratch build + each extract_* call) is
+ * appended to <path> (brief 26_0422-092). When unset, stage_w stays NULL and
+ * no esl_stopwatch call is ever made — zero added cost, same pattern as the
+ * pre-existing FASTCAL_FEAT_DUMP gate below.
  */
 int
 cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
 {
   int status;
+  /* Shared scratch: dfs_order (DFS pre-order by cm->nodemap) and the
+   * use_consensus_rank=1 subtree-span/consensus-rank-map result, both of
+   * which depend only on the CM's static tree structure. Computed once here
+   * and threaded into the extract_* functions that used to each recompute
+   * them from scratch via O(nodes^2) insertion sort / dedup scan (brief
+   * 26_0422-089). extract_c1_old's use_consensus_rank=0 call is unrelated
+   * (different data) and keeps its own private, unshared call. */
+  int *dfs_order   = NULL;
+  int *subtree_l   = NULL;
+  int *subtree_r   = NULL;
+  int *parent      = NULL;
+  int *rank_lookup = NULL;
+  int  rank_ncols  = 0;
 
-  if ((status = extract_clen(cm, feats))              != eslOK) return status;
-  if ((status = extract_effn(cm, feats))              != eslOK) return status;
-  if ((status = extract_noss_fraglen(cm, feats))      != eslOK) return status;
-  if ((status = extract_str_struct(cm, feats))        != eslOK) return status;
-  if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) return status;
-  if ((status = extract_topo_noend_basic(cm, feats))  != eslOK) return status;
-  if ((status = extract_c1_old(cm, feats))            != eslOK) return status;
+  const char     *stage_timing_path = getenv("FASTCAL_STAGE_TIMING");
+  ESL_STOPWATCH  *stage_w = (stage_timing_path != NULL) ? esl_stopwatch_Create() : NULL;
+
+#define STAGE_BEGIN() do { if (stage_w != NULL) esl_stopwatch_Start(stage_w); } while (0)
+#define STAGE_END(stagename) \
+  do { \
+    if (stage_w != NULL) { \
+      esl_stopwatch_Stop(stage_w); \
+      stage_timing_log(stage_timing_path, cm->name, (stagename), stage_w->elapsed); \
+    } \
+  } while (0)
+#define STAGE_CLEANUP() do { if (stage_w != NULL) esl_stopwatch_Destroy(stage_w); } while (0)
+
+  STAGE_BEGIN();
+  if ((status = extract_clen(cm, feats))              != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_clen");
+
+  STAGE_BEGIN();
+  if ((status = extract_effn(cm, feats))              != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_effn");
+
+  STAGE_BEGIN();
+  if ((status = extract_noss_fraglen_fast(cm, feats)) != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_noss_fraglen_fast");
+
+  STAGE_BEGIN();
+  if ((status = extract_str_struct(cm, feats))        != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_str_struct");
+
+  STAGE_BEGIN();
+  if ((status = extract_c2_score_genomic(cm, feats))  != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_c2_score_genomic");
+
+  STAGE_BEGIN();
+  ESL_ALLOC(dfs_order, sizeof(int) * cm->nodes);
+  build_dfs_order(cm, dfs_order);
+
+  ESL_ALLOC(subtree_l, sizeof(int) * cm->nodes);
+  ESL_ALLOC(subtree_r, sizeof(int) * cm->nodes);
+  ESL_ALLOC(parent,    sizeof(int) * cm->nodes);
+  if ((status = build_node_subtree_spans(cm, /*use_consensus_rank=*/1,
+                                         subtree_l, subtree_r, parent,
+                                         &rank_lookup, &rank_ncols)) != eslOK)
+    goto ERROR;
+  STAGE_END("scratch_build");
+
+  STAGE_BEGIN();
+  if ((status = extract_topo_noend_basic(cm, feats, subtree_l, subtree_r)) != eslOK) goto ERROR;
+  STAGE_END("extract_topo_noend_basic");
+
+  STAGE_BEGIN();
+  if ((status = extract_c1_old(cm, feats))            != eslOK) goto ERROR;
+  STAGE_END("extract_c1_old");
+
   /* Phase 5: v5.5 feature widening */
-  if ((status = extract_bulk_ic_and_spatial(cm, feats)) != eslOK) return status;
-  if ((status = extract_withend_rich(cm, feats))        != eslOK) return status;
-  if ((status = extract_frag_score(cm, feats))          != eslOK) return status;
-  if ((status = extract_composition(cm, feats))         != eslOK) return status;
+  STAGE_BEGIN();
+  if ((status = extract_bulk_ic_and_spatial(cm, feats, dfs_order)) != eslOK) goto ERROR;
+  STAGE_END("extract_bulk_ic_and_spatial");
+
+  STAGE_BEGIN();
+  if ((status = extract_withend_rich(cm, feats, dfs_order, subtree_l, subtree_r)) != eslOK) goto ERROR;
+  STAGE_END("extract_withend_rich");
+
+  STAGE_BEGIN();
+  if ((status = extract_frag_score(cm, feats, dfs_order, subtree_l, subtree_r,
+                                   rank_lookup, rank_ncols))        != eslOK) goto ERROR;
+  STAGE_END("extract_frag_score");
+
+  STAGE_BEGIN();
+  if ((status = extract_composition(cm, feats))         != eslOK) goto ERROR;
+  STAGE_END("extract_composition");
+
+  STAGE_CLEANUP();
+#undef STAGE_BEGIN
+#undef STAGE_END
+#undef STAGE_CLEANUP
+
+  free(dfs_order);
+  free(subtree_l);
+  free(subtree_r);
+  free(parent);
+  free(rank_lookup);
 
   /* Debug: dump feature vector if FASTCAL_FEAT_DUMP env var is set.
    * Format: one line per CM, tab-separated feature values prefixed by CM name.
@@ -4742,6 +4676,15 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   }
 
   return eslOK;
+
+ ERROR:
+  if (stage_w)     esl_stopwatch_Destroy(stage_w);
+  if (dfs_order)   free(dfs_order);
+  if (subtree_l)   free(subtree_l);
+  if (subtree_r)   free(subtree_r);
+  if (parent)      free(parent);
+  if (rank_lookup) free(rank_lookup);
+  return status;
 }
 
 
