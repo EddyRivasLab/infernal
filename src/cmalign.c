@@ -2898,7 +2898,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
     extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
     extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-    extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int do_ckpt, double *ret_bytes); /* brief 26_0430-266 */
+    extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes); /* brief 26_0430-266; ckpt_mode = P7B_OAMEM_* */
+    extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
+    extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
+    extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
+    extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                            P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
 
     /* brief 26_0430-182 Part A: Tgm when do_trunc_w (mirrors hmm_alignment()'s serial-path setup). */
     if (do_trunc_w) {
@@ -2970,6 +2975,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	int     *kmax_w = NULL;
 	int      ncells_w = 0;
 	int      pad_w  = 30;
+	int      ckpt_mode_w = P7B_OAMEM_CKPTPP;  /* brief 26_0628-083: engine picked by the preflight below */
 	P7_GBANDS *bnd_w = NULL;
 	P7_GMXB *bxf_w  = NULL;
 	P7_GMXB *bxb_w  = NULL;
@@ -3053,21 +3059,34 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
 	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
 
-	/* brief 26_0430-266: post-band do_bandedoa_w preflight (see serial-path
-	 * site above for full reasoning). This worker path is always the
-	 * non-checkpointed banded engine (2 x p7_gmxb_Create below), so
-	 * P7B_OAMEM_NOCKPT (== the old do_ckpt=FALSE). The MPI worker has never
-	 * used either checkpointed engine, so brief 26_0628-081 leaves it alone. */
+	/* brief 26_0628-083: post-band do_bandedoa_w preflight, ported from the
+	 * serial/threaded paths' three-way engine selection (brief 26_0628-081).
+	 * This worker used to hardcode P7B_OAMEM_NOCKPT with no fallback, so a
+	 * band that would have auto-downgraded on --cpu 0/N instead hard-failed
+	 * here via mpi_failure() -- see serial-path site above for full
+	 * reasoning; same overrides, same policy: keep the resident posterior
+	 * while it fits --mxsize, else drop to the double-checkpointed engine. */
 	{
-	  double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf;
-	  p7_CheckptBandedOAMemNeeded(bnd_w, P7B_OAMEM_NOCKPT, &needed_bytes_pf);
-	  needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
+	  double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf, ckpt_bytes_pf;
 	  mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
+	  if      (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ckpt_mode_w = P7B_OAMEM_NOCKPT;
+	  else if (getenv("INFERNAL_HMM_PPCKPT_ON")  != NULL) ckpt_mode_w = P7B_OAMEM_CKPTPP;
+	  else if (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ckpt_mode_w = P7B_OAMEM_CKPT;
+	  else {
+	    p7_CheckptBandedOAMemNeeded(bnd_w, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
+	    ckpt_mode_w = (ckpt_bytes_pf / (1024.0 * 1024.0) <= mxsize_limit_pf)
+	                  ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
+	  }
+	  p7_CheckptBandedOAMemNeeded(bnd_w, ckpt_mode_w, &needed_bytes_pf);
+	  needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	  if (needed_mb_pf > mxsize_limit_pf) {
 	    int recommended_mxsize_pf = (int)(ceil(needed_mb_pf / 1024.0) * 1024.0);
 	    mpi_failure("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
 			needed_mb_pf, mxsize_limit_pf, recommended_mxsize_pf);
 	  }
+	  if (getenv("INFERNAL_CKPT_VERBOSE"))
+	    fprintf(stderr, "# hmm-OA engine: mode=%d (0=nockpt 1=ckpt 2=ckptpp) needed=%.2f Mb mxsize=%.2f Mb ncell=%ld\n",
+		    ckpt_mode_w, needed_mb_pf, mxsize_limit_pf, (long) bnd_w->ncell);
 	}
 
 	/* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
@@ -3077,14 +3096,32 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
 		  bnd_w->L, bnd_w->M, (long) bnd_w->ncell, (long) bnd_w->L * (long) bnd_w->M, outside_frac);
 	}
-	bxf_w = p7_gmxb_Create(bnd_w);
-	bxb_w = p7_gmxb_Create(bnd_w);
+	/* brief 26_0628-083: three-way dispatch, mirroring the serial/threaded
+	 * paths' brief 26_0628-081 block exactly (same engines, same byte
+	 * results -- ckpt_mode_w was chosen by the preflight above). */
+	if (ckpt_mode_w == P7B_OAMEM_CKPTPP) {
+	  p7_trace_Reuse(wtr);
+	  if (p7_GCheckptFBDecodeOA_Banded(dsq, L, gm_w, bnd_w, wtr, &fwdsc_w, &oasc_w) != eslOK)
+	    mpi_failure("p7_GCheckptFBDecodeOA_Banded() failed");
+	}
+	else if (ckpt_mode_w == P7B_OAMEM_CKPT) {
+	  bxb_w = p7b_pp_Create(bnd_w);
+	  if (p7_GCheckptFBDecode_Banded(dsq, L, gm_w, bxb_w, &fwdsc_w) != eslOK)
+	    mpi_failure("p7_GCheckptFBDecode_Banded() failed");
+	  p7_trace_Reuse(wtr);
+	  if (p7_GCheckptOA_Banded(gm_w, bxb_w, wtr, &oasc_w) != eslOK)
+	    mpi_failure("p7_GCheckptOA_Banded() failed");
+	}
+	else {
+	  bxf_w = p7_gmxb_Create(bnd_w);
+	  bxb_w = p7_gmxb_Create(bnd_w);
 
-	my_p7_GForwardBanded(dsq, L, gm_w, bxf_w, &fwdsc_w);
-	p7_GBackwardBanded(dsq, L, gm_w, bxb_w, NULL);
-	p7_GDecodingBanded(gm_w, bxf_w, bxb_w, bxb_w, fwdsc_w);
-	p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
-	p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
+	  my_p7_GForwardBanded(dsq, L, gm_w, bxf_w, &fwdsc_w);
+	  p7_GBackwardBanded(dsq, L, gm_w, bxb_w, NULL);
+	  p7_GDecodingBanded(gm_w, bxf_w, bxb_w, bxb_w, fwdsc_w);
+	  p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
+	  p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
+	}
 
 	free(i2k_w);
 	free(kmin_w);
