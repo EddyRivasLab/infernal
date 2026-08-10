@@ -2383,6 +2383,7 @@ hmm_trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, P7_TRACE **ret_tr
 static int
 hmm_trace_MPISend(P7_TRACE *tr, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
 {
+  int   status;
   int   n = 0;
   int   pos;
 
@@ -3117,6 +3118,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     FreeCM(cm);
     if (mpibuf != NULL) free(mpibuf);
     return eslOK;
+
+  ERROR:
+    mpi_failure("out of memory");
+    return eslOK; /* NEVERREACHED */
   }
 
   /* initialize our worker info */
