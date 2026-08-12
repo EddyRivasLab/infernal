@@ -2485,7 +2485,6 @@ typedef struct cm_pipeline_s {
    * envelope's first residue, producing a hit that overlaps its stronger
    * sibling and is deleted by overlap removal. Those envelopes use the
    * standard cp9_IterateSeq2Bands bands instead. */
-  int          *p7env_merged;   /* temp [0..np7env-1] pre-F6 per-envelope merged-window flag               */
   int          *f7env_merged;   /* [0..nenv-1] post-F6 (compacted) per-envelope merged-window flag         */
   int           f7env_merged_n; /* number of entries in f7env_merged                                       */
   int           cur_env_merged; /* TRUE if the envelope currently being dispatched came from merged window */
