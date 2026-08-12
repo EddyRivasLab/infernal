@@ -3690,12 +3690,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
 	i2++;
       }
     }
-    /* DIAGNOSTIC ONLY (brief 26_0316-034): pre-merge F3b survivor windows */
-    if(getenv("VBT_DBG") != NULL) {
-      fprintf(stderr, "#VBT pass %d: %d F3b survivors (pre-merge), cmW/maxW-derived nwin %d\n", (int)pli->cur_pass_idx, nsurv_fwd, nwin);
-      for(i = 0; i < nsurv_fwd; i++)
-        fprintf(stderr, "#VBT   premerge[%3d] [%10" PRId64 "..%10" PRId64 "] len %7" PRId64 " sc %8.2f\n", (int)i, new_ws[i], new_we[i], new_we[i]-new_ws[i]+1, new_wb[i]);
-    }
     /* we could have overlapping windows, merge those that do overlap */
     ESL_ALLOC(useme, sizeof(int) * nsurv_fwd);
     esl_vec_ISet(useme, nsurv_fwd, FALSE);
@@ -3718,13 +3712,6 @@ pli_p7_filter(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P
       }
       new_nmerged[i] = i2 - i; /* issue #50: # windows merged into output i (>=1) */
       i = i2-1;
-    }
-    /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-    if(getenv("VBT_DBG") != NULL) {
-      for(i = 0; i < nsurv_fwd; i++) {
-        if(useme[i]) fprintf(stderr, "#VBT filter-out win [%10" PRId64 "..%10" PRId64 "] len %7" PRId64 " nmerged %3d\n",
-                             new_ws[i], new_we[i], new_we[i]-new_ws[i]+1, new_nmerged[i]);
-      }
     }
     i2 = 0;
     for(i = 0; i < nsurv_fwd; i++) {
@@ -3956,10 +3943,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
      * the standard (use_gm) pass below. wnmerged==NULL means "no merge info"
      * (e.g. hmmonly/full-seq paths) and is treated as unmerged. */
     int win_is_merged = (wnmerged != NULL && wnmerged[i] >= 2) ? TRUE : FALSE;
-    /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-    if(getenv("VBT_DBG") != NULL)
-      fprintf(stderr, "#VBT envdef win %3d/%3d [%10" PRId64 "..%10" PRId64 "] len %7" PRId64 " wnmerged %3d merged %d pass %d\n",
-              i, nwin, ws[i], we[i], we[i]-ws[i]+1, (wnmerged==NULL ? -1 : wnmerged[i]), win_is_merged, (int)pli->cur_pass_idx);
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG: p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
@@ -4546,15 +4529,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 		  pli->band_kmin, pli->band_kmax,
 		  pli->do_null2, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded multihit glocal envelope defn");
-	  /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-	  if(getenv("VBT_DBG") != NULL) {
-	    int dd;
-	    fprintf(stderr, "#VBT   path=BANDED_MULTIHIT win [%" PRId64 "..%" PRId64 "] nregions %d nenvelopes %d ndom %d\n",
-		    ws[i], we[i], pli->ddef->nregions, pli->ddef->nenvelopes, pli->ddef->ndom);
-	    for(dd = 0; dd < pli->ddef->ndom; dd++)
-	      fprintf(stderr, "#VBT     dom %2d [%10" PRId64 "..%10" PRId64 "] envsc %8.2f\n", dd,
-		      (int64_t)(pli->ddef->dcl[dd].ienv + ws[i] - 1), (int64_t)(pli->ddef->dcl[dd].jenv + ws[i] - 1), pli->ddef->dcl[dd].envsc);
-	  }
 	  /* For --p7post_cp9b: keep bnd alive (gxfb->bnd/gxbb->bnd reference it) until next window.
 	   * Transfer ownership to pli->p7bnd; it will be freed at the start of the next banded window. */
 	  if(pli->do_p7post_cp9b) {
@@ -4566,15 +4540,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
 	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
-	  /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-	  if(getenv("VBT_DBG") != NULL) {
-	    int dd;
-	    fprintf(stderr, "#VBT   path=UNBANDED_GLOCAL win [%" PRId64 "..%" PRId64 "] nregions %d nenvelopes %d ndom %d\n",
-		    ws[i], we[i], pli->ddef->nregions, pli->ddef->nenvelopes, pli->ddef->ndom);
-	    for(dd = 0; dd < pli->ddef->ndom; dd++)
-	      fprintf(stderr, "#VBT     dom %2d [%10" PRId64 "..%10" PRId64 "] envsc %8.2f\n", dd,
-		      (int64_t)(pli->ddef->dcl[dd].ienv + ws[i] - 1), (int64_t)(pli->ddef->dcl[dd].jenv + ws[i] - 1), pli->ddef->dcl[dd].envsc);
-	  }
 	}
 	/*printf(" bcksc: %.4f\n", bcksc);*/
       }
@@ -4621,10 +4586,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       
       /* check if we can skip this envelope based on its P-value */
       if(P > pli->F5) {
-        /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-        if(getenv("VBT_DBG") != NULL)
-          fprintf(stderr, "#VBT   ENV-DROPPED-F5 [%10" PRId64 "..%10" PRId64 "] sc %8.2f P %g > F5 %g\n",
-                  (int64_t)(pli->ddef->dcl[d].ienv + ws[i] - 1), (int64_t)(pli->ddef->dcl[d].jenv + ws[i] - 1), env_sc_for_pvalue, P, pli->F5);
 	if(pli->ddef->dcl[d].ad) p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
 	continue;
       }
@@ -4675,9 +4636,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       es[nenv] = pli->ddef->dcl[d].ienv + ws[i] - 1;
       ee[nenv] = pli->ddef->dcl[d].jenv + ws[i] - 1;
       eb[nenv] = env_sc_for_pvalue;
-      /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-      if(getenv("VBT_DBG") != NULL)
-        fprintf(stderr, "#VBT   ENV-KEPT [%10" PRId64 "..%10" PRId64 "] sc %8.2f P %g (win %d, merged %d)\n", es[nenv], ee[nenv], env_sc_for_pvalue, P, i, win_is_merged);
       ead[nenv] = pli->ddef->dcl[d].ad;
       pli->ddef->dcl[d].ad = NULL;
       /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
@@ -4986,9 +4944,6 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
     }
     if (P > pli->F6) {
-      /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-      if(getenv("VBT_DBG") != NULL)
-        fprintf(stderr, "#VBT F6-DROP env [%10" PRId64 "..%10" PRId64 "] sc %8.2f P %g > F6 %g\n", p7es[i], p7ee[i], sc, P, pli->F6);
       if(pli->last_dispatch_tr) { FreeParsetree(pli->last_dispatch_tr); pli->last_dispatch_tr = NULL; }
       continue;
     }
@@ -4997,15 +4952,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     nenv++;
     /* update envelope boundaries, if nec */
     if(pli->do_fcykenv && (cyk_envi != -1 && cyk_envj != -1)) {
-      /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-      if(getenv("VBT_DBG") != NULL)
-        fprintf(stderr, "#VBT F6-PASS env [%10" PRId64 "..%10" PRId64 "] sc %8.2f P %g -> redef [%10" PRId64 "..%10" PRId64 "]\n",
-                p7es[i], p7ee[i], sc, P, (int64_t)cyk_envi, (int64_t)cyk_envj);
       if(! enforce_i0) { p7es[i] = cyk_envi; }
       if(! enforce_j0) { p7ee[i] = cyk_envj; }
     }
-    else if(getenv("VBT_DBG") != NULL)
-      fprintf(stderr, "#VBT F6-PASS env [%10" PRId64 "..%10" PRId64 "] sc %8.2f P %g (no redef)\n", p7es[i], p7ee[i], sc, P);
 
     /* --cykbands: recover the F6 CYK parsetree.
      * - High-confidence path: dispatch already ran shmx, parsetree is in
@@ -5427,14 +5376,6 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F7_dp       += pli->last_dispatch_dp;
-    /* DIAGNOSTIC ONLY (brief 26_0316-034) */
-    if(getenv("VBT_DBG") != NULL) {
-      int hh;
-      fprintf(stderr, "#VBT F7 env %3d [%10" PRId64 "..%10" PRId64 "] sc %8.2f status %d -> %d hit(s)\n",
-              i, es[i], ee[i], sc, status, (int)(hitlist->N - nhit));
-      for(hh = nhit; hh < hitlist->N; hh++)
-        fprintf(stderr, "#VBT   F7hit [%10" PRId64 "..%10" PRId64 "] sc %8.2f\n", hitlist->unsrt[hh].start, hitlist->unsrt[hh].stop, hitlist->unsrt[hh].score);
-    }
     if(status == eslERANGE) {
       pli->acct[pli->cur_pass_idx].n_overflow_final++;
       continue; /* skip envelopes that would require too big a HMM banded matrix */
