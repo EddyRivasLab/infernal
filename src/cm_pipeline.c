@@ -3963,6 +3963,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
      * the standard (use_gm) pass below. wnmerged==NULL means "no merge info"
      * (e.g. hmmonly/full-seq paths) and is treated as unmerged. */
     int win_is_merged = (wnmerged != NULL && wnmerged[i] >= 2) ? TRUE : FALSE;
+    int nenv_win_first = nenv; /* issue #50 (brief 26_0316-034): first envelope index from this window */
 #if eslDEBUGLEVEL >= 2
     printf("#DEBUG: p7 envdef win: %4d of %4d [%6" PRId64 "..%6" PRId64 "] pass: %" PRId64 "\n", i, nwin, ws[i], we[i], pli->cur_pass_idx);
 #endif
@@ -4661,7 +4662,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
       if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
       /* issue #50 (brief 26_0316-034): remember whether this envelope came from a merged window */
-      em[nenv] = win_is_merged;
+      em[nenv] = FALSE; /* set below if it overlaps a sibling envelope from this window */
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
        * At CYK dispatch time, all windows have been processed and pli->gxfb/gxbb/p7bnd
        * would only reflect the last window; storing per-envelope here fixes that.
@@ -4739,6 +4740,27 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	}
       }
       nenv++;
+    }
+
+    /* issue #50 (brief 26_0316-034): narrow the merged-window flag.
+     * A merged window is only DANGEROUS when the unbanded multihit domaindef
+     * returned two envelopes that overlap each other: the per-envelope vitband
+     * bands pin the weaker copy's CM parse to its envelope start, so its hit
+     * overlaps the stronger sibling's hit and overlap removal deletes it. A
+     * merged window whose envelopes are disjoint (very often just one envelope)
+     * cannot lose a hit this way, and forcing standard cp9 bands on it is pure
+     * cost -- and can itself be a sensitivity loss, since unbanded envelope
+     * handling is NOT universally better than banded (it fragments a degraded
+     * single copy). So flag only envelopes that overlap a sibling from the same
+     * window. */
+    if(win_is_merged) {
+      int ka, kb;
+      for(ka = nenv_win_first; ka < nenv; ka++) {
+        for(kb = nenv_win_first; kb < nenv; kb++) {
+          if(ka == kb) continue;
+          if(es[ka] <= ee[kb] && ee[ka] >= es[kb]) { em[ka] = TRUE; break; }
+        }
+      }
     }
 
     pli->ddef->ndom = 0; /* reset for next use */
