@@ -2321,6 +2321,15 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_MM,k);
 	  imx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_IM,k);
 	  dmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_DM,k);
+
+	  /* CP9BWDELFIX (brief 26_0316-036, cross-ref brief 26_0430-288): fold M_k <- EL_k
+	   * for this interior row's general k, mirroring the k==M special case above
+	   * (~line 2269) which already does this. Omitted here in the original 2008/2011
+	   * kernel; env-gated OFF by default pending fixture validation. */
+	  if(getenv("CP9BWDELFIX") != NULL) {
+	    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	      mmx[i][kpcur] = ILogsum(mmx[i][kpcur], elmx[i][kpcur] + CP9TSC(cp9O_MEL,k));
+	  }
 	}
 
       /*********************************************************/
