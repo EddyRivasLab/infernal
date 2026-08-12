@@ -225,6 +225,10 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->f6_deltaA          = NULL;
   pli->f6_deltaA_n        = 0;
   pli->p7env_delta_pre    = NULL;
+  pli->p7env_merged       = NULL;  /* issue #50 / brief 26_0316-034 */
+  pli->f7env_merged       = NULL;
+  pli->f7env_merged_n     = 0;
+  pli->cur_env_merged     = FALSE;
   pli->p7pn_nenv       = 0;
   pli->p7pn_nenv_alloc = 0;
   pli->p7pn_M          = 0;
@@ -1005,6 +1009,8 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->f6_pvalA)        free(pli->f6_pvalA);
   if (pli->f6_deltaA)       free(pli->f6_deltaA);
   if (pli->p7env_delta_pre) free(pli->p7env_delta_pre);
+  if (pli->p7env_merged)    free(pli->p7env_merged);  /* issue #50 / brief 26_0316-034 */
+  if (pli->f7env_merged)    free(pli->f7env_merged);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
   free(pli);
@@ -3878,6 +3884,12 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
     if(pli->p7env_delta_pre) { free(pli->p7env_delta_pre); pli->p7env_delta_pre = NULL; }
     ESL_ALLOC(pli->p7env_delta_pre, sizeof(float) * ESL_MAX(1, nenv_alloc));
   }
+  /* issue #50 (brief 26_0316-034): per-envelope merged-window flags, consumed
+   * by pli_cyk_env_filter()/pli_final_stage() to suppress per-envelope vitband/
+   * msvband CM band derivation for envelopes that came out of a merged window. */
+  if(pli->p7env_merged) { free(pli->p7env_merged); pli->p7env_merged = NULL; }
+  ESL_ALLOC(pli->p7env_merged, sizeof(int) * ESL_MAX(1, nenv_alloc));
+  esl_vec_ISet(pli->p7env_merged, ESL_MAX(1, nenv_alloc), FALSE);
   nenv = 0;
   seq = esl_sq_CreateDigital(sq->abc);
 
@@ -4657,6 +4669,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
         ESL_RALLOC(eb, p, sizeof(float)   * nenv_alloc);
         ESL_RALLOC(ead, p, sizeof(P7_ALIDISPLAY *) * nenv_alloc);
         if(pli->do_p7deltrigger) ESL_RALLOC(pli->p7env_delta_pre, p, sizeof(float) * nenv_alloc);
+        ESL_RALLOC(pli->p7env_merged, p, sizeof(int) * nenv_alloc); /* issue #50 / brief 26_0316-034 */
       }
       /* Define envelope to search with CM */
       es[nenv] = pli->ddef->dcl[d].ienv + ws[i] - 1;
@@ -4669,6 +4682,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       pli->ddef->dcl[d].ad = NULL;
       /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
       if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+      /* issue #50 (brief 26_0316-034): remember whether this envelope came from a merged window */
+      pli->p7env_merged[nenv] = win_is_merged;
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
        * At CYK dispatch time, all windows have been processed and pli->gxfb/gxbb/p7bnd
        * would only reflect the last window; storing per-envelope here fixes that.
@@ -4947,9 +4962,12 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     /* Tell dispatch whether to call FastCYKScanHB_shmx (yields parsetree
      * via pli->last_dispatch_tr) instead of plain FastCYKScanHB. */
     pli->cykbands_high_conf = high_conf;
+    /* issue #50 (brief 26_0316-034) */
+    pli->cur_env_merged = (pli->p7env_merged != NULL) ? pli->p7env_merged[i] : FALSE;
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, p7es[i], p7ee[i], NULL, 0., cyk_env_cutoff, qdbidx, &sc,
                                     (pli->do_fcykenv) ? &cyk_envi : NULL,
                                     (pli->do_fcykenv) ? &cyk_envj : NULL);
+    pli->cur_env_merged = FALSE;
     pli->cykbands_high_conf = FALSE;
     pli->stg_time_F6_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F6_cykdp    += pli->last_dispatch_dp;
@@ -5079,6 +5097,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   /* Reset any per-pipeline f6_pvalA/f6_deltaA from a previous sequence */
   if(pli->f6_pvalA)  { free(pli->f6_pvalA);  pli->f6_pvalA  = NULL; pli->f6_pvalA_n  = 0; }
   if(pli->f6_deltaA) { free(pli->f6_deltaA); pli->f6_deltaA = NULL; pli->f6_deltaA_n = 0; }
+  /* issue #50 (brief 26_0316-034): reset compacted merged-window flags from a previous call */
+  if(pli->f7env_merged) { free(pli->f7env_merged); pli->f7env_merged = NULL; pli->f7env_merged_n = 0; }
   if(nenv > 0) {
     ESL_ALLOC(es, sizeof(int64_t) * nenv);
     ESL_ALLOC(ee, sizeof(int64_t) * nenv);
@@ -5094,6 +5114,9 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
       ESL_ALLOC(pli->f6_deltaA, sizeof(float) * nenv);
       pli->f6_deltaA_n = (int)nenv;
     }
+    /* issue #50 (brief 26_0316-034) */
+    ESL_ALLOC(pli->f7env_merged, sizeof(int) * nenv);
+    pli->f7env_merged_n = (int)nenv;
     si = 0;
     for(i = 0; i < np7env; i++) {
       if(i_surv[i]) {
@@ -5109,6 +5132,8 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
 	}
 	if(pli->f6_pvalA)  pli->f6_pvalA[si]  = f6pval_tmp  ? f6pval_tmp[i]  : 1.0f;
 	if(pli->f6_deltaA) pli->f6_deltaA[si] = f6delta_tmp ? f6delta_tmp[i] : 0.0f;
+	/* issue #50 (brief 26_0316-034) */
+	pli->f7env_merged[si] = (pli->p7env_merged != NULL) ? pli->p7env_merged[i] : FALSE;
 	si++;
       }
     }
@@ -5395,7 +5420,10 @@ pli_final_stage(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t *es
     /* Stage 6's per-envelope F7-only re-run trigger was removed (Stage 7).
      * The --p7deltrigger flag is still active; the escalation now happens
      * at window-level (F6+F7 re-run) in cm_Pipeline() after pli_final_stage(). */
+    /* issue #50 (brief 26_0316-034) */
+    pli->cur_env_merged = (pli->f7env_merged != NULL && i < pli->f7env_merged_n) ? pli->f7env_merged[i] : FALSE;
     status = pli_dispatch_cm_search(pli, cm, sq->dsq, es[i], ee[i], hitlist, pli->T, 0., qdbidx, &sc, NULL, NULL);
+    pli->cur_env_merged  = FALSE;
     pli->use_stored_cp9b = FALSE;
     pli->stg_time_F7_cp9bands += pli->last_dispatch_cp9bands;
     pli->stg_time_F7_dp       += pli->last_dispatch_dp;
@@ -5934,7 +5962,21 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	/* If status != eslOK (e.g. eslERANGE): fall through to vitband / cp9_IterateSeq2Bands */
       }
     }
-    if(!do_hbanded_done && (pli->do_msvband || pli->do_vitband) && pli->p7gm != NULL && pli->p7bg != NULL) {
+    /* issue #50 (brief 26_0316-034): envelopes that came out of a merged
+     * (multi-hit) window were defined by the unbanded multihit glocal
+     * domaindef, and a pair of them can abut or overlap by a few residues.
+     * Re-deriving p7 vitband/msvband bands per-envelope here pins the CM
+     * parse to the envelope's first residue, so the weaker copy's hit
+     * overlaps its stronger sibling and cm_tophits overlap removal deletes
+     * it outright (the tandem-copy loss 4c5bbf57 was meant to fix). Use the
+     * standard cp9 bands for these, which trim the parse start correctly.
+     * Merged windows are rare, so this costs nothing on the common case. */
+    if(!do_hbanded_done && pli->cur_env_merged && (pli->do_msvband || pli->do_vitband)) {
+      status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
+				    TRUE, FALSE, FALSE,
+				    (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+    }
+    else if(!do_hbanded_done && (pli->do_msvband || pli->do_vitband) && pli->p7gm != NULL && pli->p7bg != NULL) {
       /* --msvband/--vitband path: derive p7 bands for envelope, use banded CP9 F/B */
       int    envL = (int)(stop - start + 1);
       int   *p7_kmin = NULL, *p7_kmax = NULL, *p7_i2k = NULL;

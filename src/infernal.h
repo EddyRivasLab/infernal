@@ -2478,6 +2478,17 @@ typedef struct cm_pipeline_s {
   float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
   int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
   float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
+  /* issue #50 (brief 26_0316-034): per-envelope "came from a merged (multi-hit)
+   * window" flags. Such envelopes were defined by the unbanded multihit glocal
+   * domaindef and can abut/overlap a sibling envelope; re-deriving p7
+   * vitband/msvband CM bands per-envelope then pins the CM parse to the
+   * envelope's first residue, producing a hit that overlaps its stronger
+   * sibling and is deleted by overlap removal. Those envelopes use the
+   * standard cp9_IterateSeq2Bands bands instead. */
+  int          *p7env_merged;   /* temp [0..np7env-1] pre-F6 per-envelope merged-window flag               */
+  int          *f7env_merged;   /* [0..nenv-1] post-F6 (compacted) per-envelope merged-window flag         */
+  int           f7env_merged_n; /* number of entries in f7env_merged                                       */
+  int           cur_env_merged; /* TRUE if the envelope currently being dispatched came from merged window */
   int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
   int           cykbands_high_conf; /* TRUE: F6 dispatch should use FastCYKScanHB_shmx (saves second pass) */
   float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
