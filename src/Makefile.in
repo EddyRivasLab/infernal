@@ -76,13 +76,13 @@ PROGS = cmalign\
 	test_wviterbi
 
 # list of executable programs that get installed
-# cmcalibrate omitted from IPROGS (not installed by 'make install'): cmbuild's
-# cm_FastCalibrate() covers the standard pipeline, but cmcalibrate itself still
-# ships (built via PROGS above) as the accurate empirical fallback, e.g. for
-# --nonull3/pbnull off-set calibration.
+# cmcalibrate is installed as a fallback tool: cmbuild's cm_FastCalibrate()
+# covers the standard pipeline, but cmcalibrate remains available as the
+# accurate empirical fallback, e.g. for --nonull3/pbnull off-set calibration.
 IPROGS = \
 	cmalign\
 	cmbuild\
+	cmcalibrate\
 	cmconvert\
 	cmemit\
 	cmfetch\
