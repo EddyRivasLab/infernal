@@ -2943,11 +2943,16 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 	  imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
 	  dmx[i][kpcur] = p7_FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
 
+	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+	    mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+
 	  mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 	  imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
       }
       for(k = kx+1; k <= kmax[i]; k++) {
 	kpcur = k - kmin[i];
+	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+	  mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
 	mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 	imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
       }
