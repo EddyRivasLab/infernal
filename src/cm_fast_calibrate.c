@@ -211,8 +211,29 @@ typedef struct {
    * noss_ ridges (ere-axis feats dropped per the brief-073 ablation), so
    * ridge_predict() reuses the same extracted feature vector. Only DEPLOYED
    * cells are parsed (defined==1); GAPS stay undefined and the consumer falls
-   * back to the C0 ridge: huge-glocal STR (ECMGC/ECMGI) and NOSS
-   * medlarge/large/huge (no ere model). Used ONLY when g_fastcal_ere_mode==1. */
+   * back to the C0 ridge: NOSS medlarge/large/huge (no ere model). Used ONLY
+   * when g_fastcal_ere_mode==1.
+   *
+   * brief 26_0422-103 (nb-prefixed: bare brief numbers are ambiguous once code
+   * leaves this notebook dir, and EddyRivasLab/infernal is public): the
+   * huge (clen>=1500) / STR glocal (ECMGC, ECMGI) cells of ere_str_lambda/
+   * mu_extrap/mu_orig/K are now DEPLOYED (previously a gap that fell back to
+   * the C0 ridge, which could predict a physically-impossible positive glocal
+   * mu or lambda>1 -- see brief 26_0422-097). ECMGC_lambda/ECMGI_lambda are
+   * embedded as CONSTANTS (all-zero ridge coefficients; see
+   * brief 26_0422-103's task_a_constant_vs_ridge.py) per a pre-registered
+   * family-grouped-LOO test that showed a constant beats the trained ridge on
+   * this thin (12-row, 6-family) population; mu_extrap/mu_orig/K remain
+   * trained ridges. IMPORTANT CAVEAT: the underlying training labels
+   * (brief 26_0422-101's relabel of the previously-degenerate huge-glocal
+   * cmcalibrate merge) carry real cross-seed relative uncertainty of roughly
+   * 20-103% (median ~48%) -- a convention-quality estimate, not a precise
+   * measurement (comparable to, if somewhat above, the ~26-42% (median ~33%)
+   * spread that non-degenerate huge-glocal fits show on their own). This
+   * DOES NOT affect the default (--eent, g_fastcal_ere_mode==0) path, which
+   * still uses the unmodified C0 ridge for these same cells -- see
+   * brief 26_0422-097 for that separate, larger (10+ orders of magnitude),
+   * still-unguarded default-path defect. */
   FastCalRidge ere_str_lambda   [N_BUCKETS][N_MODES];
   FastCalRidge ere_str_mu_extrap[N_BUCKETS][N_MODES];
   FastCalRidge ere_str_mu_orig  [N_BUCKETS][N_MODES];
@@ -1774,10 +1795,28 @@ cm_FastCalibrate(CM_t *cm)
 
       /* brief 074: ere glocal lambda floor (0.005, brief 044/073). The C0 STR
        * path has no glocal floor, but the DEPLOYED ere STR glocal cells
-       * (tiny/small/medlarge/large ECMGC/ECMGI) carry glocal_lambda_floor=0.005,
-       * matching the Python predictor's apply_floor. Gated on ere_lam_used so
-       * the huge-glocal STR gap (C0 fallback) is NOT floored (byte-identical
-       * to C0 there). NOSS glocal is already floored by the block above. */
+       * (tiny/small/medlarge/large/huge ECMGC/ECMGI -- huge added by brief
+       * 26_0422-103) carry glocal_lambda_floor=0.005, matching the Python
+       * predictor's apply_floor. Gated on ere_lam_used, so this only applies
+       * once a cell is actually deployed; it now covers huge too since brief
+       * 103 deployed those 8 cells. NOSS glocal is already floored by the
+       * block above.
+       *
+       * brief 26_0422-103: for the huge/str glocal lambda cells specifically,
+       * `lam` here is a CONSTANT (0.0729 for ECMGC, 0.0838 for ECMGI -- see
+       * the ere_str_lambda[HUGE][...] comment above), not a per-CM ridge
+       * prediction. Both constants are comfortably above the 0.005 floor
+       * (>14x), so the floor is structurally unreachable for these two cells
+       * as currently embedded -- it exists here only as the same
+       * belt-and-suspenders guarantee it provides every other ere STR glocal
+       * cell. If a future retrain ever re-embeds one of these two cells as a
+       * near-floor constant (e.g. a family/condition population whose
+       * relabeled truth median drops below ~0.005), the floor would silently
+       * clamp every prediction to the SAME 0.005 value regardless of input --
+       * still a valid (if uninformative) constant, but worth noticing rather
+       * than assuming, since a constant that needs flooring probably means
+       * the training population or tailp choice should be revisited instead
+       * (see brief 26_0422-101 Task D on the underlying label uncertainty). */
       if (g_fastcal_ere_mode && !is_noss && ere_lam_used &&
           (mode == MODE_ECMGC || mode == MODE_ECMGI) && lam < 0.005)
         lam = 0.005;
