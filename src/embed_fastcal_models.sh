@@ -2,8 +2,7 @@
 # embed_fastcal_models.sh
 # Embed the production JSON model files into a C header as unsigned char arrays.
 # Usage: embed_fastcal_models.sh <outfile>
-# The JSON paths are absolute and reference the notebook analysis directory.
-# Do NOT commit copies of the JSONs into the Infernal repo.
+# The JSONs are tracked in src/cm_fast_calibrate_data/ (brief 26_0422-104).
 # v5.5: added v55_tiny_models.json, v55_K_tiny_models.json,
 #        v55_small_models.json, v55_K_small_models.json.
 # brief 22: added v55_{medlarge,large,huge}_models.json and matching K JSONs.
@@ -90,16 +89,21 @@ static const char fast_cal_models_version[] = "${HASH}";
 
 HEADER
 
-# Embed each JSON file using xxd -i
+# Embed each JSON file as a C byte array, in xxd -i's variable-naming and
+# array-content convention (varname = path with every non-alnum char, incl.
+# leading "./", turned into '_'), but using od instead of xxd: od is POSIX
+# (coreutils), xxd ships with vim and is not reliably present on a git-only
+# build machine.
 for f in "${JSONS[@]}"; do
-  basename_noext=$(basename "$f" .json | tr '-' '_')
-  # xxd -i produces: unsigned char varname[] = {...}; unsigned int varname_len = N;
-  # We want static const unsigned char varname[] = {...};
-  # Transform: prepend "static const " to the unsigned char line, and add const to len
-  xxd -i "$f" | sed \
-    -e 's/^unsigned char /static const unsigned char /g' \
-    -e 's/^unsigned int /static const unsigned int /g' \
-    >> "${TMPFILE}"
+  varname=$(printf '%s' "$f" | sed 's/[^A-Za-z0-9]/_/g')
+  nbytes=$(wc -c < "$f" | tr -d ' ')
+  {
+    echo "static const unsigned char ${varname}[] = {"
+    od -An -v -tx1 "$f" | tr -s ' \n' '\n' | sed '/^$/d;s/^/0x/;s/$/,/' | \
+      paste -sd' ' - | fold -s -w 76
+    echo "};"
+    echo "static const unsigned int ${varname}_len = ${nbytes};"
+  } >> "${TMPFILE}"
   echo "" >> "${TMPFILE}"
 done
 
