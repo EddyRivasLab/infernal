@@ -2253,7 +2253,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     if (L >= 2) { kmin_arr[L - 1] = 1; kmax_arr[L - 1] = M; }
     if (L >= 1) { kmin_arr[L] = 1; kmax_arr[L] = M; }
   }
-  kmin_arr[0] = 0; kmax_arr[0] = 0;
+  kmin_arr[0] = 0; kmax_arr[0] = p298_row0_kmax(M);   /* brief 26_0430-298, ported to _dnc by 26_0430-301 */
   i2k[0] = 0;   /* B-state convention (brief 26_0430-137): i2k[i]=argmax_k for i in [1,L]. */
 
   /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
