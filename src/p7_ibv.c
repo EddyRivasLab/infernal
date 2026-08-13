@@ -2260,6 +2260,18 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin_arr, kmax_arr);
 
+  /* brief 26_0430-298 EXPLORATORY probe (P298_INS0, DEFAULT OFF, not a proposed
+   * fix), ported to _dnc by brief 26_0430-301: the IBV band never admits k=0 on
+   * rows i>=1, so the CP9's I_0 state (leading/5'-flanking inserts, before
+   * consensus column 1) is banded out on every emitting row. This probe admits
+   * it to measure how much of the post-P298_ROW0D residual is attributable to
+   * I_0. Widening k=0 into rows i>=1 touches many INBAND(i,0) special cases in
+   * the CP9 kernels, so this is a MEASUREMENT switch only -- do not ship it
+   * without a separate audit. */
+  { static int p298_ins0 = -1;
+    if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
+    if(p298_ins0) { for (i = 1; i <= L; i++) kmin_arr[i] = 0; } }
+
   for (i = 1; i <= L; i++)
     ncells += (kmax_arr[i] - kmin_arr[i] + 1);
 
