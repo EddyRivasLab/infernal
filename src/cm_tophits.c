@@ -2286,8 +2286,11 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	    "---", "--------", "--------", 
 	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", "---------------------");
   }
-  for (h = 0; h < th->N; h++) { 
+  for (h = 0; h < th->N; h++) {
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
+      int    cfrom_emit = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->cfrom_emit : 0;
+      int    cto_emit   = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->cto_emit   : 0;
+      float  gc         = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->gc        : 0.0;
       //      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
       fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
 	      tnamew, th->hit[h]->name,
@@ -2295,13 +2298,13 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	      qnamew, qname,
 	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
 	      th->hit[h]->hmmonly ? "hmm" : "cm",
-	      th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit,
+	      cfrom_emit, cto_emit,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-	      cm_alidisplay_TruncString(th->hit[h]->ad), 
-	      th->hit[h]->pass_idx, 
-	      th->hit[h]->ad->gc,
+	      cm_alidisplay_TruncString(th->hit[h]->ad),
+	      th->hit[h]->pass_idx,
+	      gc,
 	      th->hit[h]->bias,
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
@@ -2592,6 +2595,10 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr2);
         }
         else { /* pli->do_trm_F3 is FALSE, default output mode */
+          int    cfrom_emit = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->cfrom_emit : 0;
+          int    cto_emit   = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->cto_emit   : 0;
+          float  gc         = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->gc        : 0.0;
+          int    clen       = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->clen      : 0;
           fprintf(ofp, "%-*" PRId64 " %-*s %-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %3s %3s %*s %6s %6s %*s %6s %6s %*d %*" PRId64 " %s\n",
                   idxw1, noutput,
                   tnamew, th->hit[h]->name,
@@ -2600,13 +2607,13 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
                   clanw, (th->hit[h]->clan_idx == -1) ? "-" : esl_keyhash_Get(clan_name_kh, th->hit[h]->clan_idx),
                   th->hit[h]->hmmonly ? "hmm" : "cm",
-                  th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit,
+                  cfrom_emit, cto_emit,
                   posw, th->hit[h]->start,
                   posw, th->hit[h]->stop,
                   (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-                  cm_alidisplay_TruncString(th->hit[h]->ad), 
-                  th->hit[h]->pass_idx, 
-                  th->hit[h]->ad->gc,
+                  cm_alidisplay_TruncString(th->hit[h]->ad),
+                  th->hit[h]->pass_idx,
+                  gc,
                   th->hit[h]->bias,
                   th->hit[h]->score,
                   th->hit[h]->evalue,
@@ -2618,7 +2625,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   idxw2, (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_oidxstr,
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr1,
                   (ws == -1 || ws == as) ? ((ws == -1) ? "-" : "\"") : win_ofctstr2,
-                  clenw, th->hit[h]->ad->clen, srcLw, th->hit[h]->srcL, 
+                  clenw, clen, srcLw, th->hit[h]->srcL,
                   (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
         }
       }
@@ -2739,8 +2746,12 @@ cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	    posw, posstr, posw, posstr, "------", "-----", "----", "----", "-----", "------", "---------", "---", 
             clenw, clenstr, srcLw, srcLstr, "---------------------");
   }
-  for (h = 0; h < th->N; h++) { 
+  for (h = 0; h < th->N; h++) {
     if (th->hit[h]->flags & CM_HIT_IS_REPORTED)    {
+      int    cfrom_emit = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->cfrom_emit : 0;
+      int    cto_emit   = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->cto_emit   : 0;
+      float  gc         = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->gc        : 0.0;
+      int    clen       = (th->hit[h]->ad != NULL) ? th->hit[h]->ad->clen      : 0;
       //      fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %s\n",
       fprintf(ofp, "%-*s %-*s %-*s %-*s %3s %8d %8d %*" PRId64 " %*" PRId64 " %6s %5s %4d %4.2f %5.1f %6.1f %9.2g %-3s %*d %*" PRId64 " %s\n",
 	      tnamew, th->hit[h]->name,
@@ -2748,18 +2759,18 @@ cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	      qnamew, qname,
 	      qaccw,  ((qacc != NULL && qacc[0] != '\0') ? qacc : "-"),
 	      th->hit[h]->hmmonly ? "hmm" : "cm",
-	      th->hit[h]->ad->cfrom_emit, th->hit[h]->ad->cto_emit,
+	      cfrom_emit, cto_emit,
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-	      cm_alidisplay_TruncString(th->hit[h]->ad), 
-	      th->hit[h]->pass_idx, 
-	      th->hit[h]->ad->gc,
+	      cm_alidisplay_TruncString(th->hit[h]->ad),
+	      th->hit[h]->pass_idx,
+	      gc,
 	      th->hit[h]->bias,
 	      th->hit[h]->score,
 	      th->hit[h]->evalue,
 	      (th->hit[h]->flags & CM_HIT_IS_INCLUDED ? "!" : "?"),
-              clenw, th->hit[h]->ad->clen, srcLw, th->hit[h]->srcL, 
+              clenw, clen, srcLw, th->hit[h]->srcL,
 	      (th->hit[h]->desc != NULL) ? th->hit[h]->desc : "-");
     }
   }

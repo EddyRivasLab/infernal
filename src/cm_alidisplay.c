@@ -1315,9 +1315,10 @@ cm_alidisplay_Is3PTruncOnly(const CM_ALIDISPLAY *ad)
  * Returns:   informative string
  */
 char *
-cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad) 
+cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
 {
-  if     (ad->hmmonly)                      return "-";
+  if     (ad == NULL)                       return "-";
+  else if(ad->hmmonly)                      return "-";
   else if(cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
   else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
   else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
