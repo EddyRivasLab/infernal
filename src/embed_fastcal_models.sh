@@ -97,10 +97,31 @@ HEADER
 for f in "${JSONS[@]}"; do
   varname=$(printf '%s' "$f" | sed 's/[^A-Za-z0-9]/_/g')
   nbytes=$(wc -c < "$f" | tr -d ' ')
+  bytes=$(od -An -v -tx1 "$f" | tr -s ' \n' '\n' | sed '/^$/d;s/^/0x/;s/$/,/' | \
+            paste -sd' ' - | fold -s -w 76)
+
+  # Self-check: the emitted array must hold exactly ${nbytes} elements.
+  #
+  # od's output formatting (column width, line wrapping) differs across
+  # implementations -- GNU coreutils vs BSD/macOS vs busybox. The `tr -s`
+  # normalization above is deliberately written to absorb that, but if it ever
+  # failed to, the corruption would be SILENT: C infers an array's size from
+  # its initializer, so a dropped or duplicated byte would simply disagree
+  # with ${varname}_len (computed independently by wc -c above) and the loader
+  # would read a wrong-length buffer at runtime. No compiler error, no crash,
+  # just quietly wrong model data. Counting commas is POSIX (unlike grep -o)
+  # and turns that whole class of portability failure into a loud build stop.
+  nemit=$(printf '%s' "${bytes}" | tr -cd ',' | wc -c | tr -d ' ')
+  if [ "${nemit}" -ne "${nbytes}" ]; then
+    echo "ERROR: ${f}: embedded ${nemit} bytes but file is ${nbytes} bytes." >&2
+    echo "       od output was not parsed as expected on this platform." >&2
+    echo "       (od: $(od --version 2>/dev/null | head -1 || echo 'unknown'))" >&2
+    exit 1
+  fi
+
   {
     echo "static const unsigned char ${varname}[] = {"
-    od -An -v -tx1 "$f" | tr -s ' \n' '\n' | sed '/^$/d;s/^/0x/;s/$/,/' | \
-      paste -sd' ' - | fold -s -w 76
+    printf '%s\n' "${bytes}"
     echo "};"
     echo "static const unsigned int ${varname}_len = ${nbytes};"
   } >> "${TMPFILE}"
