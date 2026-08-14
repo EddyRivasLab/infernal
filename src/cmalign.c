@@ -172,7 +172,11 @@ static ESL_OPTIONS options[] = {
   { "--no-cykbands-dnc", eslARG_NONE,   FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "disable size-conditional D&C-CYK fallback for --cykbands pre-pass",    3 },
   { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      3 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
-  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 3 },
+  /* brief 26_0430-303: demoted to docgroup 6 (no esl_opt_DisplayHelp() call below
+   * prints that group) so it no longer appears in user-facing -h output. Hard-force
+   * semantics are UNCHANGED -- dev-only, not "prefer"; --no-mxesc's incompat list
+   * (below) is deliberately left untouched, see brief 303. */
+  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 6 },
   { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 3 },
   { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 3 },
   { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "mxesc Phase2 item2: tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 3 },
