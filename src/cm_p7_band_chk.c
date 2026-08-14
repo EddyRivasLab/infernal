@@ -1693,11 +1693,15 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
       mc[kpcur] = cp9_chk_dlogsum(mc[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
       ic[kpcur] = cp9_chk_dlogsum(ic[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
       dc[kpcur] = cp9_chk_dlogsum(dc[kpcur], dc[kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+      if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+        mc[kpcur] = cp9_chk_dlogsum(mc[kpcur], ec[kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
       mc[kpcur] += Scorify(cp9->msc[dsq[i]][k]);
       ic[kpcur] += Scorify(cp9->isc[dsq[i]][k]);
     }
   for(k = kx+1; k <= kmax[i]; k++) {
     kpcur = k - kmin[i];
+    if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+      mc[kpcur] = cp9_chk_dlogsum(mc[kpcur], ec[kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
     mc[kpcur] += Scorify(cp9->msc[dsq[i]][k]);
     ic[kpcur] += Scorify(cp9->isc[dsq[i]][k]);
   }

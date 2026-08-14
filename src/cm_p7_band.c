@@ -2321,6 +2321,13 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_MM,k);
 	  imx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_IM,k);
 	  dmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_DM,k);
+
+	  /* Fold M_k <- EL_k for this interior row's general k, mirroring the k==M
+	   * special case above (~line 2269) which already does this. The omission
+	   * here dates to the original 2008/2011 kernel.
+	   * (briefs 26_0316-036, 26_0430-288) */
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	    mmx[i][kpcur] = ILogsum(mmx[i][kpcur], elmx[i][kpcur] + CP9TSC(cp9O_MEL,k));
 	}
 
       /*********************************************************/
@@ -2943,11 +2950,16 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 	  imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
 	  dmx[i][kpcur] = p7_FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
 
+	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+	    mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+
 	  mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 	  imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
       }
       for(k = kx+1; k <= kmax[i]; k++) {
 	kpcur = k - kmin[i];
+	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+	  mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
 	mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 	imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
       }
