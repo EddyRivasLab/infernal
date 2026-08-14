@@ -3596,12 +3596,26 @@ extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *p
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
 
 /* <ckpt_mode> selector for p7_CheckptBandedOAMemNeeded() (cm_p7_band.c):
- * which --hmm do_bandedoa engine the byte estimate should model.
- * Values 0/1 are the historical FALSE/TRUE do_ckpt flag. */
+ * which --hmm do_bandedoa engine the byte estimate should model. THREE
+ * values, not a boolean -- 0/1 correspond to the historical FALSE/TRUE
+ * do_ckpt flag, and 2 was added by brief 26_0628-081. Mode 2
+ * double-checkpoints the Backward pass, reducing the resident posterior
+ * term from O(ncell) to O(sqrt(nrow)*maxnc), at the cost of extra
+ * recompute passes -- 1.65-2.31x in the OA stage, which is why it is NOT
+ * used unconditionally: under --p7kmerchain the OA stage is the dominant
+ * cost, so unconditional use regressed total wall ~1.6x (brief 26_0628-081
+ * gate 4).
+ *
+ * Selection (cmalign.c, serial and threaded): the preflight estimates what
+ * P7B_OAMEM_CKPT would need; if that fits under --mxsize it is used, and
+ * P7B_OAMEM_CKPTPP is the fallback when it does not. CKPTPP is therefore
+ * --mxsize-conditional, NOT the default engine -- the initialiser
+ * `int ckpt_mode = P7B_OAMEM_CKPTPP` at cmalign.c:1265/:2098 is overwritten
+ * by that preflight and is not a default. */
 #define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: 2 x full banded gmxb;  O(ncell)      */
 #define P7B_OAMEM_CKPT    1   /* ckpt F/B/OA + RESIDENT posterior;        O(ncell)      */
 #define P7B_OAMEM_CKPTPP  2   /* + double-checkpointed posterior (brief 26_0628-081):
-                               * O(sqrt(nrow)*maxnc) -- the default engine             */
+                               * O(sqrt(nrow)*maxnc) -- --mxsize-conditional fallback */
 
 /* from cm_p7_domaindef.c */
 extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
