@@ -72,6 +72,10 @@ done
 HASH=$(cat "${JSONS[@]}" | sha256sum | awk '{print $1}')
 
 TMPFILE="${OUTFILE}.tmp.$$"
+# Don't leave a partial temp file behind if we abort (e.g. the byte-count
+# self-check below). The success path renames TMPFILE away, so this is a
+# no-op there.
+trap 'rm -f "${TMPFILE}"' EXIT
 
 cat > "${TMPFILE}" << HEADER
 /* cm_fast_calibrate_models.h
