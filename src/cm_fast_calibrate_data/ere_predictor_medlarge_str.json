@@ -2,10 +2,10 @@
  "_meta": {
   "bin": "medlarge",
   "strtype": "str",
-  "brief": "074",
+  "brief": "26_0422-074",
   "recipe": "v5.5 NAIVE ridge, L1(default+enone), NO ere-axis feats",
-  "ere_axis_features": "none (dropped; brief-073 ablation showed redundant)",
-  "note": "ere-axis features DROPPED (brief-073 ablation: redundant); feature pool now identical to C0 v5.5 pool",
+  "ere_axis_features": "none (dropped; brief 26_0422-073 ablation showed redundant)",
+  "note": "ere-axis features DROPPED (brief 26_0422-073 ablation: redundant); feature pool now identical to C0 v5.5 pool",
   "feature_pool_size": 55,
   "glocal_lambda_floor": 0.005,
   "cells": [

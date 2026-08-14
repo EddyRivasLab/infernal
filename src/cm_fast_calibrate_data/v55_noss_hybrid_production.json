@@ -1,6 +1,6 @@
 {
   "schema": "noss_hybrid_v1",
-  "design": "Hybrid NOSS E-value-param predictor. Base = brief-42/43 rfam100 unbucketed v5.5 ridge (validated for all clen on local lambda/mu and K; brief-44). Override = brief-45 synth large/huge bucket for glocal lambda + glocal K only, at clen>=threshold, where the base ridge extrapolates glocal lambda to non-physical negatives. Plus a positive glocal-lambda floor. Validated on 6 real large/huge NOSS (brief045_run/phase5_hybrid_report.txt).",
+  "design": "Hybrid NOSS E-value-param predictor. Base = briefs 26_0422-042/26_0422-043 rfam100 unbucketed v5.5 ridge (validated for all clen on local lambda/mu and K; brief 26_0422-044). Override = brief 26_0422-045 synth large/huge bucket for glocal lambda + glocal K only, at clen>=threshold, where the base ridge extrapolates glocal lambda to non-physical negatives. Plus a positive glocal-lambda floor. Validated on 6 real large/huge NOSS (brief 26_0422-045 run dir: phase5_hybrid_report.txt).",
   "modes": [
     "ECMLC",
     "ECMLI",
@@ -1016,13 +1016,13 @@
     "base_lambda": "analysis/v55_noss_models.json",
     "base_mu": "analysis/v55_noss_mu_models.json",
     "base_K": "analysis/v55_K_noss_models.json",
-    "override": "brief045_run/v55b_noss_bucketed_models.json (option b largehuge bucket)",
-    "validation": "brief045_run/phase5_hybrid_report.txt",
+    "override": "brief 26_0422-045 run dir: v55b_noss_bucketed_models.json (option b largehuge bucket)",
+    "validation": "brief 26_0422-045 run dir: phase5_hybrid_report.txt",
     "briefs": [
-      "042",
-      "043",
-      "044",
-      "045"
+      "26_0422-042",
+      "26_0422-043",
+      "26_0422-044",
+      "26_0422-045"
     ]
   }
 }

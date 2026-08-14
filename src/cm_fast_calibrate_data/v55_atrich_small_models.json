@@ -1495,9 +1495,9 @@
     }
   },
   "_provenance": {
-    "brief": "065",
+    "brief": "26_0422-065",
     "predictor": "dedicated AT-rich (Option E gated split), CV-FIRMED",
-    "supersedes": "brief064_run/v55_atrich_{bk}_models.json (10-cell in-sample matrix)",
+    "supersedes": "brief 26_0422-064 run dir: v55_atrich_{bk}_models.json (10-cell in-sample matrix)",
     "gate": "corrected gc_emit (gc_emit_v2.gc_new) <= 0.45",
     "train_set": "ALL AT-rich (corrected gc<=0.45) CMs from v50 panel train+heldout pool, bucket=small (n=125)",
     "variant": "plain",
