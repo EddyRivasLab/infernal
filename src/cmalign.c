@@ -1050,20 +1050,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
    */
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)       ? TRUE : FALSE;
 
-  /* banded functions declared in cm_p7_band.c */
-  extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
-  extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-  extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
-  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
-  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
-  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
-  extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
-                                          P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
-
   /* Verify the CM has a valid p7 HMM */
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
   hmm = cm->mlp7;
@@ -2011,20 +1997,6 @@ hmm_pipeline_thread(void *arg)
   float         sc, fwdsc, oasc;
   char          errbuf[eslERRBUFSIZE];
 
-  /* banded functions declared in cm_p7_band.c */
-  extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
-  extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-  extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
-  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-  extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
-  extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
-  extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-  extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
-  extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
-                                          P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
-
 #ifdef HAVE_FLUSH_ZERO_MODE
   _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
 #endif
@@ -2894,20 +2866,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     int         do_bandedoa_w  = (! do_hmmvit_w && ! do_hmmnoband_w);
     int         do_trunc_w     = (cm->align_opts & CM_ALIGN_TRUNC)       ? TRUE : FALSE; /* brief 26_0430-182 Part A */
     float       sc_w, fwdsc_w, oasc_w;
-
-    /* banded functions declared in cm_p7_band.c */
-    extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
-    extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-    extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-    extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
-    extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-    extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-    extern int p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes); /* brief 26_0430-266; ckpt_mode = P7B_OAMEM_* */
-    extern int p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
-    extern int p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
-    extern P7_GMXB *p7b_pp_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0526-017: compact 2-cell resident pp */
-    extern int p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
-                                            P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                          /* brief 26_0628-081: double-checkpointed, no resident posterior */
 
     /* brief 26_0430-182 Part A: Tgm when do_trunc_w (mirrors hmm_alignment()'s serial-path setup). */
     if (do_trunc_w) {

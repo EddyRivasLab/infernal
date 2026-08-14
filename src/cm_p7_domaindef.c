@@ -611,11 +611,6 @@ p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm
   float      oasc  = 0.0f;
   int        status;
 
-  /* banded functions declared in cm_p7_band.c */
-  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
-  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-
   if (p7_IsMulti(gm->mode)) return eslEINCONCEIVABLE;
 
   if ((status = p7_domaindef_GrowTo(ddef, sq->n)) != eslOK) return status;
@@ -707,14 +702,6 @@ p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PR
 							 int *kmin, int *kmax,
 							 int do_null2, int do_aln)
 {
-  /* banded functions */
-  extern int p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd_bx, P7_GMXB *bck_bx, P7_GMXB *pp, float overall_sc);
-  extern int p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-  extern int p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-  extern int p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
-  extern int my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
-  extern int p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *bx, float *opt_sc);
-
   int          L = sq->n;
   int          M = gm->M;
   int          i, j, d, z;
