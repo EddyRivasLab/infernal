@@ -319,12 +319,19 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->do_trm_F3          = esl_opt_GetBoolean(go, "--trmF3")      ? TRUE  : FALSE;
   pli->do_trm_F5          = esl_opt_GetBoolean(go, "--trmF5")      ? TRUE  : FALSE;
   pli->do_fullseq_F5      = esl_opt_GetBoolean(go, "--fullseqF5")  ? TRUE  : FALSE;
-  /* --vitband is default-on in v1.2. --msvband or --novitband disables it.
-   * --p7post_cp9b is default-on; --nop7post_cp9b disables it and it also
-   * requires --vitband at runtime (no point doing p7-posterior CP9 bands if
-   * vitband isn't producing p7 F/B matrices in the first place). */
+  /* --vitband is default-OFF in v1.2 (hub decision D4, brief 26_0316-035); it
+   * was default-on earlier in development. It is now opt-in via --vitband.
+   * --novitband is retained as a no-op (scripts in several sister projects
+   * pass it as the 1.2 mitigation) and still wins should it ever coexist with
+   * --vitband, though the two are declared mutually incompatible in the
+   * cmsearch/cmscan option tables so that combination errors out first.
+   * --p7post_cp9b is default-on but gated on do_vitband, so it follows
+   * --vitband to FALSE by default for free (no point doing p7-posterior CP9
+   * bands if vitband isn't producing p7 F/B matrices in the first place);
+   * --nop7post_cp9b still disables it independently. */
   pli->do_msvband         = esl_opt_GetBoolean(go, "--msvband")  ? TRUE : FALSE;
   pli->do_vitband         = (! pli->do_msvband &&
+			     esl_opt_GetBoolean(go, "--vitband") &&
 			     ! esl_opt_GetBoolean(go, "--novitband"))      ? TRUE : FALSE;
   pli->vitband_local      = esl_opt_GetBoolean(go, "--vitblocal") ? TRUE : FALSE;
   pli->do_p7post_cp9b     = (pli->do_vitband &&
