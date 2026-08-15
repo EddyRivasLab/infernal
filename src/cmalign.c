@@ -3502,28 +3502,34 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)\n"); }
 
   if (esl_opt_IsUsed(go, "--mxsize"))    {
-    /* brief 26_0430-305: --mxsize bounds a SINGLE DP matrix; every worker
-     * thread/process is handed the full, undivided value (cmalign.c:676,
-     * :1161), so the real worst-case memory footprint is (multiplier x
-     * --mxsize), not --mxsize itself. Report both, plus the multiplier.
+    /* brief 26_0430-305: --mxsize bounds a SINGLE DP matrix, but every worker
+     * is handed the full, undivided value -- see the `info[k].mxsize = ...`
+     * assignment in serial_master() and the `winfo[k].mxsize = ...` one in
+     * hmm_alignment(), neither of which divides by the worker count. So the
+     * real worst-case footprint is (multiplier x --mxsize), not --mxsize.
+     *
+     * (Deliberately no line numbers below: an earlier version of this comment
+     * carried six, and D17's extern hoist invalidated all six within a day.
+     * Symbols survive hoists; line numbers do not.)
      *
      * The multiplier is NOT always 'ncpus' as passed to this function:
-     *  - non-MPI: infocnt (serial_master(), :656) and hmm_alignment()'s own
-     *    serial fallback (:1189) both use 1 concurrent matrix when ncpus==0
-     *    (e.g. --cpu 0 or a non-threaded build), not 0.
-     *  - MPI: this function is called with (nworkers+1) so the unconditional
-     *    "# MPI: ... processors" line above counts ranks correctly, but
-     *    mpi_master() (:2434-2843) never calls DispatchSqAlignment() or
-     *    allocates a P7_GMX -- it only dispatches sequences and collects
-     *    results, so the master allocates NO alignment DP matrix. Only the
-     *    nworkers MPI workers (mpi_worker(), one WORKER_INFO each) do.
+     *  - non-MPI: serial_master()'s `infocnt = (ncpus == 0) ? 1 : ncpus` and
+     *    hmm_alignment()'s serial fallback both use ONE concurrent matrix when
+     *    ncpus == 0 (--cpu 0, or a build without HMMER_THREADS), not zero.
+     *  - MPI: this function is called with (nworkers+1) so the "# MPI: ...
+     *    processors" line below counts RANKS correctly -- but mpi_master()
+     *    never calls DispatchSqAlignment() nor allocates a P7_GMX; it only
+     *    dispatches sequences and collects CM_ALNDATA. The master therefore
+     *    allocates NO alignment DP matrix, and only the nworkers running
+     *    mpi_worker() (one WORKER_INFO apiece) do.
      *
-     * The multiplier is reported INLINE on the aggregate line rather than on
-     * its own line: under threading it would merely repeat the integer that
-     * ":3606" already prints as "# number of worker threads", and under MPI
-     * ":3603" suppresses that line entirely (and reports nworkers+1 ranks,
-     * which is NOT this multiplier), so a standalone count line is redundant
-     * in one case and the only source of the number in the other. */
+     * The multiplier is printed INLINE on the aggregate line rather than on a
+     * line of its own: under threading a separate count would merely repeat
+     * the integer the "# number of worker threads" line below already prints,
+     * while under MPI the "# MPI:" line sets output_ncpu and suppresses that
+     * line entirely -- and reports nworkers+1, which is NOT this multiplier.
+     * A standalone count line would thus be redundant in one case and the
+     * sole source of the number in the other. */
     int mxsize_mult;
 #ifdef HAVE_MPI
     if (esl_opt_IsUsed(go, "--mpi")) mxsize_mult = ESL_MAX(ncpus - 1, 1);
