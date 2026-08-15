@@ -1761,9 +1761,41 @@ cm_FastCalibrate(CM_t *cm)
           e_mue = &g_models.ere_str_mu_extrap[bucket][mode];
           e_muo = &g_models.ere_str_mu_orig  [bucket][mode];
         }
-        if (e_lam->defined) { r_lam = e_lam; ere_lam_used = 1; }
-        if (e_mue->defined)   r_mue = e_mue;
-        if (e_muo->defined)   r_muo = e_muo;
+        /* brief 26_0422-107: pathology backstop for the huge/STR glocal cells
+         * embedded by brief 26_0422-103 (a67d29f9). Brief 106 scored a67d29f9
+         * against real empirical random-hit data and found it WORSE than the
+         * C0 fallback it replaced in 8/12 (family,mode) cells, and MORE
+         * PERMISSIVE than C0 in all 12/12 -- a67d29f9 unconditionally swapped
+         * to the trained ere cell everywhere it was defined, even where C0's
+         * own prediction was already sane. The trained cell is only actually
+         * needed where C0's raw lambda is non-physical (SSU_rRNA_bacteria/
+         * SSU_rRNA_eukarya in the training population, lambda 0.12-1.56):
+         * C0 is sane (accuracy-superior to the trained cell) everywhere else.
+         * So: for exactly this bucket/topology/mode combination, compute C0's
+         * OWN lambda first and only fall through to the ere-trained cell if
+         * that C0 prediction is non-physical. LAMBDA_MAX=0.10 sits in the
+         * observed data gap between the sane-family max (0.036) and the
+         * pathological-family min (0.119) -- any value in (0.036,0.119) draws
+         * the identical line. This does NOT change dispatch for NOSS, for
+         * local modes, or for any other bucket -- those keep the
+         * unconditional brief-074 swap (validated separately, untouched by
+         * this brief's regression finding). */
+        int glocal_backstop_slot = (!is_noss && bucket == BUCKET_HUGE &&
+                                     (mode == MODE_ECMGC || mode == MODE_ECMGI));
+        if (glocal_backstop_slot && e_lam->defined) {
+          double c0_lam = ridge_predict(r_lam, feats);
+          if (c0_lam <= 0.0 || c0_lam > 0.10) {
+            r_lam = e_lam; ere_lam_used = 1;
+            if (e_mue->defined) r_mue = e_mue;
+            if (e_muo->defined) r_muo = e_muo;
+          }
+          /* else: C0 is physical here -- keep r_lam/r_mue/r_muo as the C0
+           * (str_lambda/str_mu_extrap/str_mu_orig) ridges selected above. */
+        } else {
+          if (e_lam->defined) { r_lam = e_lam; ere_lam_used = 1; }
+          if (e_mue->defined)   r_mue = e_mue;
+          if (e_muo->defined)   r_muo = e_muo;
+        }
       }
 
       if (r_lam->nfeat == 0) return eslFAIL;  /* no ridge for this slot */

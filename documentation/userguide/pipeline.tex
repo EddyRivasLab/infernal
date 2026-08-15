@@ -1251,30 +1251,51 @@ remaining, off-default combinations:
   sparsely sampled and the exponential-tail fits are correspondingly
   ill-determined at that scale -- this is true of both the analytical
   predictor and \prog{cmcalibrate}. On the default (\prog{--eent})
-  construction path, this gap is currently \emph{unguarded}: for
-  consensus length greater than about 1300, glocal E-value parameters
-  can be wrong by 10 or more orders of magnitude, usually (but not
-  always) in the permissive, false-positive-prone direction. Users who
-  rely on glocal-mode E-values (\prog{cmsearch}/\prog{cmscan}
-  \prog{-g}) for large or huge models should treat them with real
-  caution. Validating with \prog{cmcalibrate} is a reasonable mitigation
-  up to consensus length $\sim$1900; beyond that, \prog{cmcalibrate}'s
-  own default recipe cannot reliably calibrate the glocal tail either
-  (random glocal hits are scarce enough that its default tail-fraction
-  falls back onto the bulk of the score distribution, not a true tail),
-  so it is not a dependable check for the largest models. For
-  \prog{cmbuild --ere}/\prog{--enone} builds specifically, the
-  huge (consensus length $\geq$ 1500) glocal STR predictor cells were
-  refit (brief 26\_0422-101/103): predictions are now physically
-  plausible (no more impossible positive glocal $\mu$, or glocal
-  $\lambda$ exceeding local $\lambda$), but the underlying training
-  labels still carry real, convention-quality uncertainty (roughly
-  20--100\%, median $\sim$48\%, relative cross-seed spread) rather than
-  being a precise measurement; this is comparable in kind to (if a bit
-  above) what non-degenerate huge glocal fits show on their own
-  (roughly 26--42\%, median $\sim$33\%). The plain default-path fallback
-  for these same cells is unchanged by that fix and remains the
-  10-plus-orders-of-magnitude risk described above.
+  construction path, glocal E-value parameters can occasionally be
+  wrong by 10 or more orders of magnitude \emph{relative to
+  \prog{cmcalibrate}'s own tail fit}, but checked against real random-hit
+  data (brief 26\_0422-105) the practical impact is much smaller than
+  that figure suggests: across 6 representative huge families, the
+  default-path predictor is within $\sim$300 bits of the empirical
+  E=0.01 threshold in 10 of 12 (family, mode) cells and is permissive
+  (false-positive-prone) in only 2 of 12 -- the 10-plus-orders-of-magnitude
+  figure reflects comparisons against \prog{cmcalibrate}'s own reference
+  fit, which for several of the largest models is itself unreliable
+  (bulk-fit, not tail-fit; see below). Users who rely on glocal-mode
+  E-values (\prog{cmsearch}/\prog{cmscan} \prog{-g}) for large or huge
+  models should still treat them with real caution, since this remains
+  checked only for huge-clen models and not for the tiny/small sizes
+  where most real usage lives. Validating with \prog{cmcalibrate} is a
+  reasonable mitigation up to consensus length $\sim$1900; beyond that,
+  \prog{cmcalibrate}'s own default recipe cannot reliably calibrate the
+  glocal tail either (random glocal hits are scarce enough that its
+  default tail-fraction falls back onto the bulk of the score
+  distribution, not a true tail), so it is not a dependable check for
+  the largest models. For \prog{cmbuild --ere}/\prog{--enone} builds
+  specifically, the huge (consensus length $\geq$ 1500) glocal STR
+  predictor cells (ECMGC/ECMGI) use a two-tier design (brief
+  26\_0422-101/103/107): the plain (non-\prog{ere}) ridge's own
+  predicted $\lambda$ is used directly whenever it is physically
+  plausible ($\lambda \le 0.1$, comparable to a normal non-degenerate
+  huge-glocal fit); a separately refit cell (brief 26\_0422-101/103) is
+  used only as a fallback, for the specific case where that $\lambda$
+  is non-physical ($\lambda \le 0$ or $\lambda > 0.1$ -- impossible
+  positive glocal $\mu$ and glocal $\lambda$ exceeding 1 were both
+  observed in the training population). Checked against real random-hit
+  data (brief 26\_0422-105/106), the plain ridge is \emph{more} accurate
+  than the refit fallback cell in the large majority of these 12 cells,
+  so restricting the fallback to only the physically-implausible cases
+  is both more accurate and less permissive than always using it (an
+  earlier version of this fix, brief 26\_0422-103, used the refit cell
+  unconditionally and was found, empirically, to be worse than the
+  plain ridge in most cells and more permissive than it in all of
+  them -- corrected by brief 26\_0422-107). Where the fallback cell is
+  used, its underlying training labels still carry real,
+  convention-quality uncertainty (roughly 20--100\%, median $\sim$48\%,
+  relative cross-seed spread) rather than being a precise measurement;
+  this is comparable in kind to (if a bit above) what non-degenerate
+  huge glocal fits show on their own (roughly 26--42\%, median
+  $\sim$33\%).
 
 \item \textbf{Local-Inside (default) E-values for AT-rich models.} For
   strongly AT-rich or low-complexity models, the default local-Inside
