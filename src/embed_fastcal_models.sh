@@ -2,8 +2,7 @@
 # embed_fastcal_models.sh
 # Embed the production JSON model files into a C header as unsigned char arrays.
 # Usage: embed_fastcal_models.sh <outfile>
-# The JSON paths are absolute and reference the notebook analysis directory.
-# Do NOT commit copies of the JSONs into the Infernal repo.
+# The JSONs are tracked in src/cm_fast_calibrate_data/ (brief 26_0422-104).
 # v5.5: added v55_tiny_models.json, v55_K_tiny_models.json,
 #        v55_small_models.json, v55_K_small_models.json.
 # brief 22: added v55_{medlarge,large,huge}_models.json and matching K JSONs.
@@ -73,6 +72,10 @@ done
 HASH=$(cat "${JSONS[@]}" | sha256sum | awk '{print $1}')
 
 TMPFILE="${OUTFILE}.tmp.$$"
+# Don't leave a partial temp file behind if we abort (e.g. the byte-count
+# self-check below). The success path renames TMPFILE away, so this is a
+# no-op there.
+trap 'rm -f "${TMPFILE}"' EXIT
 
 cat > "${TMPFILE}" << HEADER
 /* cm_fast_calibrate_models.h
@@ -90,16 +93,42 @@ static const char fast_cal_models_version[] = "${HASH}";
 
 HEADER
 
-# Embed each JSON file using xxd -i
+# Embed each JSON file as a C byte array, in xxd -i's variable-naming and
+# array-content convention (varname = path with every non-alnum char, incl.
+# leading "./", turned into '_'), but using od instead of xxd: od is POSIX
+# (coreutils), xxd ships with vim and is not reliably present on a git-only
+# build machine.
 for f in "${JSONS[@]}"; do
-  basename_noext=$(basename "$f" .json | tr '-' '_')
-  # xxd -i produces: unsigned char varname[] = {...}; unsigned int varname_len = N;
-  # We want static const unsigned char varname[] = {...};
-  # Transform: prepend "static const " to the unsigned char line, and add const to len
-  xxd -i "$f" | sed \
-    -e 's/^unsigned char /static const unsigned char /g' \
-    -e 's/^unsigned int /static const unsigned int /g' \
-    >> "${TMPFILE}"
+  varname=$(printf '%s' "$f" | sed 's/[^A-Za-z0-9]/_/g')
+  nbytes=$(wc -c < "$f" | tr -d ' ')
+  bytes=$(od -An -v -tx1 "$f" | tr -s ' \n' '\n' | sed '/^$/d;s/^/0x/;s/$/,/' | \
+            paste -sd' ' - | fold -s -w 76)
+
+  # Self-check: the emitted array must hold exactly ${nbytes} elements.
+  #
+  # od's output formatting (column width, line wrapping) differs across
+  # implementations -- GNU coreutils vs BSD/macOS vs busybox. The `tr -s`
+  # normalization above is deliberately written to absorb that, but if it ever
+  # failed to, the corruption would be SILENT: C infers an array's size from
+  # its initializer, so a dropped or duplicated byte would simply disagree
+  # with ${varname}_len (computed independently by wc -c above) and the loader
+  # would read a wrong-length buffer at runtime. No compiler error, no crash,
+  # just quietly wrong model data. Counting commas is POSIX (unlike grep -o)
+  # and turns that whole class of portability failure into a loud build stop.
+  nemit=$(printf '%s' "${bytes}" | tr -cd ',' | wc -c | tr -d ' ')
+  if [ "${nemit}" -ne "${nbytes}" ]; then
+    echo "ERROR: ${f}: embedded ${nemit} bytes but file is ${nbytes} bytes." >&2
+    echo "       od output was not parsed as expected on this platform." >&2
+    echo "       (od: $(od --version 2>/dev/null | head -1 || echo 'unknown'))" >&2
+    exit 1
+  fi
+
+  {
+    echo "static const unsigned char ${varname}[] = {"
+    printf '%s\n' "${bytes}"
+    echo "};"
+    echo "static const unsigned int ${varname}_len = ${nbytes};"
+  } >> "${TMPFILE}"
   echo "" >> "${TMPFILE}"
 done
 

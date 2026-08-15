@@ -1,0 +1,435 @@
+{
+  "schema": "v4x_K_ridge_v1",
+  "design": "v4.x\u2192ridge K placeholder for NOSS (is_noss=1)",
+  "buckets": [
+    "tiny",
+    "small",
+    "medlarge",
+    "large",
+    "huge"
+  ],
+  "K_glocal_clen": {
+    "tiny": {
+      "ECMGC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.61374
+        ],
+        "intercept": 3.626408,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(3.626408)*clen^(-1.61374)"
+      },
+      "ECMGI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.477064
+        ],
+        "intercept": 2.802066,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(2.802066)*clen^(-1.477064)"
+      }
+    },
+    "small": {
+      "ECMGC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.61374
+        ],
+        "intercept": 3.626408,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(3.626408)*clen^(-1.61374)"
+      },
+      "ECMGI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.477064
+        ],
+        "intercept": 2.802066,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(2.802066)*clen^(-1.477064)"
+      }
+    },
+    "medlarge": {
+      "ECMGC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.61374
+        ],
+        "intercept": 3.626408,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(3.626408)*clen^(-1.61374)"
+      },
+      "ECMGI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.477064
+        ],
+        "intercept": 2.802066,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(2.802066)*clen^(-1.477064)"
+      }
+    },
+    "large": {
+      "ECMGC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.61374
+        ],
+        "intercept": 3.626408,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(3.626408)*clen^(-1.61374)"
+      },
+      "ECMGI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.477064
+        ],
+        "intercept": 2.802066,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(2.802066)*clen^(-1.477064)"
+      }
+    },
+    "huge": {
+      "ECMGC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.61374
+        ],
+        "intercept": 3.626408,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(3.626408)*clen^(-1.61374)"
+      },
+      "ECMGI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          -1.477064
+        ],
+        "intercept": 2.802066,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "exp",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x glocal K power law: K=exp(2.802066)*clen^(-1.477064)"
+      }
+    }
+  },
+  "K_local": {
+    "tiny": {
+      "ECMLC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.400137,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.400137 (dummy 1-feat coef=0)"
+      },
+      "ECMLI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.235226,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.235226 (dummy 1-feat coef=0)"
+      }
+    },
+    "small": {
+      "ECMLC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.392141,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.392141 (dummy 1-feat coef=0)"
+      },
+      "ECMLI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.210951,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.210951 (dummy 1-feat coef=0)"
+      }
+    },
+    "medlarge": {
+      "ECMLC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.446856,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.446856 (dummy 1-feat coef=0)"
+      },
+      "ECMLI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.346891,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.346891 (dummy 1-feat coef=0)"
+      }
+    },
+    "large": {
+      "ECMLC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.480049,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.480049 (dummy 1-feat coef=0)"
+      },
+      "ECMLI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.425224,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.425224 (dummy 1-feat coef=0)"
+      }
+    },
+    "huge": {
+      "ECMLC": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.439189,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.439189 (dummy 1-feat coef=0)"
+      },
+      "ECMLI": {
+        "feature_names": [
+          "log_clen"
+        ],
+        "coefs": [
+          0.0
+        ],
+        "intercept": 0.394883,
+        "feature_means": [
+          0.0
+        ],
+        "feature_stds": [
+          1.0
+        ],
+        "y_transform": "identity",
+        "loo_mse": 0.0,
+        "alpha": 0.0,
+        "n_train": 0,
+        "comment": "v4.x local K constant = 0.394883 (dummy 1-feat coef=0)"
+      }
+    }
+  }
+}

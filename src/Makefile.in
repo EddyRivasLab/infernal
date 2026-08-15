@@ -113,7 +113,7 @@ PROGOBJS = \
 
 HDRS =  infernal.h
 
-# Fast-calibrate model JSON files (symlinked from notebook analysis directory)
+# Fast-calibrate model JSON files (tracked in git)
 FASTCAL_DATA_DIR = $(srcdir)/cm_fast_calibrate_data
 MODEL_JSONS = \
 	$(FASTCAL_DATA_DIR)/v55_tiny_models.json \
@@ -240,9 +240,8 @@ libinfernal-src.stamp: ${OBJS}
 
 .FORCE:
 
-# Rule to generate the embedded JSON header from the 6 production model files.
-# The JSON files are referenced via symlinks in src/cm_fast_calibrate_data/
-# (which points into the notebook analysis directory; NOT committed to this repo).
+# Rule to generate the embedded JSON header from the tracked model JSON files
+# in src/cm_fast_calibrate_data/.
 cm_fast_calibrate_models.h: ${MODEL_JSONS} $(srcdir)/embed_fastcal_models.sh
 	${QUIET_GEN}$(SHELL) $(srcdir)/embed_fastcal_models.sh $@
 
@@ -310,7 +309,6 @@ ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} clean
 endif
 	-rm -f *.o *~ Makefile.bak core ${PROGS} ${BENCHMARKS} ${UTESTS} ${ITESTS} ${REGTESTS} TAGS gmon.out
-	-rm -f cm_fast_calibrate_models.h
 	-rm -f libinfernal.a libinfernal-src.stamp
 	-rm -f *.gcno
 	-rm -f cscope.out
@@ -321,11 +319,15 @@ ifndef V
 	@echo '     ' CLEAN src
 endif
 
+# cm_fast_calibrate_models.h is generated but shipped in release distros (like
+# configure/config.h.in), so a plain 'clean' must not remove it -- only
+# distclean, which already forces a reconfigure.
 distclean: clean
 ifdef IMPLDIR
 	${QUIET_SUBDIR0}${IMPLDIR} ${QUIET_SUBDIR1} distclean
 endif
 	-rm -f Makefile config.h
+	-rm -f cm_fast_calibrate_models.h
 
 
 

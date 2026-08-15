@@ -1250,9 +1250,31 @@ remaining, off-default combinations:
   than local-mode E-values, because the glocal score distributions are
   sparsely sampled and the exponential-tail fits are correspondingly
   ill-determined at that scale -- this is true of both the analytical
-  predictor and \prog{cmcalibrate}. Users who rely on glocal-mode
-  E-values for very large models should treat them with caution and,
-  where accuracy is critical, validate with \prog{cmcalibrate}.
+  predictor and \prog{cmcalibrate}. On the default (\prog{--eent})
+  construction path, this gap is currently \emph{unguarded}: for
+  consensus length greater than about 1300, glocal E-value parameters
+  can be wrong by 10 or more orders of magnitude, usually (but not
+  always) in the permissive, false-positive-prone direction. Users who
+  rely on glocal-mode E-values (\prog{cmsearch}/\prog{cmscan}
+  \prog{-g}) for large or huge models should treat them with real
+  caution. Validating with \prog{cmcalibrate} is a reasonable mitigation
+  up to consensus length $\sim$1900; beyond that, \prog{cmcalibrate}'s
+  own default recipe cannot reliably calibrate the glocal tail either
+  (random glocal hits are scarce enough that its default tail-fraction
+  falls back onto the bulk of the score distribution, not a true tail),
+  so it is not a dependable check for the largest models. For
+  \prog{cmbuild --ere}/\prog{--enone} builds specifically, the
+  huge (consensus length $\geq$ 1500) glocal STR predictor cells were
+  refit (brief 26\_0422-101/103): predictions are now physically
+  plausible (no more impossible positive glocal $\mu$, or glocal
+  $\lambda$ exceeding local $\lambda$), but the underlying training
+  labels still carry real, convention-quality uncertainty (roughly
+  20--100\%, median $\sim$48\%, relative cross-seed spread) rather than
+  being a precise measurement; this is comparable in kind to (if a bit
+  above) what non-degenerate huge glocal fits show on their own
+  (roughly 26--42\%, median $\sim$33\%). The plain default-path fallback
+  for these same cells is unchanged by that fix and remains the
+  10-plus-orders-of-magnitude risk described above.
 
 \item \textbf{Local-Inside (default) E-values for AT-rich models.} For
   strongly AT-rich or low-complexity models, the default local-Inside
