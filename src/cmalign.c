@@ -3573,10 +3573,19 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
 #endif
       mxsize_mult = ESL_MAX(ncpus, 1);
 
-    fprintf(ofp, "# maximum DP matrix size (per thread):         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
     if (mxsize_mult > 1) {
+      /* Only qualify the limit as per-thread when more than one matrix can
+       * exist at once. At mxsize_mult == 1 there is nothing to distinguish it
+       * from, and "(per thread)" would contradict the "# number of worker
+       * threads: 0" that :3606 prints under --cpu 0 (where the single matrix
+       * is allocated in the master, not in a worker). The unqualified form
+       * also matches cmsearch.c:2325 / cmscan.c:2616 for the same option. */
+      fprintf(ofp, "# maximum DP matrix size (per thread):         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
       fprintf(ofp, "# maximum aggregate DP matrix size:            %.2f Mb [%d x %.2f]\n",
 	      esl_opt_GetReal(go, "--mxsize") * mxsize_mult, mxsize_mult, esl_opt_GetReal(go, "--mxsize"));
+    }
+    else {
+      fprintf(ofp, "# maximum DP matrix size:                      %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
     }
   }
   if (esl_opt_IsUsed(go, "--hbanded"))   {  fprintf(ofp, "# using HMM bands for acceleration:            yes\n"); }
