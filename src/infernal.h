@@ -3470,6 +3470,22 @@ extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE 
 extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
 extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
 extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
+/* brief 26_0316-037: hoisted from block-local externs in cmalign.c/cm_pipeline.c/cm_p7_domaindef.c
+ * (D17); infernal.h has included p7_gmxb.h/p7_gbands.h unconditionally since 7f360469 (2026-03-18). */
+extern int          p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+extern int          my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+extern int          p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+extern int          p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+extern int          p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+extern int          p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+extern int          p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
+extern int          p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
+extern P7_GMXB     *p7b_pp_Create(P7_GBANDS *bnd);                                                                             /* brief 26_0526-017: compact 2-cell resident pp */
+extern int          p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+extern int          p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                                 P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                             /* brief 26_0628-081: double-checkpointed, no resident posterior */
+extern int          p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
+extern int          p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
 extern int          cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
@@ -3515,7 +3531,8 @@ extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7
  * when cm->p7_use_pinbridge is TRUE. Same signature except no gx (allocates banded
  * matrix internally) and no bg/bg arg (uses bg passed in). Other declarations
  * (p7_GBandedViterbi, p7_GBandedTrace, p7_GBands_FromKminKmax, p7_Seq2BandsPinBridge)
- * require p7_gmxb.h/p7_gbands.h types and are declared locally where used.  */
+ * have no callers outside cm_p7_band.c and stay file-local there -- that is why
+ * p7_Seq2BandsPinBridgeWrap is declared here while its four siblings are not.  */
 extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
                                               P7_BG *bg, P7_TRACE *p7_tr,
                                               ESL_DSQ *dsq, int L, int pad, int *nodepad,
@@ -3577,24 +3594,32 @@ extern double       cm_filter_ceiling_factor_clen(int clen);
 
 extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
 extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
-/* p7_kbands2gbands() declared locally in files that use it - requires p7_gbands.h */
-/* p7_GBackwardBanded() declared locally in files that use it - requires p7_gmxb.h */
 
 /* <ckpt_mode> selector for p7_CheckptBandedOAMemNeeded() (cm_p7_band.c):
- * which --hmm do_bandedoa engine the byte estimate should model.  The
- * function itself is declared locally where it is used (its P7_GBANDS arg
- * requires p7_gbands.h), but these mode constants have no header
- * dependency, so they live here rather than being duplicated per caller.
- * Values 0/1 are the historical FALSE/TRUE do_ckpt flag. */
+ * which --hmm do_bandedoa engine the byte estimate should model. THREE
+ * values, not a boolean -- 0/1 correspond to the historical FALSE/TRUE
+ * do_ckpt flag, and 2 was added by brief 26_0628-081. Mode 2
+ * double-checkpoints the Backward pass, reducing the resident posterior
+ * term from O(ncell) to O(sqrt(nrow)*maxnc), at the cost of extra
+ * recompute passes -- 1.65-2.31x in the OA stage, which is why it is NOT
+ * used unconditionally: under --p7kmerchain the OA stage is the dominant
+ * cost, so unconditional use regressed total wall ~1.6x (brief 26_0628-081
+ * gate 4).
+ *
+ * Selection (cmalign.c, serial and threaded): the preflight estimates what
+ * P7B_OAMEM_CKPT would need; if that fits under --mxsize it is used, and
+ * P7B_OAMEM_CKPTPP is the fallback when it does not. CKPTPP is therefore
+ * --mxsize-conditional, NOT the default engine -- the initialiser
+ * `int ckpt_mode = P7B_OAMEM_CKPTPP` at cmalign.c:1265/:2098 is overwritten
+ * by that preflight and is not a default. */
 #define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: 2 x full banded gmxb;  O(ncell)      */
 #define P7B_OAMEM_CKPT    1   /* ckpt F/B/OA + RESIDENT posterior;        O(ncell)      */
 #define P7B_OAMEM_CKPTPP  2   /* + double-checkpointed posterior (brief 26_0628-081):
-                               * O(sqrt(nrow)*maxnc) -- the default engine             */
+                               * O(sqrt(nrow)*maxnc) -- --mxsize-conditional fallback */
 
 /* from cm_p7_domaindef.c */
 extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
               P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
-/* p7_domaindef_GlocalByPosteriorHeuristics_Banded() declared locally - requires p7_gmxb.h */
 
 /* from cm_p7_modelconfig_trunc.c */
 extern int p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
