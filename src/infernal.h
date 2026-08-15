@@ -3513,9 +3513,6 @@ extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int add
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
 extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
-/* checkpointed banded CP9 P7B F/B (brief 26_0430-146, cm_p7_band_chk.c) */
-extern int          cp9_FB2HMMBandsP7B_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
-extern int          cp9_FBMatrices2BandsP7B_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
 /* checkpointed banded CP9 P7B float/truncated F/B (brief 26_0430-150, Phase 2, cm_p7_band_chk.c) */
 extern int          cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, double *pocc_arr);
 extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
