@@ -94,8 +94,12 @@ IPROGS = \
 PROGOBJS = \
 	cmalign.o\
 	cmbuild.o\
+	cmcalibrate.o\
+	cmconvert.o\
 	cmemit.o\
 	cmfetch.o\
+	cmpress.o\
+	cmscan.o\
 	cmscore.o\
 	cmsearch.o\
 	cmstat.o\
@@ -109,7 +113,8 @@ PROGOBJS = \
 	p7bandsim.o\
 	test_phase2_features.o\
 	test_phase3_features.o\
-	test_phase4_predict.o
+	test_phase4_predict.o\
+	test_wviterbi.o
 
 HDRS =  infernal.h
 
