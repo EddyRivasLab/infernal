@@ -3501,7 +3501,51 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi\n"); }
   if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)\n"); }
 
-  if (esl_opt_IsUsed(go, "--mxsize"))    {  fprintf(ofp, "# maximum total DP matrix size set to:         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize")); }
+  if (esl_opt_IsUsed(go, "--mxsize"))    {
+    /* brief 26_0430-305: --mxsize bounds a SINGLE DP matrix; every worker
+     * thread/process is handed the full, undivided value (cmalign.c:676,
+     * :1161), so the real worst-case memory footprint is (multiplier x
+     * --mxsize), not --mxsize itself. Report both, plus the multiplier.
+     *
+     * The multiplier is NOT always 'ncpus' as passed to this function:
+     *  - non-MPI: infocnt (serial_master(), :656) and hmm_alignment()'s own
+     *    serial fallback (:1189) both use 1 concurrent matrix when ncpus==0
+     *    (e.g. --cpu 0 or a non-threaded build), not 0.
+     *  - MPI: this function is called with (nworkers+1) so the unconditional
+     *    "# MPI: ... processors" line above counts ranks correctly, but
+     *    mpi_master() (:2434-2843) never calls DispatchSqAlignment() or
+     *    allocates a P7_GMX -- it only dispatches sequences and collects
+     *    results, so the master allocates NO alignment DP matrix. Only the
+     *    nworkers MPI workers (mpi_worker(), one WORKER_INFO each) do.
+     *
+     * The multiplier is reported INLINE on the aggregate line rather than on
+     * its own line: under threading it would merely repeat the integer that
+     * ":3606" already prints as "# number of worker threads", and under MPI
+     * ":3603" suppresses that line entirely (and reports nworkers+1 ranks,
+     * which is NOT this multiplier), so a standalone count line is redundant
+     * in one case and the only source of the number in the other. */
+    int mxsize_mult;
+#ifdef HAVE_MPI
+    if (esl_opt_IsUsed(go, "--mpi")) mxsize_mult = ESL_MAX(ncpus - 1, 1);
+    else
+#endif
+      mxsize_mult = ESL_MAX(ncpus, 1);
+
+    if (mxsize_mult > 1) {
+      /* Only qualify the limit as per-thread when more than one matrix can
+       * exist at once. At mxsize_mult == 1 there is nothing to distinguish it
+       * from, and "(per thread)" would contradict the "# number of worker
+       * threads: 0" that :3606 prints under --cpu 0 (where the single matrix
+       * is allocated in the master, not in a worker). The unqualified form
+       * also matches cmsearch.c:2325 / cmscan.c:2616 for the same option. */
+      fprintf(ofp, "# maximum DP matrix size (per thread):         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
+      fprintf(ofp, "# maximum aggregate DP matrix size:            %.2f Mb [%d x %.2f]\n",
+	      esl_opt_GetReal(go, "--mxsize") * mxsize_mult, mxsize_mult, esl_opt_GetReal(go, "--mxsize"));
+    }
+    else {
+      fprintf(ofp, "# maximum DP matrix size:                      %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
+    }
+  }
   if (esl_opt_IsUsed(go, "--hbanded"))   {  fprintf(ofp, "# using HMM bands for acceleration:            yes\n"); }
   if (esl_opt_IsUsed(go, "--tau"))       {  fprintf(ofp, "# tail loss probability for HMM bands set to:  %g\n", esl_opt_GetReal(go, "--tau")); }
   if (esl_opt_IsUsed(go, "--fixedtau"))  {  fprintf(ofp, "# tighten HMM bands when necessary:            no\n"); }
