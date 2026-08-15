@@ -111,7 +111,7 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
  *            multiple domains are suspected.
  */
 int
-p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
+cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
            P7_OPROFILE *om,
 					 P7_GMX *gxf, P7_GMX *gxb, P7_GMX *fwd, P7_GMX *bck, 
            P7_DOMAINDEF *ddef, int do_null2, int do_aln)
@@ -601,7 +601,7 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
  *            <eslEINCONCEIVABLE> if profile is not unihit.
  */
 int
-p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm,
+cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm,
                                                 P7_OPROFILE *om,
                                                 P7_GMXB *gxfb, P7_GMXB *gxbb,
                                                 float fwdsc, P7_DOMAINDEF *ddef,
@@ -693,7 +693,7 @@ p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm
  * Returns:   eslOK on success.
  */
 int
-p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm,
+cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm,
 							 P7_OPROFILE *om,
 							 P7_GMXB *gxfb, P7_GMXB *gxbb,
 							 float fwdsc,
