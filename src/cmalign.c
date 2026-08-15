@@ -3558,7 +3558,14 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
      *    mpi_master() (:2434-2843) never calls DispatchSqAlignment() or
      *    allocates a P7_GMX -- it only dispatches sequences and collects
      *    results, so the master allocates NO alignment DP matrix. Only the
-     *    nworkers MPI workers (mpi_worker(), one WORKER_INFO each) do. */
+     *    nworkers MPI workers (mpi_worker(), one WORKER_INFO each) do.
+     *
+     * The multiplier is reported INLINE on the aggregate line rather than on
+     * its own line: under threading it would merely repeat the integer that
+     * ":3606" already prints as "# number of worker threads", and under MPI
+     * ":3603" suppresses that line entirely (and reports nworkers+1 ranks,
+     * which is NOT this multiplier), so a standalone count line is redundant
+     * in one case and the only source of the number in the other. */
     int mxsize_mult;
 #ifdef HAVE_MPI
     if (esl_opt_IsUsed(go, "--mpi")) mxsize_mult = ESL_MAX(ncpus - 1, 1);
@@ -3568,8 +3575,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
 
     fprintf(ofp, "# maximum DP matrix size (per thread):         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
     if (mxsize_mult > 1) {
-      fprintf(ofp, "# concurrent DP matrices:                      %d\n", mxsize_mult);
-      fprintf(ofp, "# maximum aggregate DP matrix size:            %.2f Mb\n", esl_opt_GetReal(go, "--mxsize") * mxsize_mult);
+      fprintf(ofp, "# maximum aggregate DP matrix size:            %.2f Mb [%d x %.2f]\n",
+	      esl_opt_GetReal(go, "--mxsize") * mxsize_mult, mxsize_mult, esl_opt_GetReal(go, "--mxsize"));
     }
   }
   if (esl_opt_IsUsed(go, "--hbanded"))   {  fprintf(ofp, "# using HMM bands for acceleration:            yes\n"); }
