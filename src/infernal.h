@@ -3463,29 +3463,92 @@ extern float            cm_tr_penalties_Sizeof(CM_TR_PENALTIES *trp);
 extern void             cm_tr_penalties_Destroy(CM_TR_PENALTIES *trp);
 extern int              cm_tr_penalties_IdxForPass(int pass_idx);
 
+/* D16 compat shims -- TEMPORARY.  Registered on the X5 strip list in
+ * HUB-INFERNAL/releases/1.2/INVENTORY.md; see that entry for the strip
+ * procedure, its prerequisite and its deadline.  Added by brief 26_0316-038.
+ *
+ * D16 renamed 38 Infernal functions out of HMMER's namespace (35 "p7_" plus 3
+ * "my_p7_"/"my_dmx_") into "cm_".  Only the definitions and their declarations
+ * were renamed; the ~190 call sites, spread across many in-flight branches,
+ * were deliberately left alone, and these #defines are what keeps them
+ * compiling.  That is the whole point: the merge-conflict surface is the 38
+ * definition lines plus this block, instead of every line in the tree that
+ * mentions one of the 38 identifiers.
+ *
+ * !! HAZARD -- THESE SHIMS INVERT THE SAFETY PROPERTY THE RENAME BUYS.
+ * The reason for D16 is that Infernal was squatting on 38 names in HMMER's
+ * namespace by luck: if vendored HMMER ever defined one of them, we would find
+ * out at link time, loudly.  While a shim exists, that no longer happens -- a
+ * call meant for a newly vendored HMMER function is silently rewritten to
+ * Infernal's cm_ function instead, and it compiles, links and runs wrong.
+ * (p7_GForwardBanded already collided once; my_p7_GForwardBanded was the dodge.)
+ *
+ * TRIPWIRE: ANY BUMP OF VENDORED HMMER.  On such a bump, strip these shims
+ * (per X5) before trusting the build -- do not read a clean link as evidence
+ * that the two namespaces are still disjoint.
+ */
+#define my_dmx_Visualize                                         cm_dmx_Visualize
+#define my_p7_GForwardBanded                                     cm_p7_GForwardBanded
+#define my_p7_GTraceMSV                                          cm_p7_GTraceMSV
+#define p7_CheckptBandedOAMemNeeded                              cm_p7_CheckptBandedOAMemNeeded
+#define p7_domaindef_GlocalByPosteriorHeuristics                 cm_p7_domaindef_GlocalByPosteriorHeuristics
+#define p7_domaindef_GlocalByPosteriorHeuristics_Banded          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded
+#define p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit
+#define p7_GBackwardBanded                                       cm_p7_GBackwardBanded
+#define p7_GBandedTrace                                          cm_p7_GBandedTrace
+#define p7_GBandedViterbi                                        cm_p7_GBandedViterbi
+#define p7_GBands_FromKminKmax                                   cm_p7_GBands_FromKminKmax
+#define p7_GCheckptFBDecode_Banded                               cm_p7_GCheckptFBDecode_Banded
+#define p7_GCheckptFBDecodeOA_Banded                             cm_p7_GCheckptFBDecodeOA_Banded
+#define p7_GCheckptOA_Banded                                     cm_p7_GCheckptOA_Banded
+#define p7_GDecodingBanded                                       cm_p7_GDecodingBanded
+#define p7_gmx_Match2DMatrix                                     cm_p7_gmx_Match2DMatrix
+#define p7_GOATraceBanded                                        cm_p7_GOATraceBanded
+#define p7_GOptimalAccuracyBanded                                cm_p7_GOptimalAccuracyBanded
+#define p7_IBVPins2Trace                                         cm_p7_IBVPins2Trace
+#define p7_kbands2gbands                                         cm_p7_kbands2gbands
+#define p7_pins2bands                                            cm_p7_pins2bands
+#define p7_pins2bands_nodepad                                    cm_p7_pins2bands_nodepad
+#define p7_prior_Read                                            cm_p7_prior_Read
+#define p7_ProfileConfig3PrimeTrunc                              cm_p7_ProfileConfig3PrimeTrunc
+#define p7_ProfileConfig5PrimeAnd3PrimeTrunc                     cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc
+#define p7_ProfileConfig5PrimeTrunc                              cm_p7_ProfileConfig5PrimeTrunc
+#define p7_ReconfigLength3PrimeTrunc                             cm_p7_ReconfigLength3PrimeTrunc
+#define p7_ReconfigLength5PrimeTrunc                             cm_p7_ReconfigLength5PrimeTrunc
+#define p7_Seq2Bands                                             cm_p7_Seq2Bands
+#define p7_Seq2BandsIBV                                          cm_p7_Seq2BandsIBV
+#define p7_Seq2BandsIBV_dnc                                      cm_p7_Seq2BandsIBV_dnc
+#define p7_Seq2BandsIBV_extband                                  cm_p7_Seq2BandsIBV_extband
+#define p7_Seq2BandsIBV_extband_compact                          cm_p7_Seq2BandsIBV_extband_compact
+#define p7_Seq2BandsKmerChain                                    cm_p7_Seq2BandsKmerChain
+#define p7_Seq2BandsPinBridge                                    cm_p7_Seq2BandsPinBridge
+#define p7_Seq2BandsPinBridgeWrap                                cm_p7_Seq2BandsPinBridgeWrap
+#define p7_Seq2BandsVit                                          cm_p7_Seq2BandsVit
+#define p7_Seq2BandsWV                                           cm_p7_Seq2BandsWV
+
 /* from cm_p7_band.c */
-extern int          p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
-extern int          my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
-extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc, int **ret_iconflict);
+extern int          cm_p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
+extern int          cm_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
+extern int          cm_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc, int **ret_iconflict);
 extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
 extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
-extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
+extern int          cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
 /* brief 26_0316-037: hoisted from block-local externs in cmalign.c/cm_pipeline.c/cm_p7_domaindef.c
  * (D17); infernal.h has included p7_gmxb.h/p7_gbands.h unconditionally since 7f360469 (2026-03-18). */
-extern int          p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
-extern int          my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-extern int          p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
-extern int          p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
-extern int          p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-extern int          p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-extern int          p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
-extern int          p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
+extern int          cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+extern int          cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+extern int          cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+extern int          cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+extern int          cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
+extern int          cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
+extern int          cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
 extern P7_GMXB     *p7b_pp_Create(P7_GBANDS *bnd);                                                                             /* brief 26_0526-017: compact 2-cell resident pp */
-extern int          p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
-extern int          p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+extern int          cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+extern int          cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
                                                  P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                             /* brief 26_0628-081: double-checkpointed, no resident posterior */
-extern int          p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
-extern int          p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
+extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
+extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
 extern int          cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
@@ -3522,10 +3585,10 @@ extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *
 /* brief 26_0430-167: tau-ratchet single-pass multi-threshold sibling + ckpt-trunc driver (cm_p7_band_chk.c) */
 extern int          cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double *p_thresh, int NS, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, int **pn_min_m_out, int **pn_max_m_out, int **pn_min_i_out, int **pn_max_i_out, int **pn_min_d_out, int **pn_max_d_out, double **pocc_out);
 extern int          cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, int *ret_nbump, float *ret_Mb);
-extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
+extern int          cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
+extern int          cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* SW-pinbridge prefilter + banded p7 Viterbi: drop-in replacement for p7_Seq2BandsVit
  * when cm->p7_use_pinbridge is TRUE. Same signature except no gx (allocates banded
@@ -3533,18 +3596,18 @@ extern int          p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7
  * (p7_GBandedViterbi, p7_GBandedTrace, p7_GBands_FromKminKmax, p7_Seq2BandsPinBridge)
  * have no callers outside cm_p7_band.c and stay file-local there -- that is why
  * p7_Seq2BandsPinBridgeWrap is declared here while its four siblings are not.  */
-extern int          p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
+extern int          cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
                                               P7_BG *bg, P7_TRACE *p7_tr,
                                               ESL_DSQ *dsq, int L, int pad, int *nodepad,
                                               int hopback, int vitend,
                                               CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
  * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
  * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining
  * DP + backtrack + pin emission + p7_pins2bands_nodepad. Only measured when non-NULL. */
-extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s, double *ret_bd_s);
+extern int          cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s, double *ret_bd_s);
 /* Brief 26_0430-140: IBV band-derivation modes (enrich the per-row band using the
  * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
  * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */
@@ -3556,32 +3619,32 @@ extern int          p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, 
 #define P215_MODE_OFF     0
 #define P215_MODE_PIN     1
 #define P215_MODE_CLOUD   2
-extern int          p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+extern int          cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
                                     int do_trunc,
                                     int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+extern int          cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int delta_milli, int base_slab,
                                     int do_boundary_widen,
                                     int do_kband,
                                     int do_trunc,
                                     int ibv_mode, int ibv_width,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-extern int          p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
+extern int          cm_p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
                                     const int *i2k, const int *kmin, const int *kmax, int ncells,
                                     P7_TRACE **ret_tr);
 /* Brief 26_0430-169: windowed-Viterbi band = MAP-trace i2k +/- per-node pad. */
-extern int          p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+extern int          cm_p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                                     int do_trunc,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 /* brief 26_0430-248: optional delta-CLOUD band outputs (ret_kmin/ret_kmax); pass
  * NULL for those (and delta_milli ignored) to get the original pin-only behavior. */
-extern int          p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+extern int          cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int do_trunc, const int *ext_kmin, const int *ext_kmax,
                                     int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 /* brief 26_0430-216: compact O(L*bandwidth) storage version of the above (same semantics,
  * same signature); i2k must match p7_Seq2BandsIBV_extband() byte-for-byte. */
-extern int          p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+extern int          cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                     int do_trunc, const int *ext_kmin, const int *ext_kmax,
                                     int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
@@ -3618,15 +3681,15 @@ extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos,
                                * O(sqrt(nrow)*maxnc) -- --mxsize-conditional fallback */
 
 /* from cm_p7_domaindef.c */
-extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
+extern int cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
               P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
 
 /* from cm_p7_modelconfig_trunc.c */
-extern int p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
-extern int p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L);
-extern int p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L);
-extern int p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L);
-extern int p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L);
+extern int cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 
 /* from cm_p7_modelmaker.c */
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);

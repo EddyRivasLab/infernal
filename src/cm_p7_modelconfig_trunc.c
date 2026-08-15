@@ -28,7 +28,7 @@
 /* Function:  p7_ProfileConfig5PrimeTrunc()
  */
 int
-p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L)
+cm_p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L)
 {
   int status;
   int k;
@@ -63,7 +63,7 @@ p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L)
 /* Function:  p7_ProfileConfig3PrimeTrunc()
  */
 int
-p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L)
+cm_p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L)
 {
   int status;
   int k;
@@ -104,7 +104,7 @@ p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L)
 /* Function:  p7_ProfileConfig5PrimeAnd3PrimeTrunc()
  */
 int
-p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L)
+cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L)
 {
   assert(gm->mode == p7_LOCAL);
 
@@ -124,7 +124,7 @@ p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L)
 /* Function:  p7_ReconfigLength5PrimeTrunc()
  */
 int
-p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L)
+cm_p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L)
 {
   float ploop, pmove;
 
@@ -149,7 +149,7 @@ p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L)
 /* Function:  p7_ReconfigLength3PrimeTrunc()
  */
 int
-p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L)
+cm_p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L)
 {
   float ploop, pmove;
 

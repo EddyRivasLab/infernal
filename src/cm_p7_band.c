@@ -114,7 +114,7 @@ pn_match_bands_enforce_monotone(int *pn_min_m, int *pn_max_m, int M, int L,
  * Purpose:   Dump matrix <gx> to stream <fp> for diagnostics.
  */
 int
-p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max)
+cm_p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max)
 {
   int i, k;
   ESL_DMATRIX *D;
@@ -187,7 +187,7 @@ p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_m
  * Xref:      
  */
 int
-my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill)
+cm_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill)
 {
    int    nshades   = 18;
    double cyan[]    = { 1.00, 1.00, 0.90, 0.75, 0.57, 0.38, 0.24, 0.13, 0.03,
@@ -305,7 +305,7 @@ my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fi
 #define CP9TSC(s,k) (tsc[(k) * cp9O_NTRANS + (s)])
 
 int
-my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc, int **ret_iconflict)
+cm_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc, int **ret_iconflict)
 {
   int     status = eslOK;
   int     i;			/* position in seq (1..L) */
@@ -658,7 +658,7 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
  *
  */
 int
-p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int     status;
 
@@ -795,7 +795,7 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  *
  */
 int
-p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
+cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
                       int hopback, double alpha,
                       int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -1165,7 +1165,7 @@ brief035_rss_kb(void)
  * Return:   eslOK on success (including the ncells=0 "no chain" case).
  */
 int
-p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
+cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
                       int do_trunc,
                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
                       double *ret_a_s, double *ret_b_s, double *ret_bd_s)
@@ -6680,7 +6680,7 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
  * 
  */
 int
-p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
+cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 	     double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 	     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -6818,7 +6818,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
  *           ret_ncells set to 0; caller should fall back to unbanded Forward.
  */
 int
-p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
+cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
 		ESL_DSQ *dsq, int L, int pad, int *nodepad, int hopback, int vitend,
 		int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -7069,7 +7069,7 @@ P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
  *           segments are handled by special state transitions (N/J/C).
  */
 int
-p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
+cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
 {
   P7_GBANDS *bnd = NULL;
   int        status;
@@ -7122,7 +7122,7 @@ p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_b
  * Returns:  <eslOK> on success
  */
 int
-my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
 {
   int         *bnd_ip = gxb->bnd->imem;          /* ptr to current ia, ib segment band in gxb->bnd */
   int         *bnd_kp = gxb->bnd->kmem;		 /* ptr to current ka, kb row band in gxb->bnd     */
@@ -7272,7 +7272,7 @@ my_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
  *           Backward looks at what comes AFTER the current cell.
  */
 int
-p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
 {
   int         *bnd_ip;                           /* ptr to segment band boundaries in gxb->bnd */
   int         *bnd_kp;                           /* ptr to row band boundaries in gxb->bnd */
@@ -7540,7 +7540,7 @@ p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb
  * Returns:  eslOK on success.
  */
 int
-p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
+cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
 		   P7_GMXB *pp, float overall_sc)
 {
   int         *bnd_ip = fwd->bnd->imem;
@@ -7673,7 +7673,7 @@ p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
  * Returns:  eslOK on success.
  */
 int
-p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
+cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
 			  P7_GMXB *gx, float *ret_e)
 {
   /* TSCDELTA: 1.0 if transition is possible, FLT_MIN if not */
@@ -7845,7 +7845,7 @@ p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
  *           eslEMEM on allocation failure.
  */
 int
-p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
+cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 		  P7_TRACE *tr)
 {
 #define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
@@ -8217,7 +8217,7 @@ p7b_pp_Create(P7_GBANDS *bnd)
  * Returns:  eslOK on success.
  */
 int
-p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes)
+cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes)
 {
   int    *kp = bnd->kmem;
   int     nrow = bnd->nrow;
@@ -9155,7 +9155,7 @@ p7b_ppwork_fill(P7B_PPWORK *w, const P7_PROFILE *gm, const P7B_GEO *g,
  * Returns:  eslOK on success.
  */
 int
-p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
                            P7_GMXB *pp, float *ret_fwdsc)
 {
   int        status;
@@ -9698,7 +9698,7 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
  * Returns:  eslOK on success.
  */
 int
-p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc)
+cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc)
 {
   int         status;
   P7B_GEO    *g = NULL;
@@ -9768,7 +9768,7 @@ p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret
  * Returns:  eslOK on success.
  */
 int
-p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
                              P7_GBANDS *bnd, P7_TRACE *tr,
                              float *ret_fwdsc, float *ret_oasc)
 {
@@ -10514,7 +10514,7 @@ static inline int pb_adaptive_T(int M)
  * Returns:  <eslOK> on success.
  */
 int
-p7_GBandedViterbi(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+cm_p7_GBandedViterbi(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
 {
   int         *bnd_ip = gxb->bnd->imem;
   int         *bnd_kp = gxb->bnd->kmem;
@@ -10725,7 +10725,7 @@ static inline float pb_X(P7_GMXB *gxb, PB_RowMap *rm, int i, int which) {
  *           so inter-segment N/J/C accumulation does not arise.
  */
 int
-p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P7_TRACE *tr)
+cm_p7_GBandedTrace(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, P7_TRACE *tr)
 {
   int          i   = L;
   int          k   = 0;
@@ -12166,7 +12166,7 @@ pb_build_band(PB_Pin *kpins, int nfinal, int L, int M, int pad,
  * The bnd struct is reused (caller may pass a freshly-Created or Reuse'd one).
  */
 int
-p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
+cm_p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
 {
   int i;
   int status;
@@ -12271,7 +12271,7 @@ pb_load_pins_from_tsv(const char *path, int M, int L, PB_Pin **ret_pins, int *re
  *          (caller falls back to unbanded path).
  */
 int
-p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P7_GMXB *gxb,
+cm_p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32, P7_GMXB *gxb,
                       P7_GBANDS *bnd, P7_TRACE *tr,
                       const ESL_DSQ *dsq, int L, int pad, int use_vit_gaps, float *ret_sc,
                       double *ret_sw_ms, double *ret_lsis_ms,
@@ -12556,7 +12556,7 @@ cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h)
  * against gm in the caller's configured mode (GLOCAL or truncated LOCAL).
  */
 int
-p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
+cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
                           P7_BG *bg, P7_TRACE *p7_tr,
                           ESL_DSQ *dsq, int L, int pad, int *nodepad,
                           int hopback, int vitend,

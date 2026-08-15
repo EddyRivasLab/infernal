@@ -472,7 +472,7 @@ ibv_connectivity_guard(int L, int M, int ibv_mode, int *kmin, int *kmax)
  * ---------------------------------------------------------------------------*/
 
 int
-p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
                 int do_trunc,
                 int ibv_mode, int ibv_width,
                 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
@@ -792,7 +792,7 @@ p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_mil
  *           semantics to ibv_through_scan's k_argmax (delete cells excluded).
  */
 int
-p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                         int do_trunc, const int *ext_kmin, const int *ext_kmax,
                         int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax)
 {
@@ -1065,7 +1065,7 @@ ibv_compact_row0_fd(int do_trunc, int k, const float *fd0)
 }
 
 int
-p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                                 int do_trunc, const int *ext_kmin, const int *ext_kmax,
                                 int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax)
 {
@@ -1981,7 +1981,7 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
 
 
 int
-p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
                     int delta_milli, int base_slab,
                     int do_boundary_widen,
                     int do_kband,
@@ -2340,7 +2340,7 @@ p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
+cm_p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
                  const int *i2k, const int *kmin, const int *kmax, int ncells,
                  P7_TRACE **ret_tr)
 {
@@ -2640,7 +2640,7 @@ cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
  * the same conventions as p7_Seq2BandsIBV.
  */
 int
-p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
+cm_p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                int do_trunc,
                int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {

@@ -305,7 +305,7 @@ static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *c
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(FILE *fp, CM_t *cm);
 static int    dump_emission_info(FILE *fp, CM_t *cm, char *errbuf);
-static P7_PRIOR * p7_prior_Read(FILE *fp);
+static P7_PRIOR * cm_p7_prior_Read(FILE *fp);
 static P7_PRIOR * cm_p7_prior_CreateNucleic(void);
 static void  dump_cm_occupancy_values(FILE *fp, CM_t *cm);
 static void  dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9);
@@ -3716,7 +3716,7 @@ dump_emission_info(FILE *fp, CM_t *cm, char *errbuf)
  * Returns:  A prior <pri>. NULL if an error occurs.
  */
 P7_PRIOR *
-p7_prior_Read(FILE *fp) 
+cm_p7_prior_Read(FILE *fp) 
 {
   P7_PRIOR *pri = NULL;
   int        status;
