@@ -557,6 +557,51 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
           esl_opt_GetInteger(go, "--p7ibv-delta"));
 }
 
+/* check_hmm_g_notrunc()
+ *
+ * brief 26_0526-031: under --hmm, -g changes nothing but has been silently
+ * accepted on truncated (default) alignments. -g's only effect in --hmm
+ * mode is to request a p7_UNIGLOCAL profile; but the truncation-aware
+ * profile setup, cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc() (called whenever
+ * CM_ALIGN_TRUNC is set, i.e. whenever --notrunc is not given), asserts
+ * gm->mode == p7_LOCAL on entry and unconditionally forces p7_UNILOCAL out
+ * (cm_p7_modelconfig_trunc.c). So --hmm -g without --notrunc either trips
+ * that assert (debug build) or silently overwrites the requested glocal
+ * mode with local (NDEBUG build) -- the CM has no truncated glocal p7
+ * configuration to honour -g with (p7 profiles have no EL states, and
+ * cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc() has no glocal variant).
+ *
+ * Require --notrunc whenever --hmm and -g are combined, on any CM with
+ * basepairs (CMCountNodetype(cm, MATP_nd) != 0) that has not been forced to
+ * CM-DP via --nohmm. 0-basepair CMs are deliberately exempted: they can
+ * reach --hmm via maybe_hmm_autoswitch()'s auto-switch, where --nohmm is
+ * already the documented escape hatch back to CM-DP, and enforcing this
+ * check there would break that default-on path. That leaves a known,
+ * intentional residual hole (0-bp CM, --hmm, -g, no --notrunc still
+ * silently drops -g); see brief 26_0526-031 summary for its disposition.
+ *
+ * Returns eslOK if compatible, eslEINCOMPAT (with errbuf set) otherwise.
+ * Must be called after the CM is read (needs CMCountNodetype) and after
+ * maybe_hmm_autoswitch() (needs the --hmm that will actually be used).
+ */
+static int
+check_hmm_g_notrunc(ESL_GETOPTS *go, CM_t *cm, char *errbuf)
+{
+  if (esl_opt_GetBoolean(go, "--hmm")     &&
+      esl_opt_GetBoolean(go, "-g")        &&
+      (! esl_opt_GetBoolean(go, "--notrunc")) &&
+      (CMCountNodetype(cm, MATP_nd) != 0) &&
+      (! esl_opt_GetBoolean(go, "--nohmm")))
+    {
+      snprintf(errbuf, eslERRBUFSIZE,
+               "-g cannot be honoured with --hmm on a basepair-containing CM because "
+               "HMM-only alignment has no glocal truncated configuration. "
+               "Use --hmm -g --notrunc, or drop --hmm to align with the CM.");
+      return eslEINCOMPAT;
+    }
+  return eslOK;
+}
+
 /* serial_master()
  * The serial version of cmalign.
  * 
@@ -666,6 +711,11 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
    * the user requested an explicit mode or passed --nohmm. Must run before
    * output_header() and initialize_cm() so they see the switched options. */
   maybe_hmm_autoswitch(go, cm);
+
+  /* brief 26_0526-031: --hmm -g has no truncated glocal configuration to
+   * honour; require --notrunc on basepair-containing CMs (see
+   * check_hmm_g_notrunc() for the full rationale and the exempted 0-bp case). */
+  if (check_hmm_g_notrunc(go, cm, errbuf) != eslOK) cm_Fail(errbuf);
 
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
 
@@ -2466,6 +2516,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
    * match the worker's switch so master/worker agree on the dispatch path. */
   maybe_hmm_autoswitch(go, cm);
 
+  /* brief 26_0526-031: --hmm -g has no truncated glocal configuration to
+   * honour; require --notrunc on basepair-containing CMs (see
+   * check_hmm_g_notrunc() for the full rationale and the exempted 0-bp case). */
+  if (check_hmm_g_notrunc(go, cm, errbuf) != eslOK) mpi_failure(errbuf);
+
   nworkers  = cfg->nproc - 1;
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
 
@@ -2847,6 +2902,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* 0-basepair CM auto-switch to HMM mode (see maybe_hmm_autoswitch); must
    * match the master's switch so master/worker agree on the dispatch path. */
   maybe_hmm_autoswitch(go, cm);
+
+  /* brief 26_0526-031: --hmm -g has no truncated glocal configuration to
+   * honour; require --notrunc on basepair-containing CMs (see
+   * check_hmm_g_notrunc() for the full rationale and the exempted 0-bp case). */
+  if (check_hmm_g_notrunc(go, cm, errbuf) != eslOK) mpi_failure(errbuf);
 
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
