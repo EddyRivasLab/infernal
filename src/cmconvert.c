@@ -271,7 +271,6 @@ configure_model(CM_t *cm, char *errbuf)
 			       gftailp,                    /* fraction of tail mass to fit for glocal Fwd */
 			       42,                         /* seed: default */
 			       0,                          /* ncpus: 0 = serial */
-			       cm->eff_nseq,               /* the CM's eff_nseq: a glocal Fwd (tau,lambda) feature (brief 26_0719-054) */
 			       &fil_gfmu, &fil_gflambda))
      != eslOK) return status;
   if((status = cm_SetFilterHMM(cm, cm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
