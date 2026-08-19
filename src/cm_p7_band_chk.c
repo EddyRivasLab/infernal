@@ -1066,6 +1066,108 @@ cp9segF_PostRow(cp9segF_t *g, CP9_t *hmm, ESL_DSQ *dsq, int i, int *kmin, int *k
   }
 }
 
+/* brief 26_0430-310 (M3): detect a no-parse band instead of letting it poison
+ * every posterior.
+ *
+ * A band deriver can emit a p7 band (kmin/kmax) that contains NO complete CP9
+ * parse of the sequence.  When that happens the checkpointed CP9 F/B returns a
+ * total score of -inf, every posterior below becomes -inf - (-inf) = NaN, no
+ * band edge ever crosses threshold, and cp9b is left as all -1 sentinels.
+ * Nothing on this path notices; the first thing that does is an M0 sanity check
+ * in a different file, hundreds of lines away, whose message says nothing about
+ * bands.
+ *
+ * THIS IS A DIAGNOSTIC, NOT A FIX.  It does not stop a deriver emitting a
+ * no-parse band and it does not recover the alignment; it only makes the
+ * resulting failure name its own cause at the point of detection.  The
+ * underlying deriver defect is untouched.
+ *
+ * Why FAIL here, when the sibling p7 banded-decoding path CLAMPS instead:
+ *   - p7_GDecodingBanded()/p7b_decode_row() clamp a non-finite INDIVIDUAL CELL
+ *     posterior.  One DP cell is degenerate; the parse is still fine, so the
+ *     right response is to clamp and continue.
+ *   - here, sc/fsc are the WHOLE-SEQUENCE NORMALIZERS -- subtracted uniformly
+ *     from every cell in cp9segF_PostRow(), with no per-cell role.  Non-finite
+ *     means there is no parse under this band AT ALL, so every downstream
+ *     number is meaningless and clamping would only manufacture a plausible
+ *     wrong answer.
+ * The two different responses to "a non-finite value appeared in a banded
+ * posterior computation" are deliberate, not an inconsistency to harmonise.
+ *
+ * Unconditional failure is safe because this _chk family is not reachable from
+ * the search pipeline (cm_pipeline.c makes no _chk calls; search uses the
+ * non-checkpointed entry points).  In search, "no complete parse under this
+ * band" is an ordinary non-match outcome and a hard failure would be wrong; in
+ * alignment every sequence must produce a parse, so it is unambiguously an
+ * error.
+ */
+static int
+cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
+                      int *kmin, int *kmax, double fsc, double bsc)
+{
+  double ncells = 0., full;
+  int    i, nempty = 0, minw = M+1, maxw = 0;
+
+  if(isfinite(fsc) && isfinite(bsc)) return eslOK;
+
+  for(i = 0; i <= L; i++) {
+    int w = kmax[i] - kmin[i] + 1;
+    if(w <= 0) { nempty++; w = 0; }
+    ncells += (double) w;
+    if(w < minw) minw = w;
+    if(w > maxw) maxw = w;
+  }
+  full = ((double) L + 1.) * ((double) M + 1.);
+
+  /* The detail goes to stderr, not errbuf: eslERRBUFSIZE is 128 bytes, far too
+   * small to carry it, and silently truncating the explanation would recreate
+   * the illegibility this guard exists to remove. errbuf gets a short form so
+   * whatever finally prints it still names the cause. */
+  fprintf(stderr,
+          "\nERROR: no-parse p7 band in checkpointed CP9 band derivation (%s).\n"
+          "       This p7 band contains no complete parse of the sequence, so the\n"
+          "       checkpointed CP9 Forward/Backward totals are not finite (fwd=%g bwd=%g);\n"
+          "       every posterior would be NaN and no CP9 band would be set.\n"
+          "       band: L=%d M=%d cells=%.0f of %.0f (cover=%.6f)\n"
+          "       band width: min=%d max=%d mean=%.1f, %d empty row(s)\n",
+          where, fsc, bsc, L, M, ncells, full,
+          (full > 0. ? ncells / full : 0.), minw, maxw,
+          ncells / ((double) L + 1.), nempty);
+
+  ESL_FAIL(eslENORESULT, errbuf,
+           "no-parse p7 band: no complete parse under this band (CP9 F/B total not finite)");
+}
+
+/* brief 26_0430-310: which deriver produced the band.  Reported separately from
+ * cp9_chk_noparse_check() because that function is a leaf and has no CM_t; the
+ * whole failure mode this brief addresses is a symptom surfacing far from its
+ * cause, so a message that names the no-parse band but not the deriver that
+ * built it would reproduce half of the original problem.
+ */
+static const char *
+cp9_chk_band_deriver_name(CM_t *cm)
+{
+  if(cm->p7_use_kmerchain) return "--p7kmerchain";
+  if(cm->p7_use_ibv)       return "--p7ibv";
+  if(cm->p7_use_pinbridge) return "--p7pinbridge";
+  return "default p7 Viterbi-trace";
+}
+
+/* brief 26_0430-310: emit the no-parse diagnostic on stderr AND fold the deriver
+ * name into errbuf, so the cause is visible whether the caller prints errbuf or
+ * discards it.
+ */
+static void
+cp9_chk_noparse_report(CM_t *cm, char *errbuf)
+{
+  const char *deriver = cp9_chk_band_deriver_name(cm);
+
+  fprintf(stderr, "       band deriver: %s\n", deriver);
+  snprintf(errbuf, eslERRBUFSIZE,
+           "no-parse p7 band from %s: no complete parse under this band "
+           "(CP9 F/B total not finite)", deriver);
+}
+
 /* The double checkpointed band reduction: produces cp9b pn_min/pn_max bands and
  * the per-node pocc_arr (match+delete occupancy, streamed in the MIN sweep)
  * exactly as cp9_FB2HMMBandsP7BF + cp9_PredictStartAndEndPositionsP7BF's pocc
@@ -1142,6 +1244,10 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
 
   if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
   if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
+  /* brief 26_0430-310 (M3): no-parse band guard, BEFORE sc is used as the
+   * posterior normalizer in cp9segF_PostRow() below. See cp9_chk_noparse_check(). */
+  if((status = cp9_chk_noparse_check(errbuf, "cp9_FB2HMMBandsP7BF_chk", L, M,
+                                     kmin, kmax, s->fsc, sc)) != eslOK) goto ERROR;
   /* brief 26_0430-154 diag: double checkpointed CP9 F/B totals (cf. 153 ref fwd/bwd≈7993.144,
    * gap≈+0.00003; float ckpt path gave gap≈-1.687 at norovirus, ≈-35/-45 at HSV/MPXV). */
   if(getenv("P154_FBDUMP") != NULL)
@@ -1367,6 +1473,10 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
 
   if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
   if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
+  /* brief 26_0430-310 (M3): no-parse band guard, BEFORE sc is used as the
+   * posterior normalizer in cp9segF_PostRow() below. See cp9_chk_noparse_check(). */
+  if((status = cp9_chk_noparse_check(errbuf, "cp9_FB2HMMBandsP7BF_chk_multi", L, M,
+                                     kmin, kmax, s->fsc, sc)) != eslOK) goto ERROR;
   /* brief 26_0430-193: same F/B total dump as P154_FBDUMP (single-threshold path,
    * line ~2243), replicated here in the MULTI (tau-ratchet) band-extraction path so
    * genome-scale runs that take this path still report the F/B gap for the LUT-vs-exact
@@ -1824,7 +1934,11 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
   /* Step 1+2: checkpointed double F/B -> HMM bands + streamed pocc_arr. */
   if((status = cp9_FB2HMMBandsP7BF_chk(cp9, errbuf, dsq, cp9b, L, cp9b->hmm_M,
                                        (1.-cm->tau), kmin, kmax, debug_level,
-                                       do_pnmono, do_pnmono_print, pocc_arr)) != eslOK) goto ERROR;
+                                       do_pnmono, do_pnmono_print, pocc_arr)) != eslOK) {
+    /* brief 26_0430-310: name the deriver; the leaf has no CM_t. */
+    if(status == eslENORESULT) cp9_chk_noparse_report(cm, errbuf);
+    goto ERROR;
+  }
   cp9b->tau = cm->tau;
 
   if((status = cp9_FinishBandsFromPnPoccF_chk(cm, errbuf, cp9, cp9b, pocc_arr, kmin, kmax,
@@ -1953,7 +2067,11 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
   /* ---- Phase 2: ONE checkpointed F/B + MIN + MAX sweep over all NS steps. ---- */
   if((status = cp9_FB2HMMBandsP7BF_chk_multi(cp9, errbuf, dsq, cp9b, L, M, p_thresh, NS, kmin, kmax,
                                              debug_level, do_pnmono, do_pnmono_print,
-                                             pnmm, pnxm, pnmi, pnxi, pnmd, pnxd, pocc)) != eslOK) goto DONE;
+                                             pnmm, pnxm, pnmi, pnxi, pnmd, pnxd, pocc)) != eslOK) {
+    /* brief 26_0430-310: name the deriver; the leaf has no CM_t. */
+    if(status == eslENORESULT) cp9_chk_noparse_report(cm, errbuf);
+    goto DONE;
+  }
 
   /* ---- G3 determinism harness (brief 26_0430-167): for every grid step, recompute the
    * pn arrays + masked pocc the OLD single-call way (cp9_FB2HMMBandsP7BF_chk,
