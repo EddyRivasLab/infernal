@@ -439,13 +439,40 @@ ibv_through_scan(int M, size_t k_stride, float thr,
  *  by one -- kmax[i]==kmin[i-1]-1 still leaves no in-band predecessor.)
  *
  * The guard widens band[i] minimally to satisfy this for every i.  DELTA mode is
- * skipped (its posterior-reachable bands are connected by construction).  Rows 0
- * and 1 connect to the B-state via the begin transition (no diagonal needed), so
- * the forward sweep starts at i=2.  A single forward sweep is provably sufficient
- * to guarantee a complete path (hence a finite total); the backward sweep is kept
- * for robustness -- it can only widen further and so cannot re-introduce a gap.
- * Widening keeps kmin>=1 and kmax<=M; the final clamp is purely defensive.
+ * skipped (its posterior-reachable bands are connected by construction).  The
+ * forward sweep starts at i=2, i.e. it never touches index 0 or 1 -- this was
+ * historically justified as "rows 0 and 1 connect to the B-state via the begin
+ * transition (no diagonal needed)", but brief 26_0430-307 found that reasoning
+ * holds only in LOCAL mode: in glocal, row 0 also carries the CP9's leading
+ * delete chain B -> D_1 -> ... -> D_k, which is not a begin-transition path.
+ * The guard's behaviour is unaffected (it still never narrows index 0, so it
+ * cannot defeat the row-0 widening landed by brief 26_0430-309); only the
+ * stated justification for skipping it needed correcting.  A single forward
+ * sweep is provably sufficient to guarantee a complete path over i=2..L
+ * (hence a finite total); the backward sweep is kept for robustness -- it can
+ * only widen further and so cannot re-introduce a gap.  Widening keeps
+ * kmin>=1 and kmax<=M for i>=2; the final clamp is purely defensive.
  */
+/* brief 26_0430-307/309: row-0 delete-chain band coverage. Formerly a
+ * candidate fix gated behind P298_ROW0D (brief 26_0430-298, default OFF);
+ * brief 307 established this is a CORRECTNESS FIX, not a tuning knob, and
+ * brief 309 promoted it to unconditional, removing the flag entirely.
+ *
+ * Every IBV band deriver hard-pinned row 0 to the single cell k=0
+ * (kmin[0]=0, kmax[0]=0), i.e. the B state alone. But row 0 is also where
+ * the CP9's entire no-residue-consumed delete chain B -> D_1 -> D_2 -> ...
+ * -> D_k lives (leading deletes are charged to dmx[0][k]; with kmax[0]=0
+ * that chain is not merely out of band -- GrowCP9Matrix sizes row 0 to one
+ * cell, so dmx[0][k>=1] is not even allocated). Row-1 widening cannot
+ * substitute: the row-i match recursion clips kx = min(kmax[i],
+ * kmax[i-1]+1), so row 1 stays pinned to k<=1 regardless of its own band.
+ * cm_p7_band.c's own row-0 loop comment says dmx[0][k] is possible for all
+ * k in [kmin[0], kmax[0]] -- the old row-0 convention conflated "only B can
+ * be *entered* from outside at row 0" with "only B can be *occupied* at
+ * row 0". Empirically a no-op on --hmm paths (cm_p7_kbands2gbands never
+ * reads row 0) and on CM-mode local/truncated (local begins supply bsc[k]
+ * finite); material only in CM-mode glocal -g non-truncated. */
+
 static void
 ibv_connectivity_guard(int L, int M, int ibv_mode, int *kmin, int *kmax)
 {
@@ -690,11 +717,22 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   if (L >= 1) { kmin[1] = 1; kmax[1] = M; }
   if (L >= 2) { kmin[L - 1] = 1; kmax[L - 1] = M; }
   if (L >= 1) { kmin[L] = 1; kmax[L] = M; }
-  kmin[0] = 0; kmax[0] = 0;
+  kmin[0] = 0; kmax[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
 
   /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin, kmax);
+
+  /* brief 26_0430-298 EXPLORATORY probe (P298_INS0, DEFAULT OFF, not a proposed
+   * fix): the IBV band never admits k=0 on rows i>=1, so the CP9's I_0 state
+   * (leading/5'-flanking inserts, before consensus column 1) is banded out on
+   * every emitting row.  This probe admits it, to measure how much of the
+   * post-P298_ROW0D residual is attributable to I_0.  Widening k=0 into rows
+   * i>=1 touches many INBAND(i,0) special cases in the CP9 kernels, so this is
+   * a MEASUREMENT switch only -- do not ship it without a separate audit. */
+  { static int p298_ins0 = -1;
+    if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
+    if(p298_ins0) { for (i = 1; i <= L; i++) kmin[i] = 0; } }
 
   for (i = 1; i <= L; i++)
     ncells += (kmax[i] - kmin[i] + 1);
@@ -952,7 +990,7 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if (ret_kmin != NULL && ret_kmax != NULL) {
     ESL_ALLOC(cl_kmin, sizeof(int)*(L+1));
     ESL_ALLOC(cl_kmax, sizeof(int)*(L+1));
-    cl_kmin[0] = 0; cl_kmax[0] = 0;
+    cl_kmin[0] = 0; cl_kmax[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
     for (i=1;i<=L;i++){
       int lo=BAND_LO(i), hi=BAND_HI(i);
       float *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i),*bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
@@ -1226,7 +1264,7 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
   if (want_cloud) {
     ESL_ALLOC(cl_kmin, sizeof(int) * (L + 1));
     ESL_ALLOC(cl_kmax, sizeof(int) * (L + 1));
-    cl_kmin[0] = 0; cl_kmax[0] = 0;
+    cl_kmin[0] = 0; cl_kmax[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
     for (i = 1; i <= L; i++) { cl_kmin[i] = rlo[i]; cl_kmax[i] = rhi[i]; }  /* default: full bounded row */
   }
 
@@ -2219,12 +2257,24 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     if (L >= 2) { kmin_arr[L - 1] = 1; kmax_arr[L - 1] = M; }
     if (L >= 1) { kmin_arr[L] = 1; kmax_arr[L] = M; }
   }
-  kmin_arr[0] = 0; kmax_arr[0] = 0;
+  kmin_arr[0] = 0; kmax_arr[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
   i2k[0] = 0;   /* B-state convention (brief 26_0430-137): i2k[i]=argmax_k for i in [1,L]. */
 
   /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin_arr, kmax_arr);
+
+  /* brief 26_0430-298 EXPLORATORY probe (P298_INS0, DEFAULT OFF, not a proposed
+   * fix), ported to _dnc by brief 26_0430-301: the IBV band never admits k=0 on
+   * rows i>=1, so the CP9's I_0 state (leading/5'-flanking inserts, before
+   * consensus column 1) is banded out on every emitting row. This probe admits
+   * it to measure how much of the post-P298_ROW0D residual is attributable to
+   * I_0. Widening k=0 into rows i>=1 touches many INBAND(i,0) special cases in
+   * the CP9 kernels, so this is a MEASUREMENT switch only -- do not ship it
+   * without a separate audit. */
+  { static int p298_ins0 = -1;
+    if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
+    if(p298_ins0) { for (i = 1; i <= L; i++) kmin_arr[i] = 0; } }
 
   for (i = 1; i <= L; i++)
     ncells += (kmax_arr[i] - kmin_arr[i] + 1);

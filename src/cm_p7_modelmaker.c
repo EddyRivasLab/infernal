@@ -238,7 +238,8 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
  *     z2 = mean_H^2                     z3 = log(min(eff_nseq, 20))
  * where mean_H is the mean per-column relative entropy (bits) of the match
  * emissions vs a uniform background (mean_relentropy_bits()) and eff_nseq is
- * the *CM's* effective sequence count (see the note in cm_p7_Calibrate()).
+ * the *calibrated HMM's own* effective sequence count, hmm->eff_nseq (brief
+ * 26_0719-064; see the note in cm_p7_Calibrate()).
  * The coefficients are a z-scored OLS linear fit in log space (natural
  * log/exp), refit by brief 26_0719-055 on the combined pool of brief
  * 26_0719-053's 1053 held-out-validated multi-sequence families plus 64 real
@@ -447,10 +448,6 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
  *           EgfT      - fraction of tail mass to fit for glocal Fwd
  *           seed      - RNG seed for calibration (0=one-time arbitrary)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
- *           eff_nseq  - the CM's effective sequence count (cm->eff_nseq); a
- *                       feature of both glocal Fwd (tau,lambda) predictors.
- *                       Passed in rather than read off <hmm>: see the note at
- *                       the glocal block below.
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *
@@ -464,7 +461,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
 		int ElmL, int ElvL, int ElfL, int EgfL,
 		int ElmN, int ElvN, int ElfN, int EgfN,
 		double ElfT, double EgfT,
-		int seed, int ncpus, double eff_nseq,
+		int seed, int ncpus,
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -517,24 +514,24 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
    * signature: everything the correction needs (clen, mean_H, eff_nseq, the
    * predicted lambda) is already in hand at this point.
    *
-   * NOTE on <eff_nseq>: this is the *CM's* eff_nseq, passed in by the caller,
-   * NOT hmm->eff_nseq. Those are genuinely different numbers -- on cmbuild's
-   * default path the filter HMM's eff_nseq comes from a temporary CM built to
-   * match the filter HMM's relative-entropy target (cmbuild.c
-   * ::build_and_calibrate_p7_filter()), and it can differ from the CM's own
-   * eff_nseq by more than 2x (e.g. Rfam 6C: CM 2.398 vs filter HMM 5.552).
-   * Both predictors were trained against the EFFN on the CM header line
-   * (scripts/build_task053_pool_effnseq.py, scripts/build_task055_singleseq_panel.py),
-   * so reading hmm->eff_nseq here would silently feed them the wrong feature.
+   * NOTE on eff_nseq: this reads hmm->eff_nseq, the effective sequence count
+   * of the object actually being calibrated -- not the CM's eff_nseq (brief
+   * 26_0719-064, reversing brief 26_0719-054's choice to pass the CM's value
+   * in explicitly). Brief 054 correctly made the code match the training
+   * data. What had never been checked was whether the training used the
+   * right model's parameter. It did not: the object calibrated here is the
+   * filter HMM, whose eff_nseq is invariant to the CM's entropy-weighting
+   * flags, and whose ground-truth lambda is likewise invariant -- while the
+   * CM's eff_nseq moves 3 orders of magnitude across those flags.
    */
   {
     double mean_H  = mean_relentropy_bits(hmm);
     double tau_raw;
 
-    gflambda = predict_glocal_lambda(hmm->M, mean_H, eff_nseq);
+    gflambda = predict_glocal_lambda(hmm->M, mean_H, hmm->eff_nseq);
     if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
     if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &tau_raw)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
-    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, eff_nseq);
+    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, hmm->eff_nseq);
   }
 
   esl_randomness_Destroy(r); 

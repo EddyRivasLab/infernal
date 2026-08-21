@@ -1260,6 +1260,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  p7_profile_Destroy(gm_p7b);
 	  p7_bg_Destroy(bg_p7b);
 
+	  /* brief 26_0430-310 (M3): eslENORESULT means the p7 band contained no complete
+	   * parse, so cp9b was never populated (all -1 sentinels). That is NOT the
+	   * "bands too wide" condition the block below exists for, and it does not
+	   * satisfy p7b_iterate_ran's premise that the bands stay validly populated.
+	   * Routing it into that block launders it into eslOK (do_mxesc keeps the
+	   * un-set bands) or replaces its message with a matrix-size one -- either way
+	   * the run continues on meaningless bands and dies later somewhere unrelated,
+	   * which is exactly the illegibility this guard removes. Fail here, with the
+	   * cause already in errbuf and the detail already on stderr. */
+	  if(status == eslENORESULT) goto ERROR;
+
 	  if(status != eslOK) {
 	    /* P7B bands too wide even at maxtau; fall back to standard cp9 band derivation */
 	    /* Brief 26_0430-159: the standard fallback below builds a *non-banded* full CP9
