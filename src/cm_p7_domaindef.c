@@ -262,11 +262,31 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
  *   E(z) = expected number of E states occurring in region before z is emitted
  *        = \sum_{y=i}^{z} eocc[i]  =  etot[z] - etot[i-1]
  *   B(z) = expected number of B states occurring in region after z is emitted
- *        = \sum_{y=z}^{j} bocc[i]  =  btot[j] - btot[z-1]               
+ *        = \sum_{y=z+1}^{j} bocc[i]  =  btot[j] - btot[z]
  *        
  *        
  * Because this relies on the <ddef->etot> and <ddef->btot> arrays,
  * <calculate_domain_posteriors()> needs to have been called first.
+ *
+ * INDEX CONVENTION (brief 26_0316-047): eocc[y] = etot[y]-etot[y-1] is the
+ * posterior that a domain *ends* at residue y (E state on row y); bocc[y] =
+ * btot[y]-btot[y-1] is the posterior that a domain *begins* at residue y (B
+ * state on row y-1). A split at z therefore pairs "ends at <= z" with "begins
+ * at >= z+1"; the two index ranges must be DISJOINT. Upstream HMMER (through
+ * 3.4) uses btot[j]-btot[z-1] here, which also counts bocc[z] -- so a single
+ * domain occupying exactly residue z contributes its own begin AND its own end
+ * to the same split point, and is scored as evidence of two domains. In HMMER's
+ * setting that overcount is diffuse and harmless; in Infernal it is not, because
+ * the truncated-hit profiles built by cm_p7_modelconfig_trunc.c pin all of one
+ * mass to a single row (Rgm sets N->N = -inf, so all B mass is on row 0; Lgm
+ * sets C->C = -inf, so all E mass is on row L). For those profiles every
+ * min(E(z),B(z)) with disjoint indices is identically 0, and the whole statistic
+ * degenerates to "posterior that the single domain is the one residue at the
+ * window edge" -- which then trips rt3 and, since the profile is unihit, aborts
+ * the whole search at cm_p7_domaindef_GlocalByPosteriorHeuristics()'s
+ * eslEINCONCEIVABLE. See brief 26_0316-047 for the DP-matrix-level derivation
+ * and the measurements: 0/3145 default-path verdict changes on rmark4h, and
+ * 23/23 spurious truncated-pass calls removed.
  *
  * Xref:    J2/101.  
  */
@@ -280,7 +300,8 @@ is_multidomain_region(P7_DOMAINDEF *ddef, int i, int j)
   max = -1.0;
   for (z = i; z <= j; z++)
     {
-      expected_n = ESL_MIN( (ddef->etot[z] - ddef->etot[i-1]), (ddef->btot[j] - ddef->btot[z-1]));
+      /* brief 26_0316-047: btot[z], not btot[z-1] -- see INDEX CONVENTION above. */
+      expected_n = ESL_MIN( (ddef->etot[z] - ddef->etot[i-1]), (ddef->btot[j] - ddef->btot[z]));
       max        = ESL_MAX(max, expected_n);
     }
   return ( (max >= ddef->rt3) ? TRUE : FALSE);
