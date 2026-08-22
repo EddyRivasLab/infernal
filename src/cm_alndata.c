@@ -1233,11 +1233,20 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
 	    struct timespec _ta_cp9, _tb_cp9;
 	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
-	    p7b_iterate_ran = TRUE; /* brief 26_0430-269: bands stay validly populated even if this returns eslERANGE (maxtau-capped) */
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, t_kmin, t_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
 					     cm->maxtau, 0, 0, NULL);
+	    /* brief 26_0430-312: whitelist, not blacklist. eslOK and the maxtau-capped
+	     * eslERANGE are the only statuses this call can return that leave cp9b
+	     * validly (if widely) populated -- brief 26_0430-311 verified this holds
+	     * for all three eslERANGE origins reachable here. Any other status (a
+	     * contract-check eslEINCOMPAT, eslEMEM, eslENORESULT, or one invented three
+	     * frames down by a future call graph change) means cp9b was NOT left in a
+	     * trustworthy state, whether or not we've seen that status fire here
+	     * before -- a blacklist would need re-auditing every time the call graph
+	     * grows; this doesn't. */
+	    p7b_iterate_ran = (status == eslOK || status == eslERANGE) ? TRUE : FALSE;
 	    clock_gettime(CLOCK_MONOTONIC, &_tb_cp9);
 	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
 	    _st059_c_s = _cp9_s; /* brief 26_0628-059: stage (c) band construction = HMM-band -> CM v/j-band conversion */
@@ -1260,16 +1269,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  p7_profile_Destroy(gm_p7b);
 	  p7_bg_Destroy(bg_p7b);
 
-	  /* brief 26_0430-310 (M3): eslENORESULT means the p7 band contained no complete
-	   * parse, so cp9b was never populated (all -1 sentinels). That is NOT the
-	   * "bands too wide" condition the block below exists for, and it does not
-	   * satisfy p7b_iterate_ran's premise that the bands stay validly populated.
-	   * Routing it into that block launders it into eslOK (do_mxesc keeps the
-	   * un-set bands) or replaces its message with a matrix-size one -- either way
-	   * the run continues on meaningless bands and dies later somewhere unrelated,
-	   * which is exactly the illegibility this guard removes. Fail here, with the
-	   * cause already in errbuf and the detail already on stderr. */
-	  if(status == eslENORESULT) goto ERROR;
+	  /* brief 26_0430-310 (M3) narrowed by brief 26_0430-312: eslENORESULT means the
+	   * p7 band contained no complete parse, so cp9b was never populated (all -1
+	   * sentinels) -- not the "bands too wide" condition the block below exists
+	   * for, and it does not satisfy p7b_iterate_ran's premise (already excluded
+	   * from the whitelist above). At genome scale (cp9fb_Mb > mxsize, below) that
+	   * now falls to the preserve-the-cause goto ERROR in the else arm rather than
+	   * being laundered into eslOK or having its errbuf overwritten. At sub-genome
+	   * scale it now falls through to the real fallback re-derivation below, same
+	   * as it would have pre-310 -- M3's original unconditional goto ERROR here
+	   * fired at every scale, silently blocking a sub-genome fallback that could
+	   * have succeeded. */
 
 	  if(status != eslOK) {
 	    /* P7B bands too wide even at maxtau; fall back to standard cp9 band derivation */
@@ -1301,10 +1311,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	        errbuf[0] = '\0';
 	        status = eslOK; /* keep the wide p7-banded bands; skip the standard fallback */
 	      }
-	      else
+	      else if(status == eslERANGE)
 	        ESL_XFAIL(eslERANGE, errbuf,
 			"non-banded CP9 F/B band derivation needs %.1f > %.1f Mb limit.\nUse --mxsize, --maxtau or --tau (this seq needs a p7-banded/--ckpt path).",
 			cp9fb_Mb, (float) mxsize);
+	      else
+	        /* brief 26_0430-312: status is a real error (eslEINCOMPAT, eslEMEM,
+		 * eslENORESULT, ...), not the "bands too wide" eslERANGE this branch
+		 * exists for. cp9_IterateSeq2BandsP7B already left its cause in errbuf;
+		 * the ESL_XFAIL above would overwrite it with an unrelated matrix-size
+		 * message. Preserve the real cause instead of laundering it. */
+	        goto ERROR;
 	    }
 	    if(status != eslOK) { /* fallback re-derivation (only when cp9fb_Mb <= mxsize, or !do_mxesc kept status=eslERANGE) */
 	      if(do_xtau) {
