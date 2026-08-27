@@ -1977,6 +1977,19 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  p7_profile_Destroy(fb_gm);
 	  p7_bg_Destroy(fb_bg);
 	}
+	/* brief 26_0821-013 follow-up: mirror the :1299 whitelist here. Under fixed-tau
+	 * (CM_ALIGN_MXESC_FIXEDTAU, the default inside the mxesc path) eslERANGE from
+	 * cp9_IterateSeq2BandsP7B is the DESIGNED signal that step 0's bands are valid
+	 * but wider than --mxsize, not a failure -- and the whitelist above
+	 * (brief 26_0430-312, verified by 26_0430-311) establishes that eslERANGE is
+	 * one of the two statuses that leave cp9b validly, if widely, populated.
+	 * Treating it as a hard error here aborts a sequence that mxesc engine
+	 * escalation would have aligned. Clear ONLY eslERANGE; every other status
+	 * still errors. */
+	if (status == eslERANGE && (cm->align_opts & CM_ALIGN_MXESC_FIXEDTAU)) {
+	  errbuf[0] = '\0';
+	  status = eslOK; /* keep the valid p7-banded bands; mxesc escalates instead */
+	}
 	if (status != eslOK) goto ERROR;
 	goto CM_ALIGN_HB_RETRY;
       }
