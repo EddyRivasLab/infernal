@@ -704,6 +704,23 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
                       (! do_nonbanded) && (! do_qdb) && (! do_sub)) ? TRUE : FALSE;
   int mxesc_tier   = 0;    /* 0=none/not-decided, 'a'/'b'/'c' once decided (per seq) */
   int eff_checkpt  = (cm->align_opts & CM_ALIGN_CHECKPT) ? TRUE : FALSE; /* effective ckpt engine choice; do_mxesc may raise it per seq */
+  /* brief 26_0821-014: WILL the checkpointed engine actually run for this sequence?
+   * The four Qualifies() predicates read only cm->sttype[], never cm->cp9b, so this
+   * is answerable BEFORE band derivation -- which is the point: two places downstream
+   * size against the full HMM-banded cube that a checkpointed run never allocates.
+   *   (i)  cp9_IterateSeq2Bands()'s tau ratchet, which otherwise tightens bands (and
+   *        so CHANGES THE ALIGNMENT) to fit a matrix that is never built; and
+   *   (ii) the pre-dispatch cm_[Tr]AlignSizeNeededHB() eslERANGE gate below, which
+   *        otherwise admits the checkpointed engine only when the full free-OptAcc
+   *        cube would have fit -- the very gate checkpointing exists to avoid.
+   * Mirrors the mxesc tier selector's ckpt_avail OR-of-qualifiers and the engine
+   * gates at the two HB dispatch sites, so it is TRUE exactly when one of
+   * do_checkpt / do_checkpt_r3 / do_trckpt / do_trckpt_r4 will be.  Note eff_checkpt
+   * is still just the --ckpt flag here (do_mxesc raises it only AFTER bands exist),
+   * so no non---ckpt run can reach either change. */
+  char ckpt_est_mode = (mode == TRMODE_J || mode == TRMODE_L ||
+                        mode == TRMODE_R || mode == TRMODE_T) ? mode : TRMODE_T; /* max-plane => safe over-estimate */
+  int  ckpt_will_run = FALSE;
   int p7b_iterate_ran = FALSE; /* TRUE once cp9_IterateSeq2BandsP7B() ran for this seq (bands valid even on eslERANGE) */
   int doing_search = FALSE;
   /* Brief 26_0430-120: IBV HMM-divergence fallback. Set when cm_TrAlignHB / cm_AlignHB
@@ -758,6 +775,13 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   if(pass_idx == PLI_PASS_STD_ANY && (mode == TRMODE_L || mode == TRMODE_R || mode == TRMODE_T)) { 
     ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() mode is L, R, or T, but pass_idx is PLI_PASS_STD_ANY");
   }
+
+  /* brief 26_0821-014: resolve ckpt_will_run now that every engine-selecting option
+   * boolean above is known (see its declaration for why this matters). */
+  ckpt_will_run = (eff_checkpt && do_optacc && (! do_sample) && do_hbanded &&
+                   (! do_small) && (! do_sub) &&
+                   (do_trunc ? (cm_CheckptTrAlignHB_Qualifies(cm) || cm_CheckptTrOptAccAlignHB_Qualifies(cm))
+                             : (cm_CheckptAlignHB_Qualifies(cm)   || cm_CheckptOptAccAlignHB_Qualifies(cm)))) ? TRUE : FALSE;
 
   if(w_tot != NULL) esl_stopwatch_Start(w_tot);
 
@@ -1346,7 +1370,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    if(status != eslOK) { /* fallback re-derivation (only when cp9fb_Mb <= mxsize, or !do_mxesc kept status=eslERANGE) */
 	      if(do_xtau) {
 	        if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1,
-						cm->maxtau, NULL)) != eslOK) goto ERROR;
+						ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
 	      }
 	      else {
 	        if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq,
@@ -1357,7 +1381,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	}
 	else if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
 	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
-					    cm->maxtau, NULL)) != eslOK) goto ERROR;
+					    ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
 	}
 	else {
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
@@ -1683,7 +1707,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		 * brief 26_0430-269: under do_mxesc the tier selector above already validated
 		 * the chosen engine's fit and set mb_tot, so skip this eslERANGE size-gate
 		 * (for tier b it would spuriously fail on the full-matrix estimate). */
-		if(! do_mxesc) {
+		if(! do_mxesc && ! ckpt_will_run) {
 		  status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
 		  fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
@@ -1808,7 +1832,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       else {
 	/* brief 26_0430-269: skip this eslERANGE size-gate under do_mxesc (tier selector
 	 * already validated the chosen engine's fit and set mb_tot). */
-	if(! do_mxesc) {
+	/* brief 26_0821-014: ... and skip it when the CHECKPOINTED engine will run, for
+	 * the same reason: this gate measures the free-OptAcc cube that engine never
+	 * allocates, so it refused checkpointed runs that fit comfortably. The
+	 * checkpointed engines apply their own mxsize gate internally. */
+	if(! do_mxesc && ! ckpt_will_run) {
 	  if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
 	}

@@ -3843,7 +3843,7 @@ extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
 extern int          cp9_Seq2FBMatrices(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, ESL_DSQ *dsq, int i0, int j0, int doing_search, int pass_idx, CP9_t **ret_cp9, int *ret_do_fwd_scan, int *ret_do_bck_scan);
 extern int          cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, CP9Bands_t *cp9b, int i0, int j0, int doing_search, int pass_idx, int do_fwd_scan, int do_bck_scan, int debug_level);
-extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb);
+extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);

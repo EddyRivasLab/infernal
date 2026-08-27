@@ -5958,7 +5958,8 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     if(!do_hbanded_done && pli->cur_env_merged && (pli->do_msvband || pli->do_vitband)) {
       status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
 				    TRUE, FALSE, FALSE,
-				    (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+				    (! pli->do_not_iterate), FALSE, TRMODE_UNKNOWN, /* brief 26_0821-014: search never uses the ckpt engine */
+				    pli->maxtau, &hbmx_Mb);
     }
     else if(!do_hbanded_done && (pli->do_msvband || pli->do_vitband) && pli->p7gm != NULL && pli->p7bg != NULL) {
       /* --msvband/--vitband path: derive p7 bands for envelope, use banded CP9 F/B */
@@ -6042,14 +6043,16 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	/* Fall back to standard unbanded cp9_IterateSeq2Bands */
 	status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
 				      TRUE, FALSE, FALSE,
-				      (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+				      (! pli->do_not_iterate), FALSE, TRMODE_UNKNOWN, /* brief 26_0821-014: search never uses the ckpt engine */
+				    pli->maxtau, &hbmx_Mb);
       }
     }
     else if(!do_hbanded_done) {
       /* Standard unbanded path (no p7post/vitband/msvband) */
       status = cp9_IterateSeq2Bands(cm, pli->errbuf, dsq, start, stop, pli->cur_pass_idx, mxsize_limit,
 				    TRUE, FALSE, FALSE,
-				    (! pli->do_not_iterate), pli->maxtau, &hbmx_Mb);
+				    (! pli->do_not_iterate), FALSE, TRMODE_UNKNOWN, /* brief 26_0821-014: search never uses the ckpt engine */
+				    pli->maxtau, &hbmx_Mb);
     }
     esl_stopwatch_Stop(w_cp9);
     pli->last_dispatch_cp9bands = w_cp9->elapsed;
