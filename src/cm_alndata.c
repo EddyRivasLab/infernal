@@ -1296,7 +1296,27 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * p7band fallback, so plain non-p7band cmalign is unaffected (its CP9 F/B
 	     * is intentionally not mxsize-gated, matching cm_*AlignSizeNeededHB). */
 	    float cp9fb_Mb = 2.0 * (float) SizeNeededCP9Matrix(sq->L, cm->cp9->M, NULL, NULL);
-	    if(cp9fb_Mb > mxsize) {
+	    /* brief 26_0821-013: under fixed-tau (CM_ALIGN_MXESC_FIXEDTAU, the default
+	     * inside the mxesc path since brief 26_0430-271) eslERANGE from
+	     * cp9_IterateSeq2BandsP7B is not a failure -- it is the DESIGNED signal that
+	     * step 0's bands are valid but wider than --mxsize, and that mxesc engine
+	     * escalation, not band-tightening, is meant to carry the memory.  The
+	     * cp9fb_Mb > mxsize test below predates fixed-tau: it gates that
+	     * keep-the-p7-bands rescue on whether the standard fallback is AFFORDABLE,
+	     * not on whether it is BETTER.  Because cp9fb_Mb depends only on L and M,
+	     * raising --mxsize across it silently flips band derivation from the p7
+	     * bands to a non-ratcheted cp9_Seq2Bands re-derivation, which can be far
+	     * wider (measured: est_std 1720 -> 12608 Mb on a 3.4 Kb-consensus rRNA CM,
+	     * tier b -> tier c, alignment -> refusal at --mxsize 398 that succeeded at
+	     * 397).  Hoist the rescue out of the affordability test so more --mxsize
+	     * never buys a worse deriver.  Scoped to fixed-tau so the ratchet-restored
+	     * (--no-mxesc-fixedtau) path is byte-identical to before. */
+	    if(do_mxesc && p7b_iterate_ran && status == eslERANGE &&
+	       (cm->align_opts & CM_ALIGN_MXESC_FIXEDTAU)) {
+	      errbuf[0] = '\0';
+	      status = eslOK; /* keep the valid p7-banded bands; mxesc escalates instead */
+	    }
+	    else if(cp9fb_Mb > mxsize) {
 	      /* brief 26_0430-269: this is the genome-scale abort the framework replaces --
 	       * the p7-banded matrix didn't fit --mxsize even at maxtau, and the standard
 	       * non-banded CP9 F/B fallback below is itself too big. Pre-269 this ESL_XFAILs.
