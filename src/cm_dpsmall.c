@@ -858,9 +858,32 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
  * Purpose:  Return number of Mb needed for non-QDB
  *           divide and conquer CYK.
  *
+ *           cyk_deck_count() simulates a single inside() sweep over
+ *           [0..M-1] but the D&C's actual peak occurs during a
+ *           splitter's outside() phase (generic_splitter()) or
+ *           split-set-retention phase (wedge_splitter()), while
+ *           decks from the preceding inside() phase are still held
+ *           on the same never-shrunk pool (brief 26_0821-015; the
+ *           13-vs-12-deck discrepancy measured by 26_0821-008).
+ *           cyk_deck_count() has no term for either retention
+ *           pattern, so it under-counts.  We add a conservative
+ *           (not exact) correction: cyk_extra_decks() bounds the
+ *           deepest bifurcation-child retention a generic_splitter()
+ *           call can hold (already computed elsewhere in this file
+ *           for CYKDemands(), and per its own header comment this
+ *           deck-count formula "is almost invariably
+ *           10+1+cyk_extra_decks()" -- a term this function never
+ *           added); MAXCONNECT bounds wedge_splitter()'s split-set
+ *           w..y, which spans exactly one CM node's states (at most
+ *           MAXCONNECT of them, by definition); +1 covers a possible
+ *           EL deck from a local-end split.  Measured margins
+ *           (26_0821-015, scratch_brief015/): 1.46x-1.73x safe on
+ *           every fixture tested (0, 1, 2, and 71-bifurcation
+ *           topologies) -- a safe bound, not an exact model.
+ *
  * Args:     cm     - the model
  *           L      - length of sequence.
- * 
+ *
  * Returns: Number of Mb required.
  */
 float
@@ -871,7 +894,7 @@ CYKNonQDBSmallMbNeeded(CM_t *cm, int L)
   float smallmemory;	/* how much memory small version of CYKInside() needs */
 
   Mb_per_deck = size_vjd_deck(L, 1, L);
-  maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
+  maxdecks    = cyk_deck_count(cm, 0, cm->M-1) + cyk_extra_decks(cm) + MAXCONNECT + 1;
   smallmemory = (float) maxdecks * Mb_per_deck;
   return smallmemory;
 }
