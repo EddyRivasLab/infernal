@@ -39,6 +39,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <float.h>
 
 #include "easel.h"
 #include "esl_buffer.h"
@@ -4022,6 +4023,203 @@ fsprof_report(const char *cmname, const char *tag, int n_rec,
 }
 
 
+/* --------------------------------------------------------------------------
+ * [26_0824-016] Sort-free exact weighted-p90 for extract_frag_score().
+ *
+ * WHY: profiling extract_frag_score() internally (FASTCAL_FRAG_PROFILE, added
+ * with this code) showed that the qsort() used to obtain frag_score_p90 is
+ * 73-86% of the whole function's wall clock at every scale measured -- 0.033s
+ * of 0.045s at clen 1533, 25.4s of 31.3s at n_rec=1.26e8, and the dominant
+ * term at genome scale. It is also entirely serial, which is why parallelizing
+ * only the record enumeration could not help much.
+ *
+ * WHAT p90 IS: the records are (S,P) pairs; p90 is the S of the first record,
+ * in ascending-S order, at which the running sum of P reaches 0.90. That is a
+ * weighted quantile -- it does not need a total order, only the location of one
+ * threshold crossing.
+ *
+ * THE METHOD: bucket the records by S into FSP90_NB equal-width buckets and sum
+ * P per bucket; the crossing bucket is the first whose cumulative mass reaches
+ * 0.90. Then re-bucket over just that bucket's observed [min,max] S range, and
+ * repeat, until the crossing bucket holds a single distinct S value -- which is
+ * then the answer. Each round is one linear scan; no sort, no O(n log n), and
+ * none of the ~2*n_rec*sizeof(SP_PAIR) bytes of scratch qsort needs.
+ *
+ * WHY IT RETURNS EXACTLY WHAT THE qsort PATH RETURNS: both accumulations are
+ * recursive sums of n_rec non-negative terms with total ~1, so each differs
+ * from the exact real-arithmetic sum by at most ~n_rec*u (u = DBL_EPSILON/2).
+ * We accept a crossing bucket ONLY when its cumulative mass clears 0.90 by more
+ * than errb = 8*n_rec*DBL_EPSILON (>= 8x that bound, covering both sides), and
+ * the preceding cumulative mass falls short of 0.90 by the same margin. Under
+ * those two conditions the reference qsort accumulation must cross inside the
+ * same bucket, so it must report the same S. When the margin is NOT met -- i.e.
+ * whenever the crossing could plausibly land on a record whose own mass is
+ * comparable to the rounding error -- this function DECLINES (returns eslFAIL)
+ * and the caller runs the original qsort path unchanged. It never approximates.
+ *
+ * Note on the actual distribution (measured, not assumed): the single
+ * full-length record carries P = 1-pbegin = 0.95 of the mass and sits at the
+ * maximum S (= cum_ic[N]); every local-begin record together carries exactly
+ * pbegin = 0.05. So the crossing is at the top block, cleared by a margin of
+ * ~0.9 against an errb of ~4e-7, and this routine resolves it in 2-3 scans.
+ * --------------------------------------------------------------------------
+ */
+#define FSP90_NB    65536
+#define FSP90_MAXIT 48
+
+/* fs_p90_qsort()
+ * The original (pre-26_0824-016) implementation, factored out unchanged so it
+ * can serve as both the fallback and the cross-check reference. Sorts (S,P)
+ * pairs by S and walks the cumulative mass.
+ */
+static int
+fs_p90_qsort(const double *rec_S, const double *rec_P, int n_rec, double *ret_p90)
+{
+  SP_PAIR *sp = NULL;
+  int      i, status;
+  double   cum_p = 0.0, p90;
+
+  ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
+  for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
+  qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
+
+  p90 = sp[n_rec-1].s;
+  for (i = 0; i < n_rec; i++) {
+    cum_p += sp[i].p;
+    if (cum_p >= 0.90) { p90 = sp[i].s; break; }
+  }
+  free(sp);
+  *ret_p90 = p90;
+  return eslOK;
+
+ ERROR:
+  if (sp) free(sp);
+  return status;
+}
+
+/* fs_p90_bucket()
+ * Sort-free exact weighted p90 (see block comment above). smin/smax are the
+ * min and max of rec_S[0..n_rec-1], which the caller already has from its
+ * moment pass. Returns eslOK with *ret_p90 set when the answer is proven,
+ * eslFAIL when it is not (caller must fall back to fs_p90_qsort()).
+ */
+static int
+fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
+              double smin, double smax, double *ret_p90)
+{
+  double *bm   = NULL;   /* per-bucket mass                */
+  double *bmin = NULL;   /* per-bucket min S observed      */
+  double *bmax = NULL;   /* per-bucket max S observed      */
+  int    *bnz  = NULL;   /* per-bucket "has any record" flag */
+  double  lo, hi, errb;
+  int     it, b, i, status;
+
+  if (n_rec <= 0) return eslFAIL;
+  errb = 8.0 * (double) n_rec * DBL_EPSILON;
+  if (!(errb < 1e-3)) return eslFAIL;          /* n_rec absurdly large; decline */
+  if (!(smax > smin)) { *ret_p90 = smax; return eslOK; }   /* one distinct value */
+
+  ESL_ALLOC(bm,   sizeof(double) * FSP90_NB);
+  ESL_ALLOC(bmin, sizeof(double) * FSP90_NB);
+  ESL_ALLOC(bmax, sizeof(double) * FSP90_NB);
+  ESL_ALLOC(bnz,  sizeof(int)    * FSP90_NB);
+
+  lo = smin; hi = smax;
+
+  for (it = 0; it < FSP90_MAXIT; it++) {
+    double width = hi - lo;
+    double scale, below, cum, cum_before;
+    int    bstar;
+
+    if (!(width > 0.0)) { *ret_p90 = lo; goto SUCCESS; }
+    scale = (double) FSP90_NB / width;
+    if (!(scale > 0.0) || !isfinite(scale)) { status = eslFAIL; goto DECLINE; }
+
+    for (b = 0; b < FSP90_NB; b++) { bm[b] = 0.0; bmin[b] = 0.0; bmax[b] = 0.0; bnz[b] = 0; }
+
+    /* One linear scan: mass below [lo,hi], plus per-bucket mass and S range. */
+    below = 0.0;
+    for (i = 0; i < n_rec; i++) {
+      double sv = rec_S[i];
+      if (sv < lo) { below += rec_P[i]; continue; }
+      if (sv > hi) continue;
+      b = (int) ((sv - lo) * scale);
+      if (b < 0)          b = 0;
+      if (b >= FSP90_NB)  b = FSP90_NB - 1;
+      if (! bnz[b]) { bnz[b] = 1; bmin[b] = sv; bmax[b] = sv; }
+      else { if (sv < bmin[b]) bmin[b] = sv; if (sv > bmax[b]) bmax[b] = sv; }
+      bm[b] += rec_P[i];
+    }
+
+    /* First bucket whose cumulative mass reaches the threshold. */
+    cum = below; cum_before = below; bstar = -1;
+    for (b = 0; b < FSP90_NB; b++) {
+      double prev = cum;
+      cum += bm[b];
+      if (cum >= 0.90) { bstar = b; cum_before = prev; break; }
+    }
+    if (bstar < 0) { *ret_p90 = smax; goto SUCCESS; }   /* never reaches 0.90: qsort returns the max too */
+
+    /* Both margins must clear the worst-case accumulation error of either
+     * implementation, or we cannot prove qsort() would agree. */
+    if (!(cum_before + errb < 0.90)) { status = eslFAIL; goto DECLINE; }
+    if (!(cum - errb >= 0.90))       { status = eslFAIL; goto DECLINE; }
+
+    if (bmin[bstar] == bmax[bstar]) { *ret_p90 = bmin[bstar]; goto SUCCESS; }
+    /* Narrow to exactly the values actually present in the crossing bucket. */
+    if (!(bmin[bstar] > lo) && !(bmax[bstar] < hi)) { status = eslFAIL; goto DECLINE; } /* no progress */
+    lo = bmin[bstar];
+    hi = bmax[bstar];
+  }
+  status = eslFAIL;
+  goto DECLINE;
+
+ SUCCESS:
+  free(bm); free(bmin); free(bmax); free(bnz);
+  return eslOK;
+
+ DECLINE:
+ ERROR:
+  if (bm)   free(bm);
+  if (bmin) free(bmin);
+  if (bmax) free(bmax);
+  if (bnz)  free(bnz);
+  return status;
+}
+
+/* fs_p90()
+ * Dispatch: try the sort-free selector, fall back to the qsort path when it
+ * declines. FASTCAL_FRAG_P90_CHECK=1 runs BOTH and reports any disagreement on
+ * stderr (validation aid; costs a full qsort, so off by default).
+ */
+static int
+fs_p90(const double *rec_S, const double *rec_P, int n_rec,
+       double smin, double smax, double *ret_p90)
+{
+  int    status;
+  double p90b;
+  int    used_bucket;
+
+  /* FASTCAL_FRAG_QSORT=1 forces the pre-26_0824-016 reference path, so one
+   * binary can measure and cross-check both arms on the same host. */
+  if (getenv("FASTCAL_FRAG_QSORT") != NULL) status = eslFAIL;
+  else status = fs_p90_bucket(rec_S, rec_P, n_rec, smin, smax, &p90b);
+  used_bucket = (status == eslOK);
+  if (! used_bucket) {
+    if ((status = fs_p90_qsort(rec_S, rec_P, n_rec, &p90b)) != eslOK) return status;
+  }
+  if (getenv("FASTCAL_FRAG_P90_CHECK") != NULL) {
+    double p90q;
+    if (fs_p90_qsort(rec_S, rec_P, n_rec, &p90q) == eslOK) {
+      fprintf(stderr, "FRAGP90CHECK\tn_rec=%d\tpath=%s\tbucket=%.17g\tqsort=%.17g\t%s\n",
+              n_rec, used_bucket ? "bucket" : "qsort-fallback", p90b, p90q,
+              (p90b == p90q) ? "MATCH" : "*** MISMATCH ***");
+    }
+  }
+  *ret_p90 = p90b;
+  return eslOK;
+}
+
 /* count_valid_ends_in_subtree()
  * For begin node nd_v with subtree [l_v, r_v], count and collect all
  * valid-end nodes j whose subtree [l_j, r_j] is contained within [l_v, r_v].
@@ -4472,10 +4670,15 @@ extract_frag_score(CM_t *cm, double *feats,
   /* Compute aggregate statistics */
   {
     double S_mean = 0.0, S_var = 0.0, L_mean = 0.0, per_pos = 0.0, cov_SL = 0.0;
+    /* [26_0824-016] smin/smax piggyback on this existing pass -- they feed the
+     * sort-free p90 selector below and do not touch any of the sums. */
+    double S_lo = rec_S[0], S_hi = rec_S[0];
     for (i = 0; i < n_rec; i++) {
       S_mean  += rec_P[i] * rec_S[i];
       L_mean  += rec_P[i] * rec_L[i];
       per_pos += rec_P[i] * rec_S[i] / (rec_L[i] > 1.0 ? rec_L[i] : 1.0);
+      if (rec_S[i] < S_lo) S_lo = rec_S[i];
+      if (rec_S[i] > S_hi) S_hi = rec_S[i];
     }
     for (i = 0; i < n_rec; i++) {
       double ds = rec_S[i] - S_mean;
@@ -4489,24 +4692,13 @@ extract_frag_score(CM_t *cm, double *feats,
     feats[FAST_CAL_FEAT_cov_S_L]                 = cov_SL;
     if (fsprof) { double t = fsprof_now(); fsp_mom = t - fsp_m0; fsp_m0 = t; }
 
-    /* P90 of S: sort records by S, find weighted 90th percentile */
+    /* P90 of S: weighted 90th percentile. [26_0824-016] sort-free selector,
+     * with the original qsort path as an automatic fallback. */
     {
-      /* Sort (S, P) pairs by S via qsort(), O(n_rec log n_rec) */
-      SP_PAIR *sp = NULL;
-      ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
-      for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
-      if (fsprof) { double t = fsprof_now(); fsp_spbuild = t - fsp_m0; fsp_m0 = t; }
-      qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
-      if (fsprof) { double t = fsprof_now(); fsp_sort = t - fsp_m0; fsp_m0 = t; }
-
-      double cum_p = 0.0; double p90 = sp[n_rec-1].s;
-      for (i = 0; i < n_rec; i++) {
-        cum_p += sp[i].p;
-        if (cum_p >= 0.90) { p90 = sp[i].s; break; }
-      }
+      double p90 = 0.0;
+      if ((status = fs_p90(rec_S, rec_P, n_rec, S_lo, S_hi, &p90)) != eslOK) goto ERROR;
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
-      free(sp);
-      if (fsprof) { double t = fsprof_now(); fsp_quant = t - fsp_m0; fsp_m0 = t; }
+      if (fsprof) { double t = fsprof_now(); fsp_sort = t - fsp_m0; fsp_m0 = t; }
     }
   }
 
