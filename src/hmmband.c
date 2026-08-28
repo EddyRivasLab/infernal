@@ -465,7 +465,7 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
  *            A different error code upon an error, errbuf is filled.
  */
 int
-cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb)
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
 {
   int     status;
   int     do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
@@ -496,6 +496,25 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     if(doing_search) {
       if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
       else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+    }
+    else if(do_checkpt) {
+      /* brief 26_0821-014: the caller has already established that the CHECKPOINTED
+       * engine is the one that will run for this sequence, so ratchet against ITS
+       * working set, not the full HMM-banded cube the checkpointed engine never
+       * allocates.  Budget = ckptdpmb + emxmb, exactly the quantity the --mxsize
+       * escalation ladder compares against mxsize for its tier (b)
+       * (cm_alndata.c's tier selector); the CP9 F/B term is excluded there for the
+       * same reason it is excluded from hbmx_Mb here.  Measured on a 3.4 Kb-consensus
+       * rRNA CM, the full-cube figure overstates the checkpointed engine's real peak
+       * by ~6x, which made a larger --mxsize buy looser bands -- i.e. made the
+       * ALIGNMENT a function of a MEMORY flag. */
+      float ck_dp = 0., ck_em = 0., ck_cp9 = 0., ck_tot = 0.;
+      if(do_trunc) status = cm_CheckptTrAlignSizeNeededHB(cm, errbuf, j0-i0+1, ckpt_mode, NULL, NULL, &ck_dp, &ck_em, &ck_cp9, &ck_tot);
+      else         status = cm_CheckptAlignSizeNeededHB  (cm, errbuf, j0-i0+1, NULL, NULL, &ck_dp, &ck_em, &ck_cp9, &ck_tot);
+      if(status != eslOK) goto ERROR;
+      cp9mx_Mb = ck_cp9;
+      hbmx_Mb  = ck_dp + ck_em;
+      tot_Mb   = ck_tot;
     }
     else {
       if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
@@ -529,7 +548,14 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   FreeCP9Matrix(pmx);
 
   if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-  if(hbmx_Mb > size_limit) return eslERANGE;
+  if(hbmx_Mb > size_limit) {
+    /* brief 26_0821-014: the checkpointed estimators take no size_limit and so leave
+     * errbuf empty; supply the refusal message the full-cube estimators would have. */
+    if(do_checkpt && errbuf != NULL && errbuf[0] == '\0')
+      ESL_FAIL(eslERANGE, errbuf, "checkpointed %sDP mxes need %.1f Mb > %.1f Mb limit; increase --mxsize.",
+               do_trunc ? "trc " : "", hbmx_Mb, size_limit);
+    return eslERANGE;
+  }
   return eslOK;
 
  ERROR:

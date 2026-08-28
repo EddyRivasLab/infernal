@@ -1998,11 +1998,20 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
   /* ---- Phase 1: step 0 (current tau/thresh1/thresh2). ---- */
   if((status = cp9_FBMatrices2BandsP7BF_chk(cm, errbuf, cp9, dsq, cp9b, kmin, kmax, L, i0, j0,
                                             pass_idx, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
+  /* brief 26_0821-014: branch on do_trunc, as cp9_IterateSeq2BandsP7B() does. This
+   * driver is documented (above) as running a BYTE-IDENTICAL ratchet to that loop,
+   * but sized unconditionally with the TRUNCATED estimator, so a non-truncated run
+   * ratcheted against a matrix with marginal planes it will never fill. hbmx_Mb is
+   * not diagnostic here -- it decides eslOK vs eslERANGE, and so which engine the
+   * caller escalates to. The error was conservative (over-estimate => more
+   * escalation), which is why it was invisible. */
   if(doing_search) {
-    if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status;
+    if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) return status; }
+    else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) return status; }
   }
   else {
-    status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+    if(do_trunc) status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+    else         status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
     if(status != eslOK && status != eslERANGE) return status;
   }
   if(ret_nbump != NULL) *ret_nbump = 0;
@@ -2115,11 +2124,13 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
     }
     if((status = cp9_FinishBandsFromPnPoccF_chk(cm, errbuf, cp9, cp9b, pocc[s], kmin, kmax,
                                                 L, i0, j0, pass_idx, debug_level)) != eslOK) goto DONE;
-    if(doing_search) {
-      if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto DONE;
+    if(doing_search) { /* brief 26_0821-014: branch on do_trunc; see the step-0 site above */
+      if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto DONE; }
+      else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto DONE; }
     }
     else {
-      status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+      if(do_trunc) status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+      else         status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
       if(status != eslOK && status != eslERANGE) goto DONE;
     }
     if(ret_nbump != NULL) *ret_nbump = s + 1; /* grid slot s == ratchet step s+1 */
