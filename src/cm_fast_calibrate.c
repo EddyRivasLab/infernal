@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 #include "easel.h"
 #include "esl_buffer.h"
@@ -3983,6 +3984,44 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
 }
 
 
+
+/* --------------------------------------------------------------------------
+ * [26_0824-016] Intra-function profiling for extract_frag_score().
+ *
+ * Set FASTCAL_FRAG_PROFILE=<path> to append one line per CM giving the
+ * wall-clock split of extract_frag_score() across its internal phases.
+ * Zero cost when unset (one getenv() per call).
+ * --------------------------------------------------------------------------
+ */
+static double
+fsprof_now(void)
+{
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double) ts.tv_sec + 1e-9 * (double) ts.tv_nsec;
+}
+
+static void
+fsprof_report(const char *cmname, const char *tag, int n_rec,
+              double t_setup, double t_scan, double t_emit, double t_realloc,
+              double t_norm, double t_mom, double t_spbuild, double t_sort,
+              double t_quant, double t_total, double p90, double ic_tot)
+{
+  const char *path = getenv("FASTCAL_FRAG_PROFILE");
+  FILE *fp;
+  if (path == NULL) return;
+  fp = fopen(path, "a");
+  if (fp == NULL) return;
+  fprintf(fp, "FRAGPROF\t%s\t%s\tn_rec=%d\tsetup=%.3f\tscan=%.3f\temit=%.3f\trealloc=%.3f\t"
+              "normalize=%.3f\tmoments=%.3f\tspbuild=%.3f\tsort=%.3f\tquantile=%.3f\ttotal=%.3f\t"
+              "p90=%.17g\tic_tot=%.17g\tp90eq=%d\n",
+          cmname ? cmname : "-", tag, n_rec,
+          t_setup, t_scan, t_emit, t_realloc, t_norm, t_mom, t_spbuild, t_sort, t_quant, t_total,
+          p90, ic_tot, (p90 == ic_tot) ? 1 : 0);
+  fclose(fp);
+}
+
+
 /* count_valid_ends_in_subtree()
  * For begin node nd_v with subtree [l_v, r_v], count and collect all
  * valid-end nodes j whose subtree [l_j, r_j] is contained within [l_v, r_v].
@@ -4235,6 +4274,11 @@ extract_frag_score(CM_t *cm, double *feats,
   int     n_rec = 0, rec_alloc;
   int     nd, v, a, ab, i, status;
   double  nan = 0.0 / 0.0;
+  /* [26_0824-016] intra-function profiling accumulators */
+  int     fsprof = (getenv("FASTCAL_FRAG_PROFILE") != NULL);
+  double  fsp_t0 = 0.0, fsp_m0 = 0.0;
+  double  fsp_setup = 0.0, fsp_scan = 0.0, fsp_emit = 0.0, fsp_realloc = 0.0;
+  double  fsp_norm = 0.0, fsp_mom = 0.0, fsp_spbuild = 0.0, fsp_sort = 0.0, fsp_quant = 0.0;
 
   /* NaN defaults */
   feats[FAST_CAL_FEAT_frag_score_mean]         = nan;
@@ -4244,6 +4288,7 @@ extract_frag_score(CM_t *cm, double *feats,
   feats[FAST_CAL_FEAT_cov_S_L]                 = nan;
 
   if (N <= 1) return eslOK;
+  if (fsprof) { fsp_t0 = fsprof_now(); fsp_m0 = fsp_t0; }
 
   ESL_ALLOC(has_end_neighbor, sizeof(int)    * cm->nodes);
   ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
@@ -4331,6 +4376,7 @@ extract_frag_score(CM_t *cm, double *feats,
     begins[n_begin].nd=nd; begins[n_begin].l=sl; begins[n_begin].r=sr;
     n_begin++;
   }
+  if (fsprof) { double t = fsprof_now(); fsp_setup = t - fsp_m0; fsp_m0 = t; }
 
   if (n_begin == 0) goto DONE;
 
@@ -4343,9 +4389,11 @@ extract_frag_score(CM_t *cm, double *feats,
     for (bi = 0; bi < n_begin; bi++) {
       int nd_v=begins[bi].nd, l_v=begins[bi].l, r_v=begins[bi].r;
       int d_v = r_v - l_v + 1;
+      double fsp_s0 = fsprof ? fsprof_now() : 0.0;
       int K_v = count_valid_ends_in_subtree(nd_v, l_v, r_v,
                                             cm, subtree_l, subtree_r,
                                             has_end_neighbor, ends_buf);
+      if (fsprof) fsp_scan += fsprof_now() - fsp_s0;
       double no_end_p = 1.0 - (double)K_v * y;
       if (no_end_p < 0.0) no_end_p = 0.0;
 
@@ -4353,10 +4401,12 @@ extract_frag_score(CM_t *cm, double *feats,
       if (d_v >= 1 && d_v <= N) {
         double S_full = cum_ic[r_v] - cum_ic[l_v - 1];
         if (n_rec >= rec_alloc) {
+          double fsp_r0 = fsprof ? fsprof_now() : 0.0;
           rec_alloc *= 2;
           ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+          if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
         }
         rec_P[n_rec] = x * no_end_p;
         rec_S[n_rec] = S_full;
@@ -4374,10 +4424,12 @@ extract_frag_score(CM_t *cm, double *feats,
         double S_left  = (l_u > l_v) ? (cum_ic[l_u-1] - cum_ic[l_v-1]) : 0.0;
         double S_right = (r_u < r_v) ? (cum_ic[r_v]   - cum_ic[r_u])   : 0.0;
         if (n_rec >= rec_alloc) {
+          double fsp_r0 = fsprof ? fsprof_now() : 0.0;
           rec_alloc *= 2;
           ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+          if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
         }
         rec_P[n_rec] = x * y;
         rec_S[n_rec] = S_left + S_right;
@@ -4390,10 +4442,12 @@ extract_frag_score(CM_t *cm, double *feats,
     {
       double S_all = cum_ic[N];
       if (n_rec >= rec_alloc) {
+        double fsp_r0 = fsprof ? fsprof_now() : 0.0;
         rec_alloc *= 2;
         ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
         ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
         ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+        if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
       }
       rec_P[n_rec] = 1.0 - pbegin;
       rec_S[n_rec] = S_all;
@@ -4402,6 +4456,7 @@ extract_frag_score(CM_t *cm, double *feats,
     }
   }
 #undef RANGE_IC
+  if (fsprof) { double t = fsprof_now(); fsp_emit = (t - fsp_m0) - fsp_scan - fsp_realloc; fsp_m0 = t; }
 
   if (n_rec == 0) goto DONE;
 
@@ -4412,6 +4467,7 @@ extract_frag_score(CM_t *cm, double *feats,
     if (mass <= 0.0) goto DONE;
     for (i = 0; i < n_rec; i++) rec_P[i] /= mass;
   }
+  if (fsprof) { double t = fsprof_now(); fsp_norm = t - fsp_m0; fsp_m0 = t; }
 
   /* Compute aggregate statistics */
   {
@@ -4431,6 +4487,7 @@ extract_frag_score(CM_t *cm, double *feats,
     feats[FAST_CAL_FEAT_frag_score_var]          = S_var;
     feats[FAST_CAL_FEAT_frag_score_per_pos_mean] = per_pos;
     feats[FAST_CAL_FEAT_cov_S_L]                 = cov_SL;
+    if (fsprof) { double t = fsprof_now(); fsp_mom = t - fsp_m0; fsp_m0 = t; }
 
     /* P90 of S: sort records by S, find weighted 90th percentile */
     {
@@ -4438,7 +4495,9 @@ extract_frag_score(CM_t *cm, double *feats,
       SP_PAIR *sp = NULL;
       ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
       for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
+      if (fsprof) { double t = fsprof_now(); fsp_spbuild = t - fsp_m0; fsp_m0 = t; }
       qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
+      if (fsprof) { double t = fsprof_now(); fsp_sort = t - fsp_m0; fsp_m0 = t; }
 
       double cum_p = 0.0; double p90 = sp[n_rec-1].s;
       for (i = 0; i < n_rec; i++) {
@@ -4447,10 +4506,15 @@ extract_frag_score(CM_t *cm, double *feats,
       }
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
       free(sp);
+      if (fsprof) { double t = fsprof_now(); fsp_quant = t - fsp_m0; fsp_m0 = t; }
     }
   }
 
  DONE:
+  if (fsprof)
+    fsprof_report(cm->name, "serial", n_rec, fsp_setup, fsp_scan, fsp_emit, fsp_realloc,
+                  fsp_norm, fsp_mom, fsp_spbuild, fsp_sort, fsp_quant, fsprof_now() - fsp_t0,
+                  feats[FAST_CAL_FEAT_frag_score_p90], cum_ic ? cum_ic[N] : 0.0);
   if (has_end_neighbor) free(has_end_neighbor);
   if (ic_col)           free(ic_col);
   if (cum_ic)           free(cum_ic);
