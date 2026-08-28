@@ -4117,6 +4117,7 @@ fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
   if (n_rec <= 0) return eslFAIL;
   errb = 8.0 * (double) n_rec * DBL_EPSILON;
   if (!(errb < 1e-3)) return eslFAIL;          /* n_rec absurdly large; decline */
+  if (! isfinite(smin) || ! isfinite(smax)) return eslFAIL;  /* NaN/Inf in S; decline */
   if (!(smax > smin)) { *ret_p90 = smax; return eslOK; }   /* one distinct value */
 
   ESL_ALLOC(bm,   sizeof(double) * FSP90_NB);
@@ -4158,7 +4159,13 @@ fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
       cum += bm[b];
       if (cum >= 0.90) { bstar = b; cum_before = prev; break; }
     }
-    if (bstar < 0) { *ret_p90 = smax; goto SUCCESS; }   /* never reaches 0.90: qsort returns the max too */
+    if (bstar < 0) {
+      /* Never reaches 0.90 here, so qsort would fall through to its default
+       * (the largest S). Only claim that if the shortfall exceeds errb --
+       * otherwise qsort's own accumulation might have crossed. */
+      if (cum + errb < 0.90) { *ret_p90 = smax; goto SUCCESS; }
+      status = eslFAIL; goto DECLINE;
+    }
 
     /* Both margins must clear the worst-case accumulation error of either
      * implementation, or we cannot prove qsort() would agree. */
