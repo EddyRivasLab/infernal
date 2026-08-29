@@ -2110,6 +2110,12 @@ typedef struct cm_s {
 #define CM_CONFIG_TRSCANMX      (1<<7)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
 #define CM_CONFIG_SUB           (1<<8)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
 #define CM_CONFIG_NONBANDEDMX   (1<<9)  /* set up for non-banded alignment (cm->*nb*mx will be created) */
+#define CM_CONFIG_NOQDB         (1<<10) /* skip the query-dependent band calculation entirely; caller
+                                        * guarantees nothing downstream reads cm->qdbinfo's bands or
+                                        * cm->W's value, and has set cm->W itself. qdbinfo->setby is
+                                        * left at CM_QDBINFO_SETBY_INIT so every "are these bands
+                                        * valid?" test downstream correctly answers no. Overrides
+                                        * CM_CONFIG_QDB / CM_CONFIG_W_BETA if either is also set. */
 
 /* alignment options, cm->align_opts */
 #define CM_ALIGN_HBANDED       (1<<0)  /* use CP9 HMM bands                        */

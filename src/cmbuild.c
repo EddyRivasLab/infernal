@@ -2522,8 +2522,17 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
 
-  /* we must calculate QDBs so we can write them to the CM file */
-  cm->config_opts |= CM_CONFIG_QDB;   
+  /* We must calculate QDBs for the main model (iter==1) so we can write
+   * them to the CM file. The auxiliary model built in
+   * build_and_calibrate_p7_filter() (iter==2) is never written to a
+   * file and never has its bands or its W value read (all that is
+   * taken from it is acm->mlp7's mat[]/ins[] and acm->eff_nseq), so
+   * calculating its QDBs is pure waste -- and at genome scale it is
+   * roughly a third of the entire cmbuild run. Skip it there; the
+   * caller has already set acm->W. (briefs 26_0824-005/26_0824-019)
+   */
+  if(iter == 1) cm->config_opts |= CM_CONFIG_QDB;   
+  else          cm->config_opts |= CM_CONFIG_NOQDB;
 
   /* if --refine, we have to set additional flags and configuration options
    * before calling cm_Configure().
@@ -2779,12 +2788,18 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
       acm->eff_nseq = neff;
       cm_Rescale(acm, acm->eff_nseq / (float) msa->nseq);
       if((status = parameterize   (go, cfg, errbuf, FALSE, acm, cfg->pri, msa->nseq)) != eslOK) return status;
-      /* We have to configure the model to get cm->W, which gets 
-       * copied to cm->mlp7->max_length. Alternatively we could 
-       * use p7_Builder_MaxLength() but anecdotally that gives 
-       * lengths >> W (more than 2*W commonly).
-       * configure_model() will build the mlp7 HMM.
+      /* configure_model() builds the mlp7 HMM, which is the only reason
+       * we configure acm at all -- the loop below copies acm->mlp7's
+       * mat[]/ins[] onto fhmm and nothing else about acm survives.
+       *
+       * cm_cp9_to_p7() requires a nonzero cm->W (it stores it as
+       * mlp7->max_length, a field that is never read off acm), so
+       * borrow the main model's W and let configure_model() skip the
+       * band calculation for acm entirely. acm->mlp7's emissions and
+       * transitions come from acm->cp9, which has no dependence on W
+       * or on the bands. (briefs 26_0824-005/26_0824-019)
        */
+      acm->W = cm->W;
       if((status = configure_model(go, cfg, errbuf, acm, 2)) != eslOK) return status;
 
       /* copy the ML p7 emission probs from the CM we just built */

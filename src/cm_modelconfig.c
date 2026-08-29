@@ -188,10 +188,21 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
     cm->W       = W_from_cmdline;
     cm->W_setby = CM_W_SETBY_CMDLINE;
   }
-  /* If nec, set up the query dependent bands (it's important to do this before creating the ml p7 HMM (which needs to know cm->W)) */
-  if((cm->config_opts & CM_CONFIG_QDB)    || 
-     (cm->config_opts & CM_CONFIG_W_BETA) || 
-     (cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT)) { 
+  /* If nec, set up the query dependent bands (it's important to do this before creating the ml p7 HMM (which needs to know cm->W)).
+   *
+   * CM_CONFIG_NOQDB suppresses this block entirely: the caller is
+   * asserting that this CM is a scratch model whose bands and W value
+   * are never read, and that it has already set cm->W to a nonzero
+   * value itself. cm->qdbinfo is left untouched (setby stays
+   * CM_QDBINFO_SETBY_INIT, dmin/dmax at their CreateCMQDBInfo()
+   * placeholders), so cm_scan_mx_Create() and CheckCMQDBInfo() both
+   * still correctly report the bands as invalid rather than silently
+   * consuming placeholder values.
+   */
+  if((! (cm->config_opts & CM_CONFIG_NOQDB)) &&
+     ((cm->config_opts & CM_CONFIG_QDB)    || 
+      (cm->config_opts & CM_CONFIG_W_BETA) || 
+      (cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT))) { 
     if(W_from_cmdline != -1) { 
       if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, 
 						ESL_MIN(cm->qdbinfo->beta1, cm->qdbinfo->beta2), NULL, /* don't redefine W, we just set it above as W_from_cmdline */
