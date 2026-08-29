@@ -38,6 +38,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
+#include <float.h>
 
 #include "easel.h"
 #include "esl_buffer.h"
@@ -3983,6 +3985,248 @@ extract_bulk_ic_and_spatial(CM_t *cm, double *feats, const int *dfs_order)
 }
 
 
+
+/* --------------------------------------------------------------------------
+ * [26_0824-016] Intra-function profiling for extract_frag_score().
+ *
+ * Set FASTCAL_FRAG_PROFILE=<path> to append one line per CM giving the
+ * wall-clock split of extract_frag_score() across its internal phases.
+ * Zero cost when unset (one getenv() per call).
+ * --------------------------------------------------------------------------
+ */
+static double
+fsprof_now(void)
+{
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double) ts.tv_sec + 1e-9 * (double) ts.tv_nsec;
+}
+
+static void
+fsprof_report(const char *cmname, const char *tag, int n_rec,
+              double t_setup, double t_scan, double t_emit, double t_realloc,
+              double t_norm, double t_mom, double t_spbuild, double t_sort,
+              double t_quant, double t_total, double p90, double ic_tot)
+{
+  const char *path = getenv("FASTCAL_FRAG_PROFILE");
+  FILE *fp;
+  if (path == NULL) return;
+  fp = fopen(path, "a");
+  if (fp == NULL) return;
+  fprintf(fp, "FRAGPROF\t%s\t%s\tn_rec=%d\tsetup=%.3f\tscan=%.3f\temit=%.3f\trealloc=%.3f\t"
+              "normalize=%.3f\tmoments=%.3f\tspbuild=%.3f\tsort=%.3f\tquantile=%.3f\ttotal=%.3f\t"
+              "p90=%.17g\tic_tot=%.17g\tp90eq=%d\n",
+          cmname ? cmname : "-", tag, n_rec,
+          t_setup, t_scan, t_emit, t_realloc, t_norm, t_mom, t_spbuild, t_sort, t_quant, t_total,
+          p90, ic_tot, (p90 == ic_tot) ? 1 : 0);
+  fclose(fp);
+}
+
+
+/* --------------------------------------------------------------------------
+ * [26_0824-016] Sort-free exact weighted-p90 for extract_frag_score().
+ *
+ * WHY: profiling extract_frag_score() internally (FASTCAL_FRAG_PROFILE, added
+ * with this code) showed that the qsort() used to obtain frag_score_p90 is
+ * 73-86% of the whole function's wall clock at every scale measured -- 0.033s
+ * of 0.045s at clen 1533, 25.4s of 31.3s at n_rec=1.26e8, and the dominant
+ * term at genome scale. It is also entirely serial, which is why parallelizing
+ * only the record enumeration could not help much.
+ *
+ * WHAT p90 IS: the records are (S,P) pairs; p90 is the S of the first record,
+ * in ascending-S order, at which the running sum of P reaches 0.90. That is a
+ * weighted quantile -- it does not need a total order, only the location of one
+ * threshold crossing.
+ *
+ * THE METHOD: bucket the records by S into FSP90_NB equal-width buckets and sum
+ * P per bucket; the crossing bucket is the first whose cumulative mass reaches
+ * 0.90. Then re-bucket over just that bucket's observed [min,max] S range, and
+ * repeat, until the crossing bucket holds a single distinct S value -- which is
+ * then the answer. Each round is one linear scan; no sort, no O(n log n), and
+ * none of the ~2*n_rec*sizeof(SP_PAIR) bytes of scratch qsort needs.
+ *
+ * WHY IT RETURNS EXACTLY WHAT THE qsort PATH RETURNS: both accumulations are
+ * recursive sums of n_rec non-negative terms with total ~1, so each differs
+ * from the exact real-arithmetic sum by at most ~n_rec*u (u = DBL_EPSILON/2).
+ * We accept a crossing bucket ONLY when its cumulative mass clears 0.90 by more
+ * than errb = 8*n_rec*DBL_EPSILON (>= 8x that bound, covering both sides), and
+ * the preceding cumulative mass falls short of 0.90 by the same margin. Under
+ * those two conditions the reference qsort accumulation must cross inside the
+ * same bucket, so it must report the same S. When the margin is NOT met -- i.e.
+ * whenever the crossing could plausibly land on a record whose own mass is
+ * comparable to the rounding error -- this function DECLINES (returns eslFAIL)
+ * and the caller runs the original qsort path unchanged. It never approximates.
+ *
+ * Note on the actual distribution (measured, not assumed): the single
+ * full-length record carries P = 1-pbegin = 0.95 of the mass and sits at the
+ * maximum S (= cum_ic[N]); every local-begin record together carries exactly
+ * pbegin = 0.05. So the crossing is at the top block, cleared by a margin of
+ * ~0.9 against an errb of ~4e-7, and this routine resolves it in 2-3 scans.
+ * --------------------------------------------------------------------------
+ */
+#define FSP90_NB    65536
+#define FSP90_MAXIT 48
+
+/* fs_p90_qsort()
+ * The original (pre-26_0824-016) implementation, factored out unchanged so it
+ * can serve as both the fallback and the cross-check reference. Sorts (S,P)
+ * pairs by S and walks the cumulative mass.
+ */
+static int
+fs_p90_qsort(const double *rec_S, const double *rec_P, int n_rec, double *ret_p90)
+{
+  SP_PAIR *sp = NULL;
+  int      i, status;
+  double   cum_p = 0.0, p90;
+
+  ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
+  for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
+  qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
+
+  p90 = sp[n_rec-1].s;
+  for (i = 0; i < n_rec; i++) {
+    cum_p += sp[i].p;
+    if (cum_p >= 0.90) { p90 = sp[i].s; break; }
+  }
+  free(sp);
+  *ret_p90 = p90;
+  return eslOK;
+
+ ERROR:
+  if (sp) free(sp);
+  return status;
+}
+
+/* fs_p90_bucket()
+ * Sort-free exact weighted p90 (see block comment above). smin/smax are the
+ * min and max of rec_S[0..n_rec-1], which the caller already has from its
+ * moment pass. Returns eslOK with *ret_p90 set when the answer is proven,
+ * eslFAIL when it is not (caller must fall back to fs_p90_qsort()).
+ */
+static int
+fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
+              double smin, double smax, double *ret_p90)
+{
+  double *bm   = NULL;   /* per-bucket mass                */
+  double *bmin = NULL;   /* per-bucket min S observed      */
+  double *bmax = NULL;   /* per-bucket max S observed      */
+  int    *bnz  = NULL;   /* per-bucket "has any record" flag */
+  double  lo, hi, errb;
+  int     it, b, i, status;
+
+  if (n_rec <= 0) return eslFAIL;
+  errb = 8.0 * (double) n_rec * DBL_EPSILON;
+  if (!(errb < 1e-3)) return eslFAIL;          /* n_rec absurdly large; decline */
+  if (! isfinite(smin) || ! isfinite(smax)) return eslFAIL;  /* NaN/Inf in S; decline */
+  if (!(smax > smin)) { *ret_p90 = smax; return eslOK; }   /* one distinct value */
+
+  ESL_ALLOC(bm,   sizeof(double) * FSP90_NB);
+  ESL_ALLOC(bmin, sizeof(double) * FSP90_NB);
+  ESL_ALLOC(bmax, sizeof(double) * FSP90_NB);
+  ESL_ALLOC(bnz,  sizeof(int)    * FSP90_NB);
+
+  lo = smin; hi = smax;
+
+  for (it = 0; it < FSP90_MAXIT; it++) {
+    double width = hi - lo;
+    double scale, below, cum, cum_before;
+    int    bstar;
+
+    if (!(width > 0.0)) { *ret_p90 = lo; goto SUCCESS; }
+    scale = (double) FSP90_NB / width;
+    if (!(scale > 0.0) || !isfinite(scale)) { status = eslFAIL; goto DECLINE; }
+
+    for (b = 0; b < FSP90_NB; b++) { bm[b] = 0.0; bmin[b] = 0.0; bmax[b] = 0.0; bnz[b] = 0; }
+
+    /* One linear scan: mass below [lo,hi], plus per-bucket mass and S range. */
+    below = 0.0;
+    for (i = 0; i < n_rec; i++) {
+      double sv = rec_S[i];
+      if (sv < lo) { below += rec_P[i]; continue; }
+      if (sv > hi) continue;
+      b = (int) ((sv - lo) * scale);
+      if (b < 0)          b = 0;
+      if (b >= FSP90_NB)  b = FSP90_NB - 1;
+      if (! bnz[b]) { bnz[b] = 1; bmin[b] = sv; bmax[b] = sv; }
+      else { if (sv < bmin[b]) bmin[b] = sv; if (sv > bmax[b]) bmax[b] = sv; }
+      bm[b] += rec_P[i];
+    }
+
+    /* First bucket whose cumulative mass reaches the threshold. */
+    cum = below; cum_before = below; bstar = -1;
+    for (b = 0; b < FSP90_NB; b++) {
+      double prev = cum;
+      cum += bm[b];
+      if (cum >= 0.90) { bstar = b; cum_before = prev; break; }
+    }
+    if (bstar < 0) {
+      /* Never reaches 0.90 here, so qsort would fall through to its default
+       * (the largest S). Only claim that if the shortfall exceeds errb --
+       * otherwise qsort's own accumulation might have crossed. */
+      if (cum + errb < 0.90) { *ret_p90 = smax; goto SUCCESS; }
+      status = eslFAIL; goto DECLINE;
+    }
+
+    /* Both margins must clear the worst-case accumulation error of either
+     * implementation, or we cannot prove qsort() would agree. */
+    if (!(cum_before + errb < 0.90)) { status = eslFAIL; goto DECLINE; }
+    if (!(cum - errb >= 0.90))       { status = eslFAIL; goto DECLINE; }
+
+    if (bmin[bstar] == bmax[bstar]) { *ret_p90 = bmin[bstar]; goto SUCCESS; }
+    /* Narrow to exactly the values actually present in the crossing bucket. */
+    if (!(bmin[bstar] > lo) && !(bmax[bstar] < hi)) { status = eslFAIL; goto DECLINE; } /* no progress */
+    lo = bmin[bstar];
+    hi = bmax[bstar];
+  }
+  status = eslFAIL;
+  goto DECLINE;
+
+ SUCCESS:
+  free(bm); free(bmin); free(bmax); free(bnz);
+  return eslOK;
+
+ DECLINE:
+ ERROR:
+  if (bm)   free(bm);
+  if (bmin) free(bmin);
+  if (bmax) free(bmax);
+  if (bnz)  free(bnz);
+  return status;
+}
+
+/* fs_p90()
+ * Dispatch: try the sort-free selector, fall back to the qsort path when it
+ * declines. FASTCAL_FRAG_P90_CHECK=1 runs BOTH and reports any disagreement on
+ * stderr (validation aid; costs a full qsort, so off by default).
+ */
+static int
+fs_p90(const double *rec_S, const double *rec_P, int n_rec,
+       double smin, double smax, double *ret_p90)
+{
+  int    status;
+  double p90b;
+  int    used_bucket;
+
+  /* FASTCAL_FRAG_QSORT=1 forces the pre-26_0824-016 reference path, so one
+   * binary can measure and cross-check both arms on the same host. */
+  if (getenv("FASTCAL_FRAG_QSORT") != NULL) status = eslFAIL;
+  else status = fs_p90_bucket(rec_S, rec_P, n_rec, smin, smax, &p90b);
+  used_bucket = (status == eslOK);
+  if (! used_bucket) {
+    if ((status = fs_p90_qsort(rec_S, rec_P, n_rec, &p90b)) != eslOK) return status;
+  }
+  if (getenv("FASTCAL_FRAG_P90_CHECK") != NULL) {
+    double p90q;
+    if (fs_p90_qsort(rec_S, rec_P, n_rec, &p90q) == eslOK) {
+      fprintf(stderr, "FRAGP90CHECK\tn_rec=%d\tpath=%s\tbucket=%.17g\tqsort=%.17g\t%s\n",
+              n_rec, used_bucket ? "bucket" : "qsort-fallback", p90b, p90q,
+              (p90b == p90q) ? "MATCH" : "*** MISMATCH ***");
+    }
+  }
+  *ret_p90 = p90b;
+  return eslOK;
+}
+
 /* count_valid_ends_in_subtree()
  * For begin node nd_v with subtree [l_v, r_v], count and collect all
  * valid-end nodes j whose subtree [l_j, r_j] is contained within [l_v, r_v].
@@ -4235,6 +4479,11 @@ extract_frag_score(CM_t *cm, double *feats,
   int     n_rec = 0, rec_alloc;
   int     nd, v, a, ab, i, status;
   double  nan = 0.0 / 0.0;
+  /* [26_0824-016] intra-function profiling accumulators */
+  int     fsprof = (getenv("FASTCAL_FRAG_PROFILE") != NULL);
+  double  fsp_t0 = 0.0, fsp_m0 = 0.0;
+  double  fsp_setup = 0.0, fsp_scan = 0.0, fsp_emit = 0.0, fsp_realloc = 0.0;
+  double  fsp_norm = 0.0, fsp_mom = 0.0, fsp_spbuild = 0.0, fsp_sort = 0.0, fsp_quant = 0.0;
 
   /* NaN defaults */
   feats[FAST_CAL_FEAT_frag_score_mean]         = nan;
@@ -4244,6 +4493,7 @@ extract_frag_score(CM_t *cm, double *feats,
   feats[FAST_CAL_FEAT_cov_S_L]                 = nan;
 
   if (N <= 1) return eslOK;
+  if (fsprof) { fsp_t0 = fsprof_now(); fsp_m0 = fsp_t0; }
 
   ESL_ALLOC(has_end_neighbor, sizeof(int)    * cm->nodes);
   ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
@@ -4331,6 +4581,7 @@ extract_frag_score(CM_t *cm, double *feats,
     begins[n_begin].nd=nd; begins[n_begin].l=sl; begins[n_begin].r=sr;
     n_begin++;
   }
+  if (fsprof) { double t = fsprof_now(); fsp_setup = t - fsp_m0; fsp_m0 = t; }
 
   if (n_begin == 0) goto DONE;
 
@@ -4343,9 +4594,11 @@ extract_frag_score(CM_t *cm, double *feats,
     for (bi = 0; bi < n_begin; bi++) {
       int nd_v=begins[bi].nd, l_v=begins[bi].l, r_v=begins[bi].r;
       int d_v = r_v - l_v + 1;
+      double fsp_s0 = fsprof ? fsprof_now() : 0.0;
       int K_v = count_valid_ends_in_subtree(nd_v, l_v, r_v,
                                             cm, subtree_l, subtree_r,
                                             has_end_neighbor, ends_buf);
+      if (fsprof) fsp_scan += fsprof_now() - fsp_s0;
       double no_end_p = 1.0 - (double)K_v * y;
       if (no_end_p < 0.0) no_end_p = 0.0;
 
@@ -4353,10 +4606,12 @@ extract_frag_score(CM_t *cm, double *feats,
       if (d_v >= 1 && d_v <= N) {
         double S_full = cum_ic[r_v] - cum_ic[l_v - 1];
         if (n_rec >= rec_alloc) {
+          double fsp_r0 = fsprof ? fsprof_now() : 0.0;
           rec_alloc *= 2;
           ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+          if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
         }
         rec_P[n_rec] = x * no_end_p;
         rec_S[n_rec] = S_full;
@@ -4374,10 +4629,12 @@ extract_frag_score(CM_t *cm, double *feats,
         double S_left  = (l_u > l_v) ? (cum_ic[l_u-1] - cum_ic[l_v-1]) : 0.0;
         double S_right = (r_u < r_v) ? (cum_ic[r_v]   - cum_ic[r_u])   : 0.0;
         if (n_rec >= rec_alloc) {
+          double fsp_r0 = fsprof ? fsprof_now() : 0.0;
           rec_alloc *= 2;
           ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+          if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
         }
         rec_P[n_rec] = x * y;
         rec_S[n_rec] = S_left + S_right;
@@ -4390,10 +4647,12 @@ extract_frag_score(CM_t *cm, double *feats,
     {
       double S_all = cum_ic[N];
       if (n_rec >= rec_alloc) {
+        double fsp_r0 = fsprof ? fsprof_now() : 0.0;
         rec_alloc *= 2;
         ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
         ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
         ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
+        if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
       }
       rec_P[n_rec] = 1.0 - pbegin;
       rec_S[n_rec] = S_all;
@@ -4402,6 +4661,7 @@ extract_frag_score(CM_t *cm, double *feats,
     }
   }
 #undef RANGE_IC
+  if (fsprof) { double t = fsprof_now(); fsp_emit = (t - fsp_m0) - fsp_scan - fsp_realloc; fsp_m0 = t; }
 
   if (n_rec == 0) goto DONE;
 
@@ -4412,14 +4672,20 @@ extract_frag_score(CM_t *cm, double *feats,
     if (mass <= 0.0) goto DONE;
     for (i = 0; i < n_rec; i++) rec_P[i] /= mass;
   }
+  if (fsprof) { double t = fsprof_now(); fsp_norm = t - fsp_m0; fsp_m0 = t; }
 
   /* Compute aggregate statistics */
   {
     double S_mean = 0.0, S_var = 0.0, L_mean = 0.0, per_pos = 0.0, cov_SL = 0.0;
+    /* [26_0824-016] smin/smax piggyback on this existing pass -- they feed the
+     * sort-free p90 selector below and do not touch any of the sums. */
+    double S_lo = rec_S[0], S_hi = rec_S[0];
     for (i = 0; i < n_rec; i++) {
       S_mean  += rec_P[i] * rec_S[i];
       L_mean  += rec_P[i] * rec_L[i];
       per_pos += rec_P[i] * rec_S[i] / (rec_L[i] > 1.0 ? rec_L[i] : 1.0);
+      if (rec_S[i] < S_lo) S_lo = rec_S[i];
+      if (rec_S[i] > S_hi) S_hi = rec_S[i];
     }
     for (i = 0; i < n_rec; i++) {
       double ds = rec_S[i] - S_mean;
@@ -4431,26 +4697,23 @@ extract_frag_score(CM_t *cm, double *feats,
     feats[FAST_CAL_FEAT_frag_score_var]          = S_var;
     feats[FAST_CAL_FEAT_frag_score_per_pos_mean] = per_pos;
     feats[FAST_CAL_FEAT_cov_S_L]                 = cov_SL;
+    if (fsprof) { double t = fsprof_now(); fsp_mom = t - fsp_m0; fsp_m0 = t; }
 
-    /* P90 of S: sort records by S, find weighted 90th percentile */
+    /* P90 of S: weighted 90th percentile. [26_0824-016] sort-free selector,
+     * with the original qsort path as an automatic fallback. */
     {
-      /* Sort (S, P) pairs by S via qsort(), O(n_rec log n_rec) */
-      SP_PAIR *sp = NULL;
-      ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
-      for (i = 0; i < n_rec; i++) { sp[i].s = rec_S[i]; sp[i].p = rec_P[i]; }
-      qsort(sp, n_rec, sizeof(SP_PAIR), cmp_sp_pair);
-
-      double cum_p = 0.0; double p90 = sp[n_rec-1].s;
-      for (i = 0; i < n_rec; i++) {
-        cum_p += sp[i].p;
-        if (cum_p >= 0.90) { p90 = sp[i].s; break; }
-      }
+      double p90 = 0.0;
+      if ((status = fs_p90(rec_S, rec_P, n_rec, S_lo, S_hi, &p90)) != eslOK) goto ERROR;
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
-      free(sp);
+      if (fsprof) { double t = fsprof_now(); fsp_sort = t - fsp_m0; fsp_m0 = t; }
     }
   }
 
  DONE:
+  if (fsprof)
+    fsprof_report(cm->name, "serial", n_rec, fsp_setup, fsp_scan, fsp_emit, fsp_realloc,
+                  fsp_norm, fsp_mom, fsp_spbuild, fsp_sort, fsp_quant, fsprof_now() - fsp_t0,
+                  feats[FAST_CAL_FEAT_frag_score_p90], cum_ic ? cum_ic[N] : 0.0);
   if (has_end_neighbor) free(has_end_neighbor);
   if (ic_col)           free(ic_col);
   if (cum_ic)           free(cum_ic);
