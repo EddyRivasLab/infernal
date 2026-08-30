@@ -1196,7 +1196,11 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
                         double *pocc_arr)
 {
   int status;
-  double thresh = log((1. - p_thresh) / 2.);
+  /* BASE 2 (26_0821-026): compared against mass_* values accumulated by
+   * cp9_chk_dlogsum() from Scorify()d BIT scores. The int arm builds the same
+   * threshold as Prob2Score(((1.-p_thresh)/2.), 1.) = INTSCALE*sreLOG2(p),
+   * i.e. base 2 (hmmband.c:673, and identically in 1.1.5 at :579/:906). */
+  double thresh = log2((1. - p_thresh) / 2.);
   int *nset_m=NULL,*nset_i=NULL,*nset_d=NULL;
   int *xset_m=NULL,*xset_i=NULL,*xset_d=NULL;
   double *mass_m=NULL,*mass_i=NULL,*mass_d=NULL;
@@ -1449,7 +1453,7 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
                               double **pocc_out)
 {
   int status;
-  double *thresh = NULL;                       /* thresh[t] = log((1-p_thresh[t])/2) */
+  double *thresh = NULL;                       /* thresh[t] = log2((1-p_thresh[t])/2) */
   int    **nset_m=NULL,**nset_i=NULL,**nset_d=NULL;   /* [t][k] */
   int    **xset_m=NULL,**xset_i=NULL,**xset_d=NULL;
   double **mass_m=NULL,**mass_i=NULL,**mass_d=NULL;
@@ -1463,7 +1467,8 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
   hmm_is_localized = ((hmm->flags & CPLAN9_LOCAL_BEGIN) || (hmm->flags & CPLAN9_LOCAL_END) || (hmm->flags & CPLAN9_EL)) ? TRUE : FALSE;
 
   ESL_ALLOC(thresh,   sizeof(double)*NS);
-  for(t = 0; t < NS; t++) thresh[t] = log((1. - p_thresh[t]) / 2.);
+  /* BASE 2 -- see the note in cp9_FB2HMMBandsP7BF_chk (26_0821-026). */
+  for(t = 0; t < NS; t++) thresh[t] = log2((1. - p_thresh[t]) / 2.);
 
   /* Per-step accumulators (arrays of NS pointers, each (M+1) long). */
   ESL_ALLOC(nset_m, sizeof(int*)*NS); ESL_ALLOC(nset_i, sizeof(int*)*NS); ESL_ALLOC(nset_d, sizeof(int*)*NS);
