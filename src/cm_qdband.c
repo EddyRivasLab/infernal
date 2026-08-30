@@ -48,13 +48,54 @@ CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double
   int status;
   int Z;
 
-  if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2"); 
+  if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2");
 
-  Z = cm->clen * 4;
-  while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) { 
-    if(status == eslEMEM)     ESL_FAIL(status, errbuf, "Calculating QDBs, out of memory");    
-    if(status != eslERANGE)   ESL_FAIL(status, errbuf, "Calculating QDBs, unexpected error");    
-    Z *= 2;
+  /* Starting guess for Z, the maximum subsequence length the band
+   * calculation considers, and (below) the factor by which a failed
+   * attempt grows it. If Z is too small the truncation-error check fails,
+   * BandCalculationEngine() returns eslERANGE, the loop below grows Z and
+   * retries, and the resulting bands are identical either way. So both
+   * constants are a cost/benefit choice, not a correctness one.
+   *
+   * They also have to be chosen TOGETHER. The quantity that decides
+   * whether a model can ever end up slower than it was under the old
+   * 4*clen/doubling policy is the product start*growth -- that is where a
+   * single retry lands. The old 4*clen was pure overshoot: measured on a
+   * 12-model panel (clen 399-28835, 0-71 bifurcation states, 1-2000
+   * sequences), the smallest Z that succeeds on the first try is only
+   * 0.99x-2.04x clen, so 4x overshot by 2.0x-4.0x on every model.
+   *
+   * Sweeping (start, growth) jointly over that panel and timing the whole
+   * call INCLUDING retries: 1.3x with 1.6x growth costs 0.32 of the old
+   * policy on average (3.2x faster), with no model worse than 0.71, and
+   * only 3 of 12 models retrying at all. Keeping start*growth near 2.1 --
+   * just above the largest first-try Z the panel needs -- is what bounds
+   * the worst case, because it means at most ONE retry is ever required
+   * and it lands tightly.
+   *
+   * Two nearby choices are deliberately avoided:
+   *   - start 2x with doubling: a retry lands on exactly 4x, so a model
+   *     needing more than 2x pays 2x + 4x and is SLOWER than just starting
+   *     at 4x. On the panel that is the worst cell of every combination
+   *     tested.
+   *   - a smaller growth such as 1.25x: a failed attempt costs 84-99.9% of
+   *     a successful one at the same Z (measured), so extra rungs are
+   *     nearly full-price and small steps lose more than the tighter
+   *     landing gains.
+   *
+   * (brief 26_0824-019)
+   */
+  Z = (cm->clen * 13) / 10;
+
+  while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) {
+    if(status == eslEMEM)     ESL_FAIL(status, errbuf, "Calculating QDBs, out of memory");
+    if(status != eslERANGE)   ESL_FAIL(status, errbuf, "Calculating QDBs, unexpected error");
+    { /* grow by 1.6x; always advance by at least 1 so the loop cannot
+       * stall on a tiny Z. See the note above on why the growth factor
+       * and the starting Z are chosen together. */
+      int znew = (Z * 8) / 5;
+      Z = (znew > Z) ? znew : (Z + 1);
+    }
     if(Z > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Calculating QDBs, Z got insanely large (> 1000*clen)");
   }
 
