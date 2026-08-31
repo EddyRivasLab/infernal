@@ -1103,6 +1103,10 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
    if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
    if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
+   /* use the CM's W (already computed by configure_model() above) as the filter p7 HMM's max_length,
+    * instead of recomputing it from scratch via p7_Builder_MaxLength().
+    * (briefs 26_0824-013/26_0824-021) */
+   cfg->fp7_bld->w_len = cm->W;
    /* if <pretend_cm_is_hmm> OR --p7ml used, then we'll set the CM's filter p7 HMM as its maximum likelihood HMM */
    if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, msa, cm,
                                                 (pretend_cm_is_hmm || esl_opt_GetBoolean(go, "--p7ml"))))
