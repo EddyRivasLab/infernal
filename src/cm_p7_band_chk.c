@@ -108,8 +108,12 @@
  * escape hatch). Table built once via a load-time constructor (single-threaded,
  * before cmalign spawns workers) so the hot path reads a read-only table. */
 #define CP9_DLOGSUM_SCALE  1000.0
-#define CP9_DLOGSUM_CUTOFF 36.7
-#define CP9_DLOGSUM_TBLN   36702    /* (int)(CUTOFF*SCALE)+2 = 36700+2 */
+/* BASE 2. Cutoff is where 2^-x drops under double epsilon: 2^-53 = 1.1e-16.
+ * (The former base-e cutoff 36.7 was the same threshold expressed in nats,
+ * e^-36.7 = 1.1e-16 -- so this is the identical precision bound, restated in
+ * the base these scores are actually on.) */
+#define CP9_DLOGSUM_CUTOFF 53.0
+#define CP9_DLOGSUM_TBLN   53002    /* (int)(CUTOFF*SCALE)+2 = 53000+2 */
 static double  cp9_dlogsum_tbl[CP9_DLOGSUM_TBLN];
 static int     cp9_dlogsum_exact = 0;   /* set by CP9_DLOGSUM_EXACT=1 */
 
@@ -118,21 +122,29 @@ cp9_chk_dlogsum_lut_init(void)
 {
   char *s;
   int i;
-  for(i = 0; i < CP9_DLOGSUM_TBLN; i++) cp9_dlogsum_tbl[i] = log1p(exp((double) -i / CP9_DLOGSUM_SCALE));
+  /* BASE 2, matching ILogsum's sreLOG2(1.+sreEXP2(-i/INTSCALE)) exactly. */
+  for(i = 0; i < CP9_DLOGSUM_TBLN; i++) cp9_dlogsum_tbl[i] = log2(1. + exp2((double) -i / CP9_DLOGSUM_SCALE));
   if((s = getenv("CP9_DLOGSUM_EXACT")) != NULL && atoi(s) != 0) cp9_dlogsum_exact = 1;
 }
 
 /* Double-precision log-sum for the checkpointed double-trunc CP9 F/B kernels
  * (brief 26_0430-153/154/193). -inf-guarded. LUT by default; exact transcendental
- * under CP9_DLOGSUM_EXACT=1. */
+ * under CP9_DLOGSUM_EXACT=1.
+ *
+ * BASE 2 (briefs 26_0821-024/025/026). Every value this combines is a
+ * Scorify()d score, i.e. BITS -- Infernal has used bits, not nats, since 2007
+ * (see the EPN note in logsum.c). This was transcribed from the int kernels
+ * with ILogsum -> p7_FLogsum, which silently changed the base while the values
+ * stayed in bits; it under-added every sum by up to 1-ln2 = 0.307 bits,
+ * one-directionally, compounding row by row. */
 static inline double
 cp9_chk_dlogsum(double a, double b)
 {
   if(a == -eslINFINITY) return b;
   if(b == -eslINFINITY) return a;
   if(cp9_dlogsum_exact) {
-    if(a > b) return a + log1p(exp(b - a));
-    else      return b + log1p(exp(a - b));
+    if(a > b) return a + log2(1. + exp2(b - a));
+    else      return b + log2(1. + exp2(a - b));
   }
   const double max = (a > b) ? a : b;
   const double min = (a > b) ? b : a;
@@ -1184,7 +1196,11 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
                         double *pocc_arr)
 {
   int status;
-  double thresh = log((1. - p_thresh) / 2.);
+  /* BASE 2 (26_0821-026): compared against mass_* values accumulated by
+   * cp9_chk_dlogsum() from Scorify()d BIT scores. The int arm builds the same
+   * threshold as Prob2Score(((1.-p_thresh)/2.), 1.) = INTSCALE*sreLOG2(p),
+   * i.e. base 2 (hmmband.c:673, and identically in 1.1.5 at :579/:906). */
+  double thresh = log2((1. - p_thresh) / 2.);
   int *nset_m=NULL,*nset_i=NULL,*nset_d=NULL;
   int *xset_m=NULL,*xset_i=NULL,*xset_d=NULL;
   double *mass_m=NULL,*mass_i=NULL,*mass_d=NULL;
@@ -1437,7 +1453,7 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
                               double **pocc_out)
 {
   int status;
-  double *thresh = NULL;                       /* thresh[t] = log((1-p_thresh[t])/2) */
+  double *thresh = NULL;                       /* thresh[t] = log2((1-p_thresh[t])/2) */
   int    **nset_m=NULL,**nset_i=NULL,**nset_d=NULL;   /* [t][k] */
   int    **xset_m=NULL,**xset_i=NULL,**xset_d=NULL;
   double **mass_m=NULL,**mass_i=NULL,**mass_d=NULL;
@@ -1451,7 +1467,8 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
   hmm_is_localized = ((hmm->flags & CPLAN9_LOCAL_BEGIN) || (hmm->flags & CPLAN9_LOCAL_END) || (hmm->flags & CPLAN9_EL)) ? TRUE : FALSE;
 
   ESL_ALLOC(thresh,   sizeof(double)*NS);
-  for(t = 0; t < NS; t++) thresh[t] = log((1. - p_thresh[t]) / 2.);
+  /* BASE 2 -- see the note in cp9_FB2HMMBandsP7BF_chk (26_0821-026). */
+  for(t = 0; t < NS; t++) thresh[t] = log2((1. - p_thresh[t]) / 2.);
 
   /* Per-step accumulators (arrays of NS pointers, each (M+1) long). */
   ESL_ALLOC(nset_m, sizeof(int*)*NS); ESL_ALLOC(nset_i, sizeof(int*)*NS); ESL_ALLOC(nset_d, sizeof(int*)*NS);
