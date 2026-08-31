@@ -1780,7 +1780,7 @@ cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0
   float sc;
   for (k = 1; k <= M; k++) {
     mmx[0][k] = imx[0][k] = elmx[0][k] = -eslINFINITY;
-    sc = p7_FLogsum(p7_FLogsum(mmx[0][k-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+    sc = FLogsum(FLogsum(mmx[0][k-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
 			       imx[0][k-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
 		    dmx[0][k-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
     dmx[0][k] = sc;
@@ -1806,31 +1806,31 @@ cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0
       dmx[cur][0]  = -eslINFINITY;
       elmx[cur][0] = -eslINFINITY;
 
-      sc = p7_FLogsum(p7_FLogsum(mmx[prv][0] + Scorify(CP9TSC(cp9O_MI,0)),
+      sc = FLogsum(FLogsum(mmx[prv][0] + Scorify(CP9TSC(cp9O_MI,0)),
 				 imx[prv][0] + Scorify(CP9TSC(cp9O_II,0))),
 		      dmx[prv][0] + Scorify(CP9TSC(cp9O_DI,0)));
       imx[cur][0] = sc + Scorify(isc_i[0]);
 
       for (k = 1; k <= M; k++) {
 	  /* match */
-	  sc = p7_FLogsum(p7_FLogsum(mmx[prv][k-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
+	  sc = FLogsum(FLogsum(mmx[prv][k-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
 				     imx[prv][k-1] + Scorify(CP9TSC(cp9O_IM,k-1))),
-			  p7_FLogsum(dmx[prv][k-1] + Scorify(CP9TSC(cp9O_DM,k-1)),
+			  FLogsum(dmx[prv][k-1] + Scorify(CP9TSC(cp9O_DM,k-1)),
 				     mmx[prv][0]   + Scorify(CP9TSC(cp9O_BM,k))));
 	  for(c = 0; c < cp9->el_from_ct[k]; c++)
-	    sc = p7_FLogsum(sc, elmx[prv][cp9->el_from_idx[k][c]]);
+	    sc = FLogsum(sc, elmx[prv][cp9->el_from_idx[k][c]]);
 	  mmx[cur][k] = sc + Scorify(msc_i[k]);
 
-	  endsc = p7_FLogsum(endsc, mmx[cur][k] + Scorify(CP9TSC(cp9O_ME,k)));
+	  endsc = FLogsum(endsc, mmx[cur][k] + Scorify(CP9TSC(cp9O_ME,k)));
 
 	  /* insert */
-	  sc = p7_FLogsum(p7_FLogsum(mmx[prv][k] + Scorify(CP9TSC(cp9O_MI,k)),
+	  sc = FLogsum(FLogsum(mmx[prv][k] + Scorify(CP9TSC(cp9O_MI,k)),
 				     imx[prv][k] + Scorify(CP9TSC(cp9O_II,k))),
 			  dmx[prv][k] + Scorify(CP9TSC(cp9O_DI,k)));
 	  imx[cur][k] = sc + Scorify(isc_i[k]);
 
 	  /* delete */
-	  sc = p7_FLogsum(p7_FLogsum(mmx[cur][k-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+	  sc = FLogsum(FLogsum(mmx[cur][k-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
 				     imx[cur][k-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
 			  dmx[cur][k-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
 	  dmx[cur][k] = sc;
@@ -1838,15 +1838,15 @@ cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0
 	  /* el */
 	  sc = -eslINFINITY;
 	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
-	    sc = p7_FLogsum(mmx[cur][k]  + Scorify(CP9TSC(cp9O_MEL,k)),
+	    sc = FLogsum(mmx[cur][k]  + Scorify(CP9TSC(cp9O_MEL,k)),
 			    elmx[prv][k] + el_selfsc);
 	  }
 	  elmx[cur][k] = sc;
       }
-      endsc = p7_FLogsum(p7_FLogsum(endsc, dmx[cur][M] + Scorify(CP9TSC(cp9O_DM,M))),
+      endsc = FLogsum(FLogsum(endsc, dmx[cur][M] + Scorify(CP9TSC(cp9O_DM,M))),
 			 imx[cur][M] + Scorify(CP9TSC(cp9O_IM,M)));
       for(c = 0; c < cp9->el_from_ct[M+1]; c++)
-	endsc = p7_FLogsum(endsc, elmx[cur][cp9->el_from_idx[M+1][c]]);
+	endsc = FLogsum(endsc, elmx[cur][cp9->el_from_idx[M+1][c]]);
 
       erow[cur] = endsc;
       scA[jp]   = endsc;
@@ -1921,7 +1921,7 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
       elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.;
   }
 
-  mmx[cur][cp9->M]  = 0. + p7_FLogsum(elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)),
+  mmx[cur][cp9->M]  = 0. + FLogsum(elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)),
 				      Scorify(CP9TSC(cp9O_ME,cp9->M)));
   mmx[cur][cp9->M] += Scorify(cp9->msc[dsq[i]][cp9->M]);
   imx[cur][cp9->M]  = 0. + Scorify(CP9TSC(cp9O_IM,cp9->M));
@@ -1930,9 +1930,9 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
 
   for (k = cp9->M-1; k >= 1; k--) {
       mmx[cur][k]  = 0 + Scorify(CP9TSC(cp9O_ME,k));
-      mmx[cur][k]  = p7_FLogsum(mmx[cur][k], dmx[cur][k+1] + Scorify(CP9TSC(cp9O_MD,k)));
+      mmx[cur][k]  = FLogsum(mmx[cur][k], dmx[cur][k+1] + Scorify(CP9TSC(cp9O_MD,k)));
       if(cp9->flags & CPLAN9_EL)
-	mmx[cur][k]  = p7_FLogsum(mmx[cur][k], elmx[cur][k] + Scorify(CP9TSC(cp9O_MEL,k)));
+	mmx[cur][k]  = FLogsum(mmx[cur][k], elmx[cur][k] + Scorify(CP9TSC(cp9O_MEL,k)));
       mmx[cur][k] += Scorify(cp9->msc[dsq[i]][k]);
 
       imx[cur][k]  = dmx[cur][k+1] + Scorify(CP9TSC(cp9O_ID,k));
@@ -1966,7 +1966,7 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
       mmx[cur][cp9->M] += Scorify(cp9->msc[dsq[i]][cp9->M]);
 
       if((cp9->flags & CPLAN9_EL) && (cp9->has_el[cp9->M]))
-	mmx[cur][cp9->M] = p7_FLogsum(mmx[cur][cp9->M],
+	mmx[cur][cp9->M] = FLogsum(mmx[cur][cp9->M],
 				      elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)));
 
       imx[cur][cp9->M]  = imx[prv][cp9->M] + Scorify(CP9TSC(cp9O_II,cp9->M));
@@ -1976,7 +1976,7 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
 
       if(cp9->flags & CPLAN9_EL) {
 	for(c = 0; c < cp9->el_from_ct[cp9->M]; c++)
-	  elmx[cur][cp9->el_from_idx[cp9->M][c]] = p7_FLogsum(elmx[cur][cp9->el_from_idx[cp9->M][c]],
+	  elmx[cur][cp9->el_from_idx[cp9->M][c]] = FLogsum(elmx[cur][cp9->el_from_idx[cp9->M][c]],
 							      mmx[prv][cp9->M]);
       }
 
@@ -1985,47 +1985,47 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
 	    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++)
 	      elmx[cur][cp9->el_from_idx[cp9->M+1][c]] = 0.;
 	  }
-	  mmx[cur][cp9->M]  = p7_FLogsum(mmx[cur][cp9->M],
-					 p7_FLogsum(elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)),
+	  mmx[cur][cp9->M]  = FLogsum(mmx[cur][cp9->M],
+					 FLogsum(elmx[cur][cp9->M] + Scorify(CP9TSC(cp9O_MEL,cp9->M)),
 						    Scorify(CP9TSC(cp9O_ME,cp9->M))));
-	  imx[cur][cp9->M]  = p7_FLogsum(imx[cur][cp9->M],
+	  imx[cur][cp9->M]  = FLogsum(imx[cur][cp9->M],
 					 (Scorify(CP9TSC(cp9O_IM,cp9->M)) + 0));
-	  dmx[cur][cp9->M]  = p7_FLogsum(dmx[cur][cp9->M],
+	  dmx[cur][cp9->M]  = FLogsum(dmx[cur][cp9->M],
 					 (Scorify(CP9TSC(cp9O_DM,cp9->M)) + 0));
       }
 
       for (k = cp9->M-1; k >= 1; k--) {
 	  if(cp9->flags & CPLAN9_EL) {
 	    for(c = 0; c < cp9->el_from_ct[k]; c++)
-	      elmx[cur][cp9->el_from_idx[k][c]] = p7_FLogsum(elmx[cur][cp9->el_from_idx[k][c]],
+	      elmx[cur][cp9->el_from_idx[k][c]] = FLogsum(elmx[cur][cp9->el_from_idx[k][c]],
 							     mmx[prv][k]);
 	  }
 
 	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-	    elmx[cur][k] = p7_FLogsum(elmx[cur][k], elmx[prv][k] + Scorify(cp9->el_selfsc));
+	    elmx[cur][k] = FLogsum(elmx[cur][k], elmx[prv][k] + Scorify(cp9->el_selfsc));
 
-	  mmx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_MM,k))),
+	  mmx[cur][k]  = FLogsum(FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_MM,k))),
 					       (imx[prv][k]   + Scorify(CP9TSC(cp9O_MI,k)))),
 				    (dmx[cur][k+1] + Scorify(CP9TSC(cp9O_MD,k))));
 	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-	    mmx[cur][k] = p7_FLogsum(mmx[cur][k], elmx[cur][k] + Scorify(CP9TSC(cp9O_MEL,k)));
+	    mmx[cur][k] = FLogsum(mmx[cur][k], elmx[cur][k] + Scorify(CP9TSC(cp9O_MEL,k)));
 	  mmx[cur][k] += Scorify(cp9->msc[dsq[i]][k]);
 
-	  imx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_IM,k))),
+	  imx[cur][k]  = FLogsum(FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_IM,k))),
 					       (imx[prv][k]   + Scorify(CP9TSC(cp9O_II,k)))),
 				    (dmx[cur][k+1] + Scorify(CP9TSC(cp9O_ID,k))));
 	  imx[cur][k] += Scorify(cp9->isc[dsq[i]][k]);
 
 	  if(do_scan) {
-	    mmx[cur][k] = p7_FLogsum(mmx[cur][k],
+	    mmx[cur][k] = FLogsum(mmx[cur][k],
 				     (Scorify(CP9TSC(cp9O_ME,k)) + 0));
 	  }
-	  dmx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_DM,k))),
+	  dmx[cur][k]  = FLogsum(FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_DM,k))),
 					       (imx[prv][k]   + Scorify(CP9TSC(cp9O_DI,k)))),
 				    (dmx[cur][k+1] + Scorify(CP9TSC(cp9O_DD,k))));
       }
       /* k == 0 */
-      imx[cur][0] = p7_FLogsum(p7_FLogsum((mmx[prv][1] + Scorify(CP9TSC(cp9O_IM,0))),
+      imx[cur][0] = FLogsum(FLogsum((mmx[prv][1] + Scorify(CP9TSC(cp9O_IM,0))),
 					  (imx[prv][0] + Scorify(CP9TSC(cp9O_II,0)))),
 			       (dmx[cur][1] + Scorify(CP9TSC(cp9O_ID,k))));
       imx[cur][0] += Scorify(cp9->isc[dsq[i]][k]);
@@ -2034,9 +2034,9 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
 
       mmx[cur][0] = -eslINFINITY;
       for (k = cp9->M; k >= 1; k--)
-	mmx[cur][0] = p7_FLogsum(mmx[cur][0], (mmx[prv][k] + Scorify(CP9TSC(cp9O_BM,k))));
-      mmx[cur][0] = p7_FLogsum(mmx[cur][0], (imx[prv][0] + Scorify(CP9TSC(cp9O_MI,0))));
-      mmx[cur][0] = p7_FLogsum(mmx[cur][0], (dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0))));
+	mmx[cur][0] = FLogsum(mmx[cur][0], (mmx[prv][k] + Scorify(CP9TSC(cp9O_BM,k))));
+      mmx[cur][0] = FLogsum(mmx[cur][0], (imx[prv][0] + Scorify(CP9TSC(cp9O_MI,0))));
+      mmx[cur][0] = FLogsum(mmx[cur][0], (dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0))));
 
       scA[ip] = mmx[cur][0];
       fsc = scA[ip];
@@ -2056,14 +2056,14 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
   elmx[cur][cp9->M]= -eslINFINITY;
   dmx[cur][cp9->M]  = imx[prv][cp9->M] + Scorify(CP9TSC(cp9O_DI,cp9->M));
   if(do_scan) {
-      dmx[cur][cp9->M] = p7_FLogsum(dmx[cur][cp9->M],
+      dmx[cur][cp9->M] = FLogsum(dmx[cur][cp9->M],
 				    (Scorify(CP9TSC(cp9O_DM,cp9->M)) + 0));
   }
   for (k = cp9->M-1; k >= 1; k--) {
       mmx[cur][k] = -eslINFINITY;
       imx[cur][k] = -eslINFINITY;
       elmx[cur][k]= -eslINFINITY;
-      dmx[cur][k]  = p7_FLogsum(p7_FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_DM,k))),
+      dmx[cur][k]  = FLogsum(FLogsum((mmx[prv][k+1] + Scorify(CP9TSC(cp9O_DM,k))),
 					   (imx[prv][k]   + Scorify(CP9TSC(cp9O_DI,k)))),
 				(dmx[cur][k+1] + Scorify(CP9TSC(cp9O_DD,k))));
   }
@@ -2074,9 +2074,9 @@ cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j
 
   mmx[cur][0] = -eslINFINITY;
   for (k = cp9->M; k >= 1; k--)
-    mmx[cur][0] = p7_FLogsum(mmx[cur][0], (mmx[prv][k] + Scorify(CP9TSC(cp9O_BM,k))));
-  mmx[cur][0] = p7_FLogsum(mmx[cur][0], (imx[prv][0] + Scorify(CP9TSC(cp9O_MI,0))));
-  mmx[cur][0] = p7_FLogsum(mmx[cur][0], (dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0))));
+    mmx[cur][0] = FLogsum(mmx[cur][0], (mmx[prv][k] + Scorify(CP9TSC(cp9O_BM,k))));
+  mmx[cur][0] = FLogsum(mmx[cur][0], (imx[prv][0] + Scorify(CP9TSC(cp9O_MI,0))));
+  mmx[cur][0] = FLogsum(mmx[cur][0], (dmx[cur][1] + Scorify(CP9TSC(cp9O_MD,0))));
 
   scA[ip] = mmx[cur][0];
   fsc = scA[ip];

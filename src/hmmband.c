@@ -1297,7 +1297,7 @@ cp9_PosteriorF(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *
   if(did_fwd_scan) {
     sc = -eslINFINITY;
     for (ip = 0; ip <= L; ip++) {
-      sc = p7_FLogsum(sc, bmx->mmx[ip][0]);
+      sc = FLogsum(sc, bmx->mmx[ip][0]);
     }
   }
   else sc = bmx->mmx[0][0];
