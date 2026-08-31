@@ -1186,7 +1186,7 @@ cp9_chk_noparse_report(CM_t *cm, char *errbuf)
  * loop, but with O(sqrt(L)*avg_bw) memory.
  *
  * pocc_arr: caller-allocated [0..M]. Filled here: pocc_arr[k] = sum over
- * i=0..L of (exp(pmx->mmx[i][kp]) + exp(pmx->dmx[i][kp])) for nodes k with a
+ * i=0..L of (exp2(pmx->mmx[i][kp]) + exp2(pmx->dmx[i][kp])) for nodes k with a
  * band set, else -1.0 (matches the original's skip+sentinel behavior).
  */
 int
@@ -1304,12 +1304,16 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
           if(! nset_d[k]) { if((mass_d[k] = cp9_chk_dlogsum(mass_d[k], g->pd[kp])) > thresh) { cp9b->pn_min_d[k] = i; nset_d[k] = TRUE; } }
         }
       }
-      /* pocc streaming: sum exp(pm)+exp(pd) over k>=1 in band, in TWO separate
+      /* pocc streaming: sum exp2(pm)+exp2(pd) over k>=1 in band, in TWO separate
+       * adds. BASE 2 (26_0821-029): g->pm/pd are Scorify()d posteriors, i.e.
+       * BITS, so the probability is 2^x, not e^x. See the commit message: this
+       * correction is known to DEGRADE some glocal cells, which is evidence of
+       * a second, non-independent defect -- not a reason to keep this one.
        * adds (matches cp9_PredictStartAndEndPositionsP7BF's double add order). */
       kkp = ESL_MAX(1, kmin[i]) - kmin[i];
       for(kk = ESL_MAX(1, kmin[i]); kk <= kmax[i]; kk++, kkp++) {
-        pocc_arr[kk] += exp(g->pm[kkp]);
-        pocc_arr[kk] += exp(g->pd[kkp]);
+        pocc_arr[kk] += exp2(g->pm[kkp]);
+        pocc_arr[kk] += exp2(g->pd[kkp]);
       }
     }
   }
@@ -1547,8 +1551,8 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
        * match the single kernel's double add order at lines ~2284-2286). */
       kkp = ESL_MAX(1, kmin[i]) - kmin[i];
       for(kk = ESL_MAX(1, kmin[i]); kk <= kmax[i]; kk++, kkp++) {
-        pocc_raw[kk] += exp(g->pm[kkp]);
-        pocc_raw[kk] += exp(g->pd[kkp]);
+        pocc_raw[kk] += exp2(g->pm[kkp]);
+        pocc_raw[kk] += exp2(g->pd[kkp]);
       }
     }
   }
