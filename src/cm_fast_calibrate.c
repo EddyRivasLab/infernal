@@ -40,6 +40,8 @@
 #include <math.h>
 #include <time.h>
 #include <float.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 #include "easel.h"
 #include "esl_buffer.h"
@@ -4003,7 +4005,7 @@ fsprof_now(void)
 }
 
 static void
-fsprof_report(const char *cmname, const char *tag, int n_rec,
+fsprof_report(const char *cmname, const char *tag, int64_t n_rec,
               double t_setup, double t_scan, double t_emit, double t_realloc,
               double t_norm, double t_mom, double t_spbuild, double t_sort,
               double t_quant, double t_total, double p90, double ic_tot)
@@ -4013,7 +4015,7 @@ fsprof_report(const char *cmname, const char *tag, int n_rec,
   if (path == NULL) return;
   fp = fopen(path, "a");
   if (fp == NULL) return;
-  fprintf(fp, "FRAGPROF\t%s\t%s\tn_rec=%d\tsetup=%.3f\tscan=%.3f\temit=%.3f\trealloc=%.3f\t"
+  fprintf(fp, "FRAGPROF\t%s\t%s\tn_rec=%" PRId64 "\tsetup=%.3f\tscan=%.3f\temit=%.3f\trealloc=%.3f\t"
               "normalize=%.3f\tmoments=%.3f\tspbuild=%.3f\tsort=%.3f\tquantile=%.3f\ttotal=%.3f\t"
               "p90=%.17g\tic_tot=%.17g\tp90eq=%d\n",
           cmname ? cmname : "-", tag, n_rec,
@@ -4073,10 +4075,11 @@ fsprof_report(const char *cmname, const char *tag, int n_rec,
  * pairs by S and walks the cumulative mass.
  */
 static int
-fs_p90_qsort(const double *rec_S, const double *rec_P, int n_rec, double *ret_p90)
+fs_p90_qsort(const double *rec_S, const double *rec_P, int64_t n_rec, double *ret_p90)
 {
   SP_PAIR *sp = NULL;
-  int      i, status;
+  int64_t  i;
+  int      status;
   double   cum_p = 0.0, p90;
 
   ESL_ALLOC(sp, sizeof(SP_PAIR)*n_rec);
@@ -4104,7 +4107,7 @@ fs_p90_qsort(const double *rec_S, const double *rec_P, int n_rec, double *ret_p9
  * eslFAIL when it is not (caller must fall back to fs_p90_qsort()).
  */
 static int
-fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
+fs_p90_bucket(const double *rec_S, const double *rec_P, int64_t n_rec,
               double smin, double smax, double *ret_p90)
 {
   double *bm   = NULL;   /* per-bucket mass                */
@@ -4112,7 +4115,8 @@ fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
   double *bmax = NULL;   /* per-bucket max S observed      */
   int    *bnz  = NULL;   /* per-bucket "has any record" flag */
   double  lo, hi, errb;
-  int     it, b, i, status;
+  int64_t i;
+  int     it, b, status;
 
   if (n_rec <= 0) return eslFAIL;
   errb = 8.0 * (double) n_rec * DBL_EPSILON;
@@ -4200,7 +4204,7 @@ fs_p90_bucket(const double *rec_S, const double *rec_P, int n_rec,
  * stderr (validation aid; costs a full qsort, so off by default).
  */
 static int
-fs_p90(const double *rec_S, const double *rec_P, int n_rec,
+fs_p90(const double *rec_S, const double *rec_P, int64_t n_rec,
        double smin, double smax, double *ret_p90)
 {
   int    status;
@@ -4218,7 +4222,7 @@ fs_p90(const double *rec_S, const double *rec_P, int n_rec,
   if (getenv("FASTCAL_FRAG_P90_CHECK") != NULL) {
     double p90q;
     if (fs_p90_qsort(rec_S, rec_P, n_rec, &p90q) == eslOK) {
-      fprintf(stderr, "FRAGP90CHECK\tn_rec=%d\tpath=%s\tbucket=%.17g\tqsort=%.17g\t%s\n",
+      fprintf(stderr, "FRAGP90CHECK\tn_rec=%" PRId64 "\tpath=%s\tbucket=%.17g\tqsort=%.17g\t%s\n",
               n_rec, used_bucket ? "bucket" : "qsort-fallback", p90b, p90q,
               (p90b == p90q) ? "MATCH" : "*** MISMATCH ***");
     }
@@ -4476,7 +4480,8 @@ extract_frag_score(CM_t *cm, double *feats,
   int      n_begin        = 0;
   /* records: (P, S, L) triples */
   double *rec_P = NULL, *rec_S = NULL, *rec_L = NULL;
-  int     n_rec = 0, rec_alloc;
+  int64_t n_rec = 0, rec_alloc;
+  int64_t ri;  /* loop var over record-indexed (n_rec-sized) arrays */
   int     nd, v, a, ab, i, status;
   double  nan = 0.0 / 0.0;
   /* [26_0824-016] intra-function profiling accumulators */
@@ -4494,6 +4499,12 @@ extract_frag_score(CM_t *cm, double *feats,
 
   if (N <= 1) return eslOK;
   if (fsprof) { fsp_t0 = fsprof_now(); fsp_m0 = fsp_t0; }
+
+  /* [26_0824-031] Sanity bound on rec_alloc growth: with 3 arrays * 8
+   * bytes/record, 1e11 records would be ~2.4 TB, already far beyond any
+   * plausible allocation. This turns a hypothetical future runaway into an
+   * explicit, readable failure instead of undefined behavior. */
+#define FRAGSCORE_REC_ALLOC_SANE (INT64_C(100000000000))
 
   ESL_ALLOC(has_end_neighbor, sizeof(int)    * cm->nodes);
   ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
@@ -4608,6 +4619,10 @@ extract_frag_score(CM_t *cm, double *feats,
         if (n_rec >= rec_alloc) {
           double fsp_r0 = fsprof ? fsprof_now() : 0.0;
           rec_alloc *= 2;
+          if (rec_alloc > FRAGSCORE_REC_ALLOC_SANE) {
+            fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (rec_alloc=%" PRId64 ")\n", rec_alloc);
+            status = eslEMEM; goto ERROR;
+          }
           ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
@@ -4631,6 +4646,10 @@ extract_frag_score(CM_t *cm, double *feats,
         if (n_rec >= rec_alloc) {
           double fsp_r0 = fsprof ? fsprof_now() : 0.0;
           rec_alloc *= 2;
+          if (rec_alloc > FRAGSCORE_REC_ALLOC_SANE) {
+            fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (rec_alloc=%" PRId64 ")\n", rec_alloc);
+            status = eslEMEM; goto ERROR;
+          }
           ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
           ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
@@ -4649,6 +4668,10 @@ extract_frag_score(CM_t *cm, double *feats,
       if (n_rec >= rec_alloc) {
         double fsp_r0 = fsprof ? fsprof_now() : 0.0;
         rec_alloc *= 2;
+        if (rec_alloc > FRAGSCORE_REC_ALLOC_SANE) {
+          fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (rec_alloc=%" PRId64 ")\n", rec_alloc);
+          status = eslEMEM; goto ERROR;
+        }
         ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
         ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
         ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
@@ -4668,9 +4691,9 @@ extract_frag_score(CM_t *cm, double *feats,
   /* Normalize P */
   {
     double mass = 0.0;
-    for (i = 0; i < n_rec; i++) mass += rec_P[i];
+    for (ri = 0; ri < n_rec; ri++) mass += rec_P[ri];
     if (mass <= 0.0) goto DONE;
-    for (i = 0; i < n_rec; i++) rec_P[i] /= mass;
+    for (ri = 0; ri < n_rec; ri++) rec_P[ri] /= mass;
   }
   if (fsprof) { double t = fsprof_now(); fsp_norm = t - fsp_m0; fsp_m0 = t; }
 
@@ -4680,18 +4703,18 @@ extract_frag_score(CM_t *cm, double *feats,
     /* [26_0824-016] smin/smax piggyback on this existing pass -- they feed the
      * sort-free p90 selector below and do not touch any of the sums. */
     double S_lo = rec_S[0], S_hi = rec_S[0];
-    for (i = 0; i < n_rec; i++) {
-      S_mean  += rec_P[i] * rec_S[i];
-      L_mean  += rec_P[i] * rec_L[i];
-      per_pos += rec_P[i] * rec_S[i] / (rec_L[i] > 1.0 ? rec_L[i] : 1.0);
-      if (rec_S[i] < S_lo) S_lo = rec_S[i];
-      if (rec_S[i] > S_hi) S_hi = rec_S[i];
+    for (ri = 0; ri < n_rec; ri++) {
+      S_mean  += rec_P[ri] * rec_S[ri];
+      L_mean  += rec_P[ri] * rec_L[ri];
+      per_pos += rec_P[ri] * rec_S[ri] / (rec_L[ri] > 1.0 ? rec_L[ri] : 1.0);
+      if (rec_S[ri] < S_lo) S_lo = rec_S[ri];
+      if (rec_S[ri] > S_hi) S_hi = rec_S[ri];
     }
-    for (i = 0; i < n_rec; i++) {
-      double ds = rec_S[i] - S_mean;
-      double dl = rec_L[i] - L_mean;
-      S_var  += rec_P[i] * ds * ds;
-      cov_SL += rec_P[i] * ds * dl;
+    for (ri = 0; ri < n_rec; ri++) {
+      double ds = rec_S[ri] - S_mean;
+      double dl = rec_L[ri] - L_mean;
+      S_var  += rec_P[ri] * ds * ds;
+      cov_SL += rec_P[ri] * ds * dl;
     }
     feats[FAST_CAL_FEAT_frag_score_mean]         = S_mean;
     feats[FAST_CAL_FEAT_frag_score_var]          = S_var;
