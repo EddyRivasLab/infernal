@@ -4483,6 +4483,9 @@ extract_frag_score(CM_t *cm, double *feats,
   int64_t n_rec = 0, rec_alloc;
   int64_t ri;  /* loop var over record-indexed (n_rec-sized) arrays */
   int     nd, v, a, ab, i, status;
+  /* [26_0824-031] unnormalized total record mass; hoisted out of the
+   * normalize block so the p90 closed-form guard (below) can read it. */
+  double  frag_mass = 0.0;
   double  nan = 0.0 / 0.0;
   /* [26_0824-016] intra-function profiling accumulators */
   int     fsprof = (getenv("FASTCAL_FRAG_PROFILE") != NULL);
@@ -4690,10 +4693,10 @@ extract_frag_score(CM_t *cm, double *feats,
 
   /* Normalize P */
   {
-    double mass = 0.0;
-    for (ri = 0; ri < n_rec; ri++) mass += rec_P[ri];
-    if (mass <= 0.0) goto DONE;
-    for (ri = 0; ri < n_rec; ri++) rec_P[ri] /= mass;
+    frag_mass = 0.0;
+    for (ri = 0; ri < n_rec; ri++) frag_mass += rec_P[ri];
+    if (frag_mass <= 0.0) goto DONE;
+    for (ri = 0; ri < n_rec; ri++) rec_P[ri] /= frag_mass;
   }
   if (fsprof) { double t = fsprof_now(); fsp_norm = t - fsp_m0; fsp_m0 = t; }
 
@@ -4722,11 +4725,29 @@ extract_frag_score(CM_t *cm, double *feats,
     feats[FAST_CAL_FEAT_cov_S_L]                 = cov_SL;
     if (fsprof) { double t = fsprof_now(); fsp_mom = t - fsp_m0; fsp_m0 = t; }
 
-    /* P90 of S: weighted 90th percentile. [26_0824-016] sort-free selector,
-     * with the original qsort path as an automatic fallback. */
+    /* P90 of S: weighted 90th percentile.
+     * [26_0824-031] Closed-form guard (brief 26_0824-026 SS3.1): the
+     * full-length record's S is cum_ic[N], the maximum attainable S whenever
+     * every ic_col[i] >= 0, and it alone carries mass (1-pbegin). If that
+     * mass share is >= 0.10 of the (unnormalized) total, no other record can
+     * push the weighted-90th-percentile crossing below cum_ic[N], so p90 is
+     * exactly -- bit-for-bit -- the full-length record's S, i.e. cum_ic[N].
+     * This is the SAME double already computed above (the emit loop's S_all
+     * was cum_ic[N]); reusing cum_ic[N] directly for the feature is
+     * therefore bit-exact with what fs_p90() would have returned, not
+     * merely equal. The guard must be able to decline (per 026, it does on
+     * 40/40 + 59/60 deliberately out-of-guard synthetic arms): if either
+     * condition fails, fall through to the unchanged fs_p90() path. */
     {
       double p90 = 0.0;
-      if ((status = fs_p90(rec_S, rec_P, n_rec, S_lo, S_hi, &p90)) != eslOK) goto ERROR;
+      int    ic_all_nonneg = 1;
+      for (i = 1; i <= N; i++) { if (ic_col[i] < 0.0) { ic_all_nonneg = 0; break; } }
+
+      if (ic_all_nonneg && frag_mass > 0.0 && (1.0 - pbegin) / frag_mass >= 0.10) {
+        p90 = cum_ic[N];
+      } else {
+        if ((status = fs_p90(rec_S, rec_P, n_rec, S_lo, S_hi, &p90)) != eslOK) goto ERROR;
+      }
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
       if (fsprof) { double t = fsprof_now(); fsp_sort = t - fsp_m0; fsp_m0 = t; }
     }
