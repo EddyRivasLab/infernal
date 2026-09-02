@@ -4478,13 +4478,14 @@ extract_frag_score(CM_t *cm, double *feats,
   fcbeg_t *begins         = NULL;
   int      n_end_global   = 0;
   int      n_begin        = 0;
-  /* records: (P, S, L) triples */
-  double *rec_P = NULL, *rec_S = NULL, *rec_L = NULL;
-  int64_t n_rec = 0, rec_alloc;
+  /* [26_0824-031] rec_P/rec_S: only materialized in the (production-unreachable)
+   * p90 guard-decline fallback -- see FRAG_WALK below. No rec_L: the
+   * fallback needs only S and P for fs_p90(). */
+  double *rec_P = NULL, *rec_S = NULL;
+  int64_t n_rec = 0;
   int64_t ri;  /* loop var over record-indexed (n_rec-sized) arrays */
   int     nd, v, a, ab, i, status;
-  /* [26_0824-031] unnormalized total record mass; hoisted out of the
-   * normalize block so the p90 closed-form guard (below) can read it. */
+  /* [26_0824-031] total (unnormalized) record mass, accumulated by walk 1. */
   double  frag_mass = 0.0;
   double  nan = 0.0 / 0.0;
   /* [26_0824-016] intra-function profiling accumulators */
@@ -4513,10 +4514,12 @@ extract_frag_score(CM_t *cm, double *feats,
   ESL_ALLOC(ic_col,           sizeof(double) * (N + 2));
   ESL_ALLOC(cum_ic,           sizeof(double) * (N + 2));
   ESL_ALLOC(ends_buf,         sizeof(fcend_t) * cm->nodes);
-  rec_alloc = cm->nodes * 4 + 16;
-  ESL_ALLOC(rec_P, sizeof(double) * rec_alloc);
-  ESL_ALLOC(rec_S, sizeof(double) * rec_alloc);
-  ESL_ALLOC(rec_L, sizeof(double) * rec_alloc);
+  /* [26_0824-031] rec_P/rec_S are no longer allocated here. The O(n^2)
+   * pair walk below streams: it visits the identical (begin, end) pairs in
+   * the identical order as before, three times, accumulating mass/moments
+   * directly instead of materializing a (P,S,L) record per pair. They are
+   * allocated ONLY in the rare fallback below, if the p90 closed-form guard
+   * declines -- see FRAG_WALK. */
 
 #define RANK(acol) ((acol) > 0 && (acol) < rank_ncols ? rank_lookup[(acol)] : -1)
 
@@ -4599,131 +4602,98 @@ extract_frag_score(CM_t *cm, double *feats,
 
   if (n_begin == 0) goto DONE;
 
-  /* Enumerate (P, S, L) records */
+  /* [26_0824-031] FRAG_WALK(BODY): visits the identical set of (begin, end)
+   * pairs in the identical order as the pre-031 emit loop -- same nested
+   * bi/ei structure, same count_valid_ends_in_subtree() calls against the
+   * same (unchanged) subtree_l/subtree_r/has_end_neighbor arrays, so it is
+   * deterministic and reproduces the same sequence every time it is
+   * invoked. BODY sees, per pair, the exact same (S_i, L_i, P_raw) triple
+   * the old code would have stored into (rec_S[n], rec_P[n]) --
+   * unstored, so BODY must consume them immediately. Running this three
+   * times (mass; then means/per_pos; then var/cov, which needs the means)
+   * replaces one store-everything walk + separate normalize/moments passes
+   * with three walks that store nothing. Each BODY's "P_raw / frag_mass" is
+   * the SAME single division the old code did once in the normalize pass,
+   * so accumulated results are bit-identical to before. */
+#define FRAG_WALK(BODY)                                                     \
+  do {                                                                      \
+    double fw_x = pbegin / (double) n_begin;                                \
+    double fw_y = (n_end_global > 0) ? pend / (double) n_end_global : 0.0;  \
+    int fw_bi, fw_ei;                                                       \
+    for (fw_bi = 0; fw_bi < n_begin; fw_bi++) {                             \
+      int fw_nd_v=begins[fw_bi].nd, fw_l_v=begins[fw_bi].l, fw_r_v=begins[fw_bi].r; \
+      int fw_d_v = fw_r_v - fw_l_v + 1;                                     \
+      int fw_K_v = count_valid_ends_in_subtree(fw_nd_v, fw_l_v, fw_r_v,     \
+                                            cm, subtree_l, subtree_r,        \
+                                            has_end_neighbor, ends_buf);     \
+      double fw_no_end_p = 1.0 - (double)fw_K_v * fw_y;                     \
+      if (fw_no_end_p < 0.0) fw_no_end_p = 0.0;                             \
+      if (fw_d_v >= 1 && fw_d_v <= N) {                                     \
+        double S_i = cum_ic[fw_r_v] - cum_ic[fw_l_v - 1];                   \
+        double L_i = (double) fw_d_v;                                      \
+        double P_raw = fw_x * fw_no_end_p;                                 \
+        BODY;                                                               \
+      }                                                                     \
+      for (fw_ei = 0; fw_ei < fw_K_v; fw_ei++) {                            \
+        int fw_l_u=ends_buf[fw_ei].l, fw_r_u=ends_buf[fw_ei].r;             \
+        int fw_d_frag = fw_d_v - (fw_r_u - fw_l_u + 1);                     \
+        if (fw_d_frag < 1 || fw_d_frag > N) continue;                       \
+        double fw_S_left  = (fw_l_u > fw_l_v) ? (cum_ic[fw_l_u-1] - cum_ic[fw_l_v-1]) : 0.0; \
+        double fw_S_right = (fw_r_u < fw_r_v) ? (cum_ic[fw_r_v]   - cum_ic[fw_r_u])   : 0.0; \
+        double S_i = fw_S_left + fw_S_right;                                \
+        double L_i = (double) fw_d_frag;                                    \
+        double P_raw = fw_x * fw_y;                                        \
+        BODY;                                                               \
+      }                                                                     \
+    }                                                                       \
+    {                                                                       \
+      double S_i = cum_ic[N];                                              \
+      double L_i = (double) N;                                             \
+      double P_raw = 1.0 - pbegin;                                         \
+      BODY;                                                                 \
+    }                                                                       \
+  } while (0)
+
+  /* Walk 1: total (unnormalized) mass and record count. */
   {
-    double x = pbegin / (double) n_begin;
-    double y = (n_end_global > 0) ? pend / (double) n_end_global : 0.0;
-    int bi, ei;
-
-    for (bi = 0; bi < n_begin; bi++) {
-      int nd_v=begins[bi].nd, l_v=begins[bi].l, r_v=begins[bi].r;
-      int d_v = r_v - l_v + 1;
-      double fsp_s0 = fsprof ? fsprof_now() : 0.0;
-      int K_v = count_valid_ends_in_subtree(nd_v, l_v, r_v,
-                                            cm, subtree_l, subtree_r,
-                                            has_end_neighbor, ends_buf);
-      if (fsprof) fsp_scan += fsprof_now() - fsp_s0;
-      double no_end_p = 1.0 - (double)K_v * y;
-      if (no_end_p < 0.0) no_end_p = 0.0;
-
-      /* Full-subtree fragment (no end truncation) */
-      if (d_v >= 1 && d_v <= N) {
-        double S_full = cum_ic[r_v] - cum_ic[l_v - 1];
-        if (n_rec >= rec_alloc) {
-          double fsp_r0 = fsprof ? fsprof_now() : 0.0;
-          rec_alloc *= 2;
-          if (rec_alloc > FRAGSCORE_REC_ALLOC_SANE) {
-            fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (rec_alloc=%" PRId64 ")\n", rec_alloc);
-            status = eslEMEM; goto ERROR;
-          }
-          ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
-          ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
-          ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
-          if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
-        }
-        rec_P[n_rec] = x * no_end_p;
-        rec_S[n_rec] = S_full;
-        rec_L[n_rec] = (double) d_v;
-        n_rec++;
-      }
-
-      /* Truncated fragments via each end */
-      for (ei = 0; ei < K_v; ei++) {
-        int l_u=ends_buf[ei].l, r_u=ends_buf[ei].r;
-        int d_frag = d_v - (r_u - l_u + 1);
-        if (d_frag < 1 || d_frag > N) continue;
-        /* Score = IC over [l_v, r_v] minus [l_u, r_u]
-         * = range(l_v, l_u-1) + range(r_u+1, r_v) */
-        double S_left  = (l_u > l_v) ? (cum_ic[l_u-1] - cum_ic[l_v-1]) : 0.0;
-        double S_right = (r_u < r_v) ? (cum_ic[r_v]   - cum_ic[r_u])   : 0.0;
-        if (n_rec >= rec_alloc) {
-          double fsp_r0 = fsprof ? fsprof_now() : 0.0;
-          rec_alloc *= 2;
-          if (rec_alloc > FRAGSCORE_REC_ALLOC_SANE) {
-            fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (rec_alloc=%" PRId64 ")\n", rec_alloc);
-            status = eslEMEM; goto ERROR;
-          }
-          ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
-          ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
-          ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
-          if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
-        }
-        rec_P[n_rec] = x * y;
-        rec_S[n_rec] = S_left + S_right;
-        rec_L[n_rec] = (double) d_frag;
-        n_rec++;
-      }
-    }
-
-    /* Full-length non-local-begin mass */
-    {
-      double S_all = cum_ic[N];
-      if (n_rec >= rec_alloc) {
-        double fsp_r0 = fsprof ? fsprof_now() : 0.0;
-        rec_alloc *= 2;
-        if (rec_alloc > FRAGSCORE_REC_ALLOC_SANE) {
-          fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (rec_alloc=%" PRId64 ")\n", rec_alloc);
-          status = eslEMEM; goto ERROR;
-        }
-        ESL_REALLOC(rec_P, sizeof(double)*rec_alloc);
-        ESL_REALLOC(rec_S, sizeof(double)*rec_alloc);
-        ESL_REALLOC(rec_L, sizeof(double)*rec_alloc);
-        if (fsprof) fsp_realloc += fsprof_now() - fsp_r0;
-      }
-      rec_P[n_rec] = 1.0 - pbegin;
-      rec_S[n_rec] = S_all;
-      rec_L[n_rec] = (double) N;
-      n_rec++;
-    }
+    double fsp_s0 = fsprof ? fsprof_now() : 0.0;
+    FRAG_WALK({ frag_mass += P_raw; n_rec++; });
+    if (fsprof) { double t = fsprof_now(); fsp_emit = t - fsp_s0; }
   }
-#undef RANGE_IC
-  if (fsprof) { double t = fsprof_now(); fsp_emit = (t - fsp_m0) - fsp_scan - fsp_realloc; fsp_m0 = t; }
-
   if (n_rec == 0) goto DONE;
+  if (frag_mass <= 0.0) goto DONE;
 
-  /* Normalize P */
+  /* Walk 2: means and per_pos, each term using P_i = P_raw/frag_mass -- the
+   * same division, same operands, as the old normalize-then-read pass. */
   {
-    frag_mass = 0.0;
-    for (ri = 0; ri < n_rec; ri++) frag_mass += rec_P[ri];
-    if (frag_mass <= 0.0) goto DONE;
-    for (ri = 0; ri < n_rec; ri++) rec_P[ri] /= frag_mass;
-  }
-  if (fsprof) { double t = fsprof_now(); fsp_norm = t - fsp_m0; fsp_m0 = t; }
+    double S_mean = 0.0, L_mean = 0.0, per_pos = 0.0;
+    double fsp_s0 = fsprof ? fsprof_now() : 0.0;
+    FRAG_WALK({
+      double P_i = P_raw / frag_mass;
+      S_mean  += P_i * S_i;
+      L_mean  += P_i * L_i;
+      per_pos += P_i * S_i / (L_i > 1.0 ? L_i : 1.0);
+    });
+    if (fsprof) { double t = fsprof_now(); fsp_norm = t - fsp_s0; fsp_s0 = t; }
 
-  /* Compute aggregate statistics */
-  {
-    double S_mean = 0.0, S_var = 0.0, L_mean = 0.0, per_pos = 0.0, cov_SL = 0.0;
-    /* [26_0824-016] smin/smax piggyback on this existing pass -- they feed the
-     * sort-free p90 selector below and do not touch any of the sums. */
-    double S_lo = rec_S[0], S_hi = rec_S[0];
-    for (ri = 0; ri < n_rec; ri++) {
-      S_mean  += rec_P[ri] * rec_S[ri];
-      L_mean  += rec_P[ri] * rec_L[ri];
-      per_pos += rec_P[ri] * rec_S[ri] / (rec_L[ri] > 1.0 ? rec_L[ri] : 1.0);
-      if (rec_S[ri] < S_lo) S_lo = rec_S[ri];
-      if (rec_S[ri] > S_hi) S_hi = rec_S[ri];
-    }
-    for (ri = 0; ri < n_rec; ri++) {
-      double ds = rec_S[ri] - S_mean;
-      double dl = rec_L[ri] - L_mean;
-      S_var  += rec_P[ri] * ds * ds;
-      cov_SL += rec_P[ri] * ds * dl;
-    }
     feats[FAST_CAL_FEAT_frag_score_mean]         = S_mean;
-    feats[FAST_CAL_FEAT_frag_score_var]          = S_var;
     feats[FAST_CAL_FEAT_frag_score_per_pos_mean] = per_pos;
-    feats[FAST_CAL_FEAT_cov_S_L]                 = cov_SL;
-    if (fsprof) { double t = fsprof_now(); fsp_mom = t - fsp_m0; fsp_m0 = t; }
+
+    /* Walk 3: var/cov, centred against walk 2's means -- same order, same
+     * operands as the old second moments pass. */
+    {
+      double S_var = 0.0, cov_SL = 0.0;
+      FRAG_WALK({
+        double P_i = P_raw / frag_mass;
+        double ds = S_i - S_mean;
+        double dl = L_i - L_mean;
+        S_var  += P_i * ds * ds;
+        cov_SL += P_i * ds * dl;
+      });
+      feats[FAST_CAL_FEAT_frag_score_var] = S_var;
+      feats[FAST_CAL_FEAT_cov_S_L]        = cov_SL;
+    }
+    if (fsprof) { double t = fsprof_now(); fsp_mom = t - fsp_s0; }
 
     /* P90 of S: weighted 90th percentile.
      * [26_0824-031] Closed-form guard (brief 26_0824-026 SS3.1): the
@@ -4732,26 +4702,50 @@ extract_frag_score(CM_t *cm, double *feats,
      * mass share is >= 0.10 of the (unnormalized) total, no other record can
      * push the weighted-90th-percentile crossing below cum_ic[N], so p90 is
      * exactly -- bit-for-bit -- the full-length record's S, i.e. cum_ic[N].
-     * This is the SAME double already computed above (the emit loop's S_all
-     * was cum_ic[N]); reusing cum_ic[N] directly for the feature is
-     * therefore bit-exact with what fs_p90() would have returned, not
-     * merely equal. The guard must be able to decline (per 026, it does on
-     * 40/40 + 59/60 deliberately out-of-guard synthetic arms): if either
-     * condition fails, fall through to the unchanged fs_p90() path. */
+     * The guard must be able to decline (per 026, it does on 40/40 + 59/60
+     * deliberately out-of-guard synthetic arms): if either condition fails,
+     * fall back to materializing rec_S/rec_P (exact size, known from walk 1,
+     * no doubling needed) and calling the unchanged fs_p90(). This fallback
+     * is the ONLY place these arrays still exist, and per SS2.2 it is never
+     * exercised on any path that reaches this function in production
+     * (cmbuild.c skips cm_FastCalibrate() entirely for any of
+     * --pbegin/--pebegin/--pend/--pfend/--null, so pbegin==pend==0.05
+     * always). It exists so the guard can decline instead of lying. */
     {
       double p90 = 0.0;
       int    ic_all_nonneg = 1;
       for (i = 1; i <= N; i++) { if (ic_col[i] < 0.0) { ic_all_nonneg = 0; break; } }
 
-      if (ic_all_nonneg && frag_mass > 0.0 && (1.0 - pbegin) / frag_mass >= 0.10) {
+      if (ic_all_nonneg && (1.0 - pbegin) / frag_mass >= 0.10) {
         p90 = cum_ic[N];
       } else {
+        double fsp_s1 = fsprof ? fsprof_now() : 0.0;
+        double S_lo, S_hi;
+        int64_t rj = 0;
+        if (n_rec > FRAGSCORE_REC_ALLOC_SANE) {
+          fprintf(stderr, "extract_frag_score: record count exceeds sanity bound (n_rec=%" PRId64 ")\n", n_rec);
+          status = eslEMEM; goto ERROR;
+        }
+        ESL_ALLOC(rec_P, sizeof(double) * n_rec);
+        ESL_ALLOC(rec_S, sizeof(double) * n_rec);
+        FRAG_WALK({
+          rec_P[rj] = P_raw / frag_mass;
+          rec_S[rj] = S_i;
+          rj++;
+        });
+        S_lo = S_hi = rec_S[0];
+        for (ri = 1; ri < n_rec; ri++) {
+          if (rec_S[ri] < S_lo) S_lo = rec_S[ri];
+          if (rec_S[ri] > S_hi) S_hi = rec_S[ri];
+        }
         if ((status = fs_p90(rec_S, rec_P, n_rec, S_lo, S_hi, &p90)) != eslOK) goto ERROR;
+        if (fsprof) fsp_sort = fsprof_now() - fsp_s1;
       }
       feats[FAST_CAL_FEAT_frag_score_p90] = p90;
-      if (fsprof) { double t = fsprof_now(); fsp_sort = t - fsp_m0; fsp_m0 = t; }
     }
   }
+#undef RANGE_IC
+#undef FRAG_WALK
 
  DONE:
   if (fsprof)
@@ -4764,7 +4758,6 @@ extract_frag_score(CM_t *cm, double *feats,
   if (ends_buf)         free(ends_buf);
   if (rec_P)            free(rec_P);
   if (rec_S)            free(rec_S);
-  if (rec_L)            free(rec_L);
   if (begins)           free(begins);
   return eslOK;
 
@@ -4775,7 +4768,6 @@ extract_frag_score(CM_t *cm, double *feats,
   if (ends_buf)         free(ends_buf);
   if (rec_P)            free(rec_P);
   if (rec_S)            free(rec_S);
-  if (rec_L)            free(rec_L);
   if (begins)           free(begins);
   return eslEMEM;
 }
