@@ -2578,7 +2578,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
     mmx[0][kp] = imx[0][kp] = elmx[0][kp] = -eslINFINITY;
     sc = -eslINFINITY;
     if(kp > 0) {
-      sc = p7_FLogsum(p7_FLogsum(mmx[0][kp-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+      sc = FLogsum(FLogsum(mmx[0][kp-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
 				 imx[0][kp-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
 		      dmx[0][kp-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
     }
@@ -2597,7 +2597,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	mmx[i][0]  = -eslINFINITY;
 	dmx[i][0]  = -eslINFINITY;
 	elmx[i][0] = -eslINFINITY;
-	sc = p7_FLogsum(p7_FLogsum(mmx[i-1][0] + Scorify(CP9TSC(cp9O_MI,0)),
+	sc = FLogsum(FLogsum(mmx[i-1][0] + Scorify(CP9TSC(cp9O_MI,0)),
 				   imx[i-1][0] + Scorify(CP9TSC(cp9O_II,0))),
 			dmx[i-1][0] + Scorify(CP9TSC(cp9O_DI,0)));
 	imx[i][0] = sc + Scorify(isc_i[0]);
@@ -2622,14 +2622,14 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
       for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
 	assert((kpprv-1) >= 0);
 
-	sc = p7_FLogsum(p7_FLogsum(mmx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
+	sc = FLogsum(FLogsum(mmx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
 				   imx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_IM,k-1))),
 			dmx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_DM,k-1)));
 
 	if(INBAND(i-1, 0)) {
 	  assert(kmin[(i-1)] == 0);
 	  if(mmx[i-1][0] != -eslINFINITY)
-	    sc = p7_FLogsum(sc, mmx[i-1][0] + Scorify(CP9TSC(cp9O_BM,k)));
+	    sc = FLogsum(sc, mmx[i-1][0] + Scorify(CP9TSC(cp9O_BM,k)));
 	}
 
 	if (cp9->flags & CPLAN9_EL) {
@@ -2637,14 +2637,14 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	  for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
 	    if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
 	      kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
-	      sc = p7_FLogsum(sc, elmx[i-1][kpprv_el]);
+	      sc = FLogsum(sc, elmx[i-1][kpprv_el]);
 	    }
 	  }
 	}
 
 	if(sc != -eslINFINITY) {
 	  mmx[i][kpcur] = sc + Scorify(msc_i[k]);
-	  endsc = p7_FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+	  endsc = FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
 	}
 	else {
 	  mmx[i][kpcur] = -eslINFINITY;
@@ -2656,7 +2656,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	    el_sc = mmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
 	    if (INBAND(i-1, k)) {                                  /* EL self-loop */
 	      int kpprv_el = k - kmin[i-1];
-	      el_sc = p7_FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
+	      el_sc = FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
 	    }
 	  }
 	  elmx[i][kpcur] = el_sc;
@@ -2697,14 +2697,14 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	    for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
 	      if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
 		kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
-		sc = p7_FLogsum(sc, elmx[i-1][kpprv_el]);
+		sc = FLogsum(sc, elmx[i-1][kpprv_el]);
 	      }
 	    }
 	  }
 
 	  if(sc != -eslINFINITY) {
 	    mmx[i][kpcur] = sc + Scorify(msc_i[k]);
-	    endsc = p7_FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+	    endsc = FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
 	  }
 	  else {
 	    mmx[i][kpcur] = -eslINFINITY;
@@ -2716,7 +2716,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	      el_sc = mmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
 	      if (INBAND(i-1, k)) {                                  /* EL self-loop */
 		int kpprv_el = k - kmin[i-1];
-		el_sc = p7_FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
+		el_sc = FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
 	      }
 	    }
 	    elmx[i][kpcur] = el_sc;
@@ -2735,7 +2735,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
       kpprv = kn - kmin[i-1];
       for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
 	assert(kpprv >= 0);
-	sc = p7_FLogsum(p7_FLogsum(mmx[i-1][kpprv] + Scorify(CP9TSC(cp9O_MI,k)),
+	sc = FLogsum(FLogsum(mmx[i-1][kpprv] + Scorify(CP9TSC(cp9O_MI,k)),
 				   imx[i-1][kpprv] + Scorify(CP9TSC(cp9O_II,k))),
 			dmx[i-1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
 	if(sc != -eslINFINITY) imx[i][kpcur] = sc + Scorify(isc_i[k]);
@@ -2748,14 +2748,14 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
       for (kpcur = 0; kpcur < (kn - kmin[i]); kpcur++) dmx[i][kpcur] = -eslINFINITY;
       kpcur = kn - kmin[i];
       for (k = kn; k <= kmax[i]; k++, kpcur++) {
-	sc = p7_FLogsum(p7_FLogsum(mmx[i][kpcur-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+	sc = FLogsum(FLogsum(mmx[i][kpcur-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
 				   imx[i][kpcur-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
 			dmx[i][kpcur-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
 	dmx[i][kpcur] = sc;
       }
 
       if(INBAND(i, M)) {
-	endsc = p7_FLogsum(p7_FLogsum(endsc, dmx[i][M-kmin[i]] + Scorify(CP9TSC(cp9O_DM,M))),
+	endsc = FLogsum(FLogsum(endsc, dmx[i][M-kmin[i]] + Scorify(CP9TSC(cp9O_DM,M))),
 			   imx[i][M-kmin[i]] + Scorify(CP9TSC(cp9O_IM,M)));
       }
 
@@ -2766,7 +2766,7 @@ cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int 
 	for (c_el = 0; c_el < cp9->el_from_ct[M+1]; c_el++) {
 	  if (INBAND(i, cp9->el_from_idx[M+1][c_el])) {
 	    int kpel = cp9->el_from_idx[M+1][c_el] - kmin[i];
-	    erow[i] = p7_FLogsum(erow[i], elmx[i][kpel]);
+	    erow[i] = FLogsum(erow[i], elmx[i][kpel]);
 	  }
 	}
       }
@@ -2819,7 +2819,7 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
     assert(M == kmax[i]);
     kpcur = M-kmin[i];
     mmx[i][kpcur]  = 0. +
-      p7_FLogsum(elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, M)),
+      FLogsum(elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, M)),
 		 Scorify(CP9TSC(cp9O_ME,M)));
     mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][M]);
     imx[i][kpcur]  = 0. + Scorify(CP9TSC(cp9O_IM,M));
@@ -2833,10 +2833,10 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
   for (k = kx; k >= kmin[i]; k--, kpcur--) {
       mmx[i][kpcur]  = 0 + Scorify(CP9TSC(cp9O_ME,k));
       if(INBAND(i, k+1)) {
-	mmx[i][kpcur]  = p7_FLogsum(mmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
+	mmx[i][kpcur]  = FLogsum(mmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
       }
       if(cp9->flags & CPLAN9_EL)
-	mmx[i][kpcur]  = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+	mmx[i][kpcur]  = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
       mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 
       if(INBAND(i, k+1)) {
@@ -2884,14 +2884,14 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 	}
 
 	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
-	  mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,M)));
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,M)));
 
 	if(INBAND(i+1, M)) {
 	  if(cp9->flags & CPLAN9_EL) {
 	    for(c = 0; c < cp9->el_from_ct[M]; c++)
 	      if(INBAND(i, cp9->el_from_idx[M][c])) {
 		kpcur_el = cp9->el_from_idx[M][c] - kmin[i];
-		elmx[i][kpcur_el] = p7_FLogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
+		elmx[i][kpcur_el] = FLogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
 	      }
 	  }
 	}
@@ -2912,14 +2912,14 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 	    for(c = 0; c < cp9->el_from_ct[k]; c++) {
 	      if(INBAND(i, cp9->el_from_idx[k][c])) {
 		kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
-		elmx[i][kpcur_el] = p7_FLogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
+		elmx[i][kpcur_el] = FLogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
 	      }
 	    }
 	  }
 
 	  if(INBAND(i+1, k)) {
 	    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-	      elmx[i][kpcur] = p7_FLogsum(elmx[i][kpcur], elmx[i+1][kpprv] + Scorify(cp9->el_selfsc));
+	      elmx[i][kpcur] = FLogsum(elmx[i][kpcur], elmx[i+1][kpprv] + Scorify(cp9->el_selfsc));
 	  }
 	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_MM,k));
 	  imx[i][kpcur] = mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_IM,k));
@@ -2934,9 +2934,9 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
       kpcur = kx - kmin[i];
       kpprv = kx - kmin[i+1];
       for (k = kx; k >= kn; k--, kpcur--, kpprv--) {
-	  mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,k)));
-	  imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,k)));
-	  dmx[i][kpcur] = p7_FLogsum(dmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,k)));
+	  imx[i][kpcur] = FLogsum(imx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,k)));
+	  dmx[i][kpcur] = FLogsum(dmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
       }
 
       /* DELETE transitions */
@@ -2946,12 +2946,12 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 
       kpcur = kx - kmin[i];
       for (k = kx; k >= kn; k--, kpcur--) {
-	  mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
-	  imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
-	  dmx[i][kpcur] = p7_FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
+	  imx[i][kpcur] = FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
+	  dmx[i][kpcur] = FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
 
 	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
-	    mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
 
 	  mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 	  imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
@@ -2959,7 +2959,7 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
       for(k = kx+1; k <= kmax[i]; k++) {
 	kpcur = k - kmin[i];
 	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
-	  mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
 	mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
 	imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
       }
@@ -2975,15 +2975,15 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 	imx[i][kpcur] = -eslINFINITY;
 	if(INBAND(i+1, 1)) {
 	  if(mmx[i+1][kpprv+1] != -eslINFINITY)
-	    imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_IM,0)));
+	    imx[i][kpcur] = FLogsum(imx[i][kpcur], mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_IM,0)));
 	}
 	if(INBAND(i+1, 0)) {
 	  if(imx[i+1][kpprv] != -eslINFINITY)
-	    imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,0)));
+	    imx[i][kpcur] = FLogsum(imx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,0)));
 	}
 	if(INBAND(i, 1)) {
 	  if(dmx[i][kpcur+1] != -eslINFINITY)
-	    imx[i][kpcur] = p7_FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,0)));
+	    imx[i][kpcur] = FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,0)));
 	}
 
 	kprvn = ESL_MAX(1, kmin[i+1]);
@@ -2992,18 +2992,18 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
 	mmx[i][kpcur] = -eslINFINITY;
 	for(kprv = kprvx; kprv >= kprvn; kprv--, kpprv--) {
 	  if(mmx[i+1][kpprv] != -eslINFINITY)
-	    mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], (mmx[i+1][kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (mmx[i+1][kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
 	}
 	k = 0;
 	if(INBAND(i+1, 0)) {
 	  kpprv = k - kmin[i+1];
 	  if(imx[i+1][kpprv] != -eslINFINITY) {
-	    mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], (imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
 	  }
 	}
 	if(INBAND(i, 1)) {
 	  if(dmx[i][kpcur+1] != -eslINFINITY) {
-	    mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], (dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
 	  }
 	}
       }
@@ -3036,14 +3036,14 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
   kpcur = kx - kmin[i];
   kpprv = kx - kmin[i+1];
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
-    dmx[i][kpcur] = p7_FLogsum(dmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+    dmx[i][kpcur] = FLogsum(dmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
 
   kn = ESL_MAX(kmin[i], kmin[i]-1);
   kn = ESL_MAX(kn, 1);
   kx = ESL_MIN(kmax[i], kmax[i]-1);
   kpcur = kx - kmin[i];
   for (k = kx; k >= kn; k--, kpcur--)
-    dmx[i][kpcur] = p7_FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+    dmx[i][kpcur] = FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
 
   k = 0;
   if(INBAND(i, 0)) {
@@ -3061,18 +3061,18 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
     mmx[i][kpcur] = -eslINFINITY;
     for(kprv = kprvx; kprv >= kprvn; kprv--, kpprv--) {
       if(mmx[i+1][kpprv] != -eslINFINITY)
-	mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], (mmx[i+1][kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
+	mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (mmx[i+1][kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
     }
     k = 0;
     if(INBAND(i+1, 0)) {
       kpprv = k - kmin[i+1];
       if(imx[i+1][kpprv] != -eslINFINITY) {
-	mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], (imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
+	mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
       }
     }
     if(INBAND(i, 1)) {
       if(dmx[i][kpcur+1] != -eslINFINITY) {
-	mmx[i][kpcur] = p7_FLogsum(mmx[i][kpcur], (dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
+	mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
       }
     }
   }
@@ -6183,7 +6183,7 @@ cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FM
   int status;
   int k;
   /* float threshold in log space (nats? bits? cp9 uses scoring as bits/INTSCALE; we keep log-prob) */
-  float thresh = logf((1. - p_thresh) / 2.);
+  float thresh = log2f((1. - p_thresh) / 2.);
 
   float *nset_m, *nset_i, *nset_d;
   float *xset_m, *xset_i, *xset_d;
@@ -6260,14 +6260,14 @@ cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FM
 	assert(kp == 0);
 	pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - sc, -eslINFINITY);
 	if(! _nset_m[0]) {
-	  if((mass_m[0] = p7_FLogsum(mass_m[0], pmx->mmx[i][kp])) > thresh) {
+	  if((mass_m[0] = FLogsum(mass_m[0], pmx->mmx[i][kp])) > thresh) {
 	    cp9b->pn_min_m[0] = i;
 	    _nset_m[0] = TRUE;
 	  }
 	}
 	pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - Scorify(hmm->isc[dsq[i]][0]) - sc, -eslINFINITY);
 	if(! _nset_i[0]) {
-	  if((mass_i[0] = p7_FLogsum(mass_i[0], pmx->imx[i][kp])) > thresh) {
+	  if((mass_i[0] = FLogsum(mass_i[0], pmx->imx[i][kp])) > thresh) {
 	    cp9b->pn_min_i[0] = i;
 	    _nset_i[0] = TRUE;
 	  }
@@ -6284,19 +6284,19 @@ cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FM
 	pmx->dmx[i][kp] = ESL_MAX(fmx->dmx[i][kp] + bmx->dmx[i][kp] - sc, -eslINFINITY);
 
 	if(! _nset_m[k]) {
-	  if((mass_m[k] = p7_FLogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) {
+	  if((mass_m[k] = FLogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) {
 	    cp9b->pn_min_m[k] = i;
 	    _nset_m[k] = TRUE;
 	  }
 	}
 	if(! _nset_i[k]) {
-	  if((mass_i[k] = p7_FLogsum(mass_i[k], pmx->imx[i][kp])) > thresh) {
+	  if((mass_i[k] = FLogsum(mass_i[k], pmx->imx[i][kp])) > thresh) {
 	    cp9b->pn_min_i[k] = i;
 	    _nset_i[k] = TRUE;
 	  }
 	}
 	if(! _nset_d[k]) {
-	  if((mass_d[k] = p7_FLogsum(mass_d[k], pmx->dmx[i][kp])) > thresh) {
+	  if((mass_d[k] = FLogsum(mass_d[k], pmx->dmx[i][kp])) > thresh) {
 	    cp9b->pn_min_d[k] = i;
 	    _nset_d[k] = TRUE;
 	  }
@@ -6311,19 +6311,19 @@ cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FM
       kp = 0;
       for(k = kmin[i]; k <= kmax[i]; k++, kp++) {
 	if(! _xset_m[k]) {
-	  if((mass_m[k] = p7_FLogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) {
+	  if((mass_m[k] = FLogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) {
 	    cp9b->pn_max_m[k] = i;
 	    _xset_m[k] = TRUE;
 	  }
 	}
 	if(! _xset_i[k]) {
-	  if((mass_i[k] = p7_FLogsum(mass_i[k], pmx->imx[i][kp])) > thresh) {
+	  if((mass_i[k] = FLogsum(mass_i[k], pmx->imx[i][kp])) > thresh) {
 	    cp9b->pn_max_i[k] = i;
 	    _xset_i[k] = TRUE;
 	  }
 	}
 	if(! _xset_d[k]) {
-	  if((mass_d[k] = p7_FLogsum(mass_d[k], pmx->dmx[i][kp])) > thresh) {
+	  if((mass_d[k] = FLogsum(mass_d[k], pmx->dmx[i][kp])) > thresh) {
 	    cp9b->pn_max_d[k] = i;
 	    _xset_d[k] = TRUE;
 	  }
@@ -6333,7 +6333,7 @@ cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FM
   if(INBAND(0,0)) {
     assert(kmin[0] == 0);
     if(! _xset_m[0]) {
-      if((mass_m[0] = p7_FLogsum(mass_m[0], pmx->mmx[0][0])) > thresh) {
+      if((mass_m[0] = FLogsum(mass_m[0], pmx->mmx[0][0])) > thresh) {
 	cp9b->pn_max_m[0] = 0;
 	_xset_m[0] = TRUE;
       }
@@ -6344,7 +6344,7 @@ cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FM
   kp = kn - kmin[i];
   for(k = kn; k <= kx; k++, kp++) {
     if(!_xset_d[k]) {
-      if((mass_d[k] = p7_FLogsum(mass_d[k], pmx->dmx[0][kp])) > thresh) {
+      if((mass_d[k] = FLogsum(mass_d[k], pmx->dmx[0][kp])) > thresh) {
 	cp9b->pn_max_d[k] = 0;
 	_xset_d[k] = TRUE;
       }
@@ -6412,8 +6412,8 @@ cp9_PredictStartAndEndPositionsP7BF(CP9_FMX *pmx, CP9Bands_t *cp9b, int *kmin, i
     for(i = 0; i <= L; i++) {
       if(k >= kmin[i] && k <= kmax[i]) {
 	int kp = k - kmin[i];
-	pocc += expf(pmx->mmx[i][kp]);
-	pocc += expf(pmx->dmx[i][kp]);
+	pocc += exp2f(pmx->mmx[i][kp]);
+	pocc += exp2f(pmx->dmx[i][kp]);
       }
     }
     pocc_arr[k] = pocc;

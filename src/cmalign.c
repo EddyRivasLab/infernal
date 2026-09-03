@@ -394,6 +394,18 @@ main(int argc, char **argv)
   /* Initializations */
   init_ilogsum();
   FLogsumInit();
+  /* HMMER's p7_FLogsum() uses its OWN static lookup table, distinct from
+   * Infernal's FLogsum()/ILogsum() tables initialized just above. Without this
+   * call that table stays all-zero, and p7_FLogsum(a,b) silently degenerates
+   * into max(a,b) -- turning any Forward recursion that uses it into Viterbi.
+   * cmsearch.c and cmscan.c already call it; cmalign did not. Latent today
+   * (every p7_FLogsum() caller is currently unreachable from cmalign), so this
+   * is prophylactic and byte-neutral -- but it becomes live the moment any of
+   * those kernels is put back on a cmalign path. p7_FLogsumInit() is
+   * idempotent and deterministic, and this is the main thread before any
+   * worker exists, which is the placement cm_p7_modelmaker.c:826-833 requires.
+   */
+  p7_FLogsumInit();
   process_commandline(argc, argv, &go, &(cfg.cmfile), &(cfg.sqfile), &(cfg.infmt), &(cfg.outfmt));
 
   /* Determine if we need to output the alignment all at once in a
