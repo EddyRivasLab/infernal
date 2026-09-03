@@ -970,6 +970,25 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    cfg->fp7_bld = p7_builder_Create(NULL, cfg->abc);
    cfg->fp7_bld->w_len = -1;
    cfg->fp7_bld->w_beta = p7_DEFAULT_WINDOW_BETA;
+   /* cfg->fp7_bld is used only to build the "additional" filter p7 HMM
+    * (build_and_calibrate_p7_filter(), below), whose evparam[]/p7H_STATS
+    * are unconditionally overwritten by cm_p7_Calibrate() immediately
+    * after p7_Builder() returns, before cm_SetFilterHMM() copies them
+    * into the CM. p7_Builder()'s own internal calibrate() step (HMMER's
+    * p7_Calibrate(), hmmer/src/evalues.c) therefore computes six numbers
+    * that are always discarded, at a cost that scales with EmN*EmL +
+    * EvN*EvL + EfN*EfL against p7_builder_Create()'s defaults (200x200
+    * twice, 100x200 once). Shrinking these sample counts/lengths here is
+    * output-preserving by construction (verified 26_0824-032 by poisoning
+    * fhmm->evparam[] to NaN post-p7_Builder() and confirming byte-identical
+    * .cm output) and cuts this dead work by ~22x at genome scale (14.1s ->
+    * 0.6s measured on sarscov2, clen 28835) while staying safely inside
+    * HMMER's own documented valid range for these fields (n>0 via the
+    * --EmN/--EvN/--EfN etc. options, evalues.c). Do not confuse these with
+    * cm_p7_Calibrate()'s own --EmN/--EvN/--EfN sample counts (cmbuild.c,
+    * further below) -- those control numbers that DO reach the .cm file. */
+   cfg->fp7_bld->EmL = cfg->fp7_bld->EvL = cfg->fp7_bld->EfL = 20;
+   cfg->fp7_bld->EmN = cfg->fp7_bld->EvN = cfg->fp7_bld->EfN = 20;
    if(esl_opt_IsUsed(go, "--p7prior")) {
      FILE *pfp;
      if (cfg->fp7_bld->prior != NULL) p7_prior_Destroy(cfg->fp7_bld->prior);
