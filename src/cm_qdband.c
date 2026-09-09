@@ -271,11 +271,48 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
    */
   int     *eb_nstar    = NULL;   /* eb_nstar[v] = n*_v, or -1 if gamma[v] is everywhere negligible */
   int      eb_on       = TRUE;   /* FALSE reverts to the pre-041 full 0..Z loops */
+  int      eb_guard    = TRUE;   /* brief 26_0824-042: FALSE reverts the truncation threshold to 041's max_beta */
+  double   eb_thresh   = 0.;     /* the truncation's negligibility standard; see the block comment below */
   const char *eb_env;
 
   if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) return eslEINVAL;
   max_beta = beta_W;
   if(qdbinfo != NULL) max_beta = ESL_MAX(max_beta, ESL_MAX(qdbinfo->beta1, qdbinfo->beta2));
+
+  /* brief 26_0824-042: the truncation's negligibility standard.
+   *
+   * 26_0824-041 used max_beta*DBL_EPSILON, matching the per-state test 2
+   * below (`gamma[v][Z] > max_beta*DBL_EPSILON`).  That is the right standard
+   * for test 2 and makes test 2 redundant -- but it is NOT the strictest
+   * standard applied to these densities.  BandTruncationNegligible() is run on
+   * gamma[0] at three cut points, and its bar is C*DBL_EPSILON where C is the
+   * tail mass past the cut point: ~beta_W and ~beta1 for two of them, but
+   * ~beta2 for the third.  With beta1=1e-7 and beta2=1e-15 that third bar is
+   * 1e8 times finer than max_beta*DBL_EPSILON.
+   *
+   * Truncating at the coarser standard leaves gamma[0][Z] at exactly 0.0,
+   * which makes BandTruncationNegligible()'s geometric extrapolation
+   * D = (beta/(1-beta))*density[Z] identically 0 -- so the test cannot fail.
+   * It does not merely become weaker; it becomes an unconditional pass.
+   * (Measured: it is this test, not test 2, that stops firing.  See the
+   * summary for brief 26_0824-042.)
+   *
+   * So the truncation must be at least as strict as the strictest consumer of
+   * the density: use min_beta, not max_beta.  Then a gamma[0][Z] that is
+   * zeroed by the truncation was already below the bar that
+   * BandTruncationNegligible() would have compared it against, and the test's
+   * verdict is unchanged rather than fabricated.
+   */
+  {
+    const char *g = getenv("QDBGUARD");
+    if(g != NULL && g[0] == '0') eb_guard = FALSE;
+  }
+  if(eb_guard) {
+    double min_beta = beta_W;
+    if(qdbinfo != NULL) min_beta = ESL_MIN(min_beta, ESL_MIN(qdbinfo->beta1, qdbinfo->beta2));
+    eb_thresh = min_beta * DBL_EPSILON;
+  }
+  else eb_thresh = max_beta * DBL_EPSILON;
 
   /* Make copies of cm->t, cm->begin and cm->trbegin, so we can 
    * modify the copies without changing the originals. 
@@ -462,7 +499,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
 	  for (n = dv; n <= Z; n++) {
 	    gamma_v[n] += aself * gamma_v[n-dv];
 	    if (n > eb_nonself_bnd && ((n - eb_nonself_bnd) % eb_K == 0)) {
-	      if (gamma_v[n] < (max_beta * DBL_EPSILON)) { eb_bnd = n; break; }
+	      if (gamma_v[n] < eb_thresh) { eb_bnd = n; break; }
 	    }
 	  }
 	  eb_final_bnd = eb_bnd;
@@ -484,7 +521,6 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
      * 0.0 and so fall below the threshold, as intended.
      */
     if(eb_on) { 
-      double eb_thresh = max_beta * DBL_EPSILON;
       int    eb_ns     = -1;
       for (n = Z; n >= 0; n--) {
 	if (gamma[v][n] >= eb_thresh) { eb_ns = n; break; }
