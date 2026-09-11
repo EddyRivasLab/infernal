@@ -1600,14 +1600,20 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
       /* add in emission score */
       for (j = 0; j <= L; j++) {
 	i = j;
-	Jalpha[v][j][1] = IMPOSSIBLE;
-	if(fill_L) { 
-	  Lalpha[v][j][1] = lmesc_v[dsq[i]];
-	  Lyshadow[v][j][1] = USED_TRUNC_END;
-	}
-	if(fill_R) { 
-	  Ralpha[v][j][1] = rmesc_v[dsq[j]];
-	  Ryshadow[v][j][1] = USED_TRUNC_END;
+	/* See the matching guard in cm_TrInsideAlign(): the peeled d==1 case is
+	 * out of domain at j==0, where dsq[0] is eslDSQ_SENTINEL (#52). The
+	 * shadow cells are left at their entry-time initialization, as for any
+	 * other IMPOSSIBLE cell. */
+	if(j > 0) {
+	  Jalpha[v][j][1] = IMPOSSIBLE;
+	  if(fill_L) { 
+	    Lalpha[v][j][1] = lmesc_v[dsq[i]];
+	    Lyshadow[v][j][1] = USED_TRUNC_END;
+	  }
+	  if(fill_R) { 
+	    Ralpha[v][j][1] = rmesc_v[dsq[j]];
+	    Ryshadow[v][j][1] = USED_TRUNC_END;
+	  }
 	}
 	i--;
 	for (d = 2; d <= j; d++) {
@@ -2500,9 +2506,18 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];
 	    }
 	    else { 
+	      /* See the matching guard in cm_TrInsideAlignHB(): only d==1 with
+	       * j>0 is a real cell here (#52). Shadow cells for the out-of-domain
+	       * case are left at their entry-time initialization. */
 	      if(do_J_v) { Jalpha[v][jp_v][dp_v] = IMPOSSIBLE; }
-	      if(do_L_v) { Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]]; Lyshadow[v][jp_v][dp_v] = USED_TRUNC_END; }
-	      if(do_R_v) { Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]]; Ryshadow[v][jp_v][dp_v] = USED_TRUNC_END; }
+	      if(d == 1 && j > 0) { 
+		if(do_L_v) { Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]]; Lyshadow[v][jp_v][dp_v] = USED_TRUNC_END; }
+		if(do_R_v) { Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]]; Ryshadow[v][jp_v][dp_v] = USED_TRUNC_END; }
+	      }
+	      else { 
+		if(do_L_v) { Lalpha[v][jp_v][dp_v] = IMPOSSIBLE; }
+		if(do_R_v) { Ralpha[v][jp_v][dp_v] = IMPOSSIBLE; }
+	      }
 	    }
 	    i--;
 	  }
@@ -3218,9 +3233,16 @@ cm_TrInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
       /* add in emission score */
       for (j = 0; j <= L; j++) {
 	i = j;
-	Jalpha[v][j][1] = IMPOSSIBLE;
-	if(fill_L) Lalpha[v][j][1] = lmesc_v[dsq[i]];
-	if(fill_R) Ralpha[v][j][1] = rmesc_v[dsq[j]];
+	/* The d==1 case is peeled out of the 'for (d = 2; d <= j; d++)' loop
+	 * below, so nothing here enforces d <= j. At j==0 that leaves i==0 and
+	 * the lmesc_v/rmesc_v lookups index dsq[0], which is eslDSQ_SENTINEL
+	 * (255), not a residue -- a read far past the end of the per-state
+	 * marginal emission row. d==1 is out of domain at j==0 anyway (see #52). */
+	if(j > 0) {
+	  Jalpha[v][j][1] = IMPOSSIBLE;
+	  if(fill_L) Lalpha[v][j][1] = lmesc_v[dsq[i]];
+	  if(fill_R) Ralpha[v][j][1] = rmesc_v[dsq[j]];
+	}
 	i--;
 	for (d = 2; d <= j; d++) {
 	  Jalpha[v][j][d] += esc_v[dsq[i]*cm->abc->Kp+dsq[j]];
@@ -3945,9 +3967,19 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];
 	    }
 	    else { 
+	      /* The else arm covers d==0 as well as d==1. d==0 gives i==j+1
+	       * (the trailing sentinel when j==L) and is out of domain for a
+	       * pair state regardless; d==1 gives i==j, out of domain at j==0.
+	       * Only d==1 with j>0 is a real cell (#52). */
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
-	      if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	      if(d == 1 && j > 0) { 
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	      }
+	      else { 
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }
 	    }
 	    i--;
 	  }
