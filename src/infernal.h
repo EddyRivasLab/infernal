@@ -1951,7 +1951,6 @@ typedef struct cm_s {
   int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
   int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 26_0430-140, --p7ibv-mode) */
   int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 26_0430-140, --p7ibv-width) */
-  int     p7_ibv_ckpt;         /* if TRUE, checkpointed banded CP9 P7B F/B in Pass 2 (--p7ibv-ckpt, brief 26_0430-146/144-B) */
   int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 26_0430-169) */
   int    *p7_wv_nodepad;       /* [0..M] WV per-node pad (F+B-halfwidth p95), computed align-time; NULL until set */
   int     p7_wv_nodepad_M;     /* length of p7_wv_nodepad (= fp7->M); 0 if not set */

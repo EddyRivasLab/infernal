@@ -142,7 +142,6 @@ CreateCMShell(void)
   cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 26_0430-124) */
   cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 26_0430-140, --p7ibv-mode) */
   cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 26_0430-140, --p7ibv-width) */
-  cm->p7_ibv_ckpt      = FALSE;          /* default: non-checkpointed Pass-2 CP9 F/B (--p7ibv-ckpt, brief 26_0430-146) */
   cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 26_0430-169) */
   cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 26_0430-169) */
   cm->p7_wv_nodepad_M  = 0;
@@ -3295,7 +3294,6 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_ibv_base_slab = cm->p7_ibv_base_slab;
   new->p7_ibv_mode      = cm->p7_ibv_mode;
   new->p7_ibv_width     = cm->p7_ibv_width;
-  new->p7_ibv_ckpt      = cm->p7_ibv_ckpt;
   new->p7_ibv_wv        = cm->p7_ibv_wv;
   if(cm->p7_wv_nodepad != NULL) {
     ESL_ALLOC(new->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
