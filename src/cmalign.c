@@ -3799,8 +3799,30 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->align_opts |= CM_ALIGN_MXESC_FIXEDTAU;
   /* brief 26_0430-271 item 2: still default OFF (weak/inconsistent benefit). */
   if(  esl_opt_GetBoolean(go, "--ckpt-cykbands"))  cm->align_opts |= CM_ALIGN_CKPT_CYKBANDS;
+  /* brief 26_0821-035: test the FLAG, not the option boolean.  This predicate dates
+   * from 181af9835 (2012-05-10), when ACCOPTS held only --hbanded/--nonbanded and
+   * esl_opt_GetBoolean(go,"--hbanded") was a complete expression of "am I in
+   * HMM-banded mode".  --p7band (a4a6af01, 2026-04-30) joined ACCOPTS, and Easel
+   * unsets every option toggle-tied to a given one (easel/esl_getopts.c:1332-1338),
+   * so --p7band turns --hbanded's BOOLEAN off while :3754 deliberately raises its
+   * FLAG -- leaving CM_ALIGN_XTAU unset under --p7band.  Consequences that were
+   * never decided: --p7band's two band-derivation fallbacks (cm_alndata.c:1376 and
+   * the fp7==NULL path) re-derived with the UNRATCHETED cp9_Seq2Bands() rather than
+   * the ratcheted cp9_IterateSeq2Bands() the shipped default uses, and --fixedtau
+   * was a silent no-op under --p7band.  Reading cm->align_opts (as every other
+   * consumer does, e.g. cm_alndata.c:693-696) fixes both and makes the next
+   * acceleration mode added to ACCOPTS inherit the correct behaviour.
+   *
+   * NOTE the interaction, which is NOT resolved by this commit: since
+   * brief 26_0430-271 fixed-tau (CM_ALIGN_MXESC_FIXEDTAU) is DEFAULT ON and
+   * deliberately suppresses the p7-banded ratchet, but it is consumed in exactly
+   * one place (cm_p7_band_chk.c:2047) and does NOT reach cp9_IterateSeq2Bands().
+   * So the fallback's ratchet is now ON while the p7 success path's is OFF.
+   * Whether the fallback should instead be fixed-tau-aware is Eric's call --
+   * see brief 26_0821-035 section A1b.
+   */
   if((! esl_opt_GetBoolean(go, "--fixedtau")) &&
-     (  esl_opt_GetBoolean(go, "--hbanded"))) { 
+     (  cm->align_opts & CM_ALIGN_HBANDED)) { 
     cm->align_opts |= CM_ALIGN_XTAU;
   }
 
