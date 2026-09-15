@@ -739,7 +739,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     info[k].pass_idx    = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
     info[k].w           = esl_stopwatch_Create();
     info[k].w_tot       = esl_stopwatch_Create();
-    info[k].do_failover = (esl_opt_GetBoolean(go, "--hbanded")  && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 #ifdef HMMER_THREADS
     info[k].queue  = queue;
 #endif
@@ -757,6 +756,14 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* initialization */
   nali = nseq_cur = nseq_aligned = 0;
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+
+  /* do_failover must be read from the FLAG, not the --hbanded option boolean:
+   * --p7band joined ACCOPTS and Easel unsets toggle-tied option booleans, so
+   * the boolean no longer expresses "am I in HMM-banded mode".  This is set
+   * HERE rather than with the rest of info[] above, because the flag is not
+   * raised until initialize_cm() on the line above. */
+  for (k = 0; k < infocnt; ++k)
+    info[k].do_failover = ((cm->align_opts & CM_ALIGN_HBANDED) && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 
   /* --hmm mode: HMM-only alignment, bypass normal CM alignment pipeline */
   if(esl_opt_GetBoolean(go, "--hmm")) {
@@ -3203,7 +3210,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   info.pass_idx    = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
   info.w           = esl_stopwatch_Create();
   info.w_tot       = esl_stopwatch_Create();
-  info.do_failover = (esl_opt_GetBoolean(go, "--hbanded")  && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
+  /* read the FLAG, not the --hbanded boolean: --p7band joined ACCOPTS and Easel
+   * unsets toggle-tied option booleans, so the boolean no longer expresses
+   * "am I in HMM-banded mode".  initialize_cm() above has already set the flag. */
+  info.do_failover = ((cm->align_opts & CM_ALIGN_HBANDED) && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 
   /* Main loop: actually two nested while loops, over sequence blocks
    * (while(blocks_remain_in_file)) and over sequences within blocks
