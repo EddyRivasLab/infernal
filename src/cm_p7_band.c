@@ -3453,6 +3453,59 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
  *
  * Returns:  eslOK on success.
  *           eslERANGE if matrix still exceeds size_limit at maxtau.
+ *
+ * NATURAL PLACE FOR A P7-BAND RATCHET -- deliberately NOT implemented.
+ *
+ *           There are two distinct "matrix too big" problems here and this
+ *           function only ratchets against one of them:
+ *
+ *             (1) the banded CM DP matrix (hbmx_Mb).  Ratcheted below by
+ *                 tightening tau/thresh1/thresh2, and separately handled by
+ *                 the --mxsize engine-escalation ladder (standard -> ckpt ->
+ *                 D&C) in cm_alndata.c.  Covered.
+ *
+ *             (2) the CP9 F/B matrix used to DERIVE the CM bands (cp9mx_Mb).
+ *                 The correct lever for this one is the P7 ENVELOPE, not tau:
+ *                 kmin/kmax restrict which (i,k) cells the CP9 F/B computes.
+ *                 But kmin/kmax arrive here as a FIXED INPUT and are never
+ *                 re-derived, so nothing in this function can reduce (2).
+ *
+ *           A ratchet over kmin/kmax -- tightening the envelope (--p7padplus
+ *           for vitband, --p7ibv-delta for IBV, --p7kmerchain-alpha/KMC_* for
+ *           kmerchain) and re-running the F/B -- would be the structural
+ *           analogue of the tau loop below, and this is where it would go.
+ *
+ *           It is NOT implemented, on purpose (Eric, 2026-09-15).  Reasons,
+ *           so that whoever revisits this does not have to re-derive them:
+ *
+ *             - The checkpointed banded CP9 F/B (cm_p7_band_chk.c, briefs
+ *               26_0430-150/153/154) already gives O(sqrt(L)*avg_bw) working
+ *               memory for (2) and is the default path.  It is ACCURACY-NEUTRAL:
+ *               same computation, same bands, less memory.  Tightening the
+ *               envelope is NOT -- tighter envelopes are measurably less
+ *               contained (brief 26_0821-033: --p7kmerchain, the tightest
+ *               deriver, is the least contained at 9/30 sarscov2, -246 bits).
+ *               So tightening buys memory with accuracy that checkpointing
+ *               gives for free.  Only reach for it if SPEED, not memory, is
+ *               the binding constraint.
+ *
+ *             - It would be a SECOND ratchet nested inside the tau ratchet
+ *               below, over a quantity the tau ratchet's target depends on:
+ *               tightening the envelope changes the CP9 posteriors, which
+ *               changes the CM bands, which moves hbmx_Mb underneath the loop.
+ *               Two coupled feedback loops over the same quantity is where
+ *               non-monotonic behaviour comes from, and brief 26_0821-013 was
+ *               already a tau-ratchet non-monotonicity bug (TRIAGE row 1.25c).
+ *
+ *             - A tighter envelope is likelier to exclude the true parse,
+ *               which is exactly the condition that makes the truncated
+ *               HB engines return eslEAMBIGUOUS ("no valid parsetree found").
+ *               So a ratchet built to fix (2) can manufacture a DIFFERENT
+ *               failure downstream.
+ *
+ *           This pipeline is already complex, and everything in it earns its
+ *           place by making very large RNAs alignable.  Do not add this
+ *           without a demonstrated case that checkpointing does not cover.
  */
 int
 cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, int *kmax,
@@ -3536,6 +3589,13 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
        * if that doesn't fit, ONE multi-threshold F/B sweep over the whole ratchet
        * grid + scan-and-pick. Output is byte-identical to the old loop. */
       int nbump = 0;
+      /* NATURAL PLACE FOR A P7-BAND RATCHET (see this function's header, and
+       * do not build it without reading that first): kmin/kmax go in here
+       * UNCHANGED and are never re-derived.  A loop around this call that
+       * tightened the envelope and re-ran the F/B is what would reduce the
+       * CP9 band-derivation matrix (cp9mx_Mb) -- the one size the tau loop
+       * below cannot touch.  Deliberately not implemented; the checkpointed
+       * F/B already covers it accuracy-neutrally. */
       status = cp9_IterateSeq2BandsP7BF_chk_multi(cm, errbuf, cp9, dsq, L, kmin, kmax, i0, j0,
                                                   pass_idx, size_limit, doing_search, do_sample,
                                                   do_post, maxtau, do_pnmono, do_pnmono_print,
