@@ -4272,7 +4272,13 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
     esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
   }
 
-  /* HMM bands -> CM ij bands */
+  /* HMM bands -> CM ij bands.
+   * brief 26_0821-069: this function (p7banded_post_to_cp9bands) has no
+   * callers anywhere in src/*.c as of this brief (verified by grep) -- it is
+   * declared in infernal.h but dead code. Left as-is rather than "fixed":
+   * there is no live call site to determine a correct doing_search value
+   * from, and no way to test a change to unreachable code on a landing
+   * candidate. */
   if(do_old_hmm2ij) {
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) goto ERROR;
   } else {
@@ -5007,7 +5013,14 @@ p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
     esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
   }
 
-  /* HMM bands -> CM ij bands */
+  /* HMM bands -> CM ij bands.
+   * brief 26_0821-069: doing_search=TRUE is correct here, not a leftover
+   * default. This function (p7pn_bands_to_cp9cm_bands) has two textual call
+   * sites: cm_pipeline.c's pli_dispatch_cm_search() (--p7post_cp9b, a genuine
+   * search context -- the only live one), and pli_align_hit()'s legacy
+   * per-hit re-derivation block, which is dead (guarded by "if(0 && ...)").
+   * Hardcoded rather than threaded because the one live caller is
+   * unambiguously search-only. */
   if(do_old_hmm2ij) {
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
   } else {
