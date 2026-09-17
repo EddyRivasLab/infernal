@@ -3561,7 +3561,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
    * pocc=NULL (extent-based). Test path for whether a tightened band can drive
    * a valid CM alignment without the F/B collapse. */
   if(getenv("P215_DIRECT") != NULL) {
-    status = p7bands_to_cp9bands(cm, errbuf, kmin, kmax, L, cm->cp9b, i0, j0, pass_idx, NULL, 0);
+    status = p7bands_to_cp9bands(cm, errbuf, kmin, kmax, L, cm->cp9b, i0, j0, pass_idx, NULL, doing_search, 0);
     if(ret_Mb != NULL) *ret_Mb = 0.;
     return status;
   }
@@ -3731,6 +3731,12 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
  *                         internally (no F/B matrices available); callers must
  *                         supply it from an upstream posterior computation or
  *                         pass NULL to get legacy behavior.
+ *           doing_search - brief 26_0821-069: TRUE for a search (partial-span
+ *                         hit, bands may be loose), FALSE for an alignment
+ *                         (full i0..j0 span; enables cp9_HMM2ijBands()'s
+ *                         coverage-tightening checks). Passed straight through
+ *                         to cp9_HMM2ijBands{_OLD,}() -- the caller owns this
+ *                         value, this function does not infer it.
  *           debug_level - verbosity level for debugging printf()s
  *
  * Returns:  eslOK on success
@@ -3738,7 +3744,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
 int
 p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
 		    CP9Bands_t *cp9b, int i0, int j0, int pass_idx,
-		    const float *pocc, int debug_level)
+		    const float *pocc, int doing_search, int debug_level)
 {
   int   status;
   int   i, k;
@@ -3957,11 +3963,14 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
     esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
   }
 
-  /* HMM bands -> CM ij bands */
+  /* HMM bands -> CM ij bands. brief 26_0821-069: doing_search threaded from
+   * the caller (not hardcoded) -- this function's sole call site is the
+   * env-gated P215_DIRECT diagnostic in cp9_IterateSeq2BandsP7B(), which
+   * already has doing_search in scope. */
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   } else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
   }
 
   /* CM ij bands -> CM d bands */
