@@ -3407,7 +3407,13 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
     esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
 
-  /* Step 3: HMM bands -> CM bands. */
+  /* Step 3: HMM bands -> CM bands.
+   * brief 26_0821-069: doing_search=TRUE is correct here, not a leftover default.
+   * This function's sole caller (cp9_Seq2BandsP7B) has exactly one live call
+   * site in turn: cm_pipeline.c's pli_dispatch_cm_search(), a genuine search
+   * context. Hardcoded rather than threaded because that single-caller chain
+   * is stated (see the caller-audit comment on cp9_IterateSeq2BandsP7B) to be
+   * intentionally narrow. */
   if(do_old_hmm2ij) {
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
   }
