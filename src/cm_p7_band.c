@@ -3702,6 +3702,47 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     return eslOK;
   }
 
+  /* DIAGNOSTIC ONLY (brief 26_0821-068): env-gated invocation of the plain
+   * float NON-checkpointed P7-banded CP9 F/B (cp9_ForwardP7BF/cp9_BackwardP7BF/
+   * cp9_FBMatrices2BandsF) on the !do_trunc branch, mirroring INT_P7B_LEGACY
+   * above -- so a fourth arm (FLT-P7B) can be driven via real cmalign to test
+   * whether the diffuse-band defect is shared by both non-checkpointed P7B
+   * kernels (precision-independent) or specific to the int kernel. OFF BY
+   * DEFAULT. Not for production use; revert or leave OFF before this brief's
+   * work concludes. */
+  if(getenv("FLT_P7B_LEGACY") != NULL) {
+    CP9_FMX *fmx_f2 = NULL, *bmx_f2 = NULL, *pmx_f2 = NULL;
+    float fsc;
+    if((fmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating fmx_f2 (FLT_P7B_LEGACY)");
+    if((bmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating bmx_f2 (FLT_P7B_LEGACY)");
+    if((pmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating pmx_f2 (FLT_P7B_LEGACY)");
+    if((status = cp9_ForwardP7BF (cp9, errbuf, fmx_f2, dsq, L, kmin, kmax, &fsc))  != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+    if((status = cp9_BackwardP7BF(cp9, errbuf, bmx_f2, dsq, L, kmin, kmax, NULL))  != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+    int nbump_fltlegacy = 0;
+    while(1) {
+      if((status = cp9_FBMatrices2BandsF(cm, errbuf, cp9, fmx_f2, bmx_f2, pmx_f2, dsq, cm->cp9b,
+					 kmin, kmax, L, i0, j0, pass_idx, 0, do_pnmono, do_pnmono_print)) != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+      if(doing_search) {
+	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+      }
+      else {
+	status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+	if(status != eslOK && status != eslERANGE) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+      }
+      if(hbmx_Mb < size_limit)                                  break;
+      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+      nbump_fltlegacy++;
+    }
+    FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2);
+    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#FLT_P7B_LEGACY L=%d tau_bumps=%d (brief 26_0821-068 diagnostic path)\n", L, nbump_fltlegacy);
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    if(hbmx_Mb > size_limit) return eslERANGE;
+    return eslOK;
+  }
+
   /* Non-truncated path (brief 26_0628-073 diagnosis, brief 26_0628-074 fix):
    * route band derivation through the SAME double-precision checkpointed CP9
    * F/B that the do_trunc path uses (cp9_IterateSeq2BandsP7BF_chk_multi),
