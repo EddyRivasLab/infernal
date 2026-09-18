@@ -3288,9 +3288,11 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     printf("Forward/Backward matrices checked.\n");
   }
 
-  /* Phase 2: F/B -> HMM bands -> CM bands (tau-dependent) */
+  /* Phase 2: F/B -> HMM bands -> CM bands (tau-dependent).
+   * doing_search=TRUE: this function's sole live caller is cm_pipeline.c's
+   * pli_dispatch_cm_search(), a genuine search context (brief 26_0821-070). */
   if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, fmx, bmx, pmx, dsq, cp9b, kmin, kmax,
-				       L, i0, j0, pass_idx, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
+				       L, i0, j0, pass_idx, TRUE, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
   return eslOK;
 }
 
@@ -3355,6 +3357,12 @@ cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *p
  *           L           - sequence length
  *           i0, j0      - subsequence bounds in original coords
  *           pass_idx    - pipeline pass index
+ *           doing_search - brief 26_0821-070: TRUE for a search (partial-span
+ *                         hit, bands may be loose), FALSE for an alignment
+ *                         (full i0..j0 span; enables cp9_HMM2ijBands()'s
+ *                         coverage-tightening checks). Passed straight through
+ *                         to cp9_HMM2ijBands{_OLD,}() -- the caller owns this
+ *                         value, this function does not infer it.
  *           debug_level - verbosity
  *           do_pnmono, do_pnmono_print - pnmono flags
  *
@@ -3363,7 +3371,7 @@ cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *p
 int
 cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx,
 			ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax,
-			int L, int i0, int j0, int pass_idx, int debug_level,
+			int L, int i0, int j0, int pass_idx, int doing_search, int debug_level,
 			int do_pnmono, int do_pnmono_print)
 {
   int status;
@@ -3407,12 +3415,18 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
     esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
 
-  /* Step 3: HMM bands -> CM bands. */
+  /* Step 3: HMM bands -> CM bands.
+   * brief 26_0821-070: doing_search threaded from the caller (not hardcoded).
+   * cp9_FBMatrices2BandsP7B has two call sites: cp9_Seq2BandsP7B (a genuine
+   * search context, passes TRUE) and the INT_P7B_LEGACY diagnostic in
+   * cp9_IterateSeq2BandsP7B's !do_trunc branch (an alignment context, passes
+   * the doing_search already in scope there -- FALSE for cmalign). The old
+   * hardcoded TRUE was correct for the former and wrong for the latter. */
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
   }
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
   ij2d_bands(cm, cp9b, do_trunc, debug_level);
@@ -3526,12 +3540,18 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   float    sc;
 
   /* Caller audit: cp9_Seq2BandsP7B and cp9_Seq2BandsP7BF must remain narrow.
-   * cp9_Seq2BandsP7B currently has 2 callers: this function (only on the
-   * !do_trunc branch below, indirectly via cp9_FBMatrices2BandsP7B) and
-   * cm_pipeline.c (search/scan, untouched). cp9_Seq2BandsP7BF has 1 caller:
-   * this function (only on the do_trunc branch below, indirectly via
-   * cp9_FBMatrices2BandsF). The float entry point is intentionally
-   * unreachable from cmscan / cmsearch / non-truncated cmalign.
+   * STALE AS OF 26_0628-073/074, corrected by brief 26_0821-070: this
+   * function's !do_trunc branch does NOT call cp9_Seq2BandsP7B (indirectly
+   * or otherwise) on any live path -- 26_0628-074 routed !do_trunc through
+   * cp9_IterateSeq2BandsP7BF_chk_multi unconditionally, same as do_trunc.
+   * cp9_Seq2BandsP7B currently has exactly 1 live caller: cm_pipeline.c
+   * (search/scan, untouched). It is also reachable here, but only via the
+   * DIAGNOSTIC-ONLY, off-by-default INT_P7B_LEGACY env gate below (brief
+   * 26_0821-067/070) -- not a production call path.
+   * cp9_Seq2BandsP7BF has 0 live callers: the do_trunc branch below returns
+   * unconditionally before reaching it (see the do_trunc block's own
+   * comments). The float entry point is intentionally unreachable from
+   * cmscan / cmsearch / cmalign in production.
    */
 
   /* Contract checks */
@@ -3555,7 +3575,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
    * pocc=NULL (extent-based). Test path for whether a tightened band can drive
    * a valid CM alignment without the F/B collapse. */
   if(getenv("P215_DIRECT") != NULL) {
-    status = p7bands_to_cp9bands(cm, errbuf, kmin, kmax, L, cm->cp9b, i0, j0, pass_idx, NULL, 0);
+    status = p7bands_to_cp9bands(cm, errbuf, kmin, kmax, L, cm->cp9b, i0, j0, pass_idx, NULL, doing_search, 0);
     if(ret_Mb != NULL) *ret_Mb = 0.;
     return status;
   }
@@ -3646,6 +3666,83 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     return eslOK;
   }
 
+  /* DIAGNOSTIC ONLY (brief 26_0821-067): env-gated restoration of the exact
+   * pre-26_0628-074 legacy int P7-banded CP9 F/B path for the !do_trunc branch,
+   * so the INT-P7B arm can be driven via real cmalign for a same-instrument
+   * three-arm (INT-UNB / INT-P7B / DBL-P7B) comparison. OFF BY DEFAULT. Not for
+   * production use; revert or leave OFF before this brief's work concludes. */
+  if(getenv("INT_P7B_LEGACY") != NULL) {
+    CP9_MX *pmx = NULL;
+    if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, cm->cp9_mx, dsq, L, kmin, kmax, &sc)) != eslOK) goto ERROR;
+    if((status = cp9_BackwardP7B(cp9, errbuf, cm->cp9_bmx, dsq, L, kmin, kmax, NULL)) != eslOK) goto ERROR;
+    if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
+      ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating local pmx (INT_P7B_LEGACY)");
+    int nbump_legacy = 0;
+    while(1) {
+      if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b,
+					   kmin, kmax, L, i0, j0, pass_idx, doing_search, 0, do_pnmono, do_pnmono_print)) != eslOK) { FreeCP9Matrix(pmx); goto ERROR; }
+      if(doing_search) {
+	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) { FreeCP9Matrix(pmx); goto ERROR; }
+      }
+      else {
+	status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+	if(status != eslOK && status != eslERANGE) { FreeCP9Matrix(pmx); goto ERROR; }
+      }
+      if(hbmx_Mb < size_limit)                                  break;
+      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+      nbump_legacy++;
+    }
+    FreeCP9Matrix(pmx);
+    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#INT_P7B_LEGACY L=%d tau_bumps=%d (brief 26_0821-067 diagnostic path)\n", L, nbump_legacy);
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    if(hbmx_Mb > size_limit) return eslERANGE;
+    return eslOK;
+  }
+
+  /* DIAGNOSTIC ONLY (brief 26_0821-068): env-gated invocation of the plain
+   * float NON-checkpointed P7-banded CP9 F/B (cp9_ForwardP7BF/cp9_BackwardP7BF/
+   * cp9_FBMatrices2BandsF) on the !do_trunc branch, mirroring INT_P7B_LEGACY
+   * above -- so a fourth arm (FLT-P7B) can be driven via real cmalign to test
+   * whether the diffuse-band defect is shared by both non-checkpointed P7B
+   * kernels (precision-independent) or specific to the int kernel. OFF BY
+   * DEFAULT. Not for production use; revert or leave OFF before this brief's
+   * work concludes. */
+  if(getenv("FLT_P7B_LEGACY") != NULL) {
+    CP9_FMX *fmx_f2 = NULL, *bmx_f2 = NULL, *pmx_f2 = NULL;
+    float fsc;
+    if((fmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating fmx_f2 (FLT_P7B_LEGACY)");
+    if((bmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating bmx_f2 (FLT_P7B_LEGACY)");
+    if((pmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating pmx_f2 (FLT_P7B_LEGACY)");
+    if((status = cp9_ForwardP7BF (cp9, errbuf, fmx_f2, dsq, L, kmin, kmax, &fsc))  != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+    if((status = cp9_BackwardP7BF(cp9, errbuf, bmx_f2, dsq, L, kmin, kmax, NULL))  != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+    int nbump_fltlegacy = 0;
+    while(1) {
+      if((status = cp9_FBMatrices2BandsF(cm, errbuf, cp9, fmx_f2, bmx_f2, pmx_f2, dsq, cm->cp9b,
+					 kmin, kmax, L, i0, j0, pass_idx, 0, do_pnmono, do_pnmono_print)) != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+      if(doing_search) {
+	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+      }
+      else {
+	status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+	if(status != eslOK && status != eslERANGE) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
+      }
+      if(hbmx_Mb < size_limit)                                  break;
+      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+      nbump_fltlegacy++;
+    }
+    FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2);
+    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#FLT_P7B_LEGACY L=%d tau_bumps=%d (brief 26_0821-068 diagnostic path)\n", L, nbump_fltlegacy);
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    if(hbmx_Mb > size_limit) return eslERANGE;
+    return eslOK;
+  }
+
   /* Non-truncated path (brief 26_0628-073 diagnosis, brief 26_0628-074 fix):
    * route band derivation through the SAME double-precision checkpointed CP9
    * F/B that the do_trunc path uses (cp9_IterateSeq2BandsP7BF_chk_multi),
@@ -3725,6 +3822,12 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
  *                         internally (no F/B matrices available); callers must
  *                         supply it from an upstream posterior computation or
  *                         pass NULL to get legacy behavior.
+ *           doing_search - brief 26_0821-069: TRUE for a search (partial-span
+ *                         hit, bands may be loose), FALSE for an alignment
+ *                         (full i0..j0 span; enables cp9_HMM2ijBands()'s
+ *                         coverage-tightening checks). Passed straight through
+ *                         to cp9_HMM2ijBands{_OLD,}() -- the caller owns this
+ *                         value, this function does not infer it.
  *           debug_level - verbosity level for debugging printf()s
  *
  * Returns:  eslOK on success
@@ -3732,7 +3835,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
 int
 p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
 		    CP9Bands_t *cp9b, int i0, int j0, int pass_idx,
-		    const float *pocc, int debug_level)
+		    const float *pocc, int doing_search, int debug_level)
 {
   int   status;
   int   i, k;
@@ -3951,11 +4054,14 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
     esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
   }
 
-  /* HMM bands -> CM ij bands */
+  /* HMM bands -> CM ij bands. brief 26_0821-069: doing_search threaded from
+   * the caller (not hardcoded) -- this function's sole call site is the
+   * env-gated P215_DIRECT diagnostic in cp9_IterateSeq2BandsP7B(), which
+   * already has doing_search in scope. */
   if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   } else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
   }
 
   /* CM ij bands -> CM d bands */
@@ -4257,7 +4363,13 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
     esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
   }
 
-  /* HMM bands -> CM ij bands */
+  /* HMM bands -> CM ij bands.
+   * brief 26_0821-069: this function (p7banded_post_to_cp9bands) has no
+   * callers anywhere in src/*.c as of this brief (verified by grep) -- it is
+   * declared in infernal.h but dead code. Left as-is rather than "fixed":
+   * there is no live call site to determine a correct doing_search value
+   * from, and no way to test a change to unreachable code on a landing
+   * candidate. */
   if(do_old_hmm2ij) {
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) goto ERROR;
   } else {
@@ -4992,7 +5104,14 @@ p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
     esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
   }
 
-  /* HMM bands -> CM ij bands */
+  /* HMM bands -> CM ij bands.
+   * brief 26_0821-069: doing_search=TRUE is correct here, not a leftover
+   * default. This function (p7pn_bands_to_cp9cm_bands) has two textual call
+   * sites: cm_pipeline.c's pli_dispatch_cm_search() (--p7post_cp9b, a genuine
+   * search context -- the only live one), and pli_align_hit()'s legacy
+   * per-hit re-derivation block, which is dead (guarded by "if(0 && ...)").
+   * Hardcoded rather than threaded because the one live caller is
+   * unambiguously search-only. */
   if(do_old_hmm2ij) {
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
   } else {
