@@ -3666,6 +3666,42 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     return eslOK;
   }
 
+  /* DIAGNOSTIC ONLY (brief 26_0821-067): env-gated restoration of the exact
+   * pre-26_0628-074 legacy int P7-banded CP9 F/B path for the !do_trunc branch,
+   * so the INT-P7B arm can be driven via real cmalign for a same-instrument
+   * three-arm (INT-UNB / INT-P7B / DBL-P7B) comparison. OFF BY DEFAULT. Not for
+   * production use; revert or leave OFF before this brief's work concludes. */
+  if(getenv("INT_P7B_LEGACY") != NULL) {
+    CP9_MX *pmx = NULL;
+    if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, cm->cp9_mx, dsq, L, kmin, kmax, &sc)) != eslOK) goto ERROR;
+    if((status = cp9_BackwardP7B(cp9, errbuf, cm->cp9_bmx, dsq, L, kmin, kmax, NULL)) != eslOK) goto ERROR;
+    if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
+      ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating local pmx (INT_P7B_LEGACY)");
+    int nbump_legacy = 0;
+    while(1) {
+      if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b,
+					   kmin, kmax, L, i0, j0, pass_idx, doing_search, 0, do_pnmono, do_pnmono_print)) != eslOK) { FreeCP9Matrix(pmx); goto ERROR; }
+      if(doing_search) {
+	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) { FreeCP9Matrix(pmx); goto ERROR; }
+      }
+      else {
+	status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
+	if(status != eslOK && status != eslERANGE) { FreeCP9Matrix(pmx); goto ERROR; }
+      }
+      if(hbmx_Mb < size_limit)                                  break;
+      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+      nbump_legacy++;
+    }
+    FreeCP9Matrix(pmx);
+    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#INT_P7B_LEGACY L=%d tau_bumps=%d (brief 26_0821-067 diagnostic path)\n", L, nbump_legacy);
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    if(hbmx_Mb > size_limit) return eslERANGE;
+    return eslOK;
+  }
+
   /* Non-truncated path (brief 26_0628-073 diagnosis, brief 26_0628-074 fix):
    * route band derivation through the SAME double-precision checkpointed CP9
    * F/B that the do_trunc path uses (cp9_IterateSeq2BandsP7BF_chk_multi),
