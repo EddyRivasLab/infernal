@@ -398,6 +398,84 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
     esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
     esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
     esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
+
+    /* brief 26_0821-078: port of the brief 26_0430-201 dead-node widening from
+     * the checkpointed band-indexed p7 deriver to this, the default (classic)
+     * CP9 posterior band deriver, for ALIGNMENT only.
+     *
+     * A "dead" HMM node k is one with literally zero posterior evidence at
+     * every substate (pn_min_{m,i,d}[k] == -1). A contiguous run of them
+     * collapses the CM's normal left-to-right MATL/MATR/MATP chain, because
+     * each node's (i,j) band is a mandatory gateway for every downstream
+     * node's reachability. cp9_HMM2ijBands()'s "final, brutal hack" (gated on
+     * hmm_is_localized && cm_is_fully_localized) only ever widens CM node 1;
+     * it does not, and structurally cannot, bridge a dead run. The result is
+     * that the degenerate local-begin-then-EL escape parse at node 1 becomes
+     * the ONLY valid parse, and a real, correctly-banded, far higher-scoring
+     * parse elsewhere in the tree is silently discarded -- no error, no
+     * warning, exit 0, a single-consensus-column alignment with a large
+     * negative bit score. Truncated passes have an escape hatch built from
+     * cp9_PredictStartAndEndPositions()'s Lmarg/Rmarg marginal candidates
+     * (the do_trunc branch above); the non-truncated path has none, which is
+     * why this widening is confined to this branch.
+     *
+     * Bound each dead node by its NEAREST VALID NEIGHBORS on either side, not
+     * by the full i0..j0 span. brief 26_0430-201 measured that an unbounded
+     * i0..j0 widening over-widens a trailing dead run and lets CYK extend the
+     * alignment past the model's real, evidence-backed endpoint (the reported
+     * model end position ran all the way out to the literal last consensus
+     * column). Nearest-neighbor bounding keeps each widened node's admissible
+     * (i,j) span consistent with where the model actually has evidence.
+     *
+     * Both sweeps and the widening run over k = 1..hmm_M and deliberately
+     * EXCLUDE node 0. That is the one place this differs from the
+     * checkpointed original, and it is required here: in this deriver
+     * cp9_FB2HMMBands() sets pn_min_m[0] = pn_max_m[0] = i0-1 as a
+     * NON-EMITTER sentinel for M_0 (and HMMBandsEnforceValidParse() asserts
+     * pn_min_m[0] == i0-1 for alignment). Seeding the left-to-right sweep at
+     * k = 0 would therefore pick that sentinel up on the first iteration and
+     * propagate i0-1 as the lower bound for a leading dead run -- yielding
+     * imin[v] = i0-1 for real emitting states, which violates the documented
+     * imin[v] >= i0 >= 1 requirement. Every affected sequence measured for
+     * this change has its dead run starting at k = 1, so this is the common
+     * case, not a corner. Excluding node 0 from the widening loop likewise
+     * keeps that asserted sentinel from ever being overwritten.
+     *
+     * Gated on (! doing_search) so that no search path can be affected: every
+     * search caller of this function (and of cp9_IterateSeq2Bands()) passes
+     * doing_search = TRUE, and the alignment driver in cm_alndata.c passes
+     * FALSE. Gated on CMH_LOCAL_BEGIN to match the brutal hack's own
+     * local-configuration precondition; glocal alignment always has the full
+     * parse geometrically available and needs no widening. */
+    if((! doing_search) && (cm->flags & CMH_LOCAL_BEGIN)) {
+      int k;
+      int hmm_M = cp9b->hmm_M;
+      int *lb, *ub;
+      int cur;
+      lb = malloc(sizeof(int) * (hmm_M+1));
+      ub = malloc(sizeof(int) * (hmm_M+1));
+      if(lb == NULL || ub == NULL) { if(lb) free(lb); if(ub) free(ub); ESL_FAIL(eslEMEM, errbuf, "cp9_FBMatrices2Bands(): out of memory allocating dead-node bound arrays"); }
+      /* left-to-right: lb[k] = nearest valid pn_min_m at or left of k (k >= 1), else i0 */
+      cur = i0;
+      for(k = 1; k <= hmm_M; k++) {
+        if(cp9b->pn_min_m[k] != -1) cur = cp9b->pn_min_m[k];
+        lb[k] = cur;
+      }
+      /* right-to-left: ub[k] = nearest valid pn_max_m at or right of k (k >= 1), else j0 */
+      cur = j0;
+      for(k = hmm_M; k >= 1; k--) {
+        if(cp9b->pn_max_m[k] != -1) cur = cp9b->pn_max_m[k];
+        ub[k] = cur;
+      }
+      for(k = 1; k <= hmm_M; k++) {
+        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+          cp9b->pn_min_m[k] = cp9b->pn_min_i[k] = cp9b->pn_min_d[k] = lb[k];
+          cp9b->pn_max_m[k] = cp9b->pn_max_i[k] = cp9b->pn_max_d[k] = ub[k];
+        }
+      }
+      free(lb);
+      free(ub);
+    }
   }
 
   /* Step: HMM bands -> CM bands. */
