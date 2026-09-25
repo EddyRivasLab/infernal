@@ -703,6 +703,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	tinfo[0].pli->nnodes  /= 2;
 	if(tinfo[0].pli->nmodels_hmmonly > 0) tinfo[0].pli->nmodels_hmmonly /= 2;
 	if(tinfo[0].pli->nnodes_hmmonly  > 0) tinfo[0].pli->nnodes_hmmonly /= 2;
+	if(tinfo[0].pli->nmodels_hmmonly_glocal > 0) tinfo[0].pli->nmodels_hmmonly_glocal /= 2;
+	if(tinfo[0].pli->nnodes_hmmonly_glocal  > 0) tinfo[0].pli->nnodes_hmmonly_glocal  /= 2;
       }
 
       /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
@@ -725,8 +727,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* tally up total number of hits and target coverage */
       for (i = 0; i < tinfo[0].th->N; i++) {
 	if ((tinfo[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (tinfo[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].n_output++;
-	  tinfo[0].pli->acct[tinfo[0].th->hit[i]->pass_idx].pos_output += llabs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
+	  /* glocal HMM only hits are accounted separately (pli->acct_hg) */
+	  CM_PLI_ACCT *acct = (tinfo[0].th->hit[i]->hmmonly && tinfo[0].th->hit[i]->glocal) ? tinfo[0].pli->acct_hg : tinfo[0].pli->acct_cm;
+	  acct[tinfo[0].th->hit[i]->pass_idx].n_output++;
+	  acct[tinfo[0].th->hit[i]->pass_idx].pos_output += llabs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
 	}
       }
       if(tinfo[0].pli->do_trm_F3) { 
@@ -1557,6 +1561,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	pli->nnodes  /= 2;
 	if(pli->nmodels_hmmonly > 0) pli->nmodels_hmmonly /= 2;
 	if(pli->nnodes_hmmonly  > 0) pli->nnodes_hmmonly /= 2;
+	if(pli->nmodels_hmmonly_glocal > 0) pli->nmodels_hmmonly_glocal /= 2;
+	if(pli->nnodes_hmmonly_glocal  > 0) pli->nnodes_hmmonly_glocal  /= 2;
       }
 
       /* Sort by sequence index/position and remove duplicates found because we searched overlapping chunks */
@@ -1579,8 +1585,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       /* tally up total number of hits and target coverage */
       for (i = 0; i < th->N; i++) {
 	if ((th->hit[i]->flags & CM_HIT_IS_REPORTED) || (th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	  pli->acct[th->hit[i]->pass_idx].n_output++;
-	  pli->acct[th->hit[i]->pass_idx].pos_output += llabs(th->hit[i]->stop - th->hit[i]->start) + 1;
+	  /* glocal HMM only hits are accounted separately (pli->acct_hg) */
+	  CM_PLI_ACCT *acct = (th->hit[i]->hmmonly && th->hit[i]->glocal) ? pli->acct_hg : pli->acct_cm;
+	  acct[th->hit[i]->pass_idx].n_output++;
+	  acct[th->hit[i]->pass_idx].pos_output += llabs(th->hit[i]->stop - th->hit[i]->start) + 1;
 	}
       }
 

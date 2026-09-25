@@ -721,8 +721,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* tally up total number of hits and target coverage */
     for (i = 0; i < info->th->N; i++) {
       if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	info[0].pli->acct[info[0].th->hit[i]->pass_idx].n_output++;
-	info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += llabs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
+	/* glocal HMM only hits are accounted separately (pli->acct_hg) */
+	CM_PLI_ACCT *acct = (info[0].th->hit[i]->hmmonly && info[0].th->hit[i]->glocal) ? info[0].pli->acct_hg : info[0].pli->acct_cm;
+	acct[info[0].th->hit[i]->pass_idx].n_output++;
+	acct[info[0].th->hit[i]->pass_idx].pos_output += llabs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
       }
     }
       
@@ -1433,8 +1435,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* tally up total number of hits and target coverage */
     for (i = 0; i < info->th->N; i++) {
       if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
-	info->pli->acct[info->th->hit[i]->pass_idx].pos_output += llabs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	/* glocal HMM only hits are accounted separately (pli->acct_hg) */
+	CM_PLI_ACCT *acct = (info->th->hit[i]->hmmonly && info->th->hit[i]->glocal) ? info->pli->acct_hg : info->pli->acct_cm;
+	acct[info->th->hit[i]->pass_idx].n_output++;
+	acct[info->th->hit[i]->pass_idx].pos_output += llabs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
       }
     }
     

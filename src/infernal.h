@@ -2387,7 +2387,11 @@ typedef struct cm_pipeline_s {
   uint64_t      nnodes;	           /* # of model nodes searched, CM mode    */
   uint64_t      nmodels_hmmonly;   /* # of models searched, HMM only mode   */
   uint64_t      nnodes_hmmonly;	   /* # of model nodes, HMM only mode       */
-  CM_PLI_ACCT   acct[NPLI_PASSES]; 
+  uint64_t      nmodels_hmmonly_glocal; /* # of models searched, glocal HMM only mode */
+  uint64_t      nnodes_hmmonly_glocal;  /* # of model nodes, glocal HMM only mode     */
+  CM_PLI_ACCT   acct_cm[NPLI_PASSES];   /* accounting for CM mode (and local HMM only mode, pass PLI_PASS_HMM_ONLY_ANY) */
+  CM_PLI_ACCT   acct_hg[NPLI_PASSES];   /* accounting for glocal HMM only mode, which uses the CM mode passes           */
+  CM_PLI_ACCT  *acct;                   /* points to acct_cm or acct_hg, for the current model; set in cm_pli_NewModel() */
 
   /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */

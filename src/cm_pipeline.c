@@ -43,9 +43,10 @@ static int  pli_dispatch_cm_search (CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, in
 static int  pli_align_hit          (CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit);
 static int  pli_scan_mode_read_cm  (CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int p7_max_length, CM_t **ret_cm);
 
-static int   pli_pass_statistics        (FILE *ofp, CM_PIPELINE *pli, int pass_idx);
+static int   pli_pass_statistics        (FILE *ofp, CM_PIPELINE *pli, CM_PLI_ACCT *A, int hg, int pass_idx);
+static void  pli_passes_statistics      (FILE *ofp, CM_PIPELINE *pli, CM_PLI_ACCT *A, int hg, int do_passes, int do_sum);
 static int   pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli);
-static int   pli_sum_statistics         (CM_PIPELINE *pli);
+static int   pli_sum_statistics         (CM_PIPELINE *pli, CM_PLI_ACCT *A);
 static void  pli_copy_subseq            (const ESL_SQ *src_sq, ESL_SQ *dest_sq, int64_t i, int64_t L);
 static char *pli_describe_pass          (int pass_idx); 
 static char *pli_describe_hits_for_pass (int pass_idx); 
@@ -269,9 +270,13 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->nnodes          = 0;
   pli->nmodels_hmmonly = 0;
   pli->nnodes_hmmonly  = 0;
+  pli->nmodels_hmmonly_glocal = 0;
+  pli->nnodes_hmmonly_glocal  = 0;
   for(pass_idx = 0; pass_idx < NPLI_PASSES; pass_idx++) { 
-    cm_pli_ZeroAccounting(&(pli->acct[pass_idx]));
+    cm_pli_ZeroAccounting(&(pli->acct_cm[pass_idx]));
+    cm_pli_ZeroAccounting(&(pli->acct_hg[pass_idx]));
   }
+  pli->acct = pli->acct_cm;
 
   /* Normally, we reinitialize the RNG to the original seed every time we're
    * about to collect a stochastic trace ensemble. This eliminates run-to-run
@@ -1244,9 +1249,16 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
       else                      pli->do_hmmonly_cur        = TRUE;
     }
 
+    /* glocal HMM only mode uses the CM mode passes, so it gets its own
+     * accounting (reported separately, as local HMM only mode is) */
+    pli->acct = pli->do_hmmonly_glocal_cur ? pli->acct_hg : pli->acct_cm;
     if(pli->do_hmmonly_cur) { 
       pli->nmodels_hmmonly++;
       pli->nnodes_hmmonly += cm_clen;
+    }
+    else if(pli->do_hmmonly_glocal_cur) { 
+      pli->nmodels_hmmonly_glocal++;
+      pli->nnodes_hmmonly_glocal += cm_clen;
     }
     else { 
       pli->nmodels++;
@@ -1495,14 +1507,12 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
    * number of sequences and residues processed.
    */
   int p; /* counter over pipeline passes */
+  int a; /* counter over accounting sets: 0 = CM mode (acct_cm), 1 = glocal HMM only mode (acct_hg) */
+  CM_PLI_ACCT *A1, *A2;
 
   if (p1->mode == CM_SEARCH_SEQS)
     {
       p1->nseqs   += p2->nseqs;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top += p2->acct[p].npli_top;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot += p2->acct[p].npli_bot;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top += p2->acct[p].nres_top;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot += p2->acct[p].nres_bot;
     }
   else
     { /* SCAN mode */
@@ -1510,10 +1520,8 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
       p1->nnodes          += p2->nnodes;
       p1->nmodels_hmmonly += p2->nmodels_hmmonly;
       p1->nnodes_hmmonly  += p2->nnodes_hmmonly;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_top += p2->acct[p].nres_top;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].nres_bot += p2->acct[p].nres_bot;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_top += p2->acct[p].npli_top;
-      for(p = 0; p < NPLI_PASSES; p++) p1->acct[p].npli_bot += p2->acct[p].npli_bot;
+      p1->nmodels_hmmonly_glocal += p2->nmodels_hmmonly_glocal;
+      p1->nnodes_hmmonly_glocal  += p2->nnodes_hmmonly_glocal;
       /* If target CM file was small, it's possible that <p1->nseqs>
        * is 0 and <p2->nseqs> is not, or vice versa. This happens if
        * we had so few CMs in our database that not all threads got to
@@ -1523,42 +1531,51 @@ cm_pipeline_Merge(CM_PIPELINE *p1, CM_PIPELINE *p2)
       p1->nseqs = ESL_MAX(p1->nseqs, p2->nseqs);
     }
 
+  for(a = 0; a < 2; a++) { 
+  A1 = (a == 0) ? p1->acct_cm : p1->acct_hg;
+  A2 = (a == 0) ? p2->acct_cm : p2->acct_hg;
+  for(p = 0; p < NPLI_PASSES; p++) A1[p].npli_top += A2[p].npli_top;
+  for(p = 0; p < NPLI_PASSES; p++) A1[p].npli_bot += A2[p].npli_bot;
+  for(p = 0; p < NPLI_PASSES; p++) A1[p].nres_top += A2[p].nres_top;
+  for(p = 0; p < NPLI_PASSES; p++) A1[p].nres_bot += A2[p].nres_bot;
+
   for(p = 0; p < NPLI_PASSES; p++) { 
-    p1->acct[p].n_past_msv  += p2->acct[p].n_past_msv;
-    p1->acct[p].n_past_vit  += p2->acct[p].n_past_vit;
-    p1->acct[p].n_past_fwd  += p2->acct[p].n_past_fwd;
-    p1->acct[p].n_past_gfwd += p2->acct[p].n_past_gfwd;
-    p1->acct[p].n_past_edef += p2->acct[p].n_past_edef;
-    p1->acct[p].n_past_cyk  += p2->acct[p].n_past_cyk;
-    p1->acct[p].n_past_ins  += p2->acct[p].n_past_ins;
-    p1->acct[p].n_output    += p2->acct[p].n_output;
+    A1[p].n_past_msv  += A2[p].n_past_msv;
+    A1[p].n_past_vit  += A2[p].n_past_vit;
+    A1[p].n_past_fwd  += A2[p].n_past_fwd;
+    A1[p].n_past_gfwd += A2[p].n_past_gfwd;
+    A1[p].n_past_edef += A2[p].n_past_edef;
+    A1[p].n_past_cyk  += A2[p].n_past_cyk;
+    A1[p].n_past_ins  += A2[p].n_past_ins;
+    A1[p].n_output    += A2[p].n_output;
 
-    p1->acct[p].n_past_msvbias  += p2->acct[p].n_past_msvbias;
-    p1->acct[p].n_past_vitbias  += p2->acct[p].n_past_vitbias;
-    p1->acct[p].n_past_fwdbias  += p2->acct[p].n_past_fwdbias;
-    p1->acct[p].n_past_gfwdbias += p2->acct[p].n_past_gfwdbias;
-    p1->acct[p].n_past_edefbias += p2->acct[p].n_past_edefbias;
+    A1[p].n_past_msvbias  += A2[p].n_past_msvbias;
+    A1[p].n_past_vitbias  += A2[p].n_past_vitbias;
+    A1[p].n_past_fwdbias  += A2[p].n_past_fwdbias;
+    A1[p].n_past_gfwdbias += A2[p].n_past_gfwdbias;
+    A1[p].n_past_edefbias += A2[p].n_past_edefbias;
 
-    p1->acct[p].pos_past_msv  += p2->acct[p].pos_past_msv;
-    p1->acct[p].pos_past_vit  += p2->acct[p].pos_past_vit;
-    p1->acct[p].pos_past_fwd  += p2->acct[p].pos_past_fwd;
-    p1->acct[p].pos_past_gfwd += p2->acct[p].pos_past_gfwd;
-    p1->acct[p].pos_past_edef += p2->acct[p].pos_past_edef;
-    p1->acct[p].pos_past_cyk  += p2->acct[p].pos_past_cyk;
-    p1->acct[p].pos_past_ins  += p2->acct[p].pos_past_ins;
-    p1->acct[p].pos_output    += p2->acct[p].pos_output;
+    A1[p].pos_past_msv  += A2[p].pos_past_msv;
+    A1[p].pos_past_vit  += A2[p].pos_past_vit;
+    A1[p].pos_past_fwd  += A2[p].pos_past_fwd;
+    A1[p].pos_past_gfwd += A2[p].pos_past_gfwd;
+    A1[p].pos_past_edef += A2[p].pos_past_edef;
+    A1[p].pos_past_cyk  += A2[p].pos_past_cyk;
+    A1[p].pos_past_ins  += A2[p].pos_past_ins;
+    A1[p].pos_output    += A2[p].pos_output;
 
-    p1->acct[p].pos_past_msvbias += p2->acct[p].pos_past_msvbias;
-    p1->acct[p].pos_past_vitbias += p2->acct[p].pos_past_vitbias;
-    p1->acct[p].pos_past_fwdbias += p2->acct[p].pos_past_fwdbias;
-    p1->acct[p].pos_past_gfwdbias+= p2->acct[p].pos_past_gfwdbias;
-    p1->acct[p].pos_past_edefbias += p2->acct[p].pos_past_edefbias;
+    A1[p].pos_past_msvbias += A2[p].pos_past_msvbias;
+    A1[p].pos_past_vitbias += A2[p].pos_past_vitbias;
+    A1[p].pos_past_fwdbias += A2[p].pos_past_fwdbias;
+    A1[p].pos_past_gfwdbias+= A2[p].pos_past_gfwdbias;
+    A1[p].pos_past_edefbias += A2[p].pos_past_edefbias;
 
-    p1->acct[p].n_overflow_fcyk  += p2->acct[p].n_overflow_fcyk;
-    p1->acct[p].n_overflow_final += p2->acct[p].n_overflow_final;
-    p1->acct[p].n_aln_hb         += p2->acct[p].n_aln_hb;
-    p1->acct[p].n_aln_dccyk      += p2->acct[p].n_aln_dccyk;
+    A1[p].n_overflow_fcyk  += A2[p].n_overflow_fcyk;
+    A1[p].n_overflow_final += A2[p].n_overflow_final;
+    A1[p].n_aln_hb         += A2[p].n_aln_hb;
+    A1[p].n_aln_dccyk      += A2[p].n_aln_dccyk;
   }
+  } /* end of loop over accounting sets */
 
   /* merge stage timing accumulators */
   p1->stg_time_F1F3      += p2->stg_time_F1F3;
@@ -2345,6 +2362,49 @@ pli_trm_F5_create_hits(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, const
   return eslOK;
 }
   
+/* pli_passes_statistics()
+ * Print the statistics for one set of CM-pipeline passes: each pass (if
+ * <do_passes> and pli->be_verbose), and/or the sum over passes (if
+ * <do_sum>). <A> is pli->acct_cm (<hg> FALSE, the CM pipeline) or
+ * pli->acct_hg (<hg> TRUE, the glocal HMM only pipeline, which uses the
+ * same passes).
+ */
+static void
+pli_passes_statistics(FILE *ofp, CM_PIPELINE *pli, CM_PLI_ACCT *A, int hg, int do_passes, int do_sum)
+{
+  if(do_passes && pli->be_verbose) { /* print stats out for each stage */
+    if(! pli->do_trunc_only) { 
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_STD_ANY); fprintf(ofp, "\n");
+    }
+
+    /* now an if/else for additional modes */
+    if(pli->do_trunc_ends) { 
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_3P_ONLY_FORCE);   fprintf(ofp, "\n");
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_AND_3P_FORCE); fprintf(ofp, "\n");
+    }
+    else if(pli->do_trunc_any) { 
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_3P_ONLY_FORCE);   fprintf(ofp, "\n");
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_AND_3P_FORCE); fprintf(ofp, "\n");
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_AND_3P_ANY); fprintf(ofp, "\n");
+    }
+    else if(pli->do_trunc_5p_ends) { 
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
+    }
+    else if(pli->do_trunc_3p_ends) { 
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_3P_ONLY_FORCE); fprintf(ofp, "\n");
+    }
+    else if(pli->do_trunc_int || pli->do_trunc_only) { 
+      pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_5P_AND_3P_ANY); fprintf(ofp, "\n");
+    }
+  }
+  if(do_sum) { 
+    pli_sum_statistics(pli, A);
+    pli_pass_statistics(ofp, pli, A, hg, PLI_PASS_CM_SUMMED); fprintf(ofp, "\n");
+  }
+}
+
 /* Function:  cm_pli_Statistics()
  * Synopsis:  Final stats output for all passes of a pipeline.
  * Incept:    EPN, Thu Feb 16 15:19:35 2012
@@ -2362,44 +2422,34 @@ pli_trm_F5_create_hits(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, const
 int
 cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 {
-  if(pli->nmodels > 0 && pli->be_verbose) { /* print stats out for each stage */
-    if(! pli->do_trunc_only) { 
-      pli_pass_statistics(ofp, pli, PLI_PASS_STD_ANY); fprintf(ofp, "\n");
-    }
+  int nblocks = 0; /* number of pipeline variants (CM, HMM only, glocal HMM only) used for at least one model */
 
-    /* now an if/else for additional modes */
-    if(pli->do_trunc_ends) { 
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
-      pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE);   fprintf(ofp, "\n");
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE); fprintf(ofp, "\n");
-    }
-    else if(pli->do_trunc_any) { 
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
-      pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE);   fprintf(ofp, "\n");
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_FORCE); fprintf(ofp, "\n");
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY); fprintf(ofp, "\n");
-    }
-    else if(pli->do_trunc_5p_ends) { 
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_ONLY_FORCE);   fprintf(ofp, "\n");
-    }
-    else if(pli->do_trunc_3p_ends) { 
-      pli_pass_statistics(ofp, pli, PLI_PASS_3P_ONLY_FORCE); fprintf(ofp, "\n");
-    }
-    else if(pli->do_trunc_int || pli->do_trunc_only) { 
-      pli_pass_statistics(ofp, pli, PLI_PASS_5P_AND_3P_ANY); fprintf(ofp, "\n");
-    }
+  /* CM pipeline per-pass stats (if verbose), then the HMM only (local)
+   * pipeline, then the CM pipeline summed over passes, for pipeline
+   * variants used for at least one model */
+  if(pli->nmodels > 0) { 
+    pli_passes_statistics(ofp, pli, pli->acct_cm, FALSE, TRUE, FALSE);
   }
-  if(pli->nmodels_hmmonly > 0) { /* HMM only pipeline used for at least one model */
+  if(pli->nmodels_hmmonly > 0) { 
     pli_hmmonly_pass_statistics(ofp, pli); fprintf(ofp, "\n");
+    nblocks++;
   }
-  if(pli->nmodels > 0) { /* CM pipeline was used for at least one model */
-    pli_sum_statistics(pli);
-    pli_pass_statistics(ofp, pli, PLI_PASS_CM_SUMMED); fprintf(ofp, "\n");
+  if(pli->nmodels > 0) { 
+    pli_passes_statistics(ofp, pli, pli->acct_cm, FALSE, FALSE, TRUE);
+    nblocks++;
   }
-  if(pli->nmodels > 0 && pli->nmodels_hmmonly > 0) { 
+  /* glocal HMM only pipeline (--hmmonly -g, or -g for models with zero
+   * basepairs), if used for at least one model; reported separately,
+   * like the local HMM only pipeline */
+  if(pli->nmodels_hmmonly_glocal > 0) { 
+    pli_passes_statistics(ofp, pli, pli->acct_hg, TRUE, TRUE, TRUE);
+    nblocks++;
+  }
+  if(nblocks > 1) { 
     fprintf(ofp, "Total CM and HMM hits reported:                    %15d\n\n",
-	    (int) (pli->acct[PLI_PASS_CM_SUMMED].n_output) + 
-	    (int) (pli->acct[PLI_PASS_HMM_ONLY_ANY].n_output));
+	    (int) ((pli->nmodels                > 0) ? pli->acct_cm[PLI_PASS_CM_SUMMED].n_output   : 0) + 
+	    (int) ((pli->nmodels_hmmonly        > 0) ? pli->acct_cm[PLI_PASS_HMM_ONLY_ANY].n_output : 0) + 
+	    (int) ((pli->nmodels_hmmonly_glocal > 0) ? pli->acct_hg[PLI_PASS_CM_SUMMED].n_output   : 0));
   }
   /* Stage timing breakdown */
   { double total_stg = pli->stg_time_F1F3 + pli->stg_time_seq2bands + pli->stg_time_F4 + pli->stg_time_F5 + pli->stg_time_F6;
@@ -2438,7 +2488,7 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
  * Returns:   <eslOK> on success.
  */
 int
-pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
+pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, CM_PLI_ACCT *A, int hg, int pass_idx)
 {
   int64_t nwin_fcyk  = 0;      /* number of windows CYK filter evaluated */
   int64_t nwin_final = 0;      /* number of windows final stage evaluated */
@@ -2447,15 +2497,18 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   int64_t nres_searched = 0;   /* number of residues searched in this stage */
   int64_t nres_researched = 0; /* number of residues re-searched for truncated hits */
 
-  CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
-
-  /* In glocal HMM only mode (--hmmonly -g, or -g with a 0 basepair query
-   * model in cmsearch), the passes are the CM pipeline's but F1-F3 use the
+  CM_PLI_ACCT *pli_acct = &(A[pass_idx]);
+  int     hlen, h;       /* header length, and counter for underlining it */
+  /* <A> is pli->acct_cm (<hg> FALSE) or pli->acct_hg (<hg> TRUE). In glocal
+   * HMM only mode (<hg>) the passes are the CM pipeline's but F1-F3 use the
    * HMM only settings, F4/F5 have their own thresholds, there is no F5 bias
-   * filter, and no CM stages. (In cmscan, which may mix models, we only
-   * know this for sure if --hmmonly -g was used.)
+   * filter, and no CM stages.
    */
-  int    hg          = (pli->mode == CM_SEARCH_SEQS) ? pli->do_hmmonly_glocal_cur : (pli->do_hmmonly_always && pli->do_glocal_cm_always);
+  uint64_t nmodels   = hg ? pli->nmodels_hmmonly_glocal : pli->nmodels;
+  uint64_t nnodes    = hg ? pli->nnodes_hmmonly_glocal  : pli->nnodes;
+  char    *hg_reason = (! hg) ? "" : 
+    (pli->do_hmmonly_always ? (pli->do_glocal_cm_always ? " (--hmmonly -g used)" : " (--hmmonly used, for --glist models)") :
+                              (pli->do_glocal_cm_always ? " (run for model(s) with zero basepairs, -g used)" : " (run for --glist model(s) with zero basepairs)"));
   int    s_do_msv     = hg ? TRUE                    : pli->do_msv;
   int    s_do_msvbias = hg ? pli->do_bias_hmmonly    : pli->do_msvbias;
   int    s_do_vit     = hg ? (! pli->do_max_hmmonly) : pli->do_vit;
@@ -2477,7 +2530,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   nres_searched = pli_acct->nres_top + pli_acct->nres_bot;
   switch(pass_idx) {
   case PLI_PASS_CM_SUMMED: 
-    nres_researched = (pli_acct->nres_top + pli->acct->nres_bot) - (pli->acct[PLI_PASS_STD_ANY].nres_top + pli->acct[PLI_PASS_STD_ANY].nres_bot);
+    nres_researched = (pli_acct->nres_top + A->nres_bot) - (A[PLI_PASS_STD_ANY].nres_top + A[PLI_PASS_STD_ANY].nres_bot);
     break;
   case PLI_PASS_STD_ANY:
     nres_researched = 0;
@@ -2494,15 +2547,16 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   }
 
   if(pli->be_verbose) { 
-    fprintf(ofp, "Internal %s pipeline statistics summary: %s\n", hg ? "glocal HMM-only" : "CM", pli_describe_pass(pass_idx));
+    hlen = fprintf(ofp, "Internal %s pipeline statistics summary: %s%s\n", hg ? "glocal HMM-only" : "CM", pli_describe_pass(pass_idx), hg_reason);
   }
   else { 
-    fprintf(ofp, "Internal %s pipeline statistics summary:\n", hg ? "glocal HMM-only" : "CM");
+    hlen = fprintf(ofp, "Internal %s pipeline statistics summary:%s\n", hg ? "glocal HMM-only" : "CM", hg_reason);
   }
-  fprintf(ofp, "----------------------------------------\n");
+  if(hg) { for(h = 0; h < hlen-1; h++) fputc('-', ofp); fputc('\n', ofp); } /* underline the whole header, as for local HMM only mode */
+  else   fprintf(ofp, "----------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
     fprintf(ofp,   "Query model(s):                                    %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
-	    pli->nmodels, pli->nnodes);
+	    nmodels, nnodes);
     if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_CM_SUMMED) { 
       fprintf(ofp,   "Target sequences:                                  %15" PRId64 "  (%" PRId64 " residues searched)\n",  
 	      pli->nseqs, nres_searched - nres_researched);
@@ -2534,7 +2588,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   } else { /* SCAN mode */
     if(pass_idx == PLI_PASS_STD_ANY || pass_idx == PLI_PASS_CM_SUMMED) { 
       fprintf(ofp,   "Query sequence(s):                                 %15" PRId64 "  (%d residues searched)\n",  
-	      pli->nseqs, (int) ((nres_searched - nres_researched) / pli->nmodels));
+	      pli->nseqs, (int) ((nres_searched - nres_researched) / nmodels));
     }
     if(pass_idx != PLI_PASS_STD_ANY) { 
       if(pass_idx == PLI_PASS_5P_AND_3P_FORCE) { 
@@ -2552,12 +2606,12 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       else { 
         if(pli->do_trunc_only) { 
           fprintf(ofp,   "Query sequences searched for truncated hits:      %15" PRId64 "  (%.1f residues searched, avg per model)\n", 
-                  pli->nseqs, (float) nres_researched / (float) pli->nmodels);
+                  pli->nseqs, (float) nres_researched / (float) nmodels);
         }
         else { 
           fprintf(ofp,   "Query sequences re-searched for truncated hits:    %15" PRId64 "  (%.1f residues re-searched, avg per model)\n", 
                   (pli->do_trunc_ends || pli->do_trunc_any || pli->do_trunc_int || pli->do_trunc_5p_ends || pli->do_trunc_3p_ends) ? pli->nseqs : 0, 
-                  (float) nres_researched / (float) pli->nmodels);
+                  (float) nres_researched / (float) nmodels);
         }
       }
     }
@@ -2573,7 +2627,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     }
     else { 
       fprintf(ofp,   "Target model(s):                                   %15" PRId64 "  (%" PRId64 " consensus positions)\n",     
-	      pli->nmodels, pli->nnodes);
+	      nmodels, nnodes);
     }
   }
 
@@ -2698,24 +2752,24 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 
   if(pass_idx == PLI_PASS_CM_SUMMED) { 
     if(pli->do_trunc_ends) { 
-      n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_5P_AND_3P_FORCE].n_output;
-      pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_5P_AND_3P_FORCE].pos_output;
+      n_output_trunc   = A[PLI_PASS_5P_ONLY_FORCE].n_output   + A[PLI_PASS_3P_ONLY_FORCE].n_output   + A[PLI_PASS_5P_AND_3P_FORCE].n_output;
+      pos_output_trunc = A[PLI_PASS_5P_ONLY_FORCE].pos_output + A[PLI_PASS_3P_ONLY_FORCE].pos_output + A[PLI_PASS_5P_AND_3P_FORCE].pos_output;
     }
     else if(pli->do_trunc_any) { 
-      n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output   + pli->acct[PLI_PASS_5P_AND_3P_FORCE].n_output    + pli->acct[PLI_PASS_5P_AND_3P_ANY].n_output;
-      pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output + pli->acct[PLI_PASS_5P_AND_3P_FORCE].pos_output  + pli->acct[PLI_PASS_5P_AND_3P_ANY].pos_output;
+      n_output_trunc   = A[PLI_PASS_5P_ONLY_FORCE].n_output   + A[PLI_PASS_3P_ONLY_FORCE].n_output   + A[PLI_PASS_5P_AND_3P_FORCE].n_output    + A[PLI_PASS_5P_AND_3P_ANY].n_output;
+      pos_output_trunc = A[PLI_PASS_5P_ONLY_FORCE].pos_output + A[PLI_PASS_3P_ONLY_FORCE].pos_output + A[PLI_PASS_5P_AND_3P_FORCE].pos_output  + A[PLI_PASS_5P_AND_3P_ANY].pos_output;
     }
     else if(pli->do_trunc_5p_ends) { 
-      n_output_trunc   = pli->acct[PLI_PASS_5P_ONLY_FORCE].n_output;
-      pos_output_trunc = pli->acct[PLI_PASS_5P_ONLY_FORCE].pos_output;
+      n_output_trunc   = A[PLI_PASS_5P_ONLY_FORCE].n_output;
+      pos_output_trunc = A[PLI_PASS_5P_ONLY_FORCE].pos_output;
     }
     else if(pli->do_trunc_3p_ends) { 
-      n_output_trunc   = pli->acct[PLI_PASS_3P_ONLY_FORCE].n_output;
-      pos_output_trunc = pli->acct[PLI_PASS_3P_ONLY_FORCE].pos_output;
+      n_output_trunc   = A[PLI_PASS_3P_ONLY_FORCE].n_output;
+      pos_output_trunc = A[PLI_PASS_3P_ONLY_FORCE].pos_output;
     }
     else if(pli->do_trunc_int || pli->do_trunc_only) { 
-      n_output_trunc   = pli->acct[PLI_PASS_5P_AND_3P_ANY].n_output;
-      pos_output_trunc = pli->acct[PLI_PASS_5P_AND_3P_ANY].pos_output;
+      n_output_trunc   = A[PLI_PASS_5P_AND_3P_ANY].n_output;
+      pos_output_trunc = A[PLI_PASS_5P_AND_3P_ANY].pos_output;
     }
     else { /* no truncated hits were allowed */
       n_output_trunc   = 0;
@@ -2777,8 +2831,8 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 int
 pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
 {
-  CM_PLI_ACCT *pli_acct = &(pli->acct[PLI_PASS_HMM_ONLY_ANY]);
-  int match_cm_spacing = (pli->nmodels > 0) ? TRUE : FALSE;
+  CM_PLI_ACCT *pli_acct = &(pli->acct_cm[PLI_PASS_HMM_ONLY_ANY]);
+  int match_cm_spacing = (pli->nmodels > 0 || pli->nmodels_hmmonly_glocal > 0) ? TRUE : FALSE;
   int64_t nres_searched = pli_acct->nres_top + pli_acct->nres_bot;
 
   if(pli->do_hmmonly_always) { 
@@ -2883,55 +2937,55 @@ pli_hmmonly_pass_statistics(FILE *ofp, CM_PIPELINE *pli)
  * Returns:   <eslOK> on success.
  */
 int
-pli_sum_statistics(CM_PIPELINE *pli)
+pli_sum_statistics(CM_PIPELINE *pli, CM_PLI_ACCT *A)
 {
   int p; /* counter over passes */
 
-  /* first zero out pli->acct[PLI_PASS_CM_SUMMED] */
-  cm_pli_ZeroAccounting(&(pli->acct[PLI_PASS_CM_SUMMED]));
+  /* first zero out A[PLI_PASS_CM_SUMMED] */
+  cm_pli_ZeroAccounting(&(A[PLI_PASS_CM_SUMMED]));
 
   /* now tally up counts for all passes we performed, we use
-   * pli->acct[p].nres_top > 0 or pli->acct[p].nres_bot as indicator
+   * A[p].nres_top > 0 or A[p].nres_bot as indicator
    * pass was performed for at least one model.
    */
   for(p = 1; p < NPLI_PASSES; p++) { 
     if(p == PLI_PASS_HMM_ONLY_ANY) continue; /* skip HMM only stage */
-    if(pli->acct[p].nres_top > 0 || pli->acct[p].nres_bot > 0) { 
-      pli->acct[PLI_PASS_CM_SUMMED].npli_top          += pli->acct[p].npli_top;
-      pli->acct[PLI_PASS_CM_SUMMED].npli_bot          += pli->acct[p].npli_bot;
-      pli->acct[PLI_PASS_CM_SUMMED].nres_top          += pli->acct[p].nres_top;
-      pli->acct[PLI_PASS_CM_SUMMED].nres_bot          += pli->acct[p].nres_bot;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_msv        += pli->acct[p].n_past_msv;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_vit        += pli->acct[p].n_past_vit;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_fwd        += pli->acct[p].n_past_fwd;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_gfwd       += pli->acct[p].n_past_gfwd;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_edef       += pli->acct[p].n_past_edef;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_cyk        += pli->acct[p].n_past_cyk;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_ins        += pli->acct[p].n_past_ins;
-      pli->acct[PLI_PASS_CM_SUMMED].n_output          += pli->acct[p].n_output;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_msvbias    += pli->acct[p].n_past_msvbias;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_vitbias    += pli->acct[p].n_past_vitbias;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_fwdbias    += pli->acct[p].n_past_fwdbias;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_gfwdbias   += pli->acct[p].n_past_gfwdbias;
-      pli->acct[PLI_PASS_CM_SUMMED].n_past_edefbias   += pli->acct[p].n_past_edefbias;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_msv      += pli->acct[p].pos_past_msv;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_vit      += pli->acct[p].pos_past_vit;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_fwd      += pli->acct[p].pos_past_fwd;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_gfwd     += pli->acct[p].pos_past_gfwd;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_edef     += pli->acct[p].pos_past_edef;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_cyk      += pli->acct[p].pos_past_cyk;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_ins      += pli->acct[p].pos_past_ins;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_output        += pli->acct[p].pos_output;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_msvbias  += pli->acct[p].pos_past_msvbias;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_vitbias  += pli->acct[p].pos_past_vitbias;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_fwdbias  += pli->acct[p].pos_past_fwdbias;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_gfwdbias += pli->acct[p].pos_past_gfwdbias;
-      pli->acct[PLI_PASS_CM_SUMMED].pos_past_edefbias += pli->acct[p].pos_past_edefbias;
+    if(A[p].nres_top > 0 || A[p].nres_bot > 0) { 
+      A[PLI_PASS_CM_SUMMED].npli_top          += A[p].npli_top;
+      A[PLI_PASS_CM_SUMMED].npli_bot          += A[p].npli_bot;
+      A[PLI_PASS_CM_SUMMED].nres_top          += A[p].nres_top;
+      A[PLI_PASS_CM_SUMMED].nres_bot          += A[p].nres_bot;
+      A[PLI_PASS_CM_SUMMED].n_past_msv        += A[p].n_past_msv;
+      A[PLI_PASS_CM_SUMMED].n_past_vit        += A[p].n_past_vit;
+      A[PLI_PASS_CM_SUMMED].n_past_fwd        += A[p].n_past_fwd;
+      A[PLI_PASS_CM_SUMMED].n_past_gfwd       += A[p].n_past_gfwd;
+      A[PLI_PASS_CM_SUMMED].n_past_edef       += A[p].n_past_edef;
+      A[PLI_PASS_CM_SUMMED].n_past_cyk        += A[p].n_past_cyk;
+      A[PLI_PASS_CM_SUMMED].n_past_ins        += A[p].n_past_ins;
+      A[PLI_PASS_CM_SUMMED].n_output          += A[p].n_output;
+      A[PLI_PASS_CM_SUMMED].n_past_msvbias    += A[p].n_past_msvbias;
+      A[PLI_PASS_CM_SUMMED].n_past_vitbias    += A[p].n_past_vitbias;
+      A[PLI_PASS_CM_SUMMED].n_past_fwdbias    += A[p].n_past_fwdbias;
+      A[PLI_PASS_CM_SUMMED].n_past_gfwdbias   += A[p].n_past_gfwdbias;
+      A[PLI_PASS_CM_SUMMED].n_past_edefbias   += A[p].n_past_edefbias;
+      A[PLI_PASS_CM_SUMMED].pos_past_msv      += A[p].pos_past_msv;
+      A[PLI_PASS_CM_SUMMED].pos_past_vit      += A[p].pos_past_vit;
+      A[PLI_PASS_CM_SUMMED].pos_past_fwd      += A[p].pos_past_fwd;
+      A[PLI_PASS_CM_SUMMED].pos_past_gfwd     += A[p].pos_past_gfwd;
+      A[PLI_PASS_CM_SUMMED].pos_past_edef     += A[p].pos_past_edef;
+      A[PLI_PASS_CM_SUMMED].pos_past_cyk      += A[p].pos_past_cyk;
+      A[PLI_PASS_CM_SUMMED].pos_past_ins      += A[p].pos_past_ins;
+      A[PLI_PASS_CM_SUMMED].pos_output        += A[p].pos_output;
+      A[PLI_PASS_CM_SUMMED].pos_past_msvbias  += A[p].pos_past_msvbias;
+      A[PLI_PASS_CM_SUMMED].pos_past_vitbias  += A[p].pos_past_vitbias;
+      A[PLI_PASS_CM_SUMMED].pos_past_fwdbias  += A[p].pos_past_fwdbias;
+      A[PLI_PASS_CM_SUMMED].pos_past_gfwdbias += A[p].pos_past_gfwdbias;
+      A[PLI_PASS_CM_SUMMED].pos_past_edefbias += A[p].pos_past_edefbias;
       
-      pli->acct[PLI_PASS_CM_SUMMED].n_overflow_fcyk   += pli->acct[p].n_overflow_fcyk;
-      pli->acct[PLI_PASS_CM_SUMMED].n_overflow_final  += pli->acct[p].n_overflow_final;
-      pli->acct[PLI_PASS_CM_SUMMED].n_aln_hb          += pli->acct[p].n_aln_hb;
-      pli->acct[PLI_PASS_CM_SUMMED].n_aln_dccyk       += pli->acct[p].n_aln_dccyk;
+      A[PLI_PASS_CM_SUMMED].n_overflow_fcyk   += A[p].n_overflow_fcyk;
+      A[PLI_PASS_CM_SUMMED].n_overflow_final  += A[p].n_overflow_final;
+      A[PLI_PASS_CM_SUMMED].n_aln_hb          += A[p].n_aln_hb;
+      A[PLI_PASS_CM_SUMMED].n_aln_dccyk       += A[p].n_aln_dccyk;
     }
   }
   return eslOK;
