@@ -217,6 +217,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->f6_deltaA          = NULL;
   pli->f6_deltaA_n        = 0;
   pli->p7env_delta_pre    = NULL;
+  pli->p7env_bias         = NULL;
   pli->f7env_merged       = NULL;
   pli->f7env_merged_n     = 0;
   pli->cur_env_merged     = FALSE;
@@ -1006,6 +1007,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->f6_pvalA)        free(pli->f6_pvalA);
   if (pli->f6_deltaA)       free(pli->f6_deltaA);
   if (pli->p7env_delta_pre) free(pli->p7env_delta_pre);
+  if (pli->p7env_bias)      free(pli->p7env_bias);
   if (pli->f7env_merged)    free(pli->f7env_merged);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
@@ -2301,7 +2303,7 @@ pli_trm_F5_create_hits(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, const
 
     hit->hmmonly    = TRUE;
     hit->glocal     = TRUE;
-    hit->bias       = 0.;
+    hit->bias       = (pli->p7env_bias != NULL) ? pli->p7env_bias[i] : 0.; /* null2 correction, already subtracted from eb[i] */
     hit->evalue     = 0.;
     hit->has_evalue = FALSE;
 
@@ -3864,7 +3866,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   P7_GBANDS       *bnd  = NULL;       /* band boundaries for P7_GMXB           */
   /* thresholds and statistics that differ in glocal HMM only mode (--hmmonly -g,
    * brief 26_0824-075): that mode has its own F4/F4b/F5 thresholds, no F5 bias
-   * filter, and uses glocal Forward (GF) statistics for the truncated passes
+   * filter, uses null2 as local HMM only mode does, and uses glocal Forward (GF) statistics for the truncated passes
    * (Rgm/Lgm/Tgm) as well as the standard pass, because its hits are reported
    * with GF statistics on all passes. Other modes use local Forward (LF)
    * statistics for the truncated passes.
@@ -3875,6 +3877,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   double           cur_F5          = hmmonly_glocal ? pli->F5_hmmonly      : pli->F5;
   int              cur_do_gfwdbias = hmmonly_glocal ? pli->do_bias_hmmonly : pli->do_gfwdbias;
   int              cur_do_edefbias = hmmonly_glocal ? FALSE                : pli->do_edefbias;
+  int              cur_do_null2    = hmmonly_glocal ? pli->do_null2_hmmonly : pli->do_null2; /* null2 on by default in HMM only modes (--hmmnonull2) */
   float            trunc_mu        = hmmonly_glocal ? p7_evparam[CM_p7_GFMU]     : p7_evparam[CM_p7_LFTAU];
   float            trunc_lambda    = hmmonly_glocal ? p7_evparam[CM_p7_GFLAMBDA] : p7_evparam[CM_p7_LFLAMBDA];
 
@@ -3906,6 +3909,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   if(pli->do_p7deltrigger) {
     if(pli->p7env_delta_pre) { free(pli->p7env_delta_pre); pli->p7env_delta_pre = NULL; }
     ESL_ALLOC(pli->p7env_delta_pre, sizeof(float) * ESL_MAX(1, nenv_alloc));
+  }
+  if(hmmonly_glocal) {
+    if(pli->p7env_bias) { free(pli->p7env_bias); pli->p7env_bias = NULL; }
+    ESL_ALLOC(pli->p7env_bias, sizeof(float) * ESL_MAX(1, nenv_alloc));
   }
   /* issue #50 (brief 26_0316-034): per-envelope merged-window flags, returned to
    * cm_Pipeline() (per pass) and consumed by pli_cyk_env_filter()/pli_final_stage()
@@ -4495,7 +4502,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK)
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Tbcksc: %.4f\n", bcksc);*/
@@ -4518,7 +4525,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Rbcksc: %.4f\n", bcksc);*/
       }
@@ -4540,7 +4547,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Lbcksc: %.4f\n", bcksc);*/
       }
@@ -4564,7 +4571,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 		  seq, gm, om, pli->gxfb, pli->gxbb, fwdsc,
 		  pli->gfwd, pli->gbck, pli->ddef,
 		  pli->band_kmin, pli->band_kmax,
-		  pli->do_null2, do_aln)) != eslOK)
+		  cur_do_null2, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded multihit glocal envelope defn");
 	  /* For --p7post_cp9b: keep bnd alive (gxfb->bnd/gxbb->bnd reference it) until next window.
 	   * Transfer ownership to pli->p7bnd; it will be freed at the start of the next banded window. */
@@ -4576,7 +4583,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, pli->do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf(" bcksc: %.4f\n", bcksc);*/
       }
@@ -4611,7 +4618,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
        *  and here is the same code, simplified with our different names for the variables, etc 
        * (we don't use hit->dcl the way p7_pipeline does after this):  */
       env_sc            = env_sc + (wlen - env_len) * log((float) wlen / (float) (wlen+3)); /* NATS, for the moment... */
-      env_edefbias      = pli->do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0; /* NATS, and will stay so */
+      env_edefbias      = cur_do_null2 ? p7_FLogsum(0.0, log(bg->omega) + pli->ddef->dcl[d].domcorrection) : 0.0; /* NATS, and will stay so */
       env_sc_for_pvalue = (env_sc - (nullsc + env_edefbias)) / eslCONST_LOG2; /* now BITS, as it should be */
 
       if(use_Rgm) env_sc_for_pvalue += Rgm_correction / eslCONST_LOG2; /* glocal env def penalized 0. for ends and log(1/Lgm->M) for begins into any state */
@@ -4669,6 +4676,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
         ESL_RALLOC(eb, p, sizeof(float)   * nenv_alloc);
         ESL_RALLOC(ead, p, sizeof(P7_ALIDISPLAY *) * nenv_alloc);
         if(pli->do_p7deltrigger) ESL_RALLOC(pli->p7env_delta_pre, p, sizeof(float) * nenv_alloc);
+        if(hmmonly_glocal)       ESL_RALLOC(pli->p7env_bias,      p, sizeof(float) * nenv_alloc);
         ESL_RALLOC(em, p, sizeof(int) * nenv_alloc); /* issue #50 / brief 26_0316-034 */
       }
       /* Define envelope to search with CM */
@@ -4679,6 +4687,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       pli->ddef->dcl[d].ad = NULL;
       /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
       if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
+      if(hmmonly_glocal)       pli->p7env_bias[nenv]      = env_edefbias / eslCONST_LOG2; /* bits, like a CM hit's null3 bias */
       /* issue #50 (brief 26_0316-034): remember whether this envelope came from a merged window */
       em[nenv] = FALSE; /* set below if it overlaps a sibling envelope from this window */
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.

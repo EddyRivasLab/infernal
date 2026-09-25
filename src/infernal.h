@@ -2481,6 +2481,8 @@ typedef struct cm_pipeline_s {
   float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
   int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
   float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
+  float        *p7env_bias;      /* temp [0..np7env-1] per-envelope null2 correction (bits), set in pli_p7_env_def
+                                  * in glocal HMM only mode, read by pli_trm_F5_create_hits() */
   /* issue #50 (brief 26_0316-034): per-envelope "came from a merged (multi-hit)
    * window" flags. Such envelopes were defined by the unbanded multihit glocal
    * domaindef and can abut/overlap a sibling envelope; re-deriving p7
