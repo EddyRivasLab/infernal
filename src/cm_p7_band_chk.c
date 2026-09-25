@@ -800,7 +800,7 @@ cp9chkF_FwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, ch
   int M = s->M, L = s->L;
   double *m0,*i0,*d0,*e0, *m1,*i1,*d1,*e1;
   double *mp,*ip,*dp,*ep, *mc,*ic,*dc,*ec;
-  int i, j, w;
+  int i, j, w, zw;
 
   ESL_ALLOC(m0, sizeof(double)*(M+1)); ESL_ALLOC(i0, sizeof(double)*(M+1));
   ESL_ALLOC(d0, sizeof(double)*(M+1)); ESL_ALLOC(e0, sizeof(double)*(M+1));
@@ -808,7 +808,10 @@ cp9chkF_FwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, ch
   ESL_ALLOC(d1, sizeof(double)*(M+1)); ESL_ALLOC(e1, sizeof(double)*(M+1));
 
   mc=m0; ic=i0; dc=d0; ec=e0;
-  memset(mc,0,sizeof(double)*(M+1)); memset(ic,0,sizeof(double)*(M+1)); memset(dc,0,sizeof(double)*(M+1)); memset(ec,0,sizeof(double)*(M+1));
+  /* zero only the band + the single +1 edge cell each row kernel reads
+   * (see brief 26_0821-084's audit); was M+1 (full model width). */
+  zw = ESL_MIN(M+1, kmax[0]-kmin[0]+2);
+  memset(mc,0,sizeof(double)*zw); memset(ic,0,sizeof(double)*zw); memset(dc,0,sizeof(double)*zw); memset(ec,0,sizeof(double)*zw);
   cp9_chk_fwd_row0F(cp9, kmin, kmax, M, mc, ic, dc, ec, NULL);
   j = 0;
   if(s->bnd[j] == 0) {
@@ -824,7 +827,8 @@ cp9chkF_FwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, ch
   for(i = 1; i <= L; i++) {
     if((i & 1) == 1) { mc=m1; ic=i1; dc=d1; ec=e1; }
     else             { mc=m0; ic=i0; dc=d0; ec=e0; }
-    memset(mc,0,sizeof(double)*(M+1)); memset(ic,0,sizeof(double)*(M+1)); memset(dc,0,sizeof(double)*(M+1)); memset(ec,0,sizeof(double)*(M+1));
+    zw = ESL_MIN(M+1, kmax[i]-kmin[i]+2);
+    memset(mc,0,sizeof(double)*zw); memset(ic,0,sizeof(double)*zw); memset(dc,0,sizeof(double)*zw); memset(ec,0,sizeof(double)*zw);
     cp9_chk_fwd_rowF(cp9, dsq, i, kmin, kmax, M, mp, ip, dp, ep, mc, ic, dc, ec, (i==L ? &s->fsc : NULL));
     if(j < s->nbnd && s->bnd[j] == i) {
       w = kmax[i]-kmin[i]+1;
@@ -853,7 +857,7 @@ cp9chkF_BwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, do
   int M = s->M, L = s->L;
   double *m0,*i0,*d0,*e0, *m1,*i1,*d1,*e1;
   double *mn,*in,*dn,*en, *mc,*ic,*dc,*ec;
-  int i, j, w;
+  int i, j, w, zw;
 
   ESL_ALLOC(m0, sizeof(double)*(M+1)); ESL_ALLOC(i0, sizeof(double)*(M+1));
   ESL_ALLOC(d0, sizeof(double)*(M+1)); ESL_ALLOC(e0, sizeof(double)*(M+1));
@@ -864,7 +868,10 @@ cp9chkF_BwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, do
 
   /* row L. Buffer = i%2. */
   if(L & 1) { mc=m1; ic=i1; dc=d1; ec=e1; } else { mc=m0; ic=i0; dc=d0; ec=e0; }
-  memset(mc,0,sizeof(double)*(M+1)); memset(ic,0,sizeof(double)*(M+1)); memset(dc,0,sizeof(double)*(M+1)); memset(ec,0,sizeof(double)*(M+1));
+  /* zero only the band + the single +1 edge cell each row kernel reads
+   * (see brief 26_0821-084's audit); was M+1 (full model width). */
+  zw = ESL_MIN(M+1, kmax[L]-kmin[L]+2);
+  memset(mc,0,sizeof(double)*zw); memset(ic,0,sizeof(double)*zw); memset(dc,0,sizeof(double)*zw); memset(ec,0,sizeof(double)*zw);
   cp9_chk_bwd_rowLF(cp9, dsq, L, kmin, kmax, M, mc, ic, dc, ec);
   if(s->bnd[j] == L) {
     w = kmax[L]-kmin[L]+1;
@@ -879,7 +886,8 @@ cp9chkF_BwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, do
   for(i = L-1; i >= 1; i--) {
     if(i & 1) { mc=m1; ic=i1; dc=d1; ec=e1; }
     else      { mc=m0; ic=i0; dc=d0; ec=e0; }
-    memset(mc,0,sizeof(double)*(M+1)); memset(ic,0,sizeof(double)*(M+1)); memset(dc,0,sizeof(double)*(M+1)); memset(ec,0,sizeof(double)*(M+1));
+    zw = ESL_MIN(M+1, kmax[i]-kmin[i]+2);
+    memset(mc,0,sizeof(double)*zw); memset(ic,0,sizeof(double)*zw); memset(dc,0,sizeof(double)*zw); memset(ec,0,sizeof(double)*zw);
     cp9_chk_bwd_rowF(cp9, dsq, i, kmin, kmax, M, mc, ic, dc, ec, mn, in, dn, en);
     if(j >= 0 && s->bnd[j] == i) {
       w = kmax[i]-kmin[i]+1;
@@ -894,7 +902,8 @@ cp9chkF_BwdFill(cp9chkF_t *s, CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, do
 
   /* row 0 (buffer 0 = m0; next=row1 used buffer 1 -> differ) */
   mc=m0; ic=i0; dc=d0; ec=e0;
-  memset(mc,0,sizeof(double)*(M+1)); memset(ic,0,sizeof(double)*(M+1)); memset(dc,0,sizeof(double)*(M+1)); memset(ec,0,sizeof(double)*(M+1));
+  zw = ESL_MIN(M+1, kmax[0]-kmin[0]+2);
+  memset(mc,0,sizeof(double)*zw); memset(ic,0,sizeof(double)*zw); memset(dc,0,sizeof(double)*zw); memset(ec,0,sizeof(double)*zw);
   cp9_chk_bwd_row0F(cp9, dsq, kmin, kmax, M, mc, ic, dc, ec, mn, in, dn, en);
   *ret_sc = mc[0]; /* bmx->mmx[0][0] */
   if(j >= 0 && s->bnd[j] == 0) {
