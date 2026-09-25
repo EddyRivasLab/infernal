@@ -144,6 +144,20 @@ empirical benchmarks and is significantly more sensitive for remote
 homology detection. Empirically, glocal searches return many fewer
 hits than local searches, so glocal may be desired for some
 applications.
+With
+.B -g,
+models with zero basepairs are searched with a glocal profile HMM
+instead of a CM, as if
+.B --hmmonly
+were also used (see
+.B --hmmonly
+below), unless
+.B --nohmmonly
+is also used, in which case they are searched with a glocal CM and must be
+calibrated. Combined with
+.B --hmmonly,
+.B -g
+selects a glocal HMM-only search for all models.
 
 .TP
 .BI -Z " <x>"
@@ -541,6 +555,33 @@ HMM-only mode. This can be turned off, forcing CM searches for these
 models with the 
 .B --nohmmonly 
 option.
+With
+.B -g,
+the search is a glocal HMM-only search: the whole model must match
+part of a target sequence (or, at a sequence end, a truncated part of
+the model may match, unless
+.B --notrunc
+is used). Filter stages F1 through F3 are run as above, then the glocal HMM
+filter stages F4 and F5 (P-value thresholds 0.0002, and a bias filter
+after F4), and each envelope that survives F5 is reported as a hit if its
+E-value or bit score satisfies the reporting threshold.
+The E-values come from the model's glocal HMM Forward E-value
+parameters (the EFP7GF line of the model file), for full-length and
+truncated hits alike. These parameters are predicted rather than
+determined by simulation; see the user guide for their accuracy.
+
+.TP
+.B --hmmwindows
+With
+.B --hmmonly,
+stop after filter stage F3 and output the target sequence windows that
+survive it, instead of hits. Requires
+.B --noali,
+and is incompatible with
+.B -g.
+Windows are reported with bit scores but no E-values. (Before
+Infernal 1.2 this option was called
+.B --trmF3.)
 
 .TP
 .BI --FZ " <x>"
