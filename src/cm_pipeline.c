@@ -2447,6 +2447,30 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
 
   CM_PLI_ACCT *pli_acct = &(pli->acct[pass_idx]);
 
+  /* In glocal HMM only mode (--hmmonly -g, or -g with a 0 basepair query
+   * model in cmsearch), the passes are the CM pipeline's but F1-F3 use the
+   * HMM only settings, F4/F5 have their own thresholds, there is no F5 bias
+   * filter, and no CM stages. (In cmscan, which may mix models, we only
+   * know this for sure if --hmmonly -g was used.)
+   */
+  int    hg          = (pli->mode == CM_SEARCH_SEQS) ? pli->do_hmmonly_glocal_cur : (pli->do_hmmonly_always && pli->do_glocal_cm_always);
+  int    s_do_msv     = hg ? TRUE                    : pli->do_msv;
+  int    s_do_msvbias = hg ? pli->do_bias_hmmonly    : pli->do_msvbias;
+  int    s_do_vit     = hg ? (! pli->do_max_hmmonly) : pli->do_vit;
+  int    s_do_vitbias = hg ? FALSE                   : pli->do_vitbias;
+  int    s_do_fwd     = hg ? (! pli->do_max_hmmonly) : pli->do_fwd;
+  int    s_do_fwdbias = hg ? FALSE                   : pli->do_fwdbias;
+  int    s_do_gfwdbias= hg ? pli->do_bias_hmmonly    : pli->do_gfwdbias;
+  int    s_do_edefbias= hg ? FALSE                   : pli->do_edefbias;
+  int    s_do_fcyk    = hg ? FALSE                   : pli->do_fcyk;
+  double s_F1         = hg ? pli->F1_hmmonly         : pli->F1;
+  double s_F1b        = hg ? pli->F1_hmmonly         : pli->F1b;
+  double s_F2         = hg ? pli->F2_hmmonly         : pli->F2;
+  double s_F3         = hg ? pli->F3_hmmonly         : pli->F3;
+  double s_F4         = hg ? pli->F4_hmmonly         : pli->F4;
+  double s_F4b        = hg ? pli->F4b_hmmonly        : pli->F4b;
+  double s_F5         = hg ? pli->F5_hmmonly         : pli->F5;
+
   /* first, determine number of residues searched, and num res re-searched for truncated hits */
   nres_searched = pli_acct->nres_top + pli_acct->nres_bot;
   switch(pass_idx) {
@@ -2468,10 +2492,10 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   }
 
   if(pli->be_verbose) { 
-    fprintf(ofp, "Internal CM pipeline statistics summary: %s\n", pli_describe_pass(pass_idx));
+    fprintf(ofp, "Internal %s pipeline statistics summary: %s\n", hg ? "glocal HMM-only" : "CM", pli_describe_pass(pass_idx));
   }
   else { 
-    fprintf(ofp, "Internal CM pipeline statistics summary:\n");
+    fprintf(ofp, "Internal %s pipeline statistics summary:\n", hg ? "glocal HMM-only" : "CM");
   }
   fprintf(ofp, "----------------------------------------\n");
   if (pli->mode == CM_SEARCH_SEQS) {
@@ -2551,38 +2575,38 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     }
   }
 
-  if(pli->do_msv) { 
+  if(s_do_msv) { 
     fprintf(ofp, "Windows   passing  local HMM SSV           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_msv,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msv / nres_searched,
-	    pli->F1);
+	    s_F1);
     nwin_fcyk = nwin_final = pli_acct->n_past_msv;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM SSV           filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_msvbias) { 
+  if(s_do_msvbias) { 
     fprintf(ofp, "Windows   passing  local HMM MSV      bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_msvbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_msvbias / nres_searched,
-	    pli->F1b);
+	    s_F1b);
     nwin_fcyk = nwin_final = pli_acct->n_past_msvbias;
   }
   /* msv bias is off by default, so don't output anything if it's off */
 
-  if(pli->do_vit) { 
+  if(s_do_vit) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_vit,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vit / nres_searched,
-	    pli->F2);
+	    s_F2);
     nwin_fcyk = nwin_final = pli_acct->n_past_vit;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi       filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_vitbias) { 
+  if(s_do_vitbias) { 
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_vitbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_vitbias / nres_searched,
@@ -2593,18 +2617,18 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing  local HMM Viterbi  bias filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_fwd) { 
+  if(s_do_fwd) { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_fwd,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwd / nres_searched,
-	    pli->F3);
+	    s_F3);
     nwin_fcyk = nwin_final = pli_acct->n_past_fwd;
   }
   else { 
     fprintf(ofp, "Windows   passing  local HMM Forward       filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_fwdbias) { 
+  if(s_do_fwdbias) { 
     fprintf(ofp, "Windows   passing  local HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_fwdbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_fwdbias / nres_searched,
@@ -2619,17 +2643,17 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_gfwd,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_gfwd / nres_searched,
-	    pli->F4);
+	    s_F4);
     nwin_fcyk = nwin_final = pli_acct->n_past_gfwd;
   }
   else { 
     fprintf(ofp, "Windows   passing glocal HMM Forward       filter: %15s  (off)\n", "");
   }
-  if(pli->do_gfwdbias) { 
+  if(s_do_gfwdbias) { 
     fprintf(ofp, "Windows   passing glocal HMM Forward  bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_gfwdbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_gfwdbias / nres_searched,
-	    pli->F4b);
+	    s_F4b);
     nwin_fcyk = nwin_final = pli_acct->n_past_gfwdbias;
   }
   else { 
@@ -2640,14 +2664,14 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edef,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_edef / nres_searched,
-	    pli->F5);
+	    s_F5);
     nwin_fcyk = nwin_final = pli_acct->n_past_edef;
   }
   else { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope defn filter: %15s  (off)\n", "");
   }
 
-  if(pli->do_edefbias) { 
+  if(s_do_edefbias) { 
     fprintf(ofp, "Envelopes passing glocal HMM envelope bias filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    pli_acct->n_past_edefbias,
 	    (nres_searched == 0) ? 0.0 : (double) pli_acct->pos_past_edefbias / nres_searched,
@@ -2656,7 +2680,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
   }
   /* edef bias is off by default, so don't output anything if it's off */
 
-  if(pli->do_fcyk) { 
+  if(s_do_fcyk) { 
     fprintf(ofp, "Envelopes passing %6s CM  CYK           filter: %15" PRId64 "  (%.4g); expected (%.4g)\n",
 	    (pli->do_glocal_cm_always || pli->do_glocal_cm_sometimes) ? ((pli->do_glocal_cm_always) ? "glocal" : "") : "local",
 	    pli_acct->n_past_cyk,
@@ -2695,7 +2719,7 @@ pli_pass_statistics(FILE *ofp, CM_PIPELINE *pli, int pass_idx)
       n_output_trunc   = 0;
       pos_output_trunc = 0;
     }
-    fprintf(ofp, "Total CM hits reported:                            %15d  (%.4g); includes %d truncated hit(s)\n",
+    fprintf(ofp, "Total %s hits reported:                           %s%15d  (%.4g); includes %d truncated hit(s)\n", hg ? "HMM" : "CM", hg ? "" : " ",
 	    (int) pli_acct->n_output,
 	    (nres_searched == 0) ? 0.0 : (double) (pli_acct->pos_output + pos_output_trunc) / nres_searched, 
 	    (int) n_output_trunc);
