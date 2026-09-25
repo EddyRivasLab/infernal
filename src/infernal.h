@@ -2420,10 +2420,8 @@ typedef struct cm_pipeline_s {
   int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd, for timing expts */
   int           do_time_F5;      /* TRUE to abort after Stage 5 env def, for timing expts */
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
-  /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
+  /* flag for terminating after F3 in HMM-only mode and outputting surviving windows (--hmmwindows) */
   int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
-  int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
-  int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
   int           do_msvband;      /* TRUE to use MSV-derived banded F4/F5 (--msvband)                     */
   int           do_vitband;      /* TRUE to use Viterbi-derived banded F4/F5 (--vitband)                 */
   int           vitband_local;   /* TRUE to use local Viterbi for --vitband (default: glocal)            */
@@ -2609,7 +2607,9 @@ typedef struct cm_pipeline_s {
   double  final_tau;              /* HMM bands tau for final stage            */
 
   /* Threshold settings for HMM-only pipeline                               */
-  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model */
+  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model, local (single pass) */
+  int     do_hmmonly_glocal_cur;/* TRUE to only use filter HMM for current model, glocal (--hmmonly -g):
+                                 * standard + truncated passes, F5 envelopes become hits */
   int     do_hmmonly_always;	/* TRUE to only use filter HMM for all models */
   int     do_hmmonly_never;	/* TRUE to never only use filter HMM for any model */
   int     do_max_hmmonly;       /* TRUE to skip all filters in HMM only mode  */
@@ -2617,6 +2617,9 @@ typedef struct cm_pipeline_s {
   double  F1_hmmonly;	        /* MSV filter threshold, HMM only mode      */
   double  F2_hmmonly;	        /* Viterbi filter threshold, HMM only mode  */
   double  F3_hmmonly;	        /* Forward filter threshold, HMM only mode  */
+  double  F4_hmmonly;	        /* glocal Forward filter threshold, glocal HMM only mode           */
+  double  F4b_hmmonly;	        /* glocal Forward bias filter threshold, glocal HMM only mode      */
+  double  F5_hmmonly;	        /* envelope definition filter threshold, glocal HMM only mode      */
   /* on/off parameters, HMM only mode */
   int     do_bias_hmmonly;      /* TRUE to use bias filter, HMM only mode   */
   int     do_null2_hmmonly;     /* TRUE to use null2, HMM only mode         */
