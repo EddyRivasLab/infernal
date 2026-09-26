@@ -5842,7 +5842,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 
           hit->hmmonly  = TRUE;
           hit->glocal   = FALSE; /* all HMM hits are local (currently) */
-          hit->bias     = dom_bias;
+          hit->bias     = dom_bias / eslCONST_LOG2; /* nats -> bits, as for CM hits (null3) and HMMER output */
           hit->evalue   = 0.; /* we'll redefine this later */
 
           /* create a CM_ALIDISPLAY from the P7_ALIDISPLAY */
