@@ -2387,7 +2387,11 @@ typedef struct cm_pipeline_s {
   uint64_t      nnodes;	           /* # of model nodes searched, CM mode    */
   uint64_t      nmodels_hmmonly;   /* # of models searched, HMM only mode   */
   uint64_t      nnodes_hmmonly;	   /* # of model nodes, HMM only mode       */
-  CM_PLI_ACCT   acct[NPLI_PASSES]; 
+  uint64_t      nmodels_hmmonly_glocal; /* # of models searched, glocal HMM only mode */
+  uint64_t      nnodes_hmmonly_glocal;  /* # of model nodes, glocal HMM only mode     */
+  CM_PLI_ACCT   acct_cm[NPLI_PASSES];   /* accounting for CM mode (and local HMM only mode, pass PLI_PASS_HMM_ONLY_ANY) */
+  CM_PLI_ACCT   acct_hg[NPLI_PASSES];   /* accounting for glocal HMM only mode, which uses the CM mode passes           */
+  CM_PLI_ACCT  *acct;                   /* points to acct_cm or acct_hg, for the current model; set in cm_pli_NewModel() */
 
   /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */
@@ -2420,10 +2424,8 @@ typedef struct cm_pipeline_s {
   int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd, for timing expts */
   int           do_time_F5;      /* TRUE to abort after Stage 5 env def, for timing expts */
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
-  /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
+  /* flag for terminating after F3 in HMM-only mode and outputting surviving windows (--hmmwindows) */
   int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
-  int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
-  int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
   int           do_msvband;      /* TRUE to use MSV-derived banded F4/F5 (--msvband)                     */
   int           do_vitband;      /* TRUE to use Viterbi-derived banded F4/F5 (--vitband)                 */
   int           vitband_local;   /* TRUE to use local Viterbi for --vitband (default: glocal)            */
@@ -2483,6 +2485,8 @@ typedef struct cm_pipeline_s {
   float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
   int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
   float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
+  float        *p7env_bias;      /* temp [0..np7env-1] per-envelope null2 correction (bits), set in pli_p7_env_def
+                                  * in glocal HMM only mode, read by pli_trm_F5_create_hits() */
   /* issue #50 (brief 26_0316-034): per-envelope "came from a merged (multi-hit)
    * window" flags. Such envelopes were defined by the unbanded multihit glocal
    * domaindef and can abut/overlap a sibling envelope; re-deriving p7
@@ -2609,7 +2613,9 @@ typedef struct cm_pipeline_s {
   double  final_tau;              /* HMM bands tau for final stage            */
 
   /* Threshold settings for HMM-only pipeline                               */
-  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model */
+  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model, local (single pass) */
+  int     do_hmmonly_glocal_cur;/* TRUE to only use filter HMM for current model, glocal (--hmmonly -g):
+                                 * standard + truncated passes, F5 envelopes become hits */
   int     do_hmmonly_always;	/* TRUE to only use filter HMM for all models */
   int     do_hmmonly_never;	/* TRUE to never only use filter HMM for any model */
   int     do_max_hmmonly;       /* TRUE to skip all filters in HMM only mode  */
@@ -2617,6 +2623,9 @@ typedef struct cm_pipeline_s {
   double  F1_hmmonly;	        /* MSV filter threshold, HMM only mode      */
   double  F2_hmmonly;	        /* Viterbi filter threshold, HMM only mode  */
   double  F3_hmmonly;	        /* Forward filter threshold, HMM only mode  */
+  double  F4_hmmonly;	        /* glocal Forward filter threshold, glocal HMM only mode           */
+  double  F4b_hmmonly;	        /* glocal Forward bias filter threshold, glocal HMM only mode      */
+  double  F5_hmmonly;	        /* envelope definition filter threshold, glocal HMM only mode      */
   /* on/off parameters, HMM only mode */
   int     do_bias_hmmonly;      /* TRUE to use bias filter, HMM only mode   */
   int     do_null2_hmmonly;     /* TRUE to use null2, HMM only mode         */

@@ -248,7 +248,7 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
  *
  * Why this form: lambda error is depth-amplified (tau error is not), so
  * lambda accuracy dominates the deep tail where the real user-facing
- * `cmsearch --trmF5` E-values live. Adding mean_H^2 and the eff_nseq term
+ * `cmsearch --hmmonly -g` E-values live. Adding mean_H^2 and the eff_nseq term
  * takes the held-out deep-tail (P=1e-8) median error to 0.354 log10 units
  * (2.3x) at only N=4 samples -- better than the old 2-feature form at
  * --EgfN 50. The 055 refit additionally brings the single-sequence (nseq=1)

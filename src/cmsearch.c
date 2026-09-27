@@ -72,7 +72,7 @@ typedef struct {
  * #define ICWDF    "--max,--nohmm,--mid,--rfam,--FZ"
  * #define ICWRFAM  "--max,--nohmm,--mid,--default,--FZ"
  * #define ICWFZ    "--max,--nohmm,--mid,--default,--rfam"
- * #define ICWTRMF3  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
+ * #define ICWHMMWINDOWS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
  * #define ICWHMMMAX  "--hmmF1,--hmmF2,--hmmF3,--hmmnobias" 
  * #define ICWFNONBANDED  "--ftau,--fsums,--fqdb,--fbeta"
  * #define ICWNONBANDED  "--tau,--sums,--qdb,--beta"
@@ -102,7 +102,7 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles   reqs   incomp            help                                                          docgroup*/
   { "-h",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show brief help and exit",                                      1 },
   { "--version",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "show version info and exit",                                    1 },
-  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  "--hmmonly",     "configure CM for glocal alignment [default: local]",            1 },
+  { "-g",           eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,            "configure CM (or HMM, w/--hmmonly) for glocal alignment",       1 },
   { "-Z",           eslARG_REAL,   FALSE, NULL, "x>0",   NULL,  NULL,  NULL,            "set search space size in *Mb* to <x> for E-value calculations", 1 },
   { "--devhelp",    eslARG_NONE,   NULL,  NULL, NULL,    NULL,  NULL,  NULL,            "show list of otherwise hidden developer/expert options",        1 },
   /* Control of output */
@@ -138,6 +138,7 @@ static ESL_OPTIONS options[] = {
   { "--default",    eslARG_NONE,"default",NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "default: run search space size-dependent pipeline",              6 },
   { "--rfam",       eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set heuristic filters at Rfam-level (fast)",                     6 },
   { "--hmmonly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "use HMM only, don't use a CM at all",                            6 },
+  { "--hmmwindows", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", "-g", "w/--hmmonly, output windows surviving Stage 3 (Fwd), not hits",  6 },
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set filters to defaults used for a search space of size <x> Mb", 6 },
   { "--Fmid",       eslARG_REAL,  "0.10", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
@@ -221,9 +222,6 @@ static ESL_OPTIONS options[] = {
   { "--beta",       eslARG_REAL,"1e-15",  NULL, "1E-18<x<1", NULL,    NULL,   NULL,  "set tail loss prob for final Inside QDB calculation to <x>",       105 },
   { "--nonbanded",  eslARG_NONE,  FALSE,  NULL, NULL,        NULL,    NULL,   NULL, /* see ** above */ "do not use QDBs or HMM bands in final Inside round of CM search", 105 },
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
-  { "--trmF3",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", NULL, /* see ** above */ "terminate after Stage 3 Fwd and output surviving windows",       106 },
-  { "--trmF5",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,    NULL, /* see ** above */ "terminate after Stage 5 env def, output envelopes", 106 },
-  { "--fullseqF5", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  "--trmF5", NULL, "skip HMM stages F1-F3, force full sequence into F5 stage",              106 },
   { "--msvband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "MSV-derived bands (not Viterbi) for F4/F5 (experimental)", 106 },
   { "--vitband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--novitband,--msvband", "banded Viterbi env def for F4/F5 (experimental)",           6 },
   { "--novitband", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "no-op: F4/F5 are unbanded by default",                                   6 },
@@ -625,18 +623,19 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(! (tinfo->cm->flags & CMH_FP7)) cm_Fail("no filter HMM was read for CM: %s\n", tinfo->cm->name);
 
     /* check if we have E-value stats for the CM, we require them
-     * *unless* we are going to run the pipeline in HMM-only mode or --trmF5 mode.
-     * We run the pipeline in HMM-only mode if --nohmmonly is 
-     * not used and -g is not used and:
+     * *unless* we are going to run the pipeline in (local or glocal)
+     * HMM-only mode. We run the pipeline in HMM-only mode if none of
+     * --nohmmonly, --max, --nohmm are used and:
      * (a) --hmmonly used OR
-     * (b) --trmF5 used OR
-     * (c) model has 0 basepairs
+     * (b) model has 0 basepairs
+     * (this must match cm_pli_NewModel()'s choice of pipeline)
      */
     nbps = CMCountNodetype(tinfo->cm, MATP_nd);
     if((   esl_opt_GetBoolean(go, "--nohmmonly"))  || 
-       (   esl_opt_GetBoolean(go, "-g"))           || 
-       ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (! esl_opt_GetBoolean(go, "--trmF5")) && (nbps > 0))) { 
-      /* we're NOT running HMM-only or trmF5 pipeline variant, we need CM E-value stats */
+       (   esl_opt_GetBoolean(go, "--max"))        || 
+       (   esl_opt_GetBoolean(go, "--nohmm"))      || 
+       ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
+      /* we're NOT running an HMM-only pipeline variant, we need CM E-value stats */
       if(! (tinfo->cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("no E-value parameters were read for CM: %s.\nYou may need to run cmcalibrate.", tinfo->cm->name);
     }
        
@@ -696,7 +695,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* we need to re-compute e-values before merging (when list will be sorted) */
     for (i = 0; i < infocnt; ++i) { 
-      if(info[i].pli->do_hmmonly_cur || info[i].pli->do_trm_F5) eZ = info[i].pli->Z / (float) info[i].om->max_length;
+      if(info[i].pli->do_hmmonly_cur || info[i].pli->do_hmmonly_glocal_cur) eZ = info[i].pli->Z / (float) info[i].om->max_length;
       else                 	                                     eZ = cm_pli_ExpInfoA(info[i].pli, info[i].cm)[info[i].pli->final_cm_exp_mode]->cur_eff_dbsize;
       cm_tophits_ComputeEvalues(info[i].th, eZ, 0);
     }
@@ -722,8 +721,10 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* tally up total number of hits and target coverage */
     for (i = 0; i < info->th->N; i++) {
       if ((info[0].th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info[0].th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	info[0].pli->acct[info[0].th->hit[i]->pass_idx].n_output++;
-	info[0].pli->acct[info[0].th->hit[i]->pass_idx].pos_output += llabs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
+	/* glocal HMM only hits are accounted separately (pli->acct_hg) */
+	CM_PLI_ACCT *acct = (info[0].th->hit[i]->hmmonly && info[0].th->hit[i]->glocal) ? info[0].pli->acct_hg : info[0].pli->acct_cm;
+	acct[info[0].th->hit[i]->pass_idx].n_output++;
+	acct[info[0].th->hit[i]->pass_idx].pos_output += llabs(info[0].th->hit[i]->stop - info[0].th->hit[i]->start) + 1;
       }
     }
       
@@ -760,7 +761,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           cm_tophits_TabularTargets3  (tblfp, info[0].cm->name, info[0].cm->acc, info[0].th, info[0].pli, (cm_idx == 1));
         }
         // --fmt 2 causes early failure
-        // --fmt 3 and --trmF3 are actually incompatible
+        // --fmt 3 and --hmmwindows are actually incompatible
       }
       fflush(tblfp);
     }
@@ -1259,18 +1260,19 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if(! (info->cm->flags & CMH_FP7)) mpi_failure("no filter HMM was read for CM: %s\n", info->cm->name);
 
     /* check if we have E-value stats for the CM, we require them
-     * *unless* we are going to run the pipeline in HMM-only mode or --trmF5 mode.
-     * We run the pipeline in HMM-only mode if --nohmmonly is 
-     * not used and -g is not used and:
+     * *unless* we are going to run the pipeline in (local or glocal)
+     * HMM-only mode. We run the pipeline in HMM-only mode if none of
+     * --nohmmonly, --max, --nohmm are used and:
      * (a) --hmmonly used OR
-     * (b) --trmF5 used OR
-     * (c) model has 0 basepairs
+     * (b) model has 0 basepairs
+     * (this must match cm_pli_NewModel()'s choice of pipeline)
      */
     nbps = CMCountNodetype(info->cm, MATP_nd);
     if((   esl_opt_GetBoolean(go, "--nohmmonly"))  || 
-       (   esl_opt_GetBoolean(go, "-g"))           || 
-       ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (! esl_opt_GetBoolean(go, "--trmF5")) && (nbps > 0))) { 
-      /* we're NOT running HMM-only or trmF5 pipeline variant, we need CM E-value stats */
+       (   esl_opt_GetBoolean(go, "--max"))        || 
+       (   esl_opt_GetBoolean(go, "--nohmm"))      || 
+       ((! esl_opt_GetBoolean(go, "--hmmonly"))    && (nbps > 0))) { 
+      /* we're NOT running an HMM-only pipeline variant, we need CM E-value stats */
       if(! (info->cm->flags & CMH_EXPTAIL_STATS)) mpi_failure("no E-value parameters were read for CM: %s\n", info->cm->name);
     }
     
@@ -1433,8 +1435,10 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* tally up total number of hits and target coverage */
     for (i = 0; i < info->th->N; i++) {
       if ((info->th->hit[i]->flags & CM_HIT_IS_REPORTED) || (info->th->hit[i]->flags & CM_HIT_IS_INCLUDED)) { 
-	info->pli->acct[info->th->hit[i]->pass_idx].n_output++;
-	info->pli->acct[info->th->hit[i]->pass_idx].pos_output += llabs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
+	/* glocal HMM only hits are accounted separately (pli->acct_hg) */
+	CM_PLI_ACCT *acct = (info->th->hit[i]->hmmonly && info->th->hit[i]->glocal) ? info->pli->acct_hg : info->pli->acct_cm;
+	acct[info->th->hit[i]->pass_idx].n_output++;
+	acct[info->th->hit[i]->pass_idx].pos_output += llabs(info->th->hit[i]->stop - info->th->hit[i]->start) + 1;
       }
     }
     
@@ -1468,7 +1472,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
           cm_tophits_TabularTargets3  (tblfp, info->cm->name, info->cm->acc, info->th, info->pli, (cm_idx == 1));
         }
         // --fmt 2 causes early failure
-        // --fmt 3 and --trmF3 are actually incompatible
+        // --fmt 3 and --hmmwindows are actually incompatible
       }
       fflush(tblfp);
     }
@@ -1739,7 +1743,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     free(block); block = NULL;
 
     /* compute E-values before sending back to master */
-    if(info->pli->do_hmmonly_cur || info->pli->do_trm_F5) eZ = info->pli->Z / (float) info->om->max_length;
+    if(info->pli->do_hmmonly_cur || info->pli->do_hmmonly_glocal_cur) eZ = info->pli->Z / (float) info->om->max_length;
     else              	                                   eZ = cm_pli_ExpInfoA(info->pli, info->cm)[info->pli->final_cm_exp_mode]->cur_eff_dbsize;
     cm_tophits_ComputeEvalues(info->th, eZ, 0);
       
@@ -1788,11 +1792,16 @@ static void
 process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfile, char **ret_seqfile)
 {
   ESL_GETOPTS *go        = NULL;
+  int          i;                   // counter over argv
   int          do_dev    = FALSE;   // set to TRUE if --devhelp used 
   char         devnote[] = " (*)";  // footnote asterisk appended to help sections that expand with --devhelp
 
   if ((go = esl_getopts_Create(options))     == NULL)     esl_fatal("Internal failure creating options object");
   if (esl_opt_ProcessEnvironment(go)         != eslOK)  { esl_fprintf(stderr, "Failed to process environment: %s\n", go->errbuf);  goto ERROR; } // ERROR block here puts additional useful
+  /* --trmF3 was renamed --hmmwindows in 1.2; say so rather than just "not recognized" */
+  for (i = 1; i < argc; i++) { 
+    if (strcmp(argv[i], "--trmF3") == 0) { esl_fprintf(stderr, "Failed to parse command line: Option --trmF3 has been renamed --hmmwindows\n"); goto ERROR; }
+  }
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; } // user-directed cmdline usage stuff to stderr
   if (esl_opt_VerifyConfig(go)               != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; }
  
@@ -1893,8 +1902,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
-  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--trmF3"))) { 
-    esl_fprintf(stderr, "--fmt 3 doesn't make sense in combination with --trmF3\n");
+  if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 3) && (esl_opt_IsUsed(go, "--hmmwindows"))) { 
+    esl_fprintf(stderr, "--fmt 3 doesn't make sense in combination with --hmmwindows\n");
     goto ERROR;
   }
   if((esl_opt_IsUsed(go, "--fmt")) && (esl_opt_GetInteger(go, "--fmt") == 2)) { 
@@ -2179,7 +2188,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   }
 
   // #define TIMINGOPTS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
-  // #define ICWTRMF3  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
+  // #define ICWHMMWINDOWS  "--timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6"
   if(esl_opt_IsUsed(go, "--timeF1")) { 
     if((esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
       esl_fprintf(stderr, "Failed to parse command line: Option --timeF1 is incompatible with --timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
@@ -2216,28 +2225,10 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       goto ERROR; 
     }
   }
-  if(esl_opt_IsUsed(go, "--trmF3")) { 
+  if(esl_opt_IsUsed(go, "--hmmwindows")) { 
     if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) { 
-      esl_fprintf(stderr, "Failed to parse command line: Option --trmF3 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
+      esl_fprintf(stderr, "Failed to parse command line: Option --hmmwindows is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
       goto ERROR; 
-    }
-    if(esl_opt_IsUsed(go, "--trmF5")) {
-      esl_fprintf(stderr, "Failed to parse command line: Option --trmF3 is incompatible with --trmF5\n");
-      goto ERROR;
-    }
-  }
-  if(esl_opt_IsUsed(go, "--trmF5")) {
-    if((esl_opt_IsUsed(go, "--timeF1")) || (esl_opt_IsUsed(go, "--timeF2")) || (esl_opt_IsUsed(go, "--timeF3")) || (esl_opt_IsUsed(go, "--timeF4")) || (esl_opt_IsUsed(go, "--timeF5")) || (esl_opt_IsUsed(go, "--timeF6"))) {
-      esl_fprintf(stderr, "Failed to parse command line: Option --trmF5 is incompatible with --timeF1,--timeF2,--timeF3,--timeF4,--timeF5,--timeF6\n");
-      goto ERROR;
-    }
-    if(esl_opt_IsUsed(go, "--hmmonly")) {
-      esl_fprintf(stderr, "Failed to parse command line: Option --trmF5 is incompatible with --hmmonly\n");
-      goto ERROR;
-    }
-    if(esl_opt_IsUsed(go, "--nohmm") || esl_opt_IsUsed(go, "--max")) {
-      esl_fprintf(stderr, "Failed to parse command line: Option --trmF5 requires Stage 5 envelope definition and is incompatible with --nohmm and --max\n");
-      goto ERROR;
     }
   }
 
@@ -2291,7 +2282,10 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   
   fprintf(ofp, "# query CM file:                         %s\n", cmfile);
   fprintf(ofp, "# target sequence database:              %s\n", seqfile);
-  if (esl_opt_IsUsed(go, "-g"))           fprintf(ofp, "# CM configuration:                      glocal\n");
+  if (esl_opt_IsUsed(go, "-g")) {
+    if (esl_opt_IsUsed(go, "--hmmonly"))  fprintf(ofp, "# HMM configuration:                     glocal\n");
+    else                                  fprintf(ofp, "# CM configuration:                      glocal\n");
+  }
   if (esl_opt_IsUsed(go, "-Z"))           fprintf(ofp, "# database size is set to:               %.1f Mb\n",        esl_opt_GetReal(go, "-Z"));
   if (esl_opt_IsUsed(go, "-o"))           fprintf(ofp, "# output directed to file:               %s\n",             esl_opt_GetString(go, "-o"));
   if (esl_opt_IsUsed(go, "-A"))           fprintf(ofp, "# MSA of significant hits saved to file: %s\n",             esl_opt_GetString(go, "-A"));
@@ -2393,8 +2387,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *seqfile, int
   if (esl_opt_IsUsed(go, "--timeF5"))     fprintf(ofp, "# abort after Stage 5 env defn (for timing) on\n");
   if (esl_opt_IsUsed(go, "--timeF6"))     fprintf(ofp, "# abort after Stage 6 CYK (for timing)   on\n");
 
-  if (esl_opt_IsUsed(go, "--trmF3"))      fprintf(ofp, "# terminate after Stage 3 Fwd:           on\n");
-  if (esl_opt_IsUsed(go, "--trmF5"))      fprintf(ofp, "# terminate after Stage 5 env defn:      on\n");
+  if (esl_opt_IsUsed(go, "--hmmwindows")) fprintf(ofp, "# terminate after Stage 3 Fwd:           on [output HMM windows]\n");
 
   if (esl_opt_IsUsed(go, "--nogreedy"))   fprintf(ofp, "# greedy CM hit resolution:              off\n");
   if (esl_opt_IsUsed(go, "--cp9noel"))    fprintf(ofp, "# CP9 HMM local ends:                    off\n");
