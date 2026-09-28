@@ -1498,7 +1498,7 @@ cm_hit_MPIPackSize(CM_HIT *hit, MPI_Comm comm, int *ret_n)
 
   /* CM_HIT data */
   if (MPI_Pack_size(8,            MPI_LONG,   comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* start, stop, seq_idx, cm_idx, hit_idx, srcL, any_oidx, win_oidx */
-  if (MPI_Pack_size(8,            MPI_INT,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* in_rc, root, mode, clan_idx, pass_idx, hmmonly, glocal, has_evalue */
+  if (MPI_Pack_size(9,            MPI_INT,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* in_rc, root, mode, clan_idx, pass_idx, hmmonly, glocal, has_evalue, hmmtrunc */
   if (MPI_Pack_size(2,            MPI_FLOAT,  comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* score, bias             */
   if (MPI_Pack_size(4,            MPI_DOUBLE, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* pvalue, evalue, any_bitE, win_bitE */
   if (MPI_Pack_size(1,            MPI_INT,    comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz;  /* flags                              */
@@ -1582,6 +1582,7 @@ cm_hit_MPIPack(CM_HIT *hit, char *buf, int n, int *pos, MPI_Comm comm)
   if (MPI_Pack(&hit->srcL,           1, MPI_LONG,     buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->hmmonly,        1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->glocal,         1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
+  if (MPI_Pack(&hit->hmmtrunc,       1, MPI_INT,      buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->any_oidx,       1, MPI_LONG,     buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->win_oidx,       1, MPI_LONG,     buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   if (MPI_Pack(&hit->any_bitE,       1, MPI_DOUBLE,   buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
@@ -1700,6 +1701,7 @@ cm_hit_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CM_HIT *hit)
   if (MPI_Unpack(buf, n, pos, &hit->srcL,        1, MPI_LONG,   comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->hmmonly,     1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->glocal,      1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
+  if (MPI_Unpack(buf, n, pos, &hit->hmmtrunc,    1, MPI_INT,    comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->any_oidx,    1, MPI_LONG,   comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->win_oidx,    1, MPI_LONG,   comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 
   if (MPI_Unpack(buf, n, pos, &hit->any_bitE,    1, MPI_DOUBLE, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); 

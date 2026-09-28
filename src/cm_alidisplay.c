@@ -1738,6 +1738,36 @@ cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
   else return "no";
 }
 
+/* Function:  cm_hit_TruncString()
+ * Synopsis:  Truncation string for a hit's 'trunc' output column.
+ *
+ * Purpose:   Return the string for the 'trunc' column of <hit>. For a
+ *            glocal HMM only hit (--hmmonly -g) that is decided by
+ *            <hit->hmmtrunc>, which the pipeline sets from the model
+ *            span of the hit's trace, so it doesn't depend on whether
+ *            an alignment display was kept (--noali). For all other
+ *            hits it is cm_alidisplay_TruncString() of <hit->ad>, as
+ *            before ("-" for local HMM only hits and if <hit->ad> is
+ *            NULL).
+ *            (brief 26_0824-076)
+ *
+ * Returns:   informative string
+ */
+char *
+cm_hit_TruncString(const CM_HIT *hit)
+{
+  if(hit->hmmonly && hit->glocal) { 
+    switch(hit->hmmtrunc) { 
+    case CM_HMMTRUNC_NO:   return "no";
+    case CM_HMMTRUNC_5P:   return "5'";
+    case CM_HMMTRUNC_3P:   return "3'";
+    case CM_HMMTRUNC_5P3P: return "5'&3'";
+    default:               return "-";
+    }
+  }
+  return cm_alidisplay_TruncString(hit->ad);
+}
+
 /* Function:  cm_alidisplay_Backconvert()
  * Synopsis:  Convert an alidisplay to a parsetree and subsequence.
  *
