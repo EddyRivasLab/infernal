@@ -2328,9 +2328,10 @@ typedef struct cm_pipeline_accounting_s {
 /* CM_HMMSPAN: per-domain model span of the alignment trace, filled by the glocal
  * domaindef functions (cm_p7_domaindef.c) in glocal HMM only mode and indexed like
  * ddef->dcl[]. from[d]..to[d] is the first..final model position of any M or D
- * state in domain d's trace, so a terminal deletion counts as spanned, unlike
- * P7_ALIDISPLAY's hmmfrom..hmmto, which are the first/final M states only. It is
- * how a hit's truncation is determined independent of --noali (brief 26_0824-076). */
+ * state in domain d's trace (glocal traces are wing-retracted, so in practice the 
+ * first/final M state, as P7_ALIDISPLAY's hmmfrom..hmmto, but available without an
+ * alignment display). It is how a hit's truncation is determined independent
+ * of --noali (brief 26_0824-076). */
 typedef struct cm_hmmspan_s {
   int *from;
   int *to;

@@ -114,9 +114,11 @@ hmmspan_Set(CM_HMMSPAN *span, int d, int from, int to)
 }
 
 /* hmmspan_FromTrace(): record the model span of the domain in <tr> for domain <d>: the first
- * and final model position of any M or D state. Terminal deletions (G->D1..Dk-1->Mk, or
- * Mk->Dk+1..DM->E in a glocal trace) are spanned, whereas a truncated profile's entry/exit
- * at an internal position (G->Mk, Mk->E) is not.
+ * and final model position of any M or D state. Glocal traces from the generic OA traceback 
+ * are wing-retracted (entry B->Mk, exit Mk->E, no D states at the ends), so this is the first
+ * and final M state, i.e. the same hmmfrom..hmmto as the P7_ALIDISPLAY, but available
+ * without one. Whether a span that stops short of 1..M is truncation or a terminal deletion is 
+ * the caller's call (it depends on the pipeline pass).
  */
 static int
 hmmspan_FromTrace(CM_HMMSPAN *span, int d, const P7_TRACE *tr)

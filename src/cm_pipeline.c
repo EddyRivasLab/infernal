@@ -4757,11 +4757,19 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       ead[nenv] = pli->ddef->dcl[d].ad;
       pli->ddef->dcl[d].ad = NULL;
       if(hmmonly_glocal) { 
-        /* glocal HMM only truncation label (brief 26_0824-076): a truncated profile can enter (exit) at
-         * an internal model position, and the hit is 5' (3') truncated iff its trace's first (final) 
-         * M or D state is not model position 1 (M). A terminal deletion spans the end, so is not truncation. */
+        /* glocal HMM only truncation label (brief 26_0824-076). A hit is 5' (3') truncated iff (a) its pass
+         * lets the 5' (3') end be truncated (the pass forces the sequence's first (final) residue into the
+         * hit, and its profile, Rgm/Tgm (Lgm/Tgm), may enter (exit) at any model position), AND (b) the
+         * hit's model span actually starts after position 1 (ends before position M). Both are needed: in the
+         * standard pass, or at the end a truncated pass doesn't free, the glocal profile is wing-retracted,
+         * so a hit that starts at position k > 1 is a terminal deletion, not truncation, and the trace can't
+         * tell the two apart (B->Mk either way). A truncated pass whose hit does span position 1 (M) isn't
+         * truncated either. This is CM mode's rule: truncated iff the aligned span is shorter than the span
+         * the pass assumes (1..M for a forced end). */
         if(d >= cur_span->n) ESL_FAIL(eslEINCONCEIVABLE, pli->errbuf, "no trace span for glocal HMM only envelope");
-        pli->p7env_trunc[nenv] = CM_HMMTRUNC_NO + ((cur_span->from[d] > 1) ? 1 : 0) + ((cur_span->to[d] < om->M) ? 2 : 0);
+        pli->p7env_trunc[nenv] = CM_HMMTRUNC_NO 
+          + ((cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) && cur_span->from[d] > 1)     ? 1 : 0)
+          + ((cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) && cur_span->to[d]   < om->M) ? 2 : 0);
         if(! pli->show_alignments) { p7_alidisplay_Destroy(ead[nenv]); ead[nenv] = NULL; }
       }
       /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
