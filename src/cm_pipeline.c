@@ -219,10 +219,7 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->f6_deltaA_n        = 0;
   pli->p7env_delta_pre    = NULL;
   pli->p7env_bias         = NULL;
-  pli->p7env_trunc        = NULL;
-  pli->hmmspan            = NULL;
-  pli->p7env_trunc        = NULL;
-  pli->hmmspan            = NULL;
+  pli->p7env_winoff       = NULL;
   pli->f7env_merged       = NULL;
   pli->f7env_merged_n     = 0;
   pli->cur_env_merged     = FALSE;
@@ -1017,8 +1014,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->f6_deltaA)       free(pli->f6_deltaA);
   if (pli->p7env_delta_pre) free(pli->p7env_delta_pre);
   if (pli->p7env_bias)      free(pli->p7env_bias);
-  if (pli->p7env_trunc)     free(pli->p7env_trunc);
-  if (pli->hmmspan)         cm_hmmspan_Destroy(pli->hmmspan);
+  if (pli->p7env_winoff)    free(pli->p7env_winoff);
   if (pli->f7env_merged)    free(pli->f7env_merged);
   esl_randomness_Destroy(pli->r);
   p7_domaindef_Destroy(pli->ddef);
@@ -2326,7 +2322,6 @@ pli_trm_F5_create_hits(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, const
 
     hit->hmmonly    = TRUE;
     hit->glocal     = TRUE;
-    hit->hmmtrunc   = (pli->p7env_trunc != NULL) ? pli->p7env_trunc[i] : CM_HMMTRUNC_NA; /* set in pli_p7_env_def() */
     hit->bias       = (pli->p7env_bias != NULL) ? pli->p7env_bias[i] : 0.; /* null2 correction, already subtracted from eb[i] */
     hit->evalue     = 0.;
     hit->has_evalue = FALSE;
@@ -2349,9 +2344,19 @@ pli_trm_F5_create_hits(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, const
     }
 
     if(ead != NULL && ead[i] != NULL) {
-      if((status = cm_alidisplay_CreateFromP7(cm, pli->errbuf, sq, hit->start, hit->score, 0.0, ead[i], &(hit->ad))) != eslOK) return status;
+      /* ead[i]->sqfrom/sqto are still window-relative (1..wlen) here: cm_alidisplay_CreateFromP7()'s
+       * GC-content loop indexes into <sq>, which is that same window, so they must NOT be offset
+       * before this call. Afterward, correct hit->ad->sqfrom/sqto (window-relative -> sq2search-
+       * relative -> full-sequence-relative, same two corrections as hit->start/stop above) and set
+       * hit->start/stop from the alignment, like CM hits and local --hmmonly hits, instead of from
+       * the envelope es[i]/ee[i] (brief 26_0824-076). */
+      if((status = cm_alidisplay_CreateFromP7(cm, pli->errbuf, sq, hit->start, hit->score, 0.0, ead[i], om, TRUE, pli->cur_pass_idx, &(hit->ad))) != eslOK) return status;
       p7_alidisplay_Destroy(ead[i]);
       ead[i] = NULL;
+      if(pli->p7env_winoff != NULL) { hit->ad->sqfrom += pli->p7env_winoff[i]; hit->ad->sqto += pli->p7env_winoff[i]; }
+      if(start_offset != 0)         { hit->ad->sqfrom += start_offset;        hit->ad->sqto  += start_offset; }
+      hit->start = hit->ad->sqfrom;
+      hit->stop  = hit->ad->sqto;
     }
     else {
       hit->ad = NULL;
@@ -3933,7 +3938,6 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
    * statistics for the truncated passes.
    */
   int              hmmonly_glocal  = pli->do_hmmonly_glocal_cur;
-  CM_HMMSPAN      *cur_span        = NULL;  /* per-domain model span from the OA trace, glocal HMM only mode (brief 26_0824-076) */
   double           cur_F4          = hmmonly_glocal ? pli->F4_hmmonly      : pli->F4;
   double           cur_F4b         = hmmonly_glocal ? pli->F4b_hmmonly     : pli->F4b;
   double           cur_F5          = hmmonly_glocal ? pli->F5_hmmonly      : pli->F5;
@@ -3975,10 +3979,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
   if(hmmonly_glocal) {
     if(pli->p7env_bias) { free(pli->p7env_bias); pli->p7env_bias = NULL; }
     ESL_ALLOC(pli->p7env_bias, sizeof(float) * ESL_MAX(1, nenv_alloc));
-    if(pli->p7env_trunc) { free(pli->p7env_trunc); pli->p7env_trunc = NULL; }
-    ESL_ALLOC(pli->p7env_trunc, sizeof(int) * ESL_MAX(1, nenv_alloc));
-    if(pli->hmmspan == NULL && (pli->hmmspan = cm_hmmspan_Create()) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "allocation failure");
-    cur_span = pli->hmmspan;
+    if(pli->p7env_winoff) { free(pli->p7env_winoff); pli->p7env_winoff = NULL; }
+    ESL_ALLOC(pli->p7env_winoff, sizeof(int64_t) * ESL_MAX(1, nenv_alloc));
   }
   /* issue #50 (brief 26_0316-034): per-envelope merged-window flags, returned to
    * cm_Pipeline() (per pass) and consumed by pli_cyk_env_filter()/pli_final_stage()
@@ -4544,11 +4546,11 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       //if(1) continue;
 
       /* this block needs to match up with if..else if...else if...else block calling p7_GForward above */
-      /* glocal HMM only mode always computes the OA alignment, even with --noali, because a hit's
-       * 'trunc' label comes from the model span of its trace (brief 26_0824-076); the alignment
-       * display itself is discarded below when alignments aren't shown. */
+      /* glocal HMM only mode always computes the OA alignment, even with --noali; the alignment display
+       * gives the model span used for the 'trunc' label, and is now always kept (like CM/local-hmmonly
+       * hits, never gated on --show_alignments), so the label and the mdl-coord/gc tblout columns no
+       * longer depend on --noali (brief 26_0824-076). */
       do_aln = pli->do_hmmonly_glocal_cur;
-      if(hmmonly_glocal) cm_hmmspan_Reuse(cur_span);
       esl_stopwatch_Start(stg_watch);  /* time F5 */
       if(use_Tgm) {
 	/* no length reconfiguration necessary */
@@ -4560,7 +4562,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
 	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Tgm, pli->gxbb, &bcksc)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Tgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln, cur_span)) != eslOK)
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Tgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
 	  if(pli->do_p7post_cp9b) {
 	    pli->p7_fwdsc        = fwdsc;
@@ -4572,7 +4574,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln, cur_span)) != eslOK)
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Tbcksc: %.4f\n", bcksc);*/
@@ -4583,7 +4585,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
 	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Rgm, pli->gxbb, &bcksc)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Rgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln, cur_span)) != eslOK)
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Rgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
 	  if(pli->do_p7post_cp9b) {
 	    pli->p7_fwdsc        = fwdsc;
@@ -4595,7 +4597,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln, cur_span)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Rbcksc: %.4f\n", bcksc);*/
       }
@@ -4605,7 +4607,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if((pli->gxbb = p7_gmxb_Create(bnd)) == NULL) ESL_FAIL(eslEMEM, pli->errbuf, "p7_gmxb_Create failed for Backward");
 	  if((status = p7_GBackwardBanded(seq->dsq, (int)wlen, Lgm, pli->gxbb, &bcksc)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "p7_GBackwardBanded() failed");
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Lgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln, cur_span)) != eslOK)
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics_Banded(seq, Lgm, om, pli->gxfb, pli->gxbb, fwdsc, pli->ddef, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded glocal envelope defn");
 	  if(pli->do_p7post_cp9b) {
 	    pli->p7_fwdsc        = fwdsc;
@@ -4617,7 +4619,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln, cur_span)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Lbcksc: %.4f\n", bcksc);*/
       }
@@ -4641,7 +4643,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 		  seq, gm, om, pli->gxfb, pli->gxbb, fwdsc,
 		  pli->gfwd, pli->gbck, pli->ddef,
 		  pli->band_kmin, pli->band_kmax,
-		  cur_do_null2, do_aln, cur_span)) != eslOK)
+		  cur_do_null2, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during banded multihit glocal envelope defn");
 	  /* For --p7post_cp9b: keep bnd alive (gxfb->bnd/gxbb->bnd reference it) until next window.
 	   * Transfer ownership to pli->p7bnd; it will be freed at the start of the next banded window. */
@@ -4653,7 +4655,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
 	  p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
-	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln, cur_span)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
+	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf(" bcksc: %.4f\n", bcksc);*/
       }
@@ -4746,8 +4748,8 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
         ESL_RALLOC(eb, p, sizeof(float)   * nenv_alloc);
         ESL_RALLOC(ead, p, sizeof(P7_ALIDISPLAY *) * nenv_alloc);
         if(pli->do_p7deltrigger) ESL_RALLOC(pli->p7env_delta_pre, p, sizeof(float) * nenv_alloc);
-        if(hmmonly_glocal)       ESL_RALLOC(pli->p7env_bias,      p, sizeof(float) * nenv_alloc);
-        if(hmmonly_glocal)       ESL_RALLOC(pli->p7env_trunc,     p, sizeof(int)   * nenv_alloc);
+        if(hmmonly_glocal)       ESL_RALLOC(pli->p7env_bias,      p, sizeof(float)   * nenv_alloc);
+        if(hmmonly_glocal)       ESL_RALLOC(pli->p7env_winoff,    p, sizeof(int64_t) * nenv_alloc);
         ESL_RALLOC(em, p, sizeof(int) * nenv_alloc); /* issue #50 / brief 26_0316-034 */
       }
       /* Define envelope to search with CM */
@@ -4756,25 +4758,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       eb[nenv] = env_sc_for_pvalue;
       ead[nenv] = pli->ddef->dcl[d].ad;
       pli->ddef->dcl[d].ad = NULL;
-      if(hmmonly_glocal) { 
-        /* glocal HMM only truncation label (brief 26_0824-076). A hit is 5' (3') truncated iff (a) its pass
-         * lets the 5' (3') end be truncated (the pass forces the sequence's first (final) residue into the
-         * hit, and its profile, Rgm/Tgm (Lgm/Tgm), may enter (exit) at any model position), AND (b) the
-         * hit's model span actually starts after position 1 (ends before position M). Both are needed: in the
-         * standard pass, or at the end a truncated pass doesn't free, the glocal profile is wing-retracted,
-         * so a hit that starts at position k > 1 is a terminal deletion, not truncation, and the trace can't
-         * tell the two apart (B->Mk either way). A truncated pass whose hit does span position 1 (M) isn't
-         * truncated either. This is CM mode's rule: truncated iff the aligned span is shorter than the span
-         * the pass assumes (1..M for a forced end). */
-        if(d >= cur_span->n) ESL_FAIL(eslEINCONCEIVABLE, pli->errbuf, "no trace span for glocal HMM only envelope");
-        pli->p7env_trunc[nenv] = CM_HMMTRUNC_NO 
-          + ((cm_pli_PassEnforcesFirstRes(pli->cur_pass_idx) && cur_span->from[d] > 1)     ? 1 : 0)
-          + ((cm_pli_PassEnforcesFinalRes(pli->cur_pass_idx) && cur_span->to[d]   < om->M) ? 2 : 0);
-        if(! pli->show_alignments) { p7_alidisplay_Destroy(ead[nenv]); ead[nenv] = NULL; }
-      }
       /* --p7deltrigger: store per-envelope delta now while window gFwd scores are valid */
       if(pli->do_p7deltrigger) pli->p7env_delta_pre[nenv] = pli->p7_fwdsc_unbanded - pli->p7_fwdsc;
       if(hmmonly_glocal)       pli->p7env_bias[nenv]      = env_edefbias / eslCONST_LOG2; /* bits, like a CM hit's null3 bias */
+      if(hmmonly_glocal)       pli->p7env_winoff[nenv]    = ws[i] - 1;
       /* issue #50 (brief 26_0316-034): remember whether this envelope came from a merged window */
       em[nenv] = FALSE; /* set below if it overlaps a sibling envelope from this window */
       /* --p7post_cp9b: precompute pn bands now while gxfb/gxbb are valid for window i.
@@ -5880,7 +5867,7 @@ pli_final_stage_hmmonly(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_B
 
           /* create a CM_ALIDISPLAY from the P7_ALIDISPLAY */
           avgpp = pli->ddef->dcl[d].oasc / (1.0 + fabs((float) (pli->ddef->dcl[d].jenv - pli->ddef->dcl[d].ienv)));
-          if((status = cm_alidisplay_CreateFromP7(cm, pli->errbuf, sq, hit->start, hit->score, avgpp, pli->ddef->dcl[d].ad, &(hit->ad))) != eslOK) return status;
+          if((status = cm_alidisplay_CreateFromP7(cm, pli->errbuf, sq, hit->start, hit->score, avgpp, pli->ddef->dcl[d].ad, om, FALSE, pli->cur_pass_idx, &(hit->ad))) != eslOK) return status;
           /* Free the P7_ALIDISPLAY */
           p7_alidisplay_Destroy(pli->ddef->dcl[d].ad);
           pli->ddef->dcl[d].ad = NULL;

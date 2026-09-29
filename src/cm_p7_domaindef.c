@@ -59,81 +59,7 @@ static int is_multidomain_region         (P7_DOMAINDEF *ddef, int i, int j);
 /* Note: is_multidomain_region is *identical* to the function of the same name in p7_domaindef.c*/
 static int glocal_region_trace_ensemble  (P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_DSQ *dsq, int ireg, int jreg, const P7_GMX *fwd, P7_GMX *wrk, int do_null2, int *ret_nc);
 static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPROFILE *om, const ESL_SQ *sq, P7_GMX *gx1, P7_GMX *gx2, 
-					  int i, int j, int null2_is_done, int do_null2, int do_aln, CM_HMMSPAN *span);
-
-/* CM_HMMSPAN: see infernal.h. (brief 26_0824-076)
- * <from>, <to> arrays are indexed like ddef->dcl[]. */
-CM_HMMSPAN *
-cm_hmmspan_Create(void)
-{
-  CM_HMMSPAN *span = NULL;
-  int         status;
-  ESL_ALLOC(span, sizeof(CM_HMMSPAN));
-  span->from = NULL; span->to = NULL; span->n = 0; span->nalloc = 0;
-  ESL_ALLOC(span->from, sizeof(int) * 8);
-  ESL_ALLOC(span->to,   sizeof(int) * 8);
-  span->nalloc = 8;
-  return span;
- ERROR:
-  cm_hmmspan_Destroy(span);
-  return NULL;
-}
-
-void
-cm_hmmspan_Destroy(CM_HMMSPAN *span)
-{
-  if(span == NULL) return;
-  if(span->from) free(span->from);
-  if(span->to)   free(span->to);
-  free(span);
-}
-
-void
-cm_hmmspan_Reuse(CM_HMMSPAN *span)
-{
-  if(span != NULL) span->n = 0;
-}
-
-/* hmmspan_Set(): record span <from>..<to> for domain <d> */
-static int
-hmmspan_Set(CM_HMMSPAN *span, int d, int from, int to)
-{
-  int status;
-  void *p;
-  while(d >= span->nalloc) {
-    ESL_RALLOC(span->from, p, sizeof(int) * span->nalloc * 2);
-    ESL_RALLOC(span->to,   p, sizeof(int) * span->nalloc * 2);
-    span->nalloc *= 2;
-  }
-  span->from[d] = from;
-  span->to[d]   = to;
-  if(d >= span->n) span->n = d+1;
-  return eslOK;
- ERROR:
-  return status;
-}
-
-/* hmmspan_FromTrace(): record the model span of the domain in <tr> for domain <d>: the first
- * and final model position of any M or D state. Glocal traces from the generic OA traceback 
- * are wing-retracted (entry B->Mk, exit Mk->E, no D states at the ends), so this is the first
- * and final M state, i.e. the same hmmfrom..hmmto as the P7_ALIDISPLAY, but available
- * without one. Whether a span that stops short of 1..M is truncation or a terminal deletion is 
- * the caller's call (it depends on the pipeline pass).
- */
-static int
-hmmspan_FromTrace(CM_HMMSPAN *span, int d, const P7_TRACE *tr)
-{
-  int z;
-  int from = -1, to = -1;
-  for(z = 0; z < tr->N; z++) {
-    if(tr->st[z] == p7T_M || tr->st[z] == p7T_D) {
-      if(from == -1) from = tr->k[z];
-      to = tr->k[z];
-    }
-  }
-  if(from == -1) return eslEINCONCEIVABLE; /* no M or D state: corrupt trace */
-  return hmmspan_Set(span, d, from, to);
-}
+					  int i, int j, int null2_is_done, int do_null2, int do_aln);
 
 
 /* Function:  p7_domaindef_GlocalByPosteriorHeuristics()
@@ -189,7 +115,7 @@ int
 cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
            P7_OPROFILE *om,
 					 P7_GMX *gxf, P7_GMX *gxb, P7_GMX *fwd, P7_GMX *bck, 
-           P7_DOMAINDEF *ddef, int do_null2, int do_aln, CM_HMMSPAN *span)
+           P7_DOMAINDEF *ddef, int do_null2, int do_aln)
 {
   int i, j;
   int triggered;
@@ -284,7 +210,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
                  * happens. [xref J5/130].
 		 */
 		ddef->nenvelopes++;
-    if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln, span) == eslOK) 
+    if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln) == eslOK) 
 		  last_j2 = j2;
 	      }
 	      p7_spensemble_Reuse(ddef->sp);
@@ -294,7 +220,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	    {
 	      /* The region looks simple, single domain; convert the region to an envelope. */
 	      ddef->nenvelopes++;
-        glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i, j, FALSE, do_null2, do_aln, span);
+        glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i, j, FALSE, do_null2, do_aln);
 	    }
 	  i     = -1;
 	  triggered = FALSE;
@@ -596,7 +522,7 @@ glocal_region_trace_ensemble(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL
 static int
 glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPROFILE *om, const ESL_SQ *sq, 
 			       P7_GMX *gx1, P7_GMX *gx2, int i, int j, int null2_is_done, 
-			       int do_null2, int do_aln, CM_HMMSPAN *span)
+			       int do_null2, int do_aln)
 {
   P7_DOMAIN     *dom           = NULL;
   int            Ld            = j-i+1;
@@ -648,7 +574,6 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
     ddef->nalloc *= 2;    
   }
   dom = &(ddef->dcl[ddef->ndom]);
-  if(do_aln && span != NULL) { if((status = hmmspan_FromTrace(span, ddef->ndom, ddef->tr)) != eslOK) goto ERROR; }
   
   /* store the results in it */
   dom->ienv          = i;
@@ -702,7 +627,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE 
                                                 P7_OPROFILE *om,
                                                 P7_GMXB *gxfb, P7_GMXB *gxbb,
                                                 float fwdsc, P7_DOMAINDEF *ddef,
-                                                int do_aln, CM_HMMSPAN *span)
+                                                int do_aln)
 {
   P7_DOMAIN *dom   = NULL;
   float      oasc  = 0.0f;
@@ -736,7 +661,6 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE 
     ddef->nalloc *= 2;
   }
   dom = &(ddef->dcl[ddef->ndom]);
-  if(do_aln && span != NULL) { if((status = hmmspan_FromTrace(span, ddef->ndom, ddef->tr)) != eslOK) return status; }
 
   dom->ienv          = 1;
   dom->jenv          = sq->n;
@@ -798,7 +722,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7
 							 P7_GMX *fwd, P7_GMX *bck,
 							 P7_DOMAINDEF *ddef,
 							 int *kmin, int *kmax,
-							 int do_null2, int do_aln, CM_HMMSPAN *span)
+							 int do_null2, int do_aln)
 {
   int          L = sq->n;
   int          M = gm->M;
@@ -966,7 +890,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7
 		  /* unbanded rescore for multidomain */
 		  p7_gmx_GrowTo(fwd, gm->M, j2-i2+1);
 		  p7_gmx_GrowTo(bck, gm->M, j2-i2+1);
-		  if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln, span) == eslOK)
+		  if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln) == eslOK)
 		    last_j2 = j2;
 		}
 	      }
@@ -1045,7 +969,6 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7
 		  ddef->nalloc *= 2;
 		}
 		dom = &(ddef->dcl[ddef->ndom]);
-		if(do_aln && span != NULL) { if((status = hmmspan_FromTrace(span, ddef->ndom, ddef->tr)) != eslOK) { p7_gmxb_Destroy(sub_fwd_bx); if(sub_bck_bx) p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR; } }
 		dom->ienv          = i;
 		dom->jenv          = j;
 		dom->envsc         = sub_fwdsc;

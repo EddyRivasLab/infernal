@@ -2325,20 +2325,6 @@ typedef struct cm_pipeline_accounting_s {
  * 37. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
  ***********************************************************************************/
 
-/* CM_HMMSPAN: per-domain model span of the alignment trace, filled by the glocal
- * domaindef functions (cm_p7_domaindef.c) in glocal HMM only mode and indexed like
- * ddef->dcl[]. from[d]..to[d] is the first..final model position of any M or D
- * state in domain d's trace (glocal traces are wing-retracted, so in practice the 
- * first/final M state, as P7_ALIDISPLAY's hmmfrom..hmmto, but available without an
- * alignment display). It is how a hit's truncation is determined independent
- * of --noali (brief 26_0824-076). */
-typedef struct cm_hmmspan_s {
-  int *from;
-  int *to;
-  int  n;        /* number of valid entries */
-  int  nalloc;
-} CM_HMMSPAN;
-
 enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
 enum cm_newmodelmodes_e { CM_NEWMODEL_MSV = 0, CM_NEWMODEL_CM = 1 };
 enum cm_zsetby_e        { CM_ZSETBY_SSIINFO = 0, CM_ZSETBY_SSI_AND_QLENGTH = 1, CM_ZSETBY_FILEREAD = 2, CM_ZSETBY_OPTION = 3, CM_ZSETBY_FILEINFO = 4};
@@ -2499,11 +2485,15 @@ typedef struct cm_pipeline_s {
   float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
   int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
   float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
-  CM_HMMSPAN   *hmmspan;         /* temp per-domain trace span for the window being processed, glocal HMM only mode (brief 26_0824-076) */
   float        *p7env_bias;      /* temp [0..np7env-1] per-envelope null2 correction (bits), set in pli_p7_env_def
                                   * in glocal HMM only mode, read by pli_trm_F5_create_hits() */
-  int          *p7env_trunc;     /* temp [0..np7env-1] per-envelope CM_HMMTRUNC_* code, set in pli_p7_env_def in glocal
-                                  * HMM only mode, read by pli_trm_F5_create_hits() (brief 26_0824-076) */
+  int64_t      *p7env_winoff;    /* temp [0..np7env-1] per-envelope window offset (ws[i]-1) to add to the
+                                  * envelope's P7_ALIDISPLAY sqfrom/sqto (window-relative, 1..wlen) so they
+                                  * become sq2search-relative, set in pli_p7_env_def in glocal HMM only mode,
+                                  * read by pli_trm_F5_create_hits() -- applied AFTER cm_alidisplay_CreateFromP7()
+                                  * returns, never to the P7_ALIDISPLAY itself (its sqfrom/sqto must stay
+                                  * window-relative for CreateFromP7()'s own GC-content loop, which indexes into
+                                  * the window sequence) (brief 26_0824-076) */
   /* issue #50 (brief 26_0316-034): per-envelope "came from a merged (multi-hit)
    * window" flags. Such envelopes were defined by the unbanded multihit glocal
    * domaindef and can abut/overlap a sibling envelope; re-deriving p7
@@ -2717,6 +2707,14 @@ typedef struct cm_alidisplay_s {
 				 * converted from a P7_ALIDISPLAY
 				 * during an HMM only pipeline run.
 				 */
+  int    glocal;                /* TRUE if <hmmonly> and the HMM only pipeline run was glocal
+				 * (--hmmonly -g): then cfrom_span/cto_span/cfrom_emit/cto_emit
+				 * are real (cm_alidisplay_CreateFromP7() rebuilds the wing-
+				 * retracted glocal trace's terminal delete columns so they
+				 * follow ParsetreeToCMBounds()'s convention), and
+				 * cm_alidisplay_TruncString() labels the hit instead of
+				 * returning "-" (brief 26_0824-076).
+				 */
 
   int   memsize;                /* size of allocated block of char memory */
   char *mem;		        /* memory used for the char data above  */
@@ -2729,14 +2727,6 @@ typedef struct cm_alidisplay_s {
 
 #define CM_HIT_FLAGS_DEFAULT 0
 #define CM_HIT_IS_INCLUDED            (1<<0)
-/* values for CM_HIT.hmmtrunc: 'trunc' column of glocal HMM only hits (--hmmonly -g), brief 26_0824-076.
- * CM_HMMTRUNC_NA: no label ("-"), i.e. every hit that is not a glocal HMM only hit.
- * Else 1 + (5' truncated ? 1 : 0) + (3' truncated ? 2 : 0). */
-#define CM_HMMTRUNC_NA               0
-#define CM_HMMTRUNC_NO               1
-#define CM_HMMTRUNC_5P               2
-#define CM_HMMTRUNC_3P               3
-#define CM_HMMTRUNC_5P3P             4
 #define CM_HIT_IS_REPORTED            (1<<1)
 #define CM_HIT_IS_REMOVED_DUPLICATE   (1<<2)
 #define CM_HIT_IS_MARKED_OVERLAP      (1<<3)
@@ -2774,7 +2764,6 @@ typedef struct cm_hit_s {
   int            has_evalue;	/* TRUE if E-value has been set for this hit */
   int            hmmonly;       /* TRUE if hit was found during HMM only pipeline run, FALSE if not */
   int            glocal;        /* TRUE if hit was found by model in global configuration, FALSE if not */
-  int            hmmtrunc;      /* truncation of a glocal HMM only hit: CM_HMMTRUNC_{NA,NO,5P,3P,5P3P}; CM_HMMTRUNC_NA for all other hits (brief 26_0824-076) */
   CM_ALIDISPLAY *ad;            /* alignment display */
   uint32_t       flags;         /* CM_HIT_IS_REPORTED | CM_HIT_IS_INCLUDED | CM_HIT_IS_REMOVED_DUPLICATE | CM_HIT_IS_MARKED_OVERLAP */
   /* overlap information */
@@ -2966,7 +2955,7 @@ extern int     cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
 					   double tau, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
-extern int            cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, CM_ALIDISPLAY **ret_ad);
+extern int            cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, P7_OPROFILE *om, int is_glocal, int pass_idx, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
 extern void           cm_alidisplay_Destroy(CM_ALIDISPLAY *ad);
@@ -2979,7 +2968,6 @@ extern int            cm_alidisplay_Is5PAnd3PTrunc(const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Is5PTruncOnly (const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Is3PTruncOnly (const CM_ALIDISPLAY *ad);
 extern char          *cm_alidisplay_TruncString   (const CM_ALIDISPLAY *ad);
-extern char          *cm_hit_TruncString          (const CM_HIT *hit);
 extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_SQ **ret_sq, Parsetree_t **ret_tr, char **ret_pp);
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
@@ -3588,8 +3576,8 @@ extern P7_GMXB     *p7b_pp_Create(P7_GBANDS *bnd);                              
 extern int          cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
 extern int          cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
                                                  P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                             /* brief 26_0628-081: double-checkpointed, no resident posterior */
-extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln, CM_HMMSPAN *span);
-extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln, CM_HMMSPAN *span);
+extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
+extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
 extern int          cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
@@ -3720,10 +3708,7 @@ extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos,
 
 /* from cm_p7_domaindef.c */
 extern int cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
-              P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln, CM_HMMSPAN *span);
-extern CM_HMMSPAN *cm_hmmspan_Create(void);
-extern void        cm_hmmspan_Destroy(CM_HMMSPAN *span);
-extern void        cm_hmmspan_Reuse(CM_HMMSPAN *span);
+              P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
 
 /* from cm_p7_modelconfig_trunc.c */
 extern int cm_p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);

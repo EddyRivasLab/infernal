@@ -665,6 +665,36 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
  *            was written for special pipeline runs which use an 
  *            HMM only. 
  *
+ *            For a LOCAL HMM only hit (<is_glocal> FALSE), <cfrom_span>/
+ *            <cto_span> are just set equal to <cfrom_emit>/<cto_emit>
+ *            (<p7ad->hmmfrom>/<p7ad->hmmto>), as before: truncation is
+ *            undefined for a local hit, and cm_alidisplay_TruncString()
+ *            special-cases <ad->hmmonly> to print "-" for it regardless.
+ *
+ *            For a GLOCAL HMM only hit (<is_glocal> TRUE, --hmmonly -g,
+ *            brief 26_0824-076), <cfrom_span>/<cto_span>/<cfrom_emit>/
+ *            <cto_emit> are built to follow the same convention CM hits
+ *            use (ParsetreeToCMBounds()): span is where pass <pass_idx>
+ *            "guesses" a full (untruncated) hit would be, which here is
+ *            always 1..M, and emit is what the trace actually spans. The
+ *            generic glocal OA trace is wing-retracted (entry B->Mk,
+ *            exit Mk->E; no explicit delete states at the ends), so a
+ *            trace that starts at model position k > 1 could be a
+ *            terminal deletion (ordinary glocal entry, ends up at k by
+ *            chance) or genuine truncation (this pass's Rgm/Tgm profile
+ *            enters anywhere): the trace alone can't tell them apart,
+ *            only the pipeline pass (<pass_idx>) can. So: emit is 1 (M)
+ *            unless the pass forces that end (<cm_pli_PassEnforcesFirstRes>/
+ *            <cm_pli_PassEnforcesFinalRes>) AND the trace's own hmmfrom
+ *            (hmmto) is short of it, in which case emit is that hmmfrom
+ *            (hmmto) -- real truncation, nothing added to the display.
+ *            Otherwise the display is extended with hmmfrom-1 (M-hmmto)
+ *            delete columns at that end, so what's printed matches what's
+ *            claimed (a terminal deletion, not a truncation): the CM
+ *            equivalent already displays deleted consensus columns at the
+ *            ends of an unforced hit, and this makes the HMM-only display
+ *            do the same.
+ *
  * Args:      cm           - model
  *            errbuf       - for error messages
  *            sq           - the sequence, parsetree corresponds to subseq beginning at seqoffset
@@ -672,6 +702,12 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
  *            p7sc         - score of envelope p7ad was derived from
  *            p7pp         - avg pp of all aligned residues in envelope P7_ALIDISPLAY was derived from
  *            p7ad         - P7_ALIDISPLAY to convert 
+ *            om           - profile p7ad's trace is relative to; only read for its consensus/cs/rf
+ *                           text, to fill delete columns added for a glocal terminal deletion (ignored
+ *                           if <is_glocal> is FALSE, since no columns are ever added then)
+ *            is_glocal    - TRUE if this is a glocal HMM only hit (--hmmonly -g), FALSE if local
+ *            pass_idx     - the pipeline pass (PLI_PASS_*) p7ad's hit was found on; ignored if
+ *                           <is_glocal> is FALSE
  *            ret_ad       - RETURN: CM_ALIDISPLAY, allocated and filled here.
  *
  * Returns:   eslOK on success.
@@ -680,25 +716,46 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
  * Xref:      STL6 p.58
  */
 int
-cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, CM_ALIDISPLAY **ret_ad)
+cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, P7_OPROFILE *om, int is_glocal, int pass_idx, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
   int            n;
   int            cm_namelen, cm_acclen, cm_desclen;
   int            sq_namelen, sq_acclen, sq_desclen;
-  int            len;
+  int            len;             /* length of the displayed alignment (model/mline/aseq/csline/...) */
   int            len_el;
   int            pos;		  /* position in ad->mem */
   int            x; 		  /* residue position */
+  int            k;               /* model consensus position */
   float         *act = NULL;      /* [0..cm->abc->K-1], count of residue in hit */
-  int            n5p_skipped = 0; /* number of 5' match positions skipped (p7ad->hmmfrom-1) */
-  int            n3p_skipped = 0; /* number of 3' match positions skipped (p7ad->M - p7ad->hmmto) */
+  int            n5p_skipped = 0; /* number of 5' match positions skipped (p7ad->hmmfrom-1); EL display only */
+  int            n3p_skipped = 0; /* number of 3' match positions skipped (p7ad->M - p7ad->hmmto); EL display only */
+  int            force5, force3;  /* does the pass force the sequence's first/final residue into the hit? */
+  int            ext5 = 0, ext3 = 0; /* number of delete columns prepended/appended to the display, glocal only */
+  int            new_cfrom_span, new_cto_span, new_cfrom_emit, new_cto_emit;
 
-  len = p7ad->N;
-  n5p_skipped = p7ad->hmmfrom -1;
+  n5p_skipped = p7ad->hmmfrom - 1;
   n3p_skipped = p7ad->M - p7ad->hmmto;
-  len_el = len + n5p_skipped + n3p_skipped;
+
+  if(is_glocal) { 
+    force5 = cm_pli_PassEnforcesFirstRes(pass_idx);
+    force3 = cm_pli_PassEnforcesFinalRes(pass_idx);
+    new_cfrom_span = 1;
+    new_cto_span   = p7ad->M;
+    if(force5 && p7ad->hmmfrom > 1) { new_cfrom_emit = p7ad->hmmfrom; ext5 = 0;           }
+    else                            { new_cfrom_emit = 1;             ext5 = n5p_skipped; }
+    if(force3 && p7ad->hmmto < p7ad->M) { new_cto_emit = p7ad->hmmto; ext3 = 0;           }
+    else                                { new_cto_emit = p7ad->M;    ext3 = n3p_skipped; }
+  }
+  else { 
+    new_cfrom_span = new_cfrom_emit = p7ad->hmmfrom;
+    new_cto_span   = new_cto_emit   = p7ad->hmmto;
+  }
+
+  len    = p7ad->N + ext5 + ext3;
+  len_el = p7ad->N + n5p_skipped + n3p_skipped; /* unrelated to ext5/ext3: the EL-inclusive display below
+                                                  * always pads to the full model, regardless of truncation */
 
   /* Allocate the char arrays, we copy aseq into aseq_el, rf into
    * rfline_el and ppline into ppline_el for consistency with
@@ -713,7 +770,7 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   cm_desclen = (cm->desc != NULL ? strlen(cm->desc) : 0);  n += cm_desclen + 1; 
   sq_namelen = strlen(sq->name);                           n += sq_namelen + 1;
   sq_acclen  = strlen(sq->acc);                            n += sq_acclen  + 1; /* sq->acc is "\0" when unset */
-  sq_desclen = strlen(sq->desc);                           n += sq_desclen + 1; /* sq->desc is "\0" when unset */
+  sq_desclen = strlen(sq->desc);                            n += sq_desclen + 1; /* sq->desc is "\0" when unset */
 
   ESL_ALLOC(ad, sizeof(CM_ALIDISPLAY));
   ad->mem          = NULL;
@@ -724,17 +781,18 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   ad->matrix_Mb    = 0.0;  /* unknown */
   ad->elapsed_secs = 0.0;  /* unknown */
   ad->hmmonly      = TRUE; 
+  ad->glocal       = is_glocal;
   ad->N            = len;
-  ad->N_el         = len + n5p_skipped + n3p_skipped;
+  ad->N_el         = len_el;
 
   ad->clen = cm->clen;
 
   ad->sqfrom     = p7ad->sqfrom;
   ad->sqto       = p7ad->sqto;
-  ad->cfrom_emit = p7ad->hmmfrom;
-  ad->cto_emit   = p7ad->hmmto;
-  ad->cfrom_span = p7ad->hmmfrom;
-  ad->cto_span   = p7ad->hmmto;
+  ad->cfrom_emit = new_cfrom_emit;
+  ad->cto_emit   = new_cto_emit;
+  ad->cfrom_span = new_cfrom_span;
+  ad->cto_span   = new_cto_span;
 
   /* calculate GC frequency */
   ESL_ALLOC(act, sizeof(float) * cm->abc->K);
@@ -769,35 +827,65 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   strcpy(ad->sqacc,   sq->acc);
   strcpy(ad->sqdesc,  sq->desc);
 
-  /* Copy strings from p7ad */
-  if(p7ad->rfline) strcpy(ad->rfline,  p7ad->rfline);
-  strcpy(ad->csline,  p7ad->csline);
-  strcpy(ad->model,   p7ad->model);
-  strcpy(ad->mline,   p7ad->mline);
-  strcpy(ad->aseq,    p7ad->aseq);
-  if(p7ad->ppline) strcpy(ad->ppline,  p7ad->ppline);
+  /* Copy strings from p7ad, at offset ext5 (0 unless we're adding leading delete columns, glocal
+   * only). If ext5 and/or ext3 are nonzero, fill the added columns with a delete column's usual
+   * text: om's consensus/cs/rf letter, '-' for aseq, ' ' for mline, '.' for ppline -- the same
+   * convention HMMER's own p7_alidisplay.c uses for a D state (brief 26_0824-076). */
+  memcpy(ad->model  + ext5, p7ad->model,  p7ad->N);
+  memcpy(ad->mline  + ext5, p7ad->mline,  p7ad->N);
+  memcpy(ad->aseq   + ext5, p7ad->aseq,   p7ad->N);
+  memcpy(ad->csline + ext5, p7ad->csline, p7ad->N);
+  if(p7ad->rfline) memcpy(ad->rfline + ext5, p7ad->rfline, p7ad->N);
+  if(p7ad->ppline) memcpy(ad->ppline + ext5, p7ad->ppline, p7ad->N);
+  for(x = 0; x < ext5; x++) { 
+    k = x + 1; /* model consensus position 1..ext5 */
+    ad->model[x]  = om->consensus[k];
+    ad->mline[x]  = ' ';
+    ad->aseq[x]   = '-';
+    ad->csline[x] = om->cs[k];
+    if(ad->rfline != NULL) ad->rfline[x] = om->rf[k];
+    if(ad->ppline != NULL) ad->ppline[x] = '.';
+  }
+  for(x = 0; x < ext3; x++) { 
+    k = p7ad->hmmto + x + 1; /* model consensus position hmmto+1..M */
+    ad->model[ext5 + p7ad->N + x]  = om->consensus[k];
+    ad->mline[ext5 + p7ad->N + x]  = ' ';
+    ad->aseq[ext5 + p7ad->N + x]   = '-';
+    ad->csline[ext5 + p7ad->N + x] = om->cs[k];
+    if(ad->rfline != NULL) ad->rfline[ext5 + p7ad->N + x] = om->rf[k];
+    if(ad->ppline != NULL) ad->ppline[ext5 + p7ad->N + x] = '.';
+  }
+  ad->model[len]  = '\0';
+  ad->mline[len]  = '\0';
+  ad->aseq[len]   = '\0';
+  ad->csline[len] = '\0';
+  if(ad->rfline != NULL) ad->rfline[len] = '\0';
+  if(ad->ppline != NULL) ad->ppline[len] = '\0';
 
   /* Create aseq_el, rfline_el, and ppline_el. aseq_el and ppline_el
    * are copies of p7ad->aseq p7ad->ppline with n5p_skipped '-'
    * characters prepended and n3p_skipped '-' characters appended.
    * rfline_el is a copy of p7ad->rfline but with 'x' instead
    * '-' (to indicate the skipped positions were match positions).
+   * (Unaffected by ext5/ext3 above: this EL-inclusive display always
+   * pads to the full model from p7ad->hmmfrom/hmmto, regardless of
+   * how cfrom_emit/cto_emit ended up labeling truncation.)
    */
   for(x = 0; x < n5p_skipped; x++) ad->aseq_el[x] = '-';
-  memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, ad->N);
-  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
+  memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, p7ad->N);
+  for(x = p7ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
   ad->aseq_el[ad->N_el] = '\0';
 
   for(x = 0; x < n5p_skipped; x++) ad->rfline_el[x] = 'x';
   /* copy p7ad->model NOT p7ad->rfline into p7ad->rfline_el (p7ad->rfline is not mandatory) */
-  memcpy(ad->rfline_el + n5p_skipped, p7ad->model, ad->N);
-  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = 'x';
+  memcpy(ad->rfline_el + n5p_skipped, p7ad->model, p7ad->N);
+  for(x = p7ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = 'x';
   ad->rfline_el[ad->N_el] = '\0';
 
   if(p7ad->ppline) { 
     for(x = 0; x < n5p_skipped; x++) ad->ppline_el[x] = '-';
-    memcpy(ad->ppline_el + n5p_skipped, p7ad->ppline, ad->N);
-    for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->ppline_el[x] = '-';
+    memcpy(ad->ppline_el + n5p_skipped, p7ad->ppline, p7ad->N);
+    for(x = p7ad->N + n5p_skipped; x < ad->N_el; x++) ad->ppline_el[x] = '-';
     ad->ppline_el[ad->N_el] = '\0';
   }
   else { 
@@ -1722,8 +1810,15 @@ cm_alidisplay_Is3PTruncOnly(const CM_ALIDISPLAY *ad)
 /* Function:  cm_alidisplay_TruncString()
  * Synopsis:  Determine if an alignment is truncated 5', 3' or both
  *            and return a string summarizing the truncation: "5'&3'",
- *            "5'", "3'", or "no". As a special case, if hit was
- *            found using a HMM only pipeline pass, we return "-".
+ *            "5'", "3'", or "no". As a special case, if hit was found
+ *            using a LOCAL HMM only pipeline pass, we return "-": a
+ *            local HMM hit is partial by construction, so truncation
+ *            is undefined for it. A GLOCAL HMM only hit (<ad->glocal>
+ *            TRUE, --hmmonly -g) does not get this special case: its
+ *            cfrom_span/cto_span/cfrom_emit/cto_emit are real (built by
+ *            cm_alidisplay_CreateFromP7() to follow this same
+ *            emit-vs-span convention), so the ordinary comparison below
+ *            labels it correctly (brief 26_0824-076).
  *
  * Returns:   informative string
  */
@@ -1731,41 +1826,11 @@ char *
 cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
 {
   if     (ad == NULL)                       return "-";
-  else if(ad->hmmonly)                      return "-";
+  else if(ad->hmmonly && ! ad->glocal)      return "-";
   else if(cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
   else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
   else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
   else return "no";
-}
-
-/* Function:  cm_hit_TruncString()
- * Synopsis:  Truncation string for a hit's 'trunc' output column.
- *
- * Purpose:   Return the string for the 'trunc' column of <hit>. For a
- *            glocal HMM only hit (--hmmonly -g) that is decided by
- *            <hit->hmmtrunc>, which the pipeline sets from the model
- *            span of the hit's trace, so it doesn't depend on whether
- *            an alignment display was kept (--noali). For all other
- *            hits it is cm_alidisplay_TruncString() of <hit->ad>, as
- *            before ("-" for local HMM only hits and if <hit->ad> is
- *            NULL).
- *            (brief 26_0824-076)
- *
- * Returns:   informative string
- */
-char *
-cm_hit_TruncString(const CM_HIT *hit)
-{
-  if(hit->hmmonly && hit->glocal) { 
-    switch(hit->hmmtrunc) { 
-    case CM_HMMTRUNC_NO:   return "no";
-    case CM_HMMTRUNC_5P:   return "5'";
-    case CM_HMMTRUNC_3P:   return "3'";
-    case CM_HMMTRUNC_5P3P: return "5'&3'";
-    default:               return "-";
-    }
-  }
-  return cm_alidisplay_TruncString(hit->ad);
 }
 
 /* Function:  cm_alidisplay_Backconvert()

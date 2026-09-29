@@ -170,7 +170,6 @@ cm_tophits_CreateNextHit(CM_TOPHITS *h, CM_HIT **ret_hit)
   hit->srcL             = -1;
   hit->hmmonly          = FALSE;
   hit->glocal           = FALSE;
-  hit->hmmtrunc         = CM_HMMTRUNC_NA;
 
   hit->ad               = NULL;
   hit->flags            = CM_HIT_FLAGS_DEFAULT;
@@ -899,7 +898,6 @@ cm_tophits_CloneHitMostly(CM_TOPHITS *src_th, int h, CM_TOPHITS *dest_th)
   hit->srcL       = src_th->hit[h]->srcL;
   hit->hmmonly    = src_th->hit[h]->hmmonly;
   hit->glocal     = src_th->hit[h]->glocal;
-  hit->hmmtrunc   = src_th->hit[h]->hmmtrunc;
   hit->flags      = src_th->hit[h]->flags;
   /* don't update hit->any_oidx, nor hit->win_oidx, they'll stay as -1 */
   hit->any_bitE   = src_th->hit[h]->any_bitE;
@@ -1544,7 +1542,7 @@ cm_tophits_Targets(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      th->hit[h]->hmmonly ? "hmm" : "cm",
-        cm_hit_TruncString(th->hit[h]),
+        (th->hit[h]->ad != NULL) ? cm_alidisplay_TruncString(th->hit[h]->ad) : "-",
         (th->hit[h]->ad != NULL) ? th->hit[h]->ad->gc : 0.0);
       
       if (textw > 0) fprintf(ofp, "%-.*s\n", descw, th->hit[h]->desc == NULL ? "-" : th->hit[h]->desc);
@@ -1790,8 +1788,8 @@ cm_tophits_HitAlignments(FILE *ofp, CM_TOPHITS *th, CM_PIPELINE *pli, int textw)
 	      th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? '-' : '+',
 	      lseq, rseq);
-      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s %4.2f", th->hit[h]->ad->avgpp, cm_hit_TruncString(th->hit[h]), th->hit[h]->ad->gc); }
-      else                       { fprintf(ofp, " %6.1f %5s %4.2f", th->hit[h]->ad->sc,    cm_hit_TruncString(th->hit[h]), th->hit[h]->ad->gc); }
+      if(th->hit[h]->ad->ppline) { fprintf(ofp, " %4.2f %5s %4.2f", th->hit[h]->ad->avgpp, cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
+      else                       { fprintf(ofp, " %6.1f %5s %4.2f", th->hit[h]->ad->sc,    cm_alidisplay_TruncString(th->hit[h]->ad), th->hit[h]->ad->gc); }
       if(pli->be_verbose) { 
 	if(th->hit[h]->ad->tau > -0.5) { /* tau is -1. if aln did not use HMM bands */
 	  fprintf(ofp, " %5s %7.2g", "hmm", th->hit[h]->ad->tau);
@@ -2304,7 +2302,7 @@ cm_tophits_TabularTargets1(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-	      cm_hit_TruncString(th->hit[h]),
+	      cm_alidisplay_TruncString(th->hit[h]->ad),
 	      th->hit[h]->pass_idx,
 	      gc,
 	      th->hit[h]->bias,
@@ -2613,7 +2611,7 @@ cm_tophits_TabularTargets2(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
                   posw, th->hit[h]->start,
                   posw, th->hit[h]->stop,
                   (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-                  cm_hit_TruncString(th->hit[h]),
+                  cm_alidisplay_TruncString(th->hit[h]->ad),
                   th->hit[h]->pass_idx,
                   gc,
                   th->hit[h]->bias,
@@ -2765,7 +2763,7 @@ cm_tophits_TabularTargets3(FILE *ofp, char *qname, char *qacc, CM_TOPHITS *th, C
 	      posw, th->hit[h]->start,
 	      posw, th->hit[h]->stop,
 	      (th->hit[h]->in_rc == TRUE) ? "-" : "+",
-	      cm_hit_TruncString(th->hit[h]),
+	      cm_alidisplay_TruncString(th->hit[h]->ad),
 	      th->hit[h]->pass_idx,
 	      gc,
 	      th->hit[h]->bias,
