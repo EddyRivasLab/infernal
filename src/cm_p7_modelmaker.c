@@ -30,6 +30,16 @@
 
 #include "infernal.h"
 
+/* A p7 HMM's EFFN line is rejected by HMMER's reader (p7_hmmfile.c) unless it is
+ * strictly positive, but `cmbuild --eset 0` sets cm->eff_nseq to exactly 0, which
+ * an ML p7 filter HMM inherits verbatim (below). Floor it here so the written
+ * filter HMM stays loadable; the CM's own EFFN line is untouched (0 is legal
+ * there). 1e-6 is the smallest value HMMER's "%f" EFFN writer prints as nonzero,
+ * so --eset 0 still reads as effectively zero. It only changes the recorded
+ * number, not any probability. brief 26_0824-079.
+ */
+#define CM_P7_FILTER_EFFN_MIN 0.000001
+
 /* Function: BuildP7HMM_MatchEmitsOnly()
  * Incept:   EPN, Tue Aug  5 15:33:00 2008
  * 
@@ -92,7 +102,7 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7)
     hmm->comlog = NULL;
   }
 
-  hmm->eff_nseq = cm->eff_nseq;
+  hmm->eff_nseq = ESL_MAX(cm->eff_nseq, CM_P7_FILTER_EFFN_MIN);
   hmm->nseq     = cm->nseq;
   hmm->checksum = 0;
 
@@ -206,7 +216,7 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
     cm->mlp7->flags |= p7H_CS;
   }    
 
-  cm->mlp7->eff_nseq = cm->eff_nseq;
+  cm->mlp7->eff_nseq = ESL_MAX(cm->eff_nseq, CM_P7_FILTER_EFFN_MIN);
   cm->mlp7->nseq     = cm->nseq;
   if(cm->flags & CMH_CHKSUM) { 
     cm->mlp7->checksum = cm->checksum;
