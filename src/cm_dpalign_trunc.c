@@ -3227,6 +3227,7 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     if (preset_mode != TRMODE_UNKNOWN) mode_ckpt = preset_mode;
     Z_ckpt = (mode_ckpt==TRMODE_J) ? J0 : (mode_ckpt==TRMODE_L) ? L0 : R0;
   }
+  if (mode_ckpt == TRMODE_UNKNOWN) ESL_XFAIL(eslEAMBIGUOUS, errbuf, "cm_CheckptTrAlignHB() no valid parsetree found");
 
   /* resolve fill flags from winning mode; drop unneeded-mode Inside seeds */
   cx.preset_mode = mode_ckpt;
