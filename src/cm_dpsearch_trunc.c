@@ -1948,9 +1948,19 @@ TrCYKScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int pass_
 	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];
 	    }
 	    else { 
+	      /* The else arm covers d==0 as well as d==1. d==0 gives i==j+1
+	       * (the trailing sentinel at j==j0) and is out of domain for a pair
+	       * state regardless; d==1 gives i==j. Only d==1 with a real i is a
+	       * genuine cell. Same idiom as cm_TrInsideAlignHB() (#52). */
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
-	      if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	      if(d == 1 && j > 0) { 
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	      }
+	      else { 
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }
 	    }
 	    i--;
 	  }
@@ -3051,9 +3061,19 @@ FTrInsideScanHB(CM_t *cm, char *errbuf, CM_TR_HB_MX *mx, float size_limit, int p
 	      if(do_R_v) Ralpha[v][jp_v][dp_v] += rmesc_v[dsq[j]];
 	    }
 	    else { 
+	      /* The else arm covers d==0 as well as d==1. d==0 gives i==j+1
+	       * (the trailing sentinel at j==j0) and is out of domain for a pair
+	       * state regardless; d==1 gives i==j. Only d==1 with a real i is a
+	       * genuine cell. Same idiom as cm_TrInsideAlignHB() (#52). */
 	      if(do_J_v) Jalpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
-	      if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	      if(d == 1 && j > 0) { 
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = lmesc_v[dsq[i]];
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = rmesc_v[dsq[j]];
+	      }
+	      else { 
+		if(do_L_v) Lalpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		if(do_R_v) Ralpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }
 	    }
 	    i--;
 	  }

@@ -2962,7 +2962,7 @@ version_1p0_default_target_relent(const ESL_ALPHABET *abc, int clen, double eX)
 
   /* HMMER3 default eX = 6.0 as of Tue Jul 10 2007
    */
-  etarget = 6.* (eX + log((double) ((clen * (clen+1)) / 2)) / log(2.))    / (double)(2*clen + 4);
+  etarget = 6.* (eX + log(((double) clen * (double) (clen+1)) / 2.) / log(2.))    / (double)(2*clen + 4);
 
   switch (abc->type) {
   case eslRNA:    if (etarget < DEFAULT_ETARGET)   etarget = DEFAULT_ETARGET;   break;

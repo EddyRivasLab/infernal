@@ -72,7 +72,8 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
   int   subtree_clen;            /* consensus length of subtree under this node */
   float prv53, prv5, prv3;       /* previous node's fragment probability, 5'&3', 5' only, 3'only */
   float cur53, cur5, cur3;       /* current node's fragment probability, 5'&3', 5' only, 3'only */
-  int   nfrag53, nfrag5, nfrag3; /* number of fragments, 5'&3', 5' only, 3'only */
+  int   nfrag5, nfrag3;          /* number of fragments, 5' only, 3'only */
+  double nfrag53;                /* number of fragments, 5'&3' (double: subtree_clen*(subtree_clen+1) overflows int at 46,341) */
 
   if(cm == NULL || cm->emap == NULL) goto ERROR;
 
@@ -286,7 +287,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
    * MATP_MP, MATL_ML, MATR_MR, and BIF_B states and any parent
    * inserts (i1, i2) of those states.
    */
-  g_5and3 = 2. / (cm->clen * (cm->clen+1)); /* for global mode: probability of all fragments if we're truncating 5' and 3' */
+  g_5and3 = 2. / ((double) cm->clen * (double) (cm->clen+1)); /* for global mode: probability of all fragments if we're truncating 5' and 3' */
   g_5or3  = 1. / cm->clen;                  /* for global mode: probability of all fragments if we're only truncating 5' or  3' */
 
   prv5 = prv3 = prv53 = 0.; /* initialize 'previous' probability values used for calc'ing local truncation penalties */
@@ -344,7 +345,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       subtree_clen = rpos - lpos + 1;
       nfrag5  = subtree_clen;
       nfrag3  = subtree_clen;
-      nfrag53 = (subtree_clen * (subtree_clen+1)) / 2;
+      nfrag53 = ((double) subtree_clen * (double) (subtree_clen+1)) / 2.;
 
       /* determine probability of observing a fragment aligned at
        * state m (here, m is what I call t above and in notes) and
