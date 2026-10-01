@@ -33,7 +33,7 @@ $seqfile  = shift;
 $ok       = 1;
 
 if ($ok) { 
-    system("$cmbuild --hand --wgsc --enone -F i15.cm $alifile > /dev/null 2> /dev/null");
+    system("$cmbuild --hand --wgsc --enone --p7eent -F i15.cm $alifile > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {

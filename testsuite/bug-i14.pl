@@ -41,7 +41,7 @@ $seqfile  = shift;
 $ok       = 1;
 
 if ($ok) { 
-    system("$cmbuild --wnone --enone -F i14.cm $alifile > /dev/null 2> /dev/null");
+    system("$cmbuild --wnone --enone --p7eent -F i14.cm $alifile > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {

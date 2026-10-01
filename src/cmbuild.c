@@ -103,10 +103,10 @@ static ESL_OPTIONS options[] = {
 
   /* Alternate effective sequence weighting strategies */
   /* name        type            default    env     range toggles      reqs   incomp  help  docgroup*/
-  { "--eent",    eslARG_NONE, "default",    NULL,   NULL, EFFOPTS,     NULL,   NULL, "adjust eff seq # to achieve relative entropy target",           5 },
-  { "--enone",   eslARG_NONE,     FALSE,    NULL,   NULL, EFFOPTS,     NULL,   NULL, "no effective seq # weighting: just use nseq",                   5 },
-  { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set CM target relative entropy to <x>",             5 },
-  { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "set eff seq # for all models to <x>",                           5 },
+  { "--eent",    eslARG_NONE, "default",    NULL,   NULL, EFFOPTS,     NULL,   NULL, "(CM) adjust eff seq # to achieve relative entropy target",      5 },
+  { "--enone",   eslARG_NONE,     FALSE,    NULL,   NULL, EFFOPTS,     NULL,   NULL, "(CM) no effective seq # weighting: just use nseq",              5 },
+  { "--ere",     eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "(CM) for --eent: set target relative entropy to <x>",           5 },
+  { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "(CM) set eff seq # for all models to <x>",                      5 },
   { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",      5 },
   { "--emaxseq", eslARG_REAL,      NULL,    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set maximum effective sequence number to <x>",      5 },
   { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",           5 }, 
@@ -114,6 +114,7 @@ static ESL_OPTIONS options[] = {
 
   /* Options controlling filter p7 HMM construction */
   /* name         type           default  env  range toggles  reqs  incomp    help  docgroup*/
+  { "--p7eent",   eslARG_NONE, "default",NULL, NULL, NULL,    NULL, "--p7ml", "entropy-weight the filter p7 HMM to its own target",           6 },
   { "--p7ere",    eslARG_REAL,     NULL, NULL, NULL, NULL,    NULL, "--p7ml", "for the filter p7 HMM, set minimum rel entropy/posn to <x>",   6 },
   { "--p7ml",     eslARG_NONE,    FALSE, NULL, NULL, NULL,    NULL,     NULL, "define the filter p7 HMM as the ML p7 HMM",                    6 },
   /* below are only shown with --devhelp */
@@ -723,6 +724,28 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL) { esl_fprintf(stderr, "Failed to get <cmfile_out> argument on command line.\n");  goto ERROR; }
   if ((*ret_alifile = esl_opt_GetArg(go, 2)) == NULL) { esl_fprintf(stderr, "Failed to get <alifile> argument on command line.\n");     goto ERROR; }
 
+  /* --enone, --ere and --eset (and --rsearch, which implies --enone)
+   * set the CM's entropy weighting only; a basepaired model's filter
+   * HMM keeps its own. Make the user choose the filter's weighting
+   * explicitly, unless every filter HMM will be the CM's ML HMM
+   * (--noss, --p7ml), which already follows the CM. Checked here, before
+   * any alignment is read, so a multi-MSA file never fails partway.
+   * --p7eent is on by default, so esl_opt_IsUsed() can't see it on the
+   * command line; ask who set it instead. (brief 26_0824-082)
+   */
+  if ((esl_opt_IsUsed(go, "--enone") || esl_opt_IsUsed(go, "--ere") || esl_opt_IsUsed(go, "--eset") || esl_opt_IsUsed(go, "--rsearch")) &&
+      ! (esl_opt_GetSetter(go, "--p7eent") != eslARG_SETBY_DEFAULT || esl_opt_IsUsed(go, "--p7ere")) &&
+      ! (esl_opt_IsUsed(go, "--noss")   || esl_opt_IsUsed(go, "--p7ml")))
+    {
+      esl_fprintf(stderr, "--enone, --ere and --eset set the CM's entropy weighting only (--rsearch implies --enone).\n");
+      esl_fprintf(stderr, "Choose the filter HMM's weighting too:\n");
+      esl_fprintf(stderr, "  --p7eent      keep the filter HMM's own entropy weighting (the default; tuned for filtering)\n");
+      esl_fprintf(stderr, "  --p7ere <x>   set the filter HMM's own relative entropy target to <x>\n");
+      esl_fprintf(stderr, "  --p7ml        use the CM's ML HMM as the filter, so it follows the CM's weighting\n");
+      esl_fprintf(stderr, "(--noss builds are exempt.)\n");
+      exit(1);
+    }
+
   if (strcmp(*ret_cmfile, "-") == 0) {
     esl_fprintf(stderr, "Can't write <cmfile_out> to stdout: don't use '-'\n"); goto ERROR;
   }
@@ -809,6 +832,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
   if (esl_opt_IsUsed(go, "--rdump"))       { fprintf(ofp, "# printing intermediate alns during aln refnment to:  %s\n", esl_opt_GetString(go, "--rdump")); }
 
   if (esl_opt_IsUsed(go, "--p7ml"))        { fprintf(ofp, "# filter HMM is ML HMM created from CM:               yes\n"); }
+  if (esl_opt_GetSetter(go, "--p7eent") != eslARG_SETBY_DEFAULT) { fprintf(ofp, "# filter HMM entropy weighting:                       own target\n"); }
   if (esl_opt_IsUsed(go, "--p7ere"))       { fprintf(ofp, "# filter HMM minimum rel entropy target:              %g bits\n", esl_opt_GetReal(go, "--p7ere")); }
   if (esl_opt_IsUsed(go, "--p7prior"))     { fprintf(ofp, "# read filter p7 HMM prior from:                      %s\n", esl_opt_GetString(go, "--p7prior")); }
   if (esl_opt_IsUsed(go, "--p7hprior"))    { fprintf(ofp, "# using HMMER3's default prior for filter p7 HMM:     yes\n"); }
