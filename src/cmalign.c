@@ -15,6 +15,7 @@
 #include <float.h>
 #include <limits.h>
 #include <inttypes.h>
+#include <math.h>
 
 #include "easel.h"		/* general seq analysis library   */
 #include "esl_alphabet.h"
@@ -305,6 +306,57 @@ kmer_gate_p7ibv_fallback(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int 
                               FALSE, /* do_kband: unbanded D&C, same as --hmm --p7ibv */
                               do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
                               ret_i2k, ret_kmin, ret_kmax, ret_ncells);
+}
+
+/* brief 26_0821-096: --hmm banded-OA no-parse fallback, shared by the serial
+ * (hmm_alignment()) and threaded (hmm_pipeline_thread()) paths. Called when the
+ * banded HMM Forward total came back non-finite: the p7 band contains no
+ * complete parse of the sequence, so the posterior/OA traceback that follows is
+ * meaningless (it used to be emitted anyway, exit 0, as a garbage alignment).
+ *
+ * The first time this happens for a sequence whose band did NOT come from IBV,
+ * print one stderr line, free the failed band, and re-derive it with the IBV
+ * D&C deriver via kmer_gate_p7ibv_fallback() (same delta/base-slab settings as
+ * kmerchain's no-anchor fallback; still truncation-aware if <do_trunc>), so the
+ * caller can retry once. IBV D&C is used because it is memory-bounded at genome
+ * scale; a full-matrix band builder (p7_Seq2BandsVit or unbanded p7 F/B) is
+ * deliberately NOT a fallback here, and neither is non-truncated alignment.
+ * If the band was already from IBV, or the retry also had no parse, fail.
+ *
+ * <band_src> names the deriver of the sequence's original band; <*ret_retried>
+ * is FALSE on the first call for a sequence and set TRUE here on retry. */
+static void
+hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab,
+                     int band_is_ibv, const char *band_src, int *ret_retried,
+                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  char errbuf[eslERRBUFSIZE];
+  int  status;
+
+  if (*ret_retried)
+    cm_Fail("no-parse p7 band for sequence %s: neither the %s band nor the --p7ibv-mem retry band\n"
+            "contains a complete parse (banded HMM Forward total not finite).",
+            sq->name, band_src);
+  if (band_is_ibv)
+    cm_Fail("no-parse p7 band from %s for sequence %s: no complete parse under this band\n"
+            "(banded HMM Forward total not finite), and IBV is the last-resort band deriver.",
+            band_src, sq->name);
+  if (cm == NULL || cm->fp7 == NULL)
+    cm_Fail("no-parse p7 band from %s for sequence %s: no complete parse under this band\n"
+            "(banded HMM Forward total not finite), and no filter p7 HMM for a --p7ibv-mem retry.",
+            band_src, sq->name);
+
+  fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", band_src, sq->name);
+  free(*ret_i2k);  *ret_i2k  = NULL;
+  free(*ret_kmin); *ret_kmin = NULL;
+  free(*ret_kmax); *ret_kmax = NULL;
+  if ((status = kmer_gate_p7ibv_fallback(cm, errbuf, sq->dsq, sq->n, do_trunc,
+                                         cm->p7_ibv_delta, ibv_base_slab,
+                                         ret_i2k, ret_kmin, ret_kmax, ret_ncells)) != eslOK)
+    cm_Fail("--p7ibv-mem no-parse retry failed for sequence %s: %s", sq->name, errbuf);
+  if (*ret_ncells == 0)
+    cm_Fail("--p7ibv-mem no-parse retry produced no band for sequence %s", sq->name);
+  *ret_retried  = TRUE;
 }
 
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
@@ -1208,9 +1260,10 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	winfo[k].ibv_base_slab = esl_opt_IsDefault(go, "--p7ibv-base-slab")
 	                         ? HMM_P7IBV_KNEE_BASE_SLAB
 	                         : esl_opt_GetInteger(go, "--p7ibv-base-slab");
-	/* CM only needed by the IBV/kmerchain derivers (for cm->fp7);
-	 * else unused in --hmm mode. brief 26_0628-032: kmerchain also needs it. */
-	winfo[k].cm          = (do_p7ibv || cm->p7_use_kmerchain) ? cm : NULL;
+	/* CM needed by the IBV/kmerchain derivers (for cm->fp7). brief 26_0628-032:
+	 * kmerchain also needs it. brief 26_0821-096: and by the no-parse
+	 * --p7ibv-mem fallback, which any band deriver can reach, so always set. */
+	winfo[k].cm          = cm;
 	winfo[k].dataA       = NULL;
 	winfo[k].n           = 0;
 	winfo[k].mxsize      = esl_opt_GetReal(go, "--mxsize");
@@ -1324,6 +1377,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  P7_TRACE *vtr  = NULL;
 	  float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
 	  int      p7ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");        /* brief 26_0430-135b */
+	  const char *band_src = "default p7 Viterbi-trace";                      /* brief 26_0821-096: deriver of the band, for the no-parse fallback */
+	  int      band_is_ibv = FALSE;                                           /* brief 26_0821-096: band already from IBV => no further fallback */
+	  int      noparse_retried = FALSE;                                       /* brief 26_0821-096 */
 	  int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
 	  /* brief 26_0628-061: optional 4-stage per-sequence timing for this --hmm-mode
 	   * banded-OA path, reusing brief 059's BRIEF059_STAGETIME env var and
@@ -1345,6 +1401,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
 	  if (do_p7ibv) {
 	    if (_st061_on) _st061_kind = "p7ibv";
+	    band_src = "--p7ibv"; band_is_ibv = TRUE;
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
 	      cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
@@ -1377,6 +1434,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
 	      if (_st061_on) _st061_kind = "kmerchain";
+	      band_src = "--p7kmerchain";
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 						  &i2k, &kmin, &kmax, &ncells,
@@ -1406,6 +1464,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 				      : esl_opt_GetInteger(go, "--p7ibv-base-slab"));
 	      if (_st061_on) { _st061_ab_split = FALSE; _st061_used_p7ibv_fb = TRUE; /* a_s/b_s only cover the failed kmer attempt */
 	                       _st061_kind = "kmerchain->p7ibv"; }
+	      band_src = "--p7kmerchain's --p7ibv-mem no-anchor fallback"; band_is_ibv = TRUE;
 	      if ((status = kmer_gate_p7ibv_fallback(cm, errbuf, sq->dsq, sq->n, do_trunc,
 						      cm->p7_ibv_delta, p7ibv_base_slab,
 						      &i2k, &kmin, &kmax, &ncells)) != eslOK)
@@ -1423,6 +1482,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	        else if (_st061_used_p7ibv_fb) _st061_kind = "kmerchain->p7ibv->vitband";
 	        else _st061_kind = "kmerchain->vitband";
 	      }
+	      band_src = "default p7 Viterbi-trace"; band_is_ibv = FALSE;
 	      vtr = p7_trace_Create();
 	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
 	      p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
@@ -1525,6 +1585,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      if (b1_kmax)    free(b1_kmax);
 	    }
 	  }
+	HMM_NOPARSE_RETRY: /* brief 26_0821-096: re-entered once with --p7ibv-mem bands after a no-parse band */
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
@@ -1649,6 +1710,24 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  p7_trace_Reuse(tr[idx]);
 	  if ((status = p7_GOATraceBanded(gm, bxb, bxf, tr[idx])) != eslOK)
 	    cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+	  }
+
+	  /* brief 26_0821-096: a non-finite banded Forward total means the band holds
+	   * no complete parse, and the OA traceback above is garbage. All three
+	   * engines return eslOK in that case, so test the score here, after
+	   * whichever one ran. Retry once with --p7ibv-mem bands, else fail; see
+	   * hmm_noparse_fallback(). */
+	  if (! isfinite(fwdsc)) {
+	    hmm_noparse_fallback(cm, sq, do_trunc,
+				 (esl_opt_IsDefault(go, "--p7ibv-base-slab")
+				  ? HMM_P7IBV_KNEE_BASE_SLAB
+				  : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
+				 band_is_ibv, band_src, &noparse_retried,
+				 &i2k, &kmin, &kmax, &ncells);
+	    p7_gbands_Destroy(bnd); bnd = NULL;
+	    if (bxf) { p7_gmxb_Destroy(bxf); bxf = NULL; }
+	    if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
+	    goto HMM_NOPARSE_RETRY;
 	  }
 
 	  /* brief 26_0628-061: stage (d) alignment DP is complete (checkpointed or
@@ -2143,12 +2222,16 @@ hmm_pipeline_thread(void *arg)
       P7_TRACE *vtr  = NULL;
       float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
       int      p7ibv_delta = info->ibv_delta;                                 /* brief 26_0430-135b */
+      const char *band_src = "default p7 Viterbi-trace";                      /* brief 26_0821-096: see hmm_alignment() */
+      int      band_is_ibv = FALSE;                                           /* brief 26_0821-096 */
+      int      noparse_retried = FALSE;                                       /* brief 26_0821-096 */
       int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
 
       if (info->do_p7ibv) {
 	/* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	if (info->cm == NULL || info->cm->fp7 == NULL || info->cm->fp7->M != info->hmm->M)
 	  cm_Fail("--hmm --p7ibv requires cm->fp7 with M matching the ML p7 HMM");
+	band_src = "--p7ibv"; band_is_ibv = TRUE;
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  p7ibv_delta, info->ibv_base_slab,
 					  do_widen, /* brief 26_0430-135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
@@ -2177,6 +2260,7 @@ hmm_pipeline_thread(void *arg)
 					      info->do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 					      &i2k, &kmin, &kmax, &ncells, NULL, NULL, NULL)) != eslOK)
 	    cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
+	  band_src = "--p7kmerchain";
 	}
 	if (local_nodepad) free(local_nodepad);
 
@@ -2191,6 +2275,7 @@ hmm_pipeline_thread(void *arg)
 						  info->cm->p7_ibv_delta, info->ibv_base_slab,
 						  &i2k, &kmin, &kmax, &ncells)) != eslOK)
 	    cm_Fail("kmer_gate_p7ibv_fallback() failed for sequence %s: %s", sq->name, errbuf);
+	  band_src = "--p7kmerchain's --p7ibv-mem no-anchor fallback"; band_is_ibv = TRUE;
 	}
 	if (! did_kmer || ncells == 0) {
 	  /* Default banded-OA path (no kmer flag set); the kmerchain
@@ -2198,6 +2283,7 @@ hmm_pipeline_thread(void *arg)
 	   * old behavior; and the safety net when the --p7ibv fallback above
 	   * itself also found nothing usable (mirrors cm_alndata.c's
 	   * kmerchain->vitband fallback shape). */
+	  band_src = "default p7 Viterbi-trace"; band_is_ibv = FALSE;
 	  vtr = p7_trace_Create();
 	  p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
 	  p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
@@ -2238,6 +2324,7 @@ hmm_pipeline_thread(void *arg)
 	    cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
 	}
       }
+    HMM_NOPARSE_RETRY: /* brief 26_0821-096: re-entered once with --p7ibv-mem bands after a no-parse band */
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
@@ -2321,6 +2408,18 @@ hmm_pipeline_thread(void *arg)
       p7_trace_Reuse(info->hmm_tr[idx]);
       if ((status = p7_GOATraceBanded(info->gm, bxb, bxf, info->hmm_tr[idx])) != eslOK)
 	cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
+      }
+
+      /* brief 26_0821-096: no-parse band => retry once with --p7ibv-mem bands,
+       * else fail; mirrors the serial check in hmm_alignment(). */
+      if (! isfinite(fwdsc)) {
+	hmm_noparse_fallback(info->cm, sq, info->do_trunc, info->ibv_base_slab,
+			     band_is_ibv, band_src, &noparse_retried,
+			     &i2k, &kmin, &kmax, &ncells);
+	p7_gbands_Destroy(bnd); bnd = NULL;
+	if (bxf) { p7_gmxb_Destroy(bxf); bxf = NULL; }
+	if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
+	goto HMM_NOPARSE_RETRY;
       }
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT alignment_peak_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
