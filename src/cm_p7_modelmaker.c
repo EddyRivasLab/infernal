@@ -328,7 +328,8 @@ static const double gfcalib_shrink_coef[5] = {
  * were trained on default filters only. On ML-HMM filters they overpredict
  * lambda by ~16% (median predicted/true 1.160 on 792 models), which is ~19x
  * permissive at P=1e-8. These blocks have the SAME functional forms and
- * features as the shipped ones; only the coefficients are refit.
+ * features as the shipped ones; only the coefficients are refit. See
+ * cm_p7_UseP7mlPredictor() for when they are used.
  *
  * Training set: 792 real basepaired models, each rebuilt from its exact source
  * alignment with --p7ml (default entropy weighting) and with --p7ml --enone:
@@ -512,6 +513,35 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
   return tau_raw + d_hat / lambda;    /* d_hat is in units of lambda*bits */
 }
 
+/* Function: cm_p7_UseP7mlPredictor()
+ * Incept:   EPN, Fri Oct  2 2026 (w/Claude)
+ *
+ * Purpose:  Decide whether cm_p7_Calibrate() should use the --p7ml
+ *           glocal lambda/tau coefficients (brief 26_0824-085) for the
+ *           filter HMM of <cm>. That is TRUE iff the filter is the CM's
+ *           ML p7 HMM (<filter_is_mlp7>) AND <cm> has at least one
+ *           base pair. Zero-basepair models keep the default
+ *           coefficients even when their filter is the ML HMM: the
+ *           default predictor is already accurate for them.
+ *
+ *           Every caller of cm_p7_Calibrate() that is calibrating a
+ *           CM's filter should get its <use_p7ml_pred> argument from
+ *           here, so that all of them make the same decision for the
+ *           same model.
+ *
+ * Args:     cm             - the CM whose filter is being calibrated
+ *           filter_is_mlp7 - TRUE if the filter HMM is cm->mlp7 (or a
+ *                            copy of it)
+ *
+ * Returns:  TRUE or FALSE.
+ */
+int
+cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7)
+{
+  if (! filter_is_mlp7) return FALSE;
+  return (CMCountNodetype(cm, MATP_nd) > 0) ? TRUE : FALSE;
+}
+
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
  *
@@ -532,8 +562,8 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
  *           EgfT      - fraction of tail mass to fit for glocal Fwd
  *           seed      - RNG seed for calibration (0=one-time arbitrary)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
- *           use_p7ml_pred - TRUE to use the --p7ml glocal lambda/tau coefficients
- *                       (brief 26_0824-085)
+ *           use_p7ml_pred - TRUE to use the --p7ml glocal lambda/tau coefficients;
+ *                       get this from cm_p7_UseP7mlPredictor() (brief 26_0824-085)
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *
