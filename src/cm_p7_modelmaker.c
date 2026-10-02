@@ -1488,3 +1488,108 @@ cm_p7_hmm_SetConsensus(P7_HMM *hmm)
   hmm->flags    &= (~p7H_CONS);	
   return status;
 }
+
+/*****************************************************************
+ * Unit tests and test driver.
+ *****************************************************************/
+#ifdef CM_P7_MODELMAKER_TESTDRIVE
+/*
+  gcc -o cm_p7_modelmaker_utest -std=gnu99 -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_P7_MODELMAKER_TESTDRIVE cm_p7_modelmaker.c -linfernal -lhmmer -leasel -lm
+  ./cm_p7_modelmaker_utest
+*/
+#include "esl_getopts.h"
+
+/* utest_FitExpTail()
+ * Incept:    EPN, Fri Oct  2 2026 (w/Claude)
+ *
+ * cm_p7_FitExpTail() (cmbuild --Esim, brief 26_0824-087) must recover a
+ * known tail from a sample whose body is NOT exponential: p0*N of the
+ * <N> scores are <tmu> plus an Exponential(<tlambda>) draw, and the rest
+ * are uniform on [<tmu>-20, <tmu>). The survival function above <tmu> is
+ * p0 * exp(-tlambda (x - tmu)), i.e. an exponential with
+ * lambda = tlambda and mu = tmu + log(p0)/tlambda. (The tail count is
+ * fixed rather than binomial so that the top p0 fraction is exactly the
+ * tail draws, and the test measures only the estimator's own error.)
+ * Fitting the top p0 fraction should recover both. With the cmbuild
+ * defaults (N=5000, p0=0.05; k=250) lambda's relative standard error is
+ * about 1/sqrt(250) = 6% per sample, and its sampling distribution is
+ * right-skewed, so each sample gets a loose bound (40%, ~6 s.e.) and the
+ * mean over all <nrep> samples a tighter one (7%; ~4 s.e. at nrep=20,
+ * allowing for the plain MLE's k/(k-2) = +0.8% bias).
+ *
+ * Also checks that a float tail fraction (0.05f, as an option value can
+ * arrive) gives the same k, and so the same fit, as the double 0.05.
+ */
+static void
+utest_FitExpTail(ESL_RANDOMNESS *r, int N, int nrep)
+{
+  char    msg[] = "cm_p7_FitExpTail() unit test failed";
+  double  p0      = 0.05;
+  double  tmu     = 10.0;
+  double  tlambda = 0.693;
+  double  true_mu = tmu + log(p0) / tlambda;
+  double *xv      = NULL;
+  double  mu, lambda, mu_f, lambda_f;
+  double  lambda_sum = 0.;
+  double  mu_sum     = 0.;
+  int     ntail;
+  int     rep, i;
+  int     status;
+
+  ESL_ALLOC(xv, sizeof(double) * N);
+  ntail = (int) (p0 * N + 0.5);
+  for (rep = 0; rep < nrep; rep++) {
+    for (i = 0; i < N; i++)
+      xv[i] = (i < ntail) ? esl_exp_Sample(r, tmu, tlambda) : tmu - 20. * esl_random(r);
+    esl_vec_DSortDecreasing(xv, N);
+
+    if (cm_p7_FitExpTail(xv, N, p0, &mu, &lambda) != eslOK)                 esl_fatal(msg);
+    if (fabs(lambda - tlambda) / tlambda > 0.40)                             esl_fatal("%s: rep %d lambda %g, expected %g", msg, rep, lambda, tlambda);
+    if (fabs(mu - true_mu) * tlambda > 1.5)                                  esl_fatal("%s: rep %d mu %g, expected %g",     msg, rep, mu, true_mu);
+    lambda_sum += lambda;
+    mu_sum     += mu;
+
+    if (cm_p7_FitExpTail(xv, N, (float) p0, &mu_f, &lambda_f) != eslOK)     esl_fatal(msg);
+    if (mu_f != mu || lambda_f != lambda)                                    esl_fatal("%s: float vs double tail fraction differ", msg);
+  }
+  if (fabs(lambda_sum / nrep - tlambda) / tlambda > 0.07) esl_fatal("%s: mean lambda %g, expected %g", msg, lambda_sum / nrep, tlambda);
+  if (fabs(mu_sum     / nrep - true_mu) * tlambda > 0.30) esl_fatal("%s: mean mu %g, expected %g",     msg, mu_sum     / nrep, true_mu);
+
+  /* contract: too few scores, bad fraction, and a tail with no spread are errors */
+  xv[0] = xv[1] = xv[2] = 1.0;
+  if (cm_p7_FitExpTail(xv, 1, 0.05, &mu, &lambda) != eslEINVAL) esl_fatal("%s: N=1 not rejected",            msg);
+  if (cm_p7_FitExpTail(xv, N, 0.,   &mu, &lambda) != eslEINVAL) esl_fatal("%s: tailp=0 not rejected",        msg);
+  if (cm_p7_FitExpTail(xv, 3, 1.0,  &mu, &lambda) != eslEINVAL) esl_fatal("%s: flat tail not rejected",      msg);
+
+  free(xv);
+  return;
+
+ ERROR:
+  esl_fatal("%s: allocation failed", msg);
+}
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",                         0 },
+  { "--version", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",                       0 },
+  { "-s",        eslARG_INT,     "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                    0 },
+  { "-N",        eslARG_INT,   "5000", NULL, "n>1", NULL,  NULL, NULL, "number of scores per sample",                      0 },
+  { "-R",        eslARG_INT,     "20", NULL, "n>0", NULL,  NULL, NULL, "number of samples to fit",                         0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options]";
+static char banner[] = "test driver for cm_p7_modelmaker.c";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go = cm_CreateDefaultApp("cm_p7_modelmaker_utest", options, 0, argc, argv, banner, usage);
+  ESL_RANDOMNESS *r  = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
+
+  utest_FitExpTail(r, esl_opt_GetInteger(go, "-N"), esl_opt_GetInteger(go, "-R"));
+
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return eslOK;
+}
+#endif /*CM_P7_MODELMAKER_TESTDRIVE*/
