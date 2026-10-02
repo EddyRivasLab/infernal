@@ -335,57 +335,67 @@ static const double gfcalib_shrink_coef[5] = {
  * alignment with --p7ml (default entropy weighting) and with --p7ml --enone:
  * 1533 unique filter HMMs (792 + 741; the other 51 --enone filters are
  * byte-identical to their --p7ml filter and were fit once). clen 20..2987,
- * filter mean_H 0.12..1.77, filter eff_nseq 0.30..1178 (capped at 20 by the
- * feature, as above).
+ * filter mean_H 0.12..1.77, filter eff_nseq 0.30..1178.
+ * The eff_nseq feature is capped at GFCALIB_P7ML_EFFN_CAP (1000), not at the
+ * default path's 20: an ML-HMM filter's eff_nseq is the CM's, which reaches
+ * nseq under --enone, and capping at 20 discarded the information that
+ * separates those models (with a cap of 20, CV over-10x-permissive count on
+ * --p7ml --enone was 70/792; with 1000, 34/792). 1000 is about the training
+ * maximum, and the fitted eff_nseq coefficient is negative, so a larger
+ * eff_nseq that the cap clips would have predicted a smaller (more
+ * conservative) lambda.
  * Reference lambda/tau: one glocal-Forward fit per filter to N=500,000 sampled
  * scores (L = max(100, 2*clen)), an exponential tail fit to the top 7,500
  * scores, i.e. tailp 0.015. tau is converted to the GFMU convention,
  * P(S >= x) = exp(-lambda (x - tau)), before fitting.
  * Lambda: plain OLS on ln(lambda_ref), same 4 z-scored features as
- * predict_glocal_lambda(). Clan-grouped 5-fold CV (median signed error 1.02x
- * at P=1e-8 for --p7ml) matched the in-sample fit.
- * Tau shrinkage: same form as gfcalib_shrink_tau(), target
+ * predict_glocal_lambda(). Clan-grouped 5-fold CV, median signed error at
+ * P=1e-8: 1.07x for --p7ml, 1.15x for --p7ml --enone.
+ * Tau shrinkage: same form as gfcalib_shrink_tau() and the same eff_nseq cap, target
  * d = lambda*(tau_ref - tau_raw), with lambda from the --p7ml lambda
  * predictor. tau_raw is cm_p7_Tau()'s N=4 all-order estimate, simulated by
  * 200 draws of 4 scores per filter from a separate 20,000-score sample.
  */
+#define GFCALIB_EFFN_CAP       20.0    /* eff_nseq feature cap, default coefficients */
+#define GFCALIB_P7ML_EFFN_CAP  1000.0   /* eff_nseq feature cap, --p7ml coefficients  */
+
 static const double gfcalib_p7ml_feat_mu[4] = {
   4.776961104829981,     /* log(clen)                */
   0.7777697695599595,    /* mean_H                   */
   0.7309221772495036,    /* mean_H^2                 */
-  1.6799854946407393     /* log(min(eff_nseq, 20))   */
+  1.95512921883143       /* log(min(eff_nseq, 1000)) */
 };
 static const double gfcalib_p7ml_feat_sd[4] = {
   0.6758328383065203,
   0.3549596636353907,
   0.6102263831828977,
-  1.0651753571575544
+  1.5027685065912544
 };
 static const double gfcalib_p7ml_coef[5] = {
   -0.9668881313609853,   /* intercept */
-  -0.18599227664717016,  /* z0 */
-  -0.42526080029494023,  /* z1 */
-   0.29402390280564006,  /* z2 */
-  -0.06330910011706531   /* z3 */
+  -0.18483460571601934,  /* z0 */
+  -0.42773426668171655,  /* z1 */
+   0.2915341375472999,   /* z2 */
+  -0.06495529093506133   /* z3 */
 };
 static const double gfcalib_p7ml_shrink_mu[4] = {
    4.776961104832206,    /* log(clen)                */
    0.7777697695597421,   /* mean_H                   */
-   1.6799854946427144,   /* log(min(eff_nseq, 20))   */
- -13.960880241588594     /* tau_raw * lambda         */
+   1.9551292188318754,   /* log(min(eff_nseq, 1000)) */
+ -13.935619798919456     /* tau_raw * lambda         */
 };
 static const double gfcalib_p7ml_shrink_sd[4] = {
    0.6758328383066262,
    0.3549596636354067,
-   1.0651753571579323,
-  14.99502966484909
+   1.5027685065909826,
+  14.74498047181927
 };
 static const double gfcalib_p7ml_shrink_coef[5] = {
-   0.9693490801025015,   /* intercept */
-   0.037428755049923934, /* z0 */
-  -0.1257503905424057,   /* z1 */
-   0.05769396889414641,  /* z2 */
-  -0.14893876901359462   /* z3 */
+   0.9688523825711184,   /* intercept */
+   0.03237942303124768,  /* z0 */
+  -0.1168584503605011,   /* z1 */
+   0.04784605245727269,  /* z2 */
+  -0.15225363920130952   /* z3 */
 };
 
 /* mean_relentropy_bits()
@@ -425,6 +435,8 @@ mean_relentropy_bits(const P7_HMM *hmm)
  * The 20.0 cap is part of the fitted form: real SEEDs saturate around
  * eff_nseq 3-17, the training pool has little support above 20 (one model sits
  * at 10000), so the cap keeps a deep alignment from extrapolating off the fit.
+ * <cap> is GFCALIB_EFFN_CAP (20) for the default coefficients and
+ * GFCALIB_P7ML_EFFN_CAP (1000) for the --p7ml ones (brief 26_0824-085).
  *
  * There is deliberately NO floor at 1.0. Entropy weighting routinely produces
  * eff_nseq < 1 -- 51/1097 of the brief-053 multi-seq training pool (min 0.30)
@@ -436,11 +448,11 @@ mean_relentropy_bits(const P7_HMM *hmm)
  * eff_nseq > 0 at the call site. brief 26_0719-054.
  */
 static double
-gfcalib_effn_feature(double eff_nseq)
+gfcalib_effn_feature(double eff_nseq, double cap)
 {
   double e = eff_nseq;
   if (e < 1e-3) e = 1e-3;    /* log-domain guard only; unreachable for a real CM */
-  if (e > 20.0) e = 20.0;
+  if (e > cap)  e = cap;
   return log(e);
 }
 
@@ -458,10 +470,11 @@ predict_glocal_lambda(int clen, double mean_H, double eff_nseq, int use_p7ml_pre
   const double *mu   = use_p7ml_pred ? gfcalib_p7ml_feat_mu : gfcalib_feat_mu;
   const double *sd   = use_p7ml_pred ? gfcalib_p7ml_feat_sd : gfcalib_feat_sd;
   const double *coef = use_p7ml_pred ? gfcalib_p7ml_coef    : gfcalib_coef;
+  double        cap  = use_p7ml_pred ? GFCALIB_P7ML_EFFN_CAP : GFCALIB_EFFN_CAP;
   double x0 = log((double) clen);           /* natural log            */
   double x1 = mean_H;
   double x2 = mean_H * mean_H;
-  double x3 = gfcalib_effn_feature(eff_nseq);
+  double x3 = gfcalib_effn_feature(eff_nseq, cap);
   double z0 = (x0 - mu[0]) / sd[0];
   double z1 = (x1 - mu[1]) / sd[1];
   double z2 = (x2 - mu[2]) / sd[2];
@@ -498,9 +511,10 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
   const double *mu   = use_p7ml_pred ? gfcalib_p7ml_shrink_mu   : gfcalib_shrink_mu;
   const double *sd   = use_p7ml_pred ? gfcalib_p7ml_shrink_sd   : gfcalib_shrink_sd;
   const double *coef = use_p7ml_pred ? gfcalib_p7ml_shrink_coef : gfcalib_shrink_coef;
+  double        cap  = use_p7ml_pred ? GFCALIB_P7ML_EFFN_CAP    : GFCALIB_EFFN_CAP;
   double x0 = log((double) clen);
   double x1 = mean_H;
-  double x2 = gfcalib_effn_feature(eff_nseq);
+  double x2 = gfcalib_effn_feature(eff_nseq, cap);
   double x3 = tau_raw * lambda;
   double z0 = (x0 - mu[0]) / sd[0];
   double z1 = (x1 - mu[1]) / sd[1];
