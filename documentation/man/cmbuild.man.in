@@ -539,6 +539,23 @@ calibration to
 .I <n>.
 200 by default.
 
+.B --Esim
+Simulate the glocal Forward filter HMM E-value parameters instead of
+predicting them: score 5000 random sequences (or
+.I <n>
+with
+.BR --EgfN )
+and fit an exponential tail to the top 5% of the scores. This is
+slower than the default, but does not rely on a predictor trained on
+default builds. It is turned on automatically, with a note in the
+output header, when
+.B --prior
+is used, and when
+.B --eset 0
+is used and the filter HMM is the CM's maximum likelihood HMM (with
+.BR --p7ml ,
+or for a model with zero basepairs).
+
 .PP
 Use 
 .B --devhelp 
