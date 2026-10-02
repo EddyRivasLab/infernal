@@ -320,6 +320,73 @@ static const double gfcalib_shrink_coef[5] = {
   -0.5429849757828361    /* z3 */
 };
 
+/* --p7ml glocal-Forward lambda predictor and tau shrinkage (brief 26_0824-085).
+ *
+ * With cmbuild --p7ml, a model that has at least one base pair gets the CM's
+ * maximum-likelihood p7 HMM as its filter instead of the default
+ * entropy-weighted filter built by p7_Builder(). The coefficient blocks above
+ * were trained on default filters only. On ML-HMM filters they overpredict
+ * lambda by ~16% (median predicted/true 1.160 on 792 models), which is ~19x
+ * permissive at P=1e-8. These blocks have the SAME functional forms and
+ * features as the shipped ones; only the coefficients are refit.
+ *
+ * Training set: 792 real basepaired models, each rebuilt from its exact source
+ * alignment with --p7ml (default entropy weighting) and with --p7ml --enone:
+ * 1533 unique filter HMMs (792 + 741; the other 51 --enone filters are
+ * byte-identical to their --p7ml filter and were fit once). clen 20..2987,
+ * filter mean_H 0.12..1.77, filter eff_nseq 0.30..1178 (capped at 20 by the
+ * feature, as above).
+ * Reference lambda/tau: one glocal-Forward fit per filter to N=500,000 sampled
+ * scores (L = max(100, 2*clen)), an exponential tail fit to the top 7,500
+ * scores, i.e. tailp 0.015. tau is converted to the GFMU convention,
+ * P(S >= x) = exp(-lambda (x - tau)), before fitting.
+ * Lambda: plain OLS on ln(lambda_ref), same 4 z-scored features as
+ * predict_glocal_lambda(). Clan-grouped 5-fold CV (median signed error 1.02x
+ * at P=1e-8 for --p7ml) matched the in-sample fit.
+ * Tau shrinkage: same form as gfcalib_shrink_tau(), target
+ * d = lambda*(tau_ref - tau_raw), with lambda from the --p7ml lambda
+ * predictor. tau_raw is cm_p7_Tau()'s N=4 all-order estimate, simulated by
+ * 200 draws of 4 scores per filter from a separate 20,000-score sample.
+ */
+static const double gfcalib_p7ml_feat_mu[4] = {
+  4.776961104829981,     /* log(clen)                */
+  0.7777697695599595,    /* mean_H                   */
+  0.7309221772495036,    /* mean_H^2                 */
+  1.6799854946407393     /* log(min(eff_nseq, 20))   */
+};
+static const double gfcalib_p7ml_feat_sd[4] = {
+  0.6758328383065203,
+  0.3549596636353907,
+  0.6102263831828977,
+  1.0651753571575544
+};
+static const double gfcalib_p7ml_coef[5] = {
+  -0.9668881313609853,   /* intercept */
+  -0.18599227664717016,  /* z0 */
+  -0.42526080029494023,  /* z1 */
+   0.29402390280564006,  /* z2 */
+  -0.06330910011706531   /* z3 */
+};
+static const double gfcalib_p7ml_shrink_mu[4] = {
+   4.776961104832206,    /* log(clen)                */
+   0.7777697695597421,   /* mean_H                   */
+   1.6799854946427144,   /* log(min(eff_nseq, 20))   */
+ -13.960880241588594     /* tau_raw * lambda         */
+};
+static const double gfcalib_p7ml_shrink_sd[4] = {
+   0.6758328383066262,
+   0.3549596636354067,
+   1.0651753571579323,
+  14.99502966484909
+};
+static const double gfcalib_p7ml_shrink_coef[5] = {
+   0.9693490801025015,   /* intercept */
+   0.037428755049923934, /* z0 */
+  -0.1257503905424057,   /* z1 */
+   0.05769396889414641,  /* z2 */
+  -0.14893876901359462   /* z3 */
+};
+
 /* mean_relentropy_bits()
  * Mean over the M match columns of the relative entropy (bits) of the match
  * emission distribution vs a uniform 1/K background. Matches the training
@@ -381,21 +448,25 @@ gfcalib_effn_feature(double eff_nseq)
  * (briefs 26_0719-053/26_0719-055, deployed by brief 26_0719-054):
  *     lambda = exp(c0 + c1*z0 + c2*z1 + c3*z2 + c4*z3)
  * clen = hmm->M; mean_H from mean_relentropy_bits(); eff_nseq is the CM's
- * effective sequence count.
+ * effective sequence count. If <use_p7ml_pred>, use the --p7ml coefficient
+ * block instead of the default one (brief 26_0824-085).
  */
 static double
-predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
+predict_glocal_lambda(int clen, double mean_H, double eff_nseq, int use_p7ml_pred)
 {
+  const double *mu   = use_p7ml_pred ? gfcalib_p7ml_feat_mu : gfcalib_feat_mu;
+  const double *sd   = use_p7ml_pred ? gfcalib_p7ml_feat_sd : gfcalib_feat_sd;
+  const double *coef = use_p7ml_pred ? gfcalib_p7ml_coef    : gfcalib_coef;
   double x0 = log((double) clen);           /* natural log            */
   double x1 = mean_H;
   double x2 = mean_H * mean_H;
   double x3 = gfcalib_effn_feature(eff_nseq);
-  double z0 = (x0 - gfcalib_feat_mu[0]) / gfcalib_feat_sd[0];
-  double z1 = (x1 - gfcalib_feat_mu[1]) / gfcalib_feat_sd[1];
-  double z2 = (x2 - gfcalib_feat_mu[2]) / gfcalib_feat_sd[2];
-  double z3 = (x3 - gfcalib_feat_mu[3]) / gfcalib_feat_sd[3];
-  return exp(gfcalib_coef[0] + gfcalib_coef[1] * z0 + gfcalib_coef[2] * z1
-                             + gfcalib_coef[3] * z2 + gfcalib_coef[4] * z3);
+  double z0 = (x0 - mu[0]) / sd[0];
+  double z1 = (x1 - mu[1]) / sd[1];
+  double z2 = (x2 - mu[2]) / sd[2];
+  double z3 = (x3 - mu[3]) / sd[3];
+  return exp(coef[0] + coef[1] * z0 + coef[2] * z1
+                     + coef[3] * z2 + coef[4] * z3);
 }
 
 /* gfcalib_shrink_tau()
@@ -421,20 +492,23 @@ predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
  * across --cpu.
  */
 static double
-gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, double eff_nseq)
+gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, double eff_nseq, int use_p7ml_pred)
 {
+  const double *mu   = use_p7ml_pred ? gfcalib_p7ml_shrink_mu   : gfcalib_shrink_mu;
+  const double *sd   = use_p7ml_pred ? gfcalib_p7ml_shrink_sd   : gfcalib_shrink_sd;
+  const double *coef = use_p7ml_pred ? gfcalib_p7ml_shrink_coef : gfcalib_shrink_coef;
   double x0 = log((double) clen);
   double x1 = mean_H;
   double x2 = gfcalib_effn_feature(eff_nseq);
   double x3 = tau_raw * lambda;
-  double z0 = (x0 - gfcalib_shrink_mu[0]) / gfcalib_shrink_sd[0];
-  double z1 = (x1 - gfcalib_shrink_mu[1]) / gfcalib_shrink_sd[1];
-  double z2 = (x2 - gfcalib_shrink_mu[2]) / gfcalib_shrink_sd[2];
-  double z3 = (x3 - gfcalib_shrink_mu[3]) / gfcalib_shrink_sd[3];
-  double d_hat = gfcalib_shrink_coef[0] + gfcalib_shrink_coef[1] * z0
-                                        + gfcalib_shrink_coef[2] * z1
-                                        + gfcalib_shrink_coef[3] * z2
-                                        + gfcalib_shrink_coef[4] * z3;
+  double z0 = (x0 - mu[0]) / sd[0];
+  double z1 = (x1 - mu[1]) / sd[1];
+  double z2 = (x2 - mu[2]) / sd[2];
+  double z3 = (x3 - mu[3]) / sd[3];
+  double d_hat = coef[0] + coef[1] * z0
+                         + coef[2] * z1
+                         + coef[3] * z2
+                         + coef[4] * z3;
   return tau_raw + d_hat / lambda;    /* d_hat is in units of lambda*bits */
 }
 
@@ -458,6 +532,8 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
  *           EgfT      - fraction of tail mass to fit for glocal Fwd
  *           seed      - RNG seed for calibration (0=one-time arbitrary)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
+ *           use_p7ml_pred - TRUE to use the --p7ml glocal lambda/tau coefficients
+ *                       (brief 26_0824-085)
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *
@@ -471,7 +547,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
 		int ElmL, int ElvL, int ElfL, int EgfL,
 		int ElmN, int ElvN, int ElfN, int EgfN,
 		double ElfT, double EgfT,
-		int seed, int ncpus,
+		int seed, int ncpus, int use_p7ml_pred,
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -538,10 +614,10 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
     double mean_H  = mean_relentropy_bits(hmm);
     double tau_raw;
 
-    gflambda = predict_glocal_lambda(hmm->M, mean_H, hmm->eff_nseq);
+    gflambda = predict_glocal_lambda(hmm->M, mean_H, hmm->eff_nseq, use_p7ml_pred);
     if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
     if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &tau_raw)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
-    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, hmm->eff_nseq);
+    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, hmm->eff_nseq, use_p7ml_pred);
   }
 
   esl_randomness_Destroy(r); 
