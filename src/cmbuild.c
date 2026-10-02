@@ -2882,6 +2882,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 				 esl_opt_GetInteger(go, "--Eseed"),           /* RNG seed for calibration */
 				 ncpus,
 				 cm_p7_UseP7mlPredictor(cm, use_mlp7_as_filter), /* --p7ml lambda/tau coefficients? (brief 26_0824-085) */
+				 FALSE,                                       /* do_sim */
 				 &agfmu, &agflambda))
        != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
   }

@@ -7,6 +7,7 @@
 #include <p7_config.h>
 #include "config.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -578,6 +579,11 @@ cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
  *           use_p7ml_pred - TRUE to use the --p7ml glocal lambda/tau coefficients;
  *                       get this from cm_p7_UseP7mlPredictor() (brief 26_0824-085)
+ *           do_sim    - TRUE to simulate glocal Forward stats instead of predicting
+ *                       them: fit an exponential to the top <EgfT> fraction of
+ *                       <EgfN> sampled scores (cm_p7_GlocalFwdSimFit()); no
+ *                       predictor and no shrinkage, <use_p7ml_pred> is then
+ *                       ignored (cmbuild --Esim, brief 26_0824-087)
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *
@@ -591,7 +597,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
 		int ElmL, int ElvL, int ElfL, int EgfL,
 		int ElmN, int ElvN, int ElfN, int EgfN,
 		double ElfT, double EgfT,
-		int seed, int ncpus, int use_p7ml_pred,
+		int seed, int ncpus, int use_p7ml_pred, int do_sim,
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -653,8 +659,19 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
    * filter HMM, whose eff_nseq is invariant to the CM's entropy-weighting
    * flags, and whose ground-truth lambda is likewise invariant -- while the
    * CM's eff_nseq moves 3 orders of magnitude across those flags.
+   *
+   * With <do_sim> (cmbuild --Esim, brief 26_0824-087) none of the above
+   * applies: GFLAMBDA and GFMU are both fit directly to the top <EgfT>
+   * fraction of <EgfN> sampled scores. This is for builds outside the
+   * predictor's trained domain (a custom prior; --eset 0 reaching an
+   * ML-HMM filter), where the predicted lambda can be off by orders of
+   * magnitude in E-value.
    */
-  {
+  if (do_sim) {
+    if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR;
+    if ((status = cm_p7_GlocalFwdSimFit(r, errbuf, gm, bg, EgfL, EgfN, EgfT, ncpus, &gfmu, &gflambda)) != eslOK) goto ERROR;
+  }
+  else {
     double mean_H  = mean_relentropy_bits(hmm);
     double tau_raw;
 
@@ -1186,6 +1203,118 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
  ERROR:
   *ret_tau = 0.;
   if (xv  != NULL) free(xv);
+  return status;
+}
+
+
+/* Function:  cm_p7_FitExpTail()
+ * Synopsis:  Peak-over-threshold exponential fit to the top of a sample.
+ * Incept:    EPN, Fri Oct  2 2026 (w/Claude)
+ *
+ * Purpose:   Given <N> scores <xv> sorted in DECREASING order, fit an
+ *            exponential tail P(S > x) = exp(-lambda (x - mu)) to the
+ *            top <tailp> fraction of them by maximum likelihood:
+ *
+ *              k      = ceil(tailp * N)   (at least 2, at most N)
+ *              u      = xv[k-1], the k-th largest score
+ *              lambda = k / sum_{i<k} (xv[i] - u)
+ *              mu     = u + log(k/N) / lambda
+ *
+ *            lambda is esl_exp_FitComplete() on the top k scores, and
+ *            mu places the tail so that P(S > u) = k/N. (With the
+ *            cmbuild --Esim defaults, N=5000 and tailp=0.05, k = 250
+ *            and log(k/N) = log(0.05); brief 26_0824-086 chose this
+ *            fit, brief 26_0824-087 implemented it.)
+ *
+ *            The ceil() is taken after subtracting a small tolerance
+ *            so that a float <tailp> like 0.05f, whose product with N
+ *            lands a hair above an integer, does not round k up.
+ *
+ * Args:      xv         - scores, sorted decreasing, [0..N-1]
+ *            N          - number of scores
+ *            tailp      - fraction of the sample to fit, 0 < tailp <= 1
+ *            ret_mu     - RETURN: mu of the fitted tail
+ *            ret_lambda - RETURN: lambda of the fitted tail
+ *
+ * Returns:   <eslOK> on success.
+ *
+ * Throws:    <eslEINVAL> if N < 2, tailp is out of range, or the top k
+ *            scores are all equal (no tail to fit); <*ret_mu> and
+ *            <*ret_lambda> are 0.
+ */
+int
+cm_p7_FitExpTail(const double *xv, int N, double tailp, double *ret_mu, double *ret_lambda)
+{
+  int    status;
+  int    k;
+  double u, lambda;
+
+  if (N < 2 || tailp <= 0. || tailp > 1.) { status = eslEINVAL; goto ERROR; }
+  k = (int) ceil(tailp * (double) N - 1e-4);
+  k = ESL_MAX(k, 2);
+  k = ESL_MIN(k, N);
+
+  if ((status = esl_exp_FitComplete((double *) xv, k, &u, &lambda)) != eslOK) goto ERROR;
+  if (! isfinite(lambda) || lambda <= 0.) { status = eslEINVAL; goto ERROR; }
+
+  *ret_lambda = lambda;
+  *ret_mu     = u + log((double) k / (double) N) / lambda;
+  return eslOK;
+
+ ERROR:
+  *ret_mu     = 0.;
+  *ret_lambda = 0.;
+  return status;
+}
+
+/* Function:  cm_p7_GlocalFwdSimFit()
+ * Synopsis:  Simulate glocal Forward E-value parameters.
+ * Incept:    EPN, Fri Oct  2 2026 (w/Claude)
+ *
+ * Purpose:   Score <N> iid random sequences of length <L> against the
+ *            glocal generic profile <gm> (as cm_p7_Tau() does), and fit
+ *            mu and lambda of an exponential tail to the top <tailp>
+ *            fraction of the scores with cm_p7_FitExpTail(). This is
+ *            the cmbuild --Esim alternative to predicting lambda and
+ *            shrinking tau (brief 26_0824-087).
+ *
+ *            The scores are sorted before fitting, so the result is
+ *            identical for any <ncpus> given the same <r>.
+ *
+ * Args:      r          - source of randomness
+ *            errbuf     - for error messages
+ *            gm         - glocal generic profile
+ *            bg         - null model
+ *            L          - length of sequences to sample
+ *            N          - number of sequences to sample
+ *            tailp      - fraction of the N scores to fit
+ *            ncpus      - number of CPUs for threaded scoring (0=serial)
+ *            ret_mu     - RETURN: glocal Forward mu
+ *            ret_lambda - RETURN: glocal Forward lambda
+ *
+ * Returns:   <eslOK> on success.
+ *
+ * Throws:    <eslEMEM> on allocation error; <eslEINVAL> if the fit
+ *            fails; <errbuf> is filled; <*ret_mu>, <*ret_lambda> are 0.
+ */
+int
+cm_p7_GlocalFwdSimFit(ESL_RANDOMNESS *r, char *errbuf, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, int ncpus, double *ret_mu, double *ret_lambda)
+{
+  int     status;
+  double *xv = NULL;
+
+  ESL_ALLOC(xv, sizeof(double) * N);
+  if ((status = cm_p7_sample_scores(r, NULL, gm, bg, L, N, ncpus, xv)) != eslOK) ESL_XFAIL(status, errbuf, "failed to sample glocal Fwd scores");
+  esl_vec_DSortDecreasing(xv, N);
+  if ((status = cm_p7_FitExpTail(xv, N, tailp, ret_mu, ret_lambda)) != eslOK) ESL_XFAIL(status, errbuf, "failed to fit glocal Fwd exponential tail (N=%d, tail fraction %g)", N, tailp);
+
+  free(xv);
+  return eslOK;
+
+ ERROR:
+  if (xv != NULL) free(xv);
+  *ret_mu     = 0.;
+  *ret_lambda = 0.;
   return status;
 }
 
