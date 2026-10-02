@@ -856,7 +856,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
     else if (esl_opt_IsUsed(go, "--prior"))    { fprintf(ofp, "# --prior given: glocal Forward stats will be simulated (--Esim); this is slower.\n"); }
     else if (eset0 && esl_opt_GetBoolean(go, "--p7ml")) { fprintf(ofp, "# --eset 0 with --p7ml: glocal Forward stats will be simulated (--Esim); this is slower.\n"); }
     else if (eset0 && ! (esl_opt_GetBoolean(go, "--noh3pri") || esl_opt_GetBoolean(go, "--v1p0") || esl_opt_GetBoolean(go, "--p56")))
-      { fprintf(ofp, "# --eset 0 given: glocal Forward stats of zero-basepair models will be simulated (--Esim); this is slower.\n"); }
+      { fprintf(ofp, "# --eset 0 given: glocal Forward stats will be simulated (--Esim) for any zero-basepair model; this is slower.\n"); }
   }
   if (esl_opt_IsUsed(go, "--Ereal"))       { fprintf(ofp, "# sample realistic, not iid seqs for HMM calibration: yes\n"); }
   if (esl_opt_IsUsed(go, "--Enull3"))      { fprintf(ofp, "# use null3 correction during HMM calibration:        yes\n"); }
