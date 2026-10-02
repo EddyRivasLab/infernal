@@ -787,6 +787,9 @@ cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, 
  *                      RAMP_SLACK_ALPHA comment below. Callers that don't
  *                      expose a tunable knob should pass 0.75 (brief 26_0628-042's
  *                      validated default) to preserve prior behavior.
+ *                      A negative alpha skips the interpolated ramp, so every
+ *                      inter-pin gap keeps the flat band (brief 26_0821-096:
+ *                      kmerchain's default unless --p7kmerchain-ramp).
  *           ret_kmin - [0.i..L] = k, min node k for residue i
  *           ret_kmax - [0.i..L] = k, max node k for residue i
  *           ret_ncells - number of cells within bands, to return
@@ -894,7 +897,7 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
           int ci = i,          ck = i2k[i];
           int gap_len  = ci - pi;
           int pad_here = ESL_MAX(nodepad[pk], nodepad[ck]);
-          if (ck != pk && gap_len > 2 * pad_here) {
+          if (alpha >= 0. && ck != pk && gap_len > 2 * pad_here) { /* alpha < 0: ramp off, keep the flat band (brief 26_0821-096) */
             /* RAMP_SLACK_ALPHA: empirically bracketed (brief 26_0628-042), not derived
              * from a correctness proof -- pure nodepad-width margin (alpha=0)
              * measurably WORSENED one real panel case (norovirus MT372469.1,
@@ -912,7 +915,8 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
              * see brief 26_0628-042's summary "Design reasoning" section. brief 26_0628-043:
              * alpha is now a caller-supplied parameter (default 0.75 preserved
              * at every call site; only --p7kmerchain's cmalign call site
-             * exposes it as a runtime option, --p7kmerchain-alpha).
+             * exposes it as a runtime option, --p7kmerchain-alpha; since brief
+             * 26_0821-096 that call site runs the ramp only under --p7kmerchain-ramp).
              */
             int j;
             for(j = pi + 1; j < ci; j++) {
@@ -1470,9 +1474,17 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
     nodepad = local_nodepad;
   }
-  /* brief 26_0628-043: --p7kmerchain-alpha overrides brief 26_0628-042's ramp-slack alpha
-   * (default 0.75, cm->p7_kmerchain_ramp_alpha initialized in cm.c). */
-  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0, cm->p7_kmerchain_ramp_alpha, &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
+  /* brief 26_0821-096: the interpolated ramp is OFF by default here -- the band
+   * between consecutive anchors is the flat [pk-pad, ck+pad] rectangle, the only
+   * band that provably contains every path through both anchors. The ramp clips
+   * real indels that are unevenly placed within a long anchor gap, which can
+   * leave the band with no complete parse at all. --p7kmerchain-ramp
+   * (cm->p7_kmerchain_ramp) restores it, with brief 26_0628-043's
+   * --p7kmerchain-alpha slack (default 0.75); a negative alpha tells
+   * p7_pins2bands_nodepad() to skip the ramp. */
+  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0,
+                                      (cm->p7_kmerchain_ramp ? cm->p7_kmerchain_ramp_alpha : -1.0),
+                                      &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
 
   *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
   i2k = kmin = kmax = NULL;   /* handed off to caller */

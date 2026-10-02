@@ -1929,7 +1929,8 @@ typedef struct cm_s {
                                  * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
   int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 26_0628-027) */
-  double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043) */
+  int     p7_kmerchain_ramp;   /* if TRUE, kmerchain's inter-anchor band is the interpolated ramp, else the flat band (default FALSE; --p7kmerchain-ramp, brief 26_0821-096) */
+  double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043); read by the kmerchain call site only when p7_kmerchain_ramp is TRUE */
   int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmerchain (independent of the M-gate) when the
                                  * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
                                  * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy

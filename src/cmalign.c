@@ -158,7 +158,8 @@ static ESL_OPTIONS options[] = {
   { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "constant WV band half-width (no calibration)",     3 },
   { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "opt back in to per-node WV pad calibration",       3 },
   { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
-  { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain",                   NULL, "kmerchain ramp-slack alpha [default 0.75]",       3 },
+  { "--p7kmerchain-ramp",  eslARG_NONE,  FALSE, NULL,        NULL,       NULL, "--p7kmerchain",                   NULL, "kmerchain: interpolated ramp between anchors, not flat band", 3 },
+  { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain-ramp",              NULL, "kmerchain ramp-slack alpha [default 0.75]",       3 },
   { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if k>=<n> tier finds 0 hits [default 0=off]", 3 },
   { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if M < <n> [default 0=off]",          3 },
   { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbibv", "gate fallback uses old Vit-trace band, not native CP9",           3 },
@@ -3871,7 +3872,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     if(esl_opt_GetBoolean(go, "--p7ibv-wv")) cm->p7_ibv_wv = TRUE;  /* brief 26_0430-169 */
   }
   if(esl_opt_GetBoolean(go, "--p7kmerchain"))  cm->p7_use_kmerchain  = TRUE;  /* brief 26_0628-027 */
-  cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 26_0628-043; req="--p7kmerchain" so only meaningful there */
+  cm->p7_kmerchain_ramp = esl_opt_GetBoolean(go, "--p7kmerchain-ramp");     /* brief 26_0821-096; default FALSE (flat inter-anchor band) */
+  cm->p7_kmerchain_ramp_alpha = esl_opt_GetReal(go, "--p7kmerchain-alpha");  /* brief 26_0628-043; req="--p7kmerchain-ramp" (brief 26_0821-096) so only meaningful there */
   cm->p7_kmerchain_mink = esl_opt_GetInteger(go, "--p7kmerchain-mink");     /* brief 26_0628-046; 0 = disabled (default) */
   cm->p7_kmerchain_mgate = esl_opt_GetInteger(go, "--p7kmerchain-mgate");   /* brief 26_0628-047; 0 = disabled (default) */
   cm->p7_kmerchain_fallback_vit = esl_opt_GetBoolean(go, "--p7kmerchain-fbvit"); /* brief 26_0628-047; default FALSE (--p7ibv fallback) */
