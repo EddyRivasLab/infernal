@@ -30,6 +30,7 @@
 ################################################################
 
 1 exercise  utest/cm_tophits    @src/cm_tophits_utest@
+1 exercise  utest/cm_p7_modelmaker @src/cm_p7_modelmaker_utest@
 
 ################################################################
 # Integration tests

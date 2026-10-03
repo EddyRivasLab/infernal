@@ -128,6 +128,7 @@ static ESL_OPTIONS options[] = {
   { "--EvN",     eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Vit calibration",    7 },
   { "--ElfN",    eslARG_INT,    "200", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 local Fwd calibration",    7 },
   { "--EgfN",    eslARG_INT,      "4", NULL, "n>0",   NULL,  NULL, NULL,        "number of sampled seqs to use for p7 glocal Fwd calibration",   7 },
+  { "--Esim",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL,        "simulate glocal Fwd stats (N=5000, fit top 5%), don't predict; slower", 7 },
   /* below are only shown with --devhelp */
   { "--Elftp",   eslARG_REAL, "0.055", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 local fwd exp tail to <f> fraction of scoring dist",   107 },
   { "--Egftp",   eslARG_REAL, "0.065", NULL, "x>0.",  NULL,  NULL, NULL,        "fit p7 glocal fwd exp tail to <f> fraction of scoring dist",  107 },
@@ -291,6 +292,7 @@ static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
 static int    set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, int use_mlp7_as_filter);
+static char  *esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
@@ -844,6 +846,18 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
   if (esl_opt_IsUsed(go, "--EgfN"))        { fprintf(ofp, "# seq number for filter HMM glocal Fwd Gumbel mu fit: %d\n", esl_opt_GetInteger(go, "--EgfN")); }
   if (esl_opt_IsUsed(go, "--Elftp"))       { fprintf(ofp, "# tail fit frac for filter HMM local Fwd Gumbel fit:  %g\n", esl_opt_GetReal(go, "--Elftp")); }
   if (esl_opt_IsUsed(go, "--Egftp"))       { fprintf(ofp, "# tail fit frac for filter HMM glocal Fwd Gumbel fit: %g\n", esl_opt_GetReal(go, "--Egftp")); }
+  /* --Esim, given or forced; see esim_forced_by() (brief 26_0824-087).
+   * Whether --eset 0 reaches a zero-basepair model's filter can't be
+   * known before the model is built, so that warning is conditional;
+   * its test mirrors determine_pretend_cm_is_hmm(). */
+  {
+    int eset0 = (esl_opt_IsOn(go, "--eset") && esl_opt_GetReal(go, "--eset") == 0.) ? TRUE : FALSE;
+    if      (esl_opt_GetBoolean(go, "--Esim")) { fprintf(ofp, "# simulate glocal Fwd filter HMM stats (--Esim):      yes (slower)\n"); }
+    else if (esl_opt_IsUsed(go, "--prior"))    { fprintf(ofp, "# --prior given: glocal Forward stats will be simulated (--Esim); this is slower.\n"); }
+    else if (eset0 && esl_opt_GetBoolean(go, "--p7ml")) { fprintf(ofp, "# --eset 0 with --p7ml: glocal Forward stats will be simulated (--Esim); this is slower.\n"); }
+    else if (eset0 && ! (esl_opt_GetBoolean(go, "--noh3pri") || esl_opt_GetBoolean(go, "--v1p0") || esl_opt_GetBoolean(go, "--p56")))
+      { fprintf(ofp, "# --eset 0 given: glocal Forward stats will be simulated (--Esim) for any zero-basepair model; this is slower.\n"); }
+  }
   if (esl_opt_IsUsed(go, "--Ereal"))       { fprintf(ofp, "# sample realistic, not iid seqs for HMM calibration: yes\n"); }
   if (esl_opt_IsUsed(go, "--Enull3"))      { fprintf(ofp, "# use null3 correction during HMM calibration:        yes\n"); }
   if (esl_opt_IsUsed(go, "--Ebias"))       { fprintf(ofp, "# use bias correction during HMM calibration:         yes\n"); }
@@ -2694,7 +2708,9 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   int lmsvL, lvitL, lfwdL, gfwdL;
   int lmsvN, lvitN, lfwdN, gfwdN;
   double agfmu, agflambda;
-  float lftailp, gftailp;
+  float lftailp;
+  double gftailp;
+  int do_sim;
   int k, apos, cpos;
   ESL_MSA *amsa = NULL;
   double mlp7_re, fhmm_re;
@@ -2744,6 +2760,19 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     gfwdN = esl_opt_IsUsed(go, "--EgfN") ? esl_opt_GetInteger(go, "--EgfN") : 10000;
     lftailp = esl_opt_IsUsed(go, "--Elftp") ? esl_opt_GetReal(go, "--Elftp") : 0.01;
     gftailp = esl_opt_IsUsed(go, "--Egftp") ? esl_opt_GetReal(go, "--Egftp") : 0.01;
+  }
+
+  /* --Esim: simulate glocal Fwd stats instead of predicting them, either
+   * because the user asked, or because the build is outside the
+   * predictor's trained domain (esim_forced_by()). The glocal Fwd sample
+   * size and tail fraction default to 5000 and 0.05 (brief 26_0824-086),
+   * overriding both the option-table defaults and --Efitlam's, unless
+   * --EgfN/--Egftp were typed (brief 26_0824-087).
+   */
+  do_sim = (esl_opt_GetBoolean(go, "--Esim") || esim_forced_by(go, use_mlp7_as_filter) != NULL) ? TRUE : FALSE;
+  if(do_sim) {
+    gfwdN   = esl_opt_IsUsed(go, "--EgfN")  ? esl_opt_GetInteger(go, "--EgfN") : 5000;
+    gftailp = esl_opt_IsUsed(go, "--Egftp") ? esl_opt_GetReal(go, "--Egftp")    : 0.05;
   }
 
   /* Build the HMM filter (cm->fp7) */
@@ -2882,6 +2911,7 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 				 esl_opt_GetInteger(go, "--Eseed"),           /* RNG seed for calibration */
 				 ncpus,
 				 cm_p7_UseP7mlPredictor(cm, use_mlp7_as_filter), /* --p7ml lambda/tau coefficients? (brief 26_0824-085) */
+				 do_sim,                                      /* simulate, don't predict, glocal Fwd stats? (brief 26_0824-087) */
 				 &agfmu, &agflambda))
        != eslOK) ESL_FAIL(status, errbuf, "Error calibrating additional p7 HMM");
   }
@@ -2904,6 +2934,37 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   return status; /* never reached */
 }
 
+
+
+/* esim_forced_by()
+ * Incept:    EPN, Fri Oct  2 2026 (w/Claude)
+ *
+ * Purpose:   Decide whether this build must simulate its glocal Forward
+ *            filter stats (as with --Esim) because the trained predictor
+ *            is unreliable for it (brief 26_0824-087):
+ *
+ *            --prior <f>: any custom prior (brief 26_0824-080 measured
+ *               the predictor up to 25,382x off with one).
+ *            --eset 0, when the filter HMM is the CM's ML HMM (a
+ *               zero-basepair model, or --p7ml) (brief 26_0824-078).
+ *               With the default filter HMM, --eset never reaches the
+ *               filter, so the predictor is still fine there.
+ *
+ *            There is deliberately no option to turn this off.
+ *
+ * Args:      go             - command-line options
+ *            filter_is_mlp7 - TRUE if the filter HMM is the CM's ML HMM
+ *
+ * Returns:   the forcing option as a string ("--prior" or "--eset 0"),
+ *            or NULL if nothing forces simulation.
+ */
+static char *
+esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7)
+{
+  if (esl_opt_IsUsed(go, "--prior")) return "--prior";
+  if (filter_is_mlp7 && esl_opt_IsOn(go, "--eset") && esl_opt_GetReal(go, "--eset") == 0.) return "--eset 0";
+  return NULL;
+}
 
 /* set_target_relent()
  * Incept:    EPN, Tue Aug 17 09:14:15 2010
