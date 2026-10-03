@@ -159,12 +159,12 @@ static ESL_OPTIONS options[] = {
   { "--localmu-beta",     eslARG_REAL,    NULL,  NULL, "x>0.0",   NULL, "--localmu", "--no-localmu",  "QDB beta for local-mu mini-sim (default 1e-15, cmcal default)",        107 },
   { "--localmu-score-dump",eslARG_OUTFILE,NULL,  NULL, NULL,      NULL, "--localmu", "--no-localmu",  "dump all CYK/Inside hit scores to <f> (TSV: mode\\tscore)",            107 },
   { "--localmu-K-from-sim",eslARG_NONE,  FALSE,  NULL, NULL,      NULL, "--localmu", "--no-localmu",  "v14: replace regression nrandhits with sim-derived K for ECMLC/ECMLI",   107 },
-  { "--localmu",          eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,    "--no-localmu",  "brief41: enable cm_LocalMu mini-sim (ship default: OFF, ridge-only)", 107 },
-  { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "brief41: explicit form of ship default (mini-sim OFF; retained for compat)", 107 },
-  { "--smallcm-lambda",   eslARG_REAL,    NULL,  NULL, NULL,      NULL,  NULL,         NULL,    "brief41: constant local-mode lambda for clen<clenmax (ship 0.62; <=0 disables)", 107 },
-  { "--smallcm-clenmax",  eslARG_INT,     "60",  NULL, "n>0",     NULL,  NULL,         NULL,    "brief23: clen threshold for small-CM lambda override / --localmu-smallonly", 107 },
-  { "--localmu-smallonly",eslARG_NONE,   FALSE,  NULL, NULL,      NULL, "--localmu", "--no-localmu",  "brief23: run local-mu mini-sim only for clen<clenmax (ridge for big CMs)", 107 },
-  { "--localmu-fitlambda",eslARG_NONE,   FALSE,  NULL, NULL,      NULL, "--localmu", "--no-localmu",  "brief23: refit lambda jointly with mu in local-mu mini-sim", 107 },
+  { "--localmu",          eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,    "--no-localmu",  "enable cm_LocalMu mini-sim (ship default: OFF, ridge-only)", 107 },
+  { "--no-localmu",       eslARG_NONE,   FALSE,  NULL, NULL,      NULL,  NULL,         NULL,    "explicit form of ship default (mini-sim OFF; retained for compat)", 107 },
+  { "--smallcm-lambda",   eslARG_REAL,    NULL,  NULL, NULL,      NULL,  NULL,         NULL,    "constant local-mode lambda for clen<clenmax (ship 0.62; <=0 disables)", 107 },
+  { "--smallcm-clenmax",  eslARG_INT,     "60",  NULL, "n>0",     NULL,  NULL,         NULL,    "clen threshold for small-CM lambda override / --localmu-smallonly", 107 },
+  { "--localmu-smallonly",eslARG_NONE,   FALSE,  NULL, NULL,      NULL, "--localmu", "--no-localmu",  "run local-mu mini-sim only for clen<clenmax (ridge for big CMs)", 107 },
+  { "--localmu-fitlambda",eslARG_NONE,   FALSE,  NULL, NULL,      NULL, "--localmu", "--no-localmu",  "refit lambda jointly with mu in local-mu mini-sim", 107 },
 
   /* Refining the input alignment */
   /* name          type            default  env  range    toggles      reqs         incomp  help  docgroup*/
