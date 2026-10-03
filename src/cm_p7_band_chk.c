@@ -1119,8 +1119,15 @@ cp9segF_PostRow(cp9segF_t *g, CP9_t *hmm, ESL_DSQ *dsq, int i, int *kmin, int *k
  * the search pipeline (cm_pipeline.c makes no _chk calls; search uses the
  * non-checkpointed entry points).  In search, "no complete parse under this
  * band" is an ordinary non-match outcome and a hard failure would be wrong; in
- * alignment every sequence must produce a parse, so it is unambiguously an
- * error.
+ * alignment every sequence must produce a parse, so this returns eslENORESULT.
+ *
+ * It is an error only if no caller-level fallback recovers.  Since brief
+ * 26_0821-096, cmalign usually does: a genome-scale no-parse band is retried
+ * once with --p7ibv-mem bands, and below genome scale the non-p7-banded CP9
+ * re-derivation runs.  This leaf cannot tell which will happen, so its stderr
+ * block is a '#'-prefixed diagnostic and never says "error"; when no fallback
+ * recovers, the caller fails with an Error: message built from errbuf
+ * (brief 26_0821-097).
  */
 static int
 cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
@@ -1145,12 +1152,10 @@ cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
    * the illegibility this guard exists to remove. errbuf gets a short form so
    * whatever finally prints it still names the cause. */
   fprintf(stderr,
-          "\nERROR: no-parse p7 band in checkpointed CP9 band derivation (%s).\n"
-          "       This p7 band contains no complete parse of the sequence, so the\n"
-          "       checkpointed CP9 Forward/Backward totals are not finite (fwd=%g bwd=%g);\n"
-          "       every posterior would be NaN and no CP9 band would be set.\n"
-          "       band: L=%d M=%d cells=%.0f of %.0f (cover=%.6f)\n"
-          "       band width: min=%d max=%d mean=%.1f, %d empty row(s)\n",
+          "# no-parse p7 band in checkpointed CP9 band derivation (%s):\n"
+          "#   no complete parse under this band; CP9 Forward/Backward totals not finite (fwd=%g bwd=%g)\n"
+          "#   band: L=%d M=%d cells=%.0f of %.0f (cover=%.6f)\n"
+          "#   band width: min=%d max=%d mean=%.1f, %d empty row(s)\n",
           where, fsc, bsc, L, M, ncells, full,
           (full > 0. ? ncells / full : 0.), minw, maxw,
           ncells / ((double) L + 1.), nempty);
@@ -1183,7 +1188,7 @@ cp9_chk_noparse_report(CM_t *cm, char *errbuf)
 {
   const char *deriver = cp9_chk_band_deriver_name(cm);
 
-  fprintf(stderr, "       band deriver: %s\n", deriver);
+  fprintf(stderr, "#   band deriver: %s\n", deriver);
   snprintf(errbuf, eslERRBUFSIZE,
            "no-parse p7 band from %s: no complete parse under this band "
            "(CP9 F/B total not finite)", deriver);
