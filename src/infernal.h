@@ -3630,6 +3630,7 @@ extern int          cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROF
                                               CM_P7_OM_HOLDER *om_holder,
                                               int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern void         cm_p7_bands_ReachModelEnd(int *kmax, int L, int M);
 /* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
  * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
  * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining

@@ -692,6 +692,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
   int do_p7band    = (cm->align_opts & CM_ALIGN_P7BANDED)  ? TRUE  : FALSE;
+  /* brief 26_0821-100: TRUE when the non-truncated CP9 that derives bands from a
+   * p7 band can end a parse only at node M (cmalign -g --notrunc). Every p7 band
+   * is then widened at row L to reach M before use; see cm_p7_bands_ReachModelEnd(). */
+  int p7b_end_at_M = ((! do_trunc) && cm->cp9 != NULL &&
+                      (! (cm->cp9->flags & (CPLAN9_LOCAL_END | CPLAN9_EL)))) ? TRUE : FALSE;
   /* brief 26_0430-269: --mxsize auto-escalation. When enabled (default, CM_ALIGN_MXESC
    * set, cleared by --no-mxesc) AND the user did NOT force an engine, pick the cheapest
    * engine whose estimated CM-DP peak fits --mxsize: tier (a) standard free-OptAcc,
@@ -1257,6 +1262,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
 	    struct timespec _ta_cp9, _tb_cp9;
 	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
+	    if(p7b_end_at_M) cm_p7_bands_ReachModelEnd(t_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, t_kmin, t_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
@@ -1366,6 +1372,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 					       TRUE, FALSE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
 					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells)) != eslOK) goto ERROR;
 	      if(p7_ncells == 0) ESL_XFAIL(eslENORESULT, errbuf, "--p7ibv-mem no-parse retry produced no p7 band");
+	      if(p7b_end_at_M) cm_p7_bands_ReachModelEnd(p7_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
 	      status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
 					       1, sq->L, pass_idx, mxsize,
 					       doing_search, do_sample, do_post,
@@ -2038,6 +2045,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 				   0, 0,
 				   &fb_i2k, &fb_kmin, &fb_kmax, &fb_ncells);
 	  if (status == eslOK && fb_ncells > 0) {
+	    if (p7b_end_at_M) cm_p7_bands_ReachModelEnd(fb_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L,
 					     fb_kmin, fb_kmax,
 					     1, sq->L, pass_idx, mxsize,

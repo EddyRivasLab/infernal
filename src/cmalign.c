@@ -1586,6 +1586,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    }
 	  }
 	HMM_NOPARSE_RETRY: /* brief 26_0821-096: re-entered once with --p7ibv-mem bands after a no-parse band */
+	  /* brief 26_0821-100: a glocal non-truncated profile can end only at node M,
+	   * so the band's last row must reach it, whatever built the band. */
+	  if (! do_trunc && ! p7_IsLocal(gm->mode)) cm_p7_bands_ReachModelEnd(kmax, sq->n, hmm->M);
 	  if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, hmm->M, &bnd)) != eslOK)
 	    cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
@@ -2325,6 +2328,8 @@ hmm_pipeline_thread(void *arg)
 	}
       }
     HMM_NOPARSE_RETRY: /* brief 26_0821-096: re-entered once with --p7ibv-mem bands after a no-parse band */
+      /* brief 26_0821-100: glocal non-truncated => last row must reach node M (see hmm_alignment()). */
+      if (! info->do_trunc && ! p7_IsLocal(info->gm->mode)) cm_p7_bands_ReachModelEnd(kmax, sq->n, info->hmm->M);
       if ((status = p7_kbands2gbands(i2k, kmin, kmax, sq->n, info->hmm->M, &bnd)) != eslOK)
 	cm_Fail("p7_kbands2gbands() failed for sequence %s", sq->name);
 
@@ -3197,6 +3202,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  p7_pins2bands(i2k_w, errbuf, L, hmm_w->M, pad_w, &kmin_w, &kmax_w, &ncells_w);
 	}
+	/* brief 26_0821-100: glocal non-truncated => last row must reach node M (see hmm_alignment()). */
+	if (! do_trunc_w && ! p7_IsLocal(gm_w->mode)) cm_p7_bands_ReachModelEnd(kmax_w, L, hmm_w->M);
 	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
 
 	/* brief 26_0628-083: post-band do_bandedoa_w preflight, ported from the

@@ -765,6 +765,40 @@ cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, 
   return status; /* NEVERREACHED */
 }
 
+/* Function: cm_p7_bands_ReachModelEnd()
+ * Incept:   EPN, Mon Oct  5 2026 (w/Claude)
+ *
+ * Purpose:  Widen the last row of a p7 band, kmax[L], to node M.
+ *
+ *           Call this on a p7 band before it is used for alignment
+ *           in a configuration that can end a parse only at node M:
+ *           glocal, non-truncated alignment (cmalign -g --notrunc).
+ *           There the last residue's row must reach node M through
+ *           delete states. The pin->band converters (p7_pins2bands()
+ *           and p7_pins2bands_nodepad()) set kmax[L] = i2k[L] + pad
+ *           when the last pin is on row L itself, which leaves node
+ *           M outside the band and admits no parse at all (briefs
+ *           26_0821-099, 26_0821-100). Row 0 needs no counterpart:
+ *           every band builder sets kmin[0] = 0.
+ *
+ *           Local or truncated configurations can end the parse
+ *           before node M and must not call this; their bands are
+ *           left exactly as built. A band that already admits a
+ *           glocal non-truncated parse has kmax[L] == M, so this is
+ *           a no-op for it.
+ *
+ * Args:     kmax - [0.i..L] = k, max node k for residue i; may be NULL
+ *           L    - length of sequence
+ *           M    - number of nodes in the HMM
+ *
+ * Returns:  void
+ */
+void
+cm_p7_bands_ReachModelEnd(int *kmax, int L, int M)
+{
+  if(kmax != NULL && L >= 0 && kmax[L] < M) kmax[L] = M;
+}
+
 /* Function: p7_pins2bands_nodepad()
  * Date:     EPN*, Sat Apr  5 2026
  *
@@ -1160,8 +1194,12 @@ brief035_rss_kb(void)
  *                        do_trunc argument for signature-shape consistency. Unused
  *                        internally: this deriver chains exact k-mer seeds against
  *                        the raw consensus, with no begin/end-anywhere (Tgm) score
- *                        DP and no glocal-only boundary assumption for do_trunc to
- *                        relax.
+ *                        DP. The band it returns is NOT mode-neutral, though: the
+ *                        pin->band converter ends row L at i2k[L] + pad when the
+ *                        last pin is on row L, which admits no glocal
+ *                        non-truncated parse. Alignment callers in that mode
+ *                        widen row L with cm_p7_bands_ReachModelEnd() (briefs
+ *                        26_0821-099, 26_0821-100).
  *           ret_i2k/ret_kmin/ret_kmax    - RETURN band arrays (caller frees)
  *           ret_ncells - RETURN total banded cells (saturated int; 0 => no
  *                        usable chain, caller falls back to unbanded Viterbi).
