@@ -1092,7 +1092,8 @@ cp9segF_PostRow(cp9segF_t *g, CP9_t *hmm, ESL_DSQ *dsq, int i, int *kmin, int *k
  *
  * A band deriver can emit a p7 band (kmin/kmax) that contains NO complete CP9
  * parse of the sequence.  When that happens the checkpointed CP9 F/B returns a
- * total score of -inf, every posterior below becomes -inf - (-inf) = NaN, no
+ * total score of -inf or, more often, about IMPOSSIBLE (-1e36: see the test
+ * below), every posterior below becomes meaningless, no
  * band edge ever crosses threshold, and cp9b is left as all -1 sentinels.
  * Nothing on this path notices; the first thing that does is an M0 sanity check
  * in a different file, hundreds of lines away, whose message says nothing about
@@ -1136,7 +1137,13 @@ cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
   double ncells = 0., full;
   int    i, nempty = 0, minw = M+1, maxw = 0;
 
-  if(isfinite(fsc) && isfinite(bsc)) return eslOK;
+  /* An impossible total is usually NOT non-finite here. The CP9 transition
+   * scores reach these kernels through Scorify(), which maps -INFTY to the
+   * finite IMPOSSIBLE (-1e36, infernal.h), so a band with no complete parse
+   * typically yields a total of about IMPOSSIBLE rather than -inf (briefs
+   * 26_0821-099, 26_0821-100). infernal.h guarantees that any sum involving
+   * IMPOSSIBLE is below IMPROBABLE, so test against that as well. */
+  if(isfinite(fsc) && isfinite(bsc) && NOT_IMPROBABLE(fsc) && NOT_IMPROBABLE(bsc)) return eslOK;
 
   for(i = 0; i <= L; i++) {
     int w = kmax[i] - kmin[i] + 1;
@@ -1153,7 +1160,7 @@ cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
    * whatever finally prints it still names the cause. */
   fprintf(stderr,
           "# no-parse p7 band in checkpointed CP9 band derivation (%s):\n"
-          "#   no complete parse under this band; CP9 Forward/Backward totals not finite (fwd=%g bwd=%g)\n"
+          "#   no complete parse under this band; CP9 Forward/Backward totals impossible (fwd=%g bwd=%g)\n"
           "#   band: L=%d M=%d cells=%.0f of %.0f (cover=%.6f)\n"
           "#   band width: min=%d max=%d mean=%.1f, %d empty row(s)\n",
           where, fsc, bsc, L, M, ncells, full,
@@ -1161,7 +1168,7 @@ cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
           ncells / ((double) L + 1.), nempty);
 
   ESL_FAIL(eslENORESULT, errbuf,
-           "no-parse p7 band: no complete parse under this band (CP9 F/B total not finite)");
+           "no-parse p7 band: no complete parse under this band (CP9 F/B total impossible)");
 }
 
 /* brief 26_0430-310: which deriver produced the band.  Reported separately from
@@ -1191,7 +1198,7 @@ cp9_chk_noparse_report(CM_t *cm, char *errbuf)
   fprintf(stderr, "#   band deriver: %s\n", deriver);
   snprintf(errbuf, eslERRBUFSIZE,
            "no-parse p7 band from %s: no complete parse under this band "
-           "(CP9 F/B total not finite)", deriver);
+           "(CP9 F/B total impossible)", deriver);
 }
 
 /* The double checkpointed band reduction: produces cp9b pn_min/pn_max bands and

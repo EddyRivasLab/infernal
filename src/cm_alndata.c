@@ -1356,7 +1356,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	                           "default p7 Viterbi-trace";
 	      if(cm->p7_use_ibv || (_p7b_kind != NULL && strcmp(_p7b_kind, "kmerchain->p7ibv") == 0)) {
 	        fprintf(stderr, "# no-parse p7 band from --p7ibv for %s; IBV is the last-resort band deriver, no retry\n", sq->name);
-	        ESL_XFAIL(eslENORESULT, errbuf, "no-parse p7 band from --p7ibv (CP9 F/B total not finite); no further fallback");
+	        ESL_XFAIL(eslENORESULT, errbuf, "no-parse p7 band from --p7ibv (CP9 F/B total impossible); no further fallback");
 	      }
 	      fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", np_src, sq->name);
 	      p7_i2k = p7_kmin = p7_kmax = NULL; /* freed above */
@@ -1376,7 +1376,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      free(p7_kmax); p7_kmax = NULL;
 	      if(status == eslENORESULT) {
 	        fprintf(stderr, "# no-parse p7 band from %s for %s, and from its --p7ibv-mem retry\n", np_src, sq->name);
-	        snprintf(errbuf, eslERRBUFSIZE, "no-parse p7 band from %s and from its --p7ibv-mem retry (CP9 F/B total not finite)", np_src);
+	        snprintf(errbuf, eslERRBUFSIZE, "no-parse p7 band from %s and from its --p7ibv-mem retry (CP9 F/B total impossible)", np_src);
 	        goto ERROR;
 	      }
 	    }
