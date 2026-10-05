@@ -22,6 +22,8 @@
 #include <p7_config.h>
 #include "config.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -734,8 +736,22 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
     if(p298_ins0) { for (i = 1; i <= L; i++) kmin[i] = 0; } }
 
-  for (i = 1; i <= L; i++)
-    ncells += (kmax[i] - kmin[i] + 1);
+  /* briefs 26_0821-099/26_0821-100: count in int64 and saturate the int
+   * ret_ncells at INT_MAX, as p7_pins2bands() does (brief 26_0628-027). A
+   * genome-scale IBV band can exceed 2^31 cells; the int32 sum wrapped
+   * negative, and callers read ncells <= 0 as "no band". Callers use ncells
+   * only as a >0/==0 discriminator and in debug lines, never to size memory. */
+  {
+    int64_t ncells64 = 0;
+    for (i = 1; i <= L; i++)
+      ncells64 += (int64_t) (kmax[i] - kmin[i] + 1);
+    if (ncells64 > (int64_t) INT_MAX) {
+      fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+              L, M, (long long) ncells64);
+      ncells = INT_MAX;
+    }
+    else ncells = (int) ncells64;
+  }
 
   {
     const char *dump = getenv("P7IBV_DUMP_BAND");
@@ -2276,8 +2292,22 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
     if(p298_ins0) { for (i = 1; i <= L; i++) kmin_arr[i] = 0; } }
 
-  for (i = 1; i <= L; i++)
-    ncells += (kmax_arr[i] - kmin_arr[i] + 1);
+  /* briefs 26_0821-099/26_0821-100: count in int64 and saturate the int
+   * ret_ncells at INT_MAX, as p7_pins2bands() does (brief 26_0628-027). A
+   * genome-scale IBV band can exceed 2^31 cells; the int32 sum wrapped
+   * negative, and callers read ncells <= 0 as "no band". Callers use ncells
+   * only as a >0/==0 discriminator and in debug lines, never to size memory. */
+  {
+    int64_t ncells64 = 0;
+    for (i = 1; i <= L; i++)
+      ncells64 += (int64_t) (kmax_arr[i] - kmin_arr[i] + 1);
+    if (ncells64 > (int64_t) INT_MAX) {
+      fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV_dnc L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+              L, M, (long long) ncells64);
+      ncells = INT_MAX;
+    }
+    else ncells = (int) ncells64;
+  }
 
   {
     const char *dump = getenv("P7IBV_DUMP_BAND");
