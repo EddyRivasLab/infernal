@@ -9421,7 +9421,7 @@ tr_wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int 
    * and free the banded decks; the helper is deterministic so this matches the
    * writer's allocation exactly. */
   if (cm->flags & CMH_LOCAL_END) {
-    if ((eldmaxJ = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("brief 26_0430-227: eldmaxJ OOM");
+    if ((eldmaxJ = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxJ OOM");
     tr_outside_hb_el_dmax(cm, L, r, y, i0, j0, 0, cp9b, eldmaxJ);
     if (fill_L) { if ((eldmaxL = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxL OOM"); tr_outside_hb_el_dmax(cm, L, r, y, i0, j0, 1, cp9b, eldmaxL); }
     if (fill_R) { if ((eldmaxR = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxR OOM"); tr_outside_hb_el_dmax(cm, L, r, y, i0, j0, 2, cp9b, eldmaxR); }
@@ -9663,7 +9663,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * vroot=r/vend=v tr_outside_hb used) to clamp the EL-terminus reads and free the
    * banded decks; deterministic helper, so it matches the writer's allocation. */
   if (cm->flags & CMH_LOCAL_END) {
-    if ((eldmaxJ = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("brief 26_0430-227: eldmaxJ OOM");
+    if ((eldmaxJ = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxJ OOM");
     tr_outside_hb_el_dmax(cm, L, r, v, i0, j0, 0, cp9b, eldmaxJ);
     if (fill_L) { if ((eldmaxL = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxL OOM"); tr_outside_hb_el_dmax(cm, L, r, v, i0, j0, 1, cp9b, eldmaxL); }
     if (fill_R) { if ((eldmaxR = malloc(sizeof(int) * (L+1))) == NULL) cm_Fail("eldmaxR OOM"); tr_outside_hb_el_dmax(cm, L, r, v, i0, j0, 2, cp9b, eldmaxR); }
