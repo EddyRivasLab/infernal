@@ -3133,6 +3133,7 @@ CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm)
                                    lmsvN, lvitN, lfwdN, gfwdN,
                                    lftailp, gftailp, 42, 0,
                                    cm_p7_UseP7mlPredictor(newcm, TRUE), /* filter is the ML HMM (brief 26_0824-085) */
+                                   FALSE,                               /* do_sim: predict glocal Fwd stats (brief 26_0824-087) */
                                    &fil_gfmu, &fil_gflambda)) != eslOK) { FreeCM(newcm); return status; }
     if ((status = cm_SetFilterHMM(newcm, newcm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) { FreeCM(newcm); ESL_FAIL(status, errbuf, "CP9_2_CM(): unable to set the HMM filter for the CM"); }
   }
