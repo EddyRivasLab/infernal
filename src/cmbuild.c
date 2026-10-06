@@ -3006,9 +3006,14 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
  * Incept:    EPN, Mon Oct  5 2026 (w/Claude)
  *
  * Purpose:   Report, in the per-model output just before the model's
- *            tabular line, what --eforce did (g_ere, set by
+ *            tabular line, what --ere/--eforce did (g_ere, set by
  *            set_effective_seqnumber()) (brief 26_0824-089):
  *
+ *            ERE_SHORT:       a WARNING with the target and the rel
+ *                             entropy achieved at the cap, only if
+ *                             --ere was given (a default --eent build
+ *                             with few sequences misses its target
+ *                             too often to be worth a line).
  *            ERE_RAISED:      a NOTE that eff seq # now exceeds nseq.
  *            ERE_UNREACHABLE: a WARNING with the target and the rel
  *                             entropy achieved at the ceiling, and
@@ -3032,7 +3037,15 @@ output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa,
   char line[1024];
   char *floornote = (esl_opt_IsOn(go, "--ere") && g_ere.etarget > esl_opt_GetReal(go, "--ere")) ? " (length floor)" : "";
 
-  if(g_ere.outcome == ERE_RAISED) { 
+  if(g_ere.outcome == ERE_SHORT && esl_opt_IsUsed(go, "--ere")) { 
+    if(esl_opt_IsUsed(go, "--emaxseq")) 
+      snprintf(line, sizeof(line), "# WARNING: %s: --ere target %.3f bits%s not reached; achieved %.3f bits at --emaxseq %g.\n",
+               cm->name, g_ere.etarget, floornote, cm_MeanMatchRelativeEntropy(cm), g_ere.max_neff);
+    else 
+      snprintf(line, sizeof(line), "# WARNING: %s: --ere target %.3f bits%s not reached; achieved %.3f bits at eff seq # = nseq (%d); see --eforce.\n",
+               cm->name, g_ere.etarget, floornote, cm_MeanMatchRelativeEntropy(cm), msa->nseq);
+  }
+  else if(g_ere.outcome == ERE_RAISED) { 
     snprintf(line, sizeof(line), "# NOTE: %s: --eforce raised eff seq # above nseq (%d -> %.2f) to reach --ere target %.3f bits%s.\n",
              cm->name, msa->nseq, cm->eff_nseq, g_ere.etarget, floornote);
   }
