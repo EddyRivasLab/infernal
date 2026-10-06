@@ -48,13 +48,54 @@ CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double
   int status;
   int Z;
 
-  if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2"); 
+  if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) ESL_FAIL(eslEINVAL, errbuf, "Calculating QDBs, qdbinfo->beta1 < qdbinfo->beta2");
 
-  Z = cm->clen * 4;
-  while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) { 
-    if(status == eslEMEM)     ESL_FAIL(status, errbuf, "Calculating QDBs, out of memory");    
-    if(status != eslERANGE)   ESL_FAIL(status, errbuf, "Calculating QDBs, unexpected error");    
-    Z *= 2;
+  /* Starting guess for Z, the maximum subsequence length the band
+   * calculation considers, and (below) the factor by which a failed
+   * attempt grows it. If Z is too small the truncation-error check fails,
+   * BandCalculationEngine() returns eslERANGE, the loop below grows Z and
+   * retries, and the resulting bands are identical either way. So both
+   * constants are a cost/benefit choice, not a correctness one.
+   *
+   * They also have to be chosen TOGETHER. The quantity that decides
+   * whether a model can ever end up slower than it was under the old
+   * 4*clen/doubling policy is the product start*growth -- that is where a
+   * single retry lands. The old 4*clen was pure overshoot: measured on a
+   * 12-model panel (clen 399-28835, 0-71 bifurcation states, 1-2000
+   * sequences), the smallest Z that succeeds on the first try is only
+   * 0.99x-2.04x clen, so 4x overshot by 2.0x-4.0x on every model.
+   *
+   * Sweeping (start, growth) jointly over that panel and timing the whole
+   * call INCLUDING retries: 1.3x with 1.6x growth costs 0.32 of the old
+   * policy on average (3.2x faster), with no model worse than 0.71, and
+   * only 3 of 12 models retrying at all. Keeping start*growth near 2.1 --
+   * just above the largest first-try Z the panel needs -- is what bounds
+   * the worst case, because it means at most ONE retry is ever required
+   * and it lands tightly.
+   *
+   * Two nearby choices are deliberately avoided:
+   *   - start 2x with doubling: a retry lands on exactly 4x, so a model
+   *     needing more than 2x pays 2x + 4x and is SLOWER than just starting
+   *     at 4x. On the panel that is the worst cell of every combination
+   *     tested.
+   *   - a smaller growth such as 1.25x: a failed attempt costs 84-99.9% of
+   *     a successful one at the same Z (measured), so extra rungs are
+   *     nearly full-price and small steps lose more than the tighter
+   *     landing gains.
+   *
+   * (brief 26_0824-019)
+   */
+  Z = (cm->clen * 13) / 10;
+
+  while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) {
+    if(status == eslEMEM)     ESL_FAIL(status, errbuf, "Calculating QDBs, out of memory");
+    if(status != eslERANGE)   ESL_FAIL(status, errbuf, "Calculating QDBs, unexpected error");
+    { /* grow by 1.6x; always advance by at least 1 so the loop cannot
+       * stall on a tiny Z. See the note above on why the growth factor
+       * and the starting Z are chosen together. */
+      int znew = (Z * 8) / 5;
+      Z = (znew > Z) ? znew : (Z + 1);
+    }
     if(Z > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Calculating QDBs, Z got insanely large (> 1000*clen)");
   }
 
@@ -186,9 +227,50 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
   float  **t_copy       = NULL;  /* copy of cm->t[0..v..M-1][0..MAXCONNECT-1], transition probs */
   float   *begin_copy   = NULL;  /* cm->begin[0..v..M-1], standard local begin probabilities  */
 
+  /* Per-state early truncation of the gamma recursion (brief 26_0824-041,
+   * prototyped in brief 26_0824-007).  eb_nstar[v] is n*_v, the largest n
+   * with gamma[v][n] >= max_beta*DBL_EPSILON -- i.e. the last length this
+   * state contributes non-negligible mass at, by exactly the standard the
+   * function-level truncation check below already applies.  Once n*_y is
+   * known for a state's children, the parent's own recursion loops can be
+   * bounded instead of running the full 0..Z range.
+   */
+  int     *eb_nstar    = NULL;   /* eb_nstar[v] = n*_v, or -1 if gamma[v] is everywhere negligible */
+  double   eb_thresh   = 0.;     /* the truncation's negligibility standard; see the block comment below */
+
   if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) return eslEINVAL;
   max_beta = beta_W;
   if(qdbinfo != NULL) max_beta = ESL_MAX(max_beta, ESL_MAX(qdbinfo->beta1, qdbinfo->beta2));
+
+  /* brief 26_0824-042: the truncation's negligibility standard.
+   *
+   * 26_0824-041 used max_beta*DBL_EPSILON, matching the per-state test 2
+   * below (`gamma[v][Z] > max_beta*DBL_EPSILON`).  That is the right standard
+   * for test 2 and makes test 2 redundant -- but it is NOT the strictest
+   * standard applied to these densities.  BandTruncationNegligible() is run on
+   * gamma[0] at three cut points, and its bar is C*DBL_EPSILON where C is the
+   * tail mass past the cut point: ~beta_W and ~beta1 for two of them, but
+   * ~beta2 for the third.  With beta1=1e-7 and beta2=1e-15 that third bar is
+   * 1e8 times finer than max_beta*DBL_EPSILON.
+   *
+   * Truncating at the coarser standard leaves gamma[0][Z] at exactly 0.0,
+   * which makes BandTruncationNegligible()'s geometric extrapolation
+   * D = (beta/(1-beta))*density[Z] identically 0 -- so the test cannot fail.
+   * It does not merely become weaker; it becomes an unconditional pass.
+   * (Measured: it is this test, not test 2, that stops firing.  See the
+   * summary for brief 26_0824-042.)
+   *
+   * So the truncation must be at least as strict as the strictest consumer of
+   * the density: use min_beta, not max_beta.  Then a gamma[0][Z] that is
+   * zeroed by the truncation was already below the bar that
+   * BandTruncationNegligible() would have compared it against, and the test's
+   * verdict is unchanged rather than fabricated.
+   */
+  {
+    double min_beta = beta_W;
+    if(qdbinfo != NULL) min_beta = ESL_MIN(min_beta, ESL_MIN(qdbinfo->beta1, qdbinfo->beta2));
+    eb_thresh = min_beta * DBL_EPSILON;
+  }
 
   /* Make copies of cm->t, cm->begin and cm->trbegin, so we can 
    * modify the copies without changing the originals. 
@@ -222,6 +304,10 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
    * "beams" (gamma[v] rows) we can reuse.
    */
   beamstack = esl_stack_PCreate();
+
+  /* brief 26_0824-041: per-state early-truncation bookkeeping. */
+  ESL_ALLOC(eb_nstar, sizeof(int) * cm->M);
+  for (v = 0; v < cm->M; v++) eb_nstar[v] = -1;
 
   /* The second component of memory saving is the "touch" array.
    * touch[y] is the number of states above state [y] that will
@@ -262,9 +348,31 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
      * (The heart of the algorithm is right here.)
      */
     if(cm->sttype[v] == B_st) { /* a bifurcation state: */
+      /* brief 26_0824-041: gamma[v] is the convolution of the two children's
+       * densities.  A term gamma_left[leftn]*gamma_right[n-leftn] can only be
+       * non-negligible if BOTH factors are, so the outer n loop need not go
+       * beyond n*_left + n*_right, and for each n the inner leftn only has to
+       * cover [n - n*_right, n*_left].  gamma[v] was zero-filled above, so
+       * every skipped entry is correctly left at exactly 0.0 rather than
+       * holding a stale value from the beamstack reuse pool.
+       *
+       * CAVEAT (unchanged from the 26_0824-007 prototype, and stated there):
+       * this bounds the row by requiring every INDIVIDUAL term to be
+       * negligible; it does not prove the sum of up to n+1 such terms stays
+       * negligible.  In practice max_beta*DBL_EPSILON is ~1e-22, so even a
+       * Z-fold blowup at Z~1e5 stays far below any band-setting beta -- but
+       * this is an empirical argument, validated by byte-identity over the
+       * gate panel, not a proof.
+       */
+      int eb_hi, eb_ln, eb_rn;
       pdf = 0.;
-      for (n = 0; n <= Z; n++) { 
-	for (leftn = 0; leftn <= n; leftn++) {
+      eb_ln = eb_nstar[cm->cfirst[v]]; if(eb_ln < 0) eb_ln = 0;
+      eb_rn = eb_nstar[cm->cnum[v]];   if(eb_rn < 0) eb_rn = 0;
+      eb_hi = ESL_MIN(Z, eb_ln + eb_rn);
+      for (n = 0; n <= eb_hi; n++) { 
+	int llo = ESL_MAX(0, n - eb_rn);
+	int lhi = ESL_MIN(n, eb_ln);
+	for (leftn = llo; leftn <= lhi; leftn++) {
 	  gamma[v][n] += gamma[cm->cfirst[v]][leftn]*gamma[cm->cnum[v]][n-leftn];
 	}
 	pdf += gamma[v][n];
@@ -298,30 +406,78 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
        * those states -- validate downstream QDB values empirically.
        * brief 26_0719-021.
        */
+      /* brief 26_0824-041: bound the non-self child sum to
+       * dv + max(n*_y over non-self children y).  Beyond that, every child's
+       * contribution gamma_y[n-dv] is already below max_beta*DBL_EPSILON and
+       * is only scaled down further by t <= 1, so the accumulated value stays
+       * below the same threshold.  As for bifurcations, gamma[v] is
+       * zero-filled beforehand so skipped entries are exactly 0.0.
+       */
+      int eb_nonself_bnd;
+      { 
+	int base = dv;
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  y = cm->cfirst[v] + yoffset;
+	  if (y == v) continue;
+	  int yn = eb_nstar[y]; if(yn < 0) yn = 0;
+	  if (dv + yn > base) base = dv + yn;
+	}
+	eb_nonself_bnd = ESL_MIN(Z, base);
+      }
       for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	y = cm->cfirst[v] + yoffset;
 	if (y == v) { self_yoffset = yoffset; continue; }
 	double tval          = (double) t_copy[v][yoffset];
 	double *gamma_v      = gamma[v];
 	double *gamma_y      = gamma[y];
-	for (n = dv; n <= Z; n++) {
+	for (n = dv; n <= eb_nonself_bnd; n++) {
 	  gamma_v[n] += tval * gamma_y[n-dv];
 	}
       }
+      /* The self-transition (IL->IL, IR->IR) feeds gamma[v] back into itself,
+       * giving a geometric tail with no bound derivable from the children.
+       * So check convergence live instead, every eb_K steps once we are past
+       * the non-self bound; eb_K amortizes the check away without letting the
+       * loop run far past convergence.
+       */
+      int eb_final_bnd = eb_nonself_bnd;
       if (self_yoffset != -1) {
 	double aself    = (double) t_copy[v][self_yoffset];
 	double *gamma_v = gamma[v];
+	int eb_K    = 64;
+	int eb_bnd  = Z;
 	for (n = dv; n <= Z; n++) {
 	  gamma_v[n] += aself * gamma_v[n-dv];
+	  if (n > eb_nonself_bnd && ((n - eb_nonself_bnd) % eb_K == 0)) {
+	    if (gamma_v[n] < eb_thresh) { eb_bnd = n; break; }
+	  }
 	}
+	eb_final_bnd = eb_bnd;
       }
-      for (n = dv; n <= Z; n++) {
+      for (n = dv; n <= eb_final_bnd; n++) {
 	pdf += gamma[v][n];
       }
     }
+    /* brief 26_0824-041: now that gamma[v] is final, record n*_v for the
+     * parents (and for the local-begin accumulation just below).  Scanned
+     * downward from Z; entries the bounded loops above skipped are exactly
+     * 0.0 and so fall below the threshold, as intended.
+     */
+    { 
+      int    eb_ns     = -1;
+      for (n = Z; n >= 0; n--) {
+	if (gamma[v][n] >= eb_thresh) { eb_ns = n; break; }
+      }
+      eb_nstar[v] = eb_ns;
+    }
+
     /* update gamma[0] by considering local begins from ROOT_S into v */
     if(begin_copy[v] > 0.) { /* standard local begin transition into v is possible */
-      for (n = 0; n <= Z; n++) { 
+      /* brief 26_0824-041: beyond n*_v this state contributes nothing
+       * non-negligible to gamma[0] either. */
+      int eb_begin_bnd;
+      { int vn = eb_nstar[v]; if(vn < 0) vn = 0; eb_begin_bnd = ESL_MIN(Z, vn); }
+      for (n = 0; n <= eb_begin_bnd; n++) { 
 	gamma[0][n] += begin_copy[v] * gamma[v][n];
 	/* Note: we only consider possible standard local
 	 * begins, not truncated local begins. This could be
@@ -455,6 +611,8 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
 
   /*if(qdbinfo != NULL) DumpCMQDBInfo(stdout, cm, qdbinfo);*/
 
+  if (eb_nstar != NULL) { free(eb_nstar); eb_nstar = NULL; }
+
   if (ret_W          != NULL) *ret_W          = W;
   if (ret_gamma      != NULL) *ret_gamma      = gamma;      else FreeBandDensities(cm, gamma);
   if (ret_gamma0_loc != NULL) *ret_gamma0_loc = gamma0_loc; else if(gamma0_loc != NULL) free(gamma0_loc);
@@ -462,6 +620,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
   status = eslOK;
 
  ERROR: 
+  if (eb_nstar != NULL) free(eb_nstar);
   if(status != eslOK) { 
     if (ret_W          != NULL) *ret_W          = 0;
     if (ret_gamma      != NULL) *ret_gamma      = NULL;
