@@ -262,10 +262,10 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
  * `cmsearch --trmF5` E-values live. Adding mean_H^2 and the eff_nseq term
  * takes the held-out deep-tail (P=1e-8) median error to 0.354 log10 units
  * (2.3x) at only N=4 samples -- better than the old 2-feature form at
- * --EgfN 50. The 055 refit additionally brings the single-sequence (nseq=1)
+ * --EgfN 50. The 26_0719-055 refit additionally brings the single-sequence (nseq=1)
  * class to population parity (5.4x -> 2.3x) at no cost to the multi-seq
  * population. mean_H^2 is quadratic in a *bounded* feature (not in clen), so
- * it does not blow up on extrapolation at large clen: brief 053 gate D
+ * it does not blow up on extrapolation at large clen: brief 26_0719-053 gate D
  * measured the large-clen filter-safety envelope IMPROVING, max|dS*|
  * 11.83 -> 10.78 bits.
  *
@@ -653,7 +653,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
    * NOTE on eff_nseq: this reads hmm->eff_nseq, the effective sequence count
    * of the object actually being calibrated -- not the CM's eff_nseq (brief
    * 26_0719-064, reversing brief 26_0719-054's choice to pass the CM's value
-   * in explicitly). Brief 054 correctly made the code match the training
+   * in explicitly). Brief 26_0719-054 correctly made the code match the training
    * data. What had never been checked was whether the training used the
    * right model's parameter. It did not: the object calibrated here is the
    * filter HMM, whose eff_nseq is invariant to the CM's entropy-weighting
