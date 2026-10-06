@@ -320,6 +320,84 @@ static const double gfcalib_shrink_coef[5] = {
   -0.5429849757828361    /* z3 */
 };
 
+/* --p7ml glocal-Forward lambda predictor and tau shrinkage (brief 26_0824-085).
+ *
+ * With cmbuild --p7ml, a model that has at least one base pair gets the CM's
+ * maximum-likelihood p7 HMM as its filter instead of the default
+ * entropy-weighted filter built by p7_Builder(). The coefficient blocks above
+ * were trained on default filters only. On ML-HMM filters they overpredict
+ * lambda by ~16% (median predicted/true 1.160 on 792 models), which is ~19x
+ * permissive at P=1e-8. These blocks have the SAME functional forms and
+ * features as the shipped ones; only the coefficients are refit. See
+ * cm_p7_UseP7mlPredictor() for when they are used.
+ *
+ * Training set: 792 real basepaired models, each rebuilt from its exact source
+ * alignment with --p7ml (default entropy weighting) and with --p7ml --enone:
+ * 1533 unique filter HMMs (792 + 741; the other 51 --enone filters are
+ * byte-identical to their --p7ml filter and were fit once). clen 20..2987,
+ * filter mean_H 0.12..1.77, filter eff_nseq 0.30..1178.
+ * The eff_nseq feature is capped at GFCALIB_P7ML_EFFN_CAP (1000), not at the
+ * default path's 20: an ML-HMM filter's eff_nseq is the CM's, which reaches
+ * nseq under --enone, and capping at 20 discarded the information that
+ * separates those models (with a cap of 20, CV over-10x-permissive count on
+ * --p7ml --enone was 70/792; with 1000, 34/792). 1000 is about the training
+ * maximum, and the fitted eff_nseq coefficient is negative, so a larger
+ * eff_nseq that the cap clips would have predicted a smaller (more
+ * conservative) lambda.
+ * Reference lambda/tau: one glocal-Forward fit per filter to N=500,000 sampled
+ * scores (L = max(100, 2*clen)), an exponential tail fit to the top 7,500
+ * scores, i.e. tailp 0.015. tau is converted to the GFMU convention,
+ * P(S >= x) = exp(-lambda (x - tau)), before fitting.
+ * Lambda: plain OLS on ln(lambda_ref), same 4 z-scored features as
+ * predict_glocal_lambda(). Clan-grouped 5-fold CV, median signed error at
+ * P=1e-8: 1.07x for --p7ml, 1.15x for --p7ml --enone.
+ * Tau shrinkage: same form as gfcalib_shrink_tau() and the same eff_nseq cap, target
+ * d = lambda*(tau_ref - tau_raw), with lambda from the --p7ml lambda
+ * predictor. tau_raw is cm_p7_Tau()'s N=4 all-order estimate, simulated by
+ * 200 draws of 4 scores per filter from a separate 20,000-score sample.
+ */
+#define GFCALIB_EFFN_CAP       20.0    /* eff_nseq feature cap, default coefficients */
+#define GFCALIB_P7ML_EFFN_CAP  1000.0   /* eff_nseq feature cap, --p7ml coefficients  */
+
+static const double gfcalib_p7ml_feat_mu[4] = {
+  4.776961104829981,     /* log(clen)                */
+  0.7777697695599595,    /* mean_H                   */
+  0.7309221772495036,    /* mean_H^2                 */
+  1.95512921883143       /* log(min(eff_nseq, 1000)) */
+};
+static const double gfcalib_p7ml_feat_sd[4] = {
+  0.6758328383065203,
+  0.3549596636353907,
+  0.6102263831828977,
+  1.5027685065912544
+};
+static const double gfcalib_p7ml_coef[5] = {
+  -0.9668881313609853,   /* intercept */
+  -0.18483460571601934,  /* z0 */
+  -0.42773426668171655,  /* z1 */
+   0.2915341375472999,   /* z2 */
+  -0.06495529093506133   /* z3 */
+};
+static const double gfcalib_p7ml_shrink_mu[4] = {
+   4.776961104832206,    /* log(clen)                */
+   0.7777697695597421,   /* mean_H                   */
+   1.9551292188318754,   /* log(min(eff_nseq, 1000)) */
+ -13.935619798919456     /* tau_raw * lambda         */
+};
+static const double gfcalib_p7ml_shrink_sd[4] = {
+   0.6758328383066262,
+   0.3549596636354067,
+   1.5027685065909826,
+  14.74498047181927
+};
+static const double gfcalib_p7ml_shrink_coef[5] = {
+   0.9688523825711184,   /* intercept */
+   0.03237942303124768,  /* z0 */
+  -0.1168584503605011,   /* z1 */
+   0.04784605245727269,  /* z2 */
+  -0.15225363920130952   /* z3 */
+};
+
 /* mean_relentropy_bits()
  * Mean over the M match columns of the relative entropy (bits) of the match
  * emission distribution vs a uniform 1/K background. Matches the training
@@ -357,6 +435,8 @@ mean_relentropy_bits(const P7_HMM *hmm)
  * The 20.0 cap is part of the fitted form: real SEEDs saturate around
  * eff_nseq 3-17, the training pool has little support above 20 (one model sits
  * at 10000), so the cap keeps a deep alignment from extrapolating off the fit.
+ * <cap> is GFCALIB_EFFN_CAP (20) for the default coefficients and
+ * GFCALIB_P7ML_EFFN_CAP (1000) for the --p7ml ones (brief 26_0824-085).
  *
  * There is deliberately NO floor at 1.0. Entropy weighting routinely produces
  * eff_nseq < 1 -- 51/1097 of the brief-053 multi-seq training pool (min 0.30)
@@ -368,11 +448,11 @@ mean_relentropy_bits(const P7_HMM *hmm)
  * eff_nseq > 0 at the call site. brief 26_0719-054.
  */
 static double
-gfcalib_effn_feature(double eff_nseq)
+gfcalib_effn_feature(double eff_nseq, double cap)
 {
   double e = eff_nseq;
   if (e < 1e-3) e = 1e-3;    /* log-domain guard only; unreachable for a real CM */
-  if (e > 20.0) e = 20.0;
+  if (e > cap)  e = cap;
   return log(e);
 }
 
@@ -381,21 +461,26 @@ gfcalib_effn_feature(double eff_nseq)
  * (briefs 26_0719-053/26_0719-055, deployed by brief 26_0719-054):
  *     lambda = exp(c0 + c1*z0 + c2*z1 + c3*z2 + c4*z3)
  * clen = hmm->M; mean_H from mean_relentropy_bits(); eff_nseq is the CM's
- * effective sequence count.
+ * effective sequence count. If <use_p7ml_pred>, use the --p7ml coefficient
+ * block instead of the default one (brief 26_0824-085).
  */
 static double
-predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
+predict_glocal_lambda(int clen, double mean_H, double eff_nseq, int use_p7ml_pred)
 {
+  const double *mu   = use_p7ml_pred ? gfcalib_p7ml_feat_mu : gfcalib_feat_mu;
+  const double *sd   = use_p7ml_pred ? gfcalib_p7ml_feat_sd : gfcalib_feat_sd;
+  const double *coef = use_p7ml_pred ? gfcalib_p7ml_coef    : gfcalib_coef;
+  double        cap  = use_p7ml_pred ? GFCALIB_P7ML_EFFN_CAP : GFCALIB_EFFN_CAP;
   double x0 = log((double) clen);   /* natural log */
   double x1 = mean_H;
   double x2 = mean_H * mean_H;
-  double x3 = gfcalib_effn_feature(eff_nseq);
-  double z0 = (x0 - gfcalib_feat_mu[0]) / gfcalib_feat_sd[0];
-  double z1 = (x1 - gfcalib_feat_mu[1]) / gfcalib_feat_sd[1];
-  double z2 = (x2 - gfcalib_feat_mu[2]) / gfcalib_feat_sd[2];
-  double z3 = (x3 - gfcalib_feat_mu[3]) / gfcalib_feat_sd[3];
-  return exp(gfcalib_coef[0] + gfcalib_coef[1] * z0 + gfcalib_coef[2] * z1
-                             + gfcalib_coef[3] * z2 + gfcalib_coef[4] * z3);
+  double x3 = gfcalib_effn_feature(eff_nseq, cap);
+  double z0 = (x0 - mu[0]) / sd[0];
+  double z1 = (x1 - mu[1]) / sd[1];
+  double z2 = (x2 - mu[2]) / sd[2];
+  double z3 = (x3 - mu[3]) / sd[3];
+  return exp(coef[0] + coef[1] * z0 + coef[2] * z1
+                     + coef[3] * z2 + coef[4] * z3);
 }
 
 /* gfcalib_shrink_tau()
@@ -421,21 +506,54 @@ predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
  * across --cpu.
  */
 static double
-gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, double eff_nseq)
+gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, double eff_nseq, int use_p7ml_pred)
 {
+  const double *mu   = use_p7ml_pred ? gfcalib_p7ml_shrink_mu   : gfcalib_shrink_mu;
+  const double *sd   = use_p7ml_pred ? gfcalib_p7ml_shrink_sd   : gfcalib_shrink_sd;
+  const double *coef = use_p7ml_pred ? gfcalib_p7ml_shrink_coef : gfcalib_shrink_coef;
+  double        cap  = use_p7ml_pred ? GFCALIB_P7ML_EFFN_CAP    : GFCALIB_EFFN_CAP;
   double x0 = log((double) clen);
   double x1 = mean_H;
-  double x2 = gfcalib_effn_feature(eff_nseq);
+  double x2 = gfcalib_effn_feature(eff_nseq, cap);
   double x3 = tau_raw * lambda;
-  double z0 = (x0 - gfcalib_shrink_mu[0]) / gfcalib_shrink_sd[0];
-  double z1 = (x1 - gfcalib_shrink_mu[1]) / gfcalib_shrink_sd[1];
-  double z2 = (x2 - gfcalib_shrink_mu[2]) / gfcalib_shrink_sd[2];
-  double z3 = (x3 - gfcalib_shrink_mu[3]) / gfcalib_shrink_sd[3];
-  double d_hat = gfcalib_shrink_coef[0] + gfcalib_shrink_coef[1] * z0
-                                        + gfcalib_shrink_coef[2] * z1
-                                        + gfcalib_shrink_coef[3] * z2
-                                        + gfcalib_shrink_coef[4] * z3;
+  double z0 = (x0 - mu[0]) / sd[0];
+  double z1 = (x1 - mu[1]) / sd[1];
+  double z2 = (x2 - mu[2]) / sd[2];
+  double z3 = (x3 - mu[3]) / sd[3];
+  double d_hat = coef[0] + coef[1] * z0
+                         + coef[2] * z1
+                         + coef[3] * z2
+                         + coef[4] * z3;
   return tau_raw + d_hat / lambda;    /* d_hat is in units of lambda*bits */
+}
+
+/* Function: cm_p7_UseP7mlPredictor()
+ * Incept:   EPN, Fri Oct  2 2026 (w/Claude)
+ *
+ * Purpose:  Decide whether cm_p7_Calibrate() should use the --p7ml
+ *           glocal lambda/tau coefficients (brief 26_0824-085) for the
+ *           filter HMM of <cm>. That is TRUE iff the filter is the CM's
+ *           ML p7 HMM (<filter_is_mlp7>) AND <cm> has at least one
+ *           base pair. Zero-basepair models keep the default
+ *           coefficients even when their filter is the ML HMM: the
+ *           default predictor is already accurate for them.
+ *
+ *           Every caller of cm_p7_Calibrate() that is calibrating a
+ *           CM's filter should get its <use_p7ml_pred> argument from
+ *           here, so that all of them make the same decision for the
+ *           same model.
+ *
+ * Args:     cm             - the CM whose filter is being calibrated
+ *           filter_is_mlp7 - TRUE if the filter HMM is cm->mlp7 (or a
+ *                            copy of it)
+ *
+ * Returns:  TRUE or FALSE.
+ */
+int
+cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7)
+{
+  if (! filter_is_mlp7) return FALSE;
+  return (CMCountNodetype(cm, MATP_nd) > 0) ? TRUE : FALSE;
 }
 
 /* Function: cm_p7_Calibrate()
@@ -458,6 +576,8 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
  *           EgfT      - fraction of tail mass to fit for glocal Fwd
  *           seed      - RNG seed for calibration (0=one-time arbitrary)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
+ *           use_p7ml_pred - TRUE to use the --p7ml glocal lambda/tau coefficients;
+ *                       get this from cm_p7_UseP7mlPredictor() (brief 26_0824-085)
  *           ret_gfmu  - RETURN: mu for glocal forward
  *           ret_gflambda - RETURN: lambda for glocal forward
  *
@@ -471,7 +591,7 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
 		int ElmL, int ElvL, int ElfL, int EgfL,
 		int ElmN, int ElvN, int ElfN, int EgfN,
 		double ElfT, double EgfT,
-		int seed, int ncpus,
+		int seed, int ncpus, int use_p7ml_pred,
 		double *ret_gfmu, double *ret_gflambda)
 {
   int        status;
@@ -538,10 +658,10 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
     double mean_H = mean_relentropy_bits(hmm);
     double tau_raw;
 
-    gflambda = predict_glocal_lambda(hmm->M, mean_H, hmm->eff_nseq);
+    gflambda = predict_glocal_lambda(hmm->M, mean_H, hmm->eff_nseq, use_p7ml_pred);
   if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
     if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &tau_raw)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
-    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, hmm->eff_nseq);
+    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, hmm->eff_nseq, use_p7ml_pred);
   }
 
   esl_randomness_Destroy(r); 
