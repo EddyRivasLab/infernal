@@ -455,6 +455,42 @@ This number can be larger than the number of sequences in the
 alignment.
 
 .TP 
+.B --eforce
+With
+.BR --ere ,
+let the effective sequence number exceed the number of sequences in
+the alignment when that is needed to reach the target relative
+entropy. When the target can be reached without exceeding it, the
+model is the same as without
+.BR --eforce .
+Otherwise the effective sequence number is raised until the target is
+reached, up to an internal ceiling high enough that the prior has
+almost no effect. A NOTE line in the per-model output reports a raised
+effective sequence number. If even the ceiling cannot reach the target
+(the observed counts alone are not informative enough), the model is
+built at the ceiling, a WARNING gives the target and the relative
+entropy achieved, and, if the filter HMM is the CM's maximum
+likelihood HMM (zero-basepair models, or
+.BR --p7ml ),
+its glocal Forward statistics are simulated as with
+.B --Esim
+because they cannot be predicted reliably there. Even simulated
+statistics can be several-fold too permissive for some such models, so
+prefer a lower target, or more sequences, over an unreachable one.
+Note that the target that applies is the larger of
+.I <x>
+and a floor that rises as models get shorter (above 1 bit for
+models shorter than about 60 positions; see
+.BR --esigma ).
+Without
+.BR --eforce ,
+a build with
+.B --ere
+that does not reach its target prints a WARNING.
+Incompatible with
+.BR --emaxseq .
+
+.TP 
 .BI --ehmmre " <x>"
 Set the target HMM mean match state relative entropy as 
 .I <x>.

@@ -106,6 +106,7 @@ static ESL_OPTIONS options[] = {
   { "--eset",    eslARG_REAL,      NULL,    NULL, "x>=0", EFFOPTS,     NULL,   NULL, "(CM) set eff seq # for all models to <x>",                      5 },
   { "--eminseq", eslARG_REAL,     "0.1",    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set minimum effective sequence number to <x>",      5 },
   { "--emaxseq", eslARG_REAL,      NULL,    NULL, "x>=0",    NULL, "--eent",   NULL, "for --eent: set maximum effective sequence number to <x>",      5 },
+  { "--eforce",  eslARG_NONE,     FALSE,    NULL,   NULL,    NULL,  "--ere","--emaxseq", "for --ere: let eff seq # exceed nseq to reach the target",       5 },
   { "--ehmmre",  eslARG_REAL,      NULL,    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set minimum HMM relative entropy to <x>",           5 }, 
   { "--esigma",  eslARG_REAL,    "45.0",    NULL,  "x>0",    NULL, "--eent",   NULL, "for --eent: set sigma param to <x>",                            5 },
 
@@ -243,6 +244,26 @@ struct cfg_s {
   FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
 };
 
+/* What entropy weighting did for the CM most recently passed through
+ * set_effective_seqnumber(), for --ere/--eforce (brief 26_0824-089).
+ * cmbuild builds one model at a time, so build_and_calibrate_p7_filter()
+ * and output_result() read this for the same model.
+ */
+#define EFORCE_MAX_NEFF 1e6 /* --eforce's eff seq # ceiling; this high, the prior is effectively gone (brief 26_0824-088) */
+enum ere_outcome_e {
+  ERE_NONE        = 0,  /* not --eent */
+  ERE_MET         = 1,  /* target reached with eff seq # <= the usual cap (nseq or --emaxseq) */
+  ERE_SHORT       = 2,  /* target missed at the usual cap; no --eforce */
+  ERE_RAISED      = 3,  /* --eforce: target reached by raising eff seq # above nseq */
+  ERE_UNREACHABLE = 4   /* --eforce: target missed even at EFORCE_MAX_NEFF */
+};
+static struct {
+  enum ere_outcome_e outcome;
+  double             etarget;     /* effective target: max(--ere, length floor) */
+  double             max_neff;    /* the cap the final solve used */
+  int                esim_forced; /* TRUE if ERE_UNREACHABLE made this model's filter stats simulated (--Esim) */
+} g_ere;
+
 static char usage[]  = "[-options] <cmfile_out> <msafile>";
 static char banner[] = "covariance model construction from multiple sequence alignments";
 
@@ -252,6 +273,7 @@ static void   output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char
 static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
+static int    output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, CM_t *cm);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
@@ -735,6 +757,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
   if (esl_opt_IsUsed(go, "--eset"))        { fprintf(ofp, "# effective seq number:                               set to %f\n", esl_opt_GetReal(go, "--eset")); }
   if (esl_opt_IsUsed(go, "--eminseq"))     { fprintf(ofp, "# minimum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--eminseq")); }
   if (esl_opt_IsUsed(go, "--emaxseq"))     { fprintf(ofp, "# maximum effective sequence number allowed:          %g\n", esl_opt_GetReal(go, "--emaxseq")); }
+  if (esl_opt_IsUsed(go, "--eforce"))      { fprintf(ofp, "# let eff seq # exceed nseq to reach --ere target:    yes\n"); }
   if (esl_opt_IsUsed(go, "--ehmmre"))      { fprintf(ofp, "# minimum ML CP9 HMM rel entropy target:              %f bits\n",   esl_opt_GetReal(go, "--ehmmre")); }
   if (esl_opt_IsUsed(go, "--esigma"))      { fprintf(ofp, "# entropy target sigma parameter:                     %f bits\n",   esl_opt_GetReal(go, "--esigma")); }
 
@@ -1347,6 +1370,8 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if ((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
 
   if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
+
+  if ((status = output_ere_outcome(go, cfg, msa, cm)) != eslOK) return status;
 
   fprintf(cfg->ofp, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %s\n",
           cmidx,
@@ -2052,8 +2077,14 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 {
   int status;
   double neff;
+  double max_neff;
   int used_hmm_etarget = FALSE;
   ESL_STOPWATCH *w = NULL;
+
+  g_ere.outcome     = ERE_NONE;
+  g_ere.etarget     = 0.;
+  g_ere.max_neff    = 0.;
+  g_ere.esim_forced = FALSE;
 
   if(cfg->be_verbose) { 
     w = esl_stopwatch_Create();
@@ -2094,10 +2125,35 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
         etarget = set_target_relent(go, cm->abc, clen, CMCountNodetype(cm, MATP_nd));
       }
 
+      max_neff = (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq);
       status = cm_EntropyWeight(cm, pri, etarget, 
                                 esl_opt_GetReal(go, "--eminseq"), 
-                                (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                max_neff,
                                 FALSE, &hmm_re, &neff);
+      /* Did we reach etarget? cm_EntropyWeight() returns exactly
+       * <max_Neff> only when the rel entropy at <max_Neff> is still
+       * below etarget; otherwise it returns <min_Neff> or a bisection
+       * root strictly inside (0, max_Neff). So test the branch it took,
+       * not the rel entropy against a tolerance. If the target was
+       * reached, nothing below changes the solve. With --eforce, re-solve
+       * a missed target with the cap raised to EFORCE_MAX_NEFF; don't
+       * re-solve a reached one, because a different upper bracket moves
+       * the bisection root slightly (brief 26_0824-088).
+       * (brief 26_0824-089)
+       */
+      if(status == eslOK) { 
+        g_ere.etarget  = etarget;
+        g_ere.outcome  = (neff >= max_neff && max_neff > esl_opt_GetReal(go, "--eminseq")) ? ERE_SHORT : ERE_MET;
+        if(g_ere.outcome == ERE_SHORT && esl_opt_GetBoolean(go, "--eforce")) { 
+          max_neff = EFORCE_MAX_NEFF;
+          status = cm_EntropyWeight(cm, pri, etarget, 
+                                    esl_opt_GetReal(go, "--eminseq"), 
+                                    max_neff,
+                                    FALSE, &hmm_re, &neff);
+          g_ere.outcome = (neff >= max_neff) ? ERE_UNREACHABLE : ERE_RAISED;
+        }
+        g_ere.max_neff = max_neff;
+      }
       /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
        * recalculate neff so HMM relative entropy of <x> is achieved.
        */
@@ -2107,7 +2163,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
         if(hmm_re < hmm_etarget) { 
           status = cm_EntropyWeight(cm, pri, hmm_etarget, 
                                     esl_opt_GetReal(go, "--eminseq"), 
-                                    (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq),
+                                    max_neff, /* raised by --eforce only if the CM's target needed it */
                                     TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
           if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
           else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
@@ -2418,6 +2474,16 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
    * --EgfN/--Egftp were typed (brief 26_0824-087).
    */
   do_sim = (esl_opt_GetBoolean(go, "--Esim") || esim_forced_by(go, use_mlp7_as_filter) != NULL) ? TRUE : FALSE;
+  /* --eforce with an unreachable target leaves eff seq # at
+   * EFORCE_MAX_NEFF, where the predictor can be far off (brief
+   * 26_0824-088). That only reaches the filter if the filter is the
+   * CM's ML HMM; the default filter keeps its own weighting. Decided
+   * per model, unlike esim_forced_by(). (brief 26_0824-089)
+   */
+  if(use_mlp7_as_filter && g_ere.outcome == ERE_UNREACHABLE) { 
+    g_ere.esim_forced = TRUE;
+    do_sim = TRUE;
+  }
   if(do_sim) {
     gfwdN   = esl_opt_IsUsed(go, "--EgfN")  ? esl_opt_GetInteger(go, "--EgfN") : 5000;
     gftailp = esl_opt_IsUsed(go, "--Egftp") ? esl_opt_GetReal(go, "--Egftp")    : 0.05;
@@ -2583,6 +2649,66 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 }
 
 
+
+/* output_ere_outcome()
+ * Incept:    EPN, Mon Oct  5 2026 (w/Claude)
+ *
+ * Purpose:   Report, in the per-model output just before the model's
+ *            tabular line, what --ere/--eforce did (g_ere, set by
+ *            set_effective_seqnumber()) (brief 26_0824-089):
+ *
+ *            ERE_SHORT:       a WARNING with the target and the rel
+ *                             entropy achieved at the cap, only if
+ *                             --ere was given (a default --eent build
+ *                             with few sequences misses its target
+ *                             too often to be worth a line).
+ *            ERE_RAISED:      a NOTE that eff seq # now exceeds nseq.
+ *            ERE_UNREACHABLE: a WARNING with the target and the rel
+ *                             entropy achieved at the ceiling, and
+ *                             whether the filter stats were simulated.
+ *
+ *            Lines go to cfg->ofp, and also to stderr when cfg->ofp
+ *            is not stdout, as cmbuild's other per-model warnings do.
+ *            Nothing is printed for any other outcome.
+ *
+ *            The achieved rel entropy is the model's CM mean match rel
+ *            entropy, the value in the tabular line's CM column. The
+ *            target is the effective one, max(--ere, length floor)
+ *            (set_target_relent()); "(length floor)" marks a floor
+ *            above --ere.
+ *
+ * Returns:   eslOK.
+ */
+static int
+output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, CM_t *cm)
+{
+  char line[1024];
+  char *floornote = (esl_opt_IsOn(go, "--ere") && g_ere.etarget > esl_opt_GetReal(go, "--ere")) ? " (length floor)" : "";
+
+  if(g_ere.outcome == ERE_SHORT && esl_opt_IsUsed(go, "--ere")) { 
+    if(esl_opt_IsUsed(go, "--emaxseq")) 
+      snprintf(line, sizeof(line), "# WARNING: %s: --ere target %.3f bits%s not reached; achieved %.3f bits at --emaxseq %g.\n",
+               cm->name, g_ere.etarget, floornote, cm_MeanMatchRelativeEntropy(cm), g_ere.max_neff);
+    else 
+      snprintf(line, sizeof(line), "# WARNING: %s: --ere target %.3f bits%s not reached; achieved %.3f bits at eff seq # = nseq (%d); see --eforce.\n",
+               cm->name, g_ere.etarget, floornote, cm_MeanMatchRelativeEntropy(cm), msa->nseq);
+  }
+  else if(g_ere.outcome == ERE_RAISED) { 
+    snprintf(line, sizeof(line), "# NOTE: %s: --eforce raised eff seq # above nseq (%d -> %.2f) to reach --ere target %.3f bits%s.\n",
+             cm->name, msa->nseq, cm->eff_nseq, g_ere.etarget, floornote);
+  }
+  else if(g_ere.outcome == ERE_UNREACHABLE) { 
+    snprintf(line, sizeof(line), "# WARNING: %s: --ere target %.3f bits%s unreachable; achieved %.3f bits at maximum eff seq #%s.\n",
+             cm->name, g_ere.etarget, floornote, cm_MeanMatchRelativeEntropy(cm),
+             g_ere.esim_forced ? "; glocal Fwd filter stats simulated (--Esim)" : "");
+  }
+  else return eslOK;
+
+  fputs(line, cfg->ofp);
+  fflush(cfg->ofp);
+  if (cfg->ofp != stdout) fputs(line, stderr);
+  return eslOK;
+}
 
 /* esim_forced_by()
  * Incept:    EPN, Fri Oct  2 2026 (w/Claude)
