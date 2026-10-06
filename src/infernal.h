@@ -3100,10 +3100,12 @@ extern int p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 /* from cm_p7_modelmaker.c */
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);
 extern int          cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf);
-extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int seed, int ncpus, int use_p7ml_pred, double *ret_gfmu, double *ret_gflambda);
+extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int seed, int ncpus, int use_p7ml_pred, int do_sim, double *ret_gfmu, double *ret_gflambda);
 extern int          cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7);
 extern int          cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *opt_sc);
 extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, int ncpus, double *ret_tau);
+extern int          cm_p7_GlocalFwdSimFit(ESL_RANDOMNESS *r, char *errbuf, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, int ncpus, double *ret_mu, double *ret_lambda);
+extern int          cm_p7_FitExpTail(const double *xv, int N, double tailp, double *ret_mu, double *ret_lambda);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 extern float        cm_p7_hmm_Sizeof(P7_HMM *hmm);
