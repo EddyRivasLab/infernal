@@ -493,7 +493,7 @@ Set the number of sampled sequences for local Forward filter HMM calibration to
 Set the number of sampled sequences for glocal Forward filter HMM
 calibration to
 .I <n>.
-200 by default.
+4 by default.
 
 .PP
 Use 
