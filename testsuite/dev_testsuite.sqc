@@ -574,6 +574,10 @@
 1  exercise  build:pkhav/emx1    @src/cmbuild@ --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 1  exercise  build:pkhav/emx2    @src/cmbuild@ --emaxseq 5.0 --esigma 60. -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 1  exercise  build:pkhav/emx2    @src/cmbuild@ --emaxseq 5.0 --esigma 80. -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  exercise  build:pkhav/efrc    @src/cmbuild@ --ere 1.5 --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  exercise  build:pkhav/efrcun  @src/cmbuild@ --ere 3.0 --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  fail      build:pkhav/efnoere @src/cmbuild@ --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
+1  fail      build:pkhav/efemx   @src/cmbuild@ --ere 1.5 --p7ml --eforce --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 
 # --refine
 1  exercise  build:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
