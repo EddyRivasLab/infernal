@@ -1879,6 +1879,7 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
      * non-truncated (!do_trunc) path, so cp9_HMM2ijBands() and every other
      * caller of the shared pn_* arrays outside this function are
      * unaffected. */
+    cp9b->im_widened = FALSE;
     if(cm->flags & CMH_LOCAL_BEGIN) {
       int k;
       int hmm_M = cp9b->hmm_M;
@@ -1906,6 +1907,10 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
         if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
           cp9b->pn_min_m[k] = cp9b->pn_min_i[k] = cp9b->pn_min_d[k] = lb[k];
           cp9b->pn_max_m[k] = cp9b->pn_max_i[k] = cp9b->pn_max_d[k] = ub[k];
+          /* the last node's insert maps to ROOT_IR; record that it got a band
+           * with no posterior evidence so the --mxsize fallback can withdraw
+           * it (cp9_EndHullRetryBands(), brief 26_0821-103) */
+          if(k == hmm_M) cp9b->im_widened = TRUE;
         }
       }
       free(lb);

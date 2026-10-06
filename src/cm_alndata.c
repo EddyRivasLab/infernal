@@ -727,6 +727,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
                         mode == TRMODE_R || mode == TRMODE_T) ? mode : TRMODE_T; /* max-plane => safe over-estimate */
   int  ckpt_will_run = FALSE;
   int p7b_iterate_ran = FALSE; /* TRUE once cp9_IterateSeq2BandsP7B() ran for this seq (bands valid even on eslERANGE) */
+  int endhull_tried   = FALSE; /* TRUE once the end-band --mxsize fallback ran for this seq (brief 26_0821-103) */
   int doing_search = FALSE;
   /* Brief 26_0430-120: IBV HMM-divergence fallback. Set when cm_TrAlignHB / cm_AlignHB
    * fails on IBV-derived bands and we've already rebuilt with vitband for
@@ -1716,6 +1717,22 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	            est_std_cm, ck_cmmb, dnc_tot, (float)mxsize, ckpt_avail);
 
 	    if(mxesc_tier == 'c') {
+	      /* brief 26_0821-103: before giving up, re-derive the CM bands once
+	       * without the ROOT_IR tail route that band widenings (not the CP9
+	       * posterior) added -- the end-band hull of a target that runs far
+	       * past the model's 3' end. Runs only where this sequence would
+	       * otherwise abort, so every alignment that fits is untouched; never
+	       * on search-derived bands. */
+	      if(mb_tot > mxsize && ! endhull_tried && ! cp9b_valid && cm->cp9b != NULL) {
+	        int eh_changed = FALSE;
+	        endhull_tried = TRUE;
+	        if((status = cp9_EndHullRetryBands(cm, errbuf, cm->cp9b, sq->L, pass_idx, &eh_changed)) != eslOK) goto ERROR;
+	        if(eh_changed) {
+	          fprintf(stderr, "#ENDHULL_RETRY seq=%s L=%d trunc=%d dnc_floor=%.1f mxsize=%.1f\n",
+	                  sq->name, (int)sq->L, do_trunc, mb_tot, (float)mxsize);
+	          goto CM_ALIGN_HB_RETRY;
+	        }
+	      }
 	      /* If even the D&C-CYK floor exceeds --mxsize, no engine fits: fail cleanly. */
 	      if(mb_tot > mxsize) {
 	        ESL_XFAIL(eslERANGE, errbuf,

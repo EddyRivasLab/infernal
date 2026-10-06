@@ -74,6 +74,8 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->thresh2          = DEFAULT_CP9BANDS_THRESH2;    /* 0.98 */
   cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
   cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
+  cp9bands->im_widened    = FALSE;
+  cp9bands->endhull_retry = FALSE;
 
   ESL_ALLOC(cp9bands->Jvalid, sizeof(int) * (cm_M+1));
   ESL_ALLOC(cp9bands->Lvalid, sizeof(int) * (cm_M+1));
@@ -447,6 +449,7 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
      * FALSE. Gated on CMH_LOCAL_BEGIN to match the brutal hack's own
      * local-configuration precondition; glocal alignment always has the full
      * parse geometrically available and needs no widening. */
+    cp9b->im_widened = FALSE;
     if((! doing_search) && (cm->flags & CMH_LOCAL_BEGIN)) {
       int k;
       int hmm_M = cp9b->hmm_M;
@@ -471,6 +474,10 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
         if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
           cp9b->pn_min_m[k] = cp9b->pn_min_i[k] = cp9b->pn_min_d[k] = lb[k];
           cp9b->pn_max_m[k] = cp9b->pn_max_i[k] = cp9b->pn_max_d[k] = ub[k];
+          /* the last node's insert maps to ROOT_IR; record that it got a band
+           * with no posterior evidence so the --mxsize fallback can withdraw
+           * it (cp9_EndHullRetryBands(), brief 26_0821-103) */
+          if(k == hmm_M) cp9b->im_widened = TRUE;
         }
       }
       free(lb);
@@ -1741,6 +1748,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   /*int          k;*/          /* counter of HMM nodes, for debugging print statements, currently not used */
   int hmm_is_localized;      /* TRUE if HMM has local begins, ends or ELs on */
   int cm_is_fully_localized; /* TRUE if CM has local begins and ends on */
+  int *jmin_preL = NULL;     /* j-bands before the Lmarg widening, kept only during cp9_EndHullRetryBands() */
 
   /* r_* arrays, these are filled in HMMBandsEnforceValidParse(), they are the band on 'reachable'
    * residues for each HMM state as we move from left to right through the HMM. 
@@ -2096,6 +2104,15 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
    * L and/or R and/or T marginal alignments, as necessary, 
    * cp9b->{L,R}marg_{i,j}{min,max} were defined in cp9_PredictStartAndEndPositions(). 
    */
+  /* For the --mxsize fallback (glocal truncated only; see
+   * cp9_EndHullRetryBands()), keep each state's j-band from before the
+   * Lmarg widening: the j-reachability pass below then lets ROOT_IR lower j
+   * only within its own posterior-derived band. */
+  if(do_trunc && (! doing_search) && cp9b->endhull_retry && (! (cm->flags & CMH_LOCAL_END))) {
+    ESL_ALLOC(jmin_preL, sizeof(int) * cm->M);
+    esl_vec_ICopy(jmin, cm->M, jmin_preL);
+  }
+
   if(do_trunc) { 
     for(v = 0; v < cm->M; v++) { 
       if(cp9b->Lvalid[v] || cp9b->Tvalid[v]) { /* allow for left marginal alignment by expanding j band */
@@ -2339,6 +2356,68 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
   /* end of brutal hack */
+
+  /* Alignment-mode top-down j reachability (brief 26_0821-103). When
+   * aligning, ROOT_S spans exactly i0..j0, and every local or truncated
+   * begin enters its state with j = j0 (alpha[v][L][L]), so the smallest j
+   * at which state v can lie on a parse is bounded by its parents':
+   *   jlo[v] >= min over parents p of (jlo[p] - StateRightDelta(p)),
+   * and an IR state's self-loop can walk j down to its own band minimum.
+   * (In L mode right emitters and IR states don't emit, which only makes
+   * the true bound tighter, so this one stays conservative.) Cells with
+   * j < jlo[v] cannot be on any parse rooted at (ROOT_S, j0); dropping them
+   * changes no alignment. It matters for single-chain left-emitting models
+   * (genome-scale VADR models), where every state shares the parse's end
+   * j: there the marginal (Lmarg) window or the END band used to give all
+   * states a j-band thousands wide when a target runs far past the model's
+   * 3' end, even when ROOT_IR is unreachable and j0 is the only real end. */
+  if(! doing_search) {
+    int *jlo = NULL;
+    int  p, lo;
+    ESL_ALLOC(jlo, sizeof(int) * cm->M);
+    for(v = 0; v < cm->M; v++) {
+      if(jmin[v] == -1) { jlo[v] = INT_MAX; continue; }
+      if(v == 0) { lo = j0; }
+      else if(cm->stid[v] == BEGL_S) { lo = jmin[v]; } /* BEGL_S's j ranges over its BIF's i..j: no bound */
+      else {
+        lo = INT_MAX;
+        /* a local or truncated begin enters v spanning the whole target: j = j0 */
+        if((cm->flags & CMH_LOCAL_BEGIN) || do_trunc) lo = j0;
+        for(p = cm->plast[v]; p > cm->plast[v] - cm->pnum[v]; p--) {
+          if(p == v) continue;
+          if(jlo[p] == INT_MAX) continue;
+          lo = ESL_MIN(lo, jlo[p] - StateRightDelta(cm->sttype[p]));
+        }
+        if(lo == INT_MAX) lo = jmin[v];                       /* no reachable parent seen: leave untouched */
+        if(cm->sttype[v] == IR_st) {                          /* self-loop walks j down */
+          /* --mxsize fallback: in L mode an IR state is a pass-through (no
+           * emission, no self-loop; cm_dpalign_trunc.c), so the Lmarg
+           * widening of an IR band only feeds J/R-mode cells the posterior
+           * gave no mass; let IR lower j only within its pre-Lmarg band. */
+          if(jmin_preL != NULL) { if(jmin_preL[v] != -1) lo = ESL_MIN(lo, jmin_preL[v]); }
+          else                  lo = ESL_MIN(lo, jmin[v]);
+        }
+      }
+      jlo[v] = ESL_MAX(jmin[v], lo);
+      if(jlo[v] > jmin[v]) {
+        if(jlo[v] > jmax[v]) { /* unreachable */
+          imin[v] = jmin[v] = -1;
+          imax[v] = jmax[v] = -2;
+          jlo[v]  = INT_MAX;
+        }
+        else {
+          jmin[v] = jlo[v];
+          if(cm->sttype[v] == E_st) { /* E emits d = 0: keep i = j+1 consistent */
+            imin[v] = ESL_MAX(imin[v], jmin[v]+1);
+            if(imin[v] > imax[v]) { imin[v] = jmin[v] = -1; imax[v] = jmax[v] = -2; jlo[v] = INT_MAX; }
+          }
+        }
+      }
+    }
+    free(jlo);
+  }
+  if(jmin_preL != NULL) { free(jmin_preL); jmin_preL = NULL; }
+
 #if eslDEBUGLEVEL >= 3
   /* check for valid CM parse, there should be one, unless do_trunc is true, then we may not... */
   if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) { 
@@ -2369,6 +2448,86 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
 
  ERROR:
   ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+/* Function: cp9_EndHullRetryBands()
+ * Incept:   EPN, Mon Oct  5 2026 (w/Claude)
+ *
+ * Purpose:  The --mxsize fallback (brief 26_0821-103) for the
+ *           CP9->CM end-band hull. Called by the alignment driver only when
+ *           no engine fits --mxsize with the bands in <cp9b>, i.e. only
+ *           where the alignment would otherwise abort. Re-derives the CM
+ *           bands from the HMM bands already in <cp9b>, withdrawing the
+ *           ROOT_IR route that band widenings (not the posterior) created:
+ *
+ *           !do_trunc, local: if the dead-node widening gave the last
+ *           node's insert (ROOT_IR's source) a band with no posterior
+ *           evidence, unset it.
+ *           do_trunc, glocal: let ROOT_IR lower j only within its pre-Lmarg
+ *           (posterior) band (see cp9_HMM2ijBands()).
+ *
+ *           Not used in local truncated mode: there the CP9 puts a 3' flank
+ *           in EL and cannot see the CM's R-mode ROOT_IR flank parse.
+ *
+ * Args:     cm          - the model
+ *           errbuf      - for error messages
+ *           cp9b        - bands, already derived for this target
+ *           L           - target length
+ *           pass_idx    - pipeline pass the bands were derived for (selects the
+ *                         CP9 HMM and whether truncation is allowed)
+ *           ret_changed - RETURN: TRUE if a fallback applied and bands were
+ *                         re-derived; FALSE if none applies (bands untouched)
+ *
+ * Returns:  eslOK on success; error status from band derivation otherwise.
+ */
+int
+cp9_EndHullRetryBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int pass_idx, int *ret_changed)
+{
+  int status;
+  int do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  CP9_t *cp9;
+  int hmm_M = cp9b->hmm_M;
+  int v, jp, njp, found;
+
+  *ret_changed = FALSE;
+  if(! do_trunc) {
+    if(! (cm->flags & CMH_LOCAL_BEGIN) || ! cp9b->im_widened) return eslOK;
+    cp9b->pn_min_i[hmm_M] = cp9b->pn_max_i[hmm_M] = -1;
+    cp9b->im_widened = FALSE;
+  }
+  else {
+    if(cm->flags & CMH_LOCAL_END) return eslOK;
+  }
+
+  switch(pass_idx) {
+  case PLI_PASS_5P_ONLY_FORCE:   cp9 = cm->Rcp9; break;
+  case PLI_PASS_3P_ONLY_FORCE:   cp9 = cm->Lcp9; break;
+  case PLI_PASS_5P_AND_3P_FORCE: cp9 = cm->Tcp9; break;
+  case PLI_PASS_5P_AND_3P_ANY:   cp9 = cm->Tcp9; break;
+  default:                       cp9 = cm->cp9;  break;
+  }
+
+  cp9b->endhull_retry = TRUE;
+  status = cp9_HMM2ijBands(cm, errbuf, cp9, cp9b, cm->cp9map, 1, L, FALSE, do_trunc, 0);
+  cp9b->endhull_retry = FALSE;
+  if(status != eslOK) return status;
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, cp9b, do_trunc, 0);
+
+  /* same Jvalid veto as the band finishers apply in glocal truncated mode */
+  if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
+    for(v = 0; v < cp9b->cm_M; v++) {
+      if(! cp9b->Jvalid[v]) continue;
+      njp = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      found = FALSE;
+      for(jp = 0; jp < njp; jp++) {
+        if(hd_min(cp9b, v, jp) <= hd_max(cp9b, v, jp)) { found = TRUE; break; }
+      }
+      if(! found) cp9b->Jvalid[v] = FALSE;
+    }
+  }
+  *ret_changed = TRUE;
+  return eslOK;
 }
 
 /* Function: HMMBandsEnforceValidParse()
@@ -4891,6 +5050,8 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
   dest_cp9b->Rmarg_imax = src_cp9b->Rmarg_imax;
   dest_cp9b->Lmarg_jmin = src_cp9b->Lmarg_jmin;
   dest_cp9b->Lmarg_jmax = src_cp9b->Lmarg_jmax;
+  dest_cp9b->im_widened    = src_cp9b->im_widened;
+  dest_cp9b->endhull_retry = src_cp9b->endhull_retry;
 
   esl_vec_ICopy(src_cp9b->Jvalid, (src_cp9b->cm_M+1), dest_cp9b->Jvalid);
   esl_vec_ICopy(src_cp9b->Lvalid, (src_cp9b->cm_M+1), dest_cp9b->Lvalid);
