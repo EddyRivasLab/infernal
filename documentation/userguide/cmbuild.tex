@@ -506,6 +506,13 @@ default entropy is 1.41 bits per position (roughly 0.59 bits of
 information, relative to uniform base composition). This threshold can
 be changed with the \prog{--ere <x>} option. Entropy weighting may
 be turned off entirely with the \prog{--enone} option.
+These options apply to the CM only: the model's filter HMM is entropy
+weighted separately, to its own target of 0.38 bits per position. When
+you use \prog{--enone}, \prog{--ere} or \prog{--eset}, you must also
+choose the filter HMM's weighting: \prog{--p7eent} keeps its own
+entropy weighting (the default), \prog{--p7ere <x>} sets its target,
+and \prog{--p7ml} makes the filter the CM's own maximum likelihood HMM,
+so it follows the CM's weighting.
 
 
 \subsubsection{Architecture construction}
