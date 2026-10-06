@@ -1803,10 +1803,13 @@ map_alignment(const char *msafile, CM_t *cm, int noss_used, char *errbuf, CM_ALN
     /* dataA[i]->tr is in alignment coords, convert it to unaligned coords.
      * First we construct a map of aligned to unaligned coords, then
      * we use it to convert. 
+     * Only residues get an unaligned coord: gaps *and* missing data
+     * ('~', e.g. fragment ends) are removed by esl_sq_FetchFromMSA()
+     * below, so counting '~' here would offset every coord after it.
      */
     uapos = 1;
     for(apos = 1; apos <= msa->alen; apos++) { 
-      a2u_map[apos] = (esl_abc_XIsGap(msa->abc, msa->ax[i][apos])) ? -1 : uapos++; 
+      a2u_map[apos] = (esl_abc_XIsResidue(msa->abc, msa->ax[i][apos])) ? uapos++ : -1;
     }
     for(x = 0; x < dataA[i]->tr->n; x++) { 
       if(dataA[i]->tr->emitl[x] != -1) dataA[i]->tr->emitl[x] = a2u_map[dataA[i]->tr->emitl[x]];
