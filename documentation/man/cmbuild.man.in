@@ -378,6 +378,34 @@ two parameters are settable with
 and 
 .I --esigma.
 
+These options set the effective sequence number of the CM only. Each
+model's filter p7 HMM is entropy weighted separately, to its own target
+(see
+.B --p7eent
+and
+.B --p7ere
+below). Because of this,
+.B --enone,
+.B --ere
+and
+.B --eset
+(and
+.B --rsearch,
+which implies
+.B --enone
+for the CM) must be accompanied by an explicit choice of the filter
+HMM's weighting:
+.B --p7eent,
+.B --p7ere,
+or
+.B --p7ml.
+Otherwise
+.B cmbuild
+exits with an error before building any model. Builds with
+.B --noss
+are exempt, because their filter HMM is the CM's own maximum
+likelihood HMM, which already follows the CM's weighting.
+
 .TP
 .B --eent
 Use the entropy weighting strategy to determine the effective sequence
@@ -444,6 +472,22 @@ For each CM that
 .B cmbuild
 constructs, an accompanying filter p7 HMM is built from the input
 alignment as well. These options control filter HMM construction:
+
+.TP 
+.B --p7eent
+Use entropy weighting to set the filter p7 HMM's effective sequence
+number, to its own target mean match state relative entropy (0.38
+bits by default, settable with
+.B --p7ere).
+This is the default, independent of the CM's
+.B --eent,
+.B --enone,
+.B --ere
+and
+.B --eset
+options. Use it to state that choice explicitly when one of those
+options is used. Incompatible with
+.B --p7ml.
 
 .TP 
 .BI --p7ere " <x>"

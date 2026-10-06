@@ -95,6 +95,7 @@
 1 exercise  bug/i52-aln-nb-sentinel !testsuite/bug-i52.pl! @src/cmalign@ !testsuite/bug-i52.cm! !testsuite/bug-i52.fa! !testsuite/bug-i52b.cm! !testsuite/bug-i52b.fa!
 1 exercise  bug/i57-eset0-effn    !testsuite/bug-i57.pl! @src/cmbuild@ @src/cmsearch@
 1 exercise  bug/i61-mapali-tilde  !testsuite/bug-i61.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  cmbuild/entropy-filter  !testsuite/i-entropy-filter-choice.pl! @src/cmbuild@ !testsuite/RIBOSUM85-60.mat!
 1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!
@@ -484,7 +485,7 @@
 1  exercise  build:se/rf         @src/cmbuild@ --hand -F %SE.CM% !testsuite/se.rf.sto! 
 1  exercise  build:se/null       @src/cmbuild@ -F --null !testsuite/at4.null! %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/pri        @src/cmbuild@ -F --prior !testsuite/plus1.prior! %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! -F %SE.CM% !testsuite/se.1.sto!
+1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! --p7eent -F %SE.CM% !testsuite/se.1.sto!
 1  exercise  build:se/noss       @src/cmbuild@ --noss -F %SE.CM% !testsuite/se.sto!
 
 1  exercise  build:se/betaW      @src/cmbuild@ --betaW 1E-12 -F %SE.CM% !testsuite/se.sto! 
@@ -526,9 +527,9 @@
 
 # eweighting
 1  exercise  build:se/eent       @src/cmbuild@ --eent -F %SE.CM% !testsuite/se.sto! 
-1  exercise  build:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0  -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/enon    @src/cmbuild@ --enone --p7eent -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 --p7eent -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0 --p7eent -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:trna/esig     @src/cmbuild@ --esigma 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
 1  exercise  build:pkhav/emx1    @src/cmbuild@ --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
