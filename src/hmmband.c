@@ -2339,6 +2339,60 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
     }
   }
   /* end of brutal hack */
+
+  /* Alignment-mode top-down j reachability (brief 26_0821-103). When
+   * aligning, ROOT_S spans exactly i0..j0, and every local or truncated
+   * begin enters its state with j = j0 (alpha[v][L][L]), so the smallest j
+   * at which state v can lie on a parse is bounded by its parents':
+   *   jlo[v] >= min over parents p of (jlo[p] - StateRightDelta(p)),
+   * and an IR state's self-loop can walk j down to its own band minimum.
+   * (In L mode right emitters and IR states don't emit, which only makes
+   * the true bound tighter, so this one stays conservative.) Cells with
+   * j < jlo[v] cannot be on any parse rooted at (ROOT_S, j0); dropping them
+   * changes no alignment. It matters for single-chain left-emitting models
+   * (genome-scale VADR models), where every state shares the parse's end
+   * j: there the marginal (Lmarg) window or the END band used to give all
+   * states a j-band thousands wide when a target runs far past the model's
+   * 3' end, even when ROOT_IR is unreachable and j0 is the only real end. */
+  if(! doing_search) {
+    int *jlo = NULL;
+    int  p, lo;
+    ESL_ALLOC(jlo, sizeof(int) * cm->M);
+    for(v = 0; v < cm->M; v++) {
+      if(jmin[v] == -1) { jlo[v] = INT_MAX; continue; }
+      if(v == 0) { lo = j0; }
+      else if(cm->stid[v] == BEGL_S) { lo = jmin[v]; } /* BEGL_S's j ranges over its BIF's i..j: no bound */
+      else {
+        lo = INT_MAX;
+        /* a local or truncated begin enters v spanning the whole target: j = j0 */
+        if((cm->flags & CMH_LOCAL_BEGIN) || do_trunc) lo = j0;
+        for(p = cm->plast[v]; p > cm->plast[v] - cm->pnum[v]; p--) {
+          if(p == v) continue;
+          if(jlo[p] == INT_MAX) continue;
+          lo = ESL_MIN(lo, jlo[p] - StateRightDelta(cm->sttype[p]));
+        }
+        if(lo == INT_MAX) lo = jmin[v];                       /* no reachable parent seen: leave untouched */
+        if(cm->sttype[v] == IR_st) lo = ESL_MIN(lo, jmin[v]); /* self-loop walks j down */
+      }
+      jlo[v] = ESL_MAX(jmin[v], lo);
+      if(jlo[v] > jmin[v]) {
+        if(jlo[v] > jmax[v]) { /* unreachable */
+          imin[v] = jmin[v] = -1;
+          imax[v] = jmax[v] = -2;
+          jlo[v]  = INT_MAX;
+        }
+        else {
+          jmin[v] = jlo[v];
+          if(cm->sttype[v] == E_st) { /* E emits d = 0: keep i = j+1 consistent */
+            imin[v] = ESL_MAX(imin[v], jmin[v]+1);
+            if(imin[v] > imax[v]) { imin[v] = jmin[v] = -1; imax[v] = jmax[v] = -2; jlo[v] = INT_MAX; }
+          }
+        }
+      }
+    }
+    free(jlo);
+  }
+
 #if eslDEBUGLEVEL >= 3
   /* check for valid CM parse, there should be one, unless do_trunc is true, then we may not... */
   if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) { 
