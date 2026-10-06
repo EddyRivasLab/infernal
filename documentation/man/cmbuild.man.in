@@ -573,7 +573,8 @@ Set the number of sampled sequences for local Forward filter HMM calibration to
 Set the number of sampled sequences for glocal Forward filter HMM
 calibration to
 .I <n>.
-200 by default.
+4 by default (5000 with
+.BR --Esim ).
 
 .B --Esim
 Simulate the glocal Forward filter HMM E-value parameters instead of

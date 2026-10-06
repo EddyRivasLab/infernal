@@ -40,6 +40,13 @@ src/sub_cm-test
 src/truncyk_check
 src/bandcyk-montecarlo-test
 src/bandcyk-truncation-test
+src/test_phase2_features
+src/test_phase3_features
+src/test_phase4_predict
+src/test_wviterbi
+src/*_utest
+src/itest_brute
+src/cm_fast_calibrate_regression
 src/search.tbl
 src/save_infernal.h
 
