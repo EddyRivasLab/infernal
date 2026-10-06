@@ -238,6 +238,206 @@ cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf)
   return status;
 }
 
+/* Cheap glocal-Forward lambda predictor (briefs 26_0719-053/26_0719-055,
+ * deployed by brief 26_0719-054; supersedes the 2-feature 046/048/049 form).
+ *
+ * The glocal Forward E-value slope (GFLAMBDA) is predicted in closed form
+ * from four model features instead of being reused from the local Forward
+ * lambda:
+ *     z0 = log(clen)                    z1 = mean_H
+ *     z2 = mean_H^2                     z3 = log(min(eff_nseq, 20))
+ * where mean_H is the mean per-column relative entropy (bits) of the match
+ * emissions vs a uniform background (mean_relentropy_bits()) and eff_nseq is
+ * the *calibrated HMM's own* effective sequence count, hmm->eff_nseq (brief
+ * 26_0719-064; see the note in cm_p7_Calibrate()).
+ * The coefficients are a z-scored OLS linear fit in log space (natural
+ * log/exp), refit by brief 26_0719-055 on the combined pool of brief
+ * 26_0719-053's 1053 held-out-validated multi-sequence families plus 64 real
+ * nseq=1 models. Source of truth:
+ * brief055_run/lambda_refit_nseq1.json -> results.H_mandatory.spec.
+ *
+ * Why this form: lambda error is depth-amplified (tau error is not), so
+ * lambda accuracy dominates the deep tail where the real user-facing
+ * `cmsearch --trmF5` E-values live. Adding mean_H^2 and the eff_nseq term
+ * takes the held-out deep-tail (P=1e-8) median error to 0.354 log10 units
+ * (2.3x) at only N=4 samples -- better than the old 2-feature form at
+ * --EgfN 50. The 055 refit additionally brings the single-sequence (nseq=1)
+ * class to population parity (5.4x -> 2.3x) at no cost to the multi-seq
+ * population. mean_H^2 is quadratic in a *bounded* feature (not in clen), so
+ * it does not blow up on extrapolation at large clen: brief 053 gate D
+ * measured the large-clen filter-safety envelope IMPROVING, max|dS*|
+ * 11.83 -> 10.78 bits.
+ *
+ * Kept as a clean swappable static const block: mu/sd are the training-set
+ * feature means/sds, coef[0] is the intercept and coef[1..4] multiply
+ * z0..z3 in order.
+ */
+static const double gfcalib_feat_mu[4] = {
+  4.77095051518072,     /* log(clen)                */
+  0.5804811877658898,   /* mean_H                   */
+  0.3882958223057928,   /* mean_H^2                 */
+  0.90508110760581      /* log(min(eff_nseq, 20))   */
+};
+static const double gfcalib_feat_sd[4] = {
+  0.7059490720195424,
+  0.22657760912255817,
+  0.335344075259694,
+  0.7676273070778664
+};
+static const double gfcalib_coef[5]    = {
+  -0.725985532232747,    /* intercept */
+  -0.2118010089398733,   /* z0 */
+  -0.39601282842140223,  /* z1 */
+   0.2423273564376488,   /* z2 */
+  -0.06810158052837548   /* z3 */
+};
+
+/* Learned tau shrinkage correction (briefs 26_0719-053/26_0719-055, deployed
+ * by brief 26_0719-054). Applied on top of the all-order-statistic raw tau
+ * returned by cm_p7_Tau(); see gfcalib_shrink_tau() below for the formula and
+ * the exact parametrization. Source of truth:
+ * brief055_run/shrinkage_spec_combined.json -> spec_all, fit by
+ * scripts/fit_task055_shrinkage_combined.py on the combined
+ * {1097 multi-seq + 64 nseq=1} pool.
+ */
+static const double gfcalib_shrink_mu[4] = {
+   5.109825312361632,    /* log(clen)                */
+   0.5437359378271508,   /* mean_H                   */
+   1.1712644136150876,   /* log(min(eff_nseq, 20))   */
+ -10.058235004116202     /* tau_raw * lambda         */
+};
+static const double gfcalib_shrink_sd[4] = {
+   1.0783021543068307,
+   0.21815714303833725,
+   0.9871147041905497,
+  10.076412813149693
+};
+static const double gfcalib_shrink_coef[5] = {
+   1.092634838132801,    /* intercept */
+  -0.3867448779584632,   /* z0 */
+  -0.2187994840669399,   /* z1 */
+  -0.19904086095964266,  /* z2 */
+  -0.5429849757828361    /* z3 */
+};
+
+/* mean_relentropy_bits()
+ * Mean over the M match columns of the relative entropy (bits) of the match
+ * emission distribution vs a uniform 1/K background. Matches the training
+ * feature exactly (scripts/extract_p7_features.py:42,86-91): uniform 1/K
+ * background (0.25 for RNA), per-column renormalize for fp roundoff, skip
+ * p<=0 terms. brief 26_0719-046.
+ */
+static double
+mean_relentropy_bits(const P7_HMM *hmm)
+{
+  int    k, a;
+  int    K  = hmm->abc->K;
+  double bg = 1.0 / (double) K;   /* uniform background, matches training (not bg->f) */
+  double sum_H = 0.;
+
+  for (k = 1; k <= hmm->M; k++) {
+    double s = 0.;
+    double h = 0.;
+    for (a = 0; a < K; a++) s += hmm->mat[k][a];
+    if (s <= 0.) continue;
+    for (a = 0; a < K; a++) {
+      double p = hmm->mat[k][a] / s;    /* renormalize (fp roundoff), as in training */
+      if (p > 0.) h += p * (log(p / bg) / eslCONST_LOG2);  /* log2 */
+    }
+    sum_H += h;
+  }
+  return sum_H / (double) hmm->M;
+}
+
+/* gfcalib_effn_feature()
+ * The eff_nseq feature shared by the lambda predictor and the tau shrinkage:
+ * log(min(eff_nseq, 20)) -- exactly as fit
+ * (scripts/fit_task055_shrinkage_combined.py::corr_features/lam_features_H).
+ *
+ * The 20.0 cap is part of the fitted form: real SEEDs saturate around
+ * eff_nseq 3-17, the training pool has little support above 20 (one model sits
+ * at 10000), so the cap keeps a deep alignment from extrapolating off the fit.
+ *
+ * There is deliberately NO floor at 1.0. Entropy weighting routinely produces
+ * eff_nseq < 1 -- 51/1097 of the brief-053 multi-seq training pool (min 0.30)
+ * and 20/64 of the brief-055 nseq=1 pool (min 0.72) -- and the fit consumed
+ * those raw values. Flooring at 1 would silently make the deployed code
+ * disagree with the fitted formula on a real minority of models. The only
+ * guard is a tiny epsilon against a nonpositive eff_nseq (log domain error);
+ * it is unreachable for a real CM, and gate 0 of brief 26_0719-054 checks
+ * eff_nseq > 0 at the call site. brief 26_0719-054.
+ */
+static double
+gfcalib_effn_feature(double eff_nseq)
+{
+  double e = eff_nseq;
+  if (e < 1e-3) e = 1e-3;    /* log-domain guard only; unreachable for a real CM */
+  if (e > 20.0) e = 20.0;
+  return log(e);
+}
+
+/* predict_glocal_lambda()
+ * Closed-form glocal Forward lambda predictor, 5-feature form
+ * (briefs 26_0719-053/26_0719-055, deployed by brief 26_0719-054):
+ *     lambda = exp(c0 + c1*z0 + c2*z1 + c3*z2 + c4*z3)
+ * clen = hmm->M; mean_H from mean_relentropy_bits(); eff_nseq is the CM's
+ * effective sequence count.
+ */
+static double
+predict_glocal_lambda(int clen, double mean_H, double eff_nseq)
+{
+  double x0 = log((double) clen);   /* natural log */
+  double x1 = mean_H;
+  double x2 = mean_H * mean_H;
+  double x3 = gfcalib_effn_feature(eff_nseq);
+  double z0 = (x0 - gfcalib_feat_mu[0]) / gfcalib_feat_sd[0];
+  double z1 = (x1 - gfcalib_feat_mu[1]) / gfcalib_feat_sd[1];
+  double z2 = (x2 - gfcalib_feat_mu[2]) / gfcalib_feat_sd[2];
+  double z3 = (x3 - gfcalib_feat_mu[3]) / gfcalib_feat_sd[3];
+  return exp(gfcalib_coef[0] + gfcalib_coef[1] * z0 + gfcalib_coef[2] * z1
+                             + gfcalib_coef[3] * z2 + gfcalib_coef[4] * z3);
+}
+
+/* gfcalib_shrink_tau()
+ * Learned shrinkage correction applied to the raw all-order-statistic tau
+ * returned by cm_p7_Tau() (briefs 26_0719-053/26_0719-055, deployed by brief
+ * 26_0719-054).
+ *
+ * The raw all-order average is the *worst* unshrunk estimator of the family
+ * tried in brief 26_0719-041, but the best once shrunk: averaging all N
+ * anchors minimizes variance, and the learned correction removes the bias
+ * that averaging the low-rank anchors introduces. The last feature
+ * (tau_raw*lambda) is what does the shrinking -- it partly replaces the noisy
+ * N=4 sample estimate with a deterministic feature-based one.
+ *
+ * Parametrization matches scripts/fit_task055_shrinkage_combined.py exactly:
+ * the OLS target there is d = lambda*(tau_gt - tau_raw) (a dimensionless
+ * quantity), so the predicted d_hat must be divided by lambda to get a
+ * correction in bits before adding it to tau_raw (fit script line 178,
+ * `te_raw + apply_ols(spec, Xs) / lam`). Getting that factor of lambda wrong
+ * is the easy mistake here; gate 2 of brief 26_0719-054 checks it.
+ *
+ * Deterministic in (features, sorted sample), so GFMU stays byte-identical
+ * across --cpu.
+ */
+static double
+gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, double eff_nseq)
+{
+  double x0 = log((double) clen);
+  double x1 = mean_H;
+  double x2 = gfcalib_effn_feature(eff_nseq);
+  double x3 = tau_raw * lambda;
+  double z0 = (x0 - gfcalib_shrink_mu[0]) / gfcalib_shrink_sd[0];
+  double z1 = (x1 - gfcalib_shrink_mu[1]) / gfcalib_shrink_sd[1];
+  double z2 = (x2 - gfcalib_shrink_mu[2]) / gfcalib_shrink_sd[2];
+  double z3 = (x3 - gfcalib_shrink_mu[3]) / gfcalib_shrink_sd[3];
+  double d_hat = gfcalib_shrink_coef[0] + gfcalib_shrink_coef[1] * z0
+                                        + gfcalib_shrink_coef[2] * z1
+                                        + gfcalib_shrink_coef[3] * z2
+                                        + gfcalib_shrink_coef[4] * z3;
+  return tau_raw + d_hat / lambda;    /* d_hat is in units of lambda*bits */
+}
+
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
  * 
@@ -309,10 +509,40 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   hmm->evparam[p7_FLAMBDA] = lambda;
   hmm->flags              |= p7H_STATS;
 
-  /* finally, determine Glocal Forward stats */
+  /* finally, determine Glocal Forward stats (briefs 26_0719-053/26_0719-055,
+   * deployed by brief 26_0719-054).
+   *
+   * GFLAMBDA is predicted in closed form from (clen, mean_H, mean_H^2,
+   * eff_nseq) -- NOT reused from the local Forward lambda. GFMU (tau) is then
+   * the all-order-statistic average returned by cm_p7_Tau() at the predicted
+   * lambda, plus a learned shrinkage correction applied here. EgfT (tailp) is
+   * unused on this path; the tailp choice (0.015) is baked into the trained
+   * lambda predictor.
+   *
+   * The shrinkage is applied here rather than inside cm_p7_Tau() so that all
+   * the feature machinery lives in one place and cm_p7_Tau() keeps its
+   * signature: everything the correction needs (clen, mean_H, eff_nseq, the
+   * predicted lambda) is already in hand at this point.
+   *
+   * NOTE on eff_nseq: this reads hmm->eff_nseq, the effective sequence count
+   * of the object actually being calibrated -- not the CM's eff_nseq (brief
+   * 26_0719-064, reversing brief 26_0719-054's choice to pass the CM's value
+   * in explicitly). Brief 054 correctly made the code match the training
+   * data. What had never been checked was whether the training used the
+   * right model's parameter. It did not: the object calibrated here is the
+   * filter HMM, whose eff_nseq is invariant to the CM's entropy-weighting
+   * flags, and whose ground-truth lambda is likewise invariant -- while the
+   * CM's eff_nseq moves 3 orders of magnitude across those flags.
+   */
+  {
+    double mean_H = mean_relentropy_bits(hmm);
+    double tau_raw;
+
+    gflambda = predict_glocal_lambda(hmm->M, mean_H, hmm->eff_nseq);
   if ((status = p7_ProfileConfig(hmm, bg, gm, EgfL, p7_GLOCAL)) != eslOK) goto ERROR; 
-  if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, lambda, EgfT, ncpus, &gfmu)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
-  gflambda = lambda;
+    if ((status = cm_p7_Tau(r, errbuf, NULL, gm, bg, EgfL, EgfN, gflambda, EgfT, ncpus, &tau_raw)) != eslOK) ESL_XFAIL(status,  errbuf, "failed to determine fwd tau");
+    gfmu = gfcalib_shrink_tau(tau_raw, gflambda, hmm->M, mean_H, hmm->eff_nseq);
+  }
 
   esl_randomness_Destroy(r); 
   p7_bg_Destroy(bg);         
@@ -383,7 +613,13 @@ cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *
 #define ROWMX(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
 #define ROWXM(row,s)   ((row)[(M+1) * p7G_NSCELLS + (s)])
 
-  p7_FLogsumInit();
+  /* NOTE (brief 26_0719-046): the p7_FLogsum() lookup table must already be
+   * initialized by the caller (cm_p7_Tau() does this once in the main thread).
+   * We do NOT call p7_FLogsumInit() here: it rewrites a global static table,
+   * and doing so per-call would race with concurrent p7_FLogsum() reads in the
+   * threaded (--cpu>0) calibration path, making scores (and thus GFMU)
+   * nondeterministic across thread counts and run-to-run.
+   */
 
   ESL_ALLOC(mem, sizeof(float) * 2 * rowsize);
   prev = mem;
@@ -570,7 +806,11 @@ cm_p7_tau_thread_worker(void *arg)
  *            lambda : expected slope of the exponential tail (from p7_Lambda())
  *            tailp  : tail mass from which we will extrapolate mu
  *            ncpus  : number of CPUs for threaded glocal Fwd (0=serial)
- *            ret_tau : RETURN: estimate for the Forward tau (base of exponential tail)
+ *            ret_tau : RETURN: estimate for the Forward tau (base of
+ *                      exponential tail). On the glocal path this is the RAW
+ *                      all-order-statistic tau -- the caller is expected to
+ *                      apply gfcalib_shrink_tau() to it to get the final
+ *                      GFMU. See brief 26_0719-054.
  *
  * Returns:   <eslOK> on success, and <*ret_tau> is the tau estimate.
  *
@@ -583,8 +823,7 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 
   ESL_DSQ *dsq     = NULL;
   double  *xv      = NULL;
-  float    sc, fsc, nullsc;
-  double   gmu, glam;
+  float    fsc, nullsc;
   int      status;
   int      i;
   int do_generic;
@@ -594,6 +833,14 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
   do_generic = (gm != NULL) ? TRUE : FALSE;
 
   ESL_ALLOC(xv,  sizeof(double)  * N);
+
+  /* Initialize the global p7_FLogsum() lookup table ONCE, here in the main
+   * thread, before any worker scores a sequence (brief 26_0719-046). The
+   * per-call init previously inside cm_p7_GForwardScoreOnly() raced with
+   * concurrent reads under --cpu>0 and made GFMU nondeterministic. It writes
+   * the same deterministic values every time, so a single up-front init makes
+   * the threaded and serial scoring paths bit-identical. */
+  p7_FLogsumInit();
 
   if(do_generic) p7_ReconfigLength(gm, L);
   else           p7_oprofile_ReconfigLength(om, L);
@@ -733,21 +980,47 @@ cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_B
 	    if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
 	  }
 	  if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
-	  sc = (fsc - nullsc) / eslCONST_LOG2;
-	  xv[i] = sc;
+	  /* keep full double precision (match the threaded worker exactly, no
+	   * intermediate float rounding) so serial and threaded xv[] -- and thus
+	   * GFMU -- are bit-identical across --cpu (brief 26_0719-046). */
+	  xv[i] = (double)((fsc - nullsc) / eslCONST_LOG2);
 	}
 
       free(dsq); dsq = NULL;
       if (ox != NULL) { p7_omx_Destroy(ox); ox = NULL; }
     }
 
-  if ((status = esl_gumbel_FitComplete(xv, N, &gmu, &glam)) != eslOK) goto ERROR;
-  /* Explanation of the eqn below: first find the x at which the Gumbel tail
-   * mass is predicted to be equal to tailp. Then back up from that x
-   * by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-   * instead of tailp.
+  /* known-lambda all-order-statistic tau estimator (briefs 26_0719-041/
+   * 26_0719-053, deployed by brief 26_0719-054; replaces the top-half
+   * estimator of brief 26_0719-046). Given the N sampled bit scores and the
+   * *predicted* glocal lambda passed in <lambda>, sort ascending and use the
+   * distribution-free order-statistic identity E[S(X_(k))] = (N-k+1)/(N+1)
+   * under an exponential tail S(x)=exp(-lambda*(x-tau)):
+   *     tau_hat_(k) = X_(k) + log((N-k+1)/(N+1)) / lambda
+   * then average the anchors over ALL k = 1..N (brief 26_0719-041's
+   * "known_allavg"; matches Python tau_k.mean()).
+   *
+   * On its own this is the *worst* raw estimator of the family -- averaging
+   * in the low-rank anchors is biased -- but it has the lowest variance, and
+   * it is the best of the family once the caller applies the learned
+   * shrinkage correction that removes that bias (gfcalib_shrink_tau()). So
+   * what this function returns is a raw tau, not the final GFMU.
+   *
+   * The sort makes the result independent of the threaded worker merge order,
+   * so (tau,lambda) is byte-identical across --cpu. <tailp> (EgfT) is
+   * intentionally UNUSED here -- the tailp choice is baked into the predicted
+   * lambda.
    */
-  *ret_tau =  esl_gumbel_invcdf(1.0-tailp, gmu, glam) + (log(tailp) / lambda);
+  esl_vec_DSortIncreasing(xv, N);
+  {
+    double tau_sum = 0.;
+    int    k;
+    for (k = 0; k < N; k++) {            /* k is 0-based rank */
+      double p_k = (double) (N - k) / (double) (N + 1);   /* (N-(k+1)+1)/(N+1) */
+      tau_sum += xv[k] + log(p_k) / lambda;
+    }
+    *ret_tau = tau_sum / (double) N;
+  }
 
   free(xv);
   return eslOK;
