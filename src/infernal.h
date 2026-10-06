@@ -849,6 +849,10 @@ typedef struct cp9bands_s {
 
   double   tau;               /* tau used to calculate current bands */
 
+  /* --mxsize fallback for the end-band hull, cp9_EndHullRetryBands() (brief 26_0821-103) */
+  int      im_widened;        /* TRUE if the !trunc dead-node widening gave the last node's insert (ROOT_IR's source) a band with no posterior evidence */
+  int      endhull_retry;     /* TRUE while cp9_EndHullRetryBands() is re-deriving bands */
+
 } CP9Bands_t;
 
 /* Recompute-on-demand accessors for the per-state d-band (brief 26_0430-157).
@@ -3872,6 +3876,7 @@ extern double cp9_MeanMatchRelativeEntropy(const CP9_t *cp9);
 extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
 extern float        SizeofCP9Bands(CP9Bands_t *cp9b);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
+extern int          cp9_EndHullRetryBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int pass_idx, int *ret_changed);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
