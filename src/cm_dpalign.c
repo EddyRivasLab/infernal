@@ -1018,6 +1018,35 @@ ckpt_el_compute_dmax(CKPT_CTX *cx)
   }
 }
 
+/* hb_el_compute_dmax(): the stock-HB-matrix twin of ckpt_el_compute_dmax().
+ * Fill eldmax[0..L] from the HMM bands in <cp9b>: for each local-end state v,
+ * EL-row r = (v's j) - sdr is referenced at d-indices up to hdmax[v][jp] - sd,
+ * by BOTH the Outside v->EL writes and the OptAcc alpha[cm->M] reads.  Cells
+ * of the stock full-triangle EL deck with d > eldmax[r] are therefore never
+ * written by Outside (the EL->EL self-transition sweep only moves downward in
+ * d), stay exactly IMPOSSIBLE, and are never read by OptAcc.  -1 marks an
+ * EL-row no local end reaches.  Cost is O(sum over v of v's j band).
+ */
+static void
+hb_el_compute_dmax(CM_t *cm, CP9Bands_t *cp9b, int L, int *eldmax)
+{
+  int v, jp, r;
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    for (jp = 0; jp < njr; jp++) {
+      r = cp9b->jmin[v] + jp - sdr;    /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
+      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+}
+
 /* Allocate a banded EL deck [0..L][0..eldmax[j]] (NULL rows where eldmax<0),
  * initialized to IMPOSSIBLE; account its cells in the working-set tracker. */
 static float **
@@ -5904,6 +5933,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      have_el;     /* TRUE if CM has local ends on, otherwise FALSE */
   int64_t  c;           /* 64-bit int counter */
+  int     *eldmax = NULL; /* [0..L] sparse-EL upper d bound per EL row, see hb_el_compute_dmax() */
 
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      ip_v;               /* offset i index for state v */
@@ -5965,16 +5995,27 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
    */
   if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, yshadow, L)) != eslOK) return status;
 
-  /* start with the EL state (remember, cm->M deck is non-banded) */
+  /* start with the EL state (remember, cm->M deck is non-banded).
+   * Sparse EL: alpha[cm->M][j][d] is only read below at (j-sdr, d-sd) for
+   * local-end states v's band cells, i.e. at d <= eldmax[j] (see
+   * hb_el_compute_dmax()), so compute each prefix-sum row only that far.
+   * The FLogsum chain within a row is unchanged, so every cell that is
+   * read is byte-identical to the full-triangle version.
+   */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
   if(have_el && l_pp[cm->M] != NULL) { 
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    hb_el_compute_dmax(cm, cp9b, L, eldmax);
     for (j = 0; j <= L; j++) {
+      if (eldmax[j] < 0) continue;
       alpha[cm->M][j][0] = l_pp[cm->M][0];
       i = j; 
-      for (d = 1; d <= j; d++) { 
+      for (d = 1; d <= eldmax[j]; d++) { 
 	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], l_pp[cm->M][i--]);
       }
     }
+    free(eldmax);
+    eldmax = NULL;
   }
 
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
@@ -8685,6 +8726,7 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
   int    dp_v;    /* offset d in banded matrix */
   int    in, ix;  /* temp min/max i */
   int    jn, jx;  /* temp min/max j */
+  int   *eldmax = NULL; /* [0..L] sparse-EL upper d bound per EL row, see hb_el_compute_dmax() */
 
   /* ptrs to band info, for convenience */
   int     *imin  = cm->cp9b->imin;  
@@ -8730,15 +8772,23 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
     }
   }
   /* factor in contribution of local ends, the EL state may have emitted this residue.
-   * Note, the M deck is non-banded
+   * Note, the M deck is non-banded.
+   * Sparse EL: post->dp[cm->M][j][d] is exactly IMPOSSIBLE for d > eldmax[j]
+   * (see hb_el_compute_dmax(); cm_PosteriorHB() leaves those cells holding the
+   * Outside EL deck, which is never written there), and folding IMPOSSIBLE into
+   * l_pp is a no-op, so only the d <= eldmax[j] cells are folded.
    */
   if (cm->flags & CMH_LOCAL_END) {
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    hb_el_compute_dmax(cm, cm->cp9b, L, eldmax);
     for (j = 1; j <= L; j++) {
       i = j;
-      for (d = 1; d <= j; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
+      for (d = 1; d <= eldmax[j]; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
 	emit_mx->l_pp[cm->M][i] = FLogsum(emit_mx->l_pp[cm->M][i], post->dp[cm->M][j][d]);
       }
     }
+    free(eldmax);
+    eldmax = NULL;
   }
 
 #if eslDEBUGLEVEL >= 3
@@ -8850,6 +8900,9 @@ cm_EmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX 
 #endif
 
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Function: cm_PostCode()
