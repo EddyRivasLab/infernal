@@ -6035,7 +6035,7 @@ cm_OptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, 
 	/* copy values from saved EL deck */
 	for(d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
 	  dp_v = d - hd_min(cp9b, v, jp_v);
-	  alpha[v][jp_v][dp_v] = alpha[cm->M][j-sdr][d-sd];
+	  if(d >= sd) alpha[v][jp_v][dp_v] = alpha[cm->M][j-sdr][d-sd]; /* d < sd: no EL cell, stays IMPOSSIBLE */
 	  /* yshadow[v][jp_v][dp_v] remains USED_EL */
 	}
       }
@@ -8090,6 +8090,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 	jp_v =  j - jmin[v];
 	dn   = hd_min(cp9b, v, jp_v + sdr) - sd;
 	dx   = hd_max(cp9b, v, jp_v + sdr) - sd;
+	if(dn < 0) dn = 0; /* no EL cell with d < 0: v cannot emit sd residues of a shorter subseq */
 	i    = j-dn+1;                     /* we'll decrement this in for (d... loops inside switch below */
 	dp_v = dn - hd_min(cp9b, v, jp_v + sdr);  /* we'll increment this in for (d... loops inside switch below */
 

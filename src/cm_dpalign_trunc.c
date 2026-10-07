@@ -10576,7 +10576,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  jp_v  = j - jmin[v];
 	  for(d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
 	    dp_v = d - hd_min(cp9b, v, jp_v);
-	    Jalpha[v][jp_v][dp_v] = Jalpha[cm->M][j-sdr][d-sd];
+	    if(d >= sd) Jalpha[v][jp_v][dp_v] = Jalpha[cm->M][j-sdr][d-sd]; /* d < sd: no EL cell, stays IMPOSSIBLE */
 	  }
 	}
       }
@@ -10585,7 +10585,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  jp_v  = j - jmin[v];
 	  for(d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
 	    dp_v = d - hd_min(cp9b, v, jp_v);
-	    Lalpha[v][jp_v][dp_v] = Lalpha[cm->M][j][d-sdl];
+	    if(d >= sdl) Lalpha[v][jp_v][dp_v] = Lalpha[cm->M][j][d-sdl]; /* d < sd: no EL cell, stays IMPOSSIBLE */
 	  }
 	}
       }
@@ -10594,7 +10594,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 	  jp_v  = j - jmin[v];
 	  for(d = hd_min(cp9b, v, jp_v); d <= hd_max(cp9b, v, jp_v); d++) {
 	    dp_v = d - hd_min(cp9b, v, jp_v);
-	    Ralpha[v][jp_v][dp_v] = Ralpha[cm->M][j-sdr][d-sdr];
+	    if(d >= sdr) Ralpha[v][jp_v][dp_v] = Ralpha[cm->M][j-sdr][d-sdr]; /* d < sd: no EL cell, stays IMPOSSIBLE */
 	  }
 	}
       }
@@ -13838,6 +13838,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	    jp_v = j - jmin[v];
 	    dn   = hd_min(cp9b, v, jp_v + sdr) - sd;
 	    dx   = hd_max(cp9b, v, jp_v + sdr) - sd;
+	    if(dn < 0) dn = 0; /* no EL cell with d < 0: v cannot emit its residues of a shorter subseq */
 	    i    = j-dn+1;                     /* we'll decrement this in for (d... loops inside switch below */
 	    dp_v = dn - hd_min(cp9b, v, jp_v + sdr);  /* we'll increment this in for (d... loops inside switch below */
 	    
@@ -13879,6 +13880,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	    jp_v = j - jmin[v];
 	    dn   = hd_min(cp9b, v, jp_v) - sdl;
 	    dx   = hd_max(cp9b, v, jp_v) - sdl;
+	    if(dn < 0) dn = 0; /* no EL cell with d < 0: v cannot emit its residues of a shorter subseq */
 	    i    = j-dn+1;               /* we'll decrement this in for (d... loops inside switch below */
 	    dp_v = dn - hd_min(cp9b, v, jp_v);  /* we'll increment this in for (d... loops inside switch below */
 
@@ -13924,6 +13926,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	    jp_v = j - jmin[v];
 	    dn   = hd_min(cp9b, v, jp_v + sdr) - sdr;
 	    dx   = hd_max(cp9b, v, jp_v + sdr) - sdr;
+	    if(dn < 0) dn = 0; /* no EL cell with d < 0: v cannot emit its residues of a shorter subseq */
 	    i    = j-dn+1;                     /* we'll decrement this in for (d... loops inside switch below */
 	    dp_v = dn - hd_min(cp9b, v, jp_v + sdr);  /* we'll increment this in for (d... loops inside switch below */
 	    
