@@ -3956,7 +3956,10 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	  }
 	}
 	if(el_is_possible) {
-	  pA[cur_vec_size-1] = cm->endsc[v] + alpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  /* EL deck value alpha[cm->M][j][d] is the fixed ramp el_selfsc * d;
+	   * cm_InsideAlignHB() does not fill that deck (sparse EL), so reading
+	   * it here gave IMPOSSIBLE and EL could never be sampled. */
+	  pA[cur_vec_size-1] = cm->endsc[v] + (cm->el_selfsc * d);
 	}
 	/* sample yoffset */
 	if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of valid transitions (non-B_st) is 0.");
