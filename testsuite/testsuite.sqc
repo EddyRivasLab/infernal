@@ -84,6 +84,7 @@
 1 exercise  bug/i49-hmmonly-ovlp  !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
 1 exercise  bug/i57-eset0-effn    !testsuite/bug-i57.pl! @src/cmbuild@ @src/cmsearch@
 1 exercise  cmbuild/entropy-filter  !testsuite/i-entropy-filter-choice.pl! @src/cmbuild@ !testsuite/RIBOSUM85-60.mat!
+1 exercise  bug/i61-mapali-tilde  !testsuite/bug-i61.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!
