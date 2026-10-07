@@ -5055,9 +5055,11 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	      }
 	    }
 	  }
-	  if(Jel_is_possible) JpA[Jntrans-1] = cm->endsc[v] + Jalpha[cm->M][j][d]; /* remember EL deck is non-banded */
-	  if(Lel_is_possible) LpA[Lntrans-1] = cm->endsc[v] + Lalpha[cm->M][j][d]; /* remember EL deck is non-banded */
-	  if(Rel_is_possible) RpA[Rntrans-1] = cm->endsc[v] + Ralpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  /* EL deck value Xalpha[cm->M][j][d] is the fixed ramp el_selfsc * d;
+	   * cm_TrInsideAlignHB() no longer fills that deck (sparse EL). */
+	  if(Jel_is_possible) JpA[Jntrans-1] = cm->endsc[v] + (cm->el_selfsc * d); /* == Jalpha[cm->M][j][d] */
+	  if(Lel_is_possible) LpA[Lntrans-1] = cm->endsc[v] + (cm->el_selfsc * d); /* == Lalpha[cm->M][j][d] */
+	  if(Rel_is_possible) RpA[Rntrans-1] = cm->endsc[v] + (cm->el_selfsc * d); /* == Ralpha[cm->M][j][d] */
 	
 	  /* create one big vector of all possibilities, and for convenience keep track of mode and mode-specific index (q) of each */
 	  cur_vec_size = Jntrans + Lntrans + Rntrans;

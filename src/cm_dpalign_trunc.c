@@ -7204,6 +7204,42 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
+/* tr_hb_el_compute_dmax(): sparse-EL band bound for the stock truncated HB
+ * engines, the stock-matrix twin of trckpt_el_compute_dmax().  For marginal
+ * mode <mode> (TRMODE_J, TRMODE_L or TRMODE_R) fill eldmax[0..L]: the largest
+ * d at which EL-row r of that mode's EL deck is written by Outside (v->EL)
+ * or read by OptAcc, over all local-end states v valid in <mode>.  The
+ * geometry per mode is (row shift, d shift) = J: (sdr, sd), L: (0, sdl),
+ * R: (sdr, sdr), matching the v->EL writes in cm_TrOutsideAlignHB() and the
+ * EL reads in cm_TrOptAccAlignHB().  Cells with d > eldmax[r] are never
+ * written (the EL->EL sweep only moves downward in d), so they stay exactly
+ * IMPOSSIBLE, and are never read; -1 marks an EL-row no local end reaches.
+ */
+static void
+tr_hb_el_compute_dmax(CM_t *cm, CP9Bands_t *cp9b, int L, char mode, int *eldmax)
+{
+  int   v, jp, r;
+  int  *Xvalid = (mode == TRMODE_J) ? cp9b->Jvalid : (mode == TRMODE_L) ? cp9b->Lvalid : cp9b->Rvalid;
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! Xvalid[v]) continue;
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdl = StateLeftDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int dsh = (mode == TRMODE_J) ? sd : (mode == TRMODE_L) ? sdl : sdr;
+    int rsh = (mode == TRMODE_L) ? 0  : sdr;
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    for (jp = 0; jp < njr; jp++) {
+      r = cp9b->jmin[v] + jp - rsh;    /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - dsh;
+      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+}
+
 /* Function: cm_TrCYKInsideAlignHB()
  *
  * Date:     EPN, Wed Sep  7 12:13:43 2011
@@ -7364,13 +7400,13 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
   if(shmx->Lk_ncells_valid > 0 && fill_L) for(c = 0; c < shmx->Lk_ncells_valid; c++) shmx->Lkmode_mem[c] = TRMODE_J;
   if(shmx->Rk_ncells_valid > 0 && fill_R) for(c = 0; c < shmx->Rk_ncells_valid; c++) shmx->Rkmode_mem[c] = TRMODE_J;
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
-   * Note: we could optimize by skipping this step and using el_scA[d] to
-   * initialize ELs for each state in the first step of the main recursion
-   * below. We fill in the EL deck here for completeness and so that
-   * a check of this alpha matrix with a CYKOutside matrix will pass.
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores.
+   * Sparse EL: Jalpha/Lalpha/Ralpha[cm->M][j][d] would always equal
+   * el_scA[d], so the main recursion below reads el_scA[] directly and
+   * this O(L^2) fill is skipped, unless the CM_ALIGN_CHECKINOUT
+   * debugging check (which reads the whole EL deck) is on.
    */
-  if(cm->flags & CMH_LOCAL_END) { 
+  if((cm->flags & CMH_LOCAL_END) && (cm->align_opts & CM_ALIGN_CHECKINOUT)) { 
     if(cp9b->Jvalid[cm->M]) { 
       for (j = 0; j <= L; j++) {
 	for (d = 0;  d <= j; d++) Jalpha[cm->M][j][d] = el_scA[d];
@@ -7417,11 +7453,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	    dp_v = sd - hd_min(cp9b, v, jp_v);
 	  }
 	  for (; d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
-	    Jalpha[v][jp_v][dp_v] = Jalpha[cm->M][j][d-sd] + cm->endsc[v];
-	    /* If we optimize by skipping the filling of the 
-	     * EL deck the above line would become: 
-	     * 'Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];' 
-	     */
+	    Jalpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v]; /* == Jalpha[cm->M][j][d-sd] + cm->endsc[v] */
 	  }
 	}
       }
@@ -7437,7 +7469,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	    dp_v = sdl - hd_min(cp9b, v, jp_v);
 	  }
 	  for (; d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
-	    Lalpha[v][jp_v][dp_v] = Lalpha[cm->M][j][d-sdl] + cm->endsc[v];
+	    Lalpha[v][jp_v][dp_v] = el_scA[d-sdl] + cm->endsc[v]; /* == Lalpha[cm->M][j][d-sdl] + cm->endsc[v] */
 	  }
 	}
       }
@@ -7453,7 +7485,7 @@ cm_TrCYKInsideAlignHB(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, float size_l
 	    dp_v = sdr - hd_min(cp9b, v, jp_v);
 	  }
 	  for (; d <= hd_max(cp9b, v, jp_v); dp_v++, d++) {
-	    Ralpha[v][jp_v][dp_v] = Ralpha[cm->M][j][d-sdr] + cm->endsc[v];
+	    Ralpha[v][jp_v][dp_v] = el_scA[d-sdr] + cm->endsc[v]; /* == Ralpha[cm->M][j][d-sdr] + cm->endsc[v] */
 	  }
 	}
       }
@@ -8897,13 +8929,14 @@ cm_TrInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
   if(mx->Rncells_valid > 0 && fill_R) esl_vec_FSet(mx->Rdp_mem, mx->Rncells_valid, IMPOSSIBLE);
   if(mx->Tncells_valid > 0 && fill_T) esl_vec_FSet(mx->Tdp_mem, mx->Tncells_valid, IMPOSSIBLE); 
 
-  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores,
-   * Note: we could optimize by skipping this step and using el_scA[d] to
-   * initialize ELs for each state in the first step of the main recursion
-   * below. We fill in the EL deck here for completeness and so that
-   * a check of this alpha matrix with a Outside matrix will pass.
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores.
+   * Sparse EL: the main recursion below reads el_scA[] directly, and
+   * cm_TrPosteriorHB() and cm_TrStochasticParsetreeHB() use the same
+   * fixed ramp, so this O(L^2) fill is skipped unless the
+   * CM_ALIGN_CHECKINOUT debugging check (which reads the whole EL deck)
+   * is on.
    */
-  if(cm->flags & CMH_LOCAL_END) { 
+  if((cm->flags & CMH_LOCAL_END) && (cm->align_opts & CM_ALIGN_CHECKINOUT)) { 
     if(cp9b->Jvalid[cm->M]) { 
       for (j = 0; j <= L; j++) {
 	for (d = 0;  d <= j; d++) Jalpha[cm->M][j][d] = el_scA[d];
@@ -10351,6 +10384,7 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
 		   CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_EMIT_MX *emit_mx, int *ret_b, float *ret_pp)
 {
   int      status;          /* easel status code */
+  int     *eldmax = NULL;   /* [0..L] sparse-EL upper d bound per EL row, see tr_hb_el_compute_dmax() */
   int      v,y,z;	    /* indices for states  */
   int      j,d,i,k;	    /* indices in sequence dimensions */
   float    sc;		    /* temporary log odds score */
@@ -10472,29 +10506,47 @@ cm_TrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit
    */
   if((status = cm_InitializeOptAccShadowDZeroHB(cm, cp9b, errbuf, Jyshadow, L)) != eslOK) return status;
 
-  /* start with the EL state (remember the EL deck is non-banded) */
+  /* start with the EL state (remember the EL deck is non-banded).
+   * Sparse EL: each mode's EL deck is only read below at d <= that mode's
+   * eldmax[j] (see tr_hb_el_compute_dmax()), so compute each prefix-sum
+   * row only that far. The FLogsum chain within a row is unchanged, so
+   * every cell that is read is byte-identical to the full-triangle version.
+   */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
-  if(have_el) { 
+  if(have_el) {
     do_J_v = (cp9b->Jvalid[cm->M] && Jl_pp[cm->M] != NULL)           ? TRUE : FALSE;
     do_L_v = (cp9b->Lvalid[cm->M] && Ll_pp[cm->M] != NULL && fill_L) ? TRUE : FALSE;
     do_R_v = (cp9b->Rvalid[cm->M] && Rr_pp[cm->M] != NULL && fill_R) ? TRUE : FALSE;
-    for (j = 0; j <= L; j++) {
-      if(do_J_v) Jalpha[cm->M][j][0] = Jl_pp[cm->M][0];
-      if(do_L_v) Lalpha[cm->M][j][0] = Ll_pp[cm->M][0];
-      if(do_R_v) Ralpha[cm->M][j][0] = Rr_pp[cm->M][0];
-      if(do_J_v) { 
-	i = j; 
-	for (d = 1; d <= j; d++) Jalpha[cm->M][j][d] = FLogsum(Jalpha[cm->M][j][d-1], Jl_pp[cm->M][i--]);
-      }
-      if(do_L_v) { 
-	i = j; 
-	for (d = 1; d <= j; d++) Lalpha[cm->M][j][d] = FLogsum(Lalpha[cm->M][j][d-1], Ll_pp[cm->M][i--]);
-      }
-      if(do_R_v) { 
-	i = j; 
-	for (d = 1; d <= j; d++) Ralpha[cm->M][j][d] = FLogsum(Ralpha[cm->M][j][d-1], Rr_pp[cm->M][i--]);
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    if(do_J_v) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_J, eldmax);
+      for (j = 0; j <= L; j++) {
+	if(eldmax[j] < 0) continue;
+	Jalpha[cm->M][j][0] = Jl_pp[cm->M][0];
+	i = j;
+	for (d = 1; d <= eldmax[j]; d++) Jalpha[cm->M][j][d] = FLogsum(Jalpha[cm->M][j][d-1], Jl_pp[cm->M][i--]);
       }
     }
+    if(do_L_v) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_L, eldmax);
+      for (j = 0; j <= L; j++) {
+	if(eldmax[j] < 0) continue;
+	Lalpha[cm->M][j][0] = Ll_pp[cm->M][0];
+	i = j;
+	for (d = 1; d <= eldmax[j]; d++) Lalpha[cm->M][j][d] = FLogsum(Lalpha[cm->M][j][d-1], Ll_pp[cm->M][i--]);
+      }
+    }
+    if(do_R_v) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_R, eldmax);
+      for (j = 0; j <= L; j++) {
+	if(eldmax[j] < 0) continue;
+	Ralpha[cm->M][j][0] = Rr_pp[cm->M][0];
+	i = j;
+	for (d = 1; d <= eldmax[j]; d++) Ralpha[cm->M][j][d] = FLogsum(Ralpha[cm->M][j][d-1], Rr_pp[cm->M][i--]);
+      }
+    }
+    free(eldmax);
+    eldmax = NULL;
   }
 
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
@@ -13290,6 +13342,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 		    int do_check, CM_TR_HB_MX *mx, CM_TR_HB_MX *ins_mx)
 {
   int      status;
+  int     *eldmax = NULL;   /* [0..L] sparse-EL upper d bound per EL row, see tr_hb_el_compute_dmax() */
   int      v,y,z;	       /* indices for states */
   float    Jsc,Lsc,Rsc,Tsc;    /* temporary variables holding a float score */
   int      j,d,i,k;	       /* indices in sequence dimensions */
@@ -13910,33 +13963,44 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     } /* end of if !StateIsDetached() */
   } /* end loop over decks v. */
 
-  /* Deal with last step needed for local alignment 
+  /* Deal with last step needed for local alignment
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   * Sparse EL: in each mode, the v->EL writes above reach row j only up to
+   * d = eldmax[j] (see tr_hb_el_compute_dmax()), so cells d > eldmax[j]
+   * are still IMPOSSIBLE and the self-transition steps that read them are
+   * exact no-ops (FLogsum(x, IMPOSSIBLE + el_selfsc) == x). Start each
+   * row's downward sweep at d = eldmax[j]-1 instead of d = j-1.
    */
   if (cm->flags & CMH_LOCAL_END) {
-    if(cp9b->Jvalid[cm->M]) { 
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    if(cp9b->Jvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_J, eldmax);
       for (j = L; j > 0; j--) { /* careful w/ boundary here */
-	for (d = j-1; d >= 0; d--) { /* careful w/ boundary here */
+	for (d = eldmax[j]-1; d >= 0; d--) { /* careful w/ boundary here */
 	  Jbeta[cm->M][j][d] = FLogsum(Jbeta[cm->M][j][d], (Jbeta[cm->M][j][d+1] + cm->el_selfsc));
 	}
       }
     }
     if(fill_L && cp9b->Lvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_L, eldmax);
       for (j = L; j > 0; j--) { /* careful w/ boundary here */
-	for (d = j-1; d >= 0; d--) { /* careful w/ boundary here */
+	for (d = eldmax[j]-1; d >= 0; d--) { /* careful w/ boundary here */
 	  Lbeta[cm->M][j][d] = FLogsum(Lbeta[cm->M][j][d], (Lbeta[cm->M][j][d+1] + cm->el_selfsc));
 	}
       }
     }
-    if(fill_R && cp9b->Rvalid[cm->M]) { 
+    if(fill_R && cp9b->Rvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_R, eldmax);
       for (j = L; j > 0; j--) { /* careful w/ boundary here */
-	for (d = j-1; d >= 0; d--) { /* careful w/ boundary here */
+	for (d = eldmax[j]-1; d >= 0; d--) { /* careful w/ boundary here */
 	  Rbeta[cm->M][j][d] = FLogsum(Rbeta[cm->M][j][d], (Rbeta[cm->M][j][d+1] + cm->el_selfsc));
 	}
       }
     }
+    free(eldmax);
+    eldmax = NULL;
   }
-  fail_flag = FALSE;
+fail_flag = FALSE;
   if(do_check) { 
     /* Check for consistency between the Inside alpha matrix and the
      * Outside beta matrix. we assume the Inside CYK parse score
@@ -14033,6 +14097,9 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   ESL_DPRINTF1(("#DEBUG: \tcm_TrOutsideAlignHB() sc : %f (sc is from Inside!)\n", optsc));
 
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Function: cm_TrPosterior() 
@@ -14194,6 +14261,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
 		 CM_TR_HB_MX *ins_mx, CM_TR_HB_MX *out_mx, CM_TR_HB_MX *post_mx)
 {
   int   status;   /* Easel status code */
+  int     *eldmax = NULL;   /* [0..L] sparse-EL upper d bound per EL row, see tr_hb_el_compute_dmax() */
   int   v;        /* state index */
   int   j;        /* position */
   int   d;        /* subsequence length */
@@ -14239,31 +14307,52 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
     if((status = cm_tr_hb_mx_GrowTo(cm, post_mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status; 
   }
 
-  /* If local ends are on, start with the non-banded EL state (cm->M), otherwise it's not a valid deck. */
-  if(cm->flags & CMH_LOCAL_END) { 
-    if(cp9b->Jvalid[cm->M]) { 
+  /* If local ends are on, start with the non-banded EL state (cm->M), otherwise it's not a valid deck.
+   * Sparse EL: the Inside EL deck is the fixed ramp el_scA[d] = el_selfsc * d
+   * (cm_TrInsideAlignHB() no longer fills it), so use that. In each mode the
+   * Outside EL deck is exactly IMPOSSIBLE for d > eldmax[j] (see
+   * tr_hb_el_compute_dmax()), where the posterior is therefore exactly
+   * IMPOSSIBLE too: when <post_mx> is <out_mx> (all callers) those cells
+   * already hold it, so only d <= eldmax[j] is computed; otherwise they are
+   * set explicitly.
+   */
+  if(cm->flags & CMH_LOCAL_END) {
+    float *el_scA_post;
+    ESL_ALLOC(el_scA_post, sizeof(float) * (L+1));
+    for (d = 0; d <= L; d++) el_scA_post[d] = cm->el_selfsc * d;
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    if(cp9b->Jvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_J, eldmax);
       for (j = 0; j <= L; j++) {
-	for (d = 0; d <= j; d++) { 
-	  post_mx->Jdp[cm->M][j][d] = ins_mx->Jdp[cm->M][j][d] + out_mx->Jdp[cm->M][j][d] - sc;
+	for (d = 0; d <= eldmax[j]; d++) {
+	  post_mx->Jdp[cm->M][j][d] = el_scA_post[d] + out_mx->Jdp[cm->M][j][d] - sc;
 	}
+	if(post_mx != out_mx) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Jdp[cm->M][j][d] = IMPOSSIBLE;
       }
     }
-    if(fill_L && cp9b->Lvalid[cm->M]) { 
+    if(fill_L && cp9b->Lvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_L, eldmax);
       for (j = 0; j <= L; j++) {
-	for (d = 0; d <= j; d++) {
-	  post_mx->Ldp[cm->M][j][d] = ins_mx->Ldp[cm->M][j][d] + out_mx->Ldp[cm->M][j][d] - sc;
+	for (d = 0; d <= eldmax[j]; d++) {
+	  post_mx->Ldp[cm->M][j][d] = el_scA_post[d] + out_mx->Ldp[cm->M][j][d] - sc;
 	}
+	if(post_mx != out_mx) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Ldp[cm->M][j][d] = IMPOSSIBLE;
       }
     }
-    if(fill_R && cp9b->Rvalid[cm->M]) { 
+    if(fill_R && cp9b->Rvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cp9b, L, TRMODE_R, eldmax);
       for (j = 0; j <= L; j++) {
-	for (d = 0; d <= j; d++) {
-	  post_mx->Rdp[cm->M][j][d] = ins_mx->Rdp[cm->M][j][d] + out_mx->Rdp[cm->M][j][d] - sc;
+	for (d = 0; d <= eldmax[j]; d++) {
+	  post_mx->Rdp[cm->M][j][d] = el_scA_post[d] + out_mx->Rdp[cm->M][j][d] - sc;
 	}
+	if(post_mx != out_mx) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Rdp[cm->M][j][d] = IMPOSSIBLE;
       }
     }
+    free(eldmax);
+    eldmax = NULL;
+    free(el_scA_post);
   }
-  /* Fill in the rest of the matrices */
+/* Fill in the rest of the matrices */
   for (v = cm->M-1; v >= 0; v--) { 
     if(cp9b->Jvalid[v]) { 
       jx = jmax[v]-jmin[v];
@@ -14319,6 +14408,9 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
   /* FILE *fp1; fp1 = fopen("tmp.tru_phbmx", "w");   cm_tr_hb_mx_Dump(fp1, post_mx, preset_mode, TRUE); fclose(fp1); */
 #endif
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Function: cm_TrEmitterPosterior()
@@ -14628,6 +14720,7 @@ int
 cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mode, int do_check, CM_TR_HB_MX *post, CM_TR_HB_EMIT_MX *emit_mx)
 {
   int    status;
+  int     *eldmax = NULL;   /* [0..L] sparse-EL upper d bound per EL row, see tr_hb_el_compute_dmax() */
   int    v, j, d; /* state, position, subseq length */
   int    i;       /* sequence position */
   int    fill_L, fill_R; /* do we need to fill Ll_pp/Rr_pp matrices? */
@@ -14714,32 +14807,43 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
     }
   }
   /* factor in contribution of local ends, the EL state may have emitted this residue. */
-  /* Remember, the EL deck is non-banded */
+  /* Remember, the EL deck is non-banded.
+   * Sparse EL: in each mode post->Xdp[cm->M][j][d] is exactly IMPOSSIBLE for
+   * d > eldmax[j] (see tr_hb_el_compute_dmax() and cm_TrPosteriorHB()), and
+   * folding IMPOSSIBLE into the l_pp/r_pp row is a no-op, so only the
+   * d <= eldmax[j] cells are folded.
+   */
   if (cm->flags & CMH_LOCAL_END) {
-    if(cm->cp9b->Jvalid[cm->M]) { 
-      for (j = 1; j <= L; j++) { 
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    if(cm->cp9b->Jvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cm->cp9b, L, TRMODE_J, eldmax);
+      for (j = 1; j <= L; j++) {
 	i = j;
-	for (d = 1; d <= j; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
+	for (d = 1; d <= eldmax[j]; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
 	  emit_mx->Jl_pp[cm->M][i] = FLogsum(emit_mx->Jl_pp[cm->M][i], post->Jdp[cm->M][j][d]);
 	}
       }
     }
-    if(fill_L && cm->cp9b->Lvalid[cm->M]) { 
-      for (j = 1; j <= L; j++) { 
+    if(fill_L && cm->cp9b->Lvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cm->cp9b, L, TRMODE_L, eldmax);
+      for (j = 1; j <= L; j++) {
 	i = j;
-	for (d = 1; d <= j; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
+	for (d = 1; d <= eldmax[j]; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
 	  emit_mx->Ll_pp[cm->M][i] = FLogsum(emit_mx->Ll_pp[cm->M][i], post->Ldp[cm->M][j][d]);
 	}
       }
     }
-    if(fill_R && cm->cp9b->Rvalid[cm->M]) { 
-      for (j = 1; j <= L; j++) { 
+    if(fill_R && cm->cp9b->Rvalid[cm->M]) {
+      tr_hb_el_compute_dmax(cm, cm->cp9b, L, TRMODE_R, eldmax);
+      for (j = 1; j <= L; j++) {
 	i = j;
-	for (d = 1; d <= j; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
+	for (d = 1; d <= eldmax[j]; d++, i--) { /* note: d >= 1, b/c EL emits 1 residue */
 	  emit_mx->Rr_pp[cm->M][i] = FLogsum(emit_mx->Rr_pp[cm->M][i], post->Rdp[cm->M][j][d]);
 	}
       }
     }
+    free(eldmax);
+    eldmax = NULL;
   }
 #if eslDEBUGLEVEL >= 2
   /* Uncomment to dump matrix to file. Careful...this could be very large. */
@@ -14936,6 +15040,9 @@ cm_TrEmitterPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char pr
 #endif
 
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Function: cm_TrPostCode()
