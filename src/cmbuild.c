@@ -81,7 +81,7 @@ static ESL_OPTIONS options[] = {
   { "--beta1",     eslARG_REAL,    "1E-7",  NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing tighter set of QDBs to <x>",   103 },
   { "--beta2",     eslARG_REAL,    "1E-15", NULL, "x>1E-18",    NULL,      NULL,         NULL, "set tail loss prob for calc'ing looser  set of QDBs to <x>",   103 },
   { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 103 },
-  { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL,  "parameterize CM using methods from Infernal v1.0.2",          103 },
+  { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         "--ere",  "parameterize CM using methods from Infernal v1.0.2",          103 },
   { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     103 },
   { "--noh3pri",   eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,"--v1p0,--p56","do not use the hmmer3 DNA prior for zero basepair models",     103 },
   { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         103 },
