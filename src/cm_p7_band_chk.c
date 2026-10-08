@@ -390,8 +390,12 @@ cp9_chk_fwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
                        ic[M-kmin[i]] + Scorify(CP9TSC(cp9O_IM,M)));
   }
   /* erow[i] = endsc; EL-from-M+1 accumulation is UNGATED in the double original
-   * (does not require INBAND(i,M)). erow is dead for band derivation. */
-  if (cp9->flags & CPLAN9_EL) {
+   * (does not require INBAND(i,M)). erow is dead for band derivation: the sum
+   * is only returned (ret_erow != NULL) on row L, so only accumulate it there.
+   * Walking all el_from_ct[M+1] sources on every row costs O(L*M) per pass on
+   * models where nearly every node can local-end (e.g. pure-MATL genome CMs),
+   * independent of the band width (brief 26_0821-107). */
+  if ((cp9->flags & CPLAN9_EL) && ret_erow != NULL) {
     int c_el;
     for (c_el = 0; c_el < cp9->el_from_ct[M+1]; c_el++) {
       if (INBAND(i, cp9->el_from_idx[M+1][c_el])) {
