@@ -4819,7 +4819,9 @@ cm_PinTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   /* full-storage matrices: Inside (imx) + Outside/Posterior (omx) */
   imx = cm_tr_hb_mx_Create(cm);
   omx = cm_tr_hb_mx_Create(cm);
-  if (imx == NULL || omx == NULL) ESL_FAIL(eslEMEM, errbuf, "cm_PinTrPostAlignHB(): matrix create failed");
+  if (imx != NULL) imx->el_full = TRUE; /* filled as full EL triangles below */
+  if (omx != NULL) omx->el_full = TRUE;
+if (imx == NULL || omx == NULL) ESL_FAIL(eslEMEM, errbuf, "cm_PinTrPostAlignHB(): matrix create failed");
   if ((status = cm_tr_hb_mx_GrowTo(cm, imx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
   if ((status = cm_tr_hb_mx_GrowTo(cm, omx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
 
@@ -7205,39 +7207,14 @@ cm_TrCYKInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 }
 
 /* tr_hb_el_compute_dmax(): sparse-EL band bound for the stock truncated HB
- * engines, the stock-matrix twin of trckpt_el_compute_dmax().  For marginal
- * mode <mode> (TRMODE_J, TRMODE_L or TRMODE_R) fill eldmax[0..L]: the largest
- * d at which EL-row r of that mode's EL deck is written by Outside (v->EL)
- * or read by OptAcc, over all local-end states v valid in <mode>.  The
- * geometry per mode is (row shift, d shift) = J: (sdr, sd), L: (0, sdl),
- * R: (sdr, sdr), matching the v->EL writes in cm_TrOutsideAlignHB() and the
- * EL reads in cm_TrOptAccAlignHB().  Cells with d > eldmax[r] are never
- * written (the EL->EL sweep only moves downward in d), so they stay exactly
- * IMPOSSIBLE, and are never read; -1 marks an EL-row no local end reaches.
+ * engines; see cm_tr_hb_mx_ELDmax(), which cm_tr_hb_mx_GrowTo() also uses
+ * to lay out the banded EL decks, so the engines' loops and the layout
+ * agree exactly.
  */
 static void
 tr_hb_el_compute_dmax(CM_t *cm, CP9Bands_t *cp9b, int L, char mode, int *eldmax)
 {
-  int   v, jp, r;
-  int  *Xvalid = (mode == TRMODE_J) ? cp9b->Jvalid : (mode == TRMODE_L) ? cp9b->Lvalid : cp9b->Rvalid;
-  for (r = 0; r <= L; r++) eldmax[r] = -1;
-  for (v = 0; v < cm->M; v++) {
-    if (! Xvalid[v]) continue;
-    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
-    int sd  = StateDelta(cm->sttype[v]);
-    int sdl = StateLeftDelta(cm->sttype[v]);
-    int sdr = StateRightDelta(cm->sttype[v]);
-    int dsh = (mode == TRMODE_J) ? sd : (mode == TRMODE_L) ? sdl : sdr;
-    int rsh = (mode == TRMODE_L) ? 0  : sdr;
-    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
-    for (jp = 0; jp < njr; jp++) {
-      r = cp9b->jmin[v] + jp - rsh;    /* EL-row */
-      if (r < 0 || r > L) continue;
-      int dmax_here = hd_max(cp9b, v, jp) - dsh;
-      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
-      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
-    }
-  }
+  cm_tr_hb_mx_ELDmax(cm, cp9b, L, mode, eldmax);
 }
 
 /* Function: cm_TrCYKInsideAlignHB()
@@ -12125,6 +12102,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrCYKOutsideAlignHB(), unexpected pass idx: %d", pass_idx);
 
   /* grow the matrix based on the current sequence and bands */
+  mx->el_full = TRUE; /* sweeps and checks the whole EL triangles; a do_check caller's ins_mx needs it too */
   if((status = cm_tr_hb_mx_GrowTo(cm, mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status;
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
@@ -14330,7 +14308,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
 	for (d = 0; d <= eldmax[j]; d++) {
 	  post_mx->Jdp[cm->M][j][d] = el_scA_post[d] + out_mx->Jdp[cm->M][j][d] - sc;
 	}
-	if(post_mx != out_mx) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Jdp[cm->M][j][d] = IMPOSSIBLE;
+	if(post_mx != out_mx && (! post_mx->el_banded)) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Jdp[cm->M][j][d] = IMPOSSIBLE;
       }
     }
     if(fill_L && cp9b->Lvalid[cm->M]) {
@@ -14339,7 +14317,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
 	for (d = 0; d <= eldmax[j]; d++) {
 	  post_mx->Ldp[cm->M][j][d] = el_scA_post[d] + out_mx->Ldp[cm->M][j][d] - sc;
 	}
-	if(post_mx != out_mx) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Ldp[cm->M][j][d] = IMPOSSIBLE;
+	if(post_mx != out_mx && (! post_mx->el_banded)) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Ldp[cm->M][j][d] = IMPOSSIBLE;
       }
     }
     if(fill_R && cp9b->Rvalid[cm->M]) {
@@ -14348,7 +14326,7 @@ cm_TrPosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, char preset_mo
 	for (d = 0; d <= eldmax[j]; d++) {
 	  post_mx->Rdp[cm->M][j][d] = el_scA_post[d] + out_mx->Rdp[cm->M][j][d] - sc;
 	}
-	if(post_mx != out_mx) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Rdp[cm->M][j][d] = IMPOSSIBLE;
+	if(post_mx != out_mx && (! post_mx->el_banded)) for (d = ESL_MAX(0, eldmax[j]+1); d <= j; d++) post_mx->Rdp[cm->M][j][d] = IMPOSSIBLE;
       }
     }
     free(eldmax);

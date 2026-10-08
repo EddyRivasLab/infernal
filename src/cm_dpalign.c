@@ -1018,33 +1018,14 @@ ckpt_el_compute_dmax(CKPT_CTX *cx)
   }
 }
 
-/* hb_el_compute_dmax(): the stock-HB-matrix twin of ckpt_el_compute_dmax().
- * Fill eldmax[0..L] from the HMM bands in <cp9b>: for each local-end state v,
- * EL-row r = (v's j) - sdr is referenced at d-indices up to hdmax[v][jp] - sd,
- * by BOTH the Outside v->EL writes and the OptAcc alpha[cm->M] reads.  Cells
- * of the stock full-triangle EL deck with d > eldmax[r] are therefore never
- * written by Outside (the EL->EL self-transition sweep only moves downward in
- * d), stay exactly IMPOSSIBLE, and are never read by OptAcc.  -1 marks an
- * EL-row no local end reaches.  Cost is O(sum over v of v's j band).
+/* hb_el_compute_dmax(): sparse-EL band bound for the stock HB engines; see
+ * cm_hb_mx_ELDmax(), which cm_hb_mx_GrowTo() also uses to lay out the
+ * banded EL deck, so the engines' loops and the layout agree exactly.
  */
 static void
 hb_el_compute_dmax(CM_t *cm, CP9Bands_t *cp9b, int L, int *eldmax)
 {
-  int v, jp, r;
-  for (r = 0; r <= L; r++) eldmax[r] = -1;
-  for (v = 0; v < cm->M; v++) {
-    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
-    int sd  = StateDelta(cm->sttype[v]);
-    int sdr = StateRightDelta(cm->sttype[v]);
-    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
-    for (jp = 0; jp < njr; jp++) {
-      r = cp9b->jmin[v] + jp - sdr;    /* EL-row */
-      if (r < 0 || r > L) continue;
-      int dmax_here = hd_max(cp9b, v, jp) - sd;
-      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
-      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
-    }
-  }
+  cm_hb_mx_ELDmax(cm, cp9b, L, eldmax);
 }
 
 /* Allocate a banded EL deck [0..L][0..eldmax[j]] (NULL rows where eldmax<0),
@@ -2407,7 +2388,8 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   /* full Inside, into imx->dp (same banded layout the deck helpers assume) */
   imx = cm_hb_mx_Create(M);
-  if ((status = cm_hb_mx_GrowTo(cm, imx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  imx->el_full = TRUE; /* filled as the full EL triangle below */
+if ((status = cm_hb_mx_GrowTo(cm, imx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
   for (v = M-1; v >= 0; v--) ckpt_inside_deck(&cx, v, imx->dp, NULL);
   float Z = imx->dp[0][jp_0][Lp_0];
 
@@ -2423,7 +2405,8 @@ cm_PinPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
 
   /* full Outside, into omx->dp; sibling Inside reads come from cx.ifull=imx->dp */
   omx = cm_hb_mx_Create(M);
-  if ((status = cm_hb_mx_GrowTo(cm, omx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
+  omx->el_full = TRUE; /* filled as the full EL triangle below */
+if ((status = cm_hb_mx_GrowTo(cm, omx, errbuf, cm->cp9b, L, size_limit)) != eslOK) goto ERROR;
   cx.ifull = imx->dp;
   if (cx.have_el) cx.elbeta = ckpt_el_deck_alloc(&cx);
   for (v = 0; v < M; v++) ckpt_outside_deck(&cx, v, omx->dp, jp_0, Lp_0);
@@ -6843,6 +6826,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
 
   /* grow the matrix based on the current sequence and bands */
+  mx->el_full = TRUE; /* sweeps and checks the whole EL triangle; a do_check caller's ins_mx needs it too */
   if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cm->cp9b, L, size_limit)) != eslOK) return status;
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
@@ -8174,7 +8158,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     if (getenv("EL_DMAX_VERIFY")) {
       for (j = 0; j <= L; j++) {
         int true_dmax = -1;
-        for (d = j; d >= 0; d--) {
+        for (d = (mx->el_banded ? d_max_written[j] : j); d >= 0; d--) { /* banded layout: no cells above d_max_written[j] */
           if (NOT_IMPOSSIBLE(beta[cm->M][j][d])) { true_dmax = d; break; }
         }
         if (true_dmax != d_max_nonimpos[j]) {
@@ -8452,15 +8436,20 @@ cm_PosteriorHB(CM_t *cm, char *errbuf, int L, float size_limit, CM_HB_MX *ins_mx
    */
   if (cm->flags & CMH_LOCAL_END) {
     float *el_scA_post;
+    int   *eldmax;  /* sparse EL: beta[cm->M][j][d] is IMPOSSIBLE for d > eldmax[j], and those cells may not exist (banded layout) */
     ESL_ALLOC(el_scA_post, sizeof(float) * (L+1));
+    ESL_ALLOC(eldmax,      sizeof(int)   * (L+1));
     for (d = 0; d <= L; d++) el_scA_post[d] = cm->el_selfsc * d;
+    hb_el_compute_dmax(cm, cm->cp9b, L, eldmax);
     for (j = 0; j <= L; j++) {
+      if (eldmax[j] < 0) continue; /* no EL cells in row j, all IMPOSSIBLE */
       if (!NOT_IMPOSSIBLE(beta[cm->M][j][0])) continue; /* j-skip: all beta IMPOSSIBLE, post stays IMPOSSIBLE */
-      for (d = 0; d <= j; d++) {
+      for (d = 0; d <= eldmax[j]; d++) {
 	if (!NOT_IMPOSSIBLE(beta[cm->M][j][d])) break; /* contiguous strip: IMPOSSIBLE means done for this j */
 	post[cm->M][j][d] = el_scA_post[d] + beta[cm->M][j][d] - sc;
       }
     }
+    free(eldmax);
     free(el_scA_post);
   }
 

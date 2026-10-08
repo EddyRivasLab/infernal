@@ -1177,6 +1177,10 @@ typedef struct cm_hb_mx_s {
   float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
 
   int omit_el_deck;     /* if TRUE, do not allocate alpha[cm->M] EL deck (Inside use only) */
+  int el_full;          /* if TRUE, lay the EL deck out as the full [0..j..L][0..d..j] triangle; if FALSE
+			 * (default), EL row j holds only d=0..eldmax[j] (cm_hb_mx_ELDmax()), unless
+			 * cm->align_opts has CM_ALIGN_CHECKINOUT, whose checks read the whole triangle */
+  int el_banded;        /* set by cm_hb_mx_GrowTo(): TRUE if the current EL deck layout is banded */
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
 			 * matrix, which defines j, d, bands for each
 			 * state, only a reference, so don't free
@@ -1215,6 +1219,11 @@ typedef struct cm_tr_hb_mx_s {
   float   *Rdp_mem;     /* the actual mem, points to Rdp[0][0][0] */
   float ***Tdp;         /* B states only: [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *Tdp_mem;     /* the actual mem, points to Tdp[0][0][0] */
+
+  int el_full;          /* if TRUE, lay the J/L/R EL decks out as full [0..j..L][0..d..j] triangles; if FALSE
+			 * (default), EL row j of mode X holds only d=0..eldmax[j] (cm_tr_hb_mx_ELDmax()),
+			 * unless cm->align_opts has CM_ALIGN_CHECKINOUT, whose checks read the whole triangle */
+  int el_banded;        /* set by cm_tr_hb_mx_GrowTo(): TRUE if the current EL deck layout is banded */
 
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
 			 * matrix, which defines j, d, bands for each
@@ -3270,11 +3279,13 @@ extern int              cm_hb_mx_GrowTo               (CM_t *cm, CM_HB_MX *mx, c
 extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx, int print_mx);
 extern void             cm_hb_mx_Destroy              (CM_HB_MX *mx);
 extern int              cm_hb_mx_SizeNeeded           (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb);
+extern void             cm_hb_mx_ELDmax               (CM_t *cm, CP9Bands_t *cp9b, int L, int *eldmax);
 
 extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
 extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx);
 extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
+extern void             cm_tr_hb_mx_ELDmax            (CM_t *cm, CP9Bands_t *cp9b, int L, char mode, int *eldmax);
 extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, 
 						       int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 

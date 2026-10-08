@@ -70,7 +70,7 @@ static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errb
 static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
 static int cm_tr_scan_mx_freefloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
 static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
-static int cm_hb_mx_SizeNeeded_ex    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int64_t *ret_ncells, float *ret_Mb);
+static int cm_hb_mx_SizeNeeded_ex    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int *eldmax, int64_t *ret_ncells, float *ret_Mb);
 
 /*****************************************************************
  *   1. CM_MX data structure functions,
@@ -886,6 +886,8 @@ cm_hb_mx_Create(int M)
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
   mx->omit_el_deck = 0;
+  mx->el_full      = FALSE;
+  mx->el_banded    = FALSE;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
    *          remember deck M is special, as it has no bands, we allocate
@@ -921,6 +923,94 @@ cm_hb_mx_Create(int M)
  ERROR:
   if (mx != NULL) cm_hb_mx_Destroy(mx);
   return NULL;
+}
+
+/* Function:  cm_hb_mx_ELDmax()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Sparse EL: fill <eldmax>[0..L] with the band-derived upper d
+ *            bound of each row of the EL (local end) deck of a CM_HB_MX,
+ *            given the HMM bands in <cp9b>. For each local-end state v,
+ *            EL-row r = (v's j) - sdr is referenced at d-indices up to
+ *            hdmax[v][jp] - sd, by BOTH the Outside v->EL writes and the
+ *            OptAcc alpha[cm->M] reads. EL cells with d > eldmax[r] are
+ *            never written (the EL->EL self-transition sweep only moves
+ *            downward in d), so they stay exactly IMPOSSIBLE, and they are
+ *            never read. eldmax[r] == -1 marks an EL-row no local end
+ *            reaches. Same bound as the checkpointed engines'
+ *            ckpt_el_compute_dmax(). Cost is O(sum over v of v's j band).
+ *
+ * Returns:   void
+ */
+void
+cm_hb_mx_ELDmax(CM_t *cm, CP9Bands_t *cp9b, int L, int *eldmax)
+{
+  int v, jp, r;
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    for (jp = 0; jp < njr; jp++) {
+      r = cp9b->jmin[v] + jp - sdr;    /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
+      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+}
+
+/* Function:  cm_tr_hb_mx_ELDmax()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Truncated version of cm_hb_mx_ELDmax(), for the EL deck of
+ *            marginal mode <mode> (TRMODE_J, TRMODE_L or TRMODE_R) of a
+ *            CM_TR_HB_MX, over local-end states v valid in <mode>. The
+ *            geometry per mode is (row shift, d shift) = J: (sdr, sd),
+ *            L: (0, sdl), R: (sdr, sdr), matching the v->EL writes in
+ *            cm_TrOutsideAlignHB() and the EL reads in
+ *            cm_TrOptAccAlignHB(). Same bound as the checkpointed engines'
+ *            trckpt_el_compute_dmax().
+ *
+ * Returns:   void
+ */
+void
+cm_tr_hb_mx_ELDmax(CM_t *cm, CP9Bands_t *cp9b, int L, char mode, int *eldmax)
+{
+  int   v, jp, r;
+  int  *Xvalid = (mode == TRMODE_J) ? cp9b->Jvalid : (mode == TRMODE_L) ? cp9b->Lvalid : cp9b->Rvalid;
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! Xvalid[v]) continue;
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdl = StateLeftDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int dsh = (mode == TRMODE_J) ? sd : (mode == TRMODE_L) ? sdl : sdr;
+    int rsh = (mode == TRMODE_L) ? 0  : sdr;
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    for (jp = 0; jp < njr; jp++) {
+      r = cp9b->jmin[v] + jp - rsh;    /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - dsh;
+      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+}
+
+/* el_ncells(): number of EL deck cells for rows 0..L: the full triangle,
+ * or, if <eldmax> is non-NULL, sum over rows of (eldmax[j]+1). */
+static int64_t
+el_ncells(int L, int *eldmax)
+{
+  int64_t n = 0;
+  int     j;
+  if (eldmax == NULL) return (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5);
+  for (j = 0; j <= L; j++) n += eldmax[j] + 1;  /* eldmax[j] == -1 adds 0 */
+  return n;
 }
 
 /* Function:  cm_hb_mx_GrowTo()
@@ -966,7 +1056,10 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
   int     have_el;
   int     include_el = (! mx->omit_el_deck);
+  int     el_banded;      /* TRUE to lay the EL deck out banded, see cm_hb_mx_ELDmax() */
+  int    *eldmax = NULL;  /* [0..L] EL row upper d bounds, if el_banded */
   have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
+  el_banded = (have_el && (! mx->el_full) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -974,10 +1067,17 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if((status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, include_el, &ncells, &Mb_needed)) != eslOK) return status;
+  if(el_banded) {
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    cm_hb_mx_ELDmax(cm, cp9b, L, eldmax);
+  }
+  if((status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, include_el, eldmax, &ncells, &Mb_needed)) != eslOK) goto ERROR;
   /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
   ESL_DPRINTF2(("#DEBUG: HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  if(Mb_needed > size_limit) {
+    if(eldmax != NULL) free(eldmax);
+    ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  }
 
   /* check if we should free and reallocate the matrix */
   if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
@@ -1036,11 +1136,14 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
     }
   }
   if(have_el) {
-    for(jp = 0; jp <= L; jp++) { 
+    /* sparse EL: if el_banded, row jp holds only d=0..eldmax[jp] (none if eldmax[jp] == -1) */
+    for(jp = 0; jp <= L; jp++) {
       mx->dp[mx->M][jp] = mx->dp_mem + cur_size;
-      cur_size += jp + 1;
-    }      
+      cur_size += el_banded ? (eldmax[jp] + 1) : (jp + 1);
+    }
   }
+  mx->el_banded = el_banded;
+  if(eldmax != NULL) { free(eldmax); eldmax = NULL; }
   ESL_DASSERT1((cur_size == mx->ncells_valid));
   /*printf("ncells %10" PRId64 " %10" PRId64 "\n", cur_size, mx->ncells_valid);*/
 
@@ -1049,10 +1152,11 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   /* now update L and size_Mb */
   mx->L       = L;    /* length of current seq we're valid for */
   mx->size_Mb = Mb_alloc;
-  
+
   return eslOK;
 
  ERROR:
+  if(eldmax != NULL) free(eldmax);
   return status;
 }
 
@@ -1108,9 +1212,9 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
       }
       fprintf(ofp, "\n\n");
     }
-    /* print EL deck, if it's valid */
+    /* print EL deck, if it's valid (only a full-triangle layout is printed) */
     v = mx->M;
-    if(mx->nrowsA[mx->M] == (mx->L+1)) {
+    if(mx->nrowsA[mx->M] == (mx->L+1) && (! mx->el_banded)) {
       for(j = 0; j <= mx->L; j++) {
 	for(d = 0; d <= j; d++) {
 	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
@@ -1146,7 +1250,7 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
  *
  */
 static int
-cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el,
+cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int *eldmax,
                        int64_t *ret_ncells, float *ret_Mb)
 {
   int     v, jp;
@@ -1171,7 +1275,7 @@ cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int incl
     for(jp = 0; jp <= jbw; jp++)
       ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
   }
-  if(have_el) ncells += (int64_t) ( (int64_t) (L+2) * (int64_t) (L+1) * 0.5); /* space for EL deck */
+  if(have_el) ncells += el_ncells(L, eldmax); /* space for EL deck: full triangle if eldmax is NULL, else banded */
 
   Mb_needed += sizeof(float) * ncells; /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
@@ -1185,7 +1289,7 @@ cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int incl
 int
 cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
 {
-  return cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, ret_ncells, ret_Mb);
+  return cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, NULL, ret_ncells, ret_Mb);
 }
 
 /*****************************************************************
@@ -1229,6 +1333,8 @@ cm_tr_hb_mx_Create(CM_t *cm)
   mx->Tdp     = NULL;
   mx->Tdp_mem = NULL;
   mx->cp9b    = NULL;
+  mx->el_full   = FALSE;
+  mx->el_banded = FALSE;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
    *          remember deck M is special, as it has no bands, we allocate
@@ -1322,6 +1428,9 @@ cm_tr_hb_mx_Create(CM_t *cm)
   return NULL;
 }
 
+static int cm_tr_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int *Jeldmax, int *Leldmax, int *Reldmax,
+                                     int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
+
 /* Function:  cm_tr_hb_mx_GrowTo()
  * Incept:    EPN, Thu Aug 25 14:39:00 2011
  *
@@ -1374,8 +1483,13 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   int     realloced_L; /* did we reallocate mx->Ldp_mem? */
   int     realloced_R; /* did we reallocate mx->Rdp_mem? */
   int     realloced_T; /* did we reallocate mx->Tdp_mem? */
+  int     el_banded;               /* TRUE to lay the EL decks out banded, see cm_tr_hb_mx_ELDmax() */
+  int    *Jeldmax = NULL;          /* [0..L] J mode EL row upper d bounds, if el_banded */
+  int    *Leldmax = NULL;          /* [0..L] L mode EL row upper d bounds, if el_banded */
+  int    *Reldmax = NULL;          /* [0..L] R mode EL row upper d bounds, if el_banded */
 
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  el_banded = (have_el && (! mx->el_full) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -1383,10 +1497,23 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
+  if(el_banded) {
+    ESL_ALLOC(Jeldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Leldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Reldmax, sizeof(int) * (L+1));
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_J, Jeldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_L, Leldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_R, Reldmax);
+  }
+  if((status = cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, Jeldmax, Leldmax, Reldmax, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) goto ERROR;
   /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("#DEBUG: HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  if(Mb_needed > size_limit) {
+    if(Jeldmax != NULL) free(Jeldmax);
+    if(Leldmax != NULL) free(Leldmax);
+    if(Reldmax != NULL) free(Reldmax);
+    ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  }
 
   /* check if we should free the matrix */
   if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
@@ -1590,25 +1717,30 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     }
   }
   if(have_el) {
-    if(mx->Jdp[mx->M] != NULL) { 
-      for(jp = 0; jp <= L; jp++) { 
+    /* sparse EL: if el_banded, row jp of mode X holds only d=0..Xeldmax[jp] (none if -1) */
+    if(mx->Jdp[mx->M] != NULL) {
+      for(jp = 0; jp <= L; jp++) {
 	mx->Jdp[mx->M][jp] = mx->Jdp_mem + Jcur_size;
-	Jcur_size += jp + 1;
+	Jcur_size += el_banded ? (Jeldmax[jp] + 1) : (jp + 1);
       }
-    }      
-    if(mx->Ldp[mx->M] != NULL) { 
-      for(jp = 0; jp <= L; jp++) { 
+    }
+    if(mx->Ldp[mx->M] != NULL) {
+      for(jp = 0; jp <= L; jp++) {
 	mx->Ldp[mx->M][jp] = mx->Ldp_mem + Lcur_size;
-	Lcur_size += jp + 1;
+	Lcur_size += el_banded ? (Leldmax[jp] + 1) : (jp + 1);
       }
-    }      
-    if(mx->Rdp[mx->M] != NULL) { 
-      for(jp = 0; jp <= L; jp++) { 
+    }
+    if(mx->Rdp[mx->M] != NULL) {
+      for(jp = 0; jp <= L; jp++) {
 	mx->Rdp[mx->M][jp] = mx->Rdp_mem + Rcur_size;
-	Rcur_size += jp + 1;
+	Rcur_size += el_banded ? (Reldmax[jp] + 1) : (jp + 1);
       }
-    }      
+    }
   }
+  mx->el_banded = el_banded;
+  if(Jeldmax != NULL) { free(Jeldmax); Jeldmax = NULL; }
+  if(Leldmax != NULL) { free(Leldmax); Leldmax = NULL; }
+  if(Reldmax != NULL) { free(Reldmax); Reldmax = NULL; }
 
   /*printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
     printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
@@ -1632,6 +1764,9 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   return eslOK;
 
  ERROR:
+  if(Jeldmax != NULL) free(Jeldmax);
+  if(Leldmax != NULL) free(Leldmax);
+  if(Reldmax != NULL) free(Reldmax);
   return status;
 }
 
@@ -1725,9 +1860,9 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
       }
       fprintf(ofp, "\n\n");
     }
-    /* print EL deck, if it's valid */
+    /* print EL deck, if it's valid (only a full-triangle layout is printed) */
     v = mx->M;
-    for(j = 0; j <= mx->L; j++) {
+    for(j = 0; j <= mx->L && (! mx->el_banded); j++) {
       for(d = 0; d <= j; d++) {
 	if(mx->Jdp[v] && mx->JnrowsA[v] == (mx->L+1)) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
 	if(fill_L && mx->Ldp[v] && mx->LnrowsA[v] == (mx->L+1)) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
@@ -1767,6 +1902,18 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
  */
 int
 cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
+{
+  return cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, NULL, NULL, NULL, ret_Jncells, ret_Lncells, ret_Rncells, ret_Tncells, ret_Mb);
+}
+
+/* cm_tr_hb_mx_SizeNeeded_ex(): as cm_tr_hb_mx_SizeNeeded(), but if <Jeldmax>,
+ * <Leldmax>, <Reldmax> are non-NULL, count that mode's EL deck as banded
+ * (row j holds d=0..Xeldmax[j], see cm_tr_hb_mx_ELDmax()) instead of as the
+ * full triangle. cm_tr_hb_mx_GrowTo() passes them for its banded layout.
+ */
+static int
+cm_tr_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int *Jeldmax, int *Leldmax, int *Reldmax,
+                          int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
 {
   int     v, jp;
   int64_t Jncells, Lncells, Rncells, Tncells;
@@ -1817,15 +1964,15 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
   if(have_el) { /* space for EL deck */
     if(cp9b->Jvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Jdp[cm->M][] ptrs */
-      Jncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Jncells += el_ncells(L, Jeldmax); /* full triangle if Jeldmax is NULL, else banded */
     }
     if(cp9b->Lvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
-      Lncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Lncells += el_ncells(L, Leldmax); /* full triangle if Leldmax is NULL, else banded */
     }
     if(cp9b->Rvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
-      Rncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Rncells += el_ncells(L, Reldmax); /* full triangle if Reldmax is NULL, else banded */
     }
   }
 
