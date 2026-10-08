@@ -1292,6 +1292,36 @@ cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *re
   return cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, NULL, ret_ncells, ret_Mb);
 }
 
+/* Function:  cm_hb_mx_SizeNeededELBanded()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Same as cm_hb_mx_SizeNeeded(), but sizes the EL deck the way
+ *            cm_hb_mx_GrowTo() lays it out for a default (el_full FALSE)
+ *            matrix: banded (cm_hb_mx_ELDmax()) unless cm->align_opts has
+ *            CM_ALIGN_CHECKINOUT. cm_hb_mx_SizeNeeded() still counts the
+ *            full EL triangle, a safe over-estimate, so that the band
+ *            derivation tau ratchets and search band-width checks that use
+ *            it are unchanged.
+ *
+ * Returns:   <eslOK> on success; <eslEMEM> on allocation failure.
+ */
+int
+cm_hb_mx_SizeNeededELBanded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+{
+  int  status;
+  int *eldmax = NULL;
+  if((cm->flags & CMH_LOCAL_END) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) {
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    cm_hb_mx_ELDmax(cm, cp9b, L, eldmax);
+  }
+  status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, eldmax, ret_ncells, ret_Mb);
+  if(eldmax != NULL) free(eldmax);
+  return status;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "out of memory");
+}
+
 /*****************************************************************
  *   4. CM_TR_HB_MX data structure functions,
  *      matrix of float scores for HMM banded CM alignment/search
@@ -1904,6 +1934,41 @@ int
 cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
 {
   return cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, NULL, NULL, NULL, ret_Jncells, ret_Lncells, ret_Rncells, ret_Tncells, ret_Mb);
+}
+
+/* Function:  cm_tr_hb_mx_SizeNeededELBanded()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Truncated version of cm_hb_mx_SizeNeededELBanded(): sizes the
+ *            J/L/R EL decks the way cm_tr_hb_mx_GrowTo() lays them out for a
+ *            default matrix (banded, cm_tr_hb_mx_ELDmax(), unless
+ *            CM_ALIGN_CHECKINOUT).
+ *
+ * Returns:   <eslOK> on success; <eslEMEM> on allocation failure.
+ */
+int
+cm_tr_hb_mx_SizeNeededELBanded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
+{
+  int  status;
+  int *Jeldmax = NULL, *Leldmax = NULL, *Reldmax = NULL;
+  if((cm->flags & CMH_LOCAL_END) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) {
+    ESL_ALLOC(Jeldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Leldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Reldmax, sizeof(int) * (L+1));
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_J, Jeldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_L, Leldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_R, Reldmax);
+  }
+  status = cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, Jeldmax, Leldmax, Reldmax, ret_Jncells, ret_Lncells, ret_Rncells, ret_Tncells, ret_Mb);
+  if(Jeldmax != NULL) free(Jeldmax);
+  if(Leldmax != NULL) free(Leldmax);
+  if(Reldmax != NULL) free(Reldmax);
+  return status;
+
+ ERROR:
+  if(Jeldmax != NULL) free(Jeldmax);
+  if(Leldmax != NULL) free(Leldmax);
+  ESL_FAIL(status, errbuf, "out of memory");
 }
 
 /* cm_tr_hb_mx_SizeNeeded_ex(): as cm_tr_hb_mx_SizeNeeded(), but if <Jeldmax>,

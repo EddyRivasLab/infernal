@@ -524,8 +524,8 @@ cm_AlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sampl
  * Throws:  <eslEINVAL> on contract violation
  *          <eslERANGE> if total size of all matrices exceeds <size_limit>
  */
-int
-cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+static int
+align_size_needed_hb_ex(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, int el_banded,
 		     float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, 
                      float *ret_cmtotmb, float *ret_totmb)
 {
@@ -540,7 +540,7 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
 
   /* we will always need an Inside or CYK matrix */
-  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &mxmb)) != eslOK) return status;
+  if((status = (el_banded ? cm_hb_mx_SizeNeededELBanded(cm, errbuf, cm->cp9b, L, NULL, &mxmb) : cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, &mxmb))) != eslOK) return status;
   cmtotmb = mxmb;
 
   /* if calc'ing posteriors, we'll also need an Outside matrix (which
@@ -590,6 +590,35 @@ cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
   }
 
   return eslOK;
+}
+
+/* Function: cm_AlignSizeNeededHB()
+ *           cm_AlignSizeNeededHBELBanded()
+ * Incept:   EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:  cm_AlignSizeNeededHB() counts the CM_HB_MX EL (local end) deck(s) as the
+ *           full [0..L][0..j] triangle, a safe over-estimate that the band
+ *           derivation tau ratchets compare to <size_limit>.
+ *           cm_AlignSizeNeededHBELBanded() counts them the way cm_hb_mx_GrowTo()
+ *           actually lays them out (banded, sparse EL), for choosing an
+ *           engine (cmalign --mxsize engine auto-escalation, tier (a)).
+ *           Arguments and returns are otherwise identical, see above.
+ */
+int
+cm_AlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+                     float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb,
+                     float *ret_cmtotmb, float *ret_totmb)
+{
+  return align_size_needed_hb_ex(cm, errbuf, L, size_limit, do_sample, do_post, FALSE,
+                                 ret_mxmb, ret_emxmb, ret_shmxmb, ret_cp9mxmb, ret_cmtotmb, ret_totmb);
+}
+int
+cm_AlignSizeNeededHBELBanded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+                             float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb,
+                             float *ret_cmtotmb, float *ret_totmb)
+{
+  return align_size_needed_hb_ex(cm, errbuf, L, size_limit, do_sample, do_post, TRUE,
+                                 ret_mxmb, ret_emxmb, ret_shmxmb, ret_cp9mxmb, ret_cmtotmb, ret_totmb);
 }
 
 /* Function: cm_Align()

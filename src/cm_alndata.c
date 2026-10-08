@@ -1679,9 +1679,12 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    /* tier (a): standard free-OptAcc. The estimator's own cmtotmb-vs-mxsize test
 	     * (returns eslERANGE if over) is exactly the gate cm_AlignHB()/cm_TrAlignHB()
 	     * apply internally, so eslOK here guarantees the tier-(a) engine won't abort. */
-	    if(do_trunc) status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	    /* sparse EL: size the EL decks as cm_[tr_]hb_mx_GrowTo() lays them out (banded),
+	     * not as the full O(L^2) triangle, which kept every local alignment above
+	     * ~7 kb out of tier (a). */
+	    if(do_trunc) status = cm_TrAlignSizeNeededHBELBanded(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 	                                                 NULL, NULL, NULL, NULL, &est_std_cm, &est_std_tot);
-	    else         status = cm_AlignSizeNeededHB  (cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	    else         status = cm_AlignSizeNeededHBELBanded  (cm, errbuf, sq->L, mxsize, do_sample, do_post,
 	                                                 NULL, NULL, NULL, NULL, &est_std_cm, &est_std_tot);
 	    if(status != eslOK && status != eslERANGE) goto ERROR;
 	    if(status == eslOK) { mxesc_tier = 'a'; eff_checkpt = FALSE; mb_tot = est_std_tot; }

@@ -903,8 +903,8 @@ cm_TrAlignSizeNeeded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sam
  * Throws:  <eslEINVAL> on contract violation
  *          <eslERANGE> if total size of all matrices exceeds <size_limit>
  */
-int
-cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+static int
+align_size_needed_hb_ex(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, int el_banded,
 		       float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, 
                        float *ret_cmtotmb, float *ret_totmb)
 {
@@ -919,7 +919,7 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
   /* we pass NULL values to the *_mx_SizeNeeded() functions because we don't care about cell counts */
 
   /* we will always need an Inside or CYK matrix */
-  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &mxmb)) != eslOK) return status;
+  if((status = (el_banded ? cm_tr_hb_mx_SizeNeededELBanded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &mxmb) : cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, L, NULL, NULL, NULL, NULL, &mxmb))) != eslOK) return status;
   cmtotmb = mxmb;
 
   /* if calc'ing posteriors, we'll also need an Outside matrix (which
@@ -968,6 +968,35 @@ cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_s
   if(cmtotmb > size_limit) ESL_FAIL(eslERANGE, errbuf, "HMM banded trc DP mxes need %.1f>%.1f Mb limit (HMM mxes need an extra %.1f Mb).\nUse --mxsize, --maxtau or --tau.", cmtotmb, (float) size_limit, cp9mxmb);
   
   return eslOK;
+}
+
+/* Function: cm_TrAlignSizeNeededHB()
+ *           cm_TrAlignSizeNeededHBELBanded()
+ * Incept:   EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:  cm_TrAlignSizeNeededHB() counts the CM_TR_HB_MX EL (local end) deck(s) as the
+ *           full [0..L][0..j] triangle, a safe over-estimate that the band
+ *           derivation tau ratchets compare to <size_limit>.
+ *           cm_TrAlignSizeNeededHBELBanded() counts them the way cm_tr_hb_mx_GrowTo()
+ *           actually lays them out (banded, sparse EL), for choosing an
+ *           engine (cmalign --mxsize engine auto-escalation, tier (a)).
+ *           Arguments and returns are otherwise identical, see above.
+ */
+int
+cm_TrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+                       float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb,
+                       float *ret_cmtotmb, float *ret_totmb)
+{
+  return align_size_needed_hb_ex(cm, errbuf, L, size_limit, do_sample, do_post, FALSE,
+                                 ret_mxmb, ret_emxmb, ret_shmxmb, ret_cp9mxmb, ret_cmtotmb, ret_totmb);
+}
+int
+cm_TrAlignSizeNeededHBELBanded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post,
+                               float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb,
+                               float *ret_cmtotmb, float *ret_totmb)
+{
+  return align_size_needed_hb_ex(cm, errbuf, L, size_limit, do_sample, do_post, TRUE,
+                                 ret_mxmb, ret_emxmb, ret_shmxmb, ret_cp9mxmb, ret_cmtotmb, ret_totmb);
 }
 
 /* Function: cm_TrAlign()
