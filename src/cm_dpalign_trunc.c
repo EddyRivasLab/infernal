@@ -3342,13 +3342,13 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
           int jp = j - cx.jmin[v];
           int d;
           if (cx.Jv[v]) {
-            emit_mx->Jr_pp[v][jp] = Jba[v][jp][0] + Jbb[v][jp][0] - Z_ckpt;
-            for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
+            emit_mx->Jr_pp[v][jp] = IMPOSSIBLE; /* no peel: on an empty d-band row (hd_min > hd_max) [jp][0] is the next row's first cell */
+            for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
               emit_mx->Jr_pp[v][jp] = FLogsum(emit_mx->Jr_pp[v][jp], Jba[v][jp][dp] + Jbb[v][jp][dp] - Z_ckpt); }
           }
           if (cx.Rv[v] && cx.fill_R) {
-            emit_mx->Rr_pp[v][jp] = Rba[v][jp][0] + Rbb[v][jp][0] - Z_ckpt;
-            for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
+            emit_mx->Rr_pp[v][jp] = IMPOSSIBLE; /* no peel: on an empty d-band row (hd_min > hd_max) [jp][0] is the next row's first cell */
+            for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
               emit_mx->Rr_pp[v][jp] = FLogsum(emit_mx->Rr_pp[v][jp], Rba[v][jp][dp] + Rbb[v][jp][dp] - Z_ckpt); }
           }
         }
@@ -5257,13 +5257,13 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
         for (j = cx.jmin[v]; j <= cx.jmax[v]; j++) {
           int jp = j - cx.jmin[v]; int d;
           if (cx.Jv[v]) {
-            emit_mx->Jr_pp[v][jp] = Jba[v][jp][0] + Jbb[v][jp][0] - Z; /* peel d=hdmin */
-            for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
+            emit_mx->Jr_pp[v][jp] = IMPOSSIBLE; /* no peel: on an empty d-band row (hd_min > hd_max) [jp][0] is the next row's first cell */
+            for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
               emit_mx->Jr_pp[v][jp] = FLogsum(emit_mx->Jr_pp[v][jp], Jba[v][jp][dp] + Jbb[v][jp][dp] - Z); }
           }
           if (cx.Rv[v] && fill_R) {
-            emit_mx->Rr_pp[v][jp] = Rba[v][jp][0] + Rbb[v][jp][0] - Z; /* peel d=hdmin */
-            for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
+            emit_mx->Rr_pp[v][jp] = IMPOSSIBLE; /* no peel: on an empty d-band row (hd_min > hd_max) [jp][0] is the next row's first cell */
+            for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) { int dp=d-hd_min(cp9b, v, jp);
               emit_mx->Rr_pp[v][jp] = FLogsum(emit_mx->Rr_pp[v][jp], Rba[v][jp][dp] + Rbb[v][jp][dp] - Z); }
           }
         }

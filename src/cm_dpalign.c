@@ -2131,8 +2131,8 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
            * additionally covers an empty row inside a non-empty deck, whose shared
            * row pointer aliases an adjacent row's live storage.) */
           if (hd_max(cp9b, v, jp) < hd_min(cp9b, v, jp)) { emit_mx->r_pp[v][jp] = IMPOSSIBLE; continue; }
-          emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt;
-          for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
+          emit_mx->r_pp[v][jp] = IMPOSSIBLE; /* no peel: on an empty d-band row (hd_min > hd_max) [jp][0] is the next row's first cell */
+          for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) {
             int dp = d - hd_min(cp9b, v, jp);
             float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
             emit_mx->r_pp[v][jp] = FLogsum(emit_mx->r_pp[v][jp], postcell);
@@ -2672,8 +2672,8 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
            * cm_EmitterPosteriorHB reads IMPOSSIBLE (its whole HB matrix is FSet to
            * IMPOSSIBLE).  Emit IMPOSSIBLE to match stock byte-for-byte. */
           if (hd_max(cp9b, v, jp) < hd_min(cp9b, v, jp)) { emit_mx->r_pp[v][jp] = IMPOSSIBLE; continue; }
-          emit_mx->r_pp[v][jp] = ba[v][jp][0] + bb[v][jp][0] - Z_ckpt; /* peel d=hdmin */
-          for (d = hd_min(cp9b, v, jp)+1; d <= hd_max(cp9b, v, jp); d++) {
+          emit_mx->r_pp[v][jp] = IMPOSSIBLE; /* no peel: on an empty d-band row (hd_min > hd_max) [jp][0] is the next row's first cell */
+          for (d = hd_min(cp9b, v, jp); d <= hd_max(cp9b, v, jp); d++) {
             int dp = d - hd_min(cp9b, v, jp);
             float postcell = ba[v][jp][dp] + bb[v][jp][dp] - Z_ckpt;
             emit_mx->r_pp[v][jp] = FLogsum(emit_mx->r_pp[v][jp], postcell);
