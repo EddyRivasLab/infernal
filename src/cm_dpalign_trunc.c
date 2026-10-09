@@ -7146,6 +7146,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	/* J mode */
 	if(do_J_v && cp9b->Jvalid[cm->M]) { 
 	  jn = jmin[v] - sdr;
+	  if(jn < 0) jn = 0; /* no EL row j < 0; empty by band logic only while imin[v] >= 1 */
 	  jx = jmax[v] - sdr;
 	  for (j = jn; j <= jx; j++) {
 	    jp_v = j - jmin[v];
@@ -7233,6 +7234,7 @@ cm_TrCYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
 	/* R mode: again, this code is inefficient, but I chose not to try to optimize lest it get more complex */
 	if(do_R_v && cp9b->Rvalid[cm->M]) { 
 	  jn = jmin[v] - sdr;
+	  if(jn < 0) jn = 0; /* no EL row j < 0; empty by band logic only while imin[v] >= 1 */
 	  jx = jmax[v] - sdr;
 	  for (j = jn; j <= jx; j++) {
 	    jp_v = j - jmin[v];
@@ -8430,6 +8432,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	/* J mode */
 	if(do_J_v && cp9b->Jvalid[cm->M]) { 
 	  jn = jmin[v] - sdr;
+	  if(jn < 0) jn = 0; /* no EL row j < 0; empty by band logic only while imin[v] >= 1 */
 	  jx = jmax[v] - sdr;
 	  for (j = jn; j <= jx; j++) {
 	    jp_v = j - jmin[v];
@@ -8518,6 +8521,7 @@ cm_TrOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
 	/* R mode: again, this code is inefficient, but I chose not to try to optimize lest it get more complex */
 	if(do_R_v && cp9b->Rvalid[cm->M]) { 
 	  jn = jmin[v] - sdr;
+	  if(jn < 0) jn = 0; /* no EL row j < 0; empty by band logic only while imin[v] >= 1 */
 	  jx = jmax[v] - sdr;
 	  for (j = jn; j <= jx; j++) {
 	    jp_v = j - jmin[v];
