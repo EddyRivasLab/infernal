@@ -1777,7 +1777,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    }
 	  }
 	  if(do_trunc) {
-		/* brief 26_0430-126 merge: keep cd577024's #DBG-009 instrumentation, but route
+		/* brief 26_0430-126 merge: route
 		 * SizeNeededHB failure to CM_ALIGN_HB_CHECK_FB (IBV vitband fallback)
 		 * instead of directly to ERROR, so the brief-120 IBV fallback stays live
 		 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR.
@@ -1788,8 +1788,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		  /* brief 26_0821-114: banded EL deck, as cm_tr_hb_mx_GrowTo() allocates it */
 		  status = cm_TrAlignSizeNeededHBELBanded(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
-		  fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
-			status, mb_tot, (float) mxsize, do_post, errbuf);
 		  if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
 		}
 		/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
