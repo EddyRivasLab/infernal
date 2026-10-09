@@ -3708,6 +3708,7 @@ cm_CYKOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       emitmode = Emitmode(cm->sttype[v]);        /* note emitmode is for state v */
       
       jn = jmin[v] - sdr;
+      if(jn < 0) jn = 0; /* no EL row j < 0; empty by band logic only while imin[v] >= 1 */
       jx = jmax[v] - sdr;
       for (j = jn; j <= jx; j++) {
 	jp_v =  j - jmin[v];
@@ -4651,6 +4652,7 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
       emitmode = Emitmode(cm->sttype[v]);        /* note emitmode is for state v */
       
       jn = jmin[v] - sdr;
+      if(jn < 0) jn = 0; /* no EL row j < 0; empty by band logic only while imin[v] >= 1 */
       jx = jmax[v] - sdr;
       for (j = jn; j <= jx; j++) {
 	jp_v =  j - jmin[v];
