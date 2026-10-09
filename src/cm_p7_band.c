@@ -2351,7 +2351,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	   * we're going backwards so we have to work out of order
 	   * we could get around this by storing the nodes each EL goes TO
 	   * in an el_to_ct[] vector. */
-	  if(cp9->flags & CPLAN9_EL) {
+	  if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
 	    for(c = 0; c < cp9->el_from_ct[k]; c++) { /* el_from_ct[k] holds # ELs that can go to M_k */
 	      if(INBAND(i, cp9->el_from_idx[k][c])) { 
 		kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
@@ -2958,7 +2958,7 @@ cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int
       kpcur = kx - kmin[i];
       kpprv = kx - kmin[i+1];
       for (k = kx; k >= kn; k--, kpcur--, kpprv--) {
-	  if(cp9->flags & CPLAN9_EL) {
+	  if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
 	    for(c = 0; c < cp9->el_from_ct[k]; c++) {
 	      if(INBAND(i, cp9->el_from_idx[k][c])) {
 		kpcur_el = cp9->el_from_idx[k][c] - kmin[i];

@@ -527,7 +527,7 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
   kpprv = kx - kmin[i+1];
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
     {
-      if(cp9->flags & CPLAN9_EL) {
+      if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
         for(c = 0; c < cp9->el_from_ct[k]; c++) {
           if(INBAND(i, cp9->el_from_idx[k][c])) {
             kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
