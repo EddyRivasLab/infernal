@@ -1436,8 +1436,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  }
 	}
 	else if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
-	  if((status = cp9_IterateSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
-					    ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
+	  /* brief 26_0821-114: size the EL deck as it is allocated (banded), not as the
+	   * full L x L triangle that refused every local alignment above ~9.2 Kb. */
+	  if((status = cp9_IterateSeq2BandsELBanded(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
+						    ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
 	}
 	else {
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
@@ -1783,7 +1785,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		 * the chosen engine's fit and set mb_tot, so skip this eslERANGE size-gate
 		 * (for tier b it would spuriously fail on the full-matrix estimate). */
 		if(! do_mxesc && ! ckpt_will_run) {
-		  status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+		  /* brief 26_0821-114: banded EL deck, as cm_tr_hb_mx_GrowTo() allocates it */
+		  status = cm_TrAlignSizeNeededHBELBanded(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
 		  fprintf(stderr, "#DBG-009 trunc SizeNeededHB status=%d mb_tot=%.2f mxsize=%.2f do_post=%d errbuf=[%s]\n",
 			status, mb_tot, (float) mxsize, do_post, errbuf);
@@ -1912,7 +1915,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	 * allocates, so it refused checkpointed runs that fit comfortably. The
 	 * checkpointed engines apply their own mxsize gate internally. */
 	if(! do_mxesc && ! ckpt_will_run) {
-	  if((status = cm_AlignSizeNeededHB(cm, errbuf, sq->L, mxsize, do_sample, do_post,
+	  /* brief 26_0821-114: banded EL deck, as cm_hb_mx_GrowTo() allocates it */
+	  if((status = cm_AlignSizeNeededHBELBanded(cm, errbuf, sq->L, mxsize, do_sample, do_post,
 					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
 	}
 	/* checkpointed sqrt(M)-memory OptAcc path: engaged by --ckpt (CM_ALIGN_CHECKPT)

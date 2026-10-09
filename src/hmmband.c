@@ -549,8 +549,8 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
  *            for cm->tau = maxtau.
  *            A different error code upon an error, errbuf is filled.
  */
-int
-cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
+static int
+iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, int el_banded, float *ret_Mb)
 {
   int     status;
   int     do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
@@ -564,6 +564,9 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   CP9_t  *cp9 = NULL;
   int     do_fwd_scan, do_bck_scan;
   CP9_MX *pmx = NULL;    /* local pmx distinct from cm->cp9_bmx so FB2HMMBands does not clobber bmx across iterations */
+  double  tau0  = cm->tau; /* starting tau, for the INFERNAL_BANDS_VERBOSE report */
+  int     niter = 0;       /* number of band derivations (1 = bands were not tightened) */
+  float   need0 = 0.;      /* hbmx_Mb at the starting tau */
 
   /* Run Forward+Backward once (tau-independent). Cache fmx/bmx across ratchet iterations below. */
   if((status = cp9_Seq2FBMatrices(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, dsq, i0, j0, doing_search, pass_idx,
@@ -602,10 +605,18 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       tot_Mb   = ck_tot;
     }
     else {
-      if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
-      else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      if(el_banded) {
+        if(do_trunc) { status = cm_TrAlignSizeNeededHBELBanded(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+        else         { status = cm_AlignSizeNeededHBELBanded  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      }
+      else {
+        if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+        else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+      }
       if(status != eslOK && status != eslERANGE) goto ERROR;
     }
+    niter++;
+    if(niter == 1) need0 = hbmx_Mb;
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
     /* check if we can stop iterating, 4 ways we can
      * case 1: matrix is now smaller than our limit.
@@ -632,6 +643,12 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 
   FreeCP9Matrix(pmx);
 
+  /* developer diagnostic: how far the ratchet tightened the bands for this sequence */
+  if((! doing_search) && getenv("INFERNAL_BANDS_VERBOSE") != NULL)
+    fprintf(stderr, "#BANDS_RATCHET L=%d trunc=%d el_banded=%d tau0=%g tau=%g thresh1=%.2f thresh2=%.2f niter=%d need0=%.1f need=%.1f limit=%.1f %s\n",
+            (int) (j0-i0+1), do_trunc, el_banded, tau0, cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, niter, need0, hbmx_Mb, size_limit,
+            (hbmx_Mb > size_limit) ? "over" : ((niter > 1) ? "tightened" : "untightened"));
+
   if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
   if(hbmx_Mb > size_limit) {
     /* brief 26_0821-014: the checkpointed estimators take no size_limit and so leave
@@ -647,6 +664,36 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   if(pmx) FreeCP9Matrix(pmx);
   if(ret_Mb != NULL) *ret_Mb = 0.;
   return status;
+}
+
+int
+cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
+{
+  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, FALSE, ret_Mb);
+}
+
+/* Function:  cp9_IterateSeq2BandsELBanded()
+ * Incept:    EPN, Fri Oct  9 2026 (w/Claude)
+ *
+ * Purpose:   Same as cp9_IterateSeq2Bands(), but for an alignment
+ *            (<doing_search> FALSE, <do_checkpt> FALSE) the size compared
+ *            to <size_limit> counts the HMM banded matrices' local end (EL)
+ *            deck(s) banded, the way cm_[tr_]hb_mx_GrowTo() lays them out
+ *            (cm_[Tr]AlignSizeNeededHBELBanded()), instead of as the full
+ *            [0..L][0..j] triangle. The full-triangle count is almost all
+ *            of the estimate for a long sequence (~12(L+1)(L+2) bytes in
+ *            truncated mode) and does not depend on the bands, so with it
+ *            every local alignment of a sequence longer than ~9.2 Kb
+ *            tightened its bands to the limit and then failed at the
+ *            default --mxsize.
+ *
+ *            Search keeps cp9_IterateSeq2Bands(): its bands, and so its
+ *            output, must not change.
+ */
+int
+cp9_IterateSeq2BandsELBanded(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
+{
+  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, TRUE, ret_Mb);
 }
 
 /* Function: cp9_Seq2Posteriors
