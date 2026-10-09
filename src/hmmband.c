@@ -567,6 +567,11 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   double  tau0  = cm->tau; /* starting tau, for the INFERNAL_BANDS_VERBOSE report */
   int     niter = 0;       /* number of band derivations (1 = bands were not tightened) */
   float   need0 = 0.;      /* hbmx_Mb at the starting tau */
+  float   hbmx_prev = 0.;  /* hbmx_Mb of the previous iteration */
+  double  tau_prev  = cm->tau; /* cm->tau of the previous iteration */
+  float   need_tau_before = 0.; /* hbmx_Mb just before the last increase of tau (0. if none) */
+  float   need_tau_after  = 0.; /* hbmx_Mb just after  the last increase of tau */
+  int     nup   = 0;       /* number of tightening steps that increased hbmx_Mb (diagnostic) */
 
   /* Run Forward+Backward once (tau-independent). Cache fmx/bmx across ratchet iterations below. */
   if((status = cp9_Seq2FBMatrices(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, dsq, i0, j0, doing_search, pass_idx,
@@ -617,6 +622,12 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     }
     niter++;
     if(niter == 1) need0 = hbmx_Mb;
+    else {
+      if(hbmx_Mb > hbmx_prev) nup++;
+      if(cm->tau != tau_prev) { need_tau_before = hbmx_prev; need_tau_after = hbmx_Mb; }
+    }
+    hbmx_prev = hbmx_Mb;
+    tau_prev  = cm->tau;
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
     /* check if we can stop iterating, 4 ways we can
      * case 1: matrix is now smaller than our limit.
@@ -645,11 +656,37 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 
   /* developer diagnostic: how far the ratchet tightened the bands for this sequence */
   if((! doing_search) && getenv("INFERNAL_BANDS_VERBOSE") != NULL)
-    fprintf(stderr, "#BANDS_RATCHET L=%d trunc=%d el_banded=%d tau0=%g tau=%g thresh1=%.2f thresh2=%.2f niter=%d need0=%.1f need=%.1f limit=%.1f %s\n",
-            (int) (j0-i0+1), do_trunc, el_banded, tau0, cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, niter, need0, hbmx_Mb, size_limit,
+    fprintf(stderr, "#BANDS_RATCHET L=%d trunc=%d el_banded=%d tau0=%g tau=%g thresh1=%.2f thresh2=%.2f niter=%d nup=%d need0=%.1f need=%.1f limit=%.1f %s\n",
+            (int) (j0-i0+1), do_trunc, el_banded, tau0, cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, niter, nup, need0, hbmx_Mb, size_limit,
             (hbmx_Mb > size_limit) ? "over" : ((niter > 1) ? "tightened" : "untightened"));
 
   if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+  if(hbmx_Mb > size_limit && el_banded && do_iterate && (! doing_search) && (! do_checkpt) && errbuf != NULL) {
+    /* brief 26_0821-114: replace the estimator's generic "Use --mxsize, --maxtau or
+     * --tau" with advice that is true for this sequence. The ratchet derives the same
+     * sequence of bands whatever the limit and stops at the first that fit, so any
+     * --mxsize above the final (tightest-band) need succeeds. Alternatives: --p7band
+     * (p7-derived bands, and engine escalation instead of failure); from the default
+     * local truncated mode only, --notrunc and -g (each cut the need by 25-50%, at
+     * the starting and the tightest bands, on 8/8 SARS-CoV-2 genomes; adding the
+     * other flag on top of either did not reliably cut it further); and a larger
+     * --maxtau only if the last increase of tau still reduced the need. errbuf holds
+     * 127 chars: optional alternatives are dropped from the end if needed. */
+    char alt[80];
+    int  rec_mxsize = (int) (floor(hbmx_Mb / 1024.) + 1.) * 1024;
+    int  can_mode   = (do_trunc && (cm->flags & CMH_LOCAL_BEGIN)) ? TRUE : FALSE;
+    int  can_tau    = (cm->maxtau < 0.5 && need_tau_before > 0. && need_tau_after < 0.99 * need_tau_before) ? TRUE : FALSE;
+    int  nalt;
+    for(nalt = 2; nalt >= 0; nalt--) {
+      int use_mode = (nalt >= 1 && can_mode);
+      int use_tau  = (nalt >= 2 || (nalt >= 1 && ! can_mode)) && can_tau;
+      snprintf(alt, sizeof(alt), "--p7band%s%s", use_mode ? ", --notrunc, -g" : "", use_tau ? " or a larger --maxtau" : "");
+      if(snprintf(NULL, 0, "DP mxes need %.0f Mb > %.0f Mb limit at tightest bands.\nUse --mxsize %d, or try %s.",
+                  hbmx_Mb, size_limit, rec_mxsize, alt) < eslERRBUFSIZE) break;
+    }
+    ESL_FAIL(eslERANGE, errbuf, "DP mxes need %.0f Mb > %.0f Mb limit at tightest bands.\nUse --mxsize %d, or try %s.",
+             hbmx_Mb, size_limit, rec_mxsize, alt);
+  }
   if(hbmx_Mb > size_limit) {
     /* brief 26_0821-014: the checkpointed estimators take no size_limit and so leave
      * errbuf empty; supply the refusal message the full-cube estimators would have. */
