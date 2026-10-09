@@ -8552,16 +8552,23 @@ tr_vinside_hb(CM_t *cm, ESL_DSQ *dsq, int L,
   for (v = r;    v <= w2;    v++) touch[v] = cm->pnum[v];
   for (v = w2+1; v < cm->M;  v++) touch[v] = 0;
 
-  /* TRUNCATED begin straight into z on empty subsequences. */
-  if (allow_begin && j0-j1 == 0 && i1-i0 == 0 && z != 0 && cp9b->Jvalid[z]) {
+  /* TRUNCATED begin straight into z, at the full-span cell (j0,i0). The main
+   * loop's begin bookkeeping below only visits v = w1-1..r, so z is handled
+   * here, from its seeded deck: on an empty subsequence (z's cell is (j1,i1) =
+   * (j0,i0)), and, with useEL, when z's local-end cell is (j0,i0) (e.g. an MR z
+   * emitting j0 = j1+1 then EL). Without the second case a V-problem whose only
+   * valid parse is ROOT -> begin into z -> EL left b = -1 while state 0 still
+   * carries USED_TRUNC_BEGIN, and the traceback inserted a state -1 node
+   * (brief 26_0821-113). Marginal planes mirror the J plane. */
+  if (allow_begin && z != 0) {
     float trpen = tr_trpenalty(cm, z);
-    if (NOT_IMPOSSIBLE(trpen) && vji_inband(cp9b, z, j1, i1, i0,i1,j1,j0, &op)) {
-      b   = z;
-      bsc = a[z][0][op] + trpen;
-      if (z == 0) {
-	a[0][0][op] = bsc;
-	if (ret_shadow != NULL) shadow[0][0][op] = USED_TRUNC_BEGIN;
-      }
+    if (NOT_IMPOSSIBLE(trpen) && vji_inband(cp9b, z, j0, i0, i0,i1,j1,j0, &op)) {
+      if (cp9b->Jvalid[z] && NOT_IMPOSSIBLE(a[z][j0-j1][op]))
+	{ b  = z; bsc  = a[z][j0-j1][op] + trpen; }
+      if (fill_L && cp9b->Lvalid[z] && NOT_IMPOSSIBLE(La[z][j0-j1][op]))
+	{ Lb = z; Lbsc = La[z][j0-j1][op] + trpen; }
+      if (fill_R && cp9b->Rvalid[z] && NOT_IMPOSSIBLE(Ra[z][j0-j1][op]))
+	{ Rb = z; Rbsc = Ra[z][j0-j1][op] + trpen; }
     }
   }
 
