@@ -1673,8 +1673,8 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
     /* printf("hd needed v: %4d bw: %4d total: %" PRId64 "\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
-  /* diagnostic for band index array size (brief 26_0316-097/098): always print for band expansion measurement */
-  fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.4f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
+  /* diagnostic for band index array size (brief 26_0316-097/098), for band expansion measurement */
+  if(cm_StageVerbose()) fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.4f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
   /* hdmin_mem/hdmax_mem stay NULL; the per-v hdmin[]/hdmax[] pointers are unused
    * by the recompute path. Leave them NULL so any stray flat-array read faults
    * loudly rather than silently reading freed memory. */

@@ -66,3 +66,23 @@ cm_Fail(char *format, ...)
   exit(1);
 }
 
+
+/* Function:  cm_StageVerbose()
+ * Incept:    EPN, Sun Oct 11 2026 (w/Claude)
+ *
+ * Purpose:   Return TRUE if the INFERNAL_STAGE_VERBOSE environment
+ *            variable is set (to any value), FALSE if not.
+ *
+ *            Developer diagnostics -- per-stage timings, band sizes,
+ *            and alignment engine choices, written to stderr as lines
+ *            that begin with '#' -- are printed only when it is set.
+ *            The environment is read once and the answer is cached.
+ */
+int
+cm_StageVerbose(void)
+{
+  static int is_set = -1;
+
+  if(is_set == -1) is_set = (getenv("INFERNAL_STAGE_VERBOSE") != NULL) ? TRUE : FALSE;
+  return is_set;
+}

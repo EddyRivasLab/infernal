@@ -746,7 +746,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     for (i = 1; i <= L; i++)
       ncells64 += (int64_t) (kmax[i] - kmin[i] + 1);
     if (ncells64 > (int64_t) INT_MAX) {
-      fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
               L, M, (long long) ncells64);
       ncells = INT_MAX;
     }
@@ -2302,7 +2302,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     for (i = 1; i <= L; i++)
       ncells64 += (int64_t) (kmax_arr[i] - kmin_arr[i] + 1);
     if (ncells64 > (int64_t) INT_MAX) {
-      fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV_dnc L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV_dnc L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
               L, M, (long long) ncells64);
       ncells = INT_MAX;
     }

@@ -1198,16 +1198,19 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   if(do_sample && r       == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrAlignHB(), do_sample but r is NULL.");
 
   /* Temporary sub-stage timing instrumentation for efficiency review.
-   * Outputs "#CM_TR_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr.
+   * Outputs "#CM_TR_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr
+   * when INFERNAL_STAGE_VERBOSE is set.
    */
   struct timespec _ta_trsub, _tb_trsub;
 #define CM_TR_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_trsub)
 #define CM_TR_ALIGN_SUBSTAGE_END(tag) do { \
     clock_gettime(CLOCK_MONOTONIC, &_tb_trsub); \
     double _ss = (_tb_trsub.tv_sec - _ta_trsub.tv_sec) + (_tb_trsub.tv_nsec - _ta_trsub.tv_nsec)/1e9; \
-    fprintf(stderr, "#CM_TR_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
-            (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
-    fflush(stderr); \
+    if(cm_StageVerbose()) { \
+      fprintf(stderr, "#CM_TR_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
+              (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
+      fflush(stderr); \
+    } \
   } while(0)
 
   /* if do_post, fill Inside, Outside, Posterior matrices, in that order */

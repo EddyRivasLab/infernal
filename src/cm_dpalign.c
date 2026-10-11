@@ -798,16 +798,19 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L); */
 
   /* Sub-stage timing instrumentation.
-   * Outputs "#CM_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr.
+   * Outputs "#CM_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr
+   * when INFERNAL_STAGE_VERBOSE is set.
    */
   struct timespec _ta_sub, _tb_sub;
 #define CM_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_sub)
 #define CM_ALIGN_SUBSTAGE_END(tag) do { \
     clock_gettime(CLOCK_MONOTONIC, &_tb_sub); \
     double _ss = (_tb_sub.tv_sec - _ta_sub.tv_sec) + (_tb_sub.tv_nsec - _ta_sub.tv_nsec)/1e9; \
-    fprintf(stderr, "#CM_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
-            (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
-    fflush(stderr); \
+    if(cm_StageVerbose()) { \
+      fprintf(stderr, "#CM_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
+              (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
+      fflush(stderr); \
+    } \
   } while(0)
 
   /* if do_post:   fill Inside, Outside, Posterior matrices, in that order.

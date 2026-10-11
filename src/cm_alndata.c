@@ -852,7 +852,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
                             (briefs 26_0430-116-126) is a different algorithm; gate removed per
                             brief 26_0430-141. */
 	if(do_p7band && cm->fp7 != NULL && cm->fp7->M < P7BAND_MIN_M) {
-	  fprintf(stderr, "#P7BAND_SKIP M=%d reason=small_M_acc_gap (threshold=%d)\n",
+	  if(cm_StageVerbose()) fprintf(stderr, "#P7BAND_SKIP M=%d reason=small_M_acc_gap (threshold=%d)\n",
 		  cm->fp7->M, P7BAND_MIN_M);
 	  do_p7band = FALSE;
 	}
@@ -1013,7 +1013,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		/* one-line firing diagnostic so tests can count native-fallback
 		 * invocations directly (the authoritative counter; the cosmetic
 		 * "#P7BAND ... FAILED" line below just reflects p7_ncells==0). */
-		fprintf(stderr, "#NATIVE_FALLBACK seq=%s L=%d M=%d\n",
+		if(cm_StageVerbose()) fprintf(stderr, "#NATIVE_FALLBACK seq=%s L=%d M=%d\n",
 			sq->name, (int)sq->L, cm->fp7 ? cm->fp7->M : 0);
 		/* status stays eslOK, p7_ncells stays 0 -> falls through to the
 		 * native cp9_Seq2Bands fallback below. Do nothing else here. */
@@ -1051,7 +1051,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    double _p7b_s = (_tb_p7b.tv_sec - _ta_p7b.tv_sec) +
 	                    (_tb_p7b.tv_nsec - _ta_p7b.tv_nsec) / 1e9;
 	    _st059_ab_total_s = _p7b_s; /* brief 26_0628-059: authoritative a+b total, robust across fallbacks */
-	    fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f ncells=%d ibvmode=%d ibvwidth=%d ibvdelta=%d\n",
+	    if(cm_StageVerbose()) fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f ncells=%d ibvmode=%d ibvwidth=%d ibvdelta=%d\n",
 	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s,
 	            p7_ncells, cm->p7_ibv_mode, cm->p7_ibv_width, cm->p7_ibv_delta); /* brief 26_0430-140: ncells = band-size discriminator */
 	  }
@@ -1068,11 +1068,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	      }
 	    }
 	    float dbg_avgbw = (float)p7_ncells / (float)sq->L;
-	    fprintf(stderr, "#P7BAND %s L=%d M=%d npins=%d pin_range=[%d,%d] ncells=%d avg_bw=%.1f\n",
+	    if(cm_StageVerbose()) fprintf(stderr, "#P7BAND %s L=%d M=%d npins=%d pin_range=[%d,%d] ncells=%d avg_bw=%.1f\n",
 		    sq->name, (int)sq->L, cm->fp7->M, dbg_npin, dbg_minpin, dbg_maxpin, p7_ncells, dbg_avgbw);
 	  }
 	  else {
-	    fprintf(stderr, "#P7BAND %s L=%d M=%d FAILED (status=%d ncells=%d)\n",
+	    if(cm_StageVerbose()) fprintf(stderr, "#P7BAND %s L=%d M=%d FAILED (status=%d ncells=%d)\n",
 		    sq->name, (int)sq->L, cm->fp7->M, status, p7_ncells);
 	  }
 
@@ -1159,7 +1159,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		    status215 = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, zero_pad, do_trunc,
 					       &wv_i2k, &wv_kmin, &wv_kmax, &wv_ncells);  /* unbounded O(L*M) */
 		  clock_gettime(CLOCK_MONOTONIC, &_twv1);
-		  fprintf(stderr, "#T215_WVTIME seq=%s M=%d L=%d bounded=%d wv_s=%.6f\n", sq->name, M215, (int)sq->L, p215_bounded,
+		  if(cm_StageVerbose() || ! p215_cli_used) fprintf(stderr, "#T215_WVTIME seq=%s M=%d L=%d bounded=%d wv_s=%.6f\n", sq->name, M215, (int)sq->L, p215_bounded,
 			  (_twv1.tv_sec - _twv0.tv_sec) + (_twv1.tv_nsec - _twv0.tv_nsec)/1e9);
 		  if(status215 == eslOK && p215_bounded && p216_validate) {
 		    int  *oracle_i2k = NULL;
@@ -1185,7 +1185,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		    for(i215 = 0; i215 <= sq->L; i215++) { tight_kmin[i215] = wv_cloud_kmin[i215]; tight_kmax[i215] = wv_cloud_kmax[i215]; }
 		    for(i215 = 1; i215 <= sq->L; i215++) { km_totw += (p7_kmax[i215]-p7_kmin[i215]+1); cloud_totw += (tight_kmax[i215]-tight_kmin[i215]+1); }
 		    t_kmin = tight_kmin; t_kmax = tight_kmax;
-		    fprintf(stderr, "#T248_CLOUD seq=%s M=%d L=%d delta=%d km_totw=%ld cloud_totw=%ld ratio=%.4f\n",
+		    if(cm_StageVerbose() || ! p215_cli_used) fprintf(stderr, "#T248_CLOUD seq=%s M=%d L=%d delta=%d km_totw=%ld cloud_totw=%ld ratio=%.4f\n",
 			    sq->name, M215, (int)sq->L, p248_delta, km_totw, cloud_totw,
 			    km_totw > 0 ? (double)cloud_totw/(double)km_totw : 1.0);
 		  }
@@ -1241,11 +1241,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 		      km_totw += (b - a + 1); tight_totw += (hi - lo + 1);
 		    }
 		    t_kmin = tight_kmin; t_kmax = tight_kmax;
-		    fprintf(stderr, "#T215 seq=%s M=%d L=%d mode=%s N=%d km_totw=%ld tight_totw=%ld ratio=%.4f n_empty=%d\n",
+		    if(cm_StageVerbose() || ! p215_cli_used) fprintf(stderr, "#T215 seq=%s M=%d L=%d mode=%s N=%d km_totw=%ld tight_totw=%ld ratio=%.4f n_empty=%d\n",
 			    sq->name, M215, (int)sq->L, p215_pernode ? "pernode" : "const", p215_N,
 			    km_totw, tight_totw, km_totw > 0 ? (double)tight_totw/(double)km_totw : 1.0, n_empty);
 		  } else {
-		    fprintf(stderr, "#T215 seq=%s WV/pins2bands_FAILED status=%d; NO tightening applied\n", sq->name, status215);
+		    if(cm_StageVerbose() || ! p215_cli_used) fprintf(stderr, "#T215 seq=%s WV/pins2bands_FAILED status=%d; NO tightening applied\n", sq->name, status215);
 		  }
 		  if(zero_pad)    free(zero_pad);
 		  if(wv_i2k)      free(wv_i2k);
@@ -1281,7 +1281,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    clock_gettime(CLOCK_MONOTONIC, &_tb_cp9);
 	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
 	    _st059_c_s = _cp9_s; /* brief 26_0628-059: stage (c) band construction = HMM-band -> CM v/j-band conversion */
-	    fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
+	    if(cm_StageVerbose()) fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
 	    if(tight_kmin) free(tight_kmin);
 	    if(tight_kmax) free(tight_kmax);
 	  }
@@ -1453,9 +1453,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	/* note: we don't set these three if cp9b_valid is TRUE */
       }
 
-      /* DIAGNOSTIC: always print CP9 banded matrix cell count (whether
-       * cykbands is on or off) so we can compare CP9-only vs cykbands runs. */
-      {
+      /* DIAGNOSTIC: CP9 banded matrix cell count (whether cykbands is on
+       * or off) so we can compare CP9-only vs cykbands runs. */
+      if(cm_StageVerbose()) {
         double _cp9_cells = 0.;
         CP9Bands_t *_cp9b = cm->cp9b;
         int _v, _jp;
@@ -1545,7 +1545,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	  }
 	}
 
-	fprintf(stderr, "#CYKPP_ENGINE seq=%s L=%d M=%d trunc=%d engine=%c est_std=%.1f est_dnc=%.1f mxsize=%.1f\n",
+	if(cm_StageVerbose()) fprintf(stderr, "#CYKPP_ENGINE seq=%s L=%d M=%d trunc=%d engine=%c est_std=%.1f est_dnc=%.1f mxsize=%.1f\n",
 	        sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : cm->clen), do_trunc, _cykpp_engine,
 	        _cykpp_est_std, _cykpp_est_dnc, (float)mxsize);
 
@@ -1632,7 +1632,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	clock_gettime(CLOCK_MONOTONIC, &_tb_cyk);
 	double _cyk_s   = (_tb_cyk.tv_sec  - _ta_cyk.tv_sec)  + (_tb_cyk.tv_nsec  - _ta_cyk.tv_nsec) /1e9;
 	double _b_ratio = (_orig_cells > 0.) ? _tight_cells / _orig_cells : 1.0;
-	fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
+	if(cm_StageVerbose()) fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
 		(cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cyk_s, _b_ratio, _orig_cells, _tight_cells);
       }
 
@@ -1717,7 +1717,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	        mxesc_tier = 'c'; eff_checkpt = FALSE; mb_tot = dnc_tot;
 	      }
 	    }
-	    fprintf(stderr, "#MXESC seq=%s L=%d M=%d trunc=%d tier=%c est_std=%.1f est_ckpt=%.1f est_dnc=%.1f mxsize=%.1f ckpt_avail=%d\n",
+	    if(cm_StageVerbose()) fprintf(stderr, "#MXESC seq=%s L=%d M=%d trunc=%d tier=%c est_std=%.1f est_ckpt=%.1f est_dnc=%.1f mxsize=%.1f ckpt_avail=%d\n",
 	            sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : cm->clen), do_trunc, mxesc_tier,
 	            est_std_cm, ck_cmmb, dnc_tot, (float)mxsize, ckpt_avail);
 
@@ -1733,7 +1733,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	        endhull_tried = TRUE;
 	        if((status = cp9_EndHullRetryBands(cm, errbuf, cm->cp9b, sq->L, pass_idx, &eh_changed)) != eslOK) goto ERROR;
 	        if(eh_changed) {
-	          fprintf(stderr, "#ENDHULL_RETRY seq=%s L=%d trunc=%d dnc_floor=%.1f mxsize=%.1f\n",
+	          if(cm_StageVerbose()) fprintf(stderr, "#ENDHULL_RETRY seq=%s L=%d trunc=%d dnc_floor=%.1f mxsize=%.1f\n",
 	                  sq->name, (int)sq->L, do_trunc, mb_tot, (float)mxsize);
 	          goto CM_ALIGN_HB_RETRY;
 	        }
@@ -2030,7 +2030,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
        * around the p7-Viterbi trace) and retry the CM alignment once.
        */
       if (status != eslOK && cm->p7_use_ibv && !ibv_fallback_used) {
-	fprintf(stderr, "#P7IBV_FALLBACK %s L=%d M=%d status=%d errbuf='%s'\n",
+	if(cm_StageVerbose()) fprintf(stderr, "#P7IBV_FALLBACK %s L=%d M=%d status=%d errbuf='%s'\n",
 		sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : 0), status, errbuf);
 	ibv_fallback_used = TRUE;
 	errbuf[0] = '\0';
@@ -2103,7 +2103,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
       clock_gettime(CLOCK_MONOTONIC, &_tb_cm);
       double _cm_s = (_tb_cm.tv_sec - _ta_cm.tv_sec) + (_tb_cm.tv_nsec - _ta_cm.tv_nsec)/1e9;
       _st059_d_s = _cm_s; /* brief 26_0628-059: stage (d) CM alignment DP itself */
-      fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f%s\n",
+      if(cm_StageVerbose()) fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f%s\n",
               (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s,
               ibv_fallback_used ? " ibv_fallback=1" : "");
       /* brief 26_0628-059: single per-sequence 4-stage timing line, gated by

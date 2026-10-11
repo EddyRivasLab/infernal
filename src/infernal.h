@@ -3869,6 +3869,7 @@ extern int            GetDate(char *errbuf, char **ret_date);
 /* from errors.c */
 extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
+extern int  cm_StageVerbose(void);
 
 /* from eweight.c */
 extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, double max_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff);

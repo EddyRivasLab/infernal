@@ -748,7 +748,7 @@ cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, 
     int64_t ncells64 = 0;
     for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
     if(ncells64 > (int64_t) INT_MAX) {
-      fprintf(stderr, "#NCELLS64 p7_pins2bands L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_pins2bands L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
               L, M, (long long) ncells64);
       *ret_ncells = INT_MAX;
     } else {
@@ -1015,7 +1015,7 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
     int64_t ncells64 = 0;
     for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
     if(ncells64 > (int64_t) INT_MAX) {
-      fprintf(stderr, "#NCELLS64 p7_pins2bands_nodepad L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
+      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_pins2bands_nodepad L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
               L, M, (long long) ncells64);
       *ret_ncells = INT_MAX;
     } else {
@@ -5547,7 +5547,7 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
       int median_pad = sorted[M/2];
       int p90_pad    = sorted[(int)((M-1)*0.90)];
       int p99_pad    = sorted[(int)((M-1)*0.99)];
-      fprintf(stderr, "#P7PB_PERSTATE M=%d min=%d median=%d p90=%d p99=%d max=%d capped=%d\n",
+      if(cm_StageVerbose()) fprintf(stderr, "#P7PB_PERSTATE M=%d min=%d median=%d p90=%d p99=%d max=%d capped=%d\n",
               M, min_pad, median_pad, p90_pad, p99_pad, max_pad, n_capped);
       free(sorted);
     }
@@ -12611,7 +12611,7 @@ cm_p7_Seq2BandsPinBridge(P7_PROFILE *gm, P7_OPROFILE *om, const CM_PB_OM32 *om32
   /* Per-seq pin-count diagnostic (brief 26_0430-091).
    * npins_raw = pins from SW scan; npins_lsis_in = pins handed to LSIS (after
    * any pruning); nsel = chain length selected by LSIS. */
-  fprintf(stderr, "#PB_NPINS M=%d L=%d npins_raw=%d npins_lsis_in=%d nsel=%d\n",
+  if(cm_StageVerbose()) fprintf(stderr, "#PB_NPINS M=%d L=%d npins_raw=%d npins_lsis_in=%d nsel=%d\n",
           M, L, npins, npins_lsis_in, nsel);
   fflush(stderr);
   /* Brief 26_0430-104 diagnostic: dump LSIS-selected pins to file.
@@ -13033,7 +13033,7 @@ cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   }
 
   /* Emit per-stage timing for offline aggregation by CLEN bucket. */
-  fprintf(stderr, "#P7PB_STAGE M=%d L=%d om_build=%.4f sw_scan=%.4f lsis=%.4f band_build=%.4f banded_vit=%.4f banded_trace=%.4f pins2bands=%.4f\n",
+  if(cm_StageVerbose()) fprintf(stderr, "#P7PB_STAGE M=%d L=%d om_build=%.4f sw_scan=%.4f lsis=%.4f band_build=%.4f banded_vit=%.4f banded_trace=%.4f pins2bands=%.4f\n",
           M, L, om_ms/1000.0, sw_ms/1000.0, lsis_ms/1000.0, band_ms/1000.0, bvit_ms/1000.0, btrace_ms/1000.0, pins2bands_ms/1000.0);
   fflush(stderr);
 
