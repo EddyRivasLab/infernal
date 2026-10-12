@@ -169,6 +169,7 @@ OBJS  = cm.o\
 	cm_p7_modelmaker.o\
 	cp9.o\
 	cp9_dp.o\
+	cp9_dp_ckpt.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
 	cp9_trace.o\

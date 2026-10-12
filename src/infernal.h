@@ -855,6 +855,24 @@ typedef struct cp9bands_s {
 
 } CP9Bands_t;
 
+/* Checkpointed CP9 band calculation (cp9_dp_ckpt.c): the HMM bands for
+ * several posterior mass thresholds at once, from a checkpointed
+ * Forward/Backward that needs O(sqrt(L) * M) memory instead of full
+ * L x M matrices.
+ */
+typedef struct cp9_ckptbands_s {
+  int  M;          /* number of nodes in the CP9 HMM */
+  int  nthr;       /* number of distinct thresholds */
+  int *thr;        /* [0..nthr-1] integer log posterior mass thresholds, ascending */
+  /* [t*(M+1)+k] band min/max of node k's match (m), insert (i) and
+   * delete (d) states for threshold thr[t], -1 if not reached */
+  int *pn_min_m, *pn_max_m;
+  int *pn_min_i, *pn_max_i;
+  int *pn_min_d, *pn_max_d;
+  int *occ;        /* [1..M] summed posterior of node k's match and delete states */
+  int  sc;         /* Backward score (log P(seq|HMM), scaled int) */
+} CP9_CKPTBANDS;
+
 /* Recompute-on-demand accessors for the per-state d-band (brief 26_0430-157).
  *
  * These replace the formerly-materialized flat hdmin_mem/hdmax_mem arrays
@@ -3781,6 +3799,13 @@ extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i
 extern int cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
+
+/* from cp9_dp_ckpt.c */
+extern CP9_CKPTBANDS *cp9_CheckptBandsCreate(int M, const int *thr, int nthr);
+extern void           cp9_CheckptBandsDestroy(CP9_CKPTBANDS *cb);
+extern int            cp9_CheckptBandsThreshIdx(CP9_CKPTBANDS *cb, int thresh);
+extern float          cp9_CheckptBandsMbNeeded(int L, int M, int nthr);
+extern int            cp9_CheckptFB2HMMBands(CP9_t *cp9, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9_CKPTBANDS *cb);
 
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
