@@ -26,6 +26,7 @@
 
 static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
 static void plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt);
+static void shrink_cp9_matrices(CM_t *cm);
 
 /* rung-3: derive the per-bifurcation right-fragment length k* (kpin[v]) from a
  * CYK parsetree, exactly as the rung3_drv extract_bifs harness does.  kpin[v]
@@ -434,6 +435,28 @@ plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, in
                                 sq->name, (int) sq->L, cm->cp9->M, use_ckpt ? "ckpt" : "dense", dense_Mb, ckpt_Mb, mxsize,
                                 (force != NULL) ? " forced" : "");
   *ret_use_ckpt = use_ckpt;
+}
+
+/* shrink_cp9_matrices()
+ * Incept: EPN, Mon Oct 12 2026 (w/Claude)
+ *
+ * Shrink cm->cp9_mx and cm->cp9_bmx back to the two rows they are
+ * created with, so that a sequence's CP9 band calculation matrices are
+ * not still allocated during its CM DP alignment (or a later sequence's).
+ * They grow again when next needed.
+ */
+static void
+shrink_cp9_matrices(CM_t *cm)
+{
+  if(cm->cp9 == NULL) return;
+  if(cm->cp9_mx  != NULL && (cm->cp9_mx->rows  > 1 || cm->cp9_mx->ncells_allocated  > 2 * (int64_t) (cm->cp9->M+1))) {
+    FreeCP9Matrix(cm->cp9_mx);
+    cm->cp9_mx  = CreateCP9Matrix(1, cm->cp9->M);
+  }
+  if(cm->cp9_bmx != NULL && (cm->cp9_bmx->rows > 1 || cm->cp9_bmx->ncells_allocated > 2 * (int64_t) (cm->cp9->M+1))) {
+    FreeCP9Matrix(cm->cp9_bmx);
+    cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
+  }
 }
 
 CM_ALNDATA *
@@ -1522,6 +1545,11 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	    fclose(dfp);
 	  }
 	}
+
+	/* brief 26_0821-116: band calculation is done; free its CP9 matrices before
+	 * the CM DP, so peak memory is the larger of the two stages, not their sum.
+	 * Not in sub mode, where the original CM's are reported below. */
+	if(! do_sub) shrink_cp9_matrices(cm);
       }
 
       /* DIAGNOSTIC: CP9 banded matrix cell count (whether cykbands is on
