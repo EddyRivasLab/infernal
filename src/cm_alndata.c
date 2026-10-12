@@ -25,6 +25,7 @@
 #include "infernal.h"
 
 static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
+static void plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt);
 
 /* rung-3: derive the per-bifurcation right-fragment length k* (kpin[v]) from a
  * CYK parsetree, exactly as the rung3_drv extract_bifs harness does.  kpin[v]
@@ -402,6 +403,39 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
  *
  * Throws:    <NULL> on allocation failure.
  */
+/* plain_cp9_engine()
+ * Incept: EPN, Mon Oct 12 2026 (w/Claude)
+ *
+ * The --mxsize gate for the CP9 HMM band calculation of the default
+ * (not p7-banded) path, which is independent of the CM DP's: the two
+ * stages do not hold their matrices at the same time (see
+ * shrink_cp9_matrices()). The full-matrix calculation holds <nmx> CP9
+ * matrices of (L+1) x (M+1) cells (Forward, Backward and, if bands are
+ * tightened, a posterior matrix). If they exceed <mxsize>, use the
+ * checkpointed calculation, which gives the same bands in O(sqrt(L) * M)
+ * memory. That is the smallest this stage can go, so it is used even if
+ * it too exceeds <mxsize> (no length that aligned before fails now).
+ *
+ * Developer override: environment variable INFERNAL_CP9_CKPT set to 1
+ * (0) always (never) uses the checkpointed calculation, with no
+ * --mxsize check.
+ */
+static void
+plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt)
+{
+  float       dense_Mb = (float) nmx * SizeNeededCP9Matrix(sq->L, cm->cp9->M, NULL, NULL);
+  float       ckpt_Mb  = cp9_CheckptSeq2BandsMbNeeded(cm, sq->L, do_iterate, cm->maxtau);
+  int         usable   = cp9_CheckptBandsUsable(cm, FALSE);
+  const char *force    = getenv("INFERNAL_CP9_CKPT");
+  int         use_ckpt = (usable && dense_Mb > mxsize) ? TRUE : FALSE;
+
+  if(usable && force != NULL) use_ckpt = (atoi(force) != 0) ? TRUE : FALSE;
+  if(cm_StageVerbose()) fprintf(stderr, "#CP9ENGINE seq=%s L=%d M=%d engine=%s dense_Mb=%.1f ckpt_Mb=%.1f mxsize=%.1f%s\n",
+                                sq->name, (int) sq->L, cm->cp9->M, use_ckpt ? "ckpt" : "dense", dense_Mb, ckpt_Mb, mxsize,
+                                (force != NULL) ? " forced" : "");
+  *ret_use_ckpt = use_ckpt;
+}
+
 CM_ALNDATA *
 cm_alndata_Create(void)
 {
@@ -1438,12 +1472,31 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	else if(do_xtau) { /* multiply tau (if nec) until required mx is below Mb limit (mxsize) */
 	  /* brief 26_0821-114: size the EL deck as it is allocated (banded), not as the
 	   * full L x L triangle that refused every local alignment above ~9.2 Kb. */
-	  if((status = cp9_IterateSeq2BandsELBanded(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
-						    ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
+	  /* brief 26_0821-116: the full-matrix CP9 F/B holds three (L+1) x (M+1)
+	   * matrices (forward, backward, posterior); over --mxsize, calculate the
+	   * same bands checkpointed. */
+	  int use_ckpt_cp9 = FALSE;
+	  plain_cp9_engine(cm, sq, mxsize, 3, TRUE, &use_ckpt_cp9);
+	  if(use_ckpt_cp9) {
+	    if((status = cp9_CheckptIterateSeq2BandsELBanded(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
+							     ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
+	  }
+	  else {
+	    if((status = cp9_IterateSeq2BandsELBanded(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
+						      ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
+	  }
 	}
 	else {
-	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
-				     1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	  /* brief 26_0821-116: two (L+1) x (M+1) matrices here (posteriors overwrite backward) */
+	  int use_ckpt_cp9 = FALSE;
+	  plain_cp9_engine(cm, sq, mxsize, 2, FALSE, &use_ckpt_cp9);
+	  if(use_ckpt_cp9) {
+	    if((status = cp9_CheckptSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	  }
+	  else {
+	    if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, sq->dsq, 
+				       1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+	  }
 	}
 	if(w != NULL) esl_stopwatch_Stop(w);
 	secs_bands = (w == NULL) ? 0. : w->elapsed;
@@ -1451,6 +1504,24 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	thresh1 = cm->cp9b->thresh1;
 	thresh2 = cm->cp9b->thresh2;
 	/* note: we don't set these three if cp9b_valid is TRUE */
+
+	/* developer: dump the bands, to check that the checkpointed and full-matrix
+	 * CP9 band calculations give the same bands (INFERNAL_CP9_CKPT) */
+	if(getenv("INFERNAL_CP9BANDS_DUMP") != NULL) {
+	  FILE *dfp = fopen(getenv("INFERNAL_CP9BANDS_DUMP"), "a");
+	  if(dfp != NULL) {
+	    CP9Bands_t *b = cm->cp9b;
+	    int k, v;
+	    fprintf(dfp, "# %s L=%d tau=%g thresh1=%.2f thresh2=%.2f sp1=%d sp2=%d ep1=%d ep2=%d Rmarg_i=%d..%d Lmarg_j=%d..%d\n",
+		    sq->name, (int) sq->L, cm->tau, b->thresh1, b->thresh2, b->sp1, b->sp2, b->ep1, b->ep2,
+		    b->Rmarg_imin, b->Rmarg_imax, b->Lmarg_jmin, b->Lmarg_jmax);
+	    for(k = 0; k <= b->hmm_M; k++)
+	      fprintf(dfp, "k %d %d %d %d %d %d %d\n", k, b->pn_min_m[k], b->pn_max_m[k], b->pn_min_i[k], b->pn_max_i[k], b->pn_min_d[k], b->pn_max_d[k]);
+	    for(v = 0; v < cm->M; v++)
+	      fprintf(dfp, "v %d %d %d %d %d %d%d%d%d\n", v, b->imin[v], b->imax[v], b->jmin[v], b->jmax[v], b->Jvalid[v], b->Lvalid[v], b->Rvalid[v], b->Tvalid[v]);
+	    fclose(dfp);
+	  }
+	}
       }
 
       /* DIAGNOSTIC: CP9 banded matrix cell count (whether cykbands is on
