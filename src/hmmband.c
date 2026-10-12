@@ -40,6 +40,13 @@ static int          HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9M
 					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
 static int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
 static int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
+static int          hmmbands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *pmx, int *occ, CP9Bands_t *cp9b,
+				     int i0, int j0, int doing_search, int pass_idx, int debug_level);
+static void         predict_start_end_positions(CP9_MX *pmx, int *occ, CP9Bands_t *cp9b, int i0, int j0);
+static int          ckpt_prepare(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int doing_search, int pass_idx,
+				 int do_iterate, double maxtau, CP9_t **ret_cp9, CP9_CKPTBANDS **ret_cb);
+static int          ckpt_bands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_CKPTBANDS *cb, CP9Bands_t *cp9b,
+				       int i0, int j0, int doing_search, int pass_idx, int debug_level);
 #if eslDEBUGLEVEL >= 3
 static int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
 #endif
@@ -377,7 +384,6 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
   int status;
   int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
   int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
-  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
 
   /* Step: F/B -> HMM bands (tau-dependent via 1-cm->tau). */
   if(use_sums) {
@@ -388,11 +394,30 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
     if((status = cp9_FB2HMMBands(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
 				 (1.-cm->tau), do_fwd_scan, do_bck_scan, do_old_hmm2ij, debug_level)) != eslOK) return status;
   }
+  return hmmbands2cmbands(cm, errbuf, cp9, pmx, NULL, cp9b, i0, j0, doing_search, pass_idx, debug_level);
+}
+
+/* hmmbands2cmbands()
+ *
+ * The part of cp9_FBMatrices2Bands() after the HMM bands are set:
+ * truncation candidates, dead-node widening, and the CM bands. Node
+ * occupancies for the truncation candidates come from posterior matrix
+ * <pmx>, or, if <pmx> is NULL, precomputed in <occ> (see
+ * cp9_PredictStartAndEndPositions()).
+ */
+static int
+hmmbands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *pmx, int *occ, CP9Bands_t *cp9b,
+		 int i0, int j0, int doing_search, int pass_idx, int debug_level)
+{
+  int status;
+  int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step: Marginal-alignment candidate states (thresh1/thresh2-dependent, only for truncation passes). */
   if(do_trunc) {
-    cp9_PredictStartAndEndPositions(pmx, cp9b, i0, j0);
+    predict_start_end_positions(pmx, occ, cp9b, i0, j0);
     if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
@@ -550,7 +575,7 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
  *            A different error code upon an error, errbuf is filled.
  */
 static int
-iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, int el_banded, float *ret_Mb)
+iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, int el_banded, int use_ckpt_cp9, float *ret_Mb)
 {
   int     status;
   int     do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
@@ -564,6 +589,7 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   CP9_t  *cp9 = NULL;
   int     do_fwd_scan, do_bck_scan;
   CP9_MX *pmx = NULL;    /* local pmx distinct from cm->cp9_bmx so FB2HMMBands does not clobber bmx across iterations */
+  CP9_CKPTBANDS *cb = NULL; /* if use_ckpt_cp9: HMM bands for every tau the loop below can try */
   double  tau0  = cm->tau; /* starting tau, for the INFERNAL_BANDS_VERBOSE report */
   int     niter = 0;       /* number of band derivations (1 = bands were not tightened) */
   float   need0 = 0.;      /* hbmx_Mb at the starting tau */
@@ -573,19 +599,32 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   float   need_tau_after  = 0.; /* hbmx_Mb just after  the last increase of tau */
   int     nup   = 0;       /* number of tightening steps that increased hbmx_Mb (diagnostic) */
 
-  /* Run Forward+Backward once (tau-independent). Cache fmx/bmx across ratchet iterations below. */
-  if((status = cp9_Seq2FBMatrices(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, dsq, i0, j0, doing_search, pass_idx,
-				  &cp9, &do_fwd_scan, &do_bck_scan)) != eslOK) goto ERROR;
+  if(use_ckpt_cp9) {
+    /* Checkpointed CP9 F/B, once: HMM bands for every tau this loop can try,
+     * identical to the full-matrix ones, without the three L x M CP9 matrices
+     * (cm->cp9_mx, cm->cp9_bmx and pmx are not used). */
+    if((status = ckpt_prepare(cm, errbuf, dsq, i0, j0, doing_search, pass_idx, do_iterate, maxtau, &cp9, &cb)) != eslOK) goto ERROR;
+  }
+  else {
+    /* Run Forward+Backward once (tau-independent). Cache fmx/bmx across ratchet iterations below. */
+    if((status = cp9_Seq2FBMatrices(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, dsq, i0, j0, doing_search, pass_idx,
+				    &cp9, &do_fwd_scan, &do_bck_scan)) != eslOK) goto ERROR;
 
-  /* Allocate a separate pmx for posterior output. Must NOT alias bmx because
-   * cp9_FB2HMMBands writes posteriors into pmx, which would clobber bmx on
-   * the second iteration. Row count is grown internally by FB2HMMBands. */
-  if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
-    ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2Bands: OOM allocating local pmx");
+    /* Allocate a separate pmx for posterior output. Must NOT alias bmx because
+     * cp9_FB2HMMBands writes posteriors into pmx, which would clobber bmx on
+     * the second iteration. Row count is grown internally by FB2HMMBands. */
+    if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
+      ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2Bands: OOM allocating local pmx");
+  }
 
   while(1) {
-    if((status = cp9_FBMatrices2Bands(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b, i0, j0,
-				      doing_search, pass_idx, do_fwd_scan, do_bck_scan, 0)) != eslOK) goto ERROR;
+    if(use_ckpt_cp9) {
+      if((status = ckpt_bands2cmbands(cm, errbuf, cp9, cb, cm->cp9b, i0, j0, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
+    }
+    else {
+      if((status = cp9_FBMatrices2Bands(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b, i0, j0,
+					doing_search, pass_idx, do_fwd_scan, do_bck_scan, 0)) != eslOK) goto ERROR;
+    }
     if(doing_search) {
       if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
       else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
@@ -652,7 +691,8 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
     }
   }
 
-  FreeCP9Matrix(pmx);
+  if(pmx != NULL) FreeCP9Matrix(pmx);
+  if(cb  != NULL) cp9_CheckptBandsDestroy(cb);
 
   /* developer diagnostic: how far the ratchet tightened the bands for this sequence */
   if((! doing_search) && getenv("INFERNAL_BANDS_VERBOSE") != NULL)
@@ -699,6 +739,7 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 
  ERROR:
   if(pmx) FreeCP9Matrix(pmx);
+  if(cb)  cp9_CheckptBandsDestroy(cb);
   if(ret_Mb != NULL) *ret_Mb = 0.;
   return status;
 }
@@ -706,7 +747,7 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 int
 cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
 {
-  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, FALSE, ret_Mb);
+  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, FALSE, FALSE, ret_Mb);
 }
 
 /* Function:  cp9_IterateSeq2BandsELBanded()
@@ -730,7 +771,210 @@ cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
 int
 cp9_IterateSeq2BandsELBanded(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
 {
-  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, TRUE, ret_Mb);
+  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, TRUE, FALSE, ret_Mb);
+}
+
+/* Function:  cp9_CheckptIterateSeq2BandsELBanded()
+ * Incept:    EPN, Mon Oct 12 2026 (w/Claude)
+ *
+ * Purpose:   Same as cp9_IterateSeq2BandsELBanded(), with the same
+ *            result (bands, and tau, thresh1 and thresh2 on return), but
+ *            the CP9 HMM bands are calculated by the checkpointed CP9
+ *            Forward/Backward (cp9_CheckptFB2HMMBands()) in O(sqrt(L) * M)
+ *            memory, not from full L x M CP9 matrices, and once, for
+ *            every tau the band tightening can try. The size of the
+ *            checkpointed calculation is cp9_CheckptSeq2BandsMbNeeded().
+ *            Alignment only; see cp9_CheckptBandsUsable().
+ */
+int
+cp9_CheckptIterateSeq2BandsELBanded(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb)
+{
+  return iterate_seq2bands_ex(cm, errbuf, dsq, i0, j0, pass_idx, size_limit, doing_search, do_sample, do_post, do_iterate, do_checkpt, ckpt_mode, maxtau, TRUE, TRUE, ret_Mb);
+}
+
+/* Function:  cp9_CheckptSeq2Bands()
+ * Incept:    EPN, Mon Oct 12 2026 (w/Claude)
+ *
+ * Purpose:   Same as cp9_Seq2Bands(), with the same resulting bands, but
+ *            with the CP9 HMM bands calculated by the checkpointed CP9
+ *            Forward/Backward (cp9_CheckptFB2HMMBands()), in
+ *            O(sqrt(L) * M) memory instead of two full L x M CP9
+ *            matrices. Alignment only; see cp9_CheckptBandsUsable().
+ */
+int
+cp9_CheckptSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level)
+{
+  int            status;
+  CP9_t         *cp9 = NULL;
+  CP9_CKPTBANDS *cb  = NULL;
+
+  if((status = ckpt_prepare(cm, errbuf, dsq, i0, j0, doing_search, pass_idx, FALSE, cm->maxtau, &cp9, &cb)) != eslOK) return status;
+  status = ckpt_bands2cmbands(cm, errbuf, cp9, cb, cp9b, i0, j0, doing_search, pass_idx, debug_level);
+  cp9_CheckptBandsDestroy(cb);
+  return status;
+}
+
+/* Function:  cp9_CheckptBandsUsable()
+ * Incept:    EPN, Mon Oct 12 2026 (w/Claude)
+ *
+ * Purpose:   Return TRUE if the checkpointed CP9 band calculation can
+ *            replace the full-matrix one for <cm>: for alignment
+ *            (<doing_search> FALSE), with the default posterior band
+ *            calculation (not posterior sums, not the old HMM to CM
+ *            band mapping), and without the Forward/Backward check.
+ */
+int
+cp9_CheckptBandsUsable(CM_t *cm, int doing_search)
+{
+  if(doing_search)                                                             return FALSE;
+  if(cm->cp9map == NULL)                                                       return FALSE;
+  if((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      return FALSE;
+  if((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) return FALSE;
+  if(cm->align_opts & CM_ALIGN_CHECKFB)                                        return FALSE;
+  return TRUE;
+}
+
+/* ckpt_tau2thresh()
+ * The integer posterior mass threshold cp9_FB2HMMBands() uses for
+ * cm->tau == <tau> (it is passed p_thresh = 1.-tau).
+ */
+static int
+ckpt_tau2thresh(double tau)
+{
+  double p_thresh = (1.-tau);
+  return Prob2Score(((1. - p_thresh)/2.), 1.);
+}
+
+/* ckpt_tau_grid()
+ * The values of tau iterate_seq2bands_ex() can try, starting from
+ * <tau0>: tau0 alone if ! <do_iterate>, else tau0 multiplied by
+ * TAU_MULTIPLIER until it reaches <maxtau>, exactly as the loop there
+ * changes cm->tau. <taus> must hold <max> values; returns the number
+ * set (at most <max>).
+ */
+static int
+ckpt_tau_grid(double tau0, int do_iterate, double maxtau, double *taus, int max)
+{
+  double tau = tau0;
+  int    n   = 0;
+
+  taus[n++] = tau;
+  if(! do_iterate) return n;
+  while(n < max) {
+    tau *= TAU_MULTIPLIER;
+    if(tau >= maxtau) { taus[n++] = maxtau; break; }
+    taus[n++] = tau;
+  }
+  return n;
+}
+#define CKPT_MAXTAUS 128
+
+/* Function:  cp9_CheckptSeq2BandsMbNeeded()
+ * Incept:    EPN, Mon Oct 12 2026 (w/Claude)
+ *
+ * Purpose:   Return the Mb the checkpointed CP9 band calculation needs
+ *            for a target of length <L>, starting from cm->tau, with
+ *            band tightening if <do_iterate>.
+ */
+float
+cp9_CheckptSeq2BandsMbNeeded(CM_t *cm, int L, int do_iterate, double maxtau)
+{
+  double taus[CKPT_MAXTAUS];
+  int    ntau = ckpt_tau_grid(cm->tau, do_iterate, maxtau, taus, CKPT_MAXTAUS);
+  return cp9_CheckptBandsMbNeeded(L, cm->cp9->M, ntau);
+}
+
+/* ckpt_prepare()
+ * Checks, picks the CP9 HMM for <pass_idx> as cp9_Seq2FBMatrices() does,
+ * and runs the checkpointed CP9 band calculation for every tau
+ * iterate_seq2bands_ex() can try from cm->tau. Caller frees *ret_cb.
+ */
+static int
+ckpt_prepare(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int doing_search, int pass_idx,
+	     int do_iterate, double maxtau, CP9_t **ret_cp9, CP9_CKPTBANDS **ret_cb)
+{
+  int            status;
+  CP9_t         *cp9 = NULL;
+  CP9_CKPTBANDS *cb  = NULL;
+  double         taus[CKPT_MAXTAUS];
+  int            thr[CKPT_MAXTAUS];
+  int            ntau, t;
+
+  *ret_cb = NULL;
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "checkpointed CP9 bands, but cm->cp9map is NULL.\n");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "checkpointed CP9 bands, dsq is NULL.");
+  if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "checkpointed CP9 bands, i0: %d > j0: %d\n", i0, j0);
+  if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "checkpointed CP9 bands, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
+  if(! cp9_CheckptBandsUsable(cm, doing_search))
+    ESL_FAIL(eslEINCOMPAT, errbuf, "checkpointed CP9 bands requested for search or an unsupported band option");
+
+  switch(pass_idx) {
+  case PLI_PASS_5P_ONLY_FORCE:   cp9 = cm->Rcp9; break;
+  case PLI_PASS_3P_ONLY_FORCE:   cp9 = cm->Lcp9; break;
+  case PLI_PASS_5P_AND_3P_FORCE: cp9 = cm->Tcp9; break;
+  case PLI_PASS_5P_AND_3P_ANY:   cp9 = cm->Tcp9; break;
+  default:                       cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "checkpointed CP9 bands, relevant cp9 is NULL.\n");
+
+  ntau = ckpt_tau_grid(cm->tau, do_iterate, maxtau, taus, CKPT_MAXTAUS);
+  for(t = 0; t < ntau; t++) thr[t] = ckpt_tau2thresh(taus[t]);
+  if((cb = cp9_CheckptBandsCreate(cp9->M, thr, ntau)) == NULL) ESL_FAIL(eslEMEM, errbuf, "out of memory creating checkpointed CP9 bands");
+  if((status = cp9_CheckptFB2HMMBands(cp9, errbuf, dsq, i0, j0, cb)) != eslOK) { cp9_CheckptBandsDestroy(cb); return status; }
+
+  *ret_cp9 = cp9;
+  *ret_cb  = cb;
+  return eslOK;
+}
+
+/* ckpt_bands2cmbands()
+ * cp9_FBMatrices2Bands() for the current cm->tau, with the HMM bands
+ * taken from <cb> (filled by cp9_CheckptFB2HMMBands()) instead of
+ * calculated from Forward and Backward matrices. Sets the HMM bands as
+ * cp9_FB2HMMBands() does after its two posterior sweeps (a state's band
+ * is unset if either end was never reached or they cross), then
+ * continues exactly as cp9_FBMatrices2Bands().
+ */
+static int
+ckpt_bands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_CKPTBANDS *cb, CP9Bands_t *cp9b,
+		   int i0, int j0, int doing_search, int pass_idx, int debug_level)
+{
+  int M = cp9b->hmm_M;
+  int t = cp9_CheckptBandsThreshIdx(cb, ckpt_tau2thresh(cm->tau));
+  int hmm_is_localized = ((cp9->flags & CPLAN9_LOCAL_BEGIN) || (cp9->flags & CPLAN9_LOCAL_END) || (cp9->flags & CPLAN9_EL)) ? TRUE : FALSE;
+  int k, mset, dset;
+  int64_t x;
+
+  if(t == -1)    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "checkpointed CP9 bands not calculated for tau %g", cm->tau);
+  if(cb->M != M) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "checkpointed CP9 bands for M %d, cp9b for M %d", cb->M, M);
+
+  for(k = 0; k <= M; k++) {
+    x = (int64_t) t * (M+1) + k;
+    cp9b->pn_min_m[k] = cb->pn_min_m[x];
+    cp9b->pn_max_m[k] = cb->pn_max_m[x];
+    cp9b->pn_min_i[k] = cb->pn_min_i[x];
+    cp9b->pn_max_i[k] = cb->pn_max_i[x];
+    cp9b->pn_min_d[k] = cb->pn_min_d[x];
+    cp9b->pn_max_d[k] = cb->pn_max_d[x];
+    /* as in cp9_FB2HMMBands(), ! do_old_hmm2ij (a -1 here is an unset min or max) */
+    mset = dset = TRUE;
+    if(cp9b->pn_min_m[k] == -1 || cp9b->pn_max_m[k] == -1 || (cp9b->pn_max_m[k] < cp9b->pn_min_m[k])) {
+      cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
+      mset = FALSE;
+    }
+    if(cp9b->pn_min_i[k] == -1 || cp9b->pn_max_i[k] == -1 || (cp9b->pn_max_i[k] < cp9b->pn_min_i[k])) {
+      cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
+    }
+    if(cp9b->pn_min_d[k] == -1 || cp9b->pn_max_d[k] == -1 || (cp9b->pn_max_d[k] < cp9b->pn_min_d[k])) {
+      cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
+      dset = FALSE;
+    }
+    if((! hmm_is_localized) && (mset == FALSE && dset == FALSE)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
+  }
+  cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
+  cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
+
+  return hmmbands2cmbands(cm, errbuf, cp9, NULL, cb->occ, cp9b, i0, j0, doing_search, pass_idx, debug_level);
 }
 
 /* Function: cp9_Seq2Posteriors
@@ -5210,6 +5454,20 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
 void
 cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 {
+  predict_start_end_positions(pmx, NULL, cp9b, i0, j0);
+}
+
+/* predict_start_end_positions()
+ *
+ * cp9_PredictStartAndEndPositions(), with node k's occupancy (the
+ * summed posterior of its match and delete states over all positions)
+ * taken from <occ>[k] if <pmx> is NULL. The checkpointed band
+ * calculation (cp9_CheckptFB2HMMBands()) computes <occ> with the same
+ * arithmetic as the loop below.
+ */
+static void
+predict_start_end_positions(CP9_MX *pmx, int *occ, CP9Bands_t *cp9b, int i0, int j0)
+{
   int i;
   int k;                                  /* counter over nodes of the model */
   int L = j0-i0+1;                        /* length of sequence */
@@ -5227,10 +5485,13 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
        * cm->tau probability mass), k won't be our sp1 or sp2 */
     }
     else { 
-      iocc = -INFTY;
-      for(i = 0; i <= L; i++) {
-	iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+      if(pmx != NULL) {
+	iocc = -INFTY;
+	for(i = 0; i <= L; i++) {
+	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+	}
       }
+      else iocc = occ[k];
       pocc = Score2Prob(iocc, 1.);
       /*printf("k: %4d pocc: %.4f\n", k, pocc);*/
       if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
@@ -5261,10 +5522,13 @@ cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0)
 	 * cm->tau probability mass), k won't be our ep1 or ep2 */
       }
       else { 
-	iocc = -INFTY;
-	for(i = 0; i <= L; i++) {
-	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+	if(pmx != NULL) {
+	  iocc = -INFTY;
+	  for(i = 0; i <= L; i++) {
+	    iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][k], pmx->dmx[i][k]));
+	  }
 	}
+	else iocc = occ[k];
 	pocc = Score2Prob(iocc, 1.);
 	/*printf("k: %4d pocc: %.4f\n", k, pocc);*/
 	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
