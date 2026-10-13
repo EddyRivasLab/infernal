@@ -17,6 +17,7 @@
 #include <string.h>
 #include <limits.h>
 #include <inttypes.h>
+#include <math.h>
 
 #include "easel.h"
 
@@ -25,7 +26,7 @@
 #include "infernal.h"
 
 static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
-static void plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt);
+static int  plain_cp9_engine(CM_t *cm, char *errbuf, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt);
 static void shrink_cp9_matrices(CM_t *cm);
 
 /* rung-3: derive the per-bifurcation right-fragment length k* (kpin[v]) from a
@@ -414,15 +415,19 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
  * matrices of (L+1) x (M+1) cells (Forward, Backward and, if bands are
  * tightened, a posterior matrix). If they exceed <mxsize>, use the
  * checkpointed calculation, which gives the same bands in O(sqrt(L) * M)
- * memory. That is the smallest this stage can go, so it is used even if
- * it too exceeds <mxsize> (no length that aligned before fails now).
+ * memory. If that exceeds <mxsize> too, fail with eslERANGE and a
+ * message giving the --mxsize that would fit: --mxsize is a limit the
+ * user chose, and this stage can go no lower.
  *
  * Developer override: environment variable INFERNAL_CP9_CKPT set to 1
  * (0) always (never) uses the checkpointed calculation, with no
  * --mxsize check.
+ *
+ * Returns eslOK, or eslERANGE (errbuf filled) if no CP9 band
+ * calculation fits <mxsize>.
  */
-static void
-plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt)
+static int
+plain_cp9_engine(CM_t *cm, char *errbuf, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt)
 {
   float       dense_Mb = (float) nmx * SizeNeededCP9Matrix(sq->L, cm->cp9->M, NULL, NULL);
   float       ckpt_Mb  = cp9_CheckptSeq2BandsMbNeeded(cm, sq->L, do_iterate, cm->maxtau);
@@ -435,6 +440,13 @@ plain_cp9_engine(CM_t *cm, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, in
                                 sq->name, (int) sq->L, cm->cp9->M, use_ckpt ? "ckpt" : "dense", dense_Mb, ckpt_Mb, mxsize,
                                 (force != NULL) ? " forced" : "");
   *ret_use_ckpt = use_ckpt;
+  if(force == NULL) {
+    float need_Mb = use_ckpt ? ckpt_Mb : dense_Mb;
+    if(need_Mb > mxsize)
+      ESL_FAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
+               need_Mb, mxsize, (int) (floor(need_Mb / 1024.) + 1.) * 1024);
+  }
+  return eslOK;
 }
 
 /* shrink_cp9_matrices()
@@ -1499,7 +1511,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	   * matrices (forward, backward, posterior); over --mxsize, calculate the
 	   * same bands checkpointed. */
 	  int use_ckpt_cp9 = FALSE;
-	  plain_cp9_engine(cm, sq, mxsize, 3, TRUE, &use_ckpt_cp9);
+	  if((status = plain_cp9_engine(cm, errbuf, sq, mxsize, 3, TRUE, &use_ckpt_cp9)) != eslOK) goto ERROR;
 	  if(use_ckpt_cp9) {
 	    if((status = cp9_CheckptIterateSeq2BandsELBanded(cm, errbuf, sq->dsq, 1, sq->L, pass_idx, mxsize, doing_search, do_sample, do_post, 1 /*do_iterate*/,
 							     ckpt_will_run, ckpt_est_mode, cm->maxtau, NULL)) != eslOK) goto ERROR;
@@ -1512,7 +1524,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	else {
 	  /* brief 26_0821-116: two (L+1) x (M+1) matrices here (posteriors overwrite backward) */
 	  int use_ckpt_cp9 = FALSE;
-	  plain_cp9_engine(cm, sq, mxsize, 2, FALSE, &use_ckpt_cp9);
+	  if((status = plain_cp9_engine(cm, errbuf, sq, mxsize, 2, FALSE, &use_ckpt_cp9)) != eslOK) goto ERROR;
 	  if(use_ckpt_cp9) {
 	    if((status = cp9_CheckptSeq2Bands(cm, errbuf, sq->dsq, 1, sq->L, cm->cp9b, doing_search, pass_idx, 0)) != eslOK) goto ERROR;
 	  }
