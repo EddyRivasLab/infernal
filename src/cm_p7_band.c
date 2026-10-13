@@ -1534,14 +1534,33 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       fprintf(stderr, "#MEMPOINT after_chainDP L=%d nseed=%d nlink=%ld rss_kb=%ld\n", L, nseed, nlink, brief035_rss_kb());
   }
 
-  /* 6. emit multi-segment pins from every seed in the winning chain */
+  /* 6. emit multi-segment pins from every seed in the winning chain.
+   *    Junction slack (brief 26_0821-117/26_0821-118): at each chain link whose
+   *    diagonal changes by |dgap| (an implied indel of |dgap| residues), the
+   *    last |dgap| residues of the left anchor and the first |dgap| of the
+   *    right anchor are not pinned. Exact-match anchors run right up to the
+   *    junction, but the CM's best placement of the indel can lie anywhere in
+   *    a stretch that scales with the indel (equivalent placements, repeat
+   *    copies); fully pinned anchors leave the band no room to reach it. The
+   *    slack equals the implied indel, so there is no constant. A short chance
+   *    anchor between two large jumps loses all of its pins. */
   ESL_ALLOC(i2k, sizeof(int) * (L+1));
   esl_vec_ISet(i2k, L+1, -1);
   {
     int c, o;
     for (c = 0; c < nc; c++) {
       int jj = seeds[chain[c]].j, tt = seeds[chain[c]].t, kk = seeds[chain[c]].k;
-      for (o = 0; o < kk; o++) {
+      int olo = 0, ohi = kk;   /* pin offsets [olo, ohi) */
+      if (c > 0) {             /* slack after the link from the previous anchor */
+        int dd = (jj - tt) - (seeds[chain[c-1]].j - seeds[chain[c-1]].t); if (dd < 0) dd = -dd;
+        olo = dd;
+      }
+      if (c < nc-1) {          /* slack before the link to the next anchor */
+        int dd = (seeds[chain[c+1]].j - seeds[chain[c+1]].t) - (jj - tt); if (dd < 0) dd = -dd;
+        ohi = kk - dd;
+      }
+      if (ohi < olo) ohi = olo;
+      for (o = olo; o < ohi; o++) {
         int T = tt + o, J = jj + o;
         if (T >= 1 && T <= L && J >= 1 && J <= M && i2k[T] == -1) i2k[T] = J;
       }
