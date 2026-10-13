@@ -887,6 +887,14 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   int          e_cpos;          /* final consensus position filled by a nongap for current seq */
   int          aulen;           /* length of author string for msa */
   
+  /* every residue a parsetree emits must be a position 1..sq[i]->n in its
+   * sequence; fail rather than read outside it (and write garbage) if not
+   */
+#define P2A_CHECK_RPOS(rpos) do { \
+    if((rpos) < 1 || (rpos) > sq[i]->n) \
+      ESL_XFAIL(eslEINCONCEIVABLE, errbuf, "Parsetrees2Alignment(): parsetree for sequence %s emits position %d, outside the sequence (length %" PRId64 ")", sq[i]->name, (rpos), sq[i]->n); \
+  } while(0)
+
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA) {  
@@ -1100,6 +1108,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  cpos = emap->lpos[nd];
 	  apos = matmap[cpos];
 	  rpos = tr[i]->emitl[tpos];
+	  P2A_CHECK_RPOS(rpos);
 	  tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	  if(do_cur_post) { 
 	    tmp_apc[apos] = postcode[i][rpos-1];
@@ -1112,6 +1121,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  cpos = emap->rpos[nd];
 	  apos = matmap[cpos];
 	  rpos = tr[i]->emitr[tpos];
+	  P2A_CHECK_RPOS(rpos);
 	  tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	  if(do_cur_post) { 
 	    tmp_apc[apos] = postcode[i][rpos-1];
@@ -1126,6 +1136,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  cpos = emap->lpos[nd];
 	  apos = matmap[cpos];
 	  rpos = tr[i]->emitl[tpos];
+	  P2A_CHECK_RPOS(rpos);
 	  tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	  if(do_cur_post) { 
 	    tmp_apc[apos] = postcode[i][rpos-1];
@@ -1140,6 +1151,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  cpos = emap->rpos[nd];
 	  apos = matmap[cpos];
 	  rpos = tr[i]->emitr[tpos];
+	  P2A_CHECK_RPOS(rpos);
 	  tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	  if(do_cur_post) { 
 	    tmp_apc[apos] = postcode[i][rpos-1];
@@ -1154,6 +1166,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  cpos = emap->lpos[nd];
 	  apos = ilmap[cpos] + iluse[cpos];
 	  rpos = tr[i]->emitl[tpos];
+	  P2A_CHECK_RPOS(rpos);
 	  if(iluse[cpos] == 0) ifirst[cpos] = rpos; /* only update ifirst if this is the first insert for this IL */
 	  iluse[cpos]++;
 	  if(do_matchonly) break; /* we don't break until this point in case we're writing to insertfp, in which case we need ifirst[] and iluse[] */
@@ -1177,6 +1190,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	if(do_matchonly) break; /* we don't break until this point in case we're writing to elfp, in which case we need elfirst[] and eluse[] */
 	for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	  {
+	    P2A_CHECK_RPOS(rpos);
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
@@ -1190,6 +1204,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	  apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	  rpos = tr[i]->emitr[tpos];
+	  P2A_CHECK_RPOS(rpos);
 	  ifirst[cpos] = rpos; /* by overwriting each time we will end up with min rpos used by this IR */
 	  iruse[cpos]++;
 	  if(do_matchonly) break; /* we don't break until this point in case we're writing to elfp, in which case we need ifirst[] and iruse[] */
@@ -1430,7 +1445,12 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   return eslOK;
   
  ERROR:
+  if(tmp_aseq != NULL) free(tmp_aseq);
   if(tmp_apc != NULL) free(tmp_apc);
+  if(s_cposA != NULL) free(s_cposA);
+  if(e_cposA != NULL) free(e_cposA);
+  if(ifirst != NULL) free(ifirst);
+  if(elfirst != NULL) free(elfirst);
   if(matuse!= NULL)  free(matuse);
   if(iluse != NULL)  free(iluse);
   if(eluse != NULL)  free(eluse);
@@ -1445,6 +1465,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   if(msa   != NULL)  esl_msa_Destroy(msa);
   return status;
 }
+#undef P2A_CHECK_RPOS
 
 /* Function: ParsetreeScore_Global2Local()
  * Date:     EPN, Wed May 23 09:57:38 2007
