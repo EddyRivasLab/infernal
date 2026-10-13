@@ -1,0 +1,26 @@
+# STOCKHOLM 1.0
+#=GF ID i66a
+
+s0     cagAUUUUCAUAU--UAUGCAGAAAAUCUACUUCGCCUGAUACGA---
+s1     ---CGGUUAUCUUguCGGAUACUGUAUAGUCCCACCUGGUGAUCC---
+s2     ---GCUUGUGAGU--ACCCAGAAAAUAGCGACGGACCGCGGUGUUuau
+s3     ---AAGUGUCGAG--CUACAUCACUUCUCAUGUAGCCAGAAGGCU---
+s4     ---GCAACUCAUC--GACUCUAUGUAGUGACCGCGUCGAUGUCAA---
+frag1  -----------------------------GAUACAGGGAUGAAGAacg
+frag2  -----------------------------GAUACAGGGAUGAAGAa--
+frag3  -----------------------------G-UACAGGGAUGAAGAacg
+#=GC SS_cons ................................................
+#=GC RF     ...xxxxxxxxxx..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+//
+# STOCKHOLM 1.0
+#=GF ID i66b
+
+s0     cagAUUUUCAUAU--UAUGCAGAAAAUCUACUUCGCCUGAUACGA---
+s1     ---CGGUUAUCUUguCGGAUACUGUAUAGUCCCACCUGGUGAUCC---
+s2     ---GCUUGUGAGU--ACCCAGAAAAUAGCGACGGACCGCGGUGUUuau
+s3     ---AAGUGUCGAG--CUACAUCACUUCUCAUGUAGCCAGAAGGCU---
+s4     ---GCAACUCAUC--GACUCUAUGUAGUGACCGCGUCGAUGUCAA---
+frag4  --------------aGAGCUCAGAUAUCCG------------------
+#=GC SS_cons ................................................
+#=GC RF     ...xxxxxxxxxx..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+//
