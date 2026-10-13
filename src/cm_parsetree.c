@@ -4426,21 +4426,39 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
  *           process we'll zero out any transitions involving ROOT_IL
  *           and ROOT_IR states in cm_zero_flanking_insert_counts().
  *
- *           There are three possibilities for the truncation
- *           modes of the nodes:
+ *           If the parsetree is truncated (from a sequence with
+ *           missing data '~' at its 5' and/or 3' end), Transmogrify()
+ *           gives each node the truncation mode implied by its
+ *           subtree's span, and we must preserve those modes. The
+ *           possible patterns are:
  *           1. all TRMODE_J nodes     ending with an END_nd
  *           2. all TRMODE_L nodes not ending with an END_nd
- *           3. starts in TRMODE_R and switches to TRMODE_J at some
- *              point (should be after 2 nodes ROOT_S and then first 
- *              MATL_ML) and stays TRMODE_J until the end, and final
- *              node is an END_nd.
- *           Case 3 is rare but happens if the first nt is emitted from
- *           a IL state, because the implementation of Transmogrify()
- *           makes it so the transition from ROOT_S is to the MATL_ML 
- *           above the node with the IL in TRMODE_R.
- *  
- *           We verify we have one of these 3 cases and fail with an
- *           error if not.
+ *           3. a ROOT_S in a marginal mode (TRMODE_R or TRMODE_T),
+ *              then a (possibly empty) prefix of marginal nodes that
+ *              do not emit to the left: ROOT_IR and MATL_ML nodes in
+ *              TRMODE_R if the parsetree ends with an END_nd, or
+ *              MATL_ML nodes in TRMODE_T if it does not; then all
+ *              remaining nodes in TRMODE_J (ending with an END_nd)
+ *              or TRMODE_L (not ending with an END_nd). ROOT_IL
+ *              nodes may be TRMODE_L in an otherwise TRMODE_J
+ *              parsetree, because the ROOT_IL span includes any 3'
+ *              missing data.
+ *           Case 3 happens for 5' truncated sequences whose first
+ *           residue is emitted by an IL state, or that have residues
+ *           in the 3' flanking insert (ROOT_IR), or that start in the
+ *           5' flanking insert (ROOT_IL) and are also 3' truncated.
+ *           The marginal prefix nodes correspond to missing data and
+ *           must stay marginal: forcing them to TRMODE_J would make
+ *           them appear to emit residues they do not have.
+ *
+ *           A parsetree with no MATL nodes (only flanking insert
+ *           residues) has no D->I or I->D transitions, and is
+ *           returned unchanged.
+ *
+ *           We verify we have one of these cases and fail with an
+ *           error if not. D->I and I->D pairs are always within the
+ *           final TRMODE_J or TRMODE_L section, so collapsing them
+ *           never merges nodes of different modes (we check this).
  *
  *           HMMER's p7_trace_Doctor() notes:
  *           Plan 7 disallows D->I and I->D "chatter" transitions.
@@ -4470,117 +4488,75 @@ cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *
   int npos;			/* position in new parsetree (<= opos) */
   int x;                        /* position ctr in parsetree */
   int ndi, nid;			/* number of DI, ID transitions doctored */
-  int mode;                     /* truncation mode of the parsetree, it should be either all J or all L */
-  int final_non_end;            /* final parsetree node that is NOT an END_E */
-  int mode_case;                /* 1, 2, or 3, case of truncation modes */
-  int start_node;               /* node to start overwrite at, if mode_case is 1 or 2, this will be 0, else it will be 2 */
+  int tail_mode;                /* TRMODE_J if parsetree ends with an END_E, else TRMODE_L */
+  int nmatl;                    /* number of MATL states in the parsetree */
+  int stid;                     /* state id of a parsetree node */
 
-  /* determine which of the 3 cases we have regarding truncation modes: 
-   * 1. all nodes are TRMODE_J 
-   * 2. all nodes are TRMODE_L
-   * 3. first two nodes are TRMODE_R, all remaining nodes TRMODE_J 
-   */
-  /* check for case 1 */
-  mode_case = 1;
-  for(x = 0; x < tr->n; x++) { 
-    if(tr->mode[x] != TRMODE_J) { 
-      mode_case = -1;
-      x = tr->n;
-    }
-  }
-  if(mode_case == -1) { 
-    /* not case 1 */
-    mode_case = 2;
-    for(x = 0; x < tr->n; x++) { 
-      if(tr->mode[x] != TRMODE_L) { 
-        mode_case = -1;
-        x = tr->n;
-      }
-    }
-  }
-  if(mode_case == -1) { 
-    /* not case 1 or 2 */
-    mode_case = 3; /* first two nodes are ROOT_S and MATL_ML both in TRMODE_R */
-    if((tr->mode[0] == TRMODE_R) && (tr->mode[1] == TRMODE_R) && (cm->stid[tr->state[0]] == ROOT_S) && (cm->stid[tr->state[1]] == MATL_ML)) { 
-      /* the rest should be TRMODE_J */
-      for(x = 2; x < tr->n; x++) { 
-        if(tr->mode[x] != TRMODE_J) { 
-          mode_case = -1;
-          x = tr->n;
-        }
-      }
-    }
-  }
-  if(mode_case == -1) { 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unable to determine case of truncation mode");
-  }
-    
-  if(mode_case == 1) { 
-    mode = TRMODE_J;
-    start_node = 0;
-    final_non_end = tr->n-2;
-    if(cm->stid[tr->state[tr->n-1]] != END_E) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() case 1 mode J parsetree doesn't end with an END_E state\n");
-    }
-  }
-  else if(mode_case == 2) {
-    mode = TRMODE_L;
-    start_node = 0;
-    final_non_end = tr->n-1;
-    if(cm->stid[tr->state[tr->n-1]] == END_E) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() case 2 mode L parsetree ends with an END_E state\n");
-    }
-  }
-  else { /* mode_case = 3 */
-    mode = TRMODE_J;
-    start_node = 2;
-    final_non_end = tr->n-2;
-    if(cm->stid[tr->state[tr->n-1]] != END_E) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() case 3 parsetree doesn't end with an END_E state\n");
-    }
-  }
-
-  /* should start with ROOT_S */
-  if(cm->stid[tr->state[0]] != ROOT_S) { 
+  /* validate the parsetree states, should be ROOT_S->[ROOT_IL|ROOT_IR]_n->[MATL_{M,I,D}]_n->[END_E] */
+  if(tr->n < 1 || cm->stid[tr->state[0]] != ROOT_S) { 
     ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't begin with a ROOT_S state\n");
   }
-  /* validate the parsetree, should be ROOT_S->[ROOT_IL]_n->[ROOT_IR]_n->[MATL_{M,I,D}]_n 
-   * further if mode is TRMODE_J, final node should be END_E, otherwise it should NOT be END_E
-   */
   x = 1;
-  while(cm->stid[tr->state[x]] == ROOT_IL || cm->stid[tr->state[x]] == ROOT_IR) { 
-    x++;
-    if(x >= tr->n) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree is all ROOT states\n");
+  while(x < tr->n && (cm->stid[tr->state[x]] == ROOT_IL || cm->stid[tr->state[x]] == ROOT_IR)) x++;
+  nmatl = 0;
+  while(x < tr->n && (cm->stid[tr->state[x]] == MATL_ML || cm->stid[tr->state[x]] == MATL_IL || cm->stid[tr->state[x]] == MATL_D)) { x++; nmatl++; }
+  if(x < tr->n && cm->stid[tr->state[x]] == END_E) x++;
+  if(x != tr->n) { 
+    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected state id %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
+  }
+  /* no MATL states (sequence has only flanking insert residues): nothing to doctor */
+  if(nmatl == 0) { 
+    if (opt_ndi != NULL) *opt_ndi = 0;
+    if (opt_nid != NULL) *opt_nid = 0;
+    return eslOK;
+  }
+
+  /* validate the truncation modes, see 'Purpose' above for the possible cases */
+  tail_mode = (cm->stid[tr->state[tr->n-1]] == END_E) ? TRMODE_J : TRMODE_L;
+  x = 1;
+  if(tr->mode[0] != tail_mode) { 
+    /* case 3: ROOT_S in a marginal mode, then a prefix of marginal nodes */
+    if(! (tr->mode[0] == TRMODE_T || (tr->mode[0] == TRMODE_R && tail_mode == TRMODE_J))) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unable to determine case of truncation mode");
+    }
+    while(x < tr->n) { 
+      stid = cm->stid[tr->state[x]];
+      if     (tail_mode == TRMODE_J && tr->mode[x] == TRMODE_R && (stid == ROOT_IR || stid == MATL_ML)) x++;
+      else if(tail_mode == TRMODE_L && tr->mode[x] == TRMODE_T && stid == MATL_ML)                      x++;
+      else break;
     }
   }
-  /* all remaining states should be MATL_ML, MATL_IL, or MATL_D states until the END_E (if we have one)  */
-  for(; x <= final_non_end; x++) { 
-    if((cm->stid[tr->state[x]] != MATL_ML) && 
-       (cm->stid[tr->state[x]] != MATL_IL) && 
-       (cm->stid[tr->state[x]] != MATL_D)) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected state id %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
+  for(; x < tr->n; x++) { 
+    if(tr->mode[x] != tail_mode && 
+       (! (tail_mode == TRMODE_J && tr->mode[x] == TRMODE_L && cm->stid[tr->state[x]] == ROOT_IL))) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unable to determine case of truncation mode");
     }
   }
 
   /* overwrite the trace from left to right */
   ndi  = nid  = 0; 
-  opos = npos = start_node; /* will be '0' if case 1 or 2, '2' if case 3, for case 3, leave first two nodes untouched */
+  opos = npos = 0;
   while (opos < tr->n) { 
     /* first set data that is predetermined since we know we're all MATL nodes: 
-     * mode:  always TRMODE_J or TRMODE_L (we already checked), stored in mode from above
+     * mode:  unchanged, each node keeps its own truncation mode
      * nxtl:  always points to next position (except for final node, which we'll fix at end)
      * nxtr:  always -1 
      * prv:   always npos-1
      * emitr: always == tr->emitr[opos] (only right emitters we'll have are ROOT_IRs)
      * at next parsetree node.
      */ 
-    tr->mode[npos]  = mode;
+    tr->mode[npos]  = tr->mode[opos];
     tr->nxtl[npos]  = npos+1;
     tr->nxtr[npos]  = -1;
     tr->prv[npos]   = npos-1;  /* even correct for npos == 0 */
     tr->emitr[npos] = tr->emitr[opos]; /* this never changes */
 
+    /* D->I and I->D pairs should never span a change in truncation mode (see 'Purpose') */
+    if ((opos < (tr->n-1)) && (tr->mode[opos] != tr->mode[opos+1]) && 
+        (((cm->stid[tr->state[opos]] == MATL_D)  && (cm->stid[tr->state[opos+1]] == MATL_IL)) || 
+         ((cm->stid[tr->state[opos]] == MATL_IL) && (cm->stid[tr->state[opos+1]] == MATL_D)))) { 
+      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() D->I or I->D transition spans a change in truncation mode at position %d\n", opos);
+    }
     /* fix implied D->I transitions; D transforms to M, I pulled in */
     if ((opos < (tr->n-1)) && (cm->stid[tr->state[opos]] == MATL_D) && (cm->stid[tr->state[opos+1]] == MATL_IL)) {
       tr->state[npos] = tr->state[opos] - 1; /* MATL_D --> MATL_ML */
@@ -4606,7 +4582,7 @@ cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *
   tr->n    = npos;
   /* fix nxtl and possible emitr for the final node */
   tr->nxtl[tr->n-1] = -1;
-  if((mode_case == 1) || (mode_case == 3)) { /* cases 1 and 3 only case that ends with END_E */
+  if(tail_mode == TRMODE_J) { /* parsetree ends with END_E */
     /* emitr for END_E are always -1 */
     tr->emitr[tr->n-1] = -1;
   }
