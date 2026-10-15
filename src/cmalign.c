@@ -621,51 +621,6 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
           esl_opt_GetInteger(go, "--p7ibv-delta"));
 }
 
-/* check_hmm_g_notrunc()
- *
- * brief 26_0526-031: under --hmm, -g changes nothing but has been silently
- * accepted on truncated (default) alignments. -g's only effect in --hmm
- * mode is to request a p7_UNIGLOCAL profile; but the truncation-aware
- * profile setup, cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc() (called whenever
- * CM_ALIGN_TRUNC is set, i.e. whenever --notrunc is not given), asserts
- * gm->mode == p7_LOCAL on entry and unconditionally forces p7_UNILOCAL out
- * (cm_p7_modelconfig_trunc.c). So --hmm -g without --notrunc either trips
- * that assert (debug build) or silently overwrites the requested glocal
- * mode with local (NDEBUG build) -- the CM has no truncated glocal p7
- * configuration to honour -g with (p7 profiles have no EL states, and
- * cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc() has no glocal variant).
- *
- * Require --notrunc whenever --hmm and -g are combined, on any CM with
- * basepairs (CMCountNodetype(cm, MATP_nd) != 0) that has not been forced to
- * CM-DP via --nohmm. 0-basepair CMs are deliberately exempted: they can
- * reach --hmm via maybe_hmm_autoswitch()'s auto-switch, where --nohmm is
- * already the documented escape hatch back to CM-DP, and enforcing this
- * check there would break that default-on path. That leaves a known,
- * intentional residual hole (0-bp CM, --hmm, -g, no --notrunc still
- * silently drops -g); see brief 26_0526-031 summary for its disposition.
- *
- * Returns eslOK if compatible, eslEINCOMPAT (with errbuf set) otherwise.
- * Must be called after the CM is read (needs CMCountNodetype) and after
- * maybe_hmm_autoswitch() (needs the --hmm that will actually be used).
- */
-static int
-check_hmm_g_notrunc(ESL_GETOPTS *go, CM_t *cm, char *errbuf)
-{
-  if (esl_opt_GetBoolean(go, "--hmm")     &&
-      esl_opt_GetBoolean(go, "-g")        &&
-      (! esl_opt_GetBoolean(go, "--notrunc")) &&
-      (CMCountNodetype(cm, MATP_nd) != 0) &&
-      (! esl_opt_GetBoolean(go, "--nohmm")))
-    {
-      snprintf(errbuf, eslERRBUFSIZE,
-               "-g cannot be honoured with --hmm on a basepair-containing CM because "
-               "HMM-only alignment has no glocal truncated configuration. "
-               "Use --hmm -g --notrunc, or drop --hmm to align with the CM.");
-      return eslEINCOMPAT;
-    }
-  return eslOK;
-}
-
 /* serial_master()
  * The serial version of cmalign.
  * 
@@ -775,11 +730,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
    * the user requested an explicit mode or passed --nohmm. Must run before
    * output_header() and initialize_cm() so they see the switched options. */
   maybe_hmm_autoswitch(go, cm);
-
-  /* brief 26_0526-031: --hmm -g has no truncated glocal configuration to
-   * honour; require --notrunc on basepair-containing CMs (see
-   * check_hmm_g_notrunc() for the full rationale and the exempted 0-bp case). */
-  if (check_hmm_g_notrunc(go, cm, errbuf) != eslOK) cm_Fail(errbuf);
 
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
 
@@ -1175,7 +1125,25 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   if (! (cm->flags & CMH_MLP7)) cm_Fail("--hmm requires a CM file with an embedded p7 HMM (use cmconvert)");
   hmm = cm->mlp7;
 
-  /* Set up null model and profile mode (shared across serial/threaded paths) */
+  /* Set up null model and profile mode (shared across serial/threaded paths).
+   *
+   * -g: <p7mode> is used only with --notrunc. In truncation-aware
+   * alignment (the default) every --hmm alignment uses the Tgm profile
+   * (p7_LOCAL + p7_ProfileConfig5PrimeAnd3PrimeTrunc()), with or without
+   * -g, because Tgm already is the HMM analog of the CM's glocal truncated
+   * alignment: in truncated CM DP every parse, untruncated ones included,
+   * leaves ROOT_S through a truncated begin that pays the glocal 5'&3'
+   * penalty, 2/(clen*(clen+1)) per fragment (cm_dpalign_trunc.c,
+   * cm_trunc.c), and Tgm's local entry, occ[k] / sum_i occ[i]*(M-i+1),
+   * is the same per-fragment probability weighted by occupancy. On
+   * 0-basepair CMs, where CM and HMM score the same parse, CM-mode
+   * `cmalign -g` scores were within a few bits of Tgm's Forward score,
+   * with the same spans (brief 26_0821-122). So -g needs no glocal
+   * truncated profile of its own; the -g refusal added by brief
+   * 26_0526-031 was removed by brief 26_0821-122. (-g still changes
+   * cm->mlp7 slightly: cm_Configure() builds it from cm->cp9 after
+   * local configuration when -g is absent.)
+   */
   bg = p7_bg_Create(hmm->abc);
   p7mode = esl_opt_GetBoolean(go, "-g") ? p7_UNIGLOCAL : p7_UNILOCAL;
 
@@ -2639,11 +2607,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
    * match the worker's switch so master/worker agree on the dispatch path. */
   maybe_hmm_autoswitch(go, cm);
 
-  /* brief 26_0526-031: --hmm -g has no truncated glocal configuration to
-   * honour; require --notrunc on basepair-containing CMs (see
-   * check_hmm_g_notrunc() for the full rationale and the exempted 0-bp case). */
-  if (check_hmm_g_notrunc(go, cm, errbuf) != eslOK) mpi_failure(errbuf);
-
   nworkers  = cfg->nproc - 1;
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
 
@@ -3026,11 +2989,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
    * match the master's switch so master/worker agree on the dispatch path. */
   maybe_hmm_autoswitch(go, cm);
 
-  /* brief 26_0526-031: --hmm -g has no truncated glocal configuration to
-   * honour; require --notrunc on basepair-containing CMs (see
-   * check_hmm_g_notrunc() for the full rationale and the exempted 0-bp case). */
-  if (check_hmm_g_notrunc(go, cm, errbuf) != eslOK) mpi_failure(errbuf);
-
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
   /* --hmm mode: HMM-only alignment worker.
@@ -3043,7 +3001,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     P7_GMX     *gx_w    = NULL;
     P7_GMX     *gxf_w   = NULL;
     P7_GMX     *gxb_w   = NULL;
-    int         p7mode_w = esl_opt_GetBoolean(go, "-g") ? p7_UNIGLOCAL : p7_UNILOCAL;
+    int         p7mode_w = esl_opt_GetBoolean(go, "-g") ? p7_UNIGLOCAL : p7_UNILOCAL; /* --notrunc only; see hmm_alignment() for -g under truncation */
     int         do_hmmvit_w    = (cm->align_opts & CM_ALIGN_P7HMMVIT)    ? TRUE : FALSE;
     int         do_hmmnoband_w = (cm->align_opts & CM_ALIGN_P7HMMNOBAND) ? TRUE : FALSE;
     int         do_bandedoa_w  = (! do_hmmvit_w && ! do_hmmnoband_w);
