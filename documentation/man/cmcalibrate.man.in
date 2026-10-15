@@ -285,7 +285,7 @@ Save space delimited statistics of different exponential tail fits to file
 .I <f>.
 The file will contain the lambda and mu values for exponential tails
 fit to histogram tails of different sizes. The fields in the file are
-labelled informatively.
+labeled informatively.
 
 .TP 
 .BI --xfile " <f>"
