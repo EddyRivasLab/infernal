@@ -239,7 +239,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
    * the methods described above by ignoring inserts. This gives us a
    * probability p of using that state as the root of the truncated
    * alignment, i.e. the truncated begin state. (The log_2 of this
-   * probability is the penalty.) We then partition p amongst the
+   * probability is the penalty.) We then partition p among the
    * MATP_MP, MATL_ML, MATR_MR, BIF_B states and any parent insert
    * states, i.e. any insert state that can transition into the
    * match/bif state. For each match/bif state there's 0, 1 or 2
@@ -324,7 +324,7 @@ cm_tr_penalties_Create(CM_t *cm, int ignore_inserts, char *errbuf)
       if(NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][m]))  goto ERROR;
       if((i1 != -1) && NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][i1])) goto ERROR;
       if((i2 != -1) && NOT_IMPOSSIBLE(trp->g_ptyAA[TRPENALTY_5P_AND_3P][i2])) goto ERROR;
-      /* divide up the probability g_5and3 amongst relevant states m, i1, i2, weighted by psi */
+      /* divide up the probability g_5and3 among relevant states m, i1, i2, weighted by psi */
       trp->g_ptyAA[TRPENALTY_5P_AND_3P][m]  = (m_psi  / summed_psi) * g_5and3;
       if(i1 != -1) trp->g_ptyAA[TRPENALTY_5P_AND_3P][i1] = (i1_psi / summed_psi) * g_5and3;
       if(i2 != -1) trp->g_ptyAA[TRPENALTY_5P_AND_3P][i2] = (i2_psi / summed_psi) * g_5and3;

@@ -63,7 +63,7 @@ static ESL_OPTIONS options[] = {
  * threads/processes
  * 
  * This structure is passed to routines within main.c, as a means of
- * semi-encapsulation of shared data amongst different parallel
+ * semi-encapsulation of shared data among different parallel
  * processes (threads or MPI processes).  This strategy is used
  * despite the fact that neither a MPI nor a threaded version of
  * cmemit exists.

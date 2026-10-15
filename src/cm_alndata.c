@@ -125,7 +125,7 @@ sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_sub
   CP9NodeForPosn(orig_cm->cp9, 1, sq->L, sq->L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, 0);
   /* Deal with special cases for sub-CM alignment: If the most
    * likely state to have emitted the first or last residue is the
-   * insert state in node 0, it only makes sense to start modelling
+   * insert state in node 0, it only makes sense to start modeling
    * at consensus column 1. */
   if(spos == 0 && spos_state == 1) spos = 1;
   if(epos == 0 && epos_state == 1) epos = 1;

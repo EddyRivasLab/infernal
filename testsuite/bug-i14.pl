@@ -6,7 +6,7 @@
 # EPN, Fri Jun 12 16:49:11 2009
 #
 # In rare cases when aligning to a CM using HMM banded optimal accuracy,
-# the optimal parse, the parse that maximizes the summed posterior labelling 
+# the optimal parse, the parse that maximizes the summed posterior labeling 
 # of all emitted residues, requires making an illegal transition.
 # Specifically a transition from a v,j,d subtree where d==0 and
 # j and d are perfectly legal (within the hmm bands) to a y,j,d 

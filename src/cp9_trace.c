@@ -994,7 +994,7 @@ CP9Traces2Alignment(CM_t *cm, CP9_t *cp9, const ESL_ALPHABET *abc, ESL_SQ **sq, 
       if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd)
 	insleft[emap->rpos[nd]-1] = FALSE;
     }
-  if(insleft[emap->clen] == -1) insleft[emap->clen] = FALSE; /* special case, insleft[emap->clen] == -1 IFF cpos==emap->clen is modelled by MATR or MATP. */
+  if(insleft[emap->clen] == -1) insleft[emap->clen] = FALSE; /* special case, insleft[emap->clen] == -1 IFF cpos==emap->clen is modeled by MATR or MATP. */
   /* check we've constructed insleft properly, TEMPORARY */
   for(cpos = 0; cpos <= emap->clen; cpos++)
     ESL_DASSERT1((insleft[cpos] != -1));

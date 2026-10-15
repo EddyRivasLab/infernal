@@ -451,7 +451,7 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 
 	      ks = 1; /*insert*/
 	      /* whoa... careful, we want the CM state that will insert to the RIGHT
-	       * of column k (the right consensus column modelled by MATP node n),
+	       * of column k (the right consensus column modeled by MATP node n),
 	       * but MATP_IR inserts to the LEFT of column k.
 	       * What we need to determine is the CM node nn that models column k+1,
 	       * and further which half (left or right) of nn models k+1, then
@@ -497,21 +497,21 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 		  map_helper(cm, cp9map, k, ks, v);
 		}
 	      /* NOT DONE YET, the MATP_IR has to map to an HMM state,
-	       * if the previous column (k-1) is modelled by a CM MATR or 
+	       * if the previous column (k-1) is modeled by a CM MATR or 
 	       * MATP node, then the above block will take care of this situation
 	       * (in the previous iteration of this loop when k = k-1), 
-	       * HOWEVER, if (k-1) is modelled by a MATL, then this 
+	       * HOWEVER, if (k-1) is modeled by a MATL, then this 
 	       * MATP_IR's contribution to the HMM will be ignored, 
 	       * unless we do something about it. 
 	       */ 
-	      if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modelled by MATL or MATP*/
+	      if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modeled by MATL or MATP*/
 		{
 		  if(cm->ndtype[cp9map->pos2nd[k-1]] != MATL_nd)
 		    {
 		      if(cm->ndtype[cp9map->pos2nd[k-1]] == MATP_nd)
 			{
 			  /* A rare, but possible case. Previous column
-			   * k-1 column is modelled by left half of the MATP
+			   * k-1 column is modeled by left half of the MATP
 			   * node whose right half models column k.
 			   * Proceed below. 
 			   */
@@ -564,7 +564,7 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 
 	  ks = 1; /*insert*/
 	  /* whoa... careful, we want the CM state that will insert to the RIGHT
-	   * of column k (the consensus column modelled by MATR node n),
+	   * of column k (the consensus column modeled by MATR node n),
 	   * but MATR_IR inserts to the LEFT of column k.
 	   * What we need to determine is the CM node nn that models column k+1,
 	   * and further which half (left or right) of nn models k+1, then
@@ -608,7 +608,7 @@ CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level)
 	      v = 2; /*ROOT_IR*/
 	      map_helper(cm, cp9map, k, ks, v);
 	    }
-	  if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modelled by MATL*/
+	  if(cp9map->nd2lpos[cp9map->pos2nd[k-1]] == (k-1)) /*k-1 modeled by MATL*/
 	    {
 	      printf("ERROR, full understanding of the CM architecture remains elusive (1)...\n");
 	      exit(1);
@@ -1629,7 +1629,7 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
       if(cm->sttype[start] != IL_st && cm->sttype[start] != IR_st)
 	{
 	  /* This is possible, though unlikely. It only happens (I think and hope) if
-	   * we've got two adjacent (k and k+1) columns modelled by the same MATP node n, 
+	   * we've got two adjacent (k and k+1) columns modeled by the same MATP node n, 
 	   * so when setting a transition from node k ->  node k+1, we enter this function
 	   * three times with start == end. Once with each MATP_MP, MATP_ML, MATP_MR, and MATP_D
 	   * because these states map to the beginning and ending states of the M_k->M_k+1, 
@@ -1793,7 +1793,7 @@ check_psi_vs_phi_cp9(CM_t *cm, char *errbuf,CP9Map_t *cp9map, double *psi, doubl
     {
       adj_bp_flag = TRUE;
     /* if check_cm_adj_bp() returns TRUE, then the following rare (but possible) situation
-     * is true: Two adjacent consensus columns are modelled by the same MATP node. In this
+     * is true: Two adjacent consensus columns are modeled by the same MATP node. In this
      * case it is difficult for the CM plan 9 architecture to mirror the insert state
      * that maps to both the MATP_IL and MATP_IR of this node. It is more difficult than
      * for any other possible CM topology situation, so we relax the threshold when
@@ -1882,7 +1882,7 @@ check_psi_vs_phi_cp9(CM_t *cm, char *errbuf,CP9Map_t *cp9map, double *psi, doubl
       printf("ERROR, %d HMM states violate the %f threshold b/t psi and phi.\n", v_ct, threshold);
       ret_val = FALSE;
     }
-  if(adj_bp_flag == TRUE) return eslOK; /* always return TRUE for models with bps modelling adjacent columns (should be rare) */
+  if(adj_bp_flag == TRUE) return eslOK; /* always return TRUE for models with bps modeling adjacent columns (should be rare) */
 
   if(ret_val == FALSE) ESL_FAIL(eslFAIL, errbuf, "cp9 hmm fails psi/phi test");
 
@@ -2497,13 +2497,13 @@ FChiSquareFit(float *f1, float *f2, int N)
  * EPN 03.13.06
  * check_cm_adj_bp()
  *
- * Purpose:  Check if two adjacent consensus columns (HMM nodes) are modelled by the
+ * Purpose:  Check if two adjacent consensus columns (HMM nodes) are modeled by the
  *           same MATP node.
  * 
  * Args:    
  * CM_t *cm          - the CM
  * CP9Map_t          - map from CM to HMM and vice versa 
- * Returns: TRUE if two adjacent consensus columns are modelled by the same MATP_nd
+ * Returns: TRUE if two adjacent consensus columns are modeled by the same MATP_nd
  *          FALSE if not
  */
 static int
