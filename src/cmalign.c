@@ -1108,7 +1108,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
     /* we're done with sq_block, tell the workers by sending a NULL dsq */
 #if DEBUGMPI
-    printf("master sending NULL dsq to all workers signalling we're done with the file\n");
+    printf("master sending NULL dsq to all workers signaling we're done with the file\n");
 #endif
     for (wi = 1; wi < cfg->nproc; wi++) {
       if((status = cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
@@ -1150,7 +1150,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* done with all sequences/blocks in the sequence file, tell the workers */
 #if DEBUGMPI
-  printf("master sending NULL dsq to all workers signalling we're done with the file\n");
+  printf("master sending NULL dsq to all workers signaling we're done with the file\n");
 #endif
   for (wi = 1; wi < cfg->nproc; wi++) {
     if((status = cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
