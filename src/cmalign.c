@@ -139,7 +139,7 @@ static ESL_OPTIONS options[] = {
   { "--maxtau",      eslARG_REAL,      "0.05", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
   { "--p7band",      eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "use p7 Viterbi-derived bands for faster alignment",          3 },
-  { "--p7padplus",    eslARG_INT,         "7", NULL,      "n>=0",       NULL,   "--p7band",                    NULL, "add <n> to every per-node p7 band pad [default 7]",          3 },
+  { "--p7padplus",    eslARG_INT,        "10", NULL,      "n>=0",       NULL,        NULL,                     NULL, "add <n> to every per-node p7 band pad (w/--p7band or --hmm) [default 10]", 3 },
   { "--p7pinbridge", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "SW-pinbridge prefilter + banded p7 Viterbi (--p7band)", 3 },
   { "--p7pbpad",      eslARG_INT,        "20", NULL,      "n>=0",       NULL, "--p7pinbridge",                 NULL, "diagonal pad for SW-pinbridge prefilter [default 20]",  3 },
   { "--p7pinbridge-vitgaps", eslARG_NONE, FALSE, NULL,     NULL,       NULL, "--p7pinbridge",                 NULL, "exact mini-Viterbi gap costs in gap-aware LSIS (Opt 3)", 3 },
@@ -3592,6 +3592,13 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
+  /* --p7padplus pads the p7 bands, which only --p7band and --hmm use. */
+  if(esl_opt_IsUsed(go, "--p7padplus") &&
+     (! esl_opt_GetBoolean(go, "--p7band")) && (! esl_opt_GetBoolean(go, "--hmm"))) {
+    puts("\nERROR: --p7padplus requires --p7band or --hmm\n");
+    goto ERROR;
+  }
+
   /* brief 26_0628-032: --p7kmerchain only derives bands; it needs an
    * anchor mode to use them: --p7band (CM-side) or --hmm (HMM-only banded OA),
    * same requirement as --p7ibv above.
@@ -3954,7 +3961,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   
   cm->tau    = esl_opt_GetReal(go, "--tau");
   cm->maxtau = esl_opt_GetReal(go, "--maxtau");
-  if(esl_opt_GetBoolean(go, "--p7band")) cm->p7bpad = esl_opt_GetInteger(go, "--p7padplus");
+  /* One p7 band pad for both modes that use p7 bands (brief 26_0821-124).
+   * Before, --p7band used --p7padplus (default 7) and --hmm used the CM's
+   * built-in p7bpad (10). */
+  if(esl_opt_GetBoolean(go, "--p7band") || esl_opt_GetBoolean(go, "--hmm"))
+    cm->p7bpad = esl_opt_GetInteger(go, "--p7padplus");
   if(esl_opt_GetBoolean(go, "--p7pinbridge")) {
     cm->p7_use_pinbridge = TRUE;
     cm->p7_pinbridge_pad = esl_opt_GetInteger(go, "--p7pbpad");
