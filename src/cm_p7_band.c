@@ -1124,10 +1124,16 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
  * consumer.
  *****************************************************************/
 
-/* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned) */
-#define KMC_AVGK      15.0    /* representative k for gap-cost scaling            */
-#define KMC_MAX_QGAP  30000   /* max query gap, pred END to anchor START (bounds DP)*/
-#define KMC_MAX_DGAP  10000   /* max implied-indel (|diagonal diff|) on one link  */
+/* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned).
+ * KMC_MAX_ITER is the only bound on the chaining DP's work. A max query gap
+ * (30000) and a max implied indel per link (10000) were removed in brief
+ * 26_0821-124: on 624 genome-scale cells (brief 26_0821-119) the query-gap
+ * limit never changed an alignment, and the indel limit changed only one,
+ * where it was wrong (a genome with 12,288 nt of extra repeat copies: the
+ * true link was refused and the chain started 2,332 model positions late).
+ * The linear gap cost already charges 1,500 bits for a 10 kb indel, and the
+ * indel limit bounded no work (it skipped a predecessor after counting it
+ * against KMC_MAX_ITER). */
 #define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
 #define KMC_SEED_K    10      /* seed k-mer length (<=31 => uint64-encodable)     */
 #define KMC_MIN_ANCHOR 10     /* min merged exact-match length to keep an anchor  */
@@ -1135,7 +1141,8 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
                                /* admit far more anchors on sparse-anchor genomes    */
                                /* (MPXV: 56->79 chain anchors, avg_bw 1223->279.6,   */
                                /* peak RSS 12.95G->4.73G), zero accuracy cost.       */
-#define KMC_GAP_LIN   0.01    /* linear gap-cost coefficient                      */
+#define KMC_GAP_LIN   0.15    /* linear gap cost, bits per residue of |diagonal   */
+                              /* change|; was 0.01 x a "representative k" of 15  */
 #define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
 #define KMC_HSV_RLO   9401    /* HSV known false-repeat block, model lo (brief026)*/
 #define KMC_HSV_RHI   9600    /*  ... model hi -- for the repeat-trap check       */
@@ -1409,10 +1416,8 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
    *      predecessor that ends right next to i is seen first, not last.
    *      Anchors that start at or after i (contained in i, or not processed
    *      yet) are walked past without counting against KMC_MAX_ITER.
-   *    - KMC_MAX_QGAP bounds the real gap from j's END to i's START, which
-   *      grows monotonically along the walk, so the walk stops there.
    *    KMC_MAX_ITER bounds the predecessors examined per anchor, so the DP is
-   *    O(N * min(W, MAX_ITER)). */
+   *    O(N * MAX_ITER). It is the DP's only bound (see KMC_MAX_ITER). */
   if (ret_a_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stageb_t0); _stageb_t0_set = TRUE; }
   qsort(seeds, nseed, sizeof(kmw_hit_t), kmc_seed_cmp);
   ESL_ALLOC(f,   sizeof(float) * nseed);
@@ -1435,28 +1440,22 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
    *                      link -- the gap cost otherwise ignores absolute span
    *                      entirely, which is what makes two cheap hops beat one
    *                      real jump (26_0430's peer message, section 2).
-   *   KMC_AVGK_OVERRIDE / KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
-   *                      re-tune the three existing gap-cost constants; the
-   *                      compiled defaults were never tuned for wrong-diagonal
-   *                      suppression (KMC_AVGK=15 no longer "represents" the
-   *                      effective seed length, which is 10 since 26_0628-029). */
+   *   KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
+   *                      re-tune the two gap-cost constants. Since brief
+   *                      26_0821-124 KMC_GAP_LIN is the whole linear
+   *                      coefficient (bits per diagonal residue, 0.15); it
+   *                      used to be multiplied by KMC_AVGK=15. */
   char  *gopen_env = getenv("KMC_GAP_OPEN");
   char  *spanl_env = getenv("KMC_SPAN_LOG");
-  char  *avgk_env  = getenv("KMC_AVGK_OVERRIDE");
   char  *glin_env  = getenv("KMC_GAP_LIN_OVERRIDE");
   char  *glog_env  = getenv("KMC_GAP_LOG_OVERRIDE");
   double gap_open  = (gopen_env != NULL) ? atof(gopen_env) : 0.0;
   double span_log  = (spanl_env != NULL) ? atof(spanl_env) : 0.0;
-  double avgk      = (avgk_env  != NULL) ? atof(avgk_env)  : KMC_AVGK;
   double glin      = (glin_env  != NULL) ? atof(glin_env)  : KMC_GAP_LIN;
   double glog      = (glog_env  != NULL) ? atof(glog_env)  : KMC_GAP_LOG;
   int    span_on   = (spanl_env != NULL && span_log != 0.0);
-  /* developer overrides of the three lookback limits (brief 26_0821-117). */
-  char  *qg_env    = getenv("KMC_MAX_QGAP_OVERRIDE");
-  char  *dg_env    = getenv("KMC_MAX_DGAP_OVERRIDE");
+  /* developer override of the lookback limit (brief 26_0821-117). */
   char  *it_env    = getenv("KMC_MAX_ITER_OVERRIDE");
-  int    max_qgap  = (qg_env != NULL) ? atoi(qg_env) : KMC_MAX_QGAP;
-  int    max_dgap  = (dg_env != NULL) ? atoi(dg_env) : KMC_MAX_DGAP;
   int    max_iter  = (it_env != NULL) ? atoi(it_env) : KMC_MAX_ITER;
   ESL_ALLOC(eord, sizeof(kmc_end_t) * nseed);
   for (i = 0; i < nseed; i++) {
@@ -1475,21 +1474,19 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     while (lo < hi) { int mid = (lo + hi) / 2; if (eord[mid].te < tei) lo = mid + 1; else hi = mid; }
     for (e = lo - 1; e >= 0; e--) {
       jj = eord[e].idx;
-      if (ti - eord[e].te > max_qgap) break;   /* walking in end order: nothing earlier is closer */
       int qgap = ti - seeds[jj].t;
       if (qgap <= 0) continue;                  /* need strictly increasing query start; not counted */
       if (++iter > max_iter) break;             /* bound predecessors examined per anchor */
       int rgap = ji - seeds[jj].j;
       if (rgap <= 0) continue;                  /* need strictly increasing model pos (colinear) */
       int dgap = di - (seeds[jj].j - seeds[jj].t); if (dgap < 0) dgap = -dgap;
-      if (dgap > max_dgap) continue;
       int re = jei - eord[e].je;                /* i's model residues beyond j's end */
       if (re <= 0) continue;                    /* i's model span contained in j's */
       int qe = tei - eord[e].te;                /* > 0: j ends before i ends */
       int mn = qe < re ? qe : re;
       int match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted, end coordinates */
       nlink++;
-      float gapc  = (dgap > 0) ? (gap_open + glin*avgk*(double)dgap + glog*log2((double)dgap)
+      float gapc  = (dgap > 0) ? (gap_open + glin*(double)dgap + glog*log2((double)dgap)
                                   + (span_on ? span_log*log2((double)(qgap > rgap ? qgap : rgap)) : 0.0)) : 0.0;
       float sc    = f[jj] + (float) match - gapc;
       if (sc > fi) { fi = sc; pi = jj; }
