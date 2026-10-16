@@ -133,7 +133,7 @@ CreateCMShell(void)
   cm->p7_use_kmerchain = FALSE;          /* default: no genome-wide k-mer seed-and-chain (set by --p7kmerchain, brief 26_0628-027) */
   cm->p7_kmerchain_ramp = FALSE;         /* default: flat inter-anchor kmerchain band, no interpolated ramp (set TRUE by --p7kmerchain-ramp, brief 26_0821-096) */
   cm->p7_kmerchain_ramp_alpha = 0.75;    /* default: brief 26_0628-042's validated ramp-slack alpha (set by --p7kmerchain-alpha, brief 26_0628-043) */
-  cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query k-tier signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
+  cm->p7_kmerchain_mink = 0;             /* default: disabled -- unvalidated per-query longest-exact-match signal gate (set by --p7kmerchain-mink, brief 26_0628-046) */
   cm->p7_kmerchain_mgate = 0;            /* default: disabled -- opt-in small-M gate (set by --p7kmerchain-mgate, brief 26_0628-047) */
   cm->p7_kmerchain_fallback_vit = FALSE; /* default: use --p7ibv as the kmer-gate fallback deriver (set by --p7kmerchain-fbvit, brief 26_0628-047) */
   cm->p7_kmerchain_fallback_ibv = FALSE; /* default: use native CP9 banding as the kmer-gate chain=NONE fallback (set by --p7kmerchain-fbibv, brief 26_0430-260) */

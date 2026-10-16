@@ -1963,7 +1963,7 @@ typedef struct cm_s {
   int     p7_kmerchain_ramp;   /* if TRUE, kmerchain's inter-anchor band is the interpolated ramp, else the flat band (default FALSE; --p7kmerchain-ramp, brief 26_0821-096) */
   double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043); read by the kmerchain call site only when p7_kmerchain_ramp is TRUE */
   int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmerchain (independent of the M-gate) when the
-                                 * k>=mink tier finds ZERO exact-match hits anywhere in the model for this query --
+                                 * longest exact match between the query and the model consensus is shorter than mink --
                                  * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
                                  * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 26_0628-046) */
   int     p7_kmerchain_mgate;  /* brief 26_0628-047: if >0, gate kmerchain when M < this threshold (was a

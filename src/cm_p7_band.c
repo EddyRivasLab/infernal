@@ -1056,23 +1056,24 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 #define KMW_DRIFT       25    /* diagonal drift allowed when expanding outward     */
 #define KMW_EXP_FLOOR   2     /* min on-diagonal hits to accept an expansion bin   */
 
-static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-encodable */
-#define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
-
-/* brief 26_0628-046: per-query k>=mink zero-hits signal gate for kmerchain (also
- * gated the earlier best-window-anchor deriver before its removal by brief 26_0628-066).
- * `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
- * (returns TRUE) iff mink>0 and every tier with k>=mink has zero hits anywhere
- * in the model for this query -- i.e. there is no exact-match content long
+/* brief 26_0628-046: per-query signal gate for kmerchain (also gated the
+ * earlier best-window-anchor deriver before its removal by brief 26_0628-066).
+ * Fires (returns TRUE) iff mink>0 and the longest exact match between the
+ * query and the model consensus, `maxlen` (the longest merged seed run, 0 if
+ * none), is shorter than mink -- i.e. there is no exact-match content long
  * enough to carry real signal, independent of M. Disabled (mink<=0, default)
- * by construction returns FALSE. See brief 26_0628-046 for the mechanism/rationale. */
+ * by construction returns FALSE. See brief 26_0628-046 for the mechanism/rationale.
+ *
+ * Until brief 26_0821-124 this tested per-k seed tiers {10,15,20,25,30} for
+ * zero hits. A k-mer hit of length k exists iff an exact match of length >= k
+ * exists, so for mink at a tier value the two tests are the same; for other
+ * values the old test rounded mink up to the next tier (and always fired
+ * above 30). */
 static int
-kmer_ngate_fires(const int *nrawk, int mink)
+kmer_ngate_fires(int maxlen, int mink)
 {
-  int ki, sum = 0;
   if (mink <= 0) return FALSE;
-  for (ki = 0; ki < KMW_NK; ki++) if (kmw_kvals[ki] >= mink) sum += nrawk[ki];
-  return (sum == 0);
+  return (maxlen < mink);
 }
 
 typedef struct { uint64_t code; int pos; } kmw_kmer_t; /* a target k-mer occurrence */
@@ -1118,7 +1119,7 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
  * genome.
  *
  * Reuses the k-mer index infrastructure from that earlier deriver unchanged
- * (kmw_encode / kmw_kmer_cmp / kmw_lower_bound, k in {10,15,20,25,30}) and feeds
+ * (kmw_encode / kmw_kmer_cmp / kmw_lower_bound; seeds of length KMC_SEED_K) and feeds
  * the winning chain's pins through the SAME unmodified p7_pins2bands_nodepad
  * consumer.
  *****************************************************************/
@@ -1128,6 +1129,7 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
 #define KMC_MAX_QGAP  30000   /* max query gap, pred END to anchor START (bounds DP)*/
 #define KMC_MAX_DGAP  10000   /* max implied-indel (|diagonal diff|) on one link  */
 #define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
+#define KMC_SEED_K    10      /* seed k-mer length (<=31 => uint64-encodable)     */
 #define KMC_MIN_ANCHOR 10     /* min merged exact-match length to keep an anchor  */
                                /* brief 26_0628-029: lowered 20->10 (=smallest indexed k) to */
                                /* admit far more anchors on sparse-anchor genomes    */
@@ -1230,19 +1232,19 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int M = cm->fp7->M;
   int K = cm->abc->K;
   ESL_DSQ    *cons  = NULL;         /* model consensus, digital, cons[1..M]   */
-  kmc_ival_t *ival  = NULL;         /* raw seed intervals (all k), pre-merge  */
+  kmc_ival_t *ival  = NULL;         /* raw seed intervals, pre-merge          */
   int         nival = 0, ivalcap = 0;
   kmw_hit_t  *seeds = NULL;         /* merged maximal-exact-match anchors      */
   int         nseed = 0, seedcap = 0;
-  int         nrawk[KMW_NK];        /* raw seed count per k (instrumentation)  */
-  kmw_kmer_t *idx   = NULL;         /* per-k target k-mer index               */
+  int         maxrun = 0;           /* longest merged seed run (= longest exact match) */
+  kmw_kmer_t *idx   = NULL;         /* target k-mer index                     */
   float      *f     = NULL;         /* best chain score ending at anchor i     */
   int        *pre   = NULL;         /* chain predecessor                      */
   kmc_end_t  *eord  = NULL;         /* anchor ends, sorted by query end        */
   int        *chain = NULL;         /* backtracked chain (anchor indices)      */
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
-  int ki, j, x, i;
+  int j, x, i;
   int min_anchor;                   /* brief 26_0628-078: KMC_MIN_ANCHOR or env override */
   /* brief 26_0628-059 (extended 2026-07-11, brief 190 follow-up): optional
    * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
@@ -1262,7 +1264,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
     goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
-  for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)
     fprintf(stderr, "#MEMPOINT before_kmerchain L=%d M=%d rss_kb=%ld\n", L, M, brief035_rss_kb());
 
@@ -1276,15 +1277,22 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   }
 
   /* 2. collect ALL k-mer seeds genome-wide as (diagonal, query-interval) records.
-   *    A raw genome-scale seed count is ~1e6 (measured: HSV 833k), dominated by
-   *    per-position and multi-k redundancy -- far too many for an O(N^2) chain.
-   *    We collect each seed as a query interval on its diagonal, then merge
-   *    contiguous/overlapping intervals per diagonal into maximal exact-match
-   *    anchors, which collapses the redundancy by ~1-2 orders of magnitude and
-   *    yields chain-anchors that are colinear match blocks. */
-  for (ki = 0; ki < KMW_NK; ki++) {
-    int k = kmw_kvals[ki], ntgt = 0, t, p;
-    if (k > M || k > L) continue;
+   *    A raw genome-scale seed count is ~1e5-1e6, dominated by per-position
+   *    redundancy -- far too many for an O(N^2) chain. We collect each seed as
+   *    a query interval on its diagonal, then merge contiguous/overlapping
+   *    intervals per diagonal into maximal exact-match anchors, which collapses
+   *    the redundancy by ~1-2 orders of magnitude and yields chain-anchors that
+   *    are colinear match blocks.
+   *
+   *    Only one seed length, KMC_SEED_K, is used. Seeds of k=15,20,25,30 were
+   *    also collected until brief 26_0821-124, but every exact match of length
+   *    k > KMC_SEED_K is covered by overlapping KMC_SEED_K-mers on the same
+   *    diagonal, so after the merge the anchors were identical (brief
+   *    26_0821-119: identical alignments on 624 genome-scale cells). The
+   *    perk= field of the #KMERCHAIN line keeps its format, with 0 for the
+   *    retired tiers. */
+  if (KMC_SEED_K <= M && KMC_SEED_K <= L) {
+    int k = KMC_SEED_K, ntgt = 0, t, p;
     ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
     for (t = 1; t <= L - k + 1; t++) {
       int ok; uint64_t code = kmw_encode(dsq, t, k, &ok);
@@ -1303,7 +1311,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
           ival = tmp; ivalcap = newcap;
         }
         ival[nival].d = j - tt; ival[nival].tlo = tt; ival[nival].thi = tt + k - 1;
-        nival++; nrawk[ki]++;
+        nival++;
       }
     }
     free(idx); idx = NULL;
@@ -1335,6 +1343,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
         s++;
       }
       int len = thi - tlo + 1;
+      if (len > maxrun) maxrun = len;
       if (len >= min_anchor) {
         if (nseed == seedcap) {
           int newcap = seedcap ? seedcap*2 : 4096;
@@ -1349,12 +1358,12 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     }
   }
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
-          L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, min_anchor);
+          L, M, nival, nival, 0, 0, 0, 0, nseed, min_anchor);
 
-  /* brief 26_0628-046: per-query k>=mink zero-hits signal gate (unvalidated, default
-   * off -- see kmer_ngate_fires() header comment). Checked right after the raw
-   * hit collection/perk breakdown above, independent of the M-gate above. */
-  if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
+  /* brief 26_0628-046: per-query longest-exact-match signal gate (unvalidated,
+   * default off -- see kmer_ngate_fires() header comment). Checked right after
+   * the seed collection/merge above, independent of the M-gate above. */
+  if (kmer_ngate_fires(maxrun, cm->p7_kmerchain_mink)) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
                     "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
     status = eslOK; goto CLEANUP;
