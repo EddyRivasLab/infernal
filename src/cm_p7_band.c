@@ -1050,12 +1050,6 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * "no anchor" (ret_ncells=0), and the caller falls back per brief 26_0628-047's new
  * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
 
-#define KMW_BIN         200   /* model-window (bin) width, matches brief 26_0628-023/26_0628-025 B */
-#define KMW_TOL         15    /* diagonal-cluster tolerance (brief 26_0628-023/26_0628-025 TOL)    */
-#define KMW_MIN_CORRECT 3     /* floor: min on-diagonal hits for a real window     */
-#define KMW_DRIFT       25    /* diagonal drift allowed when expanding outward     */
-#define KMW_EXP_FLOOR   2     /* min on-diagonal hits to accept an expansion bin   */
-
 /* brief 26_0628-046: per-query signal gate for kmerchain (also gated the
  * earlier best-window-anchor deriver before its removal by brief 26_0628-066).
  * Fires (returns TRUE) iff mink>0 and the longest exact match between the
@@ -1425,35 +1419,18 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int   best_end = 0;
   float best_sc  = -1.0;
   long   nlink    = 0;   /* DP work counter (instrumentation) */
-  /* brief 26_0628-078: soft, env-gated gap-cost knobs on the colinear-chaining
-   * DP link cost below. All no-ops when unset (gapc arithmetic is then
-   * bit-identical to the pre-078 expression).
+  /* brief 26_0628-078: developer overrides of the gap-cost constants on the
+   * colinear-chaining DP link cost below (no-ops when unset).
    *
-   *   KMC_GAP_OPEN=<x>   affine "cost to open a new diagonal": a constant x
-   *                      charged once per dgap>0 link, so a chance anchor of
-   *                      length k only pays for itself when k > x -- but a
-   *                      short anchor may still open a diagonal when the
-   *                      alternative is far worse, so legitimate excursions
-   *                      (and their pins) are never lost outright. (An affine
-   *                      gap cost; the existing terms are the extension part.)
-   *   KMC_SPAN_LOG=<c>   span-aware term c*log2(max(qgap,rgap)) per dgap>0
-   *                      link -- the gap cost otherwise ignores absolute span
-   *                      entirely, which is what makes two cheap hops beat one
-   *                      real jump (26_0430's peer message, section 2).
    *   KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
    *                      re-tune the two gap-cost constants. Since brief
    *                      26_0821-124 KMC_GAP_LIN is the whole linear
    *                      coefficient (bits per diagonal residue, 0.15); it
    *                      used to be multiplied by KMC_AVGK=15. */
-  char  *gopen_env = getenv("KMC_GAP_OPEN");
-  char  *spanl_env = getenv("KMC_SPAN_LOG");
   char  *glin_env  = getenv("KMC_GAP_LIN_OVERRIDE");
   char  *glog_env  = getenv("KMC_GAP_LOG_OVERRIDE");
-  double gap_open  = (gopen_env != NULL) ? atof(gopen_env) : 0.0;
-  double span_log  = (spanl_env != NULL) ? atof(spanl_env) : 0.0;
   double glin      = (glin_env  != NULL) ? atof(glin_env)  : KMC_GAP_LIN;
   double glog      = (glog_env  != NULL) ? atof(glog_env)  : KMC_GAP_LOG;
-  int    span_on   = (spanl_env != NULL && span_log != 0.0);
   /* developer override of the lookback limit (brief 26_0821-117). */
   char  *it_env    = getenv("KMC_MAX_ITER_OVERRIDE");
   int    max_iter  = (it_env != NULL) ? atoi(it_env) : KMC_MAX_ITER;
@@ -1486,8 +1463,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       int mn = qe < re ? qe : re;
       int match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted, end coordinates */
       nlink++;
-      float gapc  = (dgap > 0) ? (gap_open + glin*(double)dgap + glog*log2((double)dgap)
-                                  + (span_on ? span_log*log2((double)(qgap > rgap ? qgap : rgap)) : 0.0)) : 0.0;
+      float gapc  = (dgap > 0) ? (glin*(double)dgap + glog*log2((double)dgap)) : 0.0;
       float sc    = f[jj] + (float) match - gapc;
       if (sc > fi) { fi = sc; pi = jj; }
     }
