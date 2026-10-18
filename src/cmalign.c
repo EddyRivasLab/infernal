@@ -127,7 +127,7 @@ static ESL_OPTIONS options[] = {
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
   { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g",        NULL, "build sub CM for columns b/t HMM predicted start/end points",     2 },
-  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--sub,--small", "use the p7 HMM only to align (no CM alignment)",                  2 },
+  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--sub,--small", "align with the p7 HMM only, no CM; -g acts only w/--notrunc",    2 },
   { "--hmmvit",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm", "--hmmnoband", "w/--hmm, use Viterbi traces (faster, less accurate)",               2 },
   { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use Viterbi bands for OA alignment",              2 },
   { "--nohmm",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,        "--hmm", "do not auto-switch to HMM mode on 0-basepair CMs",               2 },
@@ -619,6 +619,27 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
 
   fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
           esl_opt_GetInteger(go, "--p7ibv-delta"));
+}
+
+/* use_glocal_config()
+ *
+ * Returns TRUE if -g should configure the model for global alignment.
+ * That is every -g run except truncation-aware HMM-only alignment
+ * (--hmm, explicit or auto-switched, without --notrunc). There, every
+ * alignment uses the Tgm profile, whose local entry is the truncation
+ * entry, and an HMM has no EL states, so -g has nothing to act on (see
+ * hmm_alignment()). Ignoring -g here makes it a byte-identical no-op in
+ * that mode: initialize_cm() then configures the CM, and so builds
+ * cm->mlp7 from the CP9, exactly as without -g, and output_header()
+ * prints no "global" line. CM-mode and --notrunc runs are unchanged.
+ * Must be called after maybe_hmm_autoswitch().
+ */
+static int
+use_glocal_config(const ESL_GETOPTS *go)
+{
+  if (! esl_opt_GetBoolean(go, "-g")) return FALSE;
+  if (esl_opt_GetBoolean(go, "--hmm") && ! esl_opt_GetBoolean(go, "--notrunc")) return FALSE;
+  return TRUE;
 }
 
 /* serial_master()
@@ -1140,9 +1161,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
    * `cmalign -g` scores were within a few bits of Tgm's Forward score,
    * with the same spans (brief 26_0821-122). So -g needs no glocal
    * truncated profile of its own; the -g refusal added by brief
-   * 26_0526-031 was removed by brief 26_0821-122. (-g still changes
-   * cm->mlp7 slightly: cm_Configure() builds it from cm->cp9 after
-   * local configuration when -g is absent.)
+   * 26_0526-031 was removed by brief 26_0821-122, and -g is ignored here
+   * (see use_glocal_config()), so that cm->mlp7 and the output are the
+   * same as without -g.
    */
   bg = p7_bg_Create(hmm->abc);
   p7mode = esl_opt_GetBoolean(go, "-g") ? p7_UNIGLOCAL : p7_UNILOCAL;
@@ -3632,7 +3653,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
 			                    fprintf(ofp, "# sequence file:                               %s\n", sqfile);
                                             fprintf(ofp, "# CM name:                                     %s\n", cm->name);
   if (esl_opt_IsUsed(go, "-o"))          {  fprintf(ofp, "# saving alignment to file:                    %s\n", esl_opt_GetString(go, "-o")); }
-  if (esl_opt_IsUsed(go, "-g"))          {  fprintf(ofp, "# model configuration:                         global\n"); }
+  if (use_glocal_config(go))             {  fprintf(ofp, "# model configuration:                         global\n"); }
 
   if (esl_opt_IsUsed(go, "--optacc"))    {  fprintf(ofp, "# alignment algorithm:                         optimal accuracy\n"); }
   if (esl_opt_IsUsed(go, "--cyk"))       {  fprintf(ofp, "# alignment algorithm:                         CYK\n"); }
@@ -3904,7 +3925,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->config_opts |= CM_CONFIG_NONBANDEDMX;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->config_opts |= CM_CONFIG_TRUNC;
   if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc */
-  if(! esl_opt_GetBoolean(go, "-g")) { 
+  if(! use_glocal_config(go)) { /* -g is a no-op in truncation-aware --hmm mode */
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
