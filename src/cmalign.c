@@ -316,7 +316,8 @@ kmer_gate_p7ibv_fallback(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int 
  * meaningless (it used to be emitted anyway, exit 0, as a garbage alignment).
  *
  * The first time this happens for a sequence whose band did NOT come from IBV,
- * print one stderr line, free the failed band, and re-derive it with the IBV
+ * print one stderr line (INFERNAL_STAGE_VERBOSE only), free the failed band,
+ * and re-derive it with the IBV
  * D&C deriver via kmer_gate_p7ibv_fallback() (same delta/base-slab settings as
  * kmerchain's no-anchor fallback; still truncation-aware if <do_trunc>), so the
  * caller can retry once. IBV D&C is used because it is memory-bounded at genome
@@ -347,7 +348,8 @@ hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab
             "(banded HMM Forward total not finite), and no filter p7 HMM for a --p7ibv-mem retry.",
             band_src, sq->name);
 
-  fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", band_src, sq->name);
+  if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
+    fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", band_src, sq->name);
   free(*ret_i2k);  *ret_i2k  = NULL;
   free(*ret_kmin); *ret_kmin = NULL;
   free(*ret_kmax); *ret_kmax = NULL;
@@ -584,7 +586,8 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * If the loaded CM has 0 basepairs and the user requested no explicit
  * alignment mode, force the memory-minimal production HMM path
  * (--hmm --p7ibv [--p7ibv-delta 1000]) by setting those options in <go>
- * as if given on the command line, then emit a one-line note to stderr.
+ * as if given on the command line, then emit a one-line note to stderr
+ * (only if INFERNAL_STAGE_VERBOSE is set).
  *
  * brief 26_0526-013 FOLLOW-UP (2026-08-07): the --p7ibv-delta 1000 tight
  * band was validated ONLY at genome scale (norovirus M=7567 through MPXV
@@ -618,8 +621,9 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
   if (esl_opt_IsDefault(go, "--p7ibv-delta") && cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM)
     autoswitch_force_opt(go, "--p7ibv-delta", "1000");
 
-  fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
-          esl_opt_GetInteger(go, "--p7ibv-delta"));
+  if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
+    fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
+            esl_opt_GetInteger(go, "--p7ibv-delta"));
 }
 
 /* use_glocal_config()

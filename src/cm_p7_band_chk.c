@@ -1161,8 +1161,11 @@ cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
   /* The detail goes to stderr, not errbuf: eslERRBUFSIZE is 128 bytes, far too
    * small to carry it, and silently truncating the explanation would recreate
    * the illegibility this guard exists to remove. errbuf gets a short form so
-   * whatever finally prints it still names the cause. */
-  fprintf(stderr,
+   * whatever finally prints it still names the cause. Developer-only since
+   * brief 26_0821-133: stderr carries errors only unless INFERNAL_STAGE_VERBOSE
+   * is set. */
+  if(cm_StageVerbose())
+    fprintf(stderr,
           "# no-parse p7 band in checkpointed CP9 band derivation (%s):\n"
           "#   no complete parse under this band; CP9 Forward/Backward totals impossible (fwd=%g bwd=%g)\n"
           "#   band: L=%d M=%d cells=%.0f of %.0f (cover=%.6f)\n"
@@ -1199,7 +1202,7 @@ cp9_chk_noparse_report(CM_t *cm, char *errbuf)
 {
   const char *deriver = cp9_chk_band_deriver_name(cm);
 
-  fprintf(stderr, "#   band deriver: %s\n", deriver);
+  if(cm_StageVerbose()) fprintf(stderr, "#   band deriver: %s\n", deriver); /* brief 26_0821-133 */
   snprintf(errbuf, eslERRBUFSIZE,
            "no-parse p7 band from %s: no complete parse under this band "
            "(CP9 F/B total impossible)", deriver);
