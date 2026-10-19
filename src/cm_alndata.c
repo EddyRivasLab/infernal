@@ -2922,6 +2922,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R1 Ka=%d Kb=%d rows=%d status=%d psc=%.2f kept=%d\n",
                                   sq->name, Ka, Kb, nrow, status2, psc2, nkept);
   }
+  /* R2: native CP9 bands, if R1 was not kept. Skipped when the estimate
+   * applies, the topology offered an alternative EL and every estimate
+   * rejected it: then the first parse's EL placement stands. */
+  if(nkept == 0 && ! (gate && ncand > 0 && npos == 0)) {
+    rq.mode = ELR_MODE_NATIVE; rq.L = 0; rq.i2k = rq.kmin = rq.kmax = rq.klo = NULL;
+    status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &rq, &data2);
+    nretry++;
+    if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
+    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R2 status=%d psc=%.2f kept=%d\n", sq->name, status2, psc2, nkept);
+  }
 
  DONE:
   if(best != NULL) {
