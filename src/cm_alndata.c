@@ -2787,6 +2787,39 @@ elr_corroborated_runs(CM_t *cm, CMEmitMap_t *emap, Parsetree_t *tr, const int *r
   return eslEMEM;
 }
 
+/* T, the tail rule, applied with no parse (on a refusal): the rows after the
+ * chain's last raw pin can be absorbed by an EL only if the band holds that
+ * EL's HMM node. If the band already holds an EL entry that can absorb the
+ * tail (an EL-capable node with kmin_tail <= lpos <= the last pin's column,
+ * e.g. near the end of a single-branch CM), the tail is not what the band is
+ * missing: no edit. Otherwise take the latest (max lpos) EL-capable u with
+ * lpos[u] <= the last pin's column and lpos[u] below the tail rows' kmin, and
+ * lower kmin to elr_retry_col(u) from the first row whose band reaches it to
+ * L. Returns the number of rows whose kmin the edit lowers. */
+static int
+elr_tail_edit(CM_t *cm, CMEmitMap_t *emap, const int *raw, const int *kmin, const int *kmax, int L, int *klo, int *ret_K)
+{
+  int i, nd, rb = -1, cb = -1, ub = -1, kmin_tail = INT_MAX, n = 0;
+
+  *ret_K = -1;
+  for(i = L; i >= 1; i--) if(raw[i] != -1) { rb = i; cb = raw[i]; break; }
+  if(rb == -1 || rb == L) return 0;
+  for(i = rb+1; i <= L; i++) kmin_tail = ESL_MIN(kmin_tail, kmin[i]);
+  for(nd = 1; nd < cm->nodes; nd++)
+    if(elr_node_has_el(cm, nd) && emap->lpos[nd] >= kmin_tail && emap->lpos[nd] <= cb) return 0;
+  for(nd = 1; nd < cm->nodes; nd++)
+    if(elr_node_has_el(cm, nd) && emap->lpos[nd] <= cb && emap->lpos[nd] < kmin_tail &&
+       (ub == -1 || emap->lpos[nd] > emap->lpos[ub])) ub = nd;
+  if(ub == -1) return 0;
+  {
+    int lo = 1, K = elr_retry_col(cm, emap, ub);
+    while(lo <= L && kmax[lo] < K) lo++;
+    for(i = lo; i <= L; i++) if(kmin[i] > K) n++;
+    if(n > 0) { elr_klo_set(klo, L, lo, L, K); *ret_K = K; }
+  }
+  return n;
+}
+
 /* elr_consider(): a retry has run with status <status2> and result <*data2>.
  * Keep it iff its parse scores higher than the best so far. The comparison
  * is on the reported parse's own score (ParsetreeScore()), never on
@@ -2871,6 +2904,29 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   status = dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &eb, ret_data);
   if(eb.raw == NULL || eb.L != L) { elr_band_release(&eb); return status; }   /* the band did not come from kmerchain */
 
+  /* a refusal (eslERANGE): one retry with the tail rule T. It is not applied
+   * before alignment, since it would change many bands that align fine. */
+  if(status == eslERANGE) {
+    double t_first = 0.;
+    int    K;
+    if(w_tot != NULL) { esl_stopwatch_Stop(w_tot); t_first = w_tot->elapsed; }   /* the refused pass stops nothing */
+    if((emap = CreateEmitMap(cm)) == NULL) { status = eslEMEM; goto ERROR; }
+    ESL_ALLOC(klo, sizeof(int) * (L+1));
+    esl_vec_ISet(klo, L+1, 0);
+    nrow = elr_tail_edit(cm, emap, eb.raw, eb.kmin, eb.kmax, L, klo, &K);
+    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s L=%d refused arm=T K=%d rows=%d\n", sq->name, L, K, nrow);
+    if(nrow > 0) {
+      rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
+      status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &rq, &data2);
+      if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=T status=%d\n", sq->name, status2);
+      if(status2 == eslOK) {
+        data2->secs_tot += t_first;
+        best = data2; data2 = NULL;
+        status = eslOK; errbuf[0] = '\0';
+      }
+    }
+    goto DONE;
+  }
   if(status != eslOK) goto DONE;
 
   best = *ret_data;
