@@ -20,6 +20,7 @@
 #include <math.h>
 
 #include "easel.h"
+#include "esl_vectorops.h"
 
 #include "hmmer.h"
 
@@ -2417,15 +2418,532 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   return status; 
 }
 
+/*****************************************************************
+ * Local-mode EL detect-and-retry for --p7kmerchain bands
+ * (briefs 26_0821-127/26_0821-128/26_0821-132)
+ *
+ * The kmerchain p7 band is built without local ends (ELs). In a local
+ * alignment (no -g) on a CM with branches it can exclude the optimal EL
+ * parse, e.g. when a large insertion follows a branch end, or when the
+ * genome is tandem-doubled. Then the parse puts residues that the chain
+ * pinned into an EL instead. DispatchSqAlignment() checks for that after
+ * a local kmerchain alignment and, when it finds it, realigns once with a
+ * band that admits the alternative EL.
+ *
+ * None of the rules below has a tuned constant: the trigger is a complete
+ * run of chain pins (the chain's own unit of evidence, an exact match of
+ * at least its seed length), the retry band is read off the CM topology,
+ * a retry is kept only if its parse scores higher, and the pre-retry
+ * estimate is a sum of model scores.
+ *****************************************************************/
+
+/* EL-capable node: the same rule cm_localize() uses for cm->end[]. */
+static int
+elr_node_has_el(CM_t *cm, int nd)
+{
+  return ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+           cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+           cm->ndtype[nd] == BEGR_nd) && nd+1 < cm->nodes && cm->ndtype[nd+1] != END_nd) ? TRUE : FALSE;
+}
+
+/* The retry column for an EL entered at node <nd>: the left bound (lpos) of
+ * the branch that holds <nd>, i.e. the nearest BEGL/BEGR at or before <nd> in
+ * node order (a branch is a contiguous node run from its BEG to its END/BIF).
+ * A band that reaches only lpos[nd] itself is not enough: on a 32 kb insert
+ * test case, kmin = lpos[nd] collapses the p7-banded CP9 posterior onto an
+ * EL-to-the-end path, a kmin 3 columns lower inflates the CM bands past every
+ * engine, and every kmin 7 or more columns lower recovers the optimum.
+ * Covering every EL entry in the branch removes that dependence. On the ROOT
+ * spine (no BEG), use lpos[nd]. */
+static int
+elr_retry_col(CM_t *cm, CMEmitMap_t *emap, int nd)
+{
+  int b;
+  for(b = nd; b > 0; b--)
+    if(cm->ndtype[b] == BEGL_nd || cm->ndtype[b] == BEGR_nd) return ESL_MAX(1, emap->lpos[b]);
+  return ESL_MAX(1, emap->lpos[nd]);
+}
+
+/* One EL of a parse and the chain pins it swallows. */
+typedef struct {
+  int x, nd, e1, e2;     /* parse-tree index, entry node, EL residue span      */
+  int npin, nrun;        /* raw pins / complete raw-pin runs inside [e1,e2]    */
+  int ra, ca, rb, cb;    /* first/last pinned row inside the EL, and its column */
+} ELR_EL;
+
+/* Collect the ELs of <tr> and the raw pins each swallows. A run is a maximal
+ * stretch of rows whose pins step +1 column per row; it counts only if it
+ * starts and ends inside the EL (a run that only touches the EL boundary is
+ * the parse leaving or rejoining the chain, not a swallowed one). Returns the
+ * number of ELs that swallow a complete run (-1 on allocation failure); *ret_el is NULL if <tr> has no EL. */
+static int
+elr_detect(CM_t *cm, Parsetree_t *tr, const int *raw, int L, ELR_EL **ret_el, int *ret_nel)
+{
+  int     status;
+  ELR_EL *el = NULL;
+  int     x, i, j, nel = 0, ntrig = 0;
+
+  *ret_el = NULL; *ret_nel = 0;
+  for(x = 0; x < tr->n; x++) if(tr->state[x] == cm->M) nel++;
+  if(nel == 0) return 0;
+  ESL_ALLOC(el, sizeof(ELR_EL) * nel);
+  nel = 0;
+  for(x = 0; x < tr->n; x++) {
+    if(tr->state[x] != cm->M) continue;
+    ELR_EL *e = &el[nel++];
+    e->x  = x;
+    e->nd = cm->ndidx[tr->state[tr->prv[x]]];
+    e->e1 = tr->emitl[x];
+    e->e2 = tr->emitr[x];
+    e->npin = e->nrun = 0; e->ra = e->ca = e->rb = e->cb = -1;
+    for(i = ESL_MAX(1, e->e1); i <= ESL_MIN(L, e->e2); i++) {
+      if(raw[i] == -1) continue;
+      e->npin++;
+      if(e->ra == -1) { e->ra = i; e->ca = raw[i]; }
+      e->rb = i; e->cb = raw[i];
+      if(raw[i-1] != -1 && raw[i-1] == raw[i]-1) continue;   /* not a run start (raw[0] is -1) */
+      for(j = i; j+1 <= L && raw[j+1] != -1 && raw[j+1] == raw[j]+1; j++) ;
+      if(j <= e->e2) e->nrun++;                                /* the run ends inside the EL */
+    }
+    if(e->nrun > 0) ntrig++;
+  }
+  *ret_el = el; *ret_nel = nel;
+  return ntrig;
+
+ ERROR:
+  return -1;
+}
+
+/* Lower kmin to <K> on rows [lo,hi] of klo[]. */
+static void
+elr_klo_set(int *klo, int L, int lo, int hi, int K)
+{
+  int i;
+  for(i = ESL_MAX(1, lo); i <= ESL_MIN(L, hi); i++)
+    if(klo[i] == 0 || K < klo[i]) klo[i] = K;
+}
+
+/* R1, the retry band for one triggered EL: lower kmin on some rows (kmax is
+ * unchanged). In the CP9, an EL from CM node u is a state at HMM node lpos[u]
+ * that the path enters from M_lpos[u] and leaves to node rpos[u]
+ * (CPlan9InitEL()), so on every row the EL covers, the p7 band must reach
+ * column lpos[u]; elr_retry_col() gives the column actually used.
+ * (a) EL before the swallowed pins: take the EL-capable u with the latest
+ *     resume point epos[u] < ca (ties: latest lpos). Its EL ends u's subtree
+ *     before column ca, so the parse can resume and follow the chain from ca.
+ *     Lower kmin from the first row whose band reaches the retry column
+ *     through ra-1 (the EL has to end before the first swallowed pin).
+ * (b) EL after the swallowed pins: take the latest (max lpos) EL-capable u
+ *     with lpos[u] <= cb that the band does not already admit on the EL's rows
+ *     after rb (lpos[u] < their min kmin). Lower kmin from the first row whose
+ *     band reaches the retry column through e2.
+ * <do_a>/<do_b> say whether to edit klo[] for (a)/(b); either way *ret_ua and
+ * *ret_ub return the chosen nodes (-1 if none). Returns the number of rows
+ * whose kmin the edit lowers. */
+static int
+elr_r1_edit(CM_t *cm, CMEmitMap_t *emap, const ELR_EL *e, const int *kmin, const int *kmax, int L, int *klo,
+            int do_a, int do_b, int *ret_ua, int *ret_ub, int *ret_Ka, int *ret_Kb)
+{
+  int nd, i, n = 0;
+  int ua = -1, ub = -1, kmin_tail = INT_MAX;
+
+  *ret_ua = *ret_ub = *ret_Ka = *ret_Kb = -1;
+  if(e->ra == -1) return 0;
+  for(nd = 1; nd < cm->nodes; nd++)
+    if(elr_node_has_el(cm, nd) && emap->epos[nd] < e->ca &&
+       (ua == -1 || emap->epos[nd] > emap->epos[ua] ||
+        (emap->epos[nd] == emap->epos[ua] && emap->lpos[nd] > emap->lpos[ua]))) ua = nd;
+  *ret_ua = ua;
+  if(ua != -1 && do_a) {
+    int lo = 1, Ka = elr_retry_col(cm, emap, ua), na = 0;
+    while(lo <= L && kmax[lo] < Ka) lo++;
+    for(i = lo; i < e->ra; i++) if(kmin[i] > Ka) na++;
+    if(na > 0) { elr_klo_set(klo, L, lo, e->ra - 1, Ka); *ret_Ka = Ka; n += na; }
+  }
+  for(i = e->rb+1; i <= ESL_MIN(L, e->e2); i++) kmin_tail = ESL_MIN(kmin_tail, kmin[i]);
+  if(kmin_tail != INT_MAX) {
+    for(nd = 1; nd < cm->nodes; nd++)
+      if(elr_node_has_el(cm, nd) && emap->lpos[nd] <= e->cb && emap->lpos[nd] < kmin_tail &&
+         (ub == -1 || emap->lpos[nd] > emap->lpos[ub])) ub = nd;
+    *ret_ub = ub;
+    if(ub != -1 && do_b) {
+      int lo = 1, Kb = elr_retry_col(cm, emap, ub), nb = 0;
+      while(lo <= L && kmax[lo] < Kb) lo++;
+      for(i = lo; i <= e->e2; i++) if(kmin[i] > Kb) nb++;
+      if(nb > 0) { elr_klo_set(klo, L, lo, e->e2, Kb); *ret_Kb = Kb; n += nb; }
+    }
+  }
+  return n;
+}
+
+/* The pre-retry estimate: before realigning, estimate whether R1's
+ * alternative EL can beat the first parse, so a retry that cannot win is not
+ * paid for. Every term is a model score:
+ *   gain   = the swallowed residues aligned ungapped along the chain's
+ *            diagonals (each takes the nearest preceding raw pin's diagonal;
+ *            emission plus the p7 M->M transition), from the first pin after
+ *            the largest pin-free stretch inside the EL (the insert or the
+ *            unanchored copy; chance anchors inside it do not count), and
+ *            stopping before the first column the first parse aligns after its
+ *            EL; (b): only up to the last such pin at or before lpos[u];
+ *   lost   = (a) only: the first parse's own score (emissions and transitions,
+ *            not EL cost) on the residues the alternative moves into its EL,
+ *            i.e. after the last residue aligned at or before lpos[u] and
+ *            before the first parse's EL;
+ *   detour = the p7 model's delete-path score over the columns the
+ *            alternative must cross with no residue ((a): epos[u]+1 .. the
+ *            first recovered pin's column - 1; (b): epos[u]+1 .. the first
+ *            EL's resume column);
+ *   dEL    = el_selfsc x (alternative EL length - first EL length).
+ * delta = gain - lost + detour + dEL. */
+static float
+elr_col_emit(CM_t *cm, const int *colL, const int *colR, int c, ESL_DSQ sym)
+{
+  int v;
+  if(sym >= cm->abc->K) return 0.;
+  if((v = colL[c]) != -1) return (cm->sttype[v] == MP_st) ? cm->lmesc[v][sym] : cm->esc[v][sym];
+  if((v = colR[c]) != -1) return (cm->sttype[v] == MP_st) ? cm->rmesc[v][sym] : cm->esc[v][sym];
+  return 0.;
+}
+
+/* score contribution of parse node x (its emission and its transition out,
+ * as ParsetreeScore() sums them), without the cost of entering an EL */
+static float
+elr_node_sc(CM_t *cm, Parsetree_t *tr, int x, const ESL_DSQ *dsq)
+{
+  int     v    = tr->state[x], y;
+  char    mode = tr->mode[x];
+  float   sc   = 0.;
+  ESL_DSQ a, b;
+
+  if(v == cm->M || cm->sttype[v] == E_st || cm->sttype[v] == B_st) return 0.;
+  if(tr->nxtl[x] != -1) {
+    y = tr->state[tr->nxtl[x]];
+    if(v == 0)            sc += (! tr->is_std) ? tr->trpenalty : ((cm->flags & CMH_LOCAL_BEGIN) ? cm->beginsc[y] : cm->tsc[v][y - cm->cfirst[v]]);
+    else if(y != cm->M)   sc += cm->tsc[v][y - cm->cfirst[v]];   /* an EL's cost is the dEL term */
+  }
+  if(cm->sttype[v] == MP_st) {
+    a = dsq[tr->emitl[x]]; b = dsq[tr->emitr[x]];
+    if(mode == TRMODE_J)      sc += (a < cm->abc->K && b < cm->abc->K) ? cm->esc[v][a*cm->abc->K+b] : DegeneratePairScore(cm->abc, cm->esc[v], a, b);
+    else if(mode == TRMODE_L) sc += (a < cm->abc->K) ? cm->lmesc[v][a] : 0.;
+    else if(mode == TRMODE_R) sc += (b < cm->abc->K) ? cm->rmesc[v][b] : 0.;
+  }
+  else if((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && ModeEmitsLeft(mode)) {
+    a = dsq[tr->emitl[x]]; sc += (a < cm->abc->K) ? cm->esc[v][a] : esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
+  }
+  else if((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && ModeEmitsRight(mode)) {
+    b = dsq[tr->emitr[x]]; sc += (b < cm->abc->K) ? cm->esc[v][b] : esl_abc_FAvgScore(cm->abc, b, cm->esc[v]);
+  }
+  return sc;
+}
+
+/* Score of aligning residues [r1,r2] ungapped along the chain's diagonals:
+ * each residue takes the diagonal of the nearest raw pin at or before it and
+ * is scored as a match (emission + the p7 model's M->M transition) at that
+ * column, if the column is increasing and <= cmax. */
+static float
+elr_ungapped_gain(CM_t *cm, const int *colL, const int *colR, const ESL_DSQ *dsq, const int *raw, int r1, int r2, int cmax)
+{
+  int   i, d = 0, have = FALSE, c, last = 0;
+  float sc = 0.;
+
+  for(i = r1; i <= r2; i++) {
+    if(raw[i] != -1) { d = raw[i] - i; have = TRUE; }
+    if(! have) continue;
+    c = i + d;
+    if(c <= last || c < 1 || c > cmax) continue;
+    sc += elr_col_emit(cm, colL, colR, c, dsq[i]);
+    if(cm->fp7 != NULL && last > 0 && c == last + 1) sc += log2f(ESL_MAX(cm->fp7->t[last][p7H_MM], 1e-30));
+    last = c;
+  }
+  return sc;
+}
+
+/* delete-path score of the p7 model over columns [c1,c2] (0 if empty) */
+static float
+elr_delete_path(CM_t *cm, int c1, int c2)
+{
+  P7_HMM *h  = cm->fp7;
+  float   sc = 0.;
+  int     k;
+
+  if(h == NULL || c1 > c2) return 0.;
+  c1 = ESL_MAX(1, c1); c2 = ESL_MIN(h->M, c2);
+  if(c1 > c2) return 0.;
+  sc += log2f(ESL_MAX(h->t[c1-1][p7H_MD], 1e-30));
+  for(k = c1; k < c2; k++) sc += log2f(ESL_MAX(h->t[k][p7H_DD], 1e-30));
+  if(c2 < h->M) sc += log2f(ESL_MAX(h->t[c2][p7H_DM], 1e-30));
+  return sc;
+}
+
+/* The estimates for (a) (u = ua) and (b) (u = ub) of one EL; a missing u,
+ * or no pin to recover, gives -eslINFINITY. */
+static int
+elr_estimate(CM_t *cm, CMEmitMap_t *emap, Parsetree_t *tr, const ESL_DSQ *dsq, int L, const int *raw,
+             const ELR_EL *e, int ua, int ub, float *ret_da, float *ret_db)
+{
+  int    status;
+  int   *colL = NULL, *colR = NULL, *res2col = NULL;
+  int    nd, v, x, i, c, ru, rb2 = -1, ra2 = -1, cmax;
+  float  ga, la = 0., wa, ea, gb, wb, eb;
+  int    lfirst = e->e2 - e->e1 + 1;
+
+  *ret_da = *ret_db = -eslINFINITY;
+  ESL_ALLOC(colL,    sizeof(int) * (cm->clen+2));
+  ESL_ALLOC(colR,    sizeof(int) * (cm->clen+2));
+  ESL_ALLOC(res2col, sizeof(int) * (L+2));
+  for(c = 0; c <= cm->clen+1; c++) colL[c] = colR[c] = -1;
+  for(nd = 0; nd < cm->nodes; nd++) {
+    v = cm->nodemap[nd];
+    if(cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATP_nd) colL[emap->lpos[nd]] = v;
+    if(cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == MATP_nd) colR[emap->rpos[nd]] = v;
+  }
+  for(i = 0; i <= L+1; i++) res2col[i] = -1;
+  for(x = 0; x < tr->n; x++) {   /* residue -> the column the first parse aligns it to */
+    v = tr->state[x];
+    if(v == cm->M) continue;
+    nd = cm->ndidx[v];
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) res2col[tr->emitl[x]] = emap->lpos[nd];
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) res2col[tr->emitr[x]] = emap->rpos[nd];
+  }
+  /* the swallowed block starts at the first pin after the largest pin-free stretch inside the EL */
+  {
+    int prev = e->e1 - 1, gap = -1;
+    for(i = e->e1; i <= e->e2; i++) if(raw[i] != -1) { if(i - prev - 1 > gap) { gap = i - prev - 1; ra2 = i; } prev = i; }
+  }
+  /* recovered columns stop before the first column the first parse aligns after its EL */
+  cmax = cm->clen;
+  for(i = e->e2 + 1; i <= L; i++) if(res2col[i] > 0) cmax = ESL_MIN(cmax, res2col[i] - 1);
+  if(ua != -1 && ra2 != -1) {
+    for(i = e->e1 - 1; i >= 1; i--) if(res2col[i] > 0 && res2col[i] <= emap->lpos[ua]) break;
+    ru = i + 1;
+    ga = elr_ungapped_gain(cm, colL, colR, dsq, raw, ra2, e->e2, cmax);
+    for(x = 0; x < tr->n; x++) {
+      v = tr->state[x];
+      if(v == cm->M) continue;
+      i = (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) ? tr->emitr[x] : tr->emitl[x];
+      if(i >= ru && i < e->e1) la += elr_node_sc(cm, tr, x, dsq);
+    }
+    wa = elr_delete_path(cm, emap->epos[ua] + 1, raw[ra2] - 1);
+    ea = cm->el_selfsc * (float) (((ra2 - 1) - ru + 1) - lfirst);
+    *ret_da = ga - la + wa + ea;
+  }
+  if(ub != -1 && ra2 != -1) {
+    for(i = e->e2; i >= ra2; i--) if(raw[i] != -1 && raw[i] <= emap->lpos[ub]) { rb2 = i; break; }
+    if(rb2 != -1) {
+      gb = elr_ungapped_gain(cm, colL, colR, dsq, raw, ra2, rb2, emap->lpos[ub]);
+      wb = elr_delete_path(cm, emap->epos[ub] + 1, emap->epos[e->nd]);
+      eb = cm->el_selfsc * (float) (-(rb2 - ra2 + 1));
+      *ret_db = gb + wb + eb;
+    }
+  }
+  free(colL); free(colR); free(res2col);
+  return eslOK;
+
+ ERROR:
+  if(colL)    free(colL);
+  if(colR)    free(colR);
+  if(res2col) free(res2col);
+  return eslEMEM;
+}
+
+/* Corroboration of the first parse by the chain: the number of complete
+ * raw-pin runs that lie outside every EL of <tr> and that the parse aligns
+ * exactly at their pinned columns. The estimate assumes the first parse
+ * follows the chain outside its ELs; with no corroborated run it does not
+ * apply (the chain and the parse disagree wholesale, e.g. a one-anchor chain
+ * on a small RNA, and the band itself is the suspect). */
+static int
+elr_corroborated_runs(CM_t *cm, CMEmitMap_t *emap, Parsetree_t *tr, const int *raw, int L, int *ret_ncorr)
+{
+  int  status;
+  int *res2col = NULL, *inel = NULL;
+  int  x, v, nd, i, j, n = 0, ok;
+
+  ESL_ALLOC(res2col, sizeof(int) * (L+2));
+  ESL_ALLOC(inel,    sizeof(int) * (L+2));
+  esl_vec_ISet(res2col, L+2, 0);
+  esl_vec_ISet(inel,    L+2, 0);
+  for(x = 0; x < tr->n; x++) {
+    v = tr->state[x];
+    if(v == cm->M) { for(i = ESL_MAX(1, tr->emitl[x]); i <= ESL_MIN(L, tr->emitr[x]); i++) inel[i] = 1; continue; }
+    nd = cm->ndidx[v];
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) res2col[tr->emitl[x]] = emap->lpos[nd];
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) res2col[tr->emitr[x]] = emap->rpos[nd];
+  }
+  for(i = 1; i <= L; i++) {
+    if(raw[i] == -1 || (i > 1 && raw[i-1] != -1 && raw[i-1] == raw[i]-1)) continue;   /* run start */
+    for(j = i, ok = TRUE; j <= L && raw[j] != -1 && (j == i || raw[j] == raw[j-1]+1); j++)
+      if(inel[j] || res2col[j] != raw[j]) ok = FALSE;
+    if(ok) n++;
+  }
+  free(res2col); free(inel);
+  *ret_ncorr = n;
+  return eslOK;
+
+ ERROR:
+  if(res2col) free(res2col);
+  if(inel)    free(inel);
+  return eslEMEM;
+}
+
+/* elr_consider(): a retry has run with status <status2> and result <*data2>.
+ * Keep it iff its parse scores higher than the best so far. The comparison
+ * is on the reported parse's own score (ParsetreeScore()), never on
+ * data->sc: under optimal accuracy data->sc is the Inside score summed over
+ * the band, which a different band changes even when the parse is the same.
+ * The retry's time is added to <sum> (bands, alignment, total) either way.
+ * Returns TRUE if kept. */
+static int
+elr_consider(CM_t *cm, ESL_SQ *sq, int status2, CM_ALNDATA **data2, CM_ALNDATA **best, float *best_psc, double *sum, float *ret_psc)
+{
+  char  errbuf2[eslERRBUFSIZE];
+  float psc2 = -eslINFINITY;
+  int   kept = FALSE;
+
+  if(status2 == eslOK) {
+    sum[0] += (*data2)->secs_bands;
+    sum[1] += (*data2)->secs_aln;
+    sum[2] += (*data2)->secs_tot;
+    if(ParsetreeScore(cm, NULL, errbuf2, (*data2)->tr, sq->dsq, FALSE, &psc2, NULL, NULL, NULL, NULL) != eslOK) psc2 = -eslINFINITY;
+    if(psc2 > *best_psc) kept = TRUE;
+  }
+  if(kept) { cm_alndata_Destroy(*best, FALSE); *best = *data2; *best_psc = psc2; }
+  else if(*data2 != NULL) cm_alndata_Destroy(*data2, FALSE);
+  *data2 = NULL;
+  if(ret_psc != NULL) *ret_psc = psc2;
+  return kept;
+}
+
 /* Function: DispatchSqAlignment()
  *
  * Purpose:  See the header of dispatch_sq_alignment_core() above, which does
- *           the work.
+ *           the alignment.
+ *
+ *           Local-mode EL detect-and-retry (briefs 26_0821-127/26_0821-128/
+ *           26_0821-132): for a local alignment (CMH_LOCAL_END) in cmalign
+ *           (idx != -1) whose p7 band came from --p7kmerchain itself, check
+ *           each EL of the parse for a complete run of the chain's raw pins
+ *           inside it. If one does, the band probably excluded the better EL
+ *           placement, and the sequence is realigned:
+ *             R1: the first pass's band with kmin lowered on the rows the
+ *                 alternative EL needs (elr_r1_edit()), for each part whose
+ *                 pre-retry estimate (elr_estimate()) is positive; the
+ *                 estimate is applied only if the chain corroborates the first
+ *                 parse outside its ELs (elr_corroborated_runs()), else R1
+ *                 edits every part;
+ *             R2: if R1 was not kept, native CP9 bands, unless the topology
+ *                 offered an alternative and every estimate rejected it.
+ *           A retry is kept only if its parse scores higher (elr_consider()).
+ *           If the first pass is refused (eslERANGE), the tail rule T
+ *           (elr_tail_edit()) gets one retry.
+ *           The returned data describe the kept alignment; its times include
+ *           every pass. Nothing is printed, except developer trace lines with
+ *           INFERNAL_STAGE_VERBOSE set.
  */
 int
 DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
 		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
 		    CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data)
 {
-  return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, NULL, ret_data);
+  int          status, status2;
+  int          L     = sq->L;
+  ELR_BAND     eb;              /* the first pass's kmerchain band */
+  ELR_BAND     rq;              /* a retry's request */
+  CMEmitMap_t *emap  = NULL;
+  ELR_EL      *el    = NULL;
+  int         *klo   = NULL;
+  float       *da    = NULL, *db = NULL;
+  CM_ALNDATA  *best  = NULL, *data2 = NULL;
+  char         errbuf2[eslERRBUFSIZE];
+  float        best_psc = -eslINFINITY, psc2;
+  double       sum[3]   = { 0., 0., 0. };   /* bands, alignment, total seconds over every pass */
+  int          nel = 0, ntrig, k, ua, ub, Ka, Kb, a, b, nrow;
+  int          ncand = 0, npos = 0, ncorr = 0, gate, nkept = 0, nretry = 0;
+
+  if(idx == -1 || ! (cm->flags & CMH_LOCAL_END))
+    return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, NULL, ret_data);
+
+  memset(&eb, 0, sizeof(ELR_BAND));
+  memset(&rq, 0, sizeof(ELR_BAND));
+  eb.mode    = ELR_MODE_NONE;
+  eb.capture = TRUE;
+  status = dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &eb, ret_data);
+  if(eb.raw == NULL || eb.L != L) { elr_band_release(&eb); return status; }   /* the band did not come from kmerchain */
+
+  if(status != eslOK) goto DONE;
+
+  best = *ret_data;
+  *ret_data = NULL;
+  sum[0] = best->secs_bands;
+  sum[1] = best->secs_aln;
+  sum[2] = best->secs_tot;
+  if((ntrig = elr_detect(cm, best->tr, eb.raw, L, &el, &nel)) < 0) { status = eslEMEM; goto ERROR; }
+  if(ntrig == 0) goto DONE;
+
+  if(ParsetreeScore(cm, NULL, errbuf2, best->tr, sq->dsq, FALSE, &best_psc, NULL, NULL, NULL, NULL) != eslOK) best_psc = -eslINFINITY;
+  if((emap = CreateEmitMap(cm)) == NULL) { status = eslEMEM; goto ERROR; }
+  ESL_ALLOC(klo, sizeof(int) * (L+1));
+  esl_vec_ISet(klo, L+1, 0);
+  ESL_ALLOC(da, sizeof(float) * nel);
+  ESL_ALLOC(db, sizeof(float) * nel);
+
+  /* the pre-retry estimate of each triggered EL's alternatives */
+  for(k = 0; k < nel; k++) {
+    da[k] = db[k] = -eslINFINITY;
+    if(el[k].nrun == 0) continue;
+    elr_r1_edit(cm, emap, &el[k], eb.kmin, eb.kmax, L, klo, FALSE, FALSE, &ua, &ub, &a, &b);
+    if((status = elr_estimate(cm, emap, best->tr, sq->dsq, L, eb.raw, &el[k], ua, ub, &da[k], &db[k])) != eslOK) goto ERROR;
+    if(da[k] > -eslINFINITY || db[k] > -eslINFINITY) ncand++;
+    if(da[k] > 0.           || db[k] > 0.)           npos++;
+    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY_EL seq=%s L=%d nd=%d el=[%d,%d] npin=%d nrun=%d pinrows=[%d,%d] pincols=[%d,%d] ua=%d delta_a=%.1f ub=%d delta_b=%.1f\n",
+                                  sq->name, L, el[k].nd, el[k].e1, el[k].e2, el[k].npin, el[k].nrun, el[k].ra, el[k].rb, el[k].ca, el[k].cb,
+                                  ua, da[k], ub, db[k]);
+  }
+  if((status = elr_corroborated_runs(cm, emap, best->tr, eb.raw, L, &ncorr)) != eslOK) goto ERROR;
+  gate = (ncorr > 0) ? TRUE : FALSE;   /* apply the estimate only where its model holds */
+  if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s L=%d nel=%d ntrig=%d ncand=%d npos=%d ncorr=%d gate=%d sc=%.2f psc=%.2f\n",
+                                sq->name, L, nel, ntrig, ncand, npos, ncorr, gate, best->sc, best_psc);
+
+  /* R1: the topology band edit */
+  esl_vec_ISet(klo, L+1, 0);
+  nrow = 0; Ka = Kb = -1;
+  for(k = 0; k < nel; k++) {
+    if(el[k].nrun == 0) continue;
+    nrow += elr_r1_edit(cm, emap, &el[k], eb.kmin, eb.kmax, L, klo, (! gate) || da[k] > 0., (! gate) || db[k] > 0., &ua, &ub, &a, &b);
+    if(a > 0) Ka = a;
+    if(b > 0) Kb = b;
+  }
+  if(nrow > 0) {
+    rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
+    status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &rq, &data2);
+    nretry++;
+    if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
+    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R1 Ka=%d Kb=%d rows=%d status=%d psc=%.2f kept=%d\n",
+                                  sq->name, Ka, Kb, nrow, status2, psc2, nkept);
+  }
+
+ DONE:
+  if(best != NULL) {
+    if(nretry > 0) { best->secs_bands = sum[0]; best->secs_aln = sum[1]; best->secs_tot = sum[2]; }
+    *ret_data = best;
+  }
+  elr_band_release(&eb);
+  if(emap) FreeEmitMap(emap);
+  if(el)   free(el);
+  if(klo)  free(klo);
+  if(da)   free(da);
+  if(db)   free(db);
+  return status;
+
+ ERROR:
+  elr_band_release(&eb);
+  if(emap)  FreeEmitMap(emap);
+  if(el)    free(el);
+  if(klo)   free(klo);
+  if(da)    free(da);
+  if(db)    free(db);
+  if(best)  cm_alndata_Destroy(best, FALSE);
+  if(*ret_data != NULL) { cm_alndata_Destroy(*ret_data, FALSE); *ret_data = NULL; }
+  ESL_FAIL(status, errbuf, "DispatchSqAlignment(), out of memory");
 }
