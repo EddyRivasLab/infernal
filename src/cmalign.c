@@ -1120,6 +1120,15 @@ hmm_now(void)
  * keeps the truncation penalty, as CM-mode truncated alignment does
  * (see hmm_alignment()). With --notrunc the profile has the usual HMMER
  * length model, which the null score cancels, as in HMMER.
+ *
+ * In the default banded modes <rawsc> is the Forward score summed over
+ * the paths inside the band only, so a narrow band lowers it. This is
+ * accepted and documented, not corrected: at genome scale the 0-bp
+ * auto-switch's --p7ibv-delta 1000 band put scores 6-124 bits below
+ * CM-mode -g on 20 viral genomes (a norovirus genome: 6384.2 at delta
+ * 1000, 6423.8 at 20000, 6423.9 unbanded, 6425.6 CM-mode). At Rfam scale
+ * the band costs a few bits at most. The alignment is unaffected; only
+ * the reported score is (brief 26_0821-122a).
  */
 static float
 hmm_score_bits(float rawsc, int do_trunc, P7_BG *bg, const ESL_DSQ *dsq, int L)
