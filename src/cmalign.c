@@ -927,7 +927,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
+      if(nali == 1) output_header(cfg->sfp, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
       if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) cm_Fail(errbuf);
     }
 
@@ -1144,13 +1144,14 @@ hmm_set_stats(float *st, float sc_bits, double t0, double t_aln0, double t1, dou
 
 /* hmm_output_scores()
  * Print the --hmm score table wherever CM mode prints its table: to
- * stdout when the alignment goes to a file (-o), and to --sfile.
+ * stdout when the alignment goes to a file (-o), and to --sfile, which
+ * like CM mode gets the run header first (<ncpus> is for that header).
  * Model span (cm from/to) is the first and last match state in each
  * trace; avg pp is the mean posterior probability of the aligned
  * residues (printed as '-' when the trace has none, i.e. --hmmvit).
  */
 static int
-hmm_output_scores(struct cfg_s *cfg, CM_t *cm, char *errbuf, ESL_SQ **sqarr, P7_TRACE **tr, const float *stA, int nseq)
+hmm_output_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errbuf, ESL_SQ **sqarr, P7_TRACE **tr, const float *stA, int nseq, int ncpus)
 {
   int          status;
   CM_ALNDATA **dataA = NULL;
@@ -1189,6 +1190,7 @@ hmm_output_scores(struct cfg_s *cfg, CM_t *cm, char *errbuf, ESL_SQ **sqarr, P7_
     if ((status = output_scores(stdout,   cm, errbuf, dataA, nseq, 0, cfg->be_verbose)) != eslOK) goto CLEANUP;
   }
   if (cfg->sfp != NULL) {
+    output_header(cfg->sfp, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
     if ((status = output_scores(cfg->sfp, cm, errbuf, dataA, nseq, 0, cfg->be_verbose)) != eslOK) goto CLEANUP;
   }
   status = eslOK;
@@ -1933,7 +1935,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   if (cfg->ifp != NULL) output_hmm_insert_info(cfg->ifp, cm, hmm, sqarr, tr, nseq);
 
   /* Score table, as in CM mode (stdout if -o, and --sfile). */
-  if ((status = hmm_output_scores(cfg, cm, errbuf, sqarr, tr, hstA, nseq)) != eslOK) cm_Fail(errbuf);
+  {
+    int ncpus_hdr = 0;   /* as serial_master() computes it, for the --sfile header */
+#ifdef HMMER_THREADS
+    ncpus_hdr = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
+#endif
+    if ((status = hmm_output_scores(go, cfg, cm, errbuf, sqarr, tr, hstA, nseq, ncpus_hdr)) != eslOK) cm_Fail(errbuf);
+  }
 
   /* Clean up */
   esl_msa_Destroy(msa);
@@ -2901,7 +2909,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
 
     /* Score table, as in CM mode (stdout if -o, and --sfile). */
-    if ((status = hmm_output_scores(cfg, cm, errbuf, sqarr, tr, hstA, nseq)) != eslOK) mpi_failure(errbuf);
+    if ((status = hmm_output_scores(go, cfg, cm, errbuf, sqarr, tr, hstA, nseq, nworkers+1)) != eslOK) mpi_failure(errbuf);
 
     /* Clean up */
     for (idx2 = 0; idx2 < nseq; idx2++) {
@@ -3078,7 +3086,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
+      if(nali == 1) output_header(cfg->sfp, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
       if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) mpi_failure(errbuf);
     }
 
