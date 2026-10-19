@@ -454,6 +454,7 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
   float struct_sc;              /* contribution of the structure to the score */
   float primary_sc;             /* contribution of primary sequence emissions to the score */
   float lsc, rsc;
+  float pairsc;                 /* MP pair emission score, for degenerate pairs too */
   int   nd;
   int   sd;
 
@@ -504,17 +505,20 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 
       /* add in contribution of emission score */
       if (cm->sttype[v] == MP_st) { 
-	symi = dsq[tr->emitl[tidx]];
-	symj = dsq[tr->emitr[tidx]];
+	/* Only read the residue(s) this mode emits: in a truncated
+	 * (L or R mode) pair the other half was not emitted, and its
+	 * emitl/emitr may be -1 (e.g. for parsetrees of fragments in
+	 * cmbuild --refine), which would read dsq[-1].
+	 */
 	if (mode == TRMODE_J) { 
-	  if (symi < cm->abc->K && symj < cm->abc->K) { 
-	    sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-	    struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-	  }
-	  else { 
-	    sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
-	    struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-	  }
+	  symi = dsq[tr->emitl[tidx]];
+	  symj = dsq[tr->emitr[tidx]];
+	  /* score a degenerate pair the same way for sc and struct_sc;
+	   * indexing esc[v] with a degenerate symbol reads out of bounds */
+	  if (symi < cm->abc->K && symj < cm->abc->K) pairsc = cm->esc[v][(int) (symi*cm->abc->K+symj)];
+	  else                                        pairsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
+	  sc        += pairsc;
+	  struct_sc += pairsc;
 	  lsc = cm->lmesc[v][symi];
 	  rsc = cm->rmesc[v][symj];
 	  struct_sc -= lsc;  /* subtract left  marginalized score */
@@ -522,10 +526,14 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
 	  primary_sc += lsc;
 	  primary_sc += rsc;
 	}
-	else if (mode == TRMODE_L)
+	else if (mode == TRMODE_L) { 
+	  symi = dsq[tr->emitl[tidx]];
 	  sc += cm->lmesc[v][symi];
-	else if (mode == TRMODE_R)
+	}
+	else if (mode == TRMODE_R) { 
+	  symj = dsq[tr->emitr[tidx]];
 	  sc += cm->rmesc[v][symj];
+	}
 	if(emap != NULL) { 
 	  spos = ESL_MIN(spos, emap->lpos[nd]);
 	  epos = ESL_MAX(epos, emap->rpos[nd]);
