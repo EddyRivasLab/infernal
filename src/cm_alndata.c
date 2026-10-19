@@ -681,6 +681,93 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   else return status; /* errbuf was filled by DispatchSqAlignment() */
 }
 
+/* Local-mode EL detect-and-retry for --p7kmerchain bands (briefs
+ * 26_0821-127/26_0821-128/26_0821-132): the per-call band state that
+ * DispatchSqAlignment() passes to dispatch_sq_alignment_core().
+ *
+ * A first pass (mode ELR_MODE_NONE, capture TRUE) returns a copy of its
+ * kmerchain band and the chain's pins before junction slack. A retry either
+ * reuses that band with kmin lowered on some rows (ELR_MODE_EDIT; the chain is
+ * not rebuilt, so the band is the first pass's band plus the edit) or aligns
+ * without a p7 band, i.e. with native CP9 bands (ELR_MODE_NATIVE).
+ */
+#define ELR_MODE_NONE   0
+#define ELR_MODE_EDIT   1
+#define ELR_MODE_NATIVE 2
+typedef struct {
+  int  mode;      /* ELR_MODE_NONE | ELR_MODE_EDIT | ELR_MODE_NATIVE                     */
+  int  capture;   /* TRUE: return the kmerchain band below (first pass only)             */
+  int  L;         /* length of the arrays below, [0..L]                                  */
+  int *raw;       /* chain pins before junction slack (-1 = unpinned)                    */
+  int *i2k;       /* pins after junction slack, as the band was built from               */
+  int *kmin;      /* the band; ELR_MODE_EDIT: the band to reuse (not owned)              */
+  int *kmax;
+  int *klo;       /* ELR_MODE_EDIT: [1..L] lower kmin to this where 0 < klo[i] < kmin[i] */
+} ELR_BAND;
+
+static void
+elr_band_release(ELR_BAND *eb)
+{
+  if(eb->raw)  free(eb->raw);
+  if(eb->i2k)  free(eb->i2k);
+  if(eb->kmin) free(eb->kmin);
+  if(eb->kmax) free(eb->kmax);
+  eb->raw = eb->i2k = eb->kmin = eb->kmax = NULL;
+  eb->L = 0;
+}
+
+/* ELR_MODE_EDIT: copies of <eb>'s band with the kmin edit applied, and the new cell count */
+static int
+elr_band_edited(ELR_BAND *eb, int L, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int     status;
+  int    *i2k = NULL, *kmin = NULL, *kmax = NULL;
+  int64_t n   = 0;
+  int     i;
+
+  ESL_ALLOC(i2k,  sizeof(int) * (L+1));
+  ESL_ALLOC(kmin, sizeof(int) * (L+1));
+  ESL_ALLOC(kmax, sizeof(int) * (L+1));
+  memcpy(i2k,  eb->i2k,  sizeof(int) * (L+1));
+  memcpy(kmin, eb->kmin, sizeof(int) * (L+1));
+  memcpy(kmax, eb->kmax, sizeof(int) * (L+1));
+  for(i = 1; i <= L; i++) {
+    if(eb->klo[i] > 0 && eb->klo[i] < kmin[i]) kmin[i] = eb->klo[i];
+    n += (int64_t) (kmax[i] - kmin[i] + 1);
+  }
+  *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
+  *ret_ncells = (n > (int64_t) INT_MAX) ? INT_MAX : (int) n;
+  return eslOK;
+
+ ERROR:
+  if(i2k)  free(i2k);
+  if(kmin) free(kmin);
+  if(kmax) free(kmax);
+  return eslEMEM;
+}
+
+/* First pass: keep a copy of the kmerchain band (<raw> is handed over) */
+static int
+elr_band_keep(ELR_BAND *eb, int L, int *raw, const int *i2k, const int *kmin, const int *kmax)
+{
+  int status;
+
+  elr_band_release(eb);
+  eb->raw = raw;
+  ESL_ALLOC(eb->i2k,  sizeof(int) * (L+1));
+  ESL_ALLOC(eb->kmin, sizeof(int) * (L+1));
+  ESL_ALLOC(eb->kmax, sizeof(int) * (L+1));
+  memcpy(eb->i2k,  i2k,  sizeof(int) * (L+1));
+  memcpy(eb->kmin, kmin, sizeof(int) * (L+1));
+  memcpy(eb->kmax, kmax, sizeof(int) * (L+1));
+  eb->L = L;
+  return eslOK;
+
+ ERROR:
+  elr_band_release(eb);
+  return eslEMEM;
+}
+
 /* Function: DispatchSqAlignment()
  * Date:     EPN, Thu Jan 12 14:47:26 2012
  *
@@ -719,17 +806,23 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
  *                        worker/block and reused across sequences. Can be NULL
  *                        (then the pinbridge wrapper builds/frees its own per
  *                        call). MUST be per-thread (not shared across threads).
+ *           elr        - (dispatch_sq_alignment_core() only) local-mode EL
+ *                        retry state, see ELR_BAND; NULL for a plain alignment.
  *           ret_data   - RETURN: newly created CM_ALNDATA object
+ *
+ *           The work is done by dispatch_sq_alignment_core(), which has this
+ *           interface plus <elr>. DispatchSqAlignment(), at the end of this
+ *           file, wraps it (briefs 26_0821-128/26_0821-132).
  *
  * Returns:  eslOK on success;
  *           eslEINCOMPAT on contract violation, errbuf is filled;
  *           eslEMEM if we run out of memory;
  *           <ret_data> is alloc'ed and filled.
  */
-int
-DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
-		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
-		    CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data)
+static int
+dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
+			   int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+			   CM_P7_OM_HOLDER *om_holder, ELR_BAND *elr, CM_ALNDATA **ret_data)
 {
   int           status;            /* easel status */
   CM_ALNDATA   *data         = NULL; /* CM_ALNDATA we'll create and fill */
@@ -803,6 +896,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
    * this sequence; prevents infinite retry.
    */
   int ibv_fallback_used = FALSE;
+  /* local-mode EL retry with native CP9 bands (briefs 26_0821-128/26_0821-132) */
+  if(elr != NULL && elr->mode == ELR_MODE_NATIVE) do_p7band = FALSE;
 
 #if eslDEBUGLEVEL >= 1
   printf("#DEBUG: in DispatchSqAlignment() %s\n", sq->name);
@@ -1029,11 +1124,22 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
 	     * genome-wide, chain by global colinearity, emit multi-segment pins
 	     * into the unmodified p7_pins2bands_nodepad. Opt-in. */
 	    _p7b_kind = "kmerchain";
-	    status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
-	                                   do_trunc, /* brief 26_0628-033 */
-	                                   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
-	                                   _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL,
-	                                   _st059_on ? &_st059_bd_s : NULL);
+	    if (elr != NULL && elr->mode == ELR_MODE_EDIT) {
+	      /* local-mode EL retry (briefs 26_0821-128/26_0821-132): the first
+	       * pass's band with kmin lowered on some rows; the chain is not rebuilt */
+	      status = elr_band_edited(elr, sq->L, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+	    } else {
+	      int *p7_raw = NULL;
+	      status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
+	                                     do_trunc, /* brief 26_0628-033 */
+	                                     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
+	                                     _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL,
+	                                     _st059_on ? &_st059_bd_s : NULL,
+	                                     (elr != NULL && elr->capture) ? &p7_raw : NULL);
+	      /* first pass of a local alignment: keep the band and the raw pins for
+	       * DispatchSqAlignment()'s EL check (briefs 26_0821-128/26_0821-132) */
+	      if (status == eslOK && p7_raw != NULL) status = elr_band_keep(elr, sq->L, p7_raw, p7_i2k, p7_kmin, p7_kmax);
+	    }
 	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
 	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 26_0628-047:
 	     * default fallback is now --p7ibv's D&C deriver (this file's own
@@ -2309,4 +2415,17 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   if(status == eslEMEM) ESL_FAIL(status, errbuf, "DispatchSqAlignment(), out of memory");
 
   return status; 
+}
+
+/* Function: DispatchSqAlignment()
+ *
+ * Purpose:  See the header of dispatch_sq_alignment_core() above, which does
+ *           the work.
+ */
+int
+DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
+		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+		    CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data)
+{
+  return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, NULL, ret_data);
 }

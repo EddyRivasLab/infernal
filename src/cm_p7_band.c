@@ -1276,6 +1276,14 @@ brief035_rss_kb(void)
  *           ret_i2k/ret_kmin/ret_kmax    - RETURN band arrays (caller frees)
  *           ret_ncells - RETURN total banded cells (saturated int; 0 => no
  *                        usable chain, caller falls back to unbanded Viterbi).
+ *           ret_rawpins - optional (NULL-able) RETURN [0..L]: the chain's pins
+ *                        before junction slack unpins any (every residue of every
+ *                        chain anchor; -1 = unpinned), caller frees. Set only when
+ *                        a band is returned (ncells > 0), else NULL. cmalign's
+ *                        local-mode EL check needs these, not <ret_i2k>: the slack
+ *                        blanks the anchor residues next to a large indel, which
+ *                        are what bound an alternative local end (briefs
+ *                        26_0821-128/26_0821-132).
  *
  * Return:   eslOK on success (including the ncells=0 "no chain" case).
  */
@@ -1283,7 +1291,7 @@ int
 cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
                       int do_trunc,
                       int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
-                      double *ret_a_s, double *ret_b_s, double *ret_bd_s)
+                      double *ret_a_s, double *ret_b_s, double *ret_bd_s, int **ret_rawpins)
 {
   int status = eslOK;
   (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
@@ -1304,6 +1312,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int        *nopin = NULL;         /* [1..L+1] unpinned-row difference array  */
   int        *chain = NULL;         /* backtracked chain (anchor indices)      */
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
+  int        *rawpins = NULL;       /* pins before junction slack, for <ret_rawpins> */
   int        *local_nodepad = NULL;
   int j, x, i;
   int min_anchor;                   /* brief 26_0628-078: KMC_MIN_ANCHOR or env override */
@@ -1320,6 +1329,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   if (ret_a_s != NULL) clock_gettime(CLOCK_MONOTONIC, &_stagea_t0);
 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
+  if (ret_rawpins != NULL) *ret_rawpins = NULL;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
     status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
@@ -1693,6 +1703,10 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
         if (T >= 1 && T <= L && J >= 1 && J <= M && i2k[T] == -1) i2k[T] = J;
       }
     }
+    if (ret_rawpins != NULL) {   /* the pins before junction slack, for the caller */
+      ESL_ALLOC(rawpins, sizeof(int) * (L+1));
+      memcpy(rawpins, i2k, sizeof(int) * (L+1));
+    }
     for (q = 1; q <= L; q++) { run += nopin[q]; if (run > 0) i2k[q] = -1; }
     free(nopin); nopin = NULL;
   }
@@ -1729,6 +1743,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
 
   *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
   i2k = kmin = kmax = NULL;   /* handed off to caller */
+  if (ret_rawpins != NULL && *ret_ncells > 0) { *ret_rawpins = rawpins; rawpins = NULL; }
 
  CLEANUP:
   if (idx)           free(idx);
@@ -1746,6 +1761,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   if (i2k)           free(i2k);
   if (kmin)          free(kmin);
   if (kmax)          free(kmax);
+  if (rawpins)       free(rawpins);
   if (getenv("BRIEF035_MEMPOINT") != NULL)
     fprintf(stderr, "#MEMPOINT after_kmerchain_return L=%d rss_kb=%ld\n", L, brief035_rss_kb());
   if (ret_a_s != NULL) {
