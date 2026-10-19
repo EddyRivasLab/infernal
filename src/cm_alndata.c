@@ -2855,7 +2855,8 @@ elr_consider(CM_t *cm, ESL_SQ *sq, int status2, CM_ALNDATA **data2, CM_ALNDATA *
  *
  *           Local-mode EL detect-and-retry (briefs 26_0821-127/26_0821-128/
  *           26_0821-132): for a local alignment (CMH_LOCAL_END) in cmalign
- *           (idx != -1) whose p7 band came from --p7kmerchain itself, check
+ *           (idx != -1), not sampled (--sample) or sub-CM (--sub), whose p7
+ *           band came from --p7kmerchain itself, check
  *           each EL of the parse for a complete run of the chain's raw pins
  *           inside it. If one does, the band probably excluded the better EL
  *           placement, and the sequence is realigned:
@@ -2894,7 +2895,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int          nel = 0, ntrig, k, ua, ub, Ka, Kb, a, b, nrow;
   int          ncand = 0, npos = 0, ncorr = 0, gate, nkept = 0, nretry = 0;
 
-  if(idx == -1 || ! (cm->flags & CMH_LOCAL_END))
+  /* Not for a sampled alignment (keeping the higher-scoring of two samples
+   * would bias the sample) or a sub-CM one (its parse comes from another CM;
+   * --sub requires -g anyway). */
+  if(idx == -1 || ! (cm->flags & CMH_LOCAL_END) || (cm->align_opts & (CM_ALIGN_SAMPLE | CM_ALIGN_SUB)))
     return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, NULL, ret_data);
 
   memset(&eb, 0, sizeof(ELR_BAND));
