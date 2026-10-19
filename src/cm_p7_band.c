@@ -1050,29 +1050,24 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
  * "no anchor" (ret_ncells=0), and the caller falls back per brief 26_0628-047's new
  * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
 
-#define KMW_BIN         200   /* model-window (bin) width, matches brief 26_0628-023/26_0628-025 B */
-#define KMW_TOL         15    /* diagonal-cluster tolerance (brief 26_0628-023/26_0628-025 TOL)    */
-#define KMW_MIN_CORRECT 3     /* floor: min on-diagonal hits for a real window     */
-#define KMW_DRIFT       25    /* diagonal drift allowed when expanding outward     */
-#define KMW_EXP_FLOOR   2     /* min on-diagonal hits to accept an expansion bin   */
-
-static const int kmw_kvals[] = { 10, 15, 20, 25, 30 };  /* all <=31 => uint64-encodable */
-#define KMW_NK ((int)(sizeof(kmw_kvals)/sizeof(kmw_kvals[0])))
-
-/* brief 26_0628-046: per-query k>=mink zero-hits signal gate for kmerchain (also
- * gated the earlier best-window-anchor deriver before its removal by brief 26_0628-066).
- * `nrawk` is the raw hit count per k-tier (kmw_kvals order); fires
- * (returns TRUE) iff mink>0 and every tier with k>=mink has zero hits anywhere
- * in the model for this query -- i.e. there is no exact-match content long
+/* brief 26_0628-046: per-query signal gate for kmerchain (also gated the
+ * earlier best-window-anchor deriver before its removal by brief 26_0628-066).
+ * Fires (returns TRUE) iff mink>0 and the longest exact match between the
+ * query and the model consensus, `maxlen` (the longest merged seed run, 0 if
+ * none), is shorter than mink -- i.e. there is no exact-match content long
  * enough to carry real signal, independent of M. Disabled (mink<=0, default)
- * by construction returns FALSE. See brief 26_0628-046 for the mechanism/rationale. */
+ * by construction returns FALSE. See brief 26_0628-046 for the mechanism/rationale.
+ *
+ * Until brief 26_0821-124 this tested per-k seed tiers {10,15,20,25,30} for
+ * zero hits. A k-mer hit of length k exists iff an exact match of length >= k
+ * exists, so for mink at a tier value the two tests are the same; for other
+ * values the old test rounded mink up to the next tier (and always fired
+ * above 30). */
 static int
-kmer_ngate_fires(const int *nrawk, int mink)
+kmer_ngate_fires(int maxlen, int mink)
 {
-  int ki, sum = 0;
   if (mink <= 0) return FALSE;
-  for (ki = 0; ki < KMW_NK; ki++) if (kmw_kvals[ki] >= mink) sum += nrawk[ki];
-  return (sum == 0);
+  return (maxlen < mink);
 }
 
 typedef struct { uint64_t code; int pos; } kmw_kmer_t; /* a target k-mer occurrence */
@@ -1118,22 +1113,30 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
  * genome.
  *
  * Reuses the k-mer index infrastructure from that earlier deriver unchanged
- * (kmw_encode / kmw_kmer_cmp / kmw_lower_bound, k in {10,15,20,25,30}) and feeds
+ * (kmw_encode / kmw_kmer_cmp / kmw_lower_bound; seeds of length KMC_SEED_K) and feeds
  * the winning chain's pins through the SAME unmodified p7_pins2bands_nodepad
  * consumer.
  *****************************************************************/
 
-/* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned) */
-#define KMC_AVGK      15.0    /* representative k for gap-cost scaling            */
-#define KMC_MAX_QGAP  30000   /* max query gap, pred END to anchor START (bounds DP)*/
-#define KMC_MAX_DGAP  10000   /* max implied-indel (|diagonal diff|) on one link  */
+/* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned).
+ * KMC_MAX_ITER is the only bound on the chaining DP's work. A max query gap
+ * (30000) and a max implied indel per link (10000) were removed in brief
+ * 26_0821-124: on 624 genome-scale cells (brief 26_0821-119) the query-gap
+ * limit never changed an alignment, and the indel limit changed only one,
+ * where it was wrong (a genome with 12,288 nt of extra repeat copies: the
+ * true link was refused and the chain started 2,332 model positions late).
+ * The linear gap cost already charges 1,500 bits for a 10 kb indel, and the
+ * indel limit bounded no work (it skipped a predecessor after counting it
+ * against KMC_MAX_ITER). */
 #define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
+#define KMC_SEED_K    10      /* seed k-mer length (<=31 => uint64-encodable)     */
 #define KMC_MIN_ANCHOR 10     /* min merged exact-match length to keep an anchor  */
                                /* brief 26_0628-029: lowered 20->10 (=smallest indexed k) to */
                                /* admit far more anchors on sparse-anchor genomes    */
                                /* (MPXV: 56->79 chain anchors, avg_bw 1223->279.6,   */
                                /* peak RSS 12.95G->4.73G), zero accuracy cost.       */
-#define KMC_GAP_LIN   0.01    /* linear gap-cost coefficient                      */
+#define KMC_GAP_LIN   0.15    /* linear gap cost, bits per residue of |diagonal   */
+                              /* change|; was 0.01 x a "representative k" of 15  */
 #define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
 #define KMC_HSV_RLO   9401    /* HSV known false-repeat block, model lo (brief026)*/
 #define KMC_HSV_RHI   9600    /*  ... model hi -- for the repeat-trap check       */
@@ -1169,6 +1172,63 @@ static int kmc_end_cmp(const void *a, const void *b) {
   if (x->te  != y->te)  return (x->te  > y->te)  - (x->te  < y->te);
   if (x->je  != y->je)  return (x->je  > y->je)  - (x->je  < y->je);
   return (x->idx > y->idx) - (x->idx < y->idx);
+}
+
+/* sort anchors by model start j / by query start t (for kmc_anchor_contested()). */
+static int kmc_seed_jcmp(const void *a, const void *b) {
+  const kmw_hit_t *x = (const kmw_hit_t *)a, *y = (const kmw_hit_t *)b;
+  return (x->j > y->j) - (x->j < y->j);
+}
+static int kmc_seed_tcmp(const void *a, const void *b) {
+  const kmw_hit_t *x = (const kmw_hit_t *)a, *y = (const kmw_hit_t *)b;
+  return (x->t > y->t) - (x->t < y->t);
+}
+
+/* Function: kmc_anchor_contested()
+ * Incept:   EPN, Sat Oct 17 2026 (w/Claude)
+ *
+ * Purpose:  Decide whether chain anchor <a> is contested at a chain link:
+ *           some other anchor, on a different diagonal and overlapping the
+ *           link's junction box [qlo,qhi] (query) x [mlo,mhi] (model), covers
+ *           all of <a>'s model positions (another query copy of the same model
+ *           segment) or all of its query residues (another model copy). That
+ *           is an equally long alternative copy, so <a> is no evidence for
+ *           where the indel at that link goes. Partial overlaps do not count:
+ *           in a large junction box, chance 10-mers overlap nearly every
+ *           anchor (brief 26_0821-125).
+ *
+ * Args:     a     - the chain anchor
+ *           byj   - all <n> anchors, sorted by model start j
+ *           byt   - all <n> anchors, sorted by query start t
+ *           n     - number of anchors
+ *           maxk  - an upper bound on any anchor's length
+ *           qlo, qhi, mlo, mhi - the junction box
+ *
+ * Returns:  TRUE if contested, FALSE if not.
+ */
+static int
+kmc_anchor_contested(const kmw_hit_t *a, const kmw_hit_t *byj, const kmw_hit_t *byt, int n, int maxk,
+                     int qlo, int qhi, int mlo, int mhi)
+{
+  int pass, da = a->j - a->t;
+  for (pass = 0; pass < 2; pass++) {
+    const kmw_hit_t *arr = (pass == 0) ? byj : byt;
+    int lo  = (pass == 0) ? a->j : a->t, hi = lo + a->k - 1;
+    int key = lo - maxk + 1, l = 0, h = n, p;
+    /* first anchor that could reach <a>'s start */
+    while (l < h) { int mid = (l+h)/2; if (((pass == 0) ? arr[mid].j : arr[mid].t) < key) l = mid+1; else h = mid; }
+    for (p = l; p < n; p++) {
+      const kmw_hit_t *x = &arr[p];
+      int s = (pass == 0) ? x->j : x->t;
+      if (s > lo) break;                                   /* starts after <a>: cannot cover it */
+      if (s + x->k - 1 < hi)                   continue;   /* must cover the whole anchor */
+      if (x->j - x->t == da)                   continue;   /* same diagonal: not a copy   */
+      if (x->t + x->k - 1 < qlo || x->t > qhi) continue;   /* outside the junction box    */
+      if (x->j + x->k - 1 < mlo || x->j > mhi) continue;
+      return TRUE;
+    }
+  }
+  return FALSE;
 }
 
 /* brief 26_0628-035: temporary peak-RSS attribution instrumentation, gated by
@@ -1230,19 +1290,22 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int M = cm->fp7->M;
   int K = cm->abc->K;
   ESL_DSQ    *cons  = NULL;         /* model consensus, digital, cons[1..M]   */
-  kmc_ival_t *ival  = NULL;         /* raw seed intervals (all k), pre-merge  */
+  kmc_ival_t *ival  = NULL;         /* raw seed intervals, pre-merge          */
   int         nival = 0, ivalcap = 0;
   kmw_hit_t  *seeds = NULL;         /* merged maximal-exact-match anchors      */
   int         nseed = 0, seedcap = 0;
-  int         nrawk[KMW_NK];        /* raw seed count per k (instrumentation)  */
-  kmw_kmer_t *idx   = NULL;         /* per-k target k-mer index               */
+  int         maxrun = 0;           /* longest merged seed run (= longest exact match) */
+  kmw_kmer_t *idx   = NULL;         /* target k-mer index                     */
   float      *f     = NULL;         /* best chain score ending at anchor i     */
   int        *pre   = NULL;         /* chain predecessor                      */
   kmc_end_t  *eord  = NULL;         /* anchor ends, sorted by query end        */
+  kmw_hit_t  *byj   = NULL;         /* anchors sorted by model start (junction slack) */
+  kmw_hit_t  *byt   = NULL;         /* anchors sorted by query start (junction slack) */
+  int        *nopin = NULL;         /* [1..L+1] unpinned-row difference array  */
   int        *chain = NULL;         /* backtracked chain (anchor indices)      */
   int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
   int        *local_nodepad = NULL;
-  int ki, j, x, i;
+  int j, x, i;
   int min_anchor;                   /* brief 26_0628-078: KMC_MIN_ANCHOR or env override */
   /* brief 26_0628-059 (extended 2026-07-11, brief 190 follow-up): optional
    * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
@@ -1262,7 +1325,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
     goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
-  for (ki = 0; ki < KMW_NK; ki++) nrawk[ki] = 0;
   if (getenv("BRIEF035_MEMPOINT") != NULL)
     fprintf(stderr, "#MEMPOINT before_kmerchain L=%d M=%d rss_kb=%ld\n", L, M, brief035_rss_kb());
 
@@ -1276,15 +1338,22 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   }
 
   /* 2. collect ALL k-mer seeds genome-wide as (diagonal, query-interval) records.
-   *    A raw genome-scale seed count is ~1e6 (measured: HSV 833k), dominated by
-   *    per-position and multi-k redundancy -- far too many for an O(N^2) chain.
-   *    We collect each seed as a query interval on its diagonal, then merge
-   *    contiguous/overlapping intervals per diagonal into maximal exact-match
-   *    anchors, which collapses the redundancy by ~1-2 orders of magnitude and
-   *    yields chain-anchors that are colinear match blocks. */
-  for (ki = 0; ki < KMW_NK; ki++) {
-    int k = kmw_kvals[ki], ntgt = 0, t, p;
-    if (k > M || k > L) continue;
+   *    A raw genome-scale seed count is ~1e5-1e6, dominated by per-position
+   *    redundancy -- far too many for an O(N^2) chain. We collect each seed as
+   *    a query interval on its diagonal, then merge contiguous/overlapping
+   *    intervals per diagonal into maximal exact-match anchors, which collapses
+   *    the redundancy by ~1-2 orders of magnitude and yields chain-anchors that
+   *    are colinear match blocks.
+   *
+   *    Only one seed length, KMC_SEED_K, is used. Seeds of k=15,20,25,30 were
+   *    also collected until brief 26_0821-124, but every exact match of length
+   *    k > KMC_SEED_K is covered by overlapping KMC_SEED_K-mers on the same
+   *    diagonal, so after the merge the anchors were identical (brief
+   *    26_0821-119: identical alignments on 624 genome-scale cells). The
+   *    perk= field of the #KMERCHAIN line keeps its format, with 0 for the
+   *    retired tiers. */
+  if (KMC_SEED_K <= M && KMC_SEED_K <= L) {
+    int k = KMC_SEED_K, ntgt = 0, t, p;
     ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
     for (t = 1; t <= L - k + 1; t++) {
       int ok; uint64_t code = kmw_encode(dsq, t, k, &ok);
@@ -1303,7 +1372,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
           ival = tmp; ivalcap = newcap;
         }
         ival[nival].d = j - tt; ival[nival].tlo = tt; ival[nival].thi = tt + k - 1;
-        nival++; nrawk[ki]++;
+        nival++;
       }
     }
     free(idx); idx = NULL;
@@ -1335,6 +1404,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
         s++;
       }
       int len = thi - tlo + 1;
+      if (len > maxrun) maxrun = len;
       if (len >= min_anchor) {
         if (nseed == seedcap) {
           int newcap = seedcap ? seedcap*2 : 4096;
@@ -1349,12 +1419,12 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     }
   }
   fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
-          L, M, nival, nrawk[0], nrawk[1], nrawk[2], nrawk[3], nrawk[4], nseed, min_anchor);
+          L, M, nival, nival, 0, 0, 0, 0, nseed, min_anchor);
 
-  /* brief 26_0628-046: per-query k>=mink zero-hits signal gate (unvalidated, default
-   * off -- see kmer_ngate_fires() header comment). Checked right after the raw
-   * hit collection/perk breakdown above, independent of the M-gate above. */
-  if (kmer_ngate_fires(nrawk, cm->p7_kmerchain_mink)) {
+  /* brief 26_0628-046: per-query longest-exact-match signal gate (unvalidated,
+   * default off -- see kmer_ngate_fires() header comment). Checked right after
+   * the seed collection/merge above, independent of the M-gate above. */
+  if (kmer_ngate_fires(maxrun, cm->p7_kmerchain_mink)) {
     fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
                     "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
     status = eslOK; goto CLEANUP;
@@ -1400,10 +1470,8 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
    *      predecessor that ends right next to i is seen first, not last.
    *      Anchors that start at or after i (contained in i, or not processed
    *      yet) are walked past without counting against KMC_MAX_ITER.
-   *    - KMC_MAX_QGAP bounds the real gap from j's END to i's START, which
-   *      grows monotonically along the walk, so the walk stops there.
    *    KMC_MAX_ITER bounds the predecessors examined per anchor, so the DP is
-   *    O(N * min(W, MAX_ITER)). */
+   *    O(N * MAX_ITER). It is the DP's only bound (see KMC_MAX_ITER). */
   if (ret_a_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stageb_t0); _stageb_t0_set = TRUE; }
   qsort(seeds, nseed, sizeof(kmw_hit_t), kmc_seed_cmp);
   ESL_ALLOC(f,   sizeof(float) * nseed);
@@ -1411,43 +1479,20 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int   best_end = 0;
   float best_sc  = -1.0;
   long   nlink    = 0;   /* DP work counter (instrumentation) */
-  /* brief 26_0628-078: soft, env-gated gap-cost knobs on the colinear-chaining
-   * DP link cost below. All no-ops when unset (gapc arithmetic is then
-   * bit-identical to the pre-078 expression).
+  /* brief 26_0628-078: developer overrides of the gap-cost constants on the
+   * colinear-chaining DP link cost below (no-ops when unset).
    *
-   *   KMC_GAP_OPEN=<x>   affine "cost to open a new diagonal": a constant x
-   *                      charged once per dgap>0 link, so a chance anchor of
-   *                      length k only pays for itself when k > x -- but a
-   *                      short anchor may still open a diagonal when the
-   *                      alternative is far worse, so legitimate excursions
-   *                      (and their pins) are never lost outright. (An affine
-   *                      gap cost; the existing terms are the extension part.)
-   *   KMC_SPAN_LOG=<c>   span-aware term c*log2(max(qgap,rgap)) per dgap>0
-   *                      link -- the gap cost otherwise ignores absolute span
-   *                      entirely, which is what makes two cheap hops beat one
-   *                      real jump (26_0430's peer message, section 2).
-   *   KMC_AVGK_OVERRIDE / KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
-   *                      re-tune the three existing gap-cost constants; the
-   *                      compiled defaults were never tuned for wrong-diagonal
-   *                      suppression (KMC_AVGK=15 no longer "represents" the
-   *                      effective seed length, which is 10 since 26_0628-029). */
-  char  *gopen_env = getenv("KMC_GAP_OPEN");
-  char  *spanl_env = getenv("KMC_SPAN_LOG");
-  char  *avgk_env  = getenv("KMC_AVGK_OVERRIDE");
+   *   KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
+   *                      re-tune the two gap-cost constants. Since brief
+   *                      26_0821-124 KMC_GAP_LIN is the whole linear
+   *                      coefficient (bits per diagonal residue, 0.15); it
+   *                      used to be multiplied by KMC_AVGK=15. */
   char  *glin_env  = getenv("KMC_GAP_LIN_OVERRIDE");
   char  *glog_env  = getenv("KMC_GAP_LOG_OVERRIDE");
-  double gap_open  = (gopen_env != NULL) ? atof(gopen_env) : 0.0;
-  double span_log  = (spanl_env != NULL) ? atof(spanl_env) : 0.0;
-  double avgk      = (avgk_env  != NULL) ? atof(avgk_env)  : KMC_AVGK;
   double glin      = (glin_env  != NULL) ? atof(glin_env)  : KMC_GAP_LIN;
   double glog      = (glog_env  != NULL) ? atof(glog_env)  : KMC_GAP_LOG;
-  int    span_on   = (spanl_env != NULL && span_log != 0.0);
-  /* developer overrides of the three lookback limits (brief 26_0821-117). */
-  char  *qg_env    = getenv("KMC_MAX_QGAP_OVERRIDE");
-  char  *dg_env    = getenv("KMC_MAX_DGAP_OVERRIDE");
+  /* developer override of the lookback limit (brief 26_0821-117). */
   char  *it_env    = getenv("KMC_MAX_ITER_OVERRIDE");
-  int    max_qgap  = (qg_env != NULL) ? atoi(qg_env) : KMC_MAX_QGAP;
-  int    max_dgap  = (dg_env != NULL) ? atoi(dg_env) : KMC_MAX_DGAP;
   int    max_iter  = (it_env != NULL) ? atoi(it_env) : KMC_MAX_ITER;
   ESL_ALLOC(eord, sizeof(kmc_end_t) * nseed);
   for (i = 0; i < nseed; i++) {
@@ -1466,22 +1511,19 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
     while (lo < hi) { int mid = (lo + hi) / 2; if (eord[mid].te < tei) lo = mid + 1; else hi = mid; }
     for (e = lo - 1; e >= 0; e--) {
       jj = eord[e].idx;
-      if (ti - eord[e].te > max_qgap) break;   /* walking in end order: nothing earlier is closer */
       int qgap = ti - seeds[jj].t;
       if (qgap <= 0) continue;                  /* need strictly increasing query start; not counted */
       if (++iter > max_iter) break;             /* bound predecessors examined per anchor */
       int rgap = ji - seeds[jj].j;
       if (rgap <= 0) continue;                  /* need strictly increasing model pos (colinear) */
       int dgap = di - (seeds[jj].j - seeds[jj].t); if (dgap < 0) dgap = -dgap;
-      if (dgap > max_dgap) continue;
       int re = jei - eord[e].je;                /* i's model residues beyond j's end */
       if (re <= 0) continue;                    /* i's model span contained in j's */
       int qe = tei - eord[e].te;                /* > 0: j ends before i ends */
       int mn = qe < re ? qe : re;
       int match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted, end coordinates */
       nlink++;
-      float gapc  = (dgap > 0) ? (gap_open + glin*avgk*(double)dgap + glog*log2((double)dgap)
-                                  + (span_on ? span_log*log2((double)(qgap > rgap ? qgap : rgap)) : 0.0)) : 0.0;
+      float gapc  = (dgap > 0) ? (glin*(double)dgap + glog*log2((double)dgap)) : 0.0;
       float sc    = f[jj] + (float) match - gapc;
       if (sc > fi) { fi = sc; pi = jj; }
     }
@@ -1534,37 +1576,125 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       fprintf(stderr, "#MEMPOINT after_chainDP L=%d nseed=%d nlink=%ld rss_kb=%ld\n", L, nseed, nlink, brief035_rss_kb());
   }
 
-  /* 6. emit multi-segment pins from every seed in the winning chain.
-   *    Junction slack (brief 26_0821-117/26_0821-118): at each chain link whose
-   *    diagonal changes by |dgap| (an implied indel of |dgap| residues), the
-   *    last |dgap| residues of the left anchor and the first |dgap| of the
-   *    right anchor are not pinned. Exact-match anchors run right up to the
-   *    junction, but the CM's best placement of the indel can lie anywhere in
-   *    a stretch that scales with the indel (equivalent placements, repeat
-   *    copies); fully pinned anchors leave the band no room to reach it. The
-   *    slack equals the implied indel, so there is no constant. A short chance
-   *    anchor between two large jumps loses all of its pins. */
+  /* 6. emit multi-segment pins from every seed in the winning chain, leaving
+   *    junction slack unpinned (briefs 26_0821-117/26_0821-118, bounded in
+   *    briefs 26_0821-119/26_0821-125/26_0821-126).
+   *
+   *    At a chain link whose diagonal changes by n = |dgap| (an implied indel
+   *    of n residues), the CM's best placement of the indel can lie anywhere in
+   *    a stretch that scales with n (equivalent placements, repeat copies), so
+   *    query rows near the junction are left unpinned. How far the slack reaches
+   *    is decided by copy-uniqueness, not anchor length: walking outward from
+   *    the junction, an anchor is passed over (unpinned) while another anchor in
+   *    the junction box covers it entirely (kmc_anchor_contested(): an equally
+   *    long alternative copy, e.g. a duplicated segment), and the first
+   *    uncontested anchor keeps all but min(n, length) of its residues. The
+   *    slack never exceeds n rows on either side of the junction, and never
+   *    falls below min(n, length) residues of the adjacent anchor. The query
+   *    rows between an out-and-back detour's two jumps are also unpinned (see
+   *    below). With no full-length repeat copy in any junction box and no
+   *    detour, this unpins the same rows as the earlier rule: the last
+   *    min(n, length) residues of the left anchor and the first min(n, length)
+   *    of the right anchor (the two can differ only where adjacent anchors
+   *    overlap in the query). The rule has no constant: n and the anchors
+   *    themselves bound it. (Unpinning every row within n of each junction instead fixes the
+   *    same misses but costs ~(2n)^2 band cells per link, brief 26_0821-119.) */
   ESL_ALLOC(i2k, sizeof(int) * (L+1));
   esl_vec_ISet(i2k, L+1, -1);
+  ESL_ALLOC(nopin, sizeof(int) * (L+2));
+  esl_vec_ISet(nopin, L+2, 0);
+  if (nc > 1) {
+    int c;
+    ESL_ALLOC(byj, sizeof(kmw_hit_t) * nseed);
+    ESL_ALLOC(byt, sizeof(kmw_hit_t) * nseed);
+    memcpy(byj, seeds, sizeof(kmw_hit_t) * nseed);
+    memcpy(byt, seeds, sizeof(kmw_hit_t) * nseed);
+    qsort(byj, nseed, sizeof(kmw_hit_t), kmc_seed_jcmp);
+    qsort(byt, nseed, sizeof(kmw_hit_t), kmc_seed_tcmp);
+
+    /* junction slack, link by link */
+    for (c = 1; c < nc; c++) {
+      const kmw_hit_t *A = &seeds[chain[c-1]], *B = &seeds[chain[c]];
+      int dd = (B->j - B->t) - (A->j - A->t); if (dd < 0) dd = -dd;
+      if (dd == 0) continue;
+      int te  = A->t + A->k - 1;   /* left junction: end of left anchor     */
+      int ts  = B->t;              /* right junction: start of right anchor */
+      int jle = A->j + A->k - 1;   /* model end of left anchor              */
+      int qlo = te - dd + 1, qhi = B->t + dd - 1, mlo = jle - dd + 1, mhi = B->j + dd - 1;   /* junction box */
+      int ext_l = 0, ext_r = 0, x;
+      /* right extent: walk across contested anchors */
+      for (x = c; x < nc; x++) {
+        const kmw_hit_t *a = &seeds[chain[x]];
+        if (! kmc_anchor_contested(a, byj, byt, nseed, maxrun, qlo, qhi, mlo, mhi)) break;
+        ext_r = a->t + a->k - ts;
+        if (ext_r >= dd) break;
+      }
+      if (x < nc && ext_r < dd) ext_r = seeds[chain[x]].t + ESL_MIN(dd, seeds[chain[x]].k) - ts;   /* in-anchor slack on the first uncontested anchor */
+      ext_r = ESL_MIN(dd, ESL_MAX(ext_r, ESL_MIN(dd, B->k)));
+      /* left extent: the mirror image */
+      for (x = c-1; x >= 0; x--) {
+        const kmw_hit_t *a = &seeds[chain[x]];
+        if (! kmc_anchor_contested(a, byj, byt, nseed, maxrun, qlo, qhi, mlo, mhi)) break;
+        ext_l = te - a->t + 1;
+        if (ext_l >= dd) break;
+      }
+      if (x >= 0 && ext_l < dd) ext_l = te - seeds[chain[x]].t - seeds[chain[x]].k + ESL_MIN(dd, seeds[chain[x]].k) + 1;
+      ext_l = ESL_MIN(dd, ESL_MAX(ext_l, ESL_MIN(dd, A->k)));
+
+      int a1 = ESL_MAX(1, te - ext_l + 1), b1 = te;
+      int a2 = ts,                         b2 = ESL_MIN(L, ts + ext_r - 1);
+      if (a1 <= b1) { nopin[a1]++; nopin[b1+1]--; }
+      if (a2 <= b2) { nopin[a2]++; nopin[b2+1]--; }
+    }
+    free(byj); byj = NULL;
+    free(byt); byt = NULL;
+
+    /* Out-and-back detours: links c1 < c2 whose jumps have opposite signs,
+     * where the chain after c2 is closer to its diagonal before c1 than either
+     * jump, and the anchors between them span no more than |dd1| + |dd2| (the
+     * two links' n-row windows meet). Which copy such a detour visits is a
+     * choice, not evidence, so every query row between the two jumps is
+     * unpinned. Only the first such c2 per c1 is taken; c2 is scanned only
+     * while the detour spans at most |dd1| + the largest jump on the chain. */
+    {
+      int c1, c2, maxdd = 0;
+      for (c = 1; c < nc; c++) {
+        int d2 = (seeds[chain[c]].j - seeds[chain[c]].t) - (seeds[chain[c-1]].j - seeds[chain[c-1]].t);
+        if (d2 < 0) d2 = -d2;
+        if (d2 > maxdd) maxdd = d2;
+      }
+      for (c1 = 1; c1 < nc; c1++) {
+        int d0  = seeds[chain[c1-1]].j - seeds[chain[c1-1]].t;
+        int dd1 = (seeds[chain[c1]].j - seeds[chain[c1]].t) - d0;
+        int ts1 = seeds[chain[c1]].t;
+        if (dd1 == 0) continue;
+        for (c2 = c1+1; c2 < nc; c2++) {
+          int dd2   = (seeds[chain[c2]].j - seeds[chain[c2]].t) - (seeds[chain[c2-1]].j - seeds[chain[c2-1]].t);
+          int te2   = seeds[chain[c2-1]].t + seeds[chain[c2-1]].k - 1;
+          int inner = te2 - ts1 + 1;
+          int net   = (seeds[chain[c2]].j - seeds[chain[c2]].t) - d0;
+          if (inner > abs(dd1) + maxdd) break;
+          if (dd2 == 0) continue;
+          if ((dd1 > 0) != (dd2 > 0) && abs(net) < ESL_MIN(abs(dd1), abs(dd2)) && inner <= abs(dd1) + abs(dd2)) {
+            nopin[ts1]++; nopin[te2+1]--;
+            break;
+          }
+        }
+      }
+    }
+  }
+  /* pin every chain-anchor residue on a row that is not unpinned */
   {
-    int c, o;
+    int c, o, q, run = 0;
     for (c = 0; c < nc; c++) {
       int jj = seeds[chain[c]].j, tt = seeds[chain[c]].t, kk = seeds[chain[c]].k;
-      int olo = 0, ohi = kk;   /* pin offsets [olo, ohi) */
-      if (c > 0) {             /* slack after the link from the previous anchor */
-        int dd = (jj - tt) - (seeds[chain[c-1]].j - seeds[chain[c-1]].t); if (dd < 0) dd = -dd;
-        olo = dd;
-      }
-      if (c < nc-1) {          /* slack before the link to the next anchor */
-        int dd = (seeds[chain[c+1]].j - seeds[chain[c+1]].t) - (jj - tt); if (dd < 0) dd = -dd;
-        ohi = kk - dd;
-      }
-      if (ohi < olo) ohi = olo;
-      for (o = olo; o < ohi; o++) {
+      for (o = 0; o < kk; o++) {
         int T = tt + o, J = jj + o;
         if (T >= 1 && T <= L && J >= 1 && J <= M && i2k[T] == -1) i2k[T] = J;
       }
     }
+    for (q = 1; q <= L; q++) { run += nopin[q]; if (run > 0) i2k[q] = -1; }
+    free(nopin); nopin = NULL;
   }
 
   /* report pin span (reach) -- directly comparable to brief 26_0628-026's cover= */
@@ -1607,6 +1737,9 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   if (f)             free(f);
   if (pre)           free(pre);
   if (eord)          free(eord);
+  if (byj)           free(byj);
+  if (byt)           free(byt);
+  if (nopin)         free(nopin);
   if (chain)         free(chain);
   if (cons)          free(cons);
   if (local_nodepad) free(local_nodepad);
