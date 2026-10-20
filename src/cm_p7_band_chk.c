@@ -441,7 +441,10 @@ cp9_chk_bwd_rowLF(CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int M,
   }
   else { kx = kmax[i]; kpcur = kmax[i]-kmin[i]; }
 
-  for (k = kx; k >= kmin[i]; k--, kpcur--)
+  /* Stop at k=1, as the dense cp9ck_bck_rowL() does: M_0 has no emission, so
+   * msc[x][0] is never assigned, and the k=0 cells are all set by the
+   * INBAND(i, 0) block below (brief 26_0821-134). */
+  for (k = kx; k >= ESL_MAX(kmin[i], 1); k--, kpcur--)
     {
       mc[kpcur]  = 0 + Scorify(CP9TSC(cp9O_ME,k));
       if(INBAND(i, k+1)) {
