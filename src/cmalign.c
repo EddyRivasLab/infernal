@@ -121,6 +121,7 @@ static ESL_OPTIONS options[] = {
   { "--version",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show version info and exit",                         1 },
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
   { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
+  { "--devhelp",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show list of otherwise hidden developer/expert options", 1 },
   /* options controlling the alignment algorithm */
   { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     "--small", "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
   { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "use the CYK algorithm",                                           2 },
@@ -179,6 +180,8 @@ static ESL_OPTIONS options[] = {
    * semantics are UNCHANGED -- dev-only, not "prefer"; --no-mxesc's incompat list
    * (below) is deliberately left untouched, see brief 303. */
   { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 6 },
+  /* docgroup 7: developer options, shown only by --devhelp (brief 26_0821-135) */
+  { "--devdiag",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show developer stage/band diagnostics on stderr", 7 },
   { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 3 },
   { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 3 },
   { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 3 },
@@ -3644,9 +3647,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_VerifyConfig(go)               != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; }
 
   // "brief" help format:
-  if (esl_opt_GetBoolean(go, "-h"))
+  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp"))
     {
-      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h (or --devhelp) alone");
 
       cm_banner(stdout, "cmalign", banner);  // use progname not argv[0]: versioning, not invocation
       esl_usage(stdout, argv[0], usage);     // whereas this is invocation
@@ -3656,6 +3659,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("\nOptions controlling speed and memory requirements:\n"); esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
       esl_printf("\nOptional output files:\n");                             esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
       esl_printf("\nOther options:\n");                                     esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
+      if (esl_opt_GetBoolean(go, "--devhelp")) {
+        esl_printf("\nDeveloper options:\n");                               esl_opt_DisplayHelp(stdout, go, 7, 2, 100);
+      }
       esl_printf("\nSequence input formats:   FASTA, GenBank\n");
       esl_printf("Alignment output formats: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
       exit(0);
@@ -3668,6 +3674,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("%s %s\n", "cmalign", INFERNAL_VERSION);  // use progname here: versioning, not invocation
       exit(0);
     }
+
+  /* --devdiag does what the INFERNAL_STAGE_VERBOSE environment variable does */
+  if (esl_opt_GetBoolean(go, "--devdiag")) cm_SetStageVerbose(TRUE);
 
   if (esl_opt_ArgNumber(go)                 != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");      goto ERROR; }
   if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { esl_fprintf(stderr, "Failed to get <cmfile> argument on command line.\n");  goto ERROR; }

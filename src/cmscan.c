@@ -300,6 +300,7 @@ static ESL_OPTIONS options[] = {
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",         108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",            108 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",            108 },
+  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer stage/band diagnostics on stderr",              108 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -2124,6 +2125,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("%s %s\n", "cmscan", INFERNAL_VERSION);  // use progname here: versioning, not invocation
       exit(0);
     }
+
+  /* --devdiag does what the INFERNAL_STAGE_VERBOSE environment variable does */
+  if (esl_opt_GetBoolean(go, "--devdiag")) cm_SetStageVerbose(TRUE);
 
   if (esl_opt_ArgNumber(go)                  != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");       goto ERROR; }
   if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL)  { esl_fprintf(stderr, "Failed to get <cmdb> argument on command line.\n");    goto ERROR; }

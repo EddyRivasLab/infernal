@@ -78,11 +78,26 @@ cm_Fail(char *format, ...)
  *            that begin with '#' -- are printed only when it is set.
  *            The environment is read once and the answer is cached.
  */
+static int stage_verbose = -1; /* -1: not yet read; see cm_StageVerbose(), cm_SetStageVerbose() */
+
 int
 cm_StageVerbose(void)
 {
-  static int is_set = -1;
+  if(stage_verbose == -1) stage_verbose = (getenv("INFERNAL_STAGE_VERBOSE") != NULL) ? TRUE : FALSE;
+  return stage_verbose;
+}
 
-  if(is_set == -1) is_set = (getenv("INFERNAL_STAGE_VERBOSE") != NULL) ? TRUE : FALSE;
-  return is_set;
+/* Function:  cm_SetStageVerbose()
+ * Incept:    EPN, Tue Oct 20 2026 (w/Claude)
+ *
+ * Purpose:   Turn developer diagnostics on (<on> = TRUE) or off for the
+ *            rest of the run, overriding INFERNAL_STAGE_VERBOSE. Programs
+ *            call this right after option parsing when --devdiag is used,
+ *            so the option and the environment variable do the same thing
+ *            (brief 26_0821-135).
+ */
+void
+cm_SetStageVerbose(int on)
+{
+  stage_verbose = on ? TRUE : FALSE;
 }
