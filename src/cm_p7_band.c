@@ -1138,8 +1138,6 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
 #define KMC_GAP_LIN   0.15    /* linear gap cost, bits per residue of |diagonal   */
                               /* change|; was 0.01 x a "representative k" of 15  */
 #define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
-#define KMC_HSV_RLO   9401    /* HSV known false-repeat block, model lo (brief026)*/
-#define KMC_HSV_RHI   9600    /*  ... model hi -- for the repeat-trap check       */
 
 /* a raw k-mer seed as a query interval on a diagonal: d = model_j - query_t,
  * query positions [tlo,thi]. Point seeds are merged along a diagonal into
@@ -1554,20 +1552,17 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   /* chain[0..nc-1] is end..start; reverse to start..end */
   for (i = 0; i < nc/2; i++) { int tmp = chain[i]; chain[i] = chain[nc-1-i]; chain[nc-1-i] = tmp; }
 
-  /* 5. chain diagnostics + HSV repeat-trap check (brief 26_0628-027 central question) */
+  /* 5. chain diagnostics. brief 26_0821-135 dropped the HSV-specific
+   * repeat_anchors_in[9401,9600] field (brief 26_0628-027's repeat-trap
+   * check) from this line. */
   {
     int cs = chain[0], ce = chain[nc-1];
     int mlo = seeds[cs].j, mhi = seeds[ce].j + seeds[ce].k - 1;
     int qlo = seeds[cs].t, qhi = seeds[ce].t + seeds[ce].k - 1;
-    int nrep = 0, c;   /* chain anchors OVERLAPPING the HSV repeat block */
-    for (c = 0; c < nc; c++) {
-      int aj = seeds[chain[c]].j, ajx = seeds[chain[c]].j + seeds[chain[c]].k - 1;
-      if (aj <= KMC_HSV_RHI && ajx >= KMC_HSV_RLO) nrep++;
-    }
+    int c;
     if (cm_StageVerbose())
-      fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] "
-                    "repeat_anchors_in[%d,%d]=%d nlink=%ld\n",
-            L, M, nc, best_sc, mlo, mhi, qlo, qhi, KMC_HSV_RLO, KMC_HSV_RHI, nrep, nlink);
+      fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] nlink=%ld\n",
+            L, M, nc, best_sc, mlo, mhi, qlo, qhi, nlink);
     /* brief 26_0628-041 (ported from infernal-brief040-stagetime): per-anchor chain dump,
      * gated by BRIEF041_CHAINDUMP (silent no-op by default, mirrors
      * BRIEF035_MEMPOINT convention). */
