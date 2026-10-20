@@ -36,6 +36,7 @@ static ESL_OPTIONS options[] = {
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        1 },
   { "--cp9ascm", eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output CM's ML CP9 HMM as an unstructured (MATL-chain) CM", 1 },
   { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format: 1/a, 1/b, or 1/d (default: 1/d)",            1 },
+  { "--dropknots",eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "allow dropping pseudoknots the output format can't store", 1 },
   /* options for controlling p7 per-node band pad computation */
   { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,              NULL, "skip p7 per-node band pad computation",          2 },
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
@@ -125,6 +126,29 @@ main(int argc, char **argv)
   while ((status = cm_file_Read(cmfp, TRUE, &abc, &cm)) == eslOK)
     {
       CM_t *cp9cm = NULL;
+      int   drops_pknot = FALSE; /* TRUE if the output format can't store this CM's pknot annotation */
+
+      /* The consensus pseudoknot annotation only exists in INFERNAL1/d.
+       * Converting to an older format that predates it (1/a, 1/b via
+       * --outfmt, or the legacy v0.7-v1.0.2 -1 format) would lose it, so
+       * that's an error unless --dropknots allows it (brief 26_0821-135).
+       * Checked before any other work on the CM. */
+      if (cm->flags & CMH_PKNOT) {
+        if ((esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b")) &&
+            (fmtcode == CM_FILE_1a || fmtcode == CM_FILE_1b)) {
+          drops_pknot = TRUE;
+          if (! esl_opt_GetBoolean(go, "--dropknots"))
+            cm_Fail("CM %s has consensus pseudoknot annotation, which the INFERNAL1/%s format cannot store.\n"
+                    "Use --dropknots to convert it anyway without that annotation, or omit --outfmt to write the default INFERNAL1/d format.",
+                    cm->name, (fmtcode == CM_FILE_1a) ? "a" : "b");
+        }
+        else if (esl_opt_GetBoolean(go, "-1")) {
+          drops_pknot = TRUE;
+          if (! esl_opt_GetBoolean(go, "--dropknots"))
+            cm_Fail("CM %s has consensus pseudoknot annotation, which the v0.7-v1.0.2 (-1) format cannot store.\n"
+                    "Use --dropknots to convert it anyway without that annotation.", cm->name);
+        }
+      }
 
       if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm") || esl_opt_GetBoolean(go, "--cp9ascm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
@@ -190,21 +214,15 @@ main(int argc, char **argv)
 	if((status = cm_AppendComlog (cm, go->argc, go->argv, FALSE , 0)) != eslOK) cm_Fail("Failed to record command log");
       }
 
-      /* Feature B: the consensus pseudoknot annotation only exists in INFERNAL1/d.
-       * Converting to an older format that predates it (1/a, 1/b via --outfmt, or the
-       * legacy v0.7-v1.0.2 -1 format) drops the pknots. For -a/-b targeting 1/a or 1/b
-       * we must actually clear CMH_PKNOT and free cm->pknot, because the binary pknot
-       * block is flag-gated (not format-gated) and would otherwise be emitted; for the
-       * -1 legacy writer cm_file_Write1p0ASCII() ignores cm->pknot, so a warning suffices. */
-      if ((cm->flags & CMH_PKNOT) && (esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b")) &&
-          (fmtcode == CM_FILE_1a || fmtcode == CM_FILE_1b)) {
-        fprintf(stderr, "# WARNING: dropping pseudoknot annotation from CM %s: the INFERNAL1/%s format cannot store it.\n",
-                cm->name, (fmtcode == CM_FILE_1a) ? "a" : "b");
+      /* --dropknots, and this CM's pknot annotation can't be written (checked
+       * above): drop it silently. For -a/-b targeting 1/a or 1/b we must
+       * actually clear CMH_PKNOT and free cm->pknot, because the binary pknot
+       * block is flag-gated (not format-gated) and would otherwise be emitted;
+       * the -1 legacy writer cm_file_Write1p0ASCII() ignores cm->pknot. */
+      if (drops_pknot && ! esl_opt_GetBoolean(go, "-1")) {
         cm->flags &= ~CMH_PKNOT;
         if (cm->pknot != NULL) { free(cm->pknot); cm->pknot = NULL; }
       }
-      if ((cm->flags & CMH_PKNOT) && esl_opt_GetBoolean(go, "-1") == TRUE)
-        fprintf(stderr, "# WARNING: dropping pseudoknot annotation from CM %s: the v0.7-v1.0.2 (-1) format cannot store it.\n", cm->name);
 
       if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
       else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
