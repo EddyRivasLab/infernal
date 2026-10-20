@@ -730,6 +730,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
       
     /* Output */
+    cm_pli_ReportNoNull3Fallback(ofp); /* once per run, if --nonull3 fell back to null3-on stats */
     if(info[0].pli->do_trm_F3) { 
       cm_tophits_F3Targets(ofp, info[0].th, info[0].pli);
     }
@@ -1443,6 +1444,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
     }
     
+    cm_pli_ReportNoNull3Fallback(ofp); /* once per run, if --nonull3 fell back to null3-on stats */
     if(info->pli->do_trm_F3) { 
       cm_tophits_F3Targets(ofp, info->th, info->pli);
     }

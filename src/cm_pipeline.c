@@ -26,10 +26,14 @@
 
 #include "infernal.h"
 
-/* Process-global dedup for the --nonull3 "no off-set stats, falling back to
- * default" warning (cm_pli_NewModel). Static so it dedups across every CM,
- * query sequence, pipeline, and worker thread to one line per program run. */
-static int nonull3_fb_warned = FALSE;
+/* Process-global record of the --nonull3 "no off-set stats, falling back
+ * to default" condition (set in cm_pli_NewModel, reported to the stdout
+ * report by cm_pli_ReportNoNull3Fallback()). Static so it dedups across
+ * every CM, query sequence, pipeline, and worker thread to one line per
+ * program run. 0: hasn't happened; 1: happened, not yet reported;
+ * 2: reported. nonull3_fb_cmname is the first such CM's name. */
+static int  nonull3_fb_state = 0;
+static char nonull3_fb_cmname[256];
 
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int **ret_wnmerged, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int *wnmerged, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm,
@@ -1334,7 +1338,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
       }
     }
     else { /* ! do_hmmonly_cur && ! do_hmmonly_glocal_cur */
-      /* Fallback warning: --nonull3 requested, but this CM carries no stored
+      /* Fallback: --nonull3 requested, but this CM carries no stored
        * null3-OFF E-value set, so we fall back to the default (null3-on) stats
        * via cm_pli_ExpInfoA(). That preserves today's behavior (no regression)
        * but the silent FP inflation for AT-rich/low-GC models survives -- so
@@ -1342,13 +1346,14 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
        * cmscan creates a fresh pipeline per query sequence, so a pli-level flag
        * would re-warn per query; cmscan also calls this per CM in the DB, which
        * would spam per-CM. The static dedups across all CMs, queries, and
-       * worker threads to one line per invocation (a benign duplicate is
-       * possible if two threads race; harmless). See brief 053 addendum D. */
-      if(pli->do_null3 == FALSE && (! (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) && (! nonull3_fb_warned)) {
-	fprintf(stderr, "# WARNING: --nonull3 requested but this CM has no --nonull3 E-value stats;\n");
-	fprintf(stderr, "# using default (null3-on) stats. E-values may be inflated for low-GC/AT-rich\n");
-	fprintf(stderr, "# models. Rebuild (cmbuild) or recalibrate (cmcalibrate --nonull3) to fix.\n");
-	nonull3_fb_warned = TRUE;
+       * worker threads to one line per invocation (a benign race between two
+       * threads only changes which CM name is recorded). See brief 053
+       * addendum D. Recorded here, and printed in the stdout report by the
+       * program via cm_pli_ReportNoNull3Fallback(), not to stderr
+       * (brief 26_0821-135). */
+      if(pli->do_null3 == FALSE && (! (cm->flags & CMH_EXPTAIL_NONULL3_STATS)) && nonull3_fb_state == 0) {
+	snprintf(nonull3_fb_cmname, sizeof(nonull3_fb_cmname), "%s", cm->name);
+	nonull3_fb_state = 1;
       }
       if((status = UpdateExpsForDBSize(cm, pli->errbuf, pli->Z)) != eslOK) return status;
       if(pli->by_E) {
@@ -1409,6 +1414,34 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
       pli->F3  = pli->F3_orig;
       pli->F3b = pli->F3b_orig;
     }
+  }
+  return eslOK;
+}
+
+/* Function:  cm_pli_ReportNoNull3Fallback()
+ * Incept:    EPN, Tue Oct 20 2026 (w/Claude)
+ *
+ * Purpose:   If a --nonull3 search fell back to the default (null3-on)
+ *            E-value statistics because a CM has no --nonull3 stats
+ *            (see cm_pli_NewModel()), and that hasn't been reported yet
+ *            in this run, print one '#' line saying so to <ofp> and
+ *            mark it reported. Otherwise print nothing.
+ *
+ *            cmsearch and cmscan call this after a query's search and
+ *            before its hit list, so the line lands in the stdout
+ *            report between the query's header lines and its hit
+ *            list: never inside a table, never after '# CPU time'.
+ *            (brief 26_0821-135; previously a stderr warning.)
+ *
+ * Returns:   <eslOK>.
+ */
+int
+cm_pli_ReportNoNull3Fallback(FILE *ofp)
+{
+  if(nonull3_fb_state == 1) {
+    fprintf(ofp, "# WARNING: --nonull3, but CM %s has no --nonull3 E-value stats; using default (null3-on) stats (E-values may be inflated for low-GC/AT-rich models; to fix, rebuild with cmbuild or run cmcalibrate --nonull3; reported once per run)\n",
+            nonull3_fb_cmname);
+    nonull3_fb_state = 2;
   }
   return eslOK;
 }

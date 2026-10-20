@@ -734,6 +734,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  acct[tinfo[0].th->hit[i]->pass_idx].pos_output += llabs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
 	}
       }
+      cm_pli_ReportNoNull3Fallback(ofp); /* once per run, if --nonull3 fell back to null3-on stats */
       if(tinfo[0].pli->do_trm_F3) { 
         cm_tophits_F3Targets(ofp, tinfo[0].th, tinfo[0].pli);
       }
@@ -1594,6 +1595,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* Print the results.  */
+      cm_pli_ReportNoNull3Fallback(ofp); /* once per run, if --nonull3 fell back to null3-on stats */
       if(pli->do_trm_F3) { 
         cm_tophits_F3Targets(ofp, th, pli); 
       }
