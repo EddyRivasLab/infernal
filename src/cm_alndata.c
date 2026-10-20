@@ -175,7 +175,7 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
     memcpy(Tv, cm->cp9b->Tvalid, sizeof(int)*nv);
   }
 
-  status = cm_BandsFromCYKParsetree(cm, errbuf, tr, 1, L, pad, NULL, FALSE,
+  status = cm_BandsFromCYKParsetree(cm, errbuf, tr, 1, L, pad, FALSE,
                                     cm->cp9b, pass_idx, 0);
 
   if(preserve_valid) {

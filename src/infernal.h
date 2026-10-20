@@ -2499,10 +2499,6 @@ typedef struct cm_pipeline_s {
   int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
   int           do_cykbands_strict; /* TRUE: set Jvalid[v]=FALSE for unvisited states (--cykbands-strict)  */
   int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
-  char         *cyk_bpad_dir;   /* dir for --cykpadfile per-CM TSVs, NULL if not set                       */
-  int          *cyk_bpad_perstate; /* [0..M-1] per-state CYK pad, NULL = use scalar cyk_bpad             */
-  int           cyk_bpad_perstate_M; /* M used when cyk_bpad_perstate was loaded; 0 if not loaded.       */
-  char         *cyk_bpad_perstate_cmname; /* CM name pads were loaded for; NULL if not loaded.           */
   Parsetree_t  *cyk_envtree;    /* CYK parsetree from most recent F6 CYK scan (for --cykbands), or NULL    */
   int64_t       cyk_envtree_es; /* envelope start position the parsetree corresponds to                    */
   int64_t       cyk_envtree_ee; /* envelope end position the parsetree corresponds to                      */
@@ -3639,7 +3635,7 @@ extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, floa
 extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, int do_pnmono, int do_pnmono_print);
 extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, const float *pocc, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
 extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
-extern int          cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, const int *per_state_pad, int strict_unvisited, CP9Bands_t *cp9b, int pass_idx, int debug);
+extern int          cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, int strict_unvisited, CP9Bands_t *cp9b, int pass_idx, int debug);
 extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpad);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);

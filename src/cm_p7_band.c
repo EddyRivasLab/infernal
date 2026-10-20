@@ -5684,7 +5684,10 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  *   3. Restore the per_state_pad parameter to the cykbands worker
  *      function (it was stripped on 2026-05-19 -- the conditional was
  *      a single line at step 2; see git history before the strip
- *      commit).
+ *      commit). The strip was made on the cmalign line only; p7band-cp9
+ *      carried its own copy of --cykpadfile and the parameter, and the
+ *      2026-07-02 merge of p7band-cp9 into that line brought them back.
+ *      brief 26_0821-135 removed them again.
  *
  * === end ARCHIVED ===
  *
@@ -5808,7 +5811,6 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
  *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
- *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
  *           strict_unvisited - if TRUE, set Jvalid[v]=FALSE for unvisited states (--cykbands-strict).
  *                              This makes the F7 HB DP skip those states entirely, dramatically
  *                              reducing matrix cell count at the risk of parse failure or score loss.
@@ -5820,7 +5822,7 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
  */
 int
 cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
-                         int i0, int j0, int pad, const int *per_state_pad,
+                         int i0, int j0, int pad,
                          int strict_unvisited,
                          CP9Bands_t *cp9b, int pass_idx, int debug)
 {
@@ -5859,16 +5861,13 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(j > jmax[v]) jmax[v] = j;
   }
 
-  /* Step 2: Apply pad to visited states, clamp to [i0..j0].
-   * If per_state_pad != NULL and per_state_pad[v] >= 0, use it instead of scalar pad. */
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0]. */
   for(v = 0; v < M; v++) {
     if(visited[v]) {
-      int p = pad;
-      if(per_state_pad != NULL && per_state_pad[v] >= 0) p = per_state_pad[v];
-      imin[v] -= p; if(imin[v] < i0) imin[v] = i0;
-      imax[v] += p; if(imax[v] > j0) imax[v] = j0;
-      jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;
-      jmax[v] += p; if(jmax[v] > j0) jmax[v] = j0;
+      imin[v] -= pad; if(imin[v] < i0) imin[v] = i0;
+      imax[v] += pad; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] -= pad; if(jmin[v] < i0) jmin[v] = i0;
+      jmax[v] += pad; if(jmax[v] > j0) jmax[v] = j0;
     }
   }
 
