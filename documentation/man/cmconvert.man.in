@@ -95,6 +95,21 @@ like any other (unstructured) CM. Only CMs configured in global mode
 are currently supported (this is the default state of a freshly-read
 CM file).
 
+.TP
+.B --dropknots
+Allow a conversion that loses consensus pseudoknot annotation.  Only
+the current CM format (INFERNAL1/d, the default output format) can
+store a CM's consensus pseudoknot annotation. Converting such a CM to
+an older format (with
+.B -1,
+or with
+.B --outfmt 1/a
+or
+.B --outfmt 1/b )
+is an error unless
+.B --dropknots
+is used, in which case the annotation is silently left out of the
+output. CMs without pseudoknot annotation are unaffected.
 
 .SH SEE ALSO
 

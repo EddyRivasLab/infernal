@@ -175,7 +175,7 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
     memcpy(Tv, cm->cp9b->Tvalid, sizeof(int)*nv);
   }
 
-  status = cm_BandsFromCYKParsetree(cm, errbuf, tr, 1, L, pad, NULL, FALSE,
+  status = cm_BandsFromCYKParsetree(cm, errbuf, tr, 1, L, pad, FALSE,
                                     cm->cp9b, pass_idx, 0);
 
   if(preserve_valid) {
@@ -1523,7 +1523,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	     * Below genome scale the standard CP9 re-derivation further down
 	     * recovers; at genome scale (cp9fb_Mb > mxsize) that path cannot run,
 	     * and this used to be a hard error. Instead, unless the band already
-	     * came from IBV, print one stderr line, re-derive the p7 band with the
+	     * came from IBV, print one stderr line (INFERNAL_STAGE_VERBOSE only),
+	     * re-derive the p7 band with the
 	     * memory-bounded IBV D&C deriver (the same call and settings as
 	     * kmerchain's --p7kmerchain-fbibv no-anchor fallback above, still
 	     * truncation-aware if do_trunc), and rerun the p7-banded CP9 band
@@ -1538,10 +1539,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	                           (strcmp(_p7b_kind, "pinbridge") == 0)  ? "--p7pinbridge"            :
 	                           "default p7 Viterbi-trace";
 	      if(cm->p7_use_ibv || (_p7b_kind != NULL && strcmp(_p7b_kind, "kmerchain->p7ibv") == 0)) {
-	        fprintf(stderr, "# no-parse p7 band from --p7ibv for %s; IBV is the last-resort band deriver, no retry\n", sq->name);
+	        if(cm_StageVerbose()) /* brief 26_0821-133: the error below carries the cause */
+	          fprintf(stderr, "# no-parse p7 band from --p7ibv for %s; IBV is the last-resort band deriver, no retry\n", sq->name);
 	        ESL_XFAIL(eslENORESULT, errbuf, "no-parse p7 band from --p7ibv (CP9 F/B total impossible); no further fallback");
 	      }
-	      fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", np_src, sq->name);
+	      if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
+	        fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", np_src, sq->name);
 	      p7_i2k = p7_kmin = p7_kmax = NULL; /* freed above */
 	      p7_ncells = 0;
 	      if((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
@@ -1559,7 +1562,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	      free(p7_kmin); p7_kmin = NULL;
 	      free(p7_kmax); p7_kmax = NULL;
 	      if(status == eslENORESULT) {
-	        fprintf(stderr, "# no-parse p7 band from %s for %s, and from its --p7ibv-mem retry\n", np_src, sq->name);
+	        if(cm_StageVerbose()) /* brief 26_0821-133: the error from errbuf carries the cause */
+	          fprintf(stderr, "# no-parse p7 band from %s for %s, and from its --p7ibv-mem retry\n", np_src, sq->name);
 	        snprintf(errbuf, eslERRBUFSIZE, "no-parse p7 band from %s and from its --p7ibv-mem retry (CP9 F/B total impossible)", np_src);
 	        goto ERROR;
 	      }

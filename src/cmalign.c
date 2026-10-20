@@ -121,6 +121,7 @@ static ESL_OPTIONS options[] = {
   { "--version",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show version info and exit",                         1 },
   { "-o",         eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "output the alignment to file <f>, not stdout",       1 },
   { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
+  { "--devhelp",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show list of otherwise hidden developer/expert options", 1 },
   /* options controlling the alignment algorithm */
   { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     "--small", "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
   { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "use the CYK algorithm",                                           2 },
@@ -179,6 +180,8 @@ static ESL_OPTIONS options[] = {
    * semantics are UNCHANGED -- dev-only, not "prefer"; --no-mxesc's incompat list
    * (below) is deliberately left untouched, see brief 303. */
   { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 6 },
+  /* docgroup 7: developer options, shown only by --devhelp (brief 26_0821-135) */
+  { "--devdiag",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show developer stage/band diagnostics on stderr", 7 },
   { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 3 },
   { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 3 },
   { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 3 },
@@ -316,7 +319,8 @@ kmer_gate_p7ibv_fallback(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int 
  * meaningless (it used to be emitted anyway, exit 0, as a garbage alignment).
  *
  * The first time this happens for a sequence whose band did NOT come from IBV,
- * print one stderr line, free the failed band, and re-derive it with the IBV
+ * print one stderr line (INFERNAL_STAGE_VERBOSE only), free the failed band,
+ * and re-derive it with the IBV
  * D&C deriver via kmer_gate_p7ibv_fallback() (same delta/base-slab settings as
  * kmerchain's no-anchor fallback; still truncation-aware if <do_trunc>), so the
  * caller can retry once. IBV D&C is used because it is memory-bounded at genome
@@ -347,7 +351,8 @@ hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab
             "(banded HMM Forward total not finite), and no filter p7 HMM for a --p7ibv-mem retry.",
             band_src, sq->name);
 
-  fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", band_src, sq->name);
+  if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
+    fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", band_src, sq->name);
   free(*ret_i2k);  *ret_i2k  = NULL;
   free(*ret_kmin); *ret_kmin = NULL;
   free(*ret_kmax); *ret_kmax = NULL;
@@ -584,7 +589,8 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * If the loaded CM has 0 basepairs and the user requested no explicit
  * alignment mode, force the memory-minimal production HMM path
  * (--hmm --p7ibv [--p7ibv-delta 1000]) by setting those options in <go>
- * as if given on the command line, then emit a one-line note to stderr.
+ * as if given on the command line, then emit a one-line note to stderr
+ * (only if INFERNAL_STAGE_VERBOSE is set).
  *
  * brief 26_0526-013 FOLLOW-UP (2026-08-07): the --p7ibv-delta 1000 tight
  * band was validated ONLY at genome scale (norovirus M=7567 through MPXV
@@ -601,6 +607,11 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * CM-DP default.
  */
 #define CM_AUTOSWITCH_TIGHT_DELTA_MINM 4000
+/* TRUE once maybe_hmm_autoswitch() has switched to HMM mode. The switch
+ * sets options as if given on the command line, so esl_opt_IsUsed()
+ * can't tell it from a user's --hmm; output_header() reads this to say
+ * the mode was auto-selected (brief 26_0821-135). */
+static int hmm_autoswitched = FALSE;
 static void
 maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
 {
@@ -617,9 +628,11 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
     autoswitch_force_opt(go, "--p7ibv", NULL);
   if (esl_opt_IsDefault(go, "--p7ibv-delta") && cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM)
     autoswitch_force_opt(go, "--p7ibv-delta", "1000");
+  hmm_autoswitched = TRUE;
 
-  fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
-          esl_opt_GetInteger(go, "--p7ibv-delta"));
+  if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
+    fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
+            esl_opt_GetInteger(go, "--p7ibv-delta"));
 }
 
 /* use_glocal_config()
@@ -3634,9 +3647,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (esl_opt_VerifyConfig(go)               != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; }
 
   // "brief" help format:
-  if (esl_opt_GetBoolean(go, "-h"))
+  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp"))
     {
-      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h alone");
+      if (argc != 2) esl_fatal("Incorrect usage: to get brief help, use -h (or --devhelp) alone");
 
       cm_banner(stdout, "cmalign", banner);  // use progname not argv[0]: versioning, not invocation
       esl_usage(stdout, argv[0], usage);     // whereas this is invocation
@@ -3646,6 +3659,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("\nOptions controlling speed and memory requirements:\n"); esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
       esl_printf("\nOptional output files:\n");                             esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
       esl_printf("\nOther options:\n");                                     esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
+      if (esl_opt_GetBoolean(go, "--devhelp")) {
+        esl_printf("\nDeveloper options:\n");                               esl_opt_DisplayHelp(stdout, go, 7, 2, 100);
+      }
       esl_printf("\nSequence input formats:   FASTA, GenBank\n");
       esl_printf("Alignment output formats: Stockholm, Pfam, AFA (aligned FASTA), A2M, Clustal, PHYLIP\n");
       exit(0);
@@ -3658,6 +3674,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("%s %s\n", "cmalign", INFERNAL_VERSION);  // use progname here: versioning, not invocation
       exit(0);
     }
+
+  /* --devdiag does what the INFERNAL_STAGE_VERBOSE environment variable does */
+  if (esl_opt_GetBoolean(go, "--devdiag")) cm_SetStageVerbose(TRUE);
 
   if (esl_opt_ArgNumber(go)                 != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");      goto ERROR; }
   if ((*ret_cmfile = esl_opt_GetArg(go, 1)) == NULL)  { esl_fprintf(stderr, "Failed to get <cmfile> argument on command line.\n");  goto ERROR; }
@@ -3851,9 +3870,37 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   }
   if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
   if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
-  if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)\n"); }
+  if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)%s\n",
+                                                    hmm_autoswitched ? " [auto-selected for a 0-basepair CM; --nohmm to use the CM]" : ""); }
   if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi\n"); }
   if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)\n"); }
+
+  /* Which p7 band builder this run uses, whenever p7 bands are in play:
+   * HMM-only mode (--hmm, explicit or auto-selected) or --p7band. Mirrors
+   * the deriver dispatch in hmm_alignment() and cm_alndata.c. The --hmm
+   * path always runs IBV's divide-and-conquer deriver; --p7band only with
+   * --p7ibv-mem. Per-sequence fallbacks (e.g. a k-mer chain finding no
+   * anchor) are not reported here. (brief 26_0821-135) */
+  if (esl_opt_GetBoolean(go, "--hmm") || esl_opt_GetBoolean(go, "--p7band")) {
+    int  in_hmm = esl_opt_GetBoolean(go, "--hmm");
+    char bdesc[256];
+    if      (in_hmm && esl_opt_GetBoolean(go, "--hmmnoband")) snprintf(bdesc, sizeof(bdesc), "none [--hmmnoband]");
+    else if (in_hmm && esl_opt_GetBoolean(go, "--hmmvit"))    snprintf(bdesc, sizeof(bdesc), "none [--hmmvit: p7 Viterbi trace only]");
+    else if (! in_hmm && esl_opt_GetBoolean(go, "--p7ibv-wv")) snprintf(bdesc, sizeof(bdesc), "windowed p7 Viterbi trace, Forward/Backward pad [--p7ibv-wv]");
+    else if (esl_opt_GetBoolean(go, "--p7ibv")) {
+      int do_dnc = (in_hmm || esl_opt_GetBoolean(go, "--p7ibv-mem")) ? TRUE : FALSE;
+      snprintf(bdesc, sizeof(bdesc), "IBV (Forward/Backward), delta %d milli-bits%s%s%s",
+               esl_opt_GetInteger(go, "--p7ibv-delta"),
+               do_dnc ? ", divide-and-conquer [-mem]" : "",
+               esl_opt_IsUsed(go, "--p7ibv-mode") ? ", mode " : "",
+               esl_opt_IsUsed(go, "--p7ibv-mode") ? esl_opt_GetString(go, "--p7ibv-mode") : "");
+    }
+    else if (esl_opt_GetBoolean(go, "--p7kmerchain"))  snprintf(bdesc, sizeof(bdesc), "kmerchain (k-mer seed and chain)%s",
+                                                                esl_opt_GetBoolean(go, "--p7kmerchain-ramp") ? ", ramp" : "");
+    else if (! in_hmm && esl_opt_GetBoolean(go, "--p7pinbridge")) snprintf(bdesc, sizeof(bdesc), "pin-bridge prefilter + banded p7 Viterbi trace");
+    else                                               snprintf(bdesc, sizeof(bdesc), "p7 Viterbi trace (default)");
+    fprintf(ofp, "# p7 band method:                              %s\n", bdesc);
+  }
 
   if (esl_opt_IsUsed(go, "--mxsize"))    {
     /* brief 26_0430-305: --mxsize bounds a SINGLE DP matrix, but every worker

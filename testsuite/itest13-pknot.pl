@@ -113,12 +113,21 @@ my $pk_syn3_rt = pknot_columns("$tmppfx.syn3.re.cm");
 if ($pk_syn3 ne $pk_syn3_rt) { die "FAIL: subtest 5: synthetic 3-stem pknot columns changed across round-trip\n"; }
 
 ######################################################################
-# Subtest 6: 1d -> 1b back-convert drops pknots cleanly. cmconvert
-# --outfmt 1/b writes INFERNAL1/b with NO PKNOT header and no pknot
-# letters on node lines, and the result re-reads cleanly.
+# Subtest 6: 1d -> 1b back-convert. Without --dropknots, cmconvert
+# refuses to drop the pknot annotation (nonzero exit, error naming
+# --dropknots). With --dropknots, it writes INFERNAL1/b with NO PKNOT
+# header, no pknot letters on node lines, and nothing on stderr, and
+# the result re-reads cleanly.
 ######################################################################
-run("$builddir/src/cmconvert -a --outfmt 1/b $tmppfx.direct.cm > $tmppfx.bconv.cm 2>$tmppfx.log",
-    "subtest 6: cmconvert --outfmt 1/b failed");
+my $rc6 = system("$builddir/src/cmconvert -a --outfmt 1/b $tmppfx.direct.cm > $tmppfx.bconv.nodrop.cm 2>$tmppfx.nodrop.err");
+if ($rc6 == 0) { die "FAIL: subtest 6: cmconvert --outfmt 1/b dropped pknot annotation without --dropknots\n"; }
+my $err6 = slurp("$tmppfx.nodrop.err");
+if ($err6 !~ /pseudoknot annotation.*INFERNAL1\/b/s || $err6 !~ /--dropknots/) {
+    die "FAIL: subtest 6: refusal message did not name the format and --dropknots:\n$err6\n";
+}
+run("$builddir/src/cmconvert -a --outfmt 1/b --dropknots $tmppfx.direct.cm > $tmppfx.bconv.cm 2>$tmppfx.dropknots.err",
+    "subtest 6: cmconvert --outfmt 1/b --dropknots failed");
+if (-s "$tmppfx.dropknots.err") { die "FAIL: subtest 6: cmconvert --dropknots wrote to stderr:\n" . slurp("$tmppfx.dropknots.err") . "\n"; }
 $first = first_line("$tmppfx.bconv.cm");
 if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 6: back-convert first line is '$first', expected INFERNAL1/b\n"; }
 if (file_has_header("$tmppfx.bconv.cm", "PKNOT", "yes")) { die "FAIL: subtest 6: 1b back-convert still advertises 'PKNOT yes'\n"; }
@@ -126,6 +135,19 @@ my $leaked = pknot_letters_on_nodelines("$tmppfx.bconv.cm");
 if ($leaked != 0) { die "FAIL: subtest 6: 1b back-convert leaked $leaked pknot letter(s) onto node lines\n"; }
 run("$builddir/src/cmconvert -a $tmppfx.bconv.cm > $tmppfx.bconv.reread.cm 2>>$tmppfx.log",
     "subtest 6: re-reading the 1b back-convert failed");
+# -1 (legacy v0.7-v1.0.2 format) likewise refuses, unless --dropknots.
+my $rc6b = system("$builddir/src/cmconvert -1 $tmppfx.direct.cm > /dev/null 2>$tmppfx.nodrop1.err");
+if ($rc6b == 0) { die "FAIL: subtest 6: cmconvert -1 dropped pknot annotation without --dropknots\n"; }
+if (slurp("$tmppfx.nodrop1.err") !~ /--dropknots/) { die "FAIL: subtest 6: cmconvert -1 refusal message did not name --dropknots\n"; }
+run("$builddir/src/cmconvert -1 --dropknots $tmppfx.direct.cm > $tmppfx.v1p0.cm 2>$tmppfx.dropknots1.err",
+    "subtest 6: cmconvert -1 --dropknots failed");
+if (-s "$tmppfx.dropknots1.err") { die "FAIL: subtest 6: cmconvert -1 --dropknots wrote to stderr\n"; }
+# A CM without pknot annotation converts to 1/b and -1 without --dropknots.
+run("$builddir/src/cmconvert -a --outfmt 1/b $tmppfx.bconv.cm > $tmppfx.bconv2.cm 2>$tmppfx.nopk.err",
+    "subtest 6: cmconvert --outfmt 1/b of a CM without pknots failed");
+run("$builddir/src/cmconvert -1 $tmppfx.bconv.cm > $tmppfx.bconv2.v1p0.cm 2>>$tmppfx.nopk.err",
+    "subtest 6: cmconvert -1 of a CM without pknots failed");
+if (-s "$tmppfx.nopk.err") { die "FAIL: subtest 6: converting a CM without pknots wrote to stderr\n"; }
 
 ######################################################################
 # Subtest 7: a malformed 1d node line (non-alpha/non-dot pknot char in

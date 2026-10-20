@@ -1138,8 +1138,6 @@ static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
 #define KMC_GAP_LIN   0.15    /* linear gap cost, bits per residue of |diagonal   */
                               /* change|; was 0.01 x a "representative k" of 15  */
 #define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
-#define KMC_HSV_RLO   9401    /* HSV known false-repeat block, model lo (brief026)*/
-#define KMC_HSV_RHI   9600    /*  ... model hi -- for the repeat-trap check       */
 
 /* a raw k-mer seed as a query interval on a diagonal: d = model_j - query_t,
  * query positions [tlo,thi]. Point seeds are merged along a diagonal into
@@ -1331,7 +1329,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (ret_rawpins != NULL) *ret_rawpins = NULL;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
+    if (cm_StageVerbose()) fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
     status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
     goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
@@ -1428,14 +1426,18 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       r = s;
     }
   }
-  fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
-          L, M, nival, nival, 0, 0, 0, 0, nseed, min_anchor);
+  /* brief 26_0821-133: the #KMERCHAIN lines are developer diagnostics, printed
+   * only if INFERNAL_STAGE_VERBOSE is set; their format is unchanged. */
+  if (cm_StageVerbose())
+    fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
+            L, M, nival, nival, 0, 0, 0, 0, nseed, min_anchor);
 
   /* brief 26_0628-046: per-query longest-exact-match signal gate (unvalidated,
    * default off -- see kmer_ngate_fires() header comment). Checked right after
    * the seed collection/merge above, independent of the M-gate above. */
   if (kmer_ngate_fires(maxrun, cm->p7_kmerchain_mink)) {
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
+    if (cm_StageVerbose())
+      fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
                     "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
     status = eslOK; goto CLEANUP;
   }
@@ -1456,7 +1458,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   free(ival); ival = NULL;
 
   if (nseed == 0) {   /* no anchors: caller falls back to unbanded Viterbi */
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d chain=NONE (no anchors)\n", L, M);
+    if (cm_StageVerbose()) fprintf(stderr, "#KMERCHAIN L=%d M=%d chain=NONE (no anchors)\n", L, M);
     status = eslOK; goto CLEANUP;
   }
 
@@ -1550,19 +1552,17 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   /* chain[0..nc-1] is end..start; reverse to start..end */
   for (i = 0; i < nc/2; i++) { int tmp = chain[i]; chain[i] = chain[nc-1-i]; chain[nc-1-i] = tmp; }
 
-  /* 5. chain diagnostics + HSV repeat-trap check (brief 26_0628-027 central question) */
+  /* 5. chain diagnostics. brief 26_0821-135 dropped the HSV-specific
+   * repeat_anchors_in[9401,9600] field (brief 26_0628-027's repeat-trap
+   * check) from this line. */
   {
     int cs = chain[0], ce = chain[nc-1];
     int mlo = seeds[cs].j, mhi = seeds[ce].j + seeds[ce].k - 1;
     int qlo = seeds[cs].t, qhi = seeds[ce].t + seeds[ce].k - 1;
-    int nrep = 0, c;   /* chain anchors OVERLAPPING the HSV repeat block */
-    for (c = 0; c < nc; c++) {
-      int aj = seeds[chain[c]].j, ajx = seeds[chain[c]].j + seeds[chain[c]].k - 1;
-      if (aj <= KMC_HSV_RHI && ajx >= KMC_HSV_RLO) nrep++;
-    }
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] "
-                    "repeat_anchors_in[%d,%d]=%d nlink=%ld\n",
-            L, M, nc, best_sc, mlo, mhi, qlo, qhi, KMC_HSV_RLO, KMC_HSV_RHI, nrep, nlink);
+    int c;
+    if (cm_StageVerbose())
+      fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] nlink=%ld\n",
+            L, M, nc, best_sc, mlo, mhi, qlo, qhi, nlink);
     /* brief 26_0628-041 (ported from infernal-brief040-stagetime): per-anchor chain dump,
      * gated by BRIEF041_CHAINDUMP (silent no-op by default, mirrors
      * BRIEF035_MEMPOINT convention). */
@@ -1715,7 +1715,8 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   {
     int npin = 0, tmin = L+1, tmax = 0;
     for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
+    if (cm_StageVerbose())
+      fprintf(stderr, "#KMERCHAIN L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
             L, M, npin, (npin? tmin:0), tmax, (double) npin / (double) L);
     if (getenv("BRIEF035_MEMPOINT") != NULL)
       fprintf(stderr, "#MEMPOINT after_pinemission L=%d npins=%d rss_kb=%ld\n", L, npin, brief035_rss_kb());
@@ -5683,7 +5684,10 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  *   3. Restore the per_state_pad parameter to the cykbands worker
  *      function (it was stripped on 2026-05-19 -- the conditional was
  *      a single line at step 2; see git history before the strip
- *      commit).
+ *      commit). The strip was made on the cmalign line only; p7band-cp9
+ *      carried its own copy of --cykpadfile and the parameter, and the
+ *      2026-07-02 merge of p7band-cp9 into that line brought them back.
+ *      brief 26_0821-135 removed them again.
  *
  * === end ARCHIVED ===
  *
@@ -5807,7 +5811,6 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
  *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
  *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
  *           pad       - half-width pad to add on each side of visited bounds
- *           per_state_pad - if non-NULL, [0..M-1] per-state pad override; pad arg ignored for state v if per_state_pad[v] >= 0
  *           strict_unvisited - if TRUE, set Jvalid[v]=FALSE for unvisited states (--cykbands-strict).
  *                              This makes the F7 HB DP skip those states entirely, dramatically
  *                              reducing matrix cell count at the risk of parse failure or score loss.
@@ -5819,7 +5822,7 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
  */
 int
 cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
-                         int i0, int j0, int pad, const int *per_state_pad,
+                         int i0, int j0, int pad,
                          int strict_unvisited,
                          CP9Bands_t *cp9b, int pass_idx, int debug)
 {
@@ -5858,16 +5861,13 @@ cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
     if(j > jmax[v]) jmax[v] = j;
   }
 
-  /* Step 2: Apply pad to visited states, clamp to [i0..j0].
-   * If per_state_pad != NULL and per_state_pad[v] >= 0, use it instead of scalar pad. */
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0]. */
   for(v = 0; v < M; v++) {
     if(visited[v]) {
-      int p = pad;
-      if(per_state_pad != NULL && per_state_pad[v] >= 0) p = per_state_pad[v];
-      imin[v] -= p; if(imin[v] < i0) imin[v] = i0;
-      imax[v] += p; if(imax[v] > j0) imax[v] = j0;
-      jmin[v] -= p; if(jmin[v] < i0) jmin[v] = i0;
-      jmax[v] += p; if(jmax[v] > j0) jmax[v] = j0;
+      imin[v] -= pad; if(imin[v] < i0) imin[v] = i0;
+      imax[v] += pad; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] -= pad; if(jmin[v] < i0) jmin[v] = i0;
+      jmax[v] += pad; if(jmax[v] > j0) jmax[v] = j0;
     }
   }
 

@@ -254,7 +254,6 @@ static ESL_OPTIONS options[] = {
   { "--p7tau",     eslARG_REAL,  NULL,  NULL, "0<x<1", NULL,  NULL, "--p7pthr,--nop7post_cp9b", "with --p7post_cp9b: cumulative tau for bands",                                    106 },
   { "--cykbands",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "use CYK-derived bands for F7 alignment",                                                            106 },
   { "--cykbpad",   eslARG_INT,    "10",  NULL, "n>=0",  NULL,  "--cykbands", NULL, "with --cykbands, band pad",                                                                  106 },
-  { "--cykpadfile", eslARG_STRING, NULL, NULL, NULL,    NULL,  "--cykbands", NULL, "with --cykbands, dir of <CMname>.cykpads.tsv per-state pad TSVs",                              106 },
   { "--cykbands-strict", eslARG_NONE, FALSE, NULL, NULL, NULL, "--cykbands", NULL, "with --cykbands, constrain F7 to F6 parsetree state path only",                              106 },
   { "--debug-f6-envs", eslARG_OUTFILE, NULL, NULL, NULL, NULL, NULL, NULL, "dump per-envelope post-F6 TSV to <f>", 106 },
   { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, NULL, "--novitband,--msvband", "read per-consensus position p7 pads from <f>",                 106 },
@@ -300,6 +299,7 @@ static ESL_OPTIONS options[] = {
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",         108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",            108 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",            108 },
+  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer stage/band diagnostics on stderr",              108 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -733,6 +733,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  acct[tinfo[0].th->hit[i]->pass_idx].pos_output += llabs(tinfo[0].th->hit[i]->stop - tinfo[0].th->hit[i]->start) + 1;
 	}
       }
+      cm_pli_ReportNoNull3Fallback(ofp); /* once per run, if --nonull3 fell back to null3-on stats */
       if(tinfo[0].pli->do_trm_F3) { 
         cm_tophits_F3Targets(ofp, tinfo[0].th, tinfo[0].pli);
       }
@@ -1593,6 +1594,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       }
 
       /* Print the results.  */
+      cm_pli_ReportNoNull3Fallback(ofp); /* once per run, if --nonull3 fell back to null3-on stats */
       if(pli->do_trm_F3) { 
         cm_tophits_F3Targets(ofp, th, pli); 
       }
@@ -2124,6 +2126,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("%s %s\n", "cmscan", INFERNAL_VERSION);  // use progname here: versioning, not invocation
       exit(0);
     }
+
+  /* --devdiag does what the INFERNAL_STAGE_VERBOSE environment variable does */
+  if (esl_opt_GetBoolean(go, "--devdiag")) cm_SetStageVerbose(TRUE);
 
   if (esl_opt_ArgNumber(go)                  != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");       goto ERROR; }
   if ((*ret_cmfile  = esl_opt_GetArg(go, 1)) == NULL)  { esl_fprintf(stderr, "Failed to get <cmdb> argument on command line.\n");    goto ERROR; }
