@@ -604,6 +604,11 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * CM-DP default.
  */
 #define CM_AUTOSWITCH_TIGHT_DELTA_MINM 4000
+/* TRUE once maybe_hmm_autoswitch() has switched to HMM mode. The switch
+ * sets options as if given on the command line, so esl_opt_IsUsed()
+ * can't tell it from a user's --hmm; output_header() reads this to say
+ * the mode was auto-selected (brief 26_0821-135). */
+static int hmm_autoswitched = FALSE;
 static void
 maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
 {
@@ -620,6 +625,7 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
     autoswitch_force_opt(go, "--p7ibv", NULL);
   if (esl_opt_IsDefault(go, "--p7ibv-delta") && cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM)
     autoswitch_force_opt(go, "--p7ibv-delta", "1000");
+  hmm_autoswitched = TRUE;
 
   if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
     fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
@@ -3855,9 +3861,37 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   }
   if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
   if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
-  if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)\n"); }
+  if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)%s\n",
+                                                    hmm_autoswitched ? " [auto-selected for a 0-basepair CM; --nohmm to use the CM]" : ""); }
   if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi\n"); }
   if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)\n"); }
+
+  /* Which p7 band builder this run uses, whenever p7 bands are in play:
+   * HMM-only mode (--hmm, explicit or auto-selected) or --p7band. Mirrors
+   * the deriver dispatch in hmm_alignment() and cm_alndata.c. The --hmm
+   * path always runs IBV's divide-and-conquer deriver; --p7band only with
+   * --p7ibv-mem. Per-sequence fallbacks (e.g. a k-mer chain finding no
+   * anchor) are not reported here. (brief 26_0821-135) */
+  if (esl_opt_GetBoolean(go, "--hmm") || esl_opt_GetBoolean(go, "--p7band")) {
+    int  in_hmm = esl_opt_GetBoolean(go, "--hmm");
+    char bdesc[256];
+    if      (in_hmm && esl_opt_GetBoolean(go, "--hmmnoband")) snprintf(bdesc, sizeof(bdesc), "none [--hmmnoband]");
+    else if (in_hmm && esl_opt_GetBoolean(go, "--hmmvit"))    snprintf(bdesc, sizeof(bdesc), "none [--hmmvit: p7 Viterbi trace only]");
+    else if (! in_hmm && esl_opt_GetBoolean(go, "--p7ibv-wv")) snprintf(bdesc, sizeof(bdesc), "windowed p7 Viterbi trace, Forward/Backward pad [--p7ibv-wv]");
+    else if (esl_opt_GetBoolean(go, "--p7ibv")) {
+      int do_dnc = (in_hmm || esl_opt_GetBoolean(go, "--p7ibv-mem")) ? TRUE : FALSE;
+      snprintf(bdesc, sizeof(bdesc), "IBV (Forward/Backward), delta %d milli-bits%s%s%s",
+               esl_opt_GetInteger(go, "--p7ibv-delta"),
+               do_dnc ? ", divide-and-conquer [-mem]" : "",
+               esl_opt_IsUsed(go, "--p7ibv-mode") ? ", mode " : "",
+               esl_opt_IsUsed(go, "--p7ibv-mode") ? esl_opt_GetString(go, "--p7ibv-mode") : "");
+    }
+    else if (esl_opt_GetBoolean(go, "--p7kmerchain"))  snprintf(bdesc, sizeof(bdesc), "kmerchain (k-mer seed and chain)%s",
+                                                                esl_opt_GetBoolean(go, "--p7kmerchain-ramp") ? ", ramp" : "");
+    else if (! in_hmm && esl_opt_GetBoolean(go, "--p7pinbridge")) snprintf(bdesc, sizeof(bdesc), "pin-bridge prefilter + banded p7 Viterbi trace");
+    else                                               snprintf(bdesc, sizeof(bdesc), "p7 Viterbi trace (default)");
+    fprintf(ofp, "# p7 band method:                              %s\n", bdesc);
+  }
 
   if (esl_opt_IsUsed(go, "--mxsize"))    {
     /* brief 26_0430-305: --mxsize bounds a SINGLE DP matrix, but every worker
