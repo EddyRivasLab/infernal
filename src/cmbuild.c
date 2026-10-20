@@ -1554,15 +1554,8 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
      fprintf(cfg->ofp, "# Run 'cmcalibrate' on this CM before using cmsearch/cmscan\n");
      fprintf(cfg->ofp, "# (use 'cmcalibrate --nonull3' if you will search with --nonull3).\n");
      fflush(cfg->ofp);
-     /* Also emit to stderr so a user who did not redirect output with -o still
-      * sees it; avoid double-printing when cfg->ofp is already stdout. */
-     if (cfg->ofp != stdout) {
-       fprintf(stderr, "# WARNING: this CM was built with a non-default local-begin/end or null model\n");
-       fprintf(stderr, "# (--pbegin/--pebegin/--pend/--pfend/--null). Automatic E-value calibration does\n");
-       fprintf(stderr, "# not support this construction, so NO E-value statistics were written.\n");
-       fprintf(stderr, "# Run 'cmcalibrate' on this CM before using cmsearch/cmscan\n");
-       fprintf(stderr, "# (use 'cmcalibrate --nonull3' if you will search with --nonull3).\n");
-     }
+     /* Reported in cmbuild's output only (stdout or -o): stderr carries
+      * errors only (brief 26_0821-135). */
    }
    else {
      if ((status = cm_FastCalibrate(cm)) != eslOK) ESL_FAIL(status, errbuf, "cm_FastCalibrate failed");
@@ -3019,9 +3012,9 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
  *                             entropy achieved at the ceiling, and
  *                             whether the filter stats were simulated.
  *
- *            Lines go to cfg->ofp, and also to stderr when cfg->ofp
- *            is not stdout, as cmbuild's other per-model warnings do.
- *            Nothing is printed for any other outcome.
+ *            Lines go to cfg->ofp only (stdout or -o); stderr carries
+ *            errors only (brief 26_0821-135). Nothing is printed for
+ *            any other outcome.
  *
  *            The achieved rel entropy is the model's CM mean match rel
  *            entropy, the value in the tabular line's CM column. The
@@ -3058,7 +3051,6 @@ output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa,
 
   fputs(line, cfg->ofp);
   fflush(cfg->ofp);
-  if (cfg->ofp != stdout) fputs(line, stderr);
   return eslOK;
 }
 
