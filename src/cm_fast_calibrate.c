@@ -250,7 +250,7 @@ typedef struct {
   int          loaded;
 } FastCalModelSet;
 
-static FastCalModelSet g_models;   /* zero-initialised by C spec */
+static FastCalModelSet g_models;   /* zero-initialized by C spec */
 
 /* cm_LocalMu() configuration globals — set by cmbuild option parsing
  * before cm_FastCalibrate() is called.
@@ -431,7 +431,7 @@ parse_string_array(ESL_JSON *pi, ESL_BUFFER *bf, int arr_idx, char ***ret_fnames
  *     "exp"             -> FCRY_EXP    (apply exp() to ridge output)
  *     "log"             -> FCRY_EXP    (v5.5 convention: "y was log-transformed
  *                                       during training, so back-transform with exp")
- *   If the field is missing, default to FCRY_IDENTITY (v4.x behaviour).
+ *   If the field is missing, default to FCRY_IDENTITY (v4.x behavior).
  */
 static FastCalYTransform
 parse_y_transform_field(ESL_JSON *pi, ESL_BUFFER *bf, int obj_idx)
@@ -1670,7 +1670,7 @@ cm_FastCalibrate(CM_t *cm)
 
   /* Pick bucket. Brief 46: NOSS hybrid populates ALL 5 bucket slots
    * (including HUGE, which holds the largehuge override for glocal
-   * lambda/K). Old behaviour clamped is_noss + bucket>=LARGE down to
+   * lambda/K). Old behavior clamped is_noss + bucket>=LARGE down to
    * MEDLARGE because the v4.2 NOSS models only had tiny/small/medlarge.
    * That clamp is replaced for NOSS by simply trusting bucket_of(clen):
    *   clen 700..1499  -> LARGE  (base ridge replicated)
@@ -4679,7 +4679,7 @@ extract_frag_score(CM_t *cm, double *feats,
     feats[FAST_CAL_FEAT_frag_score_mean]         = S_mean;
     feats[FAST_CAL_FEAT_frag_score_per_pos_mean] = per_pos;
 
-    /* Walk 3: var/cov, centred against walk 2's means -- same order, same
+    /* Walk 3: var/cov, centered against walk 2's means -- same order, same
      * operands as the old second moments pass. */
     {
       double S_var = 0.0, cov_SL = 0.0;

@@ -975,7 +975,7 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
 
   /* D1 hop-back dilation pass.
    * For each pinned residue i, take min/max of i2k across the 2*hopback+1
-   * window of pinned positions centred on i (clipped at trace ends), and
+   * window of pinned positions centered on i (clipped at trace ends), and
    * widen kmin[i]/kmax[i] to that range. Vit pins are monotone in (i,k),
    * so the window-min is i2k of the (hopback)th preceding pinned position,
    * and the window-max is i2k of the (hopback)th following pinned position.
@@ -3782,7 +3782,7 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
  *               tightening the envelope changes the CP9 posteriors, which
  *               changes the CM bands, which moves hbmx_Mb underneath the loop.
  *               Two coupled feedback loops over the same quantity is where
- *               non-monotonic behaviour comes from, and brief 26_0821-013 was
+ *               non-monotonic behavior comes from, and brief 26_0821-013 was
  *               already a tau-ratchet non-monotonicity bug (TRIAGE row 1.25c).
  *
  *             - A tighter envelope is likelier to exclude the true parse,
@@ -7342,7 +7342,7 @@ cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE
    * removed, F5 backward can integrate posterior mass into the prefix
    * and suffix that would otherwise be locked to nodepad[k_first/last].
    * Skip if nM <= 2*vitend (would clear all pins; falls back to unbanded
-   * via empty pin set, behaviour matches no-pin case).
+   * via empty pin set, behavior matches no-pin case).
    */
   if (vitend > 0 && nM > 0) {
     int dropped, i;
@@ -9940,7 +9940,7 @@ p7b_pp_x(P7B_OAWIN *w, int p, int s)
  * brief 26_0628-081: when <ppw> is non-NULL, the posterior is windowed
  * the same way (recomputed per block from the F/B seeds) instead of
  * being fully resident; when <ppw> is NULL, <view> carries the legacy
- * resident pp and behaviour is unchanged. */
+ * resident pp and behavior is unchanged. */
 static int
 p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
              P7B_PPWORK *ppw, const P7B_FSEED *seed, P7_TRACE *tr)

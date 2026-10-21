@@ -1751,7 +1751,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	     * Overrides (both test only for PRESENCE, so `env VAR= cmalign ...`
 	     * with an empty value still counts as set):
 	     *   INFERNAL_HMM_CKPT_OFF    - non-checkpointed engine (as before)
-	     *   INFERNAL_HMM_PPCKPT_OFF  - never double-checkpoint (pre-081 behaviour:
+	     *   INFERNAL_HMM_PPCKPT_OFF  - never double-checkpoint (pre-081 behavior:
 	     *                              resident pp, and abort if it won't fit)
 	     *   INFERNAL_HMM_PPCKPT_ON   - always double-checkpoint (validation)
 	     */
@@ -4140,7 +4140,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * the ratcheted cp9_IterateSeq2Bands() the shipped default uses, and --fixedtau
    * was a silent no-op under --p7band.  Reading cm->align_opts (as every other
    * consumer does, e.g. cm_alndata.c:693-696) fixes both and makes the next
-   * acceleration mode added to ACCOPTS inherit the correct behaviour.
+   * acceleration mode added to ACCOPTS inherit the correct behavior.
    *
    * NOTE the interaction, which is NOT resolved by this commit: since
    * brief 26_0430-271 fixed-tau (CM_ALIGN_MXESC_FIXEDTAU) is DEFAULT ON and

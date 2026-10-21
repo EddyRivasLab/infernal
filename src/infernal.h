@@ -3736,7 +3736,7 @@ extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos,
  * Selection (cmalign.c, serial and threaded): the preflight estimates what
  * P7B_OAMEM_CKPT would need; if that fits under --mxsize it is used, and
  * P7B_OAMEM_CKPTPP is the fallback when it does not. CKPTPP is therefore
- * --mxsize-conditional, NOT the default engine -- the initialiser
+ * --mxsize-conditional, NOT the default engine -- the initializer
  * `int ckpt_mode = P7B_OAMEM_CKPTPP` at cmalign.c:1265/:2098 is overwritten
  * by that preflight and is not a default. */
 #define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: 2 x full banded gmxb;  O(ncell)      */

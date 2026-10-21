@@ -12,7 +12,7 @@ Per the brief-26_0610-060 recipe:
   `elbeta[j][0..eldmax[j]]` (upper-d-edge banded; cells above `eldmax[j]` are
   provably IMPOSSIBLE). Mirrors cm_OutsideAlignHB:6356-6402.
 - **Posterior** (`cm_CheckptAlignHB` Step B tail): EL->EL self-transition
-  (band-edge: top cell keeps its value, absent `d+1` neighbour reads IMPOSSIBLE)
+  (band-edge: top cell keeps its value, absent `d+1` neighbor reads IMPOSSIBLE)
   + fold to the 1-D `l_pp[cm->M]`; EL added to `sum[]` normalization LAST and the
   EL row normalized (mirror cm_EmitterPosteriorHB:6961-6999/6832-6843).
 - **OptAcc** (`ckpt_optacc_deck`): `elalpha` prefix-sum built from the normalized

@@ -2157,7 +2157,7 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   if (cx.have_el) {
     int j, d;
     /* self-transition: descend d within each EL-row (band edge: top cell d=eldmax
-     * keeps its value; its absent d+1 neighbour is IMPOSSIBLE, as in stock). */
+     * keeps its value; its absent d+1 neighbor is IMPOSSIBLE, as in stock). */
     for (j = L; j >= 1; j--) {
       if (cx.eldmax[j] < 1) continue;
       for (d = cx.eldmax[j]-1; d >= 0; d--)

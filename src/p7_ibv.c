@@ -447,7 +447,7 @@ ibv_through_scan(int M, size_t k_stride, float thr,
  * transition (no diagonal needed)", but brief 26_0430-307 found that reasoning
  * holds only in LOCAL mode: in glocal, row 0 also carries the CP9's leading
  * delete chain B -> D_1 -> ... -> D_k, which is not a begin-transition path.
- * The guard's behaviour is unaffected (it still never narrows index 0, so it
+ * The guard's behavior is unaffected (it still never narrows index 0, so it
  * cannot defeat the row-0 widening landed by brief 26_0430-309); only the
  * stated justification for skipping it needed correcting.  A single forward
  * sweep is provably sufficient to guarantee a complete path over i=2..L
