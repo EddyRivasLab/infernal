@@ -7,7 +7,7 @@
 # EPN, Tue Nov 17 11:20:24 2009
 #
 # In very rare cases when aligning to a CM using HMM banded optimal accuracy,
-# the optimal parse, the parse that maximizes the summed posterior labelling 
+# the optimal parse, the parse that maximizes the summed posterior labeling 
 # of all emitted residues, includes a B state with left and right
 # subtrees, one of which has an IMPOSSIBLE score. 
 # See BUGTRAX i15 description for more information.

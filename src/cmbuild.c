@@ -221,7 +221,7 @@ static ESL_OPTIONS options[] = {
 /* struct cfg_s : "Global" application configuration shared by all threads/processes
  * 
  * This structure is passed to routines within main.c, as a means of semi-encapsulation
- * of shared data amongst different parallel processes (threads or MPI processes).
+ * of shared data among different parallel processes (threads or MPI processes).
  * This strategy is used despite the fact that a MPI version of cmbuild does not
  * yet exist! 
  */

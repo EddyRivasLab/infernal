@@ -201,7 +201,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
    */
   if((! (cm->config_opts & CM_CONFIG_NOQDB)) &&
      ((cm->config_opts & CM_CONFIG_QDB)    || 
-      (cm->config_opts & CM_CONFIG_W_BETA) || 
+     (cm->config_opts & CM_CONFIG_W_BETA) || 
       (cm->qdbinfo->setby == CM_QDBINFO_SETBY_INIT))) { 
     if(W_from_cmdline != -1) { 
       if((status = CalculateQueryDependentBands(cm, errbuf, cm->qdbinfo, 

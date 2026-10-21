@@ -3,7 +3,7 @@
  * EPN 07.25.06 (Benasque)
  * 
  * Building submodels (sub CMs) from a template CM, that represent
- * a contiguous subset of the consensus columns that were modelled 
+ * a contiguous subset of the consensus columns that were modeled 
  * by the template CM. 
  *
  * These functions are still under development. No guarantees.
@@ -2952,12 +2952,12 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 		       * as the MATR nodes in the sub_cm must either be:
 		       * 
 		       * 1 orig_cm MATPs or MATRs for which the RIGHT half maps to the same column
-		       *   modelled by the corresponding sub_cm MATR, and in the case of the 
+		       *   modeled by the corresponding sub_cm MATR, and in the case of the 
 		       *   MATPs the LEFT half maps to consensus columns before spos.
 		       * 2 orig_cm nodes that map to the same consensus columns
 		       *   as the MATR nodes in the sub_cm are ALL either orig_cm MATPs
 		       *   or MATLs for which the LEFT half maps to the same 
-		       *   column modelled by the corresponding sub_cm MATR, and in the
+		       *   column modeled by the corresponding sub_cm MATR, and in the
 		       *   case of the MATPs, the RIGHT half maps to consensus columns 
 		       *   after epos.
 		       *
@@ -3980,9 +3980,9 @@ SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap
  *           epos_nd == epos;
  *           
  * Args:     hmm         - the CP9 model w/ data-dep prob's valid
- *           spos        - first consensus column modelled by some original
+ *           spos        - first consensus column modeled by some original
  *                         full length, template CP9 HMM that 'hmm' models.
- *           epos        - final consensus column modelled by some original
+ *           epos        - final consensus column modeled by some original
  *                         CP9 HMM that 'hmm' models.
  *           spos_nd     - the node of 'hmm' that models spos.
  *                         (1 if 'hmm' only has (epos-spos+1) nodes 

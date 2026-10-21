@@ -316,7 +316,7 @@ parallelized instance of the benchmark driver is supposed to process),
 and <outfile> is a file named <resultdir>/tbl<i>.out.
 
 When all the driver script instances are done, there will be <nproc>
-output files named <resultdir>/tbl<i>.out. These files can be analysed
+output files named <resultdir>/tbl<i>.out. These files can be analyzed
 using rmark-pp.sh (for default, full benchmarks) or rmark-po-pp.sh
 (for positives-only benchmarks, see below).
 

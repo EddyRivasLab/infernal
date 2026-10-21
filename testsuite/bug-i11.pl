@@ -6,7 +6,7 @@
 #
 # cmalign --hbanded (or any executable that builds a CP9 HMM)
 # will fail if built on a model with two consensus positions
-# modelled by the same base pair.
+# modeled by the same base pair.
 
 #
 # i11.1 =  simple example alignment (1 seq)

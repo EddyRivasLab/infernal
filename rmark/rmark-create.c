@@ -253,7 +253,7 @@ main(int argc, char **argv)
     if(esl_opt_IsOn(go, "--xtest")) cmdline_failure(argv[0], "--xtest requires --sub or --sample");
   }
 
-  /* Set up the configuration structure shared amongst functions here */
+  /* Set up the configuration structure shared among functions here */
   if (esl_opt_IsDefault(go, "--seed"))   cfg.r = esl_randomness_CreateTimeseeded();
   else                                   cfg.r = esl_randomness_Create(esl_opt_GetInteger(go, "--seed"));
   cfg.abc        = NULL;		          /* until we open the MSA file, below */

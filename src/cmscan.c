@@ -306,7 +306,7 @@ static ESL_OPTIONS options[] = {
 /* struct cfg_s : "Global" application configuration shared by all threads/processes
  * 
  * This structure is passed to routines within main.c, as a means of semi-encapsulation
- * of shared data amongst different parallel processes (threads or MPI processes).
+ * of shared data among different parallel processes (threads or MPI processes).
  */
 struct cfg_s {
   char            *seqfile;           /* query sequence file                             */

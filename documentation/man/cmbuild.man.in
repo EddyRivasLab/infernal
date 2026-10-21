@@ -272,7 +272,7 @@ must contain exactly one sequence or the
 option must also be enabled. All positions in each sequence will be
 considered consensus "columns".  Actually, the emission scores for
 these models will not be identical to RIBOSUM scores due of
-differences in the modelling strategy between Infernal and RSEARCH,
+differences in the modeling strategy between Infernal and RSEARCH,
 but they will be as similar as possible.  RIBOSUM matrix files are
 included with Infernal in the "matrices/" subdirectory of the
 top-level "infernal-xxx" directory.  RIBOSUM matrices are substitution
@@ -350,7 +350,7 @@ instead of the default GSC weighting.
 Cluster the sequences at a given percentage identity (see
 .B --wid);
 assign each cluster a total weight of 1.0, distributed equally
-amongst the members of that cluster.
+among the members of that cluster.
 
 .TP 
 .BI --wid " <x>"
