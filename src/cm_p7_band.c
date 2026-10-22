@@ -8667,15 +8667,13 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *           --hmmvit/--hmmnoband.  Modes 0 and 1 are still O(ncell)
  *           though, which is what mode 2 removes.
  *
- *           Note: the mode 0/1 estimates omit the O(nrow) P7B_GEO row
- *           tables (dominated by their O(ncell) term); they are left
- *           as brief 26_0430-266 wrote them except for the element
- *           sizes.  Mode 2 counts them, since with the O(ncell) term
- *           gone they are no longer negligible.
- *
  *           Brief 26_0821-141 resized all three for the double-precision
- *           F/B: the F/B terms are 8 bytes per value, the posterior and
- *           OA terms still 4.
+ *           F/B (the F/B terms are 8 bytes per value, the posterior and
+ *           OA terms still 4), counts each checkpoint seed at its own
+ *           row's width rather than at maxnc, and adds the O(nrow)
+ *           P7B_GEO tables and traceback row_idx to modes 0 and 1 (which
+ *           brief 26_0430-266 had omitted), so each mode's estimate is an
+ *           upper bound on that engine's allocations.
  *
  * Args:     bnd       - the derived band (bnd->ncell, bnd->nrow, bnd->kmem set)
  *           ckpt_mode - P7B_OAMEM_NOCKPT | P7B_OAMEM_CKPT | P7B_OAMEM_CKPTPP.
@@ -8692,50 +8690,70 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
   int     nrow = bnd->nrow;
   int     maxnc = 0, r, ka, kb, nc;
   int     B, nblk;
+  int64_t fseedc = 0, bseedc = 0;   /* cells in the Forward/OA and Backward seed rows */
   double  bytes;
-
-  for (r = 0; r < nrow; r++) {
-    ka = *kp++; kb = *kp++;
-    nc = kb - ka + 1;
-    if (nc > maxnc) maxnc = nc;
-  }
 
   B    = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
   if (B < 1) B = 1;
   nblk = (nrow + B - 1) / B;
+
+  /* maxnc (the widest row) sizes the block buffers.  The checkpoint seeds
+   * are allocated at their own row's width, so count those widths:
+   * Forward and OA seeds copy rows b*B-1 (b = 1..nblk-1), Backward seeds
+   * rows (b+1)*B (b = 0..nblk-2) -- see p7b_forward_seeds(),
+   * p7b_backward_seeds(), p7b_oa_seeds().  (brief 26_0821-141: counting
+   * every seed at maxnc over-estimated badly on IBV bands, whose few
+   * full-model-width rows make maxnc ~ M, and with double-precision seeds
+   * that pushed genome-scale cells over the limit.) */
+  for (r = 0; r < nrow; r++) {
+    ka = *kp++; kb = *kp++;
+    nc = kb - ka + 1;
+    if (nc > maxnc) maxnc = nc;
+    if (r + 1 < nrow && (r + 1) % B == 0) fseedc += nc;
+    if (r > 0        && r % B == 0)       bseedc += nc;
+  }
 
   /* brief 26_0821-141: the Forward/Backward cells, seeds, block buffers
    * and specials are double now (8 bytes); the posterior and the OA pass
    * stay float (4 bytes). */
   if (ckpt_mode == P7B_OAMEM_CKPTPP) {
     /* brief 26_0628-081: no O(ncell) term at all.
-     *   F + B seed arrays (double):  2 * nblk  * maxnc * p7G_NSCELLS
+     *   F + B seeds (double):         (fseedc + bseedc) * p7G_NSCELLS
+     *   OA seeds (float):              fseedc * p7G_NSCELLS
      *   F + B block buffers (double):2 * (B+2) * maxnc * p7G_NSCELLS
-     *   OA seed array (float):           nblk  * maxnc * p7G_NSCELLS
      *   OA traceback window (float):     (B+2) * maxnc * p7G_NSCELLS
      *   pp block buffer (float):         (B+2) * maxnc * P7B_PP_NSCELLS
      *   pp + OA block specials (float):2*(B+2) * p7G_NXCELLS
      *   decode row scratch (double):     2*maxnc + 3
+     *   seed structs:                  3 * nblk (<= 64 bytes each)
      *   P7B_GEO row tables:           nrow * (4 ints + 1 int64)
      *   traceback row_idx:            (L+1) ints
      */
     double nr = (double) (B + 2);
-    bytes  = (double) maxnc * p7G_NSCELLS *
-             ( (double) sizeof(double) * 2.0 * ((double) nblk + nr)
-             + (double) sizeof(float)  *       ((double) nblk + nr) );
+    bytes  = (double) sizeof(double) * p7G_NSCELLS * ((double) fseedc + (double) bseedc);
+    bytes += (double) sizeof(float)  * p7G_NSCELLS * (double) fseedc;
+    bytes += (double) maxnc * p7G_NSCELLS * nr * (2.0 * sizeof(double) + sizeof(float));
     bytes += (double) sizeof(float)  * (double) maxnc * P7B_PP_NSCELLS * nr;
     bytes += (double) sizeof(float)  * p7G_NXCELLS * 2.0 * nr;
     bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);
+    bytes += 3.0 * 64.0 * (double) nblk;   /* seed structs: <= 64 bytes each (defined below) */
     bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;
     bytes += (double) sizeof(int) * ((double) bnd->L + 1.0);
   }
   else if (ckpt_mode == P7B_OAMEM_CKPT) {
-    /* resident float pp + the F/B phase's double working set (Forward
-     * seeds, the B-row block buffer, two Backward rows); the OA phase's
-     * float seeds + window that follow are smaller. */
+    /* resident float pp, plus the larger of its two phases' working sets:
+     *   F/B phase (double): Forward seeds, the B-row Forward block buffer,
+     *                       two Backward rows (and Forward's two rows,
+     *                       freed first), the decode row scratch;
+     *   OA phase (float):   OA seeds and the (B+2)-row traceback window. */
+    double fb = (double) sizeof(double) * ( p7G_NSCELLS * ((double) fseedc + (double) (B + 2) * maxnc)
+                                          + 2.0 * maxnc + 3.0 );
+    double oa = (double) sizeof(float)  * p7G_NSCELLS * ((double) fseedc + (double) (B + 2) * maxnc);
     bytes  = (double) sizeof(float) * ((double) bnd->ncell * P7B_PP_NSCELLS
 					+ (double) bnd->nrow  * p7G_NXCELLS);
-    bytes += (double) sizeof(double) * p7G_NSCELLS * (double) maxnc * (double) (nblk + B + 2);
+    bytes += ESL_MAX(fb, oa);
+    bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;   /* P7B_GEO row tables */
+    bytes += (double) sizeof(int) * ((double) bnd->L + 1.0);                 /* traceback row_idx  */
   }
   else {
     /* cm_p7_GFBDecodeBandedDouble(): full double F and B, their N/J/C
@@ -8743,6 +8761,8 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
      * float OA matrix the caller allocates afterwards replaces F and B. */
     bytes  = (double) bnd->ncell * p7G_NSCELLS * (2.0 * sizeof(double) + sizeof(float));
     bytes += (double) bnd->nrow  * (p7G_NXCELLS * sizeof(float) + 6.0 * sizeof(double));
+    bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;   /* P7B_GEO row tables  */
+    bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);         /* decode row scratch  */
   }
 
   if (ret_bytes) *ret_bytes = bytes;
