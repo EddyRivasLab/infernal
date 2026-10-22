@@ -8628,9 +8628,10 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *           selected by <ckpt_mode> (brief 26_0628-081 added the third):
  *
  *             P7B_OAMEM_NOCKPT (0) (INFERNAL_HMM_CKPT_OFF set):
- *               the non-checkpointed engine -- 2 x p7_gmxb_Create(bnd),
- *               each a full banded dp (p7G_NSCELLS-wide) + xmx
- *               (p7G_NXCELLS-wide) allocation.  O(ncell).
+ *               the non-checkpointed engine -- full banded double F and
+ *               B matrices plus a float p7_gmxb_Create(bnd) posterior
+ *               (cm_p7_GFBDecodeBandedDouble(), brief 26_0821-141).
+ *               O(ncell).
  *
  *             P7B_OAMEM_CKPT (1) (the usual engine: this is what the
  *             caller picks whenever its estimate fits in --mxsize, and
@@ -8668,10 +8669,13 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *
  *           Note: the mode 0/1 estimates omit the O(nrow) P7B_GEO row
  *           tables (dominated by their O(ncell) term); they are left
- *           exactly as brief 26_0430-266 wrote them so this change
- *           cannot perturb an existing --mxsize decision.  Mode 2 counts
- *           them, since with the O(ncell) term gone they are no longer
- *           negligible.
+ *           as brief 26_0430-266 wrote them except for the element
+ *           sizes.  Mode 2 counts them, since with the O(ncell) term
+ *           gone they are no longer negligible.
+ *
+ *           Brief 26_0821-141 resized all three for the double-precision
+ *           F/B: the F/B terms are 8 bytes per value, the posterior and
+ *           OA terms still 4.
  *
  * Args:     bnd       - the derived band (bnd->ncell, bnd->nrow, bnd->kmem set)
  *           ckpt_mode - P7B_OAMEM_NOCKPT | P7B_OAMEM_CKPT | P7B_OAMEM_CKPTPP.
@@ -8700,32 +8704,45 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
   if (B < 1) B = 1;
   nblk = (nrow + B - 1) / B;
 
+  /* brief 26_0821-141: the Forward/Backward cells, seeds, block buffers
+   * and specials are double now (8 bytes); the posterior and the OA pass
+   * stay float (4 bytes). */
   if (ckpt_mode == P7B_OAMEM_CKPTPP) {
     /* brief 26_0628-081: no O(ncell) term at all.
-     *   3 seed arrays (F, B, OA):   3 * nblk  * maxnc * p7G_NSCELLS floats
-     *   F + B block buffers:        2 * (B+2) * maxnc * p7G_NSCELLS floats
-     *   pp block buffer:                (B+2) * maxnc * P7B_PP_NSCELLS floats
-     *   OA traceback window:            (B+2) * maxnc * p7G_NSCELLS floats
-     *   pp + OA block specials:       2*(B+2) * p7G_NXCELLS floats
+     *   F + B seed arrays (double):  2 * nblk  * maxnc * p7G_NSCELLS
+     *   F + B block buffers (double):2 * (B+2) * maxnc * p7G_NSCELLS
+     *   OA seed array (float):           nblk  * maxnc * p7G_NSCELLS
+     *   OA traceback window (float):     (B+2) * maxnc * p7G_NSCELLS
+     *   pp block buffer (float):         (B+2) * maxnc * P7B_PP_NSCELLS
+     *   pp + OA block specials (float):2*(B+2) * p7G_NXCELLS
+     *   decode row scratch (double):     2*maxnc + 3
      *   P7B_GEO row tables:           nrow * (4 ints + 1 int64)
      *   traceback row_idx:            (L+1) ints
      */
     double nr = (double) (B + 2);
-    bytes  = (double) sizeof(float) * (double) maxnc *
-             ( p7G_NSCELLS   * (3.0 * (double) nblk + 3.0 * nr)
-             + P7B_PP_NSCELLS * nr );
-    bytes += (double) sizeof(float)   * p7G_NXCELLS * 2.0 * nr;
+    bytes  = (double) maxnc * p7G_NSCELLS *
+             ( (double) sizeof(double) * 2.0 * ((double) nblk + nr)
+             + (double) sizeof(float)  *       ((double) nblk + nr) );
+    bytes += (double) sizeof(float)  * (double) maxnc * P7B_PP_NSCELLS * nr;
+    bytes += (double) sizeof(float)  * p7G_NXCELLS * 2.0 * nr;
+    bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);
     bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;
     bytes += (double) sizeof(int) * ((double) bnd->L + 1.0);
   }
   else if (ckpt_mode == P7B_OAMEM_CKPT) {
+    /* resident float pp + the F/B phase's double working set (Forward
+     * seeds, the B-row block buffer, two Backward rows); the OA phase's
+     * float seeds + window that follow are smaller. */
     bytes  = (double) sizeof(float) * ((double) bnd->ncell * P7B_PP_NSCELLS
 					+ (double) bnd->nrow  * p7G_NXCELLS);
-    bytes += (double) sizeof(float) * p7G_NSCELLS * (double) maxnc * (double) (nblk + B + 2);
+    bytes += (double) sizeof(double) * p7G_NSCELLS * (double) maxnc * (double) (nblk + B + 2);
   }
   else {
-    bytes = 2.0 * (double) sizeof(float) * ((double) bnd->ncell * p7G_NSCELLS
-					     + (double) bnd->nrow  * p7G_NXCELLS);
+    /* cm_p7_GFBDecodeBandedDouble(): full double F and B, their N/J/C
+     * specials per row, and the float 3-cell pp it decodes into; the
+     * float OA matrix the caller allocates afterwards replaces F and B. */
+    bytes  = (double) bnd->ncell * p7G_NSCELLS * (2.0 * sizeof(double) + sizeof(float));
+    bytes += (double) bnd->nrow  * (p7G_NXCELLS * sizeof(float) + 6.0 * sizeof(double));
   }
 
   if (ret_bytes) *ret_bytes = bytes;

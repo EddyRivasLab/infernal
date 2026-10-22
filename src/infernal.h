@@ -3757,7 +3757,7 @@ extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos,
  * --mxsize-conditional, NOT the default engine -- the initializer
  * `int ckpt_mode = P7B_OAMEM_CKPTPP` at cmalign.c:1265/:2098 is overwritten
  * by that preflight and is not a default. */
-#define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: 2 x full banded gmxb;  O(ncell)      */
+#define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: double F+B + float pp; O(ncell)      */
 #define P7B_OAMEM_CKPT    1   /* ckpt F/B/OA + RESIDENT posterior;        O(ncell)      */
 #define P7B_OAMEM_CKPTPP  2   /* + double-checkpointed posterior (brief 26_0628-081):
                                * O(sqrt(nrow)*maxnc) -- --mxsize-conditional fallback */
