@@ -7987,9 +7987,15 @@ cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *
  *           fwd        - banded Forward matrix
  *           bck        - banded Backward matrix
  *           pp         - RESULT: banded posterior matrix (may == bck)
- *           overall_sc - Forward score in nats (fwdsc)
+ *           overall_sc - Forward score in nats (fwdsc). Unused since brief
+ *                        26_0821-141: each row is exponentiated against its
+ *                        own max of F + B and normalized by its own sum.
  *
- * Returns:  eslOK on success.
+ * Note:     cmalign's HMM-only alignment no longer calls this (it uses the
+ *           double-precision cm_p7_GFBDecodeBandedDouble() and the p7b_*
+ *           engines); cmsearch's --msvband/--vitband domain definition does.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
  */
 int
 cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
@@ -8007,12 +8013,19 @@ cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
   int          last_ib;
   int          kac, kbc;
   int          M = gm->M;
-  float        fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
-  float        denom;
-  int          g, i, k;
-  int          nk;
+  double       fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+  double       denom, rowmax;
+  double      *wrk = NULL, *wx;   /* one row: M,I per cell, then N,J,C */
+  int          g, i, k, c;
+  int          nk, nw, maxnk = 0;
+  int          status;
 
-  fwd_xN_prev = 0.0f;
+  /* size the row buffer from the widest band row */
+  for (i = 0; i < fwd->bnd->nrow; i++)
+    maxnk = ESL_MAX(maxnk, fwd->bnd->kmem[2*i+1] - fwd->bnd->kmem[2*i] + 1);
+  ESL_ALLOC(wrk, sizeof(double) * (2 * maxnk + 3));
+
+  fwd_xN_prev = 0.0;
   fwd_xJ_prev = -eslINFINITY;
   fwd_xC_prev = -eslINFINITY;
   last_ib     = 0;
@@ -8035,65 +8048,53 @@ cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
 
       for (i = ia; i <= ib; i++)
 	{
-	  kac = *bnd_kp++;
-	  kbc = *bnd_kp++;
-	  denom = 0.0f;
+	  kac    = *bnd_kp++;
+	  kbc    = *bnd_kp++;
+	  nk     = kbc - kac + 1;
+	  nw     = 2 * nk + 3;
+	  wx     = wrk + 2 * nk;
+	  rowmax = -eslINFINITY;
+	  denom  = 0.0;
 
+	  /* brief 26_0821-141: F + B in double, then the row-max guard (see
+	   * p7b_decode_row()): exponentiate against this row's max of F + B
+	   * rather than overall_sc. The row is normalized by its own sum, so
+	   * it is the same posterior, but exp() stays in range when the float
+	   * F/B have drifted apart along a genome-scale sequence. F and B are
+	   * read into wrk[] before pp is written, since pp may alias bck. */
 	  for (k = kac; k <= kbc; k++)
 	    {
-	      /* M posterior */
-	      *pp_dp = expf(*fwd_dp + *bck_dp - overall_sc);
-	      if (! isfinite(*pp_dp)) *pp_dp = 0.0f;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
-	      denom += *pp_dp;
-	      pp_dp++; fwd_dp++; bck_dp++;
-
-	      /* I posterior */
-	      if (k < M) {
-		*pp_dp = expf(*fwd_dp + *bck_dp - overall_sc);
-		if (! isfinite(*pp_dp)) *pp_dp = 0.0f;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
-		denom += *pp_dp;
-	      } else {
-		*pp_dp = 0.0f;
-	      }
-	      pp_dp++; fwd_dp++; bck_dp++;
-
-	      /* D posterior = 0 (D doesn't emit) */
-	      *pp_dp = 0.0f;
-	      pp_dp++; fwd_dp++; bck_dp++;
+	      wrk[2*(k-kac)]   = (double) fwd_dp[p7G_M] + (double) bck_dp[p7G_M];                            /* M */
+	      wrk[2*(k-kac)+1] = (k < M) ? (double) fwd_dp[p7G_I] + (double) bck_dp[p7G_I] : -eslINFINITY;   /* I */
+	      fwd_dp += p7G_NSCELLS; bck_dp += p7G_NSCELLS;
 	    }
+	  /* Special states: N/J/C use fwd(i-1) and bck(i); E, B, D stay 0 */
+	  wx[0] = fwd_xN_prev + (double) bck_xp[p7G_N] + gm->xsc[p7P_N][p7P_LOOP];
+	  wx[1] = fwd_xJ_prev + (double) bck_xp[p7G_J] + gm->xsc[p7P_J][p7P_LOOP];
+	  wx[2] = fwd_xC_prev + (double) bck_xp[p7G_C] + gm->xsc[p7P_C][p7P_LOOP];
+	  for (c = 0; c < nw; c++) if (isfinite(wrk[c]) && wrk[c] > rowmax) rowmax = wrk[c];
 
-	  /* Special states: E=0, B=0; N/J/C use fwd(i-1) and bck(i) */
-	  pp_xp[p7G_E] = 0.0f;
-
-	  pp_xp[p7G_N] = expf(fwd_xN_prev + bck_xp[p7G_N] + gm->xsc[p7P_N][p7P_LOOP] - overall_sc);
-	  if (! isfinite(pp_xp[p7G_N])) pp_xp[p7G_N] = 0.0f;  /* guard NaN from -inf + -inf */
-	  denom += pp_xp[p7G_N];
-
-	  pp_xp[p7G_J] = expf(fwd_xJ_prev + bck_xp[p7G_J] + gm->xsc[p7P_J][p7P_LOOP] - overall_sc);
-	  if (! isfinite(pp_xp[p7G_J])) pp_xp[p7G_J] = 0.0f;
-	  denom += pp_xp[p7G_J];
-
-	  pp_xp[p7G_B] = 0.0f;
-
-	  pp_xp[p7G_C] = expf(fwd_xC_prev + bck_xp[p7G_C] + gm->xsc[p7P_C][p7P_LOOP] - overall_sc);
-	  if (! isfinite(pp_xp[p7G_C])) pp_xp[p7G_C] = 0.0f;
-	  denom += pp_xp[p7G_C];
+	  for (c = 0; c < nw; c++)
+	    {
+	      wrk[c] = isfinite(rowmax) ? exp(wrk[c] - rowmax) : 0.0;
+	      if (! isfinite(wrk[c])) wrk[c] = 0.0;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
+	      denom += wrk[c];
+	    }
 
 	  /* Row normalization */
-	  if (denom > 0.0f) {
-	    denom = 1.0f / denom;
-	    nk = (kbc - kac + 1);
-	    { float *p = pp_dp - nk * p7G_NSCELLS;
-	      for (k = kac; k <= kbc; k++) {
-		*p++ *= denom; /* M */
-		*p++ *= denom; /* I */
-		p++;           /* D stays 0 */
-	      }
+	  denom = (denom > 0.0) ? 1.0 / denom : 1.0;
+	  for (k = kac; k <= kbc; k++)
+	    {
+	      pp_dp[p7G_M] = (float) (wrk[2*(k-kac)]   * denom);
+	      pp_dp[p7G_I] = (float) (wrk[2*(k-kac)+1] * denom);
+	      pp_dp[p7G_D] = 0.0f;
+	      pp_dp += p7G_NSCELLS;
 	    }
-	    pp_xp[p7G_N] *= denom;
-	    pp_xp[p7G_J] *= denom;
-	    pp_xp[p7G_C] *= denom;
-	  }
+	  pp_xp[p7G_E] = 0.0f;
+	  pp_xp[p7G_N] = (float) (wx[0] * denom);
+	  pp_xp[p7G_J] = (float) (wx[1] * denom);
+	  pp_xp[p7G_B] = 0.0f;
+	  pp_xp[p7G_C] = (float) (wx[2] * denom);
 
 	  /* Save current row's fwd specials as prev for next row */
 	  fwd_xN_prev = fwd_xp[p7G_N];
@@ -8106,7 +8107,12 @@ cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
 	}
       last_ib = ib;
     }
+  free(wrk);
+  (void) overall_sc;
   return eslOK;
+
+ ERROR:
+  return status;
 }
 
 
@@ -8564,6 +8570,13 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
  * above; only deck *storage* is windowed. p7_FLogsum is a symmetric
  * deterministic LUT, so identical inputs in identical order -> identical
  * bits. The existing non-checkpointed functions are NOT modified.
+ *
+ * Brief 26_0821-141: the F/B kernels are now double precision with
+ * p7b_dlogsum() in place of p7_FLogsum (see the comment above
+ * p7b_dlogsum()), and the non-checkpointed engine uses
+ * cm_p7_GFBDecodeBandedDouble() below instead of the float originals.
+ * The same-inputs-same-order discipline still holds, so the three
+ * engines remain bit-identical to each other.
  *****************************************************************/
 
 /* Brief 26_0526-017: the resident posterior <pp> stores only M and I per cell,
@@ -9165,9 +9178,10 @@ p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
 }
 
 /* p7b_decode_row(): fold one row's posterior into the caller's output
- * row buffers.  Verbatim copy of the per-row body of
+ * row buffers.  Originally a verbatim copy of the per-row body of
  * p7_GDecodingBanded() (expf + per-row denom normalization + NaN
- * guards).
+ * guards); brief 26_0821-141 made it double precision and added the
+ * row-max guard (see below).
  *
  * brief 26_0628-081: the destination is now passed as explicit row
  * pointers <pdp>/<pxp> rather than (pp, r).  The resident-pp caller
@@ -9184,37 +9198,51 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
 {
   int    M  = g->M;
   int    nc = kbc - kac + 1;
-  double denom = 0.0;
-  double *w  = wrk;            /* [0..2nc-1] M,I per cell; [2nc..2nc+2] N,J,C */
-  double *wx = wrk + 2 * nc;
-  int    k;
+  int    nw = 2 * nc + 3;
+  double rowmax = -eslINFINITY;
+  double denom  = 0.0;
+  double *wx = wrk + 2 * nc;   /* [0..2nc-1] M,I per cell; [2nc..2nc+2] N,J,C */
+  int    k, c;
 
-  /* brief 26_0821-141: F + B - fwdsc, exp() and the row sum are all in
-   * double (<wrk> holds the unnormalized row, >= 2*nc+3 doubles); only the
-   * normalized posterior is stored as float.  <ppstride> is the pp cell
-   * stride: P7B_PP_NSCELLS (2: M,I) for the checkpointed engines'
-   * compact pp, p7G_NSCELLS (3: M,I,D, D=0) for a p7_gmxb_Create() pp. */
+  /* brief 26_0821-141: everything up to the stored posterior is double
+   * (<wrk> holds the row, >= 2*nc+3 doubles); only the normalized
+   * posterior is stored as float.  <ppstride> is the pp cell stride:
+   * P7B_PP_NSCELLS (2: M,I) for the checkpointed engines' compact pp,
+   * p7G_NSCELLS (3: M,I,D, D=0) for a p7_gmxb_Create() pp.
+   *
+   * Row-max guard: exponentiate F + B - (this row's max of F + B) rather
+   * than F + B - fwdsc.  The row is normalized by its own sum below, so
+   * the two are the same posterior; but the guard keeps exp() in range
+   * even if F and B disagree by a constant along the row -- the float
+   * roundoff drift that caused this fix, or any constant F/B offset
+   * (e.g. an asymmetric special-state charge) -- which would otherwise
+   * underflow the whole row to 0 or overflow its top cells.  With double
+   * F/B, fwdsc and the row max differ by log(the row's largest posterior)
+   * plus ~1e-8 nats, so on correct input the guard changes nothing. */
   for (k = kac; k <= kbc; k++) {
     int off = (k - kac) * p7G_NSCELLS;      /* fdp/bdp: full 3-cell Forward/Backward rows */
-    int c   = (k - kac) * 2;
-    w[c]   = exp(fdp[off] + bdp[off] - fwdsc);                       /* M */
-    if (! isfinite(w[c]))   w[c]   = 0.0;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
-    w[c+1] = (k < M) ? exp(fdp[off+1] + bdp[off+1] - fwdsc) : 0.0;   /* I */
-    if (! isfinite(w[c+1])) w[c+1] = 0.0;  /* guard NaN from -inf + inf */
-    denom += w[c] + w[c+1];
+    c = (k - kac) * 2;
+    wrk[c]   = fdp[off] + bdp[off];                                   /* M */
+    wrk[c+1] = (k < M) ? fdp[off+1] + bdp[off+1] : -eslINFINITY;      /* I */
   }
+  wx[0] = fwd_xN_prev + bck_xN + gm->xsc[p7P_N][p7P_LOOP];
+  wx[1] = fwd_xJ_prev + bck_xJ + gm->xsc[p7P_J][p7P_LOOP];
+  wx[2] = fwd_xC_prev + bck_xC + gm->xsc[p7P_C][p7P_LOOP];
+  for (c = 0; c < nw; c++) if (isfinite(wrk[c]) && wrk[c] > rowmax) rowmax = wrk[c];
 
-  wx[0] = exp(fwd_xN_prev + bck_xN + gm->xsc[p7P_N][p7P_LOOP] - fwdsc);
-  wx[1] = exp(fwd_xJ_prev + bck_xJ + gm->xsc[p7P_J][p7P_LOOP] - fwdsc);
-  wx[2] = exp(fwd_xC_prev + bck_xC + gm->xsc[p7P_C][p7P_LOOP] - fwdsc);
-  for (k = 0; k < 3; k++) { if (! isfinite(wx[k])) wx[k] = 0.0; denom += wx[k]; }
+  for (c = 0; c < nw; c++) {
+    /* a row with no finite cell has nothing to normalize: all 0, as before */
+    wrk[c] = isfinite(rowmax) ? exp(wrk[c] - rowmax) : 0.0;
+    if (! isfinite(wrk[c])) wrk[c] = 0.0;   /* guard NaN from -inf + inf (cell unreachable in one direction) */
+    denom += wrk[c];
+  }
 
   denom = (denom > 0.0) ? 1.0 / denom : 1.0;
   for (k = kac; k <= kbc; k++) {
     int poff = (k - kac) * ppstride;  /* brief 26_0526-017: compact 2-cell pp (M,I) has no D */
-    int c    = (k - kac) * 2;
-    pdp[poff]   = (float) (w[c]   * denom);
-    pdp[poff+1] = (float) (w[c+1] * denom);
+    c = (k - kac) * 2;
+    pdp[poff]   = (float) (wrk[c]   * denom);
+    pdp[poff+1] = (float) (wrk[c+1] * denom);
     if (ppstride > 2) pdp[poff+2] = 0.0f;   /* D doesn't emit */
   }
   pxp[p7G_E] = 0.0f;
@@ -9222,6 +9250,7 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
   pxp[p7G_J] = (float) (wx[1] * denom);
   pxp[p7G_B] = 0.0f;
   pxp[p7G_C] = (float) (wx[2] * denom);
+  (void) fwdsc;
 }
 
 /* p7b_backdecode(): STEP B.  Stream Backward (2 rows live) in descending
