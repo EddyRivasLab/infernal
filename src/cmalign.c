@@ -1828,20 +1828,20 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      cm_Fail("p7_GCheckptOA_Banded() failed for sequence %s", sq->name);
 	  }
 	  else {
-	  bxf = p7_gmxb_Create(bnd);
+	  /* brief 26_0821-141: F/B/decode in double precision (the float
+	   * my_p7_GForwardBanded/p7_GBackwardBanded/p7_GDecodingBanded collapse
+	   * at genome scale). bxb receives the posterior; the double F/B are
+	   * freed inside, then bxf is allocated as the OA matrix. */
 	  bxb = p7_gmxb_Create(bnd);
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
 	    fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-	  if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, gm, bxf, &fwdsc)) != eslOK)
-	    cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
-	  if ((status = p7_GBackwardBanded(sq->dsq, sq->n, gm, bxb, &bwdsc)) != eslOK)
-	    cm_Fail("p7_GBackwardBanded() failed for sequence %s", sq->name);
+	  if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, gm, bxb, &fwdsc, &bwdsc)) != eslOK)
+	    cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
 	  if (getenv("P135B_FB_INSTRUMENT") != NULL)
 	    fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
 		    sq->name, hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
-	  if ((status = p7_GDecodingBanded(gm, bxf, bxb, bxb, fwdsc)) != eslOK)
-	    cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
+	  bxf = p7_gmxb_Create(bnd);
 	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
 	    cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
 
@@ -2549,20 +2549,17 @@ hmm_pipeline_thread(void *arg)
 	  cm_Fail("p7_GCheckptOA_Banded() failed for sequence %s", sq->name);
       }
       else {
-      bxf = p7_gmxb_Create(bnd);
+      /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
       bxb = p7_gmxb_Create(bnd);
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-      if ((status = my_p7_GForwardBanded(sq->dsq, sq->n, info->gm, bxf, &fwdsc)) != eslOK)
-	cm_Fail("my_p7_GForwardBanded() failed for sequence %s", sq->name);
-      if ((status = p7_GBackwardBanded(sq->dsq, sq->n, info->gm, bxb, &bwdsc)) != eslOK)
-	cm_Fail("p7_GBackwardBanded() failed for sequence %s", sq->name);
+      if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &bwdsc)) != eslOK)
+	cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
       if (getenv("P135B_FB_INSTRUMENT") != NULL)
 	fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
 		sq->name, info->hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
-      if ((status = p7_GDecodingBanded(info->gm, bxf, bxb, bxb, fwdsc)) != eslOK)
-	cm_Fail("p7_GDecodingBanded() failed for sequence %s", sq->name);
+      bxf = p7_gmxb_Create(bnd);
       if ((status = p7_GOptimalAccuracyBanded(info->gm, bxb, bxf, &oasc)) != eslOK)
 	cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
 
@@ -3430,12 +3427,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    mpi_failure("p7_GCheckptOA_Banded() failed");
 	}
 	else {
-	  bxf_w = p7_gmxb_Create(bnd_w);
+	  /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
 	  bxb_w = p7_gmxb_Create(bnd_w);
-
-	  my_p7_GForwardBanded(dsq, L, gm_w, bxf_w, &fwdsc_w);
-	  p7_GBackwardBanded(dsq, L, gm_w, bxb_w, NULL);
-	  p7_GDecodingBanded(gm_w, bxf_w, bxb_w, bxb_w, fwdsc_w);
+	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL) != eslOK)
+	    mpi_failure("cm_p7_GFBDecodeBandedDouble() failed");
+	  bxf_w = p7_gmxb_Create(bnd_w);
 	  p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
 	  p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
 	}
