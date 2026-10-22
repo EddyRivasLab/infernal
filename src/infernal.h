@@ -3075,6 +3075,22 @@ typedef struct cm_p7_om_holder_s {
 extern void  cm_p7_om_holder_Init (CM_P7_OM_HOLDER *h);
 extern void  cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h);
 
+/* CM_P7_DECSTATS (brief 26_0821-141): per-sequence counts from cmalign's
+ * HMM-only banded posterior decode (cm_p7_band.c), for conditions that
+ * the decode zeroes silently. On a correct band and correct F/B all are 0
+ * (fb_incons ~1e-8). Reported under --devdiag. */
+typedef struct cm_p7_decstats_s {
+  int64_t nrow;        /* band rows decoded                                     */
+  int64_t ndead;       /* rows with no finite F+B cell: written as all-zero pp  */
+  int64_t nnonfinite;  /* cells whose posterior came out NaN/inf: zeroed        */
+  double  fb_incons;   /* max over live rows of how far (row max of F+B) - fwdsc
+                        * falls outside [-log(nstates), 0], in nats: F/B
+                        * inconsistency (the float drift was 100s of nats)    */
+  double  drift_max;   /* max over live rows of (row max of F+B) - fwdsc: ~0 when
+                        * some row is near-certain, so |drift_max| bounds the
+                        * F/B disagreement on such rows                       */
+} CM_P7_DECSTATS;
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
@@ -3605,13 +3621,14 @@ extern int          cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PR
 extern int          cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
 extern int          cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
 extern int          cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
-extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc); /* brief 26_0526-016 */
+extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0526-016 */
 extern int          cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
-extern int          cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc); /* brief 26_0821-141 */
+extern int          cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0821-141 */
+extern void         cm_p7_decstats_Init(CM_P7_DECSTATS *st);                                                                     /* brief 26_0821-141 */
 extern P7_GMXB     *p7b_pp_Create(P7_GBANDS *bnd);                                                                             /* brief 26_0526-017: compact 2-cell resident pp */
 extern int          cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
 extern int          cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
-                                                 P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc);                             /* brief 26_0628-081: double-checkpointed, no resident posterior */
+                                                 P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc, CM_P7_DECSTATS *opt_st);     /* brief 26_0628-081: double-checkpointed, no resident posterior */
 extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
 extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);

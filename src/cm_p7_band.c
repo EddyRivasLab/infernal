@@ -9177,6 +9177,17 @@ p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
   *xC_io = xC; *xJ_io = xJ; *xN_io = xN; *xE_io = xE; *xB_io = xB;
 }
 
+/* cm_p7_decstats_Init(): zero a CM_P7_DECSTATS (brief 26_0821-141). */
+void
+cm_p7_decstats_Init(CM_P7_DECSTATS *st)
+{
+  st->nrow       = 0;
+  st->ndead      = 0;
+  st->nnonfinite = 0;
+  st->fb_incons  = 0.0;
+  st->drift_max  = -eslINFINITY;
+}
+
 /* p7b_decode_row(): fold one row's posterior into the caller's output
  * row buffers.  Originally a verbatim copy of the per-row body of
  * p7_GDecodingBanded() (expf + per-row denom normalization + NaN
@@ -9194,7 +9205,8 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
                const double *fdp, const double *bdp,
                double bck_xN, double bck_xJ, double bck_xC,
                double fwd_xN_prev, double fwd_xJ_prev, double fwd_xC_prev,
-               double *wrk, int ppstride, float *pdp, float *pxp)
+               double *wrk, int ppstride, float *pdp, float *pxp,
+               CM_P7_DECSTATS *st)
 {
   int    M  = g->M;
   int    nc = kbc - kac + 1;
@@ -9233,8 +9245,23 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
   for (c = 0; c < nw; c++) {
     /* a row with no finite cell has nothing to normalize: all 0, as before */
     wrk[c] = isfinite(rowmax) ? exp(wrk[c] - rowmax) : 0.0;
-    if (! isfinite(wrk[c])) wrk[c] = 0.0;   /* guard NaN from -inf + inf (cell unreachable in one direction) */
+    if (! isfinite(wrk[c])) { wrk[c] = 0.0; if (st) st->nnonfinite++; }  /* NaN or +inf input; zeroed */
     denom += wrk[c];
+  }
+
+  /* brief 26_0821-141: account for what used to fail silently.  The
+   * posteriors of a row sum to 1 over its nw emitting states, so its
+   * largest is in [1/nw, 1] and rowmax - fwdsc must lie in
+   * [-log(nw), 0]; any excursion is F/B inconsistency, in nats. */
+  if (st) {
+    st->nrow++;
+    if (! isfinite(rowmax) || denom == 0.0) st->ndead++;
+    else {
+      double d = rowmax - fwdsc;
+      double x = ESL_MAX(d, -log((double) nw) - d);
+      if (x > st->fb_incons) st->fb_incons = x;
+      if (d > st->drift_max) st->drift_max = d;
+    }
   }
 
   denom = (denom > 0.0) ? 1.0 / denom : 1.0;
@@ -9250,7 +9277,6 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
   pxp[p7G_J] = (float) (wx[1] * denom);
   pxp[p7G_B] = 0.0f;
   pxp[p7G_C] = (float) (wx[2] * denom);
-  (void) fwdsc;
 }
 
 /* p7b_backdecode(): STEP B.  Stream Backward (2 rows live) in descending
@@ -9259,7 +9285,7 @@ p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
  */
 static int
 p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
-               const P7B_DFSEED *seed, double fwdsc, P7_GMXB *pp)
+               const P7B_DFSEED *seed, double fwdsc, P7_GMXB *pp, CM_P7_DECSTATS *st)
 {
   int      status;
   int      M = g->M, L = g->L, B = g->B;
@@ -9327,7 +9353,7 @@ p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
 
           p7b_decode_row(g, gm, fwdsc, kac, kbc, blkbuf + roff[r-lo], bcur,
                          xN, xJ, xC, fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev, wrk, P7B_PP_NSCELLS,
-                         pp->dp + g->dpoff[r], pp->xmx + (int64_t) r * p7G_NXCELLS);
+                         pp->dp + g->dpoff[r], pp->xmx + (int64_t) r * p7G_NXCELLS, st);
 
           dpn = bcur; kan = kac; kbn = kbc; bnext = bcur;
         }
@@ -9578,6 +9604,9 @@ typedef struct {
   double  *fblk;  int64_t *froff;  double *fxN, *fxJ, *fxC;   /* brief 26_0821-141: F/B in double */
   double  *bblk;  int64_t *broff;  double *bxN, *bxJ, *bxC;
   double  *wrk;                                                /* p7b_decode_row() row scratch */
+  CM_P7_DECSTATS *st;     /* decode counts, or NULL (brief 26_0821-141): set only for
+                           * the OA pass, which visits each row once; the traceback
+                           * recomputes rows and must not count them again */
   float   *ppblk; int64_t *pproff; float *ppxmx;
 } P7B_PPWORK;
 
@@ -9617,6 +9646,7 @@ p7b_ppwork_Create(const ESL_DSQ *dsq, const P7B_GEO *g,
   w->ppblk = w->ppxmx = NULL;
   w->froff = w->broff = w->pproff = NULL;
   w->dsq = dsq; w->fseed = fseed; w->bseed = bseed; w->fwdsc = fwdsc; w->nr = nr;
+  w->st  = NULL;
 
   ESL_ALLOC(w->fblk,   sizeof(double)  * ((int64_t) nr * g->maxnc * p7G_NSCELLS + 1));
   ESL_ALLOC(w->froff,  sizeof(int64_t) * nr);
@@ -9680,7 +9710,7 @@ p7b_ppwork_fill(P7B_PPWORK *w, const P7_PROFILE *gm, const P7B_GEO *g,
                      w->fblk + w->froff[r-lo], w->bblk + w->broff[r-lo],
                      w->bxN[r-lo], w->bxJ[r-lo], w->bxC[r-lo],
                      fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev, w->wrk, P7B_PP_NSCELLS,
-                     w->ppblk + cum, w->ppxmx + (int64_t)(r-lo) * p7G_NXCELLS);
+                     w->ppblk + cum, w->ppxmx + (int64_t)(r-lo) * p7G_NXCELLS, w->st);
 
       cum += (int64_t)(kbc - kac + 1) * P7B_PP_NSCELLS;
     }
@@ -9711,12 +9741,13 @@ p7b_ppwork_fill(P7B_PPWORK *w, const P7_PROFILE *gm, const P7B_GEO *g,
  *           pp        - RESULT: posterior matrix (created by caller from
  *                       the same P7_GBANDS); filled here.
  *           ret_fwdsc - RETURN: Forward score in nats
+ *           opt_st    - optRETURN: decode counts (see CM_P7_DECSTATS)
  *
  * Returns:  eslOK on success.
  */
 int
 cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
-                           P7_GMXB *pp, float *ret_fwdsc)
+                           P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st)
 {
   int        status;
   P7B_GEO   *g = NULL;
@@ -9731,7 +9762,8 @@ cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   for (b = 0; b < g->nblk; b++) { seed[b].dp = NULL; seed[b].valid = 0; }
 
   if ((status = p7b_forward_seeds(dsq, gm, g, seed, &fwdsc)) != eslOK) goto ERROR;
-  if ((status = p7b_backdecode  (dsq, gm, g, seed, fwdsc, pp)) != eslOK) goto ERROR;
+  if (opt_st) cm_p7_decstats_Init(opt_st);
+  if ((status = p7b_backdecode  (dsq, gm, g, seed, fwdsc, pp, opt_st)) != eslOK) goto ERROR;
 
   if (getenv("INFERNAL_CKPT_VERBOSE"))
     fprintf(stderr, "# p7_GCheckptFBDecode_Banded: M=%d L=%d nrow=%d B=%d nblk=%d fwdsc=%.6f\n",
@@ -9778,12 +9810,14 @@ cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
  *           pp        - RESULT: posterior matrix, p7_gmxb_Create(bnd)
  *           ret_fwdsc - RETURN: Forward score in nats
  *           opt_bwdsc - optRETURN: Backward score in nats
+ *           opt_st    - optRETURN: decode counts (see CM_P7_DECSTATS)
  *
  * Returns:  eslOK on success; eslEMEM on allocation failure.
  */
 int
 cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
-                            P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc)
+                            P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc,
+                            CM_P7_DECSTATS *opt_st)
 {
   int      status;
   P7B_GEO *g   = NULL;
@@ -9872,6 +9906,7 @@ cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   }
 
   /* Decode (mirror p7b_backdecode()'s per-row assembly) */
+  if (opt_st) cm_p7_decstats_Init(opt_st);
   for (r = 0; r < g->nrow; r++)
     {
       double pN = (r == 0) ? 0.0           : fx[3*(r-1)];
@@ -9884,7 +9919,7 @@ cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
       }
       p7b_decode_row(g, gm, fwdsc, g->ka[r], g->kb[r], fdp + P7B_OFF3(r), bdp + P7B_OFF3(r),
                      bx[3*r], bx[3*r+1], bx[3*r+2], pN, pJ, pC, wrk, p7G_NSCELLS,
-                     pp->dp + P7B_OFF3(r), pp->xmx + (int64_t) r * p7G_NXCELLS);
+                     pp->dp + P7B_OFF3(r), pp->xmx + (int64_t) r * p7G_NXCELLS, opt_st);
     }
 #undef P7B_OFF3
 
@@ -10478,13 +10513,14 @@ cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *
  *           tr        - RESULT: OA trace (caller-provided; Reuse'd by caller)
  *           ret_fwdsc - RETURN: Forward score in nats
  *           ret_oasc  - RETURN: OA score
+ *           opt_st    - optRETURN: decode counts (see CM_P7_DECSTATS)
  *
  * Returns:  eslOK on success.
  */
 int
 cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
                              P7_GBANDS *bnd, P7_TRACE *tr,
-                             float *ret_fwdsc, float *ret_oasc)
+                             float *ret_fwdsc, float *ret_oasc, CM_P7_DECSTATS *opt_st)
 {
   int         status;
   P7B_GEO    *g      = NULL;
@@ -10516,7 +10552,10 @@ cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   view.pp = NULL; view.ppblk = NULL; view.pproff = NULL; view.ppxmx = NULL;
   view.lo = 0; view.hi = -1;
 
+  if (opt_st) cm_p7_decstats_Init(opt_st);
+  ppw->st = opt_st;     /* count each row once, in the OA pass ... */
   if ((status = p7b_oa_seeds(gm, g, &view, ppw, oaseed, &oasc))  != eslOK) goto ERROR;
+  ppw->st = NULL;       /* ... not again in the traceback's recompute */
   if ((status = p7b_oa_trace(gm, g, &view, ppw, oaseed, tr))     != eslOK) goto ERROR;
 
   if (getenv("INFERNAL_CKPT_VERBOSE"))

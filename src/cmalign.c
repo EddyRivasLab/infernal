@@ -312,6 +312,19 @@ kmer_gate_p7ibv_fallback(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int 
                               ret_i2k, ret_kmin, ret_kmax, ret_ncells);
 }
 
+/* brief 26_0821-141: --devdiag report of the HMM-only posterior decode's
+ * counts (CM_P7_DECSTATS, cm_p7_band.c), shared by the serial and threaded
+ * paths. On a correct band all are 0 and fb_incons is ~1e-8 nats; a dead
+ * row, a non-finite cell or a large fb_incons means some posteriors were
+ * zeroed or are wrong. */
+static void
+hmm_decstats_report(const ESL_SQ *sq, const CM_P7_DECSTATS *st)
+{
+  if (cm_StageVerbose())
+    fprintf(stderr, "#HMMDECODE seq=%s L=%d rows=%ld dead_rows=%ld nonfinite=%ld fb_incons=%.3g drift_max=%.3g\n",
+            sq->name, (int) sq->n, (long) st->nrow, (long) st->ndead, (long) st->nnonfinite, st->fb_incons, st->drift_max);
+}
+
 /* brief 26_0821-096: --hmm banded-OA no-parse fallback, shared by the serial
  * (hmm_alignment()) and threaded (hmm_pipeline_thread()) paths. Called when the
  * banded HMM Forward total came back non-finite: the p7 band contains no
@@ -1502,6 +1515,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  int      ncells = 0;
 	  int      pad   = 30;
 	  int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
+	  CM_P7_DECSTATS decst;                    /* brief 26_0821-141: decode counts for --devdiag */
 	  P7_GBANDS *bnd = NULL;
 	  P7_GMXB *bxf   = NULL;
 	  P7_GMXB *bxb   = NULL;
@@ -1808,7 +1822,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if (getenv("BRIEF035_MEMPOINT") != NULL)
 	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	    p7_trace_Reuse(tr[idx]);
-	    if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, gm, bnd, tr[idx], &fwdsc, &oasc)) != eslOK)
+	    if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, gm, bnd, tr[idx], &fwdsc, &oasc, &decst)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
 	  }
 	  else if (ckpt_mode == P7B_OAMEM_CKPT) {
@@ -1821,7 +1835,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    bxb = p7b_pp_Create(bnd);
 	    if (getenv("BRIEF035_MEMPOINT") != NULL)
 	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
-	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc)) != eslOK)
+	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc, &decst)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	    p7_trace_Reuse(tr[idx]);
 	    if ((status = p7_GCheckptOA_Banded(gm, bxb, tr[idx], &oasc)) != eslOK)
@@ -1836,7 +1850,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if (getenv("BRIEF035_MEMPOINT") != NULL)
 	    fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-	  if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, gm, bxb, &fwdsc, &bwdsc)) != eslOK)
+	  if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, gm, bxb, &fwdsc, &bwdsc, &decst)) != eslOK)
 	    cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
 	  if (getenv("P135B_FB_INSTRUMENT") != NULL)
 	    fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
@@ -1855,6 +1869,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	   * engines return eslOK in that case, so test the score here, after
 	   * whichever one ran. Retry once with --p7ibv-mem bands, else fail; see
 	   * hmm_noparse_fallback(). */
+	  hmm_decstats_report(sq, &decst);
 	  if (! isfinite(fwdsc)) {
 	    hmm_noparse_fallback(cm, sq, do_trunc,
 				 (esl_opt_IsDefault(go, "--p7ibv-base-slab")
@@ -2372,6 +2387,7 @@ hmm_pipeline_thread(void *arg)
       int      ncells = 0;
       int      pad   = 30;
       int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
+      CM_P7_DECSTATS decst;                    /* brief 26_0821-141: decode counts for --devdiag */
       P7_GBANDS *bnd = NULL;
       P7_GMXB *bxf   = NULL;
       P7_GMXB *bxb   = NULL;
@@ -2532,7 +2548,7 @@ hmm_pipeline_thread(void *arg)
 	if (getenv("BRIEF035_MEMPOINT") != NULL)
 	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	p7_trace_Reuse(info->hmm_tr[idx]);
-	if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, info->gm, bnd, info->hmm_tr[idx], &fwdsc, &oasc)) != eslOK)
+	if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, info->gm, bnd, info->hmm_tr[idx], &fwdsc, &oasc, &decst)) != eslOK)
 	  cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
       }
       else if (ckpt_mode == P7B_OAMEM_CKPT) {
@@ -2542,7 +2558,7 @@ hmm_pipeline_thread(void *arg)
 	bxb = p7b_pp_Create(bnd);
 	if (getenv("BRIEF035_MEMPOINT") != NULL)
 	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
-	if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, info->gm, bxb, &fwdsc)) != eslOK)
+	if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &decst)) != eslOK)
 	  cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	p7_trace_Reuse(info->hmm_tr[idx]);
 	if ((status = p7_GCheckptOA_Banded(info->gm, bxb, info->hmm_tr[idx], &oasc)) != eslOK)
@@ -2554,7 +2570,7 @@ hmm_pipeline_thread(void *arg)
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
-      if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &bwdsc)) != eslOK)
+      if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &bwdsc, &decst)) != eslOK)
 	cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
       if (getenv("P135B_FB_INSTRUMENT") != NULL)
 	fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
@@ -2570,6 +2586,7 @@ hmm_pipeline_thread(void *arg)
 
       /* brief 26_0821-096: no-parse band => retry once with --p7ibv-mem bands,
        * else fail; mirrors the serial check in hmm_alignment(). */
+      hmm_decstats_report(sq, &decst);
       if (! isfinite(fwdsc)) {
 	hmm_noparse_fallback(info->cm, sq, info->do_trunc, info->ibv_base_slab,
 			     band_is_ibv, band_src, &noparse_retried,
@@ -3415,12 +3432,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	hst_aln0 = hmm_now();
 	if (ckpt_mode_w == P7B_OAMEM_CKPTPP) {
 	  p7_trace_Reuse(wtr);
-	  if (p7_GCheckptFBDecodeOA_Banded(dsq, L, gm_w, bnd_w, wtr, &fwdsc_w, &oasc_w) != eslOK)
+	  if (p7_GCheckptFBDecodeOA_Banded(dsq, L, gm_w, bnd_w, wtr, &fwdsc_w, &oasc_w, NULL) != eslOK)
 	    mpi_failure("p7_GCheckptFBDecodeOA_Banded() failed");
 	}
 	else if (ckpt_mode_w == P7B_OAMEM_CKPT) {
 	  bxb_w = p7b_pp_Create(bnd_w);
-	  if (p7_GCheckptFBDecode_Banded(dsq, L, gm_w, bxb_w, &fwdsc_w) != eslOK)
+	  if (p7_GCheckptFBDecode_Banded(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL) != eslOK)
 	    mpi_failure("p7_GCheckptFBDecode_Banded() failed");
 	  p7_trace_Reuse(wtr);
 	  if (p7_GCheckptOA_Banded(gm_w, bxb_w, wtr, &oasc_w) != eslOK)
@@ -3429,7 +3446,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	else {
 	  /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
 	  bxb_w = p7_gmxb_Create(bnd_w);
-	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL) != eslOK)
+	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL, NULL) != eslOK)
 	    mpi_failure("cm_p7_GFBDecodeBandedDouble() failed");
 	  bxf_w = p7_gmxb_Create(bnd_w);
 	  p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
