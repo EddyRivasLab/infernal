@@ -13605,3 +13605,224 @@ cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
   }
   return status;
 }
+
+
+/*****************************************************************
+ * Unit tests (brief 26_0821-141)
+ *   make cm_p7_band_utest; ./cm_p7_band_utest
+ *****************************************************************/
+#ifdef CM_P7_BAND_TESTDRIVE
+
+#include "esl_getopts.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+
+/* utest_dlogsum(): p7b_dlogsum() against exact log(e^a + e^b), over the
+ * table's whole range, at the score magnitudes genome-scale F/B reach. */
+static void
+utest_dlogsum(void)
+{
+  double base[3] = { 0.0, -150000.0, 150000.0 };
+  double d, exact, err, maxerr = 0.;
+  int    j;
+
+  for (j = 0; j < 3; j++)
+    for (d = 0.0; d < 40.0; d += 0.000731) {
+      exact = base[j] + log1p(exp(-d));
+      err   = fabs(p7b_dlogsum(base[j], base[j] - d) - exact);
+      if (err > maxerr) maxerr = err;
+      if (p7b_dlogsum(base[j] - d, base[j]) != p7b_dlogsum(base[j], base[j] - d))
+        esl_fatal("utest_dlogsum: not symmetric at d=%g", d);
+    }
+  /* linear interpolation over 0.001-nat steps: error <= h^2/8 * max|f''| ~ 3e-8 */
+  if (maxerr > 1e-7) esl_fatal("utest_dlogsum: max error %g nats > 1e-7", maxerr);
+  if (p7b_dlogsum(-eslINFINITY, 2.5) != 2.5)                    esl_fatal("utest_dlogsum: -inf + b != b");
+  if (p7b_dlogsum(2.5, -eslINFINITY) != 2.5)                    esl_fatal("utest_dlogsum: a + -inf != a");
+  if (p7b_dlogsum(-eslINFINITY, -eslINFINITY) != -eslINFINITY)  esl_fatal("utest_dlogsum: -inf + -inf != -inf");
+}
+
+static int
+trace_differs(const P7_TRACE *t1, const P7_TRACE *t2)
+{
+  int z;
+  if (t1->N != t2->N) return TRUE;
+  for (z = 0; z < t1->N; z++)
+    if (t1->st[z] != t2->st[z] || t1->k[z] != t2->k[z] || t1->i[z] != t2->i[z] || t1->pp[z] != t2->pp[z])
+      return TRUE;
+  return FALSE;
+}
+
+static void
+check_decstats(const char *engine, const CM_P7_DECSTATS *st, int L)
+{
+  if (st->nrow != L)        esl_fatal("utest_genome_scale: %s decoded %ld rows, expected %d", engine, (long) st->nrow, L);
+  if (st->ndead != 0)       esl_fatal("utest_genome_scale: %s has %ld dead rows", engine, (long) st->ndead);
+  if (st->nnonfinite != 0)  esl_fatal("utest_genome_scale: %s has %ld non-finite cells", engine, (long) st->nnonfinite);
+  if (st->fb_incons > 1e-3) esl_fatal("utest_genome_scale: %s F/B inconsistent by %g nats", engine, st->fb_incons);
+}
+
+/* float_fb_incons(): the positive control for utest_genome_scale().  Runs
+ * the FLOAT banded Forward/Backward that cmalign's HMM-only path used
+ * before brief 26_0821-141 (still used by cmsearch --msvband/--vitband)
+ * and returns the same F/B-inconsistency measure as CM_P7_DECSTATS's
+ * fb_incons: how far any row's max of F+B minus the Forward total falls
+ * outside [-log(nstates), 0]. */
+static double
+float_fb_incons(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd)
+{
+  P7_GMXB *fx = p7_gmxb_Create(bnd);
+  P7_GMXB *bx = p7_gmxb_Create(bnd);
+  float    fsc;
+  double   incons = 0., pN = 0., pJ = -eslINFINITY, pC = -eslINFINITY;
+  int64_t  c = 0;
+  int      r, k, nk;
+
+  cm_p7_GForwardBanded (dsq, L, gm, fx, &fsc);
+  cm_p7_GBackwardBanded(dsq, L, gm, bx, NULL);
+  for (r = 0; r < bnd->nrow; r++)   /* one segment, rows 1..L */
+    {
+      double rowmax = -eslINFINITY, v, d;
+      nk = bnd->kmem[2*r+1] - bnd->kmem[2*r] + 1;
+      for (k = 0; k < nk; k++, c++) {
+        v = (double) fx->dp[c*p7G_NSCELLS + p7G_M] + bx->dp[c*p7G_NSCELLS + p7G_M]; if (v > rowmax) rowmax = v;
+        v = (double) fx->dp[c*p7G_NSCELLS + p7G_I] + bx->dp[c*p7G_NSCELLS + p7G_I]; if (v > rowmax) rowmax = v;
+      }
+      v = pN + bx->xmx[r*p7G_NXCELLS + p7G_N] + gm->xsc[p7P_N][p7P_LOOP]; if (v > rowmax) rowmax = v;
+      v = pJ + bx->xmx[r*p7G_NXCELLS + p7G_J] + gm->xsc[p7P_J][p7P_LOOP]; if (v > rowmax) rowmax = v;
+      v = pC + bx->xmx[r*p7G_NXCELLS + p7G_C] + gm->xsc[p7P_C][p7P_LOOP]; if (v > rowmax) rowmax = v;
+      d = rowmax - fsc;
+      v = ESL_MAX(d, -log((double) (2*nk + 3)) - d);
+      if (v > incons) incons = v;
+      pN = fx->xmx[r*p7G_NXCELLS + p7G_N]; pJ = fx->xmx[r*p7G_NXCELLS + p7G_J]; pC = fx->xmx[r*p7G_NXCELLS + p7G_C];
+    }
+  p7_gmxb_Destroy(fx);
+  p7_gmxb_Destroy(bx);
+  return incons;
+}
+
+/* utest_genome_scale(): the regime that broke the float kernels (brief
+ * 26_0821-140): banded F/B at |score| >= 2^16 nats, where a float's ulp is
+ * >= 2^-7 nats and per-row rounding drifts F + B apart along the
+ * sequence.  The drift needs a SYSTEMATIC rounding bias, which comes from
+ * the same few score increments recurring row after row, as they do in a
+ * real nucleotide profile; a random protein HMM's varied increments
+ * round like a random walk and barely drift.  So: an ungapped RNA HMM of
+ * length M whose nodes are all identical, skewed to emit A (+1.2 nats per
+ * A), aligned on a diagonal band of half-width <W> to a sequence emitted
+ * from it.  ~10^5 residues reach 2^16 nats in a couple of seconds.  The
+ * profile is configured the way cmalign's default HMM-only
+ * mode configures it (local, 5'/3' truncation).  Runs all three HMM-OA
+ * engines and requires: no dead rows, no non-finite cells, F and B
+ * consistent along every row, matching Forward and Backward totals, and
+ * identical posteriors, scores and OA traces across the engines.  As a
+ * positive control, the float kernels must FAIL the consistency check on
+ * the same input; if they stop failing it, the input no longer reaches
+ * the regime this test is for. */
+static void
+utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int be_verbose)
+{
+  P7_HMM     *hmm  = NULL;
+  P7_BG      *bg   = p7_bg_Create(abc);
+  P7_PROFILE *gm   = p7_profile_Create(M, abc);
+  ESL_SQ     *sq   = esl_sq_CreateDigital(abc);
+  int        *kmin = NULL;
+  int        *kmax = NULL;
+  P7_GBANDS  *bnd  = p7_gbands_Create();
+  P7_GMXB    *pp0  = NULL, *gx0 = NULL, *pp1 = NULL;
+  P7_TRACE   *tr0  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr1  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr2  = p7_trace_CreateWithPP();
+  CM_P7_DECSTATS st0, st1, st2;
+  float       f0, b0, f1, f2, oa0, oa1, oa2;
+  double      fincons;
+  int64_t     c;
+  int         i, k, L;
+
+  if (p7_hmm_SampleUngapped(r, M, abc, &hmm) != eslOK)             esl_fatal("utest_genome_scale: p7_hmm_SampleUngapped() failed");
+  for (k = 1; k <= M; k++) {
+    for (i = 0; i < abc->K; i++) hmm->mat[k][i] = (i == 0) ? 0.85 : 0.15 / (abc->K - 1);
+    for (i = 0; i < abc->K; i++) hmm->ins[k][i] = hmm->ins[1][i];
+    if (k < M) for (i = 0; i < p7H_NTRANSITIONS; i++) hmm->t[k][i] = hmm->t[1][i];
+  }
+  if (p7_CoreEmit(r, hmm, sq, NULL) != eslOK)                      esl_fatal("utest_genome_scale: p7_CoreEmit() failed");
+  L = sq->n;
+  if (p7_ProfileConfig(hmm, bg, gm, L, p7_LOCAL) != eslOK)         esl_fatal("utest_genome_scale: p7_ProfileConfig() failed");
+  if (p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm, L) != eslOK)        esl_fatal("utest_genome_scale: trunc config failed");
+  kmin = malloc(sizeof(int) * (L+1));
+  kmax = malloc(sizeof(int) * (L+1));
+  for (i = 1; i <= L; i++) { kmin[i] = ESL_MAX(1, i - W); kmax[i] = ESL_MIN(M, i + W); }
+  if (cm_p7_GBands_FromKminKmax(kmin, kmax, L, M, bnd) != eslOK)   esl_fatal("utest_genome_scale: band setup failed");
+  bnd->L = L; bnd->M = M;   /* cm_p7_GBands_FromKminKmax() sets these before p7_gbands_Reuse() zeroes them */
+
+  /* engine 0: non-checkpointed */
+  pp0 = p7_gmxb_Create(bnd);
+  if (cm_p7_GFBDecodeBandedDouble(sq->dsq, L, gm, pp0, &f0, &b0, &st0) != eslOK) esl_fatal("utest_genome_scale: engine 0 failed");
+  gx0 = p7_gmxb_Create(bnd);
+  if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslOK)   esl_fatal("utest_genome_scale: engine 0 OA failed");
+  if (cm_p7_GOATraceBanded(gm, pp0, gx0, tr0) != eslOK)             esl_fatal("utest_genome_scale: engine 0 trace failed");
+  /* engine 1: resident posterior */
+  pp1 = p7b_pp_Create(bnd);
+  if (cm_p7_GCheckptFBDecode_Banded(sq->dsq, L, gm, pp1, &f1, &st1) != eslOK) esl_fatal("utest_genome_scale: engine 1 failed");
+  if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslOK)         esl_fatal("utest_genome_scale: engine 1 OA failed");
+  /* engine 2: double-checkpointed */
+  if (cm_p7_GCheckptFBDecodeOA_Banded(sq->dsq, L, gm, bnd, tr2, &f2, &oa2, &st2) != eslOK) esl_fatal("utest_genome_scale: engine 2 failed");
+
+  /* the test only means something at genome-scale magnitudes ... */
+  if (fabs(f0) < 65536.)  esl_fatal("utest_genome_scale: |Forward| = %g nats < 2^16; raise -M", fabs(f0));
+  /* ... where the float kernels demonstrably fail (positive control) */
+  if ((fincons = float_fb_incons(sq->dsq, L, gm, bnd)) < 1.0)
+    esl_fatal("utest_genome_scale: control failed: float F/B inconsistency only %g nats; raise -M", fincons);
+
+  if (be_verbose)
+    printf("L=%d Forward=%.4f Backward=%.4f nats; float F/B inconsistency %.3f nats; double: dead=%ld nonfinite=%ld incons=%g drift_max=%g\n",
+           L, f0, b0, fincons, (long) st0.ndead, (long) st0.nnonfinite, st0.fb_incons, st0.drift_max);
+  check_decstats("engine 0", &st0, L);
+  check_decstats("engine 1", &st1, L);
+  check_decstats("engine 2", &st2, L);
+  if (fabs(f0 - b0) > 0.05)            esl_fatal("utest_genome_scale: Forward %.4f != Backward %.4f", f0, b0);
+  if (f0 != f1 || f0 != f2)            esl_fatal("utest_genome_scale: engine Forward scores differ: %.4f %.4f %.4f", f0, f1, f2);
+  if (oa0 != oa1 || oa0 != oa2)        esl_fatal("utest_genome_scale: engine OA scores differ: %.4f %.4f %.4f", oa0, oa1, oa2);
+  for (c = 0; c < bnd->ncell; c++)
+    for (k = 0; k < P7B_PP_NSCELLS; k++)
+      if (pp0->dp[c * p7G_NSCELLS + k] != pp1->dp[c * P7B_PP_NSCELLS + k])
+        esl_fatal("utest_genome_scale: engine 0/1 posteriors differ at cell %ld", (long) c);
+  if (trace_differs(tr0, tr1) || trace_differs(tr0, tr2))
+    esl_fatal("utest_genome_scale: engine OA traces differ");
+
+  free(kmin); free(kmax);
+  p7_gmxb_Destroy(pp0); p7_gmxb_Destroy(gx0); p7_gmxb_Destroy(pp1);
+  p7_trace_Destroy(tr0); p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
+  esl_sq_Destroy(sq);
+  p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
+}
+
+static ESL_OPTIONS options[] = {
+  /* name     type          default  env  range toggles reqs incomp  help                                     docgroup*/
+  { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",               0 },
+  { "--version", eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",             0 },
+  { "-s",     eslARG_INT,      "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",          0 },
+  { "-M",     eslARG_INT,  "100000", NULL, "n>0", NULL,  NULL, NULL, "profile length for the genome-scale test", 0 },
+  { "-W",     eslARG_INT,      "10", NULL, "n>0", NULL,  NULL, NULL, "band half-width for the genome-scale test", 0 },
+  { "-v",     eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "print the genome-scale test's scores and margins", 0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options]";
+static char banner[] = "unit test driver for cm_p7_band.c (HMM-only banded F/B/decode)";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go  = cm_CreateDefaultApp("cm_p7_band_utest", options, 0, argc, argv, banner, usage);
+  ESL_RANDOMNESS *r   = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
+  ESL_ALPHABET   *abc = esl_alphabet_Create(eslRNA);
+
+  p7_FLogsumInit();
+  utest_dlogsum();
+  utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), esl_opt_GetBoolean(go, "-v"));
+
+  esl_alphabet_Destroy(abc);
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#endif /*CM_P7_BAND_TESTDRIVE*/
