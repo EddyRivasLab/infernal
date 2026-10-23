@@ -325,6 +325,22 @@ hmm_decstats_report(const ESL_SQ *sq, const CM_P7_DECSTATS *st)
             sq->name, (int) sq->n, (long) st->nrow, (long) st->ndead, (long) st->nnonfinite, st->fb_incons, st->drift_max);
 }
 
+/* brief 26_0821-141: TRUE if the HMM-only posterior decode failed (see
+ * CM_P7_DECSTATS). With a finite Forward total every band row is crossed by
+ * some complete parse, so on correct double-precision F/B a dead row or a
+ * non-finite cell cannot occur, and a row's max of F+B lies within
+ * [-log(nstates), 0] of the Forward total to ~1e-7 nats (measured <= 4.4e-7
+ * at genome scale). Any of these means the posteriors, and so the OA
+ * alignment and its PP line, are wrong: fail rather than write them.
+ * Call only after the no-parse (non-finite Forward total) case is handled. */
+#define HMM_DECODE_FB_INCONS_MAX 1.0   /* nats */
+static int
+hmm_decode_failed(const CM_P7_DECSTATS *st)
+{
+  return (st->ndead > 0 || st->nnonfinite > 0 || st->fb_incons > HMM_DECODE_FB_INCONS_MAX);
+}
+#define HMM_DECODE_FAIL_FMT "HMM-only posterior decoding failed for sequence %s (%ld dead rows, %ld non-finite cells,\nForward/Backward inconsistent by %.3g nats): the alignment would be unreliable."
+
 /* brief 26_0821-096: --hmm banded-OA no-parse fallback, shared by the serial
  * (hmm_alignment()) and threaded (hmm_pipeline_thread()) paths. Called when the
  * banded HMM Forward total came back non-finite: the p7 band contains no
@@ -1882,6 +1898,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
 	    goto HMM_NOPARSE_RETRY;
 	  }
+	  if (hmm_decode_failed(&decst))
+	    cm_Fail(HMM_DECODE_FAIL_FMT, sq->name, (long) decst.ndead, (long) decst.nnonfinite, decst.fb_incons);
 
 	  /* brief 26_0628-061: stage (d) alignment DP is complete (checkpointed or
 	   * non-checkpointed branch above); emit the per-sequence 4-stage line,
@@ -2596,6 +2614,8 @@ hmm_pipeline_thread(void *arg)
 	if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
 	goto HMM_NOPARSE_RETRY;
       }
+      if (hmm_decode_failed(&decst))
+	cm_Fail(HMM_DECODE_FAIL_FMT, sq->name, (long) decst.ndead, (long) decst.nnonfinite, decst.fb_incons);
       hst_raw = fwdsc;
       if (getenv("BRIEF035_MEMPOINT") != NULL)
 	fprintf(stderr, "#MEMPOINT alignment_peak_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
@@ -3302,6 +3322,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	int      ncells_w = 0;
 	int      pad_w  = 30;
 	int      ckpt_mode_w = P7B_OAMEM_CKPTPP;  /* brief 26_0628-083: engine picked by the preflight below */
+	CM_P7_DECSTATS decst_w;                  /* brief 26_0821-141: decode failure counts */
 	P7_GBANDS *bnd_w = NULL;
 	P7_GMXB *bxf_w  = NULL;
 	P7_GMXB *bxb_w  = NULL;
@@ -3432,12 +3453,12 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	hst_aln0 = hmm_now();
 	if (ckpt_mode_w == P7B_OAMEM_CKPTPP) {
 	  p7_trace_Reuse(wtr);
-	  if (p7_GCheckptFBDecodeOA_Banded(dsq, L, gm_w, bnd_w, wtr, &fwdsc_w, &oasc_w, NULL) != eslOK)
+	  if (p7_GCheckptFBDecodeOA_Banded(dsq, L, gm_w, bnd_w, wtr, &fwdsc_w, &oasc_w, &decst_w) != eslOK)
 	    mpi_failure("p7_GCheckptFBDecodeOA_Banded() failed");
 	}
 	else if (ckpt_mode_w == P7B_OAMEM_CKPT) {
 	  bxb_w = p7b_pp_Create(bnd_w);
-	  if (p7_GCheckptFBDecode_Banded(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL) != eslOK)
+	  if (p7_GCheckptFBDecode_Banded(dsq, L, gm_w, bxb_w, &fwdsc_w, &decst_w) != eslOK)
 	    mpi_failure("p7_GCheckptFBDecode_Banded() failed");
 	  p7_trace_Reuse(wtr);
 	  if (p7_GCheckptOA_Banded(gm_w, bxb_w, wtr, &oasc_w) != eslOK)
@@ -3446,12 +3467,16 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	else {
 	  /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
 	  bxb_w = p7_gmxb_Create(bnd_w);
-	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL, NULL) != eslOK)
+	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL, &decst_w) != eslOK)
 	    mpi_failure("cm_p7_GFBDecodeBandedDouble() failed");
 	  bxf_w = p7_gmxb_Create(bnd_w);
 	  p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
 	  p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
 	}
+	/* brief 26_0821-141: as in hmm_alignment(); this worker has no
+	 * no-parse retry, so test only a finite Forward total. */
+	if (isfinite(fwdsc_w) && hmm_decode_failed(&decst_w))
+	  mpi_failure(HMM_DECODE_FAIL_FMT, "(MPI worker)", (long) decst_w.ndead, (long) decst_w.nnonfinite, decst_w.fb_incons);
 
 	hst_raw = fwdsc_w;
 	free(i2k_w);
