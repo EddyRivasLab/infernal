@@ -7766,10 +7766,31 @@ cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *
       ia = *(--bnd_ip);
 
       /* Initialize special states for rows beyond this segment (next_ia-1...ib+1) */
-      if (next_ia > ib+1) {
+      if (next_ia > ib+1 && next_ia <= L) {
+        /* brief 26_0821-141: an interior gap of G rows below the segment
+         * starting at next_ia (whose first row is dpn, band kan..kbn).  Row
+         * next_ia-1 can enter that segment through B; all gap rows loop in
+         * N, J or C.  This used to charge C's loops only, losing the N and J
+         * paths that Forward counts.  Same arithmetic as p7b_bwd_cross_gap(). */
+        int   G  = next_ia - ib - 1;
+        float xBg = -eslINFINITY;
+        rsc = gm->rsc[dsq[next_ia]];
+        for (k = ESL_MAX(1, kan); k <= ESL_MIN(gm->M, kbn); k++)
+          xBg = p7_FLogsum(xBg, dpn[(k - kan) * p7G_NSCELLS] + TSC(p7P_BM, k-1) + MSC(k));
+        xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xBg + gm->xsc[p7P_J][p7P_MOVE]);
+        xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+        xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xBg + gm->xsc[p7P_N][p7P_MOVE]);
+        if (G > 1) {
+          xJ += (G - 1) * gm->xsc[p7P_J][p7P_LOOP];
+          xC += (G - 1) * gm->xsc[p7P_C][p7P_LOOP];
+          xN += (G - 1) * gm->xsc[p7P_N][p7P_LOOP];
+        }
+        xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+      }
+      else if (next_ia > ib+1) {
+        /* trailing rows ib+1..L after the last segment: only C can emit them */
         xC = xC + (next_ia - ib - 1) * gm->xsc[p7P_C][p7P_LOOP];
         xE = p7_FLogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]);
-        /* J,B,N remain -infinity for these positions */
       }
 
       /* Initialize next row bands for i=ib+1 (or end of sequence) */
@@ -7930,41 +7951,22 @@ cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *
    * Following unbanded p7_GBackward() pattern */
   if (opt_sc != NULL) {
     float xB_0, xN_0;
-    float const *rsc = gm->rsc[dsq[1]];
+    float const *rsc;
     
-    /* Account for N-loops from row next_ia-1 down to row 1 */
-    if (next_ia > 1) {
-      xN = xN + (next_ia - 1) * gm->xsc[p7P_N][p7P_LOOP];
-    }
-    
-    /* Calculate B(0): sum over all M states in row 1 within bands
-     * B(0) = sum_k M(1,k) + TSC(BM,k-1) + MSC(k)
-     */
+    /* N(0): N(next_ia-1) = logsum(N(next_ia) + N_LOOP, B(next_ia-1) + N_MOVE),
+     * B(next_ia-1) summed over the first band row's M cells, then N loops
+     * down to row 0.  (brief 26_0821-141: B used to be counted only when the
+     * band starts at row 1, which dropped every parse that stays in N through
+     * a leading unbanded stretch.) */
     xB_0 = -eslINFINITY;
-    /* Find the bands for row i=1 (the first row after row 0) */
-    int k1min, k1max;
-    if (next_ia <= 1) {
-      /* Row 1 is in a segment, find its bands */
-      int *kp = gxb->bnd->kmem;  /* Start of band array */
-      k1min = kp[0];
-      k1max = kp[1];
-      
-      /* Sum over M(1,k) for k in band */
-      for (int k = k1min; k <= k1max; k++) {
-        if (k >= 1 && k <= gm->M) {
-          /* Access M(1,k) from the banded matrix */
-          int k_offset = (k - k1min) * p7G_NSCELLS;
-          float m1k = gxb->dp[k_offset + p7G_M];  /* M(1,k) */
-          xB_0 = p7_FLogsum(xB_0, m1k + TSC(p7P_BM, k-1) + MSC(k));
-        }
-      }
-    } else {
-      /* Row 1 is before any segment, so all M(1,k) = -inf, thus B(0) = -inf */
-      xB_0 = -eslINFINITY;
+    if (next_ia <= L) {
+      int *kp = gxb->bnd->kmem;   /* first band row's band */
+      rsc = gm->rsc[dsq[next_ia]];
+      for (int k = ESL_MAX(1, kp[0]); k <= ESL_MIN(gm->M, kp[1]); k++)
+        xB_0 = p7_FLogsum(xB_0, gxb->dp[(k - kp[0]) * p7G_NSCELLS + p7G_M] + TSC(p7P_BM, k-1) + MSC(k));
     }
-    
-    /* Calculate N(0) = logsum(N(1) + N_LOOP, B(0) + N_MOVE) */
     xN_0 = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB_0 + gm->xsc[p7P_N][p7P_MOVE]);
+    if (next_ia > 1) xN_0 += (next_ia - 1) * gm->xsc[p7P_N][p7P_LOOP];
 
     *opt_sc = xN_0;
   }
@@ -9232,6 +9234,46 @@ cm_p7_decstats_Init(CM_P7_DECSTATS *st)
   st->drift_max  = -eslINFINITY;
 }
 
+/* p7b_bwd_cross_gap(): Backward specials across an unbanded gap of <G>
+ * rows (G >= 1) lying between two band segments, i.e. just below the
+ * already-processed first row of the upper segment (sequence row <i_up>,
+ * dp cells <dpn>, band kan..kbn).  On return xC/xJ/xN/xE are the
+ * Backward specials of row i_up-G (the row just above the lower
+ * segment's top row), ready for p7b_bwd_row() on that top row.
+ *
+ * brief 26_0821-141 (commit 9): the gap rows emit only through N, J or C.
+ * The row just below the upper segment, i_up-1, can also enter the model
+ * through B into that segment's first-row M cells; the others only loop.
+ * Forward always charged both (the gap loops of N, J and C, and B into
+ * the upper segment); Backward used to charge C's loops only, so with a
+ * finite N loop (--notrunc) it lost every path that stays in N through a
+ * gap and enters the model above it, and the posteriors below a gap were
+ * wrong.  Row i_up-1 is computed with the same formulas as p7b_bwd_row()'s
+ * B/J/C/E/N for a row with no band cells of its own. */
+static void
+p7b_bwd_cross_gap(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, int i_up, int G,
+                  const double *dpn, int kan, int kbn,
+                  double *xC, double *xJ, double *xN, double *xE)
+{
+  float const *tsc = gm->tsc;
+  float const *rsc = gm->rsc[dsq[i_up]];
+  double       xB  = -eslINFINITY;
+  int          k;
+
+  for (k = ESL_MAX(1, kan); k <= ESL_MIN(M, kbn); k++)
+    xB = p7b_dlogsum(xB, dpn[(k - kan) * p7G_NSCELLS] + TSC(p7P_BM, k-1) + MSC(k));
+
+  *xJ = p7b_dlogsum(*xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+  *xC = *xC + gm->xsc[p7P_C][p7P_LOOP];
+  *xN = p7b_dlogsum(*xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+  if (G > 1) {   /* the remaining G-1 gap rows only loop (guard 0 * -inf) */
+    *xJ += (G - 1) * gm->xsc[p7P_J][p7P_LOOP];
+    *xC += (G - 1) * gm->xsc[p7P_C][p7P_LOOP];
+    *xN += (G - 1) * gm->xsc[p7P_N][p7P_LOOP];
+  }
+  *xE = p7b_dlogsum(*xJ + gm->xsc[p7P_E][p7P_LOOP], *xC + gm->xsc[p7P_E][p7P_MOVE]);
+}
+
 /* p7b_decode_row(): fold one row's posterior into the caller's output
  * row buffers.  Originally a verbatim copy of the per-row body of
  * p7_GDecodingBanded() (expf + per-row denom normalization + NaN
@@ -9376,9 +9418,10 @@ p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
           double fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
 
           if (top) {
-            int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
-            if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
-                                 xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+            if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+              p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], dpn, kan, kbn, &xC, &xJ, &xN, &xE);
+            else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                                  xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
             use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
           }
 
@@ -9513,9 +9556,10 @@ p7b_backward_seeds(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
       int   use_kan = kan, use_kbn = kbn;
 
       if (top) {
-        int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
-        if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
-                             xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], dpn, kan, kbn, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
         use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
       }
 
@@ -9597,9 +9641,10 @@ p7b_bwd_block(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
       double *bcur = blkbuf + roff[r-lo];
 
       if (top) {
-        int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
-        if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
-                             xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], dpn, kan, kbn, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
         use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
       }
 
@@ -9924,9 +9969,10 @@ cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
       int     i   = g->irow[r];
       double *cur = bdp + P7B_OFF3(r);
       if (r == g->nrow - 1 || g->gap[r+1] > 0) {
-        int gap_above = (r == g->nrow - 1) ? (L - i) : g->gap[r+1];
-        if (gap_above > 0) { xC += gap_above * gm->xsc[p7P_C][p7P_LOOP];
-                             xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], nbr, kn_a, kn_b, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
         nbr = NULL; kn_a = kn_b = M+1;
       }
       p7b_bwd_row(dsq, gm, M, esc, i, L, g->ka[r], g->kb[r], nbr, kn_a, kn_b,
@@ -9937,16 +9983,18 @@ cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   /* Backward total, row 0 (mirror p7_GBackwardBanded()): N(0) =
    * logsum(N(1) + N_LOOP, B(0) + N_MOVE), B(0) summed over row 1's M cells. */
   { int    i0  = (g->nrow > 0) ? g->irow[0] : L+1;
-    double xB0 = -eslINFINITY;
-    if (i0 > 1) xN += (i0 - 1) * gm->xsc[p7P_N][p7P_LOOP];
-    if (i0 == 1) {
+    double xB0 = -eslINFINITY;   /* B of row i0-1: enter the first band row's M cells */
+    if (i0 <= L) {
       float const *tsc = gm->tsc;
-      float const *rsc = gm->rsc[dsq[1]];
+      float const *rsc = gm->rsc[dsq[i0]];
       int k;
       for (k = ESL_MAX(1, g->ka[0]); k <= ESL_MIN(M, g->kb[0]); k++)
         xB0 = p7b_dlogsum(xB0, bdp[(k - g->ka[0]) * p7G_NSCELLS + p7G_M] + TSC(p7P_BM, k-1) + MSC(k));
     }
+    /* N(i0-1) from N(i0) and B(i0-1), then N loops down to row 0.  (brief
+     * 26_0821-141: B(i0-1) used to be counted only when i0 == 1.) */
     bwdsc = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB0 + gm->xsc[p7P_N][p7P_MOVE]);
+    if (i0 > 1) bwdsc += (i0 - 1) * gm->xsc[p7P_N][p7P_LOOP];
   }
 
   /* Decode (mirror p7b_backdecode()'s per-row assembly) */
@@ -13823,6 +13871,97 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
   p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
 }
 
+/* utest_gap_band(): a band with unbanded gaps, under a profile with
+ * finite N and C loops (p7_UNIGLOCAL, as cmalign -g --notrunc --hmm
+ * configures it).  The sequence is a random 5' flank, a sequence emitted
+ * from the model, and a random 3' flank; the band is rows LG+1..gapa-1,
+ * then (after an interior gap) rows gapb+1..L, all full width, so the
+ * correct parse stays in N through the gap(s) and enters the model in the
+ * second segment.  <LG> is the length of the leading gap (0: interior gap
+ * only).  Requires Forward and Backward totals to agree (double engine 0
+ * and the float originals), no dead rows, no non-finite cells, consistent
+ * F/B, identical Forward scores and posteriors across the three engines,
+ * identical OA scores and traces from engines 1 and 2 (see the note at the
+ * OA check), and that the regime is real: the N posterior dominates the
+ * first band row.  Before brief 26_0821-141's commit 9, Backward charged
+ * only C's loops across a gap and never entered the model from a gap row,
+ * so the totals disagreed and this test failed. */
+static void
+utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
+{
+  int         n5 = 120, n3 = 100, gapa = 101, gapb = 115;
+  P7_HMM     *hmm  = NULL;
+  P7_BG      *bg   = p7_bg_Create(abc);
+  P7_PROFILE *gm   = p7_profile_Create(M, abc);
+  ESL_SQ     *core = esl_sq_CreateDigital(abc);
+  ESL_DSQ    *dsq  = NULL;
+  P7_GBANDS  *bnd  = p7_gbands_Create();
+  P7_GMXB    *pp0  = NULL, *pp1 = NULL, *fx = NULL, *bx = NULL;
+  P7_TRACE   *tr1  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr2  = p7_trace_CreateWithPP();
+  CM_P7_DECSTATS st[3];
+  float       f0, b0, f1, f2, oa1, oa2, ff, fb;
+  int64_t     c;
+  int         i, k, L, e;
+
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK)  esl_fatal("utest_gap_band: p7_hmm_Sample() failed");
+  if (p7_CoreEmit(r, hmm, core, NULL) != eslOK) esl_fatal("utest_gap_band: p7_CoreEmit() failed");
+  L = n5 + core->n + n3;
+  dsq = malloc(sizeof(ESL_DSQ) * (L + 2));
+  if (esl_rsq_xfIID(r, bg->f, abc->K, L, dsq) != eslOK) esl_fatal("utest_gap_band: esl_rsq_xfIID() failed");
+  memcpy(dsq + n5 + 1, core->dsq + 1, core->n);
+  if (p7_ProfileConfig(hmm, bg, gm, L, p7_UNIGLOCAL) != eslOK) esl_fatal("utest_gap_band: p7_ProfileConfig() failed");
+  if (gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) esl_fatal("utest_gap_band: N loop is not finite");
+
+  p7_gbands_Reuse(bnd);
+  for (i = LG + 1; i <= L; i++)
+    if (i < gapa || i > gapb) p7_gbands_Append(bnd, i, 1, M);
+  bnd->L = L; bnd->M = M;
+  if (bnd->nseg != 2) esl_fatal("utest_gap_band: expected 2 band segments, got %d", bnd->nseg);
+
+  pp0 = p7_gmxb_Create(bnd);
+  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm, pp0, &f0, &b0, &st[0]) != eslOK) esl_fatal("utest_gap_band: engine 0 failed");
+  pp1 = p7b_pp_Create(bnd);
+  if (cm_p7_GCheckptFBDecode_Banded(dsq, L, gm, pp1, &f1, &st[1]) != eslOK) esl_fatal("utest_gap_band: engine 1 failed");
+  if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslOK)       esl_fatal("utest_gap_band: engine 1 OA failed");
+  if (cm_p7_GCheckptFBDecodeOA_Banded(dsq, L, gm, bnd, tr2, &f2, &oa2, &st[2]) != eslOK) esl_fatal("utest_gap_band: engine 2 failed");
+
+  /* the float originals (cmsearch --msvband/--vitband) must agree with themselves too */
+  fx = p7_gmxb_Create(bnd); bx = p7_gmxb_Create(bnd);
+  cm_p7_GForwardBanded (dsq, L, gm, fx, &ff);
+  cm_p7_GBackwardBanded(dsq, L, gm, bx, &fb);
+
+  if (! isfinite(f0))          esl_fatal("utest_gap_band: no parse (Forward %g)", f0);
+  if (fabs(f0 - b0) > 1e-3)    esl_fatal("utest_gap_band: double Forward %.4f != Backward %.4f", f0, b0);
+  if (fabs(ff - fb) > 1e-2)    esl_fatal("utest_gap_band: float Forward %.4f != Backward %.4f", ff, fb);
+  for (e = 0; e < 3; e++) {
+    if (st[e].nrow != bnd->nrow) esl_fatal("utest_gap_band: engine %d decoded %ld rows, expected %d", e, (long) st[e].nrow, bnd->nrow);
+    if (st[e].ndead != 0)        esl_fatal("utest_gap_band: engine %d has %ld dead rows", e, (long) st[e].ndead);
+    if (st[e].nnonfinite != 0)   esl_fatal("utest_gap_band: engine %d has %ld non-finite cells", e, (long) st[e].nnonfinite);
+    if (st[e].fb_incons > 1e-3)  esl_fatal("utest_gap_band: engine %d F/B inconsistent by %g nats", e, st[e].fb_incons);
+  }
+  if (f0 != f1 || f0 != f2)     esl_fatal("utest_gap_band: engine Forward scores differ: %.4f %.4f %.4f", f0, f1, f2);
+  if (oa1 != oa2)               esl_fatal("utest_gap_band: engine 1/2 OA scores differ: %.4f %.4f", oa1, oa2);
+  for (c = 0; c < bnd->ncell; c++)
+    for (k = 0; k < P7B_PP_NSCELLS; k++)
+      if (pp0->dp[c * p7G_NSCELLS + k] != pp1->dp[c * P7B_PP_NSCELLS + k])
+        esl_fatal("utest_gap_band: engine 0/1 posteriors differ at cell %ld", (long) c);
+  /* OA: engines 1 and 2 only.  Engine 0's OA traceback is the float
+   * cm_p7_GOATraceBanded(), which on a band with unbanded gap rows traces
+   * N-state residues as M states with negative k and reads out of bounds
+   * (valgrind) -- a separate, pre-existing defect (brief 26_0821-141 open
+   * item) -- so engine 0 is not run through OA here; its Forward/Backward
+   * and posteriors are compared. */
+  if (trace_differs(tr1, tr2)) esl_fatal("utest_gap_band: engine 1/2 OA traces differ");
+  /* the regime is real: the first band row is 5' flank (N), reached only through the leading gap */
+  if (pp0->xmx[p7G_N] < 0.5) esl_fatal("utest_gap_band: N posterior at the first band row only %g", pp0->xmx[p7G_N]);
+
+  free(dsq);
+  p7_gmxb_Destroy(pp0); p7_gmxb_Destroy(pp1); p7_gmxb_Destroy(fx); p7_gmxb_Destroy(bx);
+  p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
+  esl_sq_Destroy(core); p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
+}
+
 static ESL_OPTIONS options[] = {
   /* name     type          default  env  range toggles reqs incomp  help                                     docgroup*/
   { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",               0 },
@@ -13846,6 +13985,9 @@ main(int argc, char **argv)
   p7_FLogsumInit();
   utest_dlogsum();
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), esl_opt_GetBoolean(go, "-v"));
+  { ESL_ALPHABET *nt = esl_alphabet_Create(eslRNA); int t;
+    for (t = 0; t < 5; t++) { utest_gap_band(r, nt, 40, 40); utest_gap_band(r, nt, 40, 0); }   /* several random draws */
+    esl_alphabet_Destroy(nt); }
 
   esl_alphabet_Destroy(abc);
   esl_randomness_Destroy(r);
