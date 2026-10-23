@@ -8765,6 +8765,13 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
     bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);         /* decode row scratch  */
   }
 
+  /* brief 26_0821-141: the OA traceback grows the caller's P7_TRACE (with
+   * PP) inside every engine: ~L+M elements of 13 bytes, and p7_trace_Grow()
+   * doubles the allocation, so allow 32 bytes per element.  Without this
+   * term massif measured the engines' peak heap 0.1-0.4 MiB above the
+   * estimate on 7-15 kb genomes. */
+  bytes += 32.0 * ((double) bnd->L + (double) bnd->M);
+
   if (ret_bytes) *ret_bytes = bytes;
   return eslOK;
 }
