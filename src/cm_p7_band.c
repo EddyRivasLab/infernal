@@ -8679,8 +8679,10 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *           though, which is what mode 2 removes.
  *
  *           Brief 26_0821-141 resized all three for the double-precision
- *           F/B (the F/B terms are 8 bytes per value, the posterior and
- *           OA terms still 4), counts each checkpoint seed at its own
+ *           F/B (the F/B terms are 8 bytes per value, the posterior 4),
+ *           and brief 26_0821-144 for the double-precision OA pass of
+ *           modes 1 and 2 (OA seeds, row buffers and traceback window at
+ *           8 bytes; mode 0's OA matrix is still float). 141 also counts each checkpoint seed at its own
  *           row's width rather than at maxnc, and adds the O(nrow)
  *           P7B_GEO tables and traceback row_idx to modes 0 and 1 (which
  *           brief 26_0430-266 had omitted), so each mode's estimate is an
@@ -8725,16 +8727,18 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
   }
 
   /* brief 26_0821-141: the Forward/Backward cells, seeds, block buffers
-   * and specials are double now (8 bytes); the posterior and the OA pass
-   * stay float (4 bytes). */
+   * and specials are double (8 bytes); the posterior stays float (4).
+   * brief 26_0821-144: so is the checkpointed OA pass (modes 1 and 2). */
   if (ckpt_mode == P7B_OAMEM_CKPTPP) {
     /* brief 26_0628-081: no O(ncell) term at all.
      *   F + B seeds (double):         (fseedc + bseedc) * p7G_NSCELLS
-     *   OA seeds (float):              fseedc * p7G_NSCELLS
+     *   OA seeds (double):             fseedc * p7G_NSCELLS
      *   F + B block buffers (double):2 * (B+2) * maxnc * p7G_NSCELLS
-     *   OA traceback window (float):     (B+2) * maxnc * p7G_NSCELLS
+     *   OA traceback window (double):    (B+2) * maxnc * p7G_NSCELLS
+     *   OA seed-pass rows (double):         2  * maxnc * p7G_NSCELLS
      *   pp block buffer (float):         (B+2) * maxnc * P7B_PP_NSCELLS
-     *   pp + OA block specials (float):2*(B+2) * p7G_NXCELLS
+     *   pp block specials (float):       (B+2) * p7G_NXCELLS
+     *   OA block specials (double):      (B+2) * p7G_NXCELLS
      *   decode row scratch (double):     2*maxnc + 3
      *   seed structs:                  3 * nblk (<= 64 bytes each)
      *   P7B_GEO row tables:           nrow * (4 ints + 1 int64)
@@ -8742,10 +8746,11 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
      */
     double nr = (double) (B + 2);
     bytes  = (double) sizeof(double) * p7G_NSCELLS * ((double) fseedc + (double) bseedc);
-    bytes += (double) sizeof(float)  * p7G_NSCELLS * (double) fseedc;
-    bytes += (double) maxnc * p7G_NSCELLS * nr * (2.0 * sizeof(double) + sizeof(float));
+    bytes += (double) sizeof(double) * p7G_NSCELLS * (double) fseedc;
+    bytes += (double) maxnc * p7G_NSCELLS * nr * (3.0 * sizeof(double));
+    bytes += (double) sizeof(double) * p7G_NSCELLS * 2.0 * (double) maxnc;
     bytes += (double) sizeof(float)  * (double) maxnc * P7B_PP_NSCELLS * nr;
-    bytes += (double) sizeof(float)  * p7G_NXCELLS * 2.0 * nr;
+    bytes += (double) (sizeof(float) + sizeof(double)) * p7G_NXCELLS * nr;
     bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);
     bytes += 3.0 * 64.0 * (double) nblk;   /* seed structs: <= 64 bytes each (defined below) */
     bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;
@@ -8756,10 +8761,13 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
      *   F/B phase (double): Forward seeds, the B-row Forward block buffer,
      *                       two Backward rows (and Forward's two rows,
      *                       freed first), the decode row scratch;
-     *   OA phase (float):   OA seeds and the (B+2)-row traceback window. */
+     *   OA phase (double, brief 26_0821-144): OA seeds, the seed pass's
+     *                       two rows and the (B+2)-row traceback window
+     *                       with its specials. */
     double fb = (double) sizeof(double) * ( p7G_NSCELLS * ((double) fseedc + (double) (B + 2) * maxnc)
                                           + 2.0 * maxnc + 3.0 );
-    double oa = (double) sizeof(float)  * p7G_NSCELLS * ((double) fseedc + (double) (B + 2) * maxnc);
+    double oa = (double) sizeof(double) * ( p7G_NSCELLS * ((double) fseedc + (double) (B + 4) * maxnc)
+                                          + (double) (B + 2) * p7G_NXCELLS );
     bytes  = (double) sizeof(float) * ((double) bnd->ncell * P7B_PP_NSCELLS
 					+ (double) bnd->nrow  * p7G_NXCELLS);
     bytes += ESL_MAX(fb, oa);
@@ -9001,14 +9009,15 @@ p7b_fwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
  * from seed[b]; block 0 starts from the initial state.
  */
 typedef struct {
-  float  *dp;        /* copy of the previous row's dp cells (NULL if none) */
+  double *dp;        /* copy of the previous row's dp cells (NULL if none) */
   int     ka, kb;    /* that row's band (kap,kbp for the next row)         */
-  float   xN, xJ, xC, xB;  /* running specials after that row             */
+  double  xN, xJ, xC, xB;  /* running specials after that row             */
   int     valid;
 } P7B_FSEED;
 
 /* brief 26_0821-141: the Forward pass's seeds are double (the OA pass
- * keeps the float P7B_FSEED above). Same fields, same meaning. */
+ * once kept the float P7B_FSEED above; brief 26_0821-144 made that double
+ * too). Same fields, same meaning. */
 typedef struct {
   double *dp;        /* copy of the previous row's dp cells (NULL if none) */
   int     ka, kb;    /* that row's band (kap,kbp for the next row)         */
@@ -10042,6 +10051,14 @@ cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
 
 /*****************************************************************
  * STEP OA + TB: sqrt(nrow)-checkpointed banded optimal accuracy
+ *
+ * brief 26_0821-144: the OA values (sums of posteriors along a path,
+ * up to ~L) are double, storage included: the row kernel, seeds, row
+ * buffers, traceback window and traceback comparisons. In float, at
+ * genome scale (L ~ 2e5, ulp ~ 0.016) the rounding tipped near-ties:
+ * 186 of 204 HK genome alignments changed against a double shadow,
+ * up to 10% of residues on one mpox row (fr0 0.899). The posteriors
+ * themselves stay float.
  *****************************************************************/
 
 #define P7B_TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0f )
@@ -10051,15 +10068,15 @@ cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
  * (pp_dp cells, pp_xp specials); writes OA dp (ascending k) + returns
  * specials. */
 static void
-p7b_oa_row(const P7_PROFILE *gm, int M, float esc,
-           int kac, int kbc, const float *dpp, int kap, int kbp,
+p7b_oa_row(const P7_PROFILE *gm, int M, double esc,
+           int kac, int kbc, const double *dpp, int kap, int kbp,
            const float *pp_dp, const float *pp_xp,
-           float xB, float xN_in, float xJ_in, float xC_in,
-           float *dpc,
-           float *o_xE, float *o_xN, float *o_xJ, float *o_xB, float *o_xC)
+           double xB, double xN_in, double xJ_in, double xC_in,
+           double *dpc,
+           double *o_xE, double *o_xN, double *o_xJ, double *o_xB, double *o_xC)
 {
   float const *tsc = gm->tsc;
-  float  mvp, ivp, dvp, dc, sc, xE, pp_m, t1, t2;
+  double  mvp, ivp, dvp, dc, sc, xE, pp_m, t1, t2;
   int    k;
   int    kbc2 = (kbc == M ? kbc - 1 : kbc);
   const float *ppp = pp_dp;
@@ -10124,9 +10141,9 @@ p7b_oa_row(const P7_PROFILE *gm, int M, float esc,
  * segment-start reset (OA resets N/J/C to -inf at a segment start; it
  * does NOT advance them through the gap the way Forward does). */
 static void
-p7b_oa_seg_start(const P7_PROFILE *gm, float *xN, float *xJ, float *xC, float *xB, int do_reset)
+p7b_oa_seg_start(const P7_PROFILE *gm, double *xN, double *xJ, double *xC, double *xB, int do_reset)
 {
-  float t1, t2;
+  double t1, t2;
   if (do_reset) { *xN = -eslINFINITY; *xJ = -eslINFINITY; *xC = -eslINFINITY; }
   t1 = (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
   t2 = (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
@@ -10148,19 +10165,19 @@ p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, P7B_PPVIEW *view,
 {
   int    status;
   int    M = g->M, B = g->B;
-  float  esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
-  float *buf0 = NULL, *buf1 = NULL, *prev = NULL, *cur;
+  double  esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  double *buf0 = NULL, *buf1 = NULL, *prev = NULL, *cur;
   int    r, kap = M+1, kbp = M+1;
-  float  xN = 0.0f, xJ = -eslINFINITY, xC = -eslINFINITY, xB = -eslINFINITY;
-  float  xE_o, xN_o, xJ_o, xB_o, xC_o;
+  double  xN = 0.0f, xJ = -eslINFINITY, xC = -eslINFINITY, xB = -eslINFINITY;
+  double  xE_o, xN_o, xJ_o, xB_o, xC_o;
 
-  ESL_ALLOC(buf0, sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
-  ESL_ALLOC(buf1, sizeof(float) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(buf0, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(buf1, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
 
   for (r = 0; r < g->nrow; r++)
     {
       int   kac = g->ka[r], kbc = g->kb[r];
-      const float *dpp;
+      const double *dpp;
       int   seg_start = (g->gap[r] > 0) || (r == 0);
       const float *pp_dp, *pp_xp;
 
@@ -10184,8 +10201,8 @@ p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, P7B_PPVIEW *view,
 
       if (r + 1 < g->nrow && ((r + 1) % B) == 0) {
         int b = (r + 1) / B, nc = kbc - kac + 1;
-        ESL_ALLOC(seed[b].dp, sizeof(float) * nc * p7G_NSCELLS);
-        memcpy(seed[b].dp, cur, sizeof(float) * nc * p7G_NSCELLS);
+        ESL_ALLOC(seed[b].dp, sizeof(double) * nc * p7G_NSCELLS);
+        memcpy(seed[b].dp, cur, sizeof(double) * nc * p7G_NSCELLS);
         seed[b].ka = kac; seed[b].kb = kbc;
         seed[b].xN = xN; seed[b].xJ = xJ; seed[b].xC = xC; seed[b].xB = xB;
         seed[b].valid = 1;
@@ -10208,12 +10225,12 @@ p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, P7B_PPVIEW *view,
 static void
 p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
                    const P7B_FSEED *seed, int b, int lo, int hi,
-                   float *oadp, int64_t *oaoff, float *oaxmx)
+                   double *oadp, int64_t *oaoff, double *oaxmx)
 {
   int    M = g->M;
-  float  esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  double  esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
   int    r, kap, kbp;
-  float  xN, xJ, xC, xB = -eslINFINITY;
+  double  xN, xJ, xC, xB = -eslINFINITY;
   int64_t cum = 0;
 
   if (b == 0) { xN = 0.0f; xJ = -eslINFINITY; xC = -eslINFINITY; kap = kbp = M+1; }
@@ -10223,10 +10240,10 @@ p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *vie
   for (r = lo; r <= hi; r++)
     {
       int   kac = g->ka[r], kbc = g->kb[r];
-      float xE_o, xN_o, xJ_o, xB_o, xC_o;
-      float *dpc = oadp + cum;
-      float *xpc = oaxmx + (int64_t)(r - lo) * p7G_NXCELLS;
-      const float *dpp;
+      double xE_o, xN_o, xJ_o, xB_o, xC_o;
+      double *dpc = oadp + cum;
+      double *xpc = oaxmx + (int64_t)(r - lo) * p7G_NXCELLS;
+      const double *dpp;
       int   seg_start = (g->gap[r] > 0) || (r == 0);
       const float *pp_dp = p7b_ppview_dp(view, g, r);
       const float *pp_xp = p7b_ppview_xp(view, g, r);
@@ -10260,7 +10277,7 @@ typedef struct {
   P7B_PPWORK       *ppw;      /* NULL => view.pp is the resident pp */
   const P7B_FSEED  *seed;
   int     B, nrow;
-  float  *oadp;  int64_t *oaoff;  float *oaxmx;
+  double  *oadp;  int64_t *oaoff;  double *oaxmx;
   int     wlo, whi;
 } P7B_OAWIN;
 
@@ -10277,7 +10294,7 @@ p7b_oawin_ensure(P7B_OAWIN *w, int r)
   }
 }
 
-static float
+static double
 p7b_oawin_dp(P7B_OAWIN *w, int p, int k, int cell)
 {
   int r;
@@ -10289,7 +10306,7 @@ p7b_oawin_dp(P7B_OAWIN *w, int p, int k, int cell)
   return w->oadp[ w->oaoff[r - w->wlo] + (int64_t)(k - w->g->ka[r]) * p7G_NSCELLS + cell ];
 }
 
-static float
+static double
 p7b_oawin_x(P7B_OAWIN *w, int p, int s)
 {
   int r;
@@ -10352,22 +10369,22 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
   int     i, k, r;
 
   /* OA window state */
-  float  *oadp  = NULL;     /* B+1 rows of OA dp, packed       */
+  double  *oadp  = NULL;     /* B+1 rows of OA dp, packed       */
   int64_t*oaoff = NULL;     /* [0..B] per-window-row dp offset */
-  float  *oaxmx = NULL;     /* [0..B] * p7G_NXCELLS            */
+  double  *oaxmx = NULL;     /* [0..B] * p7G_NXCELLS            */
   int     win_cap = B + 2;
   P7B_OAWIN w;
 
   int     sprv, scur;
-  float   postprob;
+  double   postprob;
 
   ESL_ALLOC(row_idx, sizeof(int) * (L + 1));
   for (i = 0; i <= L; i++) row_idx[i] = -1;
   for (r = 0; r < nrow; r++) row_idx[g->irow[r]] = r;
 
-  ESL_ALLOC(oadp,  sizeof(float)   * ((int64_t) win_cap * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(oadp,  sizeof(double)   * ((int64_t) win_cap * g->maxnc * p7G_NSCELLS + 1));
   ESL_ALLOC(oaoff, sizeof(int64_t) * win_cap);
-  ESL_ALLOC(oaxmx, sizeof(float)   * ((int64_t) win_cap * p7G_NXCELLS));
+  ESL_ALLOC(oaxmx, sizeof(double)   * ((int64_t) win_cap * p7G_NXCELLS));
 
   w.g = g; w.row_idx = row_idx; w.gm = gm; w.view = *view; w.ppw = ppw; w.seed = seed;
   w.B = B; w.nrow = nrow; w.oadp = oadp; w.oaoff = oaoff; w.oaxmx = oaxmx;
@@ -10399,20 +10416,20 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
             /* Node 0 has no M/D state: the only valid entry into M1 is B->M1. */
             scur = p7T_B;
           } else {
-            float path[4];
+            double path[4];
             int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
             path[0] = P7B_TSCDELTA(p7P_MM, k-1) * OA_M(i-1, k-1);
             path[1] = P7B_TSCDELTA(p7P_IM, k-1) * OA_I(i-1, k-1);
             path[2] = P7B_TSCDELTA(p7P_DM, k-1) * OA_D(i-1, k-1);
             path[3] = P7B_TSCDELTA(p7P_BM, k-1) * OA_X(i-1, p7G_B);
-            scur = state[esl_vec_FArgMax(path, 4)];
+            scur = state[esl_vec_DArgMax(path, 4)];
           }
           k--; i--;
         }
         break;
       case p7T_D:
         {
-          float path[2];
+          double path[2];
           path[0] = P7B_TSCDELTA(p7P_MD, k-1) * OA_M(i, k-1);
           path[1] = P7B_TSCDELTA(p7P_DD, k-1) * OA_D(i, k-1);
           scur = (path[0] >= path[1]) ? p7T_M : p7T_D;
@@ -10421,7 +10438,7 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
         break;
       case p7T_I:
         {
-          float path[2];
+          double path[2];
           path[0] = P7B_TSCDELTA(p7P_MI, k) * OA_M(i-1, k);
           path[1] = P7B_TSCDELTA(p7P_II, k) * OA_I(i-1, k);
           scur = (path[0] >= path[1]) ? p7T_M : p7T_I;
@@ -10433,9 +10450,9 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
         break;
       case p7T_C:
         {
-          float t1c = (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
-          float t2c = (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
-          float path[2];
+          double t1c = (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double t2c = (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double path[2];
           path[0] = t1c * (OA_X(i-1, p7G_C) + PP_X(i, p7G_C));
           path[1] = t2c *  OA_X(i, p7G_E);
           scur = (path[0] > path[1]) ? p7T_C : p7T_E;
@@ -10443,9 +10460,9 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
         break;
       case p7T_J:
         {
-          float t1j = (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
-          float t2j = (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
-          float path[2];
+          double t1j = (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double t2j = (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double path[2];
           path[0] = t1j * (OA_X(i-1, p7G_J) + PP_X(i, p7G_J));
           path[1] = t2j *  OA_X(i, p7G_E);
           scur = (path[0] > path[1]) ? p7T_J : p7T_E;
@@ -10453,7 +10470,7 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
         break;
       case p7T_E:
         {
-          float max  = -eslINFINITY;
+          double max  = -eslINFINITY;
           int   smax = -1, kmax = -1;
           int   ri   = row_idx[i];
           if (! p7_profile_IsLocal(gm)) {
@@ -10463,8 +10480,8 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
             if (ri >= 0) {
               int ka = g->ka[ri], kb = g->kb[ri];
               for (k = ka; k <= kb; k++) {
-                float mv = OA_M(i, k);
-                float dv = OA_D(i, k);
+                double mv = OA_M(i, k);
+                double dv = OA_D(i, k);
                 if (mv >= max) { max = mv; smax = p7T_M; kmax = k; }
                 if (dv >  max) { max = dv; smax = p7T_D; kmax = k; }
               }
@@ -10475,9 +10492,9 @@ p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
         break;
       case p7T_B:
         {
-          float t1b = (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
-          float t2b = (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
-          float path[2];
+          double t1b = (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double t2b = (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double path[2];
           path[0] = t1b * OA_X(i, p7G_N);
           path[1] = t2b * OA_X(i, p7G_J);
           if (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) scur = p7T_N;
