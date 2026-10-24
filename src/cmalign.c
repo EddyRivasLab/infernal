@@ -578,7 +578,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
+      if(nali == 1) output_header(cfg->sfp, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
       if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) cm_Fail(errbuf);
     }
 
@@ -1135,7 +1135,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     /* output scores to scores file, if --sfp used */
     if(cfg->sfp != NULL) { 
-      if(nali == 1) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
+      if(nali == 1) output_header(cfg->sfp, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
       if((status =  output_scores(cfg->sfp, cm, errbuf, merged_dataA, nseq_cur + nmap_cur, nmap_cur, cfg->be_verbose)) != eslOK) mpi_failure(errbuf);
     }
 
