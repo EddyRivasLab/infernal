@@ -97,9 +97,12 @@ ibv_rowstats_add(IBV_ROWSTATS *st, float rowmax)
 /* One developer line per band. An empty row (no finite through-score) cannot
  * happen when the optimum is finite, since the optimal path crosses every row;
  * a nonzero empty_rows count means the band calculation is wrong somewhere. */
+static IBV_ROWSTATS ibv_last_rowstats;   /* the last band's stats, for the unit test */
+
 static void
 ibv_rowstats_report(const IBV_ROWSTATS *st, const char *path, int L, int M, float margin, int64_t ncells)
 {
+  ibv_last_rowstats = *st;
   if (! cm_StageVerbose()) return;
   fprintf(stderr, "#IBVBAND path=%s L=%d M=%d margin_bits=%.3f optimal_bits=%.3f scans=%lld empty_rows=%lld drift_max_bits=%.3f drift_min_bits=%.3f ncells=%lld\n",
           path, L, M, margin / P7IBV_INTSCALE, st->optimal / P7IBV_INTSCALE,
@@ -2854,3 +2857,136 @@ cm_p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepa
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   return status;
 }
+
+
+/*****************************************************************
+ * Unit test driver (brief 26_0821-144)
+ *****************************************************************/
+#ifdef CM_P7_IBV_TESTDRIVE
+
+#include "esl_getopts.h"
+
+/* ibv_utest_hmm(): an M-node ungapped-ish RNA HMM whose match states
+ * strongly prefer residue 0 over an insert distribution that rarely emits
+ * it, so a sequence of 0s scores ~<sc> bits per residue: large total
+ * scores at modest M, which is what makes the float through-scores drift.
+ * <shift> (bits) lowers every residue's score by <shift>: match emissions
+ * via mat[][], insert emissions via the transitions into I (the IBV
+ * kernels score inserts by transition only). In exact arithmetic that
+ * lowers every parse by shift*L and leaves the band unchanged; with
+ * shift ~ the per-residue mean it keeps the DP's partial sums near 0,
+ * where float rounding is negligible -- the reference band. */
+static P7_HMM *
+ibv_utest_hmm(const ESL_ALPHABET *abc, int M, double shift)
+{
+  P7_HMM *hmm = p7_hmm_Create(M, abc);
+  double  f   = pow(2.0, -shift);
+  int     k, x;
+
+  p7_hmm_Zero(hmm);
+  for (k = 0; k <= M; k++) {
+    for (x = 0; x < abc->K; x++) {
+      hmm->mat[k][x] = (k == 0) ? (x == 0 ? 1.0 : 0.0) : f * ((x == 0) ? 0.97 : 0.01);
+      hmm->ins[k][x] = (x == 0) ? 0.01 : 0.33;
+    }
+    if (k < M) {
+      hmm->t[k][p7H_MM] = 0.98;  hmm->t[k][p7H_MI] = f * 0.01; hmm->t[k][p7H_MD] = 0.01;
+      hmm->t[k][p7H_IM] = 0.7;   hmm->t[k][p7H_II] = f * 0.3;
+      hmm->t[k][p7H_DM] = 0.7;   hmm->t[k][p7H_DD] = 0.3;
+    } else {
+      hmm->t[k][p7H_MM] = 1.0;   hmm->t[k][p7H_MI] = 0.0;     hmm->t[k][p7H_MD] = 0.0;
+      hmm->t[k][p7H_IM] = 1.0;   hmm->t[k][p7H_II] = 0.0;
+      hmm->t[k][p7H_DM] = 1.0;   hmm->t[k][p7H_DD] = 0.0;
+    }
+  }
+  return hmm;
+}
+
+/* utest_genome_drift(): the row-relative band threshold at a scale where
+ * float drift is real. A sequence of M residues aligned to the HMM above
+ * scores ~6.6 bits per residue; the D&C deriver (cmalign's --hmm --p7ibv
+ * path) runs once on the plain HMM and once on the shifted one.
+ * Requires: (positive control) the plain run's row max through-scores
+ * drift from its optimum by more than the band margin, which is what the
+ * old global threshold (optimum - margin) turned into bloated or empty
+ * rows; no empty rows; the shifted run's drift below 1/10 of the margin;
+ * and the two bands equal to within one cell at every row edge, with the
+ * same Viterbi pins. */
+static void
+utest_genome_drift(const ESL_ALPHABET *abc, int M, int delta, int be_verbose)
+{
+  P7_HMM   *hmm0 = ibv_utest_hmm(abc, M, 0.0);
+  P7_HMM   *hmm1 = NULL;
+  CM_t      cm;
+  ESL_DSQ  *dsq  = NULL;
+  int      *i2k0 = NULL, *kmin0 = NULL, *kmax0 = NULL;
+  int      *i2k1 = NULL, *kmin1 = NULL, *kmax1 = NULL;
+  int       nc0, nc1, i, L = M, maxdiff = 0;
+  IBV_ROWSTATS st0, st1;
+  double    persc;
+  char      errbuf[eslERRBUFSIZE];
+
+  dsq = malloc(sizeof(ESL_DSQ) * (L + 2));
+  dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+  for (i = 1; i <= L; i++) dsq[i] = 0;
+
+  memset(&cm, 0, sizeof(CM_t));
+  cm.fp7 = hmm0;
+  if (cm_p7_Seq2BandsIBV_dnc(&cm, errbuf, dsq, L, delta, 0, FALSE, FALSE, FALSE, P7IBV_MODE_DELTA, 0,
+                             &i2k0, &kmin0, &kmax0, &nc0) != eslOK) esl_fatal("utest_genome_drift: plain run failed: %s", errbuf);
+  st0 = ibv_last_rowstats;
+
+  persc = st0.optimal / P7IBV_INTSCALE / (double) L;
+  hmm1  = ibv_utest_hmm(abc, M, persc);
+  cm.fp7 = hmm1;
+  if (cm_p7_Seq2BandsIBV_dnc(&cm, errbuf, dsq, L, delta, 0, FALSE, FALSE, FALSE, P7IBV_MODE_DELTA, 0,
+                             &i2k1, &kmin1, &kmax1, &nc1) != eslOK) esl_fatal("utest_genome_drift: shifted run failed: %s", errbuf);
+  st1 = ibv_last_rowstats;
+
+  for (i = 1; i <= L; i++) {
+    maxdiff = ESL_MAX(maxdiff, abs(kmin0[i] - kmin1[i]));
+    maxdiff = ESL_MAX(maxdiff, abs(kmax0[i] - kmax1[i]));
+  }
+  if (be_verbose)
+    printf("M=L=%d optimum %.1f bits (%.3f/residue); plain drift [%.3f, %.3f] bits, %lld empty rows, %d cells; shifted drift [%.4f, %.4f], %d cells; max edge diff %d\n",
+           L, st0.optimal / P7IBV_INTSCALE, persc, st0.drift_min / P7IBV_INTSCALE, st0.drift_max / P7IBV_INTSCALE,
+           (long long) st0.empty_rows, nc0, st1.drift_min / P7IBV_INTSCALE, st1.drift_max / P7IBV_INTSCALE, nc1, maxdiff);
+
+  if (ESL_MAX(st0.drift_max, -st0.drift_min) <= (float) delta)
+    esl_fatal("utest_genome_drift: control failed: plain drift only [%g, %g] milli-bits vs margin %d; raise -M", st0.drift_min, st0.drift_max, delta);
+  if (st0.empty_rows != 0 || st1.empty_rows != 0) esl_fatal("utest_genome_drift: empty rows (%lld, %lld)", (long long) st0.empty_rows, (long long) st1.empty_rows);
+  if (ESL_MAX(st1.drift_max, -st1.drift_min) > 0.1 * delta)
+    esl_fatal("utest_genome_drift: shifted reference drifts [%g, %g] milli-bits", st1.drift_min, st1.drift_max);
+  if (maxdiff > 1) esl_fatal("utest_genome_drift: bands differ by up to %d cells at a row edge", maxdiff);
+  for (i = 1; i <= L; i++)
+    if (i2k0[i] != i2k1[i]) esl_fatal("utest_genome_drift: Viterbi pins differ at row %d (%d vs %d)", i, i2k0[i], i2k1[i]);
+
+  free(i2k0); free(kmin0); free(kmax0); free(i2k1); free(kmin1); free(kmax1); free(dsq);
+  p7_hmm_Destroy(hmm0); p7_hmm_Destroy(hmm1);
+}
+
+static ESL_OPTIONS options[] = {
+  /* name     type          default  env  range toggles reqs incomp  help                                     docgroup*/
+  { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",               0 },
+  { "--version", eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",             0 },
+  { "-M",     eslARG_INT,   "10000", NULL, "n>0", NULL,  NULL, NULL, "model and sequence length for the drift test", 0 },
+  { "-d",     eslARG_INT,     "200", NULL, "n>0", NULL,  NULL, NULL, "band margin (milli-bits) for the drift test", 0 },
+  { "-v",     eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "print the drift test's numbers",          0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options]";
+static char banner[] = "unit test driver for p7_ibv.c (IBV band derivation)";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS  *go  = cm_CreateDefaultApp("p7_ibv_utest", options, 0, argc, argv, banner, usage);
+  ESL_ALPHABET *abc = esl_alphabet_Create(eslRNA);
+
+  utest_genome_drift(abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-d"), esl_opt_GetBoolean(go, "-v"));
+
+  esl_alphabet_Destroy(abc);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#endif /*CM_P7_IBV_TESTDRIVE*/
