@@ -1118,8 +1118,11 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
 	    /* No internal ncells==0 fallback here: IBV always produces a band.
-	     * Empty rows default to [1, M] inside the kernel.
+	     * An empty row is an error inside the kernel (brief 26_0821-144);
+	     * stop on it here, before the fallback below treats any failure as
+	     * "bands too wide" and replaces the cause.
 	     */
+	    if(status == eslEINCONCEIVABLE) goto ERROR;
 	  } else if (cm->p7_use_kmerchain) {
 	    /* Brief 26_0628-027: genome-scale k-mer seed-and-chain. Collect all seeds
 	     * genome-wide, chain by global colinearity, emit multi-segment pins
@@ -1171,6 +1174,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 					     cm->p7_ibv_delta, cm->p7_ibv_base_slab,
 					     TRUE, FALSE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
 					     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
+		if (status == eslEINCONCEIVABLE) goto ERROR; /* brief 26_0821-144: empty IBV row */
 		if (status == eslOK && p7_ncells == 0) {
 		  _p7b_kind = "kmerchain->p7ibv->vitband";
 		  if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);

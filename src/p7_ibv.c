@@ -73,7 +73,7 @@
 typedef struct {
   double   optimal;      /* global optimum, for the drift detector               */
   int64_t nrows;        /* row scans (the D&C scans each midrow twice)          */
-  int64_t empty_rows;   /* rows with no finite through-score: widened to [1,M]  */
+  int64_t empty_rows;   /* rows with no finite through-score: an error          */
   double   drift_max;    /* max over rows of (row max - optimal), milli-bits     */
   double   drift_min;    /* min over rows of (row max - optimal), milli-bits     */
 } IBV_ROWSTATS;
@@ -100,7 +100,7 @@ ibv_rowstats_add(IBV_ROWSTATS *st, double rowmax)
 
 /* One developer line per band. An empty row (no finite through-score) cannot
  * happen when the optimum is finite, since the optimal path crosses every row;
- * a nonzero empty_rows count means the band calculation is wrong somewhere. */
+ * ibv_rowstats_check() makes it an error. */
 static IBV_ROWSTATS ibv_last_rowstats;   /* the last band's stats, for the unit test */
 
 static void
@@ -154,6 +154,23 @@ p7ibv_emit_milli(const P7_HMM *hmm, int k, int x)
   double pi = hmm->ins[k][x];
   if (pm <= 0.0f || pi <= 0.0f) return P7IBV_NEG_INF;
   return (double)(P7IBV_INTSCALE * (log((double) pm / (double) pi) / M_LN2));
+}
+
+/* ibv_rowstats_check(): an empty row (no finite through-score) is impossible
+ * when the optimum is finite, because the optimal path crosses every row.
+ * Widening such a row to [1,M] used to hide a wrong band (it produced the
+ * 567 M-cell EBV band of brief 26_0821-142), so it is an error instead
+ * (brief 26_0821-144, as brief 26_0821-141's HMM-only decode check).
+ * Returns eslOK, or eslEINCONCEIVABLE with <errbuf> set (a distinct code,
+ * so callers that fall back on other band failures stop on this one). */
+static int
+ibv_rowstats_check(const IBV_ROWSTATS *st, char *errbuf)
+{
+  if (st->empty_rows > 0 && st->optimal >= P7IBV_HALF_NEG_INF)
+    ESL_FAIL(eslEINCONCEIVABLE, errbuf,
+             "IBV band calculation failed: %lld rows had no finite Forward+Backward score although the optimal parse scores %.2f bits; the band would be wrong",
+             (long long) st->empty_rows, st->optimal / P7IBV_INTSCALE);
+  return eslOK;
 }
 
 static inline __m128d
@@ -394,7 +411,8 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
  *
  * The cloud is every k whose through-score is >= this row's max - margin
  * (brief 26_0821-144; see IBV_ROWSTATS). through_scratch: caller-owned
- * k_stride buffer. Returns (1,M) on an empty row, which <st> counts.
+ * k_stride buffer. Returns (1,M) on an empty row, which <st> counts
+ * and the deriver then reports as an error (ibv_rowstats_check()).
  */
 static void
 ibv_through_scan(int M, size_t k_stride, double margin,
@@ -806,6 +824,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     else ncells = (int) ncells64;
     ibv_rowstats_report(&rowstats, "flat", L, M, floor_milli, ncells64);
   }
+  if ((status = ibv_rowstats_check(&rowstats, errbuf)) != eslOK) goto ERROR;
 
   {
     const char *dump = getenv("P7IBV_DUMP_BAND");
@@ -2369,6 +2388,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     else ncells = (int) ncells64;
     ibv_rowstats_report(&ctx.st, do_kband ? "dnc-kband" : "dnc", L, M, floor_milli, ncells64);
   }
+  if ((status = ibv_rowstats_check(&ctx.st, errbuf)) != eslOK) goto ERROR;
 
   {
     const char *dump = getenv("P7IBV_DUMP_BAND");
