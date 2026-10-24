@@ -617,25 +617,27 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  *
  * If the loaded CM has 0 basepairs and the user requested no explicit
  * alignment mode, force the memory-minimal production HMM path
- * (--hmm --p7ibv [--p7ibv-delta 1000]) by setting those options in <go>
- * as if given on the command line, then emit a one-line note to stderr
- * (only if INFERNAL_STAGE_VERBOSE is set).
+ * (--hmm --p7ibv) by setting those options in <go> as if given on the
+ * command line, then emit a one-line note to stderr (only if
+ * INFERNAL_STAGE_VERBOSE is set). The IBV band margin is --p7ibv-delta's
+ * own default (20000 milli-bits) at every model size, or whatever the user
+ * gives.
  *
- * brief 26_0526-013 FOLLOW-UP (2026-08-07): the --p7ibv-delta 1000 tight
- * band was validated ONLY at genome scale (norovirus M=7567 through MPXV
- * M=197209, briefs 135c/023/026). 26_0803's brief 002 directly measured it
- * as accuracy-UNSAFE at small M -- a real VADR flu model (M=890, also
- * bps=0) diverges materially from unbanded --hmm (58% of PP chars differ,
- * one sample only 78% residue-identical). So the tight delta is now
- * SIZE-CONDITIONAL: only forced above cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM
- * (our smallest validated M, rounded down to 4000 for a clear/documented
- * threshold). At or below that, --p7ibv-delta is left untouched (CLI
- * default 20000 -- wide, and the config 26_0803 independently confirmed
- * safe at flu scale). This is a correctness fix, not a new feature --
- * bps>0 CMs are still never touched; --nohmm still forces the historical
- * CM-DP default.
+ * History: brief 26_0526-013's follow-up (2026-08-07) forced a tight
+ * --p7ibv-delta 1000 above CLEN 4000 (CM_AUTOSWITCH_TIGHT_DELTA_MINM). That
+ * 1-bit margin only worked because the float IBV through-scores drifted by
+ * hundreds of bits at genome scale, which inflated the band 25-3000x.
+ * With the drift fixed (row-max threshold and double-precision F/B, brief
+ * 26_0821-144), the 1-bit band is ~1 cell per row: on 36 rows of 7.6-197
+ * kb it lost a median 115 bits of HMM score against 20000 (up to 5,711 on
+ * a hard EBV genome, whose fr10 fell from 0.978 to 0.836). No margin below
+ * 20000 came within 1 bit of it on every row (10000: 34 of 36 rows off,
+ * median 25 bits), and 20000 had the best alignments. The band calculation,
+ * which dominates the run time, does not depend on the margin; the wider
+ * band costs seconds. So the size-conditional override was removed. bps>0
+ * CMs are never touched, and --nohmm still forces the historical CM-DP
+ * default.
  */
-#define CM_AUTOSWITCH_TIGHT_DELTA_MINM 4000
 /* TRUE once maybe_hmm_autoswitch() has switched to HMM mode. The switch
  * sets options as if given on the command line, so esl_opt_IsUsed()
  * can't tell it from a user's --hmm; output_header() reads this to say
@@ -655,8 +657,6 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
   autoswitch_force_opt(go, "--hmm", NULL);
   if (! esl_opt_GetBoolean(go, "--p7ibv"))
     autoswitch_force_opt(go, "--p7ibv", NULL);
-  if (esl_opt_IsDefault(go, "--p7ibv-delta") && cm->clen > CM_AUTOSWITCH_TIGHT_DELTA_MINM)
-    autoswitch_force_opt(go, "--p7ibv-delta", "1000");
   hmm_autoswitched = TRUE;
 
   if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
