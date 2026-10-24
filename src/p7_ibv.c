@@ -8,8 +8,8 @@
  *   divide-and-conquer band deriver (O(M * log L) peak memory).  Accessed via
  *   --p7ibv --p7ibv-mem; --p7ibv alone still calls the flat p7_Seq2BandsIBV.
  *
- * SSE/memory conventions (unchanged from brief 26_0430-121 C2/C3):
- *   k_stride = ((M+4+15) & ~15)  (16-float align + >=3 pad slots above M)
+ * SSE/memory conventions (brief 26_0430-121 C2/C3; cells double and SSE 2-lane since brief 26_0821-144):
+ *   k_stride = ((M+4+15) & ~15)  (16-double align + >=3 pad slots above M)
  *   Forward row i: scalar prefix k=0..3, SSE bulk k=4..k_sse_end-1 for M+I,
  *     scalar tail, scalar left-to-right D-fill.
  *   Backward row i from row i+1: scalar right-to-left D-fill, SSE bulk M+I,
@@ -52,30 +52,34 @@
 /* Band threshold: each row's own max through-score minus the margin
  * (brief 26_0821-144).
  *
- * The band admits every cell whose float max-sum F+B through-score is within
+ * The band admits every cell whose double max-sum F+B through-score is within
  * margin = max(delta, EPS) of the optimum. In exact arithmetic every row's max
  * through-score equals the optimum, since the Viterbi path crosses every row,
- * so thresholding a row against its own max is the same band. In float it is
+ * so thresholding a row against its own max is the same band. In double it is
  * not: F and B each accumulate rounding along the sequence, and at genome
  * scale (|optimal| ~ 1e8 milli-bits) F+B on the optimal path drifts from the
  * separately computed optimum by hundreds of bits (brief 26_0821-142: +327 to
  * +433 bits on HSV-1, mpox and EBV, against a 1-bit margin). Rows with positive
  * drift then admit far too many cells, and rows with negative drift admit none.
  * The row-relative test cancels that between-row drift, leaving only the
- * within-row rounding difference between cells. The old guard here
+ * within-row rounding difference between cells. In float that was still up
+ * to ~2 bits on HSV-1, enough to drop optimal-path cells from a 1-bit band
+ * (no parse) and to move band edges by up to 255 cells at 20 bits, so the
+ * F/B cells, their storage and the score tables are double as well (brief
+ * 26_0821-144; the SSE kernels use 2-lane __m128d). The old guard here
  * (fail if |optimal| > margin * 2^19) modeled only the final comparison's
  * rounding, not accumulation along L, and never fired. It is replaced by the
  * drift detector in IBV_ROWSTATS, reported under --devdiag. */
 typedef struct {
-  float   optimal;      /* global optimum, for the drift detector               */
+  double   optimal;      /* global optimum, for the drift detector               */
   int64_t nrows;        /* row scans (the D&C scans each midrow twice)          */
   int64_t empty_rows;   /* rows with no finite through-score: widened to [1,M]  */
-  float   drift_max;    /* max over rows of (row max - optimal), milli-bits     */
-  float   drift_min;    /* min over rows of (row max - optimal), milli-bits     */
+  double   drift_max;    /* max over rows of (row max - optimal), milli-bits     */
+  double   drift_min;    /* min over rows of (row max - optimal), milli-bits     */
 } IBV_ROWSTATS;
 
 static void
-ibv_rowstats_init(IBV_ROWSTATS *st, float optimal)
+ibv_rowstats_init(IBV_ROWSTATS *st, double optimal)
 {
   st->optimal    = optimal;
   st->nrows      = 0;
@@ -85,11 +89,11 @@ ibv_rowstats_init(IBV_ROWSTATS *st, float optimal)
 }
 
 static inline void
-ibv_rowstats_add(IBV_ROWSTATS *st, float rowmax)
+ibv_rowstats_add(IBV_ROWSTATS *st, double rowmax)
 {
   st->nrows++;
   if (rowmax < P7IBV_HALF_NEG_INF) { st->empty_rows++; return; }
-  float d = rowmax - st->optimal;
+  double d = rowmax - st->optimal;
   if (d > st->drift_max) st->drift_max = d;
   if (d < st->drift_min) st->drift_min = d;
 }
@@ -100,7 +104,7 @@ ibv_rowstats_add(IBV_ROWSTATS *st, float rowmax)
 static IBV_ROWSTATS ibv_last_rowstats;   /* the last band's stats, for the unit test */
 
 static void
-ibv_rowstats_report(const IBV_ROWSTATS *st, const char *path, int L, int M, float margin, int64_t ncells)
+ibv_rowstats_report(const IBV_ROWSTATS *st, const char *path, int L, int M, double margin, int64_t ncells)
 {
   ibv_last_rowstats = *st;
   if (! cm_StageVerbose()) return;
@@ -124,38 +128,38 @@ ibv_rowstats_report(const IBV_ROWSTATS *st, const char *path, int L, int M, floa
 #define P7IBV_SLAB_MAX        1024
 
 static int
-ibv_alloc_floats(size_t n, float **ret_p)
+ibv_alloc_floats(size_t n, double **ret_p)
 {
   void *p = NULL;
-  if (posix_memalign(&p, 64, sizeof(float) * n) != 0 || p == NULL) {
+  if (posix_memalign(&p, 64, sizeof(double) * n) != 0 || p == NULL) {
     *ret_p = NULL;
     return eslEMEM;
   }
-  *ret_p = (float *) p;
+  *ret_p = (double *) p;
   return eslOK;
 }
 
-static inline float
-p7ibv_lod_milli(float p)
+static inline double
+p7ibv_lod_milli(double p)
 {
   if (p <= 0.0f) return P7IBV_NEG_INF;
-  return (float)(P7IBV_INTSCALE * (log((double) p) / M_LN2));
+  return (double)(P7IBV_INTSCALE * (log((double) p) / M_LN2));
 }
 
-static inline float
+static inline double
 p7ibv_emit_milli(const P7_HMM *hmm, int k, int x)
 {
   if (x < 0 || x >= hmm->abc->K) return 0.0f;
-  float pm = hmm->mat[k][x];
-  float pi = hmm->ins[k][x];
+  double pm = hmm->mat[k][x];
+  double pi = hmm->ins[k][x];
   if (pm <= 0.0f || pi <= 0.0f) return P7IBV_NEG_INF;
-  return (float)(P7IBV_INTSCALE * (log((double) pm / (double) pi) / M_LN2));
+  return (double)(P7IBV_INTSCALE * (log((double) pm / (double) pi) / M_LN2));
 }
 
-static inline __m128
-p7ibv_mm_max3(__m128 a, __m128 b, __m128 c)
+static inline __m128d
+p7ibv_mm_max3(__m128d a, __m128d b, __m128d c)
 {
-  return _mm_max_ps(_mm_max_ps(a, b), c);
+  return _mm_max_pd(_mm_max_pd(a, b), c);
 }
 
 
@@ -180,37 +184,37 @@ p7ibv_mm_max3(__m128 a, __m128 b, __m128 c)
  */
 static void
 ibv_forward_one_row(int M, size_t k_stride,
-                    const float *MM_t, const float *MI_t, const float *MD_t,
-                    const float *IM_t, const float *II_t,
-                    const float *DM_t, const float *DD_t,
-                    const float *emit_row,
-                    const float *begin_milli,
-                    const float *FM_prev, const float *FI_prev, const float *FD_prev,
-                    float *FM_curr, float *FI_curr, float *FD_curr)
+                    const double *MM_t, const double *MI_t, const double *MD_t,
+                    const double *IM_t, const double *II_t,
+                    const double *DM_t, const double *DD_t,
+                    const double *emit_row,
+                    const double *begin_milli,
+                    const double *FM_prev, const double *FI_prev, const double *FD_prev,
+                    double *FM_curr, double *FI_curr, double *FD_curr)
 {
   int k;
   int kpref_end = (M < 3) ? M : 3;
 
   for (k = 0; k <= kpref_end; k++) {
-    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF, cD = P7IBV_NEG_INF;
+    double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF, cD = P7IBV_NEG_INF;
     {
-      float a = FM_prev[k] + MI_t[k];
-      float b = FI_prev[k] + II_t[k];
+      double a = FM_prev[k] + MI_t[k];
+      double b = FI_prev[k] + II_t[k];
       cI = (a > b) ? a : b;
     }
     if (k >= 1) {
-      float a = FM_prev[k - 1] + MM_t[k - 1];
-      float b = FI_prev[k - 1] + IM_t[k - 1];
-      float c = FD_prev[k - 1] + DM_t[k - 1];
-      float m = (a > b) ? a : b;
+      double a = FM_prev[k - 1] + MM_t[k - 1];
+      double b = FI_prev[k - 1] + IM_t[k - 1];
+      double c = FD_prev[k - 1] + DM_t[k - 1];
+      double m = (a > b) ? a : b;
       if (c > m) m = c;
       cM = m + emit_row[k];
       if (begin_milli != NULL) {
-        float bc = begin_milli[k] + emit_row[k];
+        double bc = begin_milli[k] + emit_row[k];
         if (bc > cM) cM = bc;
       }
-      float a2 = FM_curr[k - 1] + MD_t[k - 1];
-      float b2 = FD_curr[k - 1] + DD_t[k - 1];
+      double a2 = FM_curr[k - 1] + MD_t[k - 1];
+      double b2 = FD_curr[k - 1] + DD_t[k - 1];
       cD = (a2 > b2) ? a2 : b2;
     }
     FM_curr[k] = cM;
@@ -220,47 +224,47 @@ ibv_forward_one_row(int M, size_t k_stride,
 
   int k_sse_start = 4;
   int k_sse_end   = k_sse_start;
-  while (k_sse_end + 3 <= M) k_sse_end += 4;
-  for (k = k_sse_start; k < k_sse_end; k += 4) {
-    __m128 m_prev = _mm_loadu_ps(&FM_prev[k - 1]);
-    __m128 i_prev = _mm_loadu_ps(&FI_prev[k - 1]);
-    __m128 d_prev = _mm_loadu_ps(&FD_prev[k - 1]);
-    __m128 t_mm   = _mm_loadu_ps(&MM_t[k - 1]);
-    __m128 t_im   = _mm_loadu_ps(&IM_t[k - 1]);
-    __m128 t_dm   = _mm_loadu_ps(&DM_t[k - 1]);
-    __m128 a      = _mm_add_ps(m_prev, t_mm);
-    __m128 b      = _mm_add_ps(i_prev, t_im);
-    __m128 c      = _mm_add_ps(d_prev, t_dm);
-    __m128 mx     = p7ibv_mm_max3(a, b, c);
-    if (begin_milli != NULL) mx = _mm_max_ps(mx, _mm_loadu_ps(&begin_milli[k]));
-    __m128 e_vec  = _mm_loadu_ps(&emit_row[k]);
-    _mm_storeu_ps(&FM_curr[k], _mm_add_ps(mx, e_vec));
+  while (k_sse_end + 1 <= M) k_sse_end += 2;
+  for (k = k_sse_start; k < k_sse_end; k += 2) {
+    __m128d m_prev = _mm_loadu_pd(&FM_prev[k - 1]);
+    __m128d i_prev = _mm_loadu_pd(&FI_prev[k - 1]);
+    __m128d d_prev = _mm_loadu_pd(&FD_prev[k - 1]);
+    __m128d t_mm   = _mm_loadu_pd(&MM_t[k - 1]);
+    __m128d t_im   = _mm_loadu_pd(&IM_t[k - 1]);
+    __m128d t_dm   = _mm_loadu_pd(&DM_t[k - 1]);
+    __m128d a      = _mm_add_pd(m_prev, t_mm);
+    __m128d b      = _mm_add_pd(i_prev, t_im);
+    __m128d c      = _mm_add_pd(d_prev, t_dm);
+    __m128d mx     = p7ibv_mm_max3(a, b, c);
+    if (begin_milli != NULL) mx = _mm_max_pd(mx, _mm_loadu_pd(&begin_milli[k]));
+    __m128d e_vec  = _mm_loadu_pd(&emit_row[k]);
+    _mm_storeu_pd(&FM_curr[k], _mm_add_pd(mx, e_vec));
 
-    __m128 fm_k = _mm_loadu_ps(&FM_prev[k]);
-    __m128 fi_k = _mm_loadu_ps(&FI_prev[k]);
-    __m128 t_mi = _mm_loadu_ps(&MI_t[k]);
-    __m128 t_ii = _mm_loadu_ps(&II_t[k]);
-    __m128 a2   = _mm_add_ps(fm_k, t_mi);
-    __m128 b2   = _mm_add_ps(fi_k, t_ii);
-    _mm_storeu_ps(&FI_curr[k], _mm_max_ps(a2, b2));
+    __m128d fm_k = _mm_loadu_pd(&FM_prev[k]);
+    __m128d fi_k = _mm_loadu_pd(&FI_prev[k]);
+    __m128d t_mi = _mm_loadu_pd(&MI_t[k]);
+    __m128d t_ii = _mm_loadu_pd(&II_t[k]);
+    __m128d a2   = _mm_add_pd(fm_k, t_mi);
+    __m128d b2   = _mm_add_pd(fi_k, t_ii);
+    _mm_storeu_pd(&FI_curr[k], _mm_max_pd(a2, b2));
   }
 
   for (k = k_sse_end; k <= M; k++) {
-    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+    double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
     {
-      float a = FM_prev[k] + MI_t[k];
-      float b = FI_prev[k] + II_t[k];
+      double a = FM_prev[k] + MI_t[k];
+      double b = FI_prev[k] + II_t[k];
       cI = (a > b) ? a : b;
     }
     if (k >= 1) {
-      float a = FM_prev[k - 1] + MM_t[k - 1];
-      float b = FI_prev[k - 1] + IM_t[k - 1];
-      float c = FD_prev[k - 1] + DM_t[k - 1];
-      float m = (a > b) ? a : b;
+      double a = FM_prev[k - 1] + MM_t[k - 1];
+      double b = FI_prev[k - 1] + IM_t[k - 1];
+      double c = FD_prev[k - 1] + DM_t[k - 1];
+      double m = (a > b) ? a : b;
       if (c > m) m = c;
       cM = m + emit_row[k];
       if (begin_milli != NULL) {
-        float bc = begin_milli[k] + emit_row[k];
+        double bc = begin_milli[k] + emit_row[k];
         if (bc > cM) cM = bc;
       }
     }
@@ -270,8 +274,8 @@ ibv_forward_one_row(int M, size_t k_stride,
 
   int kd_start = (kpref_end + 1 > M) ? (M + 1) : (kpref_end + 1);
   for (k = kd_start; k <= M; k++) {
-    float a = FM_curr[k - 1] + MD_t[k - 1];
-    float b = FD_curr[k - 1] + DD_t[k - 1];
+    double a = FM_curr[k - 1] + MD_t[k - 1];
+    double b = FD_curr[k - 1] + DD_t[k - 1];
     FD_curr[k] = (a > b) ? a : b;
   }
 }
@@ -295,13 +299,13 @@ ibv_forward_one_row(int M, size_t k_stride,
  */
 static void
 ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
-                     const float *MM_t, const float *MI_t, const float *MD_t,
-                     const float *IM_t, const float *II_t,
-                     const float *DM_t, const float *DD_t,
-                     const float *emit_row_next,
-                     const float *BM_next,
-                     const float *BI_next,
-                     float *BM_curr, float *BI_curr, float *BD_curr)
+                     const double *MM_t, const double *MI_t, const double *MD_t,
+                     const double *IM_t, const double *II_t,
+                     const double *DM_t, const double *DD_t,
+                     const double *emit_row_next,
+                     const double *BM_next,
+                     const double *BI_next,
+                     double *BM_curr, double *BI_curr, double *BD_curr)
 {
   int k;
   (void) k_stride;
@@ -318,7 +322,7 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
     BI_curr[M] = 0.0f;
     BD_curr[M] = 0.0f;
     for (k = M - 1; k >= 0; k--) {
-      float bv = BD_curr[k + 1];
+      double bv = BD_curr[k + 1];
       BM_curr[k] = MD_t[k] + bv;
       BD_curr[k] = DD_t[k] + bv;
       BI_curr[k] = P7IBV_NEG_INF;
@@ -328,56 +332,56 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
 
   BD_curr[M] = P7IBV_NEG_INF;
   for (k = M - 1; k >= 0; k--) {
-    float bv_m = BM_next[k + 1] + emit_row_next[k + 1];
-    float bv_d = BD_curr[k + 1];
-    float a = DM_t[k] + bv_m;
-    float b = DD_t[k] + bv_d;
+    double bv_m = BM_next[k + 1] + emit_row_next[k + 1];
+    double bv_d = BD_curr[k + 1];
+    double a = DM_t[k] + bv_m;
+    double b = DD_t[k] + bv_d;
     BD_curr[k] = (a > b) ? a : b;
   }
 
   int k_sse_end = 0;
-  while (k_sse_end + 3 <= M) k_sse_end += 4;
-  for (k = 0; k < k_sse_end; k += 4) {
-    __m128 bm_n   = _mm_loadu_ps(&BM_next[k + 1]);
-    __m128 e_n    = _mm_loadu_ps(&emit_row_next[k + 1]);
-    __m128 bv_M   = _mm_add_ps(bm_n, e_n);
-    __m128 bv_I   = _mm_loadu_ps(&BI_next[k]);
-    __m128 bv_D   = _mm_loadu_ps(&BD_curr[k + 1]);
+  while (k_sse_end + 1 <= M) k_sse_end += 2;
+  for (k = 0; k < k_sse_end; k += 2) {
+    __m128d bm_n   = _mm_loadu_pd(&BM_next[k + 1]);
+    __m128d e_n    = _mm_loadu_pd(&emit_row_next[k + 1]);
+    __m128d bv_M   = _mm_add_pd(bm_n, e_n);
+    __m128d bv_I   = _mm_loadu_pd(&BI_next[k]);
+    __m128d bv_D   = _mm_loadu_pd(&BD_curr[k + 1]);
 
-    __m128 t_mm   = _mm_loadu_ps(&MM_t[k]);
-    __m128 t_mi   = _mm_loadu_ps(&MI_t[k]);
-    __m128 t_md   = _mm_loadu_ps(&MD_t[k]);
-    __m128 cM_out = p7ibv_mm_max3(_mm_add_ps(t_mm, bv_M),
-                                  _mm_add_ps(t_mi, bv_I),
-                                  _mm_add_ps(t_md, bv_D));
-    _mm_storeu_ps(&BM_curr[k], cM_out);
+    __m128d t_mm   = _mm_loadu_pd(&MM_t[k]);
+    __m128d t_mi   = _mm_loadu_pd(&MI_t[k]);
+    __m128d t_md   = _mm_loadu_pd(&MD_t[k]);
+    __m128d cM_out = p7ibv_mm_max3(_mm_add_pd(t_mm, bv_M),
+                                  _mm_add_pd(t_mi, bv_I),
+                                  _mm_add_pd(t_md, bv_D));
+    _mm_storeu_pd(&BM_curr[k], cM_out);
 
-    __m128 t_im   = _mm_loadu_ps(&IM_t[k]);
-    __m128 t_ii   = _mm_loadu_ps(&II_t[k]);
-    __m128 cI_out = _mm_max_ps(_mm_add_ps(t_im, bv_M),
-                               _mm_add_ps(t_ii, bv_I));
-    _mm_storeu_ps(&BI_curr[k], cI_out);
+    __m128d t_im   = _mm_loadu_pd(&IM_t[k]);
+    __m128d t_ii   = _mm_loadu_pd(&II_t[k]);
+    __m128d cI_out = _mm_max_pd(_mm_add_pd(t_im, bv_M),
+                               _mm_add_pd(t_ii, bv_I));
+    _mm_storeu_pd(&BI_curr[k], cI_out);
   }
 
   for (k = k_sse_end; k <= M; k++) {
-    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+    double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
     if (k + 1 <= M) {
-      float bv_m = BM_next[k + 1] + emit_row_next[k + 1];
-      float a = MM_t[k] + bv_m;
-      float b = IM_t[k] + bv_m;
+      double bv_m = BM_next[k + 1] + emit_row_next[k + 1];
+      double a = MM_t[k] + bv_m;
+      double b = IM_t[k] + bv_m;
       if (a > cM) cM = a;
       if (b > cI) cI = b;
     }
     {
-      float bv_i = BI_next[k];
-      float a = MI_t[k] + bv_i;
-      float b = II_t[k] + bv_i;
+      double bv_i = BI_next[k];
+      double a = MI_t[k] + bv_i;
+      double b = II_t[k] + bv_i;
       if (a > cM) cM = a;
       if (b > cI) cI = b;
     }
     if (k + 1 <= M) {
-      float bv_d = BD_curr[k + 1];
-      float a = MD_t[k] + bv_d;
+      double bv_d = BD_curr[k + 1];
+      double a = MD_t[k] + bv_d;
       if (a > cM) cM = a;
     }
     BM_curr[k] = cM;
@@ -393,56 +397,56 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
  * k_stride buffer. Returns (1,M) on an empty row, which <st> counts.
  */
 static void
-ibv_through_scan(int M, size_t k_stride, float margin,
+ibv_through_scan(int M, size_t k_stride, double margin,
                  int ibv_mode, int ibv_width,
-                 const float *FM, const float *FI, const float *FD,
-                 const float *BM, const float *BI, const float *BD,
-                 float *through_scratch, IBV_ROWSTATS *st,
+                 const double *FM, const double *FI, const double *FD,
+                 const double *BM, const double *BI, const double *BD,
+                 double *through_scratch, IBV_ROWSTATS *st,
                  int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   int k;
   int k_thru_end = 0;
-  while (k_thru_end + 3 <= M) k_thru_end += 4;
+  while (k_thru_end + 1 <= M) k_thru_end += 2;
   (void) k_stride;
 
-  for (k = 0; k < k_thru_end; k += 4) {
-    __m128 a = _mm_add_ps(_mm_loadu_ps(&FM[k]), _mm_loadu_ps(&BM[k]));
-    __m128 b = _mm_add_ps(_mm_loadu_ps(&FI[k]), _mm_loadu_ps(&BI[k]));
-    __m128 c = _mm_add_ps(_mm_loadu_ps(&FD[k]), _mm_loadu_ps(&BD[k]));
-    _mm_storeu_ps(&through_scratch[k], p7ibv_mm_max3(a, b, c));
+  for (k = 0; k < k_thru_end; k += 2) {
+    __m128d a = _mm_add_pd(_mm_loadu_pd(&FM[k]), _mm_loadu_pd(&BM[k]));
+    __m128d b = _mm_add_pd(_mm_loadu_pd(&FI[k]), _mm_loadu_pd(&BI[k]));
+    __m128d c = _mm_add_pd(_mm_loadu_pd(&FD[k]), _mm_loadu_pd(&BD[k]));
+    _mm_storeu_pd(&through_scratch[k], p7ibv_mm_max3(a, b, c));
   }
   for (k = k_thru_end; k <= M; k++) {
-    float t_m = FM[k] + BM[k];
-    float t_i = FI[k] + BI[k];
-    float t_d = FD[k] + BD[k];
-    float t = t_m;
+    double t_m = FM[k] + BM[k];
+    double t_i = FI[k] + BI[k];
+    double t_d = FD[k] + BD[k];
+    double t = t_m;
     if (t_i > t) t = t_i;
     if (t_d > t) t = t_d;
     through_scratch[k] = t;
   }
 
-  float rowmax = P7IBV_NEG_INF;
+  double rowmax = P7IBV_NEG_INF;
   for (k = 1; k <= M; k++) if (through_scratch[k] > rowmax) rowmax = through_scratch[k];
   ibv_rowstats_add(st, rowmax);
-  float thr = rowmax - margin;
+  double thr = rowmax - margin;
 
   int   row_kmin = -1, row_kmax = -1;
   int   k_argmax = -1;
-  float t_argmax = P7IBV_NEG_INF;
+  double t_argmax = P7IBV_NEG_INF;
   for (k = 1; k <= M; k++) {
-    float t = through_scratch[k];
+    double t = through_scratch[k];
     if (t < P7IBV_HALF_NEG_INF) continue;
     /* Band (kmin/kmax) uses the full through-score incl. delete cells.
      *
      * The argmax-k pin (brief 26_0430-137), however, must be over EMITTING states (M,I)
      * only: residue i is emitted by a match or insert, never a delete.  A
      * delete cell D(i,k) sits on the optimal path too (with through == optimal,
-     * at a higher k than the emitter) and float F+B reconstruction can tip the
+     * at a higher k than the emitter) and double F+B reconstruction can tip the
      * tie so the delete edges out the emitter -- which would make i2k[i] point
      * at a model position where residue i is actually *deleted*.  Restricting
      * the argmax to FM+BM / FI+BI excludes delete cells from the pin. */
-    float t_emit = FM[k] + BM[k];
-    { float ti = FI[k] + BI[k]; if (ti > t_emit) t_emit = ti; }
+    double t_emit = FM[k] + BM[k];
+    { double ti = FI[k] + BI[k]; if (ti > t_emit) t_emit = ti; }
     if (t_emit >= P7IBV_HALF_NEG_INF && t_emit > t_argmax) { t_argmax = t_emit; k_argmax = k; }
     if (t >= thr) {
       if (row_kmin < 0) row_kmin = k;
@@ -567,20 +571,20 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   int       M;
   int       i, k;
   int       K;
-  float    *begin_milli = NULL;
-  float    *MM_t = NULL, *MI_t = NULL, *MD_t = NULL;
-  float    *IM_t = NULL, *II_t = NULL;
-  float    *DM_t = NULL, *DD_t = NULL;
-  float    *FM_pool = NULL, *FI_pool = NULL, *FD_pool = NULL;
-  float    *BM_a = NULL, *BM_b = NULL;
-  float    *BI_a = NULL, *BI_b = NULL;
-  float    *BD_a = NULL, *BD_b = NULL;
-  float    *through = NULL;
-  float    *emit_pool = NULL;
-  float   **emit_table = NULL;
+  double    *begin_milli = NULL;
+  double    *MM_t = NULL, *MI_t = NULL, *MD_t = NULL;
+  double    *IM_t = NULL, *II_t = NULL;
+  double    *DM_t = NULL, *DD_t = NULL;
+  double    *FM_pool = NULL, *FI_pool = NULL, *FD_pool = NULL;
+  double    *BM_a = NULL, *BM_b = NULL;
+  double    *BI_a = NULL, *BI_b = NULL;
+  double    *BD_a = NULL, *BD_b = NULL;
+  double    *through = NULL;
+  double    *emit_pool = NULL;
+  double   **emit_table = NULL;
   int      *i2k = NULL, *kmin = NULL, *kmax = NULL;
-  float     optimal, thr;
-  float     floor_milli;
+  double     optimal, thr;
+  double     floor_milli;
   IBV_ROWSTATS rowstats;
   int       ncells = 0;
   size_t    k_stride;
@@ -595,7 +599,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     ESL_FAIL(eslEINVAL, errbuf, "p7_Seq2BandsIBV: bad L=%d or M=%d", L, M);
 
   /* k_stride must leave padding ABOVE index M: the SSE backward loads
-   * _mm_loadu_ps(&BM_next[k+1]) reach index k+4 = k_sse_end <= M+1, so we
+   * _mm_loadu_pd(&BM_next[k+1]) reach index k+2 = k_sse_end <= M+1 (k+4 with the old 4-lane float kernels), so we
    * need k_stride >= M+2. Rounding (M+1) up to 16 gives ZERO padding when
    * M+1 is a multiple of 16 (M == 15 mod 16, e.g. M=287), leaving index M+1
    * out of bounds. Round (M+4) up instead to guarantee >=3 padding slots
@@ -629,10 +633,10 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   }
 
   if ((status = ibv_alloc_floats((size_t)(K + 1) * k_stride, &emit_pool)) != eslOK) goto ERROR;
-  ESL_ALLOC(emit_table, sizeof(float *) * (K + 1));
+  ESL_ALLOC(emit_table, sizeof(double *) * (K + 1));
   for (int xt = 0; xt <= K; xt++) emit_table[xt] = emit_pool + (size_t) xt * k_stride;
   for (int xt = 0; xt < K; xt++) {
-    float *row = emit_table[xt];
+    double *row = emit_table[xt];
     for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
     for (k = M + 1; k < (int) k_stride; k++) row[k] = P7IBV_NEG_INF;
   }
@@ -673,7 +677,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     for (k = 0; k < (int) k_stride; k++) begin_milli[k] = P7IBV_NEG_INF;
     for (k = 1; k <= M; k++) {
       double b = (Z > 0.0 && occ[k] > 0.0) ? (double) occ[k] / Z : 0.0;
-      begin_milli[k] = (b > 0.0) ? (float)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
+      begin_milli[k] = (b > 0.0) ? (double)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
     }
     free(occ);
   }
@@ -688,11 +692,11 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   if (! do_trunc) {
     F_M(0)[0] = 0.0f;
     {
-      float *fm0 = F_M(0);
-      float *fd0 = F_D(0);
+      double *fm0 = F_M(0);
+      double *fd0 = F_D(0);
       for (k = 1; k <= M; k++) {
-        float a = fm0[k - 1] + MD_t[k - 1];
-        float b = fd0[k - 1] + DD_t[k - 1];
+        double a = fm0[k - 1] + MD_t[k - 1];
+        double b = fd0[k - 1] + DD_t[k - 1];
         fd0[k] = (a > b) ? a : b;
       }
     }
@@ -701,7 +705,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   for (i = 1; i <= L; i++) {
     int x  = (int) dsq[i];
     int xt = (x >= 0 && x < K) ? x : K;
-    const float *brow = (do_trunc && i == 1) ? begin_milli : NULL;
+    const double *brow = (do_trunc && i == 1) ? begin_milli : NULL;
     ibv_forward_one_row(M, k_stride,
                         MM_t, MI_t, MD_t, IM_t, II_t, DM_t, DD_t,
                         emit_table[xt], brow,
@@ -710,9 +714,9 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   }
 
   {
-    float *fm_L = F_M(L);
-    float *fi_L = F_I(L);
-    float *fd_L = F_D(L);
+    double *fm_L = F_M(L);
+    double *fi_L = F_I(L);
+    double *fd_L = F_D(L);
     if (do_trunc) {
       /* Tgm end-anywhere: exit from any match node, or D_M->E. */
       optimal = fd_L[M];
@@ -724,7 +728,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     }
   }
   assert(optimal == optimal);
-  floor_milli = (float) delta_milli;
+  floor_milli = (double) delta_milli;
   if (floor_milli < P7IBV_EPS) floor_milli = P7IBV_EPS;
   thr = optimal - floor_milli;   /* reported in the band dumps only; rows use their own max */
   ibv_rowstats_init(&rowstats, optimal);
@@ -735,8 +739,8 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   esl_vec_ISet(i2k, L + 1, -1);
   for (i = 0; i <= L; i++) { kmin[i] = 1; kmax[i] = M; }
 
-  float *B_M_prev = BM_a, *B_I_prev = BI_a, *B_D_prev = BD_a;
-  float *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
+  double *B_M_prev = BM_a, *B_I_prev = BI_a, *B_D_prev = BD_a;
+  double *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
 
   /* Row L: terminal injection. */
   ibv_backward_one_row(M, k_stride, L, L, do_trunc,
@@ -760,9 +764,9 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
                        B_M_curr, B_I_curr, B_D_curr,
                        through, &rowstats, &kmin[i], &kmax[i], &i2k[i]);
 
-    float *t_M = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t_M;
-    float *t_I = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t_I;
-    float *t_D = B_D_prev; B_D_prev = B_D_curr; B_D_curr = t_D;
+    double *t_M = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t_M;
+    double *t_I = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t_I;
+    double *t_D = B_D_prev; B_D_prev = B_D_curr; B_D_curr = t_D;
   }
 
   if (L >= 1) { kmin[1] = 1; kmax[1] = M; }
@@ -904,9 +908,9 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   P7_HMM  *hmm = NULL;
   int      M, K, i, k;
   size_t   k_stride, pool_cells;
-  float   *MM_t=NULL,*MI_t=NULL,*MD_t=NULL,*IM_t=NULL,*II_t=NULL,*DM_t=NULL,*DD_t=NULL;
-  float   *emit_pool=NULL; float **emit_table=NULL; float *begin_milli=NULL;
-  float   *FM=NULL,*FI=NULL,*FD=NULL,*BM=NULL,*BI=NULL,*BD=NULL;
+  double   *MM_t=NULL,*MI_t=NULL,*MD_t=NULL,*IM_t=NULL,*II_t=NULL,*DM_t=NULL,*DD_t=NULL;
+  double   *emit_pool=NULL; double **emit_table=NULL; double *begin_milli=NULL;
+  double   *FM=NULL,*FI=NULL,*FD=NULL,*BM=NULL,*BI=NULL,*BD=NULL;
   int     *i2k=NULL;
   int     *cl_kmin=NULL, *cl_kmax=NULL;   /* brief 26_0430-248: optional delta-cloud band */
 
@@ -934,10 +938,10 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   for (k = M + 1; k < (int) k_stride; k++) { MM_t[k]=MI_t[k]=MD_t[k]=IM_t[k]=II_t[k]=DM_t[k]=DD_t[k]=P7IBV_NEG_INF; }
 
   if ((status = ibv_alloc_floats((size_t)(K + 1) * k_stride, &emit_pool)) != eslOK) goto ERROR;
-  ESL_ALLOC(emit_table, sizeof(float *) * (K + 1));
+  ESL_ALLOC(emit_table, sizeof(double *) * (K + 1));
   for (int xt = 0; xt <= K; xt++) emit_table[xt] = emit_pool + (size_t) xt * k_stride;
   for (int xt = 0; xt < K; xt++) {
-    float *row = emit_table[xt];
+    double *row = emit_table[xt];
     for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
     for (k = M + 1; k < (int) k_stride; k++) row[k] = P7IBV_NEG_INF;
   }
@@ -973,39 +977,39 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
 
   /* Row 0 forward (glocal begin: M_0 + D-cascade, full width). */
   if (! do_trunc) {
-    float *fm0=FMr(0), *fd0=FDr(0);
+    double *fm0=FMr(0), *fd0=FDr(0);
     fm0[0]=0.0f;
-    for (k=1;k<=M;k++){ float a=fm0[k-1]+MD_t[k-1]; float b=fd0[k-1]+DD_t[k-1]; fd0[k]=(a>b)?a:b; }
+    for (k=1;k<=M;k++){ double a=fm0[k-1]+MD_t[k-1]; double b=fd0[k-1]+DD_t[k-1]; fd0[k]=(a>b)?a:b; }
   }
   /* Forward rows, banded. */
   for (i = 1; i <= L; i++) {
     int lo=BAND_LO(i), hi=BAND_HI(i);
     int xt=((int)dsq[i]>=0 && (int)dsq[i]<K)?(int)dsq[i]:K;
-    const float *er=emit_table[xt];
-    const float *bm1=(do_trunc && i==1)?begin_milli:NULL;
-    float *fmp=FMr(i-1),*fip=FIr(i-1),*fdp=FDr(i-1);
-    float *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i);
+    const double *er=emit_table[xt];
+    const double *bm1=(do_trunc && i==1)?begin_milli:NULL;
+    double *fmp=FMr(i-1),*fip=FIr(i-1),*fdp=FDr(i-1);
+    double *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i);
     for (k=lo;k<=hi;k++){
-      float a=fmp[k]+MI_t[k], b=fip[k]+II_t[k]; float cI=(a>b)?a:b;
-      float cM=P7IBV_NEG_INF;
-      if (k>=1){ float m=fmp[k-1]+MM_t[k-1]; float bb=fip[k-1]+IM_t[k-1]; if(bb>m)m=bb; float c=fdp[k-1]+DM_t[k-1]; if(c>m)m=c; cM=m+er[k]; }
-      if (bm1 && k>=1){ float bc=bm1[k]+er[k]; if(bc>cM)cM=bc; }
+      double a=fmp[k]+MI_t[k], b=fip[k]+II_t[k]; double cI=(a>b)?a:b;
+      double cM=P7IBV_NEG_INF;
+      if (k>=1){ double m=fmp[k-1]+MM_t[k-1]; double bb=fip[k-1]+IM_t[k-1]; if(bb>m)m=bb; double c=fdp[k-1]+DM_t[k-1]; if(c>m)m=c; cM=m+er[k]; }
+      if (bm1 && k>=1){ double bc=bm1[k]+er[k]; if(bc>cM)cM=bc; }
       fmc[k]=cM; fic[k]=cI;
     }
     for (k=lo;k<=hi;k++){
-      if (k>=1){ float a=fmc[k-1]+MD_t[k-1]; float b=fdc[k-1]+DD_t[k-1]; fdc[k]=(a>b)?a:b; }
+      if (k>=1){ double a=fmc[k-1]+MD_t[k-1]; double b=fdc[k-1]+DD_t[k-1]; fdc[k]=(a>b)?a:b; }
     }
   }
 
   /* Backward row L terminal (full width). */
-  { float *bm=BMr(L),*bi=BIr(L),*bd=BDr(L);
+  { double *bm=BMr(L),*bi=BIr(L),*bd=BDr(L);
     if (do_trunc){
       for (k=1;k<=M;k++){ bm[k]=0.0f; bi[k]=P7IBV_NEG_INF; }
       for (k=M;k>=1;k--){ if(k==M) bd[k]=0.0f; else bd[k]=DD_t[k]+bd[k+1]; }
     } else {
       for (k=M;k>=1;k--){
         if (k==M){ bm[k]=0.0f; bi[k]=0.0f; bd[k]=0.0f; }
-        else { float bv=bd[k+1]; bm[k]=MD_t[k]+bv; bd[k]=DD_t[k]+bv; bi[k]=P7IBV_NEG_INF; }
+        else { double bv=bd[k+1]; bm[k]=MD_t[k]+bv; bd[k]=DD_t[k]+bv; bi[k]=P7IBV_NEG_INF; }
       }
     }
   }
@@ -1013,19 +1017,19 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   for (i=L-1;i>=0;i--){
     int lo=BAND_LO(i), hi=BAND_HI(i);
     int xtn=((int)dsq[i+1]>=0 && (int)dsq[i+1]<K)?(int)dsq[i+1]:K;
-    const float *ern=emit_table[xtn];
-    float *bmn=BMr(i+1),*bin=BIr(i+1);
-    float *bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
+    const double *ern=emit_table[xtn];
+    double *bmn=BMr(i+1),*bin=BIr(i+1);
+    double *bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
     for (k=hi;k>=lo;k--){
-      float bv_m=(k+1<=M)?(bmn[k+1]+ern[k+1]):P7IBV_NEG_INF;
-      float bv_d=(k+1<=M)?bdc[k+1]:P7IBV_NEG_INF;
-      float a=DM_t[k]+bv_m, b=DD_t[k]+bv_d; bdc[k]=(a>b)?a:b;
+      double bv_m=(k+1<=M)?(bmn[k+1]+ern[k+1]):P7IBV_NEG_INF;
+      double bv_d=(k+1<=M)?bdc[k+1]:P7IBV_NEG_INF;
+      double a=DM_t[k]+bv_m, b=DD_t[k]+bv_d; bdc[k]=(a>b)?a:b;
     }
     for (k=lo;k<=hi;k++){
-      float cM=P7IBV_NEG_INF,cI=P7IBV_NEG_INF;
-      if (k+1<=M){ float bv_m=bmn[k+1]+ern[k+1]; float a=MM_t[k]+bv_m; if(a>cM)cM=a; float b=IM_t[k]+bv_m; if(b>cI)cI=b; }
-      { float bv_i=bin[k]; float a=MI_t[k]+bv_i; if(a>cM)cM=a; float b=II_t[k]+bv_i; if(b>cI)cI=b; }
-      if (k+1<=M){ float bv_d=bdc[k+1]; float a=MD_t[k]+bv_d; if(a>cM)cM=a; }
+      double cM=P7IBV_NEG_INF,cI=P7IBV_NEG_INF;
+      if (k+1<=M){ double bv_m=bmn[k+1]+ern[k+1]; double a=MM_t[k]+bv_m; if(a>cM)cM=a; double b=IM_t[k]+bv_m; if(b>cI)cI=b; }
+      { double bv_i=bin[k]; double a=MI_t[k]+bv_i; if(a>cM)cM=a; double b=II_t[k]+bv_i; if(b>cI)cI=b; }
+      if (k+1<=M){ double bv_d=bdc[k+1]; double a=MD_t[k]+bv_d; if(a>cM)cM=a; }
       bmc[k]=cM; bic[k]=cI;
     }
   }
@@ -1035,10 +1039,10 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   esl_vec_ISet(i2k, L+1, -1);
   for (i=1;i<=L;i++){
     int lo=BAND_LO(i), hi=BAND_HI(i);
-    float best=P7IBV_NEG_INF; int ka=-1;
-    float *fmc=FMr(i),*fic=FIr(i),*bmc=BMr(i),*bic=BIr(i);
+    double best=P7IBV_NEG_INF; int ka=-1;
+    double *fmc=FMr(i),*fic=FIr(i),*bmc=BMr(i),*bic=BIr(i);
     for (k=lo;k<=hi;k++){
-      float te=fmc[k]+bmc[k]; { float ti=fic[k]+bic[k]; if(ti>te)te=ti; }
+      double te=fmc[k]+bmc[k]; { double ti=fic[k]+bic[k]; if(ti>te)te=ti; }
       if (te>=P7IBV_HALF_NEG_INF && te>best){ best=te; ka=k; }
     }
     i2k[i]=ka;
@@ -1059,18 +1063,18 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     cl_kmin[0] = 0; cl_kmax[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
     for (i=1;i<=L;i++){
       int lo=BAND_LO(i), hi=BAND_HI(i);
-      float *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i),*bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
-      float rowmax=P7IBV_NEG_INF;
+      double *fmc=FMr(i),*fic=FIr(i),*fdc=FDr(i),*bmc=BMr(i),*bic=BIr(i),*bdc=BDr(i);
+      double rowmax=P7IBV_NEG_INF;
       for (k=lo;k<=hi;k++){
-        float tm=fmc[k]+bmc[k], ti=fic[k]+bic[k], td=fdc[k]+bdc[k];
-        float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+        double tm=fmc[k]+bmc[k], ti=fic[k]+bic[k], td=fdc[k]+bdc[k];
+        double t=tm; if(ti>t)t=ti; if(td>t)t=td;
         if (t>rowmax) rowmax=t;
       }
-      float thr=rowmax-(float)delta_milli;
+      double thr=rowmax-(double)delta_milli;
       int rkmin=-1, rkmax=-1;
       for (k=lo;k<=hi;k++){
-        float tm=fmc[k]+bmc[k], ti=fic[k]+bic[k], td=fdc[k]+bdc[k];
-        float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+        double tm=fmc[k]+bmc[k], ti=fic[k]+bic[k], td=fdc[k]+bdc[k];
+        double t=tm; if(ti>t)t=ti; if(td>t)t=td;
         if (t>=thr && t>=P7IBV_HALF_NEG_INF){ if(rkmin<0)rkmin=k; rkmax=k; }
       }
       if (rkmin<0){ cl_kmin[i]=lo; cl_kmax[i]=hi; }  /* empty row -> full bounded width */
@@ -1139,8 +1143,8 @@ cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
  * do_trunc leaves row 0 entirely NEG_INF (begins enter via begin_milli at row
  * 1 instead), matching the oracle's "row 0 all NEG_INF" trunc comment.
  */
-static inline float
-ibv_compact_rd(const float *arr, int lo, int hi, int k)
+static inline double
+ibv_compact_rd(const double *arr, int lo, int hi, int k)
 {
   return (k < lo || k > hi) ? P7IBV_NEG_INF : arr[k - lo];
 }
@@ -1156,14 +1160,14 @@ ibv_compact_band(int i, int L, int M, const int *ext_kmin, const int *ext_kmax, 
   }
 }
 
-static inline float
+static inline double
 ibv_compact_row0_fm(int do_trunc, int k)
 {
   return (!do_trunc && k == 0) ? 0.0f : P7IBV_NEG_INF;
 }
 
-static inline float
-ibv_compact_row0_fd(int do_trunc, int k, const float *fd0)
+static inline double
+ibv_compact_row0_fd(int do_trunc, int k, const double *fd0)
 {
   return (!do_trunc && k >= 1) ? fd0[k - 1] : P7IBV_NEG_INF;
 }
@@ -1177,13 +1181,13 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
   P7_HMM  *hmm = NULL;
   int      M, K, i, k;
   size_t   k_stride;
-  float   *MM_t=NULL,*MI_t=NULL,*MD_t=NULL,*IM_t=NULL,*II_t=NULL,*DM_t=NULL,*DD_t=NULL;
-  float   *emit_pool=NULL; float **emit_table=NULL; float *begin_milli=NULL;
-  float   *fd0 = NULL;                       /* forward row-0 D-cascade: fd0[k-1] = FD(0)[k], k=1..M */
+  double   *MM_t=NULL,*MI_t=NULL,*MD_t=NULL,*IM_t=NULL,*II_t=NULL,*DM_t=NULL,*DD_t=NULL;
+  double   *emit_pool=NULL; double **emit_table=NULL; double *begin_milli=NULL;
+  double   *fd0 = NULL;                       /* forward row-0 D-cascade: fd0[k-1] = FD(0)[k], k=1..M */
   int     *rlo=NULL, *rhi=NULL;              /* per-row [lo,hi]: fwd uses i=1..L, bwd uses i=0..L */
   size_t  *fbase=NULL;                       /* forward ragged-arena row offsets, i=1..L */
-  float   *FMc=NULL, *FIc=NULL, *FDc=NULL;   /* forward ragged arena (all L rows, compact) */
-  float   *BM_a=NULL,*BM_b=NULL,*BI_a=NULL,*BI_b=NULL,*BD_a=NULL,*BD_b=NULL; /* backward 2-row rolling */
+  double   *FMc=NULL, *FIc=NULL, *FDc=NULL;   /* forward ragged arena (all L rows, compact) */
+  double   *BM_a=NULL,*BM_b=NULL,*BI_a=NULL,*BI_b=NULL,*BD_a=NULL,*BD_b=NULL; /* backward 2-row rolling */
   int     *i2k=NULL;
   int     *cl_kmin=NULL, *cl_kmax=NULL;      /* brief 26_0430-248: optional delta-cloud band */
   int      want_cloud;
@@ -1212,10 +1216,10 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
   for (k = M + 1; k < (int) k_stride; k++) { MM_t[k]=MI_t[k]=MD_t[k]=IM_t[k]=II_t[k]=DM_t[k]=DD_t[k]=P7IBV_NEG_INF; }
 
   if ((status = ibv_alloc_floats((size_t)(K + 1) * k_stride, &emit_pool)) != eslOK) goto ERROR;
-  ESL_ALLOC(emit_table, sizeof(float *) * (K + 1));
+  ESL_ALLOC(emit_table, sizeof(double *) * (K + 1));
   for (int xt = 0; xt <= K; xt++) emit_table[xt] = emit_pool + (size_t) xt * k_stride;
   for (int xt = 0; xt < K; xt++) {
-    float *row = emit_table[xt];
+    double *row = emit_table[xt];
     for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
     for (k = M + 1; k < (int) k_stride; k++) row[k] = P7IBV_NEG_INF;
   }
@@ -1234,13 +1238,13 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
     /* row-0 D-cascade: fd0[k-1] holds FD(0)[k] for k=1..M.  FM(0)[k-1] is 0
      * only when k-1==0 (the B-state), else NEG_INF -- so the recursion below
      * needs no running fm value, only the k-1==0 special case. */
-    float fd_prev;
-    ESL_ALLOC(fd0, sizeof(float) * M);
+    double fd_prev;
+    ESL_ALLOC(fd0, sizeof(double) * M);
     fd_prev = P7IBV_NEG_INF;   /* FD(0)[0], never touched by the oracle either */
     for (k = 1; k <= M; k++) {
-      float a = ibv_compact_row0_fm(do_trunc, k - 1) + MD_t[k - 1];
-      float b = fd_prev + DD_t[k - 1];
-      float v = (a > b) ? a : b;
+      double a = ibv_compact_row0_fm(do_trunc, k - 1) + MD_t[k - 1];
+      double b = fd_prev + DD_t[k - 1];
+      double v = (a > b) ? a : b;
       fd0[k - 1] = v;
       fd_prev = v;
     }
@@ -1266,24 +1270,24 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
   /* Forward rows 1..L, banded; row 0 handled via the row0_* helpers above. */
   for (i = 1; i <= L; i++) {
     int   lo = rlo[i], hi = rhi[i];
-    float *fmc = FMc + fbase[i], *fic = FIc + fbase[i], *fdc = FDc + fbase[i];
+    double *fmc = FMc + fbase[i], *fic = FIc + fbase[i], *fdc = FDc + fbase[i];
     int   xt = ((int) dsq[i] >= 0 && (int) dsq[i] < K) ? (int) dsq[i] : K;
-    const float *er  = emit_table[xt];
-    const float *bm1 = (do_trunc && i == 1) ? begin_milli : NULL;
+    const double *er  = emit_table[xt];
+    const double *bm1 = (do_trunc && i == 1) ? begin_milli : NULL;
     int   prev_is_row0 = (i == 1);
     int   lo_p = 0, hi_p = 0;
-    float *fmp = NULL, *fip = NULL, *fdp = NULL;
+    double *fmp = NULL, *fip = NULL, *fdp = NULL;
     if (!prev_is_row0) { lo_p = rlo[i-1]; hi_p = rhi[i-1]; fmp = FMc + fbase[i-1]; fip = FIc + fbase[i-1]; fdp = FDc + fbase[i-1]; }
 
     for (k = lo; k <= hi; k++) {
-      float fmp_k, fip_k, a, b, cI, cM;
+      double fmp_k, fip_k, a, b, cI, cM;
       if (prev_is_row0) { fmp_k = ibv_compact_row0_fm(do_trunc, k); fip_k = P7IBV_NEG_INF; }
       else              { fmp_k = ibv_compact_rd(fmp, lo_p, hi_p, k); fip_k = ibv_compact_rd(fip, lo_p, hi_p, k); }
       a = fmp_k + MI_t[k]; b = fip_k + II_t[k];
       cI = (a > b) ? a : b;
       cM = P7IBV_NEG_INF;
       if (k >= 1) {
-        float fmp_km1, fip_km1, fdp_km1, m, bb, c;
+        double fmp_km1, fip_km1, fdp_km1, m, bb, c;
         if (prev_is_row0) {
           fmp_km1 = ibv_compact_row0_fm(do_trunc, k - 1);
           fip_km1 = P7IBV_NEG_INF;
@@ -1297,15 +1301,15 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
         bb = fip_km1 + IM_t[k - 1]; if (bb > m) m = bb;
         c  = fdp_km1 + DM_t[k - 1]; if (c > m) m = c;
         cM = m + er[k];
-        if (bm1 != NULL) { float bc = bm1[k] + er[k]; if (bc > cM) cM = bc; }
+        if (bm1 != NULL) { double bc = bm1[k] + er[k]; if (bc > cM) cM = bc; }
       }
       fmc[k - lo] = cM; fic[k - lo] = cI;
     }
     for (k = lo; k <= hi; k++) {
       if (k >= 1) {   /* lo>=1 always for i>=1, so this always fires (matches oracle, no else) */
-        float fmc_km1 = ibv_compact_rd(fmc, lo, hi, k - 1);
-        float fdc_km1 = ibv_compact_rd(fdc, lo, hi, k - 1);
-        float a = fmc_km1 + MD_t[k - 1], b = fdc_km1 + DD_t[k - 1];
+        double fmc_km1 = ibv_compact_rd(fmc, lo, hi, k - 1);
+        double fdc_km1 = ibv_compact_rd(fdc, lo, hi, k - 1);
+        double a = fmc_km1 + MD_t[k - 1], b = fdc_km1 + DD_t[k - 1];
         fdc[k - lo] = (a > b) ? a : b;
       }
     }
@@ -1335,8 +1339,8 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
   }
 
   {
-    float *B_M_prev = BM_a, *B_I_prev = BI_a, *B_D_prev = BD_a;
-    float *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
+    double *B_M_prev = BM_a, *B_I_prev = BI_a, *B_D_prev = BD_a;
+    double *B_M_curr = BM_b, *B_I_curr = BI_b, *B_D_curr = BD_b;
     int    lo_prev, hi_prev;
 
     /* Row L: terminal injection (full width [1,M]). */
@@ -1352,7 +1356,7 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
         for (k = hi; k >= lo; k--) {
           if (k == M) { B_M_prev[k - lo] = 0.0f; B_I_prev[k - lo] = 0.0f; B_D_prev[k - lo] = 0.0f; }
           else {
-            float bv = B_D_prev[k + 1 - lo];
+            double bv = B_D_prev[k + 1 - lo];
             B_M_prev[k - lo] = MD_t[k] + bv;
             B_D_prev[k - lo] = DD_t[k] + bv;
             B_I_prev[k - lo] = P7IBV_NEG_INF;
@@ -1365,25 +1369,25 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
     /* i2k[L] using forward row L + the terminal backward row just computed. */
     {
       int lo = rlo[L], hi = rhi[L];
-      float *fmc = FMc + fbase[L], *fic = FIc + fbase[L];
-      float best = P7IBV_NEG_INF; int ka = -1;
+      double *fmc = FMc + fbase[L], *fic = FIc + fbase[L];
+      double best = P7IBV_NEG_INF; int ka = -1;
       for (k = lo; k <= hi; k++) {
-        float te = fmc[k - lo] + B_M_prev[k - lo];
-        float ti = fic[k - lo] + B_I_prev[k - lo]; if (ti > te) te = ti;
+        double te = fmc[k - lo] + B_M_prev[k - lo];
+        double ti = fic[k - lo] + B_I_prev[k - lo]; if (ti > te) te = ti;
         if (te >= P7IBV_HALF_NEG_INF && te > best) { best = te; ka = k; }
       }
       i2k[L] = ka;
       if (want_cloud) {   /* delta-cloud band for row L (full through-score) */
-        float *fdc = FDc + fbase[L];
-        float rowmax = P7IBV_NEG_INF; int rkmin = -1, rkmax = -1;
+        double *fdc = FDc + fbase[L];
+        double rowmax = P7IBV_NEG_INF; int rkmin = -1, rkmax = -1;
         for (k = lo; k <= hi; k++) {
-          float tm=fmc[k-lo]+B_M_prev[k-lo], ti=fic[k-lo]+B_I_prev[k-lo], td=fdc[k-lo]+B_D_prev[k-lo];
-          float t=tm; if(ti>t)t=ti; if(td>t)t=td; if (t>rowmax) rowmax=t;
+          double tm=fmc[k-lo]+B_M_prev[k-lo], ti=fic[k-lo]+B_I_prev[k-lo], td=fdc[k-lo]+B_D_prev[k-lo];
+          double t=tm; if(ti>t)t=ti; if(td>t)t=td; if (t>rowmax) rowmax=t;
         }
-        float thr = rowmax - (float) delta_milli;
+        double thr = rowmax - (double) delta_milli;
         for (k = lo; k <= hi; k++) {
-          float tm=fmc[k-lo]+B_M_prev[k-lo], ti=fic[k-lo]+B_I_prev[k-lo], td=fdc[k-lo]+B_D_prev[k-lo];
-          float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+          double tm=fmc[k-lo]+B_M_prev[k-lo], ti=fic[k-lo]+B_I_prev[k-lo], td=fdc[k-lo]+B_D_prev[k-lo];
+          double t=tm; if(ti>t)t=ti; if(td>t)t=td;
           if (t>=thr && t>=P7IBV_HALF_NEG_INF){ if(rkmin<0)rkmin=k; rkmax=k; }
         }
         if (rkmin>=0){ cl_kmin[L]=rkmin; cl_kmax[L]=rkmax; }
@@ -1393,62 +1397,62 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
     for (i = L - 1; i >= 0; i--) {
       int lo = rlo[i], hi = rhi[i];
       int xtn = ((int) dsq[i+1] >= 0 && (int) dsq[i+1] < K) ? (int) dsq[i+1] : K;
-      const float *ern = emit_table[xtn];
+      const double *ern = emit_table[xtn];
 
       for (k = hi; k >= lo; k--) {
-        float bv_m = (k + 1 >= lo_prev && k + 1 <= hi_prev) ? (B_M_prev[k + 1 - lo_prev] + ern[k + 1]) : P7IBV_NEG_INF;
-        float bv_d = (k + 1 <= hi) ? B_D_curr[k + 1 - lo] : P7IBV_NEG_INF;
-        float a = DM_t[k] + bv_m, b = DD_t[k] + bv_d;
+        double bv_m = (k + 1 >= lo_prev && k + 1 <= hi_prev) ? (B_M_prev[k + 1 - lo_prev] + ern[k + 1]) : P7IBV_NEG_INF;
+        double bv_d = (k + 1 <= hi) ? B_D_curr[k + 1 - lo] : P7IBV_NEG_INF;
+        double a = DM_t[k] + bv_m, b = DD_t[k] + bv_d;
         B_D_curr[k - lo] = (a > b) ? a : b;
       }
       for (k = lo; k <= hi; k++) {
-        float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+        double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
         if (k + 1 >= lo_prev && k + 1 <= hi_prev) {
-          float bv_m = B_M_prev[k + 1 - lo_prev] + ern[k + 1];
-          float a = MM_t[k] + bv_m; if (a > cM) cM = a;
-          float b = IM_t[k] + bv_m; if (b > cI) cI = b;
+          double bv_m = B_M_prev[k + 1 - lo_prev] + ern[k + 1];
+          double a = MM_t[k] + bv_m; if (a > cM) cM = a;
+          double b = IM_t[k] + bv_m; if (b > cI) cI = b;
         }
         {
-          float bv_i = (k >= lo_prev && k <= hi_prev) ? B_I_prev[k - lo_prev] : P7IBV_NEG_INF;
-          float a = MI_t[k] + bv_i; if (a > cM) cM = a;
-          float b = II_t[k] + bv_i; if (b > cI) cI = b;
+          double bv_i = (k >= lo_prev && k <= hi_prev) ? B_I_prev[k - lo_prev] : P7IBV_NEG_INF;
+          double a = MI_t[k] + bv_i; if (a > cM) cM = a;
+          double b = II_t[k] + bv_i; if (b > cI) cI = b;
         }
         if (k + 1 <= hi) {
-          float bv_d = B_D_curr[k + 1 - lo];
-          float a = MD_t[k] + bv_d; if (a > cM) cM = a;
+          double bv_d = B_D_curr[k + 1 - lo];
+          double a = MD_t[k] + bv_d; if (a > cM) cM = a;
         }
         B_M_curr[k - lo] = cM; B_I_curr[k - lo] = cI;
       }
 
       if (i >= 1) {
-        float *fmc = FMc + fbase[i], *fic = FIc + fbase[i];
-        float best = P7IBV_NEG_INF; int ka = -1;
+        double *fmc = FMc + fbase[i], *fic = FIc + fbase[i];
+        double best = P7IBV_NEG_INF; int ka = -1;
         for (k = lo; k <= hi; k++) {
-          float te = fmc[k - lo] + B_M_curr[k - lo];
-          float ti = fic[k - lo] + B_I_curr[k - lo]; if (ti > te) te = ti;
+          double te = fmc[k - lo] + B_M_curr[k - lo];
+          double ti = fic[k - lo] + B_I_curr[k - lo]; if (ti > te) te = ti;
           if (te >= P7IBV_HALF_NEG_INF && te > best) { best = te; ka = k; }
         }
         i2k[i] = ka;
         if (want_cloud) {   /* delta-cloud band for row i (full through-score, current-row backward) */
-          float *fdc = FDc + fbase[i];
-          float rowmax = P7IBV_NEG_INF; int rkmin = -1, rkmax = -1;
+          double *fdc = FDc + fbase[i];
+          double rowmax = P7IBV_NEG_INF; int rkmin = -1, rkmax = -1;
           for (k = lo; k <= hi; k++) {
-            float tm=fmc[k-lo]+B_M_curr[k-lo], ti=fic[k-lo]+B_I_curr[k-lo], td=fdc[k-lo]+B_D_curr[k-lo];
-            float t=tm; if(ti>t)t=ti; if(td>t)t=td; if (t>rowmax) rowmax=t;
+            double tm=fmc[k-lo]+B_M_curr[k-lo], ti=fic[k-lo]+B_I_curr[k-lo], td=fdc[k-lo]+B_D_curr[k-lo];
+            double t=tm; if(ti>t)t=ti; if(td>t)t=td; if (t>rowmax) rowmax=t;
           }
-          float thr = rowmax - (float) delta_milli;
+          double thr = rowmax - (double) delta_milli;
           for (k = lo; k <= hi; k++) {
-            float tm=fmc[k-lo]+B_M_curr[k-lo], ti=fic[k-lo]+B_I_curr[k-lo], td=fdc[k-lo]+B_D_curr[k-lo];
-            float t=tm; if(ti>t)t=ti; if(td>t)t=td;
+            double tm=fmc[k-lo]+B_M_curr[k-lo], ti=fic[k-lo]+B_I_curr[k-lo], td=fdc[k-lo]+B_D_curr[k-lo];
+            double t=tm; if(ti>t)t=ti; if(td>t)t=td;
             if (t>=thr && t>=P7IBV_HALF_NEG_INF){ if(rkmin<0)rkmin=k; rkmax=k; }
           }
           if (rkmin>=0){ cl_kmin[i]=rkmin; cl_kmax[i]=rkmax; }
         }
       }
 
-      { float *t; t = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t; }
-      { float *t; t = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t; }
-      { float *t; t = B_D_prev; B_D_prev = B_D_curr; B_D_curr = t; }
+      { double *t; t = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t; }
+      { double *t; t = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t; }
+      { double *t; t = B_D_prev; B_D_prev = B_D_curr; B_D_curr = t; }
       lo_prev = lo; hi_prev = hi;
     }
   }
@@ -1495,27 +1499,27 @@ cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, i
  */
 
 typedef struct {
-  float  *arena;
-  float  *roll_F;
-  float  *roll_B;
-  float  *slab_F;
-  float  *slab_B;
-  float  *Bmid;
-  float  *through;
-  float  *MM_t, *MI_t, *MD_t, *IM_t, *II_t, *DM_t, *DD_t;
-  float **emit_table;
+  double  *arena;
+  double  *roll_F;
+  double  *roll_B;
+  double  *slab_F;
+  double  *slab_B;
+  double  *Bmid;
+  double  *through;
+  double  *MM_t, *MI_t, *MD_t, *IM_t, *II_t, *DM_t, *DD_t;
+  double **emit_table;
   int     K;
   int     M;
   size_t  k_stride;
   int     global_L;
   int     base_slab;
   int     do_trunc;        /* brief 26_0430-171: Tgm begin/end-anywhere semantics       */
-  const float *begin_milli;/* brief 26_0430-171: Tgm begin vector (NULL unless do_trunc) */
+  const double *begin_milli;/* brief 26_0430-171: Tgm begin vector (NULL unless do_trunc) */
   const ESL_DSQ *dsq;
   int    *kmin;
   int    *kmax;
   int    *i2k;     /* argmax-k per row (brief 26_0430-137); i2k[i] = Viterbi-trace cell. */
-  float   margin;    /* band margin max(delta, EPS), milli-bits (brief 26_0821-144) */
+  double   margin;    /* band margin max(delta, EPS), milli-bits (brief 26_0821-144) */
   IBV_ROWSTATS st;   /* empty-row and drift counts (brief 26_0821-144) */
   int     ibv_mode;  /* brief 26_0430-140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
   int     ibv_width; /* brief 26_0430-140: fixed-width pad W around argmax-k pin */
@@ -1526,13 +1530,13 @@ typedef struct {
 
 /* brief 26_0430-171: begin vector for the forward call at absolute row `absrow`
  * (non-NULL only at the global begin row 1 under Tgm). */
-static inline const float *
+static inline const double *
 ibv_brow(const IBV_DnC_Ctx *ctx, int absrow)
 {
   return (ctx->do_trunc && absrow == 1) ? ctx->begin_milli : NULL;
 }
 
-static inline const float *
+static inline const double *
 ibv_emit(const IBV_DnC_Ctx *ctx, int pos)
 {
   int x  = (int) ctx->dsq[pos];
@@ -1543,8 +1547,8 @@ ibv_emit(const IBV_DnC_Ctx *ctx, int pos)
 static void
 ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
                 int i_lo, int i_hi, int depth,
-                const float *F_lo_M, const float *F_lo_I, const float *F_lo_D,
-                const float *B_hi_M, const float *B_hi_I, const float *B_hi_D)
+                const double *F_lo_M, const double *F_lo_I, const double *F_lo_D,
+                const double *B_hi_M, const double *B_hi_I, const double *B_hi_D)
 {
   int    M        = ctx->M;
   size_t ks       = ctx->k_stride;
@@ -1557,9 +1561,9 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   /* ---- Base case ---- */
   if (slab_size <= base_slab) {
     /* Forward-fill rows i_lo+1..i_hi; slab_F row r = F[i_lo+r]. */
-    memcpy(ctx->slab_F + 0 * ks, F_lo_M, ks * sizeof(float));
-    memcpy(ctx->slab_F + 1 * ks, F_lo_I, ks * sizeof(float));
-    memcpy(ctx->slab_F + 2 * ks, F_lo_D, ks * sizeof(float));
+    memcpy(ctx->slab_F + 0 * ks, F_lo_M, ks * sizeof(double));
+    memcpy(ctx->slab_F + 1 * ks, F_lo_I, ks * sizeof(double));
+    memcpy(ctx->slab_F + 2 * ks, F_lo_D, ks * sizeof(double));
     for (int r = 1; r <= slab_size; r++) {
       size_t prev_off = (size_t)(r - 1) * 3 * ks;
       size_t curr_off = (size_t) r       * 3 * ks;
@@ -1578,7 +1582,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
     /* Backward-fill rows i_hi..i_lo+1; slab_B row r = B[i_lo+r]. */
     {
       int row_ihi = i_hi;
-      const float *em = (row_ihi < global_L) ? ibv_emit(ctx, row_ihi + 1) : NULL;
+      const double *em = (row_ihi < global_L) ? ibv_emit(ctx, row_ihi + 1) : NULL;
       size_t off = (size_t) slab_size * 3 * ks;
       ibv_backward_one_row(M, ks, row_ihi, global_L, ctx->do_trunc,
                            ctx->MM_t, ctx->MI_t, ctx->MD_t,
@@ -1618,29 +1622,29 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   /* ---- Recursive case ---- */
   int i_mid = (i_lo + i_hi) / 2;
 
-  float *F_mid_M  = ctx->arena + (size_t) depth * 6 * ks + 0 * ks;
-  float *F_mid_I  = ctx->arena + (size_t) depth * 6 * ks + 1 * ks;
-  float *F_mid_D  = ctx->arena + (size_t) depth * 6 * ks + 2 * ks;
-  float *B_mid1_M = ctx->arena + (size_t) depth * 6 * ks + 3 * ks;
-  float *B_mid1_I = ctx->arena + (size_t) depth * 6 * ks + 4 * ks;
-  float *B_mid1_D = ctx->arena + (size_t) depth * 6 * ks + 5 * ks;
+  double *F_mid_M  = ctx->arena + (size_t) depth * 6 * ks + 0 * ks;
+  double *F_mid_I  = ctx->arena + (size_t) depth * 6 * ks + 1 * ks;
+  double *F_mid_D  = ctx->arena + (size_t) depth * 6 * ks + 2 * ks;
+  double *B_mid1_M = ctx->arena + (size_t) depth * 6 * ks + 3 * ks;
+  double *B_mid1_I = ctx->arena + (size_t) depth * 6 * ks + 4 * ks;
+  double *B_mid1_D = ctx->arena + (size_t) depth * 6 * ks + 5 * ks;
 
   /* Rolling buffer pointers (shared; safe because streaming finishes before recursing). */
-  float *rFpM = ctx->roll_F + 0*ks, *rFpI = ctx->roll_F + 1*ks, *rFpD = ctx->roll_F + 2*ks;
-  float *rFcM = ctx->roll_F + 3*ks, *rFcI = ctx->roll_F + 4*ks, *rFcD = ctx->roll_F + 5*ks;
-  float *rBpM = ctx->roll_B + 0*ks, *rBpI = ctx->roll_B + 1*ks, *rBpD = ctx->roll_B + 2*ks;
-  float *rBcM = ctx->roll_B + 3*ks, *rBcI = ctx->roll_B + 4*ks, *rBcD = ctx->roll_B + 5*ks;
+  double *rFpM = ctx->roll_F + 0*ks, *rFpI = ctx->roll_F + 1*ks, *rFpD = ctx->roll_F + 2*ks;
+  double *rFcM = ctx->roll_F + 3*ks, *rFcI = ctx->roll_F + 4*ks, *rFcD = ctx->roll_F + 5*ks;
+  double *rBpM = ctx->roll_B + 0*ks, *rBpI = ctx->roll_B + 1*ks, *rBpD = ctx->roll_B + 2*ks;
+  double *rBcM = ctx->roll_B + 3*ks, *rBcI = ctx->roll_B + 4*ks, *rBcD = ctx->roll_B + 5*ks;
 
   /* Forward stream i_lo+1 .. i_mid into F_mid. */
-  memcpy(rFpM, F_lo_M, ks * sizeof(float));
-  memcpy(rFpI, F_lo_I, ks * sizeof(float));
-  memcpy(rFpD, F_lo_D, ks * sizeof(float));
+  memcpy(rFpM, F_lo_M, ks * sizeof(double));
+  memcpy(rFpI, F_lo_I, ks * sizeof(double));
+  memcpy(rFpD, F_lo_D, ks * sizeof(double));
   for (int r = i_lo + 1; r < i_mid; r++) {
     ibv_forward_one_row(M, ks, ctx->MM_t, ctx->MI_t, ctx->MD_t,
                         ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                         ibv_emit(ctx, r), ibv_brow(ctx, r),
                         rFpM, rFpI, rFpD, rFcM, rFcI, rFcD);
-    float *t; t=rFpM; rFpM=rFcM; rFcM=t;
+    double *t; t=rFpM; rFpM=rFcM; rFcM=t;
                t=rFpI; rFpI=rFcI; rFcI=t;
                t=rFpD; rFpD=rFcD; rFcD=t;
   }
@@ -1650,22 +1654,22 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
                       rFpM, rFpI, rFpD, F_mid_M, F_mid_I, F_mid_D);
 
   /* Backward stream i_hi .. i_mid+1 into B_mid1. */
-  memcpy(rBpM, B_hi_M, ks * sizeof(float));
-  memcpy(rBpI, B_hi_I, ks * sizeof(float));
-  memcpy(rBpD, B_hi_D, ks * sizeof(float));
+  memcpy(rBpM, B_hi_M, ks * sizeof(double));
+  memcpy(rBpI, B_hi_I, ks * sizeof(double));
+  memcpy(rBpD, B_hi_D, ks * sizeof(double));
   for (int r = i_hi; r > i_mid + 1; r--) {
-    const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
+    const double *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
     ibv_backward_one_row(M, ks, r, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
                          em, rBpM, rBpI, rBcM, rBcI, rBcD);
-    float *t; t=rBpM; rBpM=rBcM; rBcM=t;
+    double *t; t=rBpM; rBpM=rBcM; rBcM=t;
                t=rBpI; rBpI=rBcI; rBcI=t;
                t=rBpD; rBpD=rBcD; rBcD=t;
   }
   {
     int r = i_mid + 1;
-    const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
+    const double *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
     ibv_backward_one_row(M, ks, r, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
@@ -1674,7 +1678,7 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
 
   /* One more backward step: B[i_mid] from B_mid1 = B[i_mid+1]. */
   {
-    const float *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
+    const double *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
     ibv_backward_one_row(M, ks, i_mid, global_L, ctx->do_trunc,
                          ctx->MM_t, ctx->MI_t, ctx->MD_t,
                          ctx->IM_t, ctx->II_t, ctx->DM_t, ctx->DD_t,
@@ -1702,10 +1706,10 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
 
 
 static int
-ibv_dnc_alloc(size_t n, float **ret_p)
+ibv_dnc_alloc(size_t n, double **ret_p)
 {
   int status;
-  float *p;
+  double *p;
   if ((status = ibv_alloc_floats(n, &p)) != eslOK) { *ret_p = NULL; return status; }
   for (size_t c = 0; c < n; c++) p[c] = P7IBV_NEG_INF;
   *ret_p = p;
@@ -1737,7 +1741,7 @@ ibv_dnc_alloc(size_t n, float **ret_p)
  * full sweeps) collapses to ~1-2 sweeps of work.  These primitives are scalar
  * (not SSE): correctness-first, and the geometric majority of nodes are deep
  * narrow-band ones.  KPAD widens each child band by a few nodes as cheap
- * insurance against float ties at band edges (the exactness proof needs none).
+ * insurance against double ties at band edges (the exactness proof needs none).
  * In truncated (Tgm) mode the per-row argmax oracle wobbles between near-optimal
  * registers over a wider k-spread, so KPAD=64 (not 8) is needed for exact i2k
  * match there: empirically i2kdiff drops 92->0 on a truncated genome fragment
@@ -1751,32 +1755,32 @@ ibv_dnc_alloc(size_t n, float **ret_p)
 
 static void
 ibv_fwd_row_b(int M, int k_lo, int k_hi,
-              const float *MM_t, const float *MI_t, const float *MD_t,
-              const float *IM_t, const float *II_t,
-              const float *DM_t, const float *DD_t,
-              const float *emit_row, const float *begin_milli,
-              const float *FM_prev, const float *FI_prev, const float *FD_prev,
-              float *FM_curr, float *FI_curr, float *FD_curr)
+              const double *MM_t, const double *MI_t, const double *MD_t,
+              const double *IM_t, const double *II_t,
+              const double *DM_t, const double *DD_t,
+              const double *emit_row, const double *begin_milli,
+              const double *FM_prev, const double *FI_prev, const double *FD_prev,
+              double *FM_curr, double *FI_curr, double *FD_curr)
 {
   int k;
   if (k_lo < 0) k_lo = 0;
   if (k_hi > M) k_hi = M;
   for (k = k_lo; k <= k_hi; k++) {
-    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+    double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
     {
-      float a = FM_prev[k] + MI_t[k];
-      float b = FI_prev[k] + II_t[k];
+      double a = FM_prev[k] + MI_t[k];
+      double b = FI_prev[k] + II_t[k];
       cI = (a > b) ? a : b;
     }
     if (k >= 1 && (k - 1) >= k_lo) {
-      float a = FM_prev[k - 1] + MM_t[k - 1];
-      float b = FI_prev[k - 1] + IM_t[k - 1];
-      float c = FD_prev[k - 1] + DM_t[k - 1];
-      float m = (a > b) ? a : b; if (c > m) m = c;
+      double a = FM_prev[k - 1] + MM_t[k - 1];
+      double b = FI_prev[k - 1] + IM_t[k - 1];
+      double c = FD_prev[k - 1] + DM_t[k - 1];
+      double m = (a > b) ? a : b; if (c > m) m = c;
       cM = m + emit_row[k];
     }
     if (begin_milli != NULL && k >= 1) {
-      float bc = begin_milli[k] + emit_row[k];
+      double bc = begin_milli[k] + emit_row[k];
       if (bc > cM) cM = bc;
     }
     FM_curr[k] = cM;
@@ -1784,8 +1788,8 @@ ibv_fwd_row_b(int M, int k_lo, int k_hi,
   }
   for (k = k_lo; k <= k_hi; k++) {
     if (k >= 1 && (k - 1) >= k_lo) {
-      float a = FM_curr[k - 1] + MD_t[k - 1];
-      float b = FD_curr[k - 1] + DD_t[k - 1];
+      double a = FM_curr[k - 1] + MD_t[k - 1];
+      double b = FD_curr[k - 1] + DD_t[k - 1];
       FD_curr[k] = (a > b) ? a : b;
     } else {
       FD_curr[k] = P7IBV_NEG_INF;
@@ -1795,12 +1799,12 @@ ibv_fwd_row_b(int M, int k_lo, int k_hi,
 
 static void
 ibv_bwd_row_b(int M, int k_lo, int k_hi, int i, int global_L, int do_trunc,
-              const float *MM_t, const float *MI_t, const float *MD_t,
-              const float *IM_t, const float *II_t,
-              const float *DM_t, const float *DD_t,
-              const float *emit_row_next,
-              const float *BM_next, const float *BI_next,
-              float *BM_curr, float *BI_curr, float *BD_curr)
+              const double *MM_t, const double *MI_t, const double *MD_t,
+              const double *IM_t, const double *II_t,
+              const double *DM_t, const double *DD_t,
+              const double *emit_row_next,
+              const double *BM_next, const double *BI_next,
+              double *BM_curr, double *BI_curr, double *BD_curr)
 {
   int k;
   if (k_lo < 0) k_lo = 0;
@@ -1819,7 +1823,7 @@ ibv_bwd_row_b(int M, int k_lo, int k_hi, int i, int global_L, int do_trunc,
     for (k = k_hi; k >= k_lo; k--) {
       if (k == M) { BM_curr[k] = 0.0f; BI_curr[k] = 0.0f; BD_curr[k] = 0.0f; }
       else {
-        float bv = ((k + 1) <= k_hi) ? BD_curr[k + 1] : P7IBV_NEG_INF;
+        double bv = ((k + 1) <= k_hi) ? BD_curr[k + 1] : P7IBV_NEG_INF;
         BM_curr[k] = MD_t[k] + bv;
         BD_curr[k] = DD_t[k] + bv;
         BI_curr[k] = P7IBV_NEG_INF;
@@ -1829,27 +1833,27 @@ ibv_bwd_row_b(int M, int k_lo, int k_hi, int i, int global_L, int do_trunc,
   }
 
   for (k = k_hi; k >= k_lo; k--) {
-    float bv_m = ((k + 1) <= k_hi) ? (BM_next[k + 1] + emit_row_next[k + 1]) : P7IBV_NEG_INF;
-    float bv_d = ((k + 1) <= k_hi) ? BD_curr[k + 1] : P7IBV_NEG_INF;
-    float a = DM_t[k] + bv_m;
-    float b = DD_t[k] + bv_d;
+    double bv_m = ((k + 1) <= k_hi) ? (BM_next[k + 1] + emit_row_next[k + 1]) : P7IBV_NEG_INF;
+    double bv_d = ((k + 1) <= k_hi) ? BD_curr[k + 1] : P7IBV_NEG_INF;
+    double a = DM_t[k] + bv_m;
+    double b = DD_t[k] + bv_d;
     BD_curr[k] = (a > b) ? a : b;
   }
   for (k = k_lo; k <= k_hi; k++) {
-    float cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
+    double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
     if ((k + 1) <= k_hi) {
-      float bv_m = BM_next[k + 1] + emit_row_next[k + 1];
-      float a = MM_t[k] + bv_m; if (a > cM) cM = a;
-      float b = IM_t[k] + bv_m; if (b > cI) cI = b;
+      double bv_m = BM_next[k + 1] + emit_row_next[k + 1];
+      double a = MM_t[k] + bv_m; if (a > cM) cM = a;
+      double b = IM_t[k] + bv_m; if (b > cI) cI = b;
     }
     {
-      float bv_i = BI_next[k];
-      float a = MI_t[k] + bv_i; if (a > cM) cM = a;
-      float b = II_t[k] + bv_i; if (b > cI) cI = b;
+      double bv_i = BI_next[k];
+      double a = MI_t[k] + bv_i; if (a > cM) cM = a;
+      double b = II_t[k] + bv_i; if (b > cI) cI = b;
     }
     if ((k + 1) <= k_hi) {
-      float bv_d = BD_curr[k + 1];
-      float a = MD_t[k] + bv_d; if (a > cM) cM = a;
+      double bv_d = BD_curr[k + 1];
+      double a = MD_t[k] + bv_d; if (a > cM) cM = a;
     }
     BM_curr[k] = cM;
     BI_curr[k] = cI;
@@ -1860,32 +1864,32 @@ ibv_bwd_row_b(int M, int k_lo, int k_hi, int i, int global_L, int do_trunc,
  * max over [k_lo,k_hi] (brief 26_0821-144). The banded D&C's optimal-path cell
  * is interior to the band, so that max is the optimum in exact arithmetic. */
 static void
-ibv_through_b(int M, int k_lo, int k_hi, float margin,
-              const float *FM, const float *FI, const float *FD,
-              const float *BM, const float *BI, const float *BD,
+ibv_through_b(int M, int k_lo, int k_hi, double margin,
+              const double *FM, const double *FI, const double *FD,
+              const double *BM, const double *BI, const double *BD,
               IBV_ROWSTATS *st,
               int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   int   k, row_kmin = -1, row_kmax = -1, k_argmax = -1;
-  float t_argmax = P7IBV_NEG_INF;
+  double t_argmax = P7IBV_NEG_INF;
   if (k_lo < 1) k_lo = 1;
   if (k_hi > M) k_hi = M;
-  float rowmax = P7IBV_NEG_INF;
+  double rowmax = P7IBV_NEG_INF;
   for (k = k_lo; k <= k_hi; k++) {
-    float t = FM[k] + BM[k], ti = FI[k] + BI[k], td = FD[k] + BD[k];
+    double t = FM[k] + BM[k], ti = FI[k] + BI[k], td = FD[k] + BD[k];
     if (ti > t) t = ti;
     if (td > t) t = td;
     if (t > rowmax) rowmax = t;
   }
   ibv_rowstats_add(st, rowmax);
-  float thr = rowmax - margin;
+  double thr = rowmax - margin;
   for (k = k_lo; k <= k_hi; k++) {
-    float t_m = FM[k] + BM[k];
-    float t_i = FI[k] + BI[k];
-    float t_d = FD[k] + BD[k];
-    float t = t_m; if (t_i > t) t = t_i; if (t_d > t) t = t_d;
+    double t_m = FM[k] + BM[k];
+    double t_i = FI[k] + BI[k];
+    double t_d = FD[k] + BD[k];
+    double t = t_m; if (t_i > t) t = t_i; if (t_d > t) t = t_d;
     if (t < P7IBV_HALF_NEG_INF) continue;
-    float t_emit = (t_m > t_i) ? t_m : t_i;
+    double t_emit = (t_m > t_i) ? t_m : t_i;
     if (t_emit >= P7IBV_HALF_NEG_INF && t_emit > t_argmax) { t_argmax = t_emit; k_argmax = k; }
     if (t >= thr) { if (row_kmin < 0) row_kmin = k; row_kmax = k; }
   }
@@ -1900,7 +1904,7 @@ ibv_through_b(int M, int k_lo, int k_hi, float margin,
  *
  * The scalar _b primitives compute over [k_lo,k_hi] one cell at a time; the
  * full-M SSE primitives (ibv_forward_one_row / ibv_backward_one_row /
- * ibv_through_scan) compute over [0,M] in __m128 chunks (~4x/op faster).  Per
+ * ibv_through_scan) compute over [0,M] in __m128 chunks (~4x/op faster; 2-lane __m128d since brief 26_0821-144).  Per
  * the 172 re-profile the WIDE top D&C levels (band ~= [1,M]) dominate the cost,
  * so we route them through the SSE full-M primitives and keep the scalar _b
  * primitives only for the narrow deep nodes.
@@ -1929,8 +1933,8 @@ ibv_through_b(int M, int k_lo, int k_hi, float margin,
  */
 static inline void
 ibv_fwd_row_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi, int absrow,
-                     const float *FM_prev, const float *FI_prev, const float *FD_prev,
-                     float *FM_curr, float *FI_curr, float *FD_curr)
+                     const double *FM_prev, const double *FI_prev, const double *FD_prev,
+                     double *FM_curr, double *FI_curr, double *FD_curr)
 {
   if (wide)
     ibv_forward_one_row(ctx->M, ctx->k_stride,
@@ -1946,9 +1950,9 @@ ibv_fwd_row_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi, int absrow,
 
 static inline void
 ibv_bwd_row_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi, int i,
-                     const float *emit_row_next,
-                     const float *BM_next, const float *BI_next,
-                     float *BM_curr, float *BI_curr, float *BD_curr)
+                     const double *emit_row_next,
+                     const double *BM_next, const double *BI_next,
+                     double *BM_curr, double *BI_curr, double *BD_curr)
 {
   if (wide)
     ibv_backward_one_row(ctx->M, ctx->k_stride, i, ctx->global_L, ctx->do_trunc,
@@ -1962,8 +1966,8 @@ ibv_bwd_row_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi, int i,
 
 static inline void
 ibv_through_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi,
-                     const float *FM, const float *FI, const float *FD,
-                     const float *BM, const float *BI, const float *BD,
+                     const double *FM, const double *FI, const double *FD,
+                     const double *BM, const double *BI, const double *BD,
                      int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   if (wide)
@@ -1981,8 +1985,8 @@ ibv_through_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi,
 static void
 ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
                        int k_lo, int k_hi,
-                       const float *F_lo_M, const float *F_lo_I, const float *F_lo_D,
-                       const float *B_hi_M, const float *B_hi_I, const float *B_hi_D)
+                       const double *F_lo_M, const double *F_lo_I, const double *F_lo_D,
+                       const double *B_hi_M, const double *B_hi_I, const double *B_hi_D)
 {
   int    M        = ctx->M;
   size_t ks       = ctx->k_stride;
@@ -1999,9 +2003,9 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
   int wide = (k_hi - k_lo + 1) >= ctx->wide_thresh;
 
   if (slab_size <= base_slab) {
-    memcpy(ctx->slab_F + 0 * ks, F_lo_M, ks * sizeof(float));
-    memcpy(ctx->slab_F + 1 * ks, F_lo_I, ks * sizeof(float));
-    memcpy(ctx->slab_F + 2 * ks, F_lo_D, ks * sizeof(float));
+    memcpy(ctx->slab_F + 0 * ks, F_lo_M, ks * sizeof(double));
+    memcpy(ctx->slab_F + 1 * ks, F_lo_I, ks * sizeof(double));
+    memcpy(ctx->slab_F + 2 * ks, F_lo_D, ks * sizeof(double));
     for (int r = 1; r <= slab_size; r++) {
       size_t po = (size_t)(r - 1) * 3 * ks, co = (size_t) r * 3 * ks;
       ibv_fwd_row_dispatch(ctx, wide, k_lo, k_hi, i_lo + r,
@@ -2010,7 +2014,7 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
     }
     {
       int rh = i_hi;
-      const float *em = (rh < global_L) ? ibv_emit(ctx, rh + 1) : NULL;
+      const double *em = (rh < global_L) ? ibv_emit(ctx, rh + 1) : NULL;
       size_t off = (size_t) slab_size * 3 * ks;
       ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, rh,
                     em, B_hi_M, B_hi_I,
@@ -2034,46 +2038,46 @@ ibv_dnc_recurse_banded(IBV_DnC_Ctx *ctx, int i_lo, int i_hi, int depth,
   }
 
   int i_mid = (i_lo + i_hi) / 2;
-  float *F_mid_M  = ctx->arena + (size_t) depth * 6 * ks + 0 * ks;
-  float *F_mid_I  = ctx->arena + (size_t) depth * 6 * ks + 1 * ks;
-  float *F_mid_D  = ctx->arena + (size_t) depth * 6 * ks + 2 * ks;
-  float *B_mid1_M = ctx->arena + (size_t) depth * 6 * ks + 3 * ks;
-  float *B_mid1_I = ctx->arena + (size_t) depth * 6 * ks + 4 * ks;
-  float *B_mid1_D = ctx->arena + (size_t) depth * 6 * ks + 5 * ks;
+  double *F_mid_M  = ctx->arena + (size_t) depth * 6 * ks + 0 * ks;
+  double *F_mid_I  = ctx->arena + (size_t) depth * 6 * ks + 1 * ks;
+  double *F_mid_D  = ctx->arena + (size_t) depth * 6 * ks + 2 * ks;
+  double *B_mid1_M = ctx->arena + (size_t) depth * 6 * ks + 3 * ks;
+  double *B_mid1_I = ctx->arena + (size_t) depth * 6 * ks + 4 * ks;
+  double *B_mid1_D = ctx->arena + (size_t) depth * 6 * ks + 5 * ks;
 
-  float *rFpM = ctx->roll_F + 0*ks, *rFpI = ctx->roll_F + 1*ks, *rFpD = ctx->roll_F + 2*ks;
-  float *rFcM = ctx->roll_F + 3*ks, *rFcI = ctx->roll_F + 4*ks, *rFcD = ctx->roll_F + 5*ks;
-  float *rBpM = ctx->roll_B + 0*ks, *rBpI = ctx->roll_B + 1*ks, *rBpD = ctx->roll_B + 2*ks;
-  float *rBcM = ctx->roll_B + 3*ks, *rBcI = ctx->roll_B + 4*ks, *rBcD = ctx->roll_B + 5*ks;
+  double *rFpM = ctx->roll_F + 0*ks, *rFpI = ctx->roll_F + 1*ks, *rFpD = ctx->roll_F + 2*ks;
+  double *rFcM = ctx->roll_F + 3*ks, *rFcI = ctx->roll_F + 4*ks, *rFcD = ctx->roll_F + 5*ks;
+  double *rBpM = ctx->roll_B + 0*ks, *rBpI = ctx->roll_B + 1*ks, *rBpD = ctx->roll_B + 2*ks;
+  double *rBcM = ctx->roll_B + 3*ks, *rBcI = ctx->roll_B + 4*ks, *rBcD = ctx->roll_B + 5*ks;
 
-  memcpy(rFpM, F_lo_M, ks * sizeof(float));
-  memcpy(rFpI, F_lo_I, ks * sizeof(float));
-  memcpy(rFpD, F_lo_D, ks * sizeof(float));
+  memcpy(rFpM, F_lo_M, ks * sizeof(double));
+  memcpy(rFpI, F_lo_I, ks * sizeof(double));
+  memcpy(rFpD, F_lo_D, ks * sizeof(double));
   for (int r = i_lo + 1; r < i_mid; r++) {
     ibv_fwd_row_dispatch(ctx, wide, k_lo, k_hi, r,
                   rFpM, rFpI, rFpD, rFcM, rFcI, rFcD);
-    float *t; t=rFpM; rFpM=rFcM; rFcM=t; t=rFpI; rFpI=rFcI; rFcI=t; t=rFpD; rFpD=rFcD; rFcD=t;
+    double *t; t=rFpM; rFpM=rFcM; rFcM=t; t=rFpI; rFpI=rFcI; rFcI=t; t=rFpD; rFpD=rFcD; rFcD=t;
   }
   ibv_fwd_row_dispatch(ctx, wide, k_lo, k_hi, i_mid,
                 rFpM, rFpI, rFpD, F_mid_M, F_mid_I, F_mid_D);
 
-  memcpy(rBpM, B_hi_M, ks * sizeof(float));
-  memcpy(rBpI, B_hi_I, ks * sizeof(float));
-  memcpy(rBpD, B_hi_D, ks * sizeof(float));
+  memcpy(rBpM, B_hi_M, ks * sizeof(double));
+  memcpy(rBpI, B_hi_I, ks * sizeof(double));
+  memcpy(rBpD, B_hi_D, ks * sizeof(double));
   for (int r = i_hi; r > i_mid + 1; r--) {
-    const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
+    const double *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
     ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, r,
                   em, rBpM, rBpI, rBcM, rBcI, rBcD);
-    float *t; t=rBpM; rBpM=rBcM; rBcM=t; t=rBpI; rBpI=rBcI; rBcI=t; t=rBpD; rBpD=rBcD; rBcD=t;
+    double *t; t=rBpM; rBpM=rBcM; rBcM=t; t=rBpI; rBpI=rBcI; rBcI=t; t=rBpD; rBpD=rBcD; rBcD=t;
   }
   {
     int r = i_mid + 1;
-    const float *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
+    const double *em = (r < global_L) ? ibv_emit(ctx, r + 1) : NULL;
     ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, r,
                   em, rBpM, rBpI, B_mid1_M, B_mid1_I, B_mid1_D);
   }
   {
-    const float *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
+    const double *em = (i_mid < global_L) ? ibv_emit(ctx, i_mid + 1) : NULL;
     ibv_bwd_row_dispatch(ctx, wide, k_lo, k_hi, i_mid,
                   em, B_mid1_M, B_mid1_I, ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks);
   }
@@ -2110,15 +2114,15 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   int          status;
   P7_HMM      *hmm   = NULL;
   int          M, K, k, i;
-  float        optimal, thr, floor_milli;
+  double        optimal, thr, floor_milli;
   int          ncells = 0;
   size_t       ks;
   int          max_depth;
   IBV_DnC_Ctx  ctx;
-  float       *begin_milli = NULL;
-  float       *emit_pool  = NULL;
-  float       *F_row0_M   = NULL, *F_row0_I   = NULL, *F_row0_D   = NULL;
-  float       *B_seed_M   = NULL, *B_seed_I   = NULL, *B_seed_D   = NULL;
+  double       *begin_milli = NULL;
+  double       *emit_pool  = NULL;
+  double       *F_row0_M   = NULL, *F_row0_I   = NULL, *F_row0_D   = NULL;
+  double       *B_seed_M   = NULL, *B_seed_I   = NULL, *B_seed_D   = NULL;
   int         *i2k        = NULL, *kmin_arr   = NULL, *kmax_arr   = NULL;
   memset(&ctx, 0, sizeof(ctx));
 
@@ -2138,7 +2142,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   /* Adaptive base_slab when caller passes <= 0: cap base-case slab memory. */
   if (base_slab <= 0) {
     double cap_bytes = P7IBV_SLAB_CAP_BYTES * 1024.0 * 1024.0;
-    double per_row   = 2.0 * 3.0 * (double) ks * 4.0;   /* F+B slab, one row */
+    double per_row   = 2.0 * 3.0 * (double) ks * sizeof(double);   /* F+B slab, one row */
     long   adaptive  = (long)(cap_bytes / per_row) - 1;
     if (adaptive < P7IBV_SLAB_MIN) adaptive = P7IBV_SLAB_MIN;
     if (adaptive > P7IBV_SLAB_MAX) adaptive = P7IBV_SLAB_MAX;
@@ -2174,10 +2178,10 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
 
   /* Emit table. */
   if ((status = ibv_alloc_floats((size_t)(K + 1) * ks, &emit_pool)) != eslOK) goto ERROR;
-  ESL_ALLOC(ctx.emit_table, sizeof(float *) * (K + 1));
+  ESL_ALLOC(ctx.emit_table, sizeof(double *) * (K + 1));
   for (int xt = 0; xt <= K; xt++) ctx.emit_table[xt] = emit_pool + (size_t) xt * ks;
   for (int xt = 0; xt < K; xt++) {
-    float *row = ctx.emit_table[xt];
+    double *row = ctx.emit_table[xt];
     for (k = 0; k <= M; k++) row[k] = p7ibv_emit_milli(hmm, k, xt);
     for (k = M + 1; k < (int) ks; k++) row[k] = P7IBV_NEG_INF;
   }
@@ -2194,7 +2198,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     for (k = 0; k < (int) ks; k++) begin_milli[k] = P7IBV_NEG_INF;
     for (k = 1; k <= M; k++) {
       double b = (Z > 0.0 && occ[k] > 0.0) ? (double) occ[k] / Z : 0.0;
-      begin_milli[k] = (b > 0.0) ? (float)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
+      begin_milli[k] = (b > 0.0) ? (double)(P7IBV_INTSCALE * (log(b) / M_LN2)) : P7IBV_NEG_INF;
     }
     free(occ);
   }
@@ -2206,8 +2210,8 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   if (! do_trunc) {
     F_row0_M[0] = 0.0f;
     for (k = 1; k <= M; k++) {
-      float a = F_row0_M[k - 1] + ctx.MD_t[k - 1];
-      float b = F_row0_D[k - 1] + ctx.DD_t[k - 1];
+      double a = F_row0_M[k - 1] + ctx.MD_t[k - 1];
+      double b = F_row0_D[k - 1] + ctx.DD_t[k - 1];
       F_row0_D[k] = (a > b) ? a : b;
     }
   }
@@ -2216,21 +2220,21 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
    * Reuse roll_F for this; reset to NEG_INF afterwards. */
   if ((status = ibv_dnc_alloc(6 * ks, &ctx.roll_F)) != eslOK) goto ERROR;
   {
-    float *rM = ctx.roll_F + 0*ks, *rI = ctx.roll_F + 1*ks, *rD = ctx.roll_F + 2*ks;
-    float *cM = ctx.roll_F + 3*ks, *cI = ctx.roll_F + 4*ks, *cD = ctx.roll_F + 5*ks;
-    memcpy(rM, F_row0_M, ks * sizeof(float));
-    memcpy(rI, F_row0_I, ks * sizeof(float));
-    memcpy(rD, F_row0_D, ks * sizeof(float));
+    double *rM = ctx.roll_F + 0*ks, *rI = ctx.roll_F + 1*ks, *rD = ctx.roll_F + 2*ks;
+    double *cM = ctx.roll_F + 3*ks, *cI = ctx.roll_F + 4*ks, *cD = ctx.roll_F + 5*ks;
+    memcpy(rM, F_row0_M, ks * sizeof(double));
+    memcpy(rI, F_row0_I, ks * sizeof(double));
+    memcpy(rD, F_row0_D, ks * sizeof(double));
     for (i = 1; i <= L; i++) {
       int x = (int) dsq[i];
       int xt = (x >= 0 && x < K) ? x : K;
-      const float *brow = (do_trunc && i == 1) ? begin_milli : NULL;
+      const double *brow = (do_trunc && i == 1) ? begin_milli : NULL;
       ibv_forward_one_row(M, ks,
                           ctx.MM_t, ctx.MI_t, ctx.MD_t,
                           ctx.IM_t, ctx.II_t, ctx.DM_t, ctx.DD_t,
                           ctx.emit_table[xt], brow,
                           rM, rI, rD, cM, cI, cD);
-      float *t; t=rM; rM=cM; cM=t; t=rI; rI=cI; cI=t; t=rD; rD=cD; cD=t;
+      double *t; t=rM; rM=cM; cM=t; t=rI; rI=cI; cI=t; t=rD; rD=cD; cD=t;
     }
     if (do_trunc) {
       /* Tgm end-anywhere: exit from any match node, or D_M->E. */
@@ -2243,7 +2247,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     }
   }
   assert(optimal == optimal);
-  floor_milli = (float) delta_milli;
+  floor_milli = (double) delta_milli;
   if (floor_milli < P7IBV_EPS) floor_milli = P7IBV_EPS;
   thr = optimal - floor_milli;   /* reported in the band dumps only; rows use their own max */
   /* Reset roll_F for D&C streaming reuse. */
@@ -2798,14 +2802,14 @@ cm_p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepa
    *     value does not matter.
    *
    *     Speed/memory: the FLAT deriver is ~2 sweeps (vs the D&C's ~35) but
-   *     needs an O(L*M) forward pool (~12*L*M bytes).  Use it when that pool
+   *     needs an O(L*M) forward pool (~24*L*M bytes; double cells, brief 26_0821-144).  Use it when that pool
    *     fits a ~2 GB budget (covers small/viral), else fall back to the
    *     memory-bounded D&C (genome).  This delivers the de-recursion speedup
    *     wherever memory allows; the genome-scale windowed forward-Viterbi
    *     (single bounded sweep) is the remaining brief-169 speed lever and is a
    *     drop-in replacement for this block (must reproduce this i2k). */
   {
-    double flat_pool_bytes = 12.0 * (double)(L + 1) * (double)(M + 4);
+    double flat_pool_bytes = 24.0 * (double)(L + 1) * (double)(M + 4);
     double FLAT_BUDGET = 2.0e9;
     /* Brief 26_0430-172: P7WV_FORCE_KBAND forces the k-banded D&C i2k path even when the
      * flat pool would fit, so the banded kernel can be validated (exact i2k vs
@@ -2902,16 +2906,17 @@ ibv_utest_hmm(const ESL_ALPHABET *abc, int M, double shift)
   return hmm;
 }
 
-/* utest_genome_drift(): the row-relative band threshold at a scale where
- * float drift is real. A sequence of M residues aligned to the HMM above
- * scores ~6.6 bits per residue; the D&C deriver (cmalign's --hmm --p7ibv
- * path) runs once on the plain HMM and once on the shifted one.
- * Requires: (positive control) the plain run's row max through-scores
- * drift from its optimum by more than the band margin, which is what the
- * old global threshold (optimum - margin) turned into bloated or empty
- * rows; no empty rows; the shifted run's drift below 1/10 of the margin;
- * and the two bands equal to within one cell at every row edge, with the
- * same Viterbi pins. */
+/* utest_genome_drift(): the IBV band at a scale where float through-scores
+ * drift. A sequence of M residues aligned to the HMM above scores ~6.6
+ * bits per residue (~66,000 bits at the default M = 10,000); the D&C
+ * deriver (cmalign's --hmm --p7ibv path) runs once on the plain HMM and
+ * once on the shifted one. With the float F/B this file used before
+ * brief 26_0821-144, the plain run's row max through-scores drifted from
+ * its optimum by up to 7.4 bits on this input, against the test's 0.2-bit
+ * margin, and the bands differed from the reference. Requires: no empty
+ * rows; both runs' drift (row max - optimum) below 1/10 of the margin;
+ * the same Viterbi pins; and the two bands equal to within one cell at
+ * every row edge. */
 static void
 utest_genome_drift(const ESL_ALPHABET *abc, int M, int delta, int be_verbose)
 {
@@ -2952,9 +2957,9 @@ utest_genome_drift(const ESL_ALPHABET *abc, int M, int delta, int be_verbose)
            L, st0.optimal / P7IBV_INTSCALE, persc, st0.drift_min / P7IBV_INTSCALE, st0.drift_max / P7IBV_INTSCALE,
            (long long) st0.empty_rows, nc0, st1.drift_min / P7IBV_INTSCALE, st1.drift_max / P7IBV_INTSCALE, nc1, maxdiff);
 
-  if (ESL_MAX(st0.drift_max, -st0.drift_min) <= (float) delta)
-    esl_fatal("utest_genome_drift: control failed: plain drift only [%g, %g] milli-bits vs margin %d; raise -M", st0.drift_min, st0.drift_max, delta);
   if (st0.empty_rows != 0 || st1.empty_rows != 0) esl_fatal("utest_genome_drift: empty rows (%lld, %lld)", (long long) st0.empty_rows, (long long) st1.empty_rows);
+  if (ESL_MAX(st0.drift_max, -st0.drift_min) > 0.1 * delta)
+    esl_fatal("utest_genome_drift: plain run drifts [%g, %g] milli-bits (margin %d)", st0.drift_min, st0.drift_max, delta);
   if (ESL_MAX(st1.drift_max, -st1.drift_min) > 0.1 * delta)
     esl_fatal("utest_genome_drift: shifted reference drifts [%g, %g] milli-bits", st1.drift_min, st1.drift_max);
   if (maxdiff > 1) esl_fatal("utest_genome_drift: bands differ by up to %d cells at a row edge", maxdiff);
